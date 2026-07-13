@@ -48,8 +48,11 @@ RSpec.describe Channel::Instagram do
 
   describe 'concerns' do
     before do
+      failed_result = Meta::AuthorizationHealthCheckService::Result.new(
+        status: :action_required, reason: 'provider_authorization_failed', metadata: {}
+      )
       allow(Meta::AuthorizationHealthCheckService).to receive(:new)
-        .and_return(instance_double(Meta::AuthorizationHealthCheckService, healthy?: false))
+        .and_return(instance_double(Meta::AuthorizationHealthCheckService, healthy?: false, result: failed_result))
     end
 
     it_behaves_like 'reauthorizable'

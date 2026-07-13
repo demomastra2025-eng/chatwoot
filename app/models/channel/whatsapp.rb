@@ -20,6 +20,7 @@
 class Channel::Whatsapp < ApplicationRecord
   include Channelable
   include Reauthorizable
+  include WhatsappProviderLifecycle
 
   self.table_name = 'channel_whatsapp'
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
@@ -28,12 +29,18 @@ class Channel::Whatsapp < ApplicationRecord
   PROVIDERS = %w[default whatsapp_cloud].freeze
   AUTHORIZATION_FAILURE_CONFIG_KEYS = %w[authorization_status authorization_error].freeze
   TOKEN_HEALTH_CONFIG_KEY = 'token_health'.freeze
+  PROVIDER_LIFECYCLE_CONFIG_KEY = 'provider_lifecycle'.freeze
   AUTHORIZATION_ERROR_CODE = 190
   before_validation :ensure_webhook_verify_token
 
   validates :provider, inclusion: { in: PROVIDERS }
   validates :phone_number, presence: true, uniqueness: true
   validate :validate_provider_config
+
+  has_one :meta_credential_health,
+          as: :channel,
+          class_name: 'Meta::ChannelCredentialHealth',
+          dependent: :destroy
 
   after_create :sync_templates
   before_destroy :teardown_webhooks
@@ -131,38 +138,33 @@ class Channel::Whatsapp < ApplicationRecord
   def clear_provider_authorization_error!
     return false if provider_config.to_h.slice(*AUTHORIZATION_FAILURE_CONFIG_KEYS).empty?
 
-    # rubocop:disable Rails/SkipsModelValidations
-    update_column(:provider_config, provider_config.to_h.except(*AUTHORIZATION_FAILURE_CONFIG_KEYS))
-    # rubocop:enable Rails/SkipsModelValidations
+    mutate_provider_config! { |config| config.except(*AUTHORIZATION_FAILURE_CONFIG_KEYS) }
     true
   end
 
   def store_token_health!(metadata)
     return false if metadata.blank?
 
-    updated_config = provider_config.to_h.merge(TOKEN_HEALTH_CONFIG_KEY => metadata.to_h.deep_stringify_keys)
-
+    safe_metadata = sanitize_provider_metadata(metadata)
     if persisted?
-      # rubocop:disable Rails/SkipsModelValidations
-      update_column(:provider_config, updated_config)
-      # rubocop:enable Rails/SkipsModelValidations
+      mutate_provider_config! do |config|
+        config.merge(TOKEN_HEALTH_CONFIG_KEY => safe_metadata)
+      end
     else
-      self.provider_config = updated_config
+      self.provider_config = provider_config.to_h.merge(TOKEN_HEALTH_CONFIG_KEY => safe_metadata)
     end
 
     true
   end
 
   def provider_authorization_healthy?
-    Meta::AuthorizationHealthCheckService.new(self).healthy?
+    provider_authorization_health_service.healthy?
   end
 
-  def provider_authorization_reauthorization_recorded?
-    provider_authorization_error_recorded?
-  end
+  def provider_authorization_transient_failure?
+    return false unless provider_authorization_health_service.respond_to?(:result)
 
-  def after_provider_authorization_healthy!
-    clear_provider_authorization_error!
+    provider_authorization_health_service.result.transient?
   end
 
   def self.provider_authorization_error(payload)
@@ -188,26 +190,35 @@ class Channel::Whatsapp < ApplicationRecord
   end
 
   def self.provider_authorization_error?(error)
-    return true if error['code'].to_i == AUTHORIZATION_ERROR_CODE
-    return false unless error['type'] == 'OAuthException'
-
-    error['message'].to_s.match?(/access token|session has expired|validating access token/i)
+    Meta::AuthorizationErrorClassifier.classify(error).kind == :reauthorization_required
   end
 
   private
 
+  def provider_authorization_health_service
+    @provider_authorization_health_service ||= Meta::AuthorizationHealthCheckService.new(self)
+  end
+
   def record_reauthorization_error!(error_payload)
     already_requires_reauthorization = reauthorization_required?
-    # rubocop:disable Rails/SkipsModelValidations
-    update_column(
-      :provider_config,
-      provider_config.to_h.merge(
+    safe_error_payload = sanitize_provider_metadata(error_payload)
+    mutate_provider_config! do |config|
+      config.merge(
         'authorization_status' => 'reauthorization_required',
-        'authorization_error' => error_payload
+        'authorization_error' => safe_error_payload
       )
-    )
-    # rubocop:enable Rails/SkipsModelValidations
+    end
     prompt_reauthorization! unless already_requires_reauthorization
+  end
+
+  def mutate_provider_config!
+    with_lock do
+      reload
+      updated_config = yield(provider_config.to_h.deep_dup)
+      # rubocop:disable Rails/SkipsModelValidations
+      update_column(:provider_config, updated_config)
+      # rubocop:enable Rails/SkipsModelValidations
+    end
   end
 
   def ensure_webhook_verify_token

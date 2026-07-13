@@ -49,11 +49,18 @@ describe Whatsapp::FacebookApiClient do
       before do
         stub_request(:get, "https://graph.facebook.com/#{api_version}/oauth/access_token")
           .with(query: { client_id: app_id, client_secret: app_secret, code: code })
-          .to_return(status: 400, body: { error: 'Invalid code' }.to_json)
+          .to_return(
+            status: 400,
+            body: { error: { message: "Invalid code #{code}", authorization_code: code } }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
       end
 
-      it 'raises an error' do
-        expect { api_client.exchange_code_for_token(code) }.to raise_error(/Token exchange failed/)
+      it 'redacts the one-time authorization code from the error and payload' do
+        expect { api_client.exchange_code_for_token(code) }.to raise_error(Whatsapp::FacebookApiClient::Error) do |error|
+          expect(error.message).not_to include(code)
+          expect(error.payload.to_json).not_to include(code)
+        end
       end
     end
   end
@@ -83,18 +90,30 @@ describe Whatsapp::FacebookApiClient do
       before do
         stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/phone_numbers")
           .with(query: { access_token: access_token })
-          .to_return(status: 403, body: { error: 'Access denied' }.to_json)
+          .to_return(
+            status: 403,
+            body: { error: { message: "Access denied for #{access_token}", access_token: access_token } }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
       end
 
       it 'raises an error' do
         expect { api_client.fetch_phone_numbers(waba_id) }.to raise_error(/WABA phone numbers fetch failed/)
       end
+
+      it 'redacts credentials from both the exception message and payload' do
+        expect { api_client.fetch_phone_numbers(waba_id) }.to raise_error(Whatsapp::FacebookApiClient::Error) do |error|
+          expect(error.message).not_to include(access_token)
+          expect(error.payload.to_json).not_to include(access_token)
+          expect(error.payload.dig('error', 'access_token')).to be_nil
+        end
+      end
     end
   end
 
   describe '#webhook_subscribed_fields' do
-    it 'includes the Meta WhatsApp Calling webhook field from the reference flow' do
-      expect(api_client.webhook_subscribed_fields).to eq(%w[messages smb_message_echoes calls])
+    it 'includes account lifecycle, message echo, and Calling webhook fields' do
+      expect(api_client.webhook_subscribed_fields).to eq(%w[messages account_update smb_message_echoes calls])
     end
   end
 

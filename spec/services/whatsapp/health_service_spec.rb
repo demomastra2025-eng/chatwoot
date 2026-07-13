@@ -15,6 +15,7 @@ RSpec.describe Whatsapp::HealthService do
   end
 
   before do
+    allow(GlobalConfigService).to receive(:load).and_call_original
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return(api_version)
   end
 
@@ -47,14 +48,34 @@ RSpec.describe Whatsapp::HealthService do
     )
   end
 
-  it 'automatically clears a stale reauthorization flag when health check is healthy' do
-    whatsapp_channel.record_provider_authorization_error!(
+  it 'redacts credentials from provider-config errors, raised errors, and logs' do
+    channel_token = whatsapp_channel.provider_config['api_key']
+    body = {
       error: {
-        code: 190,
+        message: "access_token=#{channel_token} code=one-time-code",
         type: 'OAuthException',
-        message: 'Expired token'
+        code: 190,
+        refresh_token: 'refresh-secret'
       }
-    )
+    }.to_json
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(status: 401, body: body, headers: { 'Content-Type' => 'application/json' })
+    logged_messages = []
+    allow(Rails.logger).to receive(:error) { |message| logged_messages << message }
+
+    raised_message = nil
+    expect { described_class.new(whatsapp_channel).fetch_health_status }
+      .to raise_error(RuntimeError) { |error| raised_message = error.message }
+
+    persisted_error = whatsapp_channel.reload.provider_config['authorization_error'].to_json
+    [persisted_error, raised_message, logged_messages.join].each do |output|
+      expect(output).to include('[FILTERED]')
+      expect(output).not_to include(channel_token, 'one-time-code', 'refresh-secret')
+    end
+  end
+
+  it 'automatically clears a stale reauthorization flag when health check is healthy' do
+    whatsapp_channel.record_provider_configuration_error!('Expired token', type: 'OAuthException')
 
     stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
       .to_return(

@@ -33,6 +33,11 @@ class Channel::FacebookPage < ApplicationRecord
 
   validates :page_id, uniqueness: { scope: :account_id }
 
+  has_one :meta_credential_health,
+          as: :channel,
+          class_name: 'Meta::ChannelCredentialHealth',
+          dependent: :destroy
+
   after_create_commit :subscribe, unless: :skip_auto_subscribe?
   before_destroy :unsubscribe
 
@@ -76,10 +81,20 @@ class Channel::FacebookPage < ApplicationRecord
   end
 
   def provider_authorization_healthy?
-    Meta::AuthorizationHealthCheckService.new(self).healthy?
+    provider_authorization_health_service.healthy?
+  end
+
+  def provider_authorization_transient_failure?
+    return false unless provider_authorization_health_service.respond_to?(:result)
+
+    provider_authorization_health_service.result.transient?
   end
 
   private
+
+  def provider_authorization_health_service
+    @provider_authorization_health_service ||= Meta::AuthorizationHealthCheckService.new(self)
+  end
 
   def redacted_subscription_error(error)
     [page_access_token, user_access_token].compact_blank.each_with_object(error.message.to_s.dup) do |token, message|

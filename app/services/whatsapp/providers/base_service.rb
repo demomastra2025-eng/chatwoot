@@ -50,7 +50,7 @@ class Whatsapp::Providers::BaseService
   end
 
   def handle_error(response, message)
-    Rails.logger.error response.body
+    Rails.logger.error sanitized_provider_data(response.body)
     record_provider_authorization_error(response)
     return if message.blank?
 
@@ -68,7 +68,12 @@ class Whatsapp::Providers::BaseService
 
     whatsapp_channel.record_provider_authorization_error!(response.parsed_response)
   rescue StandardError => e
-    Rails.logger.error "[WHATSAPP] Failed to record authorization error: #{e.message}"
+    Rails.logger.error "[WHATSAPP] Failed to record authorization error: #{sanitized_provider_data(e.message)}"
+  end
+
+  def sanitized_provider_data(data)
+    secrets = Meta::CredentialDataSanitizer.channel_secrets(whatsapp_channel)
+    Meta::CredentialDataSanitizer.sanitize(data.to_s, secrets: secrets)
   end
 
   def create_buttons(items)

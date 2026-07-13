@@ -19,10 +19,16 @@ module MetaTokenVerifyConcern
   private
 
   def verify_meta_signature!
-    return unless meta_signature_verification_required?
-    return if valid_meta_signature?
+    signature_required = meta_signature_verification_required?
+    @meta_signature_verified = valid_meta_signature?
+    return if @meta_signature_verified
+    return unless signature_required
 
     head :unauthorized
+  end
+
+  def meta_signature_verified?
+    @meta_signature_verified == true
   end
 
   def valid_meta_signature?

@@ -39,9 +39,7 @@ class Instagram::MessageText < Instagram::BaseMessageText
     error_message = parsed_response.dig('error', 'message')
     error_code = parsed_response.dig('error', 'code')
 
-    # https://developers.facebook.com/docs/messenger-platform/error-codes
-    # Access token has expired or become invalid.
-    channel.authorization_error! if error_code == 190
+    Meta::AuthorizationErrorHandler.handle(channel: channel, payload: parsed_response)
 
     # TODO: Remove this once we have a better way to handle this error.
     # https://developers.facebook.com/docs/messenger-platform/instagram/features/user-profile/#user-consent

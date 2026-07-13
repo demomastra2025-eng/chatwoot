@@ -33,8 +33,8 @@ class Whatsapp::HealthService
 
     handle_response(response)
   rescue StandardError => e
-    Rails.logger.error "[WHATSAPP HEALTH] Error fetching health data: #{e.message}"
-    raise e
+    Rails.logger.error "[WHATSAPP HEALTH] Error fetching health data: #{safe_provider_data(e.message)}"
+    raise
   end
 
   def health_fields
@@ -63,9 +63,7 @@ class Whatsapp::HealthService
     unless response.success?
       error_payload = response.parsed_response if response.respond_to?(:parsed_response)
       @channel.record_provider_authorization_error!(error_payload) if @channel.respond_to?(:record_provider_authorization_error!)
-      error_message = "WhatsApp API request failed: #{response.code} - #{response.body}"
-      Rails.logger.error "[WHATSAPP HEALTH] #{error_message}"
-      raise error_message
+      raise "WhatsApp API request failed: #{response.code} - #{safe_provider_data(response.body)}"
     end
 
     data = response.parsed_response
@@ -99,6 +97,11 @@ class Whatsapp::HealthService
     return nil if frontend_url.blank?
 
     "#{frontend_url}/webhooks/whatsapp/#{@channel.phone_number}"
+  end
+
+  def safe_provider_data(data)
+    secrets = Meta::CredentialDataSanitizer.channel_secrets(@channel)
+    Meta::CredentialDataSanitizer.sanitize(data.to_s.first(1000), secrets: secrets)
   end
 
   def clear_authorization_failure_if_healthy(health_data)

@@ -25,21 +25,24 @@ class Whatsapp::ReauthorizationService
   private
 
   def update_channel_config(channel, access_token, phone_info)
-    current_config = channel.provider_config.to_h.except(*Channel::Whatsapp::AUTHORIZATION_FAILURE_CONFIG_KEYS)
-    capability_config = {
-      'calling_capable' => phone_info[:calling_capable],
-      'calling_capabilities' => phone_info[:calling_capabilities]
-    }.compact
-    capability_config['calling_enabled'] = true if phone_info[:calling_capable] && !current_config.key?('calling_enabled')
+    channel.with_lock do
+      channel.reload
+      current_config = channel.provider_config.to_h.except(*Channel::Whatsapp::AUTHORIZATION_FAILURE_CONFIG_KEYS)
+      capability_config = {
+        'calling_capable' => phone_info[:calling_capable],
+        'calling_capabilities' => phone_info[:calling_capabilities]
+      }.compact
+      capability_config['calling_enabled'] = true if phone_info[:calling_capable] && !current_config.key?('calling_enabled')
 
-    channel.provider_config = current_config.merge(
-      'api_key' => access_token,
-      'phone_number_id' => @phone_number_id,
-      'business_account_id' => @waba_id,
-      'business_id' => @business_id,
-      'source' => 'embedded_signup'
-    ).merge(capability_config)
-    channel.save!
+      channel.provider_config = current_config.merge(
+        'api_key' => access_token,
+        'phone_number_id' => @phone_number_id,
+        'business_account_id' => @waba_id,
+        'business_id' => @business_id,
+        'source' => 'embedded_signup'
+      ).merge(capability_config)
+      channel.save!
+    end
 
     # Update inbox name if business name changed
     business_name = phone_info[:business_name] || phone_info[:verified_name]

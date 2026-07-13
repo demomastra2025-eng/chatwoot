@@ -2,20 +2,15 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   queue_as :whatsapp_inbound
   retry_on LockAcquisitionError, wait: 1.second, attempts: 8
 
-  def perform(params = {})
+  def perform(params = {}, options = {})
+    hmac_verified = options.with_indifferent_access[:hmac_verified] == true
     channel = find_channel_from_whatsapp_business_payload(params)
     log_webhook_dispatch(channel, params)
 
-    if channel_is_inactive?(channel)
-      Rails.logger.warn("Inactive WhatsApp channel: #{channel&.phone_number || "unknown - #{params[:phone_number]}"}")
-      return
-    end
+    return log_inactive_channel(channel, params) if channel_is_inactive?(channel)
+    return unless continue_after_account_update?(channel, params, hmac_verified)
 
-    if message_echo_event?(params)
-      handle_message_echo(channel, params)
-    else
-      handle_message_events(channel, params)
-    end
+    dispatch_message_payload(channel, message_dispatch_params(params))
   end
 
   # Detects if the webhook is an SMB message echo event (message sent from WhatsApp Business app)
@@ -56,6 +51,72 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     params.dig(:entry, 0, :changes, 0, :field) == 'smb_message_echoes'
   end
 
+  def log_inactive_channel(channel, params)
+    phone_number = channel&.phone_number || "unknown - #{params[:phone_number]}"
+    Rails.logger.warn("Inactive WhatsApp channel: #{phone_number}")
+  end
+
+  def continue_after_account_update?(channel, params, hmac_verified)
+    return true unless account_update_event?(params)
+
+    handle_account_updates(channel, params) if trusted_account_update?(channel, hmac_verified)
+    non_account_update_event?(params)
+  end
+
+  def dispatch_message_payload(channel, params)
+    if message_echo_event?(params)
+      handle_message_echo(channel, params)
+    else
+      handle_message_events(channel, params)
+    end
+  end
+
+  def account_update_event?(params)
+    webhook_fields(params).include?('account_update')
+  end
+
+  def trusted_account_update?(channel, hmac_verified)
+    return true if hmac_verified && channel.provider == 'whatsapp_cloud'
+
+    Rails.logger.warn(
+      "[WHATSAPP ACCOUNT UPDATE] ignored untrusted event channel=#{channel.id} " \
+      "provider=#{channel.provider} hmac_verified=#{hmac_verified}"
+    )
+    false
+  end
+
+  def non_account_update_event?(params)
+    webhook_fields(params).any? { |field| field != 'account_update' }
+  end
+
+  def message_dispatch_params(params)
+    return params unless account_update_event?(params)
+
+    payload = params.to_h.deep_dup.with_indifferent_access
+    payload[:entry] = Array(payload[:entry]).filter_map do |entry|
+      entry = entry.to_h.with_indifferent_access
+      changes = Array(entry[:changes]).reject { |change| change.to_h.with_indifferent_access[:field] == 'account_update' }
+      entry.merge(changes: changes) if changes.present?
+    end
+    payload
+  end
+
+  def handle_account_updates(callback_channel, params)
+    account_update_channels(callback_channel, params).find_each do |channel|
+      Whatsapp::AccountUpdateService.new(channel: channel, params: params).perform
+    end
+  end
+
+  def account_update_channels(callback_channel, params)
+    Channel::Whatsapp
+      .where(account_id: callback_channel.account_id, provider: 'whatsapp_cloud')
+      .where("provider_config ->> 'business_account_id' IN (?)", account_update_waba_ids(params))
+  end
+
+  def account_update_waba_ids(params)
+    Array(params[:entry] || params['entry']).filter_map { |entry| entry[:id] || entry['id'] }.map(&:to_s).uniq
+  end
+
   def handle_message_echo(channel, params)
     Whatsapp::IncomingMessageWhatsappCloudService.new(inbox: channel.inbox, params: params, outgoing_echo: true).perform
   end
@@ -88,7 +149,13 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     # for the case where facebook cloud api support multiple numbers for a single app
     # https://github.com/chatwoot/chatwoot/issues/4712#issuecomment-1173838350
     # we will give priority to the phone_number in the payload
-    return get_channel_from_wb_payload(params) if params[:object] == 'whatsapp_business_account'
+    if params[:object] == 'whatsapp_business_account'
+      payload_channel = get_channel_from_wb_payload(params)
+      return payload_channel if payload_channel.present?
+      return find_channel_by_url_param(params) if account_update_event?(params)
+
+      return nil
+    end
 
     find_channel_by_url_param(params)
   end
@@ -102,15 +169,28 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   end
 
   def log_webhook_dispatch(channel, params)
-    Rails.logger.info(
-      '[WHATSAPP_WEBHOOK] dispatch ' \
-      "phone_number=#{channel&.phone_number || params[:phone_number] || params['phone_number']} " \
-      "channel_id=#{channel&.id || 'none'} " \
-      "account_id=#{channel&.account_id || 'none'} " \
-      "inbox_id=#{channel&.inbox&.id || 'none'} " \
-      "provider=#{channel&.provider || 'none'} " \
-      "fields=#{webhook_fields(params).join(',')} " \
-      "echo=#{message_echo_event?(params)}"
+    details = webhook_dispatch_details(channel, params)
+    Rails.logger.info("[WHATSAPP_WEBHOOK] dispatch #{details.map { |key, value| "#{key}=#{value}" }.join(' ')}")
+  end
+
+  def webhook_dispatch_details(channel, params)
+    details = {
+      phone_number: params[:phone_number] || params['phone_number'],
+      channel_id: 'none',
+      account_id: 'none',
+      inbox_id: 'none',
+      provider: 'none',
+      fields: webhook_fields(params).join(','),
+      echo: message_echo_event?(params)
+    }
+    return details if channel.blank?
+
+    details.merge(
+      phone_number: channel.phone_number,
+      channel_id: channel.id,
+      account_id: channel.account_id,
+      inbox_id: channel.inbox&.id || 'none',
+      provider: channel.provider
     )
   end
 

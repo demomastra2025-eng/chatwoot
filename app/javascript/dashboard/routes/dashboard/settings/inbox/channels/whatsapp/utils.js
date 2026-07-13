@@ -38,6 +38,19 @@ export const isValidBusinessData = businessData => {
   );
 };
 
+const EMBEDDED_SIGNUP_FINISH_EVENTS = [
+  'FINISH',
+  'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+];
+
+export const isEmbeddedSignupFinishEvent = data => {
+  return EMBEDDED_SIGNUP_FINISH_EVENTS.includes(data?.event);
+};
+
+export const isEmbeddedSignupErrorEvent = data => {
+  return ['ERROR', 'error'].includes(data?.event);
+};
+
 export const getWhatsAppEmbeddedSignupConfigErrors = config => {
   const missingConfig = [];
   if (!config?.whatsappAppId || config.whatsappAppId === 'none') {
@@ -100,11 +113,7 @@ export const initWhatsAppEmbeddedSignup = configId => {
         config_id: configId,
         response_type: 'code',
         override_default_response_type: true,
-        extras: {
-          setup: {},
-          featureType: 'whatsapp_business_app_onboarding',
-          sessionInfoVersion: '3',
-        },
+        extras: { setup: {} },
       }
     );
   });

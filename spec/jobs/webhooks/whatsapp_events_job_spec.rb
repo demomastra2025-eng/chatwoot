@@ -126,10 +126,103 @@ RSpec.describe Webhooks::WhatsappEventsJob do
 
       expect(Redis::Alfred::WHATSAPP_MESSAGE_MUTEX).to eq('WHATSAPP_MESSAGE_CREATE_LOCK::%<inbox_id>s::%<sender_id>s')
       expect(Whatsapp::IncomingCallService).to receive(:new)
-        .with(inbox: channel.inbox, params: { calls: [call_payload.with_indifferent_access] })
+        .with(inbox: channel.inbox, params: { calls: [call_payload.with_indifferent_access], contacts: [] })
         .and_return(service)
 
       expect { job.perform_now(call_params.with_indifferent_access) }.not_to raise_error
+    end
+
+    it 'routes metadata-free account_update events through the signed callback channel' do
+      account_update_params = {
+        object: 'whatsapp_business_account',
+        phone_number: channel.phone_number,
+        entry: [{
+          id: channel.provider_config['business_account_id'],
+          changes: [{ field: 'account_update', value: { event: 'ACCOUNT_OFFBOARDED' } }]
+        }]
+      }.with_indifferent_access
+      account_update_service = instance_double(Whatsapp::AccountUpdateService, perform: true)
+
+      expect(Whatsapp::AccountUpdateService).to receive(:new)
+        .with(channel: channel, params: account_update_params)
+        .and_return(account_update_service)
+      expect(Whatsapp::IncomingMessageWhatsappCloudService).not_to receive(:new)
+
+      job.perform_now(account_update_params, { hmac_verified: true })
+    end
+
+    it 'ignores unsigned account_update events even when the callback channel resolves' do
+      account_update_params = {
+        object: 'whatsapp_business_account',
+        phone_number: channel.phone_number,
+        entry: [{
+          id: channel.provider_config['business_account_id'],
+          changes: [{ field: 'account_update', value: { event: 'ACCOUNT_OFFBOARDED' } }]
+        }]
+      }.with_indifferent_access
+      allow(Whatsapp::AccountUpdateService).to receive(:new)
+
+      job.perform_now(account_update_params, { hmac_verified: false })
+
+      expect(Whatsapp::AccountUpdateService).not_to have_received(:new)
+    end
+
+    it 'processes messages alongside a signed account_update in the same payload' do
+      mixed_params = {
+        object: 'whatsapp_business_account',
+        phone_number: channel.phone_number,
+        entry: [{
+          id: channel.provider_config['business_account_id'],
+          changes: [
+            { field: 'account_update', value: { event: 'ACCOUNT_RECONNECTED' } },
+            { field: 'messages', value: { messages: [{ id: 'wamid.1' }] } }
+          ]
+        }]
+      }.with_indifferent_access
+      account_update_service = instance_double(Whatsapp::AccountUpdateService, perform: true)
+      message_service = instance_double(Whatsapp::IncomingMessageWhatsappCloudService, perform: true)
+      allow(Whatsapp::AccountUpdateService).to receive(:new).and_return(account_update_service)
+      allow(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new).and_return(message_service)
+
+      job.perform_now(mixed_params, { hmac_verified: true })
+
+      expected_message_params = mixed_params.deep_dup
+      expected_message_params[:entry].first[:changes] = [mixed_params[:entry].first[:changes].last]
+      expect(Whatsapp::AccountUpdateService).to have_received(:new).with(channel: channel, params: mixed_params).once
+      expect(Whatsapp::IncomingMessageWhatsappCloudService).to have_received(:new)
+        .with(inbox: channel.inbox, params: expected_message_params).once
+    end
+
+    it 'fans WABA-level account updates out only to matching channels in the callback account' do
+      same_account_channel = create(
+        :channel_whatsapp,
+        account: channel.account,
+        provider: 'whatsapp_cloud',
+        sync_templates: false,
+        validate_provider_config: false
+      )
+      other_account_channel = create(
+        :channel_whatsapp,
+        provider: 'whatsapp_cloud',
+        sync_templates: false,
+        validate_provider_config: false
+      )
+      account_update_params = {
+        object: 'whatsapp_business_account',
+        phone_number: channel.phone_number,
+        entry: [{
+          id: channel.provider_config['business_account_id'],
+          changes: [{ field: 'account_update', value: { event: 'ACCOUNT_OFFBOARDED' } }]
+        }]
+      }.with_indifferent_access
+      account_update_service = instance_double(Whatsapp::AccountUpdateService, perform: true)
+      allow(Whatsapp::AccountUpdateService).to receive(:new).and_return(account_update_service)
+
+      job.perform_now(account_update_params, { hmac_verified: true })
+
+      expect(Whatsapp::AccountUpdateService).to have_received(:new).with(channel: channel, params: account_update_params).once
+      expect(Whatsapp::AccountUpdateService).to have_received(:new).with(channel: same_account_channel, params: account_update_params).once
+      expect(Whatsapp::AccountUpdateService).not_to have_received(:new).with(channel: other_account_channel, params: account_update_params)
     end
   end
 

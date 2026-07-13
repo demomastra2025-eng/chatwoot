@@ -23,8 +23,8 @@ class Whatsapp::EmbeddedSignupService
     channel
 
   rescue StandardError => e
-    Rails.logger.error("[WHATSAPP] Embedded signup failed: #{e.message}")
-    raise e
+    Rails.logger.error("[WHATSAPP] Embedded signup failed: #{safe_error_message(e)}")
+    raise
   end
 
   private
@@ -90,7 +90,7 @@ class Whatsapp::EmbeddedSignupService
 
     channel.inbox&.destroy!
   rescue StandardError => e
-    Rails.logger.error("[WHATSAPP] Failed to cleanup channel after embedded signup error: #{e.message}")
+    Rails.logger.error("[WHATSAPP] Failed to cleanup channel after embedded signup error: #{safe_error_message(e, channel: channel)}")
   end
 
   def create_or_reauthorize_channel(access_token, phone_info)
@@ -118,7 +118,15 @@ class Whatsapp::EmbeddedSignupService
       Rails.logger.info "[WHATSAPP] Channel #{channel.phone_number} health check passed"
     end
   rescue StandardError => e
-    Rails.logger.error "[WHATSAPP] Health check failed for channel #{channel.phone_number}: #{e.message}"
+    Rails.logger.error "[WHATSAPP] Health check failed for channel #{channel.phone_number}: #{safe_error_message(e, channel: channel)}"
+  end
+
+  def safe_error_message(error, channel: nil)
+    app_id = GlobalConfigService.load('WHATSAPP_APP_ID', '')
+    app_secret = GlobalConfigService.load('WHATSAPP_APP_SECRET', '')
+    secrets = [@code, app_secret, "#{app_id}|#{app_secret}"]
+    secrets.concat(Meta::CredentialDataSanitizer.channel_secrets(channel)) if channel
+    Meta::CredentialDataSanitizer.sanitize(error.message.to_s.first(500), secrets: secrets)
   end
 
   def channel_in_pending_state?(health_data)

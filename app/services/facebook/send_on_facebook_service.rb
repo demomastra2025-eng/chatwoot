@@ -24,6 +24,7 @@ class Facebook::SendOnFacebookService < Base::SendOnChannelService
     return if parsed_result.nil?
 
     if parsed_result['error'].present?
+      handle_facebook_response_error(parsed_result)
       Messages::StatusUpdateService.new(message, 'failed', external_error(parsed_result)).perform
       Rails.logger.info "Facebook::SendOnFacebookService: Error sending message to Facebook : Page - #{channel.page_id} : #{parsed_result}"
     end
@@ -110,9 +111,12 @@ class Facebook::SendOnFacebookService < Base::SendOnChannelService
   end
 
   def handle_facebook_error(exception)
-    # Refer: https://github.com/jgorset/facebook-messenger/blob/64fe1f5cef4c1e3fca295b205037f64dfebdbcab/lib/facebook/messenger/error.rb
-    return unless exception.to_s.include?('The session has been invalidated') || exception.to_s.include?('Error validating access token')
+    payload = exception.respond_to?(:result) ? exception.result : nil
+    payload = { error: { message: exception.to_s } } unless payload.present? && payload.respond_to?(:to_h)
+    Meta::AuthorizationErrorHandler.handle(channel: channel, payload: payload)
+  end
 
-    channel.authorization_error!
+  def handle_facebook_response_error(response)
+    Meta::AuthorizationErrorHandler.handle(channel: channel, payload: response)
   end
 end

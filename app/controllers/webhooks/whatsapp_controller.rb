@@ -12,7 +12,10 @@ class Webhooks::WhatsappController < ActionController::API
       return
     end
 
-    Webhooks::WhatsappEventsJob.perform_later(params.to_unsafe_hash)
+    Webhooks::WhatsappEventsJob.perform_later(
+      params.to_unsafe_hash,
+      { hmac_verified: meta_signature_verified? }
+    )
     head :ok
   end
 

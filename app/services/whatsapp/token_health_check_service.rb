@@ -6,14 +6,17 @@ class Whatsapp::TokenHealthCheckService
   def perform
     return unless whatsapp_cloud_channel?
 
-    token_health = inspect_token
+    token_health = sanitized_token_health(inspect_token)
     @channel.store_token_health!(token_health)
+    Meta::ChannelCredentialHealthRecorder.new(@channel).record_whatsapp_token_health!(token_health)
     apply_reauthorization_state(token_health)
     token_health
   rescue StandardError => e
-    Rails.logger.error "[WHATSAPP TOKEN HEALTH] Check failed for channel=#{@channel&.id}: #{e.class}: #{e.message}"
-    token_health = failed_check_metadata(e)
+    safe_message = sanitized_error_message(e)
+    Rails.logger.error "[WHATSAPP TOKEN HEALTH] Check failed for channel=#{@channel&.id}: #{e.class}: #{safe_message}"
+    token_health = sanitized_token_health(failed_check_metadata(e, safe_message))
     @channel.store_token_health!(token_health) if @channel.respond_to?(:store_token_health!)
+    Meta::ChannelCredentialHealthRecorder.new(@channel).record_whatsapp_token_health!(token_health)
     @channel.record_provider_configuration_error!(token_health.dig('error', 'message'), type: 'WhatsAppTokenHealth') if prompt_for_failed_check?(e)
     token_health
   end
@@ -25,7 +28,7 @@ class Whatsapp::TokenHealthCheckService
   end
 
   def inspect_token
-    config = @channel.provider_config.to_h
+    config = @channel.provider_config.to_h.with_indifferent_access
     Whatsapp::TokenInspectionService.new(
       access_token: config['api_key'],
       waba_id: config['business_account_id'],
@@ -55,15 +58,25 @@ class Whatsapp::TokenHealthCheckService
       "WhatsApp token health check failed: #{token_health['status']}"
   end
 
-  def failed_check_metadata(error)
+  def failed_check_metadata(error, safe_message)
     {
       'status' => error.is_a?(ArgumentError) ? Whatsapp::TokenInspectionService::INVALID_STATUS : 'unknown',
       'checked_at' => Time.current.iso8601,
       'error' => {
         'type' => error.class.name,
-        'message' => error.message
+        'message' => safe_message
       }
     }
+  end
+
+  def sanitized_token_health(token_health)
+    secrets = Meta::CredentialDataSanitizer.channel_secrets(@channel)
+    Meta::CredentialDataSanitizer.sanitize(token_health.to_h.deep_stringify_keys, secrets: secrets)
+  end
+
+  def sanitized_error_message(error)
+    secrets = Meta::CredentialDataSanitizer.channel_secrets(@channel)
+    Meta::CredentialDataSanitizer.sanitize(error.message.to_s, secrets: secrets)
   end
 
   def prompt_for_failed_check?(error)

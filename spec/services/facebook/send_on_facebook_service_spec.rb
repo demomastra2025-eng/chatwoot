@@ -74,6 +74,19 @@ describe Facebook::SendOnFacebookService do
         expect(message.reload.external_error).to eq('Error validating access token')
       end
 
+      it 'prompts immediately for a confirmed permanent Meta token subcode' do
+        message = create(:message, message_type: 'outgoing', inbox: facebook_inbox, account: account, conversation: conversation)
+        allow(facebook_channel).to receive(:send_channel_reauthorization_email)
+        allow(bot).to receive(:deliver).and_return(
+          { error: { message: 'Session invalidated', type: 'OAuthException', code: 190, error_subcode: 460 } }.to_json
+        )
+
+        described_class.new(message: message).perform
+
+        expect(facebook_channel.reauthorization_required?).to be(true)
+        expect(facebook_channel.authorization_error_count).to eq(0)
+      end
+
       it 'if message with attachment is sent from chatwoot and is outgoing' do
         message = build(:message, message_type: 'outgoing', inbox: facebook_inbox, account: account, conversation: conversation)
         attachment = message.attachments.new(account_id: message.account_id, file_type: :image)

@@ -12,6 +12,7 @@
 
 module Reauthorizable
   extend ActiveSupport::Concern
+  include ReauthorizationProviderHealth
 
   AUTHORIZATION_ERROR_THRESHOLD = 2
 
@@ -37,13 +38,20 @@ module Reauthorizable
   # Performed automatically if error threshold is breached
   # could used to manually prompt reauthorization if auth scope changes
   def prompt_reauthorization!
-    reauthorization_was_required = reauthorization_required?
-    ::Redis::Alfred.set(reauthorization_required_key, true)
+    # Claim the state transition atomically so concurrent provider failures enqueue
+    # one notification and one realtime update for the same reauthorization cycle.
+    return false unless ::Redis::Alfred.set(reauthorization_required_key, true, nx: true)
 
-    reauthorization_handlers[self.class.name]&.call(self)
+    begin
+      reauthorization_handlers[self.class.name]&.call(self)
+    rescue StandardError
+      ::Redis::Alfred.delete(reauthorization_required_key)
+      raise
+    end
 
     invalidate_inbox_cache unless instance_of?(::AutomationRule)
-    dispatch_reauthorization_inbox_update(false, true) unless reauthorization_was_required
+    dispatch_reauthorization_inbox_update(false, true)
+    true
   end
 
   def process_integration_hook_reauthorization_emails
@@ -108,35 +116,6 @@ module Reauthorizable
     return false if provider_authorization_healthy_after_error?
 
     prompt_reauthorization!
-  end
-
-  def provider_authorization_healthy_after_error?
-    return false unless respond_to?(:provider_authorization_healthy?)
-
-    provider_auth_reauthorization = provider_authorization_reauthorization?
-    return false unless provider_authorization_healthy?
-
-    return preserve_unrelated_reauthorization_after_healthy_check! unless provider_auth_reauthorization
-
-    after_provider_authorization_healthy! if respond_to?(:after_provider_authorization_healthy!)
-    Rails.logger.info("[REAUTHORIZATION] Skipping reconnect prompt for #{self.class.name}##{id}: provider health-check passed")
-    reauthorized!
-    true
-  rescue StandardError => e
-    Rails.logger.warn("[REAUTHORIZATION] Provider health-check failed for #{self.class.name}##{id}: #{e.class}: #{e.message}")
-    false
-  end
-
-  def provider_authorization_reauthorization?
-    return true unless respond_to?(:provider_authorization_reauthorization_recorded?)
-
-    !reauthorization_required? || provider_authorization_reauthorization_recorded?
-  end
-
-  def preserve_unrelated_reauthorization_after_healthy_check!
-    ::Redis::Alfred.delete(authorization_error_count_key)
-    Rails.logger.info("[REAUTHORIZATION] #{self.class.name}##{id}: provider healthy; keeping existing non-provider reauth flag")
-    true
   end
 
   def authorization_error_count_key

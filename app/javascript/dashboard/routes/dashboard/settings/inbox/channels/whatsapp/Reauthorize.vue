@@ -10,6 +10,8 @@ import {
   initWhatsAppEmbeddedSignup,
   createMessageHandler,
   isValidBusinessData,
+  isEmbeddedSignupErrorEvent,
+  isEmbeddedSignupFinishEvent,
   getWhatsAppEmbeddedSignupConfigErrors,
 } from './utils';
 
@@ -30,6 +32,7 @@ const store = useStore();
 const SIGNUP_TIMEOUT_MS = 10 * 60 * 1000;
 
 const isRequestingAuthorization = ref(false);
+const isSubmittingReauthorization = ref(false);
 const isLoadingFacebook = ref(true);
 const authCode = ref(null);
 const signupBusinessData = ref(null);
@@ -104,6 +107,7 @@ function resetSignupState() {
   authCode.value = null;
   signupBusinessData.value = null;
   isRequestingAuthorization.value = false;
+  isSubmittingReauthorization.value = false;
   removeSignupMessageListener();
 }
 
@@ -144,14 +148,18 @@ const reauthorizeWhatsApp = async params => {
 };
 
 const completeReauthorizationIfReady = async () => {
-  if (!authCode.value) return;
+  if (isSubmittingReauthorization.value || !authCode.value) return;
 
   const businessData = signupBusinessData.value || existingBusinessData.value;
   if (!businessData || !isValidBusinessData(businessData)) return;
 
+  isSubmittingReauthorization.value = true;
+  const authorizationCode = authCode.value;
+  authCode.value = null;
+
   try {
     await reauthorizeWhatsApp({
-      code: authCode.value,
+      code: authorizationCode,
       business_id: businessData.business_id,
       waba_id: businessData.waba_id,
       phone_number_id: businessData.phone_number_id,
@@ -168,10 +176,7 @@ const handleEmbeddedSignupEvents = async data => {
     return;
   }
 
-  if (
-    data.event === 'FINISH' ||
-    data.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'
-  ) {
+  if (isEmbeddedSignupFinishEvent(data)) {
     const businessData = data.data;
 
     if (isValidBusinessData(businessData)) {
@@ -186,7 +191,7 @@ const handleEmbeddedSignupEvents = async data => {
   } else if (data.event === 'CANCEL') {
     resetSignupState();
     useAlert(t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.CANCELLED'));
-  } else if (data.event === 'error') {
+  } else if (isEmbeddedSignupErrorEvent(data)) {
     resetSignupState();
     useAlert(
       data.error_message ||

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onBeforeUnmount } from 'vue';
 import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n, I18nT } from 'vue-i18n';
@@ -15,6 +15,8 @@ import {
   initWhatsAppEmbeddedSignup,
   createMessageHandler,
   isValidBusinessData,
+  isEmbeddedSignupErrorEvent,
+  isEmbeddedSignupFinishEvent,
   getWhatsAppEmbeddedSignupConfigErrors,
 } from './whatsapp/utils';
 
@@ -136,6 +138,8 @@ const handleSignupSuccess = inboxData => {
 
 // Signup flow
 const completeSignupFlow = async businessDataParam => {
+  if (isProcessing.value) return;
+
   if (!authCodeReceived.value || !authCode.value) {
     handleSignupError({
       error: t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.AUTH_NOT_COMPLETED'),
@@ -144,13 +148,15 @@ const completeSignupFlow = async businessDataParam => {
   }
 
   isProcessing.value = true;
+  const authorizationCode = authCode.value;
+  authCode.value = null;
   processingMessage.value = t(
     'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.PROCESSING'
   );
 
   try {
     const params = {
-      code: authCode.value,
+      code: authorizationCode,
       business_id: businessDataParam.business_id,
       waba_id: businessDataParam.waba_id,
       phone_number_id: businessDataParam?.phone_number_id || '',
@@ -173,10 +179,7 @@ const completeSignupFlow = async businessDataParam => {
 
 // Message handling
 const handleEmbeddedSignupData = async data => {
-  if (
-    data.event === 'FINISH' ||
-    data.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'
-  ) {
+  if (isEmbeddedSignupFinishEvent(data)) {
     const businessDataLocal = data.data;
 
     if (isValidBusinessData(businessDataLocal)) {
@@ -197,7 +200,7 @@ const handleEmbeddedSignupData = async data => {
     }
   } else if (data.event === 'CANCEL') {
     handleSignupCancellation();
-  } else if (data.event === 'error') {
+  } else if (isEmbeddedSignupErrorEvent(data)) {
     handleSignupError({
       error:
         data.error_message ||
@@ -265,15 +268,6 @@ const launchEmbeddedSignup = async () => {
     }
   }
 };
-
-// Lifecycle
-const initialize = () => {
-  setupMessageListener();
-};
-
-onMounted(() => {
-  initialize();
-});
 
 onBeforeUnmount(() => {
   clearSignupTimeout();

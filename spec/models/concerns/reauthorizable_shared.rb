@@ -82,6 +82,34 @@ shared_examples_for 'reauthorizable' do
         expect(AdministratorNotifications::ChannelNotificationsMailer).to have_received(:with).with(account: obj.account)
       end
     end
+
+    it 'notifies only once while reauthorization is already required' do
+      2.times { obj.prompt_reauthorization! }
+
+      if model.to_s == 'AutomationRule'
+        expect(AdministratorNotifications::AccountNotificationMailer).to have_received(:with).with(account: obj.account).once
+      elsif model.to_s == 'Integrations::Hook'
+        expect(AdministratorNotifications::IntegrationsNotificationMailer).to have_received(:with).with(account: obj.account).once
+      else
+        expect(AdministratorNotifications::ChannelNotificationsMailer).to have_received(:with).with(account: obj.account).once
+      end
+    end
+
+    it 'releases the transition claim when its notification handler fails' do
+      handler_method = case model.to_s
+                       when 'AutomationRule' then :handle_automation_rule_reauthorization
+                       when 'Integrations::Hook' then :process_integration_hook_reauthorization_emails
+                       else :send_channel_reauthorization_email
+                       end
+      allow(obj).to receive(handler_method).and_raise(StandardError, 'queue unavailable')
+
+      expect { obj.prompt_reauthorization! }.to raise_error(StandardError, 'queue unavailable')
+      expect(obj.reauthorization_required?).to be(false)
+
+      allow(obj).to receive(handler_method).and_return(true)
+      expect(obj.prompt_reauthorization!).to be(true)
+      expect(obj.reauthorization_required?).to be(true)
+    end
   end
 
   if described_class.name.start_with?('Channel::')

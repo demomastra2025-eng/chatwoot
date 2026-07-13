@@ -102,6 +102,20 @@ whatsapp_token_health_check_job:
   class: 'Whatsapp::TokenHealthCheckJob'
   queue: scheduled_jobs
 
+# executed every 6 hours
+# proactively refreshes eligible Instagram tokens and verifies identity/subscription health
+instagram_credential_health_check_job:
+  cron: '31 */6 * * *'
+  class: 'Meta::InstagramCredentialHealthCheckJob'
+  queue: scheduled_jobs
+
+# executed every 6 hours
+# verifies Facebook Page token identity and webhook subscription health
+facebook_page_credential_health_check_job:
+  cron: '43 */6 * * *'
+  class: 'Meta::FacebookPageCredentialHealthCheckJob'
+  queue: scheduled_jobs
+
 # executed every 30 minutes for assignment_v2
 periodic_assignment_job:
   cron: '*/30 * * * *'

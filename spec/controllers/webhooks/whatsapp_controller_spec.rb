@@ -52,7 +52,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
   describe 'POST /webhooks/whatsapp/{:phone_number}' do
     it 'calls the whatsapp events job with the params for a valid global app signature' do
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
-      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later).with(anything, { hmac_verified: true })
 
       post_whatsapp_webhook('/webhooks/whatsapp/15550000000', body)
 
@@ -93,7 +93,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
     it 'skips signature validation for 360dialog channels' do
       dialog_channel = create(:channel_whatsapp, provider: 'default', sync_templates: false, validate_provider_config: false)
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
-      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later).with(anything, { hmac_verified: false })
 
       post_unsigned_whatsapp_webhook("/webhooks/whatsapp/#{dialog_channel.phone_number}", body)
 
@@ -104,7 +104,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       channel.update!(provider_config: channel.provider_config.except('app_secret', 'app_secret_key', 'api_secret', 'client_secret', 'source'))
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
       allow(Rails.logger).to receive(:warn)
-      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later).with(anything, { hmac_verified: false })
 
       channel_body = {
         object: 'whatsapp_business_account',
@@ -130,7 +130,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       channel.update!(provider_config: channel.provider_config.except('app_secret', 'app_secret_key', 'api_secret', 'client_secret', 'source'))
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
       allow(Rails.logger).to receive(:warn)
-      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      expect(Webhooks::WhatsappEventsJob).to receive(:perform_later).with(anything, { hmac_verified: false })
 
       post_unsigned_whatsapp_webhook("/webhooks/whatsapp/#{channel.phone_number}", body, env: {})
 

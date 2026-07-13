@@ -8,7 +8,7 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
       account: account,
       provider: 'whatsapp_cloud',
       provider_config: {
-        'api_key' => 'token-1',
+        'api_key' => 'token-secret-value',
         'business_account_id' => 'waba-1',
         'phone_number_id' => 'phone-1',
         'source' => 'embedded_signup'
@@ -34,12 +34,10 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
     end
 
     it 'stores token health and clears a stale provider authorization error' do
-      channel.record_provider_authorization_error!(
-        error: {
-          code: 190,
-          type: 'OAuthException',
-          message: 'Expired token'
-        }
+      channel.record_provider_configuration_error!(
+        'Expired token',
+        code: 190,
+        type: 'OAuthException'
       )
 
       described_class.new(channel).perform
@@ -48,6 +46,7 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
       expect(channel.reauthorization_required?).to be(false)
       expect(channel.provider_config).not_to include('authorization_status')
       expect(channel.provider_config).not_to include('authorization_error')
+      expect(channel.meta_credential_health).to have_attributes(status: 'healthy', reason: 'healthy')
     end
   end
 
@@ -74,6 +73,60 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
         'authorization_status' => 'reauthorization_required',
         'authorization_error' => hash_including('message' => 'Error validating access token')
       )
+      expect(channel.meta_credential_health).to have_attributes(status: 'action_required', reason: 'invalid')
+    end
+  end
+
+  context 'when provider-returned token health contains credential-bearing fields' do
+    let(:one_time_code) { 'one-time-oauth-code' }
+    let(:token_inspection_service) do
+      instance_double(
+        Whatsapp::TokenInspectionService,
+        perform: {
+          'status' => 'healthy',
+          'checked_at' => Time.current.iso8601,
+          'oauth_code' => one_time_code,
+          'error' => { 'message' => "code=#{one_time_code}", 'refresh_token' => 'provider-refresh-secret' }
+        }
+      )
+    end
+
+    it 'sanitizes the provider config and durable health before persistence' do
+      described_class.new(channel).perform
+
+      config_health = channel.reload.provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY].to_json
+      durable_health = channel.meta_credential_health.reload.metadata.to_json
+      expect(config_health).not_to include(one_time_code, 'provider-refresh-secret')
+      expect(durable_health).not_to include(one_time_code, 'provider-refresh-secret')
+    end
+  end
+
+  context 'when token inspection raises with credential-bearing text' do
+    let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService) }
+    let(:channel_token) { channel.provider_config['api_key'] }
+    let(:raw_error) do
+      "failed access_token=query-secret Authorization: Bearer bearer-secret #{channel_token}"
+    end
+
+    before do
+      allow(token_inspection_service).to receive(:perform).and_raise(ArgumentError, raw_error)
+      allow(Rails.logger).to receive(:error)
+    end
+
+    it 'redacts logs, provider config, and persisted health metadata' do
+      result = described_class.new(channel).perform
+      logged_message = nil
+      expect(Rails.logger).to have_received(:error) { |message| logged_message = message }
+
+      expect(result.dig('error', 'message')).not_to include('query-secret', 'bearer-secret', channel_token)
+      expect(logged_message).not_to include('query-secret', 'bearer-secret', channel_token)
+      config = channel.reload.provider_config
+      stored_failure = {
+        token_health: config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY],
+        authorization_error: config['authorization_error']
+      }.to_json
+      expect(stored_failure).not_to include('query-secret', 'bearer-secret', channel_token)
+      expect(channel.meta_credential_health.reload.metadata.to_json).not_to include('query-secret', 'bearer-secret', channel_token)
     end
   end
 

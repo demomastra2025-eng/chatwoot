@@ -66,4 +66,19 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('whatsapp_token_health_check_job', 'class')).to eq('Whatsapp::TokenHealthCheckJob')
     expect(schedule.dig('whatsapp_token_health_check_job', 'queue')).to eq('scheduled_jobs')
   end
+
+  it 'checks Instagram and Facebook credential health on staggered schedules' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule['instagram_credential_health_check_job']).to include(
+      'cron' => '31 */6 * * *',
+      'class' => 'Meta::InstagramCredentialHealthCheckJob',
+      'queue' => 'scheduled_jobs'
+    )
+    expect(schedule['facebook_page_credential_health_check_job']).to include(
+      'cron' => '43 */6 * * *',
+      'class' => 'Meta::FacebookPageCredentialHealthCheckJob',
+      'queue' => 'scheduled_jobs'
+    )
+  end
 end

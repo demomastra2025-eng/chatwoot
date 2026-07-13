@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_06_133000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_13_053000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2070,6 +2070,30 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_06_133000) do
     t.index ["provider", "inbox_id", "provider_message_id"], name: "idx_meta_ad_referrals_provider_message", unique: true
   end
 
+  create_table "meta_channel_credential_healths", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "channel_type", null: false
+    t.bigint "channel_id", null: false
+    t.string "status", default: "unknown", null: false
+    t.string "reason"
+    t.integer "provider_code"
+    t.integer "provider_subcode"
+    t.string "provider_type"
+    t.string "provider_trace_id"
+    t.datetime "expires_at"
+    t.datetime "data_access_expires_at"
+    t.datetime "checked_at"
+    t.datetime "last_healthy_at"
+    t.datetime "last_failed_at"
+    t.integer "consecutive_failures", default: 0, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status"], name: "index_meta_channel_credential_healths_on_account_status"
+    t.index ["account_id"], name: "index_meta_channel_credential_healths_on_account_id"
+    t.index ["channel_type", "channel_id"], name: "index_meta_channel_credential_healths_on_channel", unique: true
+  end
+
   create_table "notes", force: :cascade do |t|
     t.text "content", null: false
     t.bigint "account_id", null: false
@@ -3116,6 +3140,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_06_133000) do
   add_foreign_key "meta_ad_referrals", "conversations", on_delete: :nullify
   add_foreign_key "meta_ad_referrals", "inboxes", on_delete: :cascade
   add_foreign_key "meta_ad_referrals", "messages", on_delete: :nullify
+  add_foreign_key "meta_channel_credential_healths", "accounts", on_delete: :cascade
   add_foreign_key "reminder_groups", "accounts"
   add_foreign_key "reminder_groups", "captain_assistants", column: "assistant_id"
   add_foreign_key "reminder_groups", "users", column: "creator_id"

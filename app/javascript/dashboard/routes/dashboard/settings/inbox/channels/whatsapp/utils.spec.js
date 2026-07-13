@@ -1,6 +1,9 @@
 import {
   createMessageHandler,
   getWhatsAppEmbeddedSignupConfigErrors,
+  initWhatsAppEmbeddedSignup,
+  isEmbeddedSignupErrorEvent,
+  isEmbeddedSignupFinishEvent,
   isValidBusinessData,
 } from './utils';
 
@@ -47,6 +50,40 @@ describe('WhatsApp Embedded Signup utils', () => {
           whatsappConfigurationId: 'config-1',
         })
       ).toEqual([]);
+    });
+  });
+
+  describe('embedded signup event helpers', () => {
+    it('accepts supported finish and error event names', () => {
+      expect(isEmbeddedSignupFinishEvent({ event: 'FINISH' })).toBe(true);
+      expect(
+        isEmbeddedSignupFinishEvent({
+          event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+        })
+      ).toBe(true);
+      expect(isEmbeddedSignupErrorEvent({ event: 'ERROR' })).toBe(true);
+      expect(isEmbeddedSignupErrorEvent({ event: 'error' })).toBe(true);
+      expect(isEmbeddedSignupFinishEvent({ event: 'CANCEL' })).toBe(false);
+    });
+  });
+
+  describe('initWhatsAppEmbeddedSignup', () => {
+    it('uses the official v4 code flow and setup extras', async () => {
+      window.FB = {
+        login: vi.fn(callback => {
+          callback({ authResponse: { code: 'oauth-code' } });
+        }),
+      };
+
+      await expect(initWhatsAppEmbeddedSignup('config-v4')).resolves.toBe(
+        'oauth-code'
+      );
+      expect(window.FB.login).toHaveBeenCalledWith(expect.any(Function), {
+        config_id: 'config-v4',
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { setup: {} },
+      });
     });
   });
 

@@ -5,6 +5,7 @@ require Rails.root.join 'spec/models/concerns/reauthorizable_shared.rb'
 
 RSpec.describe Channel::Whatsapp do
   before do
+    allow(GlobalConfigService).to receive(:load).and_call_original
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
   end
 
@@ -145,6 +146,36 @@ RSpec.describe Channel::Whatsapp do
         }
       )
     end
+
+    it 'sanitizes nested credentials before provider-config persistence' do
+      channel_token = channel.provider_config['api_key']
+      channel.store_token_health!(
+        'status' => 'invalid',
+        'oauth_code' => 'one-time-code',
+        'refresh_token' => 'refresh-secret',
+        'error' => { 'message' => "access_token=#{channel_token} code=one-time-code" }
+      )
+
+      stored_health = channel.reload.provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY].to_json
+      expect(stored_health).to include('invalid', '[FILTERED]')
+      expect(stored_health).not_to include(channel_token, 'one-time-code', 'refresh-secret')
+    end
+  end
+
+  describe '#store_provider_lifecycle_event!' do
+    let(:channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false) }
+
+    it 'sanitizes lifecycle metadata before provider-config persistence' do
+      channel.store_provider_lifecycle_event!(
+        'fingerprint' => 'event-1',
+        'oauth_code' => 'one-time-code',
+        'details' => { 'refresh_token' => 'refresh-secret' }
+      )
+
+      stored_event = channel.reload.provider_config[Channel::Whatsapp::PROVIDER_LIFECYCLE_CONFIG_KEY].to_json
+      expect(stored_event).to include('event-1')
+      expect(stored_event).not_to include('one-time-code', 'refresh-secret')
+    end
   end
 
   describe '#update_message_templates_cache!' do
@@ -178,6 +209,18 @@ RSpec.describe Channel::Whatsapp do
         )
       )
       expect(channel.reauthorization_required?).to be(true)
+    end
+
+    it 'sanitizes authorization errors before provider-config persistence' do
+      channel_token = channel.provider_config['api_key']
+      channel.record_provider_configuration_error!(
+        "access_token=#{channel_token} code=one-time-code",
+        type: 'WhatsAppTokenHealth'
+      )
+
+      stored_error = channel.reload.provider_config['authorization_error'].to_json
+      expect(stored_error).to include('[FILTERED]')
+      expect(stored_error).not_to include(channel_token, 'one-time-code')
     end
   end
 

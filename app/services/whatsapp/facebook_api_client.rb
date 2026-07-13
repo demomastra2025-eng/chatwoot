@@ -2,7 +2,7 @@ require 'openssl'
 
 class Whatsapp::FacebookApiClient
   BASE_URI = 'https://graph.facebook.com'.freeze
-  WEBHOOK_DEFAULT_FIELDS = %w[messages smb_message_echoes calls].freeze
+  WEBHOOK_DEFAULT_FIELDS = %w[messages account_update smb_message_echoes calls].freeze
 
   class << self
     def appsecret_proof_query(access_token)
@@ -26,11 +26,13 @@ class Whatsapp::FacebookApiClient
   class Error < StandardError
     attr_reader :payload, :status
 
-    def initialize(message, response)
-      @payload = response.parsed_response if response.respond_to?(:parsed_response)
+    def initialize(message, response, secrets: [])
+      payload = response.parsed_response if response.respond_to?(:parsed_response)
+      @payload = Meta::CredentialDataSanitizer.sanitize(payload, secrets: secrets)
       @status = response.code if response.respond_to?(:code)
+      safe_body = Meta::CredentialDataSanitizer.sanitize(response.body.to_s, secrets: secrets)
 
-      super("#{message}: #{response.body}")
+      super("#{message}: #{safe_body}")
     end
   end
 
@@ -49,7 +51,7 @@ class Whatsapp::FacebookApiClient
       }
     )
 
-    handle_response(response, 'Token exchange failed')
+    handle_response(response, 'Token exchange failed', secrets: [code])
   end
 
   def fetch_phone_numbers(waba_id, after: nil)
@@ -170,10 +172,14 @@ class Whatsapp::FacebookApiClient
     self.class.appsecret_proof_query(@access_token)
   end
 
-  def handle_response(response, error_message)
-    raise Error.new(error_message, response) unless response.success?
+  def handle_response(response, error_message, secrets: [])
+    raise Error.new(error_message, response, secrets: error_secrets + secrets) unless response.success?
 
     response.parsed_response
+  end
+
+  def error_secrets
+    [@access_token, GlobalConfigService.load('WHATSAPP_APP_SECRET', ''), build_app_access_token]
   end
 end
 

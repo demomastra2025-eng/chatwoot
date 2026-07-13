@@ -17,8 +17,11 @@ RSpec.describe Channel::FacebookPage do
 
   describe 'concerns' do
     before do
+      failed_result = Meta::AuthorizationHealthCheckService::Result.new(
+        status: :action_required, reason: 'provider_authorization_failed', metadata: {}
+      )
       allow(Meta::AuthorizationHealthCheckService).to receive(:new)
-        .and_return(instance_double(Meta::AuthorizationHealthCheckService, healthy?: false))
+        .and_return(instance_double(Meta::AuthorizationHealthCheckService, healthy?: false, result: failed_result))
     end
 
     it_behaves_like 'reauthorizable'
@@ -32,6 +35,33 @@ RSpec.describe Channel::FacebookPage do
 
       expect(channel.reauthorization_required?).to be(false)
       expect(channel.authorization_error_count).to eq(0)
+    end
+
+    it 'does not prompt reauthorization for a transient provider failure' do
+      transient_result = Meta::AuthorizationHealthCheckService::Result.new(
+        status: :transient_failure, reason: 'provider_request_failed', metadata: {}
+      )
+      health_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: false, result: transient_result)
+      allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(health_check)
+      expect(AdministratorNotifications::ChannelNotificationsMailer).not_to receive(:with)
+
+      described_class::AUTHORIZATION_ERROR_THRESHOLD.times { channel.authorization_error! }
+
+      expect(channel.reauthorization_required?).to be(false)
+      expect(channel.authorization_error_count).to eq(0)
+    end
+
+    it 'uses a fresh provider health service for each authorization-error evaluation' do
+      action_required = Meta::AuthorizationHealthCheckService::Result.new(
+        status: :action_required, reason: 'provider_authorization_failed', metadata: {}
+      )
+      failed_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: false, result: action_required)
+      recovered_check = instance_double(Meta::AuthorizationHealthCheckService, healthy?: true)
+      allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(failed_check, recovered_check)
+
+      expect(channel.send(:provider_authorization_healthy_after_error?)).to be(false)
+      expect(channel.send(:provider_authorization_healthy_after_error?)).to be(true)
+      expect(Meta::AuthorizationHealthCheckService).to have_received(:new).with(channel).twice
     end
 
     context 'when prompt_reauthorization!' do
