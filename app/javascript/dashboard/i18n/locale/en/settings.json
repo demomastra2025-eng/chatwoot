@@ -700,7 +700,7 @@
       "SCOPE_ASSISTANT": "AI Assistant",
       "STATUS": {
         "CONFIGURED": "Firecrawl configured",
-        "MISSING": "Firecrawl key required"
+        "MISSING": "Firecrawl endpoint is not configured"
       },
       "SEARCH": {
         "TITLE": "Web search",

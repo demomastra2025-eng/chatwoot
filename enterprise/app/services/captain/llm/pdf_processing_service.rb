@@ -1,8 +1,9 @@
 class Captain::Llm::PdfProcessingService
   include Integrations::LlmInstrumentation
 
-  def initialize(document)
+  def initialize(document, import_run_id: document.current_import_run_id)
     @document = document
+    @import_run_id = import_run_id
   end
 
   def process
@@ -20,24 +21,26 @@ class Captain::Llm::PdfProcessingService
 
   private
 
-  attr_reader :document
+  attr_reader :document, :import_run_id
 
   def store_extracted_source_text
     source_text = Captain::Documents::SourceTextExtractor.new(document).extract_pdf_text
     return if source_text.blank?
 
-    document.update!(
-      source_text: source_text,
-      content: Captain::Documents::SourceTextExtractor.preview(source_text),
-      metadata: (document.metadata || {}).deep_merge(
-        'source_text' => {
-          'provider' => 'pdftotext',
-          'status' => 'completed',
-          'bytes' => source_text.bytesize,
-          'extracted_at' => Time.current.iso8601
-        }
+    document.with_active_import_run(import_run_id) do
+      document.update!(
+        source_text: source_text,
+        content: Captain::Documents::SourceTextExtractor.preview(source_text),
+        metadata: (document.metadata || {}).deep_merge(
+          'source_text' => {
+            'provider' => 'pdftotext',
+            'status' => 'completed',
+            'bytes' => source_text.bytesize,
+            'extracted_at' => Time.current.iso8601
+          }
+        )
       )
-    )
+    end
   end
 
   def instrument_file_prepare(&)

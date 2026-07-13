@@ -54,4 +54,8 @@ class Captain::AssistantPolicy < ApplicationPolicy
   def retry_failed?
     update?
   end
+
+  def source_text?
+    show?
+  end
 end

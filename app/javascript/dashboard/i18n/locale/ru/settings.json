@@ -1197,7 +1197,7 @@
       "SCOPE_ASSISTANT": "ИИ ассистент",
       "STATUS": {
         "CONFIGURED": "Firecrawl настроен",
-        "MISSING": "Нужен ключ Firecrawl"
+        "MISSING": "Endpoint Firecrawl не настроен"
       },
       "SEARCH": {
         "TITLE": "Веб-поиск",

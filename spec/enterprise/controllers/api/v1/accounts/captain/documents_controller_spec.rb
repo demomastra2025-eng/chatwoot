@@ -196,6 +196,58 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/:account_id/captain/documents/:id/source_text' do
+    it 'returns source text for a shared document' do
+      document.update!(source_text: 'Canonical source', content: 'Preview')
+
+      get "/api/v1/accounts/#{account.id}/captain/documents/#{document.id}/source_text",
+          headers: agent.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response).to include(
+        id: document.id,
+        source_text: 'Canonical source',
+        source_text_available: true,
+        source_text_bytes: 16,
+        content: 'Preview'
+      )
+    end
+
+    it 'does not expose another account document' do
+      other_document = create(:captain_document, account: create(:account), source_text: 'Secret')
+
+      get "/api/v1/accounts/#{account.id}/captain/documents/#{other_document.id}/source_text",
+          headers: agent.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it 'requires the assistant scope for a personal document' do
+      personal_document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        visibility: :personal,
+        source_text: 'Assistant private source'
+      )
+
+      auth_headers = agent.create_new_auth_token
+      get "/api/v1/accounts/#{account.id}/captain/documents/#{personal_document.id}/source_text",
+          headers: auth_headers,
+          as: :json
+      expect(response).to have_http_status(:not_found)
+
+      get "/api/v1/accounts/#{account.id}/captain/documents/#{personal_document.id}/source_text",
+          params: { assistant_id: assistant.id },
+          headers: auth_headers,
+          as: :json
+      expect(response).to have_http_status(:success)
+      expect(json_response[:source_text]).to eq('Assistant private source')
+    end
+  end
+
   describe 'POST /api/v1/accounts/:account_id/captain/documents' do
     let(:valid_attributes) do
       {
@@ -437,6 +489,122 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
     end
   end
 
+  describe 'POST unsupported document source mode' do
+    it 'rejects the request instead of silently falling back to a site crawl' do
+      expect do
+        post "/api/v1/accounts/#{account.id}/captain/documents",
+             params: {
+               document: {
+                 assistant_id: assistant.id,
+                 name: 'Invalid mode',
+                 external_link: 'https://example.com',
+                 source_mode: 'site_improt'
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+      end.not_to change(Captain::Document, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include(I18n.t('captain.documents.invalid_source_mode'))
+    end
+  end
+
+  describe 'POST upload source mode without an attachment' do
+    %w[file_upload pdf_upload].each do |source_mode|
+      it "rejects #{source_mode} instead of crawling the supplied URL" do
+        expect do
+          post "/api/v1/accounts/#{account.id}/captain/documents",
+               params: {
+                 document: {
+                   assistant_id: assistant.id,
+                   name: 'Missing upload',
+                   external_link: 'https://example.com',
+                   source_mode: source_mode
+                 }
+               },
+               headers: admin.create_new_auth_token,
+               as: :json
+        end.not_to change(Captain::Document, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include(I18n.t('captain.documents.missing_upload_file'))
+      end
+    end
+  end
+
+  describe 'POST selected-pages document import' do
+    let(:endpoint) { "/api/v1/accounts/#{account.id}/captain/documents" }
+
+    it 'rejects an off-domain selected URL server-side' do
+      expect do
+        post endpoint,
+             params: {
+               document: {
+                 name: 'Selected docs',
+                 external_link: 'https://example.com/docs',
+                 source_mode: 'selected_pages',
+                 selected_urls: ['https://evil.example.org/page']
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+      end.not_to change(Captain::Document, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+
+    it 'rejects selected URLs above the server-side count limit' do
+      stub_const('Captain::Documents::UrlPolicy::MAX_SELECTED_URLS', 1)
+
+      post endpoint,
+           params: {
+             document: {
+               name: 'Too many selected docs',
+               external_link: 'https://example.com/docs',
+               source_mode: 'selected_pages',
+               selected_urls: ['https://example.com/one', 'https://example.com/two']
+             }
+           },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+
+    it 'persists normalized URLs and initializes a bounded import run', :aggregate_failures do
+      allow(Captain::Documents::CrawlJob).to receive(:perform_later)
+
+      post endpoint,
+           params: {
+             document: {
+               name: 'Selected docs',
+               external_link: 'https://example.com/docs/',
+               source_mode: 'selected_pages',
+               selected_urls: [
+                 'https://example.com/docs/one/',
+                 'https://example.com/docs/one',
+                 'https://www.example.com/docs/two'
+               ],
+               import_profile: { allow_subdomains: true, max_pages: 5 }
+             }
+           },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      created_document = Captain::Document.order(:id).last
+      expect(created_document.selected_urls).to contain_exactly(
+        'https://example.com/docs/one',
+        'https://www.example.com/docs/two'
+      )
+      expect(created_document.current_import_run_id).to be_present
+      expect(created_document.pages_total).to eq(2)
+      expect(created_document.received_urls).to be_empty
+      expect(Captain::Documents::CrawlJob).to have_received(:perform_later).with(created_document)
+    end
+  end
+
   describe 'DELETE /api/v1/accounts/:account_id/captain/documents/:id' do
     context 'when it is an un-authenticated user' do
       before do
@@ -592,6 +760,19 @@ RSpec.describe 'Api::V1::Accounts::Captain::Documents', type: :request do
       expect(response).to have_http_status(:success)
       expect(Captain::Documents::CrawlJob).to have_received(:perform_later).with(document)
       expect(document.reload.refresh_mode).to eq('retry_failed')
+    end
+
+    %w[bogus file_upload pdf_upload].each do |source_mode|
+      it "rejects persisted #{source_mode} before enqueueing retry" do
+        document.update!(metadata: document.metadata.deep_merge('firecrawl' => { 'mode' => source_mode }))
+
+        post "/api/v1/accounts/#{account.id}/captain/documents/#{document.id}/retry_failed",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Captain::Documents::CrawlJob).not_to have_received(:perform_later)
+      end
     end
   end
 end

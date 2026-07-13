@@ -26,10 +26,13 @@
 #
 class Captain::Document < ApplicationRecord
   class LimitExceededError < StandardError; end
+  class InvalidSourceModeError < StandardError; end
+  class ImportJobMismatchError < StandardError; end
   self.table_name = 'captain_documents'
   include AccountStorageLimitable
 
   DEFAULT_SOURCE_MODE = 'legacy_url'.freeze
+  SOURCE_MODES = %w[legacy_url single_page site_import selected_pages pdf_url file_url file_upload pdf_upload].freeze
   FILE_PREFIX = 'FILE:'.freeze
   PDF_PREFIX = 'PDF:'.freeze
   TEXT_DOCUMENT_EXTENSIONS = %w[txt text md markdown csv json xml yaml yml].freeze
@@ -118,6 +121,10 @@ class Captain::Document < ApplicationRecord
     source_file.attached? && SUPPORTED_IMAGE_EXTENSIONS.include?(uploaded_source_extension)
   end
 
+  def text_source_upload?
+    source_file.attached? && TEXT_DOCUMENT_EXTENSIONS.include?(uploaded_source_extension)
+  end
+
   def remote_pdf_url?
     remote_document_extension == 'pdf'
   end
@@ -195,11 +202,39 @@ class Captain::Document < ApplicationRecord
     firecrawl_metadata['sync'] || {}
   end
 
+  def current_import_run_id
+    firecrawl_sync['import_run_id']
+  end
+
+  def import_job_id
+    firecrawl_metadata['job_id']
+  end
+
+  def received_urls
+    Array(firecrawl_sync['received_urls'])
+  end
+
   def source_mode
     return 'pdf_upload' if pdf_upload?
     return 'file_upload' if file_upload?
 
     firecrawl_metadata['mode'].presence || DEFAULT_SOURCE_MODE
+  end
+
+  def validate_import_source_mode!
+    mode = source_mode
+    raise InvalidSourceModeError, I18n.t('captain.documents.invalid_source_mode') unless SOURCE_MODES.include?(mode)
+
+    missing_upload = (mode == 'file_upload' && !file_upload?) || (mode == 'pdf_upload' && !pdf_upload?)
+    raise InvalidSourceModeError, I18n.t('captain.documents.missing_upload_file') if missing_upload
+
+    true
+  end
+
+  def expected_import_url?(page_url)
+    return true unless refresh_mode == 'retry_failed'
+
+    retry_urls.include?(normalize_import_url(page_url))
   end
 
   def source_document?
@@ -242,6 +277,10 @@ class Captain::Document < ApplicationRecord
 
   def failed_urls
     Array(firecrawl_sync['failed_urls'])
+  end
+
+  def retry_urls
+    Array(firecrawl_sync['retry_urls'])
   end
 
   def failed_urls_count
@@ -309,140 +348,209 @@ class Captain::Document < ApplicationRecord
   end
 
   def prepare_for_resync!(refresh_mode: 'full')
-    sync_attributes = {
-      'status' => 'queued',
-      'pages_processed' => 0,
-      'processed_urls' => [],
-      'last_error' => nil,
-      'refresh_mode' => refresh_mode,
-      'changed_urls' => [],
-      'same_urls' => [],
-      'removed_urls' => []
-    }
-    pages_total = if refresh_mode == 'retry_failed'
-                    failed_urls_count
-                  else
-                    selected_urls_count
-                  end
-    sync_attributes['pages_total'] = pages_total if pages_total.positive?
-    sync_attributes['failed_urls'] = [] if refresh_mode == 'full'
-
-    update!(
-      status: :in_progress,
-      metadata: merged_metadata(
-        'firecrawl' => firecrawl_metadata.deep_merge('sync' => sync_attributes)
-      )
-    )
+    retry_targets = refresh_mode == 'retry_failed' ? failed_urls : []
+    sync_attributes = resync_sync_attributes(refresh_mode, retry_targets)
+    updated_metadata = (metadata || {}).deep_dup
+    updated_metadata['firecrawl'] = firecrawl_metadata.except('job_id').merge('sync' => sync_attributes)
+    update!(status: :in_progress, metadata: updated_metadata)
   end
 
-  def mark_import_processing!
-    update!(
-      metadata: merged_metadata(
-        'firecrawl' => firecrawl_metadata.deep_merge(
-          'sync' => firecrawl_sync.merge('status' => 'processing', 'last_error' => nil)
-        )
-      )
-    )
-  end
+  def ensure_import_run_id!
+    run_id = nil
+    with_lock do
+      reload
+      run_id = current_import_run_id
+      next if run_id.present?
 
-  def mark_import_started!(job_id: nil, pages_total: nil)
-    sync_updates = {
-      'status' => 'processing',
-      'last_error' => nil
-    }
-    sync_updates['pages_total'] = pages_total if pages_total.present?
-
-    firecrawl_updates = {
-      'sync' => firecrawl_sync.merge(sync_updates)
-    }
-    firecrawl_updates['job_id'] = job_id if job_id.present?
-
-    update!(
-      metadata: merged_metadata(
-        'firecrawl' => firecrawl_metadata.deep_merge(firecrawl_updates)
-      )
-    )
-  end
-
-  def mark_import_completed!(failed_urls: nil)
-    updated_sync = firecrawl_sync.merge(
-      'status' => 'completed',
-      'last_synced_at' => Time.current.iso8601,
-      'last_error' => nil
-    )
-    updated_sync['failed_urls'] = Array(failed_urls) unless failed_urls.nil?
-
-    update!(
-      status: :available,
-      metadata: merged_metadata(
-        'firecrawl' => firecrawl_metadata.deep_merge(
-          'sync' => updated_sync
-        )
-      )
-    )
-  end
-
-  def mark_import_failed!(error_message)
-    update!(
-      status: :failed,
-      metadata: merged_metadata(
-        'firecrawl' => firecrawl_metadata.deep_merge(
-          'sync' => firecrawl_sync.merge(
-            'status' => 'failed',
-            'last_error' => error_message.to_s,
-            'last_synced_at' => Time.current.iso8601
+      run_id = SecureRandom.uuid
+      update!(
+        metadata: merged_metadata(
+          'firecrawl' => firecrawl_metadata.deep_merge(
+            'sync' => firecrawl_sync.merge('import_run_id' => run_id)
           )
         )
       )
-    )
+    end
+    run_id
   end
 
-  def mark_page_processed!(page_url)
-    return unless source_document?
+  def current_import_run?(import_run_id = current_import_run_id)
+    import_run_id.to_s == current_import_run_id.to_s
+  end
 
-    normalized_url = page_url.to_s.delete_suffix('/')
-
+  def with_current_import_run(import_run_id = current_import_run_id)
+    applied = false
     with_lock do
-      processed_urls = Array(firecrawl_sync['processed_urls'])
-      return if processed_urls.include?(normalized_url)
+      reload
+      next unless current_import_run?(import_run_id)
 
-      processed_urls << normalized_url
-      updated_sync = firecrawl_sync.merge(
-        'status' => 'processing',
-        'processed_urls' => processed_urls,
-        'pages_processed' => processed_urls.size
-      )
+      yield self
+      applied = true
+    end
+    applied
+  end
 
-      if pages_total.present? && processed_urls.size >= pages_total
-        updated_sync['status'] = 'completed'
-        updated_sync['last_synced_at'] = Time.current.iso8601
-      end
+  def with_active_import_run(import_run_id = current_import_run_id)
+    applied = false
+    with_lock do
+      reload
+      next unless current_import_run?(import_run_id)
+      next if terminal_import?
+
+      yield self
+      applied = true
+    end
+    applied
+  end
+
+  def mark_import_processing!(import_run_id: current_import_run_id)
+    with_current_import_run(import_run_id) do
+      next if terminal_import?
 
       update!(
-        status: (updated_sync['status'] == 'completed' ? :available : status),
         metadata: merged_metadata(
-          'firecrawl' => firecrawl_metadata.deep_merge('sync' => updated_sync)
+          'firecrawl' => firecrawl_metadata.deep_merge(
+            'sync' => firecrawl_sync.merge('status' => 'processing', 'last_error' => nil)
+          )
         )
       )
     end
   end
 
-  def record_failed_urls!(urls)
-    unique_urls = (failed_urls + Array(urls))
-                  .map { |url| url.to_s.delete_suffix('/') }
-                  .reject(&:blank?)
-                  .uniq
+  def mark_import_started!(job_id: nil, pages_total: nil, import_run_id: current_import_run_id)
+    with_current_import_run(import_run_id) do
+      next if terminal_import?
 
-    update!(
-      metadata: merged_metadata(
-        'firecrawl' => firecrawl_metadata.deep_merge(
-          'sync' => firecrawl_sync.merge('failed_urls' => unique_urls)
+      ensure_import_job_matches!(job_id)
+
+      sync_updates = {
+        'status' => 'processing',
+        'import_run_id' => import_run_id,
+        'last_error' => nil
+      }
+      sync_updates['pages_total'] = pages_total if pages_total.present?
+
+      firecrawl_updates = {
+        'sync' => firecrawl_sync.merge(sync_updates)
+      }
+      firecrawl_updates['job_id'] = job_id if job_id.present?
+
+      update!(
+        metadata: merged_metadata(
+          'firecrawl' => firecrawl_metadata.deep_merge(firecrawl_updates)
         )
       )
-    )
+    end
   end
 
-  def record_change_result!(page_url, change_status)
+  def mark_import_completed!(failed_urls: nil, import_run_id: current_import_run_id)
+    with_current_import_run(import_run_id) do
+      next if terminal_import?
+
+      apply_import_completed!(failed_urls)
+    end
+  end
+
+  def finalize_import!(failed_urls: nil, import_run_id: current_import_run_id)
+    result = :stale
+    with_current_import_run(import_run_id) do
+      if terminal_import?
+        result = :terminal
+        next
+      end
+
+      if pending_import_pages?
+        result = :pending
+        next
+      end
+
+      apply_import_completed!(failed_urls)
+      result = :completed
+    end
+    result
+  end
+
+  def fail_import_if_pending!(error_message, import_run_id: current_import_run_id)
+    result = :stale
+    with_current_import_run(import_run_id) do
+      if terminal_import?
+        result = :terminal
+      elsif pending_import_pages?
+        apply_import_failed!(error_message)
+        result = :failed
+      else
+        result = :resolved
+      end
+    end
+    result
+  end
+
+  def mark_import_failed!(error_message, import_run_id: current_import_run_id)
+    with_current_import_run(import_run_id) do
+      next if terminal_import?
+
+      apply_import_failed!(error_message)
+    end
+  end
+
+  def mark_page_received!(page_url, import_run_id: current_import_run_id)
+    return false unless source_document?
+
+    normalized_url = normalize_import_url(page_url)
+    return false if normalized_url.blank?
+
+    with_current_import_run(import_run_id) do
+      next if terminal_import?
+
+      received = (received_urls + [normalized_url]).uniq
+      update_import_sync!(firecrawl_sync.merge('received_urls' => received))
+    end
+  end
+
+  def process_import_page!(page_url, change_status: nil, import_run_id: current_import_run_id)
+    return false unless source_document?
+
+    normalized_url = normalize_import_url(page_url)
+    return false if normalized_url.blank?
+
+    with_active_import_run(import_run_id) do
+      yield self if block_given?
+      updated_sync = firecrawl_sync
+      updated_sync = sync_with_change_result(updated_sync, normalized_url, change_status) if change_status.present?
+      update_import_sync!(processed_import_sync(updated_sync, normalized_url))
+    end
+  end
+
+  def mark_page_processed!(page_url, import_run_id: current_import_run_id)
+    process_import_page!(page_url, import_run_id: import_run_id)
+  end
+
+  def record_failed_urls!(urls, import_run_id: current_import_run_id)
+    normalized_urls = Array(urls).filter_map { |url| normalize_import_url(url) }.uniq
+    return false if normalized_urls.blank?
+
+    with_current_import_run(import_run_id) do
+      next if terminal_import?
+
+      failed = (failed_urls + normalized_urls).uniq
+      received = (received_urls + normalized_urls).uniq
+      updated_sync = progress_sync(firecrawl_sync.merge('received_urls' => received, 'failed_urls' => failed))
+      update_import_sync!(updated_sync)
+    end
+  end
+
+  def pending_import_pages?
+    resolved_urls = resolved_import_urls(firecrawl_sync)
+    if refresh_mode == 'retry_failed'
+      expected_urls = retry_urls
+      return (expected_urls - resolved_urls).any?
+    end
+    return true if (received_urls - resolved_urls).any?
+
+    pages_total.present? && resolved_urls.size < pages_total
+  end
+
+  def record_change_result!(page_url, change_status, import_run_id: current_import_run_id)
     normalized_url = page_url.to_s.delete_suffix('/')
     bucket = case change_status.to_s
              when 'same' then 'same_urls'
@@ -450,7 +558,9 @@ class Captain::Document < ApplicationRecord
              else 'changed_urls'
              end
 
-    with_lock do
+    with_current_import_run(import_run_id) do
+      next if terminal_import?
+
       current_urls = Array(firecrawl_sync[bucket])
       next if current_urls.include?(normalized_url)
 
@@ -482,6 +592,125 @@ class Captain::Document < ApplicationRecord
   end
 
   private
+
+  def terminal_import?
+    %w[completed failed].include?(firecrawl_sync['status'])
+  end
+
+  def ensure_import_job_matches!(job_id)
+    return if job_id.blank? || import_job_id.blank? || import_job_id.to_s == job_id.to_s
+
+    raise ImportJobMismatchError, 'Firecrawl job ID does not match the active import'
+  end
+
+  def processed_import_sync(sync, normalized_url)
+    processed = (Array(sync['processed_urls']) + [normalized_url]).uniq
+    failed = Array(sync['failed_urls']) - [normalized_url]
+    received = (Array(sync['received_urls']) + [normalized_url]).uniq
+    progress_sync(
+      sync.merge(
+        'received_urls' => received,
+        'processed_urls' => processed,
+        'failed_urls' => failed,
+        'pages_processed' => processed.size
+      )
+    )
+  end
+
+  def sync_with_change_result(sync, normalized_url, change_status)
+    bucket = case change_status.to_s
+             when 'same' then 'same_urls'
+             when 'removed' then 'removed_urls'
+             else 'changed_urls'
+             end
+    sync.merge(bucket => (Array(sync[bucket]) + [normalized_url]).uniq)
+  end
+
+  def resync_sync_attributes(refresh_mode, retry_targets)
+    attributes = {
+      'status' => 'queued',
+      'import_run_id' => SecureRandom.uuid,
+      'pages_processed' => 0,
+      'processed_urls' => [],
+      'received_urls' => [],
+      'last_error' => nil,
+      'refresh_mode' => refresh_mode,
+      'changed_urls' => [],
+      'same_urls' => [],
+      'removed_urls' => [],
+      'retry_urls' => retry_targets,
+      'failed_urls' => []
+    }
+    pages_total = refresh_mode == 'retry_failed' ? retry_targets.count : selected_urls_count
+    attributes['pages_total'] = pages_total if pages_total.positive?
+    attributes
+  end
+
+  def apply_import_completed!(reported_failed_urls)
+    merged_failed_urls = (failed_urls + Array(reported_failed_urls)).uniq
+    updated_sync = firecrawl_sync.merge(
+      'status' => 'completed',
+      'last_synced_at' => Time.current.iso8601,
+      'last_error' => nil,
+      'failed_urls' => merged_failed_urls
+    )
+
+    update!(
+      status: :available,
+      metadata: merged_metadata(
+        'firecrawl' => firecrawl_metadata.deep_merge(
+          'sync' => updated_sync
+        )
+      )
+    )
+  end
+
+  def apply_import_failed!(error_message)
+    update!(
+      status: :failed,
+      metadata: merged_metadata(
+        'firecrawl' => firecrawl_metadata.deep_merge(
+          'sync' => firecrawl_sync.merge(
+            'status' => 'failed',
+            'last_error' => error_message.to_s,
+            'last_synced_at' => Time.current.iso8601
+          )
+        )
+      )
+    )
+  end
+
+  def normalize_import_url(value)
+    value.to_s.delete_suffix('/').presence
+  end
+
+  def progress_sync(sync)
+    updated_sync = sync.merge('status' => 'processing')
+    resolved_count = resolved_import_urls(sync).size
+    return updated_sync unless pages_total.present? && resolved_count >= pages_total
+    return updated_sync if import_job_id.present?
+
+    updated_sync.merge(
+      'status' => 'completed',
+      'last_synced_at' => Time.current.iso8601
+    )
+  end
+
+  def resolved_import_urls(sync)
+    resolved_urls = (Array(sync['processed_urls']) + Array(sync['failed_urls'])).uniq
+    return resolved_urls unless refresh_mode == 'retry_failed'
+
+    resolved_urls & retry_urls
+  end
+
+  def update_import_sync!(sync)
+    update!(
+      status: (sync['status'] == 'completed' ? :available : status),
+      metadata: merged_metadata(
+        'firecrawl' => firecrawl_metadata.deep_merge('sync' => sync)
+      )
+    )
+  end
 
   def uploaded_file_attachment
     return source_file if source_file.attached?
@@ -565,8 +794,17 @@ class Captain::Document < ApplicationRecord
   end
 
   def ensure_within_plan_limit
-    limits = account.usage_limits[:captain][:documents]
-    raise LimitExceededError, I18n.t('captain.documents.limit_exceeded') unless limits[:current_available].positive?
+    limits = account.usage_limits.dig(:captain, :documents) || {}
+    return if limits[:unlimited]
+
+    Account.lock.find(account_id)
+    current_count = Captain::Document.where(account_id: account_id).count
+    within_limit = if limits[:total_count].present?
+                     current_count < limits[:total_count].to_i
+                   else
+                     limits[:current_available].to_i.positive?
+                   end
+    raise LimitExceededError, I18n.t('captain.documents.limit_exceeded') unless within_limit
   end
 
   def validate_pdf_format

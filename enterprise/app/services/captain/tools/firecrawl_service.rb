@@ -13,6 +13,15 @@ class Captain::Tools::FirecrawlService
     end
 
     def configured?
+      self_hosted? || api_key.present?
+    end
+
+    def self_hosted?
+      configured_url = ENV['FIRECRAWL_API_URL'].presence
+      configured_url.present? && configured_url.delete_suffix('/') != DEFAULT_API_URL
+    end
+
+    def authentication_configured?
       api_key.present?
     end
   end
@@ -20,7 +29,7 @@ class Captain::Tools::FirecrawlService
   def initialize
     @api_key = self.class.api_key
     @api_url = self.class.api_url
-    raise 'Missing API key' if @api_key.blank?
+    raise 'Missing API key for Firecrawl Cloud' if @api_key.blank? && !self.class.self_hosted?
   end
 
   def perform(url, webhook_url, crawl_limit = 10, options = {})
@@ -141,7 +150,7 @@ class Captain::Tools::FirecrawlService
     payload = {
       query: query,
       limit: options.fetch(:limit, 5),
-      sources: Array(options[:sources]).presence || ['web'],
+      sources: search_sources_payload(options[:sources]),
       categories: search_categories_payload(options[:categories]),
       includeDomains: Array(options[:include_domains]).presence,
       excludeDomains: Array(options[:exclude_domains]).presence,
@@ -163,6 +172,18 @@ class Captain::Tools::FirecrawlService
     end
 
     payload.to_json
+  end
+
+  def search_sources_payload(sources)
+    normalized_sources = Array(sources).filter_map do |source|
+      normalized = source.respond_to?(:to_h) ? source.to_h.stringify_keys : { 'type' => source.to_s }
+      type = normalized['type'].to_s.strip
+      next if type.blank?
+
+      normalized.merge('type' => type)
+    end
+
+    normalized_sources.presence || [{ 'type' => 'web' }]
   end
 
   def search_categories_payload(categories)
@@ -261,9 +282,9 @@ class Captain::Tools::FirecrawlService
   end
 
   def auth_headers
-    {
-      'Authorization' => "Bearer #{@api_key}"
-    }.compact
+    return {} if @api_key.blank?
+
+    { 'Authorization' => "Bearer #{@api_key}" }
   end
 
   def json_headers

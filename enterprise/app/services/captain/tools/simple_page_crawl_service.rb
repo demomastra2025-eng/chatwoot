@@ -1,9 +1,14 @@
 class Captain::Tools::SimplePageCrawlService
+  MAX_RESPONSE_BYTES = 2.megabytes
+  ALLOWED_CONTENT_TYPES = %w[text/html application/xhtml+xml application/xml text/xml].freeze
+
   attr_reader :external_link
 
-  def initialize(external_link)
-    @external_link = external_link
-    @doc = Nokogiri::HTML(HTTParty.get(external_link).body)
+  def initialize(external_link, root_url: external_link, allow_subdomains: false)
+    @external_link = Captain::Documents::UrlPolicy.normalize!(external_link, resolve: false)
+    @root_url = Captain::Documents::UrlPolicy.normalize!(root_url, resolve: false)
+    @allow_subdomains = allow_subdomains
+    @doc = fetch_document
   end
 
   def page_links
@@ -16,7 +21,10 @@ class Captain::Tools::SimplePageCrawlService
   end
 
   def body_text_content
-    ReverseMarkdown.convert @doc.at_xpath('//body'), unknown_tags: :bypass, github_flavored: true
+    body = @doc.at_xpath('//body')
+    return '' if body.blank?
+
+    ReverseMarkdown.convert body, unknown_tags: :bypass, github_flavored: true
   end
 
   def meta_description
@@ -35,19 +43,45 @@ class Captain::Tools::SimplePageCrawlService
 
   private
 
+  def fetch_document
+    document = nil
+    SafeFetch.fetch(
+      external_link,
+      max_bytes: MAX_RESPONSE_BYTES,
+      allowed_content_types: ALLOWED_CONTENT_TYPES,
+      allowed_content_type_prefixes: []
+    ) do |result|
+      content = result.tempfile.read
+      document = sitemap? ? Nokogiri::XML(content) : Nokogiri::HTML(content)
+    end
+    document
+  end
+
   def sitemap?
     @external_link.end_with?('.xml')
   end
 
   def extract_links_from_sitemap
-    @doc.xpath('//loc').to_set(&:text)
+    @doc.xpath('//*[local-name()="loc"]').filter_map { |node| normalized_allowed_url(node.text) }.to_set
   end
 
   def extract_links_from_html
-    @doc.xpath('//a/@href').to_set do |link|
-      absolute_url = URI.join(@external_link, link.value).to_s
-      absolute_url
-    end
+    @doc.xpath('//a/@href').filter_map { |link| normalized_allowed_url(link.value) }.to_set
+  end
+
+  def normalized_allowed_url(value)
+    return if value.to_s.strip.blank? || value.to_s.strip.start_with?('#')
+
+    absolute_url = URI.join(external_link, value.to_s).to_s
+    return unless Captain::Documents::UrlPolicy.allowed_for_root?(
+      absolute_url,
+      @root_url,
+      allow_subdomains: @allow_subdomains
+    )
+
+    Captain::Documents::UrlPolicy.normalize!(absolute_url, resolve: false)
+  rescue URI::InvalidURIError, Captain::Documents::UrlPolicy::InvalidUrlError
+    nil
   end
 
   def resolve_url(url)

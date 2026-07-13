@@ -132,6 +132,250 @@ RSpec.describe Captain::Document, type: :model do
     end
   end
 
+  describe 'import lifecycle' do
+    it 'does not complete a newer import run from a stale model instance' do
+      old_run_id = SecureRandom.uuid
+      new_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: { 'firecrawl' => { 'sync' => { 'import_run_id' => old_run_id, 'status' => 'processing' } } }
+      )
+      described_class.find(document.id).update!(
+        metadata: { 'firecrawl' => { 'sync' => { 'import_run_id' => new_run_id, 'status' => 'queued' } } }
+      )
+
+      expect(document.mark_import_completed!(import_run_id: old_run_id)).to be false
+      expect(document.reload).to be_in_progress
+      expect(document.current_import_run_id).to eq(new_run_id)
+      expect(document.sync_status).to eq('queued')
+    end
+
+    it 'creates one stable import run id when metadata has none' do
+      document = create(:captain_document, account: account, assistant: assistant)
+
+      first_run_id = document.ensure_import_run_id!
+      second_run_id = document.ensure_import_run_id!
+
+      expect(first_run_id).to be_present
+      expect(second_run_id).to eq(first_run_id)
+      expect(document.reload.current_import_run_id).to eq(first_run_id)
+    end
+
+    it 'tracks received, processed and failed pages until the declared total is resolved', :aggregate_failures do
+      import_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: {
+          'firecrawl' => {
+            'job_id' => 'provider-job',
+            'sync' => {
+              'import_run_id' => import_run_id,
+              'status' => 'processing',
+              'pages_total' => 2
+            }
+          }
+        }
+      )
+
+      expect(document.mark_page_received!('https://example.com/one/', import_run_id: import_run_id)).to be true
+      expect(document.mark_page_processed!('https://example.com/one', import_run_id: import_run_id)).to be true
+      expect(document.pending_import_pages?).to be true
+      expect(document.record_failed_urls!(['https://example.com/two/'], import_run_id: import_run_id)).to be true
+      expect(document.pending_import_pages?).to be false
+      expect(document.finalize_import!(failed_urls: document.failed_urls, import_run_id: import_run_id)).to eq(:completed)
+
+      document.reload
+      expect(document.received_urls).to contain_exactly('https://example.com/one', 'https://example.com/two')
+      expect(document.failed_urls).to eq(['https://example.com/two'])
+      expect(document).to be_available
+      expect(document.sync_status).to eq('completed')
+    end
+
+    it 'clears a previous known page total when a new crawl has an unknown total' do
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: {
+          'firecrawl' => {
+            'mode' => 'site_import',
+            'job_id' => 'old-job',
+            'sync' => {
+              'status' => 'completed',
+              'pages_total' => 25,
+              'pages_processed' => 25,
+              'processed_urls' => ['https://example.com/old']
+            }
+          }
+        }
+      )
+
+      document.prepare_for_resync!(refresh_mode: 'full')
+
+      expect(document.reload.pages_total).to be_nil
+      expect(document.pages_processed).to eq(0)
+      expect(document.import_job_id).to be_nil
+      expect(document.firecrawl_sync).not_to have_key('last_synced_at')
+    end
+
+    it 'starts retry_failed with a clean failure set and preserves retry targets' do
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: {
+          'firecrawl' => {
+            'job_id' => 'old-job',
+            'sync' => { 'failed_urls' => ['https://example.com/one', 'https://example.com/two'] }
+          }
+        }
+      )
+
+      document.prepare_for_resync!(refresh_mode: 'retry_failed')
+      import_run_id = document.current_import_run_id
+
+      expect(document.retry_urls).to contain_exactly('https://example.com/one', 'https://example.com/two')
+      expect(document.failed_urls).to be_empty
+      expect(document.pages_total).to eq(2)
+      expect(document.import_job_id).to be_nil
+
+      document.mark_page_processed!('https://example.com/one', import_run_id: import_run_id)
+      document.mark_page_processed!('https://example.com/unexpected', import_run_id: import_run_id)
+      expect(document.reload.pending_import_pages?).to be true
+      expect(
+        [document.expected_import_url?('https://example.com/two'), document.expected_import_url?('https://example.com/unexpected')]
+      ).to eq([true, false])
+      expect(document).to be_in_progress
+    end
+
+    it 'stores the provider response job id and rejects a conflicting id' do
+      import_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: { 'firecrawl' => { 'sync' => { 'import_run_id' => import_run_id, 'status' => 'processing' } } }
+      )
+
+      document.mark_import_started!(job_id: 'provider-job', import_run_id: import_run_id)
+      expect(document.reload.import_job_id).to eq('provider-job')
+      expect do
+        document.mark_import_started!(job_id: 'wrong-job', import_run_id: import_run_id)
+      end.to raise_error(Captain::Document::ImportJobMismatchError)
+      expect(document.reload.import_job_id).to eq('provider-job')
+    end
+
+    it 'merges failures recorded after a stale completion snapshot' do
+      import_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: {
+          'firecrawl' => {
+            'job_id' => 'provider-job',
+            'sync' => {
+              'import_run_id' => import_run_id,
+              'status' => 'processing',
+              'pages_total' => 2,
+              'processed_urls' => ['https://example.com/ok'],
+              'received_urls' => ['https://example.com/ok']
+            }
+          }
+        }
+      )
+      stale_snapshot = ['https://example.com/provider-failure']
+      document.record_failed_urls!(['https://example.com/concurrent-failure'], import_run_id: import_run_id)
+
+      expect(document.finalize_import!(failed_urls: stale_snapshot, import_run_id: import_run_id)).to eq(:completed)
+      expect(document.reload.failed_urls).to contain_exactly(*stale_snapshot, 'https://example.com/concurrent-failure')
+    end
+
+    it 'ignores late started and page callbacks after completion' do
+      import_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: { 'firecrawl' => { 'sync' => { 'import_run_id' => import_run_id, 'status' => 'processing' } } }
+      )
+      document.mark_import_completed!(import_run_id: import_run_id)
+      terminal_sync = document.reload.firecrawl_sync.deep_dup
+      original_name = document.name
+
+      active_write_applied = document.with_active_import_run(import_run_id) { document.update!(name: 'Late parser write') }
+      document.mark_import_processing!(import_run_id: import_run_id)
+      document.mark_import_started!(job_id: 'late-job', pages_total: 10, import_run_id: import_run_id)
+      document.mark_page_received!('https://example.com/late', import_run_id: import_run_id)
+      document.mark_page_processed!('https://example.com/late', import_run_id: import_run_id)
+      document.record_failed_urls!(['https://example.com/late-failure'], import_run_id: import_run_id)
+      document.record_change_result!('https://example.com/late', 'changed', import_run_id: import_run_id)
+
+      expect(active_write_applied).to be false
+      expect(document.reload).to be_available
+      expect(document.name).to eq(original_name)
+      expect(document.sync_status).to eq('completed')
+      expect(document.import_job_id).to be_nil
+      expect(document.firecrawl_sync).to eq(terminal_sync)
+    end
+
+    it 'does not resurrect a failed terminal import with a completed event' do
+      import_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: { 'firecrawl' => { 'sync' => { 'import_run_id' => import_run_id, 'status' => 'processing' } } }
+      )
+
+      document.mark_import_failed!('provider failed', import_run_id: import_run_id)
+
+      expect(document.finalize_import!(import_run_id: import_run_id)).to eq(:terminal)
+      expect(document.reload).to be_failed
+      expect(document.sync_status).to eq('failed')
+    end
+
+    it 'does not time out an import whose final page resolved before the timeout lock' do
+      import_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: {
+          'firecrawl' => {
+            'sync' => {
+              'import_run_id' => import_run_id,
+              'status' => 'processing',
+              'pages_total' => 1
+            }
+          }
+        }
+      )
+      document.mark_page_processed!('https://example.com/final', import_run_id: import_run_id)
+
+      expect(document.fail_import_if_pending!('timeout', import_run_id: import_run_id)).to eq(:terminal)
+      expect(document.reload).to be_available
+      expect(document.sync_status).to eq('completed')
+    end
+
+    it 'rejects page mutations from a stale run' do
+      import_run_id = SecureRandom.uuid
+      document = create(
+        :captain_document,
+        account: account,
+        assistant: assistant,
+        metadata: { 'firecrawl' => { 'sync' => { 'import_run_id' => import_run_id, 'status' => 'processing' } } }
+      )
+
+      expect(document.mark_page_received!('https://example.com/stale', import_run_id: SecureRandom.uuid)).to be false
+      expect(document.reload.received_urls).to be_empty
+    end
+  end
+
   describe 'PDF support' do
     let(:pdf_document) do
       doc = build(:captain_document, assistant: assistant, account: account)

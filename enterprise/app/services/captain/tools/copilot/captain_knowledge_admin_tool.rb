@@ -162,7 +162,14 @@ class Captain::Tools::Copilot::CaptainKnowledgeAdminTool < Captain::Tools::Copil
         'root_url' => kwargs[:external_link],
         'selected_urls' => parse_json_array(kwargs[:selected_urls_json], field_name: 'selected_urls_json', default: []),
         'import_profile' => parse_json_hash(kwargs[:import_profile_json], field_name: 'import_profile_json', default: {}),
-        'sync' => { 'status' => 'queued', 'pages_processed' => 0, 'last_error' => nil }
+        'sync' => {
+          'status' => 'queued',
+          'import_run_id' => SecureRandom.uuid,
+          'pages_processed' => 0,
+          'received_urls' => [],
+          'processed_urls' => [],
+          'last_error' => nil
+        }
       }
     }
   end

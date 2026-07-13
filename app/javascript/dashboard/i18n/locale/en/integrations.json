@@ -2037,7 +2037,7 @@
           "LABEL": "File",
           "CHOOSE_FILE": "Choose file",
           "ERROR": "Please select a supported file",
-          "HELP_TEXT": "Supported formats: PDF, office documents, spreadsheets, HTML, and images. File size is limited by the account storage quota.",
+          "HELP_TEXT": "Supported formats: PDF, office documents, spreadsheets, HTML, text, Markdown, CSV, JSON, XML, YAML, and images. File size is limited by the account storage quota.",
           "INVALID_TYPE": "Please select a supported file, document, or image",
           "TOO_LARGE": "File size exceeds the account storage limit"
         },

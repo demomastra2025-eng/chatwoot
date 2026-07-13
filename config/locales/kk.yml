@@ -360,6 +360,8 @@ kk:
     documents:
       limit_exceeded: Document limit exceeded
       personal_visibility_requires_assistant: AI Agent is required for personal visibility
+      invalid_source_mode: Құжат дереккөзінің режиміне қолдау көрсетілмейді
+      missing_upload_file: Жүктеу режимі үшін файлды таңдаңыз
       pdf_format_error: must be a PDF file
       pdf_size_error: must be less than 10MB
       pdf_upload_failed: Failed to upload PDF to OpenAI

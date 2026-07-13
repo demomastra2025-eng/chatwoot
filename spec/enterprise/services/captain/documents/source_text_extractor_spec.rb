@@ -82,4 +82,83 @@ RSpec.describe Captain::Documents::SourceTextExtractor do
       expect(script).not_to include('chunks = []')
     end
   end
+
+  describe 'real fallback extraction matrix' do
+    def archive_tempfile(extension, entries)
+      tempfile = Tempfile.new(['captain-source', ".#{extension}"])
+      script = <<~PYTHON
+        import json
+        import sys
+        import zipfile
+
+        with zipfile.ZipFile(sys.argv[1], 'w') as archive:
+            for entry_name, body in json.loads(sys.argv[2]).items():
+                archive.writestr(entry_name, body)
+      PYTHON
+      _stdout, stderr, status = Open3.capture3('python3', '-c', script, tempfile.path, entries.to_json)
+      raise stderr unless status.success?
+
+      tempfile
+    end
+
+    it 'extracts every declared text extension from a bounded tempfile', :aggregate_failures do
+      tested_extensions = %w[txt text md markdown csv json xml yaml yml html htm rtf]
+      expect(tested_extensions).to match_array(described_class::TEXT_EXTENSIONS)
+
+      tested_extensions.each do |extension|
+        tempfile = Tempfile.new(['captain-text', ".#{extension}"])
+        tempfile.write("#{extension.upcase} fallback marker")
+        tempfile.rewind
+
+        extracted = described_class.extract_text_from_tempfile(
+          tempfile,
+          extension: extension,
+          content_type: 'application/octet-stream'
+        )
+        expect(extracted).to include("#{extension.upcase} fallback marker")
+      ensure
+        tempfile&.close!
+      end
+    end
+
+    it 'extracts every declared Office extension from representative files', :aggregate_failures do
+      expect(described_class::OFFICE_EXTENSIONS).to match_array(%w[docx odt xlsx])
+      expect(described_class::LEGACY_DOCUMENT_EXTENSIONS).to match_array(%w[doc xls])
+
+      archives = {
+        'docx' => {
+          'word/document.xml' => '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>DOCX marker</w:t></w:r></w:p></w:body></w:document>'
+        },
+        'odt' => {
+          'content.xml' => '<office:document-content xmlns:office="urn:o" xmlns:text="urn:t"><text:p>ODT marker</text:p></office:document-content>'
+        },
+        'xlsx' => {
+          'xl/sharedStrings.xml' => '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>XLSX marker</t></si></sst>',
+          'xl/worksheets/sheet1.xml' =>
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' \
+            '<sheetData><row><c t="s"><v>0</v></c></row></sheetData></worksheet>'
+        }
+      }
+
+      archives.each do |extension, entries|
+        tempfile = archive_tempfile(extension, entries)
+        extracted = described_class.extract_text_from_tempfile(tempfile, extension: extension)
+        expect(extracted).to include("#{extension.upcase} marker")
+      ensure
+        tempfile&.close!
+      end
+
+      %w[doc xls].each do |extension|
+        tempfile = Tempfile.new(['captain-legacy', ".#{extension}"])
+        tempfile.binmode
+        tempfile.write("\x00LEGACY #{extension.upcase} marker\x00")
+        tempfile.rewind
+
+        extracted = described_class.extract_text_from_tempfile(tempfile, extension: extension)
+        expect(extracted).to include("LEGACY #{extension.upcase} marker")
+      ensure
+        tempfile&.close!
+      end
+    end
+  end
 end

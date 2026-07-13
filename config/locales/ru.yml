@@ -390,6 +390,11 @@ ru:
       delta_refresh_uploaded_file_error: Дельта-обновление недоступно для загруженных файлов
       retry_failed_empty_error: Нет URL с ошибками для повторной попытки
       no_selected_pages_error: Не выбраны страницы для импорта
+      invalid_public_url: URL должен быть публичным HTTP- или HTTPS-адресом без встроенных учётных данных
+      invalid_source_mode: Неподдерживаемый режим источника документа
+      missing_upload_file: Выберите файл для режима загрузки
+      selected_page_off_domain: Выбранные страницы должны принадлежать импортируемому сайту
+      selected_pages_limit: Выберите не более %{limit} страниц
       missing_firecrawl_error: Для PDF по ссылке, файлов по ссылке и загрузки офисных файлов требуется настроенный Firecrawl
       pdf_format_error: должен быть PDF файлом
       pdf_size_error: превышает лимит хранилища аккаунта

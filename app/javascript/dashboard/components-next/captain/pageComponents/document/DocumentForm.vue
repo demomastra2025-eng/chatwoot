@@ -11,6 +11,11 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 
+import {
+  UPLOADABLE_FILE_EXTENSIONS,
+  UPLOAD_FILE_ACCEPT,
+} from './documentUploadTypes';
+
 const props = defineProps({
   assistantId: {
     type: [Number, String],
@@ -20,27 +25,6 @@ const props = defineProps({
 
 const emit = defineEmits(['submit', 'cancel']);
 
-const UPLOADABLE_FILE_EXTENSIONS = [
-  'pdf',
-  'docx',
-  'doc',
-  'odt',
-  'rtf',
-  'xlsx',
-  'xls',
-  'html',
-  'htm',
-  'jpg',
-  'jpeg',
-  'png',
-  'webp',
-  'gif',
-  'heic',
-  'heif',
-  'tiff',
-  'tif',
-  'bmp',
-];
 const DEFAULT_IMPORT_PROFILE = {
   sitemap: 'include',
   includePaths: '',
@@ -137,6 +121,21 @@ const documentTypeOptions = computed(() => [
     label: t('CAPTAIN.DOCUMENTS.FORM.TYPE.FILE_UPLOAD'),
   },
 ]);
+
+const documentTypeDescription = computed(() => {
+  const descriptions = {
+    single_page: t('CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.SINGLE_PAGE'),
+    site_import: t('CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.SITE_IMPORT'),
+    selected_pages: t(
+      'CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.SELECTED_PAGES'
+    ),
+    pdf_url: t('CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.PDF_URL'),
+    file_url: t('CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.FILE_URL'),
+    file_upload: t('CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.FILE_UPLOAD'),
+  };
+
+  return descriptions[state.documentType] || '';
+});
 
 const visibilityOptions = computed(() => [
   {
@@ -463,11 +462,7 @@ const handleSubmit = async () => {
     </div>
 
     <p class="m-0 text-sm text-n-slate-11">
-      {{
-        t(
-          `CAPTAIN.DOCUMENTS.FORM.TYPE_DESCRIPTIONS.${state.documentType.toUpperCase()}`
-        )
-      }}
+      {{ documentTypeDescription }}
     </p>
 
     <div
@@ -645,7 +640,7 @@ const handleSubmit = async () => {
         <input
           ref="fileInputRef"
           type="file"
-          accept=".pdf,.docx,.doc,.odt,.rtf,.xlsx,.xls,.html,.htm,.jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.tiff,.tif,.bmp"
+          :accept="UPLOAD_FILE_ACCEPT"
           class="hidden"
           @change="handleFileChange"
         />

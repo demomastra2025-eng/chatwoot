@@ -33,6 +33,22 @@ RSpec.describe Captain::Llm::UpdateEmbeddingJob do
     expect(chunk.embedding_updated_at).to be_present
   end
 
+  it 'does not store an embedding for stale content' do
+    embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.2)
+    service = instance_double(Captain::Llm::EmbeddingService)
+    original_content = chunk.content
+    allow(service).to receive(:get_embedding) do
+      chunk.update!(content: 'Updated knowledge chunk')
+      embedding
+    end
+    allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(service)
+
+    described_class.perform_now(chunk, original_content)
+
+    expect(chunk.reload.content).to eq('Updated knowledge chunk')
+    expect(chunk.embedding_status).not_to eq('indexed')
+  end
+
   it 'marks document chunk embeddings as failed when embeddings are unavailable' do
     service = instance_double(Captain::Llm::EmbeddingService)
     allow(service).to receive(:get_embedding).and_raise(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'not configured')
@@ -46,13 +62,44 @@ RSpec.describe Captain::Llm::UpdateEmbeddingJob do
     expect(chunk.embedding_error).to include('not configured')
   end
 
+  it 'does not mark updated content as failed for a stale embedding request' do
+    service = instance_double(Captain::Llm::EmbeddingService)
+    original_content = chunk.content
+    allow(service).to receive(:get_embedding) do
+      chunk.update!(content: 'Updated knowledge chunk')
+      raise Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'not configured'
+    end
+    allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(service)
+
+    described_class.perform_now(chunk, original_content)
+
+    expect(chunk.reload.content).to eq('Updated knowledge chunk')
+    expect(chunk.embedding_status).not_to eq('failed')
+    expect(chunk.embedding_error).to be_blank
+  end
+
+  it 'does not retry a stale embedding error for records without embedding status' do
+    response = create(:captain_assistant_response, account: account, assistant: assistant)
+    service = instance_double(Captain::Llm::EmbeddingService)
+    original_content = "#{response.question}: #{response.answer}"
+    allow(service).to receive(:get_embedding) do
+      response.update!(answer: 'Updated answer')
+      raise Captain::Llm::EmbeddingService::EmbeddingsError, 'temporary outage'
+    end
+    allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(service)
+
+    expect { described_class.perform_now(response, original_content) }.not_to raise_error
+    expect(response.reload.answer).to eq('Updated answer')
+  end
+
   it 'raises retryable embedding errors for records without embedding status' do
     response = create(:captain_assistant_response, account: account, assistant: assistant)
     service = instance_double(Captain::Llm::EmbeddingService)
     allow(service).to receive(:get_embedding).and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'temporary outage')
     allow(Captain::Llm::EmbeddingService).to receive(:new).with(account_id: account.id).and_return(service)
+    content = "#{response.question}: #{response.answer}"
 
-    expect { described_class.perform_now(response, response.question) }
+    expect { described_class.perform_now(response, content) }
       .to raise_error(Captain::Llm::EmbeddingService::EmbeddingsError, 'temporary outage')
   end
 end

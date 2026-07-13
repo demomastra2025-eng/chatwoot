@@ -6,6 +6,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
 
   before do
     WebMock.disable_net_connect!
+    allow(SafeFetch).to receive(:resolve_public_ip!).and_return('93.184.216.34')
   end
 
   after do
@@ -16,7 +17,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     context 'when title exists' do
       before do
         stub_request(:get, base_url)
-          .to_return(body: '<html><head><title>Example Page</title></head></html>')
+          .to_return(body: '<html><head><title>Example Page</title></head></html>', headers: { 'Content-Type' => 'text/html' })
       end
 
       it 'returns the page title' do
@@ -27,7 +28,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     context 'when title does not exist' do
       before do
         stub_request(:get, base_url)
-          .to_return(body: '<html><head></head></html>')
+          .to_return(body: '<html><head></head></html>', headers: { 'Content-Type' => 'text/html' })
       end
 
       it 'returns nil' do
@@ -51,16 +52,12 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
       end
 
       before do
-        stub_request(:get, base_url).to_return(body: html_content)
+        stub_request(:get, base_url).to_return(body: html_content, headers: { 'Content-Type' => 'text/html' })
       end
 
-      it 'extracts and absolutizes all links' do
+      it 'extracts same-origin links and rejects external or fragment-only links' do
         links = service.page_links
-        expect(links).to include(
-          'https://example.com/relative',
-          'https://external.com',
-          'https://example.com#anchor'
-        )
+        expect(links).to contain_exactly('https://example.com/relative')
       end
     end
 
@@ -82,7 +79,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
       end
 
       before do
-        stub_request(:get, sitemap_url).to_return(body: sitemap_content)
+        stub_request(:get, sitemap_url).to_return(body: sitemap_content, headers: { 'Content-Type' => 'application/xml' })
       end
 
       it 'extracts links from sitemap' do
@@ -112,7 +109,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     end
 
     before do
-      stub_request(:get, base_url).to_return(body: html_content)
+      stub_request(:get, base_url).to_return(body: html_content, headers: { 'Content-Type' => 'text/html' })
       allow(ReverseMarkdown).to receive(:convert).and_return("# Main Title\n\nConverted markdown")
     end
 
@@ -130,7 +127,10 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     context 'when meta description exists' do
       before do
         stub_request(:get, base_url)
-          .to_return(body: '<html><head><meta name="description" content="This is a test page description"></head></html>')
+          .to_return(
+            body: '<html><head><meta name="description" content="This is a test page description"></head></html>',
+            headers: { 'Content-Type' => 'text/html' }
+          )
       end
 
       it 'returns the meta description content' do
@@ -141,7 +141,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     context 'when meta description does not exist' do
       before do
         stub_request(:get, base_url)
-          .to_return(body: '<html><head><title>Test</title></head></html>')
+          .to_return(body: '<html><head><title>Test</title></head></html>', headers: { 'Content-Type' => 'text/html' })
       end
 
       it 'returns nil' do
@@ -154,7 +154,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     context 'when favicon exists with relative URL' do
       before do
         stub_request(:get, base_url)
-          .to_return(body: '<html><head><link rel="icon" href="/favicon.ico"></head></html>')
+          .to_return(body: '<html><head><link rel="icon" href="/favicon.ico"></head></html>', headers: { 'Content-Type' => 'text/html' })
       end
 
       it 'returns the resolved absolute favicon URL' do
@@ -165,7 +165,10 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     context 'when favicon exists with absolute URL' do
       before do
         stub_request(:get, base_url)
-          .to_return(body: '<html><head><link rel="icon" href="https://cdn.example.com/favicon.ico"></head></html>')
+          .to_return(
+            body: '<html><head><link rel="icon" href="https://cdn.example.com/favicon.ico"></head></html>',
+            headers: { 'Content-Type' => 'text/html' }
+          )
       end
 
       it 'returns the absolute favicon URL' do
@@ -176,7 +179,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlService do
     context 'when favicon does not exist' do
       before do
         stub_request(:get, base_url)
-          .to_return(body: '<html><head><title>Test</title></head></html>')
+          .to_return(body: '<html><head><title>Test</title></head></html>', headers: { 'Content-Type' => 'text/html' })
       end
 
       it 'returns nil' do

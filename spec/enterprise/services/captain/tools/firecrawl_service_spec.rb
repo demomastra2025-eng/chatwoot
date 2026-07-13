@@ -24,7 +24,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
       end
 
       it 'raises an error' do
-        expect { described_class.new }.to raise_error('Missing API key')
+        expect { described_class.new }.to raise_error('Missing API key for Firecrawl Cloud')
       end
     end
 
@@ -34,7 +34,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
       end
 
       it 'raises an error' do
-        expect { described_class.new }.to raise_error('Missing API key')
+        expect { described_class.new }.to raise_error('Missing API key for Firecrawl Cloud')
       end
     end
 
@@ -44,7 +44,7 @@ RSpec.describe Captain::Tools::FirecrawlService do
       end
 
       it 'raises an error' do
-        expect { described_class.new }.to raise_error('Missing API key')
+        expect { described_class.new }.to raise_error('Missing API key for Firecrawl Cloud')
       end
     end
 
@@ -57,6 +57,33 @@ RSpec.describe Captain::Tools::FirecrawlService do
 
       it 'prefers env API key over installation config' do
         expect(described_class.api_key).to eq('env-api-key')
+      end
+    end
+
+    context 'with an unauthenticated self-hosted endpoint' do
+      before do
+        InstallationConfig.find_by(name: 'CAPTAIN_FIRECRAWL_API_KEY').destroy
+      end
+
+      it 'is configured and initializes without a cloud API key' do
+        ClimateControl.modify FIRECRAWL_API_URL: 'https://firecrawl.internal.example/v2', FIRECRAWL_API_KEY: nil do
+          expect(described_class).to be_configured
+          expect(described_class).to be_self_hosted
+          expect(described_class).not_to be_authentication_configured
+          expect { described_class.new }.not_to raise_error
+        end
+      end
+
+      it 'omits the Authorization header' do
+        ClimateControl.modify FIRECRAWL_API_URL: 'https://firecrawl.internal.example/v2', FIRECRAWL_API_KEY: nil do
+          stub_request(:post, 'https://firecrawl.internal.example/v2/crawl')
+            .with { |request| request.headers['Authorization'].blank? }
+            .to_return(status: 200, body: '{"status":"success"}')
+
+          described_class.new.perform(url, webhook_url, crawl_limit)
+
+          expect(WebMock).to have_requested(:post, 'https://firecrawl.internal.example/v2/crawl')
+        end
       end
     end
   end
@@ -209,20 +236,23 @@ RSpec.describe Captain::Tools::FirecrawlService do
       service.search(
         'openrouter structured outputs',
         limit: 3,
+        sources: ['web'],
         include_domains: ['docs.firecrawl.dev'],
         scrape_results: true
       )
 
-      expect(WebMock).to have_requested(:post, "#{default_api_url}/search").with { |request|
-        payload = JSON.parse(request.body)
-        payload['query'] == 'openrouter structured outputs' &&
-          payload['limit'] == 3 &&
-          payload['sources'] == ['web'] &&
-          payload['includeDomains'] == ['docs.firecrawl.dev'] &&
-          payload['ignoreInvalidURLs'] == true &&
-          payload.dig('scrapeOptions', 'formats') == ['markdown'] &&
-          payload.dig('scrapeOptions', 'onlyMainContent') == true
-      }
+      expect(WebMock).to(
+        have_requested(:post, "#{default_api_url}/search").with do |request|
+          payload = JSON.parse(request.body)
+          payload['query'] == 'openrouter structured outputs' &&
+            payload['limit'] == 3 &&
+            payload['sources'] == [{ 'type' => 'web' }] &&
+            payload['includeDomains'] == ['docs.firecrawl.dev'] &&
+            payload['ignoreInvalidURLs'] == true &&
+            payload.dig('scrapeOptions', 'formats') == ['markdown'] &&
+            payload.dig('scrapeOptions', 'onlyMainContent') == true
+        end
+      )
     end
   end
 

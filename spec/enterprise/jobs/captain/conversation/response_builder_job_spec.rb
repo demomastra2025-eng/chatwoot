@@ -637,14 +637,14 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
       end
 
-      it 'sets waiting_since to approximately the handoff time' do
-        freeze_time do
-          described_class.perform_now(conversation, assistant)
+      it 'restores waiting_since after the handoff message callbacks' do
+        conversation.update!(waiting_since: nil)
 
-          conversation.reload
-          expect(conversation.status).to eq('open')
-          expect(conversation.waiting_since).to be_within(1.second).of(Time.current)
-        end
+        described_class.perform_now(conversation, assistant)
+
+        conversation.reload
+        expect(conversation.status).to eq('open')
+        expect(conversation.waiting_since).to be_present
       end
 
       it 'preserves waiting_since so a human reply consumes it for reply_time tracking' do

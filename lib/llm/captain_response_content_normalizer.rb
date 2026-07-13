@@ -14,6 +14,8 @@ class Llm::CaptainResponseContentNormalizer
       apply_reasoning_default!(payload)
       payload['artifact_ids'] = normalized_artifact_ids(payload['artifact_ids'])
       apply_text_default!(payload, 'handoff_message')
+      apply_text_default!(payload, 'handoff_reason')
+      apply_text_default!(payload, 'handoff_status_reason')
       payload
     end
 
@@ -28,7 +30,9 @@ class Llm::CaptainResponseContentNormalizer
         response: text,
         reasoning: DEFAULT_REASONING,
         artifact_ids: [],
-        handoff_message: ''
+        handoff_message: '',
+        handoff_reason: '',
+        handoff_status_reason: ''
       }
     end
 

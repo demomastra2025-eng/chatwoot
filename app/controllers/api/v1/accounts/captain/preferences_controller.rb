@@ -297,6 +297,8 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     {
       provider: 'firecrawl',
       configured: Captain::Tools::FirecrawlService.configured?,
+      deployment: Captain::Tools::FirecrawlService.self_hosted? ? 'self_hosted' : 'cloud',
+      authentication_configured: Captain::Tools::FirecrawlService.authentication_configured?,
       search_default_results: Llm::RuntimePolicy::WEB_SEARCH_DEFAULT_LIMIT,
       search_max_results: Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT,
       scrape_default_max_chars: Llm::RuntimePolicy::WEB_SCRAPE_DEFAULT_MAX_CHARS,
@@ -447,11 +449,11 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       runtime[key] = ActiveModel::Type::Boolean.new.cast(runtime[key]) if runtime.key?(key)
     end
     normalize_runtime_integer!(runtime, 'web_search_max_results', default: Llm::RuntimePolicy::WEB_SEARCH_DEFAULT_LIMIT,
-                                                              min: 1, max: Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT)
+                                                                  min: 1, max: Llm::RuntimePolicy::WEB_SEARCH_MAX_LIMIT)
     normalize_runtime_integer!(runtime, 'web_scrape_max_chars', default: Llm::RuntimePolicy::WEB_SCRAPE_DEFAULT_MAX_CHARS,
-                                                            min: 1_000, max: Llm::RuntimePolicy::WEB_SCRAPE_MAX_CHARS)
+                                                                min: 1_000, max: Llm::RuntimePolicy::WEB_SCRAPE_MAX_CHARS)
     normalize_runtime_integer!(runtime, 'web_document_parse_max_chars', default: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_DEFAULT_MAX_CHARS,
-                                                                       min: 1_000, max: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_MAX_CHARS)
+                                                                        min: 1_000, max: Llm::RuntimePolicy::WEB_DOCUMENT_PARSE_MAX_CHARS)
     runtime['audio_transcription_prompt'] = runtime['audio_transcription_prompt'].to_s.strip if runtime.key?('audio_transcription_prompt')
     runtime['knowledge_chunk_size'] = normalize_knowledge_chunk_size(runtime['knowledge_chunk_size']) if runtime.key?('knowledge_chunk_size')
     normalize_runtime_domain_list!(runtime, 'web_allowed_domains')

@@ -17,6 +17,18 @@ RSpec.describe Captain::Llm::PdfProcessingService do
       it 'prepares the file locally without storing an OpenAI file id' do
         expect(service.process).to be true
       end
+
+      it 'does not store extracted text for a stale import run' do
+        old_run_id = SecureRandom.uuid
+        document.update!(metadata: { 'firecrawl' => { 'sync' => { 'import_run_id' => old_run_id } } })
+        stale_service = described_class.new(document, import_run_id: old_run_id)
+        document.prepare_for_resync!
+        extractor = instance_double(Captain::Documents::SourceTextExtractor, extract_pdf_text: 'stale text')
+        allow(Captain::Documents::SourceTextExtractor).to receive(:new).with(document).and_return(extractor)
+
+        expect(stale_service.process).to be true
+        expect(document.reload.source_text).to be_blank
+      end
     end
 
     context 'when no PDF is attached' do

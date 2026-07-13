@@ -5,8 +5,13 @@ class Captain::Documents::CrawlJob < ApplicationJob
   FALLBACK_FETCH_CONTENT_TYPE_PREFIXES = Captain::Documents::SourceTextExtractor::TEXT_CONTENT_TYPE_PREFIXES
 
   def perform(document)
+    @available_document_limit = document.account.usage_limits.dig(:captain, :documents, :current_available)
+    @import_run_id = document.ensure_import_run_id!
+    document.validate_import_source_mode!
     return perform_pdf_processing(document) if document.pdf_upload?
     return perform_uploaded_file_import(document) if document.file_upload?
+
+    validate_source_url!(document)
     return perform_retry_failed(document) if document.refresh_mode == 'retry_failed'
 
     case document.source_mode
@@ -20,11 +25,15 @@ class Captain::Documents::CrawlJob < ApplicationJob
       perform_pdf_url_import(document)
     when 'site_import'
       perform_site_import(document)
-    else
+    when 'legacy_url'
       perform_legacy_import(document)
+    when 'file_upload', 'pdf_upload'
+      raise I18n.t('captain.documents.missing_upload_file')
+    else
+      raise I18n.t('captain.documents.invalid_source_mode')
     end
   rescue StandardError => e
-    document.mark_import_failed!(e.message)
+    document.mark_import_failed!(e.message, import_run_id: @import_run_id)
     raise
   end
 
@@ -35,8 +44,8 @@ class Captain::Documents::CrawlJob < ApplicationJob
   def perform_pdf_processing(document)
     return perform_firecrawl_upload_parse(document, attachment: document.pdf_file) if Captain::Tools::FirecrawlService.configured?
 
-    Captain::Llm::PdfProcessingService.new(document).process
-    document.update!(status: :available)
+    Captain::Llm::PdfProcessingService.new(document, import_run_id: @import_run_id).process
+    document.mark_import_completed!(import_run_id: @import_run_id)
   rescue StandardError => e
     Rails.logger.error I18n.t('captain.documents.pdf_processing_failed', document_id: document.id, error: e.message)
     raise # Re-raise to let job framework handle retry logic
@@ -66,14 +75,13 @@ class Captain::Documents::CrawlJob < ApplicationJob
 
   def perform_uploaded_file_import(document)
     return mark_uploaded_image_available(document) if document.image_upload?
-
-    return perform_uploaded_source_text_import(document) unless Captain::Tools::FirecrawlService.configured?
+    return perform_uploaded_source_text_import(document) if document.text_source_upload? || !Captain::Tools::FirecrawlService.configured?
 
     perform_firecrawl_upload_parse(document, attachment: document.source_file)
   end
 
   def perform_remote_file_text_import(document, operation:)
-    document.mark_import_processing!
+    document.mark_import_processing!(import_run_id: @import_run_id)
 
     source_text = nil
     SafeFetch.fetch(
@@ -101,7 +109,7 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def perform_uploaded_source_text_import(document)
-    document.mark_import_processing!
+    document.mark_import_processing!(import_run_id: @import_run_id)
 
     source_text = Captain::Documents::SourceTextExtractor.new(document).extract_source_file_text
     return mark_firecrawl_unavailable(document, I18n.t('captain.documents.file_upload_requires_firecrawl')) if source_text.blank?
@@ -116,37 +124,39 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def mark_firecrawl_unavailable(document, error_message)
-    document.mark_import_failed!(error_message)
+    document.mark_import_failed!(error_message, import_run_id: @import_run_id)
     Rails.logger.warn("#{self.class.name} skipped Firecrawl-only import for document #{document.id}: #{error_message}")
   end
 
   def mark_uploaded_image_available(document)
-    document.update!(
-      status: :available,
-      metadata: (document.metadata || {}).deep_merge(
-        'firecrawl' => document.firecrawl_metadata.deep_merge(
-          'provider' => 'attachment',
-          'sync' => document.firecrawl_sync.merge(
-            'status' => 'completed',
-            'pages_total' => 1,
-            'pages_processed' => 1,
-            'processed_urls' => [document.external_link],
-            'last_error' => nil,
-            'last_synced_at' => Time.current.iso8601
-          )
-        ),
-        'source_text' => {
-          'provider' => 'attachment',
-          'status' => 'skipped',
-          'reason' => 'image_upload',
-          'extracted_at' => Time.current.iso8601
-        }
+    document.with_active_import_run(@import_run_id) do
+      document.update!(
+        status: :available,
+        metadata: (document.metadata || {}).deep_merge(
+          'firecrawl' => document.firecrawl_metadata.deep_merge(
+            'provider' => 'attachment',
+            'sync' => document.firecrawl_sync.merge(
+              'status' => 'completed',
+              'pages_total' => 1,
+              'pages_processed' => 1,
+              'processed_urls' => [document.external_link],
+              'last_error' => nil,
+              'last_synced_at' => Time.current.iso8601
+            )
+          ),
+          'source_text' => {
+            'provider' => 'attachment',
+            'status' => 'skipped',
+            'reason' => 'image_upload',
+            'extracted_at' => Time.current.iso8601
+          }
+        )
       )
-    )
+    end
   end
 
   def perform_selected_pages_import(document)
-    selected_urls = document.selected_urls.presence
+    selected_urls = validated_selected_urls(document).presence
     raise I18n.t('captain.documents.no_selected_pages_error') if selected_urls.blank?
 
     if Captain::Tools::FirecrawlService.configured?
@@ -173,7 +183,7 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def perform_firecrawl_scrape(document, target_url: document.external_link)
-    document.mark_import_processing!
+    document.mark_import_processing!(import_run_id: @import_run_id)
 
     response = Captain::Tools::FirecrawlService.new.scrape(
       target_url,
@@ -185,15 +195,15 @@ class Captain::Documents::CrawlJob < ApplicationJob
     change_tracking = data[:changeTracking] || {}
 
     if delta_refresh?(document)
-      document.record_change_result!(document.external_link, change_tracking[:changeStatus])
+      document.record_change_result!(document.external_link, change_tracking[:changeStatus], import_run_id: @import_run_id)
 
       if change_tracking[:changeStatus] == 'same'
-        document.mark_import_completed!
+        document.mark_import_completed!(import_run_id: @import_run_id)
         return
       end
 
       if change_tracking[:changeStatus] == 'removed'
-        document.mark_import_completed!
+        document.mark_import_completed!(import_run_id: @import_run_id)
         return
       end
     end
@@ -202,7 +212,7 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def perform_firecrawl_upload_parse(document, attachment:)
-    document.mark_import_processing!
+    document.mark_import_processing!(import_run_id: @import_run_id)
 
     response = Captain::Tools::FirecrawlService.new.parse_upload(
       attachment,
@@ -214,14 +224,19 @@ class Captain::Documents::CrawlJob < ApplicationJob
   end
 
   def perform_simple_crawl(document)
-    page_links = Captain::Tools::SimplePageCrawlService.new(document.external_link).page_links
-    all_links = (page_links.to_a + [document.external_link]).uniq
+    profile = import_profile(document)
+    page_links = Captain::Tools::SimplePageCrawlService.new(
+      document.external_link,
+      root_url: document.external_link,
+      allow_subdomains: ActiveModel::Type::Boolean.new.cast(profile['allow_subdomains']) == true
+    ).page_links
+    all_links = (page_links.to_a + [document.external_link]).uniq.first(effective_crawl_limit(document))
     enqueue_simple_page_parse(document, all_links, total_pages: all_links.count)
   end
 
   def perform_firecrawl_crawl(document)
     crawl_limit = effective_crawl_limit(document)
-    document.mark_import_processing!
+    document.mark_import_processing!(import_run_id: @import_run_id)
 
     response = Captain::Tools::FirecrawlService
                .new
@@ -231,11 +246,11 @@ class Captain::Documents::CrawlJob < ApplicationJob
                  crawl_limit,
                  firecrawl_options(document).merge(change_tracking_options(document))
                )
-    document.mark_import_started!(job_id: response.parsed_response['id'])
+    document.mark_import_started!(job_id: firecrawl_job_id!(response), import_run_id: @import_run_id)
   end
 
   def perform_firecrawl_batch_scrape(document, selected_urls)
-    document.mark_import_started!(pages_total: selected_urls.count)
+    document.mark_import_processing!(import_run_id: @import_run_id)
 
     response = Captain::Tools::FirecrawlService
                .new
@@ -245,11 +260,15 @@ class Captain::Documents::CrawlJob < ApplicationJob
                  firecrawl_options(document).merge(change_tracking_options(document))
                )
 
-    document.mark_import_started!(job_id: response.parsed_response['id'], pages_total: selected_urls.count)
+    document.mark_import_started!(
+      job_id: firecrawl_job_id!(response),
+      pages_total: selected_urls.count,
+      import_run_id: @import_run_id
+    )
   end
 
   def perform_retry_failed(document)
-    failed_urls = document.failed_urls
+    failed_urls = validated_selected_urls(document, document.retry_urls.presence || document.failed_urls)
     raise I18n.t('captain.documents.retry_failed_empty_error') if failed_urls.blank?
 
     if Captain::Tools::FirecrawlService.configured?
@@ -259,15 +278,20 @@ class Captain::Documents::CrawlJob < ApplicationJob
     end
   end
 
+  def firecrawl_job_id!(response)
+    response.parsed_response['id'].presence || raise('Firecrawl response is missing job ID')
+  end
+
   def enqueue_simple_page_parse(document, page_links, total_pages:)
-    document.mark_import_started!(pages_total: total_pages)
+    document.mark_import_started!(pages_total: total_pages, import_run_id: @import_run_id)
 
     Array(page_links).each do |page_link|
       Captain::Tools::SimplePageCrawlParserJob.perform_later(
         assistant_id: document.runtime_assistant_id,
         account_id: document.account_id,
         page_link: page_link,
-        source_document_id: document.id
+        source_document_id: document.id,
+        import_run_id: @import_run_id
       )
     end
   end
@@ -278,14 +302,23 @@ class Captain::Documents::CrawlJob < ApplicationJob
 
     webhook_url = Rails.application.routes.url_helpers.enterprise_webhooks_firecrawl_url
 
-    token = generate_firecrawl_token(runtime_assistant.id, document.account_id)
-    "#{webhook_url}?assistant_id=#{runtime_assistant.id}&document_id=#{document.id}&token=#{token}"
+    token = generate_firecrawl_token(
+      runtime_assistant.id,
+      document.account_id,
+      document_id: document.id,
+      import_run_id: @import_run_id
+    )
+    query = URI.encode_www_form(
+      assistant_id: runtime_assistant.id,
+      document_id: document.id,
+      import_run_id: @import_run_id,
+      token: token
+    )
+    "#{webhook_url}?#{query}"
   end
 
   def effective_crawl_limit(document)
-    captain_usage_limits = document.account.usage_limits[:captain] || {}
-    document_limit = captain_usage_limits[:documents] || {}
-    account_limit = [document_limit[:current_available] || 10, 500].min
+    account_limit = [@available_document_limit || 10, 500].min
     requested_limit = import_profile(document)['max_pages'].presence&.to_i
 
     return account_limit if requested_limit.blank? || requested_limit <= 0
@@ -333,6 +366,19 @@ class Captain::Documents::CrawlJob < ApplicationJob
     document.import_profile
   end
 
+  def validate_source_url!(document)
+    Captain::Documents::UrlPolicy.normalize!(document.external_link)
+  end
+
+  def validated_selected_urls(document, urls = document.selected_urls)
+    Captain::Documents::UrlPolicy.normalize_selected_urls!(
+      urls,
+      root_url: document.external_link,
+      max_count: effective_crawl_limit(document),
+      allow_subdomains: import_profile(document)['allow_subdomains']
+    )
+  end
+
   def delta_refresh?(document)
     document.refresh_mode == 'delta'
   end
@@ -369,22 +415,26 @@ class Captain::Documents::CrawlJob < ApplicationJob
     markdown = data[:markdown].to_s
     metadata = (data[:metadata] || {}).with_indifferent_access
 
-    document.update!(
-      name: metadata[:title].presence || metadata[:sourceFile].presence || document.name,
-      source_text: markdown,
-      content: Captain::Documents::SourceTextExtractor.preview(markdown),
-      status: :available,
-      metadata: firecrawl_result_metadata(document, metadata, markdown, source_url, operation)
-    )
+    document.with_active_import_run(@import_run_id) do
+      document.update!(
+        name: metadata[:title].presence || metadata[:sourceFile].presence || document.name,
+        source_text: markdown,
+        content: Captain::Documents::SourceTextExtractor.preview(markdown),
+        status: :available,
+        metadata: firecrawl_result_metadata(document, metadata, markdown, source_url, operation)
+      )
+    end
   end
 
   def store_source_text_document_result!(document, source_text, source_url:, provider:, operation:)
-    document.update!(
-      source_text: source_text,
-      content: Captain::Documents::SourceTextExtractor.preview(source_text),
-      status: :available,
-      metadata: source_text_result_metadata(document, source_text, source_url, provider, operation)
-    )
+    document.with_active_import_run(@import_run_id) do
+      document.update!(
+        source_text: source_text,
+        content: Captain::Documents::SourceTextExtractor.preview(source_text),
+        status: :available,
+        metadata: source_text_result_metadata(document, source_text, source_url, provider, operation)
+      )
+    end
   end
 
   def firecrawl_result_metadata(document, metadata, markdown, source_url, operation)

@@ -39,6 +39,7 @@ RSpec.describe Captain::Tools::SimplePageCrawlParserJob, type: :job do
     expect(derived_document.faq_generation_enabled).to be false
     expect(derived_document.source_text).to eq('Simple child page text')
     expect(derived_document.content).to eq('Simple child page text')
+    expect(source_document.reload.firecrawl_sync['processed_urls']).to include('https://example.com/docs/child')
   end
 
   it 'keeps derived documents workspace-owned when the source document has no assistant' do
