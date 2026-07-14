@@ -107,6 +107,7 @@ describe('webphoneClient', () => {
     WebphoneClient.providerSessions = {};
     WebphoneClient.sessions = {};
     WebphoneClient.nativeSipClients = {};
+    WebphoneClient.nativeSipClientGenerations = {};
     Object.values(WebphoneClient.nativeSessionRetryTimers || {}).forEach(
       timer => {
         window.clearTimeout(timer);
@@ -115,6 +116,8 @@ describe('webphoneClient', () => {
     WebphoneClient.nativeSessionConfigs = {};
     WebphoneClient.nativeSessionRetryTimers = {};
     WebphoneClient.nativeSessionRetryState = {};
+    WebphoneClient.nativeSessionRetryPromises = {};
+    WebphoneClient.nativeSessionGenerations = {};
   });
 
   it('bootstraps every native Janus SIP session from a multi-session token', async () => {
@@ -246,6 +249,60 @@ describe('webphoneClient', () => {
     WebphoneClient.removeEventListener('call:connected', connectedHandler);
   });
 
+  it('ignores late events from a replaced native Janus client', async () => {
+    getWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [
+        {
+          provider: 'sipuni',
+          sip_profile_id: 39,
+          inbox_id: 4769,
+          calling_supported: true,
+          janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+          sip: {
+            username: 'line-39',
+            password: 'secret',
+            host: 'sipuni.test',
+          },
+        },
+      ],
+    });
+    janusInitializeMock.mockResolvedValue({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:39',
+      inboxId: 4769,
+      sipProfileId: 39,
+      callingSupported: true,
+      registered: true,
+    });
+    const registeredHandler = vi.fn();
+    WebphoneClient.addEventListener('call:registered', registeredHandler);
+
+    try {
+      await WebphoneClient.bootstrapIncomingSupport();
+      const oldClient = janusClientInstances[0];
+      const [, forwardRegistered] = oldClient.addEventListener.mock.calls.find(
+        ([eventName]) => eventName === 'call:registered'
+      );
+      WebphoneClient.sessions['sip_profile:39'].registered = false;
+      const generation =
+        WebphoneClient.invalidateNativeSession('sip_profile:39');
+      WebphoneClient.nativeSipClientFor('sipuni', 'sip_profile:39', generation);
+
+      forwardRegistered({
+        detail: {
+          provider: 'sipuni',
+          sessionKey: 'sip_profile:39',
+        },
+      });
+
+      expect(WebphoneClient.sessions['sip_profile:39'].registered).toBe(false);
+      expect(registeredHandler).not.toHaveBeenCalled();
+    } finally {
+      WebphoneClient.removeEventListener('call:registered', registeredHandler);
+    }
+  });
+
   it('keeps other native Janus SIP sessions when one session fails to initialize', async () => {
     getWebphoneTokenMock.mockResolvedValue({
       multi_session: true,
@@ -368,7 +425,7 @@ describe('webphoneClient', () => {
         },
       });
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(1_500);
 
       expect(getWebphoneTokenMock).toHaveBeenCalledTimes(2);
       expect(janusInitializeMock).toHaveBeenCalledTimes(2);
@@ -400,6 +457,110 @@ describe('webphoneClient', () => {
       WebphoneClient.nativeSessionRetryState = {};
       vi.useRealTimers();
     }
+  });
+
+  it('does not resurrect a destroyed session from an in-flight retry', async () => {
+    vi.useFakeTimers();
+    const initialSession = {
+      provider: 'asterisk_analog',
+      sip_profile_id: 41,
+      inbox_id: 4771,
+      calling_supported: true,
+      janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+      sip: {
+        username: '9098',
+        password: 'asterisk-secret',
+        host: '10.77.0.2',
+      },
+    };
+    getWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [initialSession],
+    });
+    janusInitializeMock.mockRejectedValueOnce(
+      new Error('temporary registration failed')
+    );
+    let resolveRefresh;
+
+    try {
+      await WebphoneClient.bootstrapIncomingSupport();
+      getWebphoneTokenMock.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveRefresh = resolve;
+          })
+      );
+
+      await vi.advanceTimersByTimeAsync(1_500);
+      const retryPromise =
+        WebphoneClient.nativeSessionRetryPromises['sip_profile:41'];
+      expect(retryPromise).toBeDefined();
+
+      await WebphoneClient.destroyNativeSession('sip_profile:41');
+      resolveRefresh({
+        ...initialSession,
+        janusServer:
+          'wss://dev.one-link.kz/janus-sipuni?janus_ticket=fresh-ticket',
+      });
+      await retryPromise;
+
+      expect(janusInitializeMock).toHaveBeenCalledTimes(1);
+      expect(WebphoneClient.sessions['sip_profile:41']).toBeUndefined();
+      expect(WebphoneClient.nativeSipClients['sip_profile:41']).toBeUndefined();
+      expect(
+        WebphoneClient.nativeSessionRetryTimers['sip_profile:41']
+      ).toBeUndefined();
+    } finally {
+      Object.values(WebphoneClient.nativeSessionRetryTimers || {}).forEach(
+        timer => {
+          window.clearTimeout(timer);
+        }
+      );
+      WebphoneClient.nativeSessionRetryTimers = {};
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops retrying after a permanent SIP credential rejection', async () => {
+    getWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [
+        {
+          provider: 'sipuni',
+          sip_profile_id: 41,
+          inbox_id: 4771,
+          calling_supported: true,
+          janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+          sip: {
+            username: 'operator-41',
+            password: 'invalid-secret',
+            host: 'sipuni.test',
+          },
+        },
+      ],
+    });
+    janusInitializeMock.mockRejectedValue(
+      Object.assign(new Error('sip_credentials_rejected'), { sipCode: 403 })
+    );
+
+    const response = await WebphoneClient.bootstrapIncomingSupport();
+
+    expect(response.sessions[0]).toEqual(
+      expect.objectContaining({
+        callingSupported: false,
+        registered: false,
+        reason: 'sip_provider_credentials_failed',
+      })
+    );
+    expect(WebphoneClient.nativeSessionRetryTimers['sip_profile:41']).toBe(
+      undefined
+    );
+    expect(WebphoneClient.nativeSessionRetryState['sip_profile:41']).toEqual(
+      expect.objectContaining({
+        blocked: true,
+        reason: 'sip_provider_credentials_failed',
+      })
+    );
   });
 
   it('does not route an unknown explicit native session key to the active session', async () => {

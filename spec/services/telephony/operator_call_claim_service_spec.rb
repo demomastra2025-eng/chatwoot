@@ -62,6 +62,9 @@ RSpec.describe Telephony::OperatorCallClaimService do
         sip_host: profile.sip_host,
         agent_aor: profile.agent_aor,
         registration_config_version: profile.registration_config_version,
+        registration_instance_id: "registration-#{profile.id}",
+        janus_session_id: "janus-session-#{profile.id}",
+        janus_handle_id: "janus-handle-#{profile.id}",
         session_key: "sip_profile:#{profile.id}"
       }
     )

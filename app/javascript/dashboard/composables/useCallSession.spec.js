@@ -379,7 +379,11 @@ describe('useCallSession', () => {
         provider: 'binotel',
         inboxId: 4770,
         sipProfileId: 40,
+        registrationInstanceId: 'registration-40',
+        registrationConfigVersion: 'version-40',
         sessionKey: 'sip_profile:40',
+        janusSessionId: 'janus-session-40',
+        janusHandleId: 'janus-handle-40',
         internalExtension: '901',
         callRef: 'raw-janus-call-id',
         from: 'sip:+77475318623@sip53.binotel.com',
@@ -393,6 +397,10 @@ describe('useCallSession', () => {
       from: 'sip:+77475318623@sip53.binotel.com',
       session_key: 'sip_profile:40',
       sip_profile_id: 40,
+      registration_instance_id: 'registration-40',
+      registration_config_version: 'version-40',
+      janus_session_id: 'janus-session-40',
+      janus_handle_id: 'janus-handle-40',
       internal_extension: '901',
     });
     expect(useCallsStore().calls).toEqual([

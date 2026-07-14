@@ -21,7 +21,8 @@ const createCallUnregisteredEvent = detail =>
 const createCallStageEvent = detail =>
   new CustomEvent('call:stage', { detail });
 
-const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 60_000;
+const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 30_000;
+const WEBPHONE_SIP_REGISTRATION_REFRESH_INTERVAL_MS = 60_000;
 const WEBPHONE_REGISTRATION_TIMEOUT_MS = 8_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 20_000;
 const WEBPHONE_INCOMING_CALL_POLL_MS = 100;
@@ -33,9 +34,6 @@ const WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS = 150;
 const WEBPHONE_OUTBOUND_START_TIMEOUT_MS = 20_000;
 const WEBPHONE_OUTBOUND_SETUP_TIMEOUT_MS = 45_000;
 const WEBPHONE_POST_CALL_REGISTRATION_REFRESH_DELAY_MS = 250;
-const WEBPHONE_DEVICE_RECOVERY_DELAY_MS = 1_000;
-const WEBPHONE_PRESENCE_CONTEXT_MISMATCH_REASON =
-  'sip_profile_registration_context_mismatch';
 const WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
@@ -203,6 +201,7 @@ export class JanusSipVoiceClient extends EventTarget {
     super();
     this.janus = null;
     this.janusGeneration = 0;
+    this.handledJanusFailureGeneration = null;
     this.sipHandle = null;
     this.sipHandleGeneration = 0;
     this.sipHandleRecoveryPromise = null;
@@ -222,6 +221,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.initializationPromise = null;
     this.registered = false;
     this.registrationPromise = null;
+    this.registrationAckPromise = null;
     this.registrationResolve = null;
     this.registrationReject = null;
     this.registrationTimer = null;
@@ -233,8 +233,11 @@ export class JanusSipVoiceClient extends EventTarget {
     this.incomingAcceptTimer = null;
     this.hasActiveCall = false;
     this.presenceHeartbeatTimer = null;
+    this.sipRegistrationRefreshTimer = null;
     this.presenceRefreshPromise = null;
+    this.sipRegistrationRefreshPromise = null;
     this.presenceReportPromise = null;
+    this.presenceHeartbeatFailureCount = 0;
     this.currentCallRef = null;
     this.currentCallDirection = null;
     this.microphonePrewarmStream = null;
@@ -250,8 +253,6 @@ export class JanusSipVoiceClient extends EventTarget {
     this.currentCallHandledByAi = false;
     this.registrationRecoveryTimer = null;
     this.registrationRecoveryPromise = null;
-    this.deviceRecoveryTimer = null;
-    this.deviceRecoveryPromise = null;
     this.destroyingDevice = false;
     this.callMediaAccepted = false;
     this.callConnectedDispatched = false;
@@ -522,6 +523,7 @@ export class JanusSipVoiceClient extends EventTarget {
     await this.destroyDevice({
       preserveMicrophonePrewarm: true,
     });
+    const initializationGeneration = this.janusGeneration;
 
     this.sessionConfig = normalized;
     this.sessionKey = normalized.sessionKey;
@@ -530,9 +532,33 @@ export class JanusSipVoiceClient extends EventTarget {
     this.sessionSignature = signature;
     this.remoteAudioElement = this.ensureRemoteAudioElement();
     await JanusSipVoiceClient.initJanus();
-    this.janus = await this.createJanusSession(normalized);
-    this.sipHandle = await this.attachSipPlugin();
+    if (initializationGeneration !== this.janusGeneration) {
+      throw new Error('stale_janus_initialization');
+    }
+    const expectedJanusGeneration = initializationGeneration + 1;
+    const janus = await this.createJanusSession(normalized);
+    if (expectedJanusGeneration !== this.janusGeneration) {
+      janus?.destroy?.();
+      throw new Error('stale_janus_session');
+    }
+    this.janus = janus;
+    const expectedSipHandleGeneration = this.sipHandleGeneration + 1;
+    const sipHandle = await this.attachSipPlugin();
+    if (
+      expectedJanusGeneration !== this.janusGeneration ||
+      expectedSipHandleGeneration !== this.sipHandleGeneration
+    ) {
+      sipHandle?.detach?.();
+      throw new Error('stale_sip_handle');
+    }
+    this.sipHandle = sipHandle;
     await this.register();
+    if (
+      expectedJanusGeneration !== this.janusGeneration ||
+      expectedSipHandleGeneration !== this.sipHandleGeneration
+    ) {
+      throw new Error('stale_sip_registration');
+    }
     this.initialized = true;
 
     return this.sessionState(normalized);
@@ -541,15 +567,40 @@ export class JanusSipVoiceClient extends EventTarget {
   createJanusSession(sessionConfig) {
     this.janusGeneration += 1;
     const generation = this.janusGeneration;
+    let connected = false;
     return new Promise((resolve, reject) => {
       const janus = new Janus({
         server: sessionConfig.janusServer,
         iceServers: sessionConfig.iceServers,
-        success: () => resolve(janus),
-        error: error => reject(error),
+        success: () => {
+          if (generation !== this.janusGeneration) {
+            janus?.destroy?.();
+            reject(new Error('stale_janus_session'));
+            return;
+          }
+          connected = true;
+          resolve(janus);
+        },
+        error: error => {
+          if (!connected) {
+            reject(error);
+            return;
+          }
+          if (generation === this.janusGeneration) {
+            this.handleJanusDestroyed({
+              reason: 'janus_transport_error',
+              error,
+            });
+          }
+        },
         destroyed: () => {
           if (generation === this.janusGeneration) {
-            this.handleJanusDestroyed();
+            const error = new Error('janus_destroyed');
+            this.handleJanusDestroyed({
+              reason: 'janus_destroyed',
+              error,
+            });
+            if (!connected) reject(error);
           }
         },
       });
@@ -621,14 +672,9 @@ export class JanusSipVoiceClient extends EventTarget {
       this.registrationReject = reject;
       this.registrationTimer = window.setTimeout(() => {
         this.registrationTimedOut = true;
-        this.registered = false;
-        this.clearRegistrationIdentifiers();
-        this.stopPresenceHeartbeat();
-        this.reportPresence(false);
-        this.dispatchEvent(
-          createCallUnregisteredEvent(this.sessionEventDetail())
-        );
-        reject(new Error('sip_registration_timeout'));
+        const error = new Error('sip_registration_timeout');
+        this.transitionToUnregistered('sip_registration_timeout');
+        reject(error);
       }, WEBPHONE_REGISTRATION_TIMEOUT_MS);
 
       try {
@@ -661,6 +707,9 @@ export class JanusSipVoiceClient extends EventTarget {
     if (this.sipHandleRecoveryPromise) {
       await this.sipHandleRecoveryPromise;
     }
+    if (!this.janus || !this.sipHandle) {
+      throw new Error('sip_device_not_ready');
+    }
     if (this.registered) {
       if (refresh) return this.register({ refresh: true });
       return undefined;
@@ -682,37 +731,32 @@ export class JanusSipVoiceClient extends EventTarget {
     const currentJanus = this.janus;
     const currentHandle = this.sipHandle;
     const recoveryPromise = (async () => {
+      this.transitionToUnregistered('outbound_sip_handle_reset');
+      this.initialized = false;
+      this.registrationAckPromise = null;
+      this.janusGeneration += 1;
       this.sipHandleGeneration += 1;
+      this.janus = null;
       this.sipHandle = null;
-      this.registered = false;
-      this.clearRegistrationIdentifiers();
-      this.clearRegistrationTimer();
-      this.registrationPromise = null;
-      this.registrationResolve = null;
-      this.registrationReject = null;
-      this.stopPresenceHeartbeat();
-      this.reportPresence(false);
 
+      try {
+        currentHandle?.send?.({ message: { request: 'unregister' } });
+      } catch {
+        // The failed handle may already reject SIP messages.
+      }
       try {
         currentHandle?.detach?.();
       } catch {
-        // The failed handle is already unusable; replacement remains authoritative.
+        // The failed handle may already be detached.
+      }
+      try {
+        currentJanus?.destroy?.();
+      } catch {
+        // Generation fencing makes delayed callbacks from this session stale.
       }
 
-      if (this.janus !== currentJanus || this.destroyingDevice) return false;
-
-      this.sipHandle = await this.attachSipPlugin();
-      await this.register();
-      this.initialized = true;
-      return true;
-    })().catch(() => {
-      this.sipHandle = null;
-      this.registered = false;
-      if (this.janus === currentJanus && !this.destroyingDevice) {
-        this.scheduleDeviceRecovery();
-      }
       return false;
-    });
+    })();
 
     const trackedRecoveryPromise = recoveryPromise.finally(() => {
       if (this.sipHandleRecoveryPromise === trackedRecoveryPromise) {
@@ -735,12 +779,7 @@ export class JanusSipVoiceClient extends EventTarget {
       if (normalizedError.includes('already registered')) {
         if (this.registrationTimedOut) return;
 
-        this.clearRegistrationTimer();
-        this.markRegistered();
-        this.registrationResolve?.(this.sessionState());
-        this.dispatchEvent(
-          createCallRegisteredEvent(this.sessionEventDetail())
-        );
+        this.completeRegistration({}, msg);
         return;
       }
 
@@ -748,13 +787,7 @@ export class JanusSipVoiceClient extends EventTarget {
         normalizedError.includes('register first') ||
         normalizedError.includes('not registered')
       ) {
-        this.registered = false;
-        this.clearRegistrationIdentifiers();
-        this.stopPresenceHeartbeat();
-        this.reportPresence(false);
-        this.dispatchEvent(
-          createCallUnregisteredEvent(this.sessionEventDetail())
-        );
+        this.transitionToUnregistered(String(error));
       }
 
       this.registrationReject?.(new Error(String(error)));
@@ -794,28 +827,27 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     if (event === 'registration_failed') {
-      this.registered = false;
-      this.clearRegistrationIdentifiers();
-      this.stopPresenceHeartbeat();
-      this.reportPresence(false);
+      const reason = `${result.code || ''} ${result.reason || ''}`.trim();
       this.clearRegistrationTimer();
-      this.registrationReject?.(
-        new Error(`${result.code || ''} ${result.reason || ''}`.trim())
+      const registrationError = Object.assign(
+        new Error(reason || 'sip_registration_failed'),
+        {
+          sipCode: result.code,
+          sipReason: result.reason,
+        }
       );
-      this.dispatchEvent(
-        createCallUnregisteredEvent(this.sessionEventDetail())
-      );
+      this.transitionToUnregistered(reason || 'sip_registration_failed', {
+        sipCode: result.code,
+        sipReason: result.reason,
+      });
+      this.registrationReject?.(registrationError);
       return;
     }
 
     if (event === 'registered') {
       if (this.registrationTimedOut) return;
 
-      this.clearRegistrationTimer();
-      this.captureRegistrationIdentifiers(result);
-      this.markRegistered();
-      this.registrationResolve?.(this.sessionState());
-      this.dispatchEvent(createCallRegisteredEvent(this.sessionEventDetail()));
+      this.completeRegistration(result, msg);
       return;
     }
 
@@ -1025,28 +1057,44 @@ export class JanusSipVoiceClient extends EventTarget {
     this.stopLocalTracks();
   }
 
-  handleJanusDestroyed() {
+  handleJanusDestroyed({ reason = 'janus_destroyed', error = null } = {}) {
+    const failedGeneration = this.janusGeneration;
+    if (this.handledJanusFailureGeneration === failedGeneration) return;
+
+    this.handledJanusFailureGeneration = failedGeneration;
+    this.janusGeneration += 1;
     const hadCall =
       this.pendingIncomingCall || this.hasActiveCall || this.currentCallRef;
     const shouldRecoverDevice = !this.destroyingDevice;
+    const eventDetail = this.callEventDetail();
     this.initialized = false;
     this.registered = false;
-    this.clearRegistrationIdentifiers();
-    this.stopPresenceHeartbeat();
     this.clearOutboundSetupTimer();
-    this.cancelPendingOutboundJoin('janus_destroyed');
-    this.registrationReject?.(new Error('janus_destroyed'));
-    this.finishOutboundAttempt(this.outboundAttemptError('janus_destroyed'));
-    this.rejectIncomingAccept(new Error('janus_destroyed'));
-    if (shouldRecoverDevice) this.reportPresence(false);
-    this.stopRecordings({ reason: 'janus_destroyed' });
+    this.cancelPendingOutboundJoin(reason);
+    this.registrationReject?.(error || new Error(reason));
+    this.finishOutboundAttempt(this.outboundAttemptError(reason));
+    this.rejectIncomingAccept(error || new Error(reason));
+    if (shouldRecoverDevice) {
+      this.transitionToUnregistered(reason, {
+        transportError: error?.message || null,
+      });
+    } else {
+      this.clearRegistrationIdentifiers();
+      this.stopPresenceHeartbeat();
+    }
+    this.sipHandleGeneration += 1;
+    this.sipHandle = null;
+    this.janus = null;
+    this.stopRecordings({ reason });
     this.stopAiMediaBridge();
     this.pendingIncomingCall = null;
     this.hasActiveCall = false;
     this.stopLocalTracks();
-    if (hadCall)
-      this.dispatchEvent(createCallDisconnectedEvent(this.callEventDetail()));
-    if (shouldRecoverDevice) this.scheduleDeviceRecovery();
+    if (hadCall) {
+      this.dispatchEvent(
+        createCallDisconnectedEvent({ ...eventDetail, reason })
+      );
+    }
   }
 
   handleCallDisconnected(extra = {}) {
@@ -1097,6 +1145,7 @@ export class JanusSipVoiceClient extends EventTarget {
       provider: this.currentProvider(),
       sessionKey: this.sessionKey,
       sipProfileId: this.sipProfileId,
+      registrationInstanceId: this.registrationInstanceId,
       registrationConfigVersion: this.sessionConfig?.registrationConfigVersion,
       inboxId: this.inboxId,
       janusSessionId: this.janusSessionId(),
@@ -1131,11 +1180,79 @@ export class JanusSipVoiceClient extends EventTarget {
     return this.sipHandle?.id || this.sipHandle?.handleId || null;
   }
 
-  captureRegistrationIdentifiers(result = {}) {
+  captureRegistrationIdentifiers(result = {}, message = {}) {
     this.janusUniqueId =
-      result.unique_id || result.uniqueId || this.janusUniqueId;
+      result.unique_id ||
+      result.uniqueId ||
+      message.unique_id ||
+      message.uniqueId ||
+      this.janusUniqueId;
     this.janusMasterId =
-      result.master_id || result.masterId || this.janusMasterId;
+      result.master_id ||
+      result.masterId ||
+      message.master_id ||
+      message.masterId ||
+      this.janusMasterId;
+  }
+
+  completeRegistration(result = {}, message = {}) {
+    if (this.registrationAckPromise) return this.registrationAckPromise;
+
+    const janusGeneration = this.janusGeneration;
+    const sipHandleGeneration = this.sipHandleGeneration;
+    this.captureRegistrationIdentifiers(result, message);
+    const ackPromise = this.markRegistered()
+      .then(() => {
+        if (
+          this.registrationTimedOut ||
+          janusGeneration !== this.janusGeneration ||
+          sipHandleGeneration !== this.sipHandleGeneration
+        ) {
+          return null;
+        }
+
+        this.clearRegistrationTimer();
+        this.registrationResolve?.(this.sessionState());
+        this.dispatchEvent(
+          createCallRegisteredEvent(this.sessionEventDetail())
+        );
+        return this.sessionState();
+      })
+      .catch(error => {
+        if (
+          janusGeneration !== this.janusGeneration ||
+          sipHandleGeneration !== this.sipHandleGeneration
+        ) {
+          return null;
+        }
+
+        this.transitionToUnregistered(
+          error?.reason || error?.message || 'presence_confirmation_failed'
+        );
+        this.registrationReject?.(error);
+        return null;
+      })
+      .finally(() => {
+        if (this.registrationAckPromise === ackPromise) {
+          this.registrationAckPromise = null;
+        }
+      });
+    this.registrationAckPromise = ackPromise;
+    return ackPromise;
+  }
+
+  transitionToUnregistered(reason = 'sip_unregistered', extra = {}) {
+    const offlinePresenceContext = this.presenceContext();
+    const detail = { ...this.sessionEventDetail(), reason, ...extra };
+    this.registered = false;
+    this.presenceHeartbeatFailureCount = 0;
+    this.clearRegistrationTimer();
+    this.stopPresenceHeartbeat();
+    this.reportPresence(false, { context: offlinePresenceContext }).catch(
+      () => null
+    );
+    this.clearRegistrationIdentifiers();
+    this.dispatchEvent(createCallUnregisteredEvent(detail));
   }
 
   clearRegistrationIdentifiers() {
@@ -1157,13 +1274,6 @@ export class JanusSipVoiceClient extends EventTarget {
 
     window.clearTimeout(this.registrationRecoveryTimer);
     this.registrationRecoveryTimer = null;
-  }
-
-  clearDeviceRecoveryTimer() {
-    if (!this.deviceRecoveryTimer) return;
-
-    window.clearTimeout(this.deviceRecoveryTimer);
-    this.deviceRecoveryTimer = null;
   }
 
   shouldRecoverRegistrationAfterCall() {
@@ -1193,12 +1303,15 @@ export class JanusSipVoiceClient extends EventTarget {
     if (!this.shouldRecoverRegistrationAfterCall()) return Promise.resolve();
 
     const sessionConfig = this.sessionConfig;
-    const inboxId = this.inboxId;
-    this.registrationRecoveryPromise = this.ensureRegistered({
+    const janusGeneration = this.janusGeneration;
+    const sipHandleGeneration = this.sipHandleGeneration;
+    const recoveryPromise = this.ensureRegistered({
       refresh: this.registered,
     })
-      .catch(async () => {
+      .catch(error => {
         if (
+          janusGeneration !== this.janusGeneration ||
+          sipHandleGeneration !== this.sipHandleGeneration ||
           this.destroyingDevice ||
           this.pendingIncomingCall ||
           this.hasActiveCall ||
@@ -1208,56 +1321,18 @@ export class JanusSipVoiceClient extends EventTarget {
           return;
         }
 
-        await this.destroyDevice({
-          preserveMicrophonePrewarm: true,
-          preserveSessionConfig: true,
-        });
-        await this.initializeDevice(sessionConfig, { inboxId });
+        this.transitionToUnregistered(
+          error?.message || 'post_call_registration_recovery_failed'
+        );
       })
-      .catch(() => {})
       .finally(() => {
-        this.registrationRecoveryPromise = null;
+        if (this.registrationRecoveryPromise === recoveryPromise) {
+          this.registrationRecoveryPromise = null;
+        }
       });
+    this.registrationRecoveryPromise = recoveryPromise;
 
-    return this.registrationRecoveryPromise;
-  }
-
-  scheduleDeviceRecovery() {
-    if (
-      !this.sessionConfig ||
-      !JanusSipVoiceClient.hasCompleteContract(this.sessionConfig)
-    ) {
-      return;
-    }
-
-    this.clearDeviceRecoveryTimer();
-    this.deviceRecoveryTimer = window.setTimeout(() => {
-      this.deviceRecoveryTimer = null;
-      this.recoverDevice();
-    }, WEBPHONE_DEVICE_RECOVERY_DELAY_MS);
-  }
-
-  recoverDevice() {
-    if (this.deviceRecoveryPromise) return this.deviceRecoveryPromise;
-    if (
-      this.destroyingDevice ||
-      !this.sessionConfig ||
-      !JanusSipVoiceClient.hasCompleteContract(this.sessionConfig)
-    ) {
-      return Promise.resolve();
-    }
-
-    const sessionConfig = this.sessionConfig;
-    const inboxId = this.inboxId;
-    this.deviceRecoveryPromise = this.initializeDevice(sessionConfig, {
-      inboxId,
-    })
-      .catch(() => {})
-      .finally(() => {
-        this.deviceRecoveryPromise = null;
-      });
-
-    return this.deviceRecoveryPromise;
+    return recoveryPromise;
   }
 
   beginIncomingAcceptWait() {
@@ -2559,30 +2634,7 @@ export class JanusSipVoiceClient extends EventTarget {
       VoiceAPI.updateWebphonePresence(registered, {
         inboxId,
         context,
-      })
-        .then(payload => {
-          if (
-            registered &&
-            JanusSipVoiceClient.isPresenceInvalidationPayload(payload) &&
-            this.isCurrentPresenceContext(context)
-          ) {
-            this.registered = false;
-            this.clearRegistrationIdentifiers();
-            this.stopPresenceHeartbeat();
-            this.dispatchEvent(
-              createCallUnregisteredEvent({
-                ...this.sessionEventDetail(),
-                reason: WEBPHONE_PRESENCE_CONTEXT_MISMATCH_REASON,
-              })
-            );
-            return this.destroyDevice({
-              preserveMicrophonePrewarm: true,
-            }).then(() => payload);
-          }
-
-          return payload;
-        })
-        .catch(() => null);
+      });
 
     const reportPromise = this.presenceReportPromise
       ? this.presenceReportPromise.then(report)
@@ -2619,28 +2671,41 @@ export class JanusSipVoiceClient extends EventTarget {
     };
   }
 
-  static isPresenceInvalidationPayload(payload = {}) {
-    return (
-      payload?.reason === WEBPHONE_PRESENCE_CONTEXT_MISMATCH_REASON ||
-      payload?.registered === false ||
-      payload?.callingSupported === false ||
-      payload?.calling_supported === false ||
-      payload?.registeredForRouting === false ||
-      payload?.registered_for_routing === false
-    );
+  static isPresenceAcknowledged(payload = {}) {
+    const accepted =
+      payload?.presence_update_accepted ?? payload?.presenceUpdateAccepted;
+    const registeredForRouting =
+      payload?.registered_for_routing ?? payload?.registeredForRouting;
+    return accepted !== false && registeredForRouting === true;
   }
 
   isCurrentPresenceContext(context = {}) {
     return JSON.stringify(this.presenceContext()) === JSON.stringify(context);
   }
 
-  markRegistered() {
+  async markRegistered() {
     this.registrationInstanceId ||=
       window.crypto?.randomUUID?.() ||
       `webphone-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const context = this.presenceContext();
+    const payload = await this.reportPresence(true, { context });
+    if (!this.isCurrentPresenceContext(context)) {
+      throw new Error('stale_presence_confirmation');
+    }
+    if (!JanusSipVoiceClient.isPresenceAcknowledged(payload)) {
+      throw Object.assign(
+        new Error(payload?.reason || 'presence_confirmation_failed'),
+        {
+          reason: payload?.reason || 'presence_confirmation_failed',
+          payload,
+        }
+      );
+    }
+
     this.registered = true;
-    this.reportPresence(true);
+    this.presenceHeartbeatFailureCount = 0;
     this.startPresenceHeartbeat();
+    return payload;
   }
 
   startPresenceHeartbeat() {
@@ -2648,49 +2713,91 @@ export class JanusSipVoiceClient extends EventTarget {
     this.presenceHeartbeatTimer = window.setInterval(() => {
       this.refreshPresenceRegistration();
     }, WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS);
+    this.sipRegistrationRefreshTimer = window.setInterval(() => {
+      this.refreshSipRegistration();
+    }, WEBPHONE_SIP_REGISTRATION_REFRESH_INTERVAL_MS);
   }
 
   refreshPresenceRegistration() {
     if (!this.registered) return Promise.resolve();
     if (this.presenceRefreshPromise) return this.presenceRefreshPromise;
 
-    this.presenceRefreshPromise = this.ensureRegistered({ refresh: true })
-      .then(() => {
-        this.reportPresence(true);
+    const context = this.presenceContext();
+    const refreshPromise = this.reportPresence(true, { context })
+      .then(payload => {
+        if (!this.isCurrentPresenceContext(context)) return payload;
+
+        if (!JanusSipVoiceClient.isPresenceAcknowledged(payload)) {
+          this.transitionToUnregistered(
+            payload?.reason || 'presence_lease_invalidated'
+          );
+        } else {
+          this.presenceHeartbeatFailureCount = 0;
+        }
+        return payload;
       })
       .catch(() => {
-        if (
-          this.initialized &&
-          this.sipHandle &&
-          this.sessionConfig &&
-          !this.destroyingDevice &&
-          !this.hasActiveCall &&
-          !this.pendingIncomingCall
-        ) {
-          return this.register()
-            .then(() => {
-              this.reportPresence(true);
-            })
-            .catch(() => {
-              this.reportPresence(false);
-            });
-        }
+        if (!this.isCurrentPresenceContext(context)) return null;
 
-        if (!this.registered) this.reportPresence(false);
+        this.presenceHeartbeatFailureCount += 1;
+        if (this.presenceHeartbeatFailureCount >= 2) {
+          this.transitionToUnregistered('presence_heartbeat_failed');
+        }
         return null;
       })
       .finally(() => {
-        this.presenceRefreshPromise = null;
+        if (this.presenceRefreshPromise === refreshPromise) {
+          this.presenceRefreshPromise = null;
+        }
       });
+    this.presenceRefreshPromise = refreshPromise;
 
-    return this.presenceRefreshPromise;
+    return refreshPromise;
+  }
+
+  refreshSipRegistration() {
+    if (!this.registered) return Promise.resolve();
+    if (this.sipRegistrationRefreshPromise) {
+      return this.sipRegistrationRefreshPromise;
+    }
+
+    const janusGeneration = this.janusGeneration;
+    const sipHandleGeneration = this.sipHandleGeneration;
+    const context = this.presenceContext();
+    const refreshPromise = this.ensureRegistered({
+      refresh: true,
+    })
+      .catch(error => {
+        if (
+          janusGeneration !== this.janusGeneration ||
+          sipHandleGeneration !== this.sipHandleGeneration ||
+          !this.isCurrentPresenceContext(context)
+        ) {
+          return null;
+        }
+        this.transitionToUnregistered(
+          error?.message || 'sip_registration_refresh_failed'
+        );
+        return null;
+      })
+      .finally(() => {
+        if (this.sipRegistrationRefreshPromise === refreshPromise) {
+          this.sipRegistrationRefreshPromise = null;
+        }
+      });
+    this.sipRegistrationRefreshPromise = refreshPromise;
+    return refreshPromise;
   }
 
   stopPresenceHeartbeat() {
-    if (!this.presenceHeartbeatTimer) return;
-
-    window.clearInterval(this.presenceHeartbeatTimer);
-    this.presenceHeartbeatTimer = null;
+    if (this.presenceHeartbeatTimer) {
+      window.clearInterval(this.presenceHeartbeatTimer);
+      this.presenceHeartbeatTimer = null;
+    }
+    if (this.sipRegistrationRefreshTimer) {
+      window.clearInterval(this.sipRegistrationRefreshTimer);
+      this.sipRegistrationRefreshTimer = null;
+    }
   }
 
   async destroyDevice({
@@ -2720,16 +2827,19 @@ export class JanusSipVoiceClient extends EventTarget {
     this.janus = null;
     this.initialized = false;
     this.registered = false;
+    this.presenceHeartbeatFailureCount = 0;
     if (shouldReportOffline) {
-      this.reportPresence(false, { context: offlinePresenceContext });
+      this.reportPresence(false, { context: offlinePresenceContext }).catch(
+        () => null
+      );
     }
     this.clearRegistrationIdentifiers();
     this.registrationPromise = null;
+    this.registrationAckPromise = null;
     this.registrationResolve = null;
     this.registrationReject = null;
     this.clearRegistrationTimer();
     this.clearRegistrationRecoveryTimer();
-    this.clearDeviceRecoveryTimer();
     this.stopPresenceHeartbeat();
     this.clearOutboundSetupTimer();
     this.pendingIncomingCall = null;

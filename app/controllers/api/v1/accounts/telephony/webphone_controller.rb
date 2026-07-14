@@ -94,6 +94,8 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       :sipHost,
       :agent_aor,
       :agentAor,
+      :registration_instance_id,
+      :registrationInstanceId,
       :registration_config_version,
       :registrationConfigVersion
     )

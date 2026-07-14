@@ -54,6 +54,15 @@ RSpec.describe Telephony::SipProfile do
   end
 
   describe '#registered_for_routing?' do
+    def browser_registration_context(profile, suffix: 'current')
+      {
+        registration_config_version: profile.registration_config_version,
+        registration_instance_id: "registration-#{suffix}",
+        janus_session_id: "janus-session-#{suffix}",
+        janus_handle_id: "janus-handle-#{suffix}"
+      }
+    end
+
     it 'lazily assigns a registration config version to legacy profiles' do
       profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
       profile.update_column(:metadata, profile.metadata.except('registration_config_version'))
@@ -84,7 +93,7 @@ RSpec.describe Telephony::SipProfile do
 
       profile.update_browser_registration!(
         registered: true,
-        registration_context: { registration_config_version: nil }
+        registration_context: browser_registration_context(profile).merge(registration_config_version: nil)
       )
 
       expect(profile.reload.registration_config_version).to be_nil
@@ -115,11 +124,18 @@ RSpec.describe Telephony::SipProfile do
 
         expect(profile.browser_registered?).to be(false)
 
-        profile.update_browser_registration!(registered: true)
+        profile.update_browser_registration!(
+          registered: true,
+          registration_context: browser_registration_context(profile)
+        )
         expect(profile.reload.browser_registered?).to be(true)
         expect(profile.registered_for_routing?).to be(true)
 
-        travel 6.minutes
+        travel 120.seconds
+        expect(profile.reload.browser_registered?).to be(true)
+        expect(profile.registered_for_routing?).to be(true)
+
+        travel 1.second
         expect(profile.reload.browser_registered?).to be(false)
         expect(profile.registered_for_routing?).to be(false)
       end
@@ -136,7 +152,10 @@ RSpec.describe Telephony::SipProfile do
       )
       old_version = profile.registration_config_version
 
-      profile.update_browser_registration!(registered: true)
+      profile.update_browser_registration!(
+        registered: true,
+        registration_context: browser_registration_context(profile)
+      )
       expect(profile.reload.registered_for_routing?).to be(true)
 
       profile.update!(sip_username: 'new-login', agent_aor: 'sip:new-login@ats01.kz.sipuni.com')
@@ -151,14 +170,36 @@ RSpec.describe Telephony::SipProfile do
 
     it 'matches unregister events to the active Janus registration instance' do
       profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
-      context = {
-        registration_config_version: profile.registration_config_version,
-        registration_instance_id: 'current-janus-registration'
-      }
+      context = browser_registration_context(profile)
       profile.update_browser_registration!(registered: true, registration_context: context)
 
       expect(profile.browser_registration_context_matches?(context)).to be(true)
       expect(profile.browser_registration_context_matches?(context.merge(registration_instance_id: 'stale-janus-registration'))).to be(false)
+    end
+
+    it 'atomically fences a competing fresh browser registration lease' do
+      profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+      stale_copy = described_class.find(profile.id)
+      current_context = browser_registration_context(profile, suffix: 'current')
+      competing_context = browser_registration_context(profile, suffix: 'competing')
+
+      expect(profile.update_browser_registration!(registered: true, registration_context: current_context)).to eq(:updated)
+      expect(stale_copy.update_browser_registration!(registered: true, registration_context: competing_context)).to eq(:conflict)
+      expect(profile.reload.metadata.dig('registration_context', 'registration_instance_id')).to eq('registration-current')
+    end
+
+    it 'allows a new browser lease after the previous lease expires' do
+      freeze_time do
+        profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+        current_context = browser_registration_context(profile, suffix: 'current')
+        replacement_context = browser_registration_context(profile, suffix: 'replacement')
+
+        profile.update_browser_registration!(registered: true, registration_context: current_context)
+        travel 3.minutes
+
+        expect(profile.update_browser_registration!(registered: true, registration_context: replacement_context)).to eq(:updated)
+        expect(profile.reload.metadata.dig('registration_context', 'registration_instance_id')).to eq('registration-replacement')
+      end
     end
   end
 end

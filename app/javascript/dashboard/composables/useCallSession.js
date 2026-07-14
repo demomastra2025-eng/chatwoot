@@ -625,6 +625,8 @@ export function useCallSession() {
         from: detail.from || detail.fromNumber || detail.from_number,
         session_key: detail.sessionKey || detail.session_key,
         sip_profile_id: detail.sipProfileId || detail.sip_profile_id,
+        registration_instance_id:
+          detail.registrationInstanceId || detail.registration_instance_id,
         registration_config_version:
           detail.registrationConfigVersion ||
           detail.registration_config_version,

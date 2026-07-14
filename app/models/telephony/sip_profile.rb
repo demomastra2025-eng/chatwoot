@@ -140,7 +140,7 @@ class Telephony::SipProfile < ApplicationRecord
     payload.compact
   end
 
-  DEFAULT_REGISTRATION_TTL = 5.minutes
+  DEFAULT_REGISTRATION_TTL = 2.minutes
   DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
   REGISTRATION_CONFIG_VERSION_KEY = 'registration_config_version'
   REGISTRATION_CONTEXT_SIGNATURE_KEY = 'registration_context_signature'
@@ -167,6 +167,11 @@ class Telephony::SipProfile < ApplicationRecord
     janus_handle_id
     janus_unique_id
     janus_master_id
+  ].freeze
+  REQUIRED_BROWSER_REGISTRATION_CONTEXT_KEYS = %w[
+    registration_instance_id
+    janus_session_id
+    janus_handle_id
   ].freeze
   REGISTRATION_CONFIG_ATTRIBUTES = %w[
     account_id
@@ -251,7 +256,40 @@ class Telephony::SipProfile < ApplicationRecord
     end
   end
 
+  def browser_registration_context_complete?(context)
+    source = context.to_h.with_indifferent_access
+
+    REQUIRED_BROWSER_REGISTRATION_CONTEXT_KEYS.all? do |key|
+      first_present(source[key], source[key.camelize(:lower)]).present?
+    end
+  end
+
   def update_browser_registration!(registered:, occurred_at: Time.current, registration_context: nil)
+    outcome = nil
+
+    with_lock do
+      reload
+      if registered && browser_registration_conflict?(registration_context)
+        outcome = :conflict
+        next
+      end
+      unless registered || browser_registration_context_matches?(registration_context)
+        outcome = :stale
+        next
+      end
+
+      persist_browser_registration!(
+        registered: registered,
+        occurred_at: occurred_at,
+        registration_context: registration_context
+      )
+      outcome = :updated
+    end
+
+    outcome
+  end
+
+  def persist_browser_registration!(registered:, occurred_at:, registration_context:)
     registration_metadata = (metadata || {}).deep_dup
     registration_metadata['registration_state'] = registered ? 'registered' : 'offline'
     registration_metadata['presence'] = registered ? 'online' : 'offline'
@@ -270,6 +308,7 @@ class Telephony::SipProfile < ApplicationRecord
 
     update!(metadata: registration_metadata, last_synced_at: occurred_at)
   end
+  private :persist_browser_registration!
 
   def registered_for_routing?
     return false unless enabled?
@@ -288,7 +327,8 @@ class Telephony::SipProfile < ApplicationRecord
                    %w[registered online available reachable active].include?(registration_state.to_s.strip.downcase)
                  end
 
-    registered && registration_fresh? && registration_stable? && registration_context_current?
+    registered && registration_fresh? && registration_stable? && registration_context_current? &&
+      browser_registration_instance_context_present?
   end
 
   private
@@ -354,6 +394,21 @@ class Telephony::SipProfile < ApplicationRecord
     return registration_config_version.blank? if signature.blank?
 
     signature == registration_context_signature
+  end
+
+  def browser_registration_conflict?(context)
+    registered_context = metadata_value('registration_context', 'registrationContext').to_h
+    return false if registered_context.blank?
+    return false unless browser_registered?
+
+    !browser_registration_context_matches?(context)
+  end
+
+  def browser_registration_instance_context_present?
+    registered_context = metadata_value('registration_context', 'registrationContext').to_h.with_indifferent_access
+    return registration_config_version.blank? if registered_context.blank?
+
+    browser_registration_context_complete?(registered_context)
   end
 
   def registration_fresh?

@@ -13,7 +13,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     account.enable_features!('channel_voice')
   end
 
-  def sip_presence_params(profile)
+  def sip_presence_params(profile, overrides = {})
     {
       sip_profile_id: profile.id,
       account_id: profile.account_id,
@@ -23,8 +23,11 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       sip_host: profile.sip_host,
       agent_aor: profile.agent_aor,
       registration_config_version: profile.registration_config_version,
+      registration_instance_id: "registration-#{profile.id}",
+      janus_session_id: "janus-session-#{profile.id}",
+      janus_handle_id: "janus-handle-#{profile.id}",
       session_key: "sip_profile:#{profile.id}"
-    }
+    }.merge(overrides)
   end
 
   def mark_sip_profile_registered!(profile)
@@ -450,12 +453,77 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
     expect(route_metadata).to include(
       'source' => 'browser_janus_sip',
+      'registration_instance_id' => "registration-#{binotel_profile.id}",
+      'registration_config_version' => binotel_profile.registration_config_version,
       'target_sip_profile_id' => binotel_profile.id,
       'target_user_id' => administrator.id,
       'operator_candidate_sip_profile_ids' => include(binotel_profile.id),
       'operator_candidate_user_ids' => include(administrator.id)
     )
     expect(binotel_profile.reload.registered_for_routing?).to be(true)
+  end
+
+  it 'rejects a stale native Janus incoming event without replacing the active browser lease' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    mark_sip_profile_registered!(binotel_profile)
+    active_context = binotel_profile.reload.metadata.fetch('registration_context')
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/incoming",
+         params: {
+           inbox_id: binotel_profile.inbox_id,
+           provider: 'binotel',
+           call_ref: 'stale-janus-binotel-incoming',
+           from: 'sip:+77470000000@sip53.binotel.com',
+           session_key: "sip_profile:#{binotel_profile.id}",
+           sip_profile_id: binotel_profile.id,
+           internal_extension: binotel_profile.internal_extension
+         }.merge(
+           sip_presence_params(
+             binotel_profile,
+             registration_instance_id: 'stale-registration-instance',
+             janus_session_id: 'stale-janus-session',
+             janus_handle_id: 'stale-janus-handle'
+           )
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('WEBPHONE_SIP_REGISTRATION_LEASE_CONFLICT')
+    expect(account.telephony_call_sessions.where('external_call_ref LIKE ?', '%stale-janus-binotel-incoming%')).to be_empty
+    expect(binotel_profile.reload.metadata.fetch('registration_context')).to eq(active_context)
+  end
+
+  it 'rejects native Janus incoming events missing any required registration identifier' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+
+    %i[
+      sip_profile_id
+      registration_config_version
+      registration_instance_id
+      janus_session_id
+      janus_handle_id
+    ].each do |missing_key|
+      call_ref = "incomplete-janus-binotel-incoming-#{missing_key}"
+      params = {
+        inbox_id: binotel_profile.inbox_id,
+        provider: 'binotel',
+        call_ref: call_ref,
+        from: 'sip:+774****0000@sip53.binotel.com',
+        session_key: "sip_profile:#{binotel_profile.id}",
+        sip_profile_id: binotel_profile.id,
+        internal_extension: binotel_profile.internal_extension
+      }.merge(sip_presence_params(binotel_profile)).except(missing_key)
+
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/incoming",
+           params: params,
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['code']).to eq('WEBPHONE_SIP_REGISTRATION_CONTEXT_INCOMPLETE')
+      expect(account.telephony_call_sessions.find_by(external_call_ref: call_ref)).to be_nil
+    end
   end
 
   it 'creates a Sipuni operator call session from native Janus SIP incoming without requiring the webhook' do
@@ -609,7 +677,13 @@ RSpec.describe 'Telephony Webphone API', type: :request do
              janus_unique_id: 'janus-unique-1',
              janus_master_id: 'janus-master-1',
              internal_extension: voice_agent_profile.internal_extension
-           }.merge(sip_presence_params(voice_agent_profile)),
+           }.merge(
+             sip_presence_params(
+               voice_agent_profile,
+               janus_session_id: 'janus-session-1',
+               janus_handle_id: 'janus-handle-1'
+             )
+           ),
            headers: headers,
            as: :json
 
@@ -705,7 +779,9 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')
-    call_session = account.telephony_call_sessions.find_by!(external_call_ref: "sipuni:janus:#{sipuni_profile.id}:raw-sipuni-ai-no-profile@91.215.136.2:8217")
+    call_session = account.telephony_call_sessions.find_by!(
+      external_call_ref: "sipuni:janus:#{sipuni_profile.id}:raw-sipuni-ai-no-profile@91.215.136.2:8217"
+    )
     expect(payload).to include(
       'route_action' => 'reject',
       'browser_join_supported' => true
@@ -994,7 +1070,73 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(legacy_binding.reload.metadata).not_to include('last_presence_source')
     expect(response.parsed_body.dig('payload', 'id')).to eq(sip_profile.id)
     expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
+    expect(response.parsed_body.dig('payload', 'presence_update_accepted')).to be(true)
     expect(response.parsed_body.dig('payload', 'calling_supported')).to be(true)
+  end
+
+  it 'rejects an online browser presence without a complete Janus registration instance' do
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '504',
+      agent_ref: 'local-profile-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone'
+    )
+    incomplete_context = sip_presence_params(sip_profile).except(:janus_handle_id)
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, inbox_id: voice_inbox.id }.merge(incomplete_context),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(sip_profile.reload.registered_for_routing?).to be(false)
+    expect(response.parsed_body['payload']).to include(
+      'registered_for_routing' => false,
+      'presence_update_accepted' => false,
+      'reason' => 'sip_profile_registration_context_incomplete'
+    )
+  end
+
+  it 'rejects a second fresh browser lease for the same SIP profile' do
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '504',
+      agent_ref: 'local-profile-504',
+      agent_aor: 'sip:504@operator.cloud.vconsult.kz',
+      availability_mode: 'browser_webphone'
+    )
+    current_context = sip_presence_params(sip_profile)
+    competing_context = current_context.merge(
+      registration_instance_id: 'competing-registration',
+      janus_session_id: 'competing-session',
+      janus_handle_id: 'competing-handle'
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, inbox_id: voice_inbox.id }.merge(current_context),
+         headers: headers,
+         as: :json
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, inbox_id: voice_inbox.id }.merge(competing_context),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include(
+      'registered_for_routing' => true,
+      'presence_update_accepted' => false,
+      'reason' => 'sip_profile_registration_lease_conflict'
+    )
+    expect(sip_profile.reload.metadata.dig('registration_context', 'registration_instance_id')).to eq(
+      current_context[:registration_instance_id]
+    )
   end
 
   it 'rejects stale browser registration context after SIP profile changes' do
@@ -1062,7 +1204,11 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(sip_profile.reload.registered_for_routing?).to be(true)
-    expect(response.parsed_body.dig('payload', 'registered_for_routing')).to be(true)
+    expect(response.parsed_body['payload']).to include(
+      'registered_for_routing' => true,
+      'presence_update_accepted' => false,
+      'reason' => 'sip_profile_registration_context_stale'
+    )
   end
 
   it 'records no-inbox browser registration presence on the only browser SIP profile' do

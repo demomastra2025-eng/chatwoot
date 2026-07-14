@@ -29,24 +29,40 @@ class Telephony::WebphoneService
     return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
     return unsupported_webphone_payload(reason: 'ambiguous_sip_profile_presence') if ambiguous_no_inbox_sip_presence?(user, inbox, operator_identity)
 
+    if registered && !browser_registration_context_complete?(operator_identity.record, registration_context)
+      return unsupported_webphone_payload(
+        inbox: inbox,
+        reason: 'sip_profile_registration_context_incomplete'
+      ).merge(presence_update_accepted: false)
+    end
+
     unless registration_context_matches?(
       operator_identity.record, registration_context
     )
-      return unsupported_webphone_payload(inbox: inbox,
-                                          reason: 'sip_profile_registration_context_mismatch')
+      return unsupported_webphone_payload(
+        inbox: inbox,
+        reason: 'sip_profile_registration_context_mismatch'
+      ).merge(presence_update_accepted: false)
     end
 
-    if !registered && !browser_registration_context_matches?(operator_identity.record, registration_context)
-      return presence_payload(inbox, operator_identity)
-    end
-
-    operator_identity.record.update_browser_registration!(registered: registered, registration_context: registration_context)
-    presence_payload(inbox, operator_identity)
+    outcome = operator_identity.record.update_browser_registration!(
+      registered: registered,
+      registration_context: registration_context
+    )
+    presence_update_payload(inbox, operator_identity, outcome)
   end
 
   def report_browser_sip_incoming!(user:, inbox:, params:)
     provider = browser_sip_incoming_provider!(inbox)
     context = browser_sip_incoming_context(provider: provider, user: user, inbox: inbox, params: params)
+    unless browser_registration_context_complete?(context[:profile], params)
+      raise Telephony::Error.new(
+        code: 'WEBPHONE_SIP_REGISTRATION_CONTEXT_INCOMPLETE',
+        message: 'Browser SIP registration context is incomplete',
+        status: :unprocessable_content
+      )
+    end
+
     unless registration_context_matches?(context[:profile], params)
       raise Telephony::Error.new(
         code: 'WEBPHONE_SIP_REGISTRATION_CONTEXT_MISMATCH',
@@ -55,7 +71,15 @@ class Telephony::WebphoneService
       )
     end
 
-    context[:profile].update_browser_registration!(registered: true, registration_context: params)
+    registration_outcome = context[:profile].update_browser_registration!(registered: true, registration_context: params)
+    unless registration_outcome == :updated
+      raise Telephony::Error.new(
+        code: 'WEBPHONE_SIP_REGISTRATION_LEASE_CONFLICT',
+        message: 'Browser SIP registration lease belongs to another session',
+        status: :conflict,
+        details: { outcome: registration_outcome }
+      )
+    end
 
     decision = perform_browser_sip_incoming_route(context)
     call_session = ensure_browser_sip_incoming_call_session!(context, decision)
@@ -327,6 +351,27 @@ class Telephony::WebphoneService
     return true unless record.is_a?(Telephony::SipProfile)
 
     record.browser_registration_context_matches?(context)
+  end
+
+  def browser_registration_context_complete?(record, context)
+    return true unless record.is_a?(Telephony::SipProfile)
+
+    required_values = [
+      params_value(context, 'sip_profile_id', 'sipProfileId'),
+      params_value(context, 'registration_config_version', 'registrationConfigVersion'),
+      params_value(context, 'registration_instance_id', 'registrationInstanceId'),
+      params_value(context, 'janus_session_id', 'janusSessionId'),
+      params_value(context, 'janus_handle_id', 'janusHandleId')
+    ]
+    required_values.all?(&:present?) && record.browser_registration_context_complete?(context)
+  end
+
+  def presence_update_payload(inbox, operator_identity, outcome)
+    payload = presence_payload(inbox, operator_identity)
+    return payload.merge(presence_update_accepted: true) if outcome == :updated
+
+    reason = outcome == :conflict ? 'sip_profile_registration_lease_conflict' : 'sip_profile_registration_context_stale'
+    payload.merge(presence_update_accepted: false, reason: reason)
   end
 
   def presence_payload(inbox, operator_identity)
@@ -757,6 +802,8 @@ class Telephony::WebphoneService
       janus_handle_id: params_value(params, 'janus_handle_id', 'janusHandleId'),
       janus_unique_id: params_value(params, 'janus_unique_id', 'janusUniqueId'),
       janus_master_id: params_value(params, 'janus_master_id', 'janusMasterId'),
+      registration_instance_id: params_value(params, 'registration_instance_id', 'registrationInstanceId'),
+      registration_config_version: params_value(params, 'registration_config_version', 'registrationConfigVersion'),
       provider_connection_id: profile.provider_connection_id,
       telephony_sip_profile_id: profile.id,
       telephony_sip_profile_kind: profile.profile_kind,
