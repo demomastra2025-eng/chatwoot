@@ -114,6 +114,8 @@
         "DELAY_NOTE": "0 means the touch is created immediately when the automation runs.",
         "AUTO_CANCEL_LABEL": "Cancel after incoming reply",
         "AUTO_CANCEL_NOTE": "Only cancel this touch if the contact replies in the same target channel before execution.",
+        "POST_DELIVERY_RESOLVE_LABEL": "Сәтті жіберілгеннен кейін диалогты жабу",
+        "POST_DELIVERY_RESOLVE_NOTE": "Диалог арна жіберуді растағаннан кейін ғана жабылады. Қате немесе кейінге қалдырылған қайта жіберу диалогты жаппайды.",
         "TIMEZONE_LABEL": "Timezone",
         "RELATIVE_UNIT_LABEL": "Unit",
         "ATTACHMENTS_LABEL": "Attachments",

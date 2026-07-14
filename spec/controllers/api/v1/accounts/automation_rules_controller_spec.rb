@@ -130,6 +130,28 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(account.automation_rules.count).to eq(0)
       end
 
+      it 'persists the safe post-delivery action for a one-time conversation touch' do
+        params[:actions] = [
+          {
+            action_name: :create_touch,
+            action_params: {
+              body: 'Final follow-up',
+              delay_minutes: 10,
+              post_delivery_action: 'resolve_conversation'
+            }
+          }
+        ]
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: params
+
+        expect(response).to have_http_status(:success)
+        expect(account.automation_rules.last.actions.first['action_params']).to include(
+          'post_delivery_action' => 'resolve_conversation'
+        )
+      end
+
       it 'Saves for automation_rules for account with country_code and browser_language conditions' do
         expect(account.automation_rules.count).to eq(0)
 
@@ -636,6 +658,37 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(body[:payload][:description]).to eq('Update description')
         expect(body[:payload][:conditions].size).to eq(1)
         expect(body[:payload][:actions].size).to eq(1)
+      end
+
+      it 'round-trips direct-hash post-delivery action params on update' do
+        params = {
+          event_name: 'conversation_created',
+          actions: [
+            {
+              action_name: 'create_touch',
+              action_params: {
+                timing_mode: 'relative',
+                relative_anchor: 'conversation.created_at',
+                relative_offset_seconds: 3600,
+                repeat_mode: 'once',
+                timezone: 'UTC',
+                body: 'Final follow-up',
+                post_delivery_action: 'resolve_conversation'
+              }
+            }
+          ]
+        }
+
+        patch "/api/v1/accounts/#{account.id}/automation_rules/#{automation_rule.id}",
+              headers: administrator.create_new_auth_token,
+              params: params,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('payload', 'actions', 0, 'action_params', 'post_delivery_action'))
+          .to eq('resolve_conversation')
+        expect(automation_rule.reload.actions.dig(0, 'action_params', 'post_delivery_action'))
+          .to eq('resolve_conversation')
       end
 
       it 'returns for updated active flag for automation_rule' do

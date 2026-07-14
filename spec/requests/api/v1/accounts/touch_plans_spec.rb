@@ -65,6 +65,52 @@ RSpec.describe 'Touch Plans API', type: :request do
     expect(account.reminder_groups.count).to eq(1)
   end
 
+  it 'round-trips a conversation post-delivery action in a touch plan' do
+    post path,
+         params: {
+           name: 'Final conversation follow-up',
+           entity_kinds: ['conversation'],
+           touches: [
+             {
+               content_kind: 'free_text',
+               timing_mode: 'absolute',
+               repeat_mode: 'once',
+               scheduled_at: 1.hour.from_now.iso8601,
+               timezone: 'UTC',
+               body: 'Final follow-up',
+               post_delivery_action: 'resolve_conversation'
+             }
+           ]
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'touches', 0, 'post_delivery_action')).to eq('resolve_conversation')
+    expect(account.reminder_groups.sole.touches.first['post_delivery_action']).to eq('resolve_conversation')
+  end
+
+  it 'rejects post-delivery actions on non-conversation touch plans' do
+    post path,
+         params: {
+           name: 'Invalid appointment follow-up',
+           entity_kinds: ['appointment'],
+           touches: [
+             {
+               action_type: 'send_message',
+               repeat_mode: 'once',
+               body: 'Should not resolve a related conversation',
+               post_delivery_action: 'resolve_conversation'
+             }
+           ]
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(account.reminder_groups).to be_empty
+  end
+
   it 'creates an assistant-scoped touch plan' do
     post path,
          params: {

@@ -60,6 +60,7 @@ const DEFAULT_TOUCH_PARAMS = {
   timing_mode: 'relative',
   timezone: BROWSER_TIMEZONE,
   auto_cancel_on_incoming: false,
+  post_delivery_action: '',
 };
 
 const normalizeLegacyParams = raw => {
@@ -378,7 +379,10 @@ export default {
         return this.normalizedValue.repeat_mode;
       },
       set(value) {
-        this.emitValue({ repeat_mode: value });
+        this.emitValue({
+          repeat_mode: value,
+          ...(value === 'once' ? {} : { post_delivery_action: '' }),
+        });
       },
     },
     timezone: {
@@ -395,6 +399,19 @@ export default {
       },
       set(value) {
         this.emitValue({ auto_cancel_on_incoming: value });
+      },
+    },
+    resolveConversationAfterDelivery: {
+      get() {
+        return (
+          this.normalizedValue.post_delivery_action === 'resolve_conversation'
+        );
+      },
+      set(value) {
+        this.emitValue({
+          post_delivery_action: value ? 'resolve_conversation' : '',
+          ...(value ? { repeat_mode: 'once', repeat_until_at: '' } : {}),
+        });
       },
     },
     targetInboxId: {
@@ -752,6 +769,14 @@ export default {
 
       if (cleaned.repeat_mode === 'once') {
         cleaned.repeat_until_at = '';
+      }
+
+      if (
+        this.entityKey !== 'conversation' ||
+        cleaned.repeat_mode !== 'once' ||
+        !cleaned.post_delivery_action
+      ) {
+        delete cleaned.post_delivery_action;
       }
 
       return cleaned;
@@ -1152,6 +1177,33 @@ export default {
               $t(
                 'OUTBOUND_WORKSPACE.TOUCH_EDITOR.FIELDS.AUTO_CANCEL_DESCRIPTION'
               )
+            }}
+          </p>
+        </div>
+      </div>
+    </SchedulingFormFieldGroup>
+
+    <SchedulingFormFieldGroup
+      v-if="entityKey === 'conversation'"
+      :framed="false"
+    >
+      <div
+        class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3"
+      >
+        <Checkbox
+          class="mt-0.5 shrink-0"
+          :model-value="resolveConversationAfterDelivery"
+          @update:model-value="resolveConversationAfterDelivery = $event"
+        />
+        <div class="min-w-0">
+          <p class="mb-1 text-sm font-medium text-n-slate-12">
+            {{
+              $t('AUTOMATION.ACTION.TOUCH_EDITOR.POST_DELIVERY_RESOLVE_LABEL')
+            }}
+          </p>
+          <p class="mb-0 text-xs leading-5 text-n-slate-10">
+            {{
+              $t('AUTOMATION.ACTION.TOUCH_EDITOR.POST_DELIVERY_RESOLVE_NOTE')
             }}
           </p>
         </div>

@@ -19,6 +19,7 @@ class Reminders::ApplyGroupService
     template_params
     metadata
     auto_cancel_on_incoming
+    post_delivery_action
     target_inbox_id
     target_contact_id
     target_contact_inbox_id
@@ -37,18 +38,11 @@ class Reminders::ApplyGroupService
   def perform
     raise ArgumentError, 'Touch plan does not support this entity kind' unless reminder_group.entity_kind_supported?(entity_kind)
 
-    reminder_group.touches.map do |definition|
-      normalized_definition = Reminders::DefinitionNormalizer.call(definition)
-      attributes = touch_attributes_from(normalized_definition)
-      reminder = account.reminders.create!(
-        attributes.merge(
-          creator: actor,
-          remindable: remindable,
-          reminder_group: reminder_group
-        )
-      )
-      reminder.approve! if reminder.draft? && reminder.ready_for_pending?
-      reminder
+    definitions = reminder_group.touches.map { |definition| Reminders::DefinitionNormalizer.call(definition) }
+    definitions.each { |definition| validate_post_delivery_action!(definition) }
+
+    account.reminders.transaction do
+      definitions.map { |definition| create_reminder!(definition) }
     end
   end
 
@@ -69,8 +63,23 @@ class Reminders::ApplyGroupService
     end
   end
 
+  def create_reminder!(definition)
+    reminder = account.reminders.create!(
+      touch_attributes_from(definition).merge(
+        creator: reminder_creator,
+        remindable: remindable,
+        reminder_group: reminder_group
+      )
+    )
+    reminder.mark_automation_provenance!(actor) if actor.is_a?(AutomationRule)
+    reminder.approve! if reminder.draft? && reminder.ready_for_pending?
+    reminder
+  end
+
   def touch_attributes_from(definition)
     attributes = definition.with_indifferent_access.slice(*TOUCH_ATTRIBUTE_KEYS)
+    attributes[:action_type] = attributes[:action_type].presence || 'send_message'
+    attributes[:repeat_mode] = attributes[:repeat_mode].presence || 'once'
     explicit_auto_cancel = attributes.key?(:auto_cancel_on_incoming)
     attributes[:auto_cancel_on_incoming] = Reminders::BooleanParam.call(
       attributes[:auto_cancel_on_incoming],
@@ -83,5 +92,26 @@ class Reminders::ApplyGroupService
       'auto_cancel_on_incoming_explicit' => attributes[:auto_cancel_on_incoming]
     )
     attributes
+  end
+
+  def validate_post_delivery_action!(definition)
+    params = definition.with_indifferent_access
+    action = params[:post_delivery_action].to_s.presence
+    return if action.blank?
+
+    return if supported_post_delivery_action?(params, action)
+
+    raise ArgumentError, 'Touch plan post_delivery_action is invalid'
+  end
+
+  def supported_post_delivery_action?(params, action)
+    entity_kind == 'conversation' &&
+      action.in?(Reminder::POST_DELIVERY_ACTIONS) &&
+      (params[:action_type].presence || 'send_message').to_s == 'send_message' &&
+      (params[:repeat_mode].presence || 'once').to_s == 'once'
+  end
+
+  def reminder_creator
+    actor if actor.is_a?(User)
   end
 end

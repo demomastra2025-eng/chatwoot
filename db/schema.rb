@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_13_053000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_14_120643) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2273,6 +2273,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_13_053000) do
     t.boolean "manual_schedule_override", default: false, null: false
     t.integer "schedule_revision", default: 0, null: false
     t.datetime "last_materialized_anchor_at"
+    t.string "post_delivery_action"
     t.index ["account_id", "fingerprint"], name: "idx_reminders_on_account_fingerprint"
     t.index ["account_id", "owner_id", "scheduled_at"], name: "idx_reminders_on_account_owner_scheduled"
     t.index ["account_id", "repeat_mode", "scheduled_at"], name: "idx_reminders_on_account_repeat_scheduled"
@@ -2287,6 +2288,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_13_053000) do
     t.index ["target_contact_inbox_id"], name: "index_reminders_on_target_contact_inbox_id"
     t.index ["target_conversation_id"], name: "index_reminders_on_target_conversation_id"
     t.index ["target_inbox_id"], name: "index_reminders_on_target_inbox_id"
+    t.check_constraint "post_delivery_action IS NULL OR post_delivery_action::text = 'resolve_conversation'::text AND action_type = 0 AND repeat_mode = 0 AND remindable_type::text = 'Conversation'::text AND remindable_id IS NOT NULL AND conversation_id = remindable_id AND target_conversation_id = remindable_id", name: "reminders_post_delivery_action_supported"
   end
 
   create_table "reporting_events", force: :cascade do |t|

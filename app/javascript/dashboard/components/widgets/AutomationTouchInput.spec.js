@@ -93,10 +93,50 @@ describe('AutomationTouchInput', () => {
     expect(wrapper.vm.normalizedValue.relative_time_of_day).toBe('');
     expect(wrapper.vm.normalizedValue.auto_cancel_on_incoming).toBe(false);
     expect(wrapper.vm.autoCancelOnIncoming).toBe(false);
+    expect(wrapper.vm.resolveConversationAfterDelivery).toBe(false);
     expect(wrapper.vm.contentModeTabs.map(tab => tab.id)).toEqual([
       'free_text',
       'channel_template',
     ]);
+  });
+
+  it('enables post-delivery resolution only for one-time conversation touches', async () => {
+    const wrapper = mountComponent({
+      modelValue: {
+        body: 'Final follow-up',
+        timing_mode: 'absolute',
+        scheduled_at: '2026-07-15T10:00:00.000Z',
+        repeat_mode: 'daily',
+      },
+    });
+
+    wrapper.vm.resolveConversationAfterDelivery = true;
+    let payload = await applyLastPayload(wrapper);
+
+    expect(payload).toMatchObject({
+      post_delivery_action: 'resolve_conversation',
+      repeat_mode: 'once',
+      repeat_until_at: '',
+    });
+
+    wrapper.vm.repeatMode = 'weekly';
+    payload = wrapper.emitted('update:modelValue').at(-1)[0];
+    expect(payload).not.toHaveProperty('post_delivery_action');
+
+    const appointmentWrapper = mountComponent({
+      eventName: 'appointment_created',
+      modelValue: {
+        body: 'Appointment follow-up',
+        post_delivery_action: 'resolve_conversation',
+      },
+    });
+
+    expect(
+      appointmentWrapper.vm.cleanPayload(appointmentWrapper.vm.normalizedValue)
+    ).not.toHaveProperty('post_delivery_action');
+    expect(appointmentWrapper.html()).not.toContain(
+      'AUTOMATION.ACTION.TOUCH_EDITOR.POST_DELIVERY_RESOLVE_LABEL'
+    );
   });
 
   it('hides the descriptive header and touch type selector while forcing message touches', () => {

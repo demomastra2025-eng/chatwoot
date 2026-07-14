@@ -114,6 +114,8 @@
         "DELAY_NOTE": "0 sends the touch immediately after the automation triggers.",
         "AUTO_CANCEL_LABEL": "Auto-cancel on incoming reply",
         "AUTO_CANCEL_NOTE": "Cancel this touch if the contact replies in the same channel before it executes.",
+        "POST_DELIVERY_RESOLVE_LABEL": "Close conversation after a successful send",
+        "POST_DELIVERY_RESOLVE_NOTE": "The conversation closes only after the channel confirms the send. A failure or deferred retry will not close it.",
         "TIMEZONE_LABEL": "Timezone",
         "RELATIVE_UNIT_LABEL": "Unit",
         "ATTACHMENTS_LABEL": "Attachments",

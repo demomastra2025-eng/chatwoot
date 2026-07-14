@@ -26,6 +26,7 @@ module Outbound::PayloadBuilder
       timezone: reminder.timezone,
       body: reminder.body,
       instructions: reminder.instructions,
+      post_delivery_action: reminder.post_delivery_action,
       attachments: reminder.attachments,
       template_params: reminder.template_params,
       metadata: reminder.metadata.except(*Reminder::INTERNAL_METADATA_KEYS),

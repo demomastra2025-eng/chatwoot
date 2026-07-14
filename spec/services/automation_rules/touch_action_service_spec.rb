@@ -15,7 +15,12 @@ RSpec.describe AutomationRules::TouchActionService do
 
       expect(touch).to be_pending
       expect(touch.auto_cancel_on_incoming).to be(false)
-      expect(touch.metadata).to include('touch_source' => 'automation', 'automation_rule_id' => rule.id)
+      expect(touch.metadata).to include(
+        'touch_source' => 'automation',
+        'automation_rule_id' => rule.id,
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
+        Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id
+      )
     end
 
     it 'stores an explicit auto-cancel flag when enabled' do
@@ -31,6 +36,73 @@ RSpec.describe AutomationRules::TouchActionService do
       expect(touch).to be_pending
       expect(touch.body).to eq('UI payload follow up')
       expect(touch.scheduled_at).to be_within(2.seconds).of(5.minutes.from_now)
+    end
+
+    it 'persists the safe post-delivery action for a one-time conversation touch' do
+      touch = service.create_touch(
+        body: 'Final follow-up',
+        delay_minutes: 5,
+        action_type: '',
+        repeat_mode: '',
+        post_delivery_action: 'resolve_conversation'
+      )
+
+      expect(touch.post_delivery_action).to eq('resolve_conversation')
+      expect(touch).to be_send_message
+      expect(touch).to be_once
+    end
+
+    it 'rejects unsupported or recurring post-delivery actions' do
+      expect do
+        service.create_touch(
+          body: 'Unsafe follow-up',
+          delay_minutes: 5,
+          post_delivery_action: 'send_webhook'
+        )
+      end.to raise_error(ArgumentError, 'create_touch post_delivery_action is invalid')
+
+      expect do
+        service.create_touch(
+          body: 'Recurring follow-up',
+          scheduled_at: 1.day.from_now,
+          repeat_mode: 'daily',
+          post_delivery_action: 'resolve_conversation'
+        )
+      end.to raise_error(ArgumentError, 'create_touch post_delivery_action requires a one-time touch')
+
+      expect do
+        service.create_touch(
+          action_type: 'ai_agent_wakeup',
+          instructions: 'Wake the agent',
+          delay_minutes: 5,
+          post_delivery_action: 'resolve_conversation'
+        )
+      end.to raise_error(ArgumentError, 'create_touch post_delivery_action is invalid')
+    end
+
+    it 'rejects conversation resolution for a non-conversation automation entity' do
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        conversation: conversation,
+        starts_at: 2.hours.from_now,
+        ends_at: 3.hours.from_now
+      )
+      appointment_service = described_class.new(
+        rule: rule,
+        account: account,
+        record: appointment,
+        entity_kind: 'appointment'
+      )
+
+      expect do
+        appointment_service.create_touch(
+          body: 'Appointment follow-up',
+          delay_minutes: 5,
+          post_delivery_action: 'resolve_conversation'
+        )
+      end.to raise_error(ArgumentError, 'create_touch post_delivery_action is invalid')
     end
 
     it 'creates a relative AI-authored touch with full touch timing params' do

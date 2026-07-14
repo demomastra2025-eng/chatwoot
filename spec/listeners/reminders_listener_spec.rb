@@ -139,4 +139,18 @@ RSpec.describe RemindersListener do
       expect(touch.reload).to be_pending
     end
   end
+
+  describe '#message_updated' do
+    it 'delegates provider delivery acknowledgement handling' do
+      message = create(:message, account: account, inbox: inbox, conversation: conversation, message_type: :outgoing)
+      event = Events::Base.new('message_updated', Time.zone.now, message: message)
+      service = instance_double(Reminders::PostDeliveryActionService, perform: true)
+
+      allow(Reminders::PostDeliveryActionService).to receive(:new).with(message: message).and_return(service)
+
+      listener.message_updated(event)
+
+      expect(service).to have_received(:perform).once
+    end
+  end
 end

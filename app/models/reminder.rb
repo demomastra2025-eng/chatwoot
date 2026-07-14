@@ -17,6 +17,7 @@
 #  last_materialized_anchor_at :datetime
 #  manual_schedule_override    :boolean          default(FALSE), not null
 #  metadata                    :jsonb            not null
+#  post_delivery_action        :string
 #  processing_started_at       :datetime
 #  relative_anchor             :string
 #  relative_offset_seconds     :integer          default(0), not null
@@ -82,11 +83,22 @@ class Reminder < ApplicationRecord
   PROCESSING_CLAIM_KEY = 'processing_claim_token'.freeze
   DELIVERY_MATERIALIZED_MESSAGE_ID_KEY = 'delivery_materialized_message_id'.freeze
   DELIVERY_DISPATCHED_MESSAGE_ID_KEY = 'delivery_dispatched_message_id'.freeze
-  INTERNAL_METADATA_KEYS = [
+  POST_DELIVERY_ACTION_MESSAGE_ID_KEY = 'post_delivery_action_message_id'.freeze
+  POST_DELIVERY_ACTION_EXECUTED_AT_KEY = 'post_delivery_action_executed_at'.freeze
+  POST_DELIVERY_ACTION_RESOLVE_CONVERSATION = 'resolve_conversation'.freeze
+  POST_DELIVERY_ACTIONS = [POST_DELIVERY_ACTION_RESOLVE_CONVERSATION].freeze
+  POST_DELIVERY_AUDIT_SOURCE_KEY = 'post_delivery_audit_source'.freeze
+  POST_DELIVERY_AUTOMATION_RULE_ID_KEY = 'post_delivery_automation_rule_id'.freeze
+  TRANSIENT_METADATA_KEYS = [
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
-    DELIVERY_DISPATCHED_MESSAGE_ID_KEY
+    DELIVERY_DISPATCHED_MESSAGE_ID_KEY,
+    POST_DELIVERY_ACTION_MESSAGE_ID_KEY,
+    POST_DELIVERY_ACTION_EXECUTED_AT_KEY
   ].freeze
+  INTERNAL_METADATA_KEYS = (
+    TRANSIENT_METADATA_KEYS + [POST_DELIVERY_AUDIT_SOURCE_KEY, POST_DELIVERY_AUTOMATION_RULE_ID_KEY]
+  ).freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
   RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY = 'fixed_time_of_day'.freeze
   RELATIVE_TIME_MODES = [
@@ -165,11 +177,13 @@ class Reminder < ApplicationRecord
   validates :timezone, inclusion: { in: TZInfo::Timezone.all_identifiers }
   validates :relative_time_mode, inclusion: { in: RELATIVE_TIME_MODES }
   validates :relative_anchor, inclusion: { in: RELATIVE_ANCHORS }, allow_blank: true
+  validates :post_delivery_action, inclusion: { in: POST_DELIVERY_ACTIONS }, allow_blank: true
   validate :validate_account_matches
   validate :validate_json_field_shapes
   validate :validate_content_requirements
   validate :validate_delivery_policy
   validate :validate_repeat_requirements
+  validate :validate_post_delivery_action
   validate :validate_relative_time_of_day
   validate :validate_open_duplicate_absence
 
@@ -209,7 +223,7 @@ class Reminder < ApplicationRecord
           cancelled_at: nil,
           processing_started_at: nil,
           last_error: nil,
-          metadata: metadata.to_h.except(*INTERNAL_METADATA_KEYS)
+          metadata: metadata.to_h.except(*TRANSIENT_METADATA_KEYS)
         )
       end
     end
@@ -236,7 +250,7 @@ class Reminder < ApplicationRecord
 
   def mark_processing!
     claim_token = SecureRandom.uuid
-    claim_metadata = metadata.to_h.except(*INTERNAL_METADATA_KEYS)
+    claim_metadata = metadata.to_h.except(*TRANSIENT_METADATA_KEYS)
     with_internal_metadata_write do
       update!(
         status: :processing,
@@ -256,6 +270,33 @@ class Reminder < ApplicationRecord
     processing? && metadata.to_h[DELIVERY_MATERIALIZED_MESSAGE_ID_KEY].present?
   end
 
+  def delivery_materialized_for?(message_id)
+    metadata.to_h[DELIVERY_MATERIALIZED_MESSAGE_ID_KEY].to_s == message_id.to_s
+  end
+
+  def post_delivery_conversation
+    return unless remindable.is_a?(Conversation)
+    return unless conversation_id == remindable.id
+    return unless target_conversation_id == remindable.id
+
+    remindable
+  end
+
+  def mark_automation_provenance!(automation_rule)
+    unless automation_rule.is_a?(AutomationRule) && automation_rule.account_id == account_id
+      raise ArgumentError, 'Automation rule must belong to the reminder account'
+    end
+
+    with_internal_metadata_write do
+      update!(
+        metadata: metadata.to_h.merge(
+          POST_DELIVERY_AUTOMATION_RULE_ID_KEY => automation_rule.id,
+          POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation'
+        )
+      )
+    end
+  end
+
   def mark_delivery_materialized!(message_id)
     with_internal_metadata_write do
       update!(metadata: metadata.to_h.merge(DELIVERY_MATERIALIZED_MESSAGE_ID_KEY => message_id))
@@ -269,6 +310,21 @@ class Reminder < ApplicationRecord
   def mark_delivery_dispatched!(message_id)
     with_internal_metadata_write do
       update!(metadata: metadata.to_h.merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id))
+    end
+  end
+
+  def post_delivery_action_executed_for?(message_id)
+    metadata.to_h[POST_DELIVERY_ACTION_MESSAGE_ID_KEY].to_s == message_id.to_s
+  end
+
+  def mark_post_delivery_action_executed!(message_id)
+    with_internal_metadata_write do
+      update!(
+        metadata: metadata.to_h.merge(
+          POST_DELIVERY_ACTION_MESSAGE_ID_KEY => message_id,
+          POST_DELIVERY_ACTION_EXECUTED_AT_KEY => Time.current.iso8601
+        )
+      )
     end
   end
 
@@ -476,6 +532,7 @@ class Reminder < ApplicationRecord
     self.attachments = Array(attachments).compact
     self.template_params = (template_params || {}).to_h
     self.metadata = (metadata || {}).to_h
+    self.post_delivery_action = post_delivery_action.presence
   end
 
   def preserve_internal_metadata
@@ -531,6 +588,7 @@ class Reminder < ApplicationRecord
       relative_time_of_day,
       content_kind,
       text_mode,
+      post_delivery_action,
       body.to_s.strip,
       instructions.to_s.strip,
       template_params.to_json,
@@ -725,6 +783,15 @@ class Reminder < ApplicationRecord
     return unless repeat_until_at.present? && scheduled_at.present? && repeat_until_at <= scheduled_at
 
     errors.add(:repeat_until_at, 'must be after the first scheduled time')
+  end
+
+  def validate_post_delivery_action
+    return if post_delivery_action.blank?
+
+    errors.add(:post_delivery_action, 'is only supported for message touches') unless send_message?
+    errors.add(:post_delivery_action, 'is only supported for one-time touches') unless once?
+    errors.add(:post_delivery_action, 'is only supported for conversation touches') unless remindable.is_a?(Conversation)
+    errors.add(:post_delivery_action, 'requires matching conversation references') if post_delivery_conversation.blank?
   end
 
   def validate_relative_time_of_day

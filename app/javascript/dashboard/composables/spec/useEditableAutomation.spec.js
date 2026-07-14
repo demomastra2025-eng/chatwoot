@@ -353,6 +353,26 @@ describe('useEditableAutomation', () => {
     expect(formatted.actions).toEqual(automation.actions);
   });
 
+  it('preserves direct-hash touch params when editing an automation', () => {
+    const { formatAutomation } = useEditableAutomation();
+    const actionParams = {
+      body: 'Final follow-up',
+      post_delivery_action: 'resolve_conversation',
+      repeat_mode: 'once',
+    };
+    const automation = {
+      event_name: 'conversation_created',
+      conditions: [],
+      actions: [{ action_name: 'create_touch', action_params: actionParams }],
+    };
+
+    const formatted = formatAutomation(automation, [], {}, [
+      { key: 'create_touch', inputType: 'touch' },
+    ]);
+
+    expect(formatted.actions[0].action_params).toEqual(actionParams);
+  });
+
   it('rehydrates last responding agent as a selected action option', () => {
     const { formatAutomation } = useEditableAutomation();
 

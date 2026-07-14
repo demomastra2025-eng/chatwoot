@@ -134,6 +134,7 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
         :body,
         :instructions,
         :auto_cancel_on_incoming,
+        :post_delivery_action,
         :target_inbox_id,
         :target_contact_id,
         :target_contact_inbox_id,

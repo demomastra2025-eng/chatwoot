@@ -117,8 +117,14 @@ export function useEditableAutomation() {
    * @param {Array} automationActionTypes - List of available automation action types.
    * @returns {Array|Object} Generated actions array or object based on input type.
    */
+  const normalizeActionParams = params => {
+    if (Array.isArray(params)) return params;
+    if (params && typeof params === 'object') return [params];
+    return [];
+  };
+
   const generateActionsArray = (action, automation, automationActionTypes) => {
-    const params = action.action_params;
+    const params = normalizeActionParams(action.action_params);
     const inputType = automationActionTypes.find(
       item => item.key === action.action_name
     ).inputType;
@@ -154,12 +160,19 @@ export function useEditableAutomation() {
    * @returns {Array} An array of manifested actions.
    */
   const manifestActions = (automation, automationActionTypes) => {
-    return automation.actions.map(action => ({
-      ...action,
-      action_params: action.action_params.length
-        ? generateActionsArray(action, automation, automationActionTypes)
-        : [],
-    }));
+    return automation.actions.map(action => {
+      const actionParams = normalizeActionParams(action.action_params);
+      return {
+        ...action,
+        action_params: actionParams.length
+          ? generateActionsArray(
+              { ...action, action_params: actionParams },
+              automation,
+              automationActionTypes
+            )
+          : [],
+      };
+    });
   };
 
   /**

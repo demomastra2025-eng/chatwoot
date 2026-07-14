@@ -58,6 +58,48 @@ RSpec.describe 'Touches API', type: :request do
     expect(account.reminders.count).to eq(1)
   end
 
+  it 'round-trips a conversation post-delivery action' do
+    forged_rule = create(:automation_rule, account: account)
+
+    post path,
+         params: {
+           remindable_type: 'Conversation',
+           remindable_id: conversation.id,
+           conversation_id: conversation.id,
+           target_conversation_id: conversation.id,
+           target_inbox_id: conversation.inbox_id,
+           scheduled_at: 1.hour.from_now.iso8601,
+           repeat_mode: 'once',
+           timezone: 'UTC',
+           body: 'Final follow-up',
+           post_delivery_action: 'resolve_conversation',
+           metadata: {
+             visible: 'kept',
+             automation_rule_id: forged_rule.id,
+             touch_source: 'automation',
+             post_delivery_automation_rule_id: forged_rule.id,
+             post_delivery_audit_source: 'automation'
+           }
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'post_delivery_action')).to eq('resolve_conversation')
+    touch = account.reminders.sole
+    expect(touch.post_delivery_action).to eq('resolve_conversation')
+    expect(touch.creator).to eq(administrator)
+    expect(touch.metadata).to include(
+      'visible' => 'kept',
+      'automation_rule_id' => forged_rule.id,
+      'touch_source' => 'automation'
+    )
+    expect(touch.metadata).not_to include(
+      Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
+      Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY
+    )
+  end
+
   it 'does not allow generic updates to mutate touch status' do
     touch = create(:reminder, account: account, touch_conversation: conversation, body: 'Before')
 

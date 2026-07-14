@@ -6,7 +6,7 @@ class AutomationRules::TouchActionService
   TOUCH_ATTRIBUTE_KEYS = %i[
     action_type attachments auto_cancel_on_incoming body content_kind conversation_id
     instructions manual_schedule_override metadata owner_id relative_anchor relative_offset_seconds
-    relative_time_mode relative_time_of_day reminder_group_id repeat_mode repeat_until_at scheduled_at
+    post_delivery_action relative_time_mode relative_time_of_day reminder_group_id repeat_mode repeat_until_at scheduled_at
     target_contact_id target_contact_inbox_id target_conversation_id target_inbox_id template_params text_mode timing_mode timezone
   ].freeze
 
@@ -26,11 +26,10 @@ class AutomationRules::TouchActionService
       account: account,
       reminder_group: reminder_group,
       remindable: record,
-      actor: nil
+      actor: rule
     ).perform
 
     reminders.each do |reminder|
-      mark_automation_reminder!(reminder)
       Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
     end
 
@@ -40,11 +39,15 @@ class AutomationRules::TouchActionService
   def create_touch(action_params)
     params = normalize_touch_params(action_params)
 
-    reminder = Reminders::CreateService.new(
-      account: account,
-      remindable: record,
-      attributes: build_touch_attributes(params)
-    ).perform
+    reminder = Reminder.transaction do
+      created_reminder = Reminders::CreateService.new(
+        account: account,
+        remindable: record,
+        attributes: build_touch_attributes(params)
+      ).perform
+      created_reminder.mark_automation_provenance!(rule)
+      created_reminder
+    end
 
     Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
     reminder
@@ -161,12 +164,6 @@ class AutomationRules::TouchActionService
     }
   end
 
-  def mark_automation_reminder!(reminder)
-    metadata = reminder.metadata.to_h.merge(automation_metadata)
-    reminder.update!(metadata: metadata) if reminder.metadata != metadata
-    reminder
-  end
-
   def load_touch_plan!(action_params)
     reminder_group = account.reminder_groups.kept.find_by(id: normalize_action_param(action_params))
     raise ArgumentError, 'apply_touch_plan requires a valid touch plan' if reminder_group.blank?
@@ -219,7 +216,25 @@ class AutomationRules::TouchActionService
     raise ArgumentError, 'create_touch content is required' unless touch_content_present?(params)
     raise ArgumentError, 'create_touch timing is invalid' unless touch_timing_supported?(params)
 
+    validate_post_delivery_action!(params)
+
     params
+  end
+
+  def validate_post_delivery_action!(params)
+    action = params[:post_delivery_action].to_s.presence
+    return if action.blank?
+
+    raise ArgumentError, 'create_touch post_delivery_action is invalid' unless valid_post_delivery_action?(params, action)
+    return if params[:repeat_mode].blank? || params[:repeat_mode].to_s == 'once'
+
+    raise ArgumentError, 'create_touch post_delivery_action requires a one-time touch'
+  end
+
+  def valid_post_delivery_action?(params, action)
+    entity_kind == 'conversation' &&
+      action.in?(Reminder::POST_DELIVERY_ACTIONS) &&
+      (params[:action_type].presence || 'send_message').to_s == 'send_message'
   end
 
   def first_action_param(action_params)

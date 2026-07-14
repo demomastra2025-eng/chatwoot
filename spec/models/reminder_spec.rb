@@ -596,7 +596,9 @@ RSpec.describe Reminder do
           'visible' => 'kept',
           'processing_claim_token' => 'forged-claim',
           'delivery_materialized_message_id' => 123,
-          'delivery_dispatched_message_id' => 123
+          'delivery_dispatched_message_id' => 123,
+          'post_delivery_automation_rule_id' => 456,
+          'post_delivery_audit_source' => 'automation'
         }
       )
 
@@ -639,6 +641,35 @@ RSpec.describe Reminder do
       expect(reminder.reload).to be_pending
       expect(reminder.metadata.keys & Reminder::INTERNAL_METADATA_KEYS).to be_empty
     end
+
+    it 'preserves trusted automation provenance while clearing transient retry state' do
+      reminder = create(:reminder, status: :pending)
+      rule = create(:automation_rule, account: reminder.account)
+      reminder.mark_automation_provenance!(rule)
+      reminder.mark_processing!
+      reminder.mark_delivery_materialized!(123)
+      reminder.fail!('retry me')
+
+      reminder.approve!
+
+      expect(reminder.reload.metadata).to include(
+        Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation'
+      )
+      expect(reminder.metadata.keys & Reminder::TRANSIENT_METADATA_KEYS).to be_empty
+    end
+
+    it 'rejects automation provenance from another account' do
+      reminder = create(:reminder)
+      foreign_rule = create(:automation_rule)
+
+      expect { reminder.mark_automation_provenance!(foreign_rule) }
+        .to raise_error(ArgumentError, 'Automation rule must belong to the reminder account')
+      expect(reminder.reload.metadata).not_to include(
+        Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY
+      )
+    end
   end
 
   describe '#cancel!' do
@@ -660,6 +691,72 @@ RSpec.describe Reminder do
 
       expect(reminder.reload).to be_processing
       expect(reminder.last_error).to be_nil
+    end
+  end
+
+  describe 'post-delivery action validation' do
+    it 'allows conversation resolution only for one-time message touches' do
+      conversation = create(:conversation)
+      reminder = build(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        post_delivery_action: Reminder::POST_DELIVERY_ACTION_RESOLVE_CONVERSATION
+      )
+
+      expect(reminder).to be_valid
+
+      reminder.repeat_mode = :daily
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:post_delivery_action]).to include('is only supported for one-time touches')
+
+      reminder.repeat_mode = :once
+      reminder.action_type = :ai_agent_wakeup
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:post_delivery_action]).to include('is only supported for message touches')
+    end
+
+    it 'requires a canonical conversation remindable and matching conversation references' do
+      conversation = create(:conversation)
+      reminder = build(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        post_delivery_action: Reminder::POST_DELIVERY_ACTION_RESOLVE_CONVERSATION
+      )
+
+      reminder.target_conversation = create(:conversation, account: conversation.account)
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:post_delivery_action]).to include('requires matching conversation references')
+
+      reminder.target_conversation = conversation
+      reminder.remindable = create(:scheduling_appointment, account: conversation.account, conversation: conversation)
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:post_delivery_action]).to include('is only supported for conversation touches')
+    end
+
+    it 'rejects unsupported actions and normalizes blank actions to nil' do
+      conversation = create(:conversation)
+      reminder = build(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        post_delivery_action: 'send_webhook'
+      )
+
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:post_delivery_action]).to be_present
+
+      reminder.post_delivery_action = ''
+      expect(reminder).to be_valid
+      reminder.save!
+      expect(reminder.reload.post_delivery_action).to be_nil
     end
   end
 

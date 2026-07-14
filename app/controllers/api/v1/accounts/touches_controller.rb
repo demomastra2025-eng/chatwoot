@@ -199,6 +199,7 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
       :body,
       :instructions,
       :auto_cancel_on_incoming,
+      :post_delivery_action,
       :target_inbox_id,
       :target_contact_id,
       :target_contact_inbox_id,

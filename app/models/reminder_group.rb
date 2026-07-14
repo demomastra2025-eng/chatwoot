@@ -41,6 +41,7 @@ class ReminderGroup < ApplicationRecord
   validate :validate_entity_kinds
   validate :validate_assistant_account
   validate :validate_touches
+  validate :validate_post_delivery_actions
 
   scope :ordered, -> { order(:name, :id) }
   scope :kept, -> { where(archived_at: nil) }
@@ -83,5 +84,26 @@ class ReminderGroup < ApplicationRecord
     return if touches.all?(Hash)
 
     errors.add(:touches, 'must be an array of touch definitions')
+  end
+
+  def validate_post_delivery_actions
+    post_delivery_touches = touches.select do |touch|
+      touch.is_a?(Hash) && touch.with_indifferent_access[:post_delivery_action].present?
+    end
+    return if post_delivery_touches.blank?
+
+    valid = entity_kinds == ['conversation'] && post_delivery_touches.all? do |touch|
+      supported_post_delivery_action?(touch)
+    end
+    return if valid
+
+    errors.add(:touches, 'contains an unsupported post-delivery action')
+  end
+
+  def supported_post_delivery_action?(touch)
+    definition = touch.with_indifferent_access
+    Reminder::POST_DELIVERY_ACTIONS.include?(definition[:post_delivery_action]) &&
+      (definition[:action_type].presence || 'send_message').to_s == 'send_message' &&
+      (definition[:repeat_mode].presence || 'once').to_s == 'once'
   end
 end

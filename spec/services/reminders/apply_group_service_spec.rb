@@ -46,6 +46,118 @@ RSpec.describe Reminders::ApplyGroupService do
       expect(implicit_default.metadata).not_to have_key('auto_cancel_on_incoming_explicit')
     end
 
+    it 'propagates a safe post-delivery action from conversation touch plans' do
+      forged_rule = create(:automation_rule, account: account)
+      reminder_group = create(
+        :reminder_group,
+        account: account,
+        entity_kinds: ['conversation'],
+        touches: [
+          touch_definition(body: 'Final plan touch').merge(
+            action_type: '',
+            repeat_mode: '',
+            post_delivery_action: 'resolve_conversation',
+            metadata: {
+              visible: 'kept',
+              automation_rule_id: forged_rule.id,
+              touch_source: 'automation',
+              post_delivery_automation_rule_id: forged_rule.id,
+              post_delivery_audit_source: 'automation'
+            }
+          )
+        ]
+      )
+
+      reminders = described_class.new(account: account, reminder_group: reminder_group, remindable: conversation, actor: actor).perform
+
+      reminder = reminders.sole
+      expect(reminder.post_delivery_action).to eq('resolve_conversation')
+      expect(reminder).to be_send_message
+      expect(reminder).to be_once
+      expect(reminder.creator).to eq(actor)
+      expect(reminder.metadata).to include(
+        'visible' => 'kept',
+        'automation_rule_id' => forged_rule.id,
+        'touch_source' => 'automation'
+      )
+      expect(reminder.metadata).not_to include(
+        Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY
+      )
+    end
+
+    it 'stores protected automation provenance before committing plan touches' do
+      rule = create(:automation_rule, account: account)
+      reminder_group = create(
+        :reminder_group,
+        account: account,
+        entity_kinds: ['conversation'],
+        touches: [touch_definition(body: 'Automated plan touch')]
+      )
+
+      reminder = described_class.new(
+        account: account,
+        reminder_group: reminder_group,
+        remindable: conversation,
+        actor: rule
+      ).perform.sole
+
+      expect(reminder.creator).to be_nil
+      expect(reminder.metadata).to include(
+        Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation'
+      )
+
+      reminder.update!(metadata: { 'visible' => 'updated', 'automation_rule_id' => rule.id + 1 })
+      expect(reminder.reload.metadata).to include(
+        'visible' => 'updated',
+        Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation'
+      )
+    end
+
+    it 'preflights every post-delivery definition before creating any plan touches' do
+      reminder_group = create(
+        :reminder_group,
+        account: account,
+        entity_kinds: ['conversation'],
+        touches: [touch_definition(body: 'Legacy valid touch')]
+      )
+      allow(reminder_group).to receive(:touches).and_return(
+        [
+          touch_definition(body: 'Would otherwise be created').stringify_keys,
+          touch_definition(body: 'Invalid action').merge(post_delivery_action: 'send_webhook').stringify_keys
+        ]
+      )
+
+      expect do
+        described_class.new(account: account, reminder_group: reminder_group, remindable: conversation, actor: actor).perform
+      end.to raise_error(ArgumentError, 'Touch plan post_delivery_action is invalid')
+        .and not_change(Reminder, :count)
+    end
+
+    it 'rejects post-delivery actions before applying a plan to a non-conversation entity' do
+      appointment = create(:scheduling_appointment, account: account)
+      reminder_group = create(
+        :reminder_group,
+        account: account,
+        entity_kinds: ['appointment'],
+        touches: [touch_definition(body: 'Legacy appointment touch')]
+      )
+      allow(reminder_group).to receive(:touches).and_return(
+        [
+          touch_definition(body: 'Unsafe appointment touch').merge(
+            post_delivery_action: 'resolve_conversation'
+          ).stringify_keys
+        ]
+      )
+
+      expect do
+        described_class.new(account: account, reminder_group: reminder_group, remindable: appointment, actor: actor).perform
+      end.to raise_error(ArgumentError, 'Touch plan post_delivery_action is invalid')
+        .and not_change(Reminder, :count)
+    end
+
     it 'propagates fixed time-of-day relative scheduling from touch plan definitions' do
       zone = Time.find_zone!('Asia/Almaty')
       appointment = create(

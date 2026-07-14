@@ -211,6 +211,59 @@ RSpec.describe AutomationRule do
       expect(rule.valid?).to be true
     end
 
+    it 'allows a safe post-delivery resolution on a one-time conversation touch' do
+      params[:actions] = [
+        {
+          action_name: :create_touch,
+          action_params: {
+            body: 'Final follow-up',
+            delay_minutes: 10,
+            post_delivery_action: 'resolve_conversation'
+          }
+        }
+      ]
+
+      expect(FactoryBot.build(:automation_rule, params)).to be_valid
+    end
+
+    it 'rejects unsupported, recurring, and non-conversation post-delivery actions' do
+      params[:actions] = [
+        {
+          action_name: :create_touch,
+          action_params: {
+            body: 'Final follow-up',
+            delay_minutes: 10,
+            post_delivery_action: 'send_webhook'
+          }
+        }
+      ]
+      expect(FactoryBot.build(:automation_rule, params)).not_to be_valid
+
+      params[:actions][0][:action_params] = {
+        body: 'Recurring follow-up',
+        scheduled_at: 1.day.from_now.iso8601,
+        repeat_mode: 'daily',
+        post_delivery_action: 'resolve_conversation'
+      }
+      expect(FactoryBot.build(:automation_rule, params)).not_to be_valid
+
+      params[:actions][0][:action_params] = {
+        action_type: 'ai_agent_wakeup',
+        instructions: 'Wake the agent',
+        delay_minutes: 10,
+        post_delivery_action: 'resolve_conversation'
+      }
+      expect(FactoryBot.build(:automation_rule, params)).not_to be_valid
+
+      params[:event_name] = 'appointment_created'
+      params[:actions][0][:action_params] = {
+        body: 'Appointment follow-up',
+        delay_minutes: 10,
+        post_delivery_action: 'resolve_conversation'
+      }
+      expect(FactoryBot.build(:automation_rule, params)).not_to be_valid
+    end
+
     it 'allows full create_touch params with absolute recurrence' do
       params[:actions] = [
         {

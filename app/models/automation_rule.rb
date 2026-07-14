@@ -500,8 +500,19 @@ class AutomationRule < ApplicationRecord
     return false if params.blank?
     return false unless create_touch_content_supported?(params)
     return false unless create_touch_timing_supported?(params)
+    return false unless create_touch_post_delivery_action_supported?(params)
 
     true
+  end
+
+  def create_touch_post_delivery_action_supported?(params)
+    action = params[:post_delivery_action].to_s.presence
+    return true if action.blank?
+    return false unless conversation_event?
+    return false unless action.in?(Reminder::POST_DELIVERY_ACTIONS)
+    return false unless (params[:action_type].presence || 'send_message').to_s == 'send_message'
+
+    params[:repeat_mode].blank? || params[:repeat_mode].to_s == 'once'
   end
 
   def create_touch_content_supported?(params)
