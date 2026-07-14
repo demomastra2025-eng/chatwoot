@@ -38,4 +38,19 @@ describe('#actionQueryGenerator', () => {
       actionQueryGenerator(testData).every(i => Array.isArray(i.action_params))
     ).toBe(true);
   });
+
+  it('preserves structured legacy action params without an id', () => {
+    const params = [{ reminder_group_id: 17, reason: 'Customer replied' }];
+
+    expect(
+      actionQueryGenerator([
+        { action_name: 'cancel_touches', action_params: params },
+      ])
+    ).toEqual([
+      {
+        action_name: 'cancel_touches',
+        action_params: params,
+      },
+    ]);
+  });
 });

@@ -12,7 +12,7 @@ const formatArray = params => {
   } else if (allElementsString(params) || allElementsNumbers(params)) {
     params = [...params];
   } else {
-    params = params.map(val => val.id);
+    params = params.map(val => val?.id ?? val);
   }
   return params;
 };
