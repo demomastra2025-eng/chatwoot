@@ -17,7 +17,7 @@ class Captain::Tools::Copilot::GetAutomationRuleService < Captain::Tools::Copilo
       action: 'get_automation_rule',
       rule: automation_rule_payload(rule, include_config: true),
       supported_conditions: rule.conditions_attributes,
-      supported_actions: rule.actions_attributes
+      supported_actions: rule.public_actions_attributes
     )
   rescue StandardError => e
     tool_failure(e)

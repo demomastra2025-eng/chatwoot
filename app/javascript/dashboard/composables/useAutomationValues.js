@@ -4,7 +4,6 @@ import languages from 'dashboard/components/widgets/conversation/advancedFilterI
 import countries from 'shared/constants/countries';
 import { useStoreGetters, useMapGetter } from 'dashboard/composables/store';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
-import { useTouchPlans } from './useTouchPlans';
 
 import {
   getActionOptions,
@@ -22,7 +21,6 @@ import {
 export default function useAutomationValues() {
   const getters = useStoreGetters();
   const crmReferencesStore = useCrmReferencesStore();
-  const { touchPlans } = useTouchPlans();
   const { t } = useI18n();
   const agents = useMapGetter('agents/getVerifiedAgents');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
@@ -238,7 +236,7 @@ export default function useAutomationValues() {
    * @param {string} type - The type of action.
    * @returns {Array} An array of action dropdown values.
    */
-  const getActionDropdownValues = (type, eventName = null) => {
+  const getActionDropdownValues = type => {
     const agentsList =
       type === 'assign_agent'
         ? [
@@ -256,12 +254,10 @@ export default function useAutomationValues() {
       crmDealOwnerOptions: agents.value,
       crmStageOptions: crmStageOptions.value,
       crmTaskStatusOptions: crmTaskStatusOptions.value,
-      eventName,
       labels: labels.value,
       teams: teams.value,
       slaPolicies: slaPolicies.value,
       statusFilterOptions: statusFilterOptions.value,
-      touchPlans: touchPlans.value,
       languages,
       type,
       addNoneToListFn: addNoneToList,

@@ -331,6 +331,28 @@ describe('useEditableAutomation', () => {
     ]);
   });
 
+  it('preserves legacy touch-plan params without loading Captain plans', () => {
+    const { formatAutomation } = useEditableAutomation();
+    const automation = {
+      event_name: 'conversation_created',
+      conditions: [],
+      actions: [
+        { action_name: 'apply_touch_plan', action_params: [17] },
+        {
+          action_name: 'cancel_touches',
+          action_params: [{ reminder_group_id: 17 }],
+        },
+      ],
+    };
+
+    const formatted = formatAutomation(automation, [], {}, [
+      { key: 'apply_touch_plan', inputType: null, legacyOnly: true },
+      { key: 'cancel_touches', inputType: null },
+    ]);
+
+    expect(formatted.actions).toEqual(automation.actions);
+  });
+
   it('rehydrates last responding agent as a selected action option', () => {
     const { formatAutomation } = useEditableAutomation();
 

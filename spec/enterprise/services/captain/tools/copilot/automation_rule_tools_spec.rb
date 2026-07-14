@@ -78,6 +78,7 @@ RSpec.describe 'Captain automation rule copilot tools' do
       expect(payload.dig('rule', 'actions', 0, 'action_params')).to eq('[REDACTED]')
       expect(payload['supported_conditions']).to include('status')
       expect(payload['supported_actions']).to include('add_label')
+      expect(payload['supported_actions']).not_to include('apply_touch_plan')
     end
 
     it 'rejects rules outside the assistant account' do

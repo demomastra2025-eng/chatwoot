@@ -79,7 +79,7 @@ RSpec.describe AutomationRule do
       expect(rule.valid?).to be true
     end
 
-    it 'allows conversation automation rules to cancel touches by a matching touch plan' do
+    it 'rejects touch-plan filters for cancel_touches in new automation rules' do
       touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
       params[:actions] = [
         {
@@ -89,7 +89,106 @@ RSpec.describe AutomationRule do
       ]
 
       rule = FactoryBot.build(:automation_rule, params)
-      expect(rule.valid?).to be true
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to include(AutomationRule::LEGACY_TOUCH_PLAN_ACTION_ERROR)
+    end
+
+    it 'rejects touch-plan application in new automation rules' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      params[:actions] = [
+        {
+          action_name: :apply_touch_plan,
+          action_params: [touch_plan.id]
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to include(AutomationRule::LEGACY_TOUCH_PLAN_ACTION_ERROR)
+    end
+
+    it 'keeps an unchanged legacy touch-plan action executable but prevents changing it' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      other_touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      params[:actions] = [
+        {
+          action_name: :apply_touch_plan,
+          action_params: [touch_plan.id]
+        }
+      ]
+      rule = FactoryBot.build(:automation_rule, params)
+      rule.save!(validate: false)
+
+      expect(rule.update(name: 'Renamed legacy automation')).to be(true)
+
+      rule.event_name = 'conversation_updated'
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to include(AutomationRule::LEGACY_TOUCH_PLAN_ACTION_ERROR)
+
+      rule.reload
+      rule.actions = [
+        {
+          action_name: :apply_touch_plan,
+          action_params: [other_touch_plan.id]
+        }
+      ]
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to include(AutomationRule::LEGACY_TOUCH_PLAN_ACTION_ERROR)
+    end
+
+    it 'keeps an unchanged legacy touch-plan cancellation executable but prevents changing it' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      other_touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      params[:actions] = [
+        {
+          action_name: :cancel_touches,
+          action_params: [{ reminder_group_id: touch_plan.id }]
+        }
+      ]
+      rule = FactoryBot.build(:automation_rule, params)
+      rule.save!(validate: false)
+
+      expect(rule.update(name: 'Renamed legacy cancellation')).to be(true)
+
+      rule.actions = [
+        {
+          action_name: :cancel_touches,
+          action_params: [{ reminder_group_id: other_touch_plan.id }]
+        }
+      ]
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:actions]).to include(AutomationRule::LEGACY_TOUCH_PLAN_ACTION_ERROR)
+    end
+
+    it 'allows explicit migration from a legacy touch plan to standalone touches' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      params[:actions] = [{ action_name: :apply_touch_plan, action_params: [touch_plan.id] }]
+      rule = FactoryBot.build(:automation_rule, params)
+      rule.save!(validate: false)
+
+      migrated_actions = [
+        { action_name: :create_touch, action_params: [{ body: 'First follow-up', delay_minutes: 10 }] },
+        { action_name: :create_touch, action_params: [{ body: 'Second follow-up', delay_minutes: 60 }] }
+      ]
+
+      expect(rule.update(actions: migrated_actions)).to be(true)
+      expect(rule.reload.actions.pluck('action_name')).to eq(%w[create_touch create_touch])
+    end
+
+    it 'allows explicit migration from plan-scoped to plan-independent cancellation' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      params[:actions] = [
+        { action_name: :cancel_touches, action_params: [{ reminder_group_id: touch_plan.id }] }
+      ]
+      rule = FactoryBot.build(:automation_rule, params)
+      rule.save!(validate: false)
+
+      expect(rule.update(actions: [{ action_name: :cancel_touches, action_params: [] }])).to be(true)
+      expect(rule.reload.actions.first['action_params']).to eq([])
     end
 
     it 'allows full create_touch params with AI text and relative timing' do

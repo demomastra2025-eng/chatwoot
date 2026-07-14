@@ -48,10 +48,6 @@ const APPOINTMENT_AUTOMATION_ACTIONS = [
     name: 'SEND_WEBHOOK_EVENT',
   },
   {
-    key: 'apply_touch_plan',
-    name: 'APPLY_TOUCH_PLAN',
-  },
-  {
     key: 'create_touch',
     name: 'CREATE_TOUCH',
   },
@@ -168,10 +164,6 @@ const DEAL_AUTOMATION_ACTIONS = [
     name: 'SEND_WEBHOOK_EVENT',
   },
   {
-    key: 'apply_touch_plan',
-    name: 'APPLY_TOUCH_PLAN',
-  },
-  {
     key: 'create_touch',
     name: 'CREATE_TOUCH',
   },
@@ -278,10 +270,6 @@ const TASK_AUTOMATION_ACTIONS = [
   {
     key: 'send_webhook_event',
     name: 'SEND_WEBHOOK_EVENT',
-  },
-  {
-    key: 'apply_touch_plan',
-    name: 'APPLY_TOUCH_PLAN',
   },
   {
     key: 'create_touch',
@@ -480,10 +468,6 @@ const CONVERSATION_AUTOMATION_ACTIONS = [
   {
     key: 'add_private_note',
     name: 'ADD_PRIVATE_NOTE',
-  },
-  {
-    key: 'apply_touch_plan',
-    name: 'APPLY_TOUCH_PLAN',
   },
   {
     key: 'create_touch',
@@ -813,7 +797,8 @@ export const AUTOMATION_ACTION_TYPES = [
   {
     key: 'apply_touch_plan',
     label: 'APPLY_TOUCH_PLAN',
-    inputType: 'search_select',
+    inputType: null,
+    legacyOnly: true,
   },
   {
     key: 'create_touch',
@@ -823,7 +808,7 @@ export const AUTOMATION_ACTION_TYPES = [
   {
     key: 'cancel_touches',
     label: 'CANCEL_TOUCHES',
-    inputType: 'search_select',
+    inputType: null,
   },
   {
     key: 'send_attachment',

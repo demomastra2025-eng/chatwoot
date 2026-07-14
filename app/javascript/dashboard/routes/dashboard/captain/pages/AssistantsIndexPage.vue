@@ -20,7 +20,13 @@ const isAssistantPresent = assistantId => {
 };
 
 const routeToView = (name, params) => {
-  router.replace({ name, params, replace: true });
+  const query = route.query || {};
+  router.replace({
+    name,
+    params,
+    ...(Object.keys(query).length ? { query } : {}),
+    replace: true,
+  });
 };
 
 const generateRouterParams = () => {

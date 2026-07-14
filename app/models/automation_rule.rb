@@ -84,6 +84,12 @@ class AutomationRule < ApplicationRecord
   ].freeze
   STAGE_REFERENCE_ERROR_CODE = 'ARCHIVED_OR_DELETED_STAGE_REFERENCE'.freeze
   STAGE_REFERENCE_ERROR_MESSAGE = 'Referenced follow-up stage is archived or deleted. Select an active stage before saving this automation.'.freeze
+  LEGACY_TOUCH_PLAN_ACTION = 'apply_touch_plan'.freeze
+  LEGACY_TOUCH_PLAN_CANCEL_ACTION = 'cancel_touches'.freeze
+  LEGACY_TOUCH_PLAN_ACTION_ERROR = [
+    'Touch plans are only supported by existing legacy automation rules. ',
+    'Use create_touch and plan-independent cancel_touches actions instead.'
+  ].join.freeze
   TASK_ACTION_ATTRIBUTES = %w[
     send_webhook_event
     change_task_status
@@ -119,6 +125,7 @@ class AutomationRule < ApplicationRecord
   validate :crm_condition_operators_supported
   validate :crm_action_params_supported
   validate :crm_stage_references_active
+  validate :new_touch_plan_actions_not_supported
   validate :query_operator_presence
   validate :query_operator_value
   validates :account_id, presence: true
@@ -141,6 +148,10 @@ class AutomationRule < ApplicationRecord
     return CONVERSATION_ACTION_ATTRIBUTES if conversation_event?
 
     []
+  end
+
+  def public_actions_attributes
+    actions_attributes - [LEGACY_TOUCH_PLAN_ACTION]
   end
 
   def appointment_event?
@@ -377,6 +388,30 @@ class AutomationRule < ApplicationRecord
       cancel_touches_action_params_supported?(action_params, 'conversation')
     else
       true
+    end
+  end
+
+  def new_touch_plan_actions_not_supported
+    current_actions = legacy_touch_plan_actions(actions)
+    return if current_actions.blank? || errors[:actions].present?
+    return if persisted_legacy_touch_plan_actions_unchanged?(current_actions)
+
+    errors.add(:actions, LEGACY_TOUCH_PLAN_ACTION_ERROR)
+  end
+
+  def persisted_legacy_touch_plan_actions_unchanged?(current_actions)
+    persisted? &&
+      event_name == attribute_in_database('event_name') &&
+      current_actions == legacy_touch_plan_actions(attribute_in_database('actions'))
+  end
+
+  def legacy_touch_plan_actions(value)
+    Array(value).select do |action|
+      action_name = action['action_name'].to_s
+      next true if action_name == LEGACY_TOUCH_PLAN_ACTION
+      next false unless action_name == LEGACY_TOUCH_PLAN_CANCEL_ACTION
+
+      normalized_cancel_touches_plan_param(action['action_params']).present?
     end
   end
 

@@ -101,7 +101,7 @@ RSpec.describe AutomationRules::ActionService do
 
       before do
         rule.actions = [{ action_name: 'apply_touch_plan', action_params: [touch_plan.id] }]
-        rule.save!
+        rule.save!(validate: false)
       end
 
       it 'creates pending touches from the touch plan for the conversation' do
@@ -127,7 +127,7 @@ RSpec.describe AutomationRules::ActionService do
             action_params: [{ reminder_group_id: touch_plan.id, reason: 'Customer replied' }]
           }
         ]
-        rule.save!
+        rule.save!(validate: false)
       end
 
       it 'delegates cancellation to the touch action service' do
@@ -143,6 +143,33 @@ RSpec.describe AutomationRules::ActionService do
             'reason' => 'Customer replied'
           )
         end
+      end
+    end
+
+    describe '#perform with multiple create_touch actions' do
+      before do
+        rule.actions = [
+          {
+            action_name: 'create_touch',
+            action_params: [{ body: 'First automation touch', delay_minutes: 10 }]
+          },
+          {
+            action_name: 'create_touch',
+            action_params: [{ body: 'Second automation touch', delay_minutes: 20 }]
+          }
+        ]
+        rule.save!
+      end
+
+      it 'creates each touch directly without applying a touch plan' do
+        expect do
+          described_class.new(rule, account, conversation).perform
+        end.to change { account.reminders.where(remindable: conversation).count }.by(2)
+
+        expect(account.reminders.where(remindable: conversation).pluck(:body)).to contain_exactly(
+          'First automation touch',
+          'Second automation touch'
+        )
       end
     end
 

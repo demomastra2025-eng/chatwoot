@@ -248,13 +248,15 @@ RSpec.describe AutomationRules::TouchActionService do
   end
 
   describe '#cancel_touches' do
-    it 'cancels only draft and pending touches for the current entity with automation reason' do
+    it 'cancels only automation-created open touches for the current entity' do
       draft_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
-                                      status: :draft, body: 'Draft touch')
+                                      status: :draft, metadata: { touch_source: 'automation' }, body: 'Draft touch')
       pending_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
-                                        status: :pending, body: 'Pending touch')
+                                        status: :pending, metadata: { touch_source: 'automation' }, body: 'Pending touch')
       completed_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
-                                          status: :completed, body: 'Completed touch')
+                                          status: :completed, metadata: { touch_source: 'automation' }, body: 'Completed touch')
+      manual_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
+                                       status: :pending, body: 'Manual touch')
 
       cancelled_count = service.cancel_touches([{}])
 
@@ -262,8 +264,29 @@ RSpec.describe AutomationRules::TouchActionService do
       expect(draft_touch.reload).to be_cancelled
       expect(pending_touch.reload).to be_cancelled
       expect(completed_touch.reload).to be_completed
+      expect(manual_touch.reload).to be_pending
       expect(pending_touch.last_error).to eq('отменен автоматизацией')
       expect(pending_touch.metadata).to include('cancelled_via' => 'automation_cancel_touches', 'cancel_touches_entity_kind' => 'conversation')
+    end
+
+    it 'preserves legacy plan-scoped cancellation across touch sources' do
+      touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      other_touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+      automation_touch = create(:reminder, account: account, remindable: conversation, reminder_group: touch_plan,
+                                           status: :pending, metadata: { touch_source: 'automation' })
+      captain_touch = create(:reminder, account: account, remindable: conversation, reminder_group: touch_plan,
+                                        status: :pending, metadata: { touch_source: 'captain' })
+      manual_touch = create(:reminder, account: account, remindable: conversation, reminder_group: touch_plan, status: :pending)
+      unrelated_touch = create(:reminder, account: account, remindable: conversation, reminder_group: other_touch_plan,
+                                          status: :pending, metadata: { touch_source: 'automation' })
+
+      cancelled_count = service.cancel_touches([{ reminder_group_id: touch_plan.id }])
+
+      expect(cancelled_count).to eq(3)
+      expect(automation_touch.reload).to be_cancelled
+      expect(captain_touch.reload).to be_cancelled
+      expect(manual_touch.reload).to be_cancelled
+      expect(unrelated_touch.reload).to be_pending
     end
   end
 end

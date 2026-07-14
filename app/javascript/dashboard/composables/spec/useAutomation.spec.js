@@ -29,11 +29,6 @@ vi.mock('dashboard/composables/store');
 vi.mock('dashboard/composables');
 vi.mock('vue-i18n');
 vi.mock('dashboard/helper/automationHelper');
-vi.mock('dashboard/api/touchPlans', () => ({
-  default: {
-    get: vi.fn(() => Promise.resolve({ data: { payload: [] } })),
-  },
-}));
 
 describe('useAutomation', () => {
   beforeEach(() => {

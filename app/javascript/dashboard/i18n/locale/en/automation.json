@@ -221,7 +221,7 @@
       "ARCHIVE_TASK": "Archive Task",
       "UNARCHIVE_TASK": "Unarchive Task",
       "SEND_WEBHOOK_EVENT": "Send Webhook Event",
-      "APPLY_TOUCH_PLAN": "Apply Touch Plan",
+      "APPLY_TOUCH_PLAN": "Legacy Touch Plan (Read Only)",
       "CREATE_TOUCH": "Create Touch",
       "CANCEL_TOUCHES": "Cancel Touches",
       "SEND_ATTACHMENT": "Send Attachment",

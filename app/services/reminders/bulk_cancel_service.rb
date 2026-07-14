@@ -2,7 +2,7 @@ class Reminders::BulkCancelService
   CANCELLABLE_STATUSES = Reminder::OPEN_STATUSES.freeze
   ACTIVE_STATUSES = Reminder::OPEN_STATUSES.freeze
 
-  attr_reader :account, :remindable, :reminder_group, :actor, :reason, :metadata
+  attr_reader :account, :remindable, :reminder_group, :actor, :reason, :metadata, :touch_source
 
   def initialize(account:, remindable:, **options)
     @account = account
@@ -11,6 +11,7 @@ class Reminders::BulkCancelService
     @actor = options[:actor]
     @reason = options[:reason].presence || 'отменен автоматизацией'
     @metadata = (options[:metadata] || {}).to_h.stringify_keys
+    @touch_source = options[:touch_source].presence
   end
 
   def perform
@@ -81,9 +82,10 @@ class Reminders::BulkCancelService
 
   def scoped_reminders
     scope = scoped_remindable_reminders
-    return scope if reminder_group.blank?
+    scope = scope.where(reminder_group: reminder_group) if reminder_group.present?
+    scope = scope.where("metadata ->> 'touch_source' = ?", touch_source) if touch_source.present?
 
-    scope.where(reminder_group: reminder_group)
+    scope
   end
 
   def scoped_remindable_reminders
@@ -149,7 +151,8 @@ class Reminders::BulkCancelService
       account_id: account.id,
       remindable_type: remindable.class.name,
       remindable_id: remindable.id,
-      reminder_group_id: reminder_group&.id
+      reminder_group_id: reminder_group&.id,
+      touch_source: touch_source
     }.compact
   end
 

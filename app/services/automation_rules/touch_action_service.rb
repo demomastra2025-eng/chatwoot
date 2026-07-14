@@ -58,6 +58,7 @@ class AutomationRules::TouchActionService
       account: account,
       remindable: record,
       reminder_group: reminder_group,
+      touch_source: reminder_group.present? ? nil : 'automation',
       actor: nil,
       reason: params[:reason].presence || AUTOMATION_CANCEL_REASON,
       metadata: {

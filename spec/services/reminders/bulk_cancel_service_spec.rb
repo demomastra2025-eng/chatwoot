@@ -111,6 +111,34 @@ RSpec.describe Reminders::BulkCancelService do
       expect(other_conversation_touch.reload).to be_pending
     end
 
+    it 'can restrict cancellation to touches created by one source' do
+      automation_touch = create(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        remindable: conversation,
+        metadata: { touch_source: 'automation' },
+        body: 'Automation touch'
+      )
+      manual_touch = create(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        remindable: conversation,
+        body: 'Manual touch'
+      )
+
+      cancelled_count = described_class.new(
+        account: account,
+        remindable: conversation,
+        touch_source: 'automation'
+      ).perform
+
+      expect(cancelled_count).to eq(1)
+      expect(automation_touch.reload).to be_cancelled
+      expect(manual_touch.reload).to be_pending
+    end
+
     it 'does not cancel a processing touch after its outgoing message was materialized' do
       processing_touch.mark_delivery_materialized!(123)
 

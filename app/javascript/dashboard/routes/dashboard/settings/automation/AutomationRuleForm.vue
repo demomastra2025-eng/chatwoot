@@ -238,14 +238,21 @@ const hasAutomationMutated = computed(() => {
 });
 
 const automationActionTypes = computed(() => {
-  const allowedActions = new Set(
-    (props.automationTypes[eventName.value]?.actions || []).map(
-      action => action.key
-    )
-  );
   const actionTypes = isCloudFeatureEnabled('sla')
     ? AUTOMATION_ACTION_TYPES
     : AUTOMATION_ACTION_TYPES.filter(({ key }) => key !== 'add_sla');
+  const legacyActionKeys = new Set(
+    actionTypes.filter(action => action.legacyOnly).map(action => action.key)
+  );
+  const configuredLegacyActions = (automation.value?.actions || [])
+    .map(action => action.action_name)
+    .filter(actionName => legacyActionKeys.has(actionName));
+  const allowedActions = new Set([
+    ...(props.automationTypes[eventName.value]?.actions || []).map(
+      action => action.key
+    ),
+    ...configuredLegacyActions,
+  ]);
 
   return actionTypes
     .filter(

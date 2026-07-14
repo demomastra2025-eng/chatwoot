@@ -254,19 +254,25 @@ const EXPECTED_BACKEND_ACTION_UNION = [
   ]),
 ];
 
+const LEGACY_BACKEND_ONLY_ACTIONS = ['apply_touch_plan'];
+const publicAutomationActions = actions =>
+  actions.filter(action => !LEGACY_BACKEND_ONLY_ACTIONS.includes(action));
+
 const expectSameMembers = (actual, expected) => {
   expect([...actual].sort()).toEqual([...expected].sort());
   expect(new Set(actual).size).toEqual(actual.length);
 };
 
 describe('AUTOMATIONS conversation parity', () => {
-  it('exposes all backend-backed conversation actions for every conversation event', () => {
+  it('exposes public conversation actions for every conversation event', () => {
     CONVERSATION_EVENTS.forEach(eventName => {
       const actionKeys = AUTOMATIONS[eventName].actions.map(
         action => action.key
       );
 
-      expect(actionKeys).toEqual(BACKEND_CONVERSATION_ACTIONS);
+      expect(actionKeys).toEqual(
+        publicAutomationActions(BACKEND_CONVERSATION_ACTIONS)
+      );
       expect(new Set(actionKeys).size).toEqual(actionKeys.length);
     });
   });
@@ -302,11 +308,11 @@ describe('AUTOMATIONS backend parity', () => {
     );
   });
 
-  it('exposes backend-backed appointment actions and conditions for every appointment event', () => {
+  it('exposes public appointment actions and backend-backed conditions for every appointment event', () => {
     APPOINTMENT_EVENTS.forEach(eventName => {
       expectSameMembers(
         AUTOMATIONS[eventName].actions.map(action => action.key),
-        BACKEND_APPOINTMENT_ACTIONS
+        publicAutomationActions(BACKEND_APPOINTMENT_ACTIONS)
       );
       expect(AUTOMATIONS[eventName].conditions.map(({ key }) => key)).toEqual(
         BACKEND_APPOINTMENT_CONDITIONS
@@ -323,11 +329,11 @@ describe('AUTOMATIONS backend parity', () => {
     });
   });
 
-  it('exposes backend-backed deal actions and conditions for every deal event', () => {
+  it('exposes public deal actions and backend-backed conditions for every deal event', () => {
     DEAL_EVENTS.forEach(eventName => {
       expectSameMembers(
         AUTOMATIONS[eventName].actions.map(action => action.key),
-        BACKEND_DEAL_ACTIONS
+        publicAutomationActions(BACKEND_DEAL_ACTIONS)
       );
       expect(AUTOMATIONS[eventName].conditions.map(({ key }) => key)).toEqual(
         BACKEND_DEAL_CONDITIONS
@@ -335,11 +341,11 @@ describe('AUTOMATIONS backend parity', () => {
     });
   });
 
-  it('exposes backend-backed task actions and conditions for every task event', () => {
+  it('exposes public task actions and backend-backed conditions for every task event', () => {
     TASK_EVENTS.forEach(eventName => {
       expectSameMembers(
         AUTOMATIONS[eventName].actions.map(action => action.key),
-        BACKEND_TASK_ACTIONS
+        publicAutomationActions(BACKEND_TASK_ACTIONS)
       );
       expect(AUTOMATIONS[eventName].conditions.map(({ key }) => key)).toEqual(
         BACKEND_TASK_CONDITIONS
@@ -352,6 +358,15 @@ describe('AUTOMATIONS backend parity', () => {
 
     expectSameMembers(actionTypeKeys, EXPECTED_BACKEND_ACTION_UNION);
     expect(actionTypeKeys).not.toContain('add_sla');
+  });
+
+  it('keeps touch plans legacy-only and makes cancellation plan-independent', () => {
+    expect(
+      AUTOMATION_ACTION_TYPES.find(action => action.key === 'apply_touch_plan')
+    ).toMatchObject({ inputType: null, legacyOnly: true });
+    expect(
+      AUTOMATION_ACTION_TYPES.find(action => action.key === 'cancel_touches')
+    ).toMatchObject({ inputType: null });
   });
 });
 
@@ -543,27 +558,13 @@ describe('getActionOptions', () => {
     ).toEqual(teams);
   });
 
-  it('returns entity-scoped touch plans with a None option for cancel_touches', () => {
-    const touchPlans = [
-      { id: 1, name: 'Conversation plan', entity_kinds: ['conversation'] },
-      { id: 2, name: 'Deal plan', entity_kinds: ['deal'] },
-    ];
-    const addNoneToListFn = list => [
-      { id: 'nil', name: 'None' },
-      ...(list || []),
-    ];
-
+  it('does not expose touch-plan dropdown values in generic automations', () => {
     expect(
-      helpers.getActionOptions({
-        touchPlans,
-        eventName: 'conversation_created',
-        type: 'cancel_touches',
-        addNoneToListFn,
-      })
-    ).toEqual([
-      { id: 'nil', name: 'None' },
-      { id: 1, name: 'Conversation plan', entity_kinds: ['conversation'] },
-    ]);
+      helpers.getActionOptions({ type: 'apply_touch_plan' })
+    ).toBeUndefined();
+    expect(
+      helpers.getActionOptions({ type: 'cancel_touches' })
+    ).toBeUndefined();
   });
 });
 

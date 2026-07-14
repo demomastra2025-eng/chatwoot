@@ -98,7 +98,9 @@ export default {
       },
     },
     actionTypesAsOptions() {
-      return this.actionTypes.map(a => ({ id: a.key, name: a.label }));
+      return this.actionTypes
+        .filter(a => !a.legacyOnly || a.key === this.action_name)
+        .map(a => ({ id: a.key, name: a.label }));
     },
     isVerticalLayout() {
       return ['team_message', 'textarea', 'touch'].includes(this.inputType);

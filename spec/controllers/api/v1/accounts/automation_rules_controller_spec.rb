@@ -116,6 +116,20 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         expect(account.automation_rules.count).to eq(0)
       end
 
+      it 'rejects touch-plan application in a new automation rule' do
+        touch_plan = create(:reminder_group, account: account, entity_kinds: ['conversation'])
+        params[:actions] = [
+          { action_name: :apply_touch_plan, action_params: [touch_plan.id] }
+        ]
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: params
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(account.automation_rules.count).to eq(0)
+      end
+
       it 'Saves for automation_rules for account with country_code and browser_language conditions' do
         expect(account.automation_rules.count).to eq(0)
 

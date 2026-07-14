@@ -28,8 +28,11 @@ export default {
           name: 'automation_touch_plans_index',
           redirect: to => {
             return {
-              name: 'outbound_touch_plans_index',
-              params: to.params,
+              name: 'captain_assistants_index',
+              params: {
+                ...to.params,
+                navigationPath: 'captain_assistants_follow_ups_index',
+              },
               query: to.query,
             };
           },
