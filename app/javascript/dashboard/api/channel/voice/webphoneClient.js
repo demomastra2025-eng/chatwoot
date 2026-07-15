@@ -65,6 +65,8 @@ class WebphoneClient extends EventTarget {
     this.nativeSessionRetryState = {};
     this.nativeSessionRetryPromises = {};
     this.nativeSessionGenerations = {};
+    this.bootstrapIncomingPromise = null;
+    this.deviceInitializationPromises = {};
     this.janusSipClientFactory = createJanusSipVoiceClient;
     this.clients = {
       twilio: TwilioVoiceClient,
@@ -644,16 +646,46 @@ class WebphoneClient extends EventTarget {
     return true;
   }
 
-  async bootstrapIncomingSupport() {
-    const response = await VoiceAPI.getWebphoneToken();
-    return this.initializeResponse(response);
+  bootstrapIncomingSupport() {
+    if (this.bootstrapIncomingPromise) return this.bootstrapIncomingPromise;
+
+    const bootstrapPromise = (async () => {
+      const response = await VoiceAPI.getWebphoneToken();
+      return this.initializeResponse(response);
+    })().finally(() => {
+      if (this.bootstrapIncomingPromise === bootstrapPromise) {
+        this.bootstrapIncomingPromise = null;
+      }
+    });
+    this.bootstrapIncomingPromise = bootstrapPromise;
+
+    return bootstrapPromise;
   }
 
-  async initializeDevice(inboxId = null, { native = false } = {}) {
-    const response = native
-      ? await VoiceAPI.getNativeWebphoneToken(inboxId)
-      : await VoiceAPI.getWebphoneToken(inboxId);
-    return this.initializeResponse(response, { inboxId, native });
+  initializeDevice(inboxId = null, { native = false } = {}) {
+    const initializationKey = `${native ? 'native' : 'default'}:${
+      inboxId || 'global'
+    }`;
+    const existing = this.deviceInitializationPromises[initializationKey];
+    if (existing) return existing;
+
+    const initializationPromise = (async () => {
+      const response = native
+        ? await VoiceAPI.getNativeWebphoneToken(inboxId)
+        : await VoiceAPI.getWebphoneToken(inboxId);
+      return this.initializeResponse(response, { inboxId, native });
+    })().finally(() => {
+      if (
+        this.deviceInitializationPromises[initializationKey] ===
+        initializationPromise
+      ) {
+        delete this.deviceInitializationPromises[initializationKey];
+      }
+    });
+    this.deviceInitializationPromises[initializationKey] =
+      initializationPromise;
+
+    return initializationPromise;
   }
 
   async initializeResponse(response, { inboxId = null, native = false } = {}) {

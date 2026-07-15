@@ -98,6 +98,7 @@ export function useCallSession() {
   let bootstrapIncomingPromise = null;
   let activeBootstrapInboxId;
   let pendingBootstrapInboxId;
+  let deferredBootstrapInboxId;
   let webphoneConfigRefreshVersion = 0;
   const callDuration = ref(0);
   const durationTimer = new Timer(elapsed => {
@@ -941,14 +942,21 @@ export function useCallSession() {
         browserSipProviderForInboxId(inboxId),
       inboxId,
     };
-    if (hasActiveCall.value || hasPendingOutboundBrowserSipCall()) {
-      await requestWebphoneConfigRefresh(refreshContext);
+    // Never touch the Janus registration that currently owns an INVITE. A
+    // route/store update for that same incoming call must not replace the SIP
+    // handle before the operator can answer it.
+    if (WebphoneClient.hasPendingIncomingCall(refreshContext)) return null;
+
+    if (
+      isJoining.value ||
+      hasActiveCall.value ||
+      hasPendingOutboundBrowserSipCall()
+    ) {
+      deferredBootstrapInboxId = positiveNumber(inboxId) || null;
       return null;
     }
 
     try {
-      await WebphoneClient.bootstrapIncomingSupport();
-
       if (inboxId) {
         await initializeWebphoneDevice(inboxId, {
           provider: incomingCallProviderForInboxId(inboxId),
@@ -957,6 +965,8 @@ export function useCallSession() {
         await WebphoneClient.initializeDevice(routeInboxId.value, {
           native: true,
         });
+      } else {
+        await WebphoneClient.bootstrapIncomingSupport();
       }
       clearBootstrapRetry();
     } catch (error) {
@@ -1039,6 +1049,11 @@ export function useCallSession() {
       if (active || incomingCount > 0 || joining) return;
 
       flushPendingWebphoneConfigRefresh();
+      if (deferredBootstrapInboxId === undefined) return;
+
+      const inboxId = deferredBootstrapInboxId;
+      deferredBootstrapInboxId = undefined;
+      bootstrapIncomingSupport(inboxId);
     },
     { immediate: true }
   );
@@ -1065,6 +1080,7 @@ export function useCallSession() {
     clearBootstrapRetry();
     clearBootstrapRefresh();
     pendingBootstrapInboxId = undefined;
+    deferredBootstrapInboxId = undefined;
     pendingWebphoneConfigRefresh.value = null;
     emitter.off(
       BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED,

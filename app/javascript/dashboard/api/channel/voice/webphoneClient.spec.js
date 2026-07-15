@@ -118,6 +118,40 @@ describe('webphoneClient', () => {
     WebphoneClient.nativeSessionRetryState = {};
     WebphoneClient.nativeSessionRetryPromises = {};
     WebphoneClient.nativeSessionGenerations = {};
+    WebphoneClient.bootstrapIncomingPromise = null;
+    WebphoneClient.deviceInitializationPromises = {};
+  });
+
+  it('coalesces concurrent dashboard bootstrap requests', async () => {
+    let resolveToken;
+    getWebphoneTokenMock.mockReturnValue(
+      new Promise(resolve => {
+        resolveToken = resolve;
+      })
+    );
+
+    const first = WebphoneClient.bootstrapIncomingSupport();
+    const second = WebphoneClient.bootstrapIncomingSupport();
+
+    expect(getWebphoneTokenMock).toHaveBeenCalledTimes(1);
+    resolveToken({ calling_supported: false });
+    await Promise.all([first, second]);
+  });
+
+  it('coalesces concurrent inbox device initialization requests', async () => {
+    let resolveToken;
+    getNativeWebphoneTokenMock.mockReturnValue(
+      new Promise(resolve => {
+        resolveToken = resolve;
+      })
+    );
+
+    const first = WebphoneClient.initializeDevice(4769, { native: true });
+    const second = WebphoneClient.initializeDevice(4769, { native: true });
+
+    expect(getNativeWebphoneTokenMock).toHaveBeenCalledTimes(1);
+    resolveToken({ calling_supported: false });
+    await Promise.all([first, second]);
   });
 
   it('bootstraps every native Janus SIP session from a multi-session token', async () => {

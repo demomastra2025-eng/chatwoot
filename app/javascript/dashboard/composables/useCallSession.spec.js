@@ -196,7 +196,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4696, { native: true });
   });
 
@@ -429,8 +429,36 @@ describe('useCallSession', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock).toHaveBeenCalled();
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4776, { native: true });
+  });
+
+  it('does not replace the Janus registration when a local incoming INVITE arrives', async () => {
+    const callsStore = useCallsStore();
+    mountUseCallSession();
+    await Promise.resolve();
+    await Promise.resolve();
+    const initialBootstrapCalls =
+      bootstrapIncomingSupportMock.mock.calls.length;
+    const initialInitializeCalls = initializeDeviceMock.mock.calls.length;
+
+    hasPendingIncomingCallMock.mockReturnValue(true);
+    callsStore.addCall({
+      callSid: 'sipuni:janus:51:incoming-registration-owner',
+      janusCallRef: 'incoming-registration-owner',
+      provider: 'sipuni',
+      inboxId: 4778,
+      sipProfileId: 51,
+      status: 'ringing',
+      callDirection: 'inbound',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(
+      initialBootstrapCalls
+    );
+    expect(initializeDeviceMock).toHaveBeenCalledTimes(initialInitializeCalls);
   });
 
   it('bootstraps browser calling for a Channel::Voice route inbox without provider metadata', async () => {
@@ -443,7 +471,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4704);
   });
 
@@ -454,7 +482,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock).toHaveBeenCalled();
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4698, { native: true });
   });
 
@@ -474,7 +502,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4704);
   });
 
@@ -828,7 +856,7 @@ describe('useCallSession', () => {
     mountUseCallSession();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock).toHaveBeenCalled();
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4698, { native: true });
   });
 
