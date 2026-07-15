@@ -304,7 +304,7 @@ describe('useCallSession', () => {
     await Promise.resolve();
 
     expect(destroyDeviceMock.mock.calls.length).toBe(initialDestroyCalls);
-    expect(bootstrapIncomingSupportMock.mock.calls.length).toBeGreaterThan(0);
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
 
     callsStore.dismissCall('sipuni:operator-call');
     await Promise.resolve();
@@ -323,6 +323,82 @@ describe('useCallSession', () => {
         sessionKey: null,
       })
     );
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4776, { native: true });
+  });
+
+  it('defers browser SIP refresh while an outbound call is still dialing', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:local:outbound-dialing',
+      provider: 'sipuni',
+      inboxId: 4776,
+      status: 'created',
+      callDirection: 'outbound',
+      browserJoined: true,
+      browserStartState: 'ringing',
+    });
+    inboxGetterMock.mockReturnValue({ id: 4776, provider: 'sipuni' });
+
+    mountUseCallSession();
+    await Promise.resolve();
+    const initialDestroyCalls = destroyDeviceMock.mock.calls.length;
+
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, {
+      account_id: 530,
+      provider: 'sipuni',
+      inbox_id: 4776,
+      sip_profile_ids: [48],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(destroyDeviceMock.mock.calls.length).toBe(initialDestroyCalls);
+
+    callsStore.dismissCall('sipuni:local:outbound-dialing');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(destroyDeviceMock.mock.calls.length).toBeGreaterThan(
+      initialDestroyCalls
+    );
+    expect(destroyDeviceMock.mock.calls.at(-1)?.[0]).toEqual(
+      expect.objectContaining({
+        provider: 'sipuni',
+        inboxId: 4776,
+      })
+    );
+  });
+
+  it('does not re-bootstrap Janus when the dashboard mounts during outbound dialing', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:local:outbound-mount-dialing',
+      provider: 'sipuni',
+      inboxId: 4776,
+      status: 'created',
+      callDirection: 'outbound',
+      browserJoined: true,
+      browserStartState: 'calling',
+    });
+    routeMock.params = { inbox_id: '4776' };
+    inboxGetterMock.mockReturnValue({ id: 4776, provider: 'sipuni' });
+
+    mountUseCallSession();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
+    expect(initializeDeviceMock).not.toHaveBeenCalled();
+
+    callsStore.dismissCall('sipuni:local:outbound-mount-dialing');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalled();
     expect(initializeDeviceMock).toHaveBeenCalledWith(4776, { native: true });
   });
 

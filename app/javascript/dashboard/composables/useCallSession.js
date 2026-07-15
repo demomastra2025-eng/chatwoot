@@ -747,10 +747,28 @@ export function useCallSession() {
     );
   };
 
+  const hasPendingOutboundBrowserSipCall = () =>
+    callsStore.calls.some(call => {
+      if (!isOutboundCallDirection(call?.callDirection)) return false;
+      if (!NATIVE_BROWSER_SIP_PROVIDERS.has(resolveCallProvider(call))) {
+        return false;
+      }
+
+      const stage = call.browserStartState || call.browser_start_state;
+      return (
+        call.browserJoined === true ||
+        call.browser_joined === true ||
+        ['preparing', 'call_sent', 'calling', 'ringing', 'progress'].includes(
+          stage
+        )
+      );
+    });
+
   const hasBusyWebphoneState = payload => {
     if (isJoining.value) return true;
     if (hasActiveCall.value) return true;
     if (incomingCalls.value.length > 0) return true;
+    if (hasPendingOutboundBrowserSipCall()) return true;
 
     return WebphoneClient.hasPendingIncomingCall(payload);
   };
@@ -860,6 +878,17 @@ export function useCallSession() {
       routeCommunicationThreadVoiceInboxId.value ||
       incomingVoiceInboxId.value
   ) {
+    const refreshContext = {
+      provider:
+        incomingCallProviderForInboxId(inboxId) ||
+        browserSipProviderForInboxId(inboxId),
+      inboxId,
+    };
+    if (hasActiveCall.value || hasPendingOutboundBrowserSipCall()) {
+      await requestWebphoneConfigRefresh(refreshContext);
+      return null;
+    }
+
     try {
       await WebphoneClient.bootstrapIncomingSupport();
 
@@ -882,6 +911,8 @@ export function useCallSession() {
         INCOMING_BOOTSTRAP_RETRY_MS
       );
     }
+
+    return null;
   }
 
   watch(routeVoiceInboxId, (inboxId, previousInboxId) => {
