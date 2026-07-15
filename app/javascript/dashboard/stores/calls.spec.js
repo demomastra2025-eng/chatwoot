@@ -271,6 +271,34 @@ describe('useCallsStore', () => {
     ]);
   });
 
+  it('keeps different inbound call refs separate without logical keys even in the same conversation', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'first-call-ref',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 612,
+      inboxId: 158,
+    });
+    store.addCall({
+      callSid: 'second-call-ref',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 612,
+      inboxId: 158,
+    });
+    store.setCallActive('first-call-ref');
+
+    expect(store.calls.map(call => call.callSid)).toEqual([
+      'first-call-ref',
+      'second-call-ref',
+    ]);
+    expect(store.incomingCalls).toEqual([
+      expect.objectContaining({ callSid: 'second-call-ref' }),
+    ]);
+  });
+
   it('clears sibling Janus SIP inbound branches when one branch becomes active', () => {
     const store = useCallsStore();
 

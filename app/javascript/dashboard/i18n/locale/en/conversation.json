@@ -421,7 +421,8 @@
       "OPEN_CHAT": "Chat",
       "CLOSE": "Close",
       "UNKNOWN_CALLER": "Unknown caller",
-      "DEFAULT_INBOX_NAME": "Customer support"
+      "DEFAULT_INBOX_NAME": "Customer support",
+      "OPERATOR_BUSY": "End the current call before answering another one"
     },
     "STATUS_REASONS": {
       "STATUS": {

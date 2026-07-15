@@ -418,7 +418,8 @@
       "OPEN_CHAT": "Чат",
       "CLOSE": "Закрыть",
       "UNKNOWN_CALLER": "Неизвестный абонент",
-      "DEFAULT_INBOX_NAME": "Поддержка клиентов"
+      "DEFAULT_INBOX_NAME": "Поддержка клиентов",
+      "OPERATOR_BUSY": "Завершите текущий звонок, прежде чем отвечать на другой"
     },
     "UNSUPPORTED_MESSAGE_TIKTOK": "Это сообщение не поддерживается. Вы можете открыть его в приложении TikTok.",
     "FILE_TYPE_NOT_SUPPORTED": "Тип файла {fileName} не поддерживается в этом диалоге",

@@ -3,6 +3,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 
 import { useCallsStore } from 'dashboard/stores/calls';
+import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import VoiceCallButton from './VoiceCallButton.vue';
 
 const {
@@ -234,6 +235,19 @@ describe('VoiceCallButton', () => {
         }),
       ],
     ]);
+  });
+
+  it('does not initiate a voice call while a WhatsApp call is active', async () => {
+    useWhatsappCallsStore().setActiveCall({ callId: 'wa-active-1' });
+    const dispatch = vi.fn();
+    const { wrapper } = mountComponent({ dispatch });
+    const button = wrapper.find('button');
+
+    expect(button.attributes('disabled')).toBeDefined();
+    await button.trigger('click');
+    await flushPromises();
+
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it('starts the browser SIP attempt directly with the prepared session scope', async () => {

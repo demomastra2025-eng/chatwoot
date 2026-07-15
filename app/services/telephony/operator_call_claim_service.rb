@@ -10,20 +10,22 @@ class Telephony::OperatorCallClaimService
   def perform
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if call_ref.blank?
 
-    call_session.with_lock do
-      raise_terminal_call! if call_session.terminal?
-      raise_not_candidate! unless candidate_user?
+    operator_availability.with_lock do
+      call_session.with_lock do
+        raise_terminal_call! if call_session.terminal?
+        raise_not_candidate! unless candidate_user?
 
-      if claimed_by_other?
-        raise Telephony::Error.new(
-          code: 'CALL_ALREADY_CLAIMED',
-          message: 'Call was already claimed by another operator',
-          status: :conflict,
-          details: claim_details
-        )
+        if claimed_by_other?
+          raise Telephony::Error.new(
+            code: 'CALL_ALREADY_CLAIMED',
+            message: 'Call was already claimed by another operator',
+            status: :conflict,
+            details: claim_details
+          )
+        end
+
+        claim_call!
       end
-
-      claim_call!
     end
 
     broadcast_claimed_call!
@@ -36,6 +38,14 @@ class Telephony::OperatorCallClaimService
 
   def call_session
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+  end
+
+  def operator_availability
+    @operator_availability ||= Telephony::OperatorBusyService.new(
+      account: account,
+      user: user,
+      excluding_telephony_call: call_session
+    )
   end
 
   def agent_binding
@@ -377,33 +387,7 @@ class Telephony::OperatorCallClaimService
 
     current_key = logical_call_key_for_session(call_session)
     session_key = logical_call_key_for_session(session)
-    return true if current_key.present? && current_key == session_key
-    return false if current_key.present? && session_key.present?
-
-    same_claimed_call_context?(session)
-  end
-
-  def same_claimed_call_context?(session)
-    return false if call_session.inbox_id.present? && session.inbox_id.present? && session.inbox_id != call_session.inbox_id
-    if call_session.conversation_id.present? && session.conversation_id.present? && session.conversation_id != call_session.conversation_id
-      return false
-    end
-
-    same_phone_value?(session.from_number, call_session.from_number) &&
-      same_phone_value?(session.to_number, call_session.to_number)
-  end
-
-  def same_phone_value?(left, right)
-    normalized_left = normalized_phone(left)
-    normalized_right = normalized_phone(right)
-    normalized_left.present? && normalized_left == normalized_right
-  end
-
-  def normalized_phone(value)
-    digits = value.to_s.gsub(/\D/, '')
-    digits = digits.delete_prefix('00')
-    digits = "7#{digits[1..]}" if digits.length == 11 && digits.start_with?('8')
-    digits.presence
+    current_key.present? && current_key == session_key
   end
 
   def logical_call_key_for_session(session)

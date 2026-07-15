@@ -6,6 +6,7 @@ import { useStore } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useCallSession } from 'dashboard/composables/useCallSession';
 import { useIncomingCallRingtone } from 'dashboard/composables/useIncomingCallRingtone';
+import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import { isVoiceCallRingtoneEligible } from 'dashboard/helper/AudioAlerts/ringtone';
 import {
   getOutboundCallStageLabelKey,
@@ -16,6 +17,7 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 
 const router = useRouter();
 const store = useStore();
+const whatsappCallsStore = useWhatsappCallsStore();
 const { t } = useI18n();
 
 const {
@@ -29,6 +31,10 @@ const {
   rejectIncomingCall,
   formattedCallDuration,
 } = useCallSession();
+
+const operatorBusy = computed(
+  () => hasActiveCall.value || whatsappCallsStore.hasActiveCall
+);
 
 const isOutboundCall = call => call?.callDirection === 'outbound';
 const callCancelLabel = call =>
@@ -609,9 +615,9 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   const inboxId = call.inboxId || conversation?.inbox_id;
   if (!inboxId) return;
 
-  // End current active call before joining new one
-  if (hasActiveCall.value) {
-    await handleEndCall();
+  if (operatorBusy.value) {
+    useAlert(t('CONVERSATION.VOICE_WIDGET.OPERATOR_BUSY'));
+    return;
   }
 
   const result = await joinCall({
@@ -778,6 +784,7 @@ onUnmounted(stopElapsedTimer);
                 class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-teal-9 text-white hover:bg-n-teal-10 shadow-sm"
                 :title="$t('CONVERSATION.VOICE_WIDGET.CALL')"
                 :aria-label="$t('CONVERSATION.VOICE_WIDGET.CALL')"
+                :disabled="operatorBusy || isJoining"
                 @click="handleJoinCall(call)"
               >
                 <i class="text-base i-ph-phone-bold" />

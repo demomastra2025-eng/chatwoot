@@ -8,19 +8,22 @@ class Telephony::CallsService
   def create_outbound!(inbox:, contact:, user:, conversation:)
     raise Telephony::Error.new(code: 'MISSING_PHONE_NUMBER', message: 'Contact phone number is required') if contact.phone_number.blank?
 
-    number_binding = ensure_number_binding!(inbox)
-    operator_identity = operator_identity_for(inbox, user)
-    if provider_owned_sip_inbox?(inbox)
-      return create_provider_owned_sip_outbound!(number_binding, inbox, contact, user, conversation,
-                                                 operator_identity)
+    Telephony::OperatorBusyService.new(account: account, user: user).with_lock do
+      number_binding = ensure_number_binding!(inbox)
+      operator_identity = operator_identity_for(inbox, user)
+      if provider_owned_sip_inbox?(inbox)
+        create_provider_owned_sip_outbound!(
+          number_binding, inbox, contact, user, conversation, operator_identity
+        )
+      else
+        raise Telephony::Error.new(
+          code: 'UNSUPPORTED_TELEPHONY_PROVIDER',
+          message: 'Outbound calls are supported only for Janus SIP voice providers',
+          status: :unprocessable_content,
+          details: { provider: inbox&.channel&.provider }
+        )
+      end
     end
-
-    raise Telephony::Error.new(
-      code: 'UNSUPPORTED_TELEPHONY_PROVIDER',
-      message: 'Outbound calls are supported only for Janus SIP voice providers',
-      status: :unprocessable_content,
-      details: { provider: inbox&.channel&.provider }
-    )
   end
 
   def list_remote(_filters = {})

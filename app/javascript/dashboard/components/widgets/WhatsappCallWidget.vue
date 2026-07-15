@@ -7,9 +7,11 @@ import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import { useI18n } from 'vue-i18n';
 import { emitter } from 'shared/helpers/mitt';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { useCallsStore } from 'dashboard/stores/calls';
 
 const { t } = useI18n();
 const router = useRouter();
+const callsStore = useCallsStore();
 
 const {
   activeCall,
@@ -46,6 +48,9 @@ const visibleIncomingCalls = computed(() =>
 );
 const showActiveCall = computed(
   () => hasActiveCall.value && !isCallHidden(activeCall.value)
+);
+const operatorBusy = computed(
+  () => hasActiveCall.value || callsStore.hasActiveCall
 );
 const shouldPlayIncomingCallRingtone = computed(
   () =>
@@ -95,6 +100,14 @@ const clearAutoRejectTimer = callId => {
 };
 
 const handleAccept = async call => {
+  if (operatorBusy.value) {
+    emitter.emit(BUS_EVENTS.SHOW_ALERT, {
+      message: t('CONVERSATION.VOICE_WIDGET.OPERATOR_BUSY'),
+      type: 'error',
+    });
+    return;
+  }
+
   clearAutoRejectTimer(call.callId);
   await acceptCall(call);
   if (activeCall.value) {
@@ -160,11 +173,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    v-show="
-      callError ||
-      (!hasActiveCall && visibleIncomingCalls.length) ||
-      showActiveCall
-    "
+    v-show="callError || visibleIncomingCalls.length || showActiveCall"
     class="fixed ltr:right-4 rtl:left-4 bottom-20 z-50 flex flex-col gap-2 w-72"
   >
     <!-- Error banner -->
@@ -175,8 +184,8 @@ onUnmounted(() => {
       {{ callError }}
     </div>
 
-    <!-- Incoming calls (shown when there's no active call yet) -->
-    <template v-if="!hasActiveCall && visibleIncomingCalls.length">
+    <!-- Incoming calls remain visible while the operator is busy. -->
+    <template v-if="visibleIncomingCalls.length">
       <div
         v-for="call in visibleIncomingCalls"
         :key="call.callId"
@@ -223,7 +232,7 @@ onUnmounted(() => {
           </button>
           <button
             class="flex justify-center items-center w-10 h-10 bg-n-teal-9 hover:bg-n-teal-10 rounded-full transition-colors"
-            :disabled="isAccepting"
+            :disabled="isAccepting || operatorBusy"
             :title="t('WHATSAPP_CALL.ACCEPT')"
             @click="handleAccept(call)"
           >

@@ -31,6 +31,8 @@ const ringtoneState = vi.hoisted(() => ({
   isActive: null,
 }));
 
+const whatsappCallsState = vi.hoisted(() => ({ hasActiveCall: false }));
+
 const t = (key, params = {}) => {
   const translations = {
     'CONVERSATION.VOICE_WIDGET.INCOMING_CALL': 'Incoming call',
@@ -99,6 +101,10 @@ vi.mock('dashboard/composables', () => ({
   useAlert: vi.fn(),
 }));
 
+vi.mock('dashboard/stores/whatsappCalls', () => ({
+  useWhatsappCallsStore: () => whatsappCallsState,
+}));
+
 vi.mock('dashboard/helper/AudioAlerts/WindowVisibilityHelper', () => ({
   default: { isWindowVisible: () => false },
 }));
@@ -157,6 +163,7 @@ describe('FloatingCallWidget', () => {
     mockSession.incomingCalls = [];
     mockSession.hasActiveCall = false;
     mockSession.isJoining = false;
+    whatsappCallsState.hasActiveCall = false;
     mockSession.canHandleCallInBrowser.mockImplementation(
       call => call?.browserJoinSupported !== false
     );
@@ -494,6 +501,32 @@ describe('FloatingCallWidget', () => {
 
     expect(wrapper.text()).toContain('+77070001002→+77070001001');
     expect(wrapper.text()).toContain('+77070001003→+77070001001');
+  });
+
+  it('keeps an incoming call visible but blocks answer while WhatsApp is active', async () => {
+    whatsappCallsState.hasActiveCall = true;
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:incoming-busy',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({ id: 4769, provider: 'sipuni' });
+
+    const wrapper = mountComponent();
+    const answerButton = wrapper.get('[aria-label="Call"]');
+
+    expect(answerButton.attributes('disabled')).toBeDefined();
+    await answerButton.trigger('click');
+    expect(mockSession.endCall).not.toHaveBeenCalled();
+    expect(mockSession.joinCall).not.toHaveBeenCalled();
   });
 
   it('hides the active call card without ending the call', async () => {

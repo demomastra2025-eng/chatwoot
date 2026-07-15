@@ -25,6 +25,8 @@ const ringtoneState = vi.hoisted(() => ({
   isActive: null,
 }));
 
+const voiceCallsState = vi.hoisted(() => ({ hasActiveCall: false }));
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
 }));
@@ -64,6 +66,10 @@ vi.mock('dashboard/composables/useIncomingCallRingtone', () => ({
   },
 }));
 
+vi.mock('dashboard/stores/calls', () => ({
+  useCallsStore: () => voiceCallsState,
+}));
+
 import WhatsappCallWidget from './WhatsappCallWidget.vue';
 
 const mountComponent = () =>
@@ -79,6 +85,8 @@ describe('WhatsappCallWidget ringtone', () => {
     mockSession.incomingCalls = [];
     mockSession.hasActiveCall = false;
     mockSession.isAccepting = false;
+    mockSession.acceptCall.mockReset();
+    voiceCallsState.hasActiveCall = false;
     ringtoneState.sourceId = null;
     ringtoneState.isActive = null;
   });
@@ -108,6 +116,22 @@ describe('WhatsappCallWidget ringtone', () => {
     const wrapper = mountComponent();
 
     expect(ringtoneState.isActive.value).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('keeps incoming WhatsApp visible but blocks accept while voice is active', async () => {
+    voiceCallsState.hasActiveCall = true;
+    mockSession.incomingCalls = [
+      { callId: 'wa-incoming-busy', caller: { name: 'Customer' } },
+    ];
+
+    const wrapper = mountComponent();
+    const acceptButton = wrapper.get('[title="WHATSAPP_CALL.ACCEPT"]');
+
+    expect(wrapper.text()).toContain('Customer');
+    expect(acceptButton.attributes('disabled')).toBeDefined();
+    await acceptButton.trigger('click');
+    expect(mockSession.acceptCall).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 

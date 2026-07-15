@@ -40,18 +40,24 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   end
 
   def accept
-    if @call.media_server_enabled?
-      service = Whatsapp::CallService.new(call: @call, agent: current_user)
-      call = service.accept
-      render json: media_server_accept_payload(call, service.agent_offer)
-    else
-      sdp_answer = params[:sdp_answer]
-      return render json: { error: 'sdp_answer is required' }, status: :unprocessable_entity if sdp_answer.blank?
-
-      call = Whatsapp::CallService.new(call: @call, agent: current_user).pre_accept_and_accept(sdp_answer)
-      render json: { id: call.id, status: call.status, message_id: call.message_id, conversation_id: call.conversation_id,
-                     conversation_display_id: call.conversation&.display_id }
+    sdp_answer = params[:sdp_answer]
+    if !@call.media_server_enabled? && sdp_answer.blank?
+      return render json: { error: 'sdp_answer is required' }, status: :unprocessable_entity
     end
+
+    with_operator_call_lock(excluding_whatsapp_call: @call) do
+      if @call.media_server_enabled?
+        service = Whatsapp::CallService.new(call: @call, agent: current_user)
+        call = service.accept
+        render json: media_server_accept_payload(call, service.agent_offer)
+      else
+        call = Whatsapp::CallService.new(call: @call, agent: current_user).pre_accept_and_accept(sdp_answer)
+        render json: { id: call.id, status: call.status, message_id: call.message_id, conversation_id: call.conversation_id,
+                       conversation_display_id: call.conversation&.display_id }
+      end
+    end
+  rescue Telephony::Error => e
+    render_operator_busy(e)
   rescue Whatsapp::CallErrors::NotRinging, Whatsapp::CallErrors::AlreadyAccepted => e
     render json: { error: e.message }, status: :unprocessable_entity
   rescue Whatsapp::MediaServerClient::SessionError => e
@@ -202,12 +208,14 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
     error = validate_whatsapp_calling(conversation)
     return render json: { error: error }, status: :unprocessable_entity if error
 
-    call = create_outbound_call(conversation)
+    call = with_operator_call_lock { create_outbound_call(conversation) }
     message = Whatsapp::CallMessageBuilder.create!(conversation: conversation, call: call, user: current_user)
     call.update!(message_id: message.id)
     render json: outbound_initiate_payload(call, message)
   rescue Whatsapp::CallErrors::NoCallPermission
     handle_no_call_permission(conversation)
+  rescue Telephony::Error => e
+    render_operator_busy(e)
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Conversation not found' }, status: :not_found
   rescue StandardError => e
@@ -224,11 +232,13 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
       return render json: { error: 'Media server is required for prepared outbound calls' }, status: :unprocessable_entity
     end
 
-    call = prepare_outbound_call_via_media_server(conversation)
+    call = with_operator_call_lock { prepare_outbound_call_via_media_server(conversation) }
     message = Whatsapp::CallMessageBuilder.create!(conversation: conversation, call: call, user: current_user)
     call.update!(message_id: message.id)
     schedule_call_cleanup(call)
     render json: outbound_initiate_payload(call, message)
+  rescue Telephony::Error => e
+    render_operator_busy(e)
   rescue ActiveRecord::RecordNotFound
     render json: { error: 'Conversation not found' }, status: :not_found
   rescue StandardError => e
@@ -255,6 +265,18 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   end
 
   private
+
+  def with_operator_call_lock(excluding_whatsapp_call: nil, &block)
+    Telephony::OperatorBusyService.new(
+      account: current_account,
+      user: current_user,
+      excluding_whatsapp_call: excluding_whatsapp_call
+    ).with_lock(&block)
+  end
+
+  def render_operator_busy(error)
+    render json: { error: error.message, code: error.code, details: error.details }, status: error.status
+  end
 
   def outbound_initiate_payload(call, message)
     payload = {

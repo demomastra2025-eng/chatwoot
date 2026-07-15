@@ -144,6 +144,26 @@ describe Messages::MessageBuilder do
         end
       end
 
+      context 'when the message is a provider-originated voice call card' do
+        let(:params) do
+          ActionController::Parameters.new(
+            content: 'WhatsApp Call',
+            content_type: 'voice_call',
+            source_id: 'wacid.outbound-1'
+          )
+        end
+
+        it 'creates the local timeline card without applying message delivery policy' do
+          message = message_builder
+
+          expect(message).to have_attributes(
+            content_type: 'voice_call',
+            source_id: 'wacid.outbound-1',
+            content: 'WhatsApp Call'
+          )
+        end
+      end
+
       context 'when the message is a private note' do
         let(:params) do
           ActionController::Parameters.new({

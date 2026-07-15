@@ -131,6 +131,28 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
       expect(ringing_call.reload.status).to eq('in_progress')
     end
 
+    it 'rejects accepting a second call while the operator is busy on voice' do
+      ringing_call = create(:call, account: account, status: 'ringing', media_session_id: nil, meta: { 'sdp_offer' => 'v=0' })
+      ringing_call.inbox.channel.update!(provider_config: ringing_call.inbox.channel.provider_config.merge('media_server_enabled' => false))
+      create(
+        :telephony_call_session,
+        account: account,
+        status: 'in_progress',
+        metadata: { 'operator_claim' => { 'user_id' => administrator.id } }
+      )
+      expect(provider_service).not_to receive(:pre_accept_call)
+      expect(provider_service).not_to receive(:accept_call)
+
+      post "/api/v1/accounts/#{account.id}/whatsapp_calls/#{ringing_call.id}/accept",
+           params: { sdp_answer: 'answer' },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body).to include('code' => 'OPERATOR_BUSY')
+      expect(ringing_call.reload).to have_attributes(status: 'ringing', accepted_by_agent_id: nil)
+    end
+
     it 'rejects direct accept without sdp_answer' do
       ringing_call = create(:call, account: account, status: 'ringing', media_session_id: nil, meta: { 'sdp_offer' => 'v=0' })
       ringing_call.inbox.channel.update!(provider_config: ringing_call.inbox.channel.provider_config.merge('media_server_enabled' => false))
@@ -333,6 +355,25 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
     before do
       allow_any_instance_of(Channel::Whatsapp).to receive(:provider_service).and_return(provider_service)
       allow(ActionCable.server).to receive(:broadcast)
+    end
+
+    it 'rejects outbound initiation while the operator is busy on voice' do
+      create(
+        :telephony_call_session,
+        account: account,
+        status: 'in_progress',
+        metadata: { 'operator_identity' => { 'user_id' => administrator.id } }
+      )
+      expect(provider_service).not_to receive(:initiate_call)
+
+      post initiate_path,
+           params: { conversation_id: conversation.display_id, sdp_offer: 'v=0' },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body).to include('code' => 'OPERATOR_BUSY')
+      expect(Call.where(account: account, accepted_by_agent_id: administrator.id)).to be_empty
     end
 
     it 'creates an outbound direct ringing call' do

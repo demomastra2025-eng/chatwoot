@@ -15,8 +15,6 @@ const callLogicalKey = call =>
   call?.callGroupKey ||
   call?.call_group_key;
 
-const hasLogicalCallKey = call => isPresent(callLogicalKey(call));
-
 const scopedCallKeys = entries =>
   entries.flatMap(([scope, ...values]) =>
     values.filter(isPresent).map(value => `${scope}:${String(value)}`)
@@ -92,12 +90,7 @@ const sameNativeSipConversation = (
     return false;
   }
 
-  if (
-    (isInboundCall(call) || isInboundCall(callData)) &&
-    (hasLogicalCallKey(call) || hasLogicalCallKey(callData))
-  ) {
-    return false;
-  }
+  if (isInboundCall(call) || isInboundCall(callData)) return false;
 
   return hasSharedConversationKey(call, callData);
 };
@@ -110,17 +103,6 @@ const sameNativeSipInboundBranch = (call, callData) => {
   if (!isInboundCall(call) || !isInboundCall(callData)) return false;
 
   return sameValue(callLogicalKey(call), callLogicalKey(callData));
-};
-
-const sameNativeSipInboundConversation = (call, callData) => {
-  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
-    return false;
-  }
-  if (call?.provider !== callData?.provider) return false;
-  if (!isInboundCall(call) || !isInboundCall(callData)) return false;
-  if (hasLogicalCallKey(call) || hasLogicalCallKey(callData)) return false;
-
-  return hasSharedConversationKey(call, callData);
 };
 
 const sameLiveCall = (call, callData) =>
@@ -147,18 +129,9 @@ const terminalSuppressionKeys = call => {
 const nonTerminalCallStatus = status => !TERMINAL_STATUSES.includes(status);
 
 const isRelatedNativeSipInbound = (call, targetCall) =>
-  sameNativeSipInboundBranch(call, targetCall) ||
-  sameNativeSipInboundConversation(call, targetCall);
+  sameNativeSipInboundBranch(call, targetCall);
 
-const visibleIncomingCalls = calls => {
-  const activeCall = calls.find(call => call.isActive);
-  return calls.filter(call => {
-    if (call.isActive) return false;
-    if (!activeCall) return true;
-
-    return !sameNativeSipInboundConversation(call, activeCall);
-  });
-};
+const visibleIncomingCalls = calls => calls.filter(call => !call.isActive);
 
 const hasOwn = (object, key) =>
   Object.prototype.hasOwnProperty.call(object || {}, key);
@@ -449,7 +422,7 @@ export const useCallsStore = defineStore('calls', {
           browserJoinSupported: call?.isActive ? browserJoinSupported : false,
           browserJoinUnsupportedReason: call?.isActive
             ? call?.browserJoinUnsupportedReason
-            : (browserJoinUnsupportedReason || 'CALL_IN_PROGRESS'),
+            : browserJoinUnsupportedReason || 'CALL_IN_PROGRESS',
           serverManagedVoiceCall,
         });
       }

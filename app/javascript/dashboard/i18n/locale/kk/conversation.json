@@ -381,7 +381,8 @@
       "OPEN_CHAT": "Чат",
       "CLOSE": "Жабу",
       "UNKNOWN_CALLER": "Белгісіз қоңырау шалушы",
-      "DEFAULT_INBOX_NAME": "Клиенттерді қолдау"
+      "DEFAULT_INBOX_NAME": "Клиенттерді қолдау",
+      "OPERATOR_BUSY": "Басқа қоңырауға жауап бермес бұрын ағымдағы қоңырауды аяқтаңыз"
     },
     "STATUS_REASONS": {
       "STATUS": {

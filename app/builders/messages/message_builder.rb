@@ -112,6 +112,7 @@ class Messages::MessageBuilder
 
   def validate_delivery_policy!
     return unless message_type == 'outgoing'
+    return if provider_originated_voice_call?
 
     Outbound::DeliveryPolicy.ensure!(
       conversation: @conversation,
@@ -121,6 +122,10 @@ class Messages::MessageBuilder
       attachments: @attachments,
       private_note: @private
     )
+  end
+
+  def provider_originated_voice_call?
+    @params[:content_type].to_s == 'voice_call' && @params[:source_id].present?
   end
 
   def validate_whatsapp_outbound_content!

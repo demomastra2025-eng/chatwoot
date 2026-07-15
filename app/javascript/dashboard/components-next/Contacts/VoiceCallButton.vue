@@ -8,6 +8,7 @@ import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useAlert } from 'dashboard/composables';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import { useCallsStore } from 'dashboard/stores/calls';
+import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
 import { startOutboundBrowserCall } from 'dashboard/api/channel/voice/outboundCallCoordinator';
 
@@ -32,6 +33,7 @@ const route = useRoute();
 const router = useRouter();
 const store = useStore();
 const callsStore = useCallsStore();
+const whatsappCallsStore = useWhatsappCallsStore();
 
 const { t } = useI18n();
 
@@ -84,7 +86,8 @@ const isCallButtonBusy = computed(
     props.disabled ||
     isPreparingCall.value ||
     isInitiatingCall.value ||
-    hasOngoingBrowserCall.value
+    hasOngoingBrowserCall.value ||
+    whatsappCallsStore.hasActiveCall
 );
 
 const sameValue = (left, right) =>
