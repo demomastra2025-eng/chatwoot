@@ -14,6 +14,7 @@ const {
   waitForPendingIncomingCallMock,
   removeEventListenerMock,
   rejectBackendCallMock,
+  reportBrowserSipAnsweredMock,
   reportBrowserSipIncomingMock,
   rejectClientCallMock,
   routeMock,
@@ -33,6 +34,7 @@ const {
   waitForPendingIncomingCallMock: vi.fn(),
   removeEventListenerMock: vi.fn(),
   rejectBackendCallMock: vi.fn(),
+  reportBrowserSipAnsweredMock: vi.fn(),
   reportBrowserSipIncomingMock: vi.fn(),
   rejectClientCallMock: vi.fn(),
   routeMock: { params: {} },
@@ -64,6 +66,7 @@ vi.mock('dashboard/api/channel/voice/voiceAPIClient', () => ({
     joinConference: vi.fn(),
     leaveConference: vi.fn(),
     rejectIncomingCall: rejectBackendCallMock,
+    reportBrowserSipAnswered: reportBrowserSipAnsweredMock,
     reportBrowserSipIncoming: reportBrowserSipIncomingMock,
   },
 }));
@@ -117,6 +120,7 @@ describe('useCallSession', () => {
     inboxGetterMock.mockReturnValue(null);
     conversationByIdGetterMock.mockReturnValue(null);
     bootstrapIncomingSupportMock.mockResolvedValue({ provider: 'sipuni' });
+    reportBrowserSipAnsweredMock.mockResolvedValue({ answered: true });
     destroyDeviceMock.mockResolvedValue({ provider: 'sipuni' });
     initializeDeviceMock.mockResolvedValue({
       provider: 'sipuni',
@@ -941,6 +945,7 @@ describe('useCallSession', () => {
       callSid: 'asterisk_analog:local:accepted-outbound',
       provider: 'asterisk_analog',
       callDirection: 'outbound',
+      answeredAt: '2026-07-15T10:10:28.655Z',
     });
 
     mountUseCallSession();
@@ -960,6 +965,10 @@ describe('useCallSession', () => {
         reason: 'remote_hangup',
         status: 'completed',
       }
+    );
+    expect(reportBrowserSipAnsweredMock).toHaveBeenCalledWith(
+      'asterisk_analog:local:accepted-outbound',
+      { answered_at: '2026-07-15T10:10:28.655Z' }
     );
     expect(callsStore.calls).toEqual([]);
   });
@@ -1047,6 +1056,10 @@ describe('useCallSession', () => {
         answeredAt: expect.any(String),
         isActive: true,
       })
+    );
+    expect(reportBrowserSipAnsweredMock).toHaveBeenCalledWith(
+      'sipuni:local:staged-outbound',
+      { answered_at: expect.any(String) }
     );
   });
 

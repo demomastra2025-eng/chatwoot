@@ -1413,6 +1413,83 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(call_session.metadata.dig('operator_claim', 'user_id')).to eq(administrator.id)
   end
 
+  it 'records an outbound browser SIP answer idempotently for the initiating operator' do
+    answered_at = 5.seconds.ago.change(usec: 0)
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      provider: 'sipuni',
+      external_call_ref: 'sipuni:local:browser-answered-1',
+      status: 'created',
+      direction: 'outbound',
+      started_at: answered_at - 10.seconds,
+      metadata: {
+        'telephony_call_ref' => 'sipuni:local:browser-answered-1',
+        'metadata' => {
+          'source' => 'onelink_browser_janus_sip',
+          'route_action' => 'operator',
+          'chatwoot_user_id' => administrator.id,
+          'operator_candidate_user_ids' => [administrator.id]
+        }
+      }
+    )
+
+    2.times do
+      post "/api/v1/accounts/#{account.id}/telephony/webphone/answered",
+           params: { call_ref: call_session.external_call_ref, answered_at: answered_at.iso8601(3) },
+           headers: headers,
+           as: :json
+    end
+
+    aggregate_failures do
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('payload', 'answered')).to be(true)
+      expect(call_session.reload).to have_attributes(
+        status: 'in_progress',
+        answered_at: answered_at,
+        answered_by: "user:#{administrator.id}"
+      )
+      expect(call_session.events.where(event_type: 'callee_answered').count).to eq(1)
+    end
+  end
+
+  it 'repairs the answer state when the browser report arrives after call completion' do
+    answered_at = 8.seconds.ago.change(usec: 0)
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      provider: 'sipuni',
+      external_call_ref: 'sipuni:local:browser-answered-late-1',
+      status: 'completed',
+      direction: 'outbound',
+      started_at: answered_at - 5.seconds,
+      ended_at: answered_at + 5.seconds,
+      metadata: {
+        'metadata' => {
+          'source' => 'onelink_browser_janus_sip',
+          'route_action' => 'operator',
+          'chatwoot_user_id' => administrator.id
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/answered",
+         params: { call_ref: call_session.external_call_ref, answered_at: answered_at.iso8601(3) },
+         headers: headers,
+         as: :json
+
+    aggregate_failures do
+      expect(response).to have_http_status(:ok)
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        answered_at: answered_at,
+        answered_by: "user:#{administrator.id}",
+        duration_seconds: 5
+      )
+      expect(call_session.events.where(event_type: 'callee_answered').count).to eq(1)
+    end
+  end
+
   it 'rejects the second operator when an incoming call was already claimed' do
     winner = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
     loser_user = create(:user, account: account, role: :agent)

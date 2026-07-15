@@ -43,6 +43,17 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
     )
   end
 
+  def answered
+    render_payload(
+      Telephony::OperatorCallAnsweredService.new(
+        account: Current.account,
+        user: Current.user,
+        call_ref: params.require(:call_ref),
+        answered_at: params[:answered_at]
+      ).perform
+    )
+  end
+
   def reject
     render_payload(
       Telephony::OperatorCallRejectService.new(

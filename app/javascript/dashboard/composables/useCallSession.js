@@ -491,15 +491,19 @@ export function useCallSession() {
         browserStartState: 'ringing',
       });
     } else if (stage === 'accepted') {
+      const answeredAt =
+        call.answeredAt || call.answered_at || new Date().toISOString();
       Object.assign(updates, {
         status: 'in_progress',
         callEvent: 'callee_answered',
         callLeg: 'callee',
         rawStatus: 'answered',
         browserStartState: 'connected',
-        answeredAt:
-          call.answeredAt || call.answered_at || new Date().toISOString(),
+        answeredAt,
       });
+      VoiceAPI.reportBrowserSipAnswered(call.callSid, {
+        answered_at: answeredAt,
+      }).catch(() => null);
     }
     callsStore.addCall(updates);
     if (stage === 'accepted') callsStore.setCallActive(call.callSid);
@@ -540,10 +544,24 @@ export function useCallSession() {
 
     await runOnceForCall(endingCallSids, call.callSid, async () => {
       const release = browserSipDisconnectRelease(call, detail);
-      await releaseBrowserSipCall(call.callSid, {
-        status: release.status,
-        reason: release.reason,
-      });
+      const answeredAt =
+        call.answeredAt ||
+        call.answered_at ||
+        detail.answeredAt ||
+        detail.answered_at ||
+        (detail.callMediaAccepted ? new Date().toISOString() : null);
+      const answerReport = answeredAt
+        ? VoiceAPI.reportBrowserSipAnswered(call.callSid, {
+            answered_at: answeredAt,
+          }).catch(() => null)
+        : null;
+      await Promise.all([
+        answerReport,
+        releaseBrowserSipCall(call.callSid, {
+          status: release.status,
+          reason: release.reason,
+        }),
+      ]);
     });
   };
 

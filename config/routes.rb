@@ -497,6 +497,7 @@ Rails.application.routes.draw do
             post 'webphone/presence', to: 'webphone#presence'
             post 'webphone/incoming', to: 'webphone#incoming'
             post 'webphone/claim', to: 'webphone#claim'
+            post 'webphone/answered', to: 'webphone#answered'
             post 'webphone/reject', to: 'webphone#reject'
           end
 
