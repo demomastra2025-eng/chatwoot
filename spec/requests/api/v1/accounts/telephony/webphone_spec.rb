@@ -2057,6 +2057,61 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'releases a SIP profile call that retained a legacy binding owned by the same operator' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    legacy_binding = create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'sipuni'
+    )
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      availability_mode: 'browser_webphone',
+      agent_ref: 'sipuni-profile-with-legacy-binding',
+      agent_aor: 'sip:509@ats01.kz.sipuni.com'
+    )
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      number_binding: Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id),
+      agent_binding: legacy_binding,
+      provider: 'sipuni',
+      external_call_ref: 'sipuni:janus:51:profile-with-legacy-binding',
+      status: 'in_progress',
+      direction: 'inbound',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'sip_profile_id' => profile.id,
+          'agent_ref' => profile.agent_ref
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'remote_hangup' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'completed',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'remote_hangup'
+    )
+  end
+
   it 'repairs a timed-out claimed browser call when the accepted media later reports remote hangup' do
     agent_binding = create(
       :telephony_agent_binding,

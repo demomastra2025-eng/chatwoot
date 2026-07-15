@@ -258,7 +258,11 @@ class Telephony::OperatorCallRejectService
   end
 
   def claimed_by_current_user?
-    return call_session.agent_binding_id == operator_agent_binding&.id if call_session.agent_binding_id.present?
+    # A Janus call can retain the legacy agent binding used while routing and
+    # then be claimed through a native SIP profile. Compare ownership, not the
+    # currently selected identity type, or the same operator is mistaken for
+    # a different claimant during the remote BYE release.
+    return call_session.agent_binding&.user_id == user.id if call_session.agent_binding_id.present?
 
     operator_claim_user_id == user.id
   end

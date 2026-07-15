@@ -944,6 +944,13 @@ describe('useCallSession', () => {
       }
     );
     expect(callsStore.calls).toEqual([]);
+
+    callsStore.addCall({
+      callSid: 'call-remote-disconnect',
+      provider: 'sipuni',
+      status: 'ringing',
+    });
+    expect(callsStore.calls).toEqual([]);
   });
 
   it('correlates a raw Janus disconnect with the canonical inbound call ref', async () => {

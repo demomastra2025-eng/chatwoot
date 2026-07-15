@@ -563,11 +563,16 @@ export function useCallSession() {
       return;
     }
 
+    const release = browserSipDisconnectRelease(call, detail);
+    // Janus BYE is authoritative for this browser leg. Remember it locally so
+    // a delayed incoming ActionCable event cannot resurrect the modal while
+    // the terminal backend request is still in flight.
+    callsStore.rememberTerminalCall({ ...call, status: release.status });
+
     const releasePromise = runOnceForCall(
       endingCallSids,
       call.callSid,
       async () => {
-        const release = browserSipDisconnectRelease(call, detail);
         const answeredAt =
           call.answeredAt ||
           call.answered_at ||
