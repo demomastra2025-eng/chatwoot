@@ -273,6 +273,20 @@ export class JanusSipVoiceClient extends EventTarget {
     this.janusServerRecordingFilename = null;
   }
 
+  static janusServerSignature(janusServer) {
+    if (!janusServer) return janusServer;
+
+    try {
+      const url = new URL(janusServer);
+      // The one-time ticket rotates on every token refresh but does not change
+      // the underlying Janus registration endpoint.
+      url.searchParams.delete('janus_ticket');
+      return url.toString();
+    } catch {
+      return janusServer;
+    }
+  }
+
   static normalizeSessionConfig(sessionConfig = {}) {
     const sip = sessionConfig.sip || {};
     const dialing = sessionConfig.dialing || sessionConfig.dialing_config || {};
@@ -499,7 +513,9 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     const signature = JSON.stringify({
-      janusServer: normalized.janusServer,
+      janusServer: JanusSipVoiceClient.janusServerSignature(
+        normalized.janusServer
+      ),
       sipUri: normalized.sip.uri,
       username: normalized.sip.username,
       host: normalized.sip.host,

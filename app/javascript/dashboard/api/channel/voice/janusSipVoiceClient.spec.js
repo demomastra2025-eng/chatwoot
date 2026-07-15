@@ -439,6 +439,52 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it('preserves a pending incoming call when the Janus websocket ticket rotates', async () => {
+    const client = createJanusSipVoiceClient();
+    await client.initializeDevice(
+      {
+        ...sipuniSession,
+        janusServer:
+          'wss://dev.one-link.kz/janus-sipuni?janus_ticket=initial-ticket',
+      },
+      { inboxId: 4769 }
+    );
+    pluginState.options?.onmessage?.(
+      {
+        result: {
+          event: 'incomingcall',
+          call_id: 'janus-invite-ticket-refresh',
+          username: 'sip:+77000000000@ats01.kz.sipuni.com',
+        },
+      },
+      { type: 'offer', sdp: 'remote-offer-sdp' }
+    );
+    janusDestroyMock.mockClear();
+    pluginDetachMock.mockClear();
+
+    await client.initializeDevice(
+      {
+        ...sipuniSession,
+        janusServer:
+          'wss://dev.one-link.kz/janus-sipuni?janus_ticket=refreshed-ticket',
+      },
+      { inboxId: 4769 }
+    );
+
+    expect(janusState.instances).toHaveLength(1);
+    expect(janusDestroyMock).not.toHaveBeenCalled();
+    expect(pluginDetachMock).not.toHaveBeenCalled();
+    expect(
+      client.hasPendingIncomingCall({
+        callRef: 'janus-invite-ticket-refresh',
+        strict: true,
+      })
+    ).toBe(true);
+    expect(client.sessionConfig.janusServer).toContain(
+      'janus_ticket=refreshed-ticket'
+    );
+  });
+
   it('recreates the Janus SIP registration when the profile registration version changes', async () => {
     await JanusSipVoiceClient.initializeDevice(
       { ...sipuniSession, registrationConfigVersion: 'version-1' },

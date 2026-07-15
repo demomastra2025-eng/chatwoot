@@ -196,6 +196,69 @@ describe('webphoneClient', () => {
     ).toBe(true);
   });
 
+  it('preserves the active native Janus client across rotated ticket refreshes', async () => {
+    const session = {
+      provider: 'sipuni',
+      sip_profile_id: 39,
+      inbox_id: 4769,
+      calling_supported: true,
+      janusServer:
+        'wss://dev.one-link.kz/janus-sipuni?janus_ticket=initial-ticket',
+      registration_config_version: 'config-39',
+      sip: {
+        username: 'line-39',
+        password: 'secret',
+        host: 'sipuni.test',
+      },
+    };
+    getNativeWebphoneTokenMock
+      .mockResolvedValueOnce(session)
+      .mockResolvedValueOnce({
+        ...session,
+        janusServer:
+          'wss://dev.one-link.kz/janus-sipuni?janus_ticket=scoped-refresh-ticket',
+      });
+    getWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [
+        {
+          ...session,
+          janusServer:
+            'wss://dev.one-link.kz/janus-sipuni?janus_ticket=global-refresh-ticket',
+        },
+      ],
+    });
+    janusInitializeMock.mockImplementation(async payload => ({
+      provider: payload.provider,
+      sessionKey: payload.sessionKey,
+      inboxId: payload.inbox_id,
+      sipProfileId: payload.sip_profile_id,
+      callingSupported: true,
+      registered: true,
+    }));
+    janusHasPendingIncomingCallMock.mockReturnValue(true);
+
+    await WebphoneClient.initializeDevice(4769, { native: true });
+    const activeClient = WebphoneClient.nativeSipClients['sip_profile:39'];
+
+    await WebphoneClient.bootstrapIncomingSupport();
+    await WebphoneClient.initializeDevice(4769, { native: true });
+
+    expect(janusClientFactoryMock).toHaveBeenCalledTimes(1);
+    expect(janusDestroyMock).not.toHaveBeenCalled();
+    expect(WebphoneClient.nativeSipClients['sip_profile:39']).toBe(
+      activeClient
+    );
+    expect(
+      WebphoneClient.hasPendingIncomingCall({
+        provider: 'sipuni',
+        inboxId: 4769,
+        sipProfileId: 39,
+        janusCallRef: 'incoming-39',
+      })
+    ).toBe(true);
+  });
+
   it('forwards native Janus SIP connected events with session context', async () => {
     getWebphoneTokenMock.mockResolvedValue({
       multi_session: true,
@@ -458,6 +521,78 @@ describe('webphoneClient', () => {
       WebphoneClient.nativeSessionRetryState = {};
       vi.useRealTimers();
     }
+  });
+
+  it('fences normal refreshes while a native session retry owns a newer generation', async () => {
+    const initialSession = {
+      provider: 'sipuni',
+      sip_profile_id: 39,
+      inbox_id: 4769,
+      calling_supported: true,
+      janusServer:
+        'wss://dev.one-link.kz/janus-sipuni?janus_ticket=initial-ticket',
+      sip: {
+        username: 'line-39',
+        password: 'secret',
+        host: 'sipuni.test',
+      },
+    };
+    getWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [initialSession],
+    });
+    janusInitializeMock.mockImplementation(async session => ({
+      provider: session.provider,
+      sessionKey: session.sessionKey,
+      inboxId: session.inbox_id,
+      sipProfileId: session.sip_profile_id,
+      callingSupported: true,
+      registered: true,
+    }));
+    await WebphoneClient.bootstrapIncomingSupport();
+    const activeClient = WebphoneClient.nativeSipClients['sip_profile:39'];
+    let resolveRefresh;
+    getNativeWebphoneTokenMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveRefresh = resolve;
+        })
+    );
+    janusInitializeMock.mockClear();
+    janusDestroyMock.mockClear();
+
+    const retryPromise = WebphoneClient.retryNativeSession('sip_profile:39');
+    expect(getNativeWebphoneTokenMock).toHaveBeenCalledWith(4769);
+
+    await WebphoneClient.initializeResponse({
+      multi_session: true,
+      sessions: [
+        {
+          ...initialSession,
+          janusServer:
+            'wss://dev.one-link.kz/janus-sipuni?janus_ticket=normal-refresh-ticket',
+        },
+      ],
+    });
+
+    expect(janusInitializeMock).not.toHaveBeenCalled();
+    expect(janusDestroyMock).not.toHaveBeenCalled();
+    expect(WebphoneClient.nativeSipClients['sip_profile:39']).toBe(
+      activeClient
+    );
+
+    resolveRefresh({
+      ...initialSession,
+      janusServer:
+        'wss://dev.one-link.kz/janus-sipuni?janus_ticket=retry-ticket',
+    });
+    await retryPromise;
+
+    expect(janusInitializeMock).toHaveBeenCalledTimes(1);
+    expect(janusDestroyMock).toHaveBeenCalledTimes(1);
+    expect(WebphoneClient.nativeSipClients['sip_profile:39']).not.toBe(
+      activeClient
+    );
   });
 
   it('does not resurrect a destroyed session from an in-flight retry', async () => {

@@ -251,6 +251,16 @@ class WebphoneClient extends EventTarget {
     return !client || this.nativeSipClients[sessionKey] === client;
   }
 
+  nativeSessionInitializationGeneration(sessionKey) {
+    const existingClient = this.nativeSipClients[sessionKey];
+    const existingGeneration = this.nativeSipClientGenerations[sessionKey];
+    if (existingClient && existingGeneration !== undefined) {
+      return existingGeneration;
+    }
+
+    return this.invalidateNativeSession(sessionKey);
+  }
+
   forgetNativeSessionConfig(sessionKey) {
     if (!sessionKey) return;
 
@@ -685,7 +695,7 @@ class WebphoneClient extends EventTarget {
     });
     const isNative = native || WebphoneClient.isNativeSipProvider(provider);
     const nativeGeneration = isNative
-      ? this.invalidateNativeSession(sessionKey)
+      ? this.nativeSessionInitializationGeneration(sessionKey)
       : null;
 
     try {
@@ -800,7 +810,8 @@ class WebphoneClient extends EventTarget {
     });
     const isNative = WebphoneClient.isNativeSipProvider(provider);
     const operationGeneration = isNative
-      ? (nativeGeneration ?? this.invalidateNativeSession(sessionKey))
+      ? (nativeGeneration ??
+        this.nativeSessionInitializationGeneration(sessionKey))
       : null;
     const callingSupported =
       response?.callingSupported ?? response?.calling_supported;
