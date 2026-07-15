@@ -967,7 +967,7 @@ export function useWhatsappCallSession() {
   const { t } = useI18n();
   const callsStore = useWhatsappCallsStore();
 
-  const isAccepting = ref(false);
+  const isAccepting = computed(() => callsStore.isAccepting);
   const isMuted = ref(false);
   const callError = ref(null);
   const callDuration = ref(0);
@@ -1039,8 +1039,8 @@ export function useWhatsappCallSession() {
    * Accept an incoming call — used by the floating widget buttons.
    */
   const acceptCall = async call => {
-    if (isAccepting.value) return;
-    isAccepting.value = true;
+    if (callsStore.isAccepting) return;
+    callsStore.setAccepting(true);
     callError.value = null;
 
     let serverRelay = false;
@@ -1142,7 +1142,7 @@ export function useWhatsappCallSession() {
       console.error('[WhatsApp Call] acceptCall error:', err);
       // Note: doAcceptCall already cleans up WebRTC resources on error
     } finally {
-      isAccepting.value = false;
+      callsStore.setAccepting(false);
     }
   };
 

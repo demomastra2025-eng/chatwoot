@@ -60,6 +60,8 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
     activeCall: null,
     // Cleanup callback registered by the composable — called when a call ends externally
     cleanupCallback: null,
+    // True from the first accept click until provider/WebRTC acceptance settles.
+    isAccepting: false,
     // True while the agent is reconnecting to an active call after page reload
     isReconnecting: false,
     // Seconds already elapsed when reconnecting — timer resumes from this offset
@@ -120,6 +122,10 @@ export const useWhatsappCallsStore = defineStore('whatsappCalls', {
 
     registerCleanupCallback(callback) {
       this.cleanupCallback = callback;
+    },
+
+    setAccepting(value) {
+      this.isAccepting = value;
     },
 
     setReconnecting(value) {

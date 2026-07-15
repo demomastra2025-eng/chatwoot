@@ -381,10 +381,12 @@ RSpec.describe 'WhatsApp Calls API', type: :request do
         .with(contact.phone_number.delete('+'), 'v=0')
         .and_return({ 'calls' => [{ 'id' => 'wacid.outbound-1' }] })
 
-      post initiate_path,
-           params: { conversation_id: conversation.display_id, sdp_offer: 'v=0' },
-           headers: headers,
-           as: :json
+      expect do
+        post initiate_path,
+             params: { conversation_id: conversation.display_id, sdp_offer: 'v=0' },
+             headers: headers,
+             as: :json
+      end.not_to have_enqueued_job(SendReplyJob)
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body).to include('status' => 'calling', 'call_id' => 'wacid.outbound-1')

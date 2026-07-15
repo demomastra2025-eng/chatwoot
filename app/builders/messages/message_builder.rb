@@ -7,9 +7,10 @@ class Messages::MessageBuilder
 
   attr_reader :message
 
-  def initialize(user, conversation, params, skip_send_reply: false)
+  def initialize(user, conversation, params, skip_send_reply: false, skip_delivery_policy: false)
     @params = params
     @skip_send_reply = skip_send_reply
+    @skip_delivery_policy = skip_delivery_policy
     @private = params[:private] || false
     @conversation = conversation
     @user = user
@@ -112,7 +113,7 @@ class Messages::MessageBuilder
 
   def validate_delivery_policy!
     return unless message_type == 'outgoing'
-    return if provider_originated_voice_call?
+    return if @skip_delivery_policy
 
     Outbound::DeliveryPolicy.ensure!(
       conversation: @conversation,
@@ -122,10 +123,6 @@ class Messages::MessageBuilder
       attachments: @attachments,
       private_note: @private
     )
-  end
-
-  def provider_originated_voice_call?
-    @params[:content_type].to_s == 'voice_call' && @params[:source_id].present?
   end
 
   def validate_whatsapp_outbound_content!

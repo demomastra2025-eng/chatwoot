@@ -87,7 +87,8 @@ const isCallButtonBusy = computed(
     isPreparingCall.value ||
     isInitiatingCall.value ||
     hasOngoingBrowserCall.value ||
-    whatsappCallsStore.hasActiveCall
+    whatsappCallsStore.hasActiveCall ||
+    whatsappCallsStore.isAccepting
 );
 
 const sameValue = (left, right) =>

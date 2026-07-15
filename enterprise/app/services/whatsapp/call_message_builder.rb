@@ -42,11 +42,17 @@ class Whatsapp::CallMessageBuilder
       content_attributes: { 'data' => build_data_payload }
     }
     # Outbound WhatsApp calls are already initiated through Meta's /calls API.
-    # Mark the local timeline card as channel-originated so Base::SendOnChannelService
-    # does not send a duplicate "WhatsApp Call" text message to the customer.
+    # Preserve the provider id on the local timeline card and explicitly skip
+    # normal message delivery so no duplicate text is sent to the customer.
     params[:source_id] = call.provider_call_id if call.outgoing?
 
-    Messages::MessageBuilder.new(sender, conversation, params).perform
+    Messages::MessageBuilder.new(
+      sender,
+      conversation,
+      params,
+      skip_send_reply: true,
+      skip_delivery_policy: true
+    ).perform
   end
 
   def update_status!(status:, agent: nil, duration_seconds: nil)

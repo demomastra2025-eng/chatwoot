@@ -33,7 +33,10 @@ const {
 } = useCallSession();
 
 const operatorBusy = computed(
-  () => hasActiveCall.value || whatsappCallsStore.hasActiveCall
+  () =>
+    hasActiveCall.value ||
+    whatsappCallsStore.hasActiveCall ||
+    whatsappCallsStore.isAccepting
 );
 
 const isOutboundCall = call => call?.callDirection === 'outbound';

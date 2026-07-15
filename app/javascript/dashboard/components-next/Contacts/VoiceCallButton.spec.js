@@ -250,6 +250,19 @@ describe('VoiceCallButton', () => {
     expect(dispatch).not.toHaveBeenCalled();
   });
 
+  it('does not initiate a voice call while WhatsApp accept is in flight', async () => {
+    useWhatsappCallsStore().setAccepting(true);
+    const dispatch = vi.fn();
+    const { wrapper } = mountComponent({ dispatch });
+    const button = wrapper.find('button');
+
+    expect(button.attributes('disabled')).toBeDefined();
+    await button.trigger('click');
+    await flushPromises();
+
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
   it('starts the browser SIP attempt directly with the prepared session scope', async () => {
     initializeDeviceMock.mockResolvedValue({
       provider: 'sipuni',

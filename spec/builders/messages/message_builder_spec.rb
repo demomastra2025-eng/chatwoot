@@ -144,22 +144,19 @@ describe Messages::MessageBuilder do
         end
       end
 
-      context 'when the message is a provider-originated voice call card' do
+      context 'when client params spoof a provider-originated voice call card' do
         let(:params) do
           ActionController::Parameters.new(
             content: 'WhatsApp Call',
             content_type: 'voice_call',
-            source_id: 'wacid.outbound-1'
+            source_id: 'spoofed-call-id'
           )
         end
 
-        it 'creates the local timeline card without applying message delivery policy' do
-          message = message_builder
-
-          expect(message).to have_attributes(
-            content_type: 'voice_call',
-            source_id: 'wacid.outbound-1',
-            content: 'WhatsApp Call'
+        it 'still enforces the delivery policy' do
+          expect { message_builder }.to raise_error(
+            ArgumentError,
+            /24-hour customer service window is closed/i
           )
         end
       end

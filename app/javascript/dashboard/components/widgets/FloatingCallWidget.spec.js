@@ -31,7 +31,10 @@ const ringtoneState = vi.hoisted(() => ({
   isActive: null,
 }));
 
-const whatsappCallsState = vi.hoisted(() => ({ hasActiveCall: false }));
+const whatsappCallsState = vi.hoisted(() => ({
+  hasActiveCall: false,
+  isAccepting: false,
+}));
 
 const t = (key, params = {}) => {
   const translations = {
@@ -164,6 +167,7 @@ describe('FloatingCallWidget', () => {
     mockSession.hasActiveCall = false;
     mockSession.isJoining = false;
     whatsappCallsState.hasActiveCall = false;
+    whatsappCallsState.isAccepting = false;
     mockSession.canHandleCallInBrowser.mockImplementation(
       call => call?.browserJoinSupported !== false
     );
@@ -526,6 +530,31 @@ describe('FloatingCallWidget', () => {
     expect(answerButton.attributes('disabled')).toBeDefined();
     await answerButton.trigger('click');
     expect(mockSession.endCall).not.toHaveBeenCalled();
+    expect(mockSession.joinCall).not.toHaveBeenCalled();
+  });
+
+  it('blocks answering a SIP call while WhatsApp acceptance is in flight', async () => {
+    whatsappCallsState.isAccepting = true;
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:incoming-whatsapp-accepting',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({ id: 4769, provider: 'sipuni' });
+
+    const wrapper = mountComponent();
+    const answerButton = wrapper.get('[aria-label="Call"]');
+
+    expect(answerButton.attributes('disabled')).toBeDefined();
+    await answerButton.trigger('click');
     expect(mockSession.joinCall).not.toHaveBeenCalled();
   });
 
