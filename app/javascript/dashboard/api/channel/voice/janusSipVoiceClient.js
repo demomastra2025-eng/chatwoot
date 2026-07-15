@@ -239,8 +239,10 @@ export class JanusSipVoiceClient extends EventTarget {
     this.sipRegistrationRefreshPromise = null;
     this.presenceReportPromise = null;
     this.presenceHeartbeatFailureCount = 0;
+    this.presenceSequence = 0;
     this.currentCallRef = null;
     this.currentCallDirection = null;
+    this.currentJanusCallId = null;
     this.microphonePrewarmStream = null;
     this.microphonePrewarmPromise = null;
     this.microphonePrewarmTimer = null;
@@ -886,6 +888,29 @@ export class JanusSipVoiceClient extends EventTarget {
     }
 
     if (event === 'incomingcall') {
+      const incomingCallId = callId ? String(callId) : null;
+      const existingIncomingCallId = this.pendingIncomingCallRef();
+      if (
+        this.hasActiveCall ||
+        this.incomingAcceptPromise ||
+        (this.pendingIncomingCall &&
+          (!incomingCallId ||
+            !existingIncomingCallId ||
+            incomingCallId !== String(existingIncomingCallId))) ||
+        (this.currentCallDirection === 'outbound' &&
+          this.outboundAttempt?.sipCallSent)
+      ) {
+        // One Janus SIP handle can carry only one call. Never let a duplicate
+        // or late INVITE replace the call currently owned by this handle.
+        return;
+      }
+      if (
+        this.pendingIncomingCall &&
+        incomingCallId &&
+        incomingCallId === String(existingIncomingCallId)
+      ) {
+        return;
+      }
       if (this.cancelPendingOutboundJoin('incoming_call_preempted')) {
         this.resetCurrentCall();
       }
@@ -902,6 +927,7 @@ export class JanusSipVoiceClient extends EventTarget {
       };
       this.currentCallRef = this.currentCallRef || callId;
       this.currentCallDirection = 'inbound';
+      this.currentJanusCallId = callId || null;
       this.callMediaAccepted = false;
       this.dispatchEvent(
         createCallIncomingEvent({
@@ -936,6 +962,7 @@ export class JanusSipVoiceClient extends EventTarget {
       this.captureOutboundJanusCallId(callId);
       this.hasActiveCall = true;
       this.resolveOutboundAttemptStart('ringing');
+      this.ensureOutboundSetupTimeout();
       this.dispatchCallStage('ringing', { janusCallId: callId });
       return;
     }
@@ -947,10 +974,10 @@ export class JanusSipVoiceClient extends EventTarget {
       if (!this.isCurrentOutboundJanusEvent(callId)) return;
 
       this.captureOutboundJanusCallId(callId);
-      this.clearOutboundSetupTimer();
       if (jsep) this.handleRemoteJsep(jsep);
       this.hasActiveCall = true;
       this.resolveOutboundAttemptStart('progress');
+      this.ensureOutboundSetupTimeout();
       this.dispatchCallStage('progress', { janusCallId: callId });
       this.playRemoteAudio();
       return;
@@ -964,6 +991,7 @@ export class JanusSipVoiceClient extends EventTarget {
         (this.pendingIncomingCall || this.incomingAcceptPromise);
       if (!isOutboundAccept && !isInboundAccept) return;
       if (isOutboundAccept && !this.isCurrentOutboundJanusEvent(callId)) return;
+      if (isInboundAccept && !this.isCurrentInboundJanusEvent(callId)) return;
 
       this.captureOutboundJanusCallId(callId);
       this.clearOutboundSetupTimer();
@@ -992,6 +1020,8 @@ export class JanusSipVoiceClient extends EventTarget {
         if (!this.isCurrentOutboundJanusEvent(callId)) return;
       } else if (this.currentCallDirection !== 'inbound') {
         return;
+      } else if (!this.isCurrentInboundJanusEvent(callId)) {
+        return;
       }
 
       this.clearOutboundSetupTimer();
@@ -1007,7 +1037,12 @@ export class JanusSipVoiceClient extends EventTarget {
       return;
     }
 
-    if (event === 'updatingcall' && jsep) {
+    if (
+      event === 'updatingcall' &&
+      jsep &&
+      this.hasActiveCall &&
+      this.isCurrentCallJanusEvent(callId)
+    ) {
       this.answerUpdate(jsep);
     }
   }
@@ -1317,11 +1352,13 @@ export class JanusSipVoiceClient extends EventTarget {
     this.janusUniqueId = null;
     this.janusMasterId = null;
     this.registrationInstanceId = null;
+    this.presenceSequence = 0;
   }
 
   resetCurrentCall() {
     this.currentCallRef = null;
     this.currentCallDirection = null;
+    this.currentJanusCallId = null;
     this.callMediaAccepted = false;
     this.callConnectedDispatched = false;
     this.currentCallHandledByAi = false;
@@ -1399,7 +1436,10 @@ export class JanusSipVoiceClient extends EventTarget {
       this.incomingAcceptResolve = resolve;
       this.incomingAcceptReject = reject;
       this.incomingAcceptTimer = window.setTimeout(() => {
-        this.rejectIncomingAccept(new Error('incoming_accept_timeout'));
+        this.failIncomingAccept(new Error('incoming_accept_timeout'), {
+          reason: 'incoming_accept_timeout',
+          request: 'hangup',
+        });
       }, WEBPHONE_INCOMING_ACCEPT_TIMEOUT_MS);
     });
     return this.incomingAcceptPromise;
@@ -1429,6 +1469,37 @@ export class JanusSipVoiceClient extends EventTarget {
     const reject = this.incomingAcceptReject;
     this.clearIncomingAcceptWait();
     reject(error);
+  }
+
+  failIncomingAccept(
+    error,
+    { reason = 'incoming_accept_failed', request = 'decline', code = 480 } = {}
+  ) {
+    const failure = error instanceof Error ? error : new Error(String(error));
+    const hadCall = Boolean(
+      this.pendingIncomingCall ||
+        this.incomingAcceptPromise ||
+        this.hasActiveCall ||
+        this.currentCallRef
+    );
+
+    try {
+      this.sipHandle?.send?.({
+        message: {
+          request,
+          ...(request === 'decline' && code ? { code } : {}),
+        },
+      });
+      this.sipHandle?.hangup?.();
+    } catch {
+      // The local terminal transition below is authoritative.
+    }
+
+    this.rejectIncomingAccept(failure);
+    if (hadCall) {
+      this.handleCallDisconnected({ reason });
+    }
+    return failure;
   }
 
   startRecordingIfReady() {
@@ -2211,6 +2282,24 @@ export class JanusSipVoiceClient extends EventTarget {
       this.outboundAttempt.janusCallId || callId;
   }
 
+  isCurrentInboundJanusEvent(callId = null) {
+    if (this.currentCallDirection !== 'inbound') return false;
+    if (!callId || !this.currentJanusCallId) return true;
+
+    return String(callId) === String(this.currentJanusCallId);
+  }
+
+  isCurrentCallJanusEvent(callId = null) {
+    if (this.currentCallDirection === 'outbound') {
+      return this.isCurrentOutboundJanusEvent(callId);
+    }
+    if (this.currentCallDirection === 'inbound') {
+      return this.isCurrentInboundJanusEvent(callId);
+    }
+
+    return false;
+  }
+
   resolveOutboundAttemptStart(stage) {
     const attempt = this.outboundAttempt;
     if (!attempt || attempt.startSettled) return;
@@ -2442,7 +2531,7 @@ export class JanusSipVoiceClient extends EventTarget {
       : this.sipHandle.createAnswer.bind(this.sipHandle);
     const accepted = this.beginIncomingAcceptWait();
 
-    return new Promise((resolve, reject) => {
+    return new Promise(resolve => {
       method({
         jsep: incomingCall.jsep,
         tracks: [
@@ -2453,17 +2542,33 @@ export class JanusSipVoiceClient extends EventTarget {
           },
         ],
         success: jsep => {
-          this.sipHandle.send({
-            message: { request: 'accept', autoaccept_reinvites: false },
-            jsep,
-          });
-          this.pendingIncomingCall = null;
-          this.hasActiveCall = true;
+          // Resolve to the Janus confirmation waiter before sending. If send
+          // fails synchronously or asynchronously, failIncomingAccept rejects
+          // that waiter and therefore the public join promise as well.
           resolve(accepted);
+          try {
+            this.sipHandle.send({
+              message: { request: 'accept', autoaccept_reinvites: false },
+              jsep,
+              error: error => {
+                this.failIncomingAccept(error, {
+                  reason: 'incoming_accept_failed',
+                  request: 'hangup',
+                });
+              },
+            });
+            this.pendingIncomingCall = null;
+            this.hasActiveCall = true;
+          } catch (error) {
+            this.failIncomingAccept(error, {
+              reason: 'incoming_accept_failed',
+              request: 'hangup',
+            });
+          }
         },
         error: error => {
-          this.rejectIncomingAccept(error);
-          reject(error);
+          resolve(accepted);
+          this.failIncomingAccept(error);
         },
       });
     }).then(result => result);
@@ -2490,23 +2595,38 @@ export class JanusSipVoiceClient extends EventTarget {
       : this.sipHandle.createAnswer.bind(this.sipHandle);
     const accepted = this.beginIncomingAcceptWait();
 
-    return new Promise((resolve, reject) => {
+    return new Promise(resolve => {
       method({
         jsep: incomingCall.jsep,
         tracks: [{ type: 'audio', capture: outputTrack, recv: true }],
         success: jsep => {
-          this.sipHandle.send({
-            message: { request: 'accept', autoaccept_reinvites: false },
-            jsep,
-          });
-          this.pendingIncomingCall = null;
-          this.hasActiveCall = true;
           resolve(accepted);
+          try {
+            this.sipHandle.send({
+              message: { request: 'accept', autoaccept_reinvites: false },
+              jsep,
+              error: error => {
+                this.stopAiMediaBridge();
+                this.failIncomingAccept(error, {
+                  reason: 'incoming_accept_failed',
+                  request: 'hangup',
+                });
+              },
+            });
+            this.pendingIncomingCall = null;
+            this.hasActiveCall = true;
+          } catch (error) {
+            this.stopAiMediaBridge();
+            this.failIncomingAccept(error, {
+              reason: 'incoming_accept_failed',
+              request: 'hangup',
+            });
+          }
         },
         error: error => {
           this.stopAiMediaBridge();
-          this.rejectIncomingAccept(error);
-          reject(error);
+          resolve(accepted);
+          this.failIncomingAccept(error);
         },
       });
     }).then(result => result);
@@ -2530,7 +2650,18 @@ export class JanusSipVoiceClient extends EventTarget {
           jsep: answer,
         });
       },
-      error: () => {},
+      error: error => {
+        try {
+          this.sipHandle?.send?.({ message: { request: 'hangup' } });
+          this.sipHandle?.hangup?.();
+        } catch {
+          // The local terminal transition below is authoritative.
+        }
+        this.handleCallDisconnected({
+          reason: 'sip_reinvite_failed',
+          error: error?.message || String(error || ''),
+        });
+      },
     });
   }
 
@@ -2623,6 +2754,12 @@ export class JanusSipVoiceClient extends EventTarget {
       }
       this.handleCallDisconnected({ reason: 'sip_outbound_setup_timeout' });
     }, WEBPHONE_OUTBOUND_SETUP_TIMEOUT_MS);
+  }
+
+  ensureOutboundSetupTimeout() {
+    if (this.outboundSetupTimer) return;
+
+    this.scheduleOutboundSetupTimeout();
   }
 
   clearOutboundSetupTimer() {
@@ -2750,13 +2887,33 @@ export class JanusSipVoiceClient extends EventTarget {
 
   reportPresence(
     registered,
-    { context = this.presenceContext(), inboxId = this.inboxId } = {}
+    {
+      context = this.presenceContext(),
+      inboxId = this.inboxId,
+      keepalive = false,
+    } = {}
   ) {
+    this.presenceSequence += 1;
+    const presenceSequence = this.presenceSequence;
+    const reportContext = {
+      ...context,
+      presence_sequence: presenceSequence,
+    };
     const report = () =>
-      VoiceAPI.updateWebphonePresence(registered, {
-        inboxId,
-        context,
-      });
+      keepalive && typeof VoiceAPI.updateWebphonePresenceOnUnload === 'function'
+        ? VoiceAPI.updateWebphonePresenceOnUnload(registered, {
+            inboxId,
+            context: reportContext,
+          })
+        : VoiceAPI.updateWebphonePresence(registered, {
+            inboxId,
+            context: reportContext,
+          });
+
+    // A page may be frozen immediately after pagehide. Start the keepalive
+    // request now; the backend sequence fence prevents an older in-flight
+    // heartbeat from reviving this registration afterwards.
+    if (keepalive) return report();
 
     const reportPromise = this.presenceReportPromise
       ? this.presenceReportPromise.then(report)
@@ -2925,6 +3082,7 @@ export class JanusSipVoiceClient extends EventTarget {
   async destroyDevice({
     preserveMicrophonePrewarm = false,
     preserveSessionConfig = false,
+    keepalivePresence = false,
   } = {}) {
     const destroyError = new Error('device_destroyed');
     const hadCall =
@@ -2951,9 +3109,10 @@ export class JanusSipVoiceClient extends EventTarget {
     this.registered = false;
     this.presenceHeartbeatFailureCount = 0;
     if (shouldReportOffline) {
-      this.reportPresence(false, { context: offlinePresenceContext }).catch(
-        () => null
-      );
+      this.reportPresence(false, {
+        context: offlinePresenceContext,
+        keepalive: keepalivePresence,
+      }).catch(() => null);
     }
     this.clearRegistrationIdentifiers();
     this.registrationPromise = null;

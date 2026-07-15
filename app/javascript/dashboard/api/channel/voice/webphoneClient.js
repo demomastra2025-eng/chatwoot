@@ -80,7 +80,8 @@ class WebphoneClient extends EventTarget {
     this.handleBrowserOffline = () =>
       this.suspendNativeSessions('browser_offline');
     this.handlePageShow = () => this.resumeNativeSessions();
-    this.handlePageHide = () => this.suspendNativeSessions('page_hidden');
+    this.handlePageHide = () =>
+      this.suspendNativeSessions('page_hidden', { keepalivePresence: true });
     this.handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') this.resumeNativeSessions();
     };
@@ -430,7 +431,10 @@ class WebphoneClient extends EventTarget {
     return retryPromise;
   }
 
-  suspendNativeSessions(reason = 'browser_offline') {
+  suspendNativeSessions(
+    reason = 'browser_offline',
+    { keepalivePresence = false } = {}
+  ) {
     Object.entries(this.nativeSessionConfigs).forEach(([sessionKey, state]) => {
       this.invalidateNativeSession(sessionKey);
       this.clearNativeSessionRetry(sessionKey);
@@ -440,6 +444,7 @@ class WebphoneClient extends EventTarget {
       };
       this.destroyNativeClientForResponse(state.response, {
         inboxId: state.inboxId,
+        destroyOptions: { keepalivePresence },
       }).catch(() => null);
       const session = this.sessions[sessionKey];
       if (session) {
@@ -771,7 +776,12 @@ class WebphoneClient extends EventTarget {
 
   async destroyNativeClientForResponse(
     response = {},
-    { inboxId = null, nativeGeneration = null, expectedClient = null } = {}
+    {
+      inboxId = null,
+      nativeGeneration = null,
+      expectedClient = null,
+      destroyOptions = {},
+    } = {}
   ) {
     const provider = WebphoneClient.resolveProvider(response);
     if (!WebphoneClient.isNativeSipProvider(provider)) return;
@@ -793,7 +803,7 @@ class WebphoneClient extends EventTarget {
       delete this.nativeSipClients[sessionKey];
       delete this.nativeSipClientGenerations[sessionKey];
     }
-    await client?.destroyDevice?.();
+    await client?.destroyDevice?.(destroyOptions);
   }
 
   unsupportedSessionFromResponse(

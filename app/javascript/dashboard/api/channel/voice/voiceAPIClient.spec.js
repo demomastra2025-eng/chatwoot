@@ -2,8 +2,18 @@ import voiceAPIClient from './voiceAPIClient';
 
 describe('#VoiceAPI virtual PBX remote commit defaults', () => {
   const originalAxios = window.axios;
+  const originalFetch = window.fetch;
   const originalPathname = window.location.pathname;
   const axiosMock = {
+    defaults: {
+      headers: {
+        common: {
+          'access-token': 'test-access-token',
+          client: 'test-client',
+          uid: 'operator@example.test',
+        },
+      },
+    },
     post: vi.fn(() => Promise.resolve({ data: { payload: {} } })),
     patch: vi.fn(() => Promise.resolve({ data: { payload: {} } })),
     delete: vi.fn(() => Promise.resolve({ data: { payload: {} } })),
@@ -11,6 +21,7 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
 
   beforeEach(() => {
     window.axios = axiosMock;
+    window.fetch = vi.fn(() => Promise.resolve({ ok: true }));
     window.history.pushState({}, '', '/app/accounts/530/settings/inboxes/42');
     axiosMock.post.mockClear();
     axiosMock.patch.mockClear();
@@ -19,6 +30,7 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
 
   afterEach(() => {
     window.axios = originalAxios;
+    window.fetch = originalFetch;
     window.history.pushState({}, '', originalPathname);
   });
 
@@ -90,5 +102,36 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
     expect(formData.get('provider')).toBe('asterisk_analog');
     expect(formData.get('direction')).toBe('outbound');
     expect(formData.get('duration_ms')).toBe('1200');
+  });
+
+  it('releases webphone presence with an authenticated keepalive request', async () => {
+    await voiceAPIClient.updateWebphonePresenceOnUnload(false, {
+      inboxId: 42,
+      context: {
+        sip_profile_id: 501,
+        registration_instance_id: 'registration-501',
+      },
+    });
+
+    expect(window.fetch).toHaveBeenCalledWith(
+      '/api/v1/accounts/530/telephony/webphone/presence',
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'same-origin',
+        keepalive: true,
+        headers: expect.objectContaining({
+          'access-token': 'test-access-token',
+          client: 'test-client',
+          uid: 'operator@example.test',
+          'Content-Type': 'application/json',
+        }),
+      })
+    );
+    expect(JSON.parse(window.fetch.mock.calls[0][1].body)).toEqual({
+      registered: false,
+      sip_profile_id: 501,
+      registration_instance_id: 'registration-501',
+      inbox_id: 42,
+    });
   });
 });

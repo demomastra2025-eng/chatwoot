@@ -201,5 +201,37 @@ RSpec.describe Telephony::SipProfile do
         expect(profile.reload.metadata.dig('registration_context', 'registration_instance_id')).to eq('registration-replacement')
       end
     end
+
+    it 'does not let a delayed online heartbeat revive a newer offline event' do
+      profile = create(:telephony_sip_profile, availability_mode: 'browser_webphone')
+      context = browser_registration_context(profile).merge(
+        presence_sequence: 1
+      )
+
+      expect(
+        profile.update_browser_registration!(
+          registered: true,
+          registration_context: context
+        )
+      ).to eq(:updated)
+      expect(
+        profile.update_browser_registration!(
+          registered: false,
+          registration_context: context.merge(presence_sequence: 3)
+        )
+      ).to eq(:updated)
+      expect(
+        profile.update_browser_registration!(
+          registered: true,
+          registration_context: context.merge(presence_sequence: 2)
+        )
+      ).to eq(:stale)
+
+      expect(profile.reload.registered_for_routing?).to be(false)
+      expect(profile.metadata).to include(
+        'last_registration_instance_id' => context[:registration_instance_id],
+        'last_presence_sequence' => 3
+      )
+    end
   end
 end

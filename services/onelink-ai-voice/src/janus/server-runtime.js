@@ -312,11 +312,24 @@ class JanusSipServerRuntimeManager {
       await this.syncProfiles();
     }
     if (!this.closed && this.profileProvider && this.syncIntervalMs > 0) {
-      this.syncTimer = setInterval(() => {
-        this.syncProfiles().catch(error => this.log('janus_server_profile_sync_failed', { error: error.message }));
-      }, this.syncIntervalMs);
+      this.scheduleProfileSync();
     }
     return this;
+  }
+
+  scheduleProfileSync() {
+    if (this.closed || !this.profileProvider || this.syncIntervalMs <= 0 || this.syncTimer) return;
+
+    this.syncTimer = setTimeout(async () => {
+      this.syncTimer = null;
+      try {
+        await this.syncProfiles();
+      } catch (error) {
+        this.log('janus_server_profile_sync_failed', { error: error.message });
+      } finally {
+        this.scheduleProfileSync();
+      }
+    }, this.syncIntervalMs);
   }
 
   async syncProfiles(profiles = null) {
@@ -405,7 +418,7 @@ class JanusSipServerRuntimeManager {
 
   async close() {
     this.closed = true;
-    if (this.syncTimer) clearInterval(this.syncTimer);
+    if (this.syncTimer) clearTimeout(this.syncTimer);
     this.syncTimer = null;
     await this.syncPromise?.catch?.(() => {});
     await Promise.allSettled(Array.from(this.sessions.values(), session => session.close()));
@@ -834,6 +847,7 @@ class JanusSipServerCallFacade extends EventEmitter {
     this.answerPromise = null;
     this.terminationPromise = null;
     this.remoteAnswerWaiter = null;
+    this.acceptRequested = false;
     this.answered = false;
     this.ended = false;
     this.transferLeg = null;
@@ -901,6 +915,7 @@ class JanusSipServerCallFacade extends EventEmitter {
         body: { request: 'accept', autoaccept_reinvites: true },
         jsep: { type: offerless ? 'offer' : 'answer', sdp: negotiatedSdp }
       });
+      this.acceptRequested = true;
       if (remoteAnswer) await remoteAnswer;
       this.ensureAnswerActive('Janus accept acknowledgement');
       this.answered = true;
@@ -990,10 +1005,13 @@ class JanusSipServerCallFacade extends EventEmitter {
   async hangup() {
     if (this.ended) return true;
     try {
+      const body = this.answered || this.acceptRequested
+        ? { request: 'hangup' }
+        : { request: 'decline', code: 480 };
       await this.janus.client.pluginMessage({
         sessionId: this.janus.sessionId,
         handleId: this.janus.handleId,
-        body: { request: 'hangup' }
+        body
       });
     } finally {
       await this.terminateMediaSession();

@@ -154,7 +154,9 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
       :janus_unique_id,
       :janusUniqueId,
       :janus_master_id,
-      :janusMasterId
+      :janusMasterId,
+      :presence_sequence,
+      :presenceSequence
     )
   end
 end

@@ -1259,6 +1259,39 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'ignores a delayed online heartbeat after a newer unload event' do
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      internal_extension: '514',
+      availability_mode: 'browser_webphone'
+    )
+    context = sip_presence_params(sip_profile)
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, presence_sequence: 1 }.merge(context),
+         headers: headers,
+         as: :json
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: false, presence_sequence: 3 }.merge(context),
+         headers: headers,
+         as: :json
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
+         params: { registered: true, presence_sequence: 2 }.merge(context),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload']).to include(
+      'registered_for_routing' => false,
+      'presence_update_accepted' => false,
+      'reason' => 'sip_profile_registration_context_stale'
+    )
+    expect(sip_profile.reload.registered_for_routing?).to be(false)
+  end
+
   it 'records no-inbox browser registration presence on the only browser SIP profile' do
     sip_profile = create(
       :telephony_sip_profile,

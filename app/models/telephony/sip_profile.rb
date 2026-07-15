@@ -269,14 +269,8 @@ class Telephony::SipProfile < ApplicationRecord
 
     with_lock do
       reload
-      if registered && browser_registration_conflict?(registration_context)
-        outcome = :conflict
-        next
-      end
-      unless registered || browser_registration_context_matches?(registration_context)
-        outcome = :stale
-        next
-      end
+      outcome = browser_registration_update_rejection(registered, registration_context)
+      next if outcome
 
       persist_browser_registration!(
         registered: registered,
@@ -298,6 +292,7 @@ class Telephony::SipProfile < ApplicationRecord
     registration_metadata['last_presence_source'] = 'browser_webphone'
     registration_metadata['last_presence_event_at'] = occurred_at.iso8601
     registration_metadata['last_unregistered_event_at'] = occurred_at.iso8601 unless registered
+    persist_browser_presence_fence!(registration_metadata, registration_context)
     if registered
       registration_metadata[REGISTRATION_CONTEXT_SIGNATURE_KEY] = registration_context_signature
       registration_metadata['registration_context'] = registration_context_payload.merge(registration_context.to_h).compact
@@ -358,6 +353,8 @@ class Telephony::SipProfile < ApplicationRecord
     registration_metadata['last_unregistered_event_at'] = Time.current.iso8601 if persisted?
     registration_metadata.delete(REGISTRATION_CONTEXT_SIGNATURE_KEY)
     registration_metadata.delete('registration_context')
+    registration_metadata.delete('last_registration_instance_id')
+    registration_metadata.delete('last_presence_sequence')
     self.metadata = registration_metadata
   end
 
@@ -402,6 +399,37 @@ class Telephony::SipProfile < ApplicationRecord
     return false unless browser_registered?
 
     !browser_registration_context_matches?(context)
+  end
+
+  def browser_presence_event_stale?(context)
+    source = context.to_h.with_indifferent_access
+    incoming_instance_id = context_value(source, 'registration_instance_id')
+    incoming_sequence = context_value(source, 'presence_sequence')
+    current_instance_id = metadata_value('last_registration_instance_id')
+    current_sequence = metadata_value('last_presence_sequence')
+    return false if incoming_instance_id.blank? || incoming_sequence.blank?
+    return false if current_instance_id.blank? || current_sequence.blank?
+    return false unless incoming_instance_id.to_s == current_instance_id.to_s
+
+    incoming_sequence.to_i <= current_sequence.to_i
+  end
+
+  def browser_registration_update_rejection(registered, context)
+    return :stale if browser_presence_event_stale?(context)
+    return :conflict if registered && browser_registration_conflict?(context)
+    return :stale unless registered || browser_registration_context_matches?(context)
+  end
+
+  def persist_browser_presence_fence!(registration_metadata, context)
+    registration_instance_id = context_value(context, 'registration_instance_id')
+    presence_sequence = context_value(context, 'presence_sequence')
+    registration_metadata['last_registration_instance_id'] = registration_instance_id if registration_instance_id.present?
+    registration_metadata['last_presence_sequence'] = presence_sequence.to_i if presence_sequence.present?
+  end
+
+  def context_value(context, key)
+    source = context.to_h.with_indifferent_access
+    first_present(source[key], source[key.camelize(:lower)])
   end
 
   def browser_registration_instance_context_present?

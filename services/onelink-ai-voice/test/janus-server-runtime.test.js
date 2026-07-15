@@ -156,6 +156,8 @@ test('Janus server call facade answers through media-server and exposes runtime 
   ]);
   assert.deepEqual(janusMessages[0].body, { request: 'accept', autoaccept_reinvites: true });
   assert.deepEqual(janusMessages[0].jsep, { type: 'answer', sdp: 'v=0\r\no=- pion-answer' });
+  await facade.hangup();
+  assert.deepEqual(janusMessages[1].body, { request: 'hangup' });
 });
 
 test('Janus server call facade negotiates native offerless SIP INVITEs', async () => {
@@ -282,6 +284,7 @@ test('Janus server call facade transfers AI calls to an operator with SIP REFER'
 
 test('Janus server call facade tears down media when runtime-agent setup fails', async () => {
   const terminated = [];
+  const janusMessages = [];
   const facade = new JanusSipServerCallFacade({
     profile: normalizeServerProfile({
       id: 15,
@@ -298,7 +301,11 @@ test('Janus server call facade tears down media when runtime-agent setup fails',
       sessionId: 100,
       handleId: 200,
       jsep: { type: 'offer', sdp: 'v=0' },
-      client: { async pluginMessage() {} }
+      client: {
+        async pluginMessage(payload) {
+          janusMessages.push(payload);
+        }
+      }
     },
     mediaServerClient: {
       async createSession() {
@@ -316,6 +323,7 @@ test('Janus server call facade tears down media when runtime-agent setup fails',
 
   await assert.rejects(() => facade.answer(), /invalid runtime-agent response/);
   await facade.hangup();
+  assert.deepEqual(janusMessages[0].body, { request: 'decline', code: 480 });
   assert.deepEqual(terminated, [['media-failed', 'janus_answer_failed']]);
 });
 

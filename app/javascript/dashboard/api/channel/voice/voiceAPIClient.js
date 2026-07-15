@@ -59,6 +59,43 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data.payload || r.data);
   }
 
+  updateWebphonePresenceOnUnload(
+    registered,
+    { inboxId = null, context = {} } = {}
+  ) {
+    const commonHeaders = axios.defaults?.headers?.common;
+    const sourceHeaders =
+      typeof commonHeaders?.toJSON === 'function'
+        ? commonHeaders.toJSON()
+        : commonHeaders || {};
+    const headers = Object.fromEntries(
+      Object.entries(sourceHeaders).filter(
+        ([, value]) => value !== undefined && value !== null
+      )
+    );
+
+    return window
+      .fetch(`${this.baseUrl()}/telephony/webphone/presence`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        credentials: 'same-origin',
+        keepalive: true,
+        body: JSON.stringify({
+          registered,
+          ...context,
+          ...(inboxId ? { inbox_id: inboxId } : {}),
+        }),
+      })
+      .then(response => {
+        if (!response.ok) throw new Error('webphone_presence_release_failed');
+        return null;
+      });
+  }
+
   reportBrowserSipIncoming(payload = {}) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/incoming`, payload)

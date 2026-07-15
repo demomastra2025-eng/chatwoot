@@ -14,6 +14,7 @@ const {
   rejectIncomingCallMock,
   uploadRecordingMock,
   updatePresenceMock,
+  updatePresenceOnUnloadMock,
 } = vi.hoisted(() => ({
   attachMock: vi.fn(),
   janusDestroyMock: vi.fn(),
@@ -21,7 +22,10 @@ const {
   pluginSendMock: vi.fn(),
   pluginHangupMock: vi.fn(),
   pluginState: { options: null },
-  pluginHandleState: { createOfferImplementation: null },
+  pluginHandleState: {
+    createOfferImplementation: null,
+    createAnswerImplementation: null,
+  },
   janusState: { autoConnect: true, instances: [] },
   janusAiMediaBridgeInstances: [],
   rejectIncomingCallMock: vi.fn(() => Promise.resolve({})),
@@ -32,6 +36,7 @@ const {
       registered_for_routing: true,
     })
   ),
+  updatePresenceOnUnloadMock: vi.fn(() => Promise.resolve(null)),
 }));
 
 vi.mock('webrtc-adapter', () => ({
@@ -64,7 +69,12 @@ vi.mock('janus-gateway', () => {
           }
           offerOptions?.success?.({ type: 'offer', sdp: 'mock-sdp' });
         },
-        createAnswer: ({ success } = {}) => {
+        createAnswer: answerOptions => {
+          if (pluginHandleState.createAnswerImplementation) {
+            pluginHandleState.createAnswerImplementation(answerOptions);
+            return;
+          }
+          const { success } = answerOptions || {};
           success?.({ type: 'answer', sdp: 'mock-answer-sdp' });
         },
       });
@@ -93,6 +103,7 @@ vi.mock('./voiceAPIClient', () => ({
     rejectIncomingCall: rejectIncomingCallMock,
     uploadWebphoneRecording: uploadRecordingMock,
     updateWebphonePresence: updatePresenceMock,
+    updateWebphonePresenceOnUnload: updatePresenceOnUnloadMock,
   },
 }));
 
@@ -314,10 +325,12 @@ describe('janusSipVoiceClient', () => {
     pluginSendMock.mockClear();
     pluginHangupMock.mockClear();
     pluginHandleState.createOfferImplementation = null;
+    pluginHandleState.createAnswerImplementation = null;
     janusAiMediaBridgeInstances.length = 0;
     rejectIncomingCallMock.mockClear();
     uploadRecordingMock.mockClear();
     updatePresenceMock.mockClear();
+    updatePresenceOnUnloadMock.mockClear();
   });
 
   afterEach(async () => {
@@ -397,6 +410,27 @@ describe('janusSipVoiceClient', () => {
     ]);
     expect(janusDestroyMock).toHaveBeenCalledTimes(1);
     expect(pluginDetachMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the browser registration lease with a keepalive request on page unload', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    updatePresenceMock.mockClear();
+
+    await JanusSipVoiceClient.destroyDevice({ keepalivePresence: true });
+    await vi.waitFor(() => {
+      expect(updatePresenceOnUnloadMock).toHaveBeenCalledWith(
+        false,
+        expect.objectContaining({
+          inboxId: 4769,
+          context: expect.objectContaining({
+            registration_instance_id: expect.any(String),
+          }),
+        })
+      );
+    });
+    expect(updatePresenceMock).not.toHaveBeenCalled();
   });
 
   it('sends offline presence only after an in-flight online report settles', async () => {
@@ -965,6 +999,93 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it('declines an inbound SIP call when browser media negotiation fails', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    pluginHandleState.createAnswerImplementation = ({ error }) => {
+      error(new Error('microphone_denied'));
+    };
+    pluginState.options?.onmessage?.(
+      {
+        call_id: 'janus-invite-media-failure',
+        result: {
+          event: 'incomingcall',
+          username: 'sip:+77010000000@ats01.kz.sipuni.com',
+        },
+      },
+      { type: 'offer', sdp: 'remote-offer-sdp' }
+    );
+
+    await expect(
+      JanusSipVoiceClient.joinClientCall({
+        callRef: 'sipuni:provider-media-failure',
+        callDirection: 'inbound',
+        janusCallRef: 'janus-invite-media-failure',
+      })
+    ).rejects.toThrow('microphone_denied');
+
+    expect(pluginSendMock).toHaveBeenCalledWith({
+      message: { request: 'decline', code: 480 },
+    });
+    expect(pluginHangupMock).toHaveBeenCalled();
+    expect(JanusSipVoiceClient.pendingIncomingCall).toBeNull();
+    expect(JanusSipVoiceClient.hasActiveCall).toBe(false);
+  });
+
+  it('hangs up when Janus never confirms an inbound accept', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    vi.useFakeTimers();
+    pluginState.options?.onmessage?.(
+      {
+        call_id: 'janus-invite-accept-timeout',
+        result: {
+          event: 'incomingcall',
+          username: 'sip:+77010000000@ats01.kz.sipuni.com',
+        },
+      },
+      { type: 'offer', sdp: 'remote-offer-sdp' }
+    );
+    const join = JanusSipVoiceClient.joinClientCall({
+      callRef: 'sipuni:provider-accept-timeout',
+      callDirection: 'inbound',
+      janusCallRef: 'janus-invite-accept-timeout',
+    });
+    const rejection = expect(join).rejects.toThrow('incoming_accept_timeout');
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await rejection;
+    expect(pluginSendMock).toHaveBeenCalledWith({
+      message: { request: 'hangup' },
+    });
+    expect(pluginHangupMock).toHaveBeenCalled();
+    expect(JanusSipVoiceClient.hasActiveCall).toBe(false);
+  });
+
+  it('ignores a late BYE from an older inbound Janus call', () => {
+    const client = createJanusSipVoiceClient();
+    const disconnectedHandler = vi.fn();
+    client.addEventListener('call:disconnected', disconnectedHandler);
+    client.sessionConfig = sipuniSession;
+    client.currentCallDirection = 'inbound';
+    client.currentCallRef = 'sipuni:provider-current';
+    client.currentJanusCallId = 'janus-current';
+    client.hasActiveCall = true;
+    client.sipHandle = { hangup: vi.fn() };
+
+    client.handleSipMessage({
+      call_id: 'janus-previous',
+      result: { event: 'hangup', code: 200, reason: 'SIP BYE' },
+    });
+
+    expect(disconnectedHandler).not.toHaveBeenCalled();
+    expect(client.hasActiveCall).toBe(true);
+    expect(client.currentJanusCallId).toBe('janus-current');
+  });
+
   it('keeps E.164 outbound dial URIs for regular SIP providers', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,
@@ -1012,6 +1133,32 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it('keeps the outbound setup timeout active after SIP early media', async () => {
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+    vi.useFakeTimers();
+
+    const join = JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'sipuni:local:early-media-timeout',
+      toNumber: '+77066318623',
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    await join;
+    pluginState.options?.onmessage?.({
+      call_id: 'outbound-call-id',
+      result: { event: 'progress' },
+    });
+    await vi.advanceTimersByTimeAsync(45_000);
+
+    expect(pluginSendMock).toHaveBeenCalledWith({
+      message: { request: 'hangup' },
+    });
+    expect(JanusSipVoiceClient.hasActiveCall).toBe(false);
+    expect(JanusSipVoiceClient.currentCallRef).toBeNull();
+  });
+
   it('keeps the existing microphone track during a SIP re-INVITE', () => {
     const client = createJanusSipVoiceClient();
     const send = vi.fn();
@@ -1032,6 +1179,40 @@ describe('janusSipVoiceClient', () => {
       message: { request: 'update' },
       jsep: { type: 'answer', sdp: 'updated-answer' },
     });
+  });
+
+  it('terminates a call when a SIP re-INVITE cannot be answered', () => {
+    const client = createJanusSipVoiceClient();
+    const send = vi.fn();
+    const hangup = vi.fn();
+    const disconnectedHandler = vi.fn();
+    client.addEventListener('call:disconnected', disconnectedHandler);
+    client.sessionConfig = sipuniSession;
+    client.currentCallDirection = 'inbound';
+    client.currentCallRef = 'sipuni:provider-reinvite';
+    client.currentJanusCallId = 'janus-reinvite';
+    client.hasActiveCall = true;
+    client.sipHandle = {
+      createAnswer: ({ error }) => error(new Error('invalid_reinvite_sdp')),
+      send,
+      hangup,
+    };
+
+    client.handleSipMessage(
+      {
+        call_id: 'janus-reinvite',
+        result: { event: 'updatingcall' },
+      },
+      { type: 'offer', sdp: 'invalid-updated-offer' }
+    );
+
+    expect(send).toHaveBeenCalledWith({ message: { request: 'hangup' } });
+    expect(hangup).toHaveBeenCalled();
+    expect(disconnectedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({ reason: 'sip_reinvite_failed' }),
+      })
+    );
   });
 
   it('transfers the live prewarmed microphone track into the Janus offer', async () => {

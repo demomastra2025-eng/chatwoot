@@ -906,6 +906,43 @@ describe('webphoneClient', () => {
     );
   });
 
+  it('releases native SIP leases with keepalive semantics on pagehide', async () => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      provider: 'sipuni',
+      calling_supported: true,
+      sip_profile_id: 501,
+      inbox_id: 4083,
+      janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+      sip: {
+        username: 'sip-agent',
+        password: 'sip-secret',
+        host: 'ats01.kz.sipuni.com',
+      },
+    });
+    janusInitializeMock.mockResolvedValue({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:501',
+      inboxId: 4083,
+      sipProfileId: 501,
+      callingSupported: true,
+      registered: true,
+    });
+    await WebphoneClient.initializeDevice(4083, { native: true });
+
+    window.dispatchEvent(new Event('pagehide'));
+    await vi.waitFor(() => {
+      expect(janusDestroyMock).toHaveBeenCalledWith({
+        keepalivePresence: true,
+      });
+    });
+    expect(WebphoneClient.sessions['sip_profile:501']).toEqual(
+      expect.objectContaining({
+        registered: false,
+        reason: 'page_hidden',
+      })
+    );
+  });
+
   it('routes native Binotel sessions to the Janus SIP client', async () => {
     getNativeWebphoneTokenMock.mockResolvedValue({
       provider: 'binotel',
