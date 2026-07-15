@@ -30,7 +30,8 @@ class Reminders::PostDeliveryActionService
   attr_reader :message
 
   def provider_acknowledged?
-    message.outgoing? && message.source_id.present? && !message.failed?
+    message.outgoing? && !message.failed? &&
+      (message.source_id.present? || message.delivered? || message.read?)
   end
 
   def reminder_for_message
@@ -95,7 +96,7 @@ class Reminders::PostDeliveryActionService
 
   def audit_context(reminder)
     api_actor = message.account.users.find_by(id: reminder.creator_id)
-    return { actor: api_actor, source: 'api' } if api_actor.present?
+    return { actor: api_actor, source: 'system' } if api_actor.present?
 
     automation_actor = automation_rule(reminder)
     return if automation_actor.blank?

@@ -59,7 +59,7 @@ RSpec.describe Reminders::PostDeliveryActionService do
     expect(ConversationStatusTransition.last).to have_attributes(
       conversation_id: conversation.id,
       actor: actor,
-      source: 'api',
+      source: 'system',
       to_status: 'resolved'
     )
   end
@@ -74,6 +74,23 @@ RSpec.describe Reminders::PostDeliveryActionService do
     expect(ConversationStatusTransition.last).to have_attributes(
       actor: trusted_rule,
       source: 'automation'
+    )
+  end
+
+  it 'resolves as a system action when manual API transitions require a status reason' do
+    account.update!(
+      conversation_status_reason_config: {
+        'resolved' => { options: ['Issue resolved'], required: true }
+      }
+    )
+    message = materialized_message
+
+    expect(described_class.new(message: message).perform).to be(true)
+    expect(conversation.reload).to be_resolved
+    expect(ConversationStatusTransition.last).to have_attributes(
+      actor: actor,
+      source: 'system',
+      reason: nil
     )
   end
 
@@ -133,6 +150,22 @@ RSpec.describe Reminders::PostDeliveryActionService do
 
     expect(described_class.new(message: message).perform).to be(true)
     expect(conversation.reload).to be_resolved
+  end
+
+  it 'accepts a provider-confirmed delivered status when the provider does not assign a source id' do
+    message = materialized_message(source_id: nil, status: :delivered)
+
+    expect(described_class.new(message: message).perform).to be(true)
+    expect(conversation.reload).to be_resolved
+    expect(reminder.reload).to be_post_delivery_action_executed_for(message.id)
+  end
+
+  it 'does not treat a local sent status without a provider id as provider acknowledgement' do
+    message = materialized_message(source_id: nil, status: :sent)
+
+    expect(described_class.new(message: message).perform).to be(false)
+    expect(conversation.reload).to be_open
+    expect(reminder.reload).not_to be_post_delivery_action_executed_for(message.id)
   end
 
   it 'does not resolve for a failed message even when a provider id is present' do
