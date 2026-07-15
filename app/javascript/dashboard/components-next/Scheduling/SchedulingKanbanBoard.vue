@@ -129,7 +129,7 @@ const formatTimeRange = appointment =>
 const appointmentSubtitle = appointment => {
   return [
     appointment.serviceNameSnapshot,
-    resourceNamesById.value[appointment.resourceId],
+    appointment.resourceName || resourceNamesById.value[appointment.resourceId],
   ]
     .filter(Boolean)
     .join(' · ');

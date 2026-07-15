@@ -64,6 +64,7 @@ describe('SchedulingCalendarGrid', () => {
           endsAt: '2026-03-29T10:30:00.000Z',
           id: 41,
           resourceId: 12,
+          resourceName: 'Dr. Sam',
           serviceNameSnapshot: 'Consultation',
           startsAt: '2026-03-29T10:00:00.000Z',
           status: 'confirmed',
@@ -84,6 +85,7 @@ describe('SchedulingCalendarGrid', () => {
       ],
     });
 
+    expect(wrapper.text()).toContain('Dr. Sam');
     expect(wrapper.text()).toContain('Visit Reason:');
     expect(wrapper.text()).toContain('Follow-up');
     expect(wrapper.text()).toContain('Needs Lab:');

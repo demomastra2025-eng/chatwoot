@@ -975,8 +975,12 @@ const appointmentEvents = computed(() => {
   return props.appointments.map(appointment => {
     const resource = resourceById.value[appointment.resourceId];
     const clientName = appointment.clientName || appointment.title || '—';
-    const subtitle =
-      appointment.serviceNameSnapshot || appointment.subtitle || '';
+    const subtitle = [
+      appointment.serviceNameSnapshot || appointment.subtitle,
+      appointment.resourceName || resource?.name,
+    ]
+      .filter(Boolean)
+      .join(' · ');
     const resourceColor =
       appointment.resourceColor || resource?.color || '#2563eb';
     const resourceName = appointment.resourceName || resource?.name || '';
@@ -1754,6 +1758,9 @@ onMounted(() => {
               >
                 {{ formatTimeLabel(minuteOfDayFromDate(event.start)) }}
                 {{ event.clientName }}
+                <span v-if="event.resourceName" class="ml-1">
+                  {{ event.resourceName }}
+                </span>
               </div>
             </template>
           </template>

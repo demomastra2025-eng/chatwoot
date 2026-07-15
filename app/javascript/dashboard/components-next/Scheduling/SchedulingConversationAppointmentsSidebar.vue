@@ -670,7 +670,13 @@ const appointmentTitle = appointment =>
 const appointmentMeta = appointment => {
   const serviceName =
     appointment.serviceNameSnapshot || t('SCHEDULING.CALENDAR.NO_SERVICE');
-  return `${formatDateTimeRange(appointment)} · ${serviceName}`;
+  return [
+    formatDateTimeRange(appointment),
+    serviceName,
+    appointment.resourceName,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 };
 
 const initializeSidebar = async () => {

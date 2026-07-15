@@ -678,6 +678,11 @@
               "TITLE": "Жазылу өрістері",
               "DESCRIPTION": "Ағымдағы диалогпен тікелей байланысты scheduling деректері."
             }
+          },
+          "FIELDS": {
+            "APPOINTMENT": {
+              "RESOURCE_NAME": { "TITLE": "Маман аты" }
+            }
           }
         },
         "TOOL_ACCESS": {

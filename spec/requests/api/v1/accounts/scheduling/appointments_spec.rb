@@ -39,6 +39,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:created)
     expect(response_body.dig('payload', 'resource_id')).to eq(resource.id)
+    expect(response_body.dig('payload', 'resource_name')).to eq(resource.name)
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
   end
 

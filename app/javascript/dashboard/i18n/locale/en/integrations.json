@@ -1013,6 +1013,7 @@
             "APPOINTMENT": {
               "ID": { "TITLE": "Appointment ID" },
               "RESOURCE_ID": { "TITLE": "Specialist ID" },
+              "RESOURCE_NAME": { "TITLE": "Specialist Name" },
               "CONTACT_ID": { "TITLE": "Contact ID" },
               "SERVICE_ID": { "TITLE": "Service ID" },
               "COMPANY_ID": { "TITLE": "Company ID" },

@@ -162,7 +162,8 @@ const formatAppointmentTimeRange = (appointment, day) => {
   return `${formatAppointmentDateTime(range.start)} - ${formatAppointmentDateTime(range.end)}`;
 };
 
-const resourceName = resourceId => resourceNamesById.value[resourceId] || '—';
+const resourceName = (resourceId, resourceNameFromAppointment) =>
+  resourceNameFromAppointment || resourceNamesById.value[resourceId] || '—';
 
 const handleStatusChange = payload => {
   emit('changeStatus', payload);
@@ -243,7 +244,10 @@ const handleStatusChange = payload => {
                     {{
                       [
                         appointment.serviceNameSnapshot,
-                        resourceName(appointment.resourceId),
+                        resourceName(
+                          appointment.resourceId,
+                          appointment.resourceName
+                        ),
                       ]
                         .filter(Boolean)
                         .join(' · ')

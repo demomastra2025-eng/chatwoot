@@ -21,7 +21,7 @@ class Captain::ContextFields
     status_name assignee_name creator_name team_name deal_title custom_attributes
   ].freeze
   APPOINTMENT_STATE_ATTRIBUTES = %i[
-    id resource_id contact_id service_id company_id conversation_id created_by_id
+    id resource_id resource_name contact_id service_id company_id conversation_id created_by_id
     starts_at ends_at duration_min status appointment_type
     client_name client_phone client_identifier client_birth_date client_gender
     client_comment source external_ref payment_status
@@ -105,6 +105,7 @@ class Captain::ContextFields
   APPOINTMENT_FIELD_DEFINITIONS = [
     { key: 'id', title: 'Appointment ID', description: 'appointment.id' },
     { key: 'resource_id', title: 'Specialist ID', description: 'appointment.resource_id' },
+    { key: 'resource_name', title: 'Specialist Name', description: 'appointment.resource_name' },
     { key: 'contact_id', title: 'Contact ID', description: 'appointment.contact_id' },
     { key: 'service_id', title: 'Service ID', description: 'appointment.service_id' },
     { key: 'company_id', title: 'Company ID', description: 'appointment.company_id' },
@@ -508,6 +509,7 @@ class Captain::ContextFields
       ends_at = appointment.ends_at&.in_time_zone(timezone)
 
       appointment.attributes.symbolize_keys.slice(*APPOINTMENT_STATE_ATTRIBUTES).merge(
+        resource_name: appointment.resource&.name,
         start_date: starts_at&.strftime('%d.%m.%Y'),
         start_time: starts_at&.strftime('%H:%M'),
         end_date: ends_at&.strftime('%d.%m.%Y'),

@@ -1013,6 +1013,7 @@
             "APPOINTMENT": {
               "ID": { "TITLE": "ID записи" },
               "RESOURCE_ID": { "TITLE": "ID специалиста" },
+              "RESOURCE_NAME": { "TITLE": "Имя специалиста" },
               "CONTACT_ID": { "TITLE": "ID контакта" },
               "SERVICE_ID": { "TITLE": "ID услуги" },
               "COMPANY_ID": { "TITLE": "ID компании" },

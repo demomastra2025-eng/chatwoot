@@ -165,6 +165,7 @@ describe('SchedulingVueCalCalendar', () => {
           durationMin: 30,
           endsAt: '2026-03-09T11:30:00.000Z',
           resourceId: 12,
+          resourceName: 'Dr. Sam',
           serviceNameSnapshot: 'Consultation',
           startsAt: '2026-03-09T11:00:00.000Z',
           status: 'scheduled',
@@ -180,6 +181,9 @@ describe('SchedulingVueCalCalendar', () => {
     expect(summary.exists()).toBe(true);
     expect(summary.text()).toMatch(/\d{2}:\d{2}\s*-\s*\d{2}:\d{2}/);
     expect(summary.text()).toContain('Alexandria Very Long Name');
+
+    const subtitle = wrapper.find('.scheduling-vue-cal__event-subtitle');
+    expect(subtitle.text()).toContain('Dr. Sam');
   });
 
   it('includes managed custom field summary in appointment tooltips', async () => {

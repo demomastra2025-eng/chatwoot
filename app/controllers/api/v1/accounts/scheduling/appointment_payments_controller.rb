@@ -30,6 +30,6 @@ class Api::V1::Accounts::Scheduling::AppointmentPaymentsController < Api::V1::Ac
   end
 
   def set_appointment
-    @appointment = Current.account.scheduling_appointments.includes(:payments, :expense).find(params[:appointment_id] || params[:id])
+    @appointment = Current.account.scheduling_appointments.includes(:payments, :expense, :resource).find(params[:appointment_id] || params[:id])
   end
 end

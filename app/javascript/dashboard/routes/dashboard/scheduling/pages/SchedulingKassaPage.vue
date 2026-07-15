@@ -171,6 +171,7 @@ const appointmentOptions = computed(() =>
     label: [
       appointment.clientName || `#${appointment.id}`,
       appointment.serviceNameSnapshot || t('SCHEDULING.CALENDAR.NO_SERVICE'),
+      appointment.resourceName,
       formatDateTimeLabel(appointment.startsAt),
     ]
       .filter(Boolean)
@@ -254,10 +255,12 @@ const hasPaymentFormValues = computed(() => {
   );
 });
 
-const resourceName = resourceId => {
+const resourceName = (resourceId, resourceNameFromAppointment) => {
   return (
+    resourceNameFromAppointment ||
     referencesStore.resources.find(resource => resource.id === resourceId)
-      ?.name || '—'
+      ?.name ||
+    '—'
   );
 };
 
@@ -283,6 +286,7 @@ const appointmentLabel = appointment => {
   return [
     appointment.clientName || `#${appointment.id}`,
     appointment.serviceNameSnapshot,
+    appointment.resourceName,
   ]
     .filter(Boolean)
     .join(' · ');
@@ -676,7 +680,14 @@ onMounted(async () => {
                       <div
                         class="mt-1 flex flex-wrap items-center gap-2 text-sm text-n-slate-11"
                       >
-                        <span>{{ resourceName(appointment.resourceId) }}</span>
+                        <span>
+                          {{
+                            resourceName(
+                              appointment.resourceId,
+                              appointment.resourceName
+                            )
+                          }}
+                        </span>
                         <span
                           class="inline-block size-1 rounded-full bg-n-slate-8"
                           aria-hidden="true"
@@ -859,7 +870,12 @@ onMounted(async () => {
             </template>
 
             <template #cell-resource="{ row }">
-              {{ resourceName(row.appointment?.resourceId) }}
+              {{
+                resourceName(
+                  row.appointment?.resourceId,
+                  row.appointment?.resourceName
+                )
+              }}
             </template>
 
             <template #cell-paymentKind="{ row }">
@@ -934,7 +950,7 @@ onMounted(async () => {
             </template>
 
             <template #cell-resource="{ row }">
-              {{ resourceName(row.resourceId) }}
+              {{ resourceName(row.resourceId, row.resourceName) }}
             </template>
 
             <template #cell-status="{ row }">
@@ -997,7 +1013,12 @@ onMounted(async () => {
               class="mx-1 inline-block size-1 rounded-full bg-n-slate-8"
               aria-hidden="true"
             />
-            {{ resourceName(selectedPaymentAppointment.resourceId) }}
+            {{
+              resourceName(
+                selectedPaymentAppointment.resourceId,
+                selectedPaymentAppointment.resourceName
+              )
+            }}
           </p>
           <p class="mb-0 mt-3 text-sm font-medium text-n-amber-11">
             {{ $t('SCHEDULING.KASSA.REMAINING_AMOUNT') }}

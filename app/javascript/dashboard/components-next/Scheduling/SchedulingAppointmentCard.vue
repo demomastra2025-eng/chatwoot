@@ -109,8 +109,13 @@ const backgroundStyle = computed(() => ({
         </span>
         <span class="truncate text-n-slate-11">
           {{
-            appointment.serviceNameSnapshot ||
-            t('SCHEDULING.CALENDAR.NO_SERVICE')
+            [
+              appointment.serviceNameSnapshot ||
+                t('SCHEDULING.CALENDAR.NO_SERVICE'),
+              appointment.resourceName,
+            ]
+              .filter(Boolean)
+              .join(' · ')
           }}
         </span>
       </div>

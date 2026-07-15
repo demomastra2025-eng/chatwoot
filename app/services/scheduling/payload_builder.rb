@@ -10,6 +10,7 @@ module Scheduling::PayloadBuilder
       id: appointment.id,
       account_id: appointment.account_id,
       resource_id: appointment.resource_id,
+      resource_name: appointment.resource&.name,
       contact_id: appointment.contact_id,
       service_id: appointment.service_id,
       service_ids: appointment.custom_attributes['service_ids'].presence || Array(appointment.service_id).compact,

@@ -140,6 +140,7 @@ class Scheduling::Appointment < ApplicationRecord
         company_id: company_id,
         conversation_id: conversation_id,
         resource_id: resource_id,
+        resource_name: resource.name,
         owner_id: owner_id,
         service_id: service_id,
         custom_attributes: custom_attributes

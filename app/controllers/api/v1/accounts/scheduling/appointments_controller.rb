@@ -132,7 +132,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def appointments_with_payload_associations
-    Current.account.scheduling_appointments.includes(:payments, :expense, :contact, conversation: :communication_thread)
+    Current.account.scheduling_appointments.includes(:payments, :expense, :contact, :resource, conversation: :communication_thread)
   end
 
   def filter_by_reference_params(scope)

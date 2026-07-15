@@ -131,7 +131,7 @@ class Scheduling::CalendarViewService
 
   def base_appointments_scope
     @base_appointments_scope ||= account.scheduling_appointments
-                                        .includes(:expense, :payments, :contact, conversation: :communication_thread)
+                                        .includes(:expense, :payments, :contact, :resource, conversation: :communication_thread)
                                         .where(resource_id: resource_ids)
                                         .where('starts_at < ? AND ends_at > ?', @to, @from)
                                         .ordered

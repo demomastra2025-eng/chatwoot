@@ -371,6 +371,7 @@ RSpec.describe Captain::ContextFields do
         state = described_class.appointment_state_for(account: account, conversation: conversation_record)
 
         expect(state[:starts_at]).to be_present
+        expect(state[:resource_name]).to eq(resource.name)
         expect(state[:start_time]).to eq('15:00')
         expect(state[:start_date]).to eq('29.03.2026')
         expect(state[:end_time]).to eq('15:30')

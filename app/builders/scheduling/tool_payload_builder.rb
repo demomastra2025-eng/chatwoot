@@ -9,6 +9,7 @@ module Scheduling::ToolPayloadBuilder
       appointment_id: appointment_data[:id],
       status: appointment_data[:status],
       resource_id: appointment_data[:resource_id],
+      resource_name: appointment_data[:resource_name],
       contact_id: appointment_data[:contact_id],
       service_id: appointment_data[:service_id],
       starts_at: appointment_data[:starts_at],
