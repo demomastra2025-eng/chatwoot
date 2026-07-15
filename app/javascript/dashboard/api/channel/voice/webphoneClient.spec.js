@@ -138,6 +138,61 @@ describe('webphoneClient', () => {
     await Promise.all([first, second]);
   });
 
+  it('returns the requested provider session from a multi-session token', async () => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [
+        {
+          provider: 'sipuni',
+          sip_profile_id: 39,
+          inbox_id: 4769,
+          calling_supported: true,
+        },
+        {
+          provider: 'binotel',
+          sip_profile_id: 40,
+          inbox_id: 4770,
+          calling_supported: true,
+        },
+      ],
+    });
+    janusInitializeMock.mockImplementation(async session => ({
+      provider: session.provider,
+      sessionKey: session.sessionKey,
+      inboxId: session.inbox_id,
+      sipProfileId: session.sip_profile_id,
+      callingSupported: true,
+      registered: true,
+    }));
+
+    const selected = await WebphoneClient.initializeDevice(4770, {
+      native: true,
+      provider: 'binotel',
+      sipProfileId: 40,
+    });
+
+    expect(selected).toMatchObject({
+      provider: 'binotel',
+      sessionKey: 'sip_profile:40',
+      inboxId: 4770,
+      sipProfileId: 40,
+      multiSession: true,
+    });
+    expect(
+      WebphoneClient.getSession('sipuni', { sipProfileId: 40 })
+    ).toBeNull();
+    expect(
+      WebphoneClient.getSession('sip_profile:40', { provider: 'binotel' })
+    ).toMatchObject({ provider: 'binotel', sipProfileId: 40 });
+    expect(
+      WebphoneClient.getSession('sip_profile:40', { provider: 'sipuni' })
+    ).toBeNull();
+    expect(
+      WebphoneClient.getSession('sip_profile:40', { inboxId: 9999 })
+    ).toBeNull();
+    expect(WebphoneClient.getClient('sipuni', { sipProfileId: 40 })).toBeNull();
+  });
+
   it('coalesces concurrent inbox device initialization requests', async () => {
     let resolveToken;
     getNativeWebphoneTokenMock.mockReturnValue(
@@ -629,6 +684,93 @@ describe('webphoneClient', () => {
     );
   });
 
+  it('does not destroy provider sessions when an explicit session key is stale', async () => {
+    const activeDestroyMock = vi.fn();
+    WebphoneClient.sessions['sip_profile:active'] = {
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:active',
+      inboxId: 4772,
+      sipProfileId: 'active',
+    };
+    WebphoneClient.nativeSipClients['sip_profile:active'] = {
+      destroyDevice: activeDestroyMock,
+    };
+    WebphoneClient.providerSessions.sipuni =
+      WebphoneClient.sessions['sip_profile:active'];
+
+    const staleSessionResult = await WebphoneClient.destroyDevice({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:stale',
+    });
+    const staleInboxResult = await WebphoneClient.destroyDevice({
+      provider: 'sipuni',
+      inboxId: 9999,
+    });
+    const staleProfileResult = await WebphoneClient.destroyDevice({
+      provider: 'sipuni',
+      sipProfileId: 'stale',
+    });
+
+    expect(staleSessionResult).toBeNull();
+    expect(staleInboxResult).toBeNull();
+    expect(staleProfileResult).toBeNull();
+    expect(activeDestroyMock).not.toHaveBeenCalled();
+    expect(WebphoneClient.sessions['sip_profile:active']).toBeDefined();
+  });
+
+  it('destroys an explicitly scoped native session while initialization is in flight', async () => {
+    let resolveInitialization;
+    janusInitializeMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveInitialization = resolve;
+        })
+    );
+    const response = {
+      multi_session: true,
+      sessions: [
+        {
+          provider: 'sipuni',
+          sip_profile_id: 51,
+          inbox_id: 4769,
+          calling_supported: true,
+        },
+      ],
+    };
+
+    const initialization = WebphoneClient.initializeResponse(response);
+    await vi.waitFor(() => {
+      expect(WebphoneClient.nativeSipClients['sip_profile:51']).toBeDefined();
+      expect(
+        WebphoneClient.nativeSessionConfigs['sip_profile:51']
+      ).toBeDefined();
+    });
+    const pendingClient = WebphoneClient.nativeSipClients['sip_profile:51'];
+
+    await WebphoneClient.destroyDevice({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:51',
+      inboxId: 4769,
+      sipProfileId: 51,
+    });
+    resolveInitialization({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:51',
+      inboxId: 4769,
+      sipProfileId: 51,
+      callingSupported: true,
+      registered: true,
+    });
+    await initialization;
+
+    expect(pendingClient.destroyDevice).toHaveBeenCalledTimes(1);
+    expect(WebphoneClient.sessions['sip_profile:51']).toBeUndefined();
+    expect(WebphoneClient.nativeSipClients['sip_profile:51']).toBeUndefined();
+    expect(
+      WebphoneClient.nativeSessionConfigs['sip_profile:51']
+    ).toBeUndefined();
+  });
+
   it('does not resurrect a destroyed session from an in-flight retry', async () => {
     vi.useFakeTimers();
     const initialSession = {
@@ -1046,5 +1188,47 @@ describe('webphoneClient', () => {
       callRef: 'janus-call-501',
       strict: true,
     });
+  });
+
+  it('forwards exact call references to scoped native SIP cleanup', async () => {
+    const client = {
+      rejectIncomingCall: vi.fn(),
+      endClientCall: vi.fn(),
+    };
+    const session = {
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:501',
+      sipProfileId: 501,
+      inboxId: 4083,
+      registered: true,
+      callingSupported: true,
+    };
+    WebphoneClient.nativeSipClients[session.sessionKey] = client;
+    WebphoneClient.sessions[session.sessionKey] = session;
+    WebphoneClient.providerSessions.sipuni = session;
+
+    const callScope = {
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:501',
+      sipProfileId: 501,
+      inboxId: 4083,
+      callSid: 'provider-call-a',
+      janusCallRef: 'janus-call-a',
+    };
+    await WebphoneClient.rejectIncomingCall(callScope);
+    await WebphoneClient.endClientCall(callScope);
+
+    expect(client.rejectIncomingCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callRef: 'provider-call-a',
+        janusCallRef: 'janus-call-a',
+      })
+    );
+    expect(client.endClientCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callRef: 'provider-call-a',
+        janusCallRef: 'janus-call-a',
+      })
+    );
   });
 });

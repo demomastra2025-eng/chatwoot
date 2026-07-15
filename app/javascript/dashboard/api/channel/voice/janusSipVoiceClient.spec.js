@@ -709,6 +709,153 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it('clears the SIP timeout on Janus ACK before a slow Rails presence lease completes', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+    client.sipHandle = { send: pluginSendMock };
+    client.inboxId = 4769;
+    let resolvePresence;
+    updatePresenceMock.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolvePresence = resolve;
+      })
+    );
+    client.registrationTimer = window.setTimeout(() => {}, 8_000);
+
+    const registrationAck = client.completeRegistration(
+      { username: 'sip:1001@sip.example.com' },
+      {}
+    );
+
+    expect(client.registrationTimer).toBeNull();
+    expect(client.registered).toBe(false);
+
+    resolvePresence({
+      presence_update_accepted: true,
+      registered_for_routing: true,
+    });
+    await registrationAck;
+    expect(client.registered).toBe(true);
+  });
+
+  it('fails registration when the Rails routing lease confirmation never settles', async () => {
+    vi.useFakeTimers();
+    const client = createJanusSipVoiceClient();
+    const registrationReject = vi.fn();
+    const unregisteredHandler = vi.fn();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+    const staleHandle = { detach: vi.fn(), send: pluginSendMock };
+    const staleJanus = { destroy: vi.fn() };
+    client.sipHandle = staleHandle;
+    client.janus = staleJanus;
+    client.inboxId = 4769;
+    client.registrationReject = registrationReject;
+    client.addEventListener('call:unregistered', unregisteredHandler);
+    updatePresenceMock
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce({
+        presence_update_accepted: true,
+        registered_for_routing: false,
+      });
+
+    try {
+      const registrationAck = client.completeRegistration(
+        { username: 'sip:1001@sip.example.com' },
+        {}
+      );
+      await vi.advanceTimersByTimeAsync(15_000);
+      await registrationAck;
+
+      expect(client.registered).toBe(false);
+      expect(registrationReject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'presence_confirmation_timeout',
+          reason: 'presence_confirmation_timeout',
+        })
+      );
+      expect(unregisteredHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          detail: expect.objectContaining({
+            reason: 'presence_confirmation_timeout',
+          }),
+        })
+      );
+      expect(updatePresenceMock).toHaveBeenLastCalledWith(
+        false,
+        expect.objectContaining({ inboxId: 4769 })
+      );
+      expect(client.registrationTimedOut).toBe(true);
+      expect(client.sipHandle).toBeNull();
+      expect(client.janus).toBeNull();
+      expect(staleHandle.detach).toHaveBeenCalled();
+      expect(staleJanus.destroy).toHaveBeenCalled();
+
+      const presenceCallCount = updatePresenceMock.mock.calls.length;
+      await client.completeRegistration(
+        { username: 'sip:1001@sip.example.com' },
+        {}
+      );
+      expect(client.registered).toBe(false);
+      expect(updatePresenceMock).toHaveBeenCalledTimes(presenceCallCount);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('rejects a late presence confirmation after its transport generation is retired', async () => {
+    const client = createJanusSipVoiceClient();
+    let resolvePresence;
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+    client.sipHandle = { send: pluginSendMock };
+    client.janus = {};
+    client.inboxId = 4769;
+    updatePresenceMock.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolvePresence = resolve;
+        })
+    );
+
+    const registration = client.markRegistered();
+    client.registrationTimedOut = true;
+    client.janusGeneration += 1;
+    client.sipHandleGeneration += 1;
+    resolvePresence({
+      presence_update_accepted: true,
+      registered_for_routing: true,
+    });
+
+    await expect(registration).rejects.toThrow('stale_presence_confirmation');
+    expect(client.registered).toBe(false);
+    expect(client.presenceHeartbeatTimer).toBeNull();
+  });
+
+  it('does not force a SIP REGISTER refresh while the Janus registration is healthy', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+    client.janus = {};
+    client.sipHandle = { send: pluginSendMock };
+    client.initialized = true;
+    client.registered = true;
+    const ensureRegisteredSpy = vi.spyOn(client, 'ensureRegistered');
+
+    await client.recoverRegistrationAfterCall();
+
+    expect(ensureRegisteredSpy).not.toHaveBeenCalled();
+    expect(pluginSendMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          request: 'register',
+          refresh: true,
+        }),
+      })
+    );
+  });
+
   it('drops routing after two consecutive Rails heartbeat failures', async () => {
     const client = createJanusSipVoiceClient();
     const unregisteredHandler = vi.fn();
@@ -736,7 +883,25 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
-  it('refreshes SIP REGISTER on its own cadence', async () => {
+  it('does not schedule an application-level SIP REGISTER refresh', async () => {
+    vi.useFakeTimers();
+    const client = createJanusSipVoiceClient();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+    client.registered = true;
+    client.inboxId = 4769;
+    const sipRefreshSpy = vi.spyOn(client, 'refreshSipRegistration');
+
+    client.startPresenceHeartbeat();
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(sipRefreshSpy).not.toHaveBeenCalled();
+    expect(updatePresenceMock).toHaveBeenCalled();
+    client.stopPresenceHeartbeat();
+    vi.useRealTimers();
+  });
+
+  it('supports an explicit SIP REGISTER refresh for recovery', async () => {
     const client = createJanusSipVoiceClient();
     client.sessionConfig =
       JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
@@ -861,6 +1026,9 @@ describe('janusSipVoiceClient', () => {
         .catch(error => error);
 
       await vi.advanceTimersByTimeAsync(0);
+      const timedOutHandleMessage = pluginState.options?.onmessage;
+      const janusGeneration = client.janusGeneration;
+      const sipHandleGeneration = client.sipHandleGeneration;
       await vi.advanceTimersByTimeAsync(8000);
 
       const error = await result;
@@ -870,9 +1038,19 @@ describe('janusSipVoiceClient', () => {
         false,
         expect.objectContaining({ inboxId: 4769 })
       );
+      expect(client.sipHandle).toBeNull();
+      expect(client.janus).toBeNull();
+      expect(client.initialized).toBe(false);
+      expect(client.sipHandleGeneration).toBeGreaterThan(sipHandleGeneration);
+      expect(client.janusGeneration).toBeGreaterThan(janusGeneration);
+      expect(pluginDetachMock).toHaveBeenCalled();
+      expect(janusDestroyMock).toHaveBeenCalled();
+      await expect(client.ensureRegistered()).rejects.toThrow(
+        'sip_device_not_ready'
+      );
 
       updatePresenceMock.mockClear();
-      pluginState.options?.onmessage?.({ result: { event: 'registered' } });
+      timedOutHandleMessage?.({ result: { event: 'registered' } });
 
       expect(client.sessionState().registered).toBe(false);
       expect(registeredHandler).not.toHaveBeenCalled();
@@ -884,6 +1062,122 @@ describe('janusSipVoiceClient', () => {
       vi.useRealTimers();
       await client.destroyDevice();
     }
+  });
+
+  it('does not hang up a newer call when cleanup carries a stale call reference', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sipHandle = {
+      send: pluginSendMock,
+      hangup: pluginHangupMock,
+    };
+    client.currentCallRef = 'provider-call-b';
+    client.currentJanusCallId = 'janus-call-b';
+    client.hasActiveCall = true;
+
+    const result = await client.endClientCall({
+      callRef: 'provider-call-a',
+      janusCallRef: 'janus-call-a',
+    });
+
+    expect(result).toBeNull();
+    expect(pluginSendMock).not.toHaveBeenCalled();
+    expect(pluginHangupMock).not.toHaveBeenCalled();
+    expect(client.currentCallRef).toBe('provider-call-b');
+    expect(client.hasActiveCall).toBe(true);
+  });
+
+  it('accepts a valid cleanup when every supplied authoritative alias matches', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sipHandle = {
+      send: pluginSendMock,
+      hangup: pluginHangupMock,
+    };
+    client.currentCallRef = 'provider-call-a';
+    client.currentJanusCallId = 'janus-call-a';
+    client.hasActiveCall = true;
+
+    await client.endClientCall({
+      callRef: 'provider-call-a',
+      janusCallRef: 'janus-call-a',
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith({
+      message: { request: 'hangup' },
+    });
+    expect(pluginHangupMock).toHaveBeenCalled();
+  });
+
+  it('accepts outbound cleanup when the Janus alias is stored on the active attempt', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sipHandle = {
+      send: pluginSendMock,
+      hangup: pluginHangupMock,
+    };
+    client.currentCallRef = 'provider-call-a';
+    client.currentJanusCallId = null;
+    client.outboundAttempt = {
+      callRef: 'provider-call-a',
+      handle: client.sipHandle,
+      janusCallId: 'janus-call-a',
+      sipCallSent: true,
+      startSettled: true,
+      audioTrack: null,
+      timer: null,
+    };
+    client.hasActiveCall = true;
+
+    await client.endClientCall({
+      callRef: 'provider-call-a',
+      janusCallRef: 'janus-call-a',
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith({
+      message: { request: 'hangup' },
+    });
+    expect(pluginHangupMock).toHaveBeenCalled();
+  });
+
+  it('rejects mixed aliases even when one alias belongs to the active call', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sipHandle = {
+      send: pluginSendMock,
+      hangup: pluginHangupMock,
+    };
+    client.currentCallRef = 'provider-call-b';
+    client.currentJanusCallId = 'janus-call-b';
+    client.hasActiveCall = true;
+
+    const result = await client.endClientCall({
+      callRef: 'provider-call-a',
+      janusCallRef: 'janus-call-b',
+    });
+
+    expect(result).toBeNull();
+    expect(pluginSendMock).not.toHaveBeenCalled();
+    expect(pluginHangupMock).not.toHaveBeenCalled();
+  });
+
+  it('does not decline a newer pending INVITE for a stale loser call', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sipHandle = {
+      send: pluginSendMock,
+      hangup: pluginHangupMock,
+    };
+    client.pendingIncomingCall = {
+      callId: 'janus-call-b',
+      result: { call_id: 'janus-call-b' },
+    };
+    client.currentCallRef = 'provider-call-b';
+
+    const result = await client.rejectIncomingCall({
+      callRef: 'provider-call-a',
+      janusCallRef: 'janus-call-a',
+    });
+
+    expect(result).toBeNull();
+    expect(pluginSendMock).not.toHaveBeenCalled();
+    expect(pluginHangupMock).not.toHaveBeenCalled();
+    expect(client.pendingIncomingCall?.callId).toBe('janus-call-b');
   });
 
   it('accepts only the matching pending Janus incoming call when a call ref is provided', async () => {
@@ -1443,15 +1737,18 @@ describe('janusSipVoiceClient', () => {
     ).toHaveLength(1);
   });
 
-  it('does not start a Sipuni outbound call when Janus registration is stale', async () => {
+  it('does not start a Sipuni outbound call when Janus reports registration unavailable', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,
     });
+    JanusSipVoiceClient.handleSipMessage({
+      result: { event: 'unregistered', code: 408, reason: 'registration lost' },
+    });
     pluginSendMock.mockImplementation(({ message } = {}) => {
-      if (message?.request === 'register' && message?.refresh) {
+      if (message?.request === 'register') {
         window.setTimeout(() => {
           pluginState.options?.onmessage?.({
-            error: 'Wrong state (not registered)',
+            error: 'SIP registration unavailable',
           });
         }, 0);
       }
@@ -1465,13 +1762,12 @@ describe('janusSipVoiceClient', () => {
         callRef: 'sipuni:local:stale-registration',
         toNumber: '+77066318623',
       })
-    ).rejects.toThrow('Wrong state (not registered)');
+    ).rejects.toThrow('SIP registration unavailable');
 
     expect(pluginSendMock).toHaveBeenCalledWith(
       expect.objectContaining({
         message: expect.objectContaining({
           request: 'register',
-          refresh: true,
         }),
       })
     );
@@ -1481,13 +1777,9 @@ describe('janusSipVoiceClient', () => {
       )
     ).toBe(false);
     expect(JanusSipVoiceClient.currentCallRef).toBeNull();
-    expect(updatePresenceMock).toHaveBeenLastCalledWith(
-      false,
-      expect.objectContaining({ inboxId: 4769 })
-    );
   });
 
-  it('refreshes SIP registration after a completed native browser call', async () => {
+  it('keeps the healthy Janus registration after a completed native browser call', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,
     });
@@ -1503,7 +1795,8 @@ describe('janusSipVoiceClient', () => {
 
     await vi.advanceTimersByTimeAsync(250);
 
-    expect(pluginSendMock).toHaveBeenCalledWith(
+    expect(JanusSipVoiceClient.registered).toBe(true);
+    expect(pluginSendMock).not.toHaveBeenCalledWith(
       expect.objectContaining({
         message: expect.objectContaining({
           request: 'register',
@@ -1720,7 +2013,7 @@ describe('janusSipVoiceClient', () => {
     JanusSipVoiceClient.removeEventListener('call:connected', connectedHandler);
   });
 
-  it('refreshes already registered Asterisk analog outbound calls with Janus refresh', async () => {
+  it('starts an Asterisk analog outbound call on the existing Janus registration', async () => {
     await JanusSipVoiceClient.initializeDevice(asteriskAnalogSession, {
       inboxId: 4771,
     });
@@ -1734,13 +2027,7 @@ describe('janusSipVoiceClient', () => {
     const requests = pluginSendMock.mock.calls
       .map(([payload]) => payload?.message?.request)
       .filter(Boolean);
-    expect(requests).toEqual(['register', 'call']);
-    expect(pluginSendMock.mock.calls[0][0]?.message).toEqual(
-      expect.objectContaining({
-        request: 'register',
-        refresh: true,
-      })
-    );
+    expect(requests).toEqual(['call']);
   });
 
   it('supports Kazakhstan trunk dialing for Asterisk analog profiles', async () => {

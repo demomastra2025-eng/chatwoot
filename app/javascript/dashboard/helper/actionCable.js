@@ -430,6 +430,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     const serverManagedVoiceCall = isServerManagedVoiceCall(data);
 
     const callsStore = useCallsStore();
+    const currentUserId = this.app.$store.getters.getCurrentUserID;
     callsStore.handleCallStatusChanged({
       callSid: data.call_sid || data.callSid || data.call_ref,
       accountId: data.account_id || data.accountId,
@@ -474,6 +475,7 @@ class ActionCableConnector extends BaseActionCableConnector {
         : data.browser_join_unsupported_reason ||
           data.browserJoinUnsupportedReason,
       serverManagedVoiceCall,
+      currentUserId,
     });
   };
 

@@ -39,7 +39,9 @@ describe('useCallsStore lazy webphone boundary', () => {
     await store.clearActiveCall();
 
     expect(webphoneClientImportedMock).toHaveBeenCalledTimes(1);
-    expect(endClientCallMock).toHaveBeenCalledWith('twilio');
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ callSid: 'call-123', provider: 'twilio' })
+    );
     expect(store.calls).toEqual([]);
   });
 
@@ -53,7 +55,9 @@ describe('useCallsStore lazy webphone boundary', () => {
     await store.clearActiveCall();
 
     expect(webphoneClientImportedMock).toHaveBeenCalledTimes(1);
-    expect(endClientCallMock).toHaveBeenCalledWith(undefined);
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ callSid: 'call-456' })
+    );
     expect(store.calls).toEqual([]);
   });
 });

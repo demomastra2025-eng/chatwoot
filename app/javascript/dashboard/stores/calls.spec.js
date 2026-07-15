@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
-const { endClientCallMock } = vi.hoisted(() => ({
+const {
+  endClientCallMock,
+  hasPendingIncomingCallMock,
+  rejectIncomingCallMock,
+} = vi.hoisted(() => ({
   endClientCallMock: vi.fn(),
+  hasPendingIncomingCallMock: vi.fn(),
+  rejectIncomingCallMock: vi.fn(),
 }));
 
 vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
   default: {
     endClientCall: endClientCallMock,
+    hasPendingIncomingCall: hasPendingIncomingCallMock,
+    rejectIncomingCall: rejectIncomingCallMock,
   },
 }));
 
@@ -17,6 +25,9 @@ describe('useCallsStore', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     endClientCallMock.mockReset();
+    hasPendingIncomingCallMock.mockReset();
+    hasPendingIncomingCallMock.mockReturnValue(false);
+    rejectIncomingCallMock.mockReset();
   });
 
   it('enriches an existing call instead of discarding later details', () => {
@@ -374,7 +385,43 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('keeps a related Janus SIP inbound widget visible when another operator claims the call', async () => {
+  it('declines a pending native SIP leg when another operator claims it', async () => {
+    const store = useCallsStore();
+    hasPendingIncomingCallMock.mockReturnValue(true);
+
+    store.addCall({
+      callSid: 'provider-call-pending-loser',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'shared-pending-call',
+      janusCallRef: 'janus-pending-call',
+      janusSessionKey: 'sip_profile:52',
+    });
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'provider-call-pending-loser',
+        provider: 'sipuni',
+        logical_call_key: 'shared-pending-call',
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([]);
+    expect(hasPendingIncomingCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: 'sip_profile:52',
+        janusCallRef: 'janus-pending-call',
+      })
+    );
+    expect(rejectIncomingCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionKey: 'sip_profile:52' })
+    );
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('dismisses a related Janus SIP inbound widget when another operator claims the call', async () => {
     const store = useCallsStore();
 
     store.addCall({
@@ -398,14 +445,7 @@ describe('useCallsStore', () => {
       7
     );
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({
-        callSid: 'operator-505-ref',
-        status: 'in_progress',
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-      }),
-    ]);
+    expect(store.calls).toEqual([]);
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
@@ -434,14 +474,7 @@ describe('useCallsStore', () => {
       7
     );
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({
-        callSid: 'operator-505-ref',
-        status: 'in_progress',
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-      }),
-    ]);
+    expect(store.calls).toEqual([]);
     expect(endClientCallMock).toHaveBeenCalledWith(
       expect.objectContaining({
         callSid: 'operator-504-ref',
@@ -480,15 +513,7 @@ describe('useCallsStore', () => {
       7
     );
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({
-        callSid: 'sipuni:operator-505-ref',
-        communicationThreadId: 72,
-        status: 'in_progress',
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-      }),
-    ]);
+    expect(store.calls).toEqual([]);
     expect(endClientCallMock).toHaveBeenCalledWith(
       expect.objectContaining({
         callSid: 'sipuni:operator-504-ref',
@@ -526,14 +551,6 @@ describe('useCallsStore', () => {
         callSid: 'sipuni:unrelated-call',
         conversationId: 72,
       }),
-      expect.objectContaining({
-        callSid: 'sipuni:claimed-call',
-        conversationId: 612,
-        communicationThreadId: 72,
-        status: 'in_progress',
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
-      }),
     ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
@@ -566,13 +583,6 @@ describe('useCallsStore', () => {
       expect.objectContaining({
         callSid: 'operator-504-ref',
         logicalCallKey: 'sipuni-inbound:first-call',
-      }),
-      expect.objectContaining({
-        callSid: 'operator-505-ref',
-        logicalCallKey: 'sipuni-inbound:second-call',
-        status: 'in_progress',
-        browserJoinSupported: false,
-        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
       }),
     ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
@@ -612,6 +622,113 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
+  it('does not classify a claim with missing owner identity as foreign', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'claim-owner-unknown',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'claim-owner-unknown-logical',
+    });
+    store.setCallActive('claim-owner-unknown');
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'claim-owner-unknown',
+        provider: 'sipuni',
+        logical_call_key: 'claim-owner-unknown-logical',
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'claim-owner-unknown',
+        isActive: true,
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the tracked local claim when a lightweight claim event omits owner identity', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'tracked-local-claim',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'tracked-local-claim-logical',
+      operatorClaim: { user_id: 7 },
+    });
+    store.setCallActive('tracked-local-claim');
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'tracked-local-claim',
+        provider: 'sipuni',
+        logical_call_key: 'tracked-local-claim-logical',
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'tracked-local-claim',
+        isActive: true,
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('uses a tracked foreign claim for a later status without claim metadata', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'tracked-foreign-claim',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'tracked-foreign-claim-logical',
+      operatorClaim: { user_id: 9 },
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'tracked-foreign-claim',
+      status: 'in_progress',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'tracked-foreign-claim-logical',
+      currentUserId: 7,
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
+  it('suppresses every related SID after a sparse foreign claim event', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'primary-claimed-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'ringing',
+    });
+
+    await store.handleCallClaimed(
+      {
+        callSid: 'primary-claimed-sid',
+        related_call_sids: ['related-operator-sid'],
+        claimedByUserId: 9,
+        callDirection: 'inbound',
+      },
+      7
+    );
+    store.addCall({
+      callSid: 'related-operator-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'ringing',
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
   it('removes calls for all canonical native terminal statuses', () => {
     const store = useCallsStore();
 
@@ -629,6 +746,423 @@ describe('useCallsStore', () => {
     });
 
     expect(store.calls).toEqual([]);
+  });
+
+  it('keeps same-provider same-SID calls isolated across SIP sessions', () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'shared-provider-session-sid',
+      provider: 'sipuni',
+      janusSessionKey: 'sip_profile:51',
+      sipProfileId: 51,
+      inboxId: 4771,
+      status: 'ringing',
+    });
+    store.addCall({
+      callSid: 'shared-provider-session-sid',
+      provider: 'sipuni',
+      janusSessionKey: 'sip_profile:52',
+      sipProfileId: 52,
+      inboxId: 4772,
+      status: 'ringing',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'shared-provider-session-sid',
+      provider: 'sipuni',
+      status: 'completed',
+    });
+    expect(store.calls).toHaveLength(2);
+
+    store.setCallActive('shared-provider-session-sid', 'sipuni', {
+      janusSessionKey: 'sip_profile:51',
+    });
+    expect(
+      store.calls.find(call => call.janusSessionKey === 'sip_profile:51')
+        .isActive
+    ).toBe(true);
+    expect(
+      store.calls.find(call => call.janusSessionKey === 'sip_profile:52')
+        .isActive
+    ).toBe(false);
+
+    store.handleCallStatusChanged({
+      callSid: 'shared-provider-session-sid',
+      provider: 'sipuni',
+      janusSessionKey: 'sip_profile:51',
+      sipProfileId: 51,
+      inboxId: 4771,
+      status: 'completed',
+    });
+    expect(store.calls).toEqual([
+      expect.objectContaining({ janusSessionKey: 'sip_profile:52' }),
+    ]);
+  });
+
+  it('fails closed when direct addCall is ambiguous across SIP sessions', () => {
+    const store = useCallsStore();
+    [51, 52].forEach(profileId => {
+      store.addCall({
+        callSid: 'ambiguous-direct-add-sid',
+        provider: 'sipuni',
+        janusSessionKey: `sip_profile:${profileId}`,
+        sipProfileId: profileId,
+        status: 'ringing',
+      });
+    });
+
+    store.addCall({
+      callSid: 'ambiguous-direct-add-sid',
+      provider: 'sipuni',
+      status: 'in_progress',
+    });
+
+    expect(store.calls).toHaveLength(2);
+    expect(store.calls.every(call => call.status === 'ringing')).toBe(true);
+  });
+
+  it('does not deduplicate outbound conversation calls across SIP sessions', () => {
+    const store = useCallsStore();
+    [51, 52].forEach(profileId => {
+      store.addCall({
+        callSid: `conversation-session-sid-${profileId}`,
+        provider: 'sipuni',
+        callDirection: 'outbound',
+        conversationId: 612,
+        janusSessionKey: `sip_profile:${profileId}`,
+        sipProfileId: profileId,
+      });
+    });
+
+    expect(store.calls).toHaveLength(2);
+  });
+
+  it('keeps a related inbound branch from another SIP session on terminal status', () => {
+    const store = useCallsStore();
+    [
+      ['terminal-related-sid-a', 51],
+      ['terminal-related-sid-b', 52],
+    ].forEach(([callSid, profileId]) => {
+      store.addCall({
+        callSid,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        logicalCallKey: 'terminal-related-logical-key',
+        janusSessionKey: `sip_profile:${profileId}`,
+        sipProfileId: profileId,
+        status: 'ringing',
+      });
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'terminal-related-sid-a',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'terminal-related-logical-key',
+      janusSessionKey: 'sip_profile:51',
+      sipProfileId: 51,
+      status: 'completed',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({ callSid: 'terminal-related-sid-b' }),
+    ]);
+  });
+
+  it('keeps terminal suppression isolated by SIP session', () => {
+    const store = useCallsStore();
+    const callA = {
+      callSid: 'reused-terminal-session-sid',
+      provider: 'sipuni',
+      janusSessionKey: 'sip_profile:51',
+      sipProfileId: 51,
+      inboxId: 4771,
+      status: 'completed',
+    };
+    const callB = {
+      callSid: 'reused-terminal-session-sid',
+      provider: 'sipuni',
+      janusSessionKey: 'sip_profile:52',
+      sipProfileId: 52,
+      inboxId: 4772,
+      status: 'ringing',
+    };
+
+    store.rememberTerminalCall(callA);
+    expect(store.isRecentlyTerminalCall(callA)).toBe(true);
+    expect(store.isRecentlyTerminalCall(callB)).toBe(false);
+    expect(
+      store.isRecentlyTerminalCall({
+        callSid: callA.callSid,
+        provider: callA.provider,
+      })
+    ).toBe(true);
+
+    store.addCall(callB);
+    expect(store.calls).toEqual([expect.objectContaining(callB)]);
+  });
+
+  it('activates only the scoped outbound session for a reused provider SID', () => {
+    const store = useCallsStore();
+    [51, 52].forEach(profileId => {
+      store.addCall({
+        callSid: 'reused-outbound-session-sid',
+        provider: 'sipuni',
+        callDirection: 'outbound',
+        janusSessionKey: `sip_profile:${profileId}`,
+        sipProfileId: profileId,
+        inboxId: 4700 + profileId,
+        status: 'ringing',
+      });
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'reused-outbound-session-sid',
+      provider: 'sipuni',
+      callDirection: 'outbound',
+      janusSessionKey: 'sip_profile:51',
+      sipProfileId: 51,
+      inboxId: 4751,
+      status: 'in_progress',
+    });
+
+    expect(
+      store.calls.find(call => call.janusSessionKey === 'sip_profile:51')
+        .isActive
+    ).toBe(true);
+    expect(
+      store.calls.find(call => call.janusSessionKey === 'sip_profile:52')
+        .isActive
+    ).toBe(false);
+  });
+
+  it('scopes foreign claim cleanup to the claimed SIP session', async () => {
+    const store = useCallsStore();
+    [51, 52].forEach(profileId => {
+      store.addCall({
+        callSid: 'reused-claim-session-sid',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        janusSessionKey: `sip_profile:${profileId}`,
+        sipProfileId: profileId,
+        inboxId: 4700 + profileId,
+        status: 'ringing',
+      });
+    });
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'reused-claim-session-sid',
+        provider: 'sipuni',
+        janus_session_key: 'sip_profile:51',
+        sip_profile_id: 51,
+        inbox_id: 4751,
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({ janusSessionKey: 'sip_profile:52' }),
+    ]);
+  });
+
+  it('fails closed for an unscoped claim across reused provider SID sessions', async () => {
+    const store = useCallsStore();
+    [51, 52].forEach(profileId => {
+      store.addCall({
+        callSid: 'ambiguous-claim-session-sid',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        janusSessionKey: `sip_profile:${profileId}`,
+        sipProfileId: profileId,
+        inboxId: 4700 + profileId,
+      });
+    });
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'ambiguous-claim-session-sid',
+        provider: 'sipuni',
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+
+    expect(store.calls).toHaveLength(2);
+  });
+
+  it('keeps an unscoped related claim isolated from another SIP session', async () => {
+    const store = useCallsStore();
+    [
+      ['related-claim-sid-a', 51],
+      ['related-claim-sid-b', 52],
+    ].forEach(([callSid, profileId]) => {
+      store.addCall({
+        callSid,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        logicalCallKey: 'related-claim-logical-key',
+        janusSessionKey: `sip_profile:${profileId}`,
+        sipProfileId: profileId,
+      });
+    });
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'related-claim-sid-a',
+        provider: 'sipuni',
+        logical_call_key: 'related-claim-logical-key',
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({ callSid: 'related-claim-sid-b' }),
+    ]);
+  });
+
+  it('does not clear a newer active call through a stale scoped cleanup', async () => {
+    const store = useCallsStore();
+    const staleCall = {
+      callSid: 'shared-active-session-sid',
+      provider: 'sipuni',
+      janusSessionKey: 'sip_profile:51',
+    };
+    const currentCall = {
+      callSid: 'shared-active-session-sid',
+      provider: 'sipuni',
+      janusSessionKey: 'sip_profile:52',
+    };
+    store.addCall(staleCall);
+    store.setCallActive(staleCall.callSid, staleCall.provider, staleCall);
+    store.addCall(currentCall);
+    store.setCallActive(currentCall.callSid, currentCall.provider, currentCall);
+
+    await expect(store.clearActiveCall(staleCall)).resolves.toBe(false);
+    expect(store.activeCall).toEqual(expect.objectContaining(currentCall));
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('scopes browser join, active, and dismiss actions by provider', () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'shared-browser-action-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+    });
+    store.addCall({
+      callSid: 'shared-browser-action-sid',
+      provider: 'binotel',
+      callDirection: 'inbound',
+    });
+
+    store.markBrowserJoinUnsupported('shared-browser-action-sid', 'sipuni');
+    store.markBrowserJoined('shared-browser-action-sid', 'sipuni');
+    store.setCallActive('shared-browser-action-sid', 'sipuni');
+
+    const sipuniCall = store.calls.find(call => call.provider === 'sipuni');
+    const binotelCall = store.calls.find(call => call.provider === 'binotel');
+    expect(sipuniCall).toMatchObject({
+      browserJoinSupported: false,
+      browserJoined: true,
+      isActive: true,
+    });
+    expect(binotelCall).toMatchObject({
+      isActive: false,
+      browserJoinSupported: null,
+    });
+
+    store.dismissCall('shared-browser-action-sid', 'sipuni');
+    expect(store.calls).toEqual([
+      expect.objectContaining({ provider: 'binotel' }),
+    ]);
+  });
+
+  it('keeps same-SID calls isolated across providers for status and claim events', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'cross-provider-live-sid',
+      provider: 'binotel',
+      callDirection: 'inbound',
+      status: 'ringing',
+    });
+
+    store.addCall({
+      callSid: 'cross-provider-live-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'ringing',
+    });
+    expect(store.calls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          callSid: 'cross-provider-live-sid',
+          provider: 'binotel',
+        }),
+        expect.objectContaining({
+          callSid: 'cross-provider-live-sid',
+          provider: 'sipuni',
+        }),
+      ])
+    );
+
+    store.handleCallStatusChanged({
+      callSid: 'cross-provider-live-sid',
+      callDirection: 'inbound',
+      status: 'completed',
+    });
+    expect(store.calls).toHaveLength(2);
+
+    store.handleCallStatusChanged({
+      callSid: 'cross-provider-live-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'completed',
+    });
+    await store.handleCallClaimed(
+      {
+        callSid: 'cross-provider-live-sid',
+        provider: 'sipuni',
+        claimedByUserId: 9,
+        callDirection: 'inbound',
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'cross-provider-live-sid',
+        provider: 'binotel',
+      }),
+    ]);
+  });
+
+  it('does not suppress another provider that reuses the same call identifiers', () => {
+    const store = useCallsStore();
+    store.handleCallStatusChanged({
+      callSid: 'provider-reused-call-id',
+      status: 'completed',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'provider-reused-logical-key',
+    });
+
+    store.addCall({
+      callSid: 'provider-reused-call-id',
+      status: 'ringing',
+      provider: 'binotel',
+      callDirection: 'inbound',
+      logicalCallKey: 'provider-reused-logical-key',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'provider-reused-call-id',
+        provider: 'binotel',
+      }),
+    ]);
   });
 
   it('does not re-add a Sipuni call when a delayed non-terminal event arrives after completion', () => {
@@ -710,6 +1244,132 @@ describe('useCallsStore', () => {
           callSid: 'call-without-terminal-ref',
           provider: 'sipuni',
         })
+      );
+    });
+  });
+
+  it('fails closed for an ambiguous terminal event with conversation scope only', () => {
+    const store = useCallsStore();
+    store.calls = ['conversation-call-a', 'conversation-call-b'].map(
+      callSid => ({
+        callSid,
+        provider: 'sipuni',
+        conversationId: 612,
+        callDirection: 'outbound',
+      })
+    );
+
+    store.handleCallStatusChanged({
+      status: 'completed',
+      provider: 'sipuni',
+      conversationId: 612,
+      callDirection: 'outbound',
+    });
+
+    expect(store.calls).toHaveLength(2);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('suppresses delayed status without claim metadata after a foreign claimed event', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'claim-before-unscoped-status',
+      status: 'ringing',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'claim-before-unscoped-status-logical',
+    });
+    await store.handleCallClaimed(
+      {
+        call_sid: 'claim-before-unscoped-status',
+        provider: 'sipuni',
+        logical_call_key: 'claim-before-unscoped-status-logical',
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+    store.handleCallStatusChanged({
+      callSid: 'claim-before-unscoped-status',
+      status: 'in_progress',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'claim-before-unscoped-status-logical',
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
+  it('suppresses a late incoming event after another operator status wins first', () => {
+    const store = useCallsStore();
+
+    store.handleCallStatusChanged({
+      callSid: 'status-before-incoming',
+      status: 'in_progress',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'status-before-incoming-logical',
+      operatorClaim: { user_id: 9 },
+      currentUserId: 7,
+    });
+    store.addCall({
+      callSid: 'status-before-incoming',
+      status: 'ringing',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'status-before-incoming-logical',
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
+  it('does not re-add a dismissed ringing widget from a delayed claimed status event', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'shared-call-delayed-status',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'shared-logical-call',
+    });
+    store.handleCallStatusChanged({
+      callSid: 'shared-call-delayed-status',
+      status: 'in_progress',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'shared-logical-call',
+      operatorClaim: { user_id: 9 },
+      currentUserId: 7,
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
+  it('ends a browser-joined native leg when a delayed status belongs to another operator', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'browser-joined-delayed-status',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'browser-joined-logical-call',
+      janusSessionKey: 'sip_profile:52',
+    });
+    store.markBrowserJoined('browser-joined-delayed-status', 'sipuni');
+    store.handleCallStatusChanged({
+      callSid: 'browser-joined-delayed-status',
+      status: 'in_progress',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'browser-joined-logical-call',
+      operatorClaim: { user_id: 9 },
+      currentUserId: 7,
+    });
+
+    expect(store.calls).toEqual([]);
+    await vi.waitFor(() => {
+      expect(endClientCallMock).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionKey: 'sip_profile:52' })
       );
     });
   });

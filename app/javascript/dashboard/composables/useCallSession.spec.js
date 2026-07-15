@@ -8,6 +8,7 @@ const {
   bootstrapIncomingSupportMock,
   destroyDeviceMock,
   endClientCallMock,
+  getSessionMock,
   hasPendingIncomingCallMock,
   initializeDeviceMock,
   joinClientCallMock,
@@ -28,6 +29,7 @@ const {
   bootstrapIncomingSupportMock: vi.fn(),
   destroyDeviceMock: vi.fn(),
   endClientCallMock: vi.fn(),
+  getSessionMock: vi.fn(),
   hasPendingIncomingCallMock: vi.fn(),
   initializeDeviceMock: vi.fn(),
   joinClientCallMock: vi.fn(),
@@ -78,6 +80,7 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
     bootstrapIncomingSupport: bootstrapIncomingSupportMock,
     destroyDevice: destroyDeviceMock,
     endClientCall: endClientCallMock,
+    getSession: getSessionMock,
     hasPendingIncomingCall: hasPendingIncomingCallMock,
     initializeDevice: initializeDeviceMock,
     joinClientCall: joinClientCallMock,
@@ -152,6 +155,7 @@ describe('useCallSession', () => {
       declined: true,
     });
     hasPendingIncomingCallMock.mockReturnValue(false);
+    getSessionMock.mockReturnValue(null);
     answerAiIncomingCallMock.mockResolvedValue({
       provider: 'sipuni',
       answered: true,
@@ -857,7 +861,139 @@ describe('useCallSession', () => {
     await Promise.resolve();
 
     expect(bootstrapIncomingSupportMock).not.toHaveBeenCalled();
-    expect(initializeDeviceMock).toHaveBeenCalledWith(4698, { native: true });
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4698, {
+      native: true,
+      provider: 'sipuni',
+    });
+  });
+
+  it('answers an already pending Janus INVITE without fetching another webphone token', async () => {
+    const readySession = {
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:42',
+      sipProfileId: 42,
+      inboxId: 4769,
+      callingSupported: true,
+      registered: true,
+    };
+    getSessionMock.mockReturnValue(readySession);
+    hasPendingIncomingCallMock.mockReturnValue(true);
+    const callSession = mountUseCallSession();
+    await Promise.resolve();
+    initializeDeviceMock.mockClear();
+
+    await callSession.joinCall({
+      conversationId: 724,
+      inboxId: 4769,
+      callSid: 'call-with-ready-invite',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      sipProfileId: 42,
+      janusCallRef: 'raw-janus-call-id',
+    });
+
+    expect(initializeDeviceMock).not.toHaveBeenCalled();
+    expect(waitForPendingIncomingCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'sipuni',
+        sipProfileId: 42,
+        sessionKey: 'sip_profile:42',
+        janusCallRef: 'raw-janus-call-id',
+      }),
+      { timeoutMs: 2500 }
+    );
+    expect(joinClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callRef: 'call-with-ready-invite',
+        janusCallRef: 'raw-janus-call-id',
+        sessionKey: 'sip_profile:42',
+      })
+    );
+  });
+
+  it('does not reuse a pending native session from another inbox or SIP profile', async () => {
+    getSessionMock.mockReturnValue({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:99',
+      sipProfileId: 99,
+      inboxId: 9999,
+      callingSupported: true,
+      registered: true,
+    });
+    hasPendingIncomingCallMock.mockReturnValue(true);
+    const callSession = mountUseCallSession();
+    await Promise.resolve();
+    initializeDeviceMock.mockClear();
+    hasPendingIncomingCallMock.mockClear();
+    initializeDeviceMock.mockResolvedValueOnce({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:42',
+      sipProfileId: 42,
+      inboxId: 4769,
+      callingSupported: true,
+      registered: true,
+    });
+
+    await callSession.joinCall({
+      conversationId: 724,
+      inboxId: 4769,
+      callSid: 'call-with-wrong-ready-session',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      sipProfileId: 42,
+      janusCallRef: 'raw-janus-call-id',
+    });
+
+    expect(hasPendingIncomingCallMock).not.toHaveBeenCalled();
+    expect(initializeDeviceMock).toHaveBeenCalledWith(4769, {
+      native: true,
+      provider: 'sipuni',
+      sipProfileId: 42,
+    });
+    expect(joinClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionKey: 'sip_profile:42' })
+    );
+  });
+
+  it('fails closed when an inbound native card has no authoritative Janus call ref', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'provider-only-incoming-card',
+      provider: 'sipuni',
+      inboxId: 4769,
+      sipProfileId: 42,
+      callDirection: 'inbound',
+    });
+    const callSession = mountUseCallSession();
+    getSessionMock.mockClear();
+    waitForPendingIncomingCallMock.mockClear();
+    joinClientCallMock.mockClear();
+
+    const result = await callSession.joinCall({
+      inboxId: 4769,
+      callSid: 'provider-only-incoming-card',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      sipProfileId: 42,
+    });
+
+    expect(result).toMatchObject({
+      provider: 'sipuni',
+      joinSupported: false,
+      reason: 'sip_invite_not_received',
+    });
+    expect(waitForPendingIncomingCallMock).not.toHaveBeenCalled();
+    expect(VoiceAPI.claimIncomingCall).toHaveBeenCalledWith(
+      'provider-only-incoming-card'
+    );
+    expect(joinClientCallMock).not.toHaveBeenCalled();
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'provider-only-incoming-card',
+      {
+        reason: 'sip_invite_not_received',
+        status: 'no_answer',
+      }
+    );
   });
 
   it('always asks the backend to reject browser SIP calls after the local SIP decline attempt', async () => {
@@ -865,13 +1001,20 @@ describe('useCallSession', () => {
     callsStore.addCall({
       callSid: 'call-server-side-reject',
       provider: 'sipuni',
+      janusCallRef: 'janus-server-side-reject',
+      janusSessionKey: 'sip_profile:reject',
     });
     const callSession = mountUseCallSession();
 
     await callSession.rejectIncomingCall(callsStore.calls[0]);
 
     expect(rejectClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'sipuni' })
+      expect.objectContaining({
+        provider: 'sipuni',
+        callRef: null,
+        janusCallRef: 'janus-server-side-reject',
+        sessionKey: 'sip_profile:reject',
+      })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-server-side-reject',
@@ -952,8 +1095,16 @@ describe('useCallSession', () => {
     callsStore.addCall({
       callSid: 'call-active-bridge-release',
       provider: 'sipuni',
+      inboxId: 4083,
+      sipProfileId: 42,
+      janusCallRef: 'janus-active-bridge-release',
+      janusSessionKey: 'sip_profile:42',
     });
     callsStore.setCallActive('call-active-bridge-release');
+    rejectBackendCallMock.mockImplementation(async () => {
+      callsStore.dismissCall('call-active-bridge-release');
+      return {};
+    });
     const callSession = mountUseCallSession();
 
     await callSession.endCall({
@@ -964,7 +1115,14 @@ describe('useCallSession', () => {
     });
 
     expect(endClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'sipuni', inboxId: 4083 })
+      expect.objectContaining({
+        provider: 'sipuni',
+        inboxId: 4083,
+        callRef: 'call-active-bridge-release',
+        janusCallRef: 'janus-active-bridge-release',
+        sessionKey: 'sip_profile:42',
+        sipProfileId: 42,
+      })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-active-bridge-release',
@@ -979,6 +1137,65 @@ describe('useCallSession', () => {
     );
     expect(VoiceAPI.leaveConference).not.toHaveBeenCalled();
     expect(callsStore.calls).toEqual([]);
+  });
+
+  it('does not clear a newer non-native active call from a stale disconnect', async () => {
+    let disconnectHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({ callSid: 'twilio-call-a', provider: 'twilio' });
+    callsStore.setCallActive('twilio-call-a', 'twilio');
+    callsStore.addCall({ callSid: 'twilio-call-b', provider: 'twilio' });
+    callsStore.setCallActive('twilio-call-b', 'twilio');
+
+    mountUseCallSession();
+    await Promise.resolve();
+    await disconnectHandler({
+      detail: { provider: 'twilio', callRef: 'twilio-call-a' },
+    });
+
+    expect(callsStore.activeCall).toEqual(
+      expect.objectContaining({ callSid: 'twilio-call-b' })
+    );
+    expect(callsStore.calls).toHaveLength(2);
+  });
+
+  it('does not clear a newer non-native active call while an older endCall is pending', async () => {
+    let resolveLeave;
+    VoiceAPI.leaveConference.mockImplementationOnce(
+      () =>
+        new Promise(resolve => {
+          resolveLeave = resolve;
+        })
+    );
+    const callsStore = useCallsStore();
+    const callSession = mountUseCallSession();
+    const callA = {
+      callSid: 'twilio-end-call-a',
+      provider: 'twilio',
+      inboxId: 4083,
+      conversationId: 6,
+    };
+    callsStore.addCall(callA);
+    callsStore.setCallActive(callA.callSid, callA.provider);
+
+    const endingCall = callSession.endCall(callA);
+    await vi.waitFor(() => {
+      expect(VoiceAPI.leaveConference).toHaveBeenCalledWith(4083, 6);
+    });
+    callsStore.addCall({ callSid: 'twilio-end-call-b', provider: 'twilio' });
+    callsStore.setCallActive('twilio-end-call-b', 'twilio');
+    resolveLeave();
+    await endingCall;
+
+    expect(endClientCallMock).toHaveBeenCalledWith(
+      expect.objectContaining({ callSid: 'twilio-end-call-a' })
+    );
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({ callSid: 'twilio-end-call-b', isActive: true }),
+    ]);
   });
 
   it('releases the backend browser SIP call when the SIP client reports a remote disconnect', async () => {
@@ -1025,7 +1242,9 @@ describe('useCallSession', () => {
     callsStore.addCall({
       callSid: 'sipuni:janus:51:raw-inbound-call-id',
       janusCallRef: 'raw-inbound-call-id',
+      janusSessionKey: 'sip_profile:51',
       provider: 'sipuni',
+      sipProfileId: 51,
       callDirection: 'inbound',
       status: 'ringing',
     });
@@ -1035,6 +1254,8 @@ describe('useCallSession', () => {
       detail: {
         provider: 'sipuni',
         callRef: 'raw-inbound-call-id',
+        sessionKey: 'sip_profile:51',
+        sipProfileId: 51,
         callDirection: 'inbound',
         callMediaAccepted: true,
         reason: 'remote_hangup',
@@ -1052,6 +1273,46 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('does not let a stale scoped Janus disconnect release the active call on another session', async () => {
+    let disconnectHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'newer-provider-call-b',
+      janusCallRef: 'session-local-call-id',
+      janusSessionKey: 'sip_profile:52',
+      provider: 'sipuni',
+      sipProfileId: 52,
+      inboxId: 4770,
+      callDirection: 'inbound',
+      status: 'in_progress',
+    });
+    callsStore.setCallActive('newer-provider-call-b');
+
+    mountUseCallSession();
+    await disconnectHandler?.({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'session-local-call-id',
+        sessionKey: 'sip_profile:51',
+        sipProfileId: 51,
+        inboxId: 4769,
+        callDirection: 'inbound',
+        reason: 'remote_hangup',
+      },
+    });
+
+    expect(rejectBackendCallMock).not.toHaveBeenCalled();
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'newer-provider-call-b',
+        isActive: true,
+      }),
+    ]);
+  });
+
   it('marks a canonical inbound call answered from the raw Janus accepted stage', async () => {
     let stageHandler;
     addEventListenerMock.mockImplementation((eventName, handler) => {
@@ -1061,7 +1322,9 @@ describe('useCallSession', () => {
     callsStore.addCall({
       callSid: 'sipuni:janus:51:raw-accepted-inbound-id',
       janusCallRef: 'raw-accepted-inbound-id',
+      janusSessionKey: 'sip_profile:51',
       provider: 'sipuni',
+      sipProfileId: 51,
       callDirection: 'inbound',
       status: 'connecting',
     });
@@ -1071,6 +1334,8 @@ describe('useCallSession', () => {
       detail: {
         provider: 'sipuni',
         callRef: 'raw-accepted-inbound-id',
+        sessionKey: 'sip_profile:51',
+        sipProfileId: 51,
         callDirection: 'inbound',
         stage: 'accepted',
       },
@@ -1241,6 +1506,43 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('ignores a provider/SID event when multiple tracked sessions are ambiguous', () => {
+    let connectedHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:connected') connectedHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.calls = [
+      {
+        callSid: 'shared-session-call-ref',
+        provider: 'sipuni',
+        janusSessionKey: 'sip_profile:51',
+        sipProfileId: 51,
+        callDirection: 'outbound',
+        isActive: false,
+      },
+      {
+        callSid: 'shared-session-call-ref',
+        provider: 'sipuni',
+        janusSessionKey: 'sip_profile:52',
+        sipProfileId: 52,
+        callDirection: 'outbound',
+        isActive: false,
+      },
+    ];
+
+    mountUseCallSession();
+    connectedHandler?.({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'shared-session-call-ref',
+        callDirection: 'outbound',
+      },
+    });
+
+    expect(callsStore.calls.every(call => call.isActive === false)).toBe(true);
+  });
+
   it('marks an outbound Asterisk call active when Janus reports it connected', async () => {
     let connectedHandler;
     addEventListenerMock.mockImplementation((eventName, handler) => {
@@ -1260,6 +1562,9 @@ describe('useCallSession', () => {
         callRef: 'asterisk_analog:local:connected-outbound',
         callDirection: 'outbound',
         callMediaAccepted: true,
+        sessionKey: 'sip_profile:71',
+        sipProfileId: 71,
+        inboxId: 4771,
       },
     });
 
@@ -1270,6 +1575,9 @@ describe('useCallSession', () => {
       expect.objectContaining({
         callSid: 'asterisk_analog:local:connected-outbound',
         isActive: true,
+        janusSessionKey: 'sip_profile:71',
+        sipProfileId: 71,
+        inboxId: 4771,
       }),
     ]);
   });
@@ -1395,6 +1703,46 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('does not block same-provider same-SID hangups from distinct sessions', async () => {
+    const callsStore = useCallsStore();
+    const firstCall = {
+      conversationId: 16,
+      inboxId: 4083,
+      provider: 'sipuni',
+      callSid: 'shared-session-hangup',
+      janusSessionKey: 'sip_profile:61',
+      sipProfileId: 61,
+    };
+    const secondCall = {
+      conversationId: 17,
+      inboxId: 4084,
+      provider: 'sipuni',
+      callSid: 'shared-session-hangup',
+      janusSessionKey: 'sip_profile:62',
+      sipProfileId: 62,
+    };
+    callsStore.addCall(firstCall);
+    callsStore.addCall(secondCall);
+    const releaseResolvers = [];
+    rejectBackendCallMock.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          releaseResolvers.push(resolve);
+        })
+    );
+    const callSession = mountUseCallSession();
+
+    const firstRelease = callSession.endCall(firstCall);
+    const secondRelease = callSession.endCall(secondCall);
+    await Promise.resolve();
+
+    expect(rejectBackendCallMock).toHaveBeenCalledTimes(2);
+    releaseResolvers.forEach(resolve => resolve({ status: 'completed' }));
+    await Promise.all([firstRelease, secondRelease]);
+    expect(endClientCallMock).toHaveBeenCalledTimes(2);
+    expect(callsStore.calls).toEqual([]);
+  });
+
   it('does not block a different browser SIP call while another hangup release is in flight', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({ callSid: 'call-first-hangup', provider: 'sipuni' });
@@ -1515,6 +1863,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-claim-thread',
+      janusCallRef: 'raw-call-claim-thread',
       provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 724,
@@ -1539,6 +1888,7 @@ describe('useCallSession', () => {
       conversationId: 724,
       inboxId: 4769,
       callSid: 'call-claim-thread',
+      janusCallRef: 'raw-call-claim-thread',
       provider: 'sipuni',
       callDirection: 'inbound',
     });
@@ -1562,6 +1912,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-claim-thread-waiting-for-invite',
+      janusCallRef: 'raw-call-claim-thread-waiting',
       provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 724,
@@ -1581,6 +1932,7 @@ describe('useCallSession', () => {
       conversationId: 724,
       inboxId: 4769,
       callSid: 'call-claim-thread-waiting-for-invite',
+      janusCallRef: 'raw-call-claim-thread-waiting',
       provider: 'sipuni',
       callDirection: 'inbound',
     });
@@ -1615,6 +1967,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-release-missing-invite-failed',
+      janusCallRef: 'raw-call-release-missing-invite',
       provider: 'sipuni',
       callDirection: 'inbound',
       conversationId: 724,
@@ -1633,6 +1986,7 @@ describe('useCallSession', () => {
       conversationId: 724,
       inboxId: 4769,
       callSid: 'call-release-missing-invite-failed',
+      janusCallRef: 'raw-call-release-missing-invite',
       provider: 'sipuni',
       callDirection: 'inbound',
     });
@@ -1658,6 +2012,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-sip-answer-failed',
+      janusCallRef: 'raw-call-sip-answer-failed',
       provider: 'sipuni',
       callDirection: 'inbound',
     });
@@ -1673,6 +2028,7 @@ describe('useCallSession', () => {
 
     const result = await callSession.joinCall({
       callSid: 'call-sip-answer-failed',
+      janusCallRef: 'raw-call-sip-answer-failed',
       provider: 'sipuni',
       callDirection: 'inbound',
     });
@@ -1699,6 +2055,7 @@ describe('useCallSession', () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-registered-waiting-for-invite',
+      janusCallRef: 'raw-call-registered-waiting',
       provider: 'sipuni',
       callDirection: 'inbound',
     });
@@ -1712,6 +2069,7 @@ describe('useCallSession', () => {
 
     const result = await callSession.joinCall({
       callSid: 'call-registered-waiting-for-invite',
+      janusCallRef: 'raw-call-registered-waiting',
       provider: 'sipuni',
       callDirection: 'inbound',
     });
@@ -1851,6 +2209,51 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('releases only the scoped outbound SIP call when a provider SID is reused', async () => {
+    const callsStore = useCallsStore();
+    [
+      [51, 4769],
+      [52, 4770],
+    ].forEach(([profileId, scopedInboxId]) => {
+      callsStore.addCall({
+        callSid: 'sipuni-reused-outbound-no-invite',
+        provider: 'sipuni',
+        callDirection: 'outbound',
+        inboxId: scopedInboxId,
+        sipProfileId: profileId,
+        janusSessionKey: `sip_profile:${profileId}`,
+      });
+    });
+    initializeDeviceMock.mockResolvedValue({
+      provider: 'sipuni',
+      callingSupported: true,
+      registered: true,
+      inboxId: 4769,
+      sipProfileId: 51,
+      sessionKey: 'sip_profile:51',
+    });
+    joinClientCallMock.mockResolvedValue(null);
+    const callSession = mountUseCallSession();
+
+    await callSession.joinCall({
+      conversationId: 6,
+      inboxId: 4769,
+      callSid: 'sipuni-reused-outbound-no-invite',
+      provider: 'sipuni',
+      callDirection: 'outbound',
+      sipProfileId: 51,
+      janusSessionKey: 'sip_profile:51',
+    });
+
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'sipuni-reused-outbound-no-invite',
+        sipProfileId: 52,
+        janusSessionKey: 'sip_profile:52',
+      }),
+    ]);
+  });
+
   it('releases outbound Binotel calls when Janus registration fails before SIP INVITE', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
@@ -1965,6 +2368,8 @@ describe('useCallSession', () => {
       callSid: 'call-outbound-cancel',
       provider: 'sipuni',
       callDirection: 'outbound',
+      janusCallRef: 'janus-outbound-cancel',
+      janusSessionKey: 'sip_profile:cancel',
     });
     const callSession = mountUseCallSession();
 
@@ -1972,7 +2377,11 @@ describe('useCallSession', () => {
 
     expect(rejectClientCallMock).not.toHaveBeenCalled();
     expect(endClientCallMock).toHaveBeenCalledWith(
-      expect.objectContaining({ provider: 'sipuni' })
+      expect.objectContaining({
+        provider: 'sipuni',
+        janusCallRef: 'janus-outbound-cancel',
+        sessionKey: 'sip_profile:cancel',
+      })
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith('call-outbound-cancel', {
       reason: 'operator_cancelled',

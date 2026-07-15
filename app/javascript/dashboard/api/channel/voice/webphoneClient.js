@@ -501,10 +501,13 @@ class WebphoneClient extends EventTarget {
       payload.sip_profile_id,
     ]);
     if (sipProfileId) {
-      const match = Object.values(this.sessions).find(
-        session => String(session.sipProfileId) === String(sipProfileId)
-      );
-      if (match?.sessionKey) return match.sessionKey;
+      const match = Object.values(this.sessions).find(session => {
+        return (
+          String(session.sipProfileId) === String(sipProfileId) &&
+          (!provider || session.provider === provider)
+        );
+      });
+      return match?.sessionKey || `sip_profile:${sipProfileId}`;
     }
 
     const inboxId = firstPresent([payload.inboxId, payload.inbox_id]);
@@ -515,13 +518,16 @@ class WebphoneClient extends EventTarget {
           (!provider || session.provider === provider)
         );
       });
-      if (match?.sessionKey) return match.sessionKey;
+      return (
+        match?.sessionKey ||
+        (provider ? `inbox:${inboxId}:${provider}` : `inbox:${inboxId}`)
+      );
     }
 
     const providerSession = provider ? this.providerSessions[provider] : null;
     return (
       providerSession?.sessionKey ||
-      this.activeSessionKey ||
+      (!provider ? this.activeSessionKey : null) ||
       (provider ? `provider:${provider}` : null)
     );
   }
@@ -533,8 +539,11 @@ class WebphoneClient extends EventTarget {
     }
 
     const sessionKey = this.resolveSessionKey({ ...payload, provider });
-    if (this.nativeSipClients[sessionKey])
+    const session = this.sessions[sessionKey];
+    if (session && session.provider !== provider) return null;
+    if (this.nativeSipClients[sessionKey]) {
       return this.nativeSipClients[sessionKey];
+    }
     if (!createNative) return null;
 
     return this.nativeSipClientFor(provider, sessionKey);
@@ -545,21 +554,73 @@ class WebphoneClient extends EventTarget {
     payload = {}
   ) {
     if (!providerOrKey) return null;
-    if (this.sessions[providerOrKey]) return this.sessions[providerOrKey];
+    const directSession = this.sessions[providerOrKey];
+    if (directSession) {
+      const requestedProvider = payload.provider;
+      const scopeMatches =
+        (!requestedProvider || directSession.provider === requestedProvider) &&
+        (!payload.inboxId ||
+          String(directSession.inboxId) === String(payload.inboxId)) &&
+        (!payload.inbox_id ||
+          String(directSession.inboxId) === String(payload.inbox_id)) &&
+        (!payload.sipProfileId ||
+          String(directSession.sipProfileId) ===
+            String(payload.sipProfileId)) &&
+        (!payload.sip_profile_id ||
+          String(directSession.sipProfileId) ===
+            String(payload.sip_profile_id)) &&
+        (!payload.sessionKey ||
+          String(directSession.sessionKey) === String(payload.sessionKey)) &&
+        (!payload.session_key ||
+          String(directSession.sessionKey) === String(payload.session_key));
+      return scopeMatches ? directSession : null;
+    }
+    if (
+      payload.provider &&
+      String(payload.provider) !== String(providerOrKey)
+    ) {
+      return null;
+    }
 
-    const sessionKey = this.resolveSessionKey({
+    const scopedPayload = {
       ...payload,
       provider: providerOrKey,
-    });
-    return (
-      this.sessions[sessionKey] || this.providerSessions[providerOrKey] || null
+    };
+    const sessionKey = this.resolveSessionKey(scopedPayload);
+    const hasExplicitScope = Boolean(
+      firstPresent([
+        payload.sessionKey,
+        payload.session_key,
+        payload.inboxId,
+        payload.inbox_id,
+        payload.sipProfileId,
+        payload.sip_profile_id,
+      ])
     );
+    const session =
+      this.sessions[sessionKey] ||
+      (!hasExplicitScope ? this.providerSessions[providerOrKey] : null) ||
+      null;
+    const scopeMatches =
+      session?.provider === providerOrKey &&
+      (!payload.inboxId ||
+        String(session.inboxId) === String(payload.inboxId)) &&
+      (!payload.inbox_id ||
+        String(session.inboxId) === String(payload.inbox_id)) &&
+      (!payload.sipProfileId ||
+        String(session.sipProfileId) === String(payload.sipProfileId)) &&
+      (!payload.sip_profile_id ||
+        String(session.sipProfileId) === String(payload.sip_profile_id)) &&
+      (!payload.sessionKey ||
+        String(session.sessionKey) === String(payload.sessionKey)) &&
+      (!payload.session_key ||
+        String(session.sessionKey) === String(payload.session_key));
+    return scopeMatches ? session : null;
   }
 
   updateProviderRegistration(provider, eventName, detail = {}) {
     const sessionKey = this.resolveSessionKey({ ...detail, provider });
-    const session =
-      this.sessions[sessionKey] || this.providerSessions[provider];
+    const session = this.getSession(provider, detail);
     if (!session) return;
 
     if (eventName === 'call:registered') {
@@ -667,10 +728,22 @@ class WebphoneClient extends EventTarget {
     return bootstrapPromise;
   }
 
-  initializeDevice(inboxId = null, { native = false } = {}) {
-    const initializationKey = `${native ? 'native' : 'default'}:${
-      inboxId || 'global'
-    }`;
+  initializeDevice(
+    inboxId = null,
+    {
+      native = false,
+      provider = null,
+      sipProfileId = null,
+      sessionKey = null,
+    } = {}
+  ) {
+    const initializationKey = [
+      native ? 'native' : 'default',
+      inboxId || 'global',
+      provider || 'any',
+      sipProfileId || 'any',
+      sessionKey || 'any',
+    ].join(':');
     const existing = this.deviceInitializationPromises[initializationKey];
     if (existing) return existing;
 
@@ -678,7 +751,13 @@ class WebphoneClient extends EventTarget {
       const response = native
         ? await VoiceAPI.getNativeWebphoneToken(inboxId)
         : await VoiceAPI.getWebphoneToken(inboxId);
-      return this.initializeResponse(response, { inboxId, native });
+      return this.initializeResponse(response, {
+        inboxId,
+        native,
+        provider,
+        sipProfileId,
+        sessionKey,
+      });
     })().finally(() => {
       if (
         this.deviceInitializationPromises[initializationKey] ===
@@ -693,28 +772,73 @@ class WebphoneClient extends EventTarget {
     return initializationPromise;
   }
 
-  async initializeResponse(response, { inboxId = null, native = false } = {}) {
+  async initializeResponse(
+    response,
+    {
+      inboxId = null,
+      native = false,
+      provider = null,
+      sipProfileId = null,
+      sessionKey = null,
+    } = {}
+  ) {
     const sessions = WebphoneClient.responseSessions(response);
     if (sessions.length) {
       const results = await Promise.all(
         sessions.map(session => {
-          const provider = WebphoneClient.resolveProvider(session);
+          const sessionProvider = WebphoneClient.resolveProvider(session);
           return this.initializeSessionSafely(session, {
-            inboxId: WebphoneClient.responseInboxId(session),
-            native: WebphoneClient.isNativeSipProvider(provider),
+            inboxId: WebphoneClient.responseInboxId(session, inboxId),
+            native: WebphoneClient.isNativeSipProvider(sessionProvider),
           });
         })
       );
+      const scopeMatches = session =>
+        session &&
+        (!provider || session.provider === provider) &&
+        (!inboxId || String(session.inboxId) === String(inboxId)) &&
+        (!sipProfileId ||
+          String(session.sipProfileId) === String(sipProfileId)) &&
+        (!sessionKey || String(session.sessionKey) === String(sessionKey));
+      const hasRequestedScope = Boolean(
+        provider || inboxId || sipProfileId || sessionKey
+      );
+      const selectedSession = hasRequestedScope
+        ? results.find(scopeMatches) || null
+        : null;
+      if (hasRequestedScope && !selectedSession) return null;
+
       return {
-        provider: results[0]?.provider || response?.provider || null,
-        callingSupported: results.some(session => session?.callingSupported),
-        registered: results.some(session => session?.registered),
+        ...(selectedSession || {}),
+        provider:
+          selectedSession?.provider ||
+          results[0]?.provider ||
+          response?.provider ||
+          null,
+        callingSupported: selectedSession
+          ? selectedSession.callingSupported
+          : results.some(session => session?.callingSupported),
+        registered: selectedSession
+          ? selectedSession.registered
+          : results.some(session => session?.registered),
         multiSession: true,
         sessions: results,
       };
     }
 
-    return this.initializeFromSession(response, { inboxId, native });
+    const initializedSession = await this.initializeFromSession(response, {
+      inboxId,
+      native,
+    });
+    const scopeMatches =
+      initializedSession &&
+      (!provider || initializedSession.provider === provider) &&
+      (!inboxId || String(initializedSession.inboxId) === String(inboxId)) &&
+      (!sipProfileId ||
+        String(initializedSession.sipProfileId) === String(sipProfileId)) &&
+      (!sessionKey ||
+        String(initializedSession.sessionKey) === String(sessionKey));
+    return scopeMatches ? initializedSession : null;
   }
 
   async initializeSessionSafely(
@@ -1036,11 +1160,16 @@ class WebphoneClient extends EventTarget {
     const client = this.getClient(provider, { ...payload, sessionKey });
     if (!client) return null;
 
+    const callScope = {
+      ...payload,
+      callRef: payload.callRef || payload.callSid || payload.call_sid,
+      janusCallRef: payload.janusCallRef || payload.janus_call_ref,
+    };
     if (typeof client.rejectIncomingCall === 'function') {
-      return client.rejectIncomingCall();
+      return client.rejectIncomingCall(callScope);
     }
 
-    return client.endClientCall();
+    return client.endClientCall(callScope);
   }
 
   endClientCall(providerOrPayload = this.activeProvider) {
@@ -1053,12 +1182,41 @@ class WebphoneClient extends EventTarget {
     const client = this.getClient(provider, { ...payload, sessionKey });
     if (!client) return null;
 
-    return client.endClientCall();
+    return client.endClientCall({
+      ...payload,
+      callRef: payload.callRef || payload.callSid || payload.call_sid,
+      janusCallRef: payload.janusCallRef || payload.janus_call_ref,
+    });
+  }
+
+  nativeSessionDescriptor(sessionKey) {
+    const session = this.sessions[sessionKey];
+    const config = this.nativeSessionConfigs[sessionKey];
+    return {
+      provider: session?.provider || config?.provider,
+      sessionKey,
+      inboxId:
+        session?.inboxId ||
+        WebphoneClient.responseInboxId(config?.response, config?.inboxId),
+      sipProfileId:
+        session?.sipProfileId ||
+        WebphoneClient.responseSipProfileId(config?.response),
+    };
+  }
+
+  nativeSessionKeys() {
+    return [
+      ...new Set([
+        ...Object.keys(this.sessions),
+        ...Object.keys(this.nativeSipClients),
+        ...Object.keys(this.nativeSessionConfigs),
+      ]),
+    ];
   }
 
   destroyNativeSession(sessionKey) {
     const client = this.nativeSipClients[sessionKey];
-    const provider = this.sessions[sessionKey]?.provider;
+    const provider = this.nativeSessionDescriptor(sessionKey).provider;
     delete this.nativeSipClients[sessionKey];
     delete this.nativeSipClientGenerations[sessionKey];
     delete this.sessions[sessionKey];
@@ -1086,24 +1244,38 @@ class WebphoneClient extends EventTarget {
     const provider = payload.provider || this.activeProvider;
 
     if (WebphoneClient.isNativeSipProvider(provider)) {
-      const sessionKey = this.resolveSessionKey(payload);
-      const session = this.sessions[sessionKey];
+      const explicitSessionKey = firstPresent([
+        payload.sessionKey,
+        payload.session_key,
+      ]);
+      const explicitInboxId = firstPresent([payload.inboxId, payload.inbox_id]);
+      const explicitSipProfileId = firstPresent([
+        payload.sipProfileId,
+        payload.sip_profile_id,
+      ]);
       const hasExplicitScope = Boolean(
-        payload.sessionKey ||
-          payload.session_key ||
-          payload.inboxId ||
-          payload.inbox_id ||
-          payload.sipProfileId ||
-          payload.sip_profile_id
+        explicitSessionKey || explicitInboxId || explicitSipProfileId
       );
-      if (hasExplicitScope && session?.provider === provider) {
-        return this.destroyNativeSession(sessionKey);
+      const candidateKeys = this.nativeSessionKeys().filter(key => {
+        const descriptor = this.nativeSessionDescriptor(key);
+        return (
+          descriptor.provider === provider &&
+          (!explicitSessionKey || String(key) === String(explicitSessionKey)) &&
+          (!explicitInboxId ||
+            String(descriptor.inboxId) === String(explicitInboxId)) &&
+          (!explicitSipProfileId ||
+            String(descriptor.sipProfileId) === String(explicitSipProfileId))
+        );
+      });
+      if (hasExplicitScope) {
+        return candidateKeys.length === 1
+          ? this.destroyNativeSession(candidateKeys[0])
+          : null;
       }
 
-      const keys = Object.entries(this.sessions)
-        .filter(([, value]) => value.provider === provider)
-        .map(([key]) => key);
-      return Promise.all(keys.map(key => this.destroyNativeSession(key)));
+      return Promise.all(
+        candidateKeys.map(key => this.destroyNativeSession(key))
+      );
     }
 
     const client = this.getClient(provider);
