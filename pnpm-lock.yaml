@@ -272,8 +272,8 @@ importers:
         specifier: 7.8.6
         version: 7.8.6
       webrtc-adapter:
-        specifier: 9.0.3
-        version: 9.0.3
+        specifier: 9.0.6
+        version: 9.0.6
     devDependencies:
       '@egoist/tailwindcss-icons':
         specifier: ^1.9.2
@@ -1652,6 +1652,11 @@ packages:
     engines: {node: '>=0.4.0'}
     hasBin: true
 
+  acorn@8.17.0:
+    resolution: {integrity: sha512-xRQbDb9BnwDafYNn6Vwl839DYVjqXYb1XVGtWAZ1kcDc6iwAL4hg3B1dZlRiuENFeO2H53gFG3in621AdERVAg==}
+    engines: {node: '>=0.4.0'}
+    hasBin: true
+
   activestorage@5.2.8:
     resolution: {integrity: sha512-bueFOxBGIAUdrjbLyBZ8Xlkcecy8vr05sCk5VV37BbFi+RehPoEjfvKX3iYYPY7RFVhl+L43W9/ZbN3xNNLPtQ==}
 
@@ -2862,8 +2867,8 @@ packages:
     resolution: {integrity: sha512-InwqeHHN2XpumIkMvpl/DCJVrAHgCsG5+cn1XlnLWGwtZBm8QJfSusItfrwx81CTp5agNZqpKU2J/ccC5nGT4A==}
     engines: {node: '>= 4'}
 
-  immutable@4.3.8:
-    resolution: {integrity: sha512-d/Ld9aLbKpNwyl0KiM2CT1WYvkitQ1TSvmRtkcV8FKStiDoA7Slzgjmb/1G2yhKM1p0XeNOieaTbFZmU1d3Xuw==}
+  immutable@4.3.9:
+    resolution: {integrity: sha512-ObHy4YN7ycwZOUCLI1/6svfyAFu7vL8RhAvVu/bh/RZW9EPlOyDaQ9jDQWCtdqzaXUjgXZCW1migtHE7YI7UGQ==}
 
   import-fresh@3.3.0:
     resolution: {integrity: sha512-veYYhQa+D1QBKznvhUHxb8faxlrwUnxseDAbAp457E0wLNio2bOSKnjYDhMj+YiAq61xrMGhQk9iXVk5FzgQMw==}
@@ -4149,6 +4154,9 @@ packages:
   sdp@3.2.0:
     resolution: {integrity: sha512-d7wDPgDV3DDiqulJjKiV2865wKsJ34YI+NDREbm+FySq6WuKOikwyNQcm+doLAZ1O6ltdO0SeKle2xMpN3Brgw==}
 
+  sdp@3.2.2:
+    resolution: {integrity: sha512-xZocWwfyp4hkbN4hLWxMjmv2Q8aNa9MhmOZ7L9aCZPT+dZsgRr6wZRrSYE3HTdyk/2pZKPSgqI7ns7Een1xMSA==}
+
   section-matter@1.0.0:
     resolution: {integrity: sha512-vfD3pmTzGpufjScBh50YHKzEu2lxBWhVEHsNGoEXmCmn2hKGfeNLYMzCJpe8cD7gqX7TJluOVpBkAequ6dgMmA==}
     engines: {node: '>=4'}
@@ -4835,6 +4843,10 @@ packages:
 
   webrtc-adapter@9.0.3:
     resolution: {integrity: sha512-5fALBcroIl31OeXAdd1YUntxiZl1eHlZZWzNg3U4Fn+J9/cGL3eT80YlrsWGvj2ojuz1rZr2OXkgCzIxAZ7vRQ==}
+    engines: {node: '>=6.0.0', npm: '>=3.10.0'}
+
+  webrtc-adapter@9.0.6:
+    resolution: {integrity: sha512-CHbl2ZQbxx164IgWRgzJno4hWtM4tFbRam1QfI3Yxhs3w/DvqluVxVWeXs3oL5/fbGkSNLKo0Ty5MgUWceNhog==}
     engines: {node: '>=6.0.0', npm: '>=3.10.0'}
 
   whatwg-encoding@2.0.0:
@@ -6389,6 +6401,9 @@ snapshots:
 
   acorn@8.16.0: {}
 
+  acorn@8.17.0:
+    optional: true
+
   activestorage@5.2.8:
     dependencies:
       spark-md5: 3.0.2
@@ -7848,7 +7863,7 @@ snapshots:
 
   ignore@6.0.2: {}
 
-  immutable@4.3.8:
+  immutable@4.3.9:
     optional: true
 
   import-fresh@3.3.0:
@@ -9279,7 +9294,7 @@ snapshots:
   sass@1.79.3:
     dependencies:
       chokidar: 4.0.3
-      immutable: 4.3.8
+      immutable: 4.3.9
       source-map-js: 1.2.1
     optional: true
 
@@ -9288,6 +9303,8 @@ snapshots:
       xmlchars: 2.2.0
 
   sdp@3.2.0: {}
+
+  sdp@3.2.2: {}
 
   section-matter@1.0.0:
     dependencies:
@@ -9570,7 +9587,7 @@ snapshots:
   terser@5.33.0:
     dependencies:
       '@jridgewell/source-map': 0.3.11
-      acorn: 8.16.0
+      acorn: 8.17.0
       commander: 2.20.3
       source-map-support: 0.5.21
     optional: true
@@ -9816,7 +9833,7 @@ snapshots:
       recordrtc: 5.6.2
       video.js: 7.21.1
       videojs-wavesurfer: 3.8.0
-      webrtc-adapter: 9.0.3
+      webrtc-adapter: 9.0.6
 
   videojs-vtt.js@0.15.5:
     dependencies:
@@ -10022,6 +10039,10 @@ snapshots:
   webrtc-adapter@9.0.3:
     dependencies:
       sdp: 3.2.0
+
+  webrtc-adapter@9.0.6:
+    dependencies:
+      sdp: 3.2.2
 
   whatwg-encoding@2.0.0:
     dependencies:

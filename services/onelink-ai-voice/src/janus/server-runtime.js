@@ -13,7 +13,8 @@ class JanusWebSocketClient extends EventEmitter {
     protocol = DEFAULT_PROTOCOL,
     apiSecret = '',
     transactionPrefix = 'onelink-ai-sip',
-    requestTimeoutMs = 8000
+    requestTimeoutMs = 8000,
+    connectTimeoutMs = 8000
   } = {}) {
     super();
     this.url = String(url || '').trim();
@@ -22,24 +23,53 @@ class JanusWebSocketClient extends EventEmitter {
     this.apiSecret = apiSecret;
     this.transactionPrefix = transactionPrefix;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.connectTimeoutMs = connectTimeoutMs;
     this.ws = null;
+    this.connectPromise = null;
     this.pending = new Map();
   }
 
   async connect() {
     if (!this.url) throw new Error('janus server WebSocket URL is required');
-    if (this.ws) return this;
+    if (
+      this.ws &&
+      (this.ws.readyState === undefined ||
+        this.ws.readyState === this.WebSocketImpl.OPEN)
+    ) {
+      return this;
+    }
+    if (this.connectPromise) return this.connectPromise;
 
-    this.ws = new this.WebSocketImpl(this.url, this.protocol);
-    wireWebSocket(this.ws, {
+    this.connectPromise = this.performConnect().finally(() => {
+      this.connectPromise = null;
+    });
+    return this.connectPromise;
+  }
+
+  performConnect() {
+    const socket = new this.WebSocketImpl(this.url, this.protocol);
+    this.ws = socket;
+    wireWebSocket(socket, {
       onOpen: () => this.emit('open'),
-      onMessage: message => this.handleMessage(message),
-      onClose: () => this.handleClose(),
-      onError: error => this.emit('error', error)
+      onMessage: message => {
+        if (this.ws === socket) this.handleMessage(message);
+      },
+      onClose: () => this.handleClose(socket),
+      onError: error => {
+        if (this.ws === socket) this.handleError(error);
+      }
     });
 
     return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        if (this.ws === socket) this.ws = null;
+        socket.terminate?.();
+        socket.close?.();
+        reject(new Error('janus websocket connection timed out'));
+      }, this.connectTimeoutMs);
       const cleanup = () => {
+        clearTimeout(timer);
         this.off('open', onOpen);
         this.off('error', onError);
         this.off('close', onClose);
@@ -98,6 +128,8 @@ class JanusWebSocketClient extends EventEmitter {
 
   async request(message = {}, { sessionId = null, handleId = null } = {}) {
     if (!this.ws) await this.connect();
+    const socket = this.ws;
+    if (!socket) throw new Error('janus websocket is not open');
     const transaction = `${this.transactionPrefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
     const payload = compact({
       ...message,
@@ -114,10 +146,10 @@ class JanusWebSocketClient extends EventEmitter {
       }, this.requestTimeoutMs);
       this.pending.set(transaction, { resolve, reject, timer });
       try {
-        if (this.ws.readyState !== undefined && this.ws.readyState !== this.WebSocketImpl.OPEN) {
+        if (socket.readyState !== undefined && socket.readyState !== this.WebSocketImpl.OPEN) {
           throw new Error('janus websocket is not open');
         }
-        this.ws.send(JSON.stringify(payload));
+        socket.send(JSON.stringify(payload));
       } catch (error) {
         clearTimeout(timer);
         this.pending.delete(transaction);
@@ -146,7 +178,8 @@ class JanusWebSocketClient extends EventEmitter {
     this.emit('event', payload);
   }
 
-  handleClose() {
+  handleClose(socket = this.ws) {
+    if (this.ws !== socket) return;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new Error('janus websocket closed'));
@@ -154,6 +187,10 @@ class JanusWebSocketClient extends EventEmitter {
     this.pending.clear();
     this.ws = null;
     this.emit('close');
+  }
+
+  handleError(error) {
+    if (this.listenerCount('error') > 0) this.emit('error', error);
   }
 
   close() {
@@ -175,13 +212,19 @@ class JanusMediaServerClient {
     this.timeoutMs = timeoutMs;
   }
 
-  async createSession({ callId, accountId, sdpOffer, iceServers = [] } = {}) {
+  async createSession({ callId, accountId, sdpOffer, iceServers = [], direction = 'incoming' } = {}) {
     return this.post('/sessions', {
       call_id: callId,
       account_id: String(accountId ?? ''),
-      direction: 'incoming',
+      direction,
       meta_sdp_offer: sdpOffer,
       ice_servers: iceServers
+    });
+  }
+
+  async setMetaAnswer(sessionId, sdpAnswer) {
+    return this.post(`/sessions/${encodeURIComponent(sessionId)}/meta-answer`, {
+      sdp_answer: sdpAnswer
     });
   }
 
@@ -614,7 +657,7 @@ class JanusSipServerProfileSession {
     if (data.error_code || data.error) {
       const reason = [data.error_code, data.error].filter(Boolean).join(' ');
       this.registrationWaiters.get(String(handle.id))?.reject(new Error(reason || 'Janus SIP plugin error'));
-      this.activeCalls.get(handle.activeCallId)?.handleJanusEvent('plugin_error', data);
+      this.activeCalls.get(handle.activeCallId)?.handleJanusEvent('plugin_error', data, event);
       this.log('janus_server_plugin_error', { profile_id: this.profile.id, handle_id: handle.id, error: reason });
       return;
     }
@@ -636,12 +679,12 @@ class JanusSipServerProfileSession {
     } else if (sipEvent === 'hangup') {
       const callId = janusCallId(event, result);
       const resolvedCallId = callId || handle.activeCallId;
-      this.activeCalls.get(resolvedCallId)?.handleJanusEvent(sipEvent, result);
+      this.activeCalls.get(resolvedCallId)?.handleJanusEvent(sipEvent, result, event);
       this.activeCalls.delete(resolvedCallId);
       handle.activeCallId = null;
     } else {
       const callId = janusCallId(event, result);
-      this.activeCalls.get(callId || handle.activeCallId)?.handleJanusEvent(sipEvent, result);
+      this.activeCalls.get(callId || handle.activeCallId)?.handleJanusEvent(sipEvent, result, event);
     }
   }
 
@@ -666,15 +709,6 @@ class JanusSipServerProfileSession {
 
   async handleIncomingCall({ event, result, handle }) {
     const jsep = event.jsep;
-    if (!jsep?.sdp) {
-      await this.client.pluginMessage({
-        sessionId: this.sessionId,
-        handleId: handle.id,
-        body: { request: 'decline', code: 488 }
-      });
-      this.log('janus_server_incoming_without_jsep', { profile_id: this.profile.id });
-      return;
-    }
     if (handle.activeCallId && !this.activeCalls.get(handle.activeCallId)?.ended) {
       await this.client.pluginMessage({
         sessionId: this.sessionId,
@@ -799,6 +833,7 @@ class JanusSipServerCallFacade extends EventEmitter {
     this.mediaSessionId = null;
     this.answerPromise = null;
     this.terminationPromise = null;
+    this.remoteAnswerWaiter = null;
     this.answered = false;
     this.ended = false;
     this.transferLeg = null;
@@ -817,19 +852,22 @@ class JanusSipServerCallFacade extends EventEmitter {
   }
 
   async performAnswer() {
+    const offerless = !this.janus.jsep?.sdp;
     this.ensureAnswerActive('media session creation');
     const session = await this.mediaServerClient.createSession({
       callId: this.request.call_ref,
       accountId: this.request.account_id,
-      sdpOffer: this.janus.jsep.sdp,
-      iceServers: this.profile.ice_servers || []
+      sdpOffer: this.janus.jsep?.sdp || '',
+      iceServers: this.profile.ice_servers || [],
+      direction: offerless ? 'outgoing' : 'incoming'
     });
     if (!session?.session_id) {
       throw new Error('media server returned an invalid Janus session response');
     }
     this.mediaSessionId = session.session_id;
     try {
-      if (!session.meta_sdp_answer) {
+      const negotiatedSdp = offerless ? session.meta_sdp_offer : session.meta_sdp_answer;
+      if (!negotiatedSdp) {
         throw new Error('media server returned an invalid Janus session response');
       }
       this.ensureAnswerActive('runtime agent creation');
@@ -856,16 +894,21 @@ class JanusSipServerCallFacade extends EventEmitter {
       this.request.media_session_ref = this.mediaSessionId;
       this.request.janus.media_session_id = this.mediaSessionId;
 
+      const remoteAnswer = offerless ? this.waitForRemoteAnswer() : null;
       await this.janus.client.pluginMessage({
         sessionId: this.janus.sessionId,
         handleId: this.janus.handleId,
         body: { request: 'accept', autoaccept_reinvites: true },
-        jsep: { type: 'answer', sdp: session.meta_sdp_answer }
+        jsep: { type: offerless ? 'offer' : 'answer', sdp: negotiatedSdp }
       });
+      if (remoteAnswer) await remoteAnswer;
       this.ensureAnswerActive('Janus accept acknowledgement');
       this.answered = true;
       return true;
     } catch (error) {
+      const waiter = this.remoteAnswerWaiter;
+      waiter?.promise.catch(() => {});
+      waiter?.reject(error);
       await this.terminateMediaSession('janus_answer_failed');
       throw error;
     }
@@ -875,6 +918,34 @@ class JanusSipServerCallFacade extends EventEmitter {
     if (this.ended) {
       throw new Error(`Janus call ended during ${stage}`);
     }
+  }
+
+  waitForRemoteAnswer(timeoutMs = 10000) {
+    if (this.remoteAnswerWaiter) return this.remoteAnswerWaiter.promise;
+
+    let resolveWaiter;
+    let rejectWaiter;
+    const promise = new Promise((resolve, reject) => {
+      resolveWaiter = resolve;
+      rejectWaiter = reject;
+    });
+    const timer = setTimeout(() => {
+      this.remoteAnswerWaiter?.reject(new Error('janus offerless answer timed out'));
+    }, timeoutMs);
+    this.remoteAnswerWaiter = {
+      promise,
+      resolve: value => {
+        clearTimeout(timer);
+        this.remoteAnswerWaiter = null;
+        resolveWaiter(value);
+      },
+      reject: error => {
+        clearTimeout(timer);
+        this.remoteAnswerWaiter = null;
+        rejectWaiter(error);
+      }
+    };
+    return promise;
   }
 
   async stream() {
@@ -934,14 +1005,27 @@ class JanusSipServerCallFacade extends EventEmitter {
   emitEnd() {
     if (this.ended) return;
     this.ended = true;
+    this.remoteAnswerWaiter?.reject(new Error('janus call ended before remote answer'));
     this.transferLeg = null;
     this.emit('end');
   }
 
-  handleJanusEvent(eventName, result = {}) {
+  handleJanusEvent(eventName, result = {}, event = {}) {
     if (eventName === 'hangup') {
       this.terminateMediaSession().catch(() => {});
       this.emitEnd();
+      return;
+    }
+    if (eventName === 'accepted' && this.remoteAnswerWaiter) {
+      const sdpAnswer = event?.jsep?.sdp;
+      if (!sdpAnswer) {
+        this.remoteAnswerWaiter.reject(new Error('janus offerless call returned no SDP answer'));
+        return;
+      }
+      this.mediaServerClient
+        .setMetaAnswer(this.mediaSessionId, sdpAnswer)
+        .then(value => this.remoteAnswerWaiter?.resolve(value))
+        .catch(error => this.remoteAnswerWaiter?.reject(error));
       return;
     }
     if (eventName === 'plugin_error') {

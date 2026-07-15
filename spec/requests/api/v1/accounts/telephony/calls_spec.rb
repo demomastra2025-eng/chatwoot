@@ -208,6 +208,7 @@ RSpec.describe 'Telephony Calls API', type: :request do
     post "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_session.external_call_ref)}/upload_recording",
          params: {
            recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/webm', true),
+           duration_ms: 10_000,
            terminal_status: 'completed',
            reason: 'remote_hangup'
          },
@@ -223,7 +224,8 @@ RSpec.describe 'Telephony Calls API', type: :request do
     )
     expect(call_session).to have_attributes(
       status: 'completed',
-      end_reason: 'remote_hangup'
+      end_reason: 'remote_hangup',
+      answered_at: be_within(1.second).of(call_session.ended_at - 10.seconds)
     )
     expect(call_session.ended_at).to be_present
     expect(call_session.events.where(event_type: 'session_completed')).to exist

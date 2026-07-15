@@ -492,13 +492,17 @@ export function useCallSession() {
       });
     } else if (stage === 'accepted') {
       Object.assign(updates, {
+        status: 'in_progress',
         callEvent: 'callee_answered',
         callLeg: 'callee',
         rawStatus: 'answered',
         browserStartState: 'connected',
+        answeredAt:
+          call.answeredAt || call.answered_at || new Date().toISOString(),
       });
     }
     callsStore.addCall(updates);
+    if (stage === 'accepted') callsStore.setCallActive(call.callSid);
   };
 
   const browserSipDisconnectRelease = (call, detail = {}) => {

@@ -35,6 +35,64 @@ const store = useStore();
 const callsStore = useCallsStore();
 const whatsappCallsStore = useWhatsappCallsStore();
 
+const OUTBOUND_BROWSER_STAGE_RANK = {
+  preparing: 0,
+  call_sent: 1,
+  calling: 1,
+  ringing: 2,
+  progress: 2,
+  connected: 3,
+  accepted: 3,
+};
+
+const outboundBrowserStageUpdate = stage => {
+  if (stage === 'accepted') {
+    return {
+      status: 'in_progress',
+      callEvent: 'callee_answered',
+      callLeg: 'callee',
+      rawStatus: 'answered',
+      browserStartState: 'connected',
+      answeredAt: new Date().toISOString(),
+    };
+  }
+  if (['progress', 'ringing'].includes(stage)) {
+    return {
+      callEvent: 'callee_ringing',
+      callLeg: 'callee',
+      rawStatus: 'ringing',
+      browserStartState: 'ringing',
+    };
+  }
+
+  return {
+    callEvent: 'operator_answered',
+    browserStartState: 'calling',
+  };
+};
+
+const applyOutboundBrowserJoinState = ({ callSid, provider, stage }) => {
+  callsStore.markBrowserJoined(callSid, provider);
+
+  const normalizedStage = stage || 'calling';
+  const currentCall = callsStore.calls.find(
+    call => String(call.callSid) === String(callSid)
+  );
+  const currentStage =
+    currentCall?.browserStartState || currentCall?.browser_start_state;
+  const currentRank = OUTBOUND_BROWSER_STAGE_RANK[currentStage] ?? -1;
+  const nextRank = OUTBOUND_BROWSER_STAGE_RANK[normalizedStage] ?? 1;
+  if (nextRank < currentRank) return;
+
+  callsStore.addCall({
+    callSid,
+    provider,
+    callDirection: 'outbound',
+    ...outboundBrowserStageUpdate(normalizedStage),
+  });
+  if (normalizedStage === 'accepted') callsStore.setCallActive(callSid);
+};
+
 const { t } = useI18n();
 
 const dialogRef = ref(null);
@@ -317,11 +375,10 @@ const startCall = async inbox => {
           call,
           sessionScope,
           onJoined: result => {
-            callsStore.markBrowserJoined(callSid, inbox.provider);
-            callsStore.addCall({
-              ...call,
-              browserStartState:
-                result?.stage === 'progress' ? 'ringing' : 'calling',
+            applyOutboundBrowserJoinState({
+              callSid,
+              provider: inbox.provider,
+              stage: result?.stage,
             });
           },
           onFailed: () => callsStore.dismissCall(callSid),

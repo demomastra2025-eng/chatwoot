@@ -1027,6 +1027,27 @@ describe('useCallSession', () => {
         rawStatus: 'ringing',
       })
     );
+
+    stageHandler?.({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'sipuni:local:staged-outbound',
+        stage: 'accepted',
+      },
+    });
+
+    expect(callsStore.activeCall).toEqual(
+      expect.objectContaining({
+        callSid: 'sipuni:local:staged-outbound',
+        status: 'in_progress',
+        browserStartState: 'connected',
+        callEvent: 'callee_answered',
+        callLeg: 'callee',
+        rawStatus: 'answered',
+        answeredAt: expect.any(String),
+        isActive: true,
+      })
+    );
   });
 
   it('still releases an active browser SIP call when the local RTC hangup fails', async () => {

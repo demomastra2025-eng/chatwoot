@@ -34,6 +34,7 @@ class Telephony::BrowserRecordingUploadService
   end
 
   def perform!
+    call_session.reload
     validate!
 
     stored_recording = persist_recording!
@@ -130,11 +131,17 @@ class Telephony::BrowserRecordingUploadService
       byte_size: stored_recording.byte_size,
       content_type: stored_recording.content_type,
       sha256: stored_recording.sha256,
-      duration_ms: duration_ms,
-      duration_seconds: resolved_duration_seconds,
       callee_leg_answered: call_session.direction == 'outbound',
       metadata: recording_metadata
-    }.compact
+    }.merge(recording_timing_payload).compact
+  end
+
+  def recording_timing_payload
+    {
+      duration_ms: duration_ms,
+      duration_seconds: resolved_duration_seconds,
+      answered_at: inferred_answered_at&.iso8601(3)
+    }
   end
 
   def recording_metadata
@@ -150,6 +157,16 @@ class Telephony::BrowserRecordingUploadService
 
   def resolved_duration_seconds
     duration_seconds || (duration_ms / 1000 if duration_ms.present?)
+  end
+
+  def inferred_answered_at
+    return call_session.answered_at if call_session.answered_at.present?
+
+    recording_duration = duration_seconds || duration_ms&.fdiv(1000)
+    return if recording_duration.blank?
+
+    answered_at = (call_session.ended_at || Time.current) - recording_duration
+    [answered_at, call_session.started_at].compact.max
   end
 
   def storage_key_for(sha256, extension)

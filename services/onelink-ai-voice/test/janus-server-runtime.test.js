@@ -5,6 +5,7 @@ const {
   JanusSipServerCallFacade,
   JanusSipServerProfileSession,
   JanusSipServerRuntimeManager,
+  JanusWebSocketClient,
   normalizeServerProfile,
   parseServerProfilesJson
 } = require('../src/janus/server-runtime');
@@ -59,6 +60,28 @@ test('Janus media-server client serializes account_id as string', async () => {
   });
 
   assert.equal(requests[0].body.account_id, '530');
+  assert.equal(requests[0].body.direction, 'incoming');
+});
+
+test('Janus WebSocket client bounds connection setup time', async () => {
+  class NeverOpeningSocket extends EventEmitter {
+    static OPEN = 1;
+
+    terminate() {
+      this.terminated = true;
+    }
+
+    close() {}
+  }
+
+  const client = new JanusWebSocketClient({
+    url: 'ws://janus.test/ws',
+    WebSocketImpl: NeverOpeningSocket,
+    connectTimeoutMs: 5
+  });
+
+  await assert.rejects(() => client.connect(), /connection timed out/);
+  assert.equal(client.ws, null);
 });
 
 test('Janus server call facade answers through media-server and exposes runtime stream', async () => {
@@ -127,11 +150,93 @@ test('Janus server call facade answers through media-server and exposes runtime 
       callId: 'sipuni:janus-server:12:provider-call-1',
       accountId: 42,
       sdpOffer: 'v=0\r\no=- janus-offer',
-      iceServers: []
+      iceServers: [],
+      direction: 'incoming'
     }
   ]);
   assert.deepEqual(janusMessages[0].body, { request: 'accept', autoaccept_reinvites: true });
   assert.deepEqual(janusMessages[0].jsep, { type: 'answer', sdp: 'v=0\r\no=- pion-answer' });
+});
+
+test('Janus server call facade negotiates native offerless SIP INVITEs', async () => {
+  const janusMessages = [];
+  const mediaCalls = [];
+  const facade = new JanusSipServerCallFacade({
+    profile: normalizeServerProfile({
+      id: 16,
+      account_id: 42,
+      inbox_id: 9,
+      provider: 'asterisk_analog',
+      sip_username: 'ai-agent',
+      sip_password: 'secret',
+      sip_host: 'asterisk.test'
+    }),
+    providerCallId: 'offerless-1',
+    caller: 'sip:1001@asterisk.test',
+    janus: {
+      sessionId: 100,
+      handleId: 200,
+      jsep: null,
+      client: {
+        async pluginMessage(payload) {
+          janusMessages.push(payload);
+          return { janus: 'ack' };
+        }
+      }
+    },
+    mediaServerClient: {
+      async createSession(payload) {
+        mediaCalls.push(['createSession', payload]);
+        return { session_id: 'media-offerless', meta_sdp_offer: 'v=0\r\no=- pion-offer' };
+      },
+      async createRuntimeAgent() {
+        return {
+          runtime_session_id: 'runtime-offerless',
+          stream_url: 'ws://media.test/runtime-offerless',
+          codec: 'pcm_s16le',
+          input_sample_rate: 16000,
+          output_sample_rate: 8000
+        };
+      },
+      async setMetaAnswer(sessionId, sdpAnswer) {
+        mediaCalls.push(['setMetaAnswer', sessionId, sdpAnswer]);
+        return { status: 'connected' };
+      },
+      async terminateSession() {}
+    },
+    runtimeMediaStreamFactory: async () => ({})
+  });
+
+  const answer = facade.answer();
+  while (janusMessages.length === 0) {
+    // The media-server and runtime attach complete on promise turns.
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  facade.handleJanusEvent('accepted', {}, {
+    jsep: { type: 'answer', sdp: 'v=0\r\no=- remote-answer' }
+  });
+
+  await assert.doesNotReject(() => answer);
+  assert.deepEqual(mediaCalls[0], [
+    'createSession',
+    {
+      callId: 'asterisk_analog:janus-server:16:offerless-1',
+      accountId: 42,
+      sdpOffer: '',
+      iceServers: [],
+      direction: 'outgoing'
+    }
+  ]);
+  assert.deepEqual(janusMessages[0].jsep, {
+    type: 'offer',
+    sdp: 'v=0\r\no=- pion-offer'
+  });
+  assert.deepEqual(mediaCalls[1], [
+    'setMetaAnswer',
+    'media-offerless',
+    'v=0\r\no=- remote-answer'
+  ]);
 });
 
 test('Janus server call facade transfers AI calls to an operator with SIP REFER', async () => {
@@ -264,9 +369,9 @@ test('Janus server call facade tears down a late media session after caller hang
   assert.deepEqual(terminated, [['media-late', 'janus_answer_failed']]);
 });
 
-test('Janus server profile rejects offerless INVITEs that media-server cannot negotiate', async () => {
+test('Janus server profile routes offerless INVITEs through the native call facade', async () => {
   const messages = [];
-  let handled = false;
+  let handledCall = null;
   const profile = normalizeServerProfile({
     id: 16,
     account_id: 42,
@@ -277,7 +382,7 @@ test('Janus server profile rejects offerless INVITEs that media-server cannot ne
     sip_host: 'asterisk.test'
   });
   const session = new JanusSipServerProfileSession({
-    app: { async handleCall() { handled = true; } },
+    app: { async handleCall(call) { handledCall = call; } },
     profile,
     janusUrl: 'ws://janus.test/ws',
     mediaServerClient: {},
@@ -299,8 +404,10 @@ test('Janus server profile rejects offerless INVITEs that media-server cannot ne
     handle: { id: 200, activeCallId: null }
   });
 
-  assert.equal(handled, false);
-  assert.deepEqual(messages[0].body, { request: 'decline', code: 488 });
+  assert.ok(handledCall);
+  assert.equal(handledCall.request.call_ref, 'asterisk_analog:janus-server:16:offerless-1');
+  assert.equal(handledCall.janus.jsep, undefined);
+  assert.deepEqual(messages, []);
 });
 
 test('Janus server profile close rejects pending SIP registration waiters', async () => {

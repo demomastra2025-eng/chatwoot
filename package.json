@@ -120,7 +120,7 @@
     "vuex": "~4.1.0",
     "vuex-router-sync": "6.0.0-rc.1",
     "wavesurfer.js": "7.8.6",
-    "webrtc-adapter": "9.0.3"
+    "webrtc-adapter": "9.0.6"
   },
   "devDependencies": {
     "@egoist/tailwindcss-icons": "^1.9.2",

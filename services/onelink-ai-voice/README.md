@@ -96,7 +96,11 @@ is only a local fallback for isolated tests.
 When enabled, `onelink-ai-voice` connects to Janus WebSocket, registers only the
 configured `voice_agent` SIP profiles, accepts incoming SIP calls by creating a
 Pion WebRTC session in `chatwoot_media_server`, and then uses the existing
-runtime stream path for Gemini Live audio.
+runtime stream path for Gemini Live audio. Both regular INVITEs with an SDP
+offer and native offerless SIP INVITEs are negotiated; offerless calls use the
+media server offer followed by the SDP answer received in the SIP ACK. Janus
+WebSocket connection attempts are time-bounded so one unreachable gateway
+cannot stall the profile synchronization loop.
 
 Required server-side Janus env:
 

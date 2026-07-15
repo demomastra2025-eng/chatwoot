@@ -985,6 +985,55 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it('reports the native SIP ringing stage for the current outbound call', async () => {
+    const stageHandler = vi.fn();
+    JanusSipVoiceClient.addEventListener('call:stage', stageHandler);
+    await JanusSipVoiceClient.initializeDevice(sipuniSession, {
+      inboxId: 4769,
+    });
+
+    await JanusSipVoiceClient.joinClientCall({
+      callDirection: 'outbound',
+      callRef: 'sipuni:local:ringing',
+      toNumber: '+77066318623',
+    });
+    pluginState.options?.onmessage?.({
+      call_id: 'outbound-call-id',
+      result: { event: 'ringing' },
+    });
+
+    expect(stageHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          stage: 'ringing',
+          janusCallId: 'outbound-call-id',
+        }),
+      })
+    );
+  });
+
+  it('keeps the existing microphone track during a SIP re-INVITE', () => {
+    const client = createJanusSipVoiceClient();
+    const send = vi.fn();
+    const createAnswer = vi.fn(({ success }) => {
+      success({ type: 'answer', sdp: 'updated-answer' });
+    });
+    client.sipHandle = { createAnswer, send };
+
+    client.answerUpdate({ type: 'offer', sdp: 'updated-offer' });
+
+    expect(createAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jsep: { type: 'offer', sdp: 'updated-offer' },
+        tracks: [],
+      })
+    );
+    expect(send).toHaveBeenCalledWith({
+      message: { request: 'update' },
+      jsep: { type: 'answer', sdp: 'updated-answer' },
+    });
+  });
+
   it('transfers the live prewarmed microphone track into the Janus offer', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,

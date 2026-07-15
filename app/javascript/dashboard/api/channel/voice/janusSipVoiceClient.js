@@ -917,6 +917,19 @@ export class JanusSipVoiceClient extends EventTarget {
       return;
     }
 
+    if (event === 'ringing') {
+      if (!this.outboundAttempt || this.currentCallDirection !== 'outbound') {
+        return;
+      }
+      if (!this.isCurrentOutboundJanusEvent(callId)) return;
+
+      this.captureOutboundJanusCallId(callId);
+      this.hasActiveCall = true;
+      this.resolveOutboundAttemptStart('ringing');
+      this.dispatchCallStage('ringing', { janusCallId: callId });
+      return;
+    }
+
     if (event === 'progress') {
       if (!this.outboundAttempt || this.currentCallDirection !== 'outbound') {
         return;
@@ -2431,13 +2444,10 @@ export class JanusSipVoiceClient extends EventTarget {
   answerUpdate(jsep) {
     this.sipHandle?.createAnswer({
       jsep,
-      tracks: [
-        {
-          type: 'audio',
-          capture: WEBPHONE_AUDIO_CAPTURE_CONSTRAINTS,
-          recv: true,
-        },
-      ],
+      // Keep the established transceiver/track. Passing capture constraints
+      // here asks Janus.js to acquire a replacement microphone on every
+      // re-INVITE (hold/resume included).
+      tracks: [],
       success: answer => {
         this.sipHandle?.send({
           message: { request: 'update' },

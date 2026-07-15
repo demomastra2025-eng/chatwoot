@@ -299,6 +299,66 @@ describe('VoiceCallButton', () => {
     );
   });
 
+  it('keeps an immediately accepted outbound SIP call connected', async () => {
+    startOutboundBrowserCallMock.mockImplementation(async ({ onJoined }) => {
+      const result = { calling: true, stage: 'accepted' };
+      await onJoined?.(result);
+      return result;
+    });
+    const { wrapper } = mountComponent();
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(useCallsStore().activeCall).toEqual(
+      expect.objectContaining({
+        callSid: 'call-ref-1',
+        status: 'in_progress',
+        browserJoined: true,
+        browserStartState: 'connected',
+        callEvent: 'callee_answered',
+        callLeg: 'callee',
+        rawStatus: 'answered',
+        answeredAt: expect.any(String),
+        isActive: true,
+      })
+    );
+  });
+
+  it('does not regress an accepted SIP call when an older start result settles', async () => {
+    startOutboundBrowserCallMock.mockImplementation(
+      async ({ call, onJoined }) => {
+        const callsStore = useCallsStore();
+        callsStore.addCall({
+          callSid: call.callSid,
+          provider: call.provider,
+          callDirection: 'outbound',
+          status: 'in_progress',
+          browserStartState: 'connected',
+          callEvent: 'callee_answered',
+          callLeg: 'callee',
+          rawStatus: 'answered',
+        });
+        callsStore.setCallActive(call.callSid);
+        await onJoined?.({ calling: true, stage: 'calling' });
+        return { calling: true, stage: 'calling' };
+      }
+    );
+    const { wrapper } = mountComponent();
+
+    await wrapper.find('button').trigger('click');
+    await flushPromises();
+
+    expect(useCallsStore().activeCall).toEqual(
+      expect.objectContaining({
+        browserStartState: 'connected',
+        callEvent: 'callee_answered',
+        rawStatus: 'answered',
+        isActive: true,
+      })
+    );
+  });
+
   it('emits success when local post-processing fails after API initiation', async () => {
     const postProcessingError = new Error('local call store failed');
     vi.spyOn(useCallsStore(), 'addCall').mockImplementationOnce(() => {
