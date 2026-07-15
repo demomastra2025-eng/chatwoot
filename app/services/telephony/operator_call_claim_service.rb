@@ -256,9 +256,11 @@ class Telephony::OperatorCallClaimService
   end
 
   def claim_call!
+    claimed_at = Time.current
     attrs = {
       answered_by: call_session.answered_by || "user:#{user.id}",
       status: claim_status,
+      last_event_at: [call_session.last_event_at, claimed_at].compact.max,
       metadata: (call_session.metadata || {}).deep_merge(
         'operator_claim' => {
           'agent_binding_id' => operator_agent_binding&.id,
@@ -267,7 +269,7 @@ class Telephony::OperatorCallClaimService
           'agent_aor' => operator_agent_aor,
           'user_id' => user.id,
           'user_name' => user.name,
-          'claimed_at' => Time.current.iso8601
+          'claimed_at' => claimed_at.iso8601
         }.compact
       )
     }

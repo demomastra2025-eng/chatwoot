@@ -446,7 +446,13 @@ export function useCallSession() {
     if (callRef) {
       const call = callsStore.calls.find(
         item =>
-          item.provider === provider && String(item.callSid) === String(callRef)
+          item.provider === provider &&
+          [item.callSid, item.janusCallRef, item.janus_call_ref].some(
+            candidate =>
+              candidate !== undefined &&
+              candidate !== null &&
+              String(candidate) === String(callRef)
+          )
       );
       if (call) return call;
     }
@@ -474,9 +480,30 @@ export function useCallSession() {
     if (detail.aiBridge || detail.callMode === 'ai') return;
 
     const call = findDisconnectedBrowserSipCall(event);
-    if (!call?.callSid || !isOutboundCallDirection(call.callDirection)) return;
+    if (!call?.callSid) return;
 
     const stage = detail.stage;
+    if (!isOutboundCallDirection(call.callDirection)) {
+      if (stage !== 'accepted') return;
+
+      const answeredAt =
+        call.answeredAt || call.answered_at || new Date().toISOString();
+      callsStore.addCall({
+        callSid: call.callSid,
+        status: 'in_progress',
+        callEvent: 'operator_answered',
+        callLeg: 'operator',
+        rawStatus: 'answered',
+        browserStartState: 'connected',
+        answeredAt,
+      });
+      VoiceAPI.reportBrowserSipAnswered(call.callSid, {
+        answered_at: answeredAt,
+      }).catch(() => null);
+      callsStore.setCallActive(call.callSid);
+      return;
+    }
+
     const updates = {
       callSid: call.callSid,
       browserStartState: stage,
@@ -536,33 +563,39 @@ export function useCallSession() {
       return;
     }
 
-    if (call.isActive) {
-      await callsStore.clearActiveCall();
-    } else {
-      callsStore.dismissCall(call.callSid);
-    }
+    const releasePromise = runOnceForCall(
+      endingCallSids,
+      call.callSid,
+      async () => {
+        const release = browserSipDisconnectRelease(call, detail);
+        const answeredAt =
+          call.answeredAt ||
+          call.answered_at ||
+          detail.answeredAt ||
+          detail.answered_at ||
+          (detail.callMediaAccepted ? new Date().toISOString() : null);
+        const answerReport = answeredAt
+          ? VoiceAPI.reportBrowserSipAnswered(call.callSid, {
+              answered_at: answeredAt,
+            }).catch(() => null)
+          : null;
+        await Promise.all([
+          answerReport,
+          releaseBrowserSipCall(call.callSid, {
+            status: release.status,
+            reason: release.reason,
+          }),
+        ]);
+      }
+    );
 
-    await runOnceForCall(endingCallSids, call.callSid, async () => {
-      const release = browserSipDisconnectRelease(call, detail);
-      const answeredAt =
-        call.answeredAt ||
-        call.answered_at ||
-        detail.answeredAt ||
-        detail.answered_at ||
-        (detail.callMediaAccepted ? new Date().toISOString() : null);
-      const answerReport = answeredAt
-        ? VoiceAPI.reportBrowserSipAnswered(call.callSid, {
-            answered_at: answeredAt,
-          }).catch(() => null)
-        : null;
-      await Promise.all([
-        answerReport,
-        releaseBrowserSipCall(call.callSid, {
-          status: release.status,
-          reason: release.reason,
-        }),
-      ]);
-    });
+    // Persist the terminal state immediately. Browser media cleanup can wait
+    // for a recording upload and must not keep the operator busy meanwhile.
+    const cleanupPromise = call.isActive
+      ? callsStore.clearActiveCall()
+      : Promise.resolve(callsStore.dismissCall(call.callSid));
+
+    await Promise.all([releasePromise, cleanupPromise]);
   };
 
   const handleClientDisconnect = async event => {

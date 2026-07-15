@@ -26,6 +26,8 @@ class Telephony::OperatorCallRejectService
     call_session.with_lock do
       if call_session.terminal?
         validate_terminal_release!
+        @terminal_completion_repair = terminal_completion_repair?
+        needs_ingestion = @terminal_completion_repair
       else
         validate_release!
         should_terminate_remote = true
@@ -201,11 +203,24 @@ class Telephony::OperatorCallRejectService
   end
 
   def candidate_agent?
-    return claimed_by_current_user? if call_session.agent_binding_id.present?
+    # Once the operator has claimed a call, a remote BYE may mark the browser
+    # SIP profile offline before the release request reaches Rails. The claim
+    # remains authoritative for releasing that call.
+    return true if claimed_by_current_user?
 
     return agent_binding.enabled? && agent_binding.registered_for_routing? if operator_identity.is_a?(Telephony::AgentBinding)
 
     sip_profile.present? && sip_profile.registered_for_routing?
+  end
+
+  def terminal_completion_repair?
+    return false unless status == 'completed' && call_session.status != 'completed'
+
+    call_session.answered_at.present? ||
+      call_session.recording_ref.present? ||
+      Array.wrap(call_session.legs).any? do |leg|
+        leg.is_a?(Hash) && leg.deep_stringify_keys['status'].to_s == 'in_progress'
+      end
   end
 
   def candidate_binding?
@@ -335,7 +350,7 @@ class Telephony::OperatorCallRejectService
   end
 
   def reject_event_payload
-    now = Time.current.iso8601
+    ended_at = release_ended_at.iso8601(3)
     {
       account_id: account.id,
       call_ref: call_ref,
@@ -344,11 +359,21 @@ class Telephony::OperatorCallRejectService
       event_type: TERMINAL_STATUS_EVENT_TYPES.fetch(status),
       status: status,
       direction: call_session.direction,
-      ended_at: now,
+      ended_at: ended_at,
       ended_by: "user:#{user.id}",
       reason: reason,
       metadata: release_metadata
     }
+  end
+
+  def release_ended_at
+    return Time.current unless @terminal_completion_repair
+
+    if call_session.answered_at.present? && call_session.duration_seconds.to_i.positive?
+      return call_session.answered_at + call_session.duration_seconds.seconds
+    end
+
+    call_session.ended_at || Time.current
   end
 
   def reject_event_key

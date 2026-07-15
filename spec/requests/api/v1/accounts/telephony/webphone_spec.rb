@@ -1453,6 +1453,50 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     end
   end
 
+  it 'records an inbound Janus answer for the operator who claimed the call' do
+    answered_at = 5.seconds.ago.change(usec: 0)
+    agent_binding = create(
+      :telephony_agent_binding,
+      :registered,
+      account: account,
+      user: administrator,
+      provider: 'sipuni'
+    )
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      provider: 'sipuni',
+      external_call_ref: 'sipuni:janus:51:browser-inbound-answered-1',
+      status: 'connecting',
+      direction: 'inbound',
+      started_at: answered_at - 10.seconds,
+      agent_binding: agent_binding,
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'agent_binding_id' => agent_binding.id
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/answered",
+         params: { call_ref: call_session.external_call_ref, answered_at: answered_at.iso8601(3) },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'in_progress',
+      answered_at: answered_at,
+      answered_by: "user:#{administrator.id}"
+    )
+    expect(call_session.events.where(event_type: 'operator_answered').count).to eq(1)
+  end
+
   it 'repairs the answer state when the browser report arrives after call completion' do
     answered_at = 8.seconds.ago.change(usec: 0)
     call_session = create(
@@ -1957,6 +2001,108 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       ended_by: "user:#{administrator.id}",
       end_reason: 'operator_hangup'
     )
+  end
+
+  it 'releases a claimed SIP profile call after Janus marks the profile offline' do
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_inbox,
+      user: administrator,
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_ref: 'sipuni-profile-claimed-offline',
+      agent_aor: 'sip:508@ats01.kz.sipuni.com'
+    )
+    mark_sip_profile_registered!(profile)
+    profile.update_browser_registration!(
+      registered: false,
+      registration_context: sip_presence_params(profile)
+    )
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      inbox: voice_inbox,
+      number_binding: Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id),
+      provider: 'sipuni',
+      external_call_ref: 'sipuni:janus:51:claimed-profile-offline',
+      status: 'in_progress',
+      direction: 'inbound',
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_sip_profile_ids' => [profile.id],
+          'operator_candidate_user_ids' => [administrator.id],
+          'operator_candidate_agent_refs' => [profile.agent_ref]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'sip_profile_id' => profile.id,
+          'agent_ref' => profile.agent_ref
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'remote_hangup' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'completed',
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'remote_hangup'
+    )
+  end
+
+  it 'repairs a timed-out claimed browser call when the accepted media later reports remote hangup' do
+    agent_binding = create(
+      :telephony_agent_binding,
+      account: account,
+      user: administrator,
+      provider: 'sipuni'
+    )
+    answered_at = 20.seconds.ago
+    timed_out_ended_at = answered_at + 10.seconds
+    call_session = create(
+      :telephony_call_session,
+      account: account,
+      external_call_ref: 'operator-browser-late-remote-hangup-1',
+      status: 'no_answer',
+      direction: 'inbound',
+      answered_at: answered_at,
+      ended_at: timed_out_ended_at,
+      duration_seconds: 10,
+      end_reason: 'operator_unavailable',
+      agent_binding: agent_binding,
+      metadata: {
+        'metadata' => {
+          'route_action' => 'operator',
+          'operator_candidate_user_ids' => [administrator.id]
+        },
+        'operator_claim' => {
+          'user_id' => administrator.id,
+          'agent_binding_id' => agent_binding.id
+        }
+      }
+    )
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
+         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'remote_hangup' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload).to have_attributes(
+      status: 'completed',
+      duration_seconds: 10,
+      ended_by: "user:#{administrator.id}",
+      end_reason: 'remote_hangup'
+    )
+    expect(call_session.answered_at).to be_within(0.001).of(answered_at)
+    expect(call_session.ended_at).to be_within(0.001).of(timed_out_ended_at)
   end
 
   it 'treats repeated browser hangup release for a completed operator call as idempotent' do

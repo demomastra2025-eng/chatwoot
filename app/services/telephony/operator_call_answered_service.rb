@@ -32,8 +32,9 @@ class Telephony::OperatorCallAnsweredService
   end
 
   def answerable_by_user?
-    return false unless call_session.direction == 'outbound'
+    return false unless call_session.direction.in?(%w[inbound outbound])
     return false if call_session.terminal? && call_session.status != 'completed'
+    return claimed_by_current_user? if call_session.direction == 'inbound'
 
     operator_user_ids.include?(user.id)
   end
@@ -42,7 +43,16 @@ class Telephony::OperatorCallAnsweredService
     ids = Array.wrap(route_metadata['operator_candidate_user_ids']).filter_map { |value| value.presence&.to_i }
     ids << route_metadata['chatwoot_user_id'].presence&.to_i
     ids << call_session.agent_binding&.user_id
+    ids << operator_claim_user_id
     ids.compact.uniq
+  end
+
+  def claimed_by_current_user?
+    operator_claim_user_id == user.id || call_session.agent_binding&.user_id == user.id
+  end
+
+  def operator_claim_user_id
+    call_session.metadata.to_h.dig('operator_claim', 'user_id').presence&.to_i
   end
 
   def route_metadata
@@ -55,20 +65,22 @@ class Telephony::OperatorCallAnsweredService
 
   def answered_event_payload
     timestamp = resolved_answered_at
-    event_key = "webphone:callee_answered:#{call_ref}:#{user.id}"
+    event_type = call_session.direction == 'inbound' ? 'operator_answered' : 'callee_answered'
+    event_key = "webphone:#{event_type}:#{call_ref}:#{user.id}"
     {
       account_id: account.id,
       call_ref: call_ref,
       provider: call_session.provider,
-      event: 'callee_answered',
-      event_type: 'callee_answered',
+      event: event_type,
+      event_type: event_type,
       event_key: event_key,
       event_id: event_key,
-      direction: 'outbound',
+      direction: call_session.direction,
       occurred_at: timestamp.iso8601(3),
       answered_at: timestamp.iso8601(3),
       answered_by: "user:#{user.id}",
-      callee_leg_answered: true,
+      callee_leg_answered: call_session.direction == 'outbound',
+      operator_leg_answered: call_session.direction == 'inbound',
       metadata: answered_event_metadata
     }
   end

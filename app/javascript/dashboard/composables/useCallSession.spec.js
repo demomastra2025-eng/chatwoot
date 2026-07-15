@@ -946,6 +946,123 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('correlates a raw Janus disconnect with the canonical inbound call ref', async () => {
+    let disconnectHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:janus:51:raw-inbound-call-id',
+      janusCallRef: 'raw-inbound-call-id',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'ringing',
+    });
+
+    mountUseCallSession();
+    await disconnectHandler?.({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'raw-inbound-call-id',
+        callDirection: 'inbound',
+        callMediaAccepted: true,
+        reason: 'remote_hangup',
+      },
+    });
+
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'sipuni:janus:51:raw-inbound-call-id',
+      {
+        reason: 'remote_hangup',
+        status: 'completed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+  });
+
+  it('marks a canonical inbound call answered from the raw Janus accepted stage', async () => {
+    let stageHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:stage') stageHandler = handler;
+    });
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'sipuni:janus:51:raw-accepted-inbound-id',
+      janusCallRef: 'raw-accepted-inbound-id',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      status: 'connecting',
+    });
+
+    mountUseCallSession();
+    stageHandler?.({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'raw-accepted-inbound-id',
+        callDirection: 'inbound',
+        stage: 'accepted',
+      },
+    });
+
+    expect(callsStore.activeCall).toEqual(
+      expect.objectContaining({
+        callSid: 'sipuni:janus:51:raw-accepted-inbound-id',
+        status: 'in_progress',
+        callEvent: 'operator_answered',
+        callLeg: 'operator',
+        answeredAt: expect.any(String),
+      })
+    );
+    expect(reportBrowserSipAnsweredMock).toHaveBeenCalledWith(
+      'sipuni:janus:51:raw-accepted-inbound-id',
+      { answered_at: expect.any(String) }
+    );
+  });
+
+  it('releases the backend call before waiting for browser recording cleanup', async () => {
+    let disconnectHandler;
+    let resolveClientCleanup;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+    endClientCallMock.mockReturnValue(
+      new Promise(resolve => {
+        resolveClientCleanup = resolve;
+      })
+    );
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'call-recording-cleanup-pending',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+    });
+    callsStore.setCallActive('call-recording-cleanup-pending');
+
+    mountUseCallSession();
+    const disconnectPromise = disconnectHandler?.({
+      detail: {
+        provider: 'sipuni',
+        callRef: 'call-recording-cleanup-pending',
+        callMediaAccepted: true,
+        reason: 'remote_hangup',
+      },
+    });
+    await Promise.resolve();
+
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'call-recording-cleanup-pending',
+      {
+        reason: 'remote_hangup',
+        status: 'completed',
+      }
+    );
+    expect(callsStore.calls).toEqual([]);
+
+    resolveClientCleanup();
+    await disconnectPromise;
+  });
+
   it('clears the active browser SIP call immediately on remote disconnect while backend release is pending', async () => {
     let disconnectHandler;
     let resolveRelease;
