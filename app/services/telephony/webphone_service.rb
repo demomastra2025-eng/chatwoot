@@ -55,6 +55,8 @@ class Telephony::WebphoneService
   def report_browser_sip_incoming!(user:, inbox:, params:)
     provider = browser_sip_incoming_provider!(inbox)
     context = browser_sip_incoming_context(provider: provider, user: user, inbox: inbox, params: params)
+    params = browser_sip_incoming_registration_context(context[:profile], params)
+    context[:params] = params
     unless browser_registration_context_complete?(context[:profile], params)
       raise Telephony::Error.new(
         code: 'WEBPHONE_SIP_REGISTRATION_CONTEXT_INCOMPLETE',
@@ -364,6 +366,25 @@ class Telephony::WebphoneService
       params_value(context, 'janus_handle_id', 'janusHandleId')
     ]
     required_values.all?(&:present?) && record.browser_registration_context_complete?(context)
+  end
+
+  def browser_sip_incoming_registration_context(profile, params)
+    source = params.to_h.with_indifferent_access
+    return source if params_value(source, 'registration_instance_id', 'registrationInstanceId').present?
+    return source unless profile.registered_for_routing?
+
+    active_context = profile.metadata.to_h['registration_context'].to_h.with_indifferent_access
+    return source unless legacy_browser_sip_context_matches_active_lease?(source, active_context)
+
+    source.merge(registration_instance_id: active_context[:registration_instance_id])
+  end
+
+  def legacy_browser_sip_context_matches_active_lease?(source, active_context)
+    %w[janus_session_id janus_handle_id].all? do |key|
+      source_value = params_value(source, key, key.camelize(:lower))
+      active_value = params_value(active_context, key, key.camelize(:lower))
+      source_value.present? && active_value.present? && source_value.to_s == active_value.to_s
+    end
   end
 
   def presence_update_payload(inbox, operator_identity, outcome)

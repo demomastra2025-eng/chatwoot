@@ -463,6 +463,54 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(binotel_profile.reload.registered_for_routing?).to be(true)
   end
 
+  it 'accepts a legacy incoming event missing only the registration instance from the active browser lease' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    mark_sip_profile_registered!(binotel_profile)
+    raw_call_ref = 'legacy-janus-binotel-incoming'
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/incoming",
+         params: {
+           inbox_id: binotel_profile.inbox_id,
+           provider: 'binotel',
+           call_ref: raw_call_ref,
+           from: 'sip:+774****0001@sip53.binotel.com',
+           session_key: "sip_profile:#{binotel_profile.id}",
+           internal_extension: binotel_profile.internal_extension
+         }.merge(sip_presence_params(binotel_profile).except(:registration_instance_id)),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    call_session = account.telephony_call_sessions.find_by!('external_call_ref LIKE ?', "%#{raw_call_ref}%")
+    expect(call_session.metadata.dig('metadata', 'registration_instance_id')).to eq("registration-#{binotel_profile.id}")
+  end
+
+  it 'rejects a legacy incoming event when its Janus session does not match the active browser lease' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    mark_sip_profile_registered!(binotel_profile)
+    raw_call_ref = 'legacy-stale-janus-binotel-incoming'
+
+    post "/api/v1/accounts/#{account.id}/telephony/webphone/incoming",
+         params: {
+           inbox_id: binotel_profile.inbox_id,
+           provider: 'binotel',
+           call_ref: raw_call_ref,
+           from: 'sip:+774****0002@sip53.binotel.com',
+           session_key: "sip_profile:#{binotel_profile.id}",
+           internal_extension: binotel_profile.internal_extension
+         }.merge(
+           sip_presence_params(binotel_profile).except(:registration_instance_id).merge(
+             janus_session_id: 'stale-janus-session'
+           )
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('WEBPHONE_SIP_REGISTRATION_CONTEXT_INCOMPLETE')
+    expect(account.telephony_call_sessions.where('external_call_ref LIKE ?', "%#{raw_call_ref}%")).to be_empty
+  end
+
   it 'rejects a stale native Janus incoming event without replacing the active browser lease' do
     _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
     mark_sip_profile_registered!(binotel_profile)

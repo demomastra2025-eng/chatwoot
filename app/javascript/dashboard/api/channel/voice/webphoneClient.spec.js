@@ -411,7 +411,7 @@ describe('webphoneClient', () => {
       expect(
         WebphoneClient.nativeSessionRetryTimers['sip_profile:41']
       ).toBeDefined();
-      getWebphoneTokenMock.mockResolvedValueOnce({
+      getNativeWebphoneTokenMock.mockResolvedValueOnce({
         provider: 'asterisk_analog',
         sip_profile_id: 41,
         inbox_id: 4771,
@@ -427,7 +427,8 @@ describe('webphoneClient', () => {
 
       await vi.advanceTimersByTimeAsync(1_500);
 
-      expect(getWebphoneTokenMock).toHaveBeenCalledTimes(2);
+      expect(getWebphoneTokenMock).toHaveBeenCalledTimes(1);
+      expect(getNativeWebphoneTokenMock).toHaveBeenCalledWith(4771);
       expect(janusInitializeMock).toHaveBeenCalledTimes(2);
       expect(janusInitializeMock.mock.calls[1][0].janusServer).toContain(
         'janus_ticket=fresh-ticket'
@@ -484,7 +485,7 @@ describe('webphoneClient', () => {
 
     try {
       await WebphoneClient.bootstrapIncomingSupport();
-      getWebphoneTokenMock.mockImplementationOnce(
+      getNativeWebphoneTokenMock.mockImplementationOnce(
         () =>
           new Promise(resolve => {
             resolveRefresh = resolve;

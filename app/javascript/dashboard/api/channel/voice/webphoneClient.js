@@ -316,7 +316,7 @@ class WebphoneClient extends EventTarget {
   }
 
   static async refreshNativeSessionState(sessionKey, state) {
-    const response = await VoiceAPI.getWebphoneToken(state.inboxId);
+    const response = await VoiceAPI.getNativeWebphoneToken(state.inboxId);
     const candidates = WebphoneClient.responseSessions(response);
     const fallback = response?.payload || response;
     const freshResponse =
