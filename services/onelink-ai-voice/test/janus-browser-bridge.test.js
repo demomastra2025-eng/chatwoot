@@ -76,3 +76,56 @@ test('Janus browser bridge exchanges browser audio with the runtime media stream
   ws.close();
   await new Promise(resolve => server.close(resolve));
 });
+
+test('Janus browser bridge enforces origin, one-time tokens and bounded payloads', async () => {
+  const server = http.createServer((_req, res) => res.writeHead(404).end());
+  const manager = new JanusBrowserBridgeManager({
+    allowedOrigins: ['https://app.one-link.kz'],
+    maxPayloadBytes: 1024,
+    maxAudioBytes: 4,
+    idleTimeoutMs: 20
+  });
+  server.on('upgrade', (req, socket, head) => {
+    if (!manager.handleUpgrade(req, socket, head)) socket.destroy();
+  });
+  await listen(server);
+
+  const session = manager.createSession();
+  const streamUrl = `ws://127.0.0.1:${server.address().port}${manager.streamUrlForSession(session)}`;
+  const rejected = new WebSocket(streamUrl, { origin: 'https://evil.example' });
+  const response = await new Promise(resolve => {
+    rejected.once('unexpected-response', (_request, upgradeResponse) => resolve(upgradeResponse));
+  });
+  assert.equal(response.statusCode, 401);
+
+  const ws = new WebSocket(streamUrl, { origin: 'https://app.one-link.kz' });
+  await once(ws, 'open');
+  assert.equal(session.tokenConsumed, true);
+  assert.equal(manager.wss.options.maxPayload, 1024);
+  assert.equal(manager.wss.options.perMessageDeflate, false);
+
+  ws.send(JSON.stringify({ data: Buffer.alloc(5).toString('base64') }));
+  const code = await once(ws, 'close');
+  assert.equal(code, 1009);
+
+  await once(session, 'close');
+  assert.equal(manager.getSession(session.id), undefined);
+  await new Promise(resolve => server.close(resolve));
+});
+
+test('Janus browser bridge expires unattached sessions and caps capacity', async () => {
+  const manager = new JanusBrowserBridgeManager({
+    maxSessions: 1,
+    attachTimeoutMs: 10
+  });
+  const session = manager.createSession();
+  session.attachTimer.ref?.();
+
+  assert.throws(
+    () => manager.createSession(),
+    error => error.code === 'janus_browser_bridge_capacity_exceeded'
+  );
+
+  await once(session, 'close');
+  assert.equal(manager.getSession(session.id), undefined);
+});

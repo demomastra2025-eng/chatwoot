@@ -860,6 +860,14 @@ export class JanusSipVoiceClient extends EventTarget {
       return;
     }
 
+    if (event === 'unregistered') {
+      this.transitionToUnregistered(result.reason || 'sip_unregistered', {
+        sipCode: result.code,
+        sipReason: result.reason,
+      });
+      return;
+    }
+
     if (event === 'registered') {
       if (this.registrationTimedOut) return;
 
@@ -1772,6 +1780,9 @@ export class JanusSipVoiceClient extends EventTarget {
     const callRef = this.recordingCallRef || this.currentCallRef;
     const provider = this.recordingProvider || this.currentProvider();
     const direction = this.recordingDirection || this.currentCallDirection;
+    // Browser recording starts only after media acceptance, so a recorded call
+    // has reached the connected state even if its terminal event is delayed.
+    const terminalStatus = 'completed';
     const startedAt = this.recordingStartedAt;
     const mimeType =
       recorder.mimeType || this.recordingMimeType || 'audio/webm';
@@ -1791,7 +1802,15 @@ export class JanusSipVoiceClient extends EventTarget {
         direction,
         duration_ms: durationMs,
         reason,
-      }).catch(() => {});
+        terminal_status: terminalStatus,
+      }).catch(() => {
+        if (direction !== 'outbound') return;
+
+        VoiceAPI.rejectIncomingCall(callRef, {
+          status: terminalStatus,
+          reason,
+        }).catch(() => {});
+      });
     };
 
     try {

@@ -54,7 +54,7 @@ docker run -p 4000:4000 -p 10000-10100:10000-10100/udp \
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error). |
 | `MAX_SESSION_DURATION` | `7200` | Max call duration in seconds (2 hours). |
 | `RECONNECT_TIMEOUT` | `30` | Seconds to wait for agent reconnect. |
-| `MAX_CONCURRENT_SESSIONS` | `0` | Max active sessions (0 = unlimited). |
+| `MAX_CONCURRENT_SESSIONS` | `0` | Max active sessions (0 = unlimited); production compose sets a bounded default of 200. |
 
 ## API
 

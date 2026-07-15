@@ -50,6 +50,7 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   def upload_recording
     authorize_recording_upload!
 
+    release_outbound_browser_call_from_recording!
     result = Telephony::BrowserRecordingUploadService.perform!(
       call_session: @call_session,
       recording: params[:recording],
@@ -89,6 +90,19 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   private
+
+  def release_outbound_browser_call_from_recording!
+    return unless @call_session.direction == 'outbound'
+    return if params[:terminal_status].blank?
+
+    Telephony::OperatorCallRejectService.new(
+      account: Current.account,
+      user: Current.user,
+      call_ref: @call_session.external_call_ref,
+      status: params[:terminal_status],
+      reason: params[:reason]
+    ).perform
+  end
 
   def set_call_session
     @call_session = Current.account.telephony_call_sessions.find_by!(external_call_ref: params[:call_ref])

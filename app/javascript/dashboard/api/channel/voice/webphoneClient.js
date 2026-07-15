@@ -309,12 +309,7 @@ class WebphoneClient extends EventTarget {
       attempt: Number(baseState.attempt) || 0,
       blocked: Boolean(baseState.blocked),
     };
-    if (
-      state.blocked ||
-      state.attempt >= WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS.length
-    ) {
-      return;
-    }
+    if (state.blocked) return;
 
     this.nativeSessionRetryState[sessionKey] = state;
     const delay = immediate
@@ -394,7 +389,10 @@ class WebphoneClient extends EventTarget {
         const permanent = WebphoneClient.isPermanentNativeSipFailure(error);
         state = {
           ...state,
-          attempt: (Number(state.attempt) || 0) + 1,
+          attempt: Math.min(
+            (Number(state.attempt) || 0) + 1,
+            WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS.length
+          ),
           blocked: permanent,
           reason: permanent
             ? 'webphone_authorization_failed'
@@ -404,7 +402,7 @@ class WebphoneClient extends EventTarget {
           inboxId: state.inboxId,
           reason:
             state.attempt >= WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS.length
-              ? 'webphone_recovery_exhausted'
+              ? 'webphone_recovery_delayed'
               : state.reason,
         });
         this.nativeSessionRetryState[sessionKey] = state;
@@ -421,7 +419,6 @@ class WebphoneClient extends EventTarget {
       if (
         currentState &&
         !currentState.blocked &&
-        currentState.attempt < WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS.length &&
         !this.nativeSessionRetryTimers[sessionKey]
       ) {
         this.scheduleNativeSessionRetry(sessionKey);

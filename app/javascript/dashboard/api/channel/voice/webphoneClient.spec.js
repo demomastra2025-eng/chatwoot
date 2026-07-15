@@ -699,6 +699,36 @@ describe('webphoneClient', () => {
     );
   });
 
+  it('keeps a low-frequency recovery loop after the fast retry window', async () => {
+    vi.useFakeTimers();
+    const sessionKey = 'sip_profile:41';
+    const retrySpy = vi
+      .spyOn(WebphoneClient, 'retryNativeSession')
+      .mockResolvedValue(null);
+    WebphoneClient.nativeSessionConfigs[sessionKey] = {
+      response: { provider: 'sipuni', sip_profile_id: 41, inbox_id: 4771 },
+      inboxId: 4771,
+      provider: 'sipuni',
+    };
+    WebphoneClient.nativeSessionRetryState[sessionKey] = {
+      ...WebphoneClient.nativeSessionConfigs[sessionKey],
+      attempt: 100,
+      blocked: false,
+    };
+
+    try {
+      WebphoneClient.scheduleNativeSessionRetry(sessionKey);
+      expect(WebphoneClient.nativeSessionRetryTimers[sessionKey]).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(73_000);
+      expect(retrySpy).toHaveBeenCalledWith(sessionKey);
+    } finally {
+      retrySpy.mockRestore();
+      WebphoneClient.clearNativeSessionRetry(sessionKey);
+      vi.useRealTimers();
+    }
+  });
+
   it('does not route an unknown explicit native session key to the active session', async () => {
     WebphoneClient.sessions['sip_profile:39'] = {
       provider: 'sipuni',

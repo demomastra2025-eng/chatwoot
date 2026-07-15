@@ -124,6 +124,21 @@ func TestRuntimeStreamGrantIsScopedOneTimeAndExpires(t *testing.T) {
 	}
 }
 
+func TestRuntimeStreamGrantCleanupRemovesAbandonedExpiredTokens(t *testing.T) {
+	h := NewHandlers(&config.Config{}, nil)
+	token := "abandoned-expired-runtime-token"
+	h.runtimeStreamGrants.Store(token, runtimeStreamGrant{
+		SessionID: "media-session-1",
+		Token:     token,
+		ExpiresAt: time.Now().UTC().Add(-2 * time.Minute),
+	})
+
+	h.cleanupRuntimeStreamGrants(time.Now().UTC())
+	if _, ok := h.runtimeStreamGrants.Load(token); ok {
+		t.Fatal("expected abandoned expired runtime token to be removed")
+	}
+}
+
 func tokenFromRuntimeStreamURL(t *testing.T, rawURL string) string {
 	t.Helper()
 	parsed, err := url.Parse(rawURL)

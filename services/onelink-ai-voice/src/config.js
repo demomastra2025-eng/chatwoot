@@ -52,6 +52,14 @@ function loadConfig(env = process.env) {
     janusBrowserBridgeEnabled: parseBoolean(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_ENABLED || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_ENABLED, false),
     janusBrowserBridgePath: env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_PATH || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_PATH || '/ai-voice/janus-sip/browser-media',
     janusBrowserBridgePublicBaseUrl: (env.VOICE_AGENT_PUBLIC_BASE_URL || env.ONELINK_AI_VOICE_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+    janusBrowserBridgeAllowedOrigins: parseList(
+      env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_ALLOWED_ORIGINS || env.FRONTEND_URL || ''
+    ),
+    janusBrowserBridgeMaxPayloadBytes: parseInteger(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES, 128 * 1024),
+    janusBrowserBridgeMaxAudioBytes: parseInteger(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_AUDIO_BYTES, 64 * 1024),
+    janusBrowserBridgeMaxSessions: parseInteger(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_SESSIONS, 256),
+    janusBrowserBridgeAttachTimeoutMs: parseInteger(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_ATTACH_TIMEOUT_MS, 60_000),
+    janusBrowserBridgeIdleTimeoutMs: parseInteger(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_IDLE_TIMEOUT_MS, 30_000),
     janusServerRuntimeEnabled: parseBoolean(env.VOICE_AGENT_JANUS_SERVER_RUNTIME_ENABLED || env.ONELINK_AI_VOICE_JANUS_SERVER_RUNTIME_ENABLED, false),
     janusServerWsUrl: env.VOICE_AGENT_JANUS_SERVER_WS_URL || env.ONELINK_AI_VOICE_JANUS_SERVER_WS_URL || env.VOICE_AGENT_JANUS_WS_URL || '',
     janusServerProfiles: parseJsonList(env.VOICE_AGENT_JANUS_SERVER_PROFILES_JSON || env.ONELINK_AI_VOICE_JANUS_SERVER_PROFILES_JSON || ''),

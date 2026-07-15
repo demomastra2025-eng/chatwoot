@@ -23,6 +23,10 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.equal(config.janusBrowserBridgeEnabled, false);
   assert.equal(config.janusBrowserBridgePath, '/ai-voice/janus-sip/browser-media');
   assert.equal(config.janusBrowserBridgePublicBaseUrl, '');
+  assert.deepEqual(config.janusBrowserBridgeAllowedOrigins, []);
+  assert.equal(config.janusBrowserBridgeMaxPayloadBytes, 128 * 1024);
+  assert.equal(config.janusBrowserBridgeMaxAudioBytes, 64 * 1024);
+  assert.equal(config.janusBrowserBridgeMaxSessions, 256);
   assert.equal(config.janusServerRuntimeEnabled, false);
   assert.equal(config.janusServerWsUrl, '');
   assert.deepEqual(config.janusServerProfiles, []);
@@ -93,6 +97,12 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
     VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PAYLOAD_TYPE: '0',
     VOICE_AGENT_JANUS_BROWSER_BRIDGE_ENABLED: 'true',
     VOICE_AGENT_JANUS_BROWSER_BRIDGE_PATH: '/custom/browser-media',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_ALLOWED_ORIGINS: 'https://app.one-link.kz, https://dev.one-link.kz',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES: '65536',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_AUDIO_BYTES: '32768',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_SESSIONS: '64',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_ATTACH_TIMEOUT_MS: '45000',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_IDLE_TIMEOUT_MS: '15000',
     VOICE_AGENT_JANUS_SERVER_RUNTIME_ENABLED: 'true',
     VOICE_AGENT_JANUS_SERVER_WS_URL: 'ws://janus:8188',
     VOICE_AGENT_JANUS_SERVER_PROFILES_JSON: '[{"id":12,"provider":"sipuni"}]',
@@ -142,6 +152,15 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
   assert.equal(config.janusBrowserBridgeEnabled, true);
   assert.equal(config.janusBrowserBridgePath, '/custom/browser-media');
   assert.equal(config.janusBrowserBridgePublicBaseUrl, 'wss://dev.one-link.kz');
+  assert.deepEqual(config.janusBrowserBridgeAllowedOrigins, [
+    'https://app.one-link.kz',
+    'https://dev.one-link.kz'
+  ]);
+  assert.equal(config.janusBrowserBridgeMaxPayloadBytes, 65536);
+  assert.equal(config.janusBrowserBridgeMaxAudioBytes, 32768);
+  assert.equal(config.janusBrowserBridgeMaxSessions, 64);
+  assert.equal(config.janusBrowserBridgeAttachTimeoutMs, 45000);
+  assert.equal(config.janusBrowserBridgeIdleTimeoutMs, 15000);
   assert.equal(config.janusServerRuntimeEnabled, true);
   assert.equal(config.janusServerWsUrl, 'ws://janus:8188');
   assert.deepEqual(config.janusServerProfiles, [{ id: 12, provider: 'sipuni' }]);

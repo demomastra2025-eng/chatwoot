@@ -11,6 +11,7 @@ const {
   pluginHandleState,
   janusState,
   janusAiMediaBridgeInstances,
+  rejectIncomingCallMock,
   uploadRecordingMock,
   updatePresenceMock,
 } = vi.hoisted(() => ({
@@ -23,6 +24,7 @@ const {
   pluginHandleState: { createOfferImplementation: null },
   janusState: { autoConnect: true, instances: [] },
   janusAiMediaBridgeInstances: [],
+  rejectIncomingCallMock: vi.fn(() => Promise.resolve({})),
   uploadRecordingMock: vi.fn(() => Promise.resolve({})),
   updatePresenceMock: vi.fn(() =>
     Promise.resolve({
@@ -88,6 +90,7 @@ vi.mock('janus-gateway', () => {
 
 vi.mock('./voiceAPIClient', () => ({
   default: {
+    rejectIncomingCall: rejectIncomingCallMock,
     uploadWebphoneRecording: uploadRecordingMock,
     updateWebphonePresence: updatePresenceMock,
   },
@@ -312,6 +315,7 @@ describe('janusSipVoiceClient', () => {
     pluginHangupMock.mockClear();
     pluginHandleState.createOfferImplementation = null;
     janusAiMediaBridgeInstances.length = 0;
+    rejectIncomingCallMock.mockClear();
     uploadRecordingMock.mockClear();
     updatePresenceMock.mockClear();
   });
@@ -717,6 +721,30 @@ describe('janusSipVoiceClient', () => {
         message: expect.objectContaining({
           request: 'register',
           refresh: true,
+        }),
+      })
+    );
+  });
+
+  it('drops routing immediately when Janus reports SIP unregistered', () => {
+    const client = createJanusSipVoiceClient();
+    const unregisteredHandler = vi.fn();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+    client.registered = true;
+    client.inboxId = 4769;
+    client.addEventListener('call:unregistered', unregisteredHandler);
+
+    client.handleSipMessage({
+      result: { event: 'unregistered', code: 200, reason: 'OK' },
+    });
+
+    expect(client.registered).toBe(false);
+    expect(unregisteredHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          reason: 'OK',
+          sipCode: 200,
         }),
       })
     );
@@ -1531,8 +1559,58 @@ describe('janusSipVoiceClient', () => {
           provider: 'asterisk_analog',
           direction: 'outbound',
           reason: 'remote_hangup',
+          terminal_status: 'completed',
         })
       );
+    } finally {
+      restore();
+    }
+  });
+
+  it('does not start browser recording before call media is accepted', () => {
+    const { MediaRecorderMock, restore } = installRecordingMocks();
+    try {
+      const client = createJanusSipVoiceClient();
+      client.sessionConfig = asteriskAnalogSession;
+      client.currentCallRef = 'asterisk_analog:local:call-ringing';
+      client.currentCallDirection = 'outbound';
+      client.callMediaAccepted = false;
+      client.localTracks = { local: fakeAudioTrack('local') };
+      client.remoteTracks = { remote: fakeAudioTrack('remote') };
+
+      client.startRecordingIfReady();
+
+      expect(MediaRecorderMock.instances).toHaveLength(0);
+      expect(uploadRecordingMock).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('releases an outbound call directly when recording upload fails', async () => {
+    const { restore } = installRecordingMocks();
+    try {
+      uploadRecordingMock.mockRejectedValueOnce(new Error('upload failed'));
+      const client = createJanusSipVoiceClient();
+      client.sessionConfig = asteriskAnalogSession;
+      client.currentCallRef = 'asterisk_analog:local:call-upload-failed';
+      client.currentCallDirection = 'outbound';
+      client.callMediaAccepted = true;
+      client.localTracks = { local: fakeAudioTrack('local') };
+      client.remoteTracks = { remote: fakeAudioTrack('remote') };
+
+      client.startRecordingIfReady();
+      client.handleCallDisconnected({ reason: 'remote_hangup' });
+
+      await vi.waitFor(() => {
+        expect(rejectIncomingCallMock).toHaveBeenCalledWith(
+          'asterisk_analog:local:call-upload-failed',
+          {
+            status: 'completed',
+            reason: 'remote_hangup',
+          }
+        );
+      });
     } finally {
       restore();
     }

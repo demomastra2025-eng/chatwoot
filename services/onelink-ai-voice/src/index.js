@@ -171,7 +171,13 @@ function createJanusBrowserBridgeManager(config = {}) {
   if (!config.janusBrowserBridgeEnabled) return null;
   return new JanusBrowserBridgeManager({
     path: config.janusBrowserBridgePath,
-    publicBaseUrl: config.janusBrowserBridgePublicBaseUrl
+    publicBaseUrl: config.janusBrowserBridgePublicBaseUrl,
+    allowedOrigins: config.janusBrowserBridgeAllowedOrigins,
+    maxPayloadBytes: config.janusBrowserBridgeMaxPayloadBytes,
+    maxAudioBytes: config.janusBrowserBridgeMaxAudioBytes,
+    maxSessions: config.janusBrowserBridgeMaxSessions,
+    attachTimeoutMs: config.janusBrowserBridgeAttachTimeoutMs,
+    idleTimeoutMs: config.janusBrowserBridgeIdleTimeoutMs
   });
 }
 

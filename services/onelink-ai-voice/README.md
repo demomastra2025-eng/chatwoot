@@ -73,6 +73,19 @@ Optional Janus Admin API env:
 - `VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_HOST`
 - `VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PORT`
 
+Browser bridge hardening env:
+
+- `VOICE_AGENT_JANUS_BROWSER_BRIDGE_ALLOWED_ORIGINS` — comma-separated trusted HTTPS origins.
+- `VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_PAYLOAD_BYTES` — WebSocket message limit, default `131072`.
+- `VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_AUDIO_BYTES` — decoded audio frame limit, default `65536`.
+- `VOICE_AGENT_JANUS_BROWSER_BRIDGE_MAX_SESSIONS` — process-wide session cap, default `256`.
+- `VOICE_AGENT_JANUS_BROWSER_BRIDGE_ATTACH_TIMEOUT_MS` — unattached session TTL, default `60000`.
+- `VOICE_AGENT_JANUS_BROWSER_BRIDGE_IDLE_TIMEOUT_MS` — disconnected session TTL, default `30000`.
+
+Browser bridge URLs contain short-lived capability tokens. The reverse proxy
+must disable access logging for this path so query tokens never enter log
+storage.
+
 Server-side Janus SIP voice-agent runtime is separate from the operator browser
 webphone. It is disabled by default. When enabled, it reads managed voice-agent
 SIP profiles from Chatwoot through the internal

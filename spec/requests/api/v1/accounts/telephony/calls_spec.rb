@@ -192,13 +192,25 @@ RSpec.describe 'Telephony Calls API', type: :request do
       provider: 'sipuni'
     )
     mark_call_session_owned_by(call_session, administrator)
+    create(:inbox_member, inbox: voice_inbox, user: administrator)
+    call_session.update!(
+      direction: 'outbound',
+      status: 'created',
+      metadata: call_session.metadata.merge(
+        'telephony_call_ref' => call_session.external_call_ref
+      )
+    )
     upload_file = Tempfile.new(['sipuni-recording', '.webm'])
     upload_file.binmode
     upload_file.write('duplicate-sipuni-audio')
     upload_file.rewind
 
     post "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_session.external_call_ref)}/upload_recording",
-         params: { recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/webm', true) },
+         params: {
+           recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/webm', true),
+           terminal_status: 'completed',
+           reason: 'remote_hangup'
+         },
          headers: headers
 
     expect(response).to have_http_status(:created)
@@ -209,10 +221,67 @@ RSpec.describe 'Telephony Calls API', type: :request do
       'content_type' => 'audio/webm',
       'writer' => 'browser_janus_media_recorder'
     )
+    expect(call_session).to have_attributes(
+      status: 'completed',
+      end_reason: 'remote_hangup'
+    )
+    expect(call_session.ended_at).to be_present
+    expect(call_session.events.where(event_type: 'session_completed')).to exist
   ensure
     upload_file&.close
     upload_file&.unlink
     FileUtils.rm_f(Rails.root.join('storage', storage_key)) if defined?(storage_key) && storage_key.present?
+  end
+
+  it 'does not persist recording when terminal release is rejected' do
+    call_session = create_recorded_call_session(
+      'sipuni:local:recording-terminal-release-rejected',
+      {},
+      recording_ref: nil,
+      provider: 'sipuni'
+    )
+    mark_call_session_owned_by(call_session, administrator)
+    call_session.update!(
+      direction: 'outbound',
+      status: 'created',
+      metadata: call_session.metadata.merge(
+        'telephony_call_ref' => call_session.external_call_ref
+      )
+    )
+    upload_file = Tempfile.new(['sipuni-recording-release-rejected', '.webm'])
+    upload_file.binmode
+    upload_file.write('release-rejected-audio')
+    upload_file.rewind
+    allow(Telephony::OperatorCallRejectService).to receive(:new).and_raise(
+      Telephony::Error.new(
+        code: 'TERMINAL_RELEASE_FAILED',
+        message: 'Terminal release failed',
+        status: :unprocessable_content
+      )
+    )
+    expect(Telephony::BrowserRecordingUploadService).not_to receive(:perform!)
+
+    post "/api/v1/accounts/#{account.id}/telephony/calls/#{CGI.escape(call_session.external_call_ref)}/upload_recording",
+         params: {
+           recording: Rack::Test::UploadedFile.new(upload_file.path, 'audio/webm', true),
+           terminal_status: 'completed',
+           reason: 'remote_hangup'
+         },
+         headers: headers
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(call_session.reload).to have_attributes(
+      status: 'created',
+      recording_ref: nil,
+      ended_at: nil
+    )
+    expect(call_session.events.where(event_type: %w[recording_ready session_completed])).not_to exist
+  ensure
+    upload_file&.close
+    upload_file&.unlink
+    FileUtils.rm_rf(
+      Rails.root.join('storage/voice-recordings/sipuni', account.id.to_s, call_session&.id.to_s)
+    )
   end
 
   it 'does not accept browser recording uploads with an explicit non-audio content type' do

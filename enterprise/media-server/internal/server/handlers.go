@@ -978,6 +978,10 @@ func (h *Handlers) cleanupRuntimeStreamGrants(now time.Time) {
 		}
 		if grant.Consumed && !grant.ConsumedAt.IsZero() && now.Sub(grant.ConsumedAt) > time.Minute {
 			h.runtimeStreamGrants.Delete(key)
+			return true
+		}
+		if !grant.ExpiresAt.IsZero() && now.After(grant.ExpiresAt.Add(time.Minute)) {
+			h.runtimeStreamGrants.Delete(key)
 		}
 		return true
 	})
