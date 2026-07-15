@@ -1,4 +1,6 @@
 class Telephony::OperatorCallRejectService
+  MAX_CLIENT_TERMINAL_AGE = 5.minutes
+  MAX_CLIENT_TERMINAL_FUTURE_SKEW = 30.seconds
   TERMINAL_STATUS_EVENT_TYPES = {
     'rejected' => 'rejected', 'completed' => 'session_completed',
     'no_answer' => 'operator_no_answer',
@@ -6,12 +8,13 @@ class Telephony::OperatorCallRejectService
     'cancelled' => 'caller_hangup'
   }.freeze
 
-  def initialize(account:, user:, call_ref:, status: nil, reason: nil)
+  def initialize(account:, user:, call_ref:, status: nil, reason: nil, **options)
     @account = account
     @user = user
     @call_ref = call_ref.to_s.strip
     @status = Telephony::CallSession.normalize_status(status.presence || 'rejected') || 'rejected'
     @reason = reason.presence || default_reason
+    @requested_ended_at = options[:ended_at]
     @sipuni_termination_error = nil
   end
 
@@ -48,7 +51,7 @@ class Telephony::OperatorCallRejectService
 
   private
 
-  attr_reader :account, :sipuni_termination_error, :user, :call_ref, :reason, :status
+  attr_reader :account, :sipuni_termination_error, :user, :call_ref, :reason, :status, :requested_ended_at
 
   def call_session
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
@@ -312,12 +315,13 @@ class Telephony::OperatorCallRejectService
   end
 
   def apply_terminal_state!
+    ended_at = release_ended_at
     call_session.update!(
       status: status,
-      ended_at: Time.current,
+      ended_at: ended_at,
       ended_by: "user:#{user.id}",
       end_reason: reason,
-      last_event_at: Time.current
+      last_event_at: [call_session.last_event_at, ended_at].compact.max
     )
   end
 
@@ -371,6 +375,8 @@ class Telephony::OperatorCallRejectService
   end
 
   def release_ended_at
+    client_ended_at = valid_client_ended_at
+    return client_ended_at if client_ended_at.present?
     return Time.current unless @terminal_completion_repair
 
     if call_session.answered_at.present? && call_session.duration_seconds.to_i.positive?
@@ -378,6 +384,26 @@ class Telephony::OperatorCallRejectService
     end
 
     call_session.ended_at || Time.current
+  end
+
+  def valid_client_ended_at
+    return @valid_client_ended_at if defined?(@valid_client_ended_at)
+
+    parsed = Time.zone.parse(requested_ended_at.to_s) if requested_ended_at.present?
+    now = Time.current
+    @valid_client_ended_at = valid_client_terminal_timestamp?(parsed, now) ? [parsed, now].min : nil
+  rescue ArgumentError, TypeError
+    @valid_client_ended_at = nil
+  end
+
+  def valid_client_terminal_timestamp?(timestamp, now)
+    return false if timestamp.blank?
+
+    minimum = [call_session.started_at, now - MAX_CLIENT_TERMINAL_AGE].compact.max
+    return false unless timestamp.between?(minimum, now + MAX_CLIENT_TERMINAL_FUTURE_SKEW)
+    return false if call_session.answered_at.present? && timestamp < call_session.answered_at
+
+    true
   end
 
   def reject_event_key

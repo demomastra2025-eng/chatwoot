@@ -80,12 +80,16 @@ class VoiceAPI extends ApiClient {
       .then(r => r.data.payload || r.data);
   }
 
-  rejectIncomingCall(callRef, { status = 'rejected', reason } = {}) {
+  rejectIncomingCall(
+    callRef,
+    { status = 'rejected', reason, ended_at: endedAt } = {}
+  ) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/reject`, {
         call_ref: callRef,
         status,
         reason,
+        ...(endedAt ? { ended_at: endedAt } : {}),
       })
       .then(r => r.data.payload || r.data);
   }

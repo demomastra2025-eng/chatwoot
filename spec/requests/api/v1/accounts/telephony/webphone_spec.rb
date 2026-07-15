@@ -1971,11 +1971,15 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
   it 'marks an active operator call as completed when the browser hangup releases it' do
     agent_binding = create(:telephony_agent_binding, :registered, account: account, user: administrator, provider: 'sipuni')
+    answered_at = 20.seconds.ago
+    reported_ended_at = 5.seconds.ago
     call_session = create(
       :telephony_call_session,
       account: account,
       external_call_ref: 'operator-browser-hangup-1',
       status: 'in_progress',
+      started_at: answered_at - 5.seconds,
+      answered_at: answered_at,
       agent_binding: agent_binding,
       metadata: {
         'metadata' => {
@@ -1990,7 +1994,12 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     post "/api/v1/accounts/#{account.id}/telephony/webphone/reject",
-         params: { call_ref: call_session.external_call_ref, status: 'completed', reason: 'operator_hangup' },
+         params: {
+           call_ref: call_session.external_call_ref,
+           status: 'completed',
+           reason: 'operator_hangup',
+           ended_at: reported_ended_at.iso8601(3)
+         },
          headers: headers,
          as: :json
 
@@ -1998,9 +2007,11 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(response.parsed_body.dig('payload', 'status')).to eq('completed')
     expect(call_session.reload).to have_attributes(
       status: 'completed',
+      duration_seconds: 15,
       ended_by: "user:#{administrator.id}",
       end_reason: 'operator_hangup'
     )
+    expect(call_session.ended_at).to be_within(0.001).of(reported_ended_at)
   end
 
   it 'releases a claimed SIP profile call after Janus marks the profile offline' do

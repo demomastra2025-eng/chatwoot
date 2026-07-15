@@ -95,6 +95,9 @@ export function useCallSession() {
   const releasingCallSids = ref(new Set());
   let bootstrapRetryTimer = null;
   let bootstrapRefreshTimer = null;
+  let bootstrapIncomingPromise = null;
+  let activeBootstrapInboxId;
+  let pendingBootstrapInboxId;
   let webphoneConfigRefreshVersion = 0;
   const callDuration = ref(0);
   const durationTimer = new Timer(elapsed => {
@@ -321,12 +324,16 @@ export function useCallSession() {
 
   const releaseBrowserSipCall = async (
     callSid,
-    { status = 'rejected', reason = 'operator_declined' } = {}
+    { status = 'rejected', reason = 'operator_declined', endedAt = null } = {}
   ) => {
     if (!callSid) return null;
 
     try {
-      return await VoiceAPI.rejectIncomingCall(callSid, { status, reason });
+      return await VoiceAPI.rejectIncomingCall(callSid, {
+        status,
+        reason,
+        ...(endedAt ? { ended_at: endedAt } : {}),
+      });
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn('Failed to release incoming call:', error);
@@ -564,6 +571,8 @@ export function useCallSession() {
     }
 
     const release = browserSipDisconnectRelease(call, detail);
+    const endedAt =
+      detail.endedAt || detail.ended_at || new Date().toISOString();
     // Janus BYE is authoritative for this browser leg. Remember it locally so
     // a delayed incoming ActionCable event cannot resurrect the modal while
     // the terminal backend request is still in flight.
@@ -589,6 +598,7 @@ export function useCallSession() {
           releaseBrowserSipCall(call.callSid, {
             status: release.status,
             reason: release.reason,
+            endedAt,
           }),
         ]);
       }
@@ -764,6 +774,12 @@ export function useCallSession() {
     inboxId: data?.inbox_id || data?.inboxId || null,
     sipProfileId: data?.sip_profile_id || data?.sipProfileId,
     sessionKey: data?.session_key || data?.sessionKey,
+    configVersion:
+      data?.webphone_config_version ||
+      data?.webphoneConfigVersion ||
+      data?.registration_config_version ||
+      data?.registrationConfigVersion ||
+      null,
   });
 
   const mergeWebphoneConfigRefresh = (current = null, next = {}) => ({
@@ -771,6 +787,7 @@ export function useCallSession() {
     inboxId: next.inboxId || current?.inboxId || null,
     sipProfileId: next.sipProfileId || current?.sipProfileId || null,
     sessionKey: next.sessionKey || current?.sessionKey || null,
+    configVersion: next.configVersion || current?.configVersion || null,
   });
 
   const sameWebphoneConfigRefresh = (left, right) => {
@@ -781,7 +798,8 @@ export function useCallSession() {
       left.provider === right.provider &&
       left.inboxId === right.inboxId &&
       left.sipProfileId === right.sipProfileId &&
-      left.sessionKey === right.sessionKey
+      left.sessionKey === right.sessionKey &&
+      left.configVersion === right.configVersion
     );
   };
 
@@ -858,7 +876,6 @@ export function useCallSession() {
   }
 
   async function requestWebphoneConfigRefresh(data) {
-    webphoneConfigRefreshVersion += 1;
     const current = pendingWebphoneConfigRefresh.value;
     const next = normalizeWebphoneConfigRefresh(data);
     const hasRefreshContext = Boolean(
@@ -867,10 +884,16 @@ export function useCallSession() {
     const payload = hasRefreshContext
       ? mergeWebphoneConfigRefresh(current, next)
       : current || mergeWebphoneConfigRefresh(null, next);
-    pendingWebphoneConfigRefresh.value =
-      current && sameWebphoneConfigRefresh(current, payload)
-        ? current
-        : payload;
+    if (
+      isRefreshingWebphoneConfig.value &&
+      current &&
+      sameWebphoneConfigRefresh(current, payload)
+    ) {
+      return;
+    }
+
+    webphoneConfigRefreshVersion += 1;
+    pendingWebphoneConfigRefresh.value = payload;
     const refreshPayload = pendingWebphoneConfigRefresh.value;
 
     if (hasBusyWebphoneState(refreshPayload)) return;
@@ -911,11 +934,7 @@ export function useCallSession() {
     }, INCOMING_BOOTSTRAP_REFRESH_MS);
   }
 
-  async function bootstrapIncomingSupport(
-    inboxId = routeVoiceInboxId.value ||
-      routeCommunicationThreadVoiceInboxId.value ||
-      incomingVoiceInboxId.value
-  ) {
+  async function performBootstrapIncomingSupport(inboxId) {
     const refreshContext = {
       provider:
         incomingCallProviderForInboxId(inboxId) ||
@@ -945,12 +964,44 @@ export function useCallSession() {
       console.error('Failed to bootstrap browser calling:', error);
       clearBootstrapRetry();
       bootstrapRetryTimer = window.setTimeout(
+        // eslint-disable-next-line no-use-before-define
         bootstrapIncomingSupport,
         INCOMING_BOOTSTRAP_RETRY_MS
       );
     }
 
     return null;
+  }
+
+  function bootstrapIncomingSupport(
+    inboxId = routeVoiceInboxId.value ||
+      routeCommunicationThreadVoiceInboxId.value ||
+      incomingVoiceInboxId.value
+  ) {
+    const normalizedInboxId = positiveNumber(inboxId) || null;
+    if (bootstrapIncomingPromise) {
+      if (normalizedInboxId !== activeBootstrapInboxId) {
+        pendingBootstrapInboxId = normalizedInboxId;
+      }
+      return bootstrapIncomingPromise;
+    }
+
+    activeBootstrapInboxId = normalizedInboxId;
+    bootstrapIncomingPromise = performBootstrapIncomingSupport(
+      normalizedInboxId
+    ).finally(() => {
+      bootstrapIncomingPromise = null;
+      activeBootstrapInboxId = undefined;
+
+      if (pendingBootstrapInboxId === undefined) return null;
+
+      const nextInboxId = pendingBootstrapInboxId;
+      pendingBootstrapInboxId = undefined;
+      // eslint-disable-next-line no-use-before-define
+      return bootstrapIncomingSupport(nextInboxId);
+    });
+
+    return bootstrapIncomingPromise;
   }
 
   watch(routeVoiceInboxId, (inboxId, previousInboxId) => {
@@ -1013,6 +1064,7 @@ export function useCallSession() {
     durationTimer.stop();
     clearBootstrapRetry();
     clearBootstrapRefresh();
+    pendingBootstrapInboxId = undefined;
     pendingWebphoneConfigRefresh.value = null;
     emitter.off(
       BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED,
@@ -1033,6 +1085,7 @@ export function useCallSession() {
         const releaseResult = releaseBrowserSipCall(callSid, {
           status: 'completed',
           reason: 'operator_hangup',
+          endedAt: new Date().toISOString(),
         });
 
         await waitForOperatorReleaseHeadStart(releaseResult);

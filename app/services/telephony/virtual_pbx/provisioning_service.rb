@@ -786,17 +786,7 @@ class Telephony::VirtualPbx::ProvisioningService
     tokens = account.users.where(id: mutation_result[:webphone_config_changed_user_ids]).filter_map(&:pubsub_token).uniq
     return if tokens.blank?
 
-    payload = {
-      event: 'telephony.webphone_config_changed',
-      data: {
-        account_id: account.id,
-        operation: operation,
-        inbox_id: mutation_result[:inbox_id] || mutation_result[:deleted_inbox_id],
-        provider: mutation_result[:provider] || config&.dig(:provider_kind),
-        sip_profile_ids: mutation_result[:sip_profile_ids],
-        reason: 'virtual_pbx_channel_changed'
-      }.compact
-    }
+    payload = { event: 'telephony.webphone_config_changed', data: webphone_config_changed_payload(operation, mutation_result, config) }
 
     tokens.each { |token| ActionCable.server.broadcast(token, payload) }
   rescue StandardError => e
@@ -804,6 +794,26 @@ class Telephony::VirtualPbx::ProvisioningService
       'TELEPHONY_WEBPHONE_CONFIG_CHANGED_BROADCAST_FAILED ' \
       "account_id=#{account.id} operation=#{operation} error=#{e.class.name}: #{e.message}"
     )
+  end
+
+  def webphone_config_changed_payload(operation, mutation_result, config)
+    {
+      account_id: account.id,
+      operation: operation,
+      inbox_id: mutation_result[:inbox_id] || mutation_result[:deleted_inbox_id],
+      provider: mutation_result[:provider] || config&.dig(:provider_kind),
+      sip_profile_ids: mutation_result[:sip_profile_ids],
+      webphone_config_version: webphone_config_version_for(mutation_result[:sip_profile_ids]),
+      reason: 'virtual_pbx_channel_changed'
+    }.compact
+  end
+
+  def webphone_config_version_for(sip_profile_ids)
+    versions = account.telephony_sip_profiles
+                      .where(id: Array.wrap(sip_profile_ids))
+                      .order(:id)
+                      .select(:id, :metadata)
+    versions.map { |profile| "#{profile.id}:#{profile.registration_config_version}" }.join('|').presence
   end
 
   def upsert_provider_connection!(payload, existing: nil, refs: generated_refs(payload))

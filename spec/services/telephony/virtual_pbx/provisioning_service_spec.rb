@@ -85,13 +85,19 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
       ),
       dry_run: false
     )
+    expected_version = a_string_including("#{sip_profile.id}:")
 
     expect(broadcasts).to include(
       [
         operator.pubsub_token,
         hash_including(
           event: 'telephony.webphone_config_changed',
-          data: hash_including(account_id: account.id, inbox_id: inbox.id, provider: 'sipuni')
+          data: hash_including(
+            account_id: account.id,
+            inbox_id: inbox.id,
+            provider: 'sipuni',
+            webphone_config_version: expected_version
+          )
         )
       ]
     )
@@ -100,7 +106,12 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
         next_operator.pubsub_token,
         hash_including(
           event: 'telephony.webphone_config_changed',
-          data: hash_including(account_id: account.id, inbox_id: inbox.id, provider: 'sipuni')
+          data: hash_including(
+            account_id: account.id,
+            inbox_id: inbox.id,
+            provider: 'sipuni',
+            webphone_config_version: expected_version
+          )
         )
       ]
     )

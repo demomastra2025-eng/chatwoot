@@ -61,7 +61,8 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
         user: Current.user,
         call_ref: params.require(:call_ref),
         status: params[:status],
-        reason: params[:reason]
+        reason: params[:reason],
+        ended_at: params[:ended_at]
       ).perform
     )
   end

@@ -1,6 +1,11 @@
 class AsyncDispatcher < BaseDispatcher
   def dispatch(event_name, timestamp, data)
-    EventDispatcherJob.perform_later(event_name, timestamp, data)
+    job = if Telephony::RealtimeEventQueue.telephony?(event_name, data)
+            EventDispatcherJob.set(queue: :telephony_realtime)
+          else
+            EventDispatcherJob
+          end
+    job.perform_later(event_name, timestamp, data)
   end
 
   def publish_event(event_name, timestamp, data)

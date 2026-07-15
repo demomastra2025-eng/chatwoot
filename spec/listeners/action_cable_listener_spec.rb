@@ -38,6 +38,16 @@ describe ActionCableListener do
       listener.message_created(event)
     end
 
+    it 'uses the dedicated realtime queue for voice-call messages' do
+      message.update!(content_type: :voice_call)
+      configured_job = instance_double(ActiveJob::ConfiguredJob)
+
+      expect(ActionCableBroadcastJob).to receive(:set).with(queue: :telephony_realtime).twice.and_return(configured_job)
+      expect(configured_job).to receive(:perform_later).twice
+
+      listener.message_created(event)
+    end
+
     it 'sends message to all hmac verified contact inboxes' do
       # HACK: to reload conversation inbox members
       expect(conversation.inbox.reload.inbox_members.count).to eq(1)

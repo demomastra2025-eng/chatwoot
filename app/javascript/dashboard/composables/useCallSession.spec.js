@@ -248,7 +248,7 @@ describe('useCallSession', () => {
     expect(initializeDeviceMock).toHaveBeenCalledWith(4776, { native: true });
   });
 
-  it('replays an identical config event received during an in-flight refresh', async () => {
+  it('coalesces an identical config event received during an in-flight refresh', async () => {
     let resolveFirstRefresh;
     const firstRefresh = new Promise(resolve => {
       resolveFirstRefresh = resolve;
@@ -275,7 +275,38 @@ describe('useCallSession', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(destroyDeviceMock.mock.calls.length).toBe(initialDestroyCalls + 2);
+    expect(destroyDeviceMock.mock.calls.length).toBe(initialDestroyCalls + 1);
+  });
+
+  it('replays a newer config version received during an in-flight refresh', async () => {
+    let resolveFirstRefresh;
+    const firstRefresh = new Promise(resolve => {
+      resolveFirstRefresh = resolve;
+    });
+    inboxGetterMock.mockReturnValue({ id: 4776, provider: 'sipuni' });
+    mountUseCallSession();
+    await Promise.resolve();
+    bootstrapIncomingSupportMock.mockImplementationOnce(() => firstRefresh);
+    const initialDestroyCalls = destroyDeviceMock.mock.calls.length;
+
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, {
+      provider: 'sipuni',
+      inbox_id: 4776,
+      sip_profile_ids: [48],
+      registration_config_version: 'version-1',
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    emitter.emit(BUS_EVENTS.TELEPHONY_WEBPHONE_CONFIG_CHANGED, {
+      provider: 'sipuni',
+      inbox_id: 4776,
+      sip_profile_ids: [48],
+      registration_config_version: 'version-2',
+    });
+    resolveFirstRefresh({ provider: 'sipuni' });
+    await vi.waitFor(() => {
+      expect(destroyDeviceMock.mock.calls.length).toBe(initialDestroyCalls + 2);
+    });
   });
 
   it('defers browser SIP refresh while a call is active and applies it after the call ends', async () => {
@@ -909,10 +940,11 @@ describe('useCallSession', () => {
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-active-bridge-release',
-      {
+      expect.objectContaining({
+        ended_at: expect.any(String),
         reason: 'operator_hangup',
         status: 'completed',
-      }
+      })
     );
     expect(rejectBackendCallMock.mock.invocationCallOrder[0]).toBeLessThan(
       endClientCallMock.mock.invocationCallOrder[0]
@@ -934,11 +966,14 @@ describe('useCallSession', () => {
     callsStore.setCallActive('call-remote-disconnect');
 
     mountUseCallSession();
-    await disconnectHandler?.();
+    await disconnectHandler?.({
+      detail: { endedAt: '2026-07-15T10:10:28.655Z' },
+    });
 
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-remote-disconnect',
       {
+        ended_at: '2026-07-15T10:10:28.655Z',
         reason: 'remote_hangup',
         status: 'completed',
       }
@@ -980,10 +1015,11 @@ describe('useCallSession', () => {
 
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'sipuni:janus:51:raw-inbound-call-id',
-      {
+      expect.objectContaining({
+        ended_at: expect.any(String),
         reason: 'remote_hangup',
         status: 'completed',
-      }
+      })
     );
     expect(callsStore.calls).toEqual([]);
   });
@@ -1059,10 +1095,11 @@ describe('useCallSession', () => {
 
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-recording-cleanup-pending',
-      {
+      expect.objectContaining({
+        ended_at: expect.any(String),
         reason: 'remote_hangup',
         status: 'completed',
-      }
+      })
     );
     expect(callsStore.calls).toEqual([]);
 
@@ -1097,10 +1134,11 @@ describe('useCallSession', () => {
     await releasePromise;
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-remote-disconnect-pending',
-      {
+      expect.objectContaining({
+        ended_at: expect.any(String),
         reason: 'remote_hangup',
         status: 'completed',
-      }
+      })
     );
   });
 
@@ -1127,10 +1165,11 @@ describe('useCallSession', () => {
 
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-pending-outbound-disconnect',
-      {
+      expect.objectContaining({
+        ended_at: expect.any(String),
         reason: 'sip_outbound_disconnected',
         status: 'failed',
-      }
+      })
     );
     expect(callsStore.calls).toEqual([]);
   });
@@ -1161,10 +1200,11 @@ describe('useCallSession', () => {
 
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'asterisk_analog:local:accepted-outbound',
-      {
+      expect.objectContaining({
+        ended_at: expect.any(String),
         reason: 'remote_hangup',
         status: 'completed',
-      }
+      })
     );
     expect(reportBrowserSipAnsweredMock).toHaveBeenCalledWith(
       'asterisk_analog:local:accepted-outbound',
@@ -1285,10 +1325,11 @@ describe('useCallSession', () => {
     );
     expect(rejectBackendCallMock).toHaveBeenCalledWith(
       'call-local-hangup-failed',
-      {
+      expect.objectContaining({
+        ended_at: expect.any(String),
         reason: 'operator_hangup',
         status: 'completed',
-      }
+      })
     );
     expect(callsStore.calls).toEqual([]);
   });
