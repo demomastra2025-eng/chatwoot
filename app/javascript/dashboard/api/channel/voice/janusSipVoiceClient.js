@@ -46,6 +46,7 @@ const WEBPHONE_RECORDING_MIME_TYPES = [
   'audio/ogg',
 ];
 const WEBPHONE_RECORDING_AUDIO_BITS_PER_SECOND = 128_000;
+const WEBPHONE_RECORDING_STOP_TIMEOUT_MS = 5_000;
 const WEBPHONE_RECORDING_LOCAL_GAIN = 1;
 const WEBPHONE_RECORDING_REMOTE_GAIN = 1;
 const WEBPHONE_RECORDING_MAX_GAIN = 3;
@@ -267,6 +268,15 @@ export class JanusSipVoiceClient extends EventTarget {
     this.recordingStartedAt = null;
     this.recordingMimeType = null;
     this.recordingStopping = false;
+    this.recordingUploadPromise = null;
+    this.recordingPersistencePending = false;
+    this.recordingUnloadGuard = event => {
+      if (!this.recordingPersistencePending) return;
+
+      event.preventDefault();
+      // Modern browsers show their own generic confirmation text.
+      event.returnValue = '';
+    };
     this.janusServerRecordingStarted = false;
     this.janusServerRecordingStarting = false;
     this.janusServerRecordingFailed = false;
@@ -991,7 +1001,8 @@ export class JanusSipVoiceClient extends EventTarget {
       );
       this.handleCallDisconnected({
         code: result.code,
-        reason: result.reason,
+        reason: JanusSipVoiceClient.normalizeHangupReason(result),
+        janusReason: result.reason,
       });
       return;
     }
@@ -999,6 +1010,16 @@ export class JanusSipVoiceClient extends EventTarget {
     if (event === 'updatingcall' && jsep) {
       this.answerUpdate(jsep);
     }
+  }
+
+  static normalizeHangupReason(result = {}) {
+    const reason = String(result.reason || '').trim();
+    // Janus documents a regular remote BYE as a 200/SIP BYE hangup event.
+    if (Number(result.code) === 200 || /\bSIP BYE\b/i.test(reason)) {
+      return 'remote_hangup';
+    }
+
+    return reason || 'remote_hangup';
   }
 
   handleRemoteJsep(jsep) {
@@ -1460,6 +1481,7 @@ export class JanusSipVoiceClient extends EventTarget {
         if (event.data?.size > 0) this.recordedChunks.push(event.data);
       };
       this.mediaRecorder.start(1000);
+      this.setRecordingPersistencePending(true);
     } catch {
       this.resetRecordingState();
     }
@@ -1663,7 +1685,7 @@ export class JanusSipVoiceClient extends EventTarget {
 
   stopRecordings({ upload = true, reason = 'call_disconnected' } = {}) {
     this.stopJanusServerRecording();
-    this.stopAndUploadRecording({ upload, reason });
+    return this.stopAndUploadRecording({ upload, reason });
   }
 
   stopJanusServerRecording() {
@@ -1782,12 +1804,16 @@ export class JanusSipVoiceClient extends EventTarget {
   }
 
   stopAndUploadRecording({ upload = true, reason = 'call_disconnected' } = {}) {
+    if (this.recordingUploadPromise) return this.recordingUploadPromise;
+
     const recorder = this.mediaRecorder;
-    if (this.recordingStopping) return;
+    if (this.recordingStopping) {
+      return this.recordingUploadPromise || Promise.resolve(null);
+    }
 
     if (!recorder || recorder.state === 'inactive') {
       this.resetRecordingState();
-      return;
+      return Promise.resolve(null);
     }
 
     const callRef = this.recordingCallRef || this.currentCallRef;
@@ -1800,15 +1826,41 @@ export class JanusSipVoiceClient extends EventTarget {
     const mimeType =
       recorder.mimeType || this.recordingMimeType || 'audio/webm';
 
-    recorder.onstop = () => {
+    let finalized = false;
+    let stopTimeout = null;
+    let resolvePersistence;
+    const persistencePromise = new Promise(resolve => {
+      resolvePersistence = resolve;
+    });
+    this.recordingUploadPromise = persistencePromise;
+
+    const completePersistence = result => {
+      if (stopTimeout) window.clearTimeout(stopTimeout);
+      if (this.recordingUploadPromise === persistencePromise) {
+        this.recordingUploadPromise = null;
+      }
+      this.setRecordingPersistencePending(false);
+      resolvePersistence(result);
+    };
+
+    const finalizeRecording = () => {
+      if (finalized) return;
+
+      finalized = true;
       const chunks = [...this.recordedChunks];
       const durationMs = startedAt ? Date.now() - startedAt : null;
-      this.resetRecordingState();
+      this.resetRecordingState({ preservePersistencePending: true });
 
-      if (!upload || !callRef || chunks.length === 0) return;
+      if (!upload || !callRef || chunks.length === 0) {
+        completePersistence(null);
+        return;
+      }
 
       const blob = new Blob(chunks, { type: mimeType });
-      if (!blob.size) return;
+      if (!blob.size) {
+        completePersistence(null);
+        return;
+      }
 
       VoiceAPI.uploadWebphoneRecording(callRef, blob, {
         provider,
@@ -1816,25 +1868,46 @@ export class JanusSipVoiceClient extends EventTarget {
         duration_ms: durationMs,
         reason,
         terminal_status: terminalStatus,
-      }).catch(() => {
-        if (direction !== 'outbound') return;
+      })
+        .catch(() => {
+          if (direction !== 'outbound') return null;
 
-        VoiceAPI.rejectIncomingCall(callRef, {
-          status: terminalStatus,
-          reason,
-        }).catch(() => {});
-      });
+          return VoiceAPI.rejectIncomingCall(callRef, {
+            status: terminalStatus,
+            reason,
+          }).catch(() => null);
+        })
+        .then(completePersistence);
     };
+    recorder.onstop = finalizeRecording;
 
     try {
       this.recordingStopping = true;
+      stopTimeout = window.setTimeout(
+        finalizeRecording,
+        WEBPHONE_RECORDING_STOP_TIMEOUT_MS
+      );
       recorder.stop();
     } catch {
       this.resetRecordingState();
+      completePersistence(null);
     }
+
+    return persistencePromise;
   }
 
-  resetRecordingState() {
+  setRecordingPersistencePending(pending) {
+    const nextPending = Boolean(pending);
+    if (this.recordingPersistencePending === nextPending) return;
+
+    this.recordingPersistencePending = nextPending;
+    if (typeof window === 'undefined') return;
+
+    const method = nextPending ? 'addEventListener' : 'removeEventListener';
+    window[method]('beforeunload', this.recordingUnloadGuard);
+  }
+
+  resetRecordingState({ preservePersistencePending = false } = {}) {
     this.recordingAudioContext?.close?.().catch?.(() => {});
     this.mediaRecorder = null;
     this.recordedChunks = [];
@@ -1847,6 +1920,9 @@ export class JanusSipVoiceClient extends EventTarget {
     this.recordingStartedAt = null;
     this.recordingMimeType = null;
     this.recordingStopping = false;
+    if (!preservePersistencePending) {
+      this.setRecordingPersistencePending(false);
+    }
   }
 
   ensureRemoteAudioElement() {
@@ -2496,11 +2572,12 @@ export class JanusSipVoiceClient extends EventTarget {
     const cancelledOutboundAttempt = this.cancelOutboundAttempt();
     const cancelledOutboundStart =
       cancelledPendingJoin || cancelledOutboundAttempt;
+    const recordingUpload = this.stopRecordings({ reason: 'client_hangup' });
 
     if (!this.sipHandle) {
-      this.stopRecordings({ reason: 'client_hangup' });
       this.stopLocalTracks();
       this.resetCurrentCall();
+      await recordingUpload;
       return null;
     }
 
@@ -2515,12 +2592,12 @@ export class JanusSipVoiceClient extends EventTarget {
     }
     this.pendingIncomingCall = null;
     this.hasActiveCall = false;
-    this.stopRecordings({ reason: 'client_hangup' });
     this.stopAiMediaBridge();
     this.stopLocalTracks();
     this.remoteTracks = {};
     this.rebuildRemoteStream();
     this.resetCurrentCall();
+    await recordingUpload;
     return hadCall ? { ...this.sessionEventDetail(), ended: true } : null;
   }
 

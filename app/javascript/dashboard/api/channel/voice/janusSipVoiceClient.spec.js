@@ -1332,6 +1332,41 @@ describe('janusSipVoiceClient', () => {
     );
   });
 
+  it('normalizes the documented Janus SIP BYE event as a remote hangup', () => {
+    const client = createJanusSipVoiceClient();
+    const disconnectedHandler = vi.fn();
+    const callRef = 'sipuni:local:remote-bye';
+    client.addEventListener('call:disconnected', disconnectedHandler);
+    client.sessionConfig = sipuniSession;
+    client.currentCallRef = callRef;
+    client.currentCallDirection = 'outbound';
+    client.hasActiveCall = true;
+    client.callMediaAccepted = true;
+    client.sipHandle = { hangup: vi.fn() };
+    client.outboundAttempt = {
+      callRef,
+      janusCallId: 'janus-remote-bye',
+      startSettled: true,
+      timer: null,
+      audioTrack: null,
+    };
+
+    client.handleSipMessage({
+      call_id: 'janus-remote-bye',
+      result: { event: 'hangup', code: 200, reason: 'SIP BYE' },
+    });
+
+    expect(disconnectedHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          callRef,
+          reason: 'remote_hangup',
+          janusReason: 'SIP BYE',
+        }),
+      })
+    );
+  });
+
   it('marks AI bridge browser calls so operator UI does not claim their media events', () => {
     const client = createJanusSipVoiceClient();
     client.sessionConfig = sipuniSession;
@@ -1660,6 +1695,54 @@ describe('janusSipVoiceClient', () => {
           }
         );
       });
+    } finally {
+      restore();
+    }
+  });
+
+  it('waits for recording persistence and guards reload while upload is pending', async () => {
+    const { restore } = installRecordingMocks();
+    let resolveUpload;
+    uploadRecordingMock.mockReturnValueOnce(
+      new Promise(resolve => {
+        resolveUpload = resolve;
+      })
+    );
+
+    try {
+      const client = createJanusSipVoiceClient();
+      client.sessionConfig = sipuniSession;
+      client.sipHandle = { send: vi.fn(), hangup: vi.fn() };
+      client.currentCallRef = 'sipuni:local:persist-before-reload';
+      client.currentCallDirection = 'outbound';
+      client.hasActiveCall = true;
+      client.callMediaAccepted = true;
+      client.localTracks = { local: fakeAudioTrack('local') };
+      client.remoteTracks = { remote: fakeAudioTrack('remote') };
+      client.startRecordingIfReady();
+
+      const ending = client.endClientCall();
+      await vi.waitFor(() => {
+        expect(uploadRecordingMock).toHaveBeenCalledTimes(1);
+      });
+
+      const pendingUnload = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(pendingUnload);
+      expect(pendingUnload.defaultPrevented).toBe(true);
+
+      let endingSettled = false;
+      ending.then(() => {
+        endingSettled = true;
+      });
+      await Promise.resolve();
+      expect(endingSettled).toBe(false);
+
+      resolveUpload({});
+      await ending;
+
+      const completedUnload = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(completedUnload);
+      expect(completedUnload.defaultPrevented).toBe(false);
     } finally {
       restore();
     }
