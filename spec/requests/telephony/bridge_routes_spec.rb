@@ -14,18 +14,57 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     Telephony::NumberBinding.sync_from_voice_channel!(voice_channel)
   end
 
-  it 'returns an operator route when the configured operator is available' do
-    agent_binding = create(
-      :telephony_agent_binding,
-      :registered,
+  def create_operator_sip_profile(account:, inbox:, agent_aor:, user: nil)
+    user ||= create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: inbox, user: user)
+    create(
+      :telephony_sip_profile,
       account: account,
-      agent_aor: 'sip:1001@example.test',
-      enabled: true
+      inbox: inbox,
+      user: user,
+      agent_aor: agent_aor,
+      status: 'active'
+    )
+  end
+
+  def create_browser_operator_sip_profile(agent_aor:, registered_at:, last_unregistered_at: nil)
+    profile = create_operator_sip_profile(account: account, inbox: voice_inbox, agent_aor: agent_aor)
+    profile.update!(availability_mode: 'browser_webphone')
+
+    expect(
+      profile.update_browser_registration!(
+        registered: true,
+        occurred_at: registered_at,
+        registration_context: browser_registration_context(profile)
+      )
+    ).to eq(:updated)
+    if last_unregistered_at
+      profile.update!(
+        metadata: profile.metadata.merge('last_unregistered_event_at' => last_unregistered_at.iso8601)
+      )
+    end
+    profile.reload
+  end
+
+  def browser_registration_context(profile)
+    {
+      registration_config_version: profile.registration_config_version,
+      registration_instance_id: "registration-#{profile.id}",
+      janus_session_id: "janus-session-#{profile.id}",
+      janus_handle_id: "janus-handle-#{profile.id}"
+    }
+  end
+
+  it 'returns an operator route when the configured operator is available' do
+    operator_profile = create_operator_sip_profile(
+      account: account,
+      inbox: voice_inbox,
+      agent_aor: 'sip:1001@example.test'
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'app'
     )
 
@@ -154,17 +193,15 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   end
 
   it 'resolves tel URL target numbers before routing inbound calls' do
-    agent_binding = create(
-      :telephony_agent_binding,
-      :registered,
+    operator_profile = create_operator_sip_profile(
       account: account,
-      agent_aor: 'sip:1001@example.test',
-      enabled: true
+      inbox: voice_inbox,
+      agent_aor: 'sip:1001@example.test'
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -255,17 +292,15 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       )
     )
     other_binding = Telephony::NumberBinding.sync_from_voice_channel!(other_channel)
-    other_agent_binding = create(
-      :telephony_agent_binding,
-      :registered,
+    other_operator_profile = create_operator_sip_profile(
       account: other_account,
-      agent_aor: 'sip:2002@example.test',
-      enabled: true
+      inbox: other_channel.inbox,
+      agent_aor: 'sip:2002@example.test'
     )
     other_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: other_agent_binding.agent_ref,
-      operator_agent_aor: other_agent_binding.agent_aor,
+      operator_agent_ref: other_operator_profile.agent_ref,
+      operator_agent_aor: other_operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -311,18 +346,16 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       display_id: 627,
       status: :open
     )
-    agent_binding = create(
-      :telephony_agent_binding,
-      :registered,
+    operator_profile = create_operator_sip_profile(
       account: account,
+      inbox: voice_inbox,
       user: agent,
-      agent_aor: 'sip:1001@example.test',
-      enabled: true
+      agent_aor: 'sip:1001@example.test'
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -360,9 +393,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(call_session.metadata.dig('metadata', 'route_action')).to eq(
       'operator'
     )
-    expect(call_session.metadata.dig('metadata', 'logical_call_key')).to match(
-      /\Afonoster-inbound:[a-f0-9]{32}\z/
-    )
+    expect(call_session.metadata.dig('metadata', 'logical_call_key')).to match(/\Ajanus-inbound:[a-f0-9]{32}\z/)
     expect(
       call_session.metadata.dig('metadata', 'operator_candidate_user_ids')
     ).to include(agent.id)
@@ -397,17 +428,15 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   end
 
   it 'uses collision-resistant logical keys and shared bridge refs for inbound route branches' do
-    agent_binding = create(
-      :telephony_agent_binding,
-      :registered,
+    operator_profile = create_operator_sip_profile(
       account: account,
-      agent_aor: 'sip:1001@example.test',
-      enabled: true
+      inbox: voice_inbox,
+      agent_aor: 'sip:1001@example.test'
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -440,10 +469,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       end
     end
 
-    expect(keys['fallback-inbound-one']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
-    expect(keys['fallback-inbound-two']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
+    expect(keys['fallback-inbound-one']).to match(/\Ajanus-inbound:[a-f0-9]{32}\z/)
+    expect(keys['fallback-inbound-two']).to match(/\Ajanus-inbound:[a-f0-9]{32}\z/)
     expect(keys['fallback-inbound-two']).to eq(keys['fallback-inbound-one'])
-    expect(keys['fallback-inbound-later']).to match(/\Afonoster-inbound:[a-f0-9]{32}\z/)
+    expect(keys['fallback-inbound-later']).to match(/\Ajanus-inbound:[a-f0-9]{32}\z/)
     expect(keys['fallback-inbound-later']).not_to eq(keys['fallback-inbound-one'])
     expect(keys['branch-inbound-one']).to eq(keys['branch-inbound-two'])
     expect(
@@ -494,17 +523,15 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       status: :open
     )
 
-    agent_binding = create(
-      :telephony_agent_binding,
-      :registered,
+    operator_profile = create_operator_sip_profile(
       account: account,
-      agent_aor: 'sip:1001@example.test',
-      enabled: true
+      inbox: voice_inbox,
+      agent_aor: 'sip:1001@example.test'
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -538,22 +565,14 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   end
 
   it 'rejects operator-mode calls when the browser registration is stale' do
-    agent_binding = create(
-      :telephony_agent_binding,
-      account: account,
+    operator_profile = create_browser_operator_sip_profile(
       agent_aor: 'sip:1001@example.test',
-      enabled: true,
-      last_synced_at: 6.minutes.ago,
-      metadata: {
-        registration_state: 'registered',
-        registered: true,
-        last_presence_event_at: 6.minutes.ago.iso8601
-      }
+      registered_at: 6.minutes.ago
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -577,23 +596,15 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   end
 
   it 'rejects operator-mode calls while browser registration is still flapping' do
-    agent_binding = create(
-      :telephony_agent_binding,
-      account: account,
+    operator_profile = create_browser_operator_sip_profile(
       agent_aor: 'sip:1001@example.test',
-      enabled: true,
-      last_synced_at: 20.seconds.ago,
-      metadata: {
-        registration_state: 'registered',
-        registered: true,
-        last_presence_event_at: 20.seconds.ago.iso8601,
-        last_unregistered_event_at: 2.seconds.ago.iso8601
-      }
+      registered_at: 20.seconds.ago,
+      last_unregistered_at: 2.seconds.ago
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -617,23 +628,15 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   end
 
   it 'routes operator-mode calls after browser re-registers following a disconnect' do
-    agent_binding = create(
-      :telephony_agent_binding,
-      account: account,
+    operator_profile = create_browser_operator_sip_profile(
       agent_aor: 'sip:1001@example.test',
-      enabled: true,
-      last_synced_at: Time.current,
-      metadata: {
-        registration_state: 'registered',
-        registered: true,
-        last_presence_event_at: Time.current.iso8601,
-        last_unregistered_event_at: 2.seconds.ago.iso8601
-      }
+      registered_at: Time.current,
+      last_unregistered_at: 2.seconds.ago
     )
     number_binding.routing_policy.update!(
       mode: 'operator',
-      operator_agent_ref: agent_binding.agent_ref,
-      operator_agent_aor: agent_binding.agent_aor,
+      operator_agent_ref: operator_profile.agent_ref,
+      operator_agent_aor: operator_profile.agent_aor,
       fallback_mode: 'reject'
     )
 
@@ -651,7 +654,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
       'action' => 'operator',
-      'agent_aor' => agent_binding.agent_aor
+      'agent_aor' => operator_profile.agent_aor
     )
   end
 
@@ -894,7 +897,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'action' => 'operator',
       'reason' => 'operator_route',
       'agent_aor' => secondary_profile.agent_aor,
-      'agent_ref' => secondary_profile.fonoster_agent_ref,
+      'agent_ref' => secondary_profile.agent_ref,
       'agent_aors' => [secondary_profile.agent_aor],
       'operator_pool' => false,
       'operator_pool_size' => 1
@@ -1913,8 +1916,9 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body).to include(
-      'action' => 'app',
-      'reason' => 'recursive_runtime_app_ref',
+      'action' => 'ai',
+      'app_ref' => 'ai-status-aware-app-ref',
+      'reason' => 'pending_conversation_ai_route',
       'bridge_call_ref' => 'bridge-call-terminal-recent'
     )
   end
@@ -2314,6 +2318,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   end
 
   it 'rejects recursive runtime app routes instead of returning the ingress runtime app ref' do
+    number_binding.update!(app_ref: 'primary-runtime-app')
     number_binding.routing_policy.update!(
       mode: 'app',
       fallback_mode: 'reject',
@@ -2344,6 +2349,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
   it 'writes inbound route request and response to the dedicated telephony debug log' do
     debug_log_file = Tempfile.new('telephony-route-debug')
+    number_binding.update!(app_ref: 'primary-runtime-app')
     number_binding.routing_policy.update!(mode: 'app')
 
     with_modified_env(
