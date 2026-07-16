@@ -499,7 +499,7 @@ RSpec.describe Telephony::CallReconciliationService do
         expect(configured_service.send(:sipuni_local_outbound_missing_after)).to eq(60.seconds)
         expect(configured_service.send(:sipuni_provider_ringing_stale_after)).to eq(5.minutes)
         expect(configured_service.send(:sipuni_provider_in_progress_stale_after)).to eq(1.hour)
-        expect(configured_service.send(:native_sip_pre_answer_stale_after)).to eq(5.minutes)
+        expect(configured_service.send(:native_sip_pre_answer_stale_after)).to eq(2.minutes)
         expect(configured_service.send(:native_sip_in_progress_stale_after)).to eq(1.hour)
         expect(configured_service.send(:native_sip_local_outbound_missing_after)).to eq(60.seconds)
       end
@@ -523,8 +523,62 @@ RSpec.describe Telephony::CallReconciliationService do
 
       expect(service.perform).to include(checked: 0, updated: 0, errors: 0)
       expect(event.reload).to have_attributes(status: 'processed', error_message: nil)
+      expect(event.payload.dig('metadata', 'reconciliation_retry_count')).to eq(1)
+      expect(event.payload.dig('metadata', 'reconciliation_last_retry_at')).to eq(now.iso8601)
       expect(message.reload.content_attributes.dig('data', 'status')).to eq('no_answer')
       expect(conversation.reload.additional_attributes['call_status']).to eq('no_answer')
+    end
+
+    it 'backs off and caps retries for persistently failed reconciliation side effects' do
+      retry_event = account.telephony_events.create!(
+        event_key: 'generic_pre_answer_reconciliation:retry-backoff:no_answer',
+        event_type: 'no_answer',
+        status: 'failed',
+        payload: {
+          'account_id' => account.id,
+          'call_ref' => 'retry-backoff',
+          'event_key' => 'generic_pre_answer_reconciliation:retry-backoff:no_answer',
+          'event' => 'no_answer',
+          'status' => 'no_answer',
+          'metadata' => {
+            'source' => 'generic_pre_answer_reconciliation',
+            'reconciliation_retry_count' => 1,
+            'reconciliation_last_retry_at' => (now - 1.minute).iso8601
+          }
+        }
+      )
+      exhausted_event = account.telephony_events.create!(
+        event_key: 'generic_pre_answer_reconciliation:retry-exhausted:no_answer',
+        event_type: 'no_answer',
+        status: 'failed',
+        payload: retry_event.payload.deep_merge(
+          'call_ref' => 'retry-exhausted',
+          'event_key' => 'generic_pre_answer_reconciliation:retry-exhausted:no_answer',
+          'metadata' => {
+            'reconciliation_retry_count' => described_class::MAX_FAILED_RECONCILIATION_RETRIES,
+            'reconciliation_last_retry_at' => (now - 1.day).iso8601
+          }
+        )
+      )
+
+      expect(Telephony::EventsIngestionService).not_to receive(:new)
+      expect(service.perform).to include(checked: 0, updated: 0, errors: 0)
+      expect(retry_event.reload).to be_failed
+      expect(exhausted_event.reload).to be_failed
+    end
+
+    it 'repairs impossible answer actors on unanswered terminal calls' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        status: 'no_answer',
+        answered_at: nil,
+        answered_by: 'user:7',
+        ended_at: now - 1.minute
+      )
+
+      expect(service.perform).to include(repaired: 1, errors: 0)
+      expect(call_session.reload.answered_by).to be_nil
     end
 
     it 'ignores old non-Janus call refs without provider-owned Sipuni ids' do

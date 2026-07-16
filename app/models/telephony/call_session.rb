@@ -58,6 +58,8 @@
 class Telephony::CallSession < ApplicationRecord
   self.table_name = 'telephony_call_sessions'
 
+  include Telephony::CallSession::LogicalGrouping
+
   CANONICAL_STATUSES = %w[created ringing connecting in_progress completed missed no_answer busy cancelled rejected failed].freeze
   STATUS_ALIASES = {
     'queued' => 'created',
@@ -207,15 +209,15 @@ class Telephony::CallSession < ApplicationRecord
   end
 
   def linked_parent_call_ref
-    metadata_hash = metadata.to_h
-    ai_voice = metadata_hash['ai_voice'].is_a?(Hash) ? metadata_hash['ai_voice'] : {}
+    call_metadata = metadata.to_h
+    ai_voice = call_metadata['ai_voice'].is_a?(Hash) ? call_metadata['ai_voice'] : {}
     linked_terminal = ai_voice['linked_parent_terminal'].is_a?(Hash) ? ai_voice['linked_parent_terminal'] : {}
-    route_metadata = metadata_hash['metadata'].is_a?(Hash) ? metadata_hash['metadata'] : {}
-    last_payload = metadata_hash['last_payload'].is_a?(Hash) ? metadata_hash['last_payload'] : {}
+    route_metadata = call_metadata['metadata'].is_a?(Hash) ? call_metadata['metadata'] : {}
+    last_payload = call_metadata['last_payload'].is_a?(Hash) ? call_metadata['last_payload'] : {}
     nested_payload = last_payload['payload'].is_a?(Hash) ? last_payload['payload'] : {}
 
     parent_ref = linked_terminal['bridge_call_ref'].presence ||
-                 route_metadata['logical_call_group_ref'].presence ||
+                 logical_call_group_ref.presence ||
                  route_metadata['bridge_call_ref'].presence || route_metadata['bridgeCallRef'].presence ||
                  last_payload['bridge_call_ref'].presence || last_payload['bridgeCallRef'].presence ||
                  nested_payload['bridge_call_ref'].presence || nested_payload['bridgeCallRef'].presence

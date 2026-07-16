@@ -409,6 +409,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
         inbox_id: voice_inbox.id,
         provider: 'sipuni',
         call_sid: 'fast-inbound-route',
+        sip_profile_id: operator_profile.id,
+        janus_session_key: "sip_profile:#{operator_profile.id}",
         logical_call_key: call_session.metadata.dig('metadata', 'logical_call_key'),
         logicalCallKey: call_session.metadata.dig('metadata', 'logical_call_key'),
         call_direction: 'inbound',

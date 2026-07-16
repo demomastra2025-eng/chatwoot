@@ -13,6 +13,130 @@ RSpec.describe 'Telephony Calls API', type: :request do
     account.enable_features!('channel_voice')
   end
 
+  describe 'GET /api/v1/accounts/:account_id/telephony/calls' do
+    it 'returns one completed logical call for multiple inbound operator branches' do
+      logical_key = 'janus-inbound:shared-provider-call'
+      primary_ref = 'sipuni:janus:79:primary-call-id'
+      primary = create_history_session(
+        call_ref: primary_ref,
+        status: 'completed',
+        logical_key: logical_key,
+        group_ref: primary_ref,
+        answered_at: 12.seconds.ago,
+        ended_at: 2.seconds.ago
+      )
+      create_history_session(
+        call_ref: 'sipuni:janus:80:duplicate-call-id',
+        status: 'no_answer',
+        logical_key: logical_key,
+        group_ref: primary_ref,
+        route_reason: 'duplicate_broadcast_branch'
+      )
+      create_history_session(
+        call_ref: 'sipuni:janus:81:duplicate-call-id',
+        status: 'rejected',
+        logical_key: 'janus-inbound:late-branch-race-key',
+        group_ref: 'sipuni:janus:80:duplicate-call-id',
+        route_reason: 'duplicate_broadcast_branch'
+      )
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['meta']['count']).to eq(1)
+      expect(response.parsed_body['payload']).to contain_exactly(
+        include('id' => primary.id, 'call_ref' => primary_ref, 'status' => 'completed')
+      )
+    end
+
+    it 'applies status filters to the logical call result instead of duplicate branches' do
+      logical_key = 'janus-inbound:answered-provider-call'
+      primary_ref = 'sipuni:janus:79:answered-call-id'
+      create_history_session(
+        call_ref: primary_ref,
+        status: 'completed',
+        logical_key: logical_key,
+        group_ref: primary_ref,
+        answered_at: 10.seconds.ago
+      )
+      create_history_session(
+        call_ref: 'sipuni:janus:80:missed-branch-id',
+        status: 'no_answer',
+        logical_key: logical_key,
+        group_ref: primary_ref,
+        route_reason: 'duplicate_broadcast_branch'
+      )
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", params: { status: 'no_answer' }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('payload' => [], 'meta' => { 'count' => 0 })
+    end
+
+    it 'applies the limit to distinct logical calls and keeps separate real calls separate' do
+      newest_ref = 'sipuni:janus:79:newest-call-id'
+      5.times do |index|
+        create_history_session(
+          call_ref: "sipuni:janus:#{80 + index}:newest-duplicate-#{index}",
+          status: 'no_answer',
+          logical_key: 'janus-inbound:newest-real-call',
+          group_ref: newest_ref,
+          route_reason: 'duplicate_broadcast_branch',
+          created_at: 1.minute.ago + (index / 1000.0)
+        )
+      end
+      newest = create_history_session(
+        call_ref: newest_ref,
+        status: 'ringing',
+        logical_key: 'janus-inbound:newest-real-call',
+        group_ref: newest_ref,
+        created_at: 1.minute.ago
+      )
+      older = create_history_session(
+        call_ref: 'sipuni:janus:79:older-call-id',
+        status: 'no_answer',
+        logical_key: 'janus-inbound:older-real-call',
+        group_ref: 'sipuni:janus:79:older-call-id',
+        created_at: 2.minutes.ago
+      )
+      create_history_session(
+        call_ref: 'sipuni:janus:79:oldest-call-id',
+        status: 'completed',
+        logical_key: 'janus-inbound:oldest-real-call',
+        group_ref: 'sipuni:janus:79:oldest-call-id',
+        created_at: 3.minutes.ago
+      )
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", params: { limit: 2 }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['meta']['count']).to eq(2)
+      expect(response.parsed_body['payload'].pluck('id')).to eq([newest.id, older.id])
+    end
+
+    it 'does not merge outbound calls even when a provider reuses a grouping value' do
+      first = create_history_session(
+        call_ref: 'sipuni:local:first-outbound',
+        status: 'completed',
+        logical_key: 'shared-outbound-key',
+        group_ref: 'shared-outbound-ref',
+        direction: 'outbound'
+      )
+      second = create_history_session(
+        call_ref: 'sipuni:local:second-outbound',
+        status: 'completed',
+        logical_key: 'shared-outbound-key',
+        group_ref: 'shared-outbound-ref',
+        direction: 'outbound'
+      )
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", params: { direction: 'outbound' }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['payload'].pluck('id')).to contain_exactly(first.id, second.id)
+    end
+  end
+
   it 'creates a local Janus SIP outbound call session' do
     create(:inbox_member, inbox: voice_inbox, user: administrator)
 
@@ -548,6 +672,31 @@ RSpec.describe 'Telephony Calls API', type: :request do
       external_call_ref: call_ref,
       recording_ref: recording_ref,
       metadata: { 'recording' => metadata }
+    )
+  end
+
+  def create_history_session(call_ref:, status:, logical_key:, group_ref:, **attributes)
+    route_reason = attributes.delete(:route_reason)
+    direction = attributes.delete(:direction) || 'inbound'
+    route_metadata = {
+      'logical_call_key' => logical_key,
+      'logical_call_group_ref' => group_ref,
+      'route_reason' => route_reason
+    }.compact
+
+    create(
+      :telephony_call_session,
+      account: account,
+      conversation: create(:conversation, account: account, inbox: voice_inbox, contact: contact),
+      inbox: voice_inbox,
+      contact: contact,
+      number_binding: voice_inbox.telephony_number_binding,
+      provider: 'sipuni',
+      external_call_ref: call_ref,
+      status: status,
+      direction: direction,
+      metadata: { 'metadata' => route_metadata },
+      **attributes
     )
   end
 

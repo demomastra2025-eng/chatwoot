@@ -350,9 +350,11 @@ class Telephony::EventsIngestionService
 
   def realtime_call_status_pubsub_tokens(call_session)
     user_ids = realtime_call_status_user_ids(call_session)
-    tokens = []
-    tokens += call_session.inbox.members.filter_map(&:pubsub_token) if call_session.inbox.present?
-    tokens += call_session.account.users.where(id: user_ids).filter_map(&:pubsub_token) if user_ids.present?
+    tokens = call_session.account.users.where(id: user_ids).filter_map(&:pubsub_token)
+    native_sip_operator_scope = native_sip_call_session?(call_session) &&
+                                call_session.direction == 'inbound' &&
+                                user_ids.present?
+    tokens += call_session.inbox.members.filter_map(&:pubsub_token) if call_session.inbox.present? && !native_sip_operator_scope
     tokens.uniq
   end
 
@@ -360,12 +362,18 @@ class Telephony::EventsIngestionService
     metadata = call_session.metadata.to_h.deep_stringify_keys
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
     candidates = route_metadata['operator_candidates'].is_a?(Array) ? route_metadata['operator_candidates'] : []
+    sip_profile_ids = Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).filter_map { |value| value.presence&.to_i }
+    sip_profile_ids << route_metadata['target_sip_profile_id'].presence&.to_i
+    sip_profile_ids << route_metadata['telephony_sip_profile_id'].presence&.to_i
 
     [
       call_session.agent_binding&.user_id,
       metadata.dig('operator_claim', 'user_id'),
       route_metadata['operator_candidate_user_ids'],
-      candidates.filter_map { |candidate| candidate['user_id'] }
+      route_metadata['target_user_id'],
+      route_metadata['onelink_user_id'],
+      candidates.filter_map { |candidate| candidate['user_id'] },
+      call_session.account.telephony_sip_profiles.where(id: sip_profile_ids.compact).pluck(:user_id)
     ].flatten.compact.map(&:to_i).uniq
   end
 
@@ -377,6 +385,18 @@ class Telephony::EventsIngestionService
                      route_metadata['target_sip_profile_id'] ||
                      Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).first
     browser_join_supported = route_metadata['browser_join_supported']
+    logical_group_sessions = if native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+                               call_session.logical_group_sessions
+                             else
+                               [call_session]
+                             end
+    canonical_session = if native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+                          call_session.canonical_logical_call_session
+                        else
+                          call_session
+                        end
+    canonical_logical_key = canonical_session.logical_call_key
+    logical_call_terminal = logical_group_sessions.all?(&:terminal?)
 
     {
       account_id: call_session.account_id,
@@ -392,8 +412,14 @@ class Telephony::EventsIngestionService
       conversation_db_id: call_session.conversation_id,
       inbox_id: call_session.inbox_id,
       number_ref: call_session.number_binding&.number_ref,
-      logical_call_key: session_logical_call_key(call_session),
-      logicalCallKey: session_logical_call_key(call_session),
+      logical_call_key: canonical_logical_key,
+      logicalCallKey: canonical_logical_key,
+      logical_call_root_ref: canonical_session.external_call_ref,
+      logicalCallRootRef: canonical_session.external_call_ref,
+      related_call_sids: logical_group_sessions.map(&:external_call_ref).uniq,
+      relatedCallSids: logical_group_sessions.map(&:external_call_ref).uniq,
+      logical_call_terminal: logical_call_terminal,
+      logicalCallTerminal: logical_call_terminal,
       contact_id: call_session.contact_id,
       sender_id: call_session.contact_id,
       from_number: call_session.from_number,
@@ -443,6 +469,10 @@ class Telephony::EventsIngestionService
   end
 
   def stale_terminal_voice_message?(call_session)
+    return true if native_sip_call_session?(call_session) &&
+                   call_session.direction == 'inbound' &&
+                   native_sip_group_voice_messages(call_session).many?
+
     message = call_session.voice_message_for_current_call
     return false if message.blank?
 
@@ -690,7 +720,7 @@ class Telephony::EventsIngestionService
       duration_seconds: next_duration_seconds(call_session, status, started_at, answered_at, ended_at),
       started_at: started_at,
       answered_at: answered_at,
-      answered_by: next_answered_by(call_session, status),
+      answered_by: next_answered_by(call_session, status, answered_at),
       ended_at: ended_at,
       ended_by: next_ended_by(call_session, status),
       end_reason: next_end_reason(call_session, status),
@@ -733,8 +763,9 @@ class Telephony::EventsIngestionService
     resolved_answered_at || call_session.answered_at || (event_time if status == 'in_progress')
   end
 
-  def next_answered_by(call_session, status)
+  def next_answered_by(call_session, status, answered_at)
     return call_session.answered_by if stale_event?(call_session)
+    return nil if answered_at.blank? && status != 'in_progress'
 
     resolved_answered_by || call_session.answered_by || resolved_agent_actor(status)
   end
@@ -1428,6 +1459,16 @@ class Telephony::EventsIngestionService
   end
 
   def sync_voice_message!(call_session)
+    return sync_voice_message_without_group_lock!(call_session) unless native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+
+    with_native_sip_voice_group_lock(call_session) do
+      call_session.reload
+      presentation_session = native_sip_group_presentation_session(call_session)
+      sync_voice_message_without_group_lock!(presentation_session)
+    end
+  end
+
+  def sync_voice_message_without_group_lock!(call_session)
     message = voice_message_for(call_session)
     return if message.blank? && (
       superseded_native_sip_conversation_call?(call_session) ||
@@ -1485,6 +1526,41 @@ class Telephony::EventsIngestionService
     message.update!(content_attributes: data)
     remove_native_sip_group_duplicate_messages!(call_session, message)
     mark_linked_runtime_duplicate_message!(call_session, message)
+    message
+  end
+
+  def with_native_sip_voice_group_lock(call_session)
+    canonical_session = call_session.canonical_logical_call_session
+    identity = [call_session.account_id, call_session.inbox_id, call_session.provider, canonical_session.external_call_ref].join(':')
+    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+
+    Telephony::CallSession.transaction do
+      ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+      yield
+    end
+  end
+
+  def native_sip_group_presentation_session(call_session)
+    sessions = call_session.logical_group_sessions.map(&:reload)
+    canonical_session = call_session.canonical_logical_call_session
+    answered_sessions = sessions.select { |session| native_sip_answer_evidence?(session) }
+    return canonical_session.reload if answered_sessions.blank?
+
+    answered_sessions.max_by do |session|
+      [
+        session.answered_at.present? ? 3 : 0,
+        session.canonical_status == 'completed' ? 2 : 0,
+        session.canonical_status == 'in_progress' ? 1 : 0,
+        session.id == canonical_session.id ? 1 : 0,
+        session.last_event_at || session.updated_at || session.created_at
+      ]
+    end
+  end
+
+  def native_sip_answer_evidence?(session)
+    session.answered_at.present? ||
+      session.metadata.to_h['operator_claim'].present? ||
+      %w[in_progress completed].include?(session.canonical_status)
   end
 
   def mark_linked_runtime_duplicate_message!(call_session, canonical_message)
@@ -1548,10 +1624,36 @@ class Telephony::EventsIngestionService
 
   def voice_message_for(call_session)
     return if call_session.conversation.blank?
+
+    if native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+      group_message = native_sip_group_voice_message_for(call_session)
+      return group_message if group_message.present?
+    end
     return exact_voice_message_for(call_session) if superseded_native_sip_conversation_call?(call_session)
     return if unanswered_linked_native_sip_branch?(call_session)
 
     call_session.voice_message_for_current_call
+  end
+
+  def native_sip_group_voice_message_for(call_session)
+    messages = native_sip_group_voice_messages(call_session)
+    return if messages.blank?
+
+    canonical_source_id = call_session.canonical_logical_call_session.voice_call_source_id
+    messages.find { |message| message.source_id == canonical_source_id } || messages.first
+  end
+
+  def native_sip_group_voice_messages(call_session)
+    return [] if call_session.conversation.blank?
+
+    sessions = call_session.logical_group_sessions
+    call_refs = sessions.filter_map(&:external_call_ref)
+    return [] if call_refs.blank?
+
+    call_session.conversation.messages.voice_calls
+                .where(source_id: call_refs.map { |call_ref| "voice_call:#{call_ref}" })
+                .order(:created_at, :id)
+                .to_a
   end
 
   def unanswered_linked_native_sip_branch?(call_session)
@@ -1661,13 +1763,16 @@ class Telephony::EventsIngestionService
     return unless call_session.direction == 'inbound'
     return if call_session.conversation.blank? || canonical_message.blank?
 
-    logical_key = logical_call_key(call_session)
+    group_sessions = call_session.logical_group_sessions
+    group_call_refs = group_sessions.filter_map(&:external_call_ref)
+    logical_key = call_session.canonical_logical_call_key
 
     call_session.conversation.messages.voice_calls.where.not(id: canonical_message.id).find_each do |message|
       data = normalized_content_attributes(message).fetch('data', {})
-      next unless duplicate_native_sip_group_message?(data, call_session, logical_key)
-      next unless data['call_sid'].present? && data['call_sid'] != call_session.external_call_ref
-      next unless unanswered_terminal_status?(data['status'].to_s)
+      source_call_ref = message.source_id.to_s.delete_prefix('voice_call:')
+      explicit_group_duplicate = group_call_refs.include?(source_call_ref) || group_call_refs.include?(data['call_sid'])
+      legacy_duplicate = group_sessions.one? && duplicate_native_sip_group_message?(data, call_session, logical_key)
+      next unless explicit_group_duplicate || legacy_duplicate
 
       message.destroy!
     end
@@ -2213,6 +2318,11 @@ class Telephony::EventsIngestionService
   end
 
   def logical_call_key(call_session = nil)
+    if call_session.present? && native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+      canonical_key = call_session.canonical_logical_call_key
+      return canonical_key if canonical_key.present?
+    end
+
     payload_value('logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
       metadata_value('logical_call_key', 'logicalCallKey', 'call_group_key', 'callGroupKey') ||
       call_session&.metadata.to_h.dig('metadata', 'logical_call_key') ||
@@ -2220,6 +2330,11 @@ class Telephony::EventsIngestionService
   end
 
   def session_logical_call_key(call_session)
+    if native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+      canonical_key = call_session.canonical_logical_call_key
+      return canonical_key if canonical_key.present?
+    end
+
     metadata = call_session&.metadata.to_h.deep_stringify_keys
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
     last_payload = metadata['last_payload'].is_a?(Hash) ? metadata['last_payload'] : {}

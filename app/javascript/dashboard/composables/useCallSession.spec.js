@@ -2419,7 +2419,7 @@ describe('useCallSession', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
-  it('keeps the call visible as browser-unsupported when backend claim says the operator is not registered', async () => {
+  it('dismisses a non-actionable call when backend says the operator is not registered', async () => {
     const callsStore = useCallsStore();
     callsStore.addCall({
       callSid: 'call-operator-not-registered',
@@ -2449,12 +2449,7 @@ describe('useCallSession', () => {
     });
     expect(rejectClientCallMock).not.toHaveBeenCalled();
     expect(rejectBackendCallMock).not.toHaveBeenCalled();
-    expect(callsStore.calls).toMatchObject([
-      {
-        callSid: 'call-operator-not-registered',
-        browserJoinSupported: false,
-      },
-    ]);
+    expect(callsStore.calls).toEqual([]);
   });
 
   it('keeps a Sipuni incoming call retryable when claim is attempted before the operator leg is ready', async () => {

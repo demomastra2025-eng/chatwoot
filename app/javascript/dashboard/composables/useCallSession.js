@@ -12,7 +12,12 @@ import { emitter } from 'shared/helpers/mitt';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
 const INCOMING_BOOTSTRAP_REFRESH_MS = 300_000;
-const TERMINAL_CLAIM_FAILURE_CODES = new Set(['CALL_NOT_CLAIMABLE']);
+const TERMINAL_CLAIM_FAILURE_CODES = new Set([
+  'CALL_NOT_CLAIMABLE',
+  'CALL_ALREADY_CLAIMED',
+  'OPERATOR_NOT_CANDIDATE',
+  'OPERATOR_BUSY',
+]);
 const TERMINAL_CLAIM_FAILURE_STATUSES = new Set([
   'completed',
   'busy',

@@ -68,8 +68,8 @@ class Telephony::InboundRoutingService
                  routed_decision
                end
 
-    enqueue_route_lifecycle!(decision)
     broadcast_fast_incoming_call!(decision)
+    enqueue_route_lifecycle!(decision)
     decision
   end
 
@@ -182,15 +182,16 @@ class Telephony::InboundRoutingService
     call_session, should_broadcast = ensure_fast_incoming_call_session!(decision)
     return if call_session.blank? || call_session.terminal? || !should_broadcast
 
-    tokens = fast_incoming_call_pubsub_tokens
-    return if tokens.blank?
+    targets = fast_incoming_call_pubsub_targets
+    return if targets.blank?
 
-    event = {
-      event: 'voice_call.incoming',
-      data: fast_incoming_call_payload(decision)
-    }
-
-    tokens.each { |token| ActionCable.server.broadcast(token, event) }
+    targets.each do |target|
+      ActionCable.server.broadcast(
+        target[:token],
+        event: 'voice_call.incoming',
+        data: fast_incoming_call_payload(decision, candidate: target[:candidate])
+      )
+    end
   rescue StandardError => e
     Rails.logger.warn(
       'TELEPHONY_FAST_INCOMING_BROADCAST_FAILED ' \
@@ -198,8 +199,11 @@ class Telephony::InboundRoutingService
     )
   end
 
-  def fast_incoming_call_pubsub_tokens
-    operator_candidates.filter_map { |candidate| candidate.user&.pubsub_token }.uniq
+  def fast_incoming_call_pubsub_targets
+    operator_candidates.filter_map do |candidate|
+      token = candidate.user&.pubsub_token
+      { token: token, candidate: candidate } if token.present?
+    end.uniq { |target| target[:token] }
   end
 
   def ensure_fast_incoming_call_session!(decision)
@@ -224,19 +228,17 @@ class Telephony::InboundRoutingService
   end
 
   def find_or_create_fast_incoming_call_session!
-    existing = number_binding.account.telephony_call_sessions.find_by(external_call_ref: call_ref)
-    return existing if existing.present?
-
-    number_binding.account.telephony_call_sessions.create!(
-      external_call_ref: call_ref,
-      provider: number_binding.provider.presence,
-      status: 'ringing',
-      direction: 'inbound',
-      started_at: Time.current,
-      last_event_at: Time.current,
-      legs: [],
-      metadata: {}
-    )
+    number_binding.account.telephony_call_sessions.find_or_create_by!(external_call_ref: call_ref) do |session|
+      session.assign_attributes(
+        provider: number_binding.provider.presence,
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: Time.current,
+        last_event_at: Time.current,
+        legs: [],
+        metadata: {}
+      )
+    end
   rescue ActiveRecord::RecordInvalid => e
     raise unless e.record&.errors&.of_kind?(:external_call_ref, :taken)
 
@@ -275,13 +277,25 @@ class Telephony::InboundRoutingService
     metadata.compact
   end
 
-  def fast_incoming_call_payload(decision)
+  def fast_incoming_call_payload(decision, candidate: nil)
     conversation = existing_voice_conversation
     contact = conversation&.contact
     route_metadata = route_lifecycle_metadata(decision)
-    sip_profile_id = primary_operator_candidate&.sip_profile_id ||
+    sip_profile_id = candidate&.sip_profile_id ||
+                     primary_operator_candidate&.sip_profile_id ||
                      route_metadata[:target_sip_profile_id] ||
                      route_metadata[:telephony_sip_profile_id]
+    route_sip_profile_id = route_metadata[:target_sip_profile_id] || route_metadata[:telephony_sip_profile_id]
+    candidate_owns_janus_branch = candidate.blank? ||
+                                  candidate.sip_profile_id.blank? ||
+                                  route_sip_profile_id.blank? ||
+                                  candidate.sip_profile_id.to_s == route_sip_profile_id.to_s
+    janus_call_ref = route_metadata[:janus_call_ref] if candidate_owns_janus_branch
+    janus_session_key = if candidate&.sip_profile_id.present?
+                          "sip_profile:#{candidate.sip_profile_id}"
+                        elsif candidate_owns_janus_branch
+                          route_metadata[:janus_session_key]
+                        end
 
     {
       account_id: number_binding.account_id,
@@ -310,13 +324,14 @@ class Telephony::InboundRoutingService
       operator_pool: decision[:operator_pool] || decision['operator_pool'],
       operator_pool_size: decision[:operator_pool_size] || decision['operator_pool_size'],
       operator_candidates: decision[:operator_candidates] || decision['operator_candidates'],
-      operator_internal_extension: primary_operator_candidate&.sip_profile&.internal_extension,
+      operator_internal_extension: candidate&.sip_profile&.internal_extension ||
+        primary_operator_candidate&.sip_profile&.internal_extension,
       sip_profile_id: sip_profile_id,
       sipProfileId: sip_profile_id,
-      janus_call_ref: route_metadata[:janus_call_ref],
-      janusCallRef: route_metadata[:janus_call_ref],
-      janus_session_key: route_metadata[:janus_session_key],
-      janusSessionKey: route_metadata[:janus_session_key],
+      janus_call_ref: janus_call_ref,
+      janusCallRef: janus_call_ref,
+      janus_session_key: janus_session_key,
+      janusSessionKey: janus_session_key,
       sipuni_native_webphone_correlation: route_metadata[:sipuni_native_webphone_correlation],
       sipuniNativeWebphoneCorrelation: route_metadata[:sipuni_native_webphone_correlation],
       browser_join_supported: route_metadata[:browser_join_supported],

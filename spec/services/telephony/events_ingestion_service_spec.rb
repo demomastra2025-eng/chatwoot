@@ -183,10 +183,51 @@ RSpec.describe Telephony::EventsIngestionService do
           data: hash_including(
             callSid: 'call-retry-1',
             status: 'completed',
+            logical_call_terminal: true,
             provider: existing_call_session.provider,
             inbox_id: existing_call_session.inbox_id
           )
         )
+      )
+    end
+
+    it 'sends a native SIP physical branch status only to its routed operator' do
+      target_operator = create(:user, account: account)
+      other_member = create(:user, account: account)
+      create(:inbox_member, inbox: existing_call_session.inbox, user: target_operator)
+      create(:inbox_member, inbox: existing_call_session.inbox, user: other_member)
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: 'sipuni:janus:branch-204',
+        metadata: {
+          'metadata' => {
+            'target_user_id' => target_operator.id,
+            'logical_call_key' => 'native-sip:canonical',
+            'call_group_key' => 'native-sip:canonical',
+            'logical_call_group_ref' => 'sipuni:janus:branch-204'
+          }
+        }
+      )
+      allow(ActionCable.server).to receive(:broadcast)
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-native-targeted-terminal-status',
+          call_ref: existing_call_session.external_call_ref,
+          provider: 'sipuni',
+          event: 'operator_no_answer',
+          status: 'no_answer'
+        )
+      ).perform
+
+      expect(ActionCable.server).to have_received(:broadcast).with(
+        target_operator.pubsub_token,
+        hash_including(event: 'voice_call.status_changed')
+      )
+      expect(ActionCable.server).not_to have_received(:broadcast).with(
+        other_member.pubsub_token,
+        anything
       )
     end
 
@@ -296,6 +337,96 @@ RSpec.describe Telephony::EventsIngestionService do
         'logical_call_key' => 'native-sip-inbound:shared-key',
         'call_group_key' => 'native-sip-inbound:shared-key'
       )
+    end
+
+    it 'removes a delayed ringing bubble through a transitive native SIP group after the root completed' do
+      conversation = existing_call_session.conversation
+      root_ref = 'sipuni:janus:root-202'
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: root_ref,
+        status: 'completed',
+        started_at: 30.seconds.ago,
+        answered_at: 10.seconds.ago,
+        ended_at: Time.current,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => 'native-sip:root-key',
+            'call_group_key' => 'native-sip:root-key',
+            'logical_call_group_ref' => root_ref
+          },
+          'operator_claim' => { 'user_id' => 1, 'user_name' => 'Ahan' }
+        }
+      )
+      root_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: "voice_call:#{root_ref}",
+        content_attributes: {
+          'data' => {
+            'status' => 'completed',
+            'call_sid' => root_ref,
+            'call_direction' => 'inbound',
+            'provider' => 'sipuni',
+            'logical_call_key' => 'native-sip:root-key'
+          }
+        }
+      )
+      branch = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: 'sipuni:janus:branch-206',
+        status: 'ringing',
+        started_at: existing_call_session.reload.started_at + 1.second,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => 'native-sip:late-key',
+            'call_group_key' => 'native-sip:late-key',
+            'logical_call_group_ref' => root_ref
+          }
+        }
+      )
+      stale_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: branch.inbox,
+        content_type: 'voice_call',
+        source_id: "voice_call:#{branch.external_call_ref}",
+        content_attributes: {
+          'data' => {
+            'status' => 'ringing',
+            'call_sid' => branch.external_call_ref,
+            'call_direction' => 'inbound',
+            'provider' => 'sipuni',
+            'logical_call_key' => 'native-sip:late-key'
+          }
+        }
+      )
+
+      described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-delayed-native-sip-ringing-branch',
+          call_ref: branch.external_call_ref,
+          provider: 'sipuni',
+          event: 'session_started',
+          status: 'ringing'
+        )
+      ).perform
+
+      expect(conversation.messages.voice_calls.reload).to contain_exactly(root_message)
+      expect(root_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(Message.exists?(stale_message.id)).to be(false)
     end
 
     it 'does not create a second voice bubble for an unanswered linked native SIP inbound branch' do
@@ -2015,6 +2146,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
       expect(result.reload).to have_attributes(
         status: 'rejected',
+        answered_by: nil,
         ended_by: 'user:7',
         end_reason: 'operator_rejected_from_browser'
       )

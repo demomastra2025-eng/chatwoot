@@ -11,23 +11,10 @@ class Telephony::OperatorCallClaimService
     raise Telephony::Error.new(code: 'CALL_REF_REQUIRED', message: 'call_ref is required', status: :unprocessable_content) if call_ref.blank?
 
     operator_availability.with_lock do
-      call_session.with_lock do
-        raise_terminal_call! if call_session.terminal?
-        raise_not_candidate! unless candidate_user?
-
-        if claimed_by_other?
-          raise Telephony::Error.new(
-            code: 'CALL_ALREADY_CLAIMED',
-            message: 'Call was already claimed by another operator',
-            status: :conflict,
-            details: claim_details
-          )
-        end
-
-        claim_call!
-      end
+      claim_fence_session.with_lock { with_requested_call_lock { claim_locked_call! } }
     end
 
+    call_session.reload
     broadcast_claimed_call!
     claim_payload
   end
@@ -38,6 +25,34 @@ class Telephony::OperatorCallClaimService
 
   def call_session
     @call_session ||= account.telephony_call_sessions.find_by!(external_call_ref: call_ref)
+  end
+
+  def claim_fence_session
+    @claim_fence_session ||= call_session.canonical_logical_call_session
+  end
+
+  def with_requested_call_lock(&)
+    return yield if claim_fence_session.id == call_session.id
+
+    call_session.with_lock(&)
+  end
+
+  def claim_locked_call!
+    call_session.reload
+    claim_fence_session.reload
+    raise_terminal_call! if call_session.terminal? || claim_fence_session.terminal?
+    raise_not_candidate! unless candidate_user?
+
+    if claimed_by_other?
+      raise Telephony::Error.new(
+        code: 'CALL_ALREADY_CLAIMED',
+        message: 'Call was already claimed by another operator',
+        status: :conflict,
+        details: claim_details
+      )
+    end
+
+    claim_call!
   end
 
   def operator_availability
@@ -181,7 +196,7 @@ class Telephony::OperatorCallClaimService
   end
 
   def claimed_by_other?
-    return call_session.agent_binding_id != operator_agent_binding&.id if call_session.agent_binding_id.present?
+    return claim_fence_session.agent_binding_id != operator_agent_binding&.id if claim_fence_session.agent_binding_id.present?
 
     operator_claim_user_id.present? && operator_claim_user_id != user.id
   end
@@ -257,11 +272,16 @@ class Telephony::OperatorCallClaimService
 
   def claim_call!
     claimed_at = Time.current
+    apply_claim_to_session!(claim_fence_session, claimed_at)
+    apply_claim_to_session!(call_session, claimed_at) unless claim_fence_session.id == call_session.id
+  end
+
+  def apply_claim_to_session!(session, claimed_at)
     attrs = {
-      answered_by: call_session.answered_by || "user:#{user.id}",
-      status: claim_status,
-      last_event_at: [call_session.last_event_at, claimed_at].compact.max,
-      metadata: (call_session.metadata || {}).deep_merge(
+      answered_by: session.answered_by || "user:#{user.id}",
+      status: claim_status(session),
+      last_event_at: [session.last_event_at, claimed_at].compact.max,
+      metadata: (session.metadata || {}).deep_merge(
         'operator_claim' => {
           'agent_binding_id' => operator_agent_binding&.id,
           'sip_profile_id' => sip_profile&.id,
@@ -274,20 +294,20 @@ class Telephony::OperatorCallClaimService
       )
     }
     attrs[:agent_binding] = operator_agent_binding if operator_agent_binding.present?
-    call_session.update!(attrs)
+    session.update!(attrs)
   end
 
-  def claim_status
-    return call_session.status if call_session.status == 'in_progress' || call_session.status == 'completed'
+  def claim_status(session)
+    return session.status if session.status == 'in_progress' || session.status == 'completed'
 
     'connecting'
   end
 
   def claim_details
     {
-      agent_binding_id: call_session.agent_binding_id,
-      sip_profile_id: call_session.metadata.to_h.dig('operator_claim', 'sip_profile_id'),
-      user_id: call_session.agent_binding&.user_id || operator_claim_user_id,
+      agent_binding_id: claim_fence_session.agent_binding_id,
+      sip_profile_id: claim_fence_session.metadata.to_h.dig('operator_claim', 'sip_profile_id'),
+      user_id: claim_fence_session.agent_binding&.user_id || operator_claim_user_id,
       user_name: claimed_user_name
     }.compact
   end
@@ -322,13 +342,13 @@ class Telephony::OperatorCallClaimService
   end
 
   def claimed_user_name
-    call_session.metadata.to_h.dig('operator_claim', 'user_name').presence ||
-      call_session.agent_binding&.user&.name ||
+    claim_fence_session.metadata.to_h.dig('operator_claim', 'user_name').presence ||
+      claim_fence_session.agent_binding&.user&.name ||
       account.users.find_by(id: operator_claim_user_id)&.name
   end
 
   def operator_claim_user_id
-    call_session.metadata.to_h.dig('operator_claim', 'user_id').presence&.to_i
+    claim_fence_session.metadata.to_h.dig('operator_claim', 'user_id').presence&.to_i
   end
 
   def broadcast_claimed_call!
@@ -363,8 +383,12 @@ class Telephony::OperatorCallClaimService
     metadata = route_metadata_for_session(session)
     binding_ids = Array.wrap(metadata['operator_candidate_binding_ids']).filter_map { |value| value.presence&.to_i }
     sip_profile_ids = Array.wrap(metadata['operator_candidate_sip_profile_ids']).filter_map { |value| value.presence&.to_i }
+    sip_profile_ids << metadata['target_sip_profile_id'].presence&.to_i
+    sip_profile_ids << metadata['telephony_sip_profile_id'].presence&.to_i
 
     ids = Array.wrap(metadata['operator_candidate_user_ids']).filter_map { |value| value.presence&.to_i }
+    ids << metadata['target_user_id'].presence&.to_i
+    ids << metadata['onelink_user_id'].presence&.to_i
     ids << session.agent_binding&.user_id
     ids += account.telephony_agent_bindings.where(id: binding_ids).pluck(:user_id) if binding_ids.present?
     ids += account.telephony_sip_profiles.where(id: sip_profile_ids).pluck(:user_id) if sip_profile_ids.present?
@@ -372,31 +396,11 @@ class Telephony::OperatorCallClaimService
   end
 
   def related_claimed_call_sessions
-    @related_claimed_call_sessions ||= begin
-      target_started_at = call_session.started_at || call_session.created_at || Time.current
-      candidates = account.telephony_call_sessions
-                          .where(provider: call_session.provider, direction: call_session.direction)
-                          .where(created_at: (target_started_at - 2.minutes)..(target_started_at + 2.minutes))
-                          .to_a
-
-      candidates.select { |session| session.id == call_session.id || related_claimed_call_session?(session) }
-    end
-  end
-
-  def related_claimed_call_session?(session)
-    return false unless session.direction == call_session.direction
-    return false unless session.provider == call_session.provider
-
-    current_key = logical_call_key_for_session(call_session)
-    session_key = logical_call_key_for_session(session)
-    current_key.present? && current_key == session_key
+    @related_claimed_call_sessions ||= call_session.logical_group_sessions
   end
 
   def logical_call_key_for_session(session)
-    metadata = route_metadata_for_session(session)
-    metadata['logical_call_key'].presence ||
-      metadata['call_group_key'].presence ||
-      metadata['logical_call_group_ref'].presence
+    session.canonical_logical_call_key.presence || session.logical_call_group_ref
   end
 
   def route_metadata_for_session(session)

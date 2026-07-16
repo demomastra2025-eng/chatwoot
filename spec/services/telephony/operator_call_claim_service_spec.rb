@@ -202,6 +202,77 @@ RSpec.describe Telephony::OperatorCallClaimService do
     expect(related_call_sids).not_to include(unrelated_call.external_call_ref)
   end
 
+  it 'uses one canonical claim fence for transitive native SIP fan-out branches' do
+    started_at = Time.current
+    root_ref = 'sipuni:janus:root-202'
+    middle_ref = 'sipuni:janus:branch-204'
+    call_session.update!(
+      provider: 'sipuni',
+      external_call_ref: root_ref,
+      started_at: started_at,
+      metadata: {
+        'metadata' => route_metadata.merge(
+          'logical_call_key' => 'native-sip:root-key',
+          'call_group_key' => 'native-sip:root-key',
+          'logical_call_group_ref' => root_ref
+        )
+      }
+    )
+    middle = create(
+      :telephony_call_session,
+      account: account,
+      conversation: call_session.conversation,
+      contact: call_session.contact,
+      inbox: inbox,
+      number_binding: call_session.number_binding,
+      provider: 'sipuni',
+      direction: 'inbound',
+      status: 'ringing',
+      external_call_ref: middle_ref,
+      started_at: started_at + 1.second,
+      metadata: {
+        'metadata' => route_metadata.merge(
+          'logical_call_key' => 'native-sip:root-key',
+          'call_group_key' => 'native-sip:root-key',
+          'logical_call_group_ref' => root_ref
+        )
+      }
+    )
+    leaf = create(
+      :telephony_call_session,
+      account: account,
+      conversation: call_session.conversation,
+      contact: call_session.contact,
+      inbox: inbox,
+      number_binding: call_session.number_binding,
+      provider: 'sipuni',
+      direction: 'inbound',
+      status: 'ringing',
+      external_call_ref: 'sipuni:janus:branch-206',
+      started_at: started_at + 2.seconds,
+      metadata: {
+        'metadata' => route_metadata.merge(
+          'logical_call_key' => 'native-sip:late-key',
+          'call_group_key' => 'native-sip:late-key',
+          'logical_call_group_ref' => middle_ref
+        )
+      }
+    )
+    broadcasts = []
+    allow(ActionCable.server).to receive(:broadcast) { |_token, event| broadcasts << event }
+
+    described_class.new(account: account, user: winner_user, call_ref: leaf.external_call_ref).perform
+
+    expect(call_session.reload.metadata.dig('operator_claim', 'user_id')).to eq(winner_user.id)
+    expect(leaf.reload.metadata.dig('operator_claim', 'user_id')).to eq(winner_user.id)
+    expect(middle.reload.status).to eq('ringing')
+    expect(broadcasts.last.dig(:data, :related_call_sids)).to contain_exactly(root_ref, middle_ref, leaf.external_call_ref)
+
+    expect do
+      described_class.new(account: account, user: other_user, call_ref: middle.external_call_ref).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('CALL_ALREADY_CLAIMED') }
+  end
+
   it 'does not mark another call_ref as related when neither call has an explicit logical key' do
     call_session.update!(
       from_number: '+770****0101',

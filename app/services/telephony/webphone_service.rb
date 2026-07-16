@@ -879,36 +879,49 @@ class Telephony::WebphoneService
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_dup : {}
     metadata['metadata'] = route_metadata.deep_merge(browser_sip_incoming_route_metadata_payload(context, decision))
     call_session.update!(metadata: metadata)
-    call_session.reload
+    normalize_browser_sip_logical_group!(call_session.reload)
   end
 
   def ensure_browser_sip_incoming_call_session!(context, decision)
-    existing = account.telephony_call_sessions.find_by(external_call_ref: context[:call_ref])
-    return existing if existing.present?
-
     conversation = browser_sip_incoming_decision_conversation(decision)
     binding = context.fetch(:binding)
     params = context.fetch(:params)
-    account.telephony_call_sessions.create!(
-      external_call_ref: context.fetch(:call_ref),
-      account: account,
-      inbox: context.fetch(:inbox),
-      number_binding: binding,
-      provider: context.fetch(:provider),
-      status: 'ringing',
-      direction: 'inbound',
-      from_number: browser_sip_incoming_from(params),
-      to_number: browser_sip_incoming_to(params, context.fetch(:inbox), binding),
-      started_at: Time.current,
-      last_event_at: Time.current,
-      conversation: conversation,
-      contact: conversation&.contact,
-      metadata: browser_sip_incoming_initial_metadata(context, decision)
-    )
+    account.telephony_call_sessions.find_or_create_by!(external_call_ref: context.fetch(:call_ref)) do |session|
+      session.assign_attributes(
+        inbox: context.fetch(:inbox),
+        number_binding: binding,
+        provider: context.fetch(:provider),
+        status: 'ringing',
+        direction: 'inbound',
+        from_number: browser_sip_incoming_from(params),
+        to_number: browser_sip_incoming_to(params, context.fetch(:inbox), binding),
+        started_at: Time.current,
+        last_event_at: Time.current,
+        conversation: conversation,
+        contact: conversation&.contact,
+        metadata: browser_sip_incoming_initial_metadata(context, decision)
+      )
+    end
   rescue ActiveRecord::RecordInvalid => e
     raise unless e.record&.errors&.of_kind?(:external_call_ref, :taken)
 
-    account.telephony_call_sessions.find_by!(external_call_ref: context[:call_ref])
+    account.telephony_call_sessions.find_by!(external_call_ref: context.fetch(:call_ref))
+  end
+
+  def normalize_browser_sip_logical_group!(call_session)
+    canonical_session = call_session.canonical_logical_call_session
+    canonical_key = canonical_session.logical_call_key.presence || call_session.logical_call_key
+    canonical_ref = canonical_session.external_call_ref
+    return call_session if canonical_key.blank? || canonical_ref.blank?
+
+    metadata = call_session.metadata.to_h.deep_dup.deep_stringify_keys
+    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_dup : {}
+    route_metadata['logical_call_key'] = canonical_key
+    route_metadata['call_group_key'] = canonical_key
+    route_metadata['logical_call_group_ref'] = canonical_ref
+    metadata['metadata'] = route_metadata
+    call_session.update!(metadata: metadata) if call_session.metadata.to_h.deep_stringify_keys != metadata
+    call_session.reload
   end
 
   def browser_sip_incoming_decision_conversation(decision)

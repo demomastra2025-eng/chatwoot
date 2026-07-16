@@ -225,6 +225,69 @@ describe('useCallsStore', () => {
     expect(store.calls).toEqual([]);
   });
 
+  it('removes every non-active scoped branch when the canonical native SIP call terminates', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'root-202',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 158,
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+      logicalCallKey: 'sipuni-inbound:canonical',
+    });
+    store.addCall({
+      callSid: 'branch-204',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 158,
+      sipProfileId: 82,
+      janusSessionKey: 'sip_profile:82',
+      logicalCallKey: 'sipuni-inbound:canonical',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'branch-204',
+      status: 'no_answer',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 158,
+      sipProfileId: 82,
+      janusSessionKey: 'sip_profile:82',
+      logicalCallKey: 'sipuni-inbound:canonical',
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
+  it('suppresses a late scoped branch after a canonical terminal event', () => {
+    const store = useCallsStore();
+
+    store.handleCallStatusChanged({
+      callSid: 'root-202',
+      status: 'completed',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 158,
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+      logicalCallKey: 'sipuni-inbound:canonical',
+    });
+    store.addCall({
+      callSid: 'late-branch-206',
+      status: 'ringing',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 158,
+      sipProfileId: 80,
+      janusSessionKey: 'sip_profile:80',
+      logicalCallKey: 'sipuni-inbound:canonical',
+    });
+
+    expect(store.calls).toEqual([]);
+  });
+
   it('keeps an active Janus SIP inbound card when a sibling branch terminates', () => {
     const store = useCallsStore();
 
@@ -253,6 +316,44 @@ describe('useCallsStore', () => {
       }),
     ]);
     expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('clears an active stale card when the whole logical call is terminal', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'canonical-fast-ref',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 158,
+      sipProfileId: 80,
+      janusSessionKey: 'sip_profile:80',
+      logicalCallKey: 'sipuni-inbound:fully-missed',
+    });
+    store.setCallActive('canonical-fast-ref', 'sipuni', {
+      inboxId: 158,
+      sipProfileId: 80,
+      janusSessionKey: 'sip_profile:80',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'physical-206-ref',
+      status: 'no_answer',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 158,
+      sipProfileId: 80,
+      janusSessionKey: 'sip_profile:80',
+      logicalCallKey: 'sipuni-inbound:fully-missed',
+      logicalCallTerminal: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(store.calls).toEqual([]);
+      expect(endClientCallMock).toHaveBeenCalledWith(
+        expect.objectContaining({ callSid: 'canonical-fast-ref' })
+      );
+    });
   });
 
   it('keeps separate Janus SIP inbound calls when logical call keys differ', () => {
@@ -837,7 +938,7 @@ describe('useCallsStore', () => {
     expect(store.calls).toHaveLength(2);
   });
 
-  it('keeps a related inbound branch from another SIP session on terminal status', () => {
+  it('clears related inbound branches from every SIP session on terminal status', () => {
     const store = useCallsStore();
     [
       ['terminal-related-sid-a', 51],
@@ -864,9 +965,7 @@ describe('useCallsStore', () => {
       status: 'completed',
     });
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({ callSid: 'terminal-related-sid-b' }),
-    ]);
+    expect(store.calls).toEqual([]);
   });
 
   it('keeps terminal suppression isolated by SIP session', () => {
@@ -992,7 +1091,7 @@ describe('useCallsStore', () => {
     expect(store.calls).toHaveLength(2);
   });
 
-  it('keeps an unscoped related claim isolated from another SIP session', async () => {
+  it('clears every logical branch for an unscoped related claim', async () => {
     const store = useCallsStore();
     [
       ['related-claim-sid-a', 51],
@@ -1018,9 +1117,7 @@ describe('useCallsStore', () => {
       7
     );
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({ callSid: 'related-claim-sid-b' }),
-    ]);
+    expect(store.calls).toEqual([]);
   });
 
   it('does not clear a newer active call through a stale scoped cleanup', async () => {

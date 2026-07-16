@@ -571,6 +571,8 @@ const displayNameFrom = value => {
 };
 
 const answeredByText = computed(() => {
+  if (isUnanswered.value || isFailed.value) return '';
+
   const acceptedByName = displayNameFrom(acceptedBy.value);
   if (acceptedByName) return acceptedByName;
   if (isOutbound.value) return '';

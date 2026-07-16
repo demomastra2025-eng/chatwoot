@@ -34,7 +34,7 @@ whatsapp_call_cleanup_job:
 
 # reconcile active native telephony sessions
 telephony_call_reconciliation_job:
-  cron: '*/5 * * * *'
+  cron: '* * * * *'
   class: 'Telephony::ReconcileCallSessionsJob'
   queue: low
 

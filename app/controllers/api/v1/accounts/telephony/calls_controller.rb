@@ -7,11 +7,15 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   before_action :authenticate_recording_request!, only: [:recording]
 
   def index
-    sessions = Current.account.telephony_call_sessions.includes(:contact, :conversation, :inbox, :number_binding, :agent_binding).recent
+    sessions = Current.account.telephony_call_sessions
     sessions = sessions.where(inbox_id: params[:inbox_id]) if params[:inbox_id].present?
-    sessions = sessions.where(status: params[:status]) if params[:status].present?
     sessions = sessions.where(direction: params[:direction]) if params[:direction].present?
-    sessions = sessions.limit(limit_param)
+    sessions = Telephony::LogicalCallHistoryQuery.new(
+      relation: sessions,
+      limit: limit_param,
+      status: params[:status]
+    ).call
+    sessions = preload_call_session_associations(sessions)
 
     render_payload(
       sessions.map(&:to_telephony_h),
@@ -90,6 +94,14 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   private
+
+  def preload_call_session_associations(sessions)
+    ActiveRecord::Associations::Preloader.new(
+      records: sessions,
+      associations: [:contact, :conversation, :inbox, :number_binding, :agent_binding]
+    ).call
+    sessions
+  end
 
   def release_outbound_browser_call_from_recording!
     return unless @call_session.direction == 'outbound'

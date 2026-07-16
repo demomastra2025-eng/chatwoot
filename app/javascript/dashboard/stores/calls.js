@@ -168,6 +168,16 @@ const sameNativeSipInboundBranch = (call, callData) => {
   return sameValue(callLogicalKey(call), callLogicalKey(callData));
 };
 
+const sameNativeSipLogicalCall = (call, callData) => {
+  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
+    return false;
+  }
+  if (call?.provider !== callData?.provider) return false;
+  if (!isInboundCall(call) || !isInboundCall(callData)) return false;
+
+  return sameValue(callLogicalKey(call), callLogicalKey(callData));
+};
+
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData) ||
   sameNativeSipInboundBranch(call, callData) ||
@@ -379,6 +389,7 @@ export const useCallsStore = defineStore('calls', {
       communicationThreadId,
       contactId,
       logicalCallKey,
+      logicalCallTerminal,
       numberRef,
       currentUserId,
     }) {
@@ -423,6 +434,7 @@ export const useCallsStore = defineStore('calls', {
           inboxId,
           sipProfileId,
           janusSessionKey,
+          forceLogicalTerminal: logicalCallTerminal === true,
         });
         return;
       }
@@ -667,7 +679,19 @@ export const useCallsStore = defineStore('calls', {
     },
 
     isRecentlyTerminalCall(callData) {
-      const keys = terminalSuppressionKeys(callData);
+      const keys = terminalSuppressionKeys(callData, {
+        includeUnscopedFallback: !callHasSessionScope(callData),
+      });
+      if (
+        callHasSessionScope(callData) &&
+        isNativeBrowserSipCall(callData) &&
+        isInboundCall(callData) &&
+        isPresent(callLogicalKey(callData))
+      ) {
+        keys.push(
+          `logical:${String(callData.provider)}:unscoped:${String(callLogicalKey(callData))}`
+        );
+      }
       if (!keys.length) return false;
 
       this.pruneTerminalCallKeys();
@@ -716,6 +740,7 @@ export const useCallsStore = defineStore('calls', {
         sipProfileId,
         janusSessionKey,
         cleanupClaimedBrowserCall: cleanupClaimed = false,
+        forceLogicalTerminal = false,
       } = {}
     ) {
       const target = {
@@ -731,10 +756,12 @@ export const useCallsStore = defineStore('calls', {
       const sidCandidates = this.calls.filter(call =>
         sameCallSid(call, target)
       );
-      if (sidCandidates.length > 1) return;
       const matchesLogicalBranch = call =>
-        sameNativeSipInboundBranch(call, target) &&
-        (!call.isActive || !isPresent(target.callSid));
+        sameNativeSipLogicalCall(call, target) &&
+        (forceLogicalTerminal || !call.isActive || sameCallSid(call, target));
+      if (sidCandidates.length > 1 && !this.calls.some(matchesLogicalBranch)) {
+        return;
+      }
       const directMatches = this.calls.filter(
         call => sameCallSid(call, target) || matchesLogicalBranch(call)
       );
@@ -862,7 +889,7 @@ export const useCallsStore = defineStore('calls', {
       const matchesClaimedCall = call =>
         scopeMatchesClaim(call) &&
         (sidMatchesClaim(call) ||
-          isRelatedNativeSipInbound(call, scopedCallData));
+          sameNativeSipLogicalCall(call, scopedCallData));
       const matchedClaimCalls = this.calls.filter(matchesClaimedCall);
       if (matchedClaimCalls.length > 1) {
         if (
@@ -873,7 +900,10 @@ export const useCallsStore = defineStore('calls', {
         ) {
           return;
         }
-        if (!claimHasSessionScope) {
+        if (
+          !claimHasSessionScope &&
+          !isPresent(callLogicalKey(scopedCallData))
+        ) {
           const scopeIdentities = matchedClaimCalls.map(call => {
             const parts = [
               callSessionKey(call),

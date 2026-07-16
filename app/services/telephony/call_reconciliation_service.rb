@@ -3,9 +3,11 @@ class Telephony::CallReconciliationService
   DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
   DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER = 5.minutes
   DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER = 1.hour
-  DEFAULT_NATIVE_SIP_PRE_ANSWER_STALE_AFTER = 5.minutes
+  DEFAULT_NATIVE_SIP_PRE_ANSWER_STALE_AFTER = 2.minutes
   DEFAULT_NATIVE_SIP_IN_PROGRESS_STALE_AFTER = 1.hour
   DEFAULT_NATIVE_SIP_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
+  FAILED_RECONCILIATION_RETRY_BASE_DELAY = 5.minutes
+  MAX_FAILED_RECONCILIATION_RETRIES = 5
 
   SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION = 'sipuni_local_outbound_reconciliation'.freeze
   SOURCE_SIPUNI_PROVIDER_RECONCILIATION = 'sipuni_provider_reconciliation'.freeze
@@ -76,9 +78,10 @@ class Telephony::CallReconciliationService
   end
 
   def perform
-    result = { checked: 0, updated: 0, missing: 0, errors: 0 }
+    result = { checked: 0, updated: 0, missing: 0, repaired: 0, errors: 0 }
 
     retry_failed_reconciliation_events!(result)
+    repair_invalid_unanswered_actors!(result)
     reconcile_missing_sipuni_local_outbound_sessions!(result)
     reconcile_missing_sipuni_provider_sessions!(result)
     reconcile_missing_native_sip_local_outbound_sessions!(result)
@@ -89,6 +92,17 @@ class Telephony::CallReconciliationService
   end
 
   private
+
+  def repair_invalid_unanswered_actors!(result)
+    scope = Telephony::CallSession.where(
+      status: %w[missed no_answer rejected busy cancelled]
+    ).where(answered_at: nil).where.not(answered_by: [nil, ''])
+    scope = scope.where(account_id: account.id) if account.present?
+    scope.find_each do |session|
+      session.update!(answered_by: nil)
+      result[:repaired] += 1
+    end
+  end
 
   JANUS_NATIVE_SIP_REF_SQL = NATIVE_SIP_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:janus:%'" }.join(' OR ').freeze
   NATIVE_SIP_LOCAL_REF_SQL = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:local:%'" }.join(' OR ').freeze
@@ -422,6 +436,9 @@ class Telephony::CallReconciliationService
     scope = Telephony::Event.where(status: 'failed')
     scope = scope.where(account_id: account.id) if account.present?
     scope.where("payload -> 'metadata' ->> 'source' IN (?)", RETRYABLE_RECONCILIATION_SOURCES).find_each do |event|
+      next unless failed_reconciliation_retry_due?(event)
+
+      record_failed_reconciliation_retry!(event)
       Telephony::EventsIngestionService.new(payload: event.payload).perform
       event.reload
       next unless event.failed?
@@ -434,12 +451,42 @@ class Telephony::CallReconciliationService
     end
   end
 
+  def failed_reconciliation_retry_due?(event)
+    retry_count = failed_reconciliation_retry_count(event)
+    return false if retry_count >= MAX_FAILED_RECONCILIATION_RETRIES
+    return true if retry_count.zero?
+
+    last_retry_at = event.payload.to_h.dig('metadata', 'reconciliation_last_retry_at')
+    return true if last_retry_at.blank?
+
+    now >= Time.zone.parse(last_retry_at) + failed_reconciliation_retry_delay(retry_count)
+  rescue ArgumentError, TypeError
+    true
+  end
+
+  def record_failed_reconciliation_retry!(event)
+    retry_payload = event.payload.to_h.deep_dup
+    retry_payload['metadata'] = retry_payload.fetch('metadata', {}).to_h
+    retry_payload['metadata']['reconciliation_retry_count'] = failed_reconciliation_retry_count(event) + 1
+    retry_payload['metadata']['reconciliation_last_retry_at'] = now.iso8601
+    event.update!(payload: retry_payload)
+  end
+
+  def failed_reconciliation_retry_count(event)
+    event.payload.to_h.dig('metadata', 'reconciliation_retry_count').to_i
+  end
+
+  def failed_reconciliation_retry_delay(retry_count)
+    FAILED_RECONCILIATION_RETRY_BASE_DELAY * (2**(retry_count - 1))
+  end
+
   def log_failed_reconciliation_retry(event, error = nil)
     Rails.logger.warn(
       event: 'telephony_call_reconciliation_retry_failed',
       event_id: event.id,
       account_id: event.account_id,
       call_ref: event.payload.to_h['call_ref'],
+      retry_count: failed_reconciliation_retry_count(event),
       error_class: error&.class&.name || 'Telephony::EventFailed',
       error_message: error&.message || event.error_message
     )

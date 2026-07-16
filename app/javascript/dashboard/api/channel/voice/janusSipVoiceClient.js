@@ -2716,22 +2716,23 @@ export class JanusSipVoiceClient extends EventTarget {
   }
 
   async rejectIncomingCall({ callRef = null, janusCallRef = null } = {}) {
-    if (
-      (callRef || janusCallRef) &&
-      !this.currentCallMatches({ callRef, janusCallRef })
-    ) {
-      return null;
-    }
+    const pendingIncomingCall = janusCallRef
+      ? this.currentCallMatches({ janusCallRef }) &&
+        this.pendingIncomingCallMatches({
+          callRef: janusCallRef,
+          strict: true,
+        })
+      : this.pendingIncomingCallMatches({ callRef });
+    if (!pendingIncomingCall) return null;
 
     this.clearOutboundSetupTimer();
-    if (!this.sipHandle || !this.pendingIncomingCall) {
+    if (!this.sipHandle) {
       this.stopMicrophonePrewarm();
       this.stopLocalTracks();
       return null;
     }
 
     this.sipHandle.send({ message: { request: 'decline' } });
-    this.sipHandle.hangup();
     this.stopRecordings({
       upload: false,
       reason: 'incoming_declined',

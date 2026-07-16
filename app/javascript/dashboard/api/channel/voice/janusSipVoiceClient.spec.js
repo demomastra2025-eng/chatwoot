@@ -1180,6 +1180,30 @@ describe('janusSipVoiceClient', () => {
     expect(client.pendingIncomingCall?.callId).toBe('janus-call-b');
   });
 
+  it('declines the only pending INVITE for a provider call scoped to this SIP profile', async () => {
+    const client = createJanusSipVoiceClient();
+    client.sipHandle = {
+      send: pluginSendMock,
+      hangup: pluginHangupMock,
+    };
+    client.pendingIncomingCall = {
+      callId: 'janus-call-a',
+      result: { call_id: 'janus-call-a' },
+    };
+    client.currentCallRef = 'janus-call-a';
+
+    const result = await client.rejectIncomingCall({
+      callRef: 'logical-provider-call-a',
+    });
+
+    expect(pluginSendMock).toHaveBeenCalledWith({
+      message: { request: 'decline' },
+    });
+    expect(pluginHangupMock).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({ declined: true }));
+    expect(client.pendingIncomingCall).toBeNull();
+  });
+
   it('accepts only the matching pending Janus incoming call when a call ref is provided', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,
