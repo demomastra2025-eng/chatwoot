@@ -611,6 +611,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       'direction' => 'inbound',
       'inbox_id' => sipuni_profile.inbox_id,
       'sip_profile_id' => sipuni_profile.id,
+      'logical_call_key' => route_metadata.fetch('logical_call_key'),
+      'logicalCallKey' => route_metadata.fetch('logical_call_key'),
       'browser_join_supported' => true,
       'route_action' => 'operator'
     )

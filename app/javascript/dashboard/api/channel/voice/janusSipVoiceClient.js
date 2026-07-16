@@ -22,6 +22,7 @@ const createCallStageEvent = detail =>
   new CustomEvent('call:stage', { detail });
 
 const WEBPHONE_PRESENCE_REFRESH_INTERVAL_MS = 30_000;
+const WEBPHONE_JANUS_KEEPALIVE_INTERVAL_MS = 15_000;
 const WEBPHONE_REGISTRATION_TIMEOUT_MS = 8_000;
 const WEBPHONE_PRESENCE_CONFIRMATION_TIMEOUT_MS = 15_000;
 const WEBPHONE_INCOMING_CALL_WAIT_MS = 20_000;
@@ -599,6 +600,7 @@ export class JanusSipVoiceClient extends EventTarget {
       const janus = new Janus({
         server: sessionConfig.janusServer,
         iceServers: sessionConfig.iceServers,
+        keepAlivePeriod: WEBPHONE_JANUS_KEEPALIVE_INTERVAL_MS,
         success: () => {
           if (generation !== this.janusGeneration) {
             janus?.destroy?.();

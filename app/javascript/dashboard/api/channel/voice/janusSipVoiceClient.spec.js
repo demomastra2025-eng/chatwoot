@@ -1950,6 +1950,14 @@ describe('janusSipVoiceClient', () => {
     expect(attachMock).not.toHaveBeenCalled();
   });
 
+  it('uses an explicit Janus keepalive interval below the gateway timeout', async () => {
+    const client = createJanusSipVoiceClient();
+
+    await client.initializeDevice(sipuniSession, { inboxId: 4769 });
+
+    expect(janusState.instances.at(-1)?.options.keepAlivePeriod).toBe(15_000);
+  });
+
   it('does not recover the Janus SIP device during intentional destroy', async () => {
     const client = createJanusSipVoiceClient();
     await client.initializeDevice(sipuniSession, {

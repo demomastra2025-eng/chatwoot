@@ -570,6 +570,7 @@ describe('useCallSession', () => {
       operator_candidates: [{ sip_profile_id: 42, user_id: 179 }],
       operator_internal_extension: '207',
       sip_profile_id: 42,
+      logical_call_key: 'janus-inbound:shared-sipuni-call',
     });
     mountUseCallSession();
     await Promise.resolve();
@@ -607,8 +608,36 @@ describe('useCallSession', () => {
         fromNumber: '+77017450000',
         operatorInternalExtension: '207',
         sipProfileId: 42,
+        logicalCallKey: 'janus-inbound:shared-sipuni-call',
       }),
     ]);
+  });
+
+  it('only marks a native incoming call actionable when its local Janus INVITE exists', () => {
+    const callSession = mountUseCallSession();
+    supportsBrowserCallingMock.mockReturnValue(true);
+    hasPendingIncomingCallMock
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const call = {
+      callSid: 'sipuni:janus:78:local-incoming',
+      provider: 'sipuni',
+      inboxId: 194,
+      sipProfileId: 78,
+      janusSessionKey: 'sip_profile:78',
+      janusCallRef: 'local-incoming',
+      callDirection: 'inbound',
+    };
+
+    expect(callSession.isIncomingCallActionableInBrowser(call)).toBe(false);
+    expect(callSession.isIncomingCallActionableInBrowser(call)).toBe(true);
+    expect(hasPendingIncomingCallMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        provider: 'sipuni',
+        sipProfileId: 78,
+        janusCallRef: 'local-incoming',
+      })
+    );
   });
 
   it('destroys a stale browser SIP device when incoming reporting is rejected', async () => {

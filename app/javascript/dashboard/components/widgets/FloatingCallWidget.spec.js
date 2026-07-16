@@ -7,6 +7,9 @@ const mockSession = vi.hoisted(() => ({
   hasActiveCall: false,
   isJoining: false,
   canHandleCallInBrowser: vi.fn(call => call?.browserJoinSupported !== false),
+  isIncomingCallActionableInBrowser: vi.fn(
+    call => call?.callDirection === 'inbound'
+  ),
   joinCall: vi.fn(),
   endCall: vi.fn(),
   rejectIncomingCall: vi.fn(),
@@ -132,6 +135,8 @@ vi.mock('dashboard/composables/useCallSession', async () => {
       hasActiveCall: computed(() => mockSession.hasActiveCall),
       isJoining: computed(() => mockSession.isJoining),
       canHandleCallInBrowser: mockSession.canHandleCallInBrowser,
+      isIncomingCallActionableInBrowser:
+        mockSession.isIncomingCallActionableInBrowser,
       joinCall: mockSession.joinCall,
       endCall: mockSession.endCall,
       rejectIncomingCall: mockSession.rejectIncomingCall,
@@ -171,6 +176,9 @@ describe('FloatingCallWidget', () => {
     mockSession.canHandleCallInBrowser.mockImplementation(
       call => call?.browserJoinSupported !== false
     );
+    mockSession.isIncomingCallActionableInBrowser.mockImplementation(
+      call => call?.callDirection === 'inbound'
+    );
     mockSession.joinCall.mockReset();
     mockSession.endCall.mockReset();
     mockSession.rejectIncomingCall.mockReset();
@@ -206,6 +214,81 @@ describe('FloatingCallWidget', () => {
 
     expect(ringtoneState.sourceId).toBe('voice');
     expect(ringtoneState.isActive.value).toBe(true);
+    wrapper.unmount();
+  });
+
+  it('shows one logical inbound call and selects the local Janus branch', async () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:branch-202',
+        provider: 'sipuni',
+        inboxId: 194,
+        sipProfileId: 72,
+        janusSessionKey: 'sip_profile:72',
+        janusCallRef: 'branch-202',
+        logicalCallKey: 'janus-inbound:shared',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+      {
+        callSid: 'sipuni:branch-207',
+        provider: 'sipuni',
+        inboxId: 194,
+        sipProfileId: 78,
+        janusSessionKey: 'sip_profile:78',
+        janusCallRef: 'branch-207',
+        logicalCallKey: 'janus-inbound:shared',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+    ];
+    mockSession.isIncomingCallActionableInBrowser.mockImplementation(
+      call => call?.sipProfileId === 78
+    );
+    storeGetters.getConversationById.mockReturnValue({ inbox_id: 194 });
+    storeGetters.getInbox.mockReturnValue({
+      id: 194,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+    mockSession.joinCall.mockResolvedValue({ joined: true });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.findAll('[aria-label="Call"]')).toHaveLength(1);
+    expect(ringtoneState.isActive.value).toBe(true);
+    await wrapper.get('[aria-label="Call"]').trigger('click');
+
+    expect(mockSession.joinCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callSid: 'sipuni:branch-207',
+        sipProfileId: 78,
+        janusCallRef: 'branch-207',
+        janusSessionKey: 'sip_profile:78',
+      })
+    );
+    wrapper.unmount();
+  });
+
+  it('keeps an informational inbound card silent and without call controls', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:remote-branch',
+        provider: 'sipuni',
+        inboxId: 194,
+        logicalCallKey: 'janus-inbound:remote',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+    ];
+    mockSession.isIncomingCallActionableInBrowser.mockReturnValue(false);
+
+    const wrapper = mountComponent();
+
+    expect(ringtoneState.isActive.value).toBe(false);
+    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Chat"]').exists()).toBe(true);
     wrapper.unmount();
   });
 

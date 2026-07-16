@@ -900,6 +900,11 @@ export function useCallSession() {
         callDirection: call.call_direction || call.direction || 'inbound',
         contactId: call.contact_id,
         senderId: call.sender_id,
+        logicalCallKey:
+          call.logical_call_key ||
+          call.logicalCallKey ||
+          call.call_group_key ||
+          call.callGroupKey,
         fromNumber: call.from_number || call.fromNumber || detail.from,
         toNumber: call.to_number || call.toNumber,
         caller: call.caller,
@@ -1823,6 +1828,18 @@ export function useCallSession() {
     });
   };
 
+  const isIncomingCallActionableInBrowser = call => {
+    const provider = resolveCallProvider(call);
+    const direction = call?.callDirection || call?.call_direction;
+    if (!provider || isOutboundCallDirection(direction)) return false;
+    if (!canHandleCallInBrowser(call)) return false;
+    if (!NATIVE_BROWSER_SIP_PROVIDERS.has(provider)) return true;
+
+    return WebphoneClient.hasPendingIncomingCall(
+      janusWebphoneCallScope({ ...call, provider })
+    );
+  };
+
   return {
     activeCall,
     incomingCalls,
@@ -1830,6 +1847,7 @@ export function useCallSession() {
     isJoining,
     formattedCallDuration,
     canHandleCallInBrowser,
+    isIncomingCallActionableInBrowser,
     joinCall,
     endCall,
     rejectIncomingCall,

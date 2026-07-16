@@ -26,6 +26,7 @@ const {
   hasActiveCall,
   isJoining,
   canHandleCallInBrowser,
+  isIncomingCallActionableInBrowser,
   joinCall,
   endCall: endCallSession,
   rejectIncomingCall,
@@ -52,6 +53,43 @@ const ACTIVE_CALL_STATUSES = new Set([
 ]);
 const hiddenCallSids = ref(new Set());
 const callSidFor = call => (call?.callSid ? String(call.callSid) : '');
+const logicalCallKeyFor = call =>
+  call?.logicalCallKey ||
+  call?.logical_call_key ||
+  call?.callGroupKey ||
+  call?.call_group_key;
+const incomingPresentationKey = call => {
+  const logicalCallKey = logicalCallKeyFor(call);
+  if (!logicalCallKey || isOutboundCall(call) || call?.isActive) return null;
+
+  const provider = call?.provider || 'unknown';
+  const inboxId = call?.inboxId || call?.inbox_id || 'unknown';
+  return `${provider}:${inboxId}:${logicalCallKey}`;
+};
+const preferActionableIncomingBranch = (current, candidate) => {
+  if (!current) return candidate;
+  if (
+    isIncomingCallActionableInBrowser(candidate) &&
+    !isIncomingCallActionableInBrowser(current)
+  ) {
+    return candidate;
+  }
+
+  return current;
+};
+const deduplicateVisibleCalls = calls => {
+  const groupedCalls = new Map();
+
+  calls.forEach(call => {
+    const key = incomingPresentationKey(call) || `call:${callSidFor(call)}`;
+    groupedCalls.set(
+      key,
+      preferActionableIncomingBranch(groupedCalls.get(key), call)
+    );
+  });
+
+  return [...groupedCalls.values()];
+};
 const elapsedNowMs = ref(Date.now());
 const callFirstSeenAtMs = ref({});
 let elapsedTimerId = null;
@@ -65,13 +103,21 @@ const isCallHidden = call => {
   return callSid && hiddenCallSids.value.has(callSid);
 };
 const visibleCalls = computed(() =>
-  (hasActiveCall.value
-    ? [activeCall.value, ...incomingCalls.value].filter(Boolean)
-    : incomingCalls.value
-  ).filter(call => !isCallHidden(call))
+  deduplicateVisibleCalls(
+    (hasActiveCall.value
+      ? [activeCall.value, ...incomingCalls.value].filter(Boolean)
+      : incomingCalls.value
+    ).filter(call => !isCallHidden(call))
+  )
 );
 const shouldPlayIncomingCallRingtone = computed(
-  () => !isJoining.value && visibleCalls.value.some(isVoiceCallRingtoneEligible)
+  () =>
+    !isJoining.value &&
+    visibleCalls.value.some(
+      call =>
+        isVoiceCallRingtoneEligible(call) &&
+        isIncomingCallActionableInBrowser(call)
+    )
 );
 
 useIncomingCallRingtone('voice', shouldPlayIncomingCallRingtone);
@@ -630,6 +676,9 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
     provider: call.provider || getCallInfo(call).provider,
     callDirection: call.callDirection,
     toNumber: call.toNumber,
+    sipProfileId: call.sipProfileId || call.sip_profile_id,
+    janusCallRef: call.janusCallRef || call.janus_call_ref,
+    janusSessionKey: call.janusSessionKey || call.janus_session_key,
   });
 
   const callWithCommunicationThread = result
@@ -714,7 +763,9 @@ onUnmounted(stopElapsedTimer);
               class="inline-flex rounded-full"
               :class="{
                 'ring-2 ring-n-teal-9': callIsLiveActive(call),
-                'animate-pulse ring-2 ring-n-teal-9': !callIsLiveActive(call),
+                'animate-pulse ring-2 ring-n-teal-9':
+                  !callIsLiveActive(call) &&
+                  isIncomingCallActionableInBrowser(call),
               }"
             >
               <Avatar
@@ -781,7 +832,8 @@ onUnmounted(stopElapsedTimer);
                 v-if="
                   !callIsLiveActive(call) &&
                   !isOutboundCall(call) &&
-                  browserJoinSupportedForCall(call)
+                  browserJoinSupportedForCall(call) &&
+                  isIncomingCallActionableInBrowser(call)
                 "
                 type="button"
                 class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-teal-9 text-white hover:bg-n-teal-10 shadow-sm"
@@ -793,7 +845,11 @@ onUnmounted(stopElapsedTimer);
                 <i class="text-base i-ph-phone-bold" />
               </button>
               <button
-                v-if="!callIsLiveActive(call)"
+                v-if="
+                  !callIsLiveActive(call) &&
+                  (isOutboundCall(call) ||
+                    isIncomingCallActionableInBrowser(call))
+                "
                 type="button"
                 class="inline-flex items-center justify-center w-10 h-10 rounded-full transition-colors bg-n-ruby-9 text-white hover:bg-n-ruby-10 shadow-sm"
                 :title="callCancelLabel(call)"

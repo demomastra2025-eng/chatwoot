@@ -1,3 +1,4 @@
+require 'digest'
 require 'uri'
 
 class Telephony::WebphoneService
@@ -83,10 +84,7 @@ class Telephony::WebphoneService
       )
     end
 
-    decision = perform_browser_sip_incoming_route(context)
-    call_session = ensure_browser_sip_incoming_call_session!(context, decision)
-    call_session = persist_browser_sip_incoming_metadata!(call_session, context, decision)
-    call_session = attach_browser_sip_ai_voice!(call_session, decision, context[:profile], params)
+    decision, call_session = process_browser_sip_incoming(context, params)
 
     browser_sip_incoming_payload(call_session, decision, context[:profile])
   end
@@ -705,6 +703,45 @@ class Telephony::WebphoneService
     ).perform
   end
 
+  def with_browser_sip_incoming_group_lock(context)
+    lock_id = browser_sip_incoming_group_lock_id(context)
+
+    Telephony::CallSession.transaction do
+      ActiveRecord::Base.connection.execute(
+        "SELECT pg_advisory_xact_lock(#{lock_id})"
+      )
+      yield
+    end
+  end
+
+  def process_browser_sip_incoming(context, params)
+    with_browser_sip_incoming_group_lock(context) do
+      decision = perform_browser_sip_incoming_route(context)
+      session = ensure_browser_sip_incoming_call_session!(context, decision)
+      session = persist_browser_sip_incoming_metadata!(session, context, decision)
+      session = attach_browser_sip_ai_voice!(session, decision, context[:profile], params)
+      [decision, session]
+    end
+  end
+
+  def browser_sip_incoming_group_lock_id(context)
+    params = context.fetch(:params)
+    identity = [
+      account.id,
+      context.fetch(:inbox).id,
+      context.fetch(:binding).id,
+      context.fetch(:provider),
+      browser_sip_incoming_from(params).to_s.gsub(/\D/, ''),
+      browser_sip_incoming_to(
+        params,
+        context.fetch(:inbox),
+        context.fetch(:binding)
+      ).to_s.gsub(/\D/, '')
+    ].join(':')
+
+    Digest::SHA256.digest(identity).unpack1('q>')
+  end
+
   def browser_sip_incoming_profile!(user, inbox, params)
     profile_id = params_value(params, 'sip_profile_id', 'sipProfileId')
     if profile_id.present?
@@ -940,6 +977,10 @@ class Telephony::WebphoneService
       sender_id: call_session.contact_id,
       from_number: call_session.from_number,
       to_number: call_session.to_number,
+      logical_call_key: route_metadata['logical_call_key'],
+      logicalCallKey: route_metadata['logical_call_key'],
+      call_group_key: route_metadata['call_group_key'],
+      callGroupKey: route_metadata['call_group_key'],
       sip_profile_id: sip_profile_id,
       sipProfileId: sip_profile_id,
       janus_call_ref: route_metadata['janus_call_ref'],
