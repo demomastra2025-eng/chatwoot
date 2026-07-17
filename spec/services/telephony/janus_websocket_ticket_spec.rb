@@ -87,6 +87,13 @@ RSpec.describe Telephony::JanusWebsocketTicket do
     it 'rejects malformed tickets' do
       expect(described_class.valid?(ticket: 'not-signed', origin: origin, path: path)).to be(false)
     end
+
+    it 'accepts a signed ticket that is still URL-encoded by the reverse proxy' do
+      encoded_ticket = ticket.sub('--', '%2D-')
+
+      expect(encoded_ticket).not_to eq(ticket)
+      expect(described_class.valid?(ticket: encoded_ticket, origin: origin, path: path)).to be(true)
+    end
   end
 
   describe '.authorize?' do

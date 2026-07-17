@@ -38,6 +38,14 @@ RSpec.describe 'Internal Janus WebSocket authorization', type: :request do
     expect(response).to have_http_status(:no_content)
   end
 
+  it 'authorizes a signed ticket that is still URL-encoded by the reverse proxy' do
+    encoded_ticket = ticket.sub('--', '%2D-')
+
+    get '/internal/voice/janus-ws/authorize', headers: headers.merge('X-Janus-Ticket' => encoded_ticket)
+
+    expect(response).to have_http_status(:no_content)
+  end
+
   it 'rejects replay of an already consumed ticket' do
     get '/internal/voice/janus-ws/authorize', headers: headers
     expect(response).to have_http_status(:no_content)

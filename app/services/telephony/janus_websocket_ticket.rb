@@ -61,10 +61,23 @@ class Telephony::JanusWebsocketTicket
     end
 
     def verified_payload(ticket)
-      payload = verifier.verified(ticket.to_s, purpose: PURPOSE)
-      payload.is_a?(Hash) ? payload.with_indifferent_access : nil
+      verification_candidates(ticket).each do |candidate|
+        payload = verifier.verified(candidate, purpose: PURPOSE)
+        return payload.with_indifferent_access if payload.is_a?(Hash)
+      end
+
+      nil
     rescue ActiveSupport::MessageVerifier::InvalidSignature
       nil
+    end
+
+    def verification_candidates(ticket)
+      raw_ticket = ticket.to_s
+      decoded_ticket = URI.decode_www_form_component(raw_ticket)
+
+      [raw_ticket, decoded_ticket].uniq
+    rescue ArgumentError
+      [raw_ticket]
     end
 
     def active_profile?(payload)
