@@ -37,15 +37,15 @@ class Reminders::ConversationResolver
     inbox = reminder.target_inbox
     contact = reminder.target_contact
 
-    raise ArgumentError, 'Touch target inbox is missing' if inbox.blank?
-    raise ArgumentError, 'Touch target contact is missing' if contact.blank?
+    raise Reminders::UndeliverableTargetError, 'Touch target inbox is missing' if inbox.blank?
+    raise Reminders::UndeliverableTargetError, 'Touch target contact is missing' if contact.blank?
 
     contact_inbox = Outbound::ContactInboxResolver.new(
       inbox: inbox,
       contact: contact
     ).perform
 
-    raise ArgumentError, 'Touch target is not deliverable for this inbox' if contact_inbox.blank?
+    raise Reminders::UndeliverableTargetError, 'Touch target is not deliverable for this inbox' if contact_inbox.blank?
 
     contact_inbox
   end

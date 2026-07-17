@@ -2,6 +2,7 @@ class Reminders::ExecuteReminderJob < ApplicationJob
   queue_as :reminders
 
   discard_on ActiveRecord::RecordNotFound
+  discard_on Reminders::UndeliverableTargetError
 
   def perform(reminder_id, processing_claim = nil)
     reminder = Reminder.find(reminder_id)

@@ -68,5 +68,17 @@ RSpec.describe Reminders::ExecuteReminderJob do
       expect(touch.reload).to be_cancelled
       expect(touch.processing_started_at).to be_nil
     end
+
+    it 'discards an undeliverable target instead of retrying the job' do
+      touch = create(:reminder, status: :processing, processing_started_at: 1.minute.ago)
+      service = instance_double(Reminders::ExecuteService)
+      allow(Reminders::ExecuteService).to receive(:new).and_return(service)
+      allow(service).to receive(:perform).and_raise(
+        Reminders::UndeliverableTargetError,
+        'Touch target is not deliverable for this inbox'
+      )
+
+      expect { described_class.perform_now(touch.id) }.not_to raise_error
+    end
   end
 end

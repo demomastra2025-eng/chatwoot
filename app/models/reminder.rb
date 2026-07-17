@@ -646,12 +646,17 @@ class Reminder < ApplicationRecord
   def route_resolved?
     return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
 
-    target_inbox_id.present? && (
-      target_contact_inbox_id.present? ||
-      target_contact_id.present? ||
-      target_conversation_id.present? ||
-      conversation_id.present?
-    )
+    return false if target_inbox_id.blank?
+    return true if target_contact_inbox_id.present?
+    return true if active_conversation_target?
+    return false if target_contact.blank?
+
+    Campaigns::TargetResolver.new(inbox: target_inbox, contact: target_contact).resolve.present?
+  end
+
+  def active_conversation_target?
+    (target_conversation.present? && !target_conversation.resolved?) ||
+      (conversation.present? && !conversation.resolved?)
   end
 
   def sync_account_from_associations
@@ -751,6 +756,7 @@ class Reminder < ApplicationRecord
       attachments: attachments,
       scheduled_at: scheduled_at
     )
+    Campaigns::TemplateParamsValidator.validate!(inbox: target_inbox, template_params: template_params) if channel_template?
   rescue ArgumentError => e
     errors.add(:base, e.message)
   end
@@ -813,9 +819,19 @@ class Reminder < ApplicationRecord
 
   def validate_open_duplicate_absence
     return if fingerprint.blank? || account_id.blank?
-    return unless open_duplicate_scope.exists?
+    return unless OPEN_STATUSES.include?(status)
 
-    errors.add(:base, 'An open touch with the same content already exists')
+    with_open_duplicate_lock do
+      next unless open_duplicate_scope.exists?
+
+      errors.add(:base, 'An open touch with the same content already exists')
+    end
+  end
+
+  def with_open_duplicate_lock
+    lock_key = Digest::SHA256.hexdigest("reminder-open-duplicate:#{account_id}:#{fingerprint}").first(16).to_i(16) % ((2**63) - 1)
+    self.class.connection.execute("SELECT pg_advisory_xact_lock(#{lock_key})")
+    yield
   end
 
   # rubocop:disable Style/RaiseArgs

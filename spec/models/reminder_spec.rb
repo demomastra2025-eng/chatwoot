@@ -510,6 +510,41 @@ RSpec.describe Reminder do
       expect(reminder).not_to be_valid
       expect(reminder.errors[:base]).to include(Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
     end
+
+    it 'rejects channel templates with missing required parameters before execution' do
+      account = create(:account)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_channel.update!(
+        message_templates: [
+          {
+            'name' => 'ticket_status_updated',
+            'status' => 'approved',
+            'category' => 'MARKETING',
+            'language' => 'en',
+            'components' => [{ 'type' => 'BODY', 'text' => 'Hi {{name}}, ticket {{ticket_id}} is updated' }]
+          }
+        ]
+      )
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: contact, contact_inbox: contact_inbox)
+      reminder = build(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        content_kind: :channel_template,
+        body: nil,
+        template_params: {
+          name: 'ticket_status_updated',
+          language: 'en',
+          processed_params: { body: { name: 'John' } }
+        }
+      )
+
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:base]).to include('Template params missing required values: body.ticket_id')
+    end
   end
 
   describe 'auto-cancel defaults' do
@@ -540,6 +575,33 @@ RSpec.describe Reminder do
       reminder.validate
 
       expect(reminder).to be_draft
+    end
+
+    it 'does not treat a contact without a channel route as resolved' do
+      account = create(:account)
+      creator = create(:user, account: account, role: :administrator)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account, phone_number: nil, email: nil)
+      reminder = described_class.new(
+        account: account,
+        creator: creator,
+        owner: creator,
+        action_type: :send_message,
+        content_kind: :free_text,
+        text_mode: :static,
+        timing_mode: :absolute,
+        target_inbox: whatsapp_inbox,
+        target_contact: contact,
+        scheduled_at: 1.hour.from_now,
+        timezone: 'UTC',
+        body: 'Unroutable touch'
+      )
+
+      reminder.validate
+
+      expect(reminder).to be_draft
+      expect(reminder).not_to be_ready_for_pending
     end
 
     it 'keeps agent touches pending when route and instructions are ready' do
