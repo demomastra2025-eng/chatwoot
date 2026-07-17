@@ -40,6 +40,7 @@
 #
 
 class Message < ApplicationRecord
+  CONVERSATION_UNREAD_COUNT_UNSET = Object.new.freeze
   searchkick callbacks: false if ChatwootApp.advanced_search_allowed?
 
   include MessageFilterHelpers
@@ -148,12 +149,12 @@ class Message < ApplicationRecord
     @token ||= inbox.channel.try(:page_access_token)
   end
 
-  def push_event_data(include_communication_thread: true)
+  def push_event_data(include_communication_thread: true, conversation_unread_count: CONVERSATION_UNREAD_COUNT_UNSET)
     data = attributes.symbolize_keys.merge(
       created_at: created_at.to_i,
       message_type: message_type_before_type_cast,
       conversation_id: conversation&.display_id,
-      conversation: conversation.present? ? conversation_push_event_data : nil
+      conversation: conversation.present? ? conversation_push_event_data(conversation_unread_count) : nil
     )
     data.merge!(communication_thread_push_event_data) if include_communication_thread && communication_threads_enabled?
     data[:echo_id] = echo_id if echo_id.present?
@@ -174,12 +175,18 @@ class Message < ApplicationRecord
     }
   end
 
-  def conversation_push_event_data
+  def conversation_push_event_data(preloaded_unread_count = CONVERSATION_UNREAD_COUNT_UNSET)
+    unread_count = if preloaded_unread_count.equal?(CONVERSATION_UNREAD_COUNT_UNSET)
+                     conversation.unread_incoming_messages_count
+                   else
+                     preloaded_unread_count
+                   end
+
     {
       assignee_id: conversation.assignee_id,
       campaign_id: conversation.campaign_id,
       campaign: campaign_push_event_data,
-      unread_count: conversation.unread_incoming_messages_count,
+      unread_count: unread_count,
       last_activity_at: conversation.last_activity_at.to_i,
       contact_inbox: { source_id: conversation.contact_inbox.source_id }
     }

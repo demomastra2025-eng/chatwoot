@@ -611,6 +611,61 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response.parsed_body.dig('data', 'payload').pluck('id')).to include(conversation.reload.communication_thread.display_id)
     end
 
+    it 'batch-loads message and label data while preserving the unified payload' do
+      inbox = create(:inbox, account: account, enable_auto_assignment: false)
+      create(:inbox_member, user: agent, inbox: inbox)
+      conversations = Array.new(3) do |index|
+        contact = create(:contact, account: account)
+        contact.update_labels("contact_#{index}")
+        contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+        conversation = create(
+          :conversation,
+          account: account,
+          inbox: inbox,
+          contact: contact,
+          contact_inbox: contact_inbox,
+          agent_last_seen_at: 2.hours.ago
+        )
+        conversation.update_labels("conversation_#{index}")
+        create(
+          :message,
+          account: account,
+          inbox: inbox,
+          conversation: conversation,
+          message_type: :incoming,
+          created_at: 1.hour.ago
+        )
+        conversation.reload.refresh_communication_thread!
+        conversation
+      end
+
+      sql_queries = []
+      subscriber = lambda do |*, payload|
+        next if payload[:name] == 'SCHEMA' || payload[:cached]
+
+        sql_queries << payload[:sql].to_s.squish
+      end
+      ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+        get "/api/v1/accounts/#{account.id}/communication_threads",
+            params: { status: 'all', inbox_id: inbox.id, include_meta: false },
+            headers: headers,
+            as: :json
+      end
+
+      expect(response).to have_http_status(:success)
+      payload = response.parsed_body.dig('data', 'payload')
+      conversations.each_with_index do |conversation, index|
+        thread_payload = payload.find { |thread| thread['id'] == conversation.communication_thread.display_id }
+        expect(thread_payload['labels']).to contain_exactly("contact_#{index}", "conversation_#{index}")
+        expect(thread_payload.dig('messages', 0, 'conversation', 'unread_count')).to eq(1)
+      end
+
+      repeated_serialization_queries = sql_queries.grep(
+        /FROM "(?:communication_threads|contacts)" WHERE .+\."id" =|SELECT COUNT\(\*\) FROM "messages"|FROM "taggings".+"taggable_id" =/
+      )
+      expect(repeated_serialization_queries).to be_empty
+    end
+
     it 'rejects invalid list parameters instead of coercing them into SQL' do
       create(:conversation, account: account)
 

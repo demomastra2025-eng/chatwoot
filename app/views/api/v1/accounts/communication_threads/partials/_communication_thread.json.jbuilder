@@ -2,6 +2,16 @@ links = local_assigns.fetch(:links, [])
 channels = local_assigns.fetch(:channels, [])
 last_public_message = local_assigns[:last_public_message]
 last_non_activity_message = local_assigns[:last_non_activity_message]
+conversation_unread_counts = local_assigns[:conversation_unread_counts]
+message_push_data = lambda do |message|
+  next if message.blank?
+
+  options = {}
+  if conversation_unread_counts
+    options[:conversation_unread_count] = conversation_unread_counts.fetch(message.conversation_id, 0)
+  end
+  message.push_event_data(**options)
+end
 linked_conversations = links.filter_map(&:conversation)
 agent_last_seen_values = linked_conversations.map(&:agent_last_seen_at)
 assignee_last_seen_values = linked_conversations.map(&:assignee_last_seen_at)
@@ -41,15 +51,18 @@ json.id communication_thread.display_id
 json.account_id communication_thread.account_id
 json.contact_id communication_thread.contact_id
 json.inbox_id nil
-json.messages(last_public_message.present? ? [last_public_message.push_event_data] : [])
-json.last_non_activity_message last_non_activity_message&.push_event_data
+json.messages(last_public_message.present? ? [message_push_data.call(last_public_message)] : [])
+json.last_non_activity_message message_push_data.call(last_non_activity_message)
 json.conversation_ids(links.map { |link| link.conversation.display_id })
 json.channels do
   json.array! channels do |channel|
     json.partial! 'api/v1/accounts/communication_threads/partials/channel', formats: [:json], channel: channel
   end
 end
-json.labels Labels::UnifiedAssignmentService.union_for(contact: communication_thread.contact, conversations: linked_conversations)
+json.labels(local_assigns[:labels] || Labels::UnifiedAssignmentService.union_for(
+  contact: communication_thread.contact,
+  conversations: linked_conversations
+))
 json.custom_attributes(thread_pinned ? { pinned: true } : {})
 json.crm_deal_stages((local_assigns[:crm_deal_stages_by_communication_thread_id] || {}).fetch(communication_thread.id, []))
 json.scheduling_appointment_statuses(

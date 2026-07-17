@@ -371,12 +371,15 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def preload_accessible_links(communication_threads, include_unlinked: false)
+    @communication_threads_by_id = communication_threads.index_by(&:id)
     thread_ids = communication_threads.map(&:id)
     @accessible_links_by_thread_id = preloaded_accessible_links(thread_ids)
     preload_channel_message_state
     preload_channel_capabilities(include_unlinked)
     preload_last_public_messages_by_thread
     preload_last_non_activity_messages_by_thread
+    preload_list_message_associations
+    preload_thread_labels(communication_threads)
     preload_directional_message_timestamps_by_thread
     preload_scheduling_appointment_statuses(communication_threads)
   end
@@ -397,6 +400,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @channel_capabilities_by_thread_id = @accessible_links_by_thread_id.transform_values do |links|
       CommunicationThreads::ChannelCapabilitiesBuilder.new(
         links: links,
+        contact: @communication_threads_by_id[links.first.communication_thread_id]&.contact,
         available_inboxes: accessible_inboxes,
         include_unlinked: include_unlinked,
         preferred_status: preferred_channel_status,
@@ -473,6 +477,69 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def preload_last_non_activity_messages_by_thread
     @last_non_activity_messages_by_thread_id = preload_last_messages_by_thread(non_activity: true)
+  end
+
+  def preload_list_message_associations
+    messages = [@last_public_messages_by_thread_id, @last_non_activity_messages_by_thread_id]
+               .flat_map(&:values)
+               .compact
+    return if messages.empty?
+
+    ActiveRecord::Associations::Preloader.new(
+      records: messages,
+      associations: [
+        { attachments: { file_attachment: :blob } },
+        :sender,
+        { inbox: :channel },
+        { conversation: [{ contact_inbox: :channel_profile }, :communication_thread, :campaign] }
+      ]
+    ).call
+    preload_list_message_senders(messages)
+  end
+
+  def preload_list_message_senders(messages)
+    contact_senders = messages.filter_map { |message| message.sender if message.sender.is_a?(Contact) }.uniq
+    user_senders = messages.filter_map { |message| message.sender if message.sender.is_a?(User) }.uniq
+    if contact_senders.any?
+      ActiveRecord::Associations::Preloader.new(
+        records: contact_senders,
+        associations: [:contact_channel_profiles, { avatar_attachment: :blob }, { owner: { avatar_attachment: :blob } }]
+      ).call
+    end
+    return unless user_senders.any?
+
+    ActiveRecord::Associations::Preloader.new(
+      records: user_senders,
+      associations: { avatar_attachment: :blob }
+    ).call
+  end
+
+  def preload_thread_labels(communication_threads)
+    contact_labels = label_names_by_record('Contact', communication_threads.map(&:contact_id))
+    conversation_labels = label_names_by_record(
+      'Conversation',
+      @accessible_links_by_thread_id.values.flatten.map(&:conversation_id)
+    )
+
+    @labels_by_thread_id = communication_threads.each_with_object({}) do |thread, labels_by_thread_id|
+      linked_labels = @accessible_links_by_thread_id.fetch(thread.id, []).flat_map do |link|
+        conversation_labels.fetch(link.conversation_id, [])
+      end
+      labels_by_thread_id[thread.id] = Labels::UnifiedAssignmentService.normalize(
+        contact_labels.fetch(thread.contact_id, []) + linked_labels
+      )
+    end
+  end
+
+  def label_names_by_record(record_type, record_ids)
+    return {} if record_ids.empty?
+
+    ActsAsTaggableOn::Tagging
+      .joins(:tag)
+      .where(taggable_type: record_type, taggable_id: record_ids, context: 'labels', tagger_id: nil)
+      .pluck(:taggable_id, 'tags.name')
+      .group_by(&:first)
+      .transform_values { |rows| rows.map(&:second) }
   end
 
   def preload_directional_message_timestamps_by_thread

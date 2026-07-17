@@ -181,6 +181,14 @@ RSpec.describe Message do
       )
     end
 
+    it 'uses a preloaded conversation unread count when provided' do
+      expect(message.conversation).not_to receive(:unread_incoming_messages_count)
+
+      payload = message.push_event_data(conversation_unread_count: 7)
+
+      expect(payload.dig(:conversation, :unread_count)).to eq(7)
+    end
+
     it 'omits communication thread metadata when the feature is disabled' do
       disabled_message = create(:message, echo_id: 'random-echo_id')
 

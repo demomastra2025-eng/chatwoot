@@ -19,10 +19,48 @@ import {
   startCallRecording,
 } from 'dashboard/composables/useWhatsappCallSession';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
+import types from 'dashboard/store/mutation-types';
 
 let audioNotificationHelperPromise;
-const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 2000;
+const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 1000;
+const SIDEBAR_UNREAD_COUNTS_MIN_INTERVAL = 5000;
+const SIDEBAR_UNREAD_COUNTS_LOCK_TTL = 15000;
+const SIDEBAR_UNREAD_COUNTS_CACHE_TTL = 15000;
+const SIDEBAR_UNREAD_COUNTS_STORAGE_PREFIX = 'chatwoot:sidebar-unread-counts';
+const SIDEBAR_UNREAD_COUNTS_CONTEXT_KEYS = [
+  'inboxId',
+  'status',
+  'assigneeType',
+  'labels',
+  'labelsScope',
+  'teamId',
+  'teamScope',
+  'conversationType',
+  'communicationThreadMode',
+  'crmPipelineId',
+  'crmStageId',
+  'appointmentStatus',
+];
 const CRM_PIPELINES_REFRESH_DELAY = 500;
+
+const stableSerialize = value => {
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map(key => `${JSON.stringify(key)}:${stableSerialize(value[key])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const stringHash = value => {
+  let hash = 5381;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 33 + value.charCodeAt(index)) % 2147483647;
+  }
+  return hash.toString(36);
+};
 
 const getAudioNotificationHelper = () => {
   audioNotificationHelperPromise ||= import(
@@ -68,6 +106,19 @@ class ActionCableConnector extends BaseActionCableConnector {
     this.sidebarUnreadCountsRefreshTimer = null;
     this.isSidebarUnreadCountsRefreshInFlight = false;
     this.hasQueuedSidebarUnreadCountsRefresh = false;
+    this.lastSidebarUnreadCountsRefreshAt = 0;
+    this.lastSidebarUnreadCountsRequestedAt = 0;
+    this.isDisconnected = false;
+    this.sidebarUnreadCountsStorageKey = `${SIDEBAR_UNREAD_COUNTS_STORAGE_PREFIX}:${this.app.$store.getters.getCurrentAccountId}:${this.app.$store.getters.getCurrentUserID}`;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('storage', this.onSidebarUnreadCountsStorage);
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener(
+        'visibilitychange',
+        this.onSidebarUnreadCountsVisibilityChange
+      );
+    }
     this.crmPipelinesRefreshTimer = null;
     this.isCrmPipelinesRefreshInFlight = false;
     this.hasQueuedCrmPipelinesRefresh = false;
@@ -282,7 +333,191 @@ class ActionCableConnector extends BaseActionCableConnector {
     this.fetchSidebarUnreadCounts();
   };
 
+  sidebarUnreadCountsContextId = (filters = null) => {
+    const currentFilters =
+      filters ||
+      this.app.$store.state?.conversations?.conversationFilters ||
+      {};
+    const countContext = Object.fromEntries(
+      SIDEBAR_UNREAD_COUNTS_CONTEXT_KEYS.map(key => [key, currentFilters[key]])
+    );
+    return stringHash(stableSerialize(countContext));
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  isSidebarUnreadCountsRefreshVisible = () => {
+    return (
+      typeof document === 'undefined' || document.visibilityState !== 'hidden'
+    );
+  };
+
+  onSidebarUnreadCountsVisibilityChange = () => {
+    if (
+      !this.isDisconnected &&
+      this.isSidebarUnreadCountsRefreshVisible() &&
+      this.hasQueuedSidebarUnreadCountsRefresh
+    ) {
+      this.hasQueuedSidebarUnreadCountsRefresh = false;
+      this.fetchSidebarUnreadCounts();
+    }
+  };
+
+  onSidebarUnreadCountsStorage = event => {
+    if (
+      this.isDisconnected ||
+      event.key !== this.sidebarUnreadCountsStorageKey ||
+      !event.newValue
+    )
+      return;
+
+    try {
+      const payload = JSON.parse(event.newValue);
+      if (payload.contextId !== this.sidebarUnreadCountsContextId()) return;
+      const refreshedAt = Number(payload.refreshedAt);
+      const requestedAt = Number(payload.requestedAt);
+      if (
+        !Number.isFinite(refreshedAt) ||
+        !Number.isFinite(requestedAt) ||
+        Date.now() - refreshedAt > SIDEBAR_UNREAD_COUNTS_CACHE_TTL ||
+        requestedAt < this.lastSidebarUnreadCountsRequestedAt ||
+        refreshedAt <= this.lastSidebarUnreadCountsRefreshAt
+      )
+        return;
+
+      this.app.$store.commit?.(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        payload.counts || {}
+      );
+      this.lastSidebarUnreadCountsRequestedAt = requestedAt;
+      this.lastSidebarUnreadCountsRefreshAt = refreshedAt;
+      this.hasQueuedSidebarUnreadCountsRefresh = false;
+      if (this.sidebarUnreadCountsRefreshTimer) {
+        clearTimeout(this.sidebarUnreadCountsRefreshTimer);
+        this.sidebarUnreadCountsRefreshTimer = null;
+      }
+    } catch {
+      // Ignore malformed or unavailable cross-tab cache data.
+    }
+  };
+
+  publishSidebarUnreadCounts = (contextId, counts, requestedAt) => {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+
+    try {
+      window.localStorage.setItem(
+        this.sidebarUnreadCountsStorageKey,
+        JSON.stringify({
+          contextId,
+          counts,
+          requestedAt,
+          refreshedAt: Date.now(),
+        })
+      );
+    } catch {
+      // Cross-tab coordination is an optimization; local refresh still works.
+    }
+  };
+
+  runSidebarUnreadCountsWithStorageLock = async (lockName, callback) => {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      await callback(() => true);
+      return true;
+    }
+
+    const lockKey = `${this.sidebarUnreadCountsStorageKey}:lock:${lockName}`;
+    await Promise.resolve();
+    const now = Date.now();
+    const owner = `${now}:${Math.random()}`;
+    let acquired = false;
+    try {
+      const existingLock = JSON.parse(window.localStorage.getItem(lockKey));
+      if (existingLock?.expiresAt > now) return false;
+
+      window.localStorage.setItem(
+        lockKey,
+        JSON.stringify({
+          owner,
+          expiresAt: now + SIDEBAR_UNREAD_COUNTS_LOCK_TTL,
+        })
+      );
+      const acquiredLock = JSON.parse(window.localStorage.getItem(lockKey));
+      if (acquiredLock?.owner !== owner) return false;
+      acquired = true;
+    } catch {
+      await callback(() => true);
+      return true;
+    }
+
+    let lockLost = false;
+    const isLockOwned = () => {
+      try {
+        const currentLock = JSON.parse(window.localStorage.getItem(lockKey));
+        return currentLock?.owner === owner;
+      } catch {
+        return false;
+      }
+    };
+    const leaseRenewalTimer = setInterval(
+      () => {
+        if (!isLockOwned()) {
+          lockLost = true;
+          return;
+        }
+
+        try {
+          window.localStorage.setItem(
+            lockKey,
+            JSON.stringify({
+              owner,
+              expiresAt: Date.now() + SIDEBAR_UNREAD_COUNTS_LOCK_TTL,
+            })
+          );
+        } catch {
+          lockLost = true;
+        }
+      },
+      Math.floor(SIDEBAR_UNREAD_COUNTS_LOCK_TTL / 3)
+    );
+
+    try {
+      await callback(() => acquired && !lockLost && isLockOwned());
+      return true;
+    } finally {
+      clearInterval(leaseRenewalTimer);
+      try {
+        const currentLock = JSON.parse(window.localStorage.getItem(lockKey));
+        if (currentLock?.owner === owner)
+          window.localStorage.removeItem(lockKey);
+      } catch {
+        // Ignore cleanup failures; the lease will expire.
+      }
+    }
+  };
+
+  runSidebarUnreadCountsWithCrossTabLock = async (contextId, callback) => {
+    const lockName = `${this.sidebarUnreadCountsStorageKey}:${contextId}`;
+    if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+      return navigator.locks.request(
+        lockName,
+        { ifAvailable: true },
+        async lock => {
+          if (!lock) return false;
+
+          await callback(() => true);
+          return true;
+        }
+      );
+    }
+
+    return this.runSidebarUnreadCountsWithStorageLock(lockName, callback);
+  };
+
   fetchSidebarUnreadCounts = () => {
+    if (this.isDisconnected) return;
+    if (!this.isSidebarUnreadCountsRefreshVisible()) {
+      this.hasQueuedSidebarUnreadCountsRefresh = true;
+      return;
+    }
     if (this.sidebarUnreadCountsRefreshTimer) return;
 
     if (this.isSidebarUnreadCountsRefreshInFlight) {
@@ -290,26 +525,91 @@ class ActionCableConnector extends BaseActionCableConnector {
       return;
     }
 
+    const elapsedSinceRefresh = this.lastSidebarUnreadCountsRefreshAt
+      ? Date.now() - this.lastSidebarUnreadCountsRefreshAt
+      : Number.POSITIVE_INFINITY;
+    const refreshDelay = Math.max(
+      SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY,
+      SIDEBAR_UNREAD_COUNTS_MIN_INTERVAL - elapsedSinceRefresh
+    );
     this.sidebarUnreadCountsRefreshTimer = setTimeout(() => {
       this.sidebarUnreadCountsRefreshTimer = null;
       this.dispatchSidebarUnreadCountsRefresh();
-    }, SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY);
+    }, refreshDelay);
   };
 
   dispatchSidebarUnreadCountsRefresh = () => {
+    if (this.isDisconnected) return;
+    if (!this.isSidebarUnreadCountsRefreshVisible()) {
+      this.hasQueuedSidebarUnreadCountsRefresh = true;
+      return;
+    }
+
     this.isSidebarUnreadCountsRefreshInFlight = true;
-    Promise.resolve()
-      .then(() => this.app.$store.dispatch('fetchSidebarUnreadCounts'))
+    const filters = {
+      ...(this.app.$store.state?.conversations?.conversationFilters || {}),
+    };
+    const contextId = this.sidebarUnreadCountsContextId(filters);
+    const requestedAt = Date.now();
+    this.lastSidebarUnreadCountsRequestedAt = requestedAt;
+    this.runSidebarUnreadCountsWithCrossTabLock(
+      contextId,
+      async isLockOwned => {
+        if (this.isDisconnected) return;
+
+        const counts = await this.app.$store.dispatch(
+          'fetchSidebarUnreadCounts',
+          filters
+        );
+        if (this.isDisconnected || (isLockOwned && !isLockOwned())) return;
+
+        this.lastSidebarUnreadCountsRefreshAt = Date.now();
+        if (counts !== undefined) {
+          this.publishSidebarUnreadCounts(contextId, counts, requestedAt);
+        }
+      }
+    )
+      .then(acquired => {
+        if (!acquired) this.hasQueuedSidebarUnreadCountsRefresh = true;
+      })
+      .catch(() => {
+        this.hasQueuedSidebarUnreadCountsRefresh = true;
+      })
       .finally(() => {
         this.isSidebarUnreadCountsRefreshInFlight = false;
-        if (this.hasQueuedSidebarUnreadCountsRefresh) {
+        if (!this.isDisconnected && this.hasQueuedSidebarUnreadCountsRefresh) {
           this.hasQueuedSidebarUnreadCountsRefresh = false;
           this.fetchSidebarUnreadCounts();
         }
       });
   };
 
+  disconnect() {
+    this.isDisconnected = true;
+    if (this.sidebarUnreadCountsRefreshTimer) {
+      clearTimeout(this.sidebarUnreadCountsRefreshTimer);
+      this.sidebarUnreadCountsRefreshTimer = null;
+    }
+    if (this.crmPipelinesRefreshTimer) {
+      clearTimeout(this.crmPipelinesRefreshTimer);
+      this.crmPipelinesRefreshTimer = null;
+    }
+    this.hasQueuedSidebarUnreadCountsRefresh = false;
+    this.hasQueuedCrmPipelinesRefresh = false;
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('storage', this.onSidebarUnreadCountsStorage);
+    }
+    if (typeof document !== 'undefined') {
+      document.removeEventListener(
+        'visibilitychange',
+        this.onSidebarUnreadCountsVisibilityChange
+      );
+    }
+    super.disconnect();
+  }
+
   fetchCrmPipelines = () => {
+    if (this.isDisconnected) return;
     if (this.crmPipelinesRefreshTimer) return;
 
     if (this.isCrmPipelinesRefreshInFlight) {
@@ -324,13 +624,14 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   dispatchCrmPipelinesRefresh = () => {
+    if (this.isDisconnected) return;
     this.isCrmPipelinesRefreshInFlight = true;
     Promise.resolve()
       .then(() => useCrmReferencesStore().loadPipelines())
       .catch(() => {})
       .finally(() => {
         this.isCrmPipelinesRefreshInFlight = false;
-        if (this.hasQueuedCrmPipelinesRefresh) {
+        if (!this.isDisconnected && this.hasQueuedCrmPipelinesRefresh) {
           this.hasQueuedCrmPipelinesRefresh = false;
           this.fetchCrmPipelines();
         }

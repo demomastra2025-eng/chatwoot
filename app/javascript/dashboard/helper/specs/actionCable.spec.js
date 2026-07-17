@@ -1,4 +1,4 @@
-import { describe, it, beforeEach, expect, vi } from 'vitest';
+import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import ActionCableConnector from '../actionCable';
 import {
@@ -67,6 +67,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
+    window.localStorage.clear();
     reconnectMock.mockResolvedValue({
       data: { sdp_offer: 'fresh-offer', ice_servers: [] },
     });
@@ -77,6 +78,8 @@ describe('ActionCableConnector - Copilot Tests', () => {
     store = {
       $store: {
         dispatch: mockDispatch,
+        commit: vi.fn(),
+        state: { conversations: { conversationFilters: {} } },
         getters: {
           getCurrentAccountId: 1,
           getCurrentUserID: 7,
@@ -85,6 +88,10 @@ describe('ActionCableConnector - Copilot Tests', () => {
     };
 
     actionCable = ActionCableConnector.init(store.$store, 'test-token');
+  });
+
+  afterEach(() => {
+    actionCable?.disconnect();
   });
 
   const sidebarUnreadRefreshCalls = () =>
@@ -101,7 +108,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
 
-        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(1000);
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
       } finally {
@@ -122,7 +129,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
       try {
         actionCable.fetchSidebarUnreadCounts();
-        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(1000);
         expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
 
         actionCable.fetchSidebarUnreadCounts();
@@ -131,12 +138,136 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
         resolveRefresh();
         await Promise.resolve();
-        await vi.advanceTimersByTimeAsync(2000);
+        await vi.advanceTimersByTimeAsync(5000);
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(2);
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('does not refresh in a hidden tab and catches up when visible', async () => {
+      vi.useFakeTimers();
+      const originalVisibilityState = Object.getOwnPropertyDescriptor(
+        document,
+        'visibilityState'
+      );
+      try {
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'hidden',
+        });
+        actionCable.fetchSidebarUnreadCounts();
+        await vi.advanceTimersByTimeAsync(10000);
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
+
+        Object.defineProperty(document, 'visibilityState', {
+          configurable: true,
+          value: 'visible',
+        });
+        document.dispatchEvent(new Event('visibilitychange'));
+        await vi.advanceTimersByTimeAsync(1000);
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
+      } finally {
+        if (originalVisibilityState) {
+          Object.defineProperty(
+            document,
+            'visibilityState',
+            originalVisibilityState
+          );
+        } else {
+          delete document.visibilityState;
+        }
+        vi.useRealTimers();
+      }
+    });
+
+    it('applies unread counts published by another tab', () => {
+      const counts = { all: 4, statuses: { open: 4 } };
+      const refreshedAt = Date.now();
+      actionCable.onSidebarUnreadCountsStorage({
+        key: actionCable.sidebarUnreadCountsStorageKey,
+        newValue: JSON.stringify({
+          contextId: actionCable.sidebarUnreadCountsContextId(),
+          counts,
+          requestedAt: refreshedAt - 5,
+          refreshedAt,
+        }),
+      });
+
+      expect(store.$store.commit).toHaveBeenCalledWith(
+        'SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS',
+        counts
+      );
+      expect(actionCable.lastSidebarUnreadCountsRefreshAt).toBe(refreshedAt);
+    });
+
+    it('ignores stale counts from an older request', () => {
+      actionCable.lastSidebarUnreadCountsRequestedAt = 200;
+      actionCable.lastSidebarUnreadCountsRefreshAt = 300;
+
+      actionCable.onSidebarUnreadCountsStorage({
+        key: actionCable.sidebarUnreadCountsStorageKey,
+        newValue: JSON.stringify({
+          contextId: actionCable.sidebarUnreadCountsContextId(),
+          counts: { all: 1 },
+          requestedAt: 100,
+          refreshedAt: 250,
+        }),
+      });
+
+      expect(store.$store.commit).not.toHaveBeenCalledWith(
+        'SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS',
+        { all: 1 }
+      );
+    });
+
+    it('does not schedule refreshes after disconnect', async () => {
+      vi.useFakeTimers();
+      try {
+        actionCable.disconnect();
+        actionCable.fetchSidebarUnreadCounts();
+        await vi.advanceTimersByTimeAsync(10000);
+
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not duplicate a refresh while another tab owns the browser lock', async () => {
+      vi.useFakeTimers();
+      const originalLocks = Object.getOwnPropertyDescriptor(navigator, 'locks');
+      const request = vi.fn((_name, _options, callback) => callback(null));
+      try {
+        Object.defineProperty(navigator, 'locks', {
+          configurable: true,
+          value: { request },
+        });
+
+        actionCable.fetchSidebarUnreadCounts();
+        await vi.advanceTimersByTimeAsync(1000);
+
+        expect(request).toHaveBeenCalledTimes(1);
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
+      } finally {
+        if (originalLocks) {
+          Object.defineProperty(navigator, 'locks', originalLocks);
+        } else {
+          delete navigator.locks;
+        }
+        vi.useRealTimers();
+      }
+    });
+
+    it('does not retry a storage-lock callback after it fails', async () => {
+      const callback = vi.fn().mockRejectedValue(new Error('refresh failed'));
+
+      await expect(
+        actionCable.runSidebarUnreadCountsWithStorageLock('failure', callback)
+      ).rejects.toThrow('refresh failed');
+
+      expect(callback).toHaveBeenCalledTimes(1);
     });
   });
   describe('communication thread realtime events', () => {
@@ -839,7 +970,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
         expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
         expect(loadPipelinesSpy).toHaveBeenCalledTimes(1);
 
-        await vi.advanceTimersByTimeAsync(1500);
+        await vi.advanceTimersByTimeAsync(500);
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
       } finally {

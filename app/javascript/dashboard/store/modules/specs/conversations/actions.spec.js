@@ -418,12 +418,15 @@ describe('#actions', () => {
       const counts = { all: 2, statuses: { open: 2 } };
       axios.get.mockResolvedValue({ data: { counts } });
 
-      await actions.fetchSidebarUnreadCounts({ commit: localCommit });
+      const result = await actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+      });
 
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
         counts
       );
+      expect(result).toEqual(counts);
     });
 
     it('commits filtered sidebar unread counts from conversation meta', async () => {

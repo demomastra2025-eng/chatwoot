@@ -420,11 +420,13 @@ const actions = {
         counts = globalCounts;
       }
 
-      if (requestId !== sidebarUnreadCountsRequestId) return;
+      if (requestId !== sidebarUnreadCountsRequestId) return undefined;
 
       commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});
+      return counts || {};
     } catch (error) {
       // Keep the last known sidebar counts if the refresh fails.
+      return undefined;
     }
   },
 
