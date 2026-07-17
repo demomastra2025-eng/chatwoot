@@ -179,6 +179,7 @@ class Reminder < ApplicationRecord
   validates :relative_anchor, inclusion: { in: RELATIVE_ANCHORS }, allow_blank: true
   validates :post_delivery_action, inclusion: { in: POST_DELIVERY_ACTIONS }, allow_blank: true
   validate :validate_account_matches
+  validate :validate_target_associations
   validate :validate_json_field_shapes
   validate :validate_content_requirements
   validate :validate_delivery_policy
@@ -713,6 +714,18 @@ class Reminder < ApplicationRecord
     validate_account_match(:target_conversation, target_conversation)
     validate_account_match(:reminder_group, reminder_group)
     validate_account_match(:remindable, remindable)
+  end
+
+  def validate_target_associations
+    validate_consistent_target(:target_contact, target_contact_id, target_contact_inbox&.contact_id, target_conversation&.contact_id)
+    validate_consistent_target(:target_inbox, target_inbox_id, target_contact_inbox&.inbox_id, target_conversation&.inbox_id)
+    validate_consistent_target(:target_contact_inbox, target_contact_inbox_id, target_conversation&.contact_inbox_id)
+  end
+
+  def validate_consistent_target(attribute, *ids)
+    return if ids.compact.uniq.length <= 1
+
+    errors.add(attribute, 'must match the other target associations')
   end
 
   def validate_json_field_shapes

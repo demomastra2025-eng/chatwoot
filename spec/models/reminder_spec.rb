@@ -604,6 +604,65 @@ RSpec.describe Reminder do
       expect(reminder).not_to be_ready_for_pending
     end
 
+    it 'rejects a target contact inbox that belongs to another target contact' do
+      account = create(:account)
+      creator = create(:user, account: account, role: :administrator)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      target_contact = create(:contact, account: account, phone_number: '+77001112233')
+      other_contact = create(:contact, account: account, phone_number: '+77004445566')
+      target_contact_inbox = create(:contact_inbox, contact: target_contact, inbox: whatsapp_inbox)
+      reminder = described_class.new(
+        account: account,
+        creator: creator,
+        owner: creator,
+        action_type: :send_message,
+        content_kind: :free_text,
+        text_mode: :static,
+        timing_mode: :absolute,
+        target_inbox: whatsapp_inbox,
+        target_contact: other_contact,
+        target_contact_inbox: target_contact_inbox,
+        scheduled_at: 1.hour.from_now,
+        timezone: 'UTC',
+        body: 'Mismatched touch'
+      )
+
+      reminder.validate
+
+      expect(reminder.errors[:target_contact]).to include('must match the other target associations')
+    end
+
+    it 'rejects a target conversation that belongs to another target contact' do
+      account = create(:account)
+      creator = create(:user, account: account, role: :administrator)
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      whatsapp_inbox = whatsapp_channel.inbox
+      target_contact = create(:contact, account: account, phone_number: '+77001112233')
+      other_contact = create(:contact, account: account, phone_number: '+77004445566')
+      target_contact_inbox = create(:contact_inbox, contact: target_contact, inbox: whatsapp_inbox)
+      target_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: target_contact, contact_inbox: target_contact_inbox)
+      reminder = described_class.new(
+        account: account,
+        creator: creator,
+        owner: creator,
+        action_type: :send_message,
+        content_kind: :free_text,
+        text_mode: :static,
+        timing_mode: :absolute,
+        target_inbox: whatsapp_inbox,
+        target_contact: other_contact,
+        target_conversation: target_conversation,
+        scheduled_at: 1.hour.from_now,
+        timezone: 'UTC',
+        body: 'Mismatched conversation touch'
+      )
+
+      reminder.validate
+
+      expect(reminder.errors[:target_contact]).to include('must match the other target associations')
+    end
+
     it 'keeps agent touches pending when route and instructions are ready' do
       conversation = create(:conversation)
       reminder = build(
