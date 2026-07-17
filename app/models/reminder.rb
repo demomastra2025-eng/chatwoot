@@ -753,6 +753,8 @@ class Reminder < ApplicationRecord
       errors.add(:instructions, 'must be present for agent touches')
     elsif channel_template? && template_params.blank?
       errors.add(:template_params, 'must be present for channel template touches')
+    elsif free_text? && template_params.present?
+      errors.add(:template_params, 'must be blank for free-text touches')
     elsif free_text? && !agent? && body.blank? && attachments.blank? && !files.attached?
       errors.add(:body, 'must be present for message touches')
     end

@@ -511,6 +511,18 @@ RSpec.describe Reminder do
       expect(reminder.errors[:base]).to include(Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
     end
 
+    it 'rejects free-text touches with template parameters' do
+      reminder = build(
+        :reminder,
+        content_kind: :free_text,
+        template_params: { name: 'John' },
+        body: 'Free text with template params'
+      )
+
+      expect(reminder).not_to be_valid
+      expect(reminder.errors[:template_params]).to include('must be blank for free-text touches')
+    end
+
     it 'rejects channel templates with missing required parameters before execution' do
       account = create(:account)
       whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
