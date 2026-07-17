@@ -1240,7 +1240,7 @@ class Telephony::EventsIngestionService
     end
 
     conversation = if call_session.direction == 'inbound'
-                     ensure_inbound_conversation!(account: account, inbox: inbox)
+                     ensure_inbound_conversation!(account: account, inbox: inbox, call_session: call_session)
                    else
                      ensure_outbound_conversation!(account: account, inbox: inbox, call_session: call_session)
                    end
@@ -1254,11 +1254,11 @@ class Telephony::EventsIngestionService
     )
   end
 
-  def ensure_inbound_conversation!(account:, inbox:)
+  def ensure_inbound_conversation!(account:, inbox:, call_session:)
     Voice::InboundCallBuilder.perform!(
       account: account,
       inbox: inbox,
-      from_number: normalized_caller_number || caller_number,
+      from_number: normalized_caller_number || caller_number || call_session.from_number,
       call_sid: call_ref
     )
   end

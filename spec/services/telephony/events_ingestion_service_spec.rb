@@ -130,6 +130,34 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'uses the persisted inbound caller when a later provider event omits phone fields' do
+      caller_number = '+77014181818'
+      existing_call_session.update!(
+        conversation: nil,
+        contact: nil,
+        provider: 'sipuni',
+        direction: 'inbound',
+        status: 'ringing',
+        from_number: caller_number
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-provider-answered-without-phone-fields-1',
+          provider: 'sipuni',
+          event: 'operator_answered',
+          status: 'answered'
+        ).except(:from_number, :fromNumber, :caller_number, :callerNumber, :from)
+      ).perform
+
+      aggregate_failures do
+        expect(result.reload.conversation).to be_present
+        expect(result.contact.phone_number).to eq(caller_number)
+        expect(result.conversation.contact_inbox.source_id).to eq(caller_number)
+        expect(account.telephony_events.find_by!(event_key: 'evt-provider-answered-without-phone-fields-1')).to be_processed
+      end
+    end
+
     it 'keeps native SIP AI conversations pending while operator conversations remain open' do
       existing_call_session.update!(
         provider: 'sipuni',
