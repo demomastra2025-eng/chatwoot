@@ -47,6 +47,21 @@ RSpec.describe Outbound::DeliveryPolicy do
       expect(result.allowed_content_kinds).to contain_exactly('free_text', 'channel_template')
     end
 
+    it 'uses a preloaded incoming timestamp for WhatsApp reply-window checks' do
+      whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+      conversation = conversation_for(whatsapp_inbox)
+      expect(conversation).not_to receive(:messages)
+
+      result = described_class.evaluate(
+        conversation: conversation,
+        content_kind: 'free_text',
+        last_incoming_message_at: 1.hour.ago
+      )
+
+      expect(result).to be_allowed
+      expect(result.reply_window_open).to be(true)
+    end
+
     it 'denies WhatsApp Business free text when the 24-hour reply window is closed' do
       whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
       conversation = conversation_for(whatsapp_inbox)

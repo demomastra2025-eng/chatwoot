@@ -877,6 +877,7 @@ function fetchFilteredConversations(payload) {
       labelsScope: activeLabelsScope.value || undefined,
       teamScope: activeTeamScope.value || undefined,
       unread: activeUnreadOnly.value || undefined,
+      sortBy: activeSortBy.value,
     })
     .then(emitConversationLoaded);
 
@@ -897,6 +898,7 @@ function fetchSavedFilteredConversations(payload) {
       labelsScope: activeLabelsScope.value || undefined,
       teamScope: activeTeamScope.value || undefined,
       unread: activeUnreadOnly.value || undefined,
+      sortBy: activeSortBy.value,
     })
     .then(emitConversationLoaded);
 }
@@ -1390,9 +1392,12 @@ async function toggleConversationStatus(
     payload.customAttributes = customAttributes;
   }
 
-  store.dispatch('toggleStatus', payload).then(() => {
+  try {
+    await store.dispatch('toggleStatus', payload);
     useAlert(t('CONVERSATION.CHANGE_STATUS'));
-  });
+  } catch (error) {
+    useAlert(t('CONVERSATION.CHANGE_STATUS_FAILED'));
+  }
 }
 
 function handleResolveConversation(conversationId, status, snoozedUntil) {

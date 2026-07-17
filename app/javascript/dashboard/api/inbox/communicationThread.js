@@ -21,6 +21,7 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    includeMeta = true,
   } = {}) {
     return axios.get(this.url, {
       params: {
@@ -37,6 +38,7 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: labelsScope,
         team_scope: teamScope,
         unread,
+        include_meta: includeMeta,
       },
     });
   }
@@ -84,6 +86,8 @@ class CommunicationThreadApi extends ApiClient {
         labels_scope: payload.labelsScope || payload.labels_scope,
         team_scope: payload.teamScope || payload.team_scope,
         unread: payload.unread,
+        sort_by: payload.sortBy || payload.sort_by,
+        include_meta: Number(payload.page || 1) === 1,
       },
     });
   }

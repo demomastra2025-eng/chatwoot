@@ -372,25 +372,38 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def preload_accessible_links(communication_threads, include_unlinked: false)
     thread_ids = communication_threads.map(&:id)
-    @accessible_links_by_thread_id = if thread_ids.empty?
-                                       {}
-                                     else
-                                       accessible_links.where(communication_thread_id: thread_ids)
-                                                       .includes({ contact_inbox: :channel_profile }, :conversation, inbox: :channel)
-                                                       .group_by(&:communication_thread_id)
-                                     end
+    @accessible_links_by_thread_id = preloaded_accessible_links(thread_ids)
+    preload_channel_message_state
+    preload_channel_capabilities(include_unlinked)
+    preload_last_public_messages_by_thread
+    preload_last_non_activity_messages_by_thread
+    preload_directional_message_timestamps_by_thread
+    preload_scheduling_appointment_statuses(communication_threads)
+  end
+
+  def preloaded_accessible_links(thread_ids)
+    return {} if thread_ids.empty?
+
+    accessible_links.where(communication_thread_id: thread_ids)
+                    .includes(
+                      { contact_inbox: :channel_profile },
+                      { conversation: { inbox: :channel } },
+                      { inbox: [:members, :channel] }
+                    )
+                    .group_by(&:communication_thread_id)
+  end
+
+  def preload_channel_capabilities(include_unlinked)
     @channel_capabilities_by_thread_id = @accessible_links_by_thread_id.transform_values do |links|
       CommunicationThreads::ChannelCapabilitiesBuilder.new(
         links: links,
         available_inboxes: accessible_inboxes,
         include_unlinked: include_unlinked,
-        preferred_status: preferred_channel_status
+        preferred_status: preferred_channel_status,
+        unread_counts: @channel_unread_counts_by_conversation_id,
+        last_incoming_message_timestamps: @last_incoming_message_timestamps_by_conversation_id
       ).perform
     end
-    preload_last_public_messages_by_thread
-    preload_last_non_activity_messages_by_thread
-    preload_directional_message_timestamps_by_thread
-    preload_scheduling_appointment_statuses(communication_threads)
   end
 
   def preload_crm_deal_stages(communication_threads)
@@ -423,6 +436,39 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def preload_last_public_messages_by_thread
     @last_public_messages_by_thread_id = preload_last_messages_by_thread
+  end
+
+  def preload_channel_message_state
+    conversation_ids = @accessible_links_by_thread_id.values.flatten.map(&:conversation_id).uniq
+    return reset_channel_message_state if conversation_ids.empty?
+
+    incoming_messages = incoming_channel_messages(conversation_ids)
+    @last_incoming_message_timestamps_by_conversation_id = incoming_messages.group(:conversation_id).maximum(:created_at)
+    @channel_unread_counts_by_conversation_id = unread_channel_message_counts(incoming_messages)
+  end
+
+  def reset_channel_message_state
+    @channel_unread_counts_by_conversation_id = {}
+    @last_incoming_message_timestamps_by_conversation_id = {}
+  end
+
+  def incoming_channel_messages(conversation_ids)
+    Message.reorder(nil).where(
+      account_id: Current.account.id,
+      conversation_id: conversation_ids,
+      message_type: Message.message_types[:incoming]
+    )
+  end
+
+  def unread_channel_message_counts(incoming_messages)
+    incoming_messages.where(private: false)
+                     .joins(:conversation)
+                     .where(
+                       'messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)',
+                       Time.zone.at(0)
+                     )
+                     .group(:conversation_id)
+                     .count
   end
 
   def preload_last_non_activity_messages_by_thread

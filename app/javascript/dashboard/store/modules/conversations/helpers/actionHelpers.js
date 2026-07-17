@@ -54,7 +54,9 @@ export const buildConversationList = (
 ) => {
   const { payload: conversationList, meta: metaData } = responseData;
   context.commit(types.SET_ALL_CONVERSATION, conversationList);
-  context.dispatch('conversationStats/set', metaData);
+  if (metaData && Object.keys(metaData).length) {
+    context.dispatch('conversationStats/set', metaData);
+  }
   if (metaData?.unread_counts) {
     context.commit(
       types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,

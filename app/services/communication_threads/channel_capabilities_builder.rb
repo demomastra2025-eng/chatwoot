@@ -10,7 +10,10 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   }.freeze
 
   SUPPORTED_UNLINKED_CHANNELS = (CONTACT_TARGET_REQUIREMENTS.keys + Inbox::API_CHANNEL_TYPES + ['Channel::WebWidget']).freeze
-  INITIALIZE_OPTION_KEYS = %i[contact available_inboxes include_unlinked deduplicate_linked preferred_status].freeze
+  INITIALIZE_OPTION_KEYS = %i[
+    contact available_inboxes include_unlinked deduplicate_linked preferred_status
+    unread_counts last_incoming_message_timestamps
+  ].freeze
 
   def initialize(links:, **options)
     validate_options!(options)
@@ -20,6 +23,8 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     @include_unlinked = options.fetch(:include_unlinked, false)
     @deduplicate_linked = options.fetch(:deduplicate_linked, true)
     @preferred_status = options.fetch(:preferred_status, nil).to_s.presence
+    @unread_counts = options[:unread_counts]
+    @last_incoming_message_timestamps = options[:last_incoming_message_timestamps]
   end
 
   def perform
@@ -28,7 +33,8 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
   private
 
-  attr_reader :links, :contact, :available_inboxes, :include_unlinked, :deduplicate_linked, :preferred_status
+  attr_reader :links, :contact, :available_inboxes, :include_unlinked, :deduplicate_linked, :preferred_status,
+              :unread_counts, :last_incoming_message_timestamps
 
   def validate_options!(options)
     unknown_options = options.keys - INITIALIZE_OPTION_KEYS
@@ -50,9 +56,10 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
   def linked_channel_sort_key(link)
     conversation = link.conversation
+    policy = delivery_policy(conversation: conversation, inbox: link.inbox)
     [
       preferred_status.present? && conversation&.status == preferred_status ? 1 : 0,
-      conversation&.can_reply? ? 1 : 0,
+      linked_reply_window_open(conversation, policy) ? 1 : 0,
       conversation&.open? ? 1 : 0,
       conversation&.last_activity_at.to_i,
       conversation&.id.to_i
@@ -69,10 +76,12 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     conversation = link.conversation
     inbox = link.inbox
     policy = delivery_policy(conversation: conversation, inbox: inbox)
+    reply_window_open = linked_reply_window_open(conversation, policy)
     capabilities = CommunicationThreads::ChannelReplyCapabilityBuilder.linked(
       conversation: conversation,
       inbox: inbox,
-      policy: policy
+      policy: policy,
+      reply_window_open: reply_window_open
     )
 
     channel_payload({
@@ -90,7 +99,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     {
       agent_last_seen_at: conversation.agent_last_seen_at&.to_i,
       assignee_last_seen_at: conversation.assignee_last_seen_at&.to_i,
-      unread_count: conversation.unread_incoming_messages_count
+      unread_count: conversation_unread_count(conversation)
     }
   end
 
@@ -130,11 +139,43 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   end
 
   def delivery_policy(conversation:, inbox:)
-    Outbound::DeliveryPolicy.evaluate(
+    @delivery_policies ||= {}
+    cache_key = [conversation&.id, inbox.id]
+    return @delivery_policies[cache_key] if @delivery_policies.key?(cache_key)
+
+    options = {
       conversation: conversation,
       inbox: inbox,
       content_kind: 'free_text'
-    )
+    }
+    if conversation.present? && !last_incoming_message_timestamps.nil?
+      options[:last_incoming_message_at] = last_incoming_message_timestamps[conversation.id]
+    end
+
+    @delivery_policies[cache_key] = Outbound::DeliveryPolicy.evaluate(**options)
+  end
+
+  def linked_reply_window_open(conversation, policy)
+    @linked_reply_window_states ||= {}
+    return @linked_reply_window_states[conversation.id] if @linked_reply_window_states.key?(conversation.id)
+
+    @linked_reply_window_states[conversation.id] = calculate_linked_reply_window_open(conversation, policy)
+  end
+
+  def calculate_linked_reply_window_open(conversation, policy)
+    return policy.reply_window_open unless policy.reply_window_open.nil?
+    return conversation.can_reply? if last_incoming_message_timestamps.nil?
+
+    Conversations::MessageWindowService.new(
+      conversation,
+      last_incoming_message_at: last_incoming_message_timestamps[conversation.id]
+    ).can_reply?
+  end
+
+  def conversation_unread_count(conversation)
+    return conversation.unread_incoming_messages_count if unread_counts.nil?
+
+    unread_counts.fetch(conversation.id, 0)
   end
 
   def contact_inbox_by_inbox_id

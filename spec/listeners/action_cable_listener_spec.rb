@@ -73,6 +73,7 @@ describe ActionCableListener do
       account.enable_features!('communication_threads')
       communication_thread = conversation.refresh_communication_thread!
       allow(ActionCableBroadcastJob).to receive(:perform_later)
+      expect(listener).to receive(:communication_thread_realtime_payload).once.and_call_original
 
       listener.message_created(event)
 

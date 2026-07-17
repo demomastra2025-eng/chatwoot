@@ -11,6 +11,7 @@ class CommunicationThreads::FilterService < FilterService
 
   def perform
     validate_query_operator
+    validate_sort_by!
     @base_matching_conversations = apply_conversation_scopes(query_builder(@filters['conversations']))
     @base_thread_scope = thread_scope_for(@base_matching_conversations)
     @communication_threads = apply_thread_scopes(
@@ -21,7 +22,7 @@ class CommunicationThreads::FilterService < FilterService
 
     {
       communication_threads: communication_threads,
-      count: thread_counts
+      count: include_meta? ? thread_counts : {}
     }
   end
 
@@ -37,6 +38,10 @@ class CommunicationThreads::FilterService < FilterService
     @params[:page] || 1
   end
 
+  def include_meta?
+    !@params.key?(:include_meta) || ActiveModel::Type::Boolean.new.cast(@params[:include_meta])
+  end
+
   def filter_config
     {
       entity: 'Conversation',
@@ -47,15 +52,22 @@ class CommunicationThreads::FilterService < FilterService
   def communication_threads
     relation = @communication_threads
     relation = with_last_message_activity_sort(relation) if message_sort?
+    relation = with_waiting_since_sort(relation) if waiting_sort?
 
     relation
-      .includes(:contact, :assignee, :team)
+      .includes(thread_list_preloads)
       .order(Arel.sql(sort_clause))
       .page(current_page)
       .per(CommunicationThreadFinder::RESULTS_PER_PAGE)
   end
 
   private
+
+  def validate_sort_by!
+    return if CommunicationThreadFinder::SORT_OPTIONS.key?(sort_key)
+
+    raise CommunicationThreadFinder::InvalidParameter, "Invalid communication thread sort_by: #{sort_key}"
+  end
 
   def thread_scope_for(conversation_scope)
     CommunicationThread
@@ -135,6 +147,10 @@ class CommunicationThreads::FilterService < FilterService
     CommunicationThreadFinder.message_sort?(sort_key)
   end
 
+  def waiting_sort?
+    CommunicationThreadFinder::WAITING_SORT_KEYS.include?(sort_key.to_s)
+  end
+
   def with_last_message_activity_sort(relation)
     sort_sql = CommunicationThreadFinder.last_message_activity_sort_sql(base_relation)
 
@@ -142,6 +158,28 @@ class CommunicationThreads::FilterService < FilterService
       .select(
         Arel.sql("communication_threads.*, #{sort_sql} AS last_message_activity_sort_at")
       )
+  end
+
+  def with_waiting_since_sort(relation)
+    sort_sql = CommunicationThreadFinder.waiting_since_sort_sql(base_relation)
+
+    relation.select(
+      Arel.sql("communication_threads.*, (#{sort_sql}) AS thread_waiting_since_sort_at")
+    )
+  end
+
+  def thread_list_preloads
+    [
+      {
+        contact: [
+          :contact_channel_profiles,
+          { avatar_attachment: :blob },
+          { owner: [:account_users, { avatar_attachment: :blob }] }
+        ]
+      },
+      { assignee: [:account_users, { avatar_attachment: :blob }] },
+      :team
+    ]
   end
 
   def thread_counts

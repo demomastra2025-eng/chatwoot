@@ -1,9 +1,11 @@
 class Conversations::MessageWindowService
+  LAST_INCOMING_MESSAGE_AT_UNSET = Object.new.freeze
   MESSAGING_WINDOW_24_HOURS = 24.hours
   MESSAGING_WINDOW_7_DAYS = 7.days
 
-  def initialize(conversation)
+  def initialize(conversation, last_incoming_message_at: LAST_INCOMING_MESSAGE_AT_UNSET)
     @conversation = conversation
+    @provided_last_incoming_message_at = last_incoming_message_at
   end
 
   def can_reply?
@@ -32,9 +34,9 @@ class Conversations::MessageWindowService
   end
 
   def last_message_in_messaging_window?(time)
-    return false if last_incoming_message.nil?
+    return false if last_incoming_message_at.nil?
 
-    Time.current < last_incoming_message.created_at + time
+    Time.current < last_incoming_message_at + time
   end
 
   def api_messaging_window
@@ -66,5 +68,11 @@ class Conversations::MessageWindowService
 
   def last_incoming_message
     @last_incoming_message ||= @conversation.messages.where(account_id: @conversation.account_id).incoming&.last
+  end
+
+  def last_incoming_message_at
+    return @provided_last_incoming_message_at unless @provided_last_incoming_message_at.equal?(LAST_INCOMING_MESSAGE_AT_UNSET)
+
+    last_incoming_message&.created_at
   end
 end

@@ -62,7 +62,7 @@ class Conversation < ApplicationRecord
   include PushDataHelper
   include ConversationMuteHelpers
 
-  attr_accessor :skip_runtime_events
+  attr_accessor :skip_runtime_events, :skip_communication_thread_refresh
 
   validates :account_id, presence: true
   validates :inbox_id, presence: true
@@ -270,7 +270,7 @@ class Conversation < ApplicationRecord
 
   def execute_after_update_commit_callbacks
     handle_resolved_status_change
-    refresh_communication_thread! if communication_threads_enabled?
+    refresh_communication_thread! if communication_threads_enabled? && !skip_communication_thread_refresh
     sync_contact_owner_from_assignee
     return if runtime_events_suppressed?
 

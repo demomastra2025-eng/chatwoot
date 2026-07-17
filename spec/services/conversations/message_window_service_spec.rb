@@ -390,6 +390,14 @@ RSpec.describe Conversations::MessageWindowService do
       expect(service.can_reply?).to be false
     end
 
+    it 'uses a preloaded incoming timestamp without querying messages' do
+      expect(conversation).not_to receive(:messages)
+
+      service = described_class.new(conversation, last_incoming_message_at: 1.hour.ago)
+
+      expect(service.can_reply?).to be true
+    end
+
     it 'return true if last message is outgoing but previous incoming message is within window' do
       create(
         :message,

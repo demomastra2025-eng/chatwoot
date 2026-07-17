@@ -1,19 +1,22 @@
 # frozen_string_literal: true
 
 class CommunicationThreads::ChannelReplyCapabilityBuilder
-  def self.linked(conversation:, inbox:, policy:)
-    new(conversation: conversation, inbox: inbox, policy: policy).linked
+  REPLY_WINDOW_OPEN_UNSET = Object.new.freeze
+
+  def self.linked(conversation:, inbox:, policy:, reply_window_open: REPLY_WINDOW_OPEN_UNSET)
+    new(conversation: conversation, inbox: inbox, policy: policy, reply_window_open: reply_window_open).linked
   end
 
   def self.unlinked(inbox:, policy:, target_error:)
     new(inbox: inbox, policy: policy, target_error: target_error).unlinked
   end
 
-  def initialize(inbox:, policy:, conversation: nil, target_error: nil)
+  def initialize(inbox:, policy:, conversation: nil, target_error: nil, reply_window_open: REPLY_WINDOW_OPEN_UNSET)
     @inbox = inbox
     @policy = policy
     @conversation = conversation
     @target_error = target_error
+    @provided_reply_window_open = reply_window_open
   end
 
   def linked
@@ -42,7 +45,7 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
 
   private
 
-  attr_reader :conversation, :inbox, :policy, :target_error
+  attr_reader :conversation, :inbox, :policy, :target_error, :provided_reply_window_open
 
   def voice_capability_payload(disabled_reason = nil, can_reply: true, can_call: true)
     capability_payload(
@@ -72,6 +75,8 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
   end
 
   def linked_reply_window_open?
+    return provided_reply_window_open unless provided_reply_window_open.equal?(REPLY_WINDOW_OPEN_UNSET)
+
     policy.reply_window_open.nil? ? conversation.can_reply? : policy.reply_window_open
   end
 

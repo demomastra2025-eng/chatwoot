@@ -361,7 +361,10 @@ const actions = {
       const params = state.conversationFilters;
       const {
         data: { data },
-      } = await CommunicationThreadApi.get(params);
+      } = await CommunicationThreadApi.get({
+        ...params,
+        includeMeta: Number(params.page || 1) === 1,
+      });
       buildConversationList(
         { commit, dispatch },
         params,
@@ -820,7 +823,7 @@ const actions = {
         snoozedUntil: updatedSnoozedUntil,
       });
     } catch (error) {
-      // Handle error
+      if (conversationType === 'communication_thread') throw error;
     }
   },
 

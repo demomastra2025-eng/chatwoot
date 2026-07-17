@@ -266,12 +266,16 @@ class ActionCableListener < BaseListener
   end
 
   def broadcast_communication_thread_dashboard_updates(account, communication_thread, links, source_conversation, source_event, message)
+    payloads_by_visible_link_ids = {}
+
     communication_thread_dashboard_users(account, links).each do |user|
       visible_links = communication_thread_visible_links_for(account, user, links)
       next if visible_links.blank?
       next unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
 
-      payload = communication_thread_realtime_payload(communication_thread, visible_links, source_conversation, source_event, message)
+      visible_link_ids = visible_links.map(&:id).sort
+      payload = payloads_by_visible_link_ids[visible_link_ids] ||=
+        communication_thread_realtime_payload(communication_thread, visible_links, source_conversation, source_event, message)
       broadcast(account, [user.pubsub_token], COMMUNICATION_THREAD_UPDATED, payload)
     end
   end

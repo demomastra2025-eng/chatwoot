@@ -62,6 +62,9 @@ describe('#CommunicationThreadAPI', () => {
             crm_stage_id: 34,
             labels_scope: 'any',
             team_scope: 'any',
+            appointment_status: undefined,
+            unread: undefined,
+            include_meta: true,
           },
         }
       );
@@ -89,6 +92,8 @@ describe('#CommunicationThreadAPI', () => {
             crm_stage_id: undefined,
             labels_scope: 'any',
             team_scope: 'any',
+            appointment_status: undefined,
+            unread: undefined,
           },
         }
       );
@@ -124,8 +129,12 @@ describe('#CommunicationThreadAPI', () => {
             page: payload.page,
             crm_pipeline_id: payload.crmPipelineId,
             crm_stage_id: payload.crmStageId,
+            appointment_status: undefined,
             labels_scope: payload.labelsScope,
             team_scope: payload.teamScope,
+            unread: undefined,
+            sort_by: undefined,
+            include_meta: false,
           },
         }
       );

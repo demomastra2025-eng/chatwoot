@@ -1,4 +1,5 @@
 class Outbound::DeliveryPolicy
+  LAST_INCOMING_MESSAGE_AT_UNSET = Object.new.freeze
   VALID_CONTENT_KINDS = %w[free_text channel_template].freeze
   WHATSAPP_TEMPLATE_REQUIRED_REASON = 'Official WhatsApp Business API requires an approved channel_template ' \
                                       'when the 24-hour customer service window is closed'.freeze
@@ -52,7 +53,9 @@ class Outbound::DeliveryPolicy
     result
   end
 
-  def initialize(conversation: nil, inbox: nil, content_kind: nil, template_params: nil, attachments: [], scheduled_at: nil, private_note: false)
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(conversation: nil, inbox: nil, content_kind: nil, template_params: nil, attachments: [], scheduled_at: nil,
+                 private_note: false, last_incoming_message_at: LAST_INCOMING_MESSAGE_AT_UNSET)
     @conversation = conversation
     @inbox = inbox || conversation&.inbox
     @content_kind = normalize_content_kind(content_kind, template_params)
@@ -60,7 +63,9 @@ class Outbound::DeliveryPolicy
     @attachments = Array(attachments).compact_blank
     @scheduled_at = normalize_time(scheduled_at)
     @private_note = ActiveModel::Type::Boolean.new.cast(private_note)
+    @provided_last_incoming_message_at = last_incoming_message_at
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def evaluate
     return allowed_result(delivery_mode: 'private_note') if private_note?
@@ -73,7 +78,8 @@ class Outbound::DeliveryPolicy
 
   private
 
-  attr_reader :conversation, :inbox, :content_kind, :template_params, :attachments, :scheduled_at
+  attr_reader :conversation, :inbox, :content_kind, :template_params, :attachments, :scheduled_at,
+              :provided_last_incoming_message_at
 
   def evaluate_free_text
     return allowed_result(delivery_mode: 'free_text') unless official_whatsapp_channel?
@@ -168,7 +174,13 @@ class Outbound::DeliveryPolicy
   def reply_window_closes_at
     return unless official_whatsapp_channel?
 
-    last_incoming_message&.created_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
+    last_incoming_message_at&.+(Conversations::MessageWindowService::MESSAGING_WINDOW_24_HOURS)
+  end
+
+  def last_incoming_message_at
+    return provided_last_incoming_message_at unless provided_last_incoming_message_at.equal?(LAST_INCOMING_MESSAGE_AT_UNSET)
+
+    last_incoming_message&.created_at
   end
 
   def last_incoming_message

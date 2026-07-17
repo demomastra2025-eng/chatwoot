@@ -21,7 +21,7 @@ import {
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 
 let audioNotificationHelperPromise;
-const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 250;
+const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 2000;
 const CRM_PIPELINES_REFRESH_DELAY = 500;
 
 const getAudioNotificationHelper = () => {

@@ -42,6 +42,22 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
       )
     end
 
+    it 'uses preloaded unread and incoming-message state without per-channel message queries' do
+      conversation = create(:conversation, account: account)
+      link = conversation.communication_thread_conversation
+      last_incoming_message_at = 1.hour.ago
+
+      expect(conversation).not_to receive(:unread_incoming_messages_count)
+      expect(conversation).not_to receive(:can_reply?)
+      payload = described_class.new(
+        links: [link],
+        unread_counts: { conversation.id => 7 },
+        last_incoming_message_timestamps: { conversation.id => last_incoming_message_at }
+      ).perform.first
+
+      expect(payload[:unread_count]).to eq(7)
+    end
+
     it 'returns contact-facing channel identity metadata without replacing inbox metadata' do
       contact = create(:contact, account: account)
       inbox = create(:inbox, account: account, name: 'Business Telegram')

@@ -524,6 +524,93 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(priorities).to eq(%w[urgent medium low])
     end
 
+    it 'sorts newest public messages across both incoming and outgoing directions' do
+      base_time = Time.zone.parse('2026-07-17 10:00:00 UTC')
+      outgoing_conversation = create(:conversation, account: account, created_at: base_time - 3.days)
+      incoming_conversation = create(:conversation, account: account, created_at: base_time - 3.days)
+      older_conversation = create(:conversation, account: account, created_at: base_time - 3.days)
+      [outgoing_conversation, incoming_conversation, older_conversation].each do |conversation|
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+      end
+
+      create(:message, account: account, conversation: older_conversation, message_type: :incoming, created_at: base_time - 3.hours)
+      create(:message, account: account, conversation: incoming_conversation, message_type: :incoming, created_at: base_time - 2.hours)
+      create(:message, account: account, conversation: outgoing_conversation, message_type: :outgoing, created_at: base_time - 1.hour)
+      create(:message, account: account, conversation: older_conversation, message_type: :activity, created_at: base_time)
+      create(:message, account: account, conversation: older_conversation, message_type: :outgoing, private: true, created_at: base_time + 1.hour)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'all', sort_by: 'last_activity_at_desc' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('data', 'payload').pluck('id').first(3)).to eq(
+        [
+          outgoing_conversation.reload.communication_thread.display_id,
+          incoming_conversation.reload.communication_thread.display_id,
+          older_conversation.reload.communication_thread.display_id
+        ]
+      )
+    end
+
+    it 'supports waiting and priority-created sorting exposed by the dashboard' do
+      base_time = Time.zone.parse('2026-07-17 10:00:00 UTC')
+      longest_waiting = create(:conversation, account: account, priority: :urgent, created_at: base_time - 3.days)
+      newer_urgent = create(:conversation, account: account, priority: :urgent, created_at: base_time - 1.day)
+      not_waiting = create(:conversation, account: account, priority: :low, created_at: base_time - 2.days)
+      [longest_waiting, newer_urgent, not_waiting].each do |conversation|
+        create(:inbox_member, user: agent, inbox: conversation.inbox)
+      end
+      longest_waiting.update!(waiting_since: base_time - 3.hours)
+      newer_urgent.update!(waiting_since: base_time - 1.hour)
+      not_waiting.update!(waiting_since: nil)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'all', sort_by: 'waiting_since_asc' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      waiting_payload = response.parsed_body.dig('data', 'payload')
+      expect(waiting_payload.pluck('id').first(3)).to eq(
+        [
+          longest_waiting.reload.communication_thread.display_id,
+          newer_urgent.reload.communication_thread.display_id,
+          not_waiting.reload.communication_thread.display_id
+        ]
+      )
+      expect(waiting_payload.first['waiting_since']).to eq((base_time - 3.hours).to_i)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'all', sort_by: 'priority_desc_created_at_asc' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('data', 'payload').pluck('id').first(3)).to eq(
+        [
+          longest_waiting.reload.communication_thread.display_id,
+          newer_urgent.reload.communication_thread.display_id,
+          not_waiting.reload.communication_thread.display_id
+        ]
+      )
+    end
+
+    it 'skips expensive list metadata for subsequent pages when requested' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads",
+          params: { status: 'all', include_meta: false },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('data', 'meta')).to be_nil
+      expect(response.parsed_body.dig('data', 'payload').pluck('id')).to include(conversation.reload.communication_thread.display_id)
+    end
+
     it 'rejects invalid list parameters instead of coercing them into SQL' do
       create(:conversation, account: account)
 
@@ -658,6 +745,36 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
       expect(payload.second.dig(:messages, 0, :id)).to eq(matching_activity_message.id)
       expect(payload.second.dig(:last_non_activity_message, :id)).to eq(matching_public_message.id)
+    end
+
+    it 'applies explicit dashboard sorting to advanced filter results' do
+      older_matching_conversation = create(
+        :conversation,
+        account: account,
+        status: :open,
+        priority: :urgent,
+        created_at: 3.days.ago
+      )
+      create(:inbox_member, user: agent, inbox: older_matching_conversation.inbox)
+      create_thread_stage_deal(older_matching_conversation, matching_stage)
+      older_matching_conversation.reload.communication_thread.update!(created_at: 3.days.ago)
+      matching_conversation.update!(priority: :urgent)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter",
+           params: {
+             payload: advanced_filter_payload,
+             sort_by: 'priority_desc_created_at_asc'
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('data', 'payload').pluck('id').first(2)).to eq(
+        [
+          older_matching_conversation.reload.communication_thread.display_id,
+          matching_conversation.reload.communication_thread.display_id
+        ]
+      )
     end
   end
 

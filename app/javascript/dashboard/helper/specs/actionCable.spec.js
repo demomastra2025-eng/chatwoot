@@ -101,7 +101,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
 
-        await vi.advanceTimersByTimeAsync(250);
+        await vi.advanceTimersByTimeAsync(2000);
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
       } finally {
@@ -122,7 +122,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
       try {
         actionCable.fetchSidebarUnreadCounts();
-        await vi.advanceTimersByTimeAsync(250);
+        await vi.advanceTimersByTimeAsync(2000);
         expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
 
         actionCable.fetchSidebarUnreadCounts();
@@ -131,7 +131,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
         resolveRefresh();
         await Promise.resolve();
-        await vi.advanceTimersByTimeAsync(250);
+        await vi.advanceTimersByTimeAsync(2000);
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(2);
       } finally {
@@ -836,8 +836,12 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
         await vi.advanceTimersByTimeAsync(500);
 
-        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(0);
         expect(loadPipelinesSpy).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(1500);
+
+        expect(sidebarUnreadRefreshCalls()).toHaveLength(1);
       } finally {
         vi.useRealTimers();
       }

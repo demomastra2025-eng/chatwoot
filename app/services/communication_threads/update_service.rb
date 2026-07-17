@@ -29,6 +29,7 @@ class CommunicationThreads::UpdateService
   end
 
   def sync_conversation!(conversation)
+    conversation.skip_communication_thread_refresh = true
     assign_status!(conversation)
     assign_priority!(conversation)
     assign_agent!(conversation)

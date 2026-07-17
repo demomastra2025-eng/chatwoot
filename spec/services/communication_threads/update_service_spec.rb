@@ -21,6 +21,8 @@ RSpec.describe CommunicationThreads::UpdateService do
         team_id: team.id
       ).permit!
 
+      expect(Conversations::CommunicationThreadResolver).to receive(:new).once.and_call_original
+
       thread = described_class.new(
         communication_thread: conversation.reload.communication_thread,
         params: params,

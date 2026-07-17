@@ -723,6 +723,31 @@ describe('#actions', () => {
         ],
       ]);
     });
+
+    it('rejects failed communication thread updates so the UI cannot report false success', async () => {
+      const error = new Error('Thread update failed');
+      const updateSpy = vi
+        .spyOn(CommunicationThreadApi, 'update')
+        .mockRejectedValue(error);
+      const communicationThread = {
+        id: 77,
+        communication_thread_id: 77,
+        is_communication_thread: true,
+      };
+
+      await expect(
+        actions.toggleStatus(
+          { commit, state: { allConversations: [communicationThread] } },
+          {
+            conversationId: 77,
+            status: 'resolved',
+            conversationType: 'communication_thread',
+          }
+        )
+      ).rejects.toThrow('Thread update failed');
+
+      updateSpy.mockRestore();
+    });
   });
 
   describe('#assignTeam', () => {

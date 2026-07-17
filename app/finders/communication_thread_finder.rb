@@ -32,9 +32,25 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       'communication_threads.priority DESC NULLS LAST',
       'communication_threads.last_activity_at DESC NULLS LAST',
       'communication_threads.id DESC'
+    ].join(', '),
+    'priority_desc_created_at_asc' => [
+      'communication_threads.priority DESC NULLS LAST',
+      'communication_threads.created_at ASC',
+      'communication_threads.id ASC'
+    ].join(', '),
+    'waiting_since_asc' => [
+      'thread_waiting_since_sort_at ASC NULLS LAST',
+      'communication_threads.created_at ASC',
+      'communication_threads.id ASC'
+    ].join(', '),
+    'waiting_since_desc' => [
+      'thread_waiting_since_sort_at DESC NULLS LAST',
+      'communication_threads.created_at ASC',
+      'communication_threads.id ASC'
     ].join(', ')
   }.with_indifferent_access
   MESSAGE_SORT_KEYS = %w[last_activity_at_asc last_activity_at_desc latest].freeze
+  WAITING_SORT_KEYS = %w[waiting_since_asc waiting_since_desc].freeze
   STATUS_COUNT_KEYS = %w[open pending snoozed resolved].freeze
 
   def self.message_sort?(sort_key)
@@ -69,6 +85,22 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     SQL
   end
 
+  def self.waiting_since_sort_sql(conversation_scope)
+    conversation_ids_sql = conversation_scope.reselect('conversations.id').to_sql
+
+    <<~SQL.squish
+      SELECT MIN(sort_waiting_conversations.waiting_since)
+      FROM communication_thread_conversations sort_waiting_links
+      INNER JOIN conversations sort_waiting_conversations
+        ON sort_waiting_conversations.id = sort_waiting_links.conversation_id
+       AND sort_waiting_conversations.account_id = communication_threads.account_id
+      INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
+        ON sort_accessible_conversations.id = sort_waiting_links.conversation_id
+      WHERE sort_waiting_links.communication_thread_id = communication_threads.id
+        AND sort_waiting_links.account_id = communication_threads.account_id
+    SQL
+  end
+
   def initialize(current_user, params)
     @current_user = current_user
     @current_account = current_user.account
@@ -77,7 +109,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   def perform
     set_up
-    count = thread_counts
+    count = include_meta? ? thread_counts : {}
     filter_by_assignee_type
 
     {
@@ -194,15 +226,15 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def set_count_for_all_threads
-    counts = assignee_counts_for(@communication_threads)
+    counts = aggregate_assignment_counts(@communication_threads, include_unread: true)
 
     [
       counts[:mine_count],
       counts[:unassigned_count],
       counts[:all_count],
-      unread_thread_count(@communication_threads.where(assignee_id: current_user.id)),
-      unread_thread_count(@communication_threads.where(assignee_id: nil)),
-      unread_thread_count(@communication_threads)
+      counts[:mine_unread_count],
+      counts[:unassigned_unread_count],
+      counts[:all_unread_count]
     ]
   end
 
@@ -225,15 +257,58 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def assignee_counts_for(scope)
-    mine_count = scope.where(assignee_id: current_user.id).count
-    unassigned_count = scope.where(assignee_id: nil).count
-    all_count = scope.count
+    counts = aggregate_assignment_counts(scope)
+    mine_count = counts[:mine_count]
+    unassigned_count = counts[:unassigned_count]
+    all_count = counts[:all_count]
 
     {
       mine_count: mine_count,
       assigned_count: all_count - unassigned_count,
       unassigned_count: unassigned_count,
       all_count: all_count
+    }
+  end
+
+  def aggregate_assignment_counts(scope, include_unread: false)
+    relation = CommunicationThread.where(id: scope.except(:order).select(:id))
+    columns = assignment_count_columns
+    columns += unread_assignment_count_columns if include_unread
+
+    assignment_counts_from(relation.pick(*columns))
+  end
+
+  def assignment_count_columns
+    [
+      Arel.sql('COUNT(*)'),
+      Arel.sql("COUNT(*) FILTER (WHERE communication_threads.assignee_id = #{current_user.id.to_i})"),
+      Arel.sql('COUNT(*) FILTER (WHERE communication_threads.assignee_id IS NULL)')
+    ]
+  end
+
+  def unread_assignment_count_columns
+    [
+      Arel.sql('COUNT(*) FILTER (WHERE communication_threads.unread_count > 0)'),
+      Arel.sql(
+        'COUNT(*) FILTER (WHERE communication_threads.unread_count > 0 AND ' \
+        "communication_threads.assignee_id = #{current_user.id.to_i})"
+      ),
+      Arel.sql(
+        'COUNT(*) FILTER (WHERE communication_threads.unread_count > 0 AND ' \
+        'communication_threads.assignee_id IS NULL)'
+      )
+    ]
+  end
+
+  def assignment_counts_from(raw_values)
+    values = Array(raw_values).map(&:to_i)
+    {
+      all_count: values[0],
+      mine_count: values[1],
+      unassigned_count: values[2],
+      all_unread_count: values[3].to_i,
+      mine_unread_count: values[4].to_i,
+      unassigned_unread_count: values[5].to_i
     }
   end
 
@@ -438,9 +513,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def communication_threads
     relation = @communication_threads
     relation = with_last_message_activity_sort(relation) if message_sort?
+    relation = with_waiting_since_sort(relation) if waiting_sort?
 
     relation
-      .includes(:contact, :assignee, :team)
+      .includes(thread_list_preloads)
       .order(Arel.sql(sort_clause))
       .page(params[:page] || 1)
       .per(RESULTS_PER_PAGE)
@@ -458,6 +534,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     self.class.message_sort?(sort_key)
   end
 
+  def waiting_sort?
+    WAITING_SORT_KEYS.include?(sort_key.to_s)
+  end
+
   def with_last_message_activity_sort(relation)
     sort_sql = self.class.last_message_activity_sort_sql(accessible_conversations)
 
@@ -465,6 +545,32 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       .select(
         Arel.sql("communication_threads.*, #{sort_sql} AS last_message_activity_sort_at")
       )
+  end
+
+  def with_waiting_since_sort(relation)
+    sort_sql = self.class.waiting_since_sort_sql(accessible_conversations)
+
+    relation.select(
+      Arel.sql("communication_threads.*, (#{sort_sql}) AS thread_waiting_since_sort_at")
+    )
+  end
+
+  def include_meta?
+    !params.key?(:include_meta) || ActiveModel::Type::Boolean.new.cast(params[:include_meta])
+  end
+
+  def thread_list_preloads
+    [
+      {
+        contact: [
+          :contact_channel_profiles,
+          { avatar_attachment: :blob },
+          { owner: [:account_users, { avatar_attachment: :blob }] }
+        ]
+      },
+      { assignee: [:account_users, { avatar_attachment: :blob }] },
+      :team
+    ]
   end
 
   def accessible_conversations
