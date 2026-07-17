@@ -170,6 +170,9 @@
     }
   },
   "pnpm": {
+    "patchedDependencies": {
+      "janus-gateway@1.4.1": "patches/janus-gateway@1.4.1.patch"
+    },
     "overrides": {
       "vite-node": "2.0.1",
       "vite": "5.4.21",

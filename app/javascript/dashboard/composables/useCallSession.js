@@ -11,7 +11,6 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
-const INCOMING_BOOTSTRAP_REFRESH_MS = 300_000;
 const TERMINAL_CLAIM_FAILURE_CODES = new Set([
   'CALL_NOT_CLAIMABLE',
   'CALL_ALREADY_CLAIMED',
@@ -99,7 +98,6 @@ export function useCallSession() {
   const endingCallSids = ref(new Set());
   const releasingCallSids = ref(new Set());
   let bootstrapRetryTimer = null;
-  let bootstrapRefreshTimer = null;
   let bootstrapIncomingPromise = null;
   let activeBootstrapInboxId;
   let pendingBootstrapInboxId;
@@ -1104,20 +1102,6 @@ export function useCallSession() {
     bootstrapRetryTimer = null;
   }
 
-  function clearBootstrapRefresh() {
-    if (!bootstrapRefreshTimer) return;
-
-    window.clearInterval(bootstrapRefreshTimer);
-    bootstrapRefreshTimer = null;
-  }
-
-  function startBootstrapRefresh() {
-    clearBootstrapRefresh();
-    bootstrapRefreshTimer = window.setInterval(() => {
-      requestWebphoneConfigRefresh();
-    }, INCOMING_BOOTSTRAP_REFRESH_MS);
-  }
-
   async function performBootstrapIncomingSupport(inboxId) {
     const refreshContext = {
       provider:
@@ -1255,13 +1239,11 @@ export function useCallSession() {
     );
 
     bootstrapIncomingSupport();
-    startBootstrapRefresh();
   });
 
   onUnmounted(() => {
     durationTimer.stop();
     clearBootstrapRetry();
-    clearBootstrapRefresh();
     pendingBootstrapInboxId = undefined;
     deferredBootstrapInboxId = undefined;
     pendingWebphoneConfigRefresh.value = null;

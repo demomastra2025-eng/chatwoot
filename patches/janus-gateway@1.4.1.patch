@@ -1,0 +1,24 @@
+diff --git a/npm/dist/janus.es.js b/npm/dist/janus.es.js
+--- a/npm/dist/janus.es.js
++++ b/npm/dist/janus.es.js
+@@ -675,0 +676,8 @@
++			if(callbacks.server !== undefined && callbacks.server !== null) {
++				if(Janus.isArray(callbacks.server)) {
++					callbacks.error("Reconnect accepts a single server URL");
++					return;
++				}
++				server = callbacks.server;
++				websockets = server.indexOf("ws") === 0;
++			}
+diff --git a/npm/src/janus.js b/npm/src/janus.js
+--- a/npm/src/janus.js
++++ b/npm/src/janus.js
+@@ -681,0 +682,8 @@
++			if(callbacks.server !== undefined && callbacks.server !== null) {
++				if(Janus.isArray(callbacks.server)) {
++					callbacks.error("Reconnect accepts a single server URL");
++					return;
++				}
++				server = callbacks.server;
++				websockets = server.indexOf("ws") === 0;
++			}

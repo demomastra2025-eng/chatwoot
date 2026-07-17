@@ -204,7 +204,7 @@ describe('useCallSession', () => {
     expect(initializeDeviceMock).toHaveBeenCalledWith(4696, { native: true });
   });
 
-  it('periodically refreshes browser calling bootstrap for open dashboards', async () => {
+  it('keeps a healthy browser SIP registration intact while the dashboard remains open', async () => {
     vi.useFakeTimers();
     mountUseCallSession();
     await Promise.resolve();
@@ -216,9 +216,10 @@ describe('useCallSession', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(bootstrapIncomingSupportMock.mock.calls.length).toBeGreaterThan(
+    expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(
       initialBootstrapCalls
     );
+    expect(destroyDeviceMock).not.toHaveBeenCalled();
   });
 
   it('refreshes browser SIP registration from realtime config events when idle', async () => {

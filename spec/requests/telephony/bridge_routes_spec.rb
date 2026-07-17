@@ -403,22 +403,24 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
 
     expect(ActionCable.server).to have_received(:broadcast).with(
       agent.pubsub_token,
-      event: 'voice_call.incoming',
-      data: include(
-        account_id: account.id,
-        inbox_id: voice_inbox.id,
-        provider: 'sipuni',
-        call_sid: 'fast-inbound-route',
-        sip_profile_id: operator_profile.id,
-        janus_session_key: "sip_profile:#{operator_profile.id}",
-        logical_call_key: call_session.metadata.dig('metadata', 'logical_call_key'),
-        logicalCallKey: call_session.metadata.dig('metadata', 'logical_call_key'),
-        call_direction: 'inbound',
-        conversation_id: conversation.display_id,
-        from_number: '+15559999999',
-        to_number: voice_channel.phone_number,
-        caller: include(id: contact.id, phone_number: '+15559999999')
-      )
+      {
+        event: 'voice_call.incoming',
+        data: include(
+          account_id: account.id,
+          inbox_id: voice_inbox.id,
+          provider: 'sipuni',
+          call_sid: 'fast-inbound-route',
+          sip_profile_id: operator_profile.id,
+          janus_session_key: "sip_profile:#{operator_profile.id}",
+          logical_call_key: call_session.metadata.dig('metadata', 'logical_call_key'),
+          logicalCallKey: call_session.metadata.dig('metadata', 'logical_call_key'),
+          call_direction: 'inbound',
+          conversation_id: conversation.display_id,
+          from_number: '+15559999999',
+          to_number: voice_channel.phone_number,
+          caller: include(id: contact.id, phone_number: '+15559999999')
+        )
+      }
     )
 
     claim = Telephony::OperatorCallClaimService.new(

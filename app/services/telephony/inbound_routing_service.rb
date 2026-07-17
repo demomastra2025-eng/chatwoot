@@ -188,8 +188,10 @@ class Telephony::InboundRoutingService
     targets.each do |target|
       ActionCable.server.broadcast(
         target[:token],
-        event: 'voice_call.incoming',
-        data: fast_incoming_call_payload(decision, candidate: target[:candidate])
+        {
+          event: 'voice_call.incoming',
+          data: fast_incoming_call_payload(decision, candidate: target[:candidate])
+        }
       )
     end
   rescue StandardError => e

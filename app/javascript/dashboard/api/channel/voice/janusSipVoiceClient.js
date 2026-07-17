@@ -35,6 +35,7 @@ const WEBPHONE_MICROPHONE_RELEASE_SETTLE_MS = 150;
 const WEBPHONE_OUTBOUND_START_TIMEOUT_MS = 20_000;
 const WEBPHONE_OUTBOUND_SETUP_TIMEOUT_MS = 45_000;
 const WEBPHONE_POST_CALL_REGISTRATION_REFRESH_DELAY_MS = 250;
+const WEBPHONE_JANUS_RECONNECT_DELAYS_MS = [0, 250, 1_000, 2_000];
 const WEBPHONE_BROWSER_FALLBACK_RECORDING_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
@@ -204,6 +205,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.janus = null;
     this.janusGeneration = 0;
     this.handledJanusFailureGeneration = null;
+    this.janusTransportRecoveryPromise = null;
     this.sipHandle = null;
     this.sipHandleGeneration = 0;
     this.sipHandleRecoveryPromise = null;
@@ -460,6 +462,22 @@ export class JanusSipVoiceClient extends EventTarget {
     return JanusSipVoiceClient.initPromise;
   }
 
+  static responseSessions(response = {}) {
+    const sessions =
+      response.sessions ||
+      response.webphoneSessions ||
+      response.webphone_sessions ||
+      response.payload?.sessions ||
+      response.payload?.webphoneSessions ||
+      response.payload?.webphone_sessions;
+
+    return Array.isArray(sessions) ? sessions : [response?.payload || response];
+  }
+
+  prepareRuntime() {
+    return this.constructor.initJanus();
+  }
+
   currentProvider() {
     return this.sessionConfig?.provider || null;
   }
@@ -601,6 +619,9 @@ export class JanusSipVoiceClient extends EventTarget {
         server: sessionConfig.janusServer,
         iceServers: sessionConfig.iceServers,
         keepAlivePeriod: WEBPHONE_JANUS_KEEPALIVE_INTERVAL_MS,
+        // WebphoneClient owns the page lifecycle. Letting janus.js also destroy
+        // the session on unload creates duplicate detach/destroy races.
+        destroyOnUnload: false,
         success: () => {
           if (generation !== this.janusGeneration) {
             janus?.destroy?.();
@@ -616,10 +637,7 @@ export class JanusSipVoiceClient extends EventTarget {
             return;
           }
           if (generation === this.janusGeneration) {
-            this.handleJanusDestroyed({
-              reason: 'janus_transport_error',
-              error,
-            });
+            this.recoverJanusTransport({ generation, error });
           }
         },
         destroyed: () => {
@@ -634,6 +652,132 @@ export class JanusSipVoiceClient extends EventTarget {
         },
       });
     });
+  }
+
+  async freshSessionConfigForReconnect() {
+    const response = await VoiceAPI.getNativeWebphoneToken(this.inboxId);
+    const candidates = JanusSipVoiceClient.responseSessions(response);
+    const matchingSession = candidates.find(candidate => {
+      const normalized = JanusSipVoiceClient.normalizeSessionConfig(candidate);
+      if (this.sessionKey && normalized.sessionKey) {
+        return String(normalized.sessionKey) === String(this.sessionKey);
+      }
+      if (this.sipProfileId && normalized.sipProfileId) {
+        return String(normalized.sipProfileId) === String(this.sipProfileId);
+      }
+      return normalized.provider === this.currentProvider();
+    });
+    if (!matchingSession) throw new Error('janus_reconnect_session_missing');
+
+    const normalized =
+      JanusSipVoiceClient.normalizeSessionConfig(matchingSession);
+    if (!JanusSipVoiceClient.hasCompleteContract(normalized)) {
+      throw new Error('janus_reconnect_session_invalid');
+    }
+    if (
+      JanusSipVoiceClient.janusServerSignature(normalized.janusServer) !==
+      JanusSipVoiceClient.janusServerSignature(this.sessionConfig?.janusServer)
+    ) {
+      throw new Error('janus_reconnect_endpoint_changed');
+    }
+    if (
+      this.sessionConfig?.registrationConfigVersion &&
+      normalized.registrationConfigVersion !==
+        this.sessionConfig.registrationConfigVersion
+    ) {
+      throw new Error('janus_reconnect_config_changed');
+    }
+
+    return normalized;
+  }
+
+  reconnectJanus(janus, server) {
+    return new Promise((resolve, reject) => {
+      if (this.janus !== janus) {
+        reject(new Error('stale_janus_session'));
+        return;
+      }
+      janus.reconnect({
+        server,
+        success: resolve,
+        error: reject,
+      });
+    });
+  }
+
+  recoverJanusTransport({ generation, error = null } = {}) {
+    if (this.janusTransportRecoveryPromise) {
+      return this.janusTransportRecoveryPromise;
+    }
+    const janus = this.janus;
+    if (
+      !janus ||
+      !this.registered ||
+      this.destroyingDevice ||
+      generation !== this.janusGeneration
+    ) {
+      this.handleJanusDestroyed({
+        reason: 'janus_transport_error',
+        error,
+      });
+      return Promise.resolve(false);
+    }
+
+    const reconnectAttempt = async (
+      attemptIndex,
+      lastError = error || new Error('janus_transport_error')
+    ) => {
+      if (
+        generation !== this.janusGeneration ||
+        this.destroyingDevice ||
+        this.janus !== janus
+      ) {
+        return false;
+      }
+      if (attemptIndex >= WEBPHONE_JANUS_RECONNECT_DELAYS_MS.length) {
+        this.handleJanusDestroyed({
+          reason: 'janus_transport_recovery_failed',
+          error: lastError,
+        });
+        return false;
+      }
+
+      const delay = WEBPHONE_JANUS_RECONNECT_DELAYS_MS[attemptIndex];
+      if (delay > 0) {
+        await new Promise(resolve => {
+          window.setTimeout(resolve, delay);
+        });
+      }
+
+      try {
+        // Each WebSocket upgrade needs a fresh one-time ticket, while Janus
+        // `claim` keeps the existing SIP handle and provider registration.
+        const freshConfig = await this.freshSessionConfigForReconnect();
+        await this.reconnectJanus(janus, freshConfig.janusServer);
+        if (
+          generation !== this.janusGeneration ||
+          this.destroyingDevice ||
+          this.janus !== janus
+        ) {
+          return false;
+        }
+
+        this.sessionConfig = freshConfig;
+        this.handledJanusFailureGeneration = null;
+        this.refreshPresenceRegistration();
+        return true;
+      } catch (reconnectError) {
+        return reconnectAttempt(attemptIndex + 1, reconnectError);
+      }
+    };
+
+    const recoveryPromise = reconnectAttempt(0).finally(() => {
+      if (this.janusTransportRecoveryPromise === recoveryPromise) {
+        this.janusTransportRecoveryPromise = null;
+      }
+    });
+    this.janusTransportRecoveryPromise = recoveryPromise;
+    return recoveryPromise;
   }
 
   attachSipPlugin() {
@@ -3189,6 +3333,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.janusGeneration += 1;
     this.sipHandleGeneration += 1;
     this.sipHandleRecoveryPromise = null;
+    this.janusTransportRecoveryPromise = null;
     this.retiredOutboundJanusCallIds.clear();
     this.sipHandle = null;
     this.janus = null;

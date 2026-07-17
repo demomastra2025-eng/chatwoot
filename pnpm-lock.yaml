@@ -12,6 +12,11 @@ overrides:
   minimatch@>=9.0.0 <9.0.7: 9.0.9
   rollup: '>=4.59.0'
 
+patchedDependencies:
+  janus-gateway@1.4.1:
+    hash: 2d930b533fb1434fa8a0ac5f50cbc8e5bcaae6402d58dfd64aae7e031500da93
+    path: patches/janus-gateway@1.4.1.patch
+
 importers:
 
   .:
@@ -153,7 +158,7 @@ importers:
         version: 8.0.0
       janus-gateway:
         specifier: ^1.4.1
-        version: 1.4.1
+        version: 1.4.1(patch_hash=2d930b533fb1434fa8a0ac5f50cbc8e5bcaae6402d58dfd64aae7e031500da93)
       js-cookie:
         specifier: ^3.0.5
         version: 3.0.5
@@ -8058,7 +8063,7 @@ snapshots:
     optionalDependencies:
       '@pkgjs/parseargs': 0.11.0
 
-  janus-gateway@1.4.1:
+  janus-gateway@1.4.1(patch_hash=2d930b533fb1434fa8a0ac5f50cbc8e5bcaae6402d58dfd64aae7e031500da93):
     dependencies:
       webrtc-adapter: 9.0.3
 

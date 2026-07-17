@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   attachMock,
   janusDestroyMock,
+  janusReconnectMock,
   pluginDetachMock,
   pluginSendMock,
   pluginHangupMock,
@@ -15,9 +16,11 @@ const {
   uploadRecordingMock,
   updatePresenceMock,
   updatePresenceOnUnloadMock,
+  getNativeWebphoneTokenMock,
 } = vi.hoisted(() => ({
   attachMock: vi.fn(),
   janusDestroyMock: vi.fn(),
+  janusReconnectMock: vi.fn(),
   pluginDetachMock: vi.fn(),
   pluginSendMock: vi.fn(),
   pluginHangupMock: vi.fn(),
@@ -37,6 +40,7 @@ const {
     })
   ),
   updatePresenceOnUnloadMock: vi.fn(() => Promise.resolve(null)),
+  getNativeWebphoneTokenMock: vi.fn(),
 }));
 
 vi.mock('webrtc-adapter', () => ({
@@ -80,6 +84,11 @@ vi.mock('janus-gateway', () => {
       });
     }
 
+    reconnect(options = {}) {
+      janusReconnectMock(options);
+      window.setTimeout(() => options.success?.(), 0);
+    }
+
     destroy() {
       janusDestroyMock();
       this.options.destroyed?.();
@@ -104,6 +113,7 @@ vi.mock('./voiceAPIClient', () => ({
     uploadWebphoneRecording: uploadRecordingMock,
     updateWebphonePresence: updatePresenceMock,
     updateWebphonePresenceOnUnload: updatePresenceOnUnloadMock,
+    getNativeWebphoneToken: getNativeWebphoneTokenMock,
   },
 }));
 
@@ -321,6 +331,7 @@ describe('janusSipVoiceClient', () => {
     janusState.instances.length = 0;
     attachMock.mockClear();
     janusDestroyMock.mockClear();
+    janusReconnectMock.mockClear();
     pluginDetachMock.mockClear();
     pluginSendMock.mockClear();
     pluginHangupMock.mockClear();
@@ -331,6 +342,12 @@ describe('janusSipVoiceClient', () => {
     uploadRecordingMock.mockClear();
     updatePresenceMock.mockClear();
     updatePresenceOnUnloadMock.mockClear();
+    getNativeWebphoneTokenMock.mockReset();
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      ...sipuniSession,
+      janusServer:
+        'wss://dev.one-link.kz/janus-sipuni?janus_ticket=fresh-ticket',
+    });
   });
 
   afterEach(async () => {
@@ -1980,6 +1997,46 @@ describe('janusSipVoiceClient', () => {
     await client.initializeDevice(sipuniSession, { inboxId: 4769 });
 
     expect(janusState.instances.at(-1)?.options.keepAlivePeriod).toBe(15_000);
+  });
+
+  it('reclaims the existing Janus session with a fresh ticket after a transport interruption', async () => {
+    const client = createJanusSipVoiceClient();
+    const unregisteredHandler = vi.fn();
+    client.addEventListener('call:unregistered', unregisteredHandler);
+    await client.initializeDevice(
+      {
+        ...sipuniSession,
+        janusServer:
+          'wss://dev.one-link.kz/janus-sipuni?janus_ticket=initial-ticket',
+      },
+      { inboxId: 4769 }
+    );
+    await flushJanusInitialization();
+    updatePresenceMock.mockClear();
+    pluginSendMock.mockClear();
+
+    janusState.instances[0].options.error(new Error('socket closed'));
+
+    await vi.waitFor(() => {
+      expect(janusReconnectMock).toHaveBeenCalledTimes(1);
+    });
+    expect(getNativeWebphoneTokenMock).toHaveBeenCalledWith(4769);
+    expect(janusReconnectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        server: 'wss://dev.one-link.kz/janus-sipuni?janus_ticket=fresh-ticket',
+      })
+    );
+    expect(client.sessionState().registered).toBe(true);
+    expect(pluginSendMock).not.toHaveBeenCalledWith({
+      message: { request: 'unregister' },
+    });
+    expect(pluginDetachMock).not.toHaveBeenCalled();
+    expect(janusDestroyMock).not.toHaveBeenCalled();
+    expect(unregisteredHandler).not.toHaveBeenCalled();
+    expect(updatePresenceMock).not.toHaveBeenCalledWith(
+      false,
+      expect.anything()
+    );
   });
 
   it('does not recover the Janus SIP device during intentional destroy', async () => {

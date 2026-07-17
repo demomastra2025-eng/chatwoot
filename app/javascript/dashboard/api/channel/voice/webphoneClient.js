@@ -77,11 +77,16 @@ class WebphoneClient extends EventTarget {
 
     this.subscribeClient('twilio', TwilioVoiceClient);
     this.handleBrowserOnline = () => this.resumeNativeSessions();
-    this.handleBrowserOffline = () =>
-      this.suspendNativeSessions('browser_offline');
+    // A short network transition should be recovered by Janus `claim`. Do not
+    // destroy an otherwise healthy SIP handle before the transport reconnects.
+    this.handleBrowserOffline = () => this.pauseNativeSessionRetries();
     this.handlePageShow = () => this.resumeNativeSessions();
-    this.handlePageHide = () =>
+    this.handlePageHide = event => {
+      // BFCache keeps the page alive and later emits `pageshow`.
+      if (event?.persisted) return;
+
       this.suspendNativeSessions('page_hidden', { keepalivePresence: true });
+    };
     this.handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') this.resumeNativeSessions();
     };
@@ -101,6 +106,10 @@ class WebphoneClient extends EventTarget {
 
   static isNativeSipProvider(provider) {
     return NATIVE_BROWSER_SIP_PROVIDERS.has(provider);
+  }
+
+  prepareNativeSipRuntime() {
+    return this.clients.sipuni?.prepareRuntime?.() || Promise.resolve();
   }
 
   static nativeSipRetryDelay(attempt, random = Math.random) {
@@ -431,6 +440,12 @@ class WebphoneClient extends EventTarget {
     return retryPromise;
   }
 
+  pauseNativeSessionRetries() {
+    Object.keys(this.nativeSessionRetryTimers).forEach(sessionKey => {
+      this.clearNativeSessionRetry(sessionKey);
+    });
+  }
+
   suspendNativeSessions(
     reason = 'browser_offline',
     { keepalivePresence = false } = {}
@@ -716,7 +731,9 @@ class WebphoneClient extends EventTarget {
     if (this.bootstrapIncomingPromise) return this.bootstrapIncomingPromise;
 
     const bootstrapPromise = (async () => {
+      const runtimePromise = this.prepareNativeSipRuntime();
       const response = await VoiceAPI.getWebphoneToken();
+      await runtimePromise;
       return this.initializeResponse(response);
     })().finally(() => {
       if (this.bootstrapIncomingPromise === bootstrapPromise) {
@@ -748,9 +765,13 @@ class WebphoneClient extends EventTarget {
     if (existing) return existing;
 
     const initializationPromise = (async () => {
+      const runtimePromise = native
+        ? this.prepareNativeSipRuntime()
+        : Promise.resolve();
       const response = native
         ? await VoiceAPI.getNativeWebphoneToken(inboxId)
         : await VoiceAPI.getWebphoneToken(inboxId);
+      await runtimePromise;
       return this.initializeResponse(response, {
         inboxId,
         native,
