@@ -29,6 +29,7 @@ class KaspiPay::PayloadBuilder
         source_id: payment.source_id,
         source: source_payload(payment.source),
         qr_token: payment.qr_token,
+        qr_original_token: payment.qr_original_token,
         receipt_url: payment.receipt_url,
         expires_at: payment.expires_at,
         paid_at: payment.paid_at,

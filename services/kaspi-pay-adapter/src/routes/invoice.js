@@ -33,7 +33,7 @@ router.get('/client-info', async (req, res) => {
   try {
     const url = `${KASPI_QRPAY_URL}/v01/remote/client-info?phoneNumber=${encodeURIComponent(phoneNumber)}`;
     const resp = await loggedFetch(url, { headers: signedQrPayHeaders(url, req.session) });
-    res.json(await resp.json());
+    res.status(resp.ok ? 200 : resp.status).json(await resp.json());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -45,13 +45,14 @@ router.post('/create', async (req, res) => {
 
   try {
     const url = `${KASPI_QRPAY_URL}/v01/remote/create`;
-    const headers = { ...signedQrPayHeaders(url, req.session), 'Content-Type': 'application/json' };
+    const body = JSON.stringify({ PhoneNumber: phoneNumber, Amount: Number(amount), Comment: comment || '' });
+    const headers = { ...signedQrPayHeaders(url, req.session, body), 'Content-Type': 'application/json' };
     const resp = await loggedFetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ PhoneNumber: phoneNumber, Amount: Number(amount), Comment: comment || '' }),
+      body,
     });
-    res.json(await resp.json());
+    res.status(resp.ok ? 200 : resp.status).json(await resp.json());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -64,7 +65,7 @@ router.get('/details', async (req, res) => {
   try {
     const url = `${KASPI_QRPAY_URL}/v02/remote/details?operationId=${encodeURIComponent(operationId)}`;
     const resp = await loggedFetch(url, { headers: signedQrPayHeaders(url, req.session) });
-    res.json(await resp.json());
+    res.status(resp.ok ? 200 : resp.status).json(await resp.json());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -76,13 +77,14 @@ router.post('/cancel', async (req, res) => {
 
   try {
     const url = `${KASPI_QRPAY_URL}/v01/remote/cancel`;
-    const headers = { ...signedQrPayHeaders(url, req.session), 'Content-Type': 'application/json' };
+    const body = JSON.stringify({ qrOperationId: Number(operationId) });
+    const headers = { ...signedQrPayHeaders(url, req.session, body), 'Content-Type': 'application/json' };
     const resp = await loggedFetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ qrOperationId: Number(operationId) }),
+      body,
     });
-    res.json(await resp.json());
+    res.status(resp.ok ? 200 : resp.status).json(await resp.json());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -91,13 +93,14 @@ router.post('/cancel', async (req, res) => {
 router.post('/history', async (_req, res) => {
   try {
     const url = `${KASPI_QRPAY_URL}/v01/remote/history`;
-    const headers = { ...signedQrPayHeaders(url, _req.session), 'Content-Type': 'application/json' };
+    const body = JSON.stringify({ MaxResult: 20 });
+    const headers = { ...signedQrPayHeaders(url, _req.session, body), 'Content-Type': 'application/json' };
     const resp = await loggedFetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ MaxResult: 20 }),
+      body,
     });
-    res.json(await resp.json());
+    res.status(resp.ok ? 200 : resp.status).json(await resp.json());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

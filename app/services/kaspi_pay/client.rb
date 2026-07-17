@@ -22,6 +22,10 @@ class KaspiPay::Client
     post('/internal/kaspi/auth/verify-otp', processId: process_id, otp: otp, phoneNumber: phone_number)
   end
 
+  def refresh(hook: self.hook)
+    post('/internal/kaspi/auth/refresh', session_payload(hook), {})
+  end
+
   def create_qr(amount:, latitude: nil, longitude: nil)
     post('/internal/kaspi/qr/create', { amount: amount, latitude: latitude, longitude: longitude }.compact, session_headers)
   end
@@ -40,6 +44,10 @@ class KaspiPay::Client
 
   def cancel_invoice(operation_id)
     post('/internal/kaspi/invoice/cancel', { operationId: operation_id }, session_headers)
+  end
+
+  def invoice_history
+    post('/internal/kaspi/invoice/history', {}, session_headers)
   end
 
   def operations_history(end_date:, last_transaction_date: nil, statement_period_code: 0)
@@ -62,8 +70,8 @@ class KaspiPay::Client
 
   attr_reader :adapter_url, :hook, :internal_secret
 
-  def session_payload
-    secrets = hook&.secret_settings || {}
+  def session_payload(current_hook = hook)
+    secrets = current_hook&.secret_settings || {}
     {
       tokenSN: secrets['token_sn'],
       vtokenSecret: secrets['vtoken_secret'],

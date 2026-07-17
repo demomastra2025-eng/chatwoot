@@ -100,6 +100,7 @@ class KaspiPay::PaymentCreator
       kaspi_operation_id: operation_id,
       kaspi_order_number: data['OrderNumber'] || data['orderNumber'],
       qr_token: qr_token,
+      qr_original_token: data['QrOriginalToken'] || data['qrOriginalToken'] || qr_token,
       receipt_url: data['ReceiptUrl'] || data['receiptUrl'],
       expires_at: parse_time(data['ExpireDate'] || data['expiresAt']),
       idempotency_key: idempotency_key,

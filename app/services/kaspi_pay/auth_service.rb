@@ -43,6 +43,33 @@ class KaspiPay::AuthService
     hook
   end
 
+  def refresh!(hook:)
+    body = client.refresh(hook: hook)
+    unless body['success']
+      code = provider_failure_response?(body) ? 'ADAPTER_REQUEST_FAILED' : 'SESSION_REFRESH_FAILED'
+      raise KaspiPay::Error.new(
+        body['message'].presence || 'Kaspi Pay session refresh failed',
+        code: code,
+        details: body
+      )
+    end
+
+    current = hook.secret_settings
+    refreshed = normalize_session(body, current['phone_number'])
+                .stringify_keys
+                .reverse_merge(current.slice('phone_number', 'profile_id', 'organization_id', 'org_name'))
+    unless refreshed['token_sn'].present? && refreshed['vtoken_secret'].present?
+      raise KaspiPay::Error.new(
+        'Kaspi Pay session refresh returned incomplete credentials',
+        code: 'SESSION_REFRESH_INVALID',
+        details: body.except('vtokenSecret', 'vtoken_secret')
+      )
+    end
+
+    hook.update!(access_token: refreshed.to_json, status: 'enabled')
+    hook
+  end
+
   private
 
   attr_reader :account, :client
@@ -52,6 +79,10 @@ class KaspiPay::AuthService
     return digits[1..] if digits.length == 11 && digits.start_with?('7', '8')
 
     digits
+  end
+
+  def provider_failure_response?(body)
+    body['StatusCode'].to_i != 0 || body['statusCode'].to_i != 0
   end
 
   def normalize_session(body, phone_number)

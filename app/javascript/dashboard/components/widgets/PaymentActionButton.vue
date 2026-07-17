@@ -198,14 +198,16 @@ export default {
       return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_PAYMENT_TEXT', {
         amount,
         currency: payment.currency || 'KZT',
-        link: payment.qr_token || payment.receipt_url,
+        link:
+          payment.qr_original_token || payment.qr_token || payment.receipt_url,
       });
     },
     qrImageText(payment, amount) {
       return this.$t('CONVERSATION.REPLYBOX.PAYMENTS.KASPI_QR_IMAGE_TEXT', {
         amount,
         currency: payment.currency || 'KZT',
-        link: payment.qr_token || payment.receipt_url,
+        link:
+          payment.qr_original_token || payment.qr_token || payment.receipt_url,
       });
     },
     qrImageFile(imageDataUrl, payment) {
@@ -251,12 +253,15 @@ export default {
         let attachment = null;
         if (
           this.selectedPaymentAction === 'kaspi_qr_image' &&
-          payment.qr_token
+          (payment.qr_original_token || payment.qr_token)
         ) {
-          const imageDataUrl = await QRCode.toDataURL(payment.qr_token, {
-            margin: 1,
-            width: 256,
-          });
+          const imageDataUrl = await QRCode.toDataURL(
+            payment.qr_original_token || payment.qr_token,
+            {
+              margin: 1,
+              width: 256,
+            }
+          );
           payment.qr_image_data_url = imageDataUrl;
           attachment = this.qrImageFile(imageDataUrl, payment);
           paymentText = this.qrImageText(payment, normalizedAmount);

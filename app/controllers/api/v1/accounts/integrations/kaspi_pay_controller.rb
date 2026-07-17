@@ -1,6 +1,6 @@
 class Api::V1::Accounts::Integrations::KaspiPayController < Api::V1::Accounts::BaseController
   before_action :check_authorization
-  before_action :fetch_hook, only: [:destroy]
+  before_action :fetch_hook, only: [:destroy, :refresh]
 
   rescue_from KaspiPay::Error, with: :render_kaspi_pay_error
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
@@ -25,6 +25,11 @@ class Api::V1::Accounts::Integrations::KaspiPayController < Api::V1::Accounts::B
     )
     hook = service.connect!(session: session, settings: kaspi_pay_settings)
 
+    render json: hook_payload(hook)
+  end
+
+  def refresh
+    hook = KaspiPay::AuthService.new(account: Current.account).refresh!(hook: @hook)
     render json: hook_payload(hook)
   end
 

@@ -639,12 +639,17 @@ Rails.application.routes.draw do
                 post 'auth/init', action: :init
                 post 'auth/send_phone', action: :send_phone
                 post 'auth/verify_otp', action: :verify_otp
+                post 'auth/refresh', action: :refresh
               end
             end
           end
           namespace :kaspi_pay do
             resources :payments, only: [:create, :show] do
               post :refund, on: :member
+              post :cancel, on: :member
+              post :history, on: :collection
+              post :history_details, on: :collection
+              post :invoice_history, on: :collection
             end
           end
           resources :working_hours, only: [:update]

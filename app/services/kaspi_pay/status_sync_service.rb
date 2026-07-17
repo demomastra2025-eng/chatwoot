@@ -9,8 +9,10 @@ class KaspiPay::StatusSyncService
     'expired' => 'expired',
     'canceled' => 'cancelled',
     'cancelled' => 'cancelled',
+    'remotepaymentcanceled' => 'cancelled',
     'failed' => 'failed',
     'declined' => 'failed',
+    'remotepaymentrejected' => 'failed',
     'error' => 'failed',
     'returned' => 'refunded',
     'refunded' => 'refunded'
@@ -24,6 +26,18 @@ class KaspiPay::StatusSyncService
   def sync!
     return payment if payment.final_status?
 
+    sync_status!
+  rescue KaspiPay::Error => e
+    raise unless e.code == 'ADAPTER_REQUEST_FAILED' && refresh_session_once!
+
+    retry
+  end
+
+  private
+
+  attr_reader :client, :payment
+
+  def sync_status!
     previous_status = payment.status
     data = status_data
     new_status = map_status(data['Status'] || data['status'])
@@ -47,17 +61,37 @@ class KaspiPay::StatusSyncService
     payment
   end
 
-  private
+  def refresh_session_once!
+    return false if @session_refresh_attempted
 
-  attr_reader :client, :payment
+    @session_refresh_attempted = true
+    hook = payment.integration_hook
+    return false if hook.blank? || hook.disabled?
+
+    KaspiPay::AuthService.new(account: payment.account).refresh!(hook: hook)
+    true
+  rescue KaspiPay::Error
+    false
+  end
 
   def status_data
     response = payment.payment_type == 'invoice' ? client.invoice_details(payment.kaspi_operation_id) : client.qr_status(payment.kaspi_operation_id)
     if response['StatusCode'].present? && response['StatusCode'].to_i != 0
-      raise KaspiPay::Error.new('Kaspi Pay status request failed', details: response)
+      code = session_expired_response?(response) ? 'ADAPTER_REQUEST_FAILED' : 'KASPI_STATUS_FAILED'
+      raise KaspiPay::Error.new('Kaspi Pay status request failed', code: code, details: response)
     end
 
     response['Data'] || response['data'] || response
+  end
+
+  def session_expired_response?(response)
+    return true if response['StatusCode'].to_i == 401
+
+    message = response.values_at('StatusDesc', 'statusDesc', 'Message', 'message', 'ErrorMessage', 'error')
+                      .compact
+                      .join(' ')
+                      .downcase
+    message.match?(/auth|token|session|unauthor|vtoken/)
   end
 
   def expired_by_ttl?

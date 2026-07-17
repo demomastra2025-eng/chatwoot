@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_14_120643) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_17_130647) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1647,6 +1647,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_14_120643) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "qr_original_token"
     t.index ["account_id", "idempotency_key"], name: "index_kaspi_pay_payments_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "kaspi_operation_id"], name: "index_kaspi_pay_payments_on_account_id_and_kaspi_operation_id", unique: true, where: "(kaspi_operation_id IS NOT NULL)"
     t.index ["account_id", "status"], name: "index_kaspi_pay_payments_on_account_id_and_status"

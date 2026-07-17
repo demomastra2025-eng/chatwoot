@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { KASPI_QRPAY_URL } from '../config.js';
 import { loggedFetch, signedQrPayHeaders } from '../helpers.js';
 import { decryptSecret } from '../crypto.js';
+import { normalizeQrResponse } from '../qr-response.js';
 
 const router = Router();
 
@@ -35,23 +36,20 @@ router.post('/create', async (req, res) => {
 
   try {
     const url = `${KASPI_QRPAY_URL}/v01/qr-token/create`;
-    const headers = { ...signedQrPayHeaders(url, req.session), 'Content-Type': 'application/json' };
+    const body = JSON.stringify({
+      PaymentAmount: Number(amount),
+      DeviceInterface: 'Pos',
+      Latitude: latitude || 43.204643483375889,
+      Longitude: longitude || 76.891962364115912,
+    });
+    const headers = { ...signedQrPayHeaders(url, req.session, body), 'Content-Type': 'application/json' };
     const resp = await loggedFetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        PaymentAmount: Number(amount),
-        DeviceInterface: 'Pos',
-        Latitude: latitude || 43.204643483375889,
-        Longitude: longitude || 76.891962364115912,
-      }),
+      body,
     });
     const kaspiResponse = await resp.json();
-    const d = kaspiResponse.Data;
-    if (d && d.QrToken) {
-      d.QrToken = d.QrToken.replace('https://qr.kaspi.kz/', 'https://pay.kaspi.kz/pay/');
-    }
-    res.json(kaspiResponse);
+    res.status(resp.ok ? 200 : resp.status).json(normalizeQrResponse(kaspiResponse));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -66,7 +64,7 @@ router.get('/status', async (req, res) => {
   try {
     const url = `${KASPI_QRPAY_URL}/v02/kaspi-qr/status?qrOperationId=${qrOperationId}`;
     const resp = await loggedFetch(url, { headers: signedQrPayHeaders(url, req.session) });
-    res.json(await resp.json());
+    res.status(resp.ok ? 200 : resp.status).json(await resp.json());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

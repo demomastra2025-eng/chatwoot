@@ -199,4 +199,49 @@ RSpec.describe KaspiPay::StatusSyncService do
 
     expect(invoice_payment.reload.status).to eq('paid')
   end
+
+  it 'refreshes the session and retries when the provider reports an expired session' do
+    invoice_payment = create(
+      :kaspi_pay_payment,
+      account: account,
+      integration_hook: hook,
+      source: create(:conversation, account: account),
+      payment_type: 'invoice',
+      amount: 15_000,
+      kaspi_operation_id: 'remote-expired',
+      status: 'pending'
+    )
+    auth_service = instance_double(KaspiPay::AuthService)
+    allow(KaspiPay::AuthService).to receive(:new).with(account: account).and_return(auth_service)
+    expect(auth_service).to receive(:refresh!).with(hook: hook).once
+    allow(client).to receive(:invoice_details).with('remote-expired').and_return(
+      { 'StatusCode' => 401, 'StatusDesc' => 'Unauthorized token' },
+      { 'StatusCode' => 0, 'Data' => { 'Status' => 'Processed' } }
+    )
+
+    described_class.new(payment: invoice_payment).sync!
+
+    expect(invoice_payment.reload.status).to eq('paid')
+  end
+
+  it 'maps remote invoice terminal statuses to local terminal states' do
+    invoice_payment = create(
+      :kaspi_pay_payment,
+      account: account,
+      integration_hook: hook,
+      source: create(:conversation, account: account),
+      payment_type: 'invoice',
+      amount: 15_000,
+      kaspi_operation_id: 'remote-canceled',
+      status: 'pending'
+    )
+    allow(client).to receive(:invoice_details).with('remote-canceled').and_return(
+      'StatusCode' => 0,
+      'Data' => { 'Status' => 'RemotePaymentCanceled', 'StatusDesc' => 'Отменен' }
+    )
+
+    described_class.new(payment: invoice_payment).sync!
+
+    expect(invoice_payment.reload.status).to eq('cancelled')
+  end
 end

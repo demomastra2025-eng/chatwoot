@@ -22,6 +22,7 @@ RSpec.describe KaspiPay::PaymentCreator do
       'Data' => {
         'QrOperationId' => 'qr-123',
         'QrToken' => 'https://pay.kaspi.kz/pay/token',
+        'QrOriginalToken' => 'https://qr.kaspi.kz/original-token',
         'ExpireDate' => 10.minutes.from_now.iso8601,
         'Amount' => 15_000,
         'ReceiptUrl' => 'https://kaspi.kz/receipt/1'
@@ -42,6 +43,7 @@ RSpec.describe KaspiPay::PaymentCreator do
     expect(payment.status).to eq('pending')
     expect(payment.kaspi_operation_id).to eq('qr-123')
     expect(payment.qr_token).to eq('https://pay.kaspi.kz/pay/token')
+    expect(payment.qr_original_token).to eq('https://qr.kaspi.kz/original-token')
     expect(KaspiPay::StatusPollJob).to have_received(:perform_later).with(payment.id)
   end
 

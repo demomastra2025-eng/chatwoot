@@ -147,6 +147,7 @@ describe('PaymentActionButton', () => {
         currency: 'KZT',
         payment_type: 'qr',
         qr_token: 'https://pay.example/qr/13',
+        qr_original_token: 'https://qr.example/original/13',
       },
     });
 
@@ -164,11 +165,11 @@ describe('PaymentActionButton', () => {
       expect.objectContaining({ payment_type: 'qr', amount: 15000 })
     );
     expect(QRCode.toDataURL).toHaveBeenCalledWith(
-      'https://pay.example/qr/13',
+      'https://qr.example/original/13',
       expect.objectContaining({ width: 256 })
     );
     const replacementText = wrapper.emitted('replaceText')?.[0]?.[0];
-    expect(replacementText).toContain('https://pay.example/qr/13');
+    expect(replacementText).toContain('https://qr.example/original/13');
     expect(replacementText).not.toContain('data:image/png;base64');
 
     const attachment = wrapper.emitted('attachFile')?.[0]?.[0];

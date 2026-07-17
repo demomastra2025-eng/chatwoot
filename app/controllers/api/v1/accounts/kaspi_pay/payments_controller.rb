@@ -1,7 +1,7 @@
 class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseController
   before_action :check_authorization
-  before_action :fetch_hook, only: [:create]
-  before_action :fetch_payment, only: [:show, :refund]
+  before_action :fetch_hook, only: [:create, :history, :history_details, :invoice_history]
+  before_action :fetch_payment, only: [:show, :refund, :cancel]
 
   rescue_from KaspiPay::Error, with: :render_kaspi_pay_error
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
@@ -30,6 +30,30 @@ class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseC
   def refund
     payment = KaspiPay::RefundService.new(payment: @payment, return_amount: params[:amount]).refund!
     render json: payment_payload(payment.reload)
+  end
+
+  def cancel
+    payment = KaspiPay::InvoiceCancellationService.new(payment: @payment).cancel!
+    render json: payment_payload(payment.reload)
+  end
+
+  def history
+    render json: KaspiPay::HistoryService.new(hook: @hook).operations(
+      end_date: params[:end_date].presence || Date.current.iso8601,
+      last_transaction_date: params[:last_transaction_date],
+      statement_period_code: params[:statement_period_code].presence || 0
+    )
+  end
+
+  def history_details
+    render json: KaspiPay::HistoryService.new(hook: @hook).operation_details(
+      id: params.require(:id),
+      operation_method: params[:operation_method].presence || 0
+    )
+  end
+
+  def invoice_history
+    render json: KaspiPay::HistoryService.new(hook: @hook).invoice_history
   end
 
   private
@@ -106,6 +130,7 @@ class Api::V1::Accounts::KaspiPay::PaymentsController < Api::V1::Accounts::BaseC
       source_type: payment.source_type,
       source_id: payment.source_id,
       qr_token: payment.qr_token,
+      qr_original_token: payment.qr_original_token,
       receipt_url: payment.receipt_url,
       expires_at: payment.expires_at,
       paid_at: payment.paid_at,

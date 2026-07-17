@@ -145,17 +145,23 @@ export const signDataPayload = (dataB64) => ecSign(dataB64);
 
 export const computeXSU = (url) => crypto.createHash('md5').update(url.toLowerCase()).digest('hex');
 
-export const computeXSign = (url, headers, xshList) => {
-  const parts = xshList.split(',').map((name) => {
+export const buildXSignPayload = (url, headers, xshList, body) => {
+  const keys = xshList.split(',');
+  const lines = [];
+  for (const name of keys) {
     if (name === 'url') {
-      try {
-        const u = new URL(url);
-        return u.pathname + u.search;
-      } catch {
-        return url;
-      }
+      lines.push('url:' + url.toLowerCase());
+    } else {
+      lines.push(name.toLowerCase() + ':' + (headers[name] || ''));
     }
-    return headers[name] || '';
-  });
-  return ecSign(parts.join(''));
+  }
+  let signText = lines.join('\n');
+  if (body) signText += '\n' + body;
+  return signText;
+};
+
+export const computeXSign = (url, headers, xshList, body) => {
+  const signText = buildXSignPayload(url, headers, xshList, body);
+  const hash = crypto.createHash('sha256').update(signText, 'utf8').digest();
+  return ecSign(hash);
 };

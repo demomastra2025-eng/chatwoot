@@ -37,7 +37,8 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
         source: appointment,
         amount: 15_000,
         kaspi_operation_id: 'qr-1',
-        qr_token: 'https://pay.kaspi.kz/pay/token'
+        qr_token: 'https://pay.kaspi.kz/pay/token',
+        qr_original_token: 'https://qr.kaspi.kz/original-token'
       )
       allow(KaspiPay::PaymentCreator).to receive(:new).with(
         hook: hook,
@@ -60,6 +61,7 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
         'id' => payment.id,
         'status' => 'pending',
         'qr_token' => 'https://pay.kaspi.kz/pay/token',
+        'qr_original_token' => 'https://qr.kaspi.kz/original-token',
         'kaspi_operation_id' => 'qr-1'
       )
     end
@@ -186,6 +188,44 @@ RSpec.describe 'Kaspi Pay payments API', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(response.parsed_body).to include('id' => payment.id, 'amount' => 15_000, 'status' => 'pending')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/kaspi_pay/payments/:id/cancel' do
+    it 'cancels an account-scoped invoice' do
+      payment = create(:kaspi_pay_payment, account: account, integration_hook: hook, source: appointment, payment_type: 'invoice',
+                                           kaspi_operation_id: 'invoice-1')
+      service = instance_double(KaspiPay::InvoiceCancellationService)
+      allow(KaspiPay::InvoiceCancellationService).to receive(:new).with(payment: payment).and_return(service)
+      allow(service).to receive(:cancel!) do
+        payment.update!(status: 'cancelled', failed_at: Time.current)
+        payment
+      end
+
+      post "/api/v1/accounts/#{account.id}/kaspi_pay/payments/#{payment.id}/cancel",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('id' => payment.id, 'status' => 'cancelled')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/kaspi_pay/payments/history' do
+    it 'returns provider history through an account-scoped hook' do
+      history = instance_double(KaspiPay::HistoryService)
+      allow(KaspiPay::HistoryService).to receive(:new).with(hook: hook).and_return(history)
+      allow(history).to receive(:operations).with(
+        end_date: '2026-07-17', last_transaction_date: nil, statement_period_code: 0
+      ).and_return('Operations' => [{ 'Id' => 1 }])
+
+      post "/api/v1/accounts/#{account.id}/kaspi_pay/payments/history",
+           params: { end_date: '2026-07-17' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to eq('Operations' => [{ 'Id' => 1 }])
     end
   end
 

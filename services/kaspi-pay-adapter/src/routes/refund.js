@@ -37,13 +37,14 @@ router.post('/create', async (req, res) => {
 
   try {
     const url = `${KASPI_QRPAY_URL}/v01/kaspi-qr/history-pos-return`;
-    const headers = { ...signedQrPayHeaders(url, req.session), 'Content-Type': 'application/json' };
+    const body = JSON.stringify({ ReturnAmount: numericReturnAmount, QrOperationId: numericQrOperationId, DeviceInterface: 'Pos' });
+    const headers = { ...signedQrPayHeaders(url, req.session, body), 'Content-Type': 'application/json' };
     const resp = await loggedFetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ ReturnAmount: numericReturnAmount, QrOperationId: numericQrOperationId, DeviceInterface: 'Pos' }),
+      body,
     });
-    res.json(await resp.json());
+    res.status(resp.ok ? 200 : resp.status).json(await resp.json());
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

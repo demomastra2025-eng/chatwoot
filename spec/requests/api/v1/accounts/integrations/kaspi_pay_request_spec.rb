@@ -64,6 +64,22 @@ RSpec.describe 'Kaspi Pay integration API', type: :request do
     end
   end
 
+  describe 'POST /api/v1/accounts/:account_id/integrations/kaspi_pay/auth/refresh' do
+    it 'refreshes the existing Kaspi Pay session without exposing secrets' do
+      hook = create(:integrations_hook, :kaspi_pay, account: account)
+      allow(KaspiPay::AuthService).to receive(:new).with(account: account).and_return(auth_service)
+      allow(auth_service).to receive(:refresh!).with(hook: hook).and_return(hook)
+
+      post "/api/v1/accounts/#{account.id}/integrations/kaspi_pay/auth/refresh",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body['secret_settings']).to be_nil
+      expect(response.parsed_body['metadata']).to include('profile_id' => hook.secret_settings['profile_id'])
+    end
+  end
+
   describe 'DELETE /api/v1/accounts/:account_id/integrations/kaspi_pay' do
     it 'disables the hook and clears secrets without deleting payment history' do
       hook = create(:integrations_hook, :kaspi_pay, account: account)

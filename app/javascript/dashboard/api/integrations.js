@@ -78,6 +78,10 @@ class IntegrationsAPI extends ApiClient {
     );
   }
 
+  refreshKaspiPayAuth() {
+    return axios.post(`${this.baseUrl()}/integrations/kaspi_pay/auth/refresh`);
+  }
+
   verifyKaspiPayOtp({ processId, phoneNumber, otp, settings }) {
     return axios.post(
       `${this.baseUrl()}/integrations/kaspi_pay/auth/verify_otp`,

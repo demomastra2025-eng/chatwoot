@@ -38,4 +38,73 @@ RSpec.describe KaspiPay::AuthService do
       expect(result).to include(phone_number: '7012114000')
     end
   end
+
+  describe '#refresh!' do
+    let(:hook) do
+      instance_double(Integrations::Hook, secret_settings: {
+                        'token_sn' => 'old-token-sn',
+                        'vtoken_secret' => 'old-secret',
+                        'profile_id' => 'profile-1',
+                        'organization_id' => 'org-1',
+                        'phone_number' => '7012114000'
+                      })
+    end
+
+    it 'refreshes the adapter session and persists the rotated credentials' do
+      allow(client).to receive(:refresh).with(hook: hook).and_return(
+        'success' => true,
+        'tokenSN' => 'new-token-sn',
+        'vtokenSecret' => 'new-secret',
+        'profileId' => 'profile-1',
+        'organizationId' => 'org-1'
+      )
+      expect(hook).to receive(:update!) do |attributes|
+        persisted = JSON.parse(attributes[:access_token])
+        expect(persisted).to include('token_sn' => 'new-token-sn', 'vtoken_secret' => 'new-secret', 'phone_number' => '7012114000')
+        expect(attributes[:status]).to eq('enabled')
+      end
+
+      expect(service.refresh!(hook: hook)).to eq(hook)
+    end
+
+    it 'preserves existing organization context when refresh omits it' do
+      allow(client).to receive(:refresh).with(hook: hook).and_return(
+        'success' => true,
+        'tokenSN' => 'new-token-sn',
+        'vtokenSecret' => 'new-secret'
+      )
+      expect(hook).to receive(:update!) do |attributes|
+        persisted = JSON.parse(attributes[:access_token])
+        expect(persisted).to include(
+          'token_sn' => 'new-token-sn',
+          'vtoken_secret' => 'new-secret',
+          'profile_id' => 'profile-1',
+          'organization_id' => 'org-1'
+        )
+      end
+
+      service.refresh!(hook: hook)
+    end
+
+    it 'does not overwrite credentials when the adapter returns an incomplete session' do
+      allow(client).to receive(:refresh).with(hook: hook).and_return('success' => true, 'profileId' => 'profile-1')
+
+      expect(hook).not_to receive(:update!)
+      expect { service.refresh!(hook: hook) }.to raise_error(KaspiPay::Error) { |error|
+        expect(error.code).to eq('SESSION_REFRESH_INVALID')
+      }
+    end
+
+    it 'classifies provider status failures as adapter request failures' do
+      allow(client).to receive(:refresh).with(hook: hook).and_return(
+        'success' => false,
+        'statusCode' => 401,
+        'message' => 'Unauthorized'
+      )
+
+      expect { service.refresh!(hook: hook) }.to raise_error(KaspiPay::Error) { |error|
+        expect(error.code).to eq('ADAPTER_REQUEST_FAILED')
+      }
+    end
+  end
 end

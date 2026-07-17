@@ -46,9 +46,9 @@ export const loggedFetch = async (url, options = {}) => {
   return resp;
 };
 
-export const signedQrPayHeaders = (url, session) => {
+export const signedQrPayHeaders = (url, session, body) => {
   const xsh =
-    'url,X-Request-ID,X-Device-ID,X-Platform-Ver,X-App-Bld,X-Time,X-Kb-TokenSn,X-App-Ver,X-Kb-TokenSnMac,X-Call,X-PI,X-Install-ID,X-Platform-Type,X-Locale,X-SV';
+    'url,X-Install-ID,X-PI,X-App-Bld,X-Platform-Ver,X-Locale,X-App-Ver,X-Device-ID,X-SV,X-Time,X-Platform-Type,X-Call,X-Kb-TokenSnMac,X-Kb-TokenSn';
   const headers = {
     'X-Kb-TokenSn': session.tokenSN,
     'X-Kb-TokenSnMac': computeTokenSnMac(session.tokenSN, session.decryptedSecret),
@@ -70,6 +70,6 @@ export const signedQrPayHeaders = (url, session) => {
     'Accept-Language': 'ru',
     'Accept-Encoding': 'gzip, deflate, br',
   };
-  headers['X-Sign'] = computeXSign(url, headers, xsh);
+  headers['X-Sign'] = computeXSign(url, headers, xsh, body);
   return headers;
 };
