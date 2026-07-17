@@ -367,6 +367,42 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'does not let a delayed lifecycle event overwrite canonical native SIP grouping' do
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
+        status: 'ringing',
+        metadata: {
+          'metadata' => {
+            'source' => 'browser_janus_sip',
+            'logical_call_key' => 'native-sip-inbound:canonical',
+            'call_group_key' => 'native-sip-inbound:canonical',
+            'logical_call_group_ref' => 'sipuni:janus:canonical-root'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-delayed-stale-logical-group',
+          provider: 'sipuni',
+          event: 'session_started',
+          status: 'ringing',
+          metadata: {
+            logical_call_key: 'native-sip-inbound:stale',
+            call_group_key: 'native-sip-inbound:stale',
+            logical_call_group_ref: 'sipuni:janus:intermediate-branch'
+          }
+        )
+      ).perform
+
+      expect(result.reload.metadata.fetch('metadata')).to include(
+        'logical_call_key' => 'native-sip-inbound:canonical',
+        'call_group_key' => 'native-sip-inbound:canonical',
+        'logical_call_group_ref' => 'sipuni:janus:canonical-root'
+      )
+    end
+
     it 'removes a delayed ringing bubble through a transitive native SIP group after the root completed' do
       conversation = existing_call_session.conversation
       root_ref = 'sipuni:janus:root-202'

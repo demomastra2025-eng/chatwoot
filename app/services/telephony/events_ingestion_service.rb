@@ -2286,7 +2286,7 @@ class Telephony::EventsIngestionService
     base['last_payload'] = payload
     if metadata.present?
       existing_metadata = base['metadata'].is_a?(Hash) ? base['metadata'].deep_dup : {}
-      base['metadata'] = existing_metadata.deep_merge(metadata_for_merge(existing_metadata))
+      base['metadata'] = existing_metadata.deep_merge(metadata_for_merge(call_session, existing_metadata))
     end
     if recording_event_metadata.present?
       existing_recording_metadata = base['recording'].is_a?(Hash) ? base['recording'].deep_dup : {}
@@ -2295,9 +2295,27 @@ class Telephony::EventsIngestionService
     base.compact
   end
 
-  def metadata_for_merge(existing_metadata)
+  def metadata_for_merge(call_session, existing_metadata)
     incoming_metadata = metadata.deep_stringify_keys
-    preserve_sipuni_operator_leg_metadata(existing_metadata.deep_stringify_keys, incoming_metadata)
+    existing_metadata = existing_metadata.deep_stringify_keys
+    incoming_metadata = preserve_sipuni_operator_leg_metadata(existing_metadata, incoming_metadata)
+    preserve_browser_janus_sip_logical_metadata(call_session, existing_metadata, incoming_metadata)
+  end
+
+  def preserve_browser_janus_sip_logical_metadata(call_session, existing_metadata, incoming_metadata)
+    browser_janus_sip = existing_metadata['source'] == 'browser_janus_sip' ||
+                        call_session.external_call_ref.to_s.include?(':janus:')
+    return incoming_metadata unless browser_janus_sip && native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+
+    logical_key = existing_metadata['logical_call_key'].presence || existing_metadata['call_group_key'].presence
+    logical_group_ref = existing_metadata['logical_call_group_ref'].presence
+    return incoming_metadata if logical_key.blank? && logical_group_ref.blank?
+
+    incoming_metadata.merge(
+      'logical_call_key' => logical_key || incoming_metadata['logical_call_key'],
+      'call_group_key' => logical_key || incoming_metadata['call_group_key'],
+      'logical_call_group_ref' => logical_group_ref || incoming_metadata['logical_call_group_ref']
+    ).compact
   end
 
   def preserve_sipuni_operator_leg_metadata(existing_metadata, incoming_metadata)

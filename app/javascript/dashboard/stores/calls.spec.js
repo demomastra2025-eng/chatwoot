@@ -196,6 +196,74 @@ describe('useCallsStore', () => {
     ]);
   });
 
+  it('replaces stale native SIP cards for the same client even when a delayed branch has another logical key', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'stale-operator-branch',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      sipProfileId: 83,
+      janusSessionKey: 'sip_profile:83',
+      logicalCallKey: 'janus-inbound:stale-key',
+      fromNumber: 'sip:+77072817060@91.215.136.2:8217',
+      toNumber: '+77017450000',
+    });
+    store.addCall({
+      callSid: 'current-operator-branch',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      sipProfileId: 83,
+      janusSessionKey: 'sip_profile:83',
+      logicalCallKey: 'janus-inbound:canonical-key',
+      fromNumber: '+7 (707) 281-70-60',
+      toNumber: '8 701 745 00 00',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'current-operator-branch',
+        logicalCallKey: 'janus-inbound:canonical-key',
+        fromNumber: '+7 (707) 281-70-60',
+      }),
+    ]);
+  });
+
+  it('keeps simultaneous native SIP calls from different clients separate', () => {
+    const store = useCallsStore();
+    const sharedScope = {
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      sipProfileId: 83,
+      janusSessionKey: 'sip_profile:83',
+      toNumber: '+77017450000',
+    };
+
+    store.addCall({
+      ...sharedScope,
+      callSid: 'first-client-call',
+      logicalCallKey: 'janus-inbound:first-client',
+      fromNumber: '+77072817060',
+    });
+    store.addCall({
+      ...sharedScope,
+      callSid: 'second-client-call',
+      logicalCallKey: 'janus-inbound:second-client',
+      fromNumber: '+77070000001',
+    });
+
+    expect(store.calls.map(call => call.callSid)).toEqual([
+      'first-client-call',
+      'second-client-call',
+    ]);
+  });
+
   it('removes a deduped Janus SIP inbound card when a sibling branch terminates', () => {
     const store = useCallsStore();
 
@@ -582,6 +650,50 @@ describe('useCallsStore', () => {
         provider: 'sipuni',
       })
     );
+  });
+
+  it('removes every stale modal for the same client after another operator claims the call', async () => {
+    const store = useCallsStore();
+    const sharedCall = {
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      sipProfileId: 83,
+      janusSessionKey: 'sip_profile:83',
+      fromNumber: '+77072817060',
+      toNumber: '+77017450000',
+      isActive: false,
+    };
+    store.calls.push(
+      {
+        ...sharedCall,
+        callSid: 'stale-modal-a',
+        logicalCallKey: 'janus-inbound:stale-a',
+      },
+      {
+        ...sharedCall,
+        callSid: 'stale-modal-b',
+        logicalCallKey: 'janus-inbound:stale-b',
+      }
+    );
+
+    await store.handleCallClaimed(
+      {
+        account_id: 43,
+        call_sid: 'stale-modal-b',
+        provider: 'sipuni',
+        call_direction: 'inbound',
+        inbox_id: 194,
+        logical_call_key: 'janus-inbound:canonical',
+        from_number: '+77072817060',
+        to_number: '+77017450000',
+        claimed_by_user_id: 1,
+      },
+      113
+    );
+
+    expect(store.calls).toEqual([]);
   });
 
   it('ends an active Sipuni browser client when another operator claims the call', async () => {

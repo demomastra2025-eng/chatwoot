@@ -909,18 +909,24 @@ class Telephony::WebphoneService
   end
 
   def normalize_browser_sip_logical_group!(call_session)
+    group_sessions = call_session.logical_group_sessions.sort_by(&:id)
     canonical_session = call_session.canonical_logical_call_session
     canonical_key = canonical_session.logical_call_key.presence || call_session.logical_call_key
     canonical_ref = canonical_session.external_call_ref
     return call_session if canonical_key.blank? || canonical_ref.blank?
 
-    metadata = call_session.metadata.to_h.deep_dup.deep_stringify_keys
-    route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_dup : {}
-    route_metadata['logical_call_key'] = canonical_key
-    route_metadata['call_group_key'] = canonical_key
-    route_metadata['logical_call_group_ref'] = canonical_ref
-    metadata['metadata'] = route_metadata
-    call_session.update!(metadata: metadata) if call_session.metadata.to_h.deep_stringify_keys != metadata
+    group_sessions.each do |session|
+      session.with_lock do
+        metadata = session.reload.metadata.to_h.deep_dup.deep_stringify_keys
+        route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'].deep_dup : {}
+        route_metadata['logical_call_key'] = canonical_key
+        route_metadata['call_group_key'] = canonical_key
+        route_metadata['logical_call_group_ref'] = canonical_ref
+        metadata['metadata'] = route_metadata
+        session.update!(metadata: metadata) if session.metadata.to_h.deep_stringify_keys != metadata
+      end
+    end
+
     call_session.reload
   end
 
@@ -939,6 +945,9 @@ class Telephony::WebphoneService
     browser_sip_incoming_metadata(context.fetch(:profile), context.fetch(:params)).deep_stringify_keys.merge(
       'route_action' => decision[:action] || decision['action'],
       'route_reason' => decision[:reason] || decision['reason'],
+      'logical_call_key' => decision[:logical_call_key] || decision['logical_call_key'],
+      'call_group_key' => decision[:call_group_key] || decision['call_group_key'],
+      'logical_call_group_ref' => decision[:logical_call_group_ref] || decision['logical_call_group_ref'],
       'chatwoot_conversation_id' => decision[:conversation_id] || decision['conversation_id'],
       'chatwoot_conversation_status' => decision[:conversation_status] || decision['conversation_status'],
       'number_ref' => context.fetch(:binding).number_ref
@@ -972,6 +981,10 @@ class Telephony::WebphoneService
 
   def browser_sip_incoming_session_payload(call_session, route_metadata = {})
     sip_profile_id = route_metadata['telephony_sip_profile_id'] || route_metadata['target_sip_profile_id']
+    canonical_session = call_session.canonical_logical_call_session
+    logical_call_key = canonical_session.logical_call_key.presence ||
+                       call_session.logical_call_key.presence ||
+                       route_metadata['logical_call_key']
 
     {
       call_sid: call_session.external_call_ref,
@@ -990,10 +1003,10 @@ class Telephony::WebphoneService
       sender_id: call_session.contact_id,
       from_number: call_session.from_number,
       to_number: call_session.to_number,
-      logical_call_key: route_metadata['logical_call_key'],
-      logicalCallKey: route_metadata['logical_call_key'],
-      call_group_key: route_metadata['call_group_key'],
-      callGroupKey: route_metadata['call_group_key'],
+      logical_call_key: logical_call_key,
+      logicalCallKey: logical_call_key,
+      call_group_key: logical_call_key,
+      callGroupKey: logical_call_key,
       sip_profile_id: sip_profile_id,
       sipProfileId: sip_profile_id,
       janus_call_ref: route_metadata['janus_call_ref'],

@@ -889,6 +889,9 @@ class Telephony::InboundRoutingService
       account_id: number_binding.account_id,
       inbox_id: number_binding.inbox_id,
       number_ref: number_binding.number_ref,
+      logical_call_key: logical_call_key,
+      call_group_key: logical_call_key,
+      logical_call_group_ref: logical_call_group_ref,
       voice_agent_sip_profile_id: voice_agent_sip_profile&.id,
       operator_distribution_mode: operator_distribution_mode,
       recording: recording_payload

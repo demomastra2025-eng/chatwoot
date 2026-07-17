@@ -626,6 +626,61 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
   end
 
+  it 'returns one canonical logical call for parallel Sipuni Janus operator branches' do
+    sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+    second_operator = create(:user, account: account, role: :agent)
+    create(:inbox_member, inbox: sipuni_profile.inbox, user: second_operator)
+    second_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: sipuni_profile.inbox,
+      user: second_operator,
+      provider_connection: sipuni_profile.provider_connection,
+      internal_extension: '506',
+      sip_username: '015856100022',
+      sip_password: 'second-sipuni-secret',
+      agent_ref: 'local-profile-sipuni-506',
+      agent_aor: 'sip:015856100022@ats01.kz.sipuni.com',
+      availability_mode: 'browser_webphone',
+      status: 'active'
+    )
+    mark_sip_profile_registered!(sipuni_profile)
+    mark_sip_profile_registered!(second_profile)
+    incoming_path = "/api/v1/accounts/#{account.id}/telephony/webphone/incoming"
+    caller = 'sip:+77072817060@91.215.136.2:8217'
+    responses = []
+
+    travel_to Time.zone.parse('2026-07-17 11:49:03 UTC') do
+      [
+        [sipuni_profile, headers, 'root-branch@91.215.136.2:8217'],
+        [second_profile, second_operator.create_new_auth_token, 'parallel-branch@91.215.136.2:8217']
+      ].each do |profile, auth_headers, raw_call_ref|
+        post incoming_path,
+             params: {
+               inbox_id: profile.inbox_id,
+               provider: 'sipuni',
+               call_ref: raw_call_ref,
+               from: caller,
+               session_key: "sip_profile:#{profile.id}",
+               sip_profile_id: profile.id,
+               internal_extension: profile.internal_extension
+             }.merge(sip_presence_params(profile)),
+             headers: auth_headers,
+             as: :json
+
+        expect(response).to have_http_status(:ok)
+        responses << response.parsed_body.fetch('payload')
+      end
+    end
+
+    sessions = account.telephony_call_sessions.where(provider: 'sipuni').order(:id).last(2)
+    root = sessions.first
+    expect(sessions.map(&:logical_call_key).uniq).to eq([root.logical_call_key])
+    expect(sessions.map(&:logical_call_group_ref).uniq).to eq([root.external_call_ref])
+    expect(responses.pluck('logical_call_key').uniq).to eq([root.logical_call_key])
+    expect(responses.pluck('call_group_key').uniq).to eq([root.logical_call_key])
+  end
+
   it 'attaches a pending native Janus SIP incoming call to AI voice without creating an operator route' do
     sipuni_profile, _binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
     voice_agent_profile = create(

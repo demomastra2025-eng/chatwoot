@@ -178,6 +178,62 @@ const sameNativeSipLogicalCall = (call, callData) => {
   return sameValue(callLogicalKey(call), callLogicalKey(callData));
 };
 
+const normalizedPhoneIdentity = value => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const sipUser = raw.match(/sip:\+?(\d+)/i)?.[1];
+  let digits = sipUser || raw.replace(/\D/g, '');
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith('8')) {
+    digits = `7${digits.slice(1)}`;
+  }
+  return digits || null;
+};
+
+const callFromIdentity = call =>
+  normalizedPhoneIdentity(
+    call?.fromNumber ||
+      call?.from_number ||
+      call?.caller?.phone_number ||
+      call?.caller?.phoneNumber
+  );
+const callToIdentity = call =>
+  normalizedPhoneIdentity(call?.toNumber || call?.to_number);
+
+const sameNativeSipInboundCustomer = (
+  call,
+  callData,
+  { allowPartialScope = false } = {}
+) => {
+  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
+    return false;
+  }
+  if (call?.provider !== callData?.provider) return false;
+  if (!isInboundCall(call) || !isInboundCall(callData)) return false;
+  if (!sameKnownScopeValue(call?.accountId, callData?.accountId)) return false;
+
+  const scopeMatches = allowPartialScope
+    ? callScopeMatches(call, callData)
+    : callScopesMatchForDeduplication(call, callData);
+  if (!scopeMatches) return false;
+
+  const fromIdentity = callFromIdentity(call);
+  const candidateFromIdentity = callFromIdentity(callData);
+  if (!fromIdentity || fromIdentity !== candidateFromIdentity) return false;
+
+  const toIdentity = callToIdentity(call);
+  const candidateToIdentity = callToIdentity(callData);
+  return (
+    !toIdentity || !candidateToIdentity || toIdentity === candidateToIdentity
+  );
+};
+
+const sameReplaceableNativeSipIncomingCall = (call, callData) =>
+  !call?.isActive &&
+  !callData?.isActive &&
+  sameNativeSipInboundCustomer(call, callData);
+
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData) ||
   sameNativeSipInboundBranch(call, callData) ||
@@ -610,8 +666,20 @@ export const useCallsStore = defineStore('calls', {
         if (sameLiveCall(call, callData)) indexes.push(index);
         return indexes;
       }, []);
-      let candidateIndexes = existingCallIndexes;
-      if (candidateIndexes.length > 1) {
+      const replaceableIncomingCallIndexes = existingCallIndexes.length
+        ? []
+        : this.calls.reduce((indexes, call, index) => {
+            if (sameReplaceableNativeSipIncomingCall(call, callData)) {
+              indexes.push(index);
+            }
+            return indexes;
+          }, []);
+      const replacingIncomingDuplicates =
+        replaceableIncomingCallIndexes.length > 0;
+      let candidateIndexes = replacingIncomingDuplicates
+        ? replaceableIncomingCallIndexes
+        : existingCallIndexes;
+      if (candidateIndexes.length > 1 && !replacingIncomingDuplicates) {
         candidateIndexes = candidateIndexes.filter(index =>
           callScopeMatchesExactly(this.calls[index], callData)
         );
@@ -638,7 +706,15 @@ export const useCallsStore = defineStore('calls', {
             return calls;
           }
 
-          if (!sameLiveCall(call, mergedCall)) calls.push(call);
+          if (
+            !sameLiveCall(call, mergedCall) &&
+            !(
+              replacingIncomingDuplicates &&
+              sameReplaceableNativeSipIncomingCall(call, mergedCall)
+            )
+          ) {
+            calls.push(call);
+          }
           return calls;
         }, []);
         if (replacedActiveCall) endClientCall(existingCall);
@@ -832,6 +908,7 @@ export const useCallsStore = defineStore('calls', {
         operatorClaimUserId(data?.operator_claim || data?.operatorClaim);
       const callData = {
         callSid: data?.call_sid || data?.callSid || data?.call_ref,
+        accountId: data?.account_id || data?.accountId,
         provider: data?.provider,
         inboxId: data?.inbox_id || data?.inboxId,
         sipProfileId: data?.sip_profile_id || data?.sipProfileId,
@@ -850,6 +927,9 @@ export const useCallsStore = defineStore('calls', {
           data?.communication_thread_id || data?.communicationThreadId,
         startedAt: data?.started_at || data?.startedAt,
         answeredAt: data?.answered_at || data?.answeredAt,
+        fromNumber: data?.from_number || data?.fromNumber,
+        toNumber: data?.to_number || data?.toNumber,
+        caller: data?.caller,
         operatorClaim: data?.operator_claim || data?.operatorClaim || null,
         browserJoinSupported: false,
         browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
@@ -889,7 +969,10 @@ export const useCallsStore = defineStore('calls', {
       const matchesClaimedCall = call =>
         scopeMatchesClaim(call) &&
         (sidMatchesClaim(call) ||
-          sameNativeSipLogicalCall(call, scopedCallData));
+          sameNativeSipLogicalCall(call, scopedCallData) ||
+          sameNativeSipInboundCustomer(call, scopedCallData, {
+            allowPartialScope: true,
+          }));
       const matchedClaimCalls = this.calls.filter(matchesClaimedCall);
       if (matchedClaimCalls.length > 1) {
         if (
@@ -975,8 +1058,15 @@ export const useCallsStore = defineStore('calls', {
       this.calls = this.calls.filter(call => {
         if (call.isActive) return true;
         if (sameCallSid(call, targetCall)) return true;
-        if (!callScopeMatches(call, targetCall)) return true;
-        return !isRelatedNativeSipInbound(call, targetCall);
+        const sameLogicalCall =
+          callScopeMatches(call, targetCall) &&
+          isRelatedNativeSipInbound(call, targetCall);
+        const sameCustomerCall = sameNativeSipInboundCustomer(
+          call,
+          targetCall,
+          { allowPartialScope: true }
+        );
+        return !sameLogicalCall && !sameCustomerCall;
       });
     },
   },
