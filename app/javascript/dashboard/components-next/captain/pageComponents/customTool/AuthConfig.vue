@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineModel } from 'vue';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Input from 'dashboard/components-next/input/Input.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';

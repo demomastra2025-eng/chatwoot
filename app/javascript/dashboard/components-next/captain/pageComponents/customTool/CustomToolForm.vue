@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
 import { required } from '@vuelidate/validators';
 import { useMapGetter } from 'dashboard/composables/store';
+import { useAlert } from 'dashboard/composables';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
@@ -76,6 +77,8 @@ const DEFAULT_PARAM = {
   source: 'agent',
   context_path: '',
   fixed_value: '',
+  request_location: 'template',
+  request_key: '',
 };
 
 const buildParamUiKey = () => {
@@ -132,6 +135,8 @@ const createParamState = param => ({
   source: param?.source || DEFAULT_PARAM.source,
   context_path: param?.context_path || '',
   fixed_value: serializeFixedValue(param?.fixed_value),
+  request_location: param?.request_location || DEFAULT_PARAM.request_location,
+  request_key: param?.request_key || '',
   [PARAM_UI_KEY]: param?.[PARAM_UI_KEY] || buildParamUiKey(),
 });
 
@@ -142,6 +147,7 @@ const serializeParamForPayload = param => {
     description: param?.description || '',
     required: Boolean(param?.required),
     source: param?.source || DEFAULT_PARAM.source,
+    request_location: param?.request_location || DEFAULT_PARAM.request_location,
   };
 
   if (serializedParam.source === 'context') {
@@ -150,6 +156,11 @@ const serializeParamForPayload = param => {
 
   if (serializedParam.source === 'fixed') {
     serializedParam.fixed_value = serializeFixedValue(param?.fixed_value);
+  }
+
+  if (serializedParam.request_location !== 'template') {
+    serializedParam.request_key =
+      param?.request_key?.trim() || serializedParam.name;
   }
 
   return serializedParam;
@@ -393,6 +404,8 @@ const visibleAuthConfigErrors = computed(() =>
 );
 
 const paramsRef = useTemplateRef('paramsRef');
+const toolTestPanelRef = useTemplateRef('toolTestPanelRef');
+const isAutoTesting = ref(false);
 
 const isParamsValid = () => {
   if (!paramsRef.value || paramsRef.value.length === 0) {
@@ -493,6 +506,25 @@ const handleSubmit = async () => {
     return;
   }
 
+  if (props.mode === 'create') {
+    isAutoTesting.value = true;
+    let testResult;
+    try {
+      testResult = await toolTestPanelRef.value?.runTestForCreate();
+    } finally {
+      isAutoTesting.value = false;
+    }
+
+    if (!testResult?.response?.successful) {
+      if (testResult) {
+        useAlert(
+          t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.REQUIRED_SUCCESS')
+        );
+      }
+      return;
+    }
+  }
+
   emit('submit', {
     ...state,
     auth_config: normalizeAuthConfig(state.auth_type, state.auth_config),
@@ -588,6 +620,8 @@ const handleSubmit = async () => {
           v-model:source="param.source"
           v-model:context-path="param.context_path"
           v-model:fixed-value="param.fixed_value"
+          v-model:request-location="param.request_location"
+          v-model:request-key="param.request_key"
           :all-param-names="state.param_schema.map(item => item.name)"
           :context-field-options="contextFieldOptions"
           @remove="removeParam(index)"
@@ -642,8 +676,9 @@ const handleSubmit = async () => {
     </label>
 
     <ToolTestPanel
+      ref="toolTestPanelRef"
       :custom-tool="toolDraftForTesting"
-      :disabled="isLoading"
+      :disabled="isLoading || isAutoTesting"
       :validate-before-run="validateBeforeToolTest"
     />
 
@@ -660,8 +695,8 @@ const handleSubmit = async () => {
         type="submit"
         :label="submitLabel"
         class="w-full"
-        :is-loading="isLoading"
-        :disabled="isLoading"
+        :is-loading="isLoading || isAutoTesting"
+        :disabled="isLoading || isAutoTesting"
       />
     </div>
   </form>

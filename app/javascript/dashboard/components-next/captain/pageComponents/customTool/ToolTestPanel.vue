@@ -36,6 +36,7 @@ const state = reactive({
   response: null,
 });
 const showSampleErrors = ref(false);
+const lastSuccessfulTestFingerprint = ref('');
 
 const agentParamDefinitions = computed(() =>
   (props.customTool.param_schema || []).filter(
@@ -65,6 +66,9 @@ const sampleInputErrorMessages = computed(() => ({
   REQUIRED: t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.REQUIRED'),
   INVALID_NUMBER: t(
     'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.INVALID_NUMBER'
+  ),
+  INVALID_BOOLEAN: t(
+    'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.INVALID_BOOLEAN'
   ),
   INVALID_ARRAY: t(
     'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.INPUT.ERRORS.INVALID_ARRAY'
@@ -150,6 +154,7 @@ watch(
   () => {
     state.preview = null;
     state.response = null;
+    lastSuccessfulTestFingerprint.value = '';
   },
   { deep: true }
 );
@@ -224,6 +229,10 @@ const resolvedParamsPreview = computed(() =>
   state.preview?.resolved_params
     ? formatBlockValue(state.preview.resolved_params)
     : ''
+);
+
+const requestHeadersPreview = computed(() =>
+  state.preview?.headers ? formatBlockValue(state.preview.headers) : ''
 );
 
 const rawResponseBody = computed(() =>
@@ -317,6 +326,13 @@ const sampleInputErrorFor = (param, value) => {
 
   if (param.type === 'number' && Number.isNaN(Number(normalizedValue))) {
     return sampleInputErrorMessages.value.INVALID_NUMBER;
+  }
+
+  if (
+    param.type === 'boolean' &&
+    !['true', 'false'].includes(normalizedValue.toLowerCase())
+  ) {
+    return sampleInputErrorMessages.value.INVALID_BOOLEAN;
   }
 
   if (!['array', 'object'].includes(param.type)) {
@@ -440,25 +456,49 @@ const handlePreview = async () => {
   }
 };
 
-const handleTest = async () => {
+const executeTest = async ({ reuseSuccessfulResult = false } = {}) => {
   if (!(await ensureRunnable())) {
-    return;
+    return null;
+  }
+
+  const requestPayload = buildRequestPayload();
+  const requestFingerprint = JSON.stringify(requestPayload);
+  if (
+    reuseSuccessfulResult &&
+    state.response?.successful &&
+    lastSuccessfulTestFingerprint.value === requestFingerprint
+  ) {
+    return { preview: state.preview, response: state.response };
   }
 
   try {
     const result = await store.dispatch(
       'captainCustomTools/testTool',
-      buildRequestPayload()
+      requestPayload
     );
     state.preview = result.preview || null;
     state.response = result.response || null;
+    lastSuccessfulTestFingerprint.value = result.response?.successful
+      ? requestFingerprint
+      : '';
+    return result;
   } catch (error) {
+    lastSuccessfulTestFingerprint.value = '';
     useAlert(
       error?.message ||
         t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.ERROR_MESSAGE')
     );
+    return null;
   }
 };
+
+const handleTest = () => executeTest();
+const runTestForCreate = () =>
+  executeTest({
+    reuseSuccessfulResult: true,
+  });
+
+defineExpose({ runTestForCreate });
 </script>
 
 <template>
@@ -639,6 +679,15 @@ const handleTest = async () => {
         <pre
           class="p-3 overflow-x-auto text-xs rounded-lg bg-n-alpha-black2 text-n-slate-12 whitespace-pre-wrap break-all"
         ><code>{{ requestPreviewBody }}</code></pre>
+      </div>
+
+      <div v-if="requestHeadersPreview" class="flex flex-col gap-1">
+        <p class="text-xs font-medium uppercase tracking-wide text-n-slate-10">
+          {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.PREVIEW.HEADERS_LABEL') }}
+        </p>
+        <pre
+          class="p-3 overflow-x-auto text-xs rounded-lg bg-n-alpha-black2 text-n-slate-12 whitespace-pre-wrap break-all"
+        ><code>{{ requestHeadersPreview }}</code></pre>
       </div>
 
       <div class="flex flex-col gap-1">

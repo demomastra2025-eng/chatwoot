@@ -115,7 +115,10 @@ class Captain::Tools::HttpRequestExecutor
   def call(params = {})
     request_preview = build_request_preview(params)
     execution_url = request_preview.delete(:execution_url)
-    response = execute_http_request(execution_url, request_preview[:body])
+    execution_headers = request_preview.delete(:execution_headers)
+    execution_body = request_preview.delete(:execution_body)
+    request_preview.delete(:execution_params)
+    response = execute_http_request(execution_url, execution_body, execution_headers)
     raw_response_body = normalize_response_body(response.body)
     formatted_body = @custom_tool.format_response(raw_response_body)
     response_with_artifacts(raw_response_body, formatted_body)
@@ -145,18 +148,22 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def preview(params = {})
-    build_request_preview(params).except(:execution_url)
+    build_request_preview(params).except(:execution_url, :execution_headers, :execution_body, :execution_params)
   end
 
   def execute_with_details(params = {}, raise_on_http_error: false)
     request_preview = build_request_preview(params)
     execution_url = request_preview.delete(:execution_url)
-    argument_error = preview_safety_error_for(:tool_arguments, request_preview[:resolved_params])
+    execution_headers = request_preview.delete(:execution_headers)
+    execution_body = request_preview.delete(:execution_body)
+    execution_params = request_preview.delete(:execution_params)
+    argument_error = preview_safety_error_for(:tool_arguments, execution_params)
     return blocked_details_response(request_preview, argument_error) if argument_error
 
     response = execute_http_request(
       execution_url,
-      request_preview[:body],
+      execution_body,
+      execution_headers,
       raise_on_http_error: raise_on_http_error
     )
     raw_response_body = normalize_response_body(response.body)
@@ -213,17 +220,63 @@ class Captain::Tools::HttpRequestExecutor
   def build_request_preview(params)
     request_params = resolve_request_params(params, @state)
     template_context = build_template_context(request_params, @state)
+    masked_params = masked_preview_params(request_params)
+    masked_body_params = masked_preview_params(request_params, preserve_types: true)
+    masked_template_context = build_template_context(masked_params, @state)
+    masked_body_template_context = build_template_context(masked_body_params, @state)
     execution_url = @custom_tool.build_request_url(
       request_params,
       template_context: template_context
     )
+    preview_url = @custom_tool.build_request_url(
+      masked_params,
+      template_context: masked_template_context
+    )
+    execution_headers = @custom_tool.build_request_headers(request_params)
+    execution_body = @custom_tool.build_request_body(request_params, template_context: template_context)
 
-    {
-      resolved_params: request_params,
-      url: masked_preview_url(execution_url),
+    preview = {
+      resolved_params: masked_params,
+      url: masked_preview_url(preview_url),
       execution_url: execution_url,
-      body: @custom_tool.build_request_body(request_params, template_context: template_context)
+      execution_headers: execution_headers,
+      execution_body: execution_body,
+      execution_params: request_params,
+      body: @custom_tool.build_request_body(masked_body_params, template_context: masked_body_template_context)
     }
+    preview[:headers] = masked_preview_headers(execution_headers) if execution_headers.present?
+    preview
+  end
+
+  def masked_preview_headers(headers)
+    headers.transform_values { 'REDACTED' }
+  end
+
+  def masked_preview_params(params, preserve_types: false)
+    masked_param_definitions = @custom_tool.parameter_definitions.select do |definition|
+      [
+        Captain::CustomTool::PARAM_REQUEST_LOCATION_QUERY,
+        Captain::CustomTool::PARAM_REQUEST_LOCATION_HEADER
+      ].include?(definition['request_location'])
+    end
+
+    params.deep_dup.tap do |masked_params|
+      masked_param_definitions.each do |definition|
+        name = definition['name']
+        masked_value = preserve_types ? masked_value_for_type(definition['type']) : 'REDACTED'
+        masked_params[name] = masked_value if masked_params.key?(name)
+        masked_params[name.to_sym] = masked_value if masked_params.key?(name.to_sym)
+      end
+    end
+  end
+
+  def masked_value_for_type(type)
+    {
+      'number' => 0,
+      'boolean' => false,
+      'array' => [],
+      'object' => {}
+    }.fetch(type, 'REDACTED')
   end
 
   def build_template_context(params, state)
@@ -368,13 +421,13 @@ class Captain::Tools::HttpRequestExecutor
     }
   end
 
-  def execute_http_request(url, body, raise_on_http_error: true)
+  def execute_http_request(url, body, headers = {}, raise_on_http_error: true)
     uri = URI.parse(url)
     resolved_ip = resolve_public_ip!(uri.host)
     attempts = auto_retryable_request? ? MAX_HTTP_ATTEMPTS : 1
 
     attempts.times do |attempt_index|
-      response = perform_http_request(uri, resolved_ip, body)
+      response = perform_http_request(uri, resolved_ip, body, headers)
       validate_response!(response)
 
       if raise_on_http_error && auto_retryable_response?(response) && retry_remaining?(attempt_index, attempts)
@@ -397,7 +450,7 @@ class Captain::Tools::HttpRequestExecutor
     end
   end
 
-  def perform_http_request(uri, resolved_ip, body)
+  def perform_http_request(uri, resolved_ip, body, headers)
     http = Net::HTTP.new(uri.host, uri.port)
     http.ipaddr = resolved_ip
     http.use_ssl = uri.scheme == 'https'
@@ -406,6 +459,7 @@ class Captain::Tools::HttpRequestExecutor
     http.max_retries = 0
 
     request = build_http_request(uri, body)
+    apply_custom_headers(request, headers)
     apply_authentication(request)
     apply_metadata_headers(request)
 
@@ -464,6 +518,10 @@ class Captain::Tools::HttpRequestExecutor
 
     credentials = @custom_tool.build_basic_auth_credentials
     request.basic_auth(*credentials) if credentials
+  end
+
+  def apply_custom_headers(request, headers)
+    headers.each { |key, value| request[key] = value }
   end
 
   def apply_metadata_headers(request)

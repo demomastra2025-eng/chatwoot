@@ -1360,9 +1360,17 @@
           "USERNAME_PLACEHOLDER": "Пайдаланушы атын енгізіңіз",
           "PASSWORD": "Құпиясөз",
           "PASSWORD_PLACEHOLDER": "Құпиясөзді енгізіңіз",
+          "API_KEY_LOCATION_LABEL": "API кілтін жіберу орны",
+          "API_KEY_LOCATION_PLACEHOLDER": "API кілтін жіберу орнын таңдаңыз",
+          "API_KEY_LOCATIONS": {
+            "HEADER": "Тақырып",
+            "QUERY": "Query параметрі"
+          },
           "API_KEY": "Тақырып атауы",
           "API_KEY_PLACEHOLDER": "X-API-Key",
-          "API_VALUE": "Тақырып мәні",
+          "API_KEY_QUERY_NAME": "Query параметрінің атауы",
+          "API_KEY_QUERY_NAME_PLACEHOLDER": "api_key",
+          "API_VALUE": "API кілтінің мәні",
           "API_VALUE_PLACEHOLDER": "API кілтінің мәнін енгізіңіз"
         },
         "PARAMETERS": {
@@ -1375,6 +1383,17 @@
         },
         "PARAM_SOURCE": {
           "PLACEHOLDER": "Кім толтырады"
+        },
+        "PARAM_REQUEST_LOCATION": {
+          "PLACEHOLDER": "Қайда жіберіледі"
+        },
+        "PARAM_REQUEST_LOCATIONS": {
+          "TEMPLATE": "Тек шаблондарда",
+          "QUERY": "Query параметрі",
+          "HEADER": "HTTP тақырыбы"
+        },
+        "PARAM_REQUEST_KEY": {
+          "PLACEHOLDER": "Сұраудағы атау (әдепкісі: {name})"
         },
         "PARAM_SOURCES": {
           "AGENT": "Агент",
@@ -1419,12 +1438,69 @@
           "LABEL": "Агентке құрал жауабындағы файлдарды пайдалануға рұқсат беру",
           "HELP_TEXT": "Қосулы болса, HTTP жауабындағы файл сілтемелері агентке қауіпсіз artifact candidates ретінде көрсетіледі. Агент оларды нативті хабарлама немесе touch арқылы өзі таңдап жіберуі керек."
         },
+        "TEST_PANEL": {
+          "TITLE": "Сұрауды алдын ала қарау және тексеру",
+          "DESCRIPTION": "Сақтамас бұрын немесе сыртқы endpoint-ке жібермес бұрын agent және context параметрлерін жинау үшін тест мәндерін пайдаланыңыз.",
+          "ENCODING_HINT": "Query мәндері URL үшін қауіпсіз түрде кодталып жіберіледі.",
+          "FIXED_PARAMS_LABEL": "Тұрақты параметрлер",
+          "AGENT_PARAMS_LABEL": "Агенттің тест мәндері",
+          "CONTEXT_PARAMS_LABEL": "Контекстің тест мәндері",
+          "CONTEXT_FIELD_HINT": "Контекст өрісімен байланысқан: {field}",
+          "NO_SAMPLES_REQUIRED": "Бұл құрал тек тұрақты мәндерді немесе тікелей template сілтемелерін пайдаланады.",
+          "VALIDATION_ERROR": "Құралды тексермес бұрын форма қателерін түзетіңіз.",
+          "INPUT": {
+            "TEXT_PLACEHOLDER": "Тест мәнін енгізіңіз",
+            "NUMBER_PLACEHOLDER": "Тест санын енгізіңіз",
+            "BOOLEAN_PLACEHOLDER": "true немесе false",
+            "JSON_PLACEHOLDER": "Тест JSON енгізіңіз",
+            "ERRORS": {
+              "REQUIRED": "Тест мәні міндетті",
+              "INVALID_NUMBER": "Жарамды сан енгізіңіз",
+              "INVALID_BOOLEAN": "true немесе false енгізіңіз",
+              "INVALID_ARRAY": "Жарамды JSON массивін енгізіңіз",
+              "INVALID_OBJECT": "Жарамды JSON объектісін енгізіңіз",
+              "FIX_ERRORS": "Құралды іске қоспас бұрын тест мәндерінің қателерін түзетіңіз."
+            }
+          },
+          "PREVIEW": {
+            "ACTION": "Сұрауды алдын ала қарау",
+            "ERROR_MESSAGE": "Сұрауды алдын ала қарау мүмкін болмады",
+            "RESULT_TITLE": "Жиналған сұрау",
+            "URL_LABEL": "Соңғы URL",
+            "BODY_LABEL": "Соңғы body",
+            "HEADERS_LABEL": "HTTP тақырыптары",
+            "RESOLVED_PARAMS_LABEL": "Жиналған параметрлер",
+            "NO_BODY_FOR_METHOD": "Бұл HTTP әдісі үшін сұрау денесі жіберілмейді.",
+            "NO_BODY_TEMPLATE": "Сұрау денесінің шаблоны бапталмаған.",
+            "RUN_TEST_HINT": "Сұрауды жіберіп, жауабын көру үшін құралды тексеріңіз."
+          },
+          "TEST": {
+            "ACTION": "Құралды тексеру",
+            "ERROR_MESSAGE": "Құралды тексеру мүмкін болмады",
+            "REQUIRED_SUCCESS": "Құрал жасалмады: алдымен тест сұрауы сәтті аяқталуы керек."
+          },
+          "RESPONSE": {
+            "SUCCESS_STATUS": "HTTP {status}",
+            "ERROR_STATUS": "HTTP {status}",
+            "RAW_LABEL": "Бастапқы жауап",
+            "FORMATTED_LABEL": "Пішімделген жауап",
+            "FORMAT_ERROR_LABEL": "Жауап шаблонының қатесі"
+          }
+        },
         "ERRORS": {
           "PARAM_NAME_REQUIRED": "Параметр атауы міндетті",
           "PARAM_NAME_INVALID": "Тек әріптерді, сандарды және астын сызу таңбасын қолданыңыз, атау әріптен немесе астын сызудан басталуы керек",
+          "PARAM_NAME_RESERVED": "Бұл атау жүйелік контекст үшін сақталған. Басқа атау пайдаланыңыз.",
+          "PARAM_NAME_DUPLICATE": "Параметр атаулары қайталанбауы керек",
           "PARAM_DESCRIPTION_REQUIRED": "Параметр сипаттамасы міндетті",
           "PARAM_CONTEXT_PATH_REQUIRED": "Осы параметр үшін контекст өрісін таңдаңыз",
-          "PARAM_FIXED_VALUE_REQUIRED": "Осы параметр үшін тұрақты мән міндетті"
+          "PARAM_FIXED_VALUE_REQUIRED": "Осы параметр үшін тұрақты мән міндетті",
+          "PARAM_FIXED_VALUE_JSON_INVALID": "Таңдалған параметр түріне сәйкес жарамды JSON енгізіңіз",
+          "AUTH_BEARER_TOKEN_REQUIRED": "Bearer token міндетті",
+          "AUTH_BASIC_USERNAME_REQUIRED": "Пайдаланушы аты міндетті",
+          "AUTH_BASIC_PASSWORD_REQUIRED": "Құпиясөз міндетті",
+          "AUTH_API_KEY_NAME_REQUIRED": "API кілтінің атауы міндетті",
+          "AUTH_API_KEY_VALUE_REQUIRED": "API кілтінің мәні міндетті"
         }
       },
       "UNGROUPED": "Топсыз"

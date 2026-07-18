@@ -57,6 +57,105 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
     end)
   end
 
+  it 'sends configured headers with POST requests' do
+    custom_tool.update!(
+      param_schema: custom_tool.param_schema + [
+        {
+          'name' => 'tenant_id',
+          'type' => 'string',
+          'source' => 'fixed',
+          'fixed_value' => 'tenant-42',
+          'request_location' => 'header',
+          'request_key' => 'X-Tenant-ID'
+        }
+      ]
+    )
+
+    executor.call('lead_name' => 'Alice')
+
+    expect(WebMock).to have_requested(:post, 'https://example.com/leads')
+      .with(headers: { 'X-Tenant-ID' => 'tenant-42' })
+  end
+
+  it 'does not let custom headers override authentication or OneLink metadata' do
+    custom_tool.update!(
+      auth_type: 'bearer',
+      auth_config: { 'token' => 'real-token' },
+      param_schema: custom_tool.param_schema + [
+        {
+          'name' => 'authorization_override',
+          'type' => 'string',
+          'source' => 'fixed',
+          'fixed_value' => 'Bearer attacker-token',
+          'request_location' => 'header',
+          'request_key' => 'Authorization'
+        },
+        {
+          'name' => 'account_override',
+          'type' => 'string',
+          'source' => 'fixed',
+          'fixed_value' => '999999',
+          'request_location' => 'header',
+          'request_key' => 'X-Chatwoot-Account-Id'
+        }
+      ]
+    )
+
+    executor.call('lead_name' => 'Alice')
+
+    expect(WebMock).to have_requested(:post, 'https://example.com/leads').with(
+      headers: {
+        'Authorization' => 'Bearer real-token',
+        'X-Chatwoot-Account-Id' => account.id.to_s
+      }
+    )
+  end
+
+  it 'sends encoded query parameters and headers with GET requests' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      param_schema: [
+        {
+          'name' => 'search',
+          'type' => 'string',
+          'description' => 'Search text',
+          'source' => 'agent',
+          'required' => true,
+          'request_location' => 'query',
+          'request_key' => 'q'
+        },
+        {
+          'name' => 'tenant_id',
+          'type' => 'string',
+          'source' => 'fixed',
+          'fixed_value' => 'tenant-42',
+          'request_location' => 'header',
+          'request_key' => 'X-Tenant-ID'
+        }
+      ]
+    )
+    remove_request_stub(lead_request_stub)
+    request_url = 'https://example.com/leads?q=%D0%90%D0%BB%D0%BC%D0%B0%D1%82%D1%8B+%26+%D0%90%D1%81%D1%82%D0%B0%D0%BD%D0%B0'
+    stub_request(:get, request_url)
+      .with(headers: { 'X-Tenant-ID' => 'tenant-42' })
+      .to_return(status: 200, body: '{"ok": true}')
+
+    preview = executor.preview('search' => 'Алматы & Астана')
+    result = executor.call('search' => 'Алматы & Астана')
+
+    expect(preview).to include(
+      url: 'https://example.com/leads?q=REDACTED',
+      headers: { 'X-Tenant-ID' => 'REDACTED' },
+      resolved_params: {
+        'search' => 'REDACTED',
+        'tenant_id' => 'REDACTED'
+      }
+    )
+    expect(result).to eq('Lead accepted: true')
+    expect(WebMock).to have_requested(:get, request_url).with(headers: { 'X-Tenant-ID' => 'tenant-42' })
+  end
+
   it 'normalizes binary-encoded HTTP response bodies before returning them to Captain runtime' do
     custom_tool.update!(response_template: nil)
     binary_body = '{"status":"принято"}'.dup.force_encoding(Encoding::ASCII_8BIT)

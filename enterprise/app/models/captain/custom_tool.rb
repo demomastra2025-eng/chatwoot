@@ -48,6 +48,27 @@ class Captain::CustomTool < ApplicationRecord
     PARAM_SOURCE_CONTEXT,
     PARAM_SOURCE_FIXED
   ].freeze
+  PARAM_REQUEST_LOCATION_TEMPLATE = 'template'.freeze
+  PARAM_REQUEST_LOCATION_QUERY = 'query'.freeze
+  PARAM_REQUEST_LOCATION_HEADER = 'header'.freeze
+  PARAM_REQUEST_LOCATIONS = [
+    PARAM_REQUEST_LOCATION_TEMPLATE,
+    PARAM_REQUEST_LOCATION_QUERY,
+    PARAM_REQUEST_LOCATION_HEADER
+  ].freeze
+  HTTP_HEADER_NAME_FORMAT = /\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/
+  FORBIDDEN_REQUEST_HEADER_NAMES = %w[
+    connection
+    content-length
+    host
+    keep-alive
+    proxy-authenticate
+    proxy-authorization
+    te
+    trailer
+    transfer-encoding
+    upgrade
+  ].freeze
   HTTP_METHODS = %w[GET POST PUT PATCH DELETE HEAD OPTIONS].freeze
   REQUEST_BODY_HTTP_METHODS = %w[POST PUT PATCH DELETE OPTIONS].freeze
   SAFE_READ_ONLY_HTTP_METHODS = %w[GET HEAD OPTIONS].freeze
@@ -93,9 +114,11 @@ class Captain::CustomTool < ApplicationRecord
         'required': { 'type': 'boolean' },
         'source': { 'type': 'string' },
         'context_path': { 'type': 'string' },
-        'fixed_value': {}
+        'fixed_value': {},
+        'request_location': { 'type': 'string' },
+        'request_key': { 'type': 'string' }
       },
-      'required': %w[name type description],
+      'required': %w[name type],
       'additionalProperties': false
     }
   }.to_json.freeze
@@ -263,8 +286,9 @@ class Captain::CustomTool < ApplicationRecord
   def normalize_param_definition(param_definition)
     raw_definition = (param_definition || {}).to_h.deep_stringify_keys
     normalized_definition = raw_definition.slice(
-      'name', 'type', 'description', 'required', 'source', 'context_path', 'fixed_value'
+      'name', 'type', 'description', 'required', 'source', 'context_path', 'fixed_value', 'request_location', 'request_key'
     )
+    normalized_definition['description'] = raw_definition['description'].to_s
     normalized_definition['required'] = if raw_definition.key?('required')
                                           ActiveModel::Type::Boolean.new.cast(raw_definition['required'])
                                         else
@@ -272,10 +296,19 @@ class Captain::CustomTool < ApplicationRecord
                                         end
     normalized_definition['source'] = normalize_param_source(raw_definition['source'])
     normalized_definition['context_path'] = normalize_context_path(raw_definition['context_path'])
+    normalized_definition['request_location'] = normalize_request_location(raw_definition['request_location'])
+    normalized_definition['request_key'] = raw_definition['request_key'].to_s.strip.presence
 
     normalized_definition.delete('context_path') if normalized_definition['source'] != PARAM_SOURCE_CONTEXT
 
     normalized_definition.delete('fixed_value') if normalized_definition['source'] != PARAM_SOURCE_FIXED
+
+    if normalized_definition['request_location'] == PARAM_REQUEST_LOCATION_TEMPLATE
+      normalized_definition.delete('request_location')
+      normalized_definition.delete('request_key')
+    else
+      normalized_definition['request_key'] ||= normalized_definition['name']
+    end
 
     normalized_definition
   end
@@ -360,6 +393,7 @@ class Captain::CustomTool < ApplicationRecord
       validate_param_definition_shape(param_definition, parameter_names)
       validate_param_source(param_definition, available_field_ids)
       validate_fixed_param_value(param_definition)
+      validate_param_request_location(param_definition)
     end
   end
 
@@ -415,7 +449,9 @@ class Captain::CustomTool < ApplicationRecord
     end
 
     errors.add(:param_schema, "parameter #{name} has an invalid type") unless PARAM_TYPES.include?(type)
-    errors.add(:param_schema, "parameter #{name} must define a description") if description.blank?
+    if param_definition['source'] == PARAM_SOURCE_AGENT && description.blank?
+      errors.add(:param_schema, "agent parameter #{name} must define a description")
+    end
   end
 
   def validate_param_source(param_definition, available_field_ids)
@@ -452,6 +488,31 @@ class Captain::CustomTool < ApplicationRecord
     errors.add(:param_schema, "parameter #{param_definition['name']} #{e.message}")
   end
 
+  def validate_param_request_location(param_definition)
+    request_location = normalize_request_location(param_definition['request_location'])
+    name = param_definition['name']
+
+    unless PARAM_REQUEST_LOCATIONS.include?(request_location)
+      errors.add(:param_schema, "parameter #{name} has an invalid request location")
+      return
+    end
+
+    return if request_location == PARAM_REQUEST_LOCATION_TEMPLATE
+
+    request_key = param_definition['request_key'].to_s
+    if request_key.blank?
+      errors.add(:param_schema, "parameter #{name} must define a request key")
+      return
+    end
+
+    return unless request_location == PARAM_REQUEST_LOCATION_HEADER
+
+    errors.add(:param_schema, "parameter #{name} has an invalid header name") unless request_key.match?(HTTP_HEADER_NAME_FORMAT)
+    if FORBIDDEN_REQUEST_HEADER_NAMES.include?(request_key.downcase)
+      errors.add(:param_schema, "parameter #{name} uses a forbidden header name")
+    end
+  end
+
   def fixed_param_value_blank?(value)
     return true if value.nil?
     return value.empty? if value.respond_to?(:empty?)
@@ -466,5 +527,9 @@ class Captain::CustomTool < ApplicationRecord
 
   def normalize_context_path(context_path)
     context_path.to_s.gsub(/\\(.)/, '\1').presence
+  end
+
+  def normalize_request_location(request_location)
+    request_location.to_s.strip.presence || PARAM_REQUEST_LOCATION_TEMPLATE
   end
 end

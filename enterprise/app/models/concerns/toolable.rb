@@ -51,13 +51,17 @@ module Concerns::Toolable
                   render_template(endpoint_url, template_context)
                 end
 
-    apply_query_auth_to_url(built_url)
+    apply_query_auth_to_url(apply_query_params_to_url(built_url, params))
   end
 
   def build_request_body(params, template_context: params)
     return nil if request_template.blank?
 
     render_template(request_template, template_context)
+  end
+
+  def build_request_headers(params)
+    request_params_for_location(Captain::CustomTool::PARAM_REQUEST_LOCATION_HEADER, params)
   end
 
   def build_auth_headers
@@ -166,6 +170,43 @@ module Concerns::Toolable
   end
 
   private
+
+  def apply_query_params_to_url(url, params)
+    query_params = request_params_for_location(Captain::CustomTool::PARAM_REQUEST_LOCATION_QUERY, params)
+    return url if query_params.empty?
+
+    uri = URI.parse(url)
+    query_pairs = URI.decode_www_form(uri.query.to_s)
+    query_params.each do |key, value|
+      query_pairs.reject! { |existing_key, _existing_value| existing_key == key }
+      query_pairs << [key, value]
+    end
+    uri.query = URI.encode_www_form(query_pairs)
+    uri.to_s
+  rescue URI::InvalidURIError
+    url
+  end
+
+  def request_params_for_location(location, params)
+    stringified_params = params.deep_stringify_keys
+
+    parameter_definitions.each_with_object({}) do |definition, request_params|
+      next unless definition['request_location'] == location
+
+      value = stringified_params[definition['name']]
+      next if value.nil?
+
+      request_params[definition['request_key']] = request_param_value(value)
+    end
+  end
+
+  def request_param_value(value)
+    if value.is_a?(Hash) || value.is_a?(Array)
+      JSON.generate(Captain::EncodingNormalizer.utf8(value))
+    else
+      value.to_s
+    end
+  end
 
   def apply_query_auth_to_url(url)
     return url unless auth_type == 'api_key'

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineModel, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -70,6 +70,16 @@ const fixedValue = defineModel('fixedValue', {
   default: '',
 });
 
+const requestLocation = defineModel('requestLocation', {
+  type: String,
+  default: 'template',
+});
+
+const requestKey = defineModel('requestKey', {
+  type: String,
+  default: '',
+});
+
 const paramTypeOptions = computed(() => [
   { value: 'string', label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_TYPES.STRING') },
   { value: 'number', label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_TYPES.NUMBER') },
@@ -103,6 +113,21 @@ const fixedValuePlaceholder = computed(() => {
 
   return t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_FIXED_VALUE.PLACEHOLDER');
 });
+
+const requestLocationOptions = computed(() => [
+  {
+    value: 'template',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_REQUEST_LOCATIONS.TEMPLATE'),
+  },
+  {
+    value: 'query',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_REQUEST_LOCATIONS.QUERY'),
+  },
+  {
+    value: 'header',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_REQUEST_LOCATIONS.HEADER'),
+  },
+]);
 
 const hasDuplicateParamName = computed(() => {
   const trimmedName = name.value?.trim();
@@ -150,7 +175,10 @@ const validationError = computed(() => {
   if (hasDuplicateParamName.value) {
     return 'PARAM_NAME_DUPLICATE';
   }
-  if (!description.value || description.value.trim() === '') {
+  if (
+    source.value === 'agent' &&
+    (!description.value || description.value.trim() === '')
+  ) {
     return 'PARAM_DESCRIPTION_REQUIRED';
   }
   if (source.value === 'context' && !contextPath.value) {
@@ -196,7 +224,17 @@ const validationErrorMessage = computed(() => {
 });
 
 watch(
-  [name, type, description, required, source, contextPath, fixedValue],
+  [
+    name,
+    type,
+    description,
+    required,
+    source,
+    contextPath,
+    fixedValue,
+    requestLocation,
+    requestKey,
+  ],
   () => {
     showErrors.value = false;
   }
@@ -232,12 +270,20 @@ defineExpose({ validate });
             class="[&>div>button]:bg-n-alpha-black2"
           />
         </div>
-        <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+        <div class="grid grid-cols-1 gap-2 md:grid-cols-3">
           <ComboBox
             v-model="source"
             :options="paramSourceOptions"
             :placeholder="
               t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_SOURCE.PLACEHOLDER')
+            "
+            class="[&>div>button]:bg-n-alpha-black2"
+          />
+          <ComboBox
+            v-model="requestLocation"
+            :options="requestLocationOptions"
+            :placeholder="
+              t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_REQUEST_LOCATION.PLACEHOLDER')
             "
             class="[&>div>button]:bg-n-alpha-black2"
           />
@@ -256,6 +302,15 @@ defineExpose({ validate });
             :placeholder="fixedValuePlaceholder"
           />
         </div>
+        <Input
+          v-if="requestLocation !== 'template'"
+          v-model="requestKey"
+          :placeholder="
+            t('CAPTAIN.CUSTOM_TOOLS.FORM.PARAM_REQUEST_KEY.PLACEHOLDER', {
+              name: name || 'parameter_name',
+            })
+          "
+        />
         <Input
           v-model="description"
           :placeholder="

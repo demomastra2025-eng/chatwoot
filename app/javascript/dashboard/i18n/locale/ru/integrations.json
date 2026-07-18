@@ -2207,6 +2207,17 @@
         "PARAM_SOURCE": {
           "PLACEHOLDER": "Кем заполняется"
         },
+        "PARAM_REQUEST_LOCATION": {
+          "PLACEHOLDER": "Куда отправить"
+        },
+        "PARAM_REQUEST_LOCATIONS": {
+          "TEMPLATE": "Только в шаблонах",
+          "QUERY": "Query-параметр",
+          "HEADER": "HTTP header"
+        },
+        "PARAM_REQUEST_KEY": {
+          "PLACEHOLDER": "Имя в запросе (по умолчанию: {name})"
+        },
         "PARAM_SOURCES": {
           "AGENT": "Агент",
           "CONTEXT": "Системный контекст",
@@ -2268,6 +2279,7 @@
             "ERRORS": {
               "REQUIRED": "Тестовое значение обязательно",
               "INVALID_NUMBER": "Введите корректное число",
+              "INVALID_BOOLEAN": "Введите true или false",
               "INVALID_ARRAY": "Введите корректный JSON-массив",
               "INVALID_OBJECT": "Введите корректный JSON-объект",
               "FIX_ERRORS": "Исправьте ошибки тестовых значений перед запуском инструмента."
@@ -2279,6 +2291,7 @@
             "RESULT_TITLE": "Собранный запрос",
             "URL_LABEL": "Финальный URL",
             "BODY_LABEL": "Финальное body",
+            "HEADERS_LABEL": "HTTP headers",
             "RESOLVED_PARAMS_LABEL": "Разрешённые параметры",
             "NO_BODY_FOR_METHOD": "Для этого HTTP-метода тело запроса не будет отправлено.",
             "NO_BODY_TEMPLATE": "Шаблон тела запроса не настроен.",
@@ -2286,7 +2299,8 @@
           },
           "TEST": {
             "ACTION": "Test tool",
-            "ERROR_MESSAGE": "Не удалось протестировать этот инструмент"
+            "ERROR_MESSAGE": "Не удалось протестировать этот инструмент",
+            "REQUIRED_SUCCESS": "Инструмент не создан: тестовый запрос должен завершиться успешно."
           },
           "RESPONSE": {
             "SUCCESS_STATUS": "HTTP {status}",

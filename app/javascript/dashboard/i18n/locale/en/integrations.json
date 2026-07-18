@@ -2207,6 +2207,17 @@
         "PARAM_SOURCE": {
           "PLACEHOLDER": "Filled by"
         },
+        "PARAM_REQUEST_LOCATION": {
+          "PLACEHOLDER": "Send as"
+        },
+        "PARAM_REQUEST_LOCATIONS": {
+          "TEMPLATE": "Templates only",
+          "QUERY": "Query parameter",
+          "HEADER": "HTTP header"
+        },
+        "PARAM_REQUEST_KEY": {
+          "PLACEHOLDER": "Request key (defaults to {name})"
+        },
         "PARAM_SOURCES": {
           "AGENT": "Agent",
           "CONTEXT": "System context",
@@ -2268,6 +2279,7 @@
             "ERRORS": {
               "REQUIRED": "Sample value is required",
               "INVALID_NUMBER": "Enter a valid number",
+              "INVALID_BOOLEAN": "Enter true or false",
               "INVALID_ARRAY": "Enter valid JSON array",
               "INVALID_OBJECT": "Enter valid JSON object",
               "FIX_ERRORS": "Fix the sample input errors before running this tool."
@@ -2279,6 +2291,7 @@
             "RESULT_TITLE": "Resolved request preview",
             "URL_LABEL": "Final URL",
             "BODY_LABEL": "Final body",
+            "HEADERS_LABEL": "HTTP headers",
             "RESOLVED_PARAMS_LABEL": "Resolved parameters",
             "NO_BODY_FOR_METHOD": "No request body will be sent for this HTTP method.",
             "NO_BODY_TEMPLATE": "No request body template is configured.",
@@ -2286,7 +2299,8 @@
           },
           "TEST": {
             "ACTION": "Test tool",
-            "ERROR_MESSAGE": "Failed to test this tool"
+            "ERROR_MESSAGE": "Failed to test this tool",
+            "REQUIRED_SUCCESS": "The tool was not created because its test request must succeed first."
           },
           "RESPONSE": {
             "SUCCESS_STATUS": "HTTP {status}",

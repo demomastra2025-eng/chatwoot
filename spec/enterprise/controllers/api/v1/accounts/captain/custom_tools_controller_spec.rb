@@ -206,6 +206,43 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
                                                    ])
       end
 
+      it 'persists query and header destinations from the custom tool form' do
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools",
+             params: {
+               custom_tool: {
+                 title: 'Search leads',
+                 endpoint_url: 'https://api.example.com/leads',
+                 http_method: 'GET',
+                 param_schema: [
+                   {
+                     name: 'search',
+                     type: 'string',
+                     description: 'Search text',
+                     source: 'agent',
+                     request_location: 'query',
+                     request_key: 'q'
+                   },
+                   {
+                     name: 'tenant_id',
+                     type: 'string',
+                     source: 'fixed',
+                     fixed_value: 'tenant-42',
+                     request_location: 'header',
+                     request_key: 'X-Tenant-ID'
+                   }
+                 ]
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:param_schema]).to include(
+          include(request_location: 'query', request_key: 'q'),
+          include(request_location: 'header', request_key: 'X-Tenant-ID')
+        )
+      end
+
       it 'defaults API key authentication to header mode when created from the modal payload shape' do
         post "/api/v1/accounts/#{account.id}/captain/custom_tools",
              params: {

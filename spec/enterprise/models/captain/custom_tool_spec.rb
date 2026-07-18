@@ -170,7 +170,68 @@ RSpec.describe Captain::CustomTool, type: :model do
                      ])
 
         expect(tool).not_to be_valid
-        expect(tool.errors[:param_schema]).to include('parameter order_id must define a description')
+        expect(tool.errors[:param_schema]).to include('agent parameter order_id must define a description')
+      end
+
+      it 'allows context and fixed parameters without descriptions' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       {
+                         'name' => 'vip_level',
+                         'type' => 'string',
+                         'source' => 'context',
+                         'context_path' => 'contact.custom_attributes.vip_level'
+                       },
+                       {
+                         'name' => 'tenant',
+                         'type' => 'string',
+                         'source' => 'fixed',
+                         'fixed_value' => 'sales'
+                       }
+                     ])
+
+        expect(tool).to be_valid
+        expect(tool.param_schema.pluck('description')).to eq(['', ''])
+      end
+
+      it 'normalizes query and header request destinations' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       {
+                         'name' => 'search',
+                         'type' => 'string',
+                         'description' => 'Search text',
+                         'request_location' => 'query'
+                       },
+                       {
+                         'name' => 'tenant_id',
+                         'type' => 'string',
+                         'source' => 'fixed',
+                         'fixed_value' => 'tenant-42',
+                         'request_location' => 'header',
+                         'request_key' => 'X-Tenant-ID'
+                       }
+                     ])
+
+        expect(tool).to be_valid
+        expect(tool.param_schema.second).to include(
+          'request_location' => 'header',
+          'request_key' => 'X-Tenant-ID'
+        )
+      end
+
+      it 'rejects unsafe custom header names' do
+        tool = build(:captain_custom_tool, account: account, param_schema: [
+                       {
+                         'name' => 'host_override',
+                         'type' => 'string',
+                         'source' => 'fixed',
+                         'fixed_value' => 'internal.example.com',
+                         'request_location' => 'header',
+                         'request_key' => 'Host'
+                       }
+                     ])
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:param_schema]).to include('parameter host_override uses a forbidden header name')
       end
 
       it 'is valid when required field is omitted (defaults to optional param)' do
@@ -528,6 +589,70 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(tool.build_request_url({})).to eq(
           'https://api.example.com/orders?details=true&api_key=secret'
         )
+      end
+
+      it 'encodes configured query parameters and preserves existing query values' do
+        tool = create(
+          :captain_custom_tool,
+          account: account,
+          endpoint_url: 'https://api.example.com/orders?active=true',
+          param_schema: [
+            {
+              'name' => 'search',
+              'type' => 'string',
+              'description' => 'Search text',
+              'request_location' => 'query',
+              'request_key' => 'q'
+            }
+          ]
+        )
+
+        expect(tool.build_request_url({ search: 'Алматы & Астана' })).to eq(
+          'https://api.example.com/orders?active=true&q=%D0%90%D0%BB%D0%BC%D0%B0%D1%82%D1%8B+%26+%D0%90%D1%81%D1%82%D0%B0%D0%BD%D0%B0'
+        )
+      end
+    end
+
+    describe '#build_request_headers' do
+      it 'builds arbitrary headers from resolved parameters' do
+        tool = create(
+          :captain_custom_tool,
+          account: account,
+          param_schema: [
+            {
+              'name' => 'tenant_id',
+              'type' => 'string',
+              'source' => 'fixed',
+              'fixed_value' => 'tenant-42',
+              'request_location' => 'header',
+              'request_key' => 'X-Tenant-ID'
+            }
+          ]
+        )
+
+        expect(tool.build_request_headers('tenant_id' => 'tenant-42')).to eq('X-Tenant-ID' => 'tenant-42')
+      end
+
+      it 'rejects forbidden request header names' do
+        Captain::CustomTool::FORBIDDEN_REQUEST_HEADER_NAMES.each do |header_name|
+          tool = build(
+            :captain_custom_tool,
+            account: account,
+            param_schema: [
+              {
+                name: 'header_override',
+                type: 'string',
+                source: 'fixed',
+                fixed_value: 'forbidden-value',
+                request_location: 'header',
+                request_key: header_name
+              }
+            ]
+          )
+
+          expect(tool).not_to be_valid
+          expect(tool.errors[:param_schema]).to include('parameter header_override uses a forbidden header name')
+        end
       end
     end
 
