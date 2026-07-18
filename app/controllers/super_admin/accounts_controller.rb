@@ -159,7 +159,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   def preserved_feature_flags(submitted_names)
-    return [] if params[:id].blank?
+    return [] unless action_name == 'update'
 
     requested_resource.selected_feature_flags.map(&:to_s).reject do |feature_name|
       submitted_names.include?(feature_name)

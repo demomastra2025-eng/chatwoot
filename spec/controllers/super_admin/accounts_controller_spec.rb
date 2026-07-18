@@ -137,6 +137,31 @@ RSpec.describe 'Super Admin accounts API', type: :request do
         expect(account.reload.feature_enabled?('inbox_view')).to be(true)
       end
 
+      it 'does not preserve an existing account hidden flags when creating with an id param' do
+        account.enable_features!('inbox_view')
+        sign_in(super_admin, scope: :super_admin)
+
+        created_name = "Created account #{account.id}"
+        expect do
+          post '/super_admin/accounts', params: {
+            id: account.id,
+            account: {
+              name: created_name,
+              locale: account.locale,
+              status: account.status
+            },
+            enabled_features: {
+              feature_crm: '1'
+            }
+          }
+        end.to change(Account, :count).by(1)
+
+        expect(response).to have_http_status(:redirect)
+        created_account = Account.find_by!(name: created_name)
+        expect(created_account.feature_enabled?('inbox_view')).to be(false)
+        expect(created_account.feature_enabled?('crm')).to be(true)
+      end
+
       it 'renders a toggle for every visible account feature' do
         sign_in(super_admin, scope: :super_admin)
         get "/super_admin/accounts/#{account.id}/edit"
