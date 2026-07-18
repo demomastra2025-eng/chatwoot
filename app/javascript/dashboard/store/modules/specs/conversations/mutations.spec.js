@@ -674,6 +674,65 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#REPLACE_ALL_CONVERSATION', () => {
+    it('preserves selected conversation details when replacing the list', () => {
+      const state = {
+        allConversations: [
+          {
+            id: 1,
+            messages: [{ id: 1 }],
+            dataFetched: true,
+            allMessagesLoaded: true,
+          },
+        ],
+        selectedChatId: 1,
+        selectedChatType: null,
+      };
+      const data = [{ id: 1, status: 'resolved' }, { id: 2 }];
+
+      mutations[types.REPLACE_ALL_CONVERSATION](state, data);
+
+      expect(state.allConversations).toEqual([
+        {
+          id: 1,
+          status: 'resolved',
+          messages: [{ id: 1 }],
+          dataFetched: true,
+          allMessagesLoaded: true,
+        },
+        { id: 2 },
+      ]);
+      expect(state.selectedChatId).toBe(1);
+    });
+
+    it('clears selection when the selected conversation is not in the new list', () => {
+      const state = {
+        allConversations: [{ id: 1 }],
+        selectedChatId: 1,
+        selectedChatType: 'conversation',
+      };
+
+      mutations[types.REPLACE_ALL_CONVERSATION](state, [{ id: 2 }]);
+
+      expect(state.allConversations).toEqual([{ id: 2 }]);
+      expect(state.selectedChatId).toBeNull();
+      expect(state.selectedChatType).toBeNull();
+    });
+
+    it('clears stale selection even when it is absent from the current list', () => {
+      const state = {
+        allConversations: [{ id: 2 }],
+        selectedChatId: 1,
+        selectedChatType: 'conversation',
+      };
+
+      mutations[types.REPLACE_ALL_CONVERSATION](state, [{ id: 2 }]);
+
+      expect(state.selectedChatId).toBeNull();
+      expect(state.selectedChatType).toBeNull();
+    });
+  });
+
   describe('#SET_ALL_ATTACHMENTS', () => {
     it('set all attachments', () => {
       const state = {

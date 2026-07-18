@@ -54,7 +54,10 @@ import languages from 'dashboard/components/widgets/conversation/advancedFilterI
 import countries from 'shared/constants/countries';
 import { generateValuesForEditCustomViews } from 'dashboard/helper/customViewsHelper';
 import { conversationListPageURL } from '../helper/URLHelper';
-import { extractSingleStatusFilter } from '../helper/conversationStatusFilter';
+import {
+  extractSingleStatusFilter,
+  mergeRouteStatusFilter,
+} from '../helper/conversationStatusFilter';
 import {
   isOnMentionsView,
   isOnParticipatingView,
@@ -131,7 +134,10 @@ const sidebarStatuses = [
   wootConstants.STATUS_TYPE.RESOLVED,
 ];
 const showAdvancedFilters = ref(false);
-const preserveAppliedFiltersOnStatusRouteChange = ref(false);
+const pendingStatusRouteSyncs = new Map();
+let statusRouteSyncGeneration = 0;
+let filterApplicationGeneration = 0;
+let latestStatusRouteIntent = wootConstants.STATUS_TYPE.OPEN;
 // chatsOnView is to store the chats that are currently visible on the screen,
 // which mirrors the conversationList.
 const chatsOnView = ref([]);
@@ -409,6 +415,14 @@ function conversationNavigationQuery(overrides = {}) {
 
   return nextQuery;
 }
+
+const routeTargetKey = ({
+  name = route.name,
+  params = route.params,
+  query = route.query,
+} = {}) => JSON.stringify({ name, params, query });
+
+let expectedRouteTargetKey = routeTargetKey();
 
 const currentUserDetails = computed(() => {
   const { id, name } = currentUser.value;
@@ -905,27 +919,113 @@ function fetchSavedFilteredConversations(payload) {
     .then(emitConversationLoaded);
 }
 
+function fetchConversations() {
+  store.dispatch('updateChatListFilters', conversationFilters.value);
+  store
+    .dispatch(
+      props.communicationThreadMode
+        ? 'fetchCommunicationThreads'
+        : 'fetchAllConversations'
+    )
+    .then(emitConversationLoaded);
+}
+
+function resetAndFetchData({ preserveAppliedFilters = false, status } = {}) {
+  if (!preserveAppliedFilters) {
+    appliedFilter.value = [];
+    store.dispatch('clearConversationFilters');
+  }
+  resetBulkActions();
+  store.dispatch('conversationPage/reset');
+  if (hasActiveFolders.value) {
+    const payload = activeFolder.value.query;
+    fetchSavedFilteredConversations(payload);
+  }
+  if (props.foldersId) {
+    return;
+  }
+  if (preserveAppliedFilters && hasAppliedFilters.value) {
+    const filters = status
+      ? mergeRouteStatusFilter(appliedFilters.value, status, sidebarStatuses)
+      : appliedFilters.value;
+    if (status) {
+      store.dispatch('setConversationFilters', filters);
+    }
+    fetchFilteredConversations(filters);
+    return;
+  }
+  fetchConversations();
+}
+
 async function onApplyFilter(payload) {
+  filterApplicationGeneration += 1;
+  store.dispatch('invalidateConversationListRequests');
+  const applicationGeneration = filterApplicationGeneration;
   payload = useSnakeCase(payload);
 
   const nextStatus = extractSingleStatusFilter(payload, sidebarStatuses);
+  latestStatusRouteIntent = nextStatus || routeConversationStatus.value;
   if (nextStatus && nextStatus !== routeConversationStatus.value) {
-    preserveAppliedFiltersOnStatusRouteChange.value = true;
+    statusRouteSyncGeneration += 1;
+    const syncGeneration = statusRouteSyncGeneration;
+    const targetQuery = conversationNavigationQuery({ status: nextStatus });
+    expectedRouteTargetKey = routeTargetKey({ query: targetQuery });
+    pendingStatusRouteSyncs.set(syncGeneration, {
+      status: nextStatus,
+      applicationGeneration,
+      targetKey: expectedRouteTargetKey,
+    });
     try {
       await router.replace({
         name: route.name,
         params: route.params,
-        query: conversationNavigationQuery({ status: nextStatus }),
+        query: targetQuery,
       });
     } catch {
-      preserveAppliedFiltersOnStatusRouteChange.value = false;
+      pendingStatusRouteSyncs.delete(syncGeneration);
+      if (applicationGeneration === filterApplicationGeneration) {
+        filterApplicationGeneration += 1;
+        clearLocalSearch();
+        resetAndFetchData({
+          preserveAppliedFilters: true,
+          status: routeConversationStatus.value,
+        });
+      }
+      return;
+    } finally {
+      pendingStatusRouteSyncs.delete(syncGeneration);
     }
+  }
+
+  if (applicationGeneration !== filterApplicationGeneration) {
+    if (routeConversationStatus.value !== latestStatusRouteIntent) {
+      statusRouteSyncGeneration += 1;
+      const syncGeneration = statusRouteSyncGeneration;
+      const targetQuery = conversationNavigationQuery({
+        status: latestStatusRouteIntent,
+      });
+      expectedRouteTargetKey = routeTargetKey({ query: targetQuery });
+      pendingStatusRouteSyncs.set(syncGeneration, {
+        status: latestStatusRouteIntent,
+        applicationGeneration: filterApplicationGeneration,
+        targetKey: expectedRouteTargetKey,
+      });
+      try {
+        await router.replace({
+          name: route.name,
+          params: route.params,
+          query: targetQuery,
+        });
+      } finally {
+        pendingStatusRouteSyncs.delete(syncGeneration);
+      }
+    }
+    return;
   }
 
   resetBulkActions();
   foldersQuery.value = filterQueryGenerator(payload);
   store.dispatch('conversationPage/reset');
-  store.dispatch('emptyAllConversations');
   fetchFilteredConversations(payload);
 }
 
@@ -1073,33 +1173,6 @@ async function onToggleAdvanceFiltersModal() {
   showAdvancedFilters.value = true;
 }
 
-function fetchConversations() {
-  store.dispatch('updateChatListFilters', conversationFilters.value);
-  store
-    .dispatch(
-      props.communicationThreadMode
-        ? 'fetchCommunicationThreads'
-        : 'fetchAllConversations'
-    )
-    .then(emitConversationLoaded);
-}
-
-function resetAndFetchData() {
-  appliedFilter.value = [];
-  resetBulkActions();
-  store.dispatch('conversationPage/reset');
-  store.dispatch('emptyAllConversations');
-  store.dispatch('clearConversationFilters');
-  if (hasActiveFolders.value) {
-    const payload = activeFolder.value.query;
-    fetchSavedFilteredConversations(payload);
-  }
-  if (props.foldersId) {
-    return;
-  }
-  fetchConversations();
-}
-
 function loadMoreConversations() {
   if (hasCurrentPageEndReached.value || chatListLoading.value) {
     return;
@@ -1111,7 +1184,13 @@ function loadMoreConversations() {
     const payload = activeFolder.value.query;
     fetchSavedFilteredConversations(payload);
   } else if (hasAppliedFilters.value) {
-    fetchFilteredConversations(appliedFilters.value);
+    fetchFilteredConversations(
+      mergeRouteStatusFilter(
+        appliedFilters.value,
+        routeConversationStatus.value,
+        sidebarStatuses
+      )
+    );
   }
 }
 
@@ -1596,6 +1675,28 @@ watch(activeTeam, () => {
   resetAndFetchData();
 });
 
+watch(
+  () => routeTargetKey(),
+  (newTargetKey, oldTargetKey) => {
+    if (
+      newTargetKey === oldTargetKey ||
+      newTargetKey === expectedRouteTargetKey
+    ) {
+      return;
+    }
+
+    const pendingTarget = [...pendingStatusRouteSyncs.values()].some(
+      sync => sync.targetKey === newTargetKey
+    );
+    if (pendingTarget) return;
+
+    latestStatusRouteIntent = routeConversationStatus.value;
+    expectedRouteTargetKey = newTargetKey;
+    filterApplicationGeneration += 1;
+    store.dispatch('invalidateConversationListRequests');
+  }
+);
+
 watch(routeConversationStatus, (newStatus, oldStatus) => {
   if (newStatus === oldStatus) {
     return;
@@ -1611,13 +1712,32 @@ watch(routeConversationStatus, (newStatus, oldStatus) => {
     },
   });
 
-  if (preserveAppliedFiltersOnStatusRouteChange.value) {
-    preserveAppliedFiltersOnStatusRouteChange.value = false;
+  const matchingSyncGeneration = [...pendingStatusRouteSyncs.entries()].find(
+    ([, sync]) =>
+      sync.status === newStatus &&
+      sync.applicationGeneration === filterApplicationGeneration
+  )?.[0];
+  if (matchingSyncGeneration !== undefined) {
+    pendingStatusRouteSyncs.delete(matchingSyncGeneration);
     return;
   }
 
+  const staleSync = [...pendingStatusRouteSyncs.values()].some(
+    sync =>
+      sync.status === newStatus &&
+      sync.applicationGeneration < filterApplicationGeneration
+  );
+  if (staleSync) {
+    return;
+  }
+
+  latestStatusRouteIntent = newStatus;
+  filterApplicationGeneration += 1;
   clearLocalSearch();
-  resetAndFetchData();
+  resetAndFetchData({
+    preserveAppliedFilters: hasAppliedFilters.value,
+    status: newStatus,
+  });
 });
 
 watch(routeConversationAssigneeType, (newAssigneeType, oldAssigneeType) => {

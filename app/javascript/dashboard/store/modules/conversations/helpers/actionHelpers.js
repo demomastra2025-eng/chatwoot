@@ -50,10 +50,16 @@ export const buildConversationList = (
   context,
   requestPayload,
   responseData,
-  filterType
+  filterType,
+  replaceExistingList = false
 ) => {
   const { payload: conversationList, meta: metaData } = responseData;
-  context.commit(types.SET_ALL_CONVERSATION, conversationList);
+  context.commit(
+    replaceExistingList
+      ? types.REPLACE_ALL_CONVERSATION
+      : types.SET_ALL_CONVERSATION,
+    conversationList
+  );
   if (metaData && Object.keys(metaData).length) {
     context.dispatch('conversationStats/set', metaData);
   }

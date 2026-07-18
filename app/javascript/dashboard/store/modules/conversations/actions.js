@@ -24,6 +24,13 @@ import {
   handleVoiceCallUpdated,
 } from 'dashboard/helper/voice';
 
+let conversationListRequestGeneration = 0;
+
+const invalidateConversationListRequest = commit => {
+  conversationListRequestGeneration += 1;
+  commit(types.CLEAR_LIST_LOADING_STATUS);
+};
+
 let sidebarUnreadCountsRequestId = 0;
 
 const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
@@ -315,6 +322,10 @@ export const hasMessageFailedWithExternalError = pendingMessage => {
 
 // actions
 const actions = {
+  invalidateConversationListRequests({ commit }) {
+    invalidateConversationListRequest(commit);
+  },
+
   getConversation: async ({ commit, state }, conversationId) => {
     try {
       const response = await ConversationApi.show(conversationId);
@@ -338,24 +349,32 @@ const actions = {
   },
 
   fetchAllConversations: async ({ commit, state, dispatch }) => {
+    conversationListRequestGeneration += 1;
+    const requestGeneration = conversationListRequestGeneration;
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
       const {
         data: { data },
       } = await ConversationApi.get(params);
+      if (requestGeneration !== conversationListRequestGeneration) return;
       buildConversationList(
         { commit, dispatch },
         params,
         data,
-        params.assigneeType
+        params.assigneeType,
+        Number(params.page || 1) === 1
       );
     } catch (error) {
-      // Handle error
+      if (requestGeneration === conversationListRequestGeneration) {
+        commit(types.CLEAR_LIST_LOADING_STATUS);
+      }
     }
   },
 
   fetchCommunicationThreads: async ({ commit, state, dispatch }) => {
+    conversationListRequestGeneration += 1;
+    const requestGeneration = conversationListRequestGeneration;
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
@@ -365,6 +384,7 @@ const actions = {
         ...params,
         includeMeta: Number(params.page || 1) === 1,
       });
+      if (requestGeneration !== conversationListRequestGeneration) return;
       buildConversationList(
         { commit, dispatch },
         params,
@@ -374,10 +394,13 @@ const actions = {
             buildCommunicationThreadConversation
           ),
         },
-        params.assigneeType
+        params.assigneeType,
+        Number(params.page || 1) === 1
       );
     } catch (error) {
-      commit(types.CLEAR_LIST_LOADING_STATUS);
+      if (requestGeneration === conversationListRequestGeneration) {
+        commit(types.CLEAR_LIST_LOADING_STATUS);
+      }
     }
   },
 
@@ -431,12 +454,15 @@ const actions = {
   },
 
   fetchFilteredConversations: async ({ commit, dispatch }, params) => {
+    conversationListRequestGeneration += 1;
+    const requestGeneration = conversationListRequestGeneration;
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const filterApi = params?.communicationThreadMode
         ? CommunicationThreadApi
         : ConversationApi;
       const { data } = await filterApi.filter(params);
+      if (requestGeneration !== conversationListRequestGeneration) return;
       const responseData = params?.communicationThreadMode
         ? {
             meta: data.data?.meta || {},
@@ -449,10 +475,13 @@ const actions = {
         { commit, dispatch },
         params,
         responseData,
-        'appliedFilters'
+        'appliedFilters',
+        Number(params.page || 1) === 1
       );
     } catch (error) {
-      // Handle error
+      if (requestGeneration === conversationListRequestGeneration) {
+        commit(types.CLEAR_LIST_LOADING_STATUS);
+      }
     }
   },
 
@@ -777,6 +806,7 @@ const actions = {
       conversationType = null,
     }
   ) => {
+    invalidateConversationListRequest(commit);
     try {
       const communicationThread = getCommunicationThreadTarget(
         state,

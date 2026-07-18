@@ -671,8 +671,9 @@ describe('#actions', () => {
         { commit },
         { conversationId: 1, status: 'snoozed' }
       );
-      expect(commit).toHaveBeenCalledTimes(1);
+      expect(commit).toHaveBeenCalledTimes(2);
       expect(commit.mock.calls).toEqual([
+        ['CLEAR_LIST_LOADING_STATUS'],
         [
           'CHANGE_CONVERSATION_STATUS',
           { conversationId: 1, status: 'snoozed', snoozedUntil: null },
@@ -710,6 +711,7 @@ describe('#actions', () => {
       );
 
       expect(commit.mock.calls).toEqual([
+        ['CLEAR_LIST_LOADING_STATUS'],
         [
           types.UPDATE_CONVERSATION_CUSTOM_ATTRIBUTES,
           {
@@ -786,12 +788,143 @@ describe('#actions', () => {
         data: dataReceived,
       });
       await actions.fetchFilteredConversations({ commit }, dataToSend);
-      expect(commit).toHaveBeenCalledTimes(2);
+      expect(commit).toHaveBeenCalledTimes(3);
       expect(commit.mock.calls).toEqual([
         ['SET_LIST_LOADING_STATUS'],
-        ['SET_ALL_CONVERSATION', dataReceived.payload],
+        ['REPLACE_ALL_CONVERSATION', dataReceived.payload],
+        ['CLEAR_LIST_LOADING_STATUS'],
       ]);
     });
+  });
+
+  it('ignores a stale filtered conversations response', async () => {
+    let resolveFirstRequest;
+    const firstRequest = new Promise(resolve => {
+      resolveFirstRequest = resolve;
+    });
+    const secondResponse = {
+      data: {
+        ...dataReceived,
+        payload: [{ ...dataReceived.payload[0], id: 999 }],
+      },
+    };
+
+    commit.mockClear();
+    dispatch.mockClear();
+    axios.post
+      .mockImplementationOnce(() => firstRequest)
+      .mockResolvedValueOnce(secondResponse);
+
+    const firstFetch = actions.fetchFilteredConversations(
+      { commit, dispatch },
+      dataToSend
+    );
+    const secondFetch = actions.fetchFilteredConversations(
+      { commit, dispatch },
+      dataToSend
+    );
+
+    await secondFetch;
+    resolveFirstRequest({ data: dataReceived });
+    await firstFetch;
+
+    expect(
+      commit.mock.calls.filter(
+        ([mutation]) => mutation === 'REPLACE_ALL_CONVERSATION'
+      )
+    ).toEqual([['REPLACE_ALL_CONVERSATION', secondResponse.data.payload]]);
+  });
+
+  it('clears loading when the latest filtered request fails', async () => {
+    commit.mockClear();
+    dispatch.mockClear();
+    axios.post.mockRejectedValueOnce(new Error('request failed'));
+
+    await actions.fetchFilteredConversations({ commit, dispatch }, dataToSend);
+
+    expect(commit.mock.calls).toEqual([
+      ['SET_LIST_LOADING_STATUS'],
+      ['CLEAR_LIST_LOADING_STATUS'],
+    ]);
+  });
+
+  it('does not apply an older success after the latest request fails', async () => {
+    let resolveFirstRequest;
+    const firstRequest = new Promise(resolve => {
+      resolveFirstRequest = resolve;
+    });
+
+    commit.mockClear();
+    dispatch.mockClear();
+    axios.post
+      .mockImplementationOnce(() => firstRequest)
+      .mockRejectedValueOnce(new Error('latest request failed'));
+
+    const firstFetch = actions.fetchFilteredConversations(
+      { commit, dispatch },
+      dataToSend
+    );
+    const secondFetch = actions.fetchFilteredConversations(
+      { commit, dispatch },
+      dataToSend
+    );
+
+    await secondFetch;
+    resolveFirstRequest({ data: dataReceived });
+    await firstFetch;
+
+    expect(
+      commit.mock.calls.filter(
+        ([mutation]) => mutation === 'SET_ALL_CONVERSATION'
+      )
+    ).toEqual([]);
+    expect(
+      commit.mock.calls.filter(
+        ([mutation]) => mutation === 'CLEAR_LIST_LOADING_STATUS'
+      )
+    ).toEqual([['CLEAR_LIST_LOADING_STATUS']]);
+  });
+
+  it('invalidates an in-flight list response when status is mutated', async () => {
+    let resolveListRequest;
+    const listRequest = new Promise(resolve => {
+      resolveListRequest = resolve;
+    });
+
+    commit.mockClear();
+    dispatch.mockClear();
+    axios.post
+      .mockImplementationOnce(() => listRequest)
+      .mockResolvedValueOnce({
+        data: {
+          payload: {
+            conversation_id: 1,
+            current_status: 'resolved',
+            snoozed_until: null,
+          },
+        },
+      });
+
+    const listFetch = actions.fetchFilteredConversations(
+      { commit, dispatch },
+      dataToSend
+    );
+    await actions.toggleStatus(
+      { commit, state: { allConversations: [] } },
+      { conversationId: 1, status: 'resolved' }
+    );
+
+    resolveListRequest({ data: dataReceived });
+    await listFetch;
+
+    expect(commit.mock.calls).toEqual([
+      ['SET_LIST_LOADING_STATUS'],
+      ['CLEAR_LIST_LOADING_STATUS'],
+      [
+        'CHANGE_CONVERSATION_STATUS',
+        { conversationId: 1, status: 'resolved', snoozedUntil: null },
+      ],
+    ]);
   });
 
   describe('#setConversationFilter', () => {

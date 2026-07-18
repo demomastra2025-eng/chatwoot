@@ -32,3 +32,41 @@ export const extractSingleStatusFilter = (filters, allowedStatuses) => {
   const status = filterValue(values[0]);
   return allowedStatuses.includes(status) ? status : null;
 };
+
+export const mergeRouteStatusFilter = (filters, status, allowedStatuses) => {
+  if (
+    !Array.isArray(filters) ||
+    !Array.isArray(allowedStatuses) ||
+    !allowedStatuses.includes(status)
+  ) {
+    return filters;
+  }
+
+  if (filters.some(filter => filterQueryOperator(filter) === 'or')) {
+    return filters;
+  }
+
+  const statusFilters = filters.filter(
+    filter => filterAttribute(filter) === 'status'
+  );
+  if (!statusFilters.length) {
+    return [
+      ...filters,
+      {
+        attribute_key: 'status',
+        filter_operator: 'equal_to',
+        values: [status],
+        query_operator: 'and',
+      },
+    ];
+  }
+
+  if (extractSingleStatusFilter(filters, allowedStatuses) === null) {
+    return filters;
+  }
+
+  return filters.map(filter => {
+    if (filterAttribute(filter) !== 'status') return filter;
+    return { ...filter, values: [status] };
+  });
+};

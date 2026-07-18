@@ -382,6 +382,34 @@ export const mutations = {
     });
     _state.allConversations = newAllConversations;
   },
+  [types.REPLACE_ALL_CONVERSATION](_state, conversationList) {
+    const selectedConversation = _state.allConversations.find(conversation =>
+      isSelectedConversation(_state, conversation)
+    );
+    const selectedConversationInNextList = conversationList.find(conversation =>
+      isSelectedConversation(_state, conversation)
+    );
+
+    _state.allConversations = conversationList.map(conversation => {
+      if (!isSelectedConversation(_state, conversation)) return conversation;
+
+      return {
+        ...conversation,
+        allMessagesLoaded: selectedConversation?.allMessagesLoaded,
+        messages: selectedConversation?.messages,
+        dataFetched: selectedConversation?.dataFetched,
+      };
+    });
+
+    if (
+      _state.selectedChatId !== null &&
+      _state.selectedChatId !== undefined &&
+      !selectedConversationInNextList
+    ) {
+      _state.selectedChatId = null;
+      _state.selectedChatType = null;
+    }
+  },
   [types.EMPTY_ALL_CONVERSATION](_state) {
     _state.allConversations = [];
     _state.selectedChatId = null;
