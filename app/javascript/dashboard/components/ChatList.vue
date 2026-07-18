@@ -54,6 +54,7 @@ import languages from 'dashboard/components/widgets/conversation/advancedFilterI
 import countries from 'shared/constants/countries';
 import { generateValuesForEditCustomViews } from 'dashboard/helper/customViewsHelper';
 import { conversationListPageURL } from '../helper/URLHelper';
+import { extractSingleStatusFilter } from '../helper/conversationStatusFilter';
 import {
   isOnMentionsView,
   isOnParticipatingView,
@@ -130,6 +131,7 @@ const sidebarStatuses = [
   wootConstants.STATUS_TYPE.RESOLVED,
 ];
 const showAdvancedFilters = ref(false);
+const preserveAppliedFiltersOnStatusRouteChange = ref(false);
 // chatsOnView is to store the chats that are currently visible on the screen,
 // which mirrors the conversationList.
 const chatsOnView = ref([]);
@@ -903,8 +905,23 @@ function fetchSavedFilteredConversations(payload) {
     .then(emitConversationLoaded);
 }
 
-function onApplyFilter(payload) {
+async function onApplyFilter(payload) {
   payload = useSnakeCase(payload);
+
+  const nextStatus = extractSingleStatusFilter(payload, sidebarStatuses);
+  if (nextStatus && nextStatus !== routeConversationStatus.value) {
+    preserveAppliedFiltersOnStatusRouteChange.value = true;
+    try {
+      await router.replace({
+        name: route.name,
+        params: route.params,
+        query: conversationNavigationQuery({ status: nextStatus }),
+      });
+    } catch {
+      preserveAppliedFiltersOnStatusRouteChange.value = false;
+    }
+  }
+
   resetBulkActions();
   foldersQuery.value = filterQueryGenerator(payload);
   store.dispatch('conversationPage/reset');
@@ -1593,6 +1610,12 @@ watch(routeConversationStatus, (newStatus, oldStatus) => {
       order_by: activeSortBy.value,
     },
   });
+
+  if (preserveAppliedFiltersOnStatusRouteChange.value) {
+    preserveAppliedFiltersOnStatusRouteChange.value = false;
+    return;
+  }
+
   clearLocalSearch();
   resetAndFetchData();
 });
