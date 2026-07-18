@@ -95,6 +95,39 @@ RSpec.describe 'Super Admin accounts API', type: :request do
           account.reload.custom_attributes['limit_counter_excluded_user_ids']
         ).to eq([12, 15, 19])
       end
+
+      it 'persists checked and unchecked account features from the form' do
+        account.disable_features!('crm', 'scheduling')
+        sign_in(super_admin, scope: :super_admin)
+
+        patch "/super_admin/accounts/#{account.id}", params: {
+          account: {
+            name: account.name,
+            locale: account.locale,
+            status: account.status
+          },
+          enabled_features: {
+            feature_crm: '1',
+            feature_scheduling: '0'
+          }
+        }
+
+        expect(response).to have_http_status(:redirect)
+        expect(account.reload.feature_enabled?('crm')).to be(true)
+        expect(account.feature_enabled?('scheduling')).to be(false)
+      end
+
+      it 'renders a toggle for every visible account feature' do
+        sign_in(super_admin, scope: :super_admin)
+        get "/super_admin/accounts/#{account.id}/edit"
+
+        expect(response).to have_http_status(:success)
+
+        visible_features = SuperAdmin::AccountFeaturesHelper.filtered_features(account.all_features)
+        visible_features.each_key do |feature_key, _display_name|
+          expect(response.body).to include(%(name="enabled_features[feature_#{feature_key}]"))
+        end
+      end
     end
   end
 

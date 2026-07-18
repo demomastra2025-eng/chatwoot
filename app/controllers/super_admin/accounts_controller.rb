@@ -38,7 +38,12 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def resource_params
     permitted_params = super
     permitted_params[:limits] = normalize_limits(permitted_params[:limits])
-    permitted_params[:selected_feature_flags] = params[:enabled_features].keys.map(&:to_sym) if params[:enabled_features].present?
+    if params[:enabled_features].present?
+      boolean_type = ActiveModel::Type::Boolean.new
+      permitted_params[:selected_feature_flags] = params[:enabled_features].to_unsafe_h.each_with_object([]) do |(feature_name, enabled), selected|
+        selected << feature_name.to_s.delete_prefix('feature_').to_sym if boolean_type.cast(enabled)
+      end
+    end
     merge_limit_counter_user_exclusions!(permitted_params)
     permitted_params
   end
