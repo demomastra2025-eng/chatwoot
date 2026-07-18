@@ -38,12 +38,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   def resource_params
     permitted_params = super
     permitted_params[:limits] = normalize_limits(permitted_params[:limits])
-    if params[:enabled_features].present?
-      boolean_type = ActiveModel::Type::Boolean.new
-      permitted_params[:selected_feature_flags] = params[:enabled_features].to_unsafe_h.each_with_object([]) do |(feature_name, enabled), selected|
-        selected << feature_name.to_s.delete_prefix('feature_').to_sym if boolean_type.cast(enabled)
-      end
-    end
+    merge_selected_feature_flags!(permitted_params)
     merge_limit_counter_user_exclusions!(permitted_params)
     permitted_params
   end
@@ -135,6 +130,40 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
     permitted_params.delete(:limit_counter_excluded_user_ids_raw)
     permitted_params[:custom_attributes] = updated_custom_attributes
+  end
+
+  def merge_selected_feature_flags!(permitted_params)
+    submitted_features = submitted_feature_states
+    return if submitted_features.empty?
+
+    enabled_features = submitted_features.filter_map do |feature_name, enabled|
+      feature_name.to_sym if enabled
+    end
+    permitted_params[:selected_feature_flags] = preserved_feature_flags(submitted_features.keys) + enabled_features
+  end
+
+  def submitted_feature_states
+    raw_features = params[:enabled_features]
+    return {} unless raw_features.respond_to?(:to_unsafe_h)
+
+    boolean_type = ActiveModel::Type::Boolean.new
+    raw_features.to_unsafe_h.each_with_object({}) do |(feature_name, enabled), features|
+      feature_name = feature_name.to_s
+      next unless feature_name.start_with?('feature_')
+
+      normalized_name = feature_name.delete_prefix('feature_')
+      next unless Featurable::FEATURE_NAMES.include?(normalized_name)
+
+      features[normalized_name] = boolean_type.cast(enabled)
+    end
+  end
+
+  def preserved_feature_flags(submitted_names)
+    return [] if params[:id].blank?
+
+    requested_resource.selected_feature_flags.map(&:to_s).reject do |feature_name|
+      submitted_names.include?(feature_name)
+    end
   end
 
   def normalize_limit_counter_excluded_user_ids(value)

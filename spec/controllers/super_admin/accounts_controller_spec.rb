@@ -117,6 +117,26 @@ RSpec.describe 'Super Admin accounts API', type: :request do
         expect(account.feature_enabled?('scheduling')).to be(false)
       end
 
+      it 'preserves hidden feature flags when saving visible features' do
+        account.enable_features!('inbox_view')
+        sign_in(super_admin, scope: :super_admin)
+
+        patch "/super_admin/accounts/#{account.id}", params: {
+          account: {
+            name: account.name,
+            locale: account.locale,
+            status: account.status
+          },
+          enabled_features: {
+            feature_crm: '1',
+            feature_scheduling: '0'
+          }
+        }
+
+        expect(response).to have_http_status(:redirect)
+        expect(account.reload.feature_enabled?('inbox_view')).to be(true)
+      end
+
       it 'renders a toggle for every visible account feature' do
         sign_in(super_admin, scope: :super_admin)
         get "/super_admin/accounts/#{account.id}/edit"
