@@ -22,7 +22,7 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
       custom_tool: custom_tool,
       state: preview_state,
       feature: :assistant,
-      preferences: Current.account.captain_preferences[:runtime],
+      preferences: Current.account.captain_runtime_preferences,
       enforce_safety: !preview_only?
     )
 
@@ -33,9 +33,6 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
              end
 
     render json: result
-  rescue Captain::Tools::HttpRequestExecutor::MissingRequiredParametersError,
-         Captain::Tools::HttpRequestExecutor::ToolConfigurationError => e
-    render_could_not_create_error(e.message)
   rescue StandardError => e
     render_could_not_create_error(e.message)
   end

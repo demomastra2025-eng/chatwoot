@@ -659,6 +659,22 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         )
       end
 
+      it 'loads only runtime preferences when executing a test request' do
+        allow(Current).to receive(:account).and_return(account)
+        expect(account).not_to receive(:captain_preferences)
+        expect(account).to receive(:captain_runtime_preferences).and_call_original
+        stub_request(:post, 'https://api.example.com/hooks/alice/sales?contact_id=42')
+          .to_return(status: 200, body: '{"status":"accepted"}', headers: { 'Content-Type' => 'application/json' })
+
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.merge(preview_only: false),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:response]).to include(successful: true, status: 200)
+      end
+
       it 'returns non-successful downstream responses without dropping the preview' do
         stub_request(:post, 'https://api.example.com/hooks/alice/sales?contact_id=42')
           .with(body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}')
