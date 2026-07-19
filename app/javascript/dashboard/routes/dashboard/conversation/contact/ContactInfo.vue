@@ -24,7 +24,6 @@ import ComposeConversation from 'dashboard/components-next/NewConversation/Compo
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
-import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import InlineInput from 'dashboard/components-next/inline-input/InlineInput.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 
@@ -200,6 +199,7 @@ export default {
       return [
         ...new Set(
           (this.contactConversations || [])
+            .filter(conversation => conversation.status !== 'resolved')
             .map(conversation =>
               Number(conversation.inboxId || conversation.inbox_id)
             )
@@ -400,32 +400,11 @@ export default {
         }
       }
     },
-    openChannelConversation(channelIdentity) {
-      const targetConversation = (this.contactConversations || []).find(
-        conversation =>
-          Number(conversation.inboxId || conversation.inbox_id) ===
-          Number(channelIdentity.inboxId)
-      );
-
-      if (!targetConversation) {
-        this.$refs.composeConversation?.openWithChannel({
-          contact: this.contact,
-          channelIdentity,
-        });
-        return;
-      }
-
-      this.$router.push(
-        frontendURL(
-          conversationUrl({
-            accountId: this.$route.params.accountId,
-            activeInbox: Number(
-              targetConversation.inboxId || targetConversation.inbox_id
-            ),
-            id: targetConversation.id,
-          })
-        )
-      );
+    async openChannelConversation(channelIdentity) {
+      await this.$refs.composeConversation?.openWithChannel({
+        contact: this.contact,
+        channelIdentity,
+      });
     },
   },
 };

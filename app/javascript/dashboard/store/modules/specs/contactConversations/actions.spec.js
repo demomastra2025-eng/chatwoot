@@ -163,6 +163,35 @@ describe('#actions', () => {
         ],
       ]);
     });
+
+    it('preserves the backend validation message for an unprocessable conversation', async () => {
+      axios.post.mockRejectedValue({
+        response: {
+          status: 422,
+          data: { error: 'An approved channel_template is required' },
+        },
+      });
+
+      await expect(
+        actions.create(
+          { commit },
+          {
+            params: {
+              inboxId: 1,
+              message: { content: 'hi' },
+              contactId: 4,
+              assigneeId: 6,
+              sourceId: 5,
+            },
+            isFromWhatsApp: false,
+          }
+        )
+      ).rejects.toMatchObject({
+        name: 'ExceptionWithMessage',
+        data: 'An approved channel_template is required',
+      });
+    });
+
     it('sends correct actions with files if API is error', async () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });
       await expect(
@@ -232,6 +261,7 @@ describe('createConversationPayload', () => {
           content: 'Test message content',
         },
         sourceId: '12',
+        contactInboxId: '44',
         mailSubject: 'Test Subject',
         assigneeId: '123',
       },
@@ -251,6 +281,7 @@ describe('createConversationPayload', () => {
       options.params.mailSubject
     );
     expect(payload.get('assignee_id')).toBe(options.params.assigneeId);
+    expect(payload.get('contact_inbox_id')).toBe(options.params.contactInboxId);
     expect(payload.getAll('message[attachments][]')).toEqual(options.files);
   });
 
@@ -293,6 +324,7 @@ describe('createWhatsAppConversationPayload', () => {
           content: 'Test message content',
         },
         sourceId: '12',
+        contactInboxId: '44',
         assigneeId: '123',
       },
     };
@@ -302,6 +334,7 @@ describe('createWhatsAppConversationPayload', () => {
     expect(payload.message).toBe(options.params.message);
     expect(payload.inbox_id).toBe(options.params.inboxId);
     expect(payload.source_id).toBe(options.params.sourceId);
+    expect(payload.contact_inbox_id).toBe(options.params.contactInboxId);
     expect(payload.assignee_id).toBe(options.params.assigneeId);
   });
 });

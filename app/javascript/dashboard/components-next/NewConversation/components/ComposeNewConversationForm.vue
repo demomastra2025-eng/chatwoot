@@ -91,6 +91,11 @@ const inboxTypes = computed(() => ({
     props.targetInbox?.medium === 'whatsapp',
 }));
 
+const isWhatsappReplyWindowOpen = computed(
+  () =>
+    inboxTypes.value.isWhatsapp && props.targetInbox?.replyWindowOpen === true
+);
+
 const whatsappMessageTemplates = computed(() =>
   Object.keys(props.targetInbox?.messageTemplates || {}).length
     ? props.targetInbox.messageTemplates
@@ -117,7 +122,8 @@ const validationRules = computed(() => ({
   targetInbox: { required },
   message: {
     required: requiredIf(
-      !inboxTypes.value.isWhatsapp && !inboxTypes.value.isVoice
+      (!inboxTypes.value.isWhatsapp || isWhatsappReplyWindowOpen.value) &&
+        !inboxTypes.value.isVoice
     ),
   },
   subject: { required: requiredIf(inboxTypes.value.isEmail) },
@@ -346,7 +352,7 @@ const handleSendTwilioMessage = async ({ message, templateParams }) => {
 
 const shouldShowMessageEditor = computed(() => {
   return (
-    !inboxTypes.value.isWhatsapp &&
+    (!inboxTypes.value.isWhatsapp || isWhatsappReplyWindowOpen.value) &&
     !inboxTypes.value.isVoice &&
     !showNoInboxAlert.value &&
     !inboxTypes.value.isTwilioWhatsapp
@@ -450,6 +456,7 @@ useKeyboardEvents({
       v-else
       :attached-files="state.attachedFiles"
       :is-whatsapp-inbox="inboxTypes.isWhatsapp"
+      :is-whatsapp-reply-window-open="isWhatsappReplyWindowOpen"
       :is-email-or-web-widget-inbox="inboxTypes.isEmailOrWebWidget"
       :is-twilio-sms-inbox="inboxTypes.isTwilioSMS"
       :is-twilio-whats-app-inbox="inboxTypes.isTwilioWhatsapp"

@@ -94,9 +94,10 @@ export const getCapitalizedNameFromEmail = email => {
 };
 
 export const processContactableInboxes = inboxes => {
-  return inboxes.map(inbox => ({
-    ...inbox.inbox,
-    sourceId: inbox.sourceId,
+  return inboxes.map(({ inbox, sourceId, ...metadata }) => ({
+    ...inbox,
+    sourceId,
+    ...metadata,
   }));
 };
 
@@ -144,6 +145,9 @@ export const prepareNewMessagePayload = ({
   const payload = {
     inboxId: targetInbox.id,
     sourceId: targetInbox.sourceId,
+    ...(targetInbox.contactInboxId && {
+      contactInboxId: targetInbox.contactInboxId,
+    }),
     contactId: Number(selectedContact.id),
     message: { content: message },
     assigneeId: currentUser.id,
@@ -181,6 +185,9 @@ export const prepareWhatsAppMessagePayload = ({
   return {
     inboxId: targetInbox.id,
     sourceId: targetInbox.sourceId,
+    ...(targetInbox.contactInboxId && {
+      contactInboxId: targetInbox.contactInboxId,
+    }),
     contactId: selectedContact.id,
     message: { content: message, template_params: templateParams },
     assigneeId: currentUser.id,

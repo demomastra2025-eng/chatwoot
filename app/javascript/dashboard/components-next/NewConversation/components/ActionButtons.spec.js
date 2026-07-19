@@ -1,5 +1,10 @@
 import { shallowMount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
+import FileUpload from 'vue-upload-component';
+
+const useFileUploadMock = vi.hoisted(() =>
+  vi.fn(() => ({ onFileUpload: vi.fn() }))
+);
 
 vi.mock('dashboard/composables/useUISettings', () => ({
   useUISettings: () => ({
@@ -10,7 +15,7 @@ vi.mock('dashboard/composables/useUISettings', () => ({
 }));
 
 vi.mock('dashboard/composables/useFileUpload', () => ({
-  useFileUpload: () => ({ onFileUpload: vi.fn() }),
+  useFileUpload: useFileUploadMock,
 }));
 
 vi.mock('dashboard/composables/useKeyboardEvents', () => ({
@@ -30,6 +35,7 @@ vi.mock('vue-i18n', () => ({
 
 import VoiceCallButton from 'dashboard/components-next/Contacts/VoiceCallButton.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
+import WhatsAppOptions from './WhatsAppOptions.vue';
 import ActionButtons from './ActionButtons.vue';
 
 const mountComponent = props =>
@@ -114,5 +120,88 @@ describe('ActionButtons', () => {
             'COMPOSE_NEW_CONVERSATION.FORM.ACTION_BUTTONS.SEND:↵'
         )
     ).toBe(true);
+  });
+
+  it('keeps template-only actions for WhatsApp when the reply window is closed', () => {
+    const wrapper = mountComponent({
+      channelType: 'Channel::Whatsapp',
+      isWhatsappInbox: true,
+      isWhatsappReplyWindowOpen: false,
+      hasSelectedInbox: true,
+      inboxId: 43,
+    });
+
+    expect(wrapper.findComponent(WhatsAppOptions).exists()).toBe(true);
+    expect(
+      wrapper
+        .findAllComponents(Button)
+        .some(
+          button =>
+            button.props('label') ===
+            'COMPOSE_NEW_CONVERSATION.FORM.ACTION_BUTTONS.SEND:↵'
+        )
+    ).toBe(false);
+  });
+
+  it('shows free-text, attachment and template actions when the WhatsApp reply window is open', () => {
+    const wrapper = mountComponent({
+      channelType: 'Channel::Whatsapp',
+      isWhatsappInbox: true,
+      isWhatsappReplyWindowOpen: true,
+      hasSelectedInbox: true,
+      inboxId: 43,
+    });
+
+    expect(wrapper.findComponent(WhatsAppOptions).exists()).toBe(true);
+    expect(wrapper.findComponent(FileUpload).exists()).toBe(true);
+    expect(
+      wrapper
+        .findAllComponents(Button)
+        .some(
+          button =>
+            button.props('label') ===
+            'COMPOSE_NEW_CONVERSATION.FORM.ACTION_BUTTONS.SEND:↵'
+        )
+    ).toBe(true);
+  });
+
+  it('hides template actions while a WhatsApp free-text attachment is pending', () => {
+    const wrapper = mountComponent({
+      attachedFiles: [{ name: 'brochure.pdf' }],
+      channelType: 'Channel::Whatsapp',
+      isWhatsappInbox: true,
+      isWhatsappReplyWindowOpen: true,
+      hasSelectedInbox: true,
+      inboxId: 43,
+    });
+
+    expect(wrapper.findComponent(WhatsAppOptions).exists()).toBe(false);
+    expect(wrapper.findComponent(FileUpload).exists()).toBe(true);
+  });
+
+  it('blocks template and regular send actions while an upload is in flight', async () => {
+    const wrapper = mountComponent({
+      channelType: 'Channel::Whatsapp',
+      isWhatsappInbox: true,
+      isWhatsappReplyWindowOpen: true,
+      hasSelectedInbox: true,
+      inboxId: 43,
+    });
+    const uploadLifecycle = useFileUploadMock.mock.calls.at(-1)[0];
+    const findSendButton = () =>
+      wrapper
+        .findAllComponents(Button)
+        .find(button => button.props('label')?.includes('SEND'));
+
+    uploadLifecycle.onUploadStart();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findComponent(WhatsAppOptions).exists()).toBe(false);
+    expect(findSendButton().attributes('disabled')).toBeDefined();
+
+    uploadLifecycle.onUploadEnd();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.findComponent(WhatsAppOptions).exists()).toBe(true);
+    expect(findSendButton().attributes('disabled')).toBe('false');
   });
 });

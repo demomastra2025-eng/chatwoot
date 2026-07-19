@@ -67,6 +67,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     preload_crm_deal_stages([@conversation])
     preload_scheduling_appointment_statuses([@conversation])
     preload_directional_message_timestamps([@conversation])
+  rescue ArgumentError => e
+    render_could_not_create_error(e.message)
   end
 
   def update
@@ -249,7 +251,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     # fallback for the old case where we do look up only using source id
     # In future we need to change this and make sure we do look up on combination of inbox_id and source_id
     # and deprecate the support of passing only source_id as the param
-    @contact_inbox ||= ::ContactInbox.find_by!(source_id: params[:source_id])
+    @contact_inbox ||= scoped_contact_inboxes.find_by!(source_id: params[:source_id])
     authorize @contact_inbox.inbox, :show?
   rescue ActiveRecord::RecordNotUnique
     render json: { error: 'source_id should be unique' }, status: :unprocessable_content
@@ -257,6 +259,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
 
   def build_contact_inbox
     return if @inbox.blank? || @contact.blank?
+    return scoped_contact_inboxes.find(params[:contact_inbox_id]) if params[:contact_inbox_id].present?
 
     ContactInboxBuilder.new(
       contact: @contact,
@@ -264,6 +267,13 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
       source_id: params[:source_id],
       hmac_verified: hmac_verified?
     ).perform
+  end
+
+  def scoped_contact_inboxes
+    scope = ::ContactInbox.joins(:inbox).where(inboxes: { account_id: Current.account.id })
+    scope = scope.where(inbox_id: @inbox.id) if @inbox.present?
+    scope = scope.where(contact_id: @contact.id) if @contact.present?
+    scope
   end
 
   def conversation_finder

@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils';
+import { flushPromises, shallowMount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const copilotState = vi.hoisted(() => ({ isActive: false }));
@@ -97,5 +97,65 @@ describe('ComposeNewConversationForm voice mode', () => {
     });
 
     expect(wrapper.findComponent(MessageEditor).exists()).toBe(true);
+  });
+});
+
+describe('ComposeNewConversationForm WhatsApp reply window', () => {
+  const whatsappInbox = replyWindowOpen => ({
+    id: 43,
+    channelType: 'Channel::Whatsapp',
+    medium: 'whatsapp',
+    sourceId: '15551234567',
+    contactInboxId: 88,
+    replyWindowOpen,
+    messageTemplates: {},
+  });
+
+  const mountWhatsapp = replyWindowOpen => {
+    const targetInbox = whatsappInbox(replyWindowOpen);
+    return mountComponent({
+      targetInbox,
+      selectedContact: {
+        id: 7,
+        phone_number: '+15551234567',
+        contactInboxes: [targetInbox],
+      },
+    });
+  };
+
+  it('keeps template-only mode when the reply window is closed', () => {
+    const wrapper = mountWhatsapp(false);
+
+    expect(wrapper.findComponent(MessageEditor).exists()).toBe(false);
+    expect(
+      wrapper.getComponent(ActionButtons).props('isWhatsappReplyWindowOpen')
+    ).toBe(false);
+  });
+
+  it('shows the regular editor when the reply window is open', () => {
+    const wrapper = mountWhatsapp(true);
+
+    expect(wrapper.findComponent(MessageEditor).exists()).toBe(true);
+    expect(
+      wrapper.getComponent(ActionButtons).props('isWhatsappReplyWindowOpen')
+    ).toBe(true);
+  });
+
+  it('submits free text without template params while the reply window is open', async () => {
+    const wrapper = mountWhatsapp(true);
+
+    wrapper.getComponent(ActionButtons).vm.$emit('sendMessage');
+    await flushPromises();
+
+    expect(wrapper.emitted('createConversation')?.[0]?.[0]).toMatchObject({
+      isFromWhatsApp: false,
+      payload: {
+        inboxId: 43,
+        contactId: 7,
+        sourceId: '15551234567',
+        contactInboxId: 88,
+        message: { content: 'Draft that must not be sent as a call' },
+      },
+    });
   });
 });

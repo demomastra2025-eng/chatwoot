@@ -22,7 +22,7 @@ class Contacts::ContactableInboxesService
 
   def get
     account = contact.account
-    account.inboxes.filter_map { |inbox| get_contactable_inbox(inbox) }
+    account.inboxes.includes(:channel).filter_map { |inbox| get_contactable_inbox(inbox) }
   end
 
   private
@@ -57,28 +57,42 @@ class Contacts::ContactableInboxesService
   end
 
   def whatsapp_contactable_inbox(inbox)
-    phone_number = contact_phone_number
-    return if phone_number.blank?
+    return if @contact.phone_number.blank?
 
     # Remove the plus since thats the format 360 dialog uses
-    { source_id: phone_number.delete('+'), inbox: inbox }
+    source_id = @contact.phone_number.delete('+')
+    contact_inbox = contact_inboxes_by_identity[[inbox.id, source_id]] ||
+                    latest_contact_inboxes_by_inbox[inbox.id]
+    delivery_policy = Outbound::DeliveryPolicy.evaluate(
+      inbox: inbox,
+      content_kind: 'free_text',
+      last_incoming_message_at: latest_incoming_message_timestamps[inbox.id]
+    )
+
+    {
+      source_id: source_id,
+      inbox: inbox,
+      contact_inbox_id: contact_inbox&.id,
+      active_conversation_id: active_conversation_display_ids[inbox.id],
+      reply_window_open: delivery_policy.reply_window_open,
+      reply_window_closes_at: delivery_policy.reply_window_closes_at,
+      allowed_content_kinds: delivery_policy.allowed_content_kinds
+    }
   end
 
   def whatsapp_web_contactable_inbox(inbox)
-    phone_number = contact_phone_number
-    return if phone_number.blank?
+    return if @contact.phone_number.blank?
 
     latest_contact_inbox = inbox.contact_inboxes.where(contact: @contact).last
-    source_id = latest_contact_inbox&.source_id.presence || phone_number.delete('+')
+    source_id = latest_contact_inbox&.source_id.presence || @contact.phone_number.delete('+')
 
     { source_id: source_id, inbox: inbox }
   end
 
   def sms_contactable_inbox(inbox)
-    phone_number = contact_phone_number
-    return if phone_number.blank?
+    return if @contact.phone_number.blank?
 
-    { source_id: phone_number, inbox: inbox }
+    { source_id: @contact.phone_number, inbox: inbox }
   end
 
   def telegram_personal_contactable_inbox(inbox)
@@ -113,45 +127,54 @@ class Contacts::ContactableInboxesService
   end
 
   def twilio_contactable_inbox(inbox)
-    phone_number = contact_phone_number
-    return if phone_number.blank?
+    return if @contact.phone_number.blank?
 
     case inbox.channel.medium
     when 'sms'
-      { source_id: phone_number, inbox: inbox }
+      { source_id: @contact.phone_number, inbox: inbox }
     when 'whatsapp'
-      { source_id: "whatsapp:#{phone_number}", inbox: inbox }
+      { source_id: "whatsapp:#{@contact.phone_number}", inbox: inbox }
     end
   end
-  def contact_phone_number
-    @contact_phone_number ||= @contact.phone_number.presence ||
-                              phone_number_from_voice_call_session ||
-                              phone_number_from_voice_contact_inbox
+
+  def contact_inboxes_by_identity
+    @contact_inboxes_by_identity ||= @contact.contact_inboxes.index_by do |contact_inbox|
+      [contact_inbox.inbox_id, contact_inbox.source_id]
+    end
   end
 
-  def phone_number_from_voice_call_session
-    scope = Telephony::CallSession.where(account_id: @contact.account_id, direction: 'inbound')
-    scope = scope.where(contact_id: @contact.id).or(scope.where(conversation_id: @contact.conversations.select(:id)))
-    raw_phone_number = scope.where.not(from_number: [nil, '']).order(created_at: :desc, id: :desc).pick(:from_number)
-
-    normalize_phone_number(raw_phone_number)
+  def latest_contact_inboxes_by_inbox
+    @latest_contact_inboxes_by_inbox ||= contact_inboxes_by_identity.values.each_with_object({}) do |contact_inbox, result|
+      current = result[contact_inbox.inbox_id]
+      result[contact_inbox.inbox_id] = contact_inbox if current.nil? || contact_inbox.id > current.id
+    end
   end
 
-  def phone_number_from_voice_contact_inbox
-    raw_phone_number = @contact.contact_inboxes
-                               .joins(:inbox)
-                               .where(inboxes: { account_id: @contact.account_id, channel_type: 'Channel::Voice' })
-                               .where.not(source_id: [nil, ''])
-                               .order(created_at: :desc, id: :desc)
-                               .pick(:source_id)
-
-    normalize_phone_number(raw_phone_number)
+  def latest_incoming_message_timestamps
+    @latest_incoming_message_timestamps ||= Message.incoming
+                                                   .reorder(nil)
+                                                   .joins(:conversation)
+                                                   .where(
+                                                     account_id: @contact.account_id,
+                                                     conversations: {
+                                                       account_id: @contact.account_id,
+                                                       contact_id: @contact.id
+                                                     }
+                                                   )
+                                                   .group('conversations.inbox_id')
+                                                   .maximum('messages.created_at')
   end
 
-  def normalize_phone_number(value)
-    Contacts::PhoneNumberNormalizer.normalize(value) || Contacts::PhoneNumberNormalizer.normalize(value, default_country: 'KZ')
+  def active_conversation_display_ids
+    @active_conversation_display_ids ||= Conversation
+                                         .where(account_id: @contact.account_id, contact_id: @contact.id)
+                                         .where.not(status: :resolved)
+                                         .select('DISTINCT ON (inbox_id) inbox_id, display_id')
+                                         .order(Arel.sql('inbox_id, last_activity_at DESC NULLS LAST, id DESC'))
+                                         .each_with_object({}) do |conversation, result|
+      result[conversation.inbox_id] = conversation.display_id
+    end
   end
-
 end
 
 Contacts::ContactableInboxesService.prepend_mod_with('Contacts::ContactableInboxesService')

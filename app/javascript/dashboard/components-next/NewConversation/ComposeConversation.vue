@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, computed, onMounted, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useI18n } from 'vue-i18n';
 import { useWindowSize } from '@vueuse/core';
@@ -42,6 +43,7 @@ const emit = defineEmits(['close']);
 
 const searchContacts = createContactSearcher();
 const store = useStore();
+const router = useRouter();
 const { t } = useI18n();
 const { width: windowWidth } = useWindowSize();
 
@@ -82,6 +84,7 @@ const clearFormState = () => {
 const contactById = useMapGetter('contacts/getContactById');
 const contactsUiFlags = useMapGetter('contacts/getUIFlags');
 const currentUser = useMapGetter('getCurrentUser');
+const currentAccountId = useMapGetter('getCurrentAccountId');
 const globalConfig = useMapGetter('globalConfig/get');
 const uiFlags = useMapGetter('contactConversations/getUIFlags');
 const messageSignature = useMapGetter('getMessageSignature');
@@ -131,17 +134,12 @@ const resetContacts = () => {
 const prepareContactWithInboxes = async contact => {
   if (!contact?.id) return null;
 
-  let contactInboxes = contact.contactInboxes || [];
-
-  if (contactInboxes.length === 0) {
-    isFetchingInboxes.value = true;
-    try {
-      contactInboxes = await fetchContactableInboxes(contact.id);
-    } finally {
-      isFetchingInboxes.value = false;
-    }
-  } else {
-    contactInboxes = processContactableInboxes(contactInboxes);
+  let contactInboxes;
+  isFetchingInboxes.value = true;
+  try {
+    contactInboxes = await fetchContactableInboxes(contact.id);
+  } finally {
+    isFetchingInboxes.value = false;
   }
 
   return {
@@ -175,12 +173,6 @@ const handleSelectedContact = async ({ value, action, ...rest }) => {
   }
 };
 
-const handleTargetInbox = inbox => {
-  targetInbox.value = inbox;
-  if (!inbox) clearFormState();
-  resetContacts();
-};
-
 const clearSelectedContact = () => {
   selectedContact.value = null;
   targetInbox.value = null;
@@ -197,6 +189,27 @@ const closeCompose = () => {
   targetInbox.value = null;
   resetContacts();
   emit('close');
+};
+
+const handleTargetInbox = inbox => {
+  targetInbox.value = inbox;
+  if (
+    inbox?.channelType === 'Channel::Whatsapp' &&
+    inbox.activeConversationId
+  ) {
+    const conversationPath = frontendURL(
+      conversationUrl({
+        accountId: currentAccountId.value,
+        activeInbox: inbox.id,
+        id: inbox.activeConversationId,
+      })
+    );
+    closeCompose();
+    router.push(conversationPath);
+    return;
+  }
+  if (!inbox) clearFormState();
+  resetContacts();
 };
 
 const discardCompose = () => {
@@ -227,6 +240,21 @@ const createConversation = async ({ payload, isFromWhatsApp }) => {
     useAlert(t('COMPOSE_NEW_CONVERSATION.FORM.SUCCESS_MESSAGE'), action);
     return true; // Return success
   } catch (error) {
+    if (targetInbox.value?.channelType === 'Channel::Whatsapp') {
+      const currentInbox = targetInbox.value;
+      try {
+        selectedContact.value = await prepareContactWithInboxes(
+          selectedContact.value
+        );
+        targetInbox.value = selectedContact.value?.contactInboxes?.find(
+          inbox =>
+            Number(inbox.id) === Number(currentInbox.id) &&
+            inbox.sourceId === currentInbox.sourceId
+        );
+      } catch {
+        // Keep the current selection when reply-window refresh fails.
+      }
+    }
     useAlert(
       error instanceof ExceptionWithMessage
         ? error.data
@@ -236,8 +264,17 @@ const createConversation = async ({ payload, isFromWhatsApp }) => {
   }
 };
 
-const toggle = () => {
+const toggle = async () => {
   showComposeNewConversation.value = !showComposeNewConversation.value;
+  if (showComposeNewConversation.value && selectedContact.value?.id) {
+    try {
+      selectedContact.value = await prepareContactWithInboxes(
+        selectedContact.value
+      );
+    } catch {
+      // Keep the existing contact inboxes if a refresh fails.
+    }
+  }
 };
 
 const openWithChannel = async ({ contact, channelIdentity }) => {
@@ -248,10 +285,7 @@ const openWithChannel = async ({ contact, channelIdentity }) => {
   selectedContact.value = await prepareContactWithInboxes(baseContact);
 
   const matchingInbox = selectedContact.value?.contactInboxes?.find(
-    inbox =>
-      Number(inbox.id) === Number(channelIdentity?.inboxId) &&
-      (!channelIdentity?.sourceId ||
-        inbox.sourceId === channelIdentity.sourceId)
+    inbox => Number(inbox.id) === Number(channelIdentity?.inboxId)
   );
 
   if (!matchingInbox) {
@@ -259,9 +293,9 @@ const openWithChannel = async ({ contact, channelIdentity }) => {
     return false;
   }
 
-  targetInbox.value = matchingInbox;
   showComposeNewConversation.value = true;
   emitter.emit(BUS_EVENTS.NEW_CONVERSATION_MODAL, true);
+  handleTargetInbox(matchingInbox);
   return true;
 };
 

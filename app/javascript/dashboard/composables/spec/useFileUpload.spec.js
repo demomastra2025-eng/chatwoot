@@ -93,6 +93,37 @@ describe('useFileUpload', () => {
     });
   });
 
+  it('reports upload lifecycle through attachment processing', async () => {
+    const onUploadStart = vi.fn();
+    const onUploadEnd = vi.fn();
+    let finishAttachment;
+    const attachFile = vi.fn(
+      () =>
+        new Promise(resolve => {
+          finishAttachment = resolve;
+        })
+    );
+    DirectUpload.mockImplementation(() => ({
+      create: callback => callback(null, { signed_id: 'test-blob' }),
+    }));
+    const { onFileUpload } = useFileUpload({
+      inbox,
+      attachFile,
+      onUploadStart,
+      onUploadEnd,
+    });
+
+    onFileUpload(mockFile);
+
+    expect(onUploadStart).toHaveBeenCalledOnce();
+    expect(onUploadEnd).not.toHaveBeenCalled();
+
+    finishAttachment();
+    await Promise.resolve();
+
+    expect(onUploadEnd).toHaveBeenCalledOnce();
+  });
+
   it('handles indirect file upload when direct upload disabled', () => {
     useMapGetter.mockImplementation(getter => {
       const getterMap = {

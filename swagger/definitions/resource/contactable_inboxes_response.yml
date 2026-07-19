@@ -3,5 +3,5 @@ properties:
   payload:
     type: array
     items:
-      $ref: '#/components/schemas/contact_inbox'
+      $ref: '#/components/schemas/contactable_inboxes'
     description: List of contactable inboxes for the contact 

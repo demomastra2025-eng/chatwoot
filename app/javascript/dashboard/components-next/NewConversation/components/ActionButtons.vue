@@ -18,6 +18,7 @@ import ContentTemplateSelector from './ContentTemplateSelector.vue';
 const props = defineProps({
   attachedFiles: { type: Array, default: () => [] },
   isWhatsappInbox: { type: Boolean, default: false },
+  isWhatsappReplyWindowOpen: { type: Boolean, default: false },
   isEmailOrWebWidgetInbox: { type: Boolean, default: false },
   isTwilioSmsInbox: { type: Boolean, default: false },
   isTwilioWhatsAppInbox: { type: Boolean, default: false },
@@ -56,6 +57,8 @@ const generateUid = () => {
 
 const uploadAttachment = ref(null);
 const isEmojiPickerOpen = ref(false);
+const pendingUploadCount = ref(0);
+const hasPendingUploads = computed(() => pendingUploadCount.value > 0);
 
 const EmojiInput = defineAsyncComponent(
   () => import('shared/components/emoji/EmojiInput.vue')
@@ -82,7 +85,7 @@ const showTwilioContentTemplates = computed(() => {
 
 const shouldShowEmojiButton = computed(() => {
   return (
-    !props.isWhatsappInbox &&
+    (!props.isWhatsappInbox || props.isWhatsappReplyWindowOpen) &&
     !props.isTwilioWhatsAppInbox &&
     !isVoiceInbox.value &&
     !props.hasNoInbox
@@ -91,11 +94,15 @@ const shouldShowEmojiButton = computed(() => {
 
 const isRegularMessageMode = computed(() => {
   return (
-    !props.isWhatsappInbox &&
+    (!props.isWhatsappInbox || props.isWhatsappReplyWindowOpen) &&
     !props.isTwilioWhatsAppInbox &&
     !isVoiceInbox.value
   );
 });
+
+const canAttachFiles = computed(
+  () => props.isEmailOrWebWidgetInbox || props.isWhatsappReplyWindowOpen
+);
 
 const shouldShowSignatureButton = computed(() => {
   return props.hasSelectedInbox && isEmailInbox.value && !isVoiceInbox.value;
@@ -136,20 +143,31 @@ const onClickInsertEmoji = emoji => {
 
 const { onFileUpload } = useFileUpload({
   isATwilioSMSChannel: props.isTwilioSmsInbox,
-  attachFile: ({ blob, file }) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.readAsDataURL(file.file);
-    reader.onloadend = () => {
-      const newFile = {
-        resource: blob || file,
-        isPrivate: false,
-        thumb: reader.result,
-        blobSignedId: blob?.signed_id,
-      };
-      emit('attachFile', [...props.attachedFiles, newFile]);
-    };
+  onUploadStart: () => {
+    pendingUploadCount.value += 1;
   },
+  onUploadEnd: () => {
+    pendingUploadCount.value = Math.max(0, pendingUploadCount.value - 1);
+  },
+  attachFile: ({ blob, file }) =>
+    new Promise(resolve => {
+      if (!file) {
+        resolve();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const newFile = {
+          resource: blob || file,
+          isPrivate: false,
+          thumb: reader.result,
+          blobSignedId: blob?.signed_id,
+        };
+        emit('attachFile', [...props.attachedFiles, newFile]);
+        resolve();
+      };
+      reader.readAsDataURL(file.file);
+    }),
 });
 
 const sendButtonLabel = computed(() => {
@@ -186,7 +204,7 @@ const keyboardEvents = {
 useKeyboardEvents(keyboardEvents);
 
 const onPaste = e => {
-  if (!props.isEmailOrWebWidgetInbox) return;
+  if (!canAttachFiles.value) return;
 
   const files = e.clipboardData?.files;
   if (!files?.length) return;
@@ -210,7 +228,9 @@ useEventListener(document, 'paste', onPaste);
   >
     <div class="flex gap-2 items-center">
       <WhatsAppOptions
-        v-if="isWhatsappInbox"
+        v-if="
+          isWhatsappInbox && attachedFiles.length === 0 && !hasPendingUploads
+        "
         :inbox-id="inboxId"
         :message-templates="messageTemplates"
         @send-message="emit('sendWhatsappMessage', $event)"
@@ -239,7 +259,7 @@ useEventListener(document, 'paste', onPaste);
         />
       </div>
       <FileUpload
-        v-if="isEmailOrWebWidgetInbox"
+        v-if="canAttachFiles"
         ref="uploadAttachment"
         input-id="composeNewConversationAttachment"
         :size="4096 * 4096"
@@ -304,7 +324,7 @@ useEventListener(document, 'paste', onPaste);
         :label="sendButtonLabel"
         size="sm"
         class="!text-xs font-medium"
-        :disabled="isLoading || disableSendButton"
+        :disabled="isLoading || disableSendButton || hasPendingUploads"
         :is-loading="isLoading"
         @click="emit('sendMessage')"
       />

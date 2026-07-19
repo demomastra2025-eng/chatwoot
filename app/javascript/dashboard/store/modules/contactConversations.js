@@ -2,6 +2,7 @@ import * as types from '../mutation-types';
 import ContactAPI from '../../api/contacts';
 import ConversationApi from '../../api/conversations';
 import camelcaseKeys from 'camelcase-keys';
+import { ExceptionWithMessage } from 'shared/helpers/CustomErrors';
 
 export const createMessagePayload = (payload, message) => {
   const { content, cc_emails, bcc_emails } = message;
@@ -11,7 +12,14 @@ export const createMessagePayload = (payload, message) => {
 };
 
 export const createConversationPayload = ({ params, contactId, files }) => {
-  const { inboxId, message, sourceId, mailSubject, assigneeId } = params;
+  const {
+    inboxId,
+    message,
+    sourceId,
+    contactInboxId,
+    mailSubject,
+    assigneeId,
+  } = params;
   const payload = new FormData();
 
   if (message) {
@@ -25,6 +33,7 @@ export const createConversationPayload = ({ params, contactId, files }) => {
   payload.append('inbox_id', inboxId);
   payload.append('contact_id', contactId);
   payload.append('source_id', sourceId);
+  if (contactInboxId) payload.append('contact_inbox_id', contactInboxId);
   payload.append('additional_attributes[mail_subject]', mailSubject);
   payload.append('assignee_id', assigneeId);
 
@@ -32,12 +41,14 @@ export const createConversationPayload = ({ params, contactId, files }) => {
 };
 
 export const createWhatsAppConversationPayload = ({ params }) => {
-  const { inboxId, message, contactId, sourceId, assigneeId } = params;
+  const { inboxId, message, contactId, sourceId, contactInboxId, assigneeId } =
+    params;
 
   const payload = {
     inbox_id: inboxId,
     contact_id: contactId,
     source_id: sourceId,
+    ...(contactInboxId && { contact_inbox_id: contactInboxId }),
     message,
     assignee_id: assigneeId,
   };
@@ -103,7 +114,12 @@ export const actions = {
 
       return data;
     } catch (error) {
-      throw new Error(error);
+      if (error.response?.data?.error) {
+        throw new ExceptionWithMessage(error.response.data.error);
+      }
+      throw error instanceof Error
+        ? error
+        : new Error(error?.message || String(error));
     } finally {
       commit(types.default.SET_CONTACT_CONVERSATIONS_UI_FLAG, {
         isCreating: false,

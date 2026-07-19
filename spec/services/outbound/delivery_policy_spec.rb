@@ -62,6 +62,52 @@ RSpec.describe Outbound::DeliveryPolicy do
       expect(result.reply_window_open).to be(true)
     end
 
+    it 'uses a preloaded incoming timestamp without an existing conversation' do
+      whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+
+      result = described_class.evaluate(
+        inbox: whatsapp_inbox,
+        content_kind: 'free_text',
+        last_incoming_message_at: 1.hour.ago
+      )
+
+      expect(result).to be_allowed
+      expect(result.reply_window_open).to be(true)
+    end
+
+    it 'uses incoming messages across contact inbox identities of the same contact and inbox' do
+      whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+      previous_contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      current_contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      previous_conversation = create(
+        :conversation,
+        account: account,
+        inbox: whatsapp_inbox,
+        contact: contact,
+        contact_inbox: previous_contact_inbox
+      )
+      new_conversation = create(
+        :conversation,
+        account: account,
+        inbox: whatsapp_inbox,
+        contact: contact,
+        contact_inbox: current_contact_inbox
+      )
+      create(
+        :message,
+        account: account,
+        inbox: whatsapp_inbox,
+        conversation: previous_conversation,
+        message_type: 'incoming',
+        created_at: 1.hour.ago
+      )
+
+      result = described_class.evaluate(conversation: new_conversation, content_kind: 'free_text')
+
+      expect(result).to be_allowed
+      expect(result.reply_window_open).to be(true)
+    end
+
     it 'denies WhatsApp Business free text when the 24-hour reply window is closed' do
       whatsapp_inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
       conversation = conversation_for(whatsapp_inbox)

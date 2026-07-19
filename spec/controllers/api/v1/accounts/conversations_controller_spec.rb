@@ -576,6 +576,20 @@ RSpec.describe 'Conversations API', type: :request do
         expect(response).to have_http_status(:unauthorized)
       end
 
+      it 'does not resolve a source-only contact inbox from another account' do
+        foreign_account = create(:account)
+        foreign_inbox = create(:inbox, account: foreign_account)
+        foreign_contact = create(:contact, account: foreign_account)
+        foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: foreign_inbox)
+
+        post "/api/v1/accounts/#{account.id}/conversations",
+             headers: agent.create_new_auth_token,
+             params: { source_id: foreign_contact_inbox.source_id },
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
+      end
+
       context 'when it is an authenticated user who has access to the inbox' do
         before do
           create(:inbox_member, user: agent, inbox: inbox)
@@ -594,6 +608,25 @@ RSpec.describe 'Conversations API', type: :request do
           expect(response).to conform_schema(200)
           response_data = JSON.parse(response.body, symbolize_names: true)
           expect(response_data[:additional_attributes]).to eq(additional_attributes)
+        end
+
+        it 'does not reuse an explicit contact inbox identity from another account' do
+          foreign_account = create(:account)
+          foreign_inbox = create(:inbox, account: foreign_account)
+          foreign_contact = create(:contact, account: foreign_account)
+          foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: foreign_inbox)
+
+          post "/api/v1/accounts/#{account.id}/conversations",
+               headers: agent.create_new_auth_token,
+               params: {
+                 source_id: contact_inbox.source_id,
+                 contact_inbox_id: foreign_contact_inbox.id,
+                 inbox_id: inbox.id,
+                 contact_id: contact.id
+               },
+               as: :json
+
+          expect(response).to have_http_status(:not_found)
         end
 
         it 'does not create a new conversation if source_id is not unique' do
@@ -629,6 +662,63 @@ RSpec.describe 'Conversations API', type: :request do
           response_data = JSON.parse(response.body, symbolize_names: true)
           expect(response_data[:additional_attributes]).to eq({})
           expect(account.conversations.find_by(display_id: response_data[:id]).messages.outgoing.first.content).to eq 'hi'
+        end
+
+        context 'with an official WhatsApp inbox' do
+          let(:inbox) do
+            create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+          end
+
+          it 'creates a free-text conversation while another conversation keeps the reply window open' do
+            previous_conversation = create(
+              :conversation,
+              account: account,
+              inbox: inbox,
+              contact: contact,
+              contact_inbox: contact_inbox,
+              status: :resolved
+            )
+            create(
+              :message,
+              account: account,
+              inbox: inbox,
+              conversation: previous_conversation,
+              message_type: :incoming,
+              created_at: 1.hour.ago
+            )
+
+            post "/api/v1/accounts/#{account.id}/conversations",
+                 headers: agent.create_new_auth_token,
+                 params: {
+                   source_id: contact_inbox.source_id,
+                   contact_inbox_id: contact_inbox.id,
+                   inbox_id: inbox.id,
+                   contact_id: contact.id,
+                   message: { content: 'reply inside the active window' }
+                 },
+                 as: :json
+
+            expect(response).to have_http_status(:success)
+            created_conversation = account.conversations.find_by(display_id: response.parsed_body['id'])
+            expect(created_conversation.messages.outgoing.first.content).to eq('reply inside the active window')
+          end
+
+          it 'rejects free text and rolls back the conversation outside the reply window' do
+            expect do
+              post "/api/v1/accounts/#{account.id}/conversations",
+                   headers: agent.create_new_auth_token,
+                   params: {
+                     source_id: contact_inbox.source_id,
+                     inbox_id: inbox.id,
+                     contact_id: contact.id,
+                     message: { content: 'reply outside the active window' }
+                   },
+                   as: :json
+            end.not_to change(account.conversations, :count)
+
+            expect(response).to have_http_status(:unprocessable_content)
+            expect(response.parsed_body['error']).to include('approved channel_template')
+          end
         end
 
         it 'calls contact inbox builder if contact_id and inbox_id is present' do

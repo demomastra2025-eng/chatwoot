@@ -98,6 +98,10 @@ describe('composeConversationHelper', () => {
         {
           inbox: { id: 1, name: 'Inbox 1' },
           sourceId: 'source1',
+          contactInboxId: 44,
+          activeConversationId: 123,
+          replyWindowOpen: true,
+          allowedContentKinds: ['free_text', 'channel_template'],
         },
       ];
 
@@ -106,6 +110,10 @@ describe('composeConversationHelper', () => {
         id: 1,
         name: 'Inbox 1',
         sourceId: 'source1',
+        contactInboxId: 44,
+        activeConversationId: 123,
+        replyWindowOpen: true,
+        allowedContentKinds: ['free_text', 'channel_template'],
       });
     });
   });
@@ -273,7 +281,7 @@ describe('composeConversationHelper', () => {
 
   describe('prepareNewMessagePayload', () => {
     const baseParams = {
-      targetInbox: { id: 1, sourceId: 'source1' },
+      targetInbox: { id: 1, sourceId: 'source1', contactInboxId: 44 },
       selectedContact: { id: '2' },
       message: 'Hello',
       currentUser: { id: 3 },
@@ -284,6 +292,7 @@ describe('composeConversationHelper', () => {
       expect(result).toEqual({
         inboxId: 1,
         sourceId: 'source1',
+        contactInboxId: 44,
         contactId: 2,
         message: { content: 'Hello' },
         assigneeId: 3,
@@ -315,7 +324,7 @@ describe('composeConversationHelper', () => {
   describe('prepareWhatsAppMessagePayload', () => {
     it('prepares whatsapp message payload', () => {
       const params = {
-        targetInbox: { id: 1, sourceId: 'source1' },
+        targetInbox: { id: 1, sourceId: 'source1', contactInboxId: 44 },
         selectedContact: { id: 2 },
         message: 'Hello',
         templateParams: { param1: 'value1' },
@@ -326,6 +335,7 @@ describe('composeConversationHelper', () => {
       expect(result).toEqual({
         inboxId: 1,
         sourceId: 'source1',
+        contactInboxId: 44,
         contactId: 2,
         message: {
           content: 'Hello',

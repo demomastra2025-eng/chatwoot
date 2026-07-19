@@ -633,6 +633,48 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response.parsed_body['payload'].pluck('inbox').pluck('id')).to eq([twilio_whatsapp_inbox.id])
       end
 
+      it 'serializes WhatsApp reply-window metadata' do
+        whatsapp_inbox = create(
+          :channel_whatsapp,
+          account: account,
+          sync_templates: false,
+          validate_provider_config: false
+        ).inbox
+        create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+        reply_window_closes_at = 23.hours.from_now.change(usec: 0)
+        inbox_service = instance_double(Contacts::ContactableInboxesService)
+        allow(Contacts::ContactableInboxesService).to receive(:new).and_return(inbox_service)
+        allow(inbox_service).to receive(:get).and_return(
+          [
+            {
+              source_id: '15551234567',
+              inbox: whatsapp_inbox,
+              contact_inbox_id: 44,
+              active_conversation_id: 123,
+              reply_window_open: true,
+              reply_window_closes_at: reply_window_closes_at,
+              allowed_content_kinds: %w[free_text channel_template]
+            }
+          ]
+        )
+
+        get "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/contactable_inboxes",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body['payload']).to contain_exactly(
+          hash_including(
+            'source_id' => '15551234567',
+            'contact_inbox_id' => 44,
+            'active_conversation_id' => 123,
+            'reply_window_open' => true,
+            'reply_window_closes_at' => reply_window_closes_at.iso8601,
+            'allowed_content_kinds' => %w[free_text channel_template]
+          )
+        )
+      end
+
       it 'returns whatsapp web inboxes via the native service flow' do
         with_modified_env(
           'EVOLUTION_API_URL' => 'https://evolution.example.com',

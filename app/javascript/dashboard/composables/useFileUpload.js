@@ -14,9 +14,17 @@ import {
  * @param {Object} options
  * @param {Object} options.inbox - Current inbox object (has channel_type, medium, etc.)
  * @param {Function} options.attachFile - Callback to handle file attachment
+ * @param {Function} options.onUploadStart - Optional callback after validation
+ * @param {Function} options.onUploadEnd - Optional callback after upload/attachment completion
  * @param {boolean} options.isPrivateNote - Whether the upload is for a private note
  */
-export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
+export const useFileUpload = ({
+  inbox,
+  attachFile,
+  onUploadStart = () => {},
+  onUploadEnd = () => {},
+  isPrivateNote = false,
+}) => {
   const { t } = useI18n();
 
   const accountId = useMapGetter('getCurrentAccountId');
@@ -62,6 +70,16 @@ export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
       isOnPrivateNote: isPrivateNote,
     });
 
+  const attachFileAndFinish = payload => {
+    try {
+      const result = attachFile(payload);
+      Promise.resolve(result).then(onUploadEnd, onUploadEnd);
+    } catch (error) {
+      onUploadEnd();
+      throw error;
+    }
+  };
+
   const handleDirectFileUpload = file => {
     if (!file) return;
 
@@ -77,6 +95,8 @@ export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
       alertOverLimit(maxSizeMB);
       return;
     }
+
+    onUploadStart();
 
     const upload = new DirectUpload(
       file.file,
@@ -94,8 +114,9 @@ export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
     upload.create((error, blob) => {
       if (error) {
         useAlert(error);
+        onUploadEnd();
       } else {
-        attachFile({ file, blob });
+        attachFileAndFinish({ file, blob });
       }
     });
   };
@@ -116,7 +137,8 @@ export const useFileUpload = ({ inbox, attachFile, isPrivateNote = false }) => {
       return;
     }
 
-    attachFile({ file });
+    onUploadStart();
+    attachFileAndFinish({ file });
   };
 
   const onFileUpload = file => {

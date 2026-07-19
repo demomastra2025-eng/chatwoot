@@ -4,7 +4,6 @@ import { useI18n } from 'vue-i18n';
 import { useStore, useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { dynamicTime } from 'shared/helpers/timeHelper';
-import { useRoute, useRouter } from 'vue-router';
 import camelcaseKeys from 'camelcase-keys';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
@@ -32,8 +31,6 @@ const emit = defineEmits(['goToContactsList']);
 
 const { t } = useI18n();
 const store = useStore();
-const route = useRoute();
-const router = useRouter();
 
 const confirmDeleteContactDialogRef = ref(null);
 const composeConversationRef = ref(null);
@@ -45,9 +42,6 @@ const metadataSeparator = '•';
 const contactsFormRef = ref(null);
 
 const uiFlags = useMapGetter('contacts/getUIFlags');
-const contactConversations = useMapGetter(
-  'contactConversations/getAllConversationsByContactId'
-);
 const isUpdating = computed(() => uiFlags.value.isUpdating);
 
 const isFormInvalid = computed(() => contactsFormRef.value?.isFormInvalid);
@@ -296,30 +290,9 @@ const handleAvatarDelete = async () => {
 };
 
 const openChannelConversation = async channelIdentity => {
-  const conversations =
-    contactConversations.value(props.selectedContact?.id) || [];
-
-  const targetConversation = conversations.find(
-    conversation =>
-      Number(conversation.inboxId || conversation.inbox_id) ===
-      Number(channelIdentity.inboxId)
-  );
-
-  if (!targetConversation) {
-    await composeConversationRef.value?.openWithChannel({
-      contact: contactData.value,
-      channelIdentity,
-    });
-    return;
-  }
-
-  router.push({
-    name: 'inbox_view_conversation',
-    params: {
-      accountId: route.params.accountId,
-      type: 'conversation',
-      id: targetConversation.id,
-    },
+  await composeConversationRef.value?.openWithChannel({
+    contact: contactData.value,
+    channelIdentity,
   });
 };
 </script>

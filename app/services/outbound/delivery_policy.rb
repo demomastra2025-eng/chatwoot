@@ -165,7 +165,6 @@ class Outbound::DeliveryPolicy
 
   def reply_window_open_at_delivery?
     return true unless official_whatsapp_channel?
-    return false if conversation.blank?
     return false if reply_window_closes_at.blank?
 
     delivery_time < reply_window_closes_at
@@ -184,7 +183,24 @@ class Outbound::DeliveryPolicy
   end
 
   def last_incoming_message
-    @last_incoming_message ||= conversation&.messages&.where(account_id: conversation.account_id)&.incoming&.reorder(created_at: :desc)&.first
+    return @last_incoming_message if defined?(@last_incoming_message)
+
+    @last_incoming_message = incoming_messages_scope&.reorder(created_at: :desc)&.first
+  end
+
+  def incoming_messages_scope
+    return if conversation.blank?
+
+    Message.incoming
+           .joins(:conversation)
+           .where(
+             account_id: conversation.account_id,
+             conversations: {
+               account_id: conversation.account_id,
+               contact_id: conversation.contact_id,
+               inbox_id: inbox&.id || conversation.inbox_id
+             }
+           )
   end
 
   def delivery_time

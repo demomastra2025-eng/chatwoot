@@ -8,6 +8,7 @@ const dispatchMock = vi.fn();
 const updateUISettingsMock = vi.fn();
 const useAdminMock = vi.fn();
 const useUISettingsMock = vi.fn();
+const openWithChannelMock = vi.fn();
 
 vi.mock('dashboard/composables/useAdmin', () => ({
   useAdmin: (...args) => useAdminMock(...args),
@@ -75,7 +76,11 @@ const buildWrapper = ({ conversations = [], contact = {} } = {}) =>
       },
       stubs: {
         Avatar: true,
-        ComposeConversation: true,
+        ComposeConversation: {
+          name: 'ComposeConversation',
+          template: '<div />',
+          methods: { openWithChannel: openWithChannelMock },
+        },
         ContactChannelLabels: true,
         ContactInfoRow: true,
         ContactMergeModal: true,
@@ -93,6 +98,7 @@ describe('ContactInfo', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
     routerPushMock.mockReset();
+    openWithChannelMock.mockReset();
     updateUISettingsMock.mockReset();
 
     useAdminMock.mockReturnValue({
@@ -105,29 +111,29 @@ describe('ContactInfo', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('opens an existing channel conversation in the standard inbox route', () => {
-    window.history.replaceState(
-      {},
-      '',
-      '/app/accounts/1/inbox-view/conversation/138?status=pending'
-    );
+  it('delegates channel shortcuts to the authoritative compose flow', async () => {
+    const wrapper = buildWrapper();
 
-    const wrapper = buildWrapper({
-      conversations: [
-        {
-          id: 42,
-          inboxId: 7,
-        },
-      ],
-    });
-
-    wrapper.vm.openChannelConversation({
+    await wrapper.vm.openChannelConversation({
       inboxId: 7,
     });
 
-    expect(routerPushMock).toHaveBeenCalledWith(
-      '/app/accounts/1/inbox/7/conversations/42?status=pending'
-    );
+    expect(openWithChannelMock).toHaveBeenCalledWith({
+      contact: expect.objectContaining({ id: 154 }),
+      channelIdentity: { inboxId: 7 },
+    });
+    expect(routerPushMock).not.toHaveBeenCalled();
+  });
+
+  it('marks only non-resolved inbox conversations as active', () => {
+    const wrapper = buildWrapper({
+      conversations: [
+        { id: 42, inboxId: 7, status: 'resolved' },
+        { id: 43, inboxId: 8, status: 'open' },
+      ],
+    });
+
+    expect(wrapper.vm.existingConversationInboxIds).toEqual([8]);
   });
 
   it('closes the edit contact modal when the modal show model is set to false', async () => {
