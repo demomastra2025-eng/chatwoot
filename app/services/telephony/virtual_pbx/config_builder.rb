@@ -339,7 +339,9 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def routing_payload(channel:, binding:, policy:)
-    return { show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators? } if binding.blank? && policy.blank?
+    if binding.blank? && policy.blank?
+      return { show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators? }
+    end
 
     provider_owned_sip = provider_owned_sip_provider?(binding&.provider)
     {

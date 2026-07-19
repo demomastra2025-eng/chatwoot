@@ -1406,7 +1406,9 @@ class Telephony::EventsIngestionService
       contact_id: contact.id,
       status: :open
     }
-    attrs[:identifier] = conversation_identifier || call_ref unless native_sip_call_session?(call_session) && reuse_existing_conversation
+    unless native_sip_call_session?(call_session) && reuse_existing_conversation
+      attrs[:identifier] = conversation_identifier || call_ref
+    end
 
     account.conversations.create!(attrs)
   end
