@@ -143,6 +143,7 @@ class Telephony::CallSession < ApplicationRecord
       agent_binding
     ].compact
     return false unless account_records.all? { |record| record.account_id == expected_account.id }
+    return false if number_binding.present? && number_binding.inbox_id != inbox_id
     return false if agent_binding.present? && !expected_account.users.exists?(id: agent_binding.user_id)
 
     return true if conversation.blank?

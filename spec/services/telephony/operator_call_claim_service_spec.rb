@@ -561,6 +561,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
       conversation: voice_conversation,
       contact: voice_conversation.contact,
       inbox: voice_inbox,
+      number_binding: voice_inbox.telephony_number_binding,
       metadata: {
         'metadata' => {
           'route_action' => 'operator',

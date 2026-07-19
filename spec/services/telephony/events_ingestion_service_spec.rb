@@ -116,6 +116,24 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
     end
 
+    it 'rejects a number binding from another inbox in the same account before side effects' do
+      mismatched_inbox = create(:inbox, account: account)
+      mismatched_number_binding = create(:telephony_number_binding, account: account, inbox: mismatched_inbox)
+      original_status = existing_call_session.conversation.status
+      original_message_count = existing_call_session.conversation.messages.count
+      existing_call_session.update_column(:number_binding_id, mismatched_number_binding.id) # rubocop:disable Rails/SkipsModelValidations
+      allow(ActionCable.server).to receive(:broadcast)
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(existing_call_session.conversation.reload.status).to eq(original_status)
+      expect(existing_call_session.conversation.messages.count).to eq(original_message_count)
+      expect(ActionCable.server).not_to have_received(:broadcast)
+      expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
+    end
+
     it 'rejects an agent binding owned by another account before side effects' do
       foreign_account = create(:account)
       foreign_agent_binding = create(:telephony_agent_binding, account: foreign_account)
@@ -141,6 +159,20 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(event.reload).to be_failed
     end
 
+    it 'revalidates number binding inbox scope before returning a processed event' do
+      result = service.perform
+      event = account.telephony_events.find_by!(event_key: 'evt-retry-1')
+      mismatched_inbox = create(:inbox, account: account)
+      mismatched_number_binding = create(:telephony_number_binding, account: account, inbox: mismatched_inbox)
+      result.update_column(:number_binding_id, mismatched_number_binding.id) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(event.reload).to be_failed
+    end
+
     it 'keeps terminal recovery scoped to native SIP call sessions' do
       allow(Twilio::VoiceWebhookSetupService).to receive(:new)
         .and_return(instance_double(Twilio::VoiceWebhookSetupService, perform: "AP#{SecureRandom.hex(8)}"))
@@ -149,6 +181,7 @@ RSpec.describe Telephony::EventsIngestionService do
         conversation: nil,
         contact: nil,
         inbox: voice_inbox,
+        number_binding: nil,
         provider: 'twilio',
         direction: 'inbound',
         status: 'completed',
@@ -3310,7 +3343,8 @@ RSpec.describe Telephony::EventsIngestionService do
       old_logical_key = 'native-sip-inbound:old-missing-message'
       new_logical_key = 'native-sip-inbound:new-current-call'
       existing_call_session.update!(
-        inbox: voice_inbox, provider: 'sipuni', direction: 'inbound', status: 'completed',
+        inbox: voice_inbox, number_binding: voice_inbox.telephony_number_binding,
+        provider: 'sipuni', direction: 'inbound', status: 'completed',
         started_at: old_started_at, answered_at: old_started_at + 2.seconds, ended_at: old_started_at + 20.seconds,
         duration_seconds: 18, last_event_at: old_started_at + 20.seconds,
         from_number: '+77000001002', to_number: '+77000001001',
@@ -3452,6 +3486,7 @@ RSpec.describe Telephony::EventsIngestionService do
       new_started_at = Time.zone.parse(1.minute.ago.iso8601)
       existing_call_session.update!(
         inbox: voice_inbox,
+        number_binding: voice_inbox.telephony_number_binding,
         provider: 'sipuni',
         direction: 'outbound',
         status: 'no_answer',
