@@ -24,6 +24,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  showCountryFlag: {
+    type: Boolean,
+    default: true,
+  },
   defaultCountry: {
     type: String,
     default: '',
@@ -296,7 +300,11 @@ watch(
 
     <div class="flex min-w-0 rounded-lg shadow-xs shadow-black/[.04]">
       <div :class="selectSurfaceClass">
-        <span class="text-base leading-none" aria-hidden="true">
+        <span
+          v-if="showCountryFlag"
+          class="text-base leading-none"
+          aria-hidden="true"
+        >
           {{ countryCodeToFlag(selectedCountryCode) }}
         </span>
         <span

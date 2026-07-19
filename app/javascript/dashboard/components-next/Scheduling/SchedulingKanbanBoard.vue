@@ -221,7 +221,7 @@ const handleColumnChange = (event, status) => {
                     <h4
                       class="mb-0 truncate text-sm font-semibold text-n-slate-12"
                     >
-                      {{ element.clientName }}
+                      {{ element.title || element.clientName || '—' }}
                     </h4>
                     <p class="mb-0 mt-1 text-xs text-n-slate-11">
                       {{ appointmentSubtitle(element) }}

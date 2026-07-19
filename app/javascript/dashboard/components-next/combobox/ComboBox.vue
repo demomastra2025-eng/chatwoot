@@ -30,6 +30,8 @@ const props = defineProps({
     default: 'bottom',
     validator: value => ['auto', 'bottom', 'top'].includes(value),
   },
+  dropdownMinWidth: { type: Number, default: 0 },
+  triggerIcon: { type: String, default: '' },
 });
 
 const emit = defineEmits(['open', 'update:modelValue', 'search']);
@@ -69,7 +71,11 @@ const updateDropdownPosition = () => {
   const rect = comboboxRef.value.getBoundingClientRect();
   const viewportPadding = 8;
   const dropdownGap = 8;
-  const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
+  const requestedWidth = Math.max(rect.width, props.dropdownMinWidth);
+  const width = Math.min(
+    requestedWidth,
+    window.innerWidth - viewportPadding * 2
+  );
   const left = Math.min(
     Math.max(rect.left, viewportPadding),
     window.innerWidth - width - viewportPadding
@@ -124,7 +130,9 @@ const selectedOption = computed(() =>
 const selectedLabel = computed(() => {
   return selectedOption.value?.label ?? selectPlaceholder.value;
 });
-const selectedIcon = computed(() => selectedOption.value?.icon || '');
+const selectedIcon = computed(
+  () => selectedOption.value?.icon || props.triggerIcon
+);
 const selectedIconClass = computed(
   () => selectedOption.value?.iconClass || 'text-n-slate-10'
 );

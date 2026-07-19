@@ -974,7 +974,7 @@ const timelineBackgroundEvents = computed(() => {
 const appointmentEvents = computed(() => {
   return props.appointments.map(appointment => {
     const resource = resourceById.value[appointment.resourceId];
-    const clientName = appointment.clientName || appointment.title || '—';
+    const clientName = appointment.title || appointment.clientName || '—';
     const subtitle = [
       appointment.serviceNameSnapshot || appointment.subtitle,
       appointment.resourceName || resource?.name,

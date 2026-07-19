@@ -236,7 +236,7 @@ const handleStatusChange = payload => {
                   <span
                     class="font-medium whitespace-normal break-words text-n-slate-12"
                   >
-                    {{ appointment.clientName }}
+                    {{ appointment.title || appointment.clientName || '—' }}
                   </span>
                   <span
                     class="text-xs whitespace-normal break-words text-n-slate-11"

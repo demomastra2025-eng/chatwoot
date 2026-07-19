@@ -105,7 +105,7 @@ const backgroundStyle = computed(() => ({
     <div class="flex items-start justify-between gap-2">
       <div class="flex flex-col min-w-0">
         <span class="font-semibold truncate text-n-slate-12">
-          {{ appointment.clientName }}
+          {{ appointment.title || appointment.clientName || '—' }}
         </span>
         <span class="truncate text-n-slate-11">
           {{

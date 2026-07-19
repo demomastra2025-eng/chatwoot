@@ -663,6 +663,7 @@ const formatDateTimeRange = appointment => {
 };
 
 const appointmentTitle = appointment =>
+  appointment.title ||
   appointment.clientName ||
   appointment.serviceNameSnapshot ||
   t('SCHEDULING.CALENDAR.NO_SERVICE');
