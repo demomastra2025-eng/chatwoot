@@ -140,7 +140,7 @@ class Contacts::ContactableInboxesService
   def phone_number_from_voice_contact_inbox
     raw_phone_number = @contact.contact_inboxes
                                .joins(:inbox)
-                               .where(inboxes: { channel_type: 'Channel::Voice' })
+                               .where(inboxes: { account_id: @contact.account_id, channel_type: 'Channel::Voice' })
                                .where.not(source_id: [nil, ''])
                                .order(created_at: :desc, id: :desc)
                                .pick(:source_id)
