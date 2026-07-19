@@ -831,9 +831,9 @@ export const useCallsStore = defineStore('calls', {
       );
     },
 
-    rememberTerminalCall(callData) {
+    rememberTerminalCall(callData, { includeUnscopedFallback = true } = {}) {
       const keys = terminalSuppressionKeys(callData, {
-        includeUnscopedFallback: true,
+        includeUnscopedFallback,
       });
       if (!keys.length) return;
 
@@ -1086,7 +1086,19 @@ export const useCallsStore = defineStore('calls', {
             sameNativeSipInboundCustomer(call, scopedCallData, {
               allowPartialScope: true,
             })));
-      const matchedClaimCalls = this.calls.filter(matchesClaimedCall);
+      const claimedCallCandidates = this.calls.filter(matchesClaimedCall);
+      const exactSessionMatches = claimHasSessionScope
+        ? claimedCallCandidates.filter(call =>
+            callScopeMatchesExactly(call, scopedCallData)
+          )
+        : [];
+      const matchedClaimCalls = exactSessionMatches.length
+        ? claimedCallCandidates.filter(
+            call =>
+              callScopeMatchesExactly(call, scopedCallData) ||
+              sameNativeSipLogicalCall(call, scopedCallData)
+          )
+        : claimedCallCandidates;
       if (
         matchedClaimCalls.length > 1 &&
         !isPresent(callLogicalKey(scopedCallData))
@@ -1159,7 +1171,7 @@ export const useCallsStore = defineStore('calls', {
         return;
       }
 
-      const removedCalls = this.calls.filter(matchesClaimedCall);
+      const removedCalls = matchedClaimCalls;
       const suppressionProvider =
         claimProvider || removedCalls.find(call => call.provider)?.provider;
       const showHandledCall = Boolean(
@@ -1167,14 +1179,41 @@ export const useCallsStore = defineStore('calls', {
           data?.showCallsHandledByOtherOperators
       );
       if (!showHandledCall) {
-        callSids.forEach(callSid => {
-          this.rememberTerminalCall({
-            ...callData,
-            callSid,
-            provider: suppressionProvider,
-          });
+        const preservedClaimCandidates = claimedCallCandidates.filter(
+          call => !removedCalls.includes(call)
+        );
+        const hasPreservedSameSid = call =>
+          preservedClaimCandidates.some(candidate =>
+            sameValue(candidate.callSid, call.callSid)
+          );
+        removedCalls.forEach(call => {
+          this.rememberTerminalCall(
+            {
+              ...callData,
+              ...call,
+              provider: call.provider || suppressionProvider,
+            },
+            {
+              includeUnscopedFallback: !hasPreservedSameSid(call),
+            }
+          );
         });
-        if (!callSids.length) {
+        const removedCallSids = removedCalls.map(call => call.callSid);
+        callSids
+          .filter(
+            callSid =>
+              !removedCallSids.some(removedCallSid =>
+                sameValue(removedCallSid, callSid)
+              )
+          )
+          .forEach(callSid => {
+            this.rememberTerminalCall({
+              ...callData,
+              callSid,
+              provider: suppressionProvider,
+            });
+          });
+        if (!callSids.length && !removedCalls.length) {
           this.rememberTerminalCall({
             ...callData,
             provider: suppressionProvider,
@@ -1182,7 +1221,7 @@ export const useCallsStore = defineStore('calls', {
         }
       }
 
-      this.calls = this.calls.filter(call => !matchesClaimedCall(call));
+      this.calls = this.calls.filter(call => !removedCalls.includes(call));
 
       const removedBrowserCalls = removedCalls.filter(call =>
         NATIVE_BROWSER_SIP_PROVIDERS.has(call.provider)
@@ -1194,10 +1233,24 @@ export const useCallsStore = defineStore('calls', {
       }
 
       if (showHandledCall) {
-        this.addCall({
+        const observerCallData = {
           ...callData,
           provider: suppressionProvider,
-        });
+        };
+        const observerCallIndex = this.calls.findIndex(
+          call =>
+            callScopeMatchesExactly(call, observerCallData) &&
+            (sameCallSid(call, observerCallData) ||
+              sameNativeSipLogicalCall(call, observerCallData))
+        );
+        if (observerCallIndex >= 0) {
+          this.calls[observerCallIndex] = buildCallState(
+            observerCallData,
+            this.calls[observerCallIndex]
+          );
+        } else {
+          this.calls.push(buildCallState(observerCallData));
+        }
       }
 
       // The winning operator owns the in-progress call. Other browsers either

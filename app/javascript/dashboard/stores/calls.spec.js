@@ -618,6 +618,122 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
+  it('preserves a partial-scope same-SID call outside an exact foreign claim', async () => {
+    const store = useCallsStore();
+
+    store.calls.push(
+      {
+        callSid: 'shared-claim-sid',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        inboxId: 42,
+        logicalCallKey: 'sipuni-inbound:claimed-call',
+      },
+      {
+        callSid: 'shared-claim-sid',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        inboxId: null,
+        logicalCallKey: 'sipuni-inbound:unrelated-call',
+        status: 'ringing',
+      }
+    );
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'shared-claim-sid',
+        provider: 'sipuni',
+        call_direction: 'inbound',
+        inbox_id: 42,
+        logical_call_key: 'sipuni-inbound:claimed-call',
+        claimed_by_user_id: 9,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'shared-claim-sid',
+        inboxId: null,
+        logicalCallKey: 'sipuni-inbound:unrelated-call',
+      }),
+    ]);
+
+    store.handleCallStatusChanged({
+      callSid: 'shared-claim-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni-inbound:unrelated-call',
+      status: 'connecting',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'shared-claim-sid',
+        logicalCallKey: 'sipuni-inbound:unrelated-call',
+        status: 'connecting',
+      }),
+    ]);
+  });
+
+  it('keeps a partial-scope same-SID call separate from a scoped observer card', async () => {
+    const store = useCallsStore();
+
+    store.calls.push(
+      {
+        callSid: 'shared-observer-sid',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        inboxId: 42,
+        logicalCallKey: 'sipuni-inbound:observed-call',
+      },
+      {
+        callSid: 'shared-observer-sid',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        inboxId: null,
+        logicalCallKey: 'sipuni-inbound:unrelated-observer-call',
+        status: 'ringing',
+      }
+    );
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'shared-observer-sid',
+        provider: 'sipuni',
+        call_direction: 'inbound',
+        inbox_id: 42,
+        logical_call_key: 'sipuni-inbound:observed-call',
+        claimed_by_user_id: 9,
+        show_calls_handled_by_other_operators: true,
+      },
+      7
+    );
+
+    expect(store.calls).toHaveLength(2);
+    expect(
+      store.calls.find(
+        call => call.logicalCallKey === 'sipuni-inbound:unrelated-observer-call'
+      )
+    ).toEqual(
+      expect.objectContaining({
+        inboxId: null,
+        status: 'ringing',
+      })
+    );
+    expect(
+      store.calls.find(
+        call => call.logicalCallKey === 'sipuni-inbound:observed-call'
+      )
+    ).toEqual(
+      expect.objectContaining({
+        inboxId: 42,
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+      })
+    );
+  });
+
   it('ends the browser client only when a claimed Janus SIP call was active in this browser', async () => {
     const store = useCallsStore();
 

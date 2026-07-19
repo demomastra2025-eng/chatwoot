@@ -62,7 +62,31 @@ describe('voice helper', () => {
     ]);
   });
 
-  it('hides a foreign claimed voice call message when observer visibility is disabled', () => {
+  it('dismisses an existing foreign claimed voice call when observer visibility is disabled', () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'foreign-ringing-branch',
+      callDirection: 'inbound',
+      provider: 'sipuni',
+      inboxId: 42,
+      status: 'ringing',
+    });
+    callsStore.addCall({
+      callSid: 'foreign-related-ringing-branch',
+      callDirection: 'inbound',
+      provider: 'sipuni',
+      inboxId: 42,
+      status: 'ringing',
+    });
+    callsStore.addCall({
+      callSid: 'unrelated-ringing-branch',
+      callDirection: 'inbound',
+      provider: 'sipuni',
+      inboxId: 42,
+      status: 'ringing',
+      logicalCallKey: 'native-sip:unrelated-created-message',
+    });
+
     handleVoiceCallCreated(
       {
         content_type: 'voice_call',
@@ -74,8 +98,11 @@ describe('voice helper', () => {
             call_sid: 'foreign-created-message',
             call_direction: 'inbound',
             provider: 'sipuni',
-            status: 'in_progress',
-            logical_call_key: 'native-sip:foreign-created-message',
+            status: 'connecting',
+            related_call_sids: [
+              'foreign-ringing-branch',
+              'foreign-related-ringing-branch',
+            ],
             operator_claim: { user_id: 12, user_name: 'Ayan' },
             show_calls_handled_by_other_operators: false,
           },
@@ -84,7 +111,9 @@ describe('voice helper', () => {
       99
     );
 
-    expect(useCallsStore().calls).toEqual([]);
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({ callSid: 'unrelated-ringing-branch' }),
+    ]);
   });
 
   it('does not add terminal voice call messages as active browser calls', () => {

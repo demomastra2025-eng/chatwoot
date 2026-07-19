@@ -121,6 +121,11 @@ function extractCallData(message) {
       contentData.janusSessionKey ||
       contentMeta?.janus_session_key ||
       contentMeta?.janusSessionKey,
+    relatedCallSids:
+      contentData.related_call_sids ||
+      contentData.relatedCallSids ||
+      contentMeta?.related_call_sids ||
+      contentMeta?.relatedCallSids,
     showCallsHandledByOtherOperators:
       contentData.show_calls_handled_by_other_operators ??
       contentData.showCallsHandledByOtherOperators ??
@@ -261,11 +266,12 @@ export function handleVoiceCallCreated(message, currentUserId) {
     operatorClaim,
     currentUserId
   );
-  if (foreignOperatorClaim && showCallsHandledByOtherOperators !== true) {
+  const callsStore = useCallsStore();
+  if (foreignOperatorClaim) {
+    callsStore.handleCallClaimed(extractCallData(message), currentUserId);
     return;
   }
 
-  const callsStore = useCallsStore();
   callsStore.addCall({
     callSid,
     status,
