@@ -88,6 +88,11 @@ import {
   sortListRecords,
 } from 'dashboard/routes/dashboard/crm/listSort';
 import {
+  filterVisibleBoardDeals,
+  filterVisibleBoardStages,
+  isTerminalStage,
+} from 'dashboard/routes/dashboard/crm/boardVisibility';
+import {
   DuplicateContactException,
   ExceptionWithMessage,
 } from 'shared/helpers/CustomErrors';
@@ -181,6 +186,7 @@ const filters = reactive({
   pipelineId: '',
   stageId: '',
   teamId: '',
+  showInactive: false,
 });
 const filterDraft = reactive({
   archived: false,
@@ -191,6 +197,7 @@ const filterDraft = reactive({
   pipelineId: '',
   stageId: '',
   teamId: '',
+  showInactive: false,
 });
 const listQuickFilters = reactive({
   q: '',
@@ -450,10 +457,15 @@ const boardStages = computed(() => {
       id: stage.id,
       label: stage.name,
       name: stage.name,
+      outcome: stage.outcome,
       pipelineId: pipeline.id,
     }))
   );
 });
+
+const visibleBoardStages = computed(() =>
+  filterVisibleBoardStages(boardStages.value, filters.showInactive)
+);
 
 const hasBoardStages = computed(() => boardStages.value.length > 0);
 
@@ -465,9 +477,6 @@ const listStageOptionsForDeal = deal => {
   );
 };
 
-const TERMINAL_STAGE_OUTCOMES = new Set(['won', 'lost']);
-const isTerminalStage = stage =>
-  TERMINAL_STAGE_OUTCOMES.has(String(stage?.outcome || '').toLowerCase());
 const normalizedTextValues = values => [
   ...new Set(
     (Array.isArray(values) ? values : [values])
@@ -754,6 +763,10 @@ const quickFilteredDeals = computed(() => {
   });
 });
 
+const boardDeals = computed(() =>
+  filterVisibleBoardDeals(quickFilteredDeals.value, visibleBoardStages.value)
+);
+
 const filteredListDeals = computed(() => quickFilteredDeals.value);
 
 const resolveDealSortValue = computed(() =>
@@ -808,6 +821,7 @@ const defaultDealsPreferences = () => ({
     pipelineId: '',
     stageId: '',
     teamId: '',
+    showInactive: false,
   },
   listQuickFilters: {
     q: '',
@@ -2221,6 +2235,7 @@ const syncFilterDraft = () => {
     dateRange: { ...filters.dateRange },
     ownerId: filters.ownerId,
     pipelineId: filters.pipelineId,
+    showInactive: filters.showInactive,
     stageId: resolveStageFilterId(filters.stageId, filters.pipelineId),
     teamId: filters.teamId,
   });
@@ -2242,6 +2257,7 @@ const applyFilters = async () => {
     dateRange: { ...filterDraft.dateRange },
     ownerId: filterDraft.ownerId,
     pipelineId: resolvePipelineFilterId(filterDraft.pipelineId),
+    showInactive: filterDraft.showInactive,
     stageId: resolveStageFilterId(
       filterDraft.stageId,
       resolvePipelineFilterId(filterDraft.pipelineId)
@@ -2935,14 +2951,14 @@ watch(
             class="min-h-0 flex-1"
             :can-manage="canManageDeals"
             :can-reorder="!hasListSearchQuery"
-            :deals="quickFilteredDeals"
+            :deals="boardDeals"
             :field-definitions="dealFieldDefinitions"
             :has-more="hasMoreDeals"
             :is-loading-more="ui.isLoadingMore"
             :owners="ownerOptions"
             :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
             :stage-counts="stageCounts"
-            :stages="boardStages"
+            :stages="visibleBoardStages"
             :sort-direction-labels="boardSortDirectionLabels"
             :sort-directions="boardSortDirections"
             :sort-key="boardSort.key"
@@ -3665,14 +3681,25 @@ watch(
           />
         </div>
 
-        <div class="flex items-center gap-3">
-          <Checkbox
-            :model-value="filterDraft.archived"
-            @update:model-value="filterDraft.archived = $event"
-          />
-          <span class="text-sm text-n-slate-12">
-            {{ $t('CRM.FILTERS.INCLUDE_ARCHIVED') }}
-          </span>
+        <div class="flex items-center gap-4">
+          <label class="flex items-center gap-2">
+            <Checkbox
+              :model-value="filterDraft.archived"
+              @update:model-value="filterDraft.archived = $event"
+            />
+            <span class="text-sm text-n-slate-12">
+              {{ $t('CRM.FILTERS.INCLUDE_ARCHIVED') }}
+            </span>
+          </label>
+          <label class="flex items-center gap-2">
+            <Checkbox
+              :model-value="filterDraft.showInactive"
+              @update:model-value="filterDraft.showInactive = $event"
+            />
+            <span class="text-sm text-n-slate-12">
+              {{ $t('CRM.FILTERS.SHOW_INACTIVE') }}
+            </span>
+          </label>
         </div>
       </div>
       <template #footer>
