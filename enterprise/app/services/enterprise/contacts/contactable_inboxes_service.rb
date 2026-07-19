@@ -9,8 +9,9 @@ module Enterprise::Contacts::ContactableInboxesService
   end
 
   def voice_contactable_inbox(inbox)
-    return if @contact.phone_number.blank?
+    phone_number = contact_phone_number
+    return if phone_number.blank?
 
-    { source_id: @contact.phone_number, inbox: inbox }
+    { source_id: phone_number, inbox: inbox }
   end
 end
