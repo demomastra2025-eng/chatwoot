@@ -1,29 +1,54 @@
+require 'digest'
+
 class Voice::InboundCallBuilder
   PROVIDER_OWNED_SIP_PROVIDERS = Channel::Voice::PROVIDER_OWNED_SIP_PROVIDERS
 
-  attr_reader :account, :inbox, :from_number, :call_sid
+  attr_reader :account, :inbox, :from_number, :call_sid, :reuse_existing_conversation, :excluded_conversation_id,
+              :conversation_identifier, :build_voice_message
 
-  def self.perform!(account:, inbox:, from_number:, call_sid:)
-    new(account: account, inbox: inbox, from_number: from_number, call_sid: call_sid).perform!
+  def self.perform!(account:, inbox:, from_number:, call_sid:, reuse_existing_conversation: true, excluded_conversation_id: nil,
+                    conversation_identifier: nil, build_voice_message: true)
+    new(
+      account: account,
+      inbox: inbox,
+      from_number: from_number,
+      call_sid: call_sid,
+      reuse_existing_conversation: reuse_existing_conversation,
+      excluded_conversation_id: excluded_conversation_id,
+      conversation_identifier: conversation_identifier,
+      build_voice_message: build_voice_message
+    ).perform!
   end
 
-  def initialize(account:, inbox:, from_number:, call_sid:)
+  def initialize(account:, inbox:, from_number:, call_sid:, reuse_existing_conversation: true, excluded_conversation_id: nil,
+                 conversation_identifier: nil, build_voice_message: true)
     @account = account
     @inbox = inbox
     @from_number = from_number
     @call_sid = call_sid
+    @reuse_existing_conversation = reuse_existing_conversation
+    @excluded_conversation_id = excluded_conversation_id
+    @conversation_identifier = conversation_identifier
+    @build_voice_message = build_voice_message
   end
 
   def perform!
+    raise ArgumentError, 'inbox must belong to account' unless inbox.account_id == account.id
+
     timestamp = current_timestamp
 
     ActiveRecord::Base.transaction do
+      lock_call_identity!
       contact = ensure_contact!
       contact_inbox = ensure_contact_inbox!(contact)
+      contact = contact_inbox.contact
+      raise ArgumentError, 'contact inbox must belong to account' unless contact.account_id == account.id
+
       conversation = find_conversation(contact) || create_conversation!(contact, contact_inbox)
       conversation.reload
-      update_conversation!(conversation, timestamp)
-      build_voice_message!(conversation, timestamp)
+      validate_conversation!(conversation, contact, contact_inbox)
+      update_conversation!(conversation, timestamp, contact_inbox)
+      build_voice_message!(conversation, timestamp) if build_voice_message
       conversation
     end
   end
@@ -37,17 +62,34 @@ class Voice::InboundCallBuilder
   end
 
   def ensure_contact_inbox!(contact)
-    ContactInbox.find_or_create_by!(
-      contact_id: contact.id,
-      inbox_id: inbox.id
-    ) do |record|
-      record.source_id = normalized_from_number
-    end
+    ContactInbox.find_by(inbox_id: inbox.id, source_id: normalized_from_number) ||
+      ContactInbox.create_or_find_by!(inbox_id: inbox.id, source_id: normalized_from_number) do |record|
+        record.contact = contact
+      end
+  end
+
+  def lock_call_identity!
+    identity = ['voice-contact', account.id, normalized_from_number].join(':')
+    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+  end
+
+  def validate_conversation!(conversation, contact, contact_inbox)
+    valid = conversation.account_id == account.id &&
+            conversation.inbox_id == inbox.id &&
+            conversation.contact_id == contact.id &&
+            (conversation.contact_inbox_id.blank? || conversation.contact_inbox_id == contact_inbox.id)
+    return if valid
+
+    raise ArgumentError, 'conversation does not match voice context'
   end
 
   def find_conversation(contact)
-    conversation = account.conversations.includes(:contact).find_by(identifier: call_sid) if call_sid.present?
+    conversations = account.conversations.includes(:contact).where.not(id: excluded_conversation_id)
+    identifier = conversation_identifier || call_sid
+    conversation = conversations.find_by(identifier: identifier) if identifier.present?
     return conversation if conversation.present?
+    return unless reuse_existing_conversation
 
     reusable_native_telephony_conversation(contact)
   end
@@ -56,6 +98,7 @@ class Voice::InboundCallBuilder
     return unless native_telephony_provider?
 
     account.conversations
+           .where.not(id: excluded_conversation_id)
            .where(inbox_id: inbox.id, contact_id: contact.id)
            .order(last_activity_at: :desc, id: :desc)
            .first
@@ -68,12 +111,12 @@ class Voice::InboundCallBuilder
       contact_id: contact.id,
       status: :open
     }
-    attrs[:identifier] = call_sid unless native_telephony_provider?
+    attrs[:identifier] = conversation_identifier || call_sid unless native_telephony_provider? && reuse_existing_conversation
 
     account.conversations.create!(attrs)
   end
 
-  def update_conversation!(conversation, timestamp)
+  def update_conversation!(conversation, timestamp, contact_inbox)
     attrs = (conversation.additional_attributes || {}).deep_dup
     reset_reused_call_state!(attrs)
     attrs.merge!(
@@ -91,6 +134,7 @@ class Voice::InboundCallBuilder
       additional_attributes: attrs,
       last_activity_at: current_time
     }
+    update_attrs[:contact_inbox] = contact_inbox if conversation.contact_inbox_id.blank?
     update_attrs[:identifier] = call_sid unless native_telephony_provider? && conversation.identifier.present?
     update_attrs[:status] = :open if native_telephony_provider?
 

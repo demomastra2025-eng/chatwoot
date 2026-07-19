@@ -641,37 +641,71 @@ describe('useCallSession', () => {
     );
   });
 
-  it('destroys a stale browser SIP device when incoming reporting is rejected', async () => {
+  it.each([404, 409, 422])(
+    'destroys a stale browser SIP device when incoming reporting is rejected with HTTP %s',
+    async status => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+      reportBrowserSipIncomingMock.mockRejectedValueOnce({
+        response: { status },
+      });
+      mountUseCallSession();
+      await Promise.resolve();
+
+      const incomingHandler = addEventListenerMock.mock.calls.find(
+        ([eventName]) => eventName === 'call:incoming'
+      )?.[1];
+      await incomingHandler({
+        detail: {
+          provider: 'sipuni',
+          inboxId: 4772,
+          sipProfileId: 42,
+          sessionKey: 'sip_profile:42',
+          internalExtension: '207',
+          callRef: 'stale-sipuni-call-id',
+          from: 'sip:+770****0000@ats01.kz.sipuni.com',
+        },
+      });
+
+      expect(destroyDeviceMock).toHaveBeenCalledWith({
+        provider: 'sipuni',
+        inboxId: 4772,
+        sessionKey: 'sip_profile:42',
+        sipProfileId: 42,
+      });
+      expect(useCallsStore().calls).toEqual([]);
+      consoleWarnSpy.mockRestore();
+    }
+  );
+
+  it('keeps stale incoming-call cleanup fail-closed when device destruction fails', async () => {
     const consoleWarnSpy = vi
       .spyOn(console, 'warn')
       .mockImplementation(() => {});
     reportBrowserSipIncomingMock.mockRejectedValueOnce({
-      response: { status: 404 },
+      response: { status: 409 },
     });
+    destroyDeviceMock.mockRejectedValueOnce(new Error('cleanup failed'));
     mountUseCallSession();
     await Promise.resolve();
 
     const incomingHandler = addEventListenerMock.mock.calls.find(
       ([eventName]) => eventName === 'call:incoming'
     )?.[1];
-    await incomingHandler({
-      detail: {
-        provider: 'sipuni',
-        inboxId: 4772,
-        sipProfileId: 42,
-        sessionKey: 'sip_profile:42',
-        internalExtension: '207',
-        callRef: 'stale-sipuni-call-id',
-        from: 'sip:+77017450000@ats01.kz.sipuni.com',
-      },
-    });
+    await expect(
+      incomingHandler({
+        detail: {
+          provider: 'sipuni',
+          inboxId: 4772,
+          sipProfileId: 42,
+          sessionKey: 'sip_profile:42',
+          callRef: 'stale-cleanup-failure',
+        },
+      })
+    ).resolves.toBeUndefined();
 
-    expect(destroyDeviceMock).toHaveBeenCalledWith({
-      provider: 'sipuni',
-      inboxId: 4772,
-      sessionKey: 'sip_profile:42',
-      sipProfileId: 42,
-    });
+    expect(destroyDeviceMock).toHaveBeenCalledOnce();
     expect(useCallsStore().calls).toEqual([]);
     consoleWarnSpy.mockRestore();
   });

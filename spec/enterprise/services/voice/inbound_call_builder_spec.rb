@@ -57,6 +57,18 @@ RSpec.describe Voice::InboundCallBuilder do
       expect(data['meta']['ringing_at']).to be_present
     end
 
+    it 'can defer the voice message while preparing an atomic recovery conversation' do
+      conversation = described_class.perform!(
+        account: account,
+        inbox: inbox,
+        from_number: from_number,
+        call_sid: call_sid,
+        build_voice_message: false
+      )
+
+      expect(conversation.messages.voice_calls).to be_empty
+    end
+
     it 'sets the contact name to the phone number for new callers' do
       conversation = perform_builder
 
@@ -70,6 +82,31 @@ RSpec.describe Voice::InboundCallBuilder do
       end
 
       perform_builder
+    end
+
+    it 'uses the same contact lock across inboxes for the same account and caller' do
+      other_inbox = create(:inbox, account: account)
+      builders = [inbox, other_inbox].map do |target_inbox|
+        described_class.new(
+          account: account,
+          inbox: target_inbox,
+          from_number: from_number,
+          call_sid: call_sid
+        )
+      end
+      lock_statements = []
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:execute).and_wrap_original do |method, statement, *args|
+        lock_statements << statement if statement.include?('pg_advisory_xact_lock')
+        method.call(statement, *args)
+      end
+
+      ActiveRecord::Base.transaction do
+        builders.each { |builder| builder.send(:lock_call_identity!) }
+      end
+
+      expect(lock_statements.size).to eq(2)
+      expect(lock_statements.uniq.size).to eq(1)
     end
   end
 
@@ -190,6 +227,68 @@ RSpec.describe Voice::InboundCallBuilder do
         expect(voice_messages.last.content_attributes.dig('data', 'call_sid')).to eq(call_sid)
         expect(voice_messages.first.content_attributes.dig('data', 'call_sid')).to eq('sipuni-previous-call')
       end
+    end
+
+    it 'reuses the canonical contact inbox when concurrent contact lookup returns a duplicate contact' do
+      duplicate_contact = create(:contact, account: account)
+      contacts_scope = account.contacts
+      allow(account).to receive(:contacts).and_return(contacts_scope)
+      allow(contacts_scope).to receive(:find_or_create_by!).and_return(duplicate_contact)
+
+      expect { perform_builder }.not_to change(ContactInbox, :count)
+
+      conversation = account.conversations.order(:id).last
+      expect(conversation).to eq(existing_conversation)
+      expect(conversation.contact).to eq(contact)
+      expect(conversation.contact_inbox).to eq(contact_inbox)
+    end
+
+    it 'rejects a canonical contact inbox linked to another account' do
+      foreign_contact = create(:contact, account: create(:account))
+      contact_inbox.update_column(:contact_id, foreign_contact.id) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { perform_builder }.to raise_error(ArgumentError, 'contact inbox must belong to account')
+      expect(existing_conversation.reload.contact).to eq(contact)
+    end
+
+    it 'restores a missing contact inbox on the reusable native SIP conversation' do
+      existing_conversation.update_column(:contact_inbox_id, nil) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { perform_builder }.not_to raise_error
+
+      expect(existing_conversation.reload.contact_inbox).to eq(contact_inbox)
+      expect(existing_conversation.messages.voice_calls.where(source_id: "voice_call:#{call_sid}").count).to eq(1)
+    end
+
+    it 'rejects a reusable conversation linked to a different contact inbox' do
+      foreign_contact = create(:contact, account: account)
+      foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: inbox, source_id: '+155****8181')
+      existing_conversation.update_column(:contact_inbox_id, foreign_contact_inbox.id) # rubocop:disable Rails/SkipsModelValidations
+      original_message_count = existing_conversation.messages.count
+
+      expect { perform_builder }.to raise_error(ArgumentError, 'conversation does not match voice context')
+      expect(existing_conversation.reload.messages.count).to eq(original_message_count)
+    end
+
+    it 'creates a dedicated conversation when reuse is disabled for late recovery' do
+      original_attributes = existing_conversation.additional_attributes.deep_dup
+      recovered_conversation = nil
+
+      expect do
+        recovered_conversation = described_class.perform!(
+          account: account,
+          inbox: inbox,
+          from_number: from_number,
+          call_sid: call_sid,
+          reuse_existing_conversation: false
+        )
+      end.to change(account.conversations, :count).by(1)
+
+      expect(recovered_conversation).not_to eq(existing_conversation)
+      expect(recovered_conversation.identifier).to eq(call_sid)
+      expect(recovered_conversation.contact).to eq(contact)
+      expect(recovered_conversation.contact_inbox).to eq(contact_inbox)
+      expect(existing_conversation.reload.additional_attributes).to eq(original_attributes)
     end
   end
 

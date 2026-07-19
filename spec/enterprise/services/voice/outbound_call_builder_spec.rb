@@ -63,6 +63,34 @@ RSpec.describe Voice::OutboundCallBuilder do
       end
     end
 
+    it 'locks the shared phone identity and uses the canonical contact inbox contact' do
+      canonical_contact = create(:contact, account: account)
+      canonical_contact.update_column(:phone_number, contact.phone_number)
+      canonical_contact_inbox = create(
+        :contact_inbox,
+        contact: canonical_contact,
+        inbox: inbox,
+        source_id: contact.phone_number
+      )
+      connection = ActiveRecord::Base.connection
+      lock_statements = []
+      allow(connection).to receive(:execute).and_wrap_original do |original, statement, *args|
+        lock_statements << statement if statement.include?('pg_advisory_xact_lock')
+        original.call(statement, *args)
+      end
+
+      result = described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+
+      aggregate_failures do
+        expect(lock_statements.one?).to be(true)
+        expect(result[:conversation]).to have_attributes(
+          contact_id: canonical_contact.id,
+          contact_inbox_id: canonical_contact_inbox.id
+        )
+        expect(channel).to have_received(:initiate_call).with(to: canonical_contact.phone_number)
+      end
+    end
+
     it 'raises an error when contact is missing a phone number' do
       contact.update!(phone_number: nil)
 
@@ -201,6 +229,17 @@ RSpec.describe Voice::OutboundCallBuilder do
           expect(voice_messages.first.content_attributes.dig('data', 'call_sid')).to eq('sipuni-previous-call')
           expect(SendReplyJob).not_to have_received(:perform_later)
         end
+      end
+
+      it 'rejects a reusable conversation linked to a different contact inbox before provider side effects' do
+        foreign_contact = create(:contact, account: account)
+        foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: inbox, source_id: '+155****8282')
+        existing_conversation.update_column(:contact_inbox_id, foreign_contact_inbox.id) # rubocop:disable Rails/SkipsModelValidations
+
+        expect do
+          described_class.perform!(account: account, inbox: inbox, user: user, contact: contact)
+        end.to raise_error(ArgumentError, 'conversation does not match voice context')
+        expect(calls_service).not_to have_received(:create_outbound!)
       end
     end
   end

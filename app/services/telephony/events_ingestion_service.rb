@@ -149,7 +149,10 @@ class Telephony::EventsIngestionService
   def perform
     account = resolve_account!
     event = persist_event!(account)
-    return event.call_session if event.processed? && event.call_session.present?
+    if event.processed? && event.call_session.present?
+      validate_call_session_tenant_links!(event.call_session, account)
+      return event.call_session
+    end
 
     process_event_with_retry!(account, event)
   rescue Telephony::Error => e
@@ -177,14 +180,6 @@ class Telephony::EventsIngestionService
 
     begin
       process_event!(account, event)
-    rescue ActiveRecord::RecordNotUnique
-      raise if retries >= CALL_SESSION_CONFLICT_RETRIES
-
-      retries += 1
-      event.reload
-      return event.call_session if event.processed? && event.call_session.present?
-
-      retry
     rescue *RETRYABLE_DATABASE_ERRORS
       raise if retries >= CALL_SESSION_CONFLICT_RETRIES
 
@@ -205,12 +200,14 @@ class Telephony::EventsIngestionService
       event.lock!
       if event.processed? && event.call_session.present?
         call_session = event.call_session
+        validate_call_session_tenant_links!(call_session, account)
         next
       end
 
       call_session = resolve_call_session!(account)
       call_session.with_lock do
         call_session.reload
+        validate_call_session_tenant_links!(call_session, account)
         if immutable_ai_finalized_late_event?(call_session)
           immutable_ai_finalized_late_event = true
           event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
@@ -299,10 +296,16 @@ class Telephony::EventsIngestionService
 
     begin
       call_session.reload
-      ensure_conversation!(call_session, account)
-      call_session.reload
-      apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session)
-      sync_voice_message!(call_session)
+      recovered_terminal_message = reconcile_stale_terminal_voice_message!(call_session, account, event) if call_session.terminal?
+      return if recovered_terminal_message.in?([false, :nonterminal])
+
+      unless recovered_terminal_message
+        call_session.reload
+        ensure_conversation!(call_session, account)
+        call_session.reload
+        apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session)
+        sync_voice_message!(call_session)
+      end
       linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
       enqueue_external_recording_cache(call_session)
       enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
@@ -483,20 +486,38 @@ class Telephony::EventsIngestionService
   end
 
   def reconcile_stale_terminal_voice_message!(call_session, account, event)
-    call_session.reload
-    return unless call_session.terminal?
-    return unless stale_terminal_voice_message?(call_session)
+    call_session.with_lock do
+      call_session.reload
+      next :nonterminal unless call_session.terminal?
+      next unless native_sip_call_session?(call_session)
+      next unless stale_terminal_voice_message?(call_session)
 
-    ensure_conversation!(call_session, account)
-    call_session.reload
-    sync_voice_message!(call_session)
+      recovery_messages = native_sip_recovery_messages(call_session)
+      superseded_conversation_id = call_session.conversation_id if superseded_native_sip_conversation_call?(call_session)
+      call_session.update!(conversation: nil) if superseded_conversation_id.present?
+      ensure_conversation!(
+        call_session,
+        account,
+        reuse_existing_conversation: false,
+        excluded_conversation_id: superseded_conversation_id,
+        conversation_identifier: "voice-recovery:#{call_session.id}",
+        build_voice_message: false
+      )
+      call_session.reload
+      move_native_sip_recovery_messages!(recovery_messages, call_session.conversation)
+      apply_call_status!(call_session) unless suppress_native_sip_conversation_update?(call_session)
+      sync_voice_message!(call_session, require_canonical_message: true)
+      true
+    end
+  rescue *RETRYABLE_DATABASE_ERRORS
+    raise
   rescue StandardError => e
     event.update(status: 'failed', error_message: e.message)
     Rails.logger.error(
       "TELEPHONY_VOICE_EVENT_SIDE_EFFECT_ERROR event_id=#{event.id} account_id=#{event.account_id} " \
       "event_type=#{event.event_type} call_ref=#{call_session.external_call_ref} error_class=#{e.class.name} message=#{e.message}"
     )
-    call_session
+    false
   end
 
   def stale_terminal_voice_message?(call_session)
@@ -504,12 +525,26 @@ class Telephony::EventsIngestionService
                    call_session.direction == 'inbound' &&
                    native_sip_group_voice_messages(call_session).many?
 
-    message = call_session.voice_message_for_current_call
-    return false if message.blank?
+    message = native_sip_group_voice_message_for(call_session) || exact_voice_message_for(call_session)
+    return true if message.blank?
 
     data = normalized_content_attributes(message).fetch('data', {})
     status = Telephony::CallSession.normalize_status(data['status']) || data['status'].to_s
     !terminal_status?(status)
+  end
+
+  def native_sip_recovery_messages(call_session)
+    (native_sip_group_voice_messages(call_session) + [exact_voice_message_for(call_session)]).compact.uniq
+  end
+
+  def move_native_sip_recovery_messages!(messages, conversation)
+    return if messages.blank? || conversation.blank?
+
+    messages.each do |message|
+      next if message.conversation_id == conversation.id
+
+      message.update!(conversation: conversation, inbox: conversation.inbox)
+    end
   end
 
   def persist_event!(account)
@@ -1261,19 +1296,56 @@ class Telephony::EventsIngestionService
     Telephony::CallSession::TERMINAL_STATUSES.include?(status)
   end
 
-  def ensure_conversation!(call_session, account)
-    return if call_session.conversation.present?
+  def validate_call_session_tenant_links!(call_session, account)
+    conversation = call_session.conversation
+    account_records = [call_session.inbox, call_session.contact, conversation, conversation&.inbox, conversation&.contact].compact
+    valid_account_links = call_session.account_id == account.id && account_records.all? { |record| record.account_id == account.id }
+    contact_inbox = conversation&.contact_inbox
+    valid_contact_inbox = conversation.blank? ||
+                          (contact_inbox.present? && contact_inbox.inbox_id == conversation.inbox_id &&
+                            contact_inbox.contact_id == conversation.contact_id)
+    return if valid_account_links && valid_contact_inbox
+
+    raise Telephony::Error.new(code: 'CALL_SESSION_TENANT_MISMATCH', message: 'Call session links belong to another account',
+                               status: :unprocessable_content)
+  end
+
+  def ensure_conversation!(call_session, account, reuse_existing_conversation: true, excluded_conversation_id: nil,
+                           conversation_identifier: nil, build_voice_message: true)
+    if call_session.conversation.present?
+      validate_call_session_tenant_links!(call_session, account)
+      return
+    end
 
     inbox = call_session.inbox || resolve_inbox(account)
     if inbox.blank?
       raise Telephony::Error.new(code: 'VOICE_INBOX_NOT_FOUND', message: "Unable to resolve voice inbox for #{call_session.direction} call",
                                  status: :not_found)
     end
+    unless inbox.account_id == account.id
+      raise Telephony::Error.new(code: 'VOICE_INBOX_ACCOUNT_MISMATCH', message: 'Resolved voice inbox belongs to another account',
+                                 status: :unprocessable_content)
+    end
 
     conversation = if call_session.direction == 'inbound'
-                     ensure_inbound_conversation!(account: account, inbox: inbox, call_session: call_session)
+                     ensure_inbound_conversation!(
+                       account: account,
+                       inbox: inbox,
+                       call_session: call_session,
+                       reuse_existing_conversation: reuse_existing_conversation,
+                       excluded_conversation_id: excluded_conversation_id,
+                       conversation_identifier: conversation_identifier,
+                       build_voice_message: build_voice_message
+                     )
                    else
-                     ensure_outbound_conversation!(account: account, inbox: inbox, call_session: call_session)
+                     ensure_outbound_conversation!(
+                       account: account,
+                       inbox: inbox,
+                       call_session: call_session,
+                       reuse_existing_conversation: reuse_existing_conversation,
+                       excluded_conversation_id: excluded_conversation_id,
+                       conversation_identifier: conversation_identifier
+                     )
                    end
     conversation.update!(status: :pending) if ai_voice_inbound_call?(call_session) && !conversation.pending?
 
@@ -1285,43 +1357,75 @@ class Telephony::EventsIngestionService
     )
   end
 
-  def ensure_inbound_conversation!(account:, inbox:, call_session:)
+  def ensure_inbound_conversation!(account:, inbox:, call_session:, reuse_existing_conversation: true, excluded_conversation_id: nil,
+                                   conversation_identifier: nil, build_voice_message: true)
     Voice::InboundCallBuilder.perform!(
       account: account,
       inbox: inbox,
       from_number: normalized_caller_number || caller_number || call_session.from_number,
-      call_sid: call_ref
+      call_sid: call_ref,
+      reuse_existing_conversation: reuse_existing_conversation,
+      excluded_conversation_id: excluded_conversation_id,
+      conversation_identifier: conversation_identifier,
+      build_voice_message: build_voice_message
     )
   end
 
-  def ensure_outbound_conversation!(account:, inbox:, call_session:)
+  def ensure_outbound_conversation!(account:, inbox:, call_session:, reuse_existing_conversation: true, excluded_conversation_id: nil,
+                                    conversation_identifier: nil)
     contact_number = call_session.to_number.presence || resolved_to_number
     if contact_number.blank?
       raise Telephony::Error.new(code: 'CONTACT_PHONE_NOT_FOUND', message: 'Unable to resolve contact phone number for outbound call',
                                  status: :unprocessable_content)
     end
 
-    contact = ensure_call_contact!(account, contact_number)
-    contact_inbox = ensure_call_contact_inbox!(contact, inbox, contact_number)
-    conversation = account.conversations.find_by(identifier: call_ref) ||
-                   reusable_native_sip_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session) ||
-                   create_outbound_conversation!(account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox,
-                                                 call_session: call_session)
+    ActiveRecord::Base.transaction do
+      contact_source = normalized_call_phone(contact_number)
+      lock_call_contact_identity!(account, contact_source)
+      contact = ensure_call_contact!(account, contact_source)
+      contact_inbox = ensure_call_contact_inbox!(contact, inbox, contact_source)
+      contact = contact_inbox.contact
+      validate_call_contact_account!(contact, account)
+      conversations = account.conversations.where.not(id: excluded_conversation_id)
+      identifier = conversation_identifier || call_ref
+      conversation = conversations.find_by(identifier: identifier) ||
+                     (reuse_existing_conversation &&
+                       reusable_native_sip_conversation(account: account, inbox: inbox, contact: contact, call_session: call_session)) ||
+                     create_outbound_conversation!(account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox,
+                                                   call_session: call_session,
+                                                   reuse_existing_conversation: reuse_existing_conversation,
+                                                   conversation_identifier: identifier)
 
-    update_outbound_conversation!(conversation, call_session)
-    conversation
+      update_outbound_conversation!(conversation, call_session)
+      conversation
+    end
   end
 
-  def create_outbound_conversation!(account:, inbox:, contact:, contact_inbox:, call_session:)
+  def create_outbound_conversation!(account:, inbox:, contact:, contact_inbox:, call_session:, reuse_existing_conversation: true,
+                                    conversation_identifier: nil)
     attrs = {
       contact_inbox_id: contact_inbox.id,
       inbox_id: inbox.id,
       contact_id: contact.id,
       status: :open
     }
-    attrs[:identifier] = call_ref unless native_sip_call_session?(call_session)
+    unless native_sip_call_session?(call_session) && reuse_existing_conversation
+      attrs[:identifier] = conversation_identifier || call_ref
+    end
 
     account.conversations.create!(attrs)
+  end
+
+  def lock_call_contact_identity!(account, phone_number)
+    identity = ['voice-contact', account.id, normalized_call_phone(phone_number)].join(':')
+    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+  end
+
+  def normalized_call_phone(phone_number)
+    Contacts::PhoneNumberNormalizer.normalize(phone_number) ||
+      Contacts::PhoneNumberNormalizer.normalize(phone_number, default_country: 'KZ') ||
+      phone_number
   end
 
   def ensure_call_contact!(account, phone_number)
@@ -1331,9 +1435,17 @@ class Telephony::EventsIngestionService
   end
 
   def ensure_call_contact_inbox!(contact, inbox, source_id)
-    ContactInbox.find_or_create_by!(contact_id: contact.id, inbox_id: inbox.id) do |record|
-      record.source_id = source_id
-    end
+    ContactInbox.find_by(inbox_id: inbox.id, source_id: source_id) ||
+      ContactInbox.create_or_find_by!(inbox_id: inbox.id, source_id: source_id) do |record|
+        record.contact = contact
+      end
+  end
+
+  def validate_call_contact_account!(contact, account)
+    return if contact.account_id == account.id
+
+    raise Telephony::Error.new(code: 'CONTACT_ACCOUNT_MISMATCH', message: 'Resolved call contact belongs to another account',
+                               status: :unprocessable_content)
   end
 
   def update_outbound_conversation!(conversation, call_session)
@@ -1489,22 +1601,30 @@ class Telephony::EventsIngestionService
     ].each { |key| attrs.delete(key) }
   end
 
-  def sync_voice_message!(call_session)
+  def sync_voice_message!(call_session, require_canonical_message: false)
     return sync_voice_message_without_group_lock!(call_session) unless native_sip_call_session?(call_session) && call_session.direction == 'inbound'
 
     with_native_sip_voice_group_lock(call_session) do
       call_session.reload
       presentation_session = native_sip_group_presentation_session(call_session)
+      if require_canonical_message
+        presentation_session.conversation = call_session.conversation
+        ensure_canonical_native_sip_voice_message!(presentation_session, call_session.conversation)
+      end
       sync_voice_message_without_group_lock!(presentation_session)
     end
   end
 
+  def ensure_canonical_native_sip_voice_message!(presentation_session, conversation)
+    canonical_session = presentation_session.canonical_logical_call_session
+    return if conversation.messages.voice_calls.exists?(source_id: canonical_session.voice_call_source_id)
+
+    build_voice_message!(canonical_session, conversation: conversation)
+  end
+
   def sync_voice_message_without_group_lock!(call_session)
     message = voice_message_for(call_session)
-    return if message.blank? && (
-      superseded_native_sip_conversation_call?(call_session) ||
-      suppress_linked_unanswered_native_sip_branch!(call_session)
-    )
+    return if message.blank? && suppress_missing_voice_message?(call_session)
 
     message ||= build_voice_message!(call_session)
     return unless message
@@ -1559,6 +1679,17 @@ class Telephony::EventsIngestionService
     remove_native_sip_group_duplicate_messages!(call_session, message)
     mark_linked_runtime_duplicate_message!(call_session, message)
     message
+  end
+
+  def suppress_missing_voice_message?(call_session)
+    return true if suppress_linked_unanswered_native_sip_branch!(call_session)
+    return false unless superseded_native_sip_conversation_call?(call_session)
+
+    !recoverable_terminal_voice_message?(call_session)
+  end
+
+  def recoverable_terminal_voice_message?(call_session)
+    call_session.terminal? && call_session.logical_group_sessions.all?(&:terminal?)
   end
 
   def with_native_sip_voice_group_lock(call_session)
@@ -1696,8 +1827,7 @@ class Telephony::EventsIngestionService
     linked_parent_voice_message_for(call_session).present? ||
       linked_answered_native_sip_call_session_for(call_session).present? ||
       linked_logical_group_voice_message_for(call_session).present? ||
-      linked_unanswered_native_sip_voice_message_for(call_session).present? ||
-      linked_recent_context_voice_message_for(call_session).present?
+      linked_unanswered_native_sip_voice_message_for(call_session).present?
   end
 
   def suppress_linked_unanswered_native_sip_branch!(call_session)
@@ -1721,20 +1851,13 @@ class Telephony::EventsIngestionService
       next false if unanswered_terminal_status?(candidate.status)
       next false unless candidate.answered_at.present? || %w[in_progress completed].include?(candidate.status)
 
-      linked_native_sip_call_session_matches?(candidate, call_session, current_key, event_start)
+      linked_native_sip_call_session_matches?(candidate, current_key)
     end
   end
 
-  def linked_native_sip_call_session_matches?(candidate, call_session, current_key, event_start)
+  def linked_native_sip_call_session_matches?(candidate, current_key)
     candidate_key = session_logical_call_key(candidate)
-    return true if current_key.present? && candidate_key.to_s == current_key.to_s
-
-    candidate_start = candidate.started_at || candidate.created_at
-    return false if event_start.present? && candidate_start.present? &&
-                    !candidate_start.between?(event_start - 90.seconds, event_start + 90.seconds)
-
-    same_phone_value?(candidate.from_number, call_session.from_number) &&
-      same_phone_value?(candidate.to_number, call_session.to_number)
+    current_key.present? && candidate_key.to_s == current_key.to_s
   end
 
   def linked_parent_voice_message_for(call_session)
@@ -1802,51 +1925,13 @@ class Telephony::EventsIngestionService
     call_session.conversation.messages.voice_calls.where.not(id: canonical_message.id).find_each do |message|
       data = normalized_content_attributes(message).fetch('data', {})
       source_call_ref = message.source_id.to_s.delete_prefix('voice_call:')
-      explicit_group_duplicate = group_call_refs.include?(source_call_ref) || group_call_refs.include?(data['call_sid'])
-      legacy_duplicate = group_sessions.one? && duplicate_native_sip_group_message?(data, call_session, logical_key)
-      next unless explicit_group_duplicate || legacy_duplicate
+      explicit_group_duplicate = group_call_refs.include?(source_call_ref) ||
+                                 group_call_refs.include?(data['call_sid']) ||
+                                 (logical_key.present? && logical_group_key_matches?(data, logical_key))
+      next unless explicit_group_duplicate
 
       message.destroy!
     end
-  end
-
-  def linked_recent_context_voice_message_for(call_session)
-    return if call_session.conversation.blank?
-
-    call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
-      data = normalized_content_attributes(message).fetch('data', {})
-      next false if data['call_sid'].to_s == call_session.external_call_ref
-      next false if unanswered_terminal_status?(data['status'].to_s)
-
-      duplicate_native_sip_context_message?(data, call_session, message)
-    end
-  end
-
-  def duplicate_native_sip_group_message?(data, call_session, logical_key)
-    return true if logical_key.present? && logical_group_key_matches?(data, logical_key)
-
-    duplicate_native_sip_context_message?(data, call_session)
-  end
-
-  def duplicate_native_sip_context_message?(data, call_session, message = nil)
-    return false unless native_sip_provider?(data['provider'])
-    return false unless data['call_direction'].to_s == 'inbound'
-    return false unless same_phone_value?(data['from_number'], call_session.from_number)
-    return false unless same_phone_value?(data['to_number'], call_session.to_number)
-    return true if message.blank?
-
-    event_start = call_session.started_at || call_session.created_at
-    return true if event_start.blank?
-
-    message.created_at.between?(event_start - 90.seconds, event_start + 90.seconds)
-  end
-
-  def same_phone_value?(left, right)
-    normalized_left = normalized_phone(left)
-    normalized_right = normalized_phone(right)
-    return false if normalized_left.blank? || normalized_right.blank?
-
-    normalized_left == normalized_right
   end
 
   def logical_group_key_matches?(data, logical_key)
@@ -1861,14 +1946,16 @@ class Telephony::EventsIngestionService
   end
 
   def exact_voice_message_for(call_session)
-    call_session.exact_voice_message ||
-      call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
-        normalized_content_attributes(message).dig('data', 'call_sid') == call_session.external_call_ref
-      end
+    exact_message = call_session.exact_voice_message
+    return exact_message if exact_message.present?
+    return if call_session.conversation.blank?
+
+    call_session.conversation.messages.voice_calls.order(created_at: :desc, id: :desc).detect do |message|
+      normalized_content_attributes(message).dig('data', 'call_sid') == call_session.external_call_ref
+    end
   end
 
-  def build_voice_message!(call_session)
-    conversation = call_session.conversation
+  def build_voice_message!(call_session, conversation: call_session.conversation)
     return if conversation.blank?
 
     timestamp = (call_session.started_at || call_session.created_at || Time.current).to_i

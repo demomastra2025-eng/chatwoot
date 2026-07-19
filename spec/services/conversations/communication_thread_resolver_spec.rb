@@ -49,6 +49,25 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(first_thread.communication_thread_conversations.where(primary: true).count).to eq(1)
     end
 
+    it 'uses the same advisory lock for different conversations of one contact' do
+      contact = create(:contact, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact)
+      second_conversation = create(:conversation, account: account, contact: contact)
+      connection = ActiveRecord::Base.connection
+      lock_statements = []
+      allow(connection).to receive(:execute).and_wrap_original do |original, statement, *args|
+        lock_statements << statement if statement.include?('pg_advisory_xact_lock')
+        original.call(statement, *args)
+      end
+
+      described_class.new(conversation: first_conversation).perform
+      described_class.new(conversation: second_conversation).perform
+
+      expect(lock_statements.size).to eq(2)
+      expect(lock_statements.uniq.size).to eq(1)
+      expect(CommunicationThread.where(account: account, contact: contact).count).to eq(1)
+    end
+
     it 'is idempotent for the same conversation' do
       conversation = create(:conversation, account: account)
 
@@ -58,6 +77,39 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(second_thread).to eq(first_thread)
       expect(CommunicationThread.count).to eq(1)
       expect(CommunicationThreadConversation.count).to eq(1)
+    end
+
+    it 'rejects a malformed conversation linked to a contact from another account' do
+      conversation = create(:conversation, account: account)
+      foreign_account = create(:account)
+      foreign_contact = create(:contact, account: foreign_account)
+      foreign_contact_inbox = create(:contact_inbox, contact: foreign_contact, inbox: conversation.inbox)
+
+      # rubocop:disable Rails/SkipsModelValidations
+      conversation.update_columns(contact_id: foreign_contact.id, contact_inbox_id: foreign_contact_inbox.id)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      expect(described_class.new(conversation: conversation.reload).perform).to be_nil
+      expect(CommunicationThread.where(account: account, contact: foreign_contact)).to be_empty
+    end
+
+    it 'does not reuse a linked thread whose account no longer matches the conversation' do
+      conversation = create(:conversation, account: account)
+      foreign_account = create(:account)
+      original_thread = described_class.new(conversation: conversation).perform
+
+      # rubocop:disable Rails/SkipsModelValidations
+      original_thread.update_column(:account_id, foreign_account.id)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      conversation.reload
+      expect(conversation.communication_thread).to be_nil
+      current_thread = described_class.new(conversation: conversation).perform
+
+      expect(current_thread).not_to eq(original_thread)
+      expect(current_thread).to have_attributes(account_id: account.id, contact_id: conversation.contact_id)
+      expect(conversation.reload.communication_thread).to eq(current_thread)
+      expect(original_thread.reload.account_id).to eq(foreign_account.id)
     end
 
     it 'moves a conversation to the thread for the current contact', :aggregate_failures do

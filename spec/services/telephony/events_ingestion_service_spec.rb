@@ -57,6 +57,118 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'rejects a call session linked to a conversation from another account before side effects' do
+      foreign_account = create(:account)
+      foreign_conversation = create(:conversation, account: foreign_account)
+      original_status = foreign_conversation.status
+      original_attributes = foreign_conversation.additional_attributes.deep_dup
+      original_message_count = foreign_conversation.messages.count
+      existing_call_session.update_column(:conversation_id, foreign_conversation.id) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(foreign_conversation.reload).to have_attributes(status: original_status, additional_attributes: original_attributes)
+      expect(foreign_conversation.messages.count).to eq(original_message_count)
+      expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
+    end
+
+    it 'rejects an existing conversation without a matching contact inbox before side effects' do
+      conversation = existing_call_session.conversation
+      original_message_count = conversation.messages.count
+      conversation.update_column(:contact_inbox_id, nil) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(conversation.reload.messages.count).to eq(original_message_count)
+      expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
+    end
+
+    it 'revalidates tenant ownership before returning a processed event' do
+      result = service.perform
+      event = account.telephony_events.find_by!(event_key: 'evt-retry-1')
+      foreign_account = create(:account)
+      result.update_column(:account_id, foreign_account.id) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(event.reload).to be_failed
+    end
+
+    it 'keeps terminal recovery scoped to native SIP call sessions' do
+      allow(Twilio::VoiceWebhookSetupService).to receive(:new)
+        .and_return(instance_double(Twilio::VoiceWebhookSetupService, perform: "AP#{SecureRandom.hex(8)}"))
+      voice_inbox = create(:channel_voice, account: account, phone_number: '+15555551910').inbox
+      existing_call_session.update!(
+        conversation: nil,
+        contact: nil,
+        inbox: voice_inbox,
+        provider: 'twilio',
+        direction: 'inbound',
+        status: 'completed',
+        from_number: '+15555551919'
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-non-native-recording-ready-1',
+          provider: 'twilio',
+          event: 'recording_ready',
+          status: 'completed',
+          from_number: '+15555551919',
+          recording_ref: 'recordings/non-native-call.wav'
+        )
+      ).perform
+
+      expect(result.reload.conversation).to be_present
+      expect(result.conversation.identifier).to eq(result.external_call_ref)
+      expect(result.conversation.identifier).not_to start_with('voice-recovery:')
+    end
+
+    it 'stops stale terminal side effects when a concurrent event makes the call nonterminal' do
+      existing_call_session.update!(provider: 'sipuni', status: 'completed')
+      allow(existing_call_session).to receive(:with_lock).and_wrap_original do |original, *args, &block|
+        existing_call_session.update_column(:status, 'in_progress') # rubocop:disable Rails/SkipsModelValidations
+        original.call(*args, &block)
+      end
+      event = instance_double(Telephony::Event, id: 1, account_id: account.id, event_type: 'recording_ready')
+      lifecycle_service = described_class.new(payload: payload.merge(event: 'recording_ready'))
+
+      expect(lifecycle_service).not_to receive(:ensure_conversation!)
+      expect(lifecycle_service).not_to receive(:apply_call_status!)
+      expect(lifecycle_service).not_to receive(:sync_voice_message!)
+
+      lifecycle_service.send(:run_side_effects!, existing_call_session, account, event)
+      expect(existing_call_session.reload.status).to eq('in_progress')
+    end
+
+    it 'marks a non-retryable terminal recovery error as failed without detaching the call session' do
+      existing_call_session.update!(provider: 'sipuni', status: 'completed')
+      existing_call_session.conversation.messages.voice_calls.delete_all
+      original_conversation = existing_call_session.conversation
+      lifecycle_service = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-terminal-recovery-failure-1',
+          provider: 'sipuni',
+          event: 'recording_ready'
+        )
+      )
+      allow(lifecycle_service).to receive(:ensure_conversation!).and_raise(RuntimeError, 'recovery failed')
+
+      result = lifecycle_service.perform
+
+      expect(result.reload.conversation).to eq(original_conversation)
+      expect(account.telephony_events.find_by!(event_key: 'evt-terminal-recovery-failure-1')).to have_attributes(
+        status: 'failed',
+        error_message: 'recovery failed'
+      )
+    end
+
     it 'reuses the exact voice call bubble when message creation races with the WhatsApp webhook' do
       existing_message = create(
         :message,
@@ -831,7 +943,7 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
-    it 'does not create a second voice bubble for an unanswered native SIP fan-out branch when logical keys differ at a bucket boundary' do
+    it 'preserves separate voice bubbles when native SIP logical keys differ at a bucket boundary' do
       conversation = existing_call_session.conversation
       parent_session = existing_call_session
       parent_session.update!(
@@ -897,7 +1009,9 @@ RSpec.describe Telephony::EventsIngestionService do
       ).perform
 
       expect(result.reload).to have_attributes(status: 'no_answer')
-      expect(conversation.messages.voice_calls.reload).to contain_exactly(parent_message)
+      child_message = conversation.messages.voice_calls.find_by!(source_id: child_session.voice_call_source_id)
+      expect(child_message.content_attributes.dig('data', 'status')).to eq('no_answer')
+      expect(conversation.messages.voice_calls.reload).to contain_exactly(parent_message, child_message)
     end
 
     it 'does not let an unanswered native SIP fan-out branch overwrite the answered conversation state' do
@@ -1029,7 +1143,7 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('completed')
     end
 
-    it 'removes an earlier rejected native SIP fan-out bubble when the answered branch completes' do
+    it 'preserves an earlier rejected native SIP bubble when no reliable group identity links it' do
       conversation = existing_call_session.conversation
       started_at = Time.current
       phone_attrs = {
@@ -1075,9 +1189,9 @@ RSpec.describe Telephony::EventsIngestionService do
       ).perform
 
       expect(result.reload).to have_attributes(status: 'completed')
-      expect(conversation.messages.voice_calls.reload.pluck(:id)).not_to include(rejected_message.id)
-      expect(conversation.messages.voice_calls.count).to eq(1)
-      expect(conversation.messages.voice_calls.first.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(conversation.messages.voice_calls.reload.pluck(:id)).to include(rejected_message.id)
+      expect(conversation.messages.voice_calls.count).to eq(2)
+      expect(conversation.messages.voice_calls.where(source_id: existing_call_session.voice_call_source_id)).to exist
     end
 
     it 'uses the answered timestamp for active native SIP conversation state' do
@@ -3124,27 +3238,185 @@ RSpec.describe Telephony::EventsIngestionService do
       end
     end
 
-    it 'keeps newer native SIP conversation state when an older call recording arrives late' do
+    it 'recreates the canonical terminal native SIP bubble when only a branch bubble remains' do
       conversation = existing_call_session.conversation
+      voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+77000001001')
+      voice_inbox = voice_channel.inbox
+      contact_inbox = create(
+        :contact_inbox,
+        contact: conversation.contact,
+        inbox: voice_inbox,
+        source_id: '+77000001002'
+      )
+      conversation.update!(
+        inbox: voice_inbox,
+        contact_inbox: contact_inbox,
+        identifier: existing_call_session.external_call_ref
+      )
+      old_started_at = Time.zone.parse(10.minutes.ago.iso8601)
+      new_started_at = Time.zone.parse(1.minute.ago.iso8601)
+      old_logical_key = 'native-sip-inbound:old-missing-message'
+      new_logical_key = 'native-sip-inbound:new-current-call'
+      existing_call_session.update!(
+        inbox: voice_inbox, provider: 'sipuni', direction: 'inbound', status: 'completed',
+        started_at: old_started_at, answered_at: old_started_at + 2.seconds, ended_at: old_started_at + 20.seconds,
+        duration_seconds: 18, last_event_at: old_started_at + 20.seconds,
+        from_number: '+77000001002', to_number: '+77000001001',
+        metadata: { 'metadata' => { 'logical_call_key' => old_logical_key, 'call_group_key' => old_logical_key } }
+      )
+      conversation.messages.voice_calls.delete_all
+      branch_call_session = create(
+        :telephony_call_session,
+        account: account, conversation: conversation, contact: existing_call_session.contact,
+        inbox: voice_inbox, number_binding: existing_call_session.number_binding,
+        provider: 'sipuni', direction: 'inbound', external_call_ref: 'old-branch-call-ref', status: 'no_answer',
+        created_at: old_started_at + 1.second, started_at: old_started_at + 1.second, ended_at: old_started_at + 19.seconds,
+        from_number: '+77000001002', to_number: '+77000001001',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => old_logical_key,
+            'call_group_key' => old_logical_key,
+            'logical_call_group_ref' => existing_call_session.external_call_ref
+          }
+        }
+      )
+      branch_message = create(
+        :message,
+        account: account, conversation: conversation, inbox: voice_inbox,
+        content_type: 'voice_call', source_id: branch_call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'call_sid' => branch_call_session.external_call_ref,
+            'status' => 'ringing',
+            'logical_call_key' => old_logical_key,
+            'call_group_key' => old_logical_key
+          }
+        }
+      )
+      expect(existing_call_session.reload.logical_group_sessions.map(&:id)).to include(branch_call_session.id)
+      new_call_session = create(
+        :telephony_call_session,
+        account: account, conversation: conversation, contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox, number_binding: existing_call_session.number_binding,
+        provider: 'sipuni', direction: 'inbound', external_call_ref: 'new-current-call-ref', status: 'ringing',
+        started_at: new_started_at, from_number: '+77000001002', to_number: '+77000001001',
+        metadata: { 'metadata' => { 'logical_call_key' => new_logical_key, 'call_group_key' => new_logical_key } }
+      )
+      conversation.update!(
+        additional_attributes: {
+          'telephony_call_ref' => new_call_session.external_call_ref,
+          'call_status' => 'ringing',
+          'call_direction' => 'inbound',
+          'meta' => { 'initiated_at' => new_started_at.to_i }
+        }
+      )
+      create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: voice_inbox,
+        content_type: 'voice_call',
+        source_id: new_call_session.voice_call_source_id,
+        content_attributes: { 'data' => { 'call_sid' => new_call_session.external_call_ref, 'status' => 'completed' } }
+      )
+
+      service = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-terminal-missing-message-recovery-1',
+          provider: 'sipuni',
+          event: 'session_completed',
+          status: 'completed',
+          occurred_at: existing_call_session.ended_at.iso8601
+        )
+      )
+      expect(service).to receive(:reconcile_stale_terminal_voice_message!).and_call_original
+
+      result = service.perform
+
+      expect(result).to eq(existing_call_session)
+      recovered_conversation = result.reload.conversation
+      expect(recovered_conversation).not_to eq(conversation)
+      expect(recovered_conversation.identifier).to eq("voice-recovery:#{result.id}")
+      message = recovered_conversation.messages.voice_calls.find_by!(source_id: existing_call_session.voice_call_source_id)
+      expect(message.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(Message.exists?(branch_message.id)).to be(false)
+      expect(conversation.messages.voice_calls.where(source_id: existing_call_session.voice_call_source_id)).to be_empty
+      expect(conversation.reload.additional_attributes).to include(
+        'telephony_call_ref' => new_call_session.external_call_ref,
+        'call_status' => 'ringing'
+      )
+    end
+
+    it 'preserves a nearby redial without explicit native SIP group identity' do
+      conversation = existing_call_session.conversation
+      new_started_at = Time.zone.parse(1.minute.ago.iso8601)
+      old_started_at = new_started_at - 45.seconds
+      old_message = create(
+        :message,
+        account: account, conversation: conversation, inbox: existing_call_session.inbox,
+        content_type: 'voice_call', source_id: 'voice_call:older-distinct-call', created_at: old_started_at,
+        content_attributes: {
+          'data' => {
+            'provider' => 'sipuni', 'status' => 'completed', 'call_sid' => 'older-distinct-call',
+            'call_direction' => 'inbound', 'from_number' => '+770****1002', 'to_number' => '+770****1001'
+          }
+        }
+      )
+      existing_call_session.update!(
+        provider: 'sipuni', direction: 'inbound', status: 'no_answer',
+        started_at: new_started_at, answered_at: nil, ended_at: new_started_at + 15.seconds,
+        from_number: '+770****1002', to_number: '+770****1001',
+        metadata: { 'metadata' => {} }
+      )
+      conversation.update!(
+        additional_attributes: {
+          'telephony_call_ref' => existing_call_session.external_call_ref,
+          'call_status' => 'no_answer',
+          'call_direction' => 'inbound',
+          'meta' => { 'initiated_at' => new_started_at.to_i }
+        }
+      )
+
+      described_class.new(payload: payload).send(:sync_voice_message!, existing_call_session.reload)
+
+      expect(Message.exists?(old_message.id)).to be(true)
+      expect(conversation.messages.voice_calls.where(source_id: existing_call_session.voice_call_source_id)).to exist
+    end
+
+    it 'keeps newer native SIP conversation state when an unlinked older outbound recording arrives late' do
+      conversation = existing_call_session.conversation
+      contact = conversation.contact
+      contact.update!(phone_number: '+77000002002')
+      voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+77000002001')
+      voice_inbox = voice_channel.inbox
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox, source_id: '+77000002002')
+      conversation.update!(
+        inbox: voice_inbox,
+        contact_inbox: contact_inbox,
+        identifier: existing_call_session.external_call_ref
+      )
       old_started_at = Time.zone.parse(35.minutes.ago.iso8601)
       old_ended_at = old_started_at + 8.seconds
       new_started_at = Time.zone.parse(1.minute.ago.iso8601)
       existing_call_session.update!(
+        inbox: voice_inbox,
         provider: 'sipuni',
         direction: 'outbound',
         status: 'no_answer',
         started_at: old_started_at,
         ended_at: old_ended_at,
         duration_seconds: 8,
-        last_event_at: old_ended_at
+        last_event_at: old_ended_at,
+        from_number: '+77000002001',
+        to_number: '+77000002002'
       )
       new_call_session = create(
         :telephony_call_session,
         account: account,
         conversation: conversation,
-        contact: existing_call_session.contact,
-        inbox: existing_call_session.inbox,
-        number_binding: existing_call_session.number_binding,
+        contact: contact,
+        inbox: voice_inbox,
+        number_binding: nil,
         provider: 'sipuni',
         external_call_ref: 'call-current-1',
         direction: 'outbound',
@@ -3169,19 +3441,25 @@ RSpec.describe Telephony::EventsIngestionService do
         :message,
         account: account,
         conversation: conversation,
-        inbox: existing_call_session.inbox,
+        inbox: voice_inbox,
         content_type: 'voice_call',
-        source_id: 'voice_call:call-retry-1',
+        source_id: existing_call_session.voice_call_source_id,
         content_attributes: {
           'data' => {
-            'call_sid' => 'call-retry-1',
-            'status' => 'no_answer',
-            'duration' => 8
+            'call_sid' => existing_call_session.external_call_ref,
+            'status' => 'ringing',
+            'provider' => 'sipuni'
           }
         }
       )
+      lock_transaction_states = []
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:execute).and_wrap_original do |original, statement, *args|
+        lock_transaction_states << connection.transaction_open? if statement.include?('pg_advisory_xact_lock')
+        original.call(statement, *args)
+      end
 
-      result = described_class.new(
+      service = described_class.new(
         payload: payload.merge(
           event_key: 'evt-late-old-native-sip-recording-ready-1',
           provider: 'sipuni',
@@ -3190,11 +3468,29 @@ RSpec.describe Telephony::EventsIngestionService do
           recording_ref: 'voice-recordings/janus/530/call-retry-1/late.wav',
           duration: 1800
         )
-      ).perform
+      )
+      recovery_attempts = 0
+      allow(service).to receive(:move_native_sip_recovery_messages!).and_wrap_original do |original, messages, target_conversation|
+        recovery_attempts += 1
+        if recovery_attempts == 1
+          messages.first.update!(conversation: target_conversation, inbox: target_conversation.inbox)
+          raise ActiveRecord::Deadlocked, 'retry stale recovery after partial move'
+        end
+
+        original.call(messages, target_conversation)
+      end
+      result = service.perform
 
       attrs = conversation.reload.additional_attributes
-      old_message_data = old_message.reload.content_attributes['data']
+      recovered_conversation = result.reload.conversation
+      recovered_message = recovered_conversation.messages.voice_calls.find_by!(source_id: result.voice_call_source_id)
+      recovered_message_data = recovered_message.content_attributes['data']
       aggregate_failures do
+        expect(recovery_attempts).to eq(2)
+        expect(lock_transaction_states).to be_present.and all(be(true))
+        expect(recovered_message.id).to eq(old_message.id)
+        expect(recovered_conversation).not_to eq(conversation)
+        expect(recovered_conversation.identifier).to eq("voice-recovery:#{result.id}")
         expect(result.reload).to have_attributes(
           status: 'no_answer',
           ended_at: old_ended_at,
@@ -3210,7 +3506,8 @@ RSpec.describe Telephony::EventsIngestionService do
         )
         expect(attrs['recording_ref']).to be_blank
         expect(attrs['recording']).to be_blank
-        expect(old_message_data).to include(
+        expect(conversation.messages.voice_calls.where(id: old_message.id)).to be_empty
+        expect(recovered_message_data).to include(
           'status' => 'no_answer',
           'duration' => 8,
           'recording_ref' => 'voice-recordings/janus/530/call-retry-1/late.wav'

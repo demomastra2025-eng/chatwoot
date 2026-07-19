@@ -53,7 +53,7 @@ const BROWSER_SIP_INCOMING_REPORT_PROVIDERS = new Set([
   'binotel',
   'sipuni',
 ]);
-const STALE_BROWSER_SIP_INCOMING_STATUSES = new Set([404, 422]);
+const STALE_BROWSER_SIP_INCOMING_STATUSES = new Set([404, 409, 422]);
 
 const positiveNumber = value => {
   const numericValue = Number(value);
@@ -939,12 +939,20 @@ export function useCallSession() {
       });
     } catch (error) {
       if (STALE_BROWSER_SIP_INCOMING_STATUSES.has(error?.response?.status)) {
-        await WebphoneClient.destroyDevice({
-          provider,
-          inboxId: detail.inboxId || detail.inbox_id,
-          sessionKey: detail.sessionKey || detail.session_key,
-          sipProfileId: detail.sipProfileId || detail.sip_profile_id,
-        });
+        try {
+          await WebphoneClient.destroyDevice({
+            provider,
+            inboxId: detail.inboxId || detail.inbox_id,
+            sessionKey: detail.sessionKey || detail.session_key,
+            sipProfileId: detail.sipProfileId || detail.sip_profile_id,
+          });
+        } catch (cleanupError) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            'Failed to destroy stale browser SIP device:',
+            cleanupError
+          );
+        }
       }
       // eslint-disable-next-line no-console
       console.warn('Failed to report browser SIP incoming call:', error);

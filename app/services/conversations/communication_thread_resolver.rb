@@ -1,3 +1,5 @@
+require 'digest'
+
 class Conversations::CommunicationThreadResolver
   def initialize(conversation:)
     @conversation = conversation
@@ -6,8 +8,15 @@ class Conversations::CommunicationThreadResolver
   def perform
     return unless linkable_conversation?
 
+    locked_account_id = conversation.account_id
+    locked_contact_id = conversation.contact_id
     CommunicationThread.transaction do
-      previous_thread = conversation.communication_thread
+      lock_contact_thread!(locked_account_id, locked_contact_id)
+      conversation.lock!
+      return unless linkable_conversation?
+      return unless conversation.account_id == locked_account_id && conversation.contact_id == locked_contact_id
+
+      previous_thread = raw_communication_thread
       thread = existing_thread || build_thread
       thread.save! if thread.new_record?
       create_or_update_link!(thread)
@@ -22,23 +31,35 @@ class Conversations::CommunicationThreadResolver
 
   attr_reader :conversation
 
+  def lock_contact_thread!(account_id, contact_id)
+    identity = "communication-thread:#{account_id}:#{contact_id}"
+    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+
+    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+  end
+
   def linkable_conversation?
     return false if conversation.blank? || conversation.destroyed? || conversation.marked_for_destruction?
     return false if conversation.account_id.blank? || conversation.contact_id.blank?
     return false if conversation.inbox_id.blank? || conversation.contact_inbox_id.blank?
     return false unless Inbox.exists?(id: conversation.inbox_id, account_id: conversation.account_id)
+    return false unless Contact.exists?(id: conversation.contact_id, account_id: conversation.account_id)
     return false unless ContactInbox.exists?(id: conversation.contact_inbox_id, inbox_id: conversation.inbox_id, contact_id: conversation.contact_id)
 
     true
   end
 
   def existing_thread
-    linked_thread = conversation.communication_thread
-    return linked_thread if linked_thread&.contact_id == conversation.contact_id
+    linked_thread = raw_communication_thread
+    return linked_thread if linked_thread&.account_id == conversation.account_id && linked_thread.contact_id == conversation.contact_id
 
     CommunicationThread.where(account_id: conversation.account_id, contact_id: conversation.contact_id)
                        .order(Arel.sql('last_activity_at DESC NULLS LAST'), id: :asc)
                        .first
+  end
+
+  def raw_communication_thread
+    conversation.association(:communication_thread).reader
   end
 
   def build_thread
@@ -96,6 +117,8 @@ class Conversations::CommunicationThreadResolver
 
   def refresh_previous_thread!(previous_thread, current_thread)
     return if previous_thread.blank? || previous_thread.id == current_thread.id
+    return unless previous_thread.account_id == conversation.account_id
+    return unless previous_thread.contact&.account_id == conversation.account_id
 
     previous_thread.reload
     if previous_thread.communication_thread_conversations.exists?
@@ -184,7 +207,7 @@ class Conversations::CommunicationThreadResolver
 
   def linked_conversations(thread)
     @linked_conversations ||= {}
-    @linked_conversations[thread.id] ||= Conversation.where(
+    @linked_conversations[thread.id] ||= Conversation.where(account_id: thread.account_id).where(
       id: CommunicationThreadConversation
         .where(communication_thread_id: thread.id)
         .select(:conversation_id)

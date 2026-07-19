@@ -238,6 +238,12 @@ class Conversation < ApplicationRecord
     dispatcher_dispatch(CONVERSATION_UPDATED, previous_changes)
   end
 
+  def communication_thread
+    thread = super
+    return if thread.blank?
+    return thread if thread.account_id == account_id && thread.contact_id == contact_id
+  end
+
   def refresh_communication_thread!
     return unless communication_threads_enabled?
 

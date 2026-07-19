@@ -1,3 +1,5 @@
+require 'digest'
+
 class Voice::OutboundCallBuilder
   PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
 
@@ -17,13 +19,20 @@ class Voice::OutboundCallBuilder
   def perform!
     raise ArgumentError, 'Contact phone number required' if contact.phone_number.blank?
     raise ArgumentError, 'Agent required' if user.blank?
+    raise ArgumentError, 'Contact must belong to account' if contact.account_id != account.id
+    raise ArgumentError, 'Inbox must belong to account' if inbox.account_id != account.id
 
     timestamp = current_timestamp
 
     ActiveRecord::Base.transaction do
+      lock_call_identity!
       contact_inbox = ensure_contact_inbox!
+      @contact = contact_inbox.contact
+      raise ArgumentError, 'Contact inbox must belong to account' if contact.account_id != account.id
+
       conversation = find_or_create_conversation!(contact_inbox)
       conversation.reload
+      validate_conversation!(conversation, contact_inbox)
       conference_sid = Voice::Conference::Name.for(conversation)
       call = initiate_call!(conversation)
       call_sid = call[:call_sid]
@@ -37,12 +46,32 @@ class Voice::OutboundCallBuilder
   private
 
   def ensure_contact_inbox!
-    ContactInbox.find_or_create_by!(
-      contact_id: contact.id,
-      inbox_id: inbox.id
-    ) do |record|
-      record.source_id = contact.phone_number
-    end
+    ContactInbox.find_by(inbox_id: inbox.id, source_id: normalized_contact_phone) ||
+      ContactInbox.create_or_find_by!(inbox_id: inbox.id, source_id: normalized_contact_phone) do |record|
+        record.contact = contact
+      end
+  end
+
+  def lock_call_identity!
+    identity = ['voice-contact', account.id, normalized_contact_phone].join(':')
+    lock_id = Digest::SHA256.digest(identity).unpack1('q>')
+    ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock(#{lock_id})")
+  end
+
+  def validate_conversation!(conversation, contact_inbox)
+    valid = conversation.account_id == account.id &&
+            conversation.inbox_id == inbox.id &&
+            conversation.contact_id == contact.id &&
+            conversation.contact_inbox_id == contact_inbox.id
+    return if valid
+
+    raise ArgumentError, 'conversation does not match voice context'
+  end
+
+  def normalized_contact_phone
+    @normalized_contact_phone ||= Contacts::PhoneNumberNormalizer.normalize(contact.phone_number) ||
+                                  Contacts::PhoneNumberNormalizer.normalize(contact.phone_number, default_country: 'KZ') ||
+                                  contact.phone_number
   end
 
   def create_conversation!(contact_inbox)
