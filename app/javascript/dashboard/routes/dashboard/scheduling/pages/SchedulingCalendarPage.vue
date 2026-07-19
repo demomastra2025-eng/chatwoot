@@ -1261,7 +1261,7 @@ onMounted(async () => {
                   <div class="appointment-contact-accordion">
                     <div class="appointment-contact-accordion-summary">
                       <div
-                        class="grid min-w-0 flex-1 gap-2 md:grid-cols-[2rem_minmax(0,1fr)_15rem]"
+                        class="grid min-w-0 flex-1 gap-2 md:grid-cols-[2rem_minmax(0,1.25fr)_11.25rem]"
                       >
                         <div class="mb-1 flex items-center">
                           <SchedulingSelectField

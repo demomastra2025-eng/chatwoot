@@ -140,6 +140,7 @@ const selectedLabelClass = computed(() => {
   if (!selectedOption.value) return 'text-n-slate-10';
   return selectedOption.value.labelClass || 'text-n-slate-12';
 });
+const isIconOnlyTrigger = computed(() => Boolean(props.triggerIcon));
 const triggerId = computed(() => props.id || attrs.id || undefined);
 const rootAttrs = computed(() => {
   const forwardedAttrs = { ...attrs };
@@ -250,7 +251,8 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
           @click="toggleDropdown"
         >
           <span
-            class="flex min-w-0 flex-1 items-center justify-start gap-2 text-left"
+            class="relative flex min-w-0 flex-1 items-center gap-2 text-left"
+            :class="isIconOnlyTrigger ? 'justify-center' : 'justify-start'"
           >
             <Avatar
               v-if="selectedOption?.thumbnail"
@@ -279,7 +281,10 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
             </span>
             <span
               class="size-4 shrink-0 text-n-slate-10"
-              :class="[open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down']"
+              :class="[
+                open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down',
+                { 'absolute right-0': isIconOnlyTrigger },
+              ]"
               aria-hidden="true"
             />
           </span>
