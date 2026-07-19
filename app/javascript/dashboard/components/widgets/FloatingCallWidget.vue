@@ -60,7 +60,7 @@ const logicalCallKeyFor = call =>
   call?.call_group_key;
 const incomingPresentationKey = call => {
   const logicalCallKey = logicalCallKeyFor(call);
-  if (!logicalCallKey || isOutboundCall(call) || call?.isActive) return null;
+  if (!logicalCallKey || isOutboundCall(call)) return null;
 
   const provider = call?.provider || 'unknown';
   const inboxId = call?.inboxId || call?.inbox_id || 'unknown';
@@ -68,6 +68,8 @@ const incomingPresentationKey = call => {
 };
 const preferActionableIncomingBranch = (current, candidate) => {
   if (!current) return candidate;
+  if (current?.isActive) return current;
+  if (candidate?.isActive) return candidate;
   if (
     isIncomingCallActionableInBrowser(candidate) &&
     !isIncomingCallActionableInBrowser(current)
@@ -343,18 +345,22 @@ const getOperatorExtension = call => {
   const claim = call?.operatorClaim || call?.operator_claim || {};
 
   return firstPresent([
-    call?.operatorInternalExtension,
-    call?.operator_internal_extension,
     claim.internalExtension,
     claim.internal_extension,
+    call?.operatorInternalExtension,
+    call?.operator_internal_extension,
     candidate.internalExtension,
     candidate.internal_extension,
   ]);
 };
 
 const getOperatorParty = call => {
-  const name = getOperatorName(call);
-  const extension = getOperatorExtension(call);
+  const claim = call?.operatorClaim || call?.operator_claim || {};
+  const name = displayNameFrom(claim);
+  const extension = firstPresent([
+    claim.internalExtension,
+    claim.internal_extension,
+  ]);
 
   if (name && extension) {
     return t('CONVERSATION.VOICE_WIDGET.OPERATOR_WITH_EXTENSION', {
@@ -439,7 +445,7 @@ const getCallTypeText = call => {
       return t('CONVERSATION.VOICE_WIDGET.HANDLED_BY_AI_AGENT');
     }
 
-    const operator = getOperatorName(call);
+    const operator = getOperatorParty(call);
     if (callHasActiveRemoteState(call)) {
       return operator
         ? t('CONVERSATION.VOICE_WIDGET.HANDLED_BY', { name: operator })
@@ -447,6 +453,10 @@ const getCallTypeText = call => {
     }
 
     return t('CONVERSATION.VOICE_WIDGET.HANDLED_OUTSIDE_BROWSER');
+  }
+
+  if (call?.isActive || ACTIVE_CALL_STATUSES.has(call?.status)) {
+    return t('CONVERSATION.VOICE_WIDGET.CALL_IN_PROGRESS');
   }
 
   return getDirectionLabel(call);
@@ -473,7 +483,10 @@ const getCallStageText = call => {
 
 const getCallSecondaryText = call => {
   const typeText = getCallTypeText(call);
-  const operatorText = getOperatorText(call);
+  const operatorText =
+    !browserJoinSupportedForCall(call) && callHasActiveRemoteState(call)
+      ? ''
+      : getOperatorText(call);
   const stageText = getCallStageText(call);
 
   return [typeText, operatorText, stageText].filter(Boolean).join(' · ');
@@ -617,12 +630,10 @@ const openConversation = call => {
   });
 };
 
-const handleBrowserJoinUnavailable = (call, { notify = true } = {}) => {
+const handleBrowserJoinUnavailable = ({ notify = true } = {}) => {
   if (notify) {
     useAlert(t('CONVERSATION.VOICE_WIDGET.BROWSER_CALLING_UNAVAILABLE'));
   }
-
-  openConversation(call);
 };
 
 const handleEndCall = async () => {
@@ -657,7 +668,7 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
   if (!call || isJoining.value) return;
 
   if (!browserJoinSupportedForCall(call)) {
-    handleBrowserJoinUnavailable(call, { notify: notifyOnUnavailable });
+    handleBrowserJoinUnavailable({ notify: notifyOnUnavailable });
     return;
   }
 
@@ -681,29 +692,13 @@ const handleJoinCall = async (call, { notifyOnUnavailable = true } = {}) => {
     janusSessionKey: call.janusSessionKey || call.janus_session_key,
   });
 
-  const callWithCommunicationThread = result
-    ? {
-        ...call,
-        communicationThreadId:
-          result.communicationThreadId ||
-          result.communication_thread_id ||
-          call.communicationThreadId ||
-          call.communication_thread_id,
-      }
-    : call;
-
   if (result?.joinSupported === false) {
     if (isOutboundCall(call)) return;
     if (result.retryable) return;
 
-    handleBrowserJoinUnavailable(callWithCommunicationThread, {
+    handleBrowserJoinUnavailable({
       notify: notifyOnUnavailable,
     });
-    return;
-  }
-
-  if (result) {
-    openConversation(callWithCommunicationThread);
   }
 };
 

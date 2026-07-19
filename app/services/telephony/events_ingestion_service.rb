@@ -354,8 +354,25 @@ class Telephony::EventsIngestionService
     native_sip_operator_scope = native_sip_call_session?(call_session) &&
                                 call_session.direction == 'inbound' &&
                                 user_ids.present?
-    tokens += call_session.inbox.members.filter_map(&:pubsub_token) if call_session.inbox.present? && !native_sip_operator_scope
+    show_to_other_operators =
+      call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true &&
+      realtime_call_status_claimed?(call_session)
+    if call_session.inbox.present? && (!native_sip_operator_scope || show_to_other_operators)
+      tokens += call_session.inbox.members.filter_map(&:pubsub_token)
+    end
     tokens.uniq
+  end
+
+  def realtime_call_status_claimed?(call_session)
+    sessions = if native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+                 call_session.logical_group_sessions
+               else
+                 [call_session]
+               end
+
+    sessions.any? do |session|
+      session.metadata.to_h.deep_stringify_keys.dig('operator_claim', 'user_id').present?
+    end
   end
 
   def realtime_call_status_user_ids(call_session)
@@ -365,6 +382,13 @@ class Telephony::EventsIngestionService
     sip_profile_ids = Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).filter_map { |value| value.presence&.to_i }
     sip_profile_ids << route_metadata['target_sip_profile_id'].presence&.to_i
     sip_profile_ids << route_metadata['telephony_sip_profile_id'].presence&.to_i
+    logical_group_claim_user_ids = if native_sip_call_session?(call_session) && call_session.direction == 'inbound'
+                                     call_session.logical_group_sessions.filter_map do |session|
+                                       session.metadata.to_h.deep_stringify_keys.dig('operator_claim', 'user_id')
+                                     end
+                                   else
+                                     []
+                                   end
 
     [
       call_session.agent_binding&.user_id,
@@ -372,6 +396,7 @@ class Telephony::EventsIngestionService
       route_metadata['operator_candidate_user_ids'],
       route_metadata['target_user_id'],
       route_metadata['onelink_user_id'],
+      logical_group_claim_user_ids,
       candidates.filter_map { |candidate| candidate['user_id'] },
       call_session.account.telephony_sip_profiles.where(id: sip_profile_ids.compact).pluck(:user_id)
     ].flatten.compact.map(&:to_i).uniq
@@ -395,6 +420,10 @@ class Telephony::EventsIngestionService
                         else
                           call_session
                         end
+    operator_claim = [call_session, canonical_session, *logical_group_sessions].uniq.filter_map do |session|
+      session_claim = session.metadata.to_h.deep_stringify_keys['operator_claim']
+      session_claim if session_claim.is_a?(Hash) && session_claim.present?
+    end.first || {}
     canonical_logical_key = canonical_session.logical_call_key
     logical_call_terminal = logical_group_sessions.all?(&:terminal?)
 
@@ -425,9 +454,11 @@ class Telephony::EventsIngestionService
       from_number: call_session.from_number,
       to_number: call_session.to_number,
       caller: realtime_call_status_caller_payload(contact, call_session),
-      operator_claim: metadata['operator_claim'],
+      operator_claim: operator_claim,
       operator_candidates: route_metadata['operator_candidates'],
-      operator_internal_extension: route_metadata['operator_internal_extension'],
+      operator_internal_extension: operator_claim['internal_extension'].presence || route_metadata['operator_internal_extension'],
+      show_calls_handled_by_other_operators:
+        call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true,
       sip_profile_id: sip_profile_id,
       sipProfileId: sip_profile_id,
       janus_call_ref: route_metadata['janus_call_ref'],

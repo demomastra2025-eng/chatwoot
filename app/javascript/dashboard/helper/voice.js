@@ -91,6 +91,21 @@ function extractCallData(message) {
       contentMeta?.logicalCallKey ||
       contentMeta?.call_group_key ||
       contentMeta?.callGroupKey,
+    logicalCallTerminal:
+      contentData.logical_call_terminal ??
+      contentData.logicalCallTerminal ??
+      contentMeta?.logical_call_terminal ??
+      contentMeta?.logicalCallTerminal,
+    sipProfileId:
+      contentData.sip_profile_id ||
+      contentData.sipProfileId ||
+      contentMeta?.sip_profile_id ||
+      contentMeta?.sipProfileId,
+    janusSessionKey:
+      contentData.janus_session_key ||
+      contentData.janusSessionKey ||
+      contentMeta?.janus_session_key ||
+      contentMeta?.janusSessionKey,
     provider:
       contentData.provider ||
       message?.provider ||
@@ -179,6 +194,9 @@ export function handleVoiceCallCreated(message, currentUserId) {
     communicationThreadId,
     contactId,
     logicalCallKey,
+    logicalCallTerminal,
+    sipProfileId,
+    janusSessionKey,
     numberRef,
   } = extractCallData(message);
 
@@ -208,6 +226,9 @@ export function handleVoiceCallCreated(message, currentUserId) {
       communicationThreadId,
       contactId,
       logicalCallKey,
+      logicalCallTerminal,
+      sipProfileId,
+      janusSessionKey,
       numberRef,
     });
     return;
@@ -237,6 +258,9 @@ export function handleVoiceCallCreated(message, currentUserId) {
     communicationThreadId,
     contactId,
     logicalCallKey,
+    logicalCallTerminal,
+    sipProfileId,
+    janusSessionKey,
     numberRef,
   });
 }
@@ -267,6 +291,9 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     communicationThreadId,
     contactId,
     logicalCallKey,
+    logicalCallTerminal,
+    sipProfileId,
+    janusSessionKey,
     numberRef,
   } = extractCallData(message);
 
@@ -308,6 +335,9 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     communicationThreadId,
     contactId,
     logicalCallKey,
+    logicalCallTerminal,
+    sipProfileId,
+    janusSessionKey,
     numberRef,
   });
 
@@ -339,6 +369,9 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       communicationThreadId,
       contactId,
       logicalCallKey,
+      logicalCallTerminal,
+      sipProfileId,
+      janusSessionKey,
       numberRef,
     });
   }

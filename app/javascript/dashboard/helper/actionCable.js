@@ -779,6 +779,9 @@ class ActionCableConnector extends BaseActionCableConnector {
           data.browserJoinUnsupportedReason,
       serverManagedVoiceCall,
       currentUserId,
+      showCallsHandledByOtherOperators:
+        data.show_calls_handled_by_other_operators ??
+        data.showCallsHandledByOtherOperators,
     });
   };
 

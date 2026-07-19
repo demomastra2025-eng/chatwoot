@@ -197,6 +197,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
           mode: 'operator',
           fallback_mode: 'reject',
           operator_distribution_mode: 'broadcast',
+          show_calls_handled_by_other_operators: false,
         },
         connection: {
           host: 'ats01.kz.sipuni.com',
@@ -226,6 +227,49 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(alertMock).toHaveBeenCalledWith(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_SUCCESS'
     );
+  });
+
+  it('saves visibility of active calls for other operators', async () => {
+    const wrapper = buildWrapper();
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+    wrapper.vm.virtualPbxForm.showCallsHandledByOtherOperators = true;
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(
+      updateVirtualPbxChannelMock.mock.calls[0][1].routing
+        .show_calls_handled_by_other_operators
+    ).toBe(true);
+  });
+
+  it('disables handled-call visibility for a read-only Virtual PBX', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      ...statusPayload,
+      payload: {
+        ...statusPayload.payload,
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          status: {
+            ...statusPayload.payload.ui_config.status,
+            read_only: true,
+          },
+        },
+      },
+    });
+    const wrapper = buildWrapper();
+    await flushPromises();
+
+    const visibilityToggle = wrapper
+      .findAllComponents({ name: 'SettingsToggleSection' })
+      .find(
+        component =>
+          component.props('header') ===
+          'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.LABEL'
+      );
+
+    expect(visibilityToggle.props('disabled')).toBe(true);
   });
 
   it('saves employee SIP assignments from settings only', async () => {

@@ -131,8 +131,51 @@ RSpec.describe Telephony::OperatorCallClaimService do
           account_id: account.id,
           call_sid: call_session.external_call_ref,
           related_call_sids: include(call_session.external_call_ref),
-          claimed_by_user_id: winner_user.id
+          claimed_by_user_id: winner_user.id,
+          show_calls_handled_by_other_operators: false
         )
+      )
+    )
+  end
+
+  it 'broadcasts the claimed call to other inbox operators when visibility is enabled' do
+    observer_user = create(:user, account: account, role: :agent)
+    channel = create(
+      :channel_voice,
+      :sipuni,
+      account: account,
+      phone_number: '+17775550126',
+      provider_config: { show_calls_handled_by_other_operators: true }
+    )
+    [winner_user, other_user, observer_user].each do |operator|
+      create(:inbox_member, inbox: channel.inbox, user: operator)
+    end
+    voice_call = create(
+      :telephony_call_session,
+      account: account,
+      inbox: channel.inbox,
+      number_binding: channel.inbox.telephony_number_binding,
+      provider: 'sipuni',
+      direction: 'inbound',
+      status: 'ringing',
+      metadata: { 'metadata' => route_metadata }
+    )
+    broadcasts = []
+    allow(ActionCable.server).to receive(:broadcast) do |token, event|
+      broadcasts << [token, event]
+    end
+
+    described_class.new(
+      account: account,
+      user: winner_user,
+      call_ref: voice_call.external_call_ref
+    ).perform
+
+    expect(broadcasts.map(&:first)).to include(observer_user.pubsub_token)
+    expect(broadcasts.map(&:last)).to include(
+      include(
+        event: 'voice_call.claimed',
+        data: include(show_calls_handled_by_other_operators: true)
       )
     )
   end
@@ -337,13 +380,15 @@ RSpec.describe Telephony::OperatorCallClaimService do
       agent_ref: profile.agent_ref,
       agent_aor: profile.agent_aor,
       sip_profile_id: profile.id,
-      user_id: winner_user.id
+      user_id: winner_user.id,
+      internal_extension: '504'
     )
     expect(payload).not_to have_key(:agent_binding_id)
 
     call_session.reload
     expect(call_session.agent_binding_id).to be_nil
     expect(call_session.metadata.dig('operator_claim', 'sip_profile_id')).to eq(profile.id)
+    expect(call_session.metadata.dig('operator_claim', 'internal_extension')).to eq('504')
     expect(call_session.metadata.dig('operator_claim', 'agent_binding_id')).to be_nil
     expect(call_session.metadata.dig('operator_claim', 'agent_aor')).to eq('sip:504@ats01.kz.sipuni.com')
   end

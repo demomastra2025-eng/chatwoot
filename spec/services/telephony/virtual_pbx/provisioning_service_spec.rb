@@ -116,4 +116,16 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
       ]
     )
   end
+
+  it 'persists and exposes handled-call visibility for other operators' do
+    payload = sipuni_channel_payload(operator).deep_merge(
+      routing: { show_calls_handled_by_other_operators: true }
+    )
+
+    result = service.create_channel(payload, dry_run: false)
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+
+    expect(inbox.channel.show_calls_handled_by_other_operators?).to be(true)
+    expect(result.dig(:ui_config, :routing, :show_calls_handled_by_other_operators)).to be(true)
+  end
 end

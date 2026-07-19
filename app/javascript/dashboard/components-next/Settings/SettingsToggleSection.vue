@@ -18,6 +18,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  disabled: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const modelValue = defineModel({ type: Boolean, default: false });
@@ -33,7 +37,7 @@ const modelValue = defineModel({ type: Boolean, default: false });
           {{ header }}
         </span>
         <div v-if="hideToggle" class="size-2" />
-        <ToggleSwitch v-else v-model="modelValue" />
+        <ToggleSwitch v-else v-model="modelValue" :disabled="disabled" />
       </div>
       <span v-if="description" class="text-body-main text-n-slate-11">
         {{ description }}

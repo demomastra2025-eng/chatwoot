@@ -567,7 +567,7 @@ describe('VoiceCallButton', () => {
     expect(routerPushMock).not.toHaveBeenCalled();
   });
 
-  it('navigates outbound calls to the communication thread when the API returns it', async () => {
+  it('keeps the current page when an outbound call starts', async () => {
     const dispatch = vi.fn().mockResolvedValue({
       call_sid: 'call-ref-thread',
       conversation_id: 627,
@@ -578,9 +578,7 @@ describe('VoiceCallButton', () => {
     await wrapper.find('button').trigger('click');
     await flushPromises();
 
-    expect(routerPushMock).toHaveBeenCalledWith({
-      path: '/app/accounts/530/communication_threads/72?assignee_type=all',
-    });
+    expect(routerPushMock).not.toHaveBeenCalled();
   });
 
   it('does not downgrade from a communication thread to a concrete inbox conversation', async () => {

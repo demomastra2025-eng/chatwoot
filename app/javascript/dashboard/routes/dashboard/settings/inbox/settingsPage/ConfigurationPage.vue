@@ -76,6 +76,7 @@ export default {
         connectionPassword: '',
         routingMode: 'operator',
         operatorDistributionMode: 'broadcast',
+        showCallsHandledByOtherOperators: false,
         profiles: [],
       },
     };
@@ -729,6 +730,8 @@ export default {
         routingMode: routing.mode || 'operator',
         operatorDistributionMode:
           routing.operator_distribution_mode || 'broadcast',
+        showCallsHandledByOtherOperators:
+          routing.show_calls_handled_by_other_operators === true,
         profiles: this.normalizeVirtualPbxProfiles(
           config.employees || config.profiles || []
         ),
@@ -871,6 +874,8 @@ export default {
           fallback_mode: 'reject',
           operator_distribution_mode:
             form.operatorDistributionMode || 'broadcast',
+          show_calls_handled_by_other_operators:
+            form.showCallsHandledByOtherOperators,
         },
         profiles: this.virtualPbxProfilesPayload(),
         metadata: {
@@ -1293,6 +1298,26 @@ export default {
                 </option>
               </select>
             </label>
+          </div>
+
+          <div
+            :class="{ 'pointer-events-none opacity-60': isVirtualPbxReadOnly }"
+            :aria-disabled="isVirtualPbxReadOnly"
+          >
+            <SettingsToggleSection
+              v-model="virtualPbxForm.showCallsHandledByOtherOperators"
+              :disabled="isVirtualPbxReadOnly"
+              :header="
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.LABEL'
+                )
+              "
+              :description="
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.DESCRIPTION'
+                )
+              "
+            />
           </div>
 
           <div

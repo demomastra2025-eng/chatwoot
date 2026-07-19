@@ -835,6 +835,236 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
+  it('merges a status from another SIP branch into the active owner call', () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'operator-202-ref',
+      accountId: 1,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni-inbound:shared-owner-call',
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+      browserJoinSupported: true,
+      status: 'ringing',
+    });
+    store.setCallActive('operator-202-ref', 'sipuni', {
+      inboxId: 4769,
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'operator-207-ref',
+      accountId: 1,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni-inbound:shared-owner-call',
+      sipProfileId: 81,
+      janusSessionKey: 'sip_profile:81',
+      status: 'in_progress',
+      currentUserId: 113,
+      operatorClaim: {
+        user_id: 113,
+        user_name: 'Жанат',
+        sip_profile_id: 79,
+        internal_extension: '202',
+      },
+      operatorInternalExtension: '202',
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'operator-202-ref',
+        isActive: true,
+        status: 'in_progress',
+        sipProfileId: 79,
+        janusSessionKey: 'sip_profile:79',
+        operatorInternalExtension: '202',
+        operatorClaim: expect.objectContaining({
+          user_id: 113,
+          internal_extension: '202',
+        }),
+      }),
+    ]);
+  });
+
+  it('shows one informational card to other operators when the channel setting is enabled', () => {
+    const store = useCallsStore();
+    [79, 81].forEach(profileId => {
+      store.addCall({
+        callSid: `operator-branch-${profileId}`,
+        accountId: 1,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        logicalCallKey: 'sipuni-inbound:observer-call',
+        sipProfileId: profileId,
+        janusSessionKey: `sip_profile:${profileId}`,
+        browserJoinSupported: true,
+        status: 'ringing',
+      });
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'operator-branch-81',
+      accountId: 1,
+      inboxId: 4769,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni-inbound:observer-call',
+      sipProfileId: 81,
+      janusSessionKey: 'sip_profile:81',
+      status: 'in_progress',
+      currentUserId: 7,
+      operatorClaim: {
+        user_id: 113,
+        user_name: 'Жанат',
+        sip_profile_id: 79,
+        internal_extension: '202',
+      },
+      operatorInternalExtension: '202',
+      showCallsHandledByOtherOperators: true,
+    });
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'operator-branch-81',
+        status: 'in_progress',
+        isActive: false,
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        operatorInternalExtension: '202',
+      }),
+    ]);
+  });
+
+  it('replaces every local branch with one observer card on a foreign claim', async () => {
+    const store = useCallsStore();
+    [79, 81].forEach(profileId => {
+      store.addCall({
+        callSid: `claim-branch-${profileId}`,
+        accountId: 1,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        logicalCallKey: 'sipuni-inbound:observer-claim',
+        sipProfileId: profileId,
+        janusSessionKey: `sip_profile:${profileId}`,
+        browserJoinSupported: true,
+        status: 'ringing',
+      });
+    });
+
+    await store.handleCallClaimed(
+      {
+        call_sid: 'claim-branch-79',
+        account_id: 1,
+        inbox_id: 4769,
+        provider: 'sipuni',
+        call_direction: 'inbound',
+        logical_call_key: 'sipuni-inbound:observer-claim',
+        sip_profile_id: 79,
+        janus_session_key: 'sip_profile:79',
+        related_call_sids: ['claim-branch-79', 'claim-branch-81'],
+        claimed_by_user_id: 113,
+        operator_claim: {
+          user_id: 113,
+          user_name: 'Жанат',
+          sip_profile_id: 79,
+          internal_extension: '202',
+        },
+        show_calls_handled_by_other_operators: true,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'claim-branch-79',
+        browserJoinSupported: false,
+        browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        operatorInternalExtension: '202',
+      }),
+    ]);
+  });
+
+  it('keeps an active branch when a same-SID sibling ends before the logical call', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'shared-native-sid-79',
+      accountId: 1,
+      inboxId: 194,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'janus-inbound:same-sid-terminal',
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+      status: 'in_progress',
+      isActive: true,
+      operatorClaim: {
+        user_id: 5,
+        user_name: 'Owner 79',
+        internal_extension: '202',
+      },
+    });
+    store.setCallActive('shared-native-sid-79', 'sipuni', {
+      accountId: 1,
+      inboxId: 194,
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+    });
+
+    await store.handleCallStatusChanged({
+      callSid: 'shared-native-sid-79',
+      accountId: 1,
+      inboxId: 194,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'janus-inbound:same-sid-terminal',
+      sipProfileId: 81,
+      janusSessionKey: 'sip_profile:81',
+      status: 'completed',
+      logicalCallTerminal: false,
+    });
+
+    expect(store.calls).toHaveLength(1);
+    expect(store.activeCall).toEqual(
+      expect.objectContaining({
+        sipProfileId: 79,
+        janusSessionKey: 'sip_profile:79',
+      })
+    );
+
+    await store.handleCallStatusChanged({
+      callSid: 'shared-native-sid-79',
+      accountId: 1,
+      inboxId: 194,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'janus-inbound:same-sid-terminal',
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+      status: 'in_progress',
+      answeredAt: '2026-07-19T06:45:00Z',
+      currentUserId: 5,
+      operatorClaim: {
+        user_id: 5,
+        user_name: 'Owner 79',
+        internal_extension: '202',
+      },
+    });
+
+    expect(store.activeCall).toEqual(
+      expect.objectContaining({
+        answeredAt: '2026-07-19T06:45:00Z',
+        operatorInternalExtension: '202',
+      })
+    );
+  });
+
   it('does not classify a claim with missing owner identity as foreign', async () => {
     const store = useCallsStore();
     store.addCall({
@@ -1010,6 +1240,36 @@ describe('useCallsStore', () => {
     expect(store.calls).toEqual([
       expect.objectContaining({ janusSessionKey: 'sip_profile:52' }),
     ]);
+  });
+
+  it('fails closed for an unscoped status with one logical key and multiple same-SID branches', () => {
+    const store = useCallsStore();
+    [
+      { inboxId: 4771, sipProfileId: 51 },
+      { inboxId: 4772, sipProfileId: 52 },
+    ].forEach(({ inboxId, sipProfileId }) => {
+      store.addCall({
+        callSid: 'ambiguous-logical-status-sid',
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        inboxId,
+        sipProfileId,
+        janusSessionKey: `sip_profile:${sipProfileId}`,
+        logicalCallKey: 'ambiguous-logical-status-key',
+        status: 'ringing',
+      });
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'ambiguous-logical-status-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'ambiguous-logical-status-key',
+      status: 'in_progress',
+    });
+
+    expect(store.calls).toHaveLength(2);
+    expect(store.calls.every(call => call.status === 'ringing')).toBe(true);
   });
 
   it('fails closed when direct addCall is ambiguous across SIP sessions', () => {

@@ -529,6 +529,7 @@ class Telephony::VirtualPbx::ProvisioningService
       fallback_mode: source['fallback_mode'].presence || fallback[:fallback_mode] || DEFAULT_FALLBACK_MODE,
       ai_enabled: normalized_routing_ai_enabled(source, fallback),
       operator_distribution_mode: normalized_operator_distribution_mode(source, fallback),
+      show_calls_handled_by_other_operators: normalized_show_calls_handled_by_other_operators(source, fallback),
       operator_agent_aor: normalized_operator_agent_aor(source, fallback, profiles_supplied: profiles_supplied)
     }.compact
   end
@@ -544,6 +545,16 @@ class Telephony::VirtualPbx::ProvisioningService
     value = DEFAULT_OPERATOR_DISTRIBUTION_MODE if value.blank?
 
     Telephony::RoutingPolicy.normalized_operator_distribution_mode(value)
+  end
+
+  def normalized_show_calls_handled_by_other_operators(source, fallback)
+    value = if source.key?('show_calls_handled_by_other_operators')
+              source['show_calls_handled_by_other_operators']
+            else
+              fallback[:show_calls_handled_by_other_operators]
+            end
+
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def normalized_operator_agent_aor(source, fallback, profiles_supplied: false)
@@ -1068,6 +1079,7 @@ class Telephony::VirtualPbx::ProvisioningService
       routing_mode: payload.dig(:routing, :mode),
       fallback_mode: payload.dig(:routing, :fallback_mode),
       operator_distribution_mode: payload.dig(:routing, :operator_distribution_mode),
+      show_calls_handled_by_other_operators: payload.dig(:routing, :show_calls_handled_by_other_operators),
       operator_agent_aor: operator_agent_aor_for(payload),
       provider_connection_id: provider_connection.id,
       managed_by: MANAGED_BY_ONELINK,

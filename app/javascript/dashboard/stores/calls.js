@@ -71,6 +71,8 @@ const callHasSessionScope = call =>
   [callSessionKey(call), callSipProfileId(call), callInboxId(call)].some(
     isPresent
   );
+const callHasPhysicalSessionScope = call =>
+  [callSessionKey(call), callSipProfileId(call)].some(isPresent);
 const callScopesMatchForDeduplication = (call, candidate) => {
   if (!callHasSessionScope(call) && !callHasSessionScope(candidate))
     return true;
@@ -174,6 +176,9 @@ const sameNativeSipLogicalCall = (call, callData) => {
   }
   if (call?.provider !== callData?.provider) return false;
   if (!isInboundCall(call) || !isInboundCall(callData)) return false;
+  if (!sameKnownScopeValue(call?.accountId, callData?.accountId)) return false;
+  if (!sameKnownScopeValue(callInboxId(call), callInboxId(callData)))
+    return false;
 
   return sameValue(callLogicalKey(call), callLogicalKey(callData));
 };
@@ -448,6 +453,7 @@ export const useCallsStore = defineStore('calls', {
       logicalCallTerminal,
       numberRef,
       currentUserId,
+      showCallsHandledByOtherOperators = false,
     }) {
       const callData = {
         callSid,
@@ -474,14 +480,20 @@ export const useCallsStore = defineStore('calls', {
         browserJoinSupported,
         browserJoinUnsupportedReason,
         serverManagedVoiceCall,
+        operatorClaim,
+        operatorInternalExtension,
       };
       const sidCandidates = this.calls.filter(call =>
         sameCallSid(call, callData)
       );
-      if (sidCandidates.length > 1) return;
+      if (sidCandidates.length > 1 && !logicalCallKey) return;
 
       if (TERMINAL_STATUSES.includes(status)) {
-        this.rememberTerminalCall(callData);
+        this.rememberTerminalCall(
+          logicalCallTerminal === false
+            ? { ...callData, logicalCallKey: null }
+            : callData
+        );
         this.removeCall(callSid, {
           conversationId,
           provider,
@@ -497,9 +509,33 @@ export const useCallsStore = defineStore('calls', {
 
       if (this.isRecentlyTerminalCall(callData)) return;
 
-      const call = this.calls.find(
+      const eventClaimedByUserId = operatorClaimUserId(operatorClaim);
+      const ownedActiveLogicalCall =
+        status === 'in_progress' &&
+        isPresent(eventClaimedByUserId) &&
+        isPresent(currentUserId) &&
+        sameValue(eventClaimedByUserId, currentUserId)
+          ? this.calls.find(
+              item => item.isActive && sameNativeSipLogicalCall(item, callData)
+            )
+          : null;
+      const matchingCalls = this.calls.filter(
         item => sameCallSid(item, callData) || sameLiveCall(item, callData)
       );
+      const exactScopedMatches = matchingCalls.filter(item =>
+        callScopeMatchesExactly(item, callData)
+      );
+      if (
+        !ownedActiveLogicalCall &&
+        matchingCalls.length > 1 &&
+        exactScopedMatches.length !== 1
+      ) {
+        return;
+      }
+      const call =
+        ownedActiveLogicalCall ||
+        exactScopedMatches[0] ||
+        (matchingCalls.length === 1 ? matchingCalls[0] : null);
       const resolvedProvider = call?.provider || provider;
       const resolvedCallDirection = call?.callDirection || callDirection;
       const claimedByUserId =
@@ -512,17 +548,71 @@ export const useCallsStore = defineStore('calls', {
         String(claimedByUserId) !== String(currentUserId);
 
       if (claimedByAnotherOperator) {
-        this.rememberTerminalCall(callData);
-        this.removeCall(call?.callSid || callSid, {
-          conversationId,
-          provider: resolvedProvider,
-          callDirection: resolvedCallDirection,
-          logicalCallKey,
-          inboxId,
-          sipProfileId,
-          janusSessionKey,
-          cleanupClaimedBrowserCall: true,
-        });
+        const matchesClaimedLogicalCall = item =>
+          sameCallSid(item, callData) ||
+          sameNativeSipLogicalCall(item, callData);
+        const removedCalls = this.calls.filter(matchesClaimedLogicalCall);
+        this.calls = this.calls.filter(
+          item => !matchesClaimedLogicalCall(item)
+        );
+        removedCalls
+          .filter(item => NATIVE_BROWSER_SIP_PROVIDERS.has(item.provider))
+          .forEach(item => cleanupClaimedBrowserCall(item));
+
+        if (showCallsHandledByOtherOperators) {
+          this.addCall({
+            ...callData,
+            callSid: call?.callSid || callSid,
+            status,
+            provider: resolvedProvider,
+            callDirection: resolvedCallDirection || 'inbound',
+            conversationId,
+            conversationDbId,
+            conversationDisplayId,
+            communicationThreadId,
+            senderId,
+            contactId,
+            numberRef,
+            startedAt,
+            answeredAt,
+            fromNumber,
+            toNumber,
+            caller,
+            operatorCandidates,
+            browserJoinSupported: false,
+            browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+          });
+        } else {
+          this.rememberTerminalCall(callData);
+        }
+        return;
+      }
+
+      if (ownedActiveLogicalCall) {
+        this.calls = this.calls.map(item =>
+          item === ownedActiveLogicalCall
+            ? {
+                ...item,
+                status,
+                startedAt: startedAt || item.startedAt,
+                answeredAt: answeredAt || item.answeredAt,
+                conversationId: conversationId || item.conversationId,
+                conversationDbId: conversationDbId || item.conversationDbId,
+                conversationDisplayId:
+                  conversationDisplayId || item.conversationDisplayId,
+                communicationThreadId:
+                  communicationThreadId || item.communicationThreadId,
+                operatorClaim: operatorClaim || item.operatorClaim,
+                operatorCandidates:
+                  operatorCandidates || item.operatorCandidates,
+                operatorInternalExtension:
+                  operatorInternalExtension ||
+                  operatorClaim?.internal_extension ||
+                  item.operatorInternalExtension,
+              }
+            : item
+        );
+        this.dismissRelatedNativeSipIncomingCalls(ownedActiveLogicalCall);
         return;
       }
 
@@ -832,14 +922,31 @@ export const useCallsStore = defineStore('calls', {
       const sidCandidates = this.calls.filter(call =>
         sameCallSid(call, target)
       );
+      const ambiguousSid = sidCandidates.length > 1;
+      const preservesScopedActiveBranch = call =>
+        call.isActive &&
+        callHasPhysicalSessionScope(call) &&
+        !callHasPhysicalSessionScope(target) &&
+        sameNativeSipLogicalCall(call, target) &&
+        !forceLogicalTerminal;
       const matchesLogicalBranch = call =>
         sameNativeSipLogicalCall(call, target) &&
-        (forceLogicalTerminal || !call.isActive || sameCallSid(call, target));
+        !preservesScopedActiveBranch(call) &&
+        (forceLogicalTerminal ||
+          !call.isActive ||
+          (sameCallSid(call, target) && callScopeMatchesExactly(call, target)));
+      const matchesDirectCall = call =>
+        sameCallSid(call, target) &&
+        !preservesScopedActiveBranch(call) &&
+        (!ambiguousSid ||
+          forceLogicalTerminal ||
+          callScopeMatchesExactly(call, target) ||
+          sameNativeSipLogicalCall(call, target));
       if (sidCandidates.length > 1 && !this.calls.some(matchesLogicalBranch)) {
         return;
       }
       const directMatches = this.calls.filter(
-        call => sameCallSid(call, target) || matchesLogicalBranch(call)
+        call => matchesDirectCall(call) || matchesLogicalBranch(call)
       );
       let matchingCalls = directMatches;
       if (!matchingCalls.length) {
@@ -931,6 +1038,11 @@ export const useCallsStore = defineStore('calls', {
         toNumber: data?.to_number || data?.toNumber,
         caller: data?.caller,
         operatorClaim: data?.operator_claim || data?.operatorClaim || null,
+        operatorInternalExtension:
+          data?.operator_internal_extension ||
+          data?.operatorInternalExtension ||
+          data?.operator_claim?.internal_extension ||
+          data?.operatorClaim?.internalExtension,
         browserJoinSupported: false,
         browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
         logicalCallKey:
@@ -967,14 +1079,18 @@ export const useCallsStore = defineStore('calls', {
         callInboxId(scopedCallData),
       ].some(isPresent);
       const matchesClaimedCall = call =>
-        scopeMatchesClaim(call) &&
-        (sidMatchesClaim(call) ||
+        providerMatchesClaim(call) &&
+        ((scopeMatchesClaim(call) && sidMatchesClaim(call)) ||
           sameNativeSipLogicalCall(call, scopedCallData) ||
-          sameNativeSipInboundCustomer(call, scopedCallData, {
-            allowPartialScope: true,
-          }));
+          (scopeMatchesClaim(call) &&
+            sameNativeSipInboundCustomer(call, scopedCallData, {
+              allowPartialScope: true,
+            })));
       const matchedClaimCalls = this.calls.filter(matchesClaimedCall);
-      if (matchedClaimCalls.length > 1) {
+      if (
+        matchedClaimCalls.length > 1 &&
+        !isPresent(callLogicalKey(scopedCallData))
+      ) {
         if (
           claimHasSessionScope &&
           matchedClaimCalls.some(
@@ -1008,7 +1124,10 @@ export const useCallsStore = defineStore('calls', {
           }
         }
       }
-      const trackedCall = matchedClaimCalls[0];
+      const trackedCall =
+        matchedClaimCalls.find(call => call.isActive) ||
+        matchedClaimCalls.find(call => call.browserJoinSupported !== false) ||
+        matchedClaimCalls[0];
       const claimedByUserId =
         eventClaimedByUserId || operatorClaimUserId(trackedCall?.operatorClaim);
 
@@ -1017,25 +1136,50 @@ export const useCallsStore = defineStore('calls', {
       if (!isPresent(claimedByUserId) || !isPresent(currentUserId)) return;
 
       if (String(claimedByUserId) === String(currentUserId)) {
-        this.dismissRelatedNativeSipIncomingCalls(scopedCallData);
+        if (trackedCall) {
+          this.calls = this.calls.map(call =>
+            call === trackedCall
+              ? {
+                  ...call,
+                  status: data?.status || call.status,
+                  communicationThreadId:
+                    callData.communicationThreadId ||
+                    call.communicationThreadId,
+                  operatorClaim: callData.operatorClaim || call.operatorClaim,
+                  operatorInternalExtension:
+                    callData.operatorInternalExtension ||
+                    call.operatorInternalExtension,
+                }
+              : call
+          );
+        }
+        this.dismissRelatedNativeSipIncomingCalls(
+          trackedCall || scopedCallData
+        );
         return;
       }
 
       const removedCalls = this.calls.filter(matchesClaimedCall);
       const suppressionProvider =
         claimProvider || removedCalls.find(call => call.provider)?.provider;
-      callSids.forEach(callSid => {
-        this.rememberTerminalCall({
-          ...callData,
-          callSid,
-          provider: suppressionProvider,
+      const showHandledCall = Boolean(
+        data?.show_calls_handled_by_other_operators ??
+          data?.showCallsHandledByOtherOperators
+      );
+      if (!showHandledCall) {
+        callSids.forEach(callSid => {
+          this.rememberTerminalCall({
+            ...callData,
+            callSid,
+            provider: suppressionProvider,
+          });
         });
-      });
-      if (!callSids.length) {
-        this.rememberTerminalCall({
-          ...callData,
-          provider: suppressionProvider,
-        });
+        if (!callSids.length) {
+          this.rememberTerminalCall({
+            ...callData,
+            provider: suppressionProvider,
+          });
+        }
       }
 
       this.calls = this.calls.filter(call => !matchesClaimedCall(call));
@@ -1049,18 +1193,23 @@ export const useCallsStore = defineStore('calls', {
         );
       }
 
-      // The winning operator owns the in-progress call. For every other
-      // browser this event is terminal for the ringing UI: do not recreate an
-      // unanswerable card after removing the local branches above.
+      if (showHandledCall) {
+        this.addCall({
+          ...callData,
+          provider: suppressionProvider,
+        });
+      }
+
+      // The winning operator owns the in-progress call. Other browsers either
+      // keep a single informational card or treat the event as terminal for
+      // their ringing UI, depending on the channel setting.
     },
 
     dismissRelatedNativeSipIncomingCalls(targetCall) {
       this.calls = this.calls.filter(call => {
         if (call.isActive) return true;
-        if (sameCallSid(call, targetCall)) return true;
-        const sameLogicalCall =
-          callScopeMatches(call, targetCall) &&
-          isRelatedNativeSipInbound(call, targetCall);
+        const sameLogicalCall = sameNativeSipLogicalCall(call, targetCall);
+        if (sameCallSid(call, targetCall) && !sameLogicalCall) return true;
         const sameCustomerCall = sameNativeSipInboundCustomer(
           call,
           targetCall,

@@ -128,6 +128,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         fallback_mode: routing[:fallback_mode],
         ai_enabled: routing[:ai_enabled],
         operator_distribution_mode: routing[:operator_distribution_mode],
+        show_calls_handled_by_other_operators: routing[:show_calls_handled_by_other_operators],
         operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?
       }.compact,
       employees: ui_employees_payload(config[:profiles]),
@@ -237,7 +238,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       name: inbox.name,
       phone_numbers: parts.except(:provider_kind),
       resources: resources_payload(channel: channel, binding: binding, policy: policy),
-      routing: routing_payload(binding: binding, policy: policy),
+      routing: routing_payload(channel: channel, binding: binding, policy: policy),
       profiles: profiles_payload(inbox: inbox, policy: policy),
       ownership: ownership_payload(channel: channel, binding: binding),
       provider_config: sanitize(provider_config_hash(channel)),
@@ -337,8 +338,10 @@ class Telephony::VirtualPbx::ConfigBuilder
     }.compact
   end
 
-  def routing_payload(binding:, policy:)
-    return {} if binding.blank? && policy.blank?
+  def routing_payload(channel:, binding:, policy:)
+    if binding.blank? && policy.blank?
+      return { show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators? }
+    end
 
     provider_owned_sip = provider_owned_sip_provider?(binding&.provider)
     {
@@ -348,6 +351,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       operator_agent_ref: policy&.operator_agent_ref,
       operator_agent_aor: policy&.resolved_operator_agent_aor,
       operator_distribution_mode: policy&.operator_distribution_mode,
+      show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators?,
       fallback_mode: policy&.fallback_mode,
       ai_enabled: policy&.ai_enabled,
       ai_app_ref: policy&.effective_ai_app_ref

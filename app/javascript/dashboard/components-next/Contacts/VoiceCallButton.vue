@@ -1,12 +1,10 @@
 <script setup>
 import { computed, ref, useAttrs } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRoute, useRouter } from 'vue-router';
 import * as Sentry from '@sentry/vue';
 import { useMapGetter, useStore } from 'dashboard/composables/store';
 import { INBOX_TYPES } from 'dashboard/helper/inbox';
 import { useAlert } from 'dashboard/composables';
-import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
 import { useCallsStore } from 'dashboard/stores/calls';
 import { useWhatsappCallsStore } from 'dashboard/stores/whatsappCalls';
 import WebphoneClient from 'dashboard/api/channel/voice/webphoneClient';
@@ -29,8 +27,6 @@ const emit = defineEmits(['callInitiated']);
 
 defineOptions({ inheritAttrs: false });
 const attrs = useAttrs();
-const route = useRoute();
-const router = useRouter();
 const store = useStore();
 const callsStore = useCallsStore();
 const whatsappCallsStore = useWhatsappCallsStore();
@@ -148,91 +144,6 @@ const isCallButtonBusy = computed(
     whatsappCallsStore.hasActiveCall ||
     whatsappCallsStore.isAccepting
 );
-
-const sameValue = (left, right) =>
-  left !== undefined &&
-  left !== null &&
-  right !== undefined &&
-  right !== null &&
-  String(left) === String(right);
-
-const selectedChatContactId = () => {
-  const selectedChat = store.getters.getSelectedChat;
-  return (
-    selectedChat?.contact_id ||
-    selectedChat?.contactId ||
-    selectedChat?.meta?.sender?.id ||
-    selectedChat?.meta?.sender?.contact_id ||
-    selectedChat?.meta?.sender?.contactId ||
-    null
-  );
-};
-
-const currentCommunicationThreadId = () =>
-  route.params?.communication_thread_id || route.params?.communicationThreadId;
-
-const selectedChatCommunicationThreadId = () => {
-  const selectedChat = store.getters.getSelectedChat;
-  return (
-    selectedChat?.communication_thread_id ||
-    selectedChat?.communicationThreadId ||
-    selectedChat?.communication_thread?.display_id ||
-    selectedChat?.communicationThread?.displayId ||
-    selectedChat?.communication_thread?.id ||
-    selectedChat?.communicationThread?.id ||
-    null
-  );
-};
-
-const isCommunicationThreadRoute = () =>
-  route.name === 'communication_thread_conversation' ||
-  Boolean(currentCommunicationThreadId());
-
-const navigateToConversation = response => {
-  if (sameValue(selectedChatContactId(), props.contactId)) return;
-
-  const accountId = route.params.accountId;
-  const conversationId = response?.conversation_id || response;
-  const communicationThreadId =
-    response?.communication_thread_id || response?.communicationThreadId;
-  if (conversationId && accountId) {
-    if (communicationThreadId) {
-      if (
-        sameValue(currentCommunicationThreadId(), communicationThreadId) ||
-        sameValue(selectedChatCommunicationThreadId(), communicationThreadId)
-      ) {
-        return;
-      }
-
-      const path = frontendURL(
-        conversationUrl({
-          accountId,
-          id: communicationThreadId,
-          communicationThread: true,
-        })
-      );
-      router.push({ path });
-      return;
-    }
-
-    if (isCommunicationThreadRoute()) return;
-
-    if (
-      String(route.params?.conversation_id || route.params?.conversationId) ===
-      String(conversationId)
-    ) {
-      return;
-    }
-
-    const path = frontendURL(
-      conversationUrl({
-        accountId,
-        id: conversationId,
-      })
-    );
-    router.push({ path });
-  }
-};
 
 const BROWSER_SIP_PROVIDERS = new Set(['asterisk_analog', 'sipuni', 'binotel']);
 
@@ -367,7 +278,6 @@ const startCall = async inbox => {
 
     callsStore.addCall(call);
     useAlert(t('CONTACT_PANEL.CALL_INITIATED'));
-    navigateToConversation(response);
 
     if (shouldStartBrowserSip) {
       try {

@@ -270,6 +270,43 @@ describe('FloatingCallWidget', () => {
     wrapper.unmount();
   });
 
+  it('keeps one active card when a sibling ringing branch is still present', () => {
+    mockSession.activeCall = {
+      callSid: 'sipuni:branch-202',
+      provider: 'sipuni',
+      inboxId: 194,
+      logicalCallKey: 'janus-inbound:active-shared',
+      callDirection: 'inbound',
+      status: 'in_progress',
+      isActive: true,
+      browserJoinSupported: true,
+    };
+    mockSession.hasActiveCall = true;
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:branch-207',
+        provider: 'sipuni',
+        inboxId: 194,
+        logicalCallKey: 'janus-inbound:active-shared',
+        callDirection: 'inbound',
+        status: 'ringing',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({ inbox_id: 194 });
+    storeGetters.getInbox.mockReturnValue({
+      id: 194,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.findAll('[aria-label="End call"]')).toHaveLength(1);
+    expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Call in progress');
+    wrapper.unmount();
+  });
+
   it('keeps an informational inbound card silent and without call controls', () => {
     mockSession.incomingCalls = [
       {
@@ -448,7 +485,11 @@ describe('FloatingCallWidget', () => {
         callDirection: 'inbound',
         status: 'in_progress',
         browserJoinSupported: false,
-        operatorClaim: { user_name: 'Ayan' },
+        operatorClaim: {
+          user_name: 'Ayan',
+          internal_extension: '202',
+        },
+        operatorInternalExtension: '207',
         fromNumber: '+77070001002',
         toNumber: '+77070001001',
       },
@@ -467,10 +508,41 @@ describe('FloatingCallWidget', () => {
 
     await vi.advanceTimersByTimeAsync(7000);
 
-    expect(wrapper.text()).toContain('Handled by: Ayan');
+    expect(wrapper.text()).toContain('Handled by: Ayan (202)');
+    expect(wrapper.text().match(/Ayan/g)).toHaveLength(1);
     expect(wrapper.text()).toContain('00:07');
     expect(wrapper.find('[aria-label="Reject"]').exists()).toBe(false);
     expect(wrapper.find('[aria-label="Call"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('does not identify the handling operator from routing candidates', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:handled-without-claim',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        status: 'in_progress',
+        browserJoinSupported: false,
+        operatorCandidates: [
+          { user_id: 179, name: 'Candidate', internal_extension: '502' },
+        ],
+        operatorInternalExtension: '502',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({ inbox_id: 4769 });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('Handled by another operator');
+    expect(wrapper.text()).not.toContain('Handled by: Candidate');
     wrapper.unmount();
   });
 
@@ -703,7 +775,7 @@ describe('FloatingCallWidget', () => {
     });
   });
 
-  it('opens the communication thread returned by claim after answering a call', async () => {
+  it('keeps the current page after answering a call', async () => {
     mockSession.joinCall.mockResolvedValue({
       joinSupported: true,
       communicationThreadId: 72,
@@ -734,20 +806,10 @@ describe('FloatingCallWidget', () => {
     await wrapper.get('[aria-label="Call"]').trigger('click');
     await flushPromises();
 
-    expect(routerMock.push).toHaveBeenCalledWith({
-      name: 'communication_thread_conversation',
-      params: {
-        accountId: 1,
-        communication_thread_id: 72,
-      },
-      query: {
-        assignee_type: 'all',
-        status: 'open',
-      },
-    });
+    expect(routerMock.push).not.toHaveBeenCalled();
   });
 
-  it('opens the communication thread returned by claim when browser join falls back', async () => {
+  it('keeps the current page when browser join falls back', async () => {
     mockSession.joinCall.mockResolvedValue({
       joinSupported: false,
       communicationThreadId: 72,
@@ -779,22 +841,7 @@ describe('FloatingCallWidget', () => {
     await wrapper.get('[aria-label="Call"]').trigger('click');
     await flushPromises();
 
-    expect(routerMock.push).toHaveBeenCalledWith({
-      name: 'communication_thread_conversation',
-      params: {
-        accountId: 1,
-        communication_thread_id: 72,
-      },
-      query: {
-        assignee_type: 'all',
-        status: 'open',
-      },
-    });
-    expect(routerMock.push).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'conversation_through_inbox',
-      })
-    );
+    expect(routerMock.push).not.toHaveBeenCalled();
   });
 
   it('keeps a retryable incoming claim on the current page', async () => {

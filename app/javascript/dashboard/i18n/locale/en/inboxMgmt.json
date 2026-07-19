@@ -510,6 +510,10 @@
             "BROADCAST": "Ring all available operators",
             "TARGETED": "Route by employee extension"
           },
+          "HANDLED_CALL_VISIBILITY": {
+            "LABEL": "Show active calls to other operators",
+            "DESCRIPTION": "After an operator answers, show the other operators who is handling the call. The card is informational and cannot be answered."
+          },
           "OPERATOR_TARGET_REQUIRED": "SIP AOR or employee extension is required when operator routing is selected",
           "MANAGEMENT_TITLE": "Virtual PBX",
           "MANAGEMENT_SUBTITLE": "OneLink manages the channel settings, employees, and SIP access through Janus SIP.",

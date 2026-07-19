@@ -285,6 +285,7 @@ class Telephony::OperatorCallClaimService
         'operator_claim' => {
           'agent_binding_id' => operator_agent_binding&.id,
           'sip_profile_id' => sip_profile&.id,
+          'internal_extension' => sip_profile&.internal_extension,
           'agent_ref' => operator_agent_ref,
           'agent_aor' => operator_agent_aor,
           'user_id' => user.id,
@@ -307,6 +308,7 @@ class Telephony::OperatorCallClaimService
     {
       agent_binding_id: claim_fence_session.agent_binding_id,
       sip_profile_id: claim_fence_session.metadata.to_h.dig('operator_claim', 'sip_profile_id'),
+      internal_extension: claim_fence_session.metadata.to_h.dig('operator_claim', 'internal_extension'),
       user_id: claim_fence_session.agent_binding&.user_id || operator_claim_user_id,
       user_name: claimed_user_name
     }.compact
@@ -322,6 +324,7 @@ class Telephony::OperatorCallClaimService
       agent_aor: operator_agent_aor,
       agent_binding_id: operator_agent_binding&.id,
       sip_profile_id: sip_profile&.id,
+      internal_extension: sip_profile&.internal_extension,
       user_id: user.id,
       user_name: user.name
     }.compact
@@ -369,7 +372,11 @@ class Telephony::OperatorCallClaimService
   end
 
   def claimed_call_pubsub_tokens
-    account.users.where(id: claimed_call_candidate_user_ids).filter_map(&:pubsub_token).uniq
+    tokens = account.users.where(id: claimed_call_candidate_user_ids).filter_map(&:pubsub_token)
+    if call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true
+      tokens += call_session.inbox.members.filter_map(&:pubsub_token)
+    end
+    tokens.uniq
   end
 
   def claimed_call_candidate_user_ids
@@ -433,6 +440,8 @@ class Telephony::OperatorCallClaimService
       relatedCallSids: related_claimed_call_sessions.map(&:external_call_ref).uniq,
       claimed_by_user_id: user.id,
       claimedByUserId: user.id,
+      show_calls_handled_by_other_operators:
+        call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true,
       operator_claim: claim_payload
     }.compact
   end

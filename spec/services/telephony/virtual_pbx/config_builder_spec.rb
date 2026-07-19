@@ -22,6 +22,18 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     )
   end
 
+  it 'returns handled-call visibility without a number binding or routing policy' do
+    voice_channel = create_native_sip_channel(
+      phone_number: '+17775550124',
+      provider_config: { show_calls_handled_by_other_operators: true }
+    )
+    voice_channel.inbox.telephony_number_binding&.destroy!
+
+    payload = described_class.new(account: account).for_inbox(voice_channel.inbox)
+
+    expect(payload.dig(:routing, :show_calls_handled_by_other_operators)).to be(true)
+  end
+
   it 'builds a split display/ingress bundle for legacy Asterisk analog resources' do
     voice_channel = create_native_sip_channel(
       phone_number: '+17715555175',

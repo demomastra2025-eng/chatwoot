@@ -114,6 +114,97 @@ describe('voice helper', () => {
     expect(callsStore.calls).toEqual([]);
   });
 
+  it('keeps a scoped active native SIP branch on an underscoped terminal message update', () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'shared-terminal-message-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 42,
+      logicalCallKey: 'native-sip:shared-terminal-message',
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+      status: 'in_progress',
+    });
+    callsStore.setCallActive('shared-terminal-message-sid', 'sipuni', {
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+    });
+
+    handleVoiceCallUpdated(
+      vi.fn(),
+      {
+        content_type: 'voice_call',
+        conversation_id: 19,
+        inbox_id: 42,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'shared-terminal-message-sid',
+            call_direction: 'inbound',
+            provider: 'sipuni',
+            status: 'completed',
+            logical_call_key: 'native-sip:shared-terminal-message',
+          },
+        },
+      },
+      99
+    );
+
+    expect(callsStore.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'shared-terminal-message-sid',
+        isActive: true,
+        janusSessionKey: 'sip_profile:79',
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
+  it('ends a scoped active branch when the message marks the logical call terminal', async () => {
+    const callsStore = useCallsStore();
+    callsStore.addCall({
+      callSid: 'canonical-terminal-message-sid',
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 42,
+      logicalCallKey: 'native-sip:canonical-terminal-message',
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+      status: 'in_progress',
+    });
+    callsStore.setCallActive('canonical-terminal-message-sid', 'sipuni', {
+      sipProfileId: 79,
+      janusSessionKey: 'sip_profile:79',
+    });
+
+    handleVoiceCallUpdated(
+      vi.fn(),
+      {
+        content_type: 'voice_call',
+        conversation_id: 19,
+        inbox_id: 42,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'canonical-terminal-message-sid',
+            call_direction: 'inbound',
+            provider: 'sipuni',
+            status: 'completed',
+            logical_call_key: 'native-sip:canonical-terminal-message',
+            logical_call_terminal: true,
+          },
+        },
+      },
+      99
+    );
+
+    expect(callsStore.calls).toEqual([]);
+    await vi.waitFor(() => {
+      expect(endClientCallMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('resolves inbox details from metadata when a ringing update creates the call', () => {
     const commit = vi.fn();
 

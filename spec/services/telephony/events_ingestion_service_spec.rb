@@ -194,6 +194,14 @@ RSpec.describe Telephony::EventsIngestionService do
     it 'broadcasts lightweight realtime status updates without waiting for message broadcasts' do
       operator = create(:user, account: account)
       create(:inbox_member, inbox: existing_call_session.inbox, user: operator)
+      existing_call_session.update!(
+        metadata: {
+          'operator_claim' => {
+            'user_id' => operator.id,
+            'internal_extension' => '202'
+          }
+        }
+      )
       allow(ActionCable.server).to receive(:broadcast)
 
       described_class.new(
@@ -213,10 +221,69 @@ RSpec.describe Telephony::EventsIngestionService do
             status: 'completed',
             logical_call_terminal: true,
             provider: existing_call_session.provider,
-            inbox_id: existing_call_session.inbox_id
+            inbox_id: existing_call_session.inbox_id,
+            operator_internal_extension: '202',
+            show_calls_handled_by_other_operators: false
           )
         )
       )
+    end
+
+    it 'uses the canonical operator claim for a sibling native SIP branch status' do
+      operator = create(:user, account: account)
+      logical_call_key = 'native-sip:shared-operator-claim'
+      root_ref = 'sipuni:janus:operator-202'
+      existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: root_ref,
+        status: 'in_progress',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_call_key,
+            'logical_call_group_ref' => root_ref,
+            'target_sip_profile_id' => 79
+          },
+          'operator_claim' => {
+            'user_id' => operator.id,
+            'user_name' => operator.name,
+            'sip_profile_id' => 79,
+            'internal_extension' => '202'
+          }
+        }
+      )
+      sibling = create(
+        :telephony_call_session,
+        account: account,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: 'sipuni:janus:operator-207',
+        status: 'in_progress',
+        started_at: existing_call_session.started_at,
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_call_key,
+            'logical_call_group_ref' => root_ref,
+            'target_sip_profile_id' => 81
+          }
+        }
+      )
+
+      service = described_class.new(payload: payload)
+      realtime_payload = service.send(:realtime_call_status_payload, sibling)
+
+      expect(realtime_payload).to include(
+        logical_call_key: logical_call_key,
+        operator_internal_extension: '202',
+        operator_claim: include(
+          'user_id' => operator.id,
+          'sip_profile_id' => 79,
+          'internal_extension' => '202'
+        )
+      )
+      expect(service.send(:realtime_call_status_user_ids, sibling)).to include(operator.id)
     end
 
     it 'sends a native SIP physical branch status only to its routed operator' do
@@ -257,6 +324,40 @@ RSpec.describe Telephony::EventsIngestionService do
         other_member.pubsub_token,
         anything
       )
+    end
+
+    it 'includes other inbox operators in native SIP statuses when handled-call visibility is enabled' do
+      target_operator = create(:user, account: account)
+      other_member = create(:user, account: account)
+      channel = create(
+        :channel_voice,
+        :sipuni,
+        account: account,
+        phone_number: '+17775550125',
+        provider_config: { show_calls_handled_by_other_operators: true }
+      )
+      create(:inbox_member, inbox: channel.inbox, user: target_operator)
+      create(:inbox_member, inbox: channel.inbox, user: other_member)
+      existing_call_session.update!(
+        inbox: channel.inbox,
+        provider: 'sipuni',
+        direction: 'inbound',
+        metadata: {
+          'operator_claim' => { 'user_id' => target_operator.id },
+          'metadata' => {
+            'target_user_id' => target_operator.id,
+            'logical_call_key' => 'native-sip:observer-status',
+            'logical_call_group_ref' => existing_call_session.external_call_ref
+          }
+        }
+      )
+
+      tokens = described_class.new(payload: payload).send(
+        :realtime_call_status_pubsub_tokens,
+        existing_call_session
+      )
+
+      expect(tokens).to include(target_operator.pubsub_token, other_member.pubsub_token)
     end
 
     it 'does not rebroadcast a realtime status update for an already processed event' do
