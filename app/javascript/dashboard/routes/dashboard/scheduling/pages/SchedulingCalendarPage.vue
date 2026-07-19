@@ -74,6 +74,7 @@ const router = useRouter();
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
 const companyOptions = ref([]);
+let companySearchRequestId = 0;
 const customFieldFilters = ref({});
 const filterDialogRef = ref(null);
 const appointmentFilterDraft = reactive({
@@ -688,6 +689,9 @@ const loadPage = async () => {
 };
 
 const loadCompanies = async query => {
+  companySearchRequestId += 1;
+  const requestId = companySearchRequestId;
+
   if (!companySelectionEnabled.value) {
     companyOptions.value = [];
     return;
@@ -696,6 +700,8 @@ const loadCompanies = async query => {
   const response = query
     ? await CompanyAPI.search(query, 1)
     : await CompanyAPI.get();
+  if (requestId !== companySearchRequestId) return;
+
   companyOptions.value = mergeCompanyOptions(
     normalizePayload(response.data).map(buildCompanyOption)
   );

@@ -232,6 +232,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
       <div class="relative">
         <Button
           :id="triggerId"
+          :aria-label="attrs['aria-label']"
           variant="outline"
           :color="triggerColor"
           justify="start"
