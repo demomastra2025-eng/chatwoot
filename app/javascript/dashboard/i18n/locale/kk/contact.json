@@ -632,7 +632,7 @@
       "GO_TO_CONVERSATION": "View",
       "SUCCESS_MESSAGE": "The message was sent successfully!",
       "ERROR_MESSAGE": "An error occurred while creating the conversation. Please try again later.",
-      "NO_INBOX_ALERT": "There are no available inboxes to start a conversation with this contact.",
+      "NO_INBOX_ALERT": "Бұл контакт үшін диалог бастауға қолжетімді арна жоқ.",
       "CONTACT_SELECTOR": {
         "LABEL": "To:",
         "TAG_INPUT_PLACEHOLDER": "Search for a contact with name, email or phone number",
