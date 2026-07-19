@@ -18,6 +18,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  compact: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['update:modelValue']);
@@ -154,7 +158,8 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         color="slate"
         variant="outline"
         justify="start"
-        class="!h-10 !max-w-full !rounded-lg !bg-n-alpha-black2 !px-3 !py-2 !font-normal !outline-n-weak hover:!outline-n-slate-6"
+        :class="props.compact ? '!h-8' : '!h-10'"
+        class="!max-w-full !rounded-lg !bg-n-alpha-black2 !px-3 !py-2 !font-normal !outline-n-weak hover:!outline-n-slate-6"
         @click="toggleDropdown"
       >
         <span class="min-w-0 flex-1 truncate text-left text-sm text-n-slate-12">

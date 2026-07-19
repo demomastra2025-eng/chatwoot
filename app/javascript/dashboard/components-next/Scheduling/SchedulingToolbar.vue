@@ -27,6 +27,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  showToday: {
+    type: Boolean,
+    default: true,
+  },
+  showViewSwitcher: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits([
@@ -50,8 +58,15 @@ const translatedViews = computed(() =>
     class="px-5 pb-2 pt-4"
     :class="props.transparent ? 'bg-transparent' : 'bg-n-surface-1'"
   >
-    <div class="grid gap-3 xl:grid-cols-[auto_1fr_auto] xl:items-center">
-      <div class="min-w-0">
+    <div
+      class="grid gap-3 xl:items-center"
+      :class="
+        showViewSwitcher
+          ? 'xl:grid-cols-[auto_1fr_auto]'
+          : 'xl:grid-cols-[1fr_auto]'
+      "
+    >
+      <div v-if="showViewSwitcher" class="min-w-0">
         <SchedulingViewSwitcher
           :model-value="modelValue"
           :views="translatedViews"
@@ -77,6 +92,7 @@ const translatedViews = computed(() =>
           @click="emit('next')"
         />
         <Button
+          v-if="showToday"
           size="sm"
           color="slate"
           variant="outline"
