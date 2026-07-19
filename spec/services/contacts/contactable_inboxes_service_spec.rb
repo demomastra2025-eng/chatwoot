@@ -100,6 +100,63 @@ describe Contacts::ContactableInboxesService do
       end
     end
 
+    context 'when the contact phone is stored by the voice call runtime' do
+      before do
+        @voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+77000000001')
+        @voice_inbox = @voice_channel.inbox
+        @whatsapp_inbox = create(
+          :channel_whatsapp,
+          account: account,
+          sync_templates: false,
+          validate_provider_config: false
+        ).inbox
+        @voice_contact = create(:contact, account: account, phone_number: nil)
+        @voice_conversation = create(:conversation, account: account, inbox: @voice_inbox, contact: @voice_contact)
+        @voice_call_session = create(
+          :telephony_call_session,
+          account: account,
+          conversation: @voice_conversation,
+          contact: @voice_contact,
+          inbox: @voice_inbox,
+          number_binding: @voice_inbox.telephony_number_binding,
+          direction: 'inbound',
+          from_number: '+77000000002',
+          to_number: @voice_channel.phone_number
+        )
+      end
+
+      it 'uses the latest inbound voice caller number for WhatsApp' do
+        @voice_call_session.update!(contact: nil)
+        contactable_inboxes = described_class.new(contact: @voice_contact).get
+
+        expect(contactable_inboxes).to include(
+          { source_id: '77000000002', inbox: whatsapp_web_inbox }
+        )
+        expect(contactable_inboxes).to include(
+          hash_including(source_id: '77000000002', inbox: @whatsapp_inbox)
+        )
+        expect(contactable_inboxes).to include(
+          { source_id: '+77000000002', inbox: @voice_inbox }
+        )
+      end
+
+      it 'uses a phone-like voice contact inbox source when no call session exists' do
+        @voice_call_session.destroy!
+        create(
+          :contact_inbox,
+          contact: @voice_contact,
+          inbox: @voice_inbox,
+          source_id: '+77000000003'
+        )
+
+        contactable_inboxes = described_class.new(contact: @voice_contact).get
+
+        expect(contactable_inboxes).to include(
+          { source_id: '77000000003', inbox: whatsapp_web_inbox }
+        )
+      end
+    end
+
     context 'when telegram personal inbox is available' do
       it 'returns the telegram user id from contact attributes' do
         contact.update!(additional_attributes: { 'social_telegram_user_id' => 4242 })
