@@ -232,6 +232,7 @@ class Telephony::EventsIngestionService
       end
     end
 
+    validate_call_session_tenant_links!(call_session, account) if call_session.present?
     broadcast_realtime_call_status!(call_session) if call_session.present? && realtime_status_event?
 
     if call_session.present? && terminal_late_terminal_event
@@ -353,15 +354,18 @@ class Telephony::EventsIngestionService
 
   def realtime_call_status_pubsub_tokens(call_session)
     user_ids = realtime_call_status_user_ids(call_session)
-    tokens = call_session.account.users.where(id: user_ids).filter_map(&:pubsub_token)
+    account = call_session.account
+    tokens = account.users.where(id: user_ids).filter_map(&:pubsub_token)
+    inbox = account.inboxes.find_by(id: call_session.inbox_id)
     native_sip_operator_scope = native_sip_call_session?(call_session) &&
                                 call_session.direction == 'inbound' &&
                                 user_ids.present?
     show_to_other_operators =
-      call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true &&
+      inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true &&
       realtime_call_status_claimed?(call_session)
-    if call_session.inbox.present? && (!native_sip_operator_scope || show_to_other_operators)
-      tokens += call_session.inbox.members.filter_map(&:pubsub_token)
+    if inbox.present? && (!native_sip_operator_scope || show_to_other_operators)
+      member_user_ids = inbox.inbox_members.select(:user_id)
+      tokens += account.users.where(id: member_user_ids).filter_map(&:pubsub_token)
     end
     tokens.uniq
   end
@@ -1297,14 +1301,7 @@ class Telephony::EventsIngestionService
   end
 
   def validate_call_session_tenant_links!(call_session, account)
-    conversation = call_session.conversation
-    account_records = [call_session.inbox, call_session.contact, conversation, conversation&.inbox, conversation&.contact].compact
-    valid_account_links = call_session.account_id == account.id && account_records.all? { |record| record.account_id == account.id }
-    contact_inbox = conversation&.contact_inbox
-    valid_contact_inbox = conversation.blank? ||
-                          (contact_inbox.present? && contact_inbox.inbox_id == conversation.inbox_id &&
-                            contact_inbox.contact_id == conversation.contact_id)
-    return if valid_account_links && valid_contact_inbox
+    return if call_session.tenant_links_match?(account)
 
     raise Telephony::Error.new(code: 'CALL_SESSION_TENANT_MISMATCH', message: 'Call session links belong to another account',
                                status: :unprocessable_content)
@@ -1409,9 +1406,7 @@ class Telephony::EventsIngestionService
       contact_id: contact.id,
       status: :open
     }
-    unless native_sip_call_session?(call_session) && reuse_existing_conversation
-      attrs[:identifier] = conversation_identifier || call_ref
-    end
+    attrs[:identifier] = conversation_identifier || call_ref unless native_sip_call_session?(call_session) && reuse_existing_conversation
 
     account.conversations.create!(attrs)
   end

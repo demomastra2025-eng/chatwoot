@@ -362,7 +362,7 @@ RSpec.describe Voice::InboundCallBuilder do
         expect(existing_conversation.additional_attributes).to include(
           'call_direction' => 'inbound',
           'call_status' => 'ringing',
-          "#{provider}_call_ref" => call_sid,
+          'telephony_call_ref' => call_sid,
           'from_number' => from_number,
           'to_number' => channel.phone_number
         )

@@ -104,7 +104,8 @@ class Telephony::VirtualPbx::ProvisioningService
     )
   end
 
-  def provision(inbox_id:, remote_commit: false, include_diagnostics: false)
+  # Keep remote_commit in the public service contract while remote mutations remain fail-closed.
+  def provision(inbox_id:, remote_commit: false, include_diagnostics: false) # rubocop:disable Lint/UnusedMethodArgument
     config = config_builder.for_inbox(inbox_id)
     plan = local_provisioning_plan(steps: update_steps({}, config))
 
@@ -285,7 +286,8 @@ class Telephony::VirtualPbx::ProvisioningService
     ]
   end
 
-  def local_provisioning_plan(steps: [], status: 'local_only')
+  # Keep steps in the plan-builder contract until remote operations are enabled.
+  def local_provisioning_plan(steps: [], status: 'local_only') # rubocop:disable Lint/UnusedMethodArgument
     {
       status: status,
       remote_mutations: 'disabled',
@@ -328,8 +330,9 @@ class Telephony::VirtualPbx::ProvisioningService
     payload
   end
 
+  # Keep remote_commit accepted while mutations are intentionally local-only.
   def mutation_payload(operation, mutation_result, normalized_payload, steps, existing_config: nil, prebuilt_plan: nil, remote_result: nil,
-                       remote_commit: false, include_diagnostics: false)
+                       remote_commit: false, include_diagnostics: false) # rubocop:disable Lint/UnusedMethodArgument
     config = mutation_result[:inbox_id].present? ? config_builder.for_inbox(mutation_result[:inbox_id]) : nil
     plan = prebuilt_plan || local_provisioning_plan(steps: steps)
 
@@ -717,8 +720,12 @@ class Telephony::VirtualPbx::ProvisioningService
     ActiveRecord::Base.transaction do
       refs = generated_refs(payload)
       provider_connection = upsert_provider_connection!(payload, refs: refs)
-      channel = Channel::Voice.create!(account: account, phone_number: payload[:display_phone_number], provider: voice_provider_for(payload[:provider_kind]),
-                                       provider_config: provider_config_for(payload, provider_connection, refs: refs))
+      channel = Channel::Voice.create!(
+        account: account,
+        phone_number: payload[:display_phone_number],
+        provider: voice_provider_for(payload[:provider_kind]),
+        provider_config: provider_config_for(payload, provider_connection, refs: refs)
+      )
       inbox = Inbox.create!(account: account, channel: channel, name: payload[:channel_name])
       ensure_inbox_members_for_profiles!(inbox, payload)
       binding = upsert_number_binding!(inbox, channel, payload, provider_connection, refs: refs)

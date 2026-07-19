@@ -15,6 +15,7 @@ class Telephony::OperatorCallClaimService
     end
 
     call_session.reload
+    validate_call_session_tenant_links!
     broadcast_claimed_call!
     claim_payload
   end
@@ -40,6 +41,7 @@ class Telephony::OperatorCallClaimService
   def claim_locked_call!
     call_session.reload
     claim_fence_session.reload
+    validate_call_session_tenant_links!
     raise_terminal_call! if call_session.terminal? || claim_fence_session.terminal?
     raise_not_candidate! unless candidate_user?
 
@@ -373,10 +375,23 @@ class Telephony::OperatorCallClaimService
 
   def claimed_call_pubsub_tokens
     tokens = account.users.where(id: claimed_call_candidate_user_ids).filter_map(&:pubsub_token)
-    if call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true
-      tokens += call_session.inbox.members.filter_map(&:pubsub_token)
+    inbox = account.inboxes.find_by(id: call_session.inbox_id)
+    if inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true
+      member_user_ids = inbox.inbox_members.select(:user_id)
+      tokens += account.users.where(id: member_user_ids).filter_map(&:pubsub_token)
     end
     tokens.uniq
+  end
+
+  def validate_call_session_tenant_links!
+    sessions = [call_session, claim_fence_session].uniq
+    return if sessions.all? { |session| session.tenant_links_match?(account) }
+
+    raise Telephony::Error.new(
+      code: 'CALL_SESSION_TENANT_MISMATCH',
+      message: 'Call session links belong to another account',
+      status: :unprocessable_content
+    )
   end
 
   def claimed_call_candidate_user_ids

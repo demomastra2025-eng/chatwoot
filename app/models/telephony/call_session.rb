@@ -129,6 +129,29 @@ class Telephony::CallSession < ApplicationRecord
     TERMINAL_STATUSES.include?(canonical_status)
   end
 
+  def tenant_links_match?(expected_account)
+    return false unless account_id == expected_account.id
+
+    account_records = [
+      inbox,
+      contact,
+      conversation,
+      conversation&.inbox,
+      conversation&.contact,
+      number_binding,
+      number_binding&.inbox,
+      agent_binding
+    ].compact
+    return false unless account_records.all? { |record| record.account_id == expected_account.id }
+    return false if agent_binding.present? && !expected_account.users.exists?(id: agent_binding.user_id)
+
+    return true if conversation.blank?
+    return false unless conversation.inbox_id == inbox_id && conversation.contact_id == contact_id
+
+    contact_inbox = conversation.contact_inbox
+    contact_inbox.present? && contact_inbox.inbox_id == conversation.inbox_id && contact_inbox.contact_id == conversation.contact_id
+  end
+
   def latest_voice_message
     conversation&.messages&.voice_calls&.order(created_at: :desc)&.first
   end

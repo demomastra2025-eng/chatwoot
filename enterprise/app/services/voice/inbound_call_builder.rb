@@ -124,7 +124,7 @@ class Voice::InboundCallBuilder
       'call_status' => 'ringing',
       'conference_sid' => Voice::Conference::Name.for(conversation),
       'from_number' => normalized_from_number,
-      'to_number' => inbox.channel&.phone_number
+      'to_number' => inbox.channel&.try(:phone_number)
     )
     attrs['meta'] = attrs['meta'].is_a?(Hash) ? attrs['meta'] : {}
     attrs['meta']['initiated_at'] = timestamp
@@ -150,7 +150,7 @@ class Voice::InboundCallBuilder
         status: 'ringing',
         conference_sid: conversation.additional_attributes['conference_sid'],
         from_number: normalized_from_number,
-        to_number: inbox.channel&.phone_number
+        to_number: inbox.channel&.try(:phone_number)
       },
       timestamps: { created_at: timestamp, ringing_at: timestamp }
     )
@@ -171,7 +171,8 @@ class Voice::InboundCallBuilder
   end
 
   def provider_owned_sip_provider?
-    inbox.channel&.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
+    channel = inbox.channel
+    channel.is_a?(Channel::Voice) && channel.provider.to_s.in?(PROVIDER_OWNED_SIP_PROVIDERS)
   end
 
   def native_telephony_provider?

@@ -239,7 +239,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       phone_numbers: parts.except(:provider_kind),
       resources: resources_payload(channel: channel, binding: binding, policy: policy),
       routing: routing_payload(channel: channel, binding: binding, policy: policy),
-      profiles: profiles_payload(inbox: inbox, policy: policy),
+      profiles: profiles_payload(inbox: inbox),
       ownership: ownership_payload(channel: channel, binding: binding),
       provider_config: sanitize(provider_config_hash(channel)),
       metadata: sanitize(binding&.metadata || {}),
@@ -339,9 +339,7 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def routing_payload(channel:, binding:, policy:)
-    if binding.blank? && policy.blank?
-      return { show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators? }
-    end
+    return { show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators? } if binding.blank? && policy.blank?
 
     provider_owned_sip = provider_owned_sip_provider?(binding&.provider)
     {
@@ -358,7 +356,7 @@ class Telephony::VirtualPbx::ConfigBuilder
     }.compact
   end
 
-  def profiles_payload(inbox:, policy:)
+  def profiles_payload(inbox:)
     account.telephony_sip_profiles
            .where(inbox: inbox)
            .recent

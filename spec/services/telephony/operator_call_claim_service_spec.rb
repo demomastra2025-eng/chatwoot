@@ -38,10 +38,13 @@ RSpec.describe Telephony::OperatorCallClaimService do
       'operator_candidate_agent_refs' => [winner_binding.agent_ref, other_binding.agent_ref]
     }
   end
+  let(:conversation) { create(:conversation, account: account, inbox: inbox) }
   let(:call_session) do
     create(
       :telephony_call_session,
       account: account,
+      conversation: conversation,
+      contact: conversation.contact,
       inbox: inbox,
       direction: 'inbound',
       status: 'ringing',
@@ -138,8 +141,26 @@ RSpec.describe Telephony::OperatorCallClaimService do
     )
   end
 
+  it 'rejects malformed foreign inbox links before claim mutation or broadcast' do
+    foreign_account = create(:account)
+    foreign_inbox = create(:inbox, account: foreign_account)
+    foreign_member = create(:user, account: foreign_account, role: :agent)
+    create(:inbox_member, inbox: foreign_inbox, user: foreign_member)
+    call_session.update_column(:inbox_id, foreign_inbox.id) # rubocop:disable Rails/SkipsModelValidations
+    allow(ActionCable.server).to receive(:broadcast)
+
+    expect do
+      described_class.new(account: account, user: winner_user, call_ref: call_session.external_call_ref).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH') }
+
+    expect(call_session.reload).to have_attributes(status: 'ringing', agent_binding_id: nil)
+    expect(ActionCable.server).not_to have_received(:broadcast)
+  end
+
   it 'broadcasts the claimed call to other inbox operators when visibility is enabled' do
     observer_user = create(:user, account: account, role: :agent)
+    foreign_account = create(:account)
+    foreign_member = create(:user, account: foreign_account, role: :agent)
     channel = create(
       :channel_voice,
       :sipuni,
@@ -150,9 +171,13 @@ RSpec.describe Telephony::OperatorCallClaimService do
     [winner_user, other_user, observer_user].each do |operator|
       create(:inbox_member, inbox: channel.inbox, user: operator)
     end
+    create(:inbox_member, inbox: channel.inbox, user: foreign_member)
+    voice_conversation = create(:conversation, account: account, inbox: channel.inbox)
     voice_call = create(
       :telephony_call_session,
       account: account,
+      conversation: voice_conversation,
+      contact: voice_conversation.contact,
       inbox: channel.inbox,
       number_binding: channel.inbox.telephony_number_binding,
       provider: 'sipuni',
@@ -172,6 +197,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
     ).perform
 
     expect(broadcasts.map(&:first)).to include(observer_user.pubsub_token)
+    expect(broadcasts.map(&:first)).not_to include(foreign_member.pubsub_token)
     expect(broadcasts.map(&:last)).to include(
       include(
         event: 'voice_call.claimed',
@@ -510,6 +536,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
     )
     voice_inbox = voice_channel.inbox
     create(:inbox_member, inbox: voice_inbox, user: winner_user)
+    voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
     profile = create(
       :telephony_sip_profile,
       account: account,
@@ -531,6 +558,8 @@ RSpec.describe Telephony::OperatorCallClaimService do
     )
     call_session.update!(
       provider: 'sipuni',
+      conversation: voice_conversation,
+      contact: voice_conversation.contact,
       inbox: voice_inbox,
       metadata: {
         'metadata' => {

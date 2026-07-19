@@ -87,6 +87,47 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
     end
 
+    it 'rejects same-account inbox and conversation links that do not describe the same call scope' do
+      mismatched_inbox = create(:inbox, account: account)
+      original_status = existing_call_session.conversation.status
+      original_message_count = existing_call_session.conversation.messages.count
+      existing_call_session.update_column(:inbox_id, mismatched_inbox.id) # rubocop:disable Rails/SkipsModelValidations
+      allow(ActionCable.server).to receive(:broadcast)
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(existing_call_session.conversation.reload.status).to eq(original_status)
+      expect(existing_call_session.conversation.messages.count).to eq(original_message_count)
+      expect(ActionCable.server).not_to have_received(:broadcast)
+      expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
+    end
+
+    it 'rejects a number binding owned by another account before side effects' do
+      foreign_account = create(:account)
+      foreign_number_binding = create(:telephony_number_binding, account: foreign_account)
+      existing_call_session.update_column(:number_binding_id, foreign_number_binding.id) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
+    end
+
+    it 'rejects an agent binding owned by another account before side effects' do
+      foreign_account = create(:account)
+      foreign_agent_binding = create(:telephony_agent_binding, account: foreign_account)
+      existing_call_session.update_column(:agent_binding_id, foreign_agent_binding.id) # rubocop:disable Rails/SkipsModelValidations
+
+      expect { service.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TENANT_MISMATCH')
+      end
+
+      expect(account.telephony_events.find_by!(event_key: 'evt-retry-1')).to be_failed
+    end
+
     it 'revalidates tenant ownership before returning a processed event' do
       result = service.perform
       event = account.telephony_events.find_by!(event_key: 'evt-retry-1')
@@ -244,9 +285,13 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'uses the persisted inbound caller when a later provider event omits phone fields' do
       caller_number = '+77014181818'
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      Telephony::NumberBinding.sync_from_voice_channel!(voice_inbox.channel)
       existing_call_session.update!(
         conversation: nil,
         contact: nil,
+        inbox: voice_inbox,
+        number_binding: voice_inbox.reload.telephony_number_binding,
         provider: 'sipuni',
         direction: 'inbound',
         status: 'ringing',
@@ -462,6 +507,8 @@ RSpec.describe Telephony::EventsIngestionService do
     it 'includes other inbox operators in native SIP statuses when handled-call visibility is enabled' do
       target_operator = create(:user, account: account)
       other_member = create(:user, account: account)
+      foreign_account = create(:account)
+      foreign_member = create(:user, account: foreign_account)
       channel = create(
         :channel_voice,
         :sipuni,
@@ -471,6 +518,7 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       create(:inbox_member, inbox: channel.inbox, user: target_operator)
       create(:inbox_member, inbox: channel.inbox, user: other_member)
+      create(:inbox_member, inbox: channel.inbox, user: foreign_member)
       existing_call_session.update!(
         inbox: channel.inbox,
         provider: 'sipuni',
@@ -491,6 +539,7 @@ RSpec.describe Telephony::EventsIngestionService do
       )
 
       expect(tokens).to include(target_operator.pubsub_token, other_member.pubsub_token)
+      expect(tokens).not_to include(foreign_member.pubsub_token)
     end
 
     it 'does not rebroadcast a realtime status update for an already processed event' do
@@ -3129,6 +3178,9 @@ RSpec.describe Telephony::EventsIngestionService do
       voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+77070001001')
       voice_inbox = voice_channel.inbox
       number_binding = Telephony::NumberBinding.find_by!(account: account, inbox: voice_inbox)
+      conversation = existing_call_session.conversation
+      contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: voice_inbox)
+      conversation.update!(inbox: voice_inbox, contact_inbox: contact_inbox)
       answered_at = Time.zone.parse(45.seconds.ago.iso8601)
       ended_at = answered_at + 12.seconds
       existing_call_session.update!(
@@ -3653,9 +3705,12 @@ RSpec.describe Telephony::EventsIngestionService do
       target_voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+1555889010')
       Telephony::NumberBinding.sync_from_voice_channel!(target_voice_channel)
       target_binding = target_voice_channel.inbox.telephony_number_binding
+      target_conversation = create(:conversation, account: account, inbox: target_voice_channel.inbox)
       target_session = create(
         :telephony_call_session,
         account: account,
+        conversation: target_conversation,
+        contact: target_conversation.contact,
         inbox: target_voice_channel.inbox,
         number_binding: target_binding,
         external_call_ref: 'shared-bridge-call-ref',

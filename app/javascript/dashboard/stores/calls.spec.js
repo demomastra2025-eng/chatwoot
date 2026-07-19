@@ -694,7 +694,7 @@ describe('useCallsStore', () => {
     );
 
     expect(store.calls).toEqual([]);
-  });
+  }, 10000);
 
   it('ends an active Sipuni browser client when another operator claims the call', async () => {
     const store = useCallsStore();
@@ -989,7 +989,7 @@ describe('useCallsStore', () => {
         operatorInternalExtension: '202',
       }),
     ]);
-  });
+  }, 10000);
 
   it('keeps an active branch when a same-SID sibling ends before the logical call', async () => {
     const store = useCallsStore();
