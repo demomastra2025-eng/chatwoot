@@ -35,7 +35,7 @@ describe('voice helper', () => {
             from_number: 'client-party',
             to_number: '+770****4321',
             meta: {
-              operator_claim: { user_id: 12, user_name: 'Ayan' },
+              operator_claim: { user_id: 99, user_name: 'Ayan' },
             },
           },
         },
@@ -54,12 +54,37 @@ describe('voice helper', () => {
         fromNumber: 'client-party',
         inboxId: 42,
         isActive: false,
-        operatorClaim: { user_id: 12, user_name: 'Ayan' },
+        operatorClaim: { user_id: 99, user_name: 'Ayan' },
         provider: 'sipuni',
         senderId: 7,
         toNumber: '+770****4321',
       }),
     ]);
+  });
+
+  it('hides a foreign claimed voice call message when observer visibility is disabled', () => {
+    handleVoiceCallCreated(
+      {
+        content_type: 'voice_call',
+        conversation_id: 19,
+        inbox_id: 42,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'foreign-created-message',
+            call_direction: 'inbound',
+            provider: 'sipuni',
+            status: 'in_progress',
+            logical_call_key: 'native-sip:foreign-created-message',
+            operator_claim: { user_id: 12, user_name: 'Ayan' },
+            show_calls_handled_by_other_operators: false,
+          },
+        },
+      },
+      99
+    );
+
+    expect(useCallsStore().calls).toEqual([]);
   });
 
   it('does not add terminal voice call messages as active browser calls', () => {
@@ -203,6 +228,32 @@ describe('voice helper', () => {
     await vi.waitFor(() => {
       expect(endClientCallMock).toHaveBeenCalledTimes(1);
     });
+  });
+
+  it('hides foreign claimed message updates when observer visibility is disabled', () => {
+    handleVoiceCallUpdated(
+      vi.fn(),
+      {
+        content_type: 'voice_call',
+        conversation_id: 19,
+        inbox_id: 42,
+        sender: { id: 7 },
+        content_attributes: {
+          data: {
+            call_sid: 'foreign-claimed-message',
+            call_direction: 'inbound',
+            provider: 'sipuni',
+            status: 'in_progress',
+            logical_call_key: 'native-sip:foreign-claimed-message',
+            operator_claim: { user_id: 12, user_name: 'Ayan' },
+            show_calls_handled_by_other_operators: false,
+          },
+        },
+      },
+      99
+    );
+
+    expect(useCallsStore().calls).toEqual([]);
   });
 
   it('resolves inbox details from metadata when a ringing update creates the call', () => {

@@ -29,6 +29,21 @@ const shouldSkipCall = (callDirection, senderId, currentUserId) => {
   return callDirection === 'outbound' && senderId !== currentUserId;
 };
 
+const claimedByAnotherOperator = (operatorClaim, currentUserId) => {
+  const claimedByUserId =
+    operatorClaim?.user_id ||
+    operatorClaim?.userId ||
+    operatorClaim?.claimed_by_user_id ||
+    operatorClaim?.claimedByUserId;
+  return (
+    claimedByUserId !== undefined &&
+    claimedByUserId !== null &&
+    currentUserId !== undefined &&
+    currentUserId !== null &&
+    String(claimedByUserId) !== String(currentUserId)
+  );
+};
+
 const getContentData = message => message?.content_attributes?.data || {};
 
 const getContentMeta = contentData =>
@@ -106,6 +121,11 @@ function extractCallData(message) {
       contentData.janusSessionKey ||
       contentMeta?.janus_session_key ||
       contentMeta?.janusSessionKey,
+    showCallsHandledByOtherOperators:
+      contentData.show_calls_handled_by_other_operators ??
+      contentData.showCallsHandledByOtherOperators ??
+      contentMeta?.show_calls_handled_by_other_operators ??
+      contentMeta?.showCallsHandledByOtherOperators,
     provider:
       contentData.provider ||
       message?.provider ||
@@ -197,6 +217,7 @@ export function handleVoiceCallCreated(message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
+    showCallsHandledByOtherOperators,
     numberRef,
   } = extractCallData(message);
 
@@ -229,8 +250,18 @@ export function handleVoiceCallCreated(message, currentUserId) {
       logicalCallTerminal,
       sipProfileId,
       janusSessionKey,
+      showCallsHandledByOtherOperators,
+      currentUserId,
       numberRef,
     });
+    return;
+  }
+
+  const foreignOperatorClaim = claimedByAnotherOperator(
+    operatorClaim,
+    currentUserId
+  );
+  if (foreignOperatorClaim && showCallsHandledByOtherOperators !== true) {
     return;
   }
 
@@ -261,6 +292,13 @@ export function handleVoiceCallCreated(message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
+    showCallsHandledByOtherOperators,
+    ...(foreignOperatorClaim
+      ? {
+          browserJoinSupported: false,
+          browserJoinUnsupportedReason: 'CALL_ALREADY_CLAIMED',
+        }
+      : {}),
     numberRef,
   });
 }
@@ -294,6 +332,7 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
+    showCallsHandledByOtherOperators,
     numberRef,
   } = extractCallData(message);
 
@@ -338,12 +377,16 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
     logicalCallTerminal,
     sipProfileId,
     janusSessionKey,
+    showCallsHandledByOtherOperators,
+    currentUserId,
     numberRef,
   });
 
   const isNewCall =
     status === 'ringing' &&
-    !shouldSkipCall(callDirection, senderId, currentUserId);
+    !shouldSkipCall(callDirection, senderId, currentUserId) &&
+    (!claimedByAnotherOperator(operatorClaim, currentUserId) ||
+      showCallsHandledByOtherOperators === true);
 
   if (isNewCall) {
     callsStore.addCall({
@@ -372,6 +415,7 @@ export function handleVoiceCallUpdated(commit, message, currentUserId) {
       logicalCallTerminal,
       sipProfileId,
       janusSessionKey,
+      showCallsHandledByOtherOperators,
       numberRef,
     });
   }

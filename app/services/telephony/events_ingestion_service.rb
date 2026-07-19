@@ -1526,6 +1526,7 @@ class Telephony::EventsIngestionService
       data['data']['call_group_key'] = logical_key
       data['data']['callGroupKey'] = logical_key
     end
+    data['data'].merge!(voice_message_runtime_data(call_session))
     if message.source_id.blank? || message.source_id == call_session.voice_call_source_id
       data['data']['call_sid'] = call_session.external_call_ref
       data['data']['call_direction'] ||= call_session.direction
@@ -1947,6 +1948,18 @@ class Telephony::EventsIngestionService
     meta['latest_leg_status'] = latest_leg['status'] if latest_leg['status'].present?
     meta['latest_raw_status'] = latest_leg['raw_status'] if latest_leg['raw_status'].present?
     meta.compact
+  end
+
+  def voice_message_runtime_data(call_session)
+    realtime_call_status_payload(call_session).slice(
+      :logical_call_terminal,
+      :logicalCallTerminal,
+      :sip_profile_id,
+      :sipProfileId,
+      :janus_session_key,
+      :janusSessionKey,
+      :show_calls_handled_by_other_operators
+    ).stringify_keys
   end
 
   def accepted_by_from_operator_claim(call_session, operator_claim)

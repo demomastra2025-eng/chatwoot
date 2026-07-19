@@ -195,10 +195,18 @@ RSpec.describe Telephony::EventsIngestionService do
       operator = create(:user, account: account)
       create(:inbox_member, inbox: existing_call_session.inbox, user: operator)
       existing_call_session.update!(
+        provider: 'sipuni',
+        direction: 'inbound',
         metadata: {
           'operator_claim' => {
             'user_id' => operator.id,
             'internal_extension' => '202'
+          },
+          'metadata' => {
+            'logical_call_key' => 'native-sip:serialized-runtime-status',
+            'logical_call_group_ref' => existing_call_session.external_call_ref,
+            'telephony_sip_profile_id' => 79,
+            'janus_session_key' => 'sip_profile:79'
           }
         }
       )
@@ -207,6 +215,7 @@ RSpec.describe Telephony::EventsIngestionService do
       described_class.new(
         payload: payload.merge(
           event_key: 'evt-direct-terminal-status-1',
+          provider: 'sipuni',
           event: 'session_completed',
           status: 'completed'
         )
@@ -226,6 +235,18 @@ RSpec.describe Telephony::EventsIngestionService do
             show_calls_handled_by_other_operators: false
           )
         )
+      )
+      message_data = existing_call_session.conversation.messages.voice_calls.find_by!(
+        source_id: "voice_call:#{existing_call_session.external_call_ref}"
+      ).content_attributes.fetch('data')
+      expect(message_data).to include(
+        'logical_call_terminal' => true,
+        'logicalCallTerminal' => true,
+        'sip_profile_id' => 79,
+        'sipProfileId' => 79,
+        'janus_session_key' => 'sip_profile:79',
+        'janusSessionKey' => 'sip_profile:79',
+        'show_calls_handled_by_other_operators' => false
       )
     end
 
