@@ -190,6 +190,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
     >
       <div class="relative">
         <Button
+          type="button"
           size="sm"
           color="slate"
           variant="outline"

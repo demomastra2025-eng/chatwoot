@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
+import CompanyAPI from 'dashboard/api/companies';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import Button from 'dashboard/components-next/button/Button.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
@@ -72,6 +73,7 @@ const route = useRoute();
 const router = useRouter();
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
+const companyOptions = ref([]);
 const customFieldFilters = ref({});
 const filterDialogRef = ref(null);
 const appointmentFilterDraft = reactive({
@@ -119,6 +121,7 @@ const viewLabels = computed(() => ({
 
 const presentationLabels = computed(() => ({
   calendar: t('SCHEDULING.VIEWS.CALENDAR'),
+  kanban: t('SCHEDULING.VIEWS.KANBAN'),
   list: t('SCHEDULING.VIEWS.LIST'),
 }));
 
@@ -168,7 +171,7 @@ const calendarTypeViews = computed(() =>
 );
 
 const presentationOptions = computed(() =>
-  ['calendar', 'list'].map(value => ({
+  ['calendar', 'list', 'kanban'].map(value => ({
     label: presentationLabels.value[value],
     value,
   }))
@@ -247,6 +250,10 @@ const serviceOptions = computed(() =>
 );
 const hasServiceOptions = computed(() => serviceOptions.value.length > 0);
 
+const companySelectionEnabled = computed(
+  () => currentAccount.value?.settings?.scheduling_company_enabled !== false
+);
+
 const contactSelectionRequired = computed(
   () => currentAccount.value?.settings?.scheduling_contact_required !== false
 );
@@ -288,6 +295,25 @@ const contactOptions = computed(() => {
     ...options,
   ];
 });
+
+const dedupeOptions = options => {
+  const seen = new Set();
+
+  return options.filter(option => {
+    if (seen.has(option.value)) return false;
+
+    seen.add(option.value);
+    return true;
+  });
+};
+
+const buildCompanyOption = company => ({
+  label: company.name,
+  value: company.id,
+});
+
+const mergeCompanyOptions = options =>
+  dedupeOptions([...options, ...companyOptions.value]);
 
 const appointmentStatusOptions = computed(() =>
   APPOINTMENT_STATUS_VALUES.map(value => ({
@@ -661,6 +687,36 @@ const loadPage = async () => {
   await fetchCalendar();
 };
 
+const loadCompanies = async query => {
+  if (!companySelectionEnabled.value) {
+    companyOptions.value = [];
+    return;
+  }
+
+  const response = query
+    ? await CompanyAPI.search(query, 1)
+    : await CompanyAPI.get();
+  companyOptions.value = mergeCompanyOptions(
+    normalizePayload(response.data).map(buildCompanyOption)
+  );
+};
+
+const ensureSelectedCompanyOption = async companyId => {
+  if (!companyId || !companySelectionEnabled.value) return;
+  if (
+    companyOptions.value.some(
+      option => Number(option.value) === Number(companyId)
+    )
+  ) {
+    return;
+  }
+
+  const response = await CompanyAPI.show(companyId);
+  companyOptions.value = mergeCompanyOptions([
+    buildCompanyOption(normalizePayload(response.data)),
+  ]);
+};
+
 const openCreateAppointment = (slot, defaults = {}) => {
   pendingCreateCustomFieldDefaultsHydration.value = true;
   showAppointmentConversationPanel.value = false;
@@ -1015,9 +1071,23 @@ watch(
 );
 
 watch(
-  contactSelectionRequired,
-  contactRequired => {
-    formStore.setRequirements({ contactRequired });
+  [contactSelectionRequired, companySelectionEnabled],
+  ([contactRequired, companyEnabled]) => {
+    formStore.setRequirements({ contactRequired, companyEnabled });
+  },
+  { immediate: true }
+);
+
+watch(
+  () => formStore.form.companyId,
+  async companyId => {
+    if (!companyId) return;
+
+    try {
+      await ensureSelectedCompanyOption(companyId);
+    } catch {
+      // Surface company lookup failures only when the form submits.
+    }
   },
   { immediate: true }
 );
@@ -1268,6 +1338,9 @@ onMounted(async () => {
                             trigger-icon="i-lucide-users-round"
                             dropdown-min-width="240"
                             placeholder=" "
+                            :aria-label="
+                              $t('SCHEDULING.APPOINTMENT_FORM.CONTACT')
+                            "
                             :has-error="!!formStore.validationErrors.contactId"
                             :search-placeholder="
                               $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
@@ -1367,6 +1440,28 @@ onMounted(async () => {
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div v-if="companySelectionEnabled" class="grid gap-1">
+                  <SchedulingSelectField
+                    class="appointment-drawer-select-control"
+                    :model-value="formStore.form.companyId"
+                    use-api-results
+                    :label="$t('SCHEDULING.APPOINTMENT_FORM.COMPANY')"
+                    :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.COMPANY')"
+                    :options="companyOptions"
+                    :search-placeholder="
+                      $t('SCHEDULING.APPOINTMENT_FORM.COMPANY_SEARCH')
+                    "
+                    :empty-state="
+                      $t('SCHEDULING.APPOINTMENT_FORM.COMPANY_EMPTY')
+                    "
+                    @open="loadCompanies('')"
+                    @search="loadCompanies"
+                    @update:model-value="
+                      formStore.updateField('companyId', $event)
+                    "
+                  />
                 </div>
 
                 <SchedulingFormFieldGroup

@@ -180,6 +180,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         </span>
 
         <Button
+          type="button"
           size="sm"
           color="slate"
           variant="outline"
