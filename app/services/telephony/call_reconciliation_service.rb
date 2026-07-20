@@ -123,9 +123,14 @@ class Telephony::CallReconciliationService
                                   .where(provider: 'sipuni', direction: 'outbound', provider_call_sid: nil)
                                   .where("external_call_ref LIKE 'sipuni:local:%'")
     scope = scope.where(account_id: account.id) if account.present?
+    reference_sql = 'COALESCE(last_event_at, started_at, updated_at, created_at)'
     scope.where(
-      'COALESCE(last_event_at, started_at, updated_at, created_at) <= ?',
-      now - sipuni_local_outbound_missing_after
+      "(status IN (:pre_answer_statuses) AND answered_at IS NULL AND #{reference_sql} <= :pre_answer_before) OR " \
+      "((status = :in_progress_status OR answered_at IS NOT NULL) AND #{reference_sql} <= :in_progress_before)",
+      pre_answer_statuses: SIPUNI_PRE_ANSWER_STATUSES,
+      pre_answer_before: now - sipuni_local_outbound_missing_after,
+      in_progress_status: 'in_progress',
+      in_progress_before: now - sipuni_provider_in_progress_stale_after
     )
   end
 
@@ -137,8 +142,8 @@ class Telephony::CallReconciliationService
 
     reference_sql = 'COALESCE(last_event_at, started_at, updated_at, created_at)'
     scope.where(
-      "(status IN (:pre_answer_statuses) AND #{reference_sql} <= :pre_answer_before) OR " \
-      "(status = :in_progress_status AND #{reference_sql} <= :in_progress_before)",
+      "(status IN (:pre_answer_statuses) AND answered_at IS NULL AND #{reference_sql} <= :pre_answer_before) OR " \
+      "((status = :in_progress_status OR answered_at IS NOT NULL) AND #{reference_sql} <= :in_progress_before)",
       pre_answer_statuses: SIPUNI_PRE_ANSWER_STATUSES,
       pre_answer_before: now - sipuni_provider_ringing_stale_after,
       in_progress_status: 'in_progress',
@@ -154,8 +159,8 @@ class Telephony::CallReconciliationService
 
     reference_sql = 'COALESCE(last_event_at, started_at, updated_at, created_at)'
     scope.where(
-      "(status IN (:pre_answer_statuses) AND #{reference_sql} <= :pre_answer_before) OR " \
-      "(status = :in_progress_status AND #{reference_sql} <= :in_progress_before)",
+      "(status IN (:pre_answer_statuses) AND answered_at IS NULL AND #{reference_sql} <= :pre_answer_before) OR " \
+      "((status = :in_progress_status OR answered_at IS NOT NULL) AND #{reference_sql} <= :in_progress_before)",
       pre_answer_statuses: NATIVE_SIP_PRE_ANSWER_STATUSES,
       pre_answer_before: now - native_sip_pre_answer_stale_after,
       in_progress_status: 'in_progress',
@@ -170,8 +175,8 @@ class Telephony::CallReconciliationService
     local_ref_sql = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:local:%'" }.join(' OR ')
     reference_sql = 'COALESCE(last_event_at, started_at, updated_at, created_at)'
     scope.where(local_ref_sql).where(
-      "(status IN (:pre_answer_statuses) AND #{reference_sql} <= :pre_answer_before) OR " \
-      "(status = :in_progress_status AND #{reference_sql} <= :in_progress_before)",
+      "(status IN (:pre_answer_statuses) AND answered_at IS NULL AND #{reference_sql} <= :pre_answer_before) OR " \
+      "((status = :in_progress_status OR answered_at IS NOT NULL) AND #{reference_sql} <= :in_progress_before)",
       pre_answer_statuses: NATIVE_SIP_PRE_ANSWER_STATUSES,
       pre_answer_before: now - native_sip_local_outbound_missing_after,
       in_progress_status: 'in_progress',
@@ -230,19 +235,22 @@ class Telephony::CallReconciliationService
   end
 
   def reconcile_missing_sipuni_local_outbound_session(session)
+    target_status = nil
     reconciled = reconcile_stale_session(
       session,
-      statuses: nil,
-      stale_after: sipuni_local_outbound_missing_after,
+      statuses: SIPUNI_PRE_ANSWER_STATUSES + ['in_progress'],
+      stale_after: lambda do |locked_session|
+        answered_session?(locked_session) ? sipuni_provider_in_progress_stale_after : sipuni_local_outbound_missing_after
+      end,
       guard: method(:sipuni_local_outbound_session?)
     ) do |locked_session|
       ended_at = now
-      target_status = 'failed'
+      target_status = answered_session?(locked_session) ? 'completed' : 'failed'
       locked_session.update!(
         status: target_status,
         ended_at: ended_at,
         ended_by: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION,
-        end_reason: 'sipuni_provider_event_missing',
+        end_reason: target_status == 'completed' ? 'sipuni_local_outbound_missing_completed_call' : 'sipuni_provider_event_missing',
         duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
         last_event_at: ended_at,
         metadata: missing_sipuni_local_outbound_metadata(locked_session, target_status),
@@ -253,7 +261,7 @@ class Telephony::CallReconciliationService
 
     reconciliation_outcome(
       session,
-      'failed',
+      target_status,
       source: SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION
     )
   end
@@ -264,7 +272,7 @@ class Telephony::CallReconciliationService
       session,
       statuses: SIPUNI_PRE_ANSWER_STATUSES + ['in_progress'],
       stale_after: lambda do |locked_session|
-        status_stale_after(locked_session, sipuni_provider_ringing_stale_after, sipuni_provider_in_progress_stale_after)
+        answered_session?(locked_session) ? sipuni_provider_in_progress_stale_after : sipuni_provider_ringing_stale_after
       end,
       guard: method(:sipuni_provider_session?)
     ) do |locked_session|
@@ -292,7 +300,7 @@ class Telephony::CallReconciliationService
     reconciled = reconcile_stale_session(
       session,
       statuses: NATIVE_SIP_PRE_ANSWER_STATUSES + ['in_progress'],
-      stale_after: ->(locked_session) { status_stale_after(locked_session, native_sip_pre_answer_stale_after, native_sip_in_progress_stale_after) },
+      stale_after: ->(locked_session) { answered_session?(locked_session) ? native_sip_in_progress_stale_after : native_sip_pre_answer_stale_after },
       guard: method(:native_sip_session?)
     ) do |locked_session|
       ended_at = now
@@ -320,11 +328,7 @@ class Telephony::CallReconciliationService
       session,
       statuses: NATIVE_SIP_PRE_ANSWER_STATUSES + ['in_progress'],
       stale_after: lambda do |locked_session|
-        status_stale_after(
-          locked_session,
-          native_sip_local_outbound_missing_after,
-          native_sip_in_progress_stale_after
-        )
+        answered_session?(locked_session) ? native_sip_in_progress_stale_after : native_sip_local_outbound_missing_after
       end,
       guard: method(:native_sip_local_outbound_session?)
     ) do |locked_session|
@@ -410,10 +414,6 @@ class Telephony::CallReconciliationService
   def positive_env_duration(key, default)
     value = ENV[key].to_i
     value.positive? ? value.seconds : default
-  end
-
-  def status_stale_after(session, pre_answer_after, in_progress_after)
-    session.canonical_status == 'in_progress' ? in_progress_after : pre_answer_after
   end
 
   def apply_reconciliation_outcome!(result, outcome)
@@ -665,7 +665,7 @@ class Telephony::CallReconciliationService
   end
 
   def missing_sipuni_provider_status(session)
-    return 'completed' if session.canonical_status == 'in_progress'
+    return 'completed' if session.canonical_status == 'in_progress' || session.answered_at.present?
     return 'no_answer' if session.direction == 'outbound'
     return 'no_answer' if route_action(session) == 'operator'
 

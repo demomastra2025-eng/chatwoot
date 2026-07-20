@@ -164,6 +164,11 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
       recorded_by: 'janus',
       layout: 'mixed_mono',
       mode: 'operator',
+      channels: 1,
+      channel_layout: 'mono',
+      channel_map: { channel_1: 'user_audio' },
+      degraded: true,
+      missing_direction: 'peer_audio',
       content_type: 'audio/wav',
       writer: 'janus_recording_postprocessor'
     }
@@ -186,7 +191,12 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
       'storage_key' => storage_key,
       'sha256' => stored_sha256,
       'recorded_by' => 'janus',
-      'writer' => 'janus_recording_postprocessor'
+      'writer' => 'janus_recording_postprocessor',
+      'channels' => 1,
+      'channel_layout' => 'mono',
+      'channel_map' => { 'channel_1' => 'user_audio' },
+      'degraded' => true,
+      'missing_direction' => 'peer_audio'
     )
   ensure
     FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?

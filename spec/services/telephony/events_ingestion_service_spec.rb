@@ -57,6 +57,50 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'does not replace a Janus dual-channel recording with a late browser fallback' do
+      janus_storage_key = 'voice-recordings/janus/1/call/dual.wav'
+      existing_call_session.update!(
+        recording_ref: janus_storage_key,
+        metadata: {
+          'recording' => {
+            'recording_ref' => janus_storage_key,
+            'storage_key' => janus_storage_key,
+            'recorded_by' => 'janus',
+            'layout' => 'dual_channel',
+            'sha256' => 'janus-sha256'
+          }
+        }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-browser-recording-ready',
+          event: 'recording_ready',
+          recording_ref: 'voice-recordings/sipuni/1/call/browser.webm',
+          storage_key: 'voice-recordings/sipuni/1/call/browser.webm',
+          content_type: 'audio/webm',
+          sha256: 'browser-sha256',
+          duration_seconds: 5,
+          metadata: {
+            recording: {
+              writer: 'browser_janus_media_recorder',
+              storage_provider: 'local',
+              recorded_by: 'browser'
+            }
+          }
+        )
+      ).perform
+
+      expect(result.reload.recording_ref).to eq(janus_storage_key)
+      expect(result.metadata['recording']).to include(
+        'recording_ref' => janus_storage_key,
+        'storage_key' => janus_storage_key,
+        'recorded_by' => 'janus',
+        'layout' => 'dual_channel',
+        'sha256' => 'janus-sha256'
+      )
+    end
+
     it 'rejects a call session linked to a conversation from another account before side effects' do
       foreign_account = create(:account)
       foreign_conversation = create(:conversation, account: foreign_account)

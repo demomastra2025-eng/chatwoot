@@ -120,7 +120,10 @@ class Telephony::StoredRecordingReadyService
       'mode' => mode,
       'recorded_by' => recorded_by,
       'channels' => channels,
-      'channel_layout' => channel_layout
+      'channel_layout' => channel_layout,
+      'channel_map' => channel_map,
+      'degraded' => degraded,
+      'missing_direction' => missing_direction
     }
   end
 
@@ -275,6 +278,21 @@ class Telephony::StoredRecordingReadyService
 
   def channel_layout
     payload_value('channel_layout', 'channelLayout')
+  end
+
+  def channel_map
+    payload_value('channel_map', 'channelMap')
+  end
+
+  def degraded
+    value = payload_value('degraded', 'recording_degraded', 'recordingDegraded')
+    return if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def missing_direction
+    payload_value('missing_direction', 'missingDirection')
   end
 
   def event_key

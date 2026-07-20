@@ -178,7 +178,7 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
     expect(inbox.channel.reload.show_calls_handled_by_other_operators?).to be(true)
   end
 
-  it 'ignores an orphan ringing branch after its claimed logical call is terminal' do
+  it 'blocks technical updates until a stale sibling branch is reconciled' do
     result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
     inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
     logical_call_key = 'sipuni-inbound:resolved-call'
@@ -214,7 +214,7 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
       dry_run: true
     )
 
-    expect(update_result[:errors]).not_to include(hash_including(code: 'active_calls_present'))
+    expect(update_result[:errors]).to include(hash_including(code: 'active_calls_present'))
   end
 
   it 'still blocks technical updates while an unrelated call is active' do

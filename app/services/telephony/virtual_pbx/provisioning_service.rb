@@ -1204,27 +1204,11 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def active_calls_present?(inbox_id)
-    Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).any? do |call_session|
-      !resolved_logical_call?(call_session)
-    end
+    Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).exists?
   end
 
   def block_update_for_active_calls?(inbox_id, payload)
     !handled_call_visibility_only_update?(payload) && active_calls_present?(inbox_id)
-  end
-
-  def resolved_logical_call?(call_session)
-    return false unless call_session.direction == 'inbound'
-    return false unless call_session.canonical_status.in?(%w[created ringing connecting])
-    return false if call_session.answered_at.present?
-
-    call_session.logical_group_sessions.any? do |related_call_session|
-      next false if related_call_session.id == call_session.id
-      next false unless related_call_session.terminal?
-
-      operator_claim = related_call_session.metadata.to_h['operator_claim']
-      related_call_session.answered_at.present? || operator_claim.present?
-    end
   end
 
   def handled_call_visibility_only_update?(payload)

@@ -809,9 +809,7 @@ class Telephony::EventsIngestionService
       direction: next_direction(call_session),
       from_number: next_from_number(call_session),
       to_number: next_to_number(call_session),
-      recording_ref: payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
-        nested_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
-        call_session.recording_ref,
+      recording_ref: next_recording_ref(call_session),
       transcript_ref: payload_value('transcript_ref', 'transcriptRef') || call_session.transcript_ref,
       summary: payload_value('summary') || nested_payload_value('summary') || call_session.summary,
       duration_seconds: next_duration_seconds(call_session, status, started_at, answered_at, ended_at),
@@ -2478,11 +2476,34 @@ class Telephony::EventsIngestionService
       existing_metadata = base['metadata'].is_a?(Hash) ? base['metadata'].deep_dup : {}
       base['metadata'] = existing_metadata.deep_merge(metadata_for_merge(call_session, existing_metadata))
     end
-    if recording_event_metadata.present?
+    if recording_event_metadata.present? && !preserve_preferred_janus_recording?(call_session)
       existing_recording_metadata = base['recording'].is_a?(Hash) ? base['recording'].deep_dup : {}
       base['recording'] = existing_recording_metadata.deep_merge(recording_event_metadata)
     end
     base.compact
+  end
+
+  def next_recording_ref(call_session)
+    return call_session.recording_ref if preserve_preferred_janus_recording?(call_session)
+
+    payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
+      nested_payload_value('recording_ref', 'recordingRef', 'recording_url', 'recordingUrl') ||
+      call_session.recording_ref
+  end
+
+  def preserve_preferred_janus_recording?(call_session)
+    return false unless resolved_event_type == 'recording_ready'
+    return false unless incoming_recorded_by == 'browser'
+
+    existing_recording = call_session.metadata.to_h['recording'].to_h.deep_stringify_keys
+    existing_recording['recorded_by'] == 'janus' && existing_recording['layout'] == 'dual_channel'
+  end
+
+  def incoming_recorded_by
+    recording_import_metadata['recorded_by'].presence ||
+      recording_payload_value('recorded_by', 'recordedBy').presence ||
+      metadata.dig('recording', 'recorded_by').presence ||
+      metadata.dig('recording', 'recordedBy').presence
   end
 
   def metadata_for_merge(call_session, existing_metadata)
@@ -2689,6 +2710,7 @@ class Telephony::EventsIngestionService
       'sample_rate' => recording_payload_value('sample_rate', 'sampleRate')&.to_i,
       'channels' => recording_payload_value('channels')&.to_i,
       'channel_layout' => recording_payload_value('channel_layout', 'channelLayout'),
+      'channel_map' => recording_payload_value('channel_map', 'channelMap'),
       'inbound_bytes' => recording_payload_value('inbound_bytes', 'inboundBytes')&.to_i,
       'outbound_bytes' => recording_payload_value('outbound_bytes', 'outboundBytes')&.to_i,
       'recording_status' => recording_payload_value('recording_status', 'recordingStatus'),

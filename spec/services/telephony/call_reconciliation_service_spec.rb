@@ -67,6 +67,51 @@ RSpec.describe Telephony::CallReconciliationService do
       end
     end
 
+    it 'uses the long timeout for answered Sipuni local outbound calls and completes only the stale session' do
+      fresh_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:local:fresh-answered-outbound',
+        provider_call_sid: nil,
+        status: 'in_progress',
+        direction: 'outbound',
+        started_at: now - 10.minutes,
+        answered_at: now - 9.minutes,
+        last_event_at: now - 1.minute
+      )
+      stale_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:local:stale-answered-outbound',
+        provider_call_sid: nil,
+        status: 'ringing',
+        direction: 'outbound',
+        started_at: now - 4.hours,
+        answered_at: now - 3.hours,
+        last_event_at: now - 3.hours
+      )
+
+      with_modified_env(
+        'TELEPHONY_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS' => '30',
+        'TELEPHONY_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER_SECONDS' => '7200'
+      ) do
+        expect(service.perform).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      aggregate_failures do
+        expect(fresh_session.reload.status).to eq('in_progress')
+        expect(stale_session.reload).to have_attributes(
+          status: 'completed',
+          ended_at: now,
+          ended_by: 'sipuni_local_outbound_reconciliation',
+          end_reason: 'sipuni_local_outbound_missing_completed_call',
+          duration_seconds: 10_800
+        )
+      end
+    end
+
     it 'closes stale Sipuni provider inbound ringing calls and syncs the voice bubble' do
       conversation = create(
         :conversation,
@@ -142,6 +187,51 @@ RSpec.describe Telephony::CallReconciliationService do
       end
 
       expect(call_session.reload.status).to eq('in_progress')
+    end
+
+    it 'uses the long timeout when Sipuni provider answer evidence outruns the status' do
+      fresh_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:1782827000.500003',
+        provider_call_sid: '1782827000.500003',
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: now - 40.minutes,
+        answered_at: now - 39.minutes,
+        last_event_at: now - 30.minutes
+      )
+      stale_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'sipuni',
+        external_call_ref: 'sipuni:1782827000.500004',
+        provider_call_sid: '1782827000.500004',
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: now - 4.hours,
+        answered_at: now - 3.hours,
+        last_event_at: now - 3.hours
+      )
+
+      with_modified_env(
+        'TELEPHONY_SIPUNI_PROVIDER_RINGING_STALE_AFTER_SECONDS' => '120',
+        'TELEPHONY_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER_SECONDS' => '7200'
+      ) do
+        expect(service.perform).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+      end
+
+      aggregate_failures do
+        expect(fresh_session.reload.status).to eq('ringing')
+        expect(stale_session.reload).to have_attributes(
+          status: 'completed',
+          ended_at: now,
+          ended_by: 'sipuni_provider_reconciliation',
+          end_reason: 'sipuni_provider_missing_completed_call',
+          duration_seconds: 10_800
+        )
+      end
     end
 
     it 'closes stale native Asterisk Janus ringing calls and syncs the voice bubble' do
