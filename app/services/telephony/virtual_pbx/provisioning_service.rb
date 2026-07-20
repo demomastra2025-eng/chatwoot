@@ -192,7 +192,9 @@ class Telephony::VirtualPbx::ProvisioningService
       errors << error('managed_ownership_required',
                       'Legacy/reference resources are read-only until managed migration is approved')
     end
-    errors << error('active_calls_present', 'Channel has active calls and cannot be updated') if active_calls_present?(inbox_id)
+    if block_update_for_active_calls?(inbox_id, payload)
+      errors << error('active_calls_present', 'Channel has active calls and cannot be updated')
+    end
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'update', normalized_payload: normalized, errors: errors, existing_config: existing_config,
@@ -1202,7 +1204,37 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def active_calls_present?(inbox_id)
-    Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).exists?
+    Telephony::CallSession.active.where(account: account, inbox_id: inbox_id).any? do |call_session|
+      !resolved_logical_call?(call_session)
+    end
+  end
+
+  def block_update_for_active_calls?(inbox_id, payload)
+    !handled_call_visibility_only_update?(payload) && active_calls_present?(inbox_id)
+  end
+
+  def resolved_logical_call?(call_session)
+    return false unless call_session.direction == 'inbound'
+    return false unless call_session.canonical_status.in?(%w[created ringing connecting])
+    return false if call_session.answered_at.present?
+
+    call_session.logical_group_sessions.any? do |related_call_session|
+      next false if related_call_session.id == call_session.id
+      next false unless related_call_session.terminal?
+
+      operator_claim = related_call_session.metadata.to_h['operator_claim']
+      related_call_session.answered_at.present? || operator_claim.present?
+    end
+  end
+
+  def handled_call_visibility_only_update?(payload)
+    update_payload = payload.to_h.with_indifferent_access
+    return false if (update_payload.keys.map(&:to_s) - %w[expected_configuration_version routing]).any?
+
+    routing = update_payload[:routing]
+    return false unless routing.respond_to?(:to_h)
+
+    routing.to_h.keys.map(&:to_s) == ['show_calls_handled_by_other_operators']
   end
 
   def destroy_provider_connection_if_orphaned!(provider_connection)

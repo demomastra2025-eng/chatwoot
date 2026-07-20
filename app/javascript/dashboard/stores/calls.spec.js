@@ -1189,6 +1189,66 @@ describe('useCallsStore', () => {
     expect(endClientCallMock).not.toHaveBeenCalled();
   });
 
+  it('keeps the current operator connecting call when claim arrives before media is active', async () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'binotel:sibling-906-ref',
+      accountId: 66,
+      inboxId: 190,
+      provider: 'binotel',
+      callDirection: 'inbound',
+      conversationId: 612,
+      logicalCallKey: 'binotel-inbound:target-call',
+      sipProfileId: 69,
+      janusSessionKey: 'sip_profile:69',
+      browserJoinSupported: true,
+      status: 'ringing',
+      isActive: false,
+    });
+    store.addCall({
+      callSid: 'binotel:target-907-ref',
+      accountId: 66,
+      inboxId: 190,
+      provider: 'binotel',
+      callDirection: 'inbound',
+      conversationId: 612,
+      logicalCallKey: 'binotel-inbound:target-call',
+      sipProfileId: 70,
+      janusSessionKey: 'sip_profile:70',
+      browserJoinSupported: true,
+      status: 'ringing',
+      isActive: false,
+    });
+
+    await store.handleCallClaimed(
+      {
+        account_id: 66,
+        inbox_id: 190,
+        call_sid: 'binotel:target-907-ref',
+        provider: 'binotel',
+        call_direction: 'inbound',
+        conversation_id: 612,
+        logical_call_key: 'binotel-inbound:target-call',
+        sip_profile_id: 70,
+        janus_session_key: 'sip_profile:70',
+        related_call_sids: ['binotel:target-907-ref'],
+        status: 'connecting',
+        claimed_by_user_id: 7,
+      },
+      7
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'binotel:target-907-ref',
+        status: 'connecting',
+        isActive: false,
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
+
   it('merges a status from another SIP branch into the active owner call', () => {
     const store = useCallsStore();
     store.addCall({

@@ -2552,6 +2552,66 @@ describe('janusSipVoiceClient', () => {
     }
   });
 
+  it.each([
+    ['sipuni', 'inbound'],
+    ['sipuni', 'outbound'],
+    ['binotel', 'inbound'],
+    ['binotel', 'outbound'],
+  ])('records local and peer audio for %s %s calls', (provider, direction) => {
+    const { createdDestinations, createdSources, MediaRecorderMock, restore } =
+      installRecordingMocks();
+    try {
+      const client = createJanusSipVoiceClient();
+      client.sessionConfig = {
+        ...asteriskServerRecordingSession,
+        provider,
+      };
+      client.sipProfileId = 77;
+      client.sipHandle = { send: pluginSendMock };
+      client.currentCallRef = `${provider}:janus:77:${direction}-recording`;
+      client.currentCallDirection = direction;
+      client.callMediaAccepted = true;
+      client.localTracks = { local: fakeAudioTrack('local') };
+      client.remoteTracks = { remote: fakeAudioTrack('remote') };
+      pluginSendMock.mockClear();
+
+      client.startRecordingIfReady();
+
+      expect(pluginSendMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            request: 'recording',
+            action: 'start',
+            audio: true,
+            peer_audio: true,
+          }),
+        })
+      );
+      expect(MediaRecorderMock.instances).toHaveLength(1);
+      expect(createdSources).toHaveLength(2);
+      expect(createdSources[0].connect).toHaveBeenCalledWith(
+        createdDestinations[0]
+      );
+      expect(createdSources[1].connect).toHaveBeenCalledWith(
+        createdDestinations[0]
+      );
+
+      client.handleCallDisconnected({ reason: 'remote_hangup' });
+
+      expect(uploadRecordingMock).toHaveBeenCalledWith(
+        `${provider}:janus:77:${direction}-recording`,
+        expect.any(Blob),
+        expect.objectContaining({
+          provider,
+          direction,
+          reason: 'remote_hangup',
+        })
+      );
+    } finally {
+      restore();
+    }
+  });
+
   it('keeps browser recording when Janus server recording would have reported an async error', () => {
     const { MediaRecorderMock, restore } = installRecordingMocks();
     try {

@@ -328,8 +328,40 @@ const getOperatorCandidates = call => {
   return Array.isArray(candidates) ? candidates : [];
 };
 
-const getPrimaryOperatorCandidate = call =>
-  getOperatorCandidates(call)[0] || {};
+const sameOperatorIdentity = (left, right) =>
+  left !== undefined &&
+  left !== null &&
+  left !== '' &&
+  right !== undefined &&
+  right !== null &&
+  right !== '' &&
+  String(left) === String(right);
+
+const getPrimaryOperatorCandidate = call => {
+  const candidates = getOperatorCandidates(call);
+  const sipProfileId = firstPresent([call?.sipProfileId, call?.sip_profile_id]);
+  const internalExtension = firstPresent([
+    call?.operatorInternalExtension,
+    call?.operator_internal_extension,
+  ]);
+
+  return (
+    candidates.find(candidate =>
+      sameOperatorIdentity(
+        candidate?.sipProfileId || candidate?.sip_profile_id,
+        sipProfileId
+      )
+    ) ||
+    candidates.find(candidate =>
+      sameOperatorIdentity(
+        candidate?.internalExtension || candidate?.internal_extension,
+        internalExtension
+      )
+    ) ||
+    candidates[0] ||
+    {}
+  );
+};
 
 const getOperatorName = call => {
   const candidate = getPrimaryOperatorCandidate(call);

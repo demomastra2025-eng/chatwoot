@@ -912,6 +912,50 @@ describe('FloatingCallWidget', () => {
     expect(wrapper.text()).not.toContain('Manager: John (502)');
   });
 
+  it('matches the incoming branch operator by SIP profile instead of the first candidate', () => {
+    mockSession.incomingCalls = [
+      {
+        callSid: 'sipuni:branch-205',
+        conversationId: 724,
+        inboxId: 4769,
+        provider: 'sipuni',
+        callDirection: 'inbound',
+        fromNumber: '+770****1002',
+        toNumber: '+770****1001',
+        sipProfileId: 83,
+        operatorCandidates: [
+          {
+            user_id: 5,
+            name: 'Ahan',
+            sip_profile_id: 82,
+            internal_extension: '204',
+          },
+          {
+            user_id: 6,
+            name: 'Aset',
+            sip_profile_id: 83,
+            internal_extension: '205',
+          },
+        ],
+        operatorInternalExtension: '205',
+      },
+    ];
+    storeGetters.getConversationById.mockReturnValue({
+      inbox_id: 4769,
+      meta: { sender: { name: 'Client' } },
+    });
+    storeGetters.getInbox.mockReturnValue({
+      id: 4769,
+      name: 'Sipuni',
+      provider: 'sipuni',
+    });
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.text()).toContain('Aset (205)');
+    expect(wrapper.text()).not.toContain('Ahan (205)');
+  });
+
   it('does not leave the current concrete conversation for the same contact', async () => {
     mockSession.incomingCalls = [
       {

@@ -153,4 +153,133 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
     expect(binding.reload.metadata).to include('binding_marker' => 'keep')
     expect(provider_connection.reload.metadata).to include('connection_marker' => 'keep')
   end
+
+  it 'updates handled-call visibility while a call is active without changing technical settings' do
+    result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+    create(
+      :telephony_call_session,
+      account: account,
+      inbox: inbox,
+      number_binding: inbox.telephony_number_binding,
+      status: 'in_progress'
+    )
+
+    update_result = service.update_channel(
+      inbox_id: inbox.id,
+      payload: {
+        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version),
+        routing: { show_calls_handled_by_other_operators: true }
+      },
+      dry_run: false
+    )
+
+    expect(update_result[:errors]).to be_blank
+    expect(inbox.channel.reload.show_calls_handled_by_other_operators?).to be(true)
+  end
+
+  it 'ignores an orphan ringing branch after its claimed logical call is terminal' do
+    result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+    logical_call_key = 'sipuni-inbound:resolved-call'
+    shared_attributes = {
+      account: account,
+      inbox: inbox,
+      number_binding: inbox.telephony_number_binding,
+      direction: 'inbound',
+      provider: 'sipuni',
+      metadata: {
+        'metadata' => {
+          'logical_call_key' => logical_call_key,
+          'call_group_key' => logical_call_key
+        }
+      }
+    }
+    create(
+      :telephony_call_session,
+      **shared_attributes,
+      status: 'completed',
+      ended_at: Time.current,
+      metadata: shared_attributes[:metadata].deep_merge(
+        'operator_claim' => { 'user_id' => operator.id }
+      )
+    )
+    create(:telephony_call_session, **shared_attributes, status: 'ringing')
+
+    update_result = service.update_channel(
+      inbox_id: inbox.id,
+      payload: sipuni_channel_payload(operator).merge(
+        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version)
+      ),
+      dry_run: true
+    )
+
+    expect(update_result[:errors]).not_to include(hash_including(code: 'active_calls_present'))
+  end
+
+  it 'still blocks technical updates while an unrelated call is active' do
+    result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+    create(
+      :telephony_call_session,
+      account: account,
+      inbox: inbox,
+      number_binding: inbox.telephony_number_binding,
+      status: 'in_progress'
+    )
+
+    update_result = service.update_channel(
+      inbox_id: inbox.id,
+      payload: sipuni_channel_payload(operator).merge(
+        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version)
+      ),
+      dry_run: true
+    )
+
+    expect(update_result[:errors]).to include(hash_including(code: 'active_calls_present'))
+  end
+
+  it 'still blocks technical updates for an answered branch when a sibling is terminal' do
+    result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+    logical_call_key = 'sipuni-inbound:active-answered-call'
+    shared_attributes = {
+      account: account,
+      inbox: inbox,
+      number_binding: inbox.telephony_number_binding,
+      direction: 'inbound',
+      provider: 'sipuni',
+      metadata: {
+        'metadata' => {
+          'logical_call_key' => logical_call_key,
+          'call_group_key' => logical_call_key
+        }
+      }
+    }
+    create(
+      :telephony_call_session,
+      **shared_attributes,
+      status: 'completed',
+      ended_at: 1.minute.ago,
+      metadata: shared_attributes[:metadata].deep_merge(
+        'operator_claim' => { 'user_id' => operator.id }
+      )
+    )
+    create(
+      :telephony_call_session,
+      **shared_attributes,
+      status: 'in_progress',
+      answered_at: 1.minute.ago
+    )
+
+    update_result = service.update_channel(
+      inbox_id: inbox.id,
+      payload: sipuni_channel_payload(operator).merge(
+        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version)
+      ),
+      dry_run: true
+    )
+
+    expect(update_result[:errors]).to include(hash_including(code: 'active_calls_present'))
+  end
 end

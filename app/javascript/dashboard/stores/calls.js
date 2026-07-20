@@ -1219,8 +1219,15 @@ export const useCallsStore = defineStore('calls', {
           }
         }
       }
+      const exactClaimedCall = matchedClaimCalls.find(
+        call =>
+          sameCallSid(call, scopedCallData) &&
+          (!claimHasSessionScope ||
+            callScopeMatchesExactly(call, scopedCallData))
+      );
       const trackedCall =
         matchedClaimCalls.find(call => call.isActive) ||
+        exactClaimedCall ||
         matchedClaimCalls.find(call => call.browserJoinSupported !== false) ||
         matchedClaimCalls[0];
       const claimedByUserId =
@@ -1343,6 +1350,10 @@ export const useCallsStore = defineStore('calls', {
 
     dismissRelatedNativeSipIncomingCalls(targetCall) {
       this.calls = this.calls.filter(call => {
+        const isTargetBranch =
+          sameCallSid(call, targetCall) &&
+          callScopeMatchesExactly(call, targetCall);
+        if (isTargetBranch) return true;
         if (call.isActive) return true;
         const sameLogicalCall = sameNativeSipLogicalCall(call, targetCall);
         if (sameCallSid(call, targetCall) && !sameLogicalCall) return true;

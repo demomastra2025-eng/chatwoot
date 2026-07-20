@@ -338,7 +338,25 @@ const updateCallVisibility = async value => {
       },
       { dryRun: false, remoteCommit: false }
     );
-    if (response?.payload?.errors?.length) throw new Error('update_failed');
+    const responseErrors = response?.payload?.errors || [];
+    if (responseErrors.length) {
+      if (updateId !== callVisibilityUpdateId || props.inbox.id !== inboxId) {
+        return;
+      }
+      showCallsHandledByOtherOperators.value = previousValue;
+      if (
+        responseErrors.some(error => error?.code === 'active_calls_present')
+      ) {
+        useAlert(
+          t(
+            'INBOX_MGMT.EDIT.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.ACTIVE_CALL_ERROR'
+          )
+        );
+      } else {
+        useAlert(t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      }
+      return;
+    }
     if (updateId !== callVisibilityUpdateId || props.inbox.id !== inboxId) {
       return;
     }

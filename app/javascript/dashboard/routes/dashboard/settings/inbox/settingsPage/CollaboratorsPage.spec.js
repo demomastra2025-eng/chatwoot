@@ -168,6 +168,32 @@ describe('CollaboratorsPage call visibility', () => {
     );
   });
 
+  it('shows the actionable active-call error returned by the backend', async () => {
+    mocks.updateVirtualPbxChannel.mockResolvedValue({
+      payload: {
+        errors: [
+          {
+            code: 'active_calls_present',
+            message: 'Channel has active calls and cannot be updated',
+          },
+        ],
+      },
+    });
+    const wrapper = buildWrapper();
+    await flushPromises();
+
+    const toggle = wrapper.findComponent(
+      '[data-test="handled-call-visibility"]'
+    );
+    toggle.vm.$emit('update:modelValue', false);
+    await flushPromises();
+
+    expect(toggle.props('modelValue')).toBe(true);
+    expect(mocks.alert).toHaveBeenCalledWith(
+      'INBOX_MGMT.EDIT.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.ACTIVE_CALL_ERROR'
+    );
+  });
+
   it('ignores a stale status response after switching inboxes', async () => {
     let resolveFirstRequest;
     mocks.getVirtualPbxStatus
