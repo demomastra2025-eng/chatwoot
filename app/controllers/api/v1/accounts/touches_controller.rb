@@ -4,10 +4,14 @@ class Api::V1::Accounts::TouchesController < Api::V1::Accounts::OutboundBaseCont
   def index
     authorize Reminder
 
-    touches = filtered_touches
+    pagination = Outbound::TouchesPagination.new(
+      scope: filtered_touches,
+      page: params[:page],
+      per_page: params[:per_page]
+    )
     render_payload(
-      touches.map { |touch| Outbound::PayloadBuilder.touch_payload(touch) },
-      meta: { count: touches.size }
+      pagination.records.map { |touch| Outbound::PayloadBuilder.touch_payload(touch) },
+      meta: pagination.metadata
     )
   end
 

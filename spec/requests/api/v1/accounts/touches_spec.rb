@@ -18,6 +18,28 @@ RSpec.describe 'Touches API', type: :request do
     expect(response.parsed_body.dig('payload', 0, 'action_type')).to eq('send_message')
   end
 
+  it 'lists a requested page with pagination metadata' do
+    3.times do |index|
+      create(
+        :reminder,
+        account: account,
+        touch_conversation: conversation,
+        body: "Touch #{index}"
+      )
+    end
+
+    get path, params: { page: 2, per_page: 2 }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].size).to eq(1)
+    expect(response.parsed_body['meta']).to include(
+      'count' => 3,
+      'current_page' => 2,
+      'per_page' => 2,
+      'total_pages' => 2
+    )
+  end
+
   it 'returns an empty list for unsupported remindable filters' do
     create(:reminder, account: account, touch_conversation: conversation)
 

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import { useToggle } from '@vueuse/core';
+import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import CampaignsAPI from 'dashboard/api/campaigns';
 import TouchesAPI from 'dashboard/api/touches';
@@ -25,6 +26,7 @@ import TouchEmptyState from 'dashboard/components-next/Outbound/TouchEmptyState.
 import TouchEditorDrawer from 'dashboard/components-next/Outbound/TouchEditorDrawer.vue';
 import TouchAnalyticsDialog from 'dashboard/components-next/Outbound/TouchAnalyticsDialog.vue';
 import TouchList from 'dashboard/components-next/Outbound/TouchList.vue';
+import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 
 const props = defineProps({
   mode: {
@@ -37,6 +39,8 @@ const MODE_MASS = 'mass';
 const MODE_TOUCHES = 'touches';
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const { checkPermissions } = usePolicy();
 const store = useStore();
 const getters = useStoreGetters();
@@ -49,6 +53,13 @@ const resumingCampaignId = ref(null);
 const [showOutboundCampaignDialog, toggleOutboundCampaignDialog] = useToggle();
 
 const touches = ref([]);
+const TOUCHES_PER_PAGE = 25;
+const touchesMeta = ref({
+  currentPage: 1,
+  perPage: TOUCHES_PER_PAGE,
+  totalEntries: 0,
+});
+const touchesRequestId = ref(0);
 const isFetchingTouches = ref(false);
 const isTouchEditorOpen = ref(false);
 const editingTouch = ref(null);
@@ -101,6 +112,10 @@ const currentMode = computed(() => {
 });
 
 const isTouchesMode = computed(() => currentMode.value === MODE_TOUCHES);
+const currentTouchPage = computed(() => {
+  const page = Number.parseInt(route.query.page, 10);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+});
 const selectedTouch = ref(null);
 
 const pageTitle = computed(() => {
@@ -121,7 +136,7 @@ const touchEditorSelectionMode = computed(() => {
 
 const totalItems = computed(() => {
   return isTouchesMode.value
-    ? allTouches.value.length
+    ? touchesMeta.value.totalEntries
     : allCampaigns.value.length;
 });
 
@@ -208,18 +223,55 @@ const handleResume = async campaign => {
 };
 
 const fetchTouches = async () => {
+  const requestId = touchesRequestId.value + 1;
+  touchesRequestId.value = requestId;
   isFetchingTouches.value = true;
 
   try {
-    const { data } = await TouchesAPI.get();
+    const { data } = await TouchesAPI.get({
+      page: currentTouchPage.value,
+      per_page: TOUCHES_PER_PAGE,
+    });
+    if (requestId !== touchesRequestId.value) return;
+
     touches.value = data.payload || [];
+    touchesMeta.value = {
+      currentPage: data.meta?.current_page || currentTouchPage.value,
+      perPage: data.meta?.per_page || TOUCHES_PER_PAGE,
+      totalEntries: data.meta?.count || 0,
+    };
+
+    const totalPages = Math.ceil(
+      touchesMeta.value.totalEntries / touchesMeta.value.perPage
+    );
+    if (totalPages > 0 && currentTouchPage.value > totalPages) {
+      router.replace({
+        query: {
+          ...route.query,
+          page: totalPages,
+        },
+      });
+    }
   } catch (error) {
+    if (requestId !== touchesRequestId.value) return;
+
     useAlert(
       error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES')
     );
   } finally {
-    isFetchingTouches.value = false;
+    if (requestId === touchesRequestId.value) {
+      isFetchingTouches.value = false;
+    }
   }
+};
+
+const setTouchPage = page => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: page === 1 ? undefined : page,
+    },
+  });
 };
 
 const openCreateTouch = () => {
@@ -295,8 +347,8 @@ const handleTouchDeleted = async () => {
 };
 
 watch(
-  () => isTouchesMode.value,
-  isTouches => {
+  () => [isTouchesMode.value, currentTouchPage.value],
+  ([isTouches]) => {
     if (isTouches) {
       fetchTouches();
       return;
@@ -354,6 +406,13 @@ watch(
         :title="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_TITLE')"
         :subtitle="$t('OUTBOUND_WORKSPACE.TOUCHES.EMPTY_SUBTITLE')"
         class="pt-8"
+      />
+      <PaginationFooter
+        v-if="totalItems > touchesMeta.perPage"
+        :current-page="currentTouchPage"
+        :total-items="totalItems"
+        :items-per-page="touchesMeta.perPage"
+        @update:current-page="setTouchPage"
       />
     </template>
 

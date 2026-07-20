@@ -146,28 +146,14 @@ class Reminders::ExecuteService
     ).blocked?
   end
 
-  def with_execution_lock
+  def with_execution_lock(&)
     return yield unless reminder.persisted?
 
-    result = nil
-    reminder.with_lock do
-      reminder.reload
-      next unless reminder.processing?
-      next unless current_execution_claim?
-
-      if reminder.delivery_materialized?
-        result = Reminders::ExecutionFinisher.materialized_message_for(reminder)
-        next
-      end
-
-      if stale_execution?
-        reset_stale_execution!
-        next
-      end
-
-      result = yield
-    end
-    result
+    Reminders::ExecutionLockService.new(
+      reminder: reminder,
+      processing_claim: @processing_claim,
+      execution_updated_at: @execution_updated_at
+    ).perform(&)
   end
 
   def reload_reminder
