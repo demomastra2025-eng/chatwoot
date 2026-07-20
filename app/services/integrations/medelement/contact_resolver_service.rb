@@ -113,7 +113,8 @@ class Integrations::Medelement::ContactResolverService
     email = patient['PATIENT_EMAIL'].to_s.downcase.presence
     contact = contact_for_lookup(patient_code: patient_code, iin: iin, email: email) || account.contacts.new
 
-    phone = main_phone(patient)
+    source_phone = main_phone(patient)
+    phone = source_phone
     phone_conflict_comment = nil
     if phone.present?
       conflicting_contact = account.contacts.where(phone_number: phone).where.not(id: contact.id).first
@@ -143,7 +144,7 @@ class Integrations::Medelement::ContactResolverService
       'medelement_last_synced_at' => Time.current.iso8601,
       'medelement_patient_code' => patient_code.to_s,
       'phone_conflict_comment' => phone_conflict_comment,
-      'secondary_phones' => secondary_phones(patient, phone)
+      'secondary_phones' => secondary_phones(patient, source_phone)
     ).compact
     contact.save!
     contact

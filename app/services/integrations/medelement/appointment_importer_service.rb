@@ -14,8 +14,27 @@ class Integrations::Medelement::AppointmentImporterService
 
   def upsert!(resource:, contact:, reception:, import_context:)
     appointment = find_or_initialize_appointment(reception)
-    ensure_medelement_source!(appointment)
+    unless appointment.persisted?
+      return persist_appointment!(
+        appointment,
+        resource: resource,
+        contact: contact,
+        reception: reception,
+        import_context: import_context
+      )
+    end
 
+    appointment.with_lock do
+      persist_appointment!(appointment, resource: resource, contact: contact, reception: reception, import_context: import_context)
+    end
+  end
+
+  private
+
+  attr_reader :account
+
+  def persist_appointment!(appointment, resource:, contact:, reception:, import_context:)
+    ensure_medelement_source!(appointment)
     appointment.assign_attributes(
       appointment_attributes(
         appointment: appointment,
@@ -30,10 +49,6 @@ class Integrations::Medelement::AppointmentImporterService
     appointment
   end
 
-  private
-
-  attr_reader :account
-
   def appointment_attributes(appointment:, resource:, contact:, reception:, import_context:)
     starts_at = import_context[:starts_at]
     ends_at = import_context[:ends_at]
@@ -42,6 +57,7 @@ class Integrations::Medelement::AppointmentImporterService
       account: account,
       resource: resource,
       contact: contact,
+      conversation: conversation_for_contact(appointment, contact),
       starts_at: starts_at,
       ends_at: ends_at,
       duration_min: duration_minutes(starts_at, ends_at),
@@ -82,8 +98,18 @@ class Integrations::Medelement::AppointmentImporterService
   end
 
   def contact_phone(contact)
-    contact&.phone_number.presence ||
-      Array(contact&.custom_attributes&.dig('secondary_phones')).compact_blank.first
+    return contact.phone_number if contact&.phone_number.present?
+
+    conflict_comment = contact&.custom_attributes&.dig('phone_conflict_comment').to_s
+    Array(contact&.custom_attributes&.dig('secondary_phones')).compact_blank.find do |phone|
+      conflict_comment.blank? || conflict_comment.exclude?(phone)
+    end
+  end
+
+  def conversation_for_contact(appointment, contact)
+    conversation = appointment.conversation
+    return conversation if conversation.blank?
+    return conversation if contact.present? && conversation.contact_id == contact.id
   end
 
   def custom_attributes(appointment, reception, import_context)

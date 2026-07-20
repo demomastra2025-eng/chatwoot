@@ -210,7 +210,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       starts_at: booking_day,
       ends_at: booking_day + 30.minutes
     )
-    original_attributes = appointment.attributes.except('conversation_id', 'updated_at')
+    original_attributes = appointment.attributes.except('conversation_id', 'owner_id', 'updated_at')
 
     expect do
       post "#{path}/#{appointment.id}/conversation",
@@ -226,10 +226,11 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(appointment.reload).to have_attributes(
       conversation_id: be_present,
+      owner_id: agent.id,
       source: 'medelement',
       external_ref: 'medelement:reception:conversation-test'
     )
-    expect(appointment.attributes.except('conversation_id', 'updated_at')).to eq(original_attributes)
+    expect(appointment.attributes.except('conversation_id', 'owner_id', 'updated_at')).to eq(original_attributes)
     expect(response_body.dig('payload', 'external_conversation_creation_supported')).to be(true)
   end
 

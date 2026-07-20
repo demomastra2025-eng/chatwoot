@@ -56,6 +56,54 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
     end.not_to change(Conversation, :count)
   end
 
+  it 'preserves the assignee when a single-conversation inbox returns an existing conversation' do
+    existing_assignee = create(:user, account: account, role: :agent)
+    inbox.update!(lock_to_single_conversation: true)
+    existing_conversation = create(
+      :conversation,
+      account: account,
+      assignee: existing_assignee,
+      contact: contact,
+      contact_inbox: contact_inbox,
+      inbox: inbox
+    )
+
+    expect do
+      result = described_class.new(
+        account: account,
+        appointment: appointment,
+        inbox: inbox,
+        params: params,
+        actor: actor
+      ).perform
+
+      expect(result.conversation_id).to eq(existing_conversation.id)
+    end.not_to change(Conversation, :count)
+    expect(existing_conversation.reload.assignee_id).to eq(existing_assignee.id)
+  end
+
+  it 'dispatches the appointment update event when linking a conversation' do
+    dispatcher = Rails.configuration.dispatcher
+    allow(dispatcher).to receive(:dispatch)
+
+    described_class.new(
+      account: account,
+      appointment: appointment,
+      inbox: inbox,
+      params: params,
+      actor: actor
+    ).perform
+
+    expect(dispatcher).to have_received(:dispatch).with(
+      'appointment.updated',
+      anything,
+      hash_including(
+        appointment: appointment,
+        changed_attributes: hash_including('conversation_id' => [nil, appointment.reload.conversation_id])
+      )
+    )
+  end
+
   it 'does not overwrite a contact changed before the appointment lock is acquired' do
     stale_params = params
     appointment.update!(contact: create(:contact, account: account))
@@ -93,7 +141,7 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
   end
 
   it 'rolls the conversation back when appointment linking fails' do
-    allow(appointment).to receive(:update_columns).and_raise(ActiveRecord::ActiveRecordError, 'link failed')
+    allow(appointment).to receive(:update!).and_raise(ActiveRecord::ActiveRecordError, 'link failed')
 
     expect do
       described_class.new(

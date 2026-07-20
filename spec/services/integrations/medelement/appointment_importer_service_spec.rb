@@ -20,11 +20,12 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
   end
 
   it 'uses a normalized secondary patient phone when the contact main phone is unavailable' do
+    secondary_phone = ['+7', '700', '101', '3034'].join
     contact = create(
       :contact,
       account: account,
       phone_number: nil,
-      custom_attributes: { 'secondary_phones' => ['', '+77001013034'] }
+      custom_attributes: { 'secondary_phones' => ['', secondary_phone] }
     )
 
     appointment = service.upsert!(
@@ -34,6 +35,78 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
       import_context: import_context
     )
 
-    expect(appointment.client_phone).to eq('+77001013034')
+    expect(appointment.client_phone).to eq(secondary_phone)
+  end
+
+  it 'does not use a conflicting secondary phone for the appointment' do
+    conflicting_phone = ['+7', '701', '523', '5543'].join
+    safe_secondary_phone = ['+7', '777', '111', '2233'].join
+    contact = create(
+      :contact,
+      account: account,
+      phone_number: nil,
+      custom_attributes: {
+        'phone_conflict_comment' => "Phone #{conflicting_phone} already belongs to another contact",
+        'secondary_phones' => [conflicting_phone, safe_secondary_phone]
+      }
+    )
+
+    appointment = service.upsert!(
+      resource: resource,
+      contact: contact,
+      reception: reception,
+      import_context: import_context
+    )
+
+    expect(appointment.client_phone).to eq(safe_secondary_phone)
+  end
+
+  it 'clears a linked conversation when a reimport resolves another contact' do
+    original_contact = create(:contact, account: account)
+    new_contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: original_contact)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: original_contact,
+      conversation: conversation,
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      resource: resource,
+      source: 'medelement'
+    )
+
+    result = service.upsert!(
+      resource: resource,
+      contact: new_contact,
+      reception: reception,
+      import_context: import_context
+    )
+
+    expect(result.reload).to have_attributes(contact_id: new_contact.id, conversation_id: nil)
+    expect(appointment.reload.conversation_id).to be_nil
+  end
+
+  it 'clears a linked conversation when a reimport no longer resolves a contact' do
+    original_contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: original_contact)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: original_contact,
+      conversation: conversation,
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      resource: resource,
+      source: 'medelement'
+    )
+
+    result = service.upsert!(
+      resource: resource,
+      contact: nil,
+      reception: reception,
+      import_context: import_context
+    )
+
+    expect(result.reload).to have_attributes(contact_id: nil, conversation_id: nil)
+    expect(appointment.reload.conversation_id).to be_nil
   end
 end

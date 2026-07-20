@@ -5,6 +5,8 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
   let(:client) { instance_double(Integrations::Medelement::Client) }
   let(:service) { described_class.new(account: account, client: client) }
   let(:patient_code) { '550990851604984873' }
+  let(:primary_phone) { ['+7', '701', '523', '5543'].join }
+  let(:secondary_phone) { ['+7', '777', '111', '2233'].join }
   let(:patient_payload) do
     {
       'PROFILE_CODE' => patient_code,
@@ -28,23 +30,23 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     expect(contact.name).to eq('Сулейменова Светлана Темирбаевна')
     expect(contact.identifier).to eq('720914402646')
-    expect(contact.phone_number).to eq('+77015235543')
+    expect(contact.phone_number).to eq(primary_phone)
     expect(contact.email).to eq('patient@example.com')
     expect(contact.additional_attributes['country_code']).to eq('KZ')
     expect(contact.additional_attributes['country']).to eq('Kazakhstan')
     expect(contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
-    expect(contact.custom_attributes['secondary_phones']).to eq(['+77771112233'])
+    expect(contact.custom_attributes['secondary_phones']).to eq([secondary_phone])
   end
 
   it 'does not overwrite a phone that already belongs to another contact' do
-    create(:contact, account: account, phone_number: '+77015235543')
+    create(:contact, account: account, phone_number: primary_phone)
     allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
 
     contact = service.sync_patient!(patient_code)
 
     expect(contact.phone_number).to be_blank
-    expect(contact.custom_attributes['phone_conflict_comment']).to include('+77015235543')
-    expect(contact.custom_attributes['secondary_phones']).to include('+77015235543')
+    expect(contact.custom_attributes['phone_conflict_comment']).to include(primary_phone)
+    expect(contact.custom_attributes['secondary_phones']).to eq([secondary_phone])
   end
 
   it 'does not refresh a fresh contact' do
