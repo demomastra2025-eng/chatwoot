@@ -59,6 +59,7 @@ const touchesMeta = ref({
   perPage: TOUCHES_PER_PAGE,
   totalEntries: 0,
 });
+const paginationSupported = ref(true);
 const touchesRequestId = ref(0);
 const isFetchingTouches = ref(false);
 const isTouchEditorOpen = ref(false);
@@ -222,7 +223,17 @@ const handleResume = async campaign => {
   }
 };
 
+const setTouchPage = page => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: page === 1 ? undefined : page,
+    },
+  });
+};
+
 const fetchTouches = async () => {
+  const requestedPage = currentTouchPage.value;
   const requestId = touchesRequestId.value + 1;
   touchesRequestId.value = requestId;
   isFetchingTouches.value = true;
@@ -234,26 +245,35 @@ const fetchTouches = async () => {
     });
     if (requestId !== touchesRequestId.value) return;
 
+    const hasPaginationMetadata =
+      typeof data.meta?.current_page === 'number' &&
+      typeof data.meta?.per_page === 'number';
+    paginationSupported.value = hasPaginationMetadata;
     touches.value = data.payload || [];
     touchesMeta.value = {
-      currentPage: data.meta?.current_page || currentTouchPage.value,
-      perPage: data.meta?.per_page || TOUCHES_PER_PAGE,
+      currentPage: hasPaginationMetadata ? data.meta.current_page : 1,
+      perPage: hasPaginationMetadata
+        ? data.meta.per_page
+        : Math.max(
+            data.meta?.count || data.payload?.length || 0,
+            TOUCHES_PER_PAGE
+          ),
       totalEntries: data.meta?.count || 0,
     };
 
     const totalPages = Math.ceil(
       touchesMeta.value.totalEntries / touchesMeta.value.perPage
     );
-    if (totalPages > 0 && currentTouchPage.value > totalPages) {
-      router.replace({
-        query: {
-          ...route.query,
-          page: totalPages,
-        },
-      });
+    if (!hasPaginationMetadata && requestedPage > 1) {
+      setTouchPage(1);
+    } else if (hasPaginationMetadata && requestedPage > totalPages) {
+      setTouchPage(totalPages || 1);
     }
   } catch (error) {
     if (requestId !== touchesRequestId.value) return;
+    if (requestedPage !== touchesMeta.value.currentPage) {
+      touches.value = [];
+    }
 
     useAlert(
       error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES')
@@ -263,15 +283,6 @@ const fetchTouches = async () => {
       isFetchingTouches.value = false;
     }
   }
-};
-
-const setTouchPage = page => {
-  router.replace({
-    query: {
-      ...route.query,
-      page: page === 1 ? undefined : page,
-    },
-  });
 };
 
 const openCreateTouch = () => {
@@ -408,7 +419,7 @@ watch(
         class="pt-8"
       />
       <PaginationFooter
-        v-if="totalItems > touchesMeta.perPage"
+        v-if="paginationSupported && totalItems > touchesMeta.perPage"
         :current-page="currentTouchPage"
         :total-items="totalItems"
         :items-per-page="touchesMeta.perPage"
