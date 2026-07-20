@@ -607,6 +607,22 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.to_json).not_to include('do-not-return-binotel-profile-secret')
   end
 
+  it 'accepts a legacy Virtual PBX PATCH without a configuration version' do
+    post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+
+    put "#{base_path}/#{inbox_id}",
+        params: {
+          dry_run: false,
+          virtual_pbx_channel: { channel_name: 'Legacy client channel name' }
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(Inbox.find(inbox_id).name).to eq('Legacy client channel name')
+  end
+
   it 'rejects a stale Virtual PBX PATCH without overwriting a newer configuration' do
     post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
     ui_config = response.parsed_body.dig('payload', 'ui_config')

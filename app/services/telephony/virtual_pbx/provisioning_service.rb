@@ -255,8 +255,10 @@ class Telephony::VirtualPbx::ProvisioningService
   attr_reader :account, :current_user, :config_builder
 
   def verify_configuration_version!(config, expected_version)
+    return if expected_version.blank?
+
     current_version = config[:configuration_version]
-    if expected_version.present? && current_version.present? &&
+    if current_version.present? &&
        ActiveSupport::SecurityUtils.secure_compare(expected_version.to_s, current_version.to_s)
       return
     end
