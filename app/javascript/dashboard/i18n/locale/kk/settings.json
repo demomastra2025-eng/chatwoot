@@ -459,6 +459,7 @@
     "SIP_TELEPHONY": {
       "LABEL": "SIP-телефония",
       "RECONNECT": "SIP-ті қайта қосу",
+      "CHANNEL_LABEL": "SIP ({name})",
       "CHANNEL_FALLBACK": "Арна #{id}",
       "STATUS": {
         "READY": "Қоңырауларға дайын",

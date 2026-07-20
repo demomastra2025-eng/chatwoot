@@ -49,13 +49,18 @@ vi.mock('dashboard/composables/useImpersonation', () => ({
 const translations = {
   'SIDEBAR.SIP_TELEPHONY.LABEL': 'SIP-телефония',
   'SIDEBAR.SIP_TELEPHONY.RECONNECT': 'Переподключить SIP',
+  'SIDEBAR.SIP_TELEPHONY.CHANNEL_LABEL': 'SIP ({name})',
   'SIDEBAR.SIP_TELEPHONY.CHANNEL_FALLBACK': 'Канал',
   'SIDEBAR.SIP_TELEPHONY.STATUS.READY': 'Готова к звонкам',
   'SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING': 'Подключение…',
   'SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED': 'Не подключена',
   'SIDEBAR.SIP_TELEPHONY.STATUS.ERROR': 'Ошибка подключения',
 };
-const translate = key => translations[key] || key;
+const translate = (key, params = {}) =>
+  (translations[key] || key).replace(
+    /\{(\w+)\}/g,
+    (_, name) => params[name] ?? `{${name}}`
+  );
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: translate }),
@@ -136,15 +141,23 @@ describe('SidebarProfileMenuStatus', () => {
     );
 
     expect(rows).toHaveLength(2);
-    expect(rows[0].text()).toContain('Отдел продаж');
+    expect(rows[0].find('div').text()).toBe('SIP (Отдел продаж)');
     expect(rows[0].text()).not.toContain('Sipuni');
-    expect(rows[1].text()).toContain('Поддержка');
+    expect(rows[1].find('div').text()).toBe('SIP (Поддержка)');
     expect(rows[1].text()).not.toContain('Binotel');
     expect(indicators[0].attributes('disabled')).toBeDefined();
     expect(indicators[0].find('i').attributes('data-icon')).toBe(
       'i-lucide-circle-check'
     );
+    expect(indicators[0].find('span').classes()).not.toContain('sr-only');
+    expect(indicators[0].find('span').text()).toBe('Готова к звонкам');
+    expect(indicators[0].classes()).toContain('text-[#008573]');
+    expect(indicators[0].classes()).toContain('disabled:opacity-100');
+    expect(indicators[0].classes()).not.toContain('bg-n-teal-3');
+    expect(indicators[0].element.lastElementChild.tagName).toBe('I');
     expect(indicators[1].attributes('disabled')).toBeUndefined();
+    expect(indicators[1].classes()).toContain('text-[#ca244d]');
+    expect(indicators[1].classes()).not.toContain('bg-n-ruby-3');
     expect(indicators[1].find('i').attributes('data-icon')).toBe(
       'i-lucide-refresh-cw'
     );

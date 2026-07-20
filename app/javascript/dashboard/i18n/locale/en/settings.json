@@ -476,6 +476,7 @@
     "SIP_TELEPHONY": {
       "LABEL": "SIP telephony",
       "RECONNECT": "Reconnect SIP",
+      "CHANNEL_LABEL": "SIP ({name})",
       "CHANNEL_FALLBACK": "Channel #{id}",
       "STATUS": {
         "READY": "Ready for calls",

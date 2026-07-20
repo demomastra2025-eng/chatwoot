@@ -476,6 +476,7 @@
     "SIP_TELEPHONY": {
       "LABEL": "SIP-телефония",
       "RECONNECT": "Переподключить SIP",
+      "CHANNEL_LABEL": "SIP ({name})",
       "CHANNEL_FALLBACK": "Канал #{id}",
       "STATUS": {
         "READY": "Готова к звонкам",

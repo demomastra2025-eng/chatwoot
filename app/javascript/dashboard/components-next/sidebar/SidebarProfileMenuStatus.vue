@@ -65,22 +65,22 @@ const sipStatusConfig = session => {
     ready: {
       label: t('SIDEBAR.SIP_TELEPHONY.STATUS.READY'),
       icon: 'i-lucide-circle-check',
-      color: 'text-n-teal-9',
+      color: 'text-[#008573]',
     },
     connecting: {
       label: t('SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING'),
       icon: 'i-lucide-loader-circle',
-      color: 'text-n-amber-9',
+      color: 'text-n-amber-12',
     },
     disconnected: {
       label: t('SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED'),
       icon: 'i-lucide-refresh-cw',
-      color: 'text-n-slate-10',
+      color: 'text-[#ca244d]',
     },
     error: {
       label: t('SIDEBAR.SIP_TELEPHONY.STATUS.ERROR'),
       icon: 'i-lucide-refresh-cw',
-      color: 'text-n-ruby-9',
+      color: 'text-[#ca244d]',
     },
   };
 
@@ -233,11 +233,15 @@ onUnmounted(() => {
         data-testid="sip-telephony-status"
       >
         <div class="flex-grow min-w-0 truncate text-sm">
-          {{ sipChannelName(session) }}
+          {{
+            $t('SIDEBAR.SIP_TELEPHONY.CHANNEL_LABEL', {
+              name: sipChannelName(session),
+            })
+          }}
         </div>
         <button
           type="button"
-          class="flex items-center justify-center shrink-0 size-6"
+          class="flex items-center justify-end shrink-0 gap-1 min-w-0 font-normal disabled:opacity-100"
           :class="[
             sipStatusConfig(session).color,
             { 'cursor-pointer': canReconnectSip(session) },
@@ -251,12 +255,14 @@ onUnmounted(() => {
           data-testid="sip-telephony-indicator"
           @click="reconnectSip(session)"
         >
+          <span class="text-xs whitespace-nowrap">
+            {{ sipStatusConfig(session).label }}
+          </span>
           <Icon
             :icon="sipStatusConfig(session).icon"
             class="size-4"
             :class="{ 'animate-spin': sipStatus(session) === 'connecting' }"
           />
-          <span class="sr-only">{{ sipStatusConfig(session).label }}</span>
         </button>
       </DropdownItem>
       <DropdownItem preserve-open>
