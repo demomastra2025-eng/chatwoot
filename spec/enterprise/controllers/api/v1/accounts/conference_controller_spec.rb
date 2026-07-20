@@ -153,16 +153,20 @@ RSpec.describe Api::V1::Accounts::ConferenceController, type: :request do
 
         with_modified_env(TELEPHONY_SIPUNI_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni') do
           get "/api/v1/accounts/#{account.id}/inboxes/#{voice_inbox.id}/conference/token",
+              params: { client_instance_id: 'conference-test-tab' },
               headers: agent.create_new_auth_token
         end
 
         expect(response).to have_http_status(:ok)
         body = response.parsed_body
         expect(body['provider']).to eq('sipuni')
-        expect(body['janus_server']).to eq('wss://dev.one-link.kz/janus-sipuni')
+        janus_uri = URI.parse(body['janus_server'])
+        expect("#{janus_uri.scheme}://#{janus_uri.host}#{janus_uri.path}").to eq('wss://dev.one-link.kz/janus-sipuni')
+        expect(URI.decode_www_form(janus_uri.query).to_h['janus_ticket']).to be_present
         expect(body.dig('sip', 'username')).to eq('990001000021')
         expect(body.dig('sip', 'host')).to eq('ats01.kz.sipuni.com')
         expect(body.dig('sip', 'internal_extension')).to eq('505')
+        expect(body['registration_instance_id']).to be_present
       end
     end
 

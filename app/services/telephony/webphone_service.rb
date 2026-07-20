@@ -15,14 +15,14 @@ class Telephony::WebphoneService
     @account = account
   end
 
-  def token_for(user:, inbox: nil)
-    bootstrap_payload = webphone_bootstrap_payload_for(user, inbox)
+  def token_for(user:, inbox: nil, client_instance_id: nil)
+    bootstrap_payload = webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return bootstrap_payload if bootstrap_payload.present?
 
     operator_identity = operator_identity_for(user: user, inbox: inbox)
     return unsupported_webphone_payload(inbox: inbox, reason: 'agent_binding_missing') if operator_identity.blank?
 
-    webphone_payload_for_identity(user, inbox, operator_identity)
+    webphone_payload_for_identity(user, inbox, operator_identity, client_instance_id)
   end
 
   def update_presence!(user:, registered:, inbox: nil, registration_context: {})
@@ -93,16 +93,16 @@ class Telephony::WebphoneService
 
   attr_reader :account
 
-  def webphone_bootstrap_payload_for(user, inbox)
+  def webphone_bootstrap_payload_for(user, inbox, client_instance_id)
     return if inbox.present?
 
-    native_sessions = janus_sip_webphone_payloads_for(user)
+    native_sessions = janus_sip_webphone_payloads_for(user, client_instance_id)
     multi_webphone_payload(native_sessions) if native_sessions.present?
   end
 
-  def webphone_payload_for_identity(user, inbox, operator_identity)
+  def webphone_payload_for_identity(user, inbox, operator_identity, client_instance_id)
     return unsupported_provider_extension_payload(inbox, operator_identity) if provider_managed_external_extension?(inbox, operator_identity)
-    return janus_sip_webphone_payload(inbox, operator_identity, user) if janus_sip_webphone?(inbox, operator_identity)
+    return janus_sip_webphone_payload(inbox, operator_identity, user, client_instance_id) if janus_sip_webphone?(inbox, operator_identity)
 
     unsupported_webphone_payload(inbox: inbox, reason: 'janus_sip_profile_required').merge(
       browser_join_supported: false,
@@ -150,18 +150,35 @@ class Telephony::WebphoneService
     inbox_voice_provider(profile.inbox).to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
   end
 
-  def janus_sip_webphone_payload(inbox, operator_identity, user)
+  def janus_sip_webphone_payload(inbox, operator_identity, user, client_instance_id)
     profile = operator_identity.sip_profile
     profile.ensure_registration_config_version!
+    lease = profile.acquire_browser_registration_lease!(client_instance_id: client_instance_id, user_id: user.id)
     provider = janus_sip_provider_for(inbox, profile)
-    credentials = janus_sip_credentials_for(profile)
     raw_janus_server = janus_sip_server_url(provider)
-    support = janus_sip_support_state(provider, operator_identity, credentials, raw_janus_server)
-    janus_server = authorized_janus_server_url(raw_janus_server, user, profile)
-    sip = janus_sip_contract(credentials, profile)
+    credentials = lease[:acquired] ? janus_sip_credentials_for(profile) : nil
+    support = if lease[:acquired]
+                janus_sip_support_state(provider, operator_identity, credentials, raw_janus_server)
+              else
+                reason = if client_instance_id.present?
+                           'sip_profile_registration_lease_owned_by_another_tab'
+                         else
+                           'webphone_client_instance_id_required'
+                         end
+                { supported: false, reason: reason }
+              end
+    janus_server = if lease[:acquired]
+                     authorized_janus_server_url(
+                       raw_janus_server,
+                       user,
+                       profile,
+                       registration_instance_id: lease[:registration_instance_id]
+                     )
+                   end
+    sip = janus_sip_contract(credentials, profile) if lease[:acquired]
 
     payload = janus_sip_base_payload(provider, operator_identity, profile, janus_server, support).merge(
-      janus_sip_session_payload(profile)
+      janus_sip_session_payload(profile, lease[:acquired] ? lease : {})
     ).merge(
       external_number: inbox&.channel&.phone_number,
       externalNumber: inbox&.channel&.phone_number,
@@ -320,7 +337,7 @@ class Telephony::WebphoneService
     ActiveModel::Type::Boolean.new.cast(value)
   end
 
-  def janus_sip_session_payload(profile)
+  def janus_sip_session_payload(profile, lease)
     session_key = janus_sip_session_key(profile)
 
     {
@@ -330,6 +347,10 @@ class Telephony::WebphoneService
       sipProfileId: profile.id,
       registration_config_version: profile.registration_config_version,
       registrationConfigVersion: profile.registration_config_version,
+      registration_instance_id: lease[:registration_instance_id],
+      registrationInstanceId: lease[:registration_instance_id],
+      registration_lease_expires_at: lease[:expires_at],
+      registrationLeaseExpiresAt: lease[:expires_at],
       account_id: account.id,
       accountId: account.id,
       inbox_id: profile.inbox_id,
@@ -422,7 +443,7 @@ class Telephony::WebphoneService
     }.compact
   end
 
-  def janus_sip_webphone_payloads_for(user)
+  def janus_sip_webphone_payloads_for(user, client_instance_id)
     return [] if user.blank?
 
     account.telephony_sip_profiles
@@ -435,18 +456,19 @@ class Telephony::WebphoneService
       next unless provider.to_s.in?(JANUS_SIP_WEBPHONE_PROVIDERS)
 
       operator_identity = Telephony::OperatorIdentityResolver::Identity.new(source: :sip_profile, record: profile)
-      janus_sip_webphone_payload(profile.inbox, operator_identity, user)
+      janus_sip_webphone_payload(profile.inbox, operator_identity, user, client_instance_id)
     end
   end
 
-  def authorized_janus_server_url(server_url, user, profile)
+  def authorized_janus_server_url(server_url, user, profile, registration_instance_id:)
     return server_url if server_url.blank?
 
     Telephony::JanusWebsocketTicket.url_for(
       server_url: server_url,
       account: account,
       user: user,
-      sip_profile: profile
+      sip_profile: profile,
+      registration_instance_id: registration_instance_id
     )
   end
 

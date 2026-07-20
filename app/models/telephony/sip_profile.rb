@@ -142,6 +142,7 @@ class Telephony::SipProfile < ApplicationRecord
 
   DEFAULT_REGISTRATION_TTL = 2.minutes
   DEFAULT_REGISTRATION_STABILITY_WINDOW = 10.seconds
+  BROWSER_REGISTRATION_LEASE_KEY = 'browser_registration_lease'
   REGISTRATION_CONFIG_VERSION_KEY = 'registration_config_version'
   REGISTRATION_CONTEXT_SIGNATURE_KEY = 'registration_context_signature'
   REGISTRATION_CONTEXT_KEYS = %w[
@@ -264,6 +265,57 @@ class Telephony::SipProfile < ApplicationRecord
     end
   end
 
+  def acquire_browser_registration_lease!(client_instance_id:, user_id:, occurred_at: Time.current)
+    return { acquired: false, registration_instance_id: nil } if client_instance_id.blank?
+
+    result = nil
+    with_lock do
+      reload
+      lease = browser_registration_lease
+      if browser_registration_lease_active?(lease, occurred_at) && lease['client_instance_id'].to_s != client_instance_id.to_s
+        result = {
+          acquired: false,
+          registration_instance_id: lease['registration_instance_id'],
+          expires_at: lease['expires_at']
+        }
+        next
+      end
+      if lease.blank? && browser_registered?
+        result = { acquired: false, registration_instance_id: metadata.to_h.dig('registration_context', 'registration_instance_id') }
+        next
+      end
+
+      registration_instance_id = if lease['client_instance_id'].to_s == client_instance_id.to_s
+                                   lease['registration_instance_id'].presence || SecureRandom.uuid
+                                 else
+                                   SecureRandom.uuid
+                                 end
+      expires_at = occurred_at + registration_ttl.seconds
+      registration_metadata = (metadata || {}).deep_dup
+      registration_metadata[BROWSER_REGISTRATION_LEASE_KEY] = {
+        'client_instance_id' => client_instance_id,
+        'registration_instance_id' => registration_instance_id,
+        'user_id' => user_id,
+        'acquired_at' => occurred_at.iso8601,
+        'expires_at' => expires_at.iso8601
+      }
+      update!(metadata: registration_metadata)
+      result = { acquired: true, registration_instance_id: registration_instance_id, expires_at: expires_at.iso8601 }
+    end
+
+    result
+  end
+
+  def browser_registration_lease_valid?(registration_instance_id, occurred_at: Time.current)
+    lease = browser_registration_lease
+    browser_registration_lease_active?(lease, occurred_at) &&
+      registration_instance_id.present? &&
+      ActiveSupport::SecurityUtils.secure_compare(
+        lease['registration_instance_id'].to_s,
+        registration_instance_id.to_s
+      )
+  end
+
   def update_browser_registration!(registered:, occurred_at: Time.current, registration_context: nil)
     outcome = nil
 
@@ -296,9 +348,11 @@ class Telephony::SipProfile < ApplicationRecord
     if registered
       registration_metadata[REGISTRATION_CONTEXT_SIGNATURE_KEY] = registration_context_signature
       registration_metadata['registration_context'] = registration_context_payload.merge(registration_context.to_h).compact
+      renew_browser_registration_lease!(registration_metadata, registration_context, occurred_at)
     else
       registration_metadata.delete(REGISTRATION_CONTEXT_SIGNATURE_KEY)
       registration_metadata.delete('registration_context')
+      registration_metadata.delete(BROWSER_REGISTRATION_LEASE_KEY) if browser_registration_lease_matches?(registration_context)
     end
 
     update!(metadata: registration_metadata, last_synced_at: occurred_at)
@@ -353,6 +407,7 @@ class Telephony::SipProfile < ApplicationRecord
     registration_metadata['last_unregistered_event_at'] = Time.current.iso8601 if persisted?
     registration_metadata.delete(REGISTRATION_CONTEXT_SIGNATURE_KEY)
     registration_metadata.delete('registration_context')
+    registration_metadata.delete(BROWSER_REGISTRATION_LEASE_KEY)
     registration_metadata.delete('last_registration_instance_id')
     registration_metadata.delete('last_presence_sequence')
     self.metadata = registration_metadata
@@ -401,6 +456,35 @@ class Telephony::SipProfile < ApplicationRecord
     !browser_registration_context_matches?(context)
   end
 
+  def browser_registration_lease
+    metadata_value(BROWSER_REGISTRATION_LEASE_KEY).to_h.deep_stringify_keys
+  end
+
+  def browser_registration_lease_active?(lease = browser_registration_lease, reference_time = Time.current)
+    expires_at = Time.zone.parse(lease['expires_at'].to_s) if lease['expires_at'].present?
+    expires_at.present? && expires_at >= reference_time
+  rescue ArgumentError, TypeError
+    false
+  end
+
+  def browser_registration_lease_matches?(context)
+    lease_instance_id = browser_registration_lease['registration_instance_id']
+    return true if lease_instance_id.blank?
+
+    lease_instance_id.to_s == context_value(context, 'registration_instance_id').to_s
+  end
+
+  def renew_browser_registration_lease!(registration_metadata, context, occurred_at)
+    return unless browser_registration_lease_matches?(context)
+    return unless browser_registration_lease_active?
+
+    lease = registration_metadata[BROWSER_REGISTRATION_LEASE_KEY].to_h
+    return if lease.blank?
+
+    lease['expires_at'] = (occurred_at + registration_ttl.seconds).iso8601
+    registration_metadata[BROWSER_REGISTRATION_LEASE_KEY] = lease
+  end
+
   def browser_presence_event_stale?(context)
     source = context.to_h.with_indifferent_access
     incoming_instance_id = context_value(source, 'registration_instance_id')
@@ -416,6 +500,9 @@ class Telephony::SipProfile < ApplicationRecord
 
   def browser_registration_update_rejection(registered, context)
     return :stale if browser_presence_event_stale?(context)
+    return :conflict if registered && !browser_registration_lease_matches?(context)
+    return :conflict if registered && !browser_registration_lease_active?
+    return :stale if !registered && !browser_registration_lease_matches?(context)
     return :conflict if registered && browser_registration_conflict?(context)
     return :stale unless registered || browser_registration_context_matches?(context)
   end

@@ -166,12 +166,16 @@ class Telephony::CallReconciliationService
   def native_sip_local_outbound_missing_scope
     scope = Telephony::CallSession.active
                                   .where(provider: NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS, direction: 'outbound', provider_call_sid: nil)
-                                  .where(status: NATIVE_SIP_PRE_ANSWER_STATUSES)
     scope = scope.where(account_id: account.id) if account.present?
     local_ref_sql = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:local:%'" }.join(' OR ')
+    reference_sql = 'COALESCE(last_event_at, started_at, updated_at, created_at)'
     scope.where(local_ref_sql).where(
-      'COALESCE(last_event_at, started_at, updated_at, created_at) <= ?',
-      now - native_sip_local_outbound_missing_after
+      "(status IN (:pre_answer_statuses) AND #{reference_sql} <= :pre_answer_before) OR " \
+      "(status = :in_progress_status AND #{reference_sql} <= :in_progress_before)",
+      pre_answer_statuses: NATIVE_SIP_PRE_ANSWER_STATUSES,
+      pre_answer_before: now - native_sip_local_outbound_missing_after,
+      in_progress_status: 'in_progress',
+      in_progress_before: now - native_sip_in_progress_stale_after
     )
   end
 
@@ -311,20 +315,32 @@ class Telephony::CallReconciliationService
   end
 
   def reconcile_missing_native_sip_local_outbound_session(session)
-    target_status = 'no_answer'
+    target_status = nil
     reconciled = reconcile_stale_session(
       session,
-      statuses: NATIVE_SIP_PRE_ANSWER_STATUSES,
-      stale_after: native_sip_local_outbound_missing_after,
+      statuses: NATIVE_SIP_PRE_ANSWER_STATUSES + ['in_progress'],
+      stale_after: lambda do |locked_session|
+        status_stale_after(
+          locked_session,
+          native_sip_local_outbound_missing_after,
+          native_sip_in_progress_stale_after
+        )
+      end,
       guard: method(:native_sip_local_outbound_session?)
     ) do |locked_session|
       ended_at = now
       previous_status = locked_session.canonical_status
+      target_status = missing_native_sip_status(locked_session)
+      end_reason = if target_status == 'no_answer'
+                     'native_sip_missing_outbound_no_answer'
+                   else
+                     missing_native_sip_end_reason(locked_session, target_status)
+                   end
       locked_session.update!(
         status: target_status,
         ended_at: ended_at,
         ended_by: SOURCE_NATIVE_SIP_RECONCILIATION,
-        end_reason: 'native_sip_missing_outbound_no_answer',
+        end_reason: end_reason,
         duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
         last_event_at: ended_at,
         metadata: missing_native_sip_metadata(locked_session, target_status, previous_status),
@@ -665,7 +681,7 @@ class Telephony::CallReconciliationService
   end
 
   def missing_native_sip_status(session)
-    return 'completed' if session.canonical_status == 'in_progress'
+    return 'completed' if session.canonical_status == 'in_progress' || session.answered_at.present?
     return 'no_answer' if session.direction == 'outbound'
     return 'no_answer' if route_action(session) == 'operator'
 

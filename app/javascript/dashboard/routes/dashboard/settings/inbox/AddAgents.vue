@@ -86,6 +86,13 @@ export default {
         null
       );
     },
+    virtualPbxConfigurationVersion() {
+      return (
+        this.virtualPbxConfig?.configuration_version ||
+        this.virtualPbxStatusPayload?.configuration_version ||
+        null
+      );
+    },
     virtualPbxProviderKind() {
       return (
         this.virtualPbxConfig?.channel?.provider_kind ||
@@ -297,6 +304,7 @@ export default {
       const response = await VoiceAPI.updateVirtualPbxChannel(
         inboxId,
         {
+          expected_configuration_version: this.virtualPbxConfigurationVersion,
           profiles: this.virtualPbxProfilesPayload(),
           metadata: {
             source: 'virtual_pbx_agents_step',

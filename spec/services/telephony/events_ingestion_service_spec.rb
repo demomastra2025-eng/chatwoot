@@ -440,8 +440,9 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
-    it 'uses the canonical operator claim for a sibling native SIP branch status' do
+    it 'uses the canonical operator claim without marking the group terminal while another branch is active' do
       operator = create(:user, account: account)
+      stale_operator = create(:user, account: account)
       logical_call_key = 'native-sip:shared-operator-claim'
       root_ref = 'sipuni:janus:operator-202'
       existing_call_session.update!(
@@ -449,6 +450,7 @@ RSpec.describe Telephony::EventsIngestionService do
         direction: 'inbound',
         external_call_ref: root_ref,
         status: 'in_progress',
+        started_at: 1.minute.ago,
         metadata: {
           'metadata' => {
             'logical_call_key' => logical_call_key,
@@ -471,13 +473,21 @@ RSpec.describe Telephony::EventsIngestionService do
         provider: 'sipuni',
         direction: 'inbound',
         external_call_ref: 'sipuni:janus:operator-207',
-        status: 'in_progress',
+        status: 'completed',
         started_at: existing_call_session.started_at,
+        answered_at: existing_call_session.started_at + 2.seconds,
+        ended_at: existing_call_session.started_at + 20.seconds,
         metadata: {
           'metadata' => {
             'logical_call_key' => logical_call_key,
             'logical_call_group_ref' => root_ref,
             'target_sip_profile_id' => 81
+          },
+          'operator_claim' => {
+            'user_id' => stale_operator.id,
+            'user_name' => stale_operator.name,
+            'sip_profile_id' => 81,
+            'internal_extension' => '207'
           }
         }
       )
@@ -487,6 +497,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
       expect(realtime_payload).to include(
         logical_call_key: logical_call_key,
+        logical_call_terminal: false,
         operator_internal_extension: '202',
         operator_claim: include(
           'user_id' => operator.id,
@@ -2569,6 +2580,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'closes a linked runtime child session when the parent bridge session is terminal' do
       ended_at = Time.zone.parse(10.seconds.ago.iso8601)
+      answered_at = ended_at - 20.seconds
       child_session = create(
         :telephony_call_session,
         account: account,
@@ -2595,6 +2607,8 @@ RSpec.describe Telephony::EventsIngestionService do
           event_key: 'evt-parent-terminal-child-close-1',
           event: 'session_completed',
           runtime_call_ref: 'runtime-child-call-1',
+          answered_at: answered_at.iso8601,
+          answered_by: 'user:42',
           occurred_at: ended_at.iso8601,
           ended_at: ended_at.iso8601,
           ended_by: 'caller',
@@ -2610,6 +2624,8 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       expect(child_session.reload).to have_attributes(
         status: 'completed',
+        answered_at: answered_at,
+        answered_by: 'user:42',
         ended_at: ended_at,
         ended_by: 'caller',
         end_reason: 'media_stream_closed_after_audio'
@@ -2634,6 +2650,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'resyncs a terminal linked runtime child voice message on parent terminal retry' do
       ended_at = Time.zone.parse(15.seconds.ago.iso8601)
+      answered_at = ended_at - 30.seconds
       child_session = create(
         :telephony_call_session,
         account: account,
@@ -2664,6 +2681,8 @@ RSpec.describe Telephony::EventsIngestionService do
           event_key: 'evt-parent-terminal-child-retry-sync-1',
           event: 'session_completed',
           runtime_call_ref: 'runtime-child-call-retry-1',
+          answered_at: answered_at.iso8601,
+          answered_by: 'user:42',
           occurred_at: ended_at.iso8601,
           ended_at: ended_at.iso8601,
           ended_by: 'caller',
@@ -2671,7 +2690,12 @@ RSpec.describe Telephony::EventsIngestionService do
         )
       ).perform
 
-      expect(child_session.reload).to have_attributes(status: 'completed', last_event_at: ended_at)
+      expect(child_session.reload).to have_attributes(
+        status: 'completed',
+        answered_at: answered_at,
+        answered_by: 'user:42',
+        last_event_at: ended_at
+      )
       expect(child_voice_message.reload.content_attributes.dig('data', 'status')).to eq('completed')
       expect(child_voice_message.content_attributes.dig('data', 'ai_voice')).to include('state' => 'completed')
     end
@@ -3431,6 +3455,203 @@ RSpec.describe Telephony::EventsIngestionService do
         'telephony_call_ref' => new_call_session.external_call_ref,
         'call_status' => 'ringing'
       )
+    end
+
+    it 'attaches a terminal-first duplicate broadcast branch without duplicate or recovery bubbles' do
+      conversation = existing_call_session.conversation
+      voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+15555551001')
+      voice_inbox = voice_channel.inbox
+      contact_inbox = create(
+        :contact_inbox,
+        contact: conversation.contact,
+        inbox: voice_inbox,
+        source_id: '+15555551002'
+      )
+      logical_key = 'native-sip-inbound:fanout-regression'
+      started_at = 1.minute.ago
+      conversation.update!(
+        inbox: voice_inbox,
+        contact_inbox: contact_inbox,
+        identifier: existing_call_session.external_call_ref,
+        additional_attributes: {
+          'telephony_call_ref' => existing_call_session.external_call_ref,
+          'call_status' => 'ringing',
+          'call_direction' => 'inbound'
+        }
+      )
+      existing_call_session.update!(
+        provider: 'sipuni', direction: 'inbound', status: 'ringing',
+        inbox: voice_inbox, number_binding: voice_inbox.telephony_number_binding,
+        started_at: started_at, from_number: '+15555551002', to_number: '+15555551001',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'route_reason' => 'operator_route'
+          }
+        }
+      )
+      canonical_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: voice_inbox,
+        content_type: 'voice_call',
+        source_id: existing_call_session.voice_call_source_id,
+        content_attributes: {
+          'data' => {
+            'provider' => 'sipuni',
+            'call_sid' => existing_call_session.external_call_ref,
+            'status' => 'ringing',
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key
+          }
+        }
+      )
+      duplicate_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: nil,
+        contact: nil,
+        inbox: voice_inbox,
+        number_binding: voice_inbox.telephony_number_binding,
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: 'duplicate-branch-206',
+        status: 'no_answer',
+        started_at: started_at + 1.second,
+        ended_at: Time.current,
+        from_number: '+15555551002',
+        to_number: '+15555551001',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'logical_call_group_ref' => existing_call_session.external_call_ref,
+            'logical_call_root_ref' => existing_call_session.external_call_ref,
+            'route_reason' => 'duplicate_broadcast_branch'
+          }
+        }
+      )
+      linked_runtime_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: existing_call_session.contact,
+        inbox: voice_inbox,
+        number_binding: voice_inbox.telephony_number_binding,
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: 'duplicate-runtime-child-206',
+        status: 'ringing',
+        started_at: started_at + 2.seconds,
+        metadata: { 'ai_voice' => { 'enabled' => true } }
+      )
+
+      service = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-duplicate-branch-ended-1',
+          call_ref: duplicate_session.external_call_ref,
+          provider: 'sipuni',
+          event: 'session_completed',
+          runtime_call_ref: linked_runtime_session.external_call_ref,
+          status: 'no_answer',
+          direction: 'inbound',
+          occurred_at: Time.current.iso8601
+        )
+      )
+      expect(service).to receive(:enqueue_external_recording_cache).with(existing_call_session).and_call_original
+
+      expect do
+        service.perform
+      end.not_to change(Conversation, :count)
+
+      expect(duplicate_session.reload.conversation).to eq(conversation)
+      expect(linked_runtime_session.reload).to be_terminal
+      expect(linked_runtime_session.ended_at).to be_present
+      expect(conversation.messages.voice_calls.pluck(:source_id)).to contain_exactly(
+        canonical_message.source_id,
+        linked_runtime_session.voice_call_source_id
+      )
+      expect(conversation.messages.voice_calls.where(source_id: duplicate_session.voice_call_source_id)).to be_empty
+      expect(account.conversations.where(identifier: "voice-recovery:#{duplicate_session.id}")).to be_empty
+    end
+
+    it 'creates an absent canonical conversation with the root ref before attaching a duplicate branch' do
+      voice_channel = create(:channel_voice, :sipuni, account: account, phone_number: '+15551202001')
+      voice_inbox = voice_channel.inbox
+      logical_key = 'native-sip-inbound:duplicate-first'
+      started_at = 1.minute.ago
+      canonical_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: nil,
+        contact: nil,
+        inbox: voice_inbox,
+        number_binding: voice_inbox.telephony_number_binding,
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: 'canonical-root-207',
+        status: 'ringing',
+        started_at: started_at,
+        from_number: '+15551202002',
+        to_number: '+15551202001',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'route_reason' => 'operator_route'
+          }
+        }
+      )
+      duplicate_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: nil,
+        contact: nil,
+        inbox: voice_inbox,
+        number_binding: voice_inbox.telephony_number_binding,
+        provider: 'sipuni',
+        direction: 'inbound',
+        external_call_ref: 'duplicate-branch-207',
+        status: 'ringing',
+        started_at: started_at + 1.second,
+        from_number: '+15551202002',
+        to_number: '+15551202001',
+        metadata: {
+          'metadata' => {
+            'logical_call_key' => logical_key,
+            'call_group_key' => logical_key,
+            'logical_call_group_ref' => canonical_session.external_call_ref,
+            'logical_call_root_ref' => canonical_session.external_call_ref,
+            'route_reason' => 'duplicate_broadcast_branch'
+          }
+        }
+      )
+      service = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-duplicate-branch-started-before-root-conversation-1',
+          call_ref: duplicate_session.external_call_ref,
+          provider: 'sipuni',
+          event: 'session_started',
+          status: 'ringing',
+          direction: 'inbound',
+          from_number: '+15551202002',
+          to_number: '+15551202001',
+          occurred_at: duplicate_session.started_at.iso8601
+        )
+      )
+      expect(service).to receive(:enqueue_external_recording_cache).with(canonical_session).and_call_original
+
+      expect { service.perform }.to change(Conversation, :count).by(1)
+
+      canonical_conversation = canonical_session.reload.conversation
+      expect(canonical_conversation.additional_attributes).to include(
+        'telephony_call_ref' => canonical_session.external_call_ref,
+        'call_status' => 'ringing'
+      )
+      expect(duplicate_session.reload.conversation).to eq(canonical_conversation)
+      expect(canonical_conversation.messages.voice_calls.pluck(:source_id)).to eq([canonical_session.voice_call_source_id])
     end
 
     it 'preserves a nearby redial without explicit native SIP group identity' do

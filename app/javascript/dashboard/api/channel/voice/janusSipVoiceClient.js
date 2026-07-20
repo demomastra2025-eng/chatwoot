@@ -329,6 +329,10 @@ export class JanusSipVoiceClient extends EventTarget {
         sessionConfig.registrationConfigVersion ||
         sessionConfig.registration_config_version ||
         null,
+      registrationInstanceId:
+        sessionConfig.registrationInstanceId ||
+        sessionConfig.registration_instance_id ||
+        null,
       accountId: sessionConfig.accountId || sessionConfig.account_id || null,
       inboxId: sessionConfig.inboxId || sessionConfig.inbox_id || null,
       recordingStrategy:
@@ -554,6 +558,7 @@ export class JanusSipVoiceClient extends EventTarget {
       sessionKey: normalized.sessionKey,
       sipProfileId: normalized.sipProfileId,
       registrationConfigVersion: normalized.registrationConfigVersion,
+      registrationInstanceId: normalized.registrationInstanceId,
       internalExtension: normalized.sip.internalExtension,
     });
 
@@ -575,6 +580,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.sessionKey = normalized.sessionKey;
     this.sipProfileId = normalized.sipProfileId;
     this.inboxId = resolvedInboxId;
+    this.registrationInstanceId = normalized.registrationInstanceId;
     this.sessionSignature = signature;
     this.remoteAudioElement = this.ensureRemoteAudioElement();
     await JanusSipVoiceClient.initJanus();
@@ -847,7 +853,7 @@ export class JanusSipVoiceClient extends EventTarget {
         this.registrationTimedOut = true;
         const error = new Error('sip_registration_timeout');
         this.transitionToUnregistered('sip_registration_timeout');
-        this.retireRegistrationTransportAfterTimeout();
+        this.retireRegistrationTransport();
         reject(error);
       }, WEBPHONE_REGISTRATION_TIMEOUT_MS);
 
@@ -877,7 +883,7 @@ export class JanusSipVoiceClient extends EventTarget {
     this.registrationTimer = null;
   }
 
-  retireRegistrationTransportAfterTimeout() {
+  retireRegistrationTransport() {
     const staleHandle = this.sipHandle;
     const staleJanus = this.janus;
     this.sipHandleGeneration += 1;
@@ -1494,7 +1500,7 @@ export class JanusSipVoiceClient extends EventTarget {
         this.transitionToUnregistered(
           error?.reason || error?.message || 'presence_confirmation_failed'
         );
-        this.retireRegistrationTransportAfterTimeout();
+        this.retireRegistrationTransport();
         this.registrationReject?.(error);
         return null;
       })
@@ -2259,6 +2265,13 @@ export class JanusSipVoiceClient extends EventTarget {
     const janusCallRefMatches =
       !janusCallRef || janusRefs.includes(String(janusCallRef));
     return Boolean(callRefMatches && janusCallRefMatches);
+  }
+
+  bindCurrentCallReference({ callRef, janusCallRef = null } = {}) {
+    if (!callRef || !this.currentCallMatches({ janusCallRef })) return false;
+
+    this.currentCallRef = callRef;
+    return true;
   }
 
   async waitForPendingIncomingCall(
@@ -3245,6 +3258,7 @@ export class JanusSipVoiceClient extends EventTarget {
           this.transitionToUnregistered(
             payload?.reason || 'presence_lease_invalidated'
           );
+          this.retireRegistrationTransport();
         } else {
           this.presenceHeartbeatFailureCount = 0;
         }
@@ -3256,6 +3270,7 @@ export class JanusSipVoiceClient extends EventTarget {
         this.presenceHeartbeatFailureCount += 1;
         if (this.presenceHeartbeatFailureCount >= 2) {
           this.transitionToUnregistered('presence_heartbeat_failed');
+          this.retireRegistrationTransport();
         }
         return null;
       })

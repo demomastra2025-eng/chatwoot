@@ -2,6 +2,10 @@
 import ApiClient from '../../ApiClient';
 import ContactsAPI from '../../contacts';
 
+const webphoneClientInstanceId =
+  window.crypto?.randomUUID?.() ||
+  `webphone-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 class VoiceAPI extends ApiClient {
   constructor() {
     super('voice', { accountScoped: true });
@@ -32,18 +36,23 @@ class VoiceAPI extends ApiClient {
   getWebphoneToken(inboxId = null) {
     if (inboxId) {
       return axios
-        .get(`${this.baseUrl()}/inboxes/${inboxId}/conference/token`)
+        .get(`${this.baseUrl()}/inboxes/${inboxId}/conference/token`, {
+          params: { client_instance_id: webphoneClientInstanceId },
+        })
         .then(r => r.data);
     }
 
     return axios
-      .post(`${this.baseUrl()}/telephony/webphone/token`)
+      .post(`${this.baseUrl()}/telephony/webphone/token`, {
+        client_instance_id: webphoneClientInstanceId,
+      })
       .then(r => r.data.payload || r.data);
   }
 
   getNativeWebphoneToken(inboxId = null) {
     return axios
       .post(`${this.baseUrl()}/telephony/webphone/token`, {
+        client_instance_id: webphoneClientInstanceId,
         ...(inboxId ? { inbox_id: inboxId } : {}),
       })
       .then(r => r.data.payload || r.data);
@@ -250,11 +259,18 @@ class VoiceAPI extends ApiClient {
     payload,
     { dryRun = false, remoteCommit = false } = {}
   ) {
+    const {
+      expected_configuration_version: expectedConfigurationVersion,
+      ...configurationPayload
+    } = payload;
     return axios
       .patch(`${this.baseUrl()}/telephony/virtual_pbx_channels/${inboxId}`, {
-        virtual_pbx_channel: payload,
+        virtual_pbx_channel: configurationPayload,
         dry_run: dryRun,
         remote_commit: remoteCommit,
+        ...(expectedConfigurationVersion !== undefined
+          ? { expected_configuration_version: expectedConfigurationVersion }
+          : {}),
       })
       .then(r => r.data);
   }

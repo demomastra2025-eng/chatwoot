@@ -603,6 +603,28 @@ export function useCallSession() {
     return currentActiveCall;
   };
 
+  const fallbackDisconnectedBrowserSipCall = detail => {
+    const provider = detail.provider;
+    const callRef = detail.callRef || detail.callSid;
+    if (!provider || !callRef) return null;
+
+    const canonicalPrefixes = [`${provider}:local:`, `${provider}:janus:`];
+    if (!canonicalPrefixes.some(prefix => String(callRef).startsWith(prefix))) {
+      return null;
+    }
+
+    return browserSipCallWithEventScope(
+      {
+        callSid: callRef,
+        provider,
+        callDirection: detail.callDirection || detail.call_direction,
+        isActive: Boolean(detail.callMediaAccepted),
+        answeredAt: detail.answeredAt || detail.answered_at,
+      },
+      detail
+    );
+  };
+
   const handleClientConnected = event => {
     const detail = event?.detail || {};
     if (detail.aiBridge || detail.callMode === 'ai') return;
@@ -691,23 +713,31 @@ export function useCallSession() {
   };
 
   const browserSipDisconnectRelease = (call, detail = {}) => {
+    const detailReason = [
+      'janus_destroyed',
+      'janus_transport_error',
+      'janus_transport_recovery_failed',
+      'sip_handle_detached',
+    ].includes(detail.reason)
+      ? 'browser_janus_session_lost'
+      : detail.reason;
     if (call?.isActive || detail.callMediaAccepted) {
       return {
         status: 'completed',
-        reason: detail.reason || 'remote_hangup',
+        reason: detailReason || 'remote_hangup',
       };
     }
 
     if (isOutboundCallDirection(call?.callDirection)) {
       return {
         status: 'failed',
-        reason: detail.reason || 'sip_outbound_disconnected',
+        reason: detailReason || 'sip_outbound_disconnected',
       };
     }
 
     return {
       status: 'no_answer',
-      reason: detail.reason || 'remote_hangup',
+      reason: detailReason || 'remote_hangup',
     };
   };
 
@@ -792,6 +822,9 @@ export function useCallSession() {
       }
     }
 
+    if (nativeProvider && !trackedCall) {
+      trackedCall = fallbackDisconnectedBrowserSipCall(detail);
+    }
     if (nativeProvider && !trackedCall) return;
 
     const call = browserSipCallWithEventScope(trackedCall, detail);
@@ -890,8 +923,29 @@ export function useCallSession() {
         return;
       }
 
+      const canonicalCallRef = call.callSid || call.call_sid || call.call_ref;
+      WebphoneClient.bindCurrentCallReference({
+        provider: call.provider || provider,
+        inboxId: call.inboxId || call.inbox_id || detail.inboxId,
+        sessionKey:
+          call.janusSessionKey ||
+          call.janus_session_key ||
+          detail.sessionKey ||
+          detail.session_key,
+        sipProfileId:
+          call.sipProfileId || call.sip_profile_id || detail.sipProfileId,
+        callRef: canonicalCallRef,
+        janusCallRef:
+          call.janusCallRef ||
+          call.janus_call_ref ||
+          detail.janusCallRef ||
+          detail.janus_call_ref ||
+          detail.callRef ||
+          detail.callSid,
+      });
+
       callsStore.addCall({
-        callSid: call.callSid || call.call_sid || call.call_ref,
+        callSid: canonicalCallRef,
         status: call.status || 'ringing',
         conversationId: call.conversation_id,
         conversationDbId: call.conversation_db_id,

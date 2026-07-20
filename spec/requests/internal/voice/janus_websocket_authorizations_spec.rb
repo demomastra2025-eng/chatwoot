@@ -16,12 +16,17 @@ RSpec.describe 'Internal Janus WebSocket authorization', type: :request do
     )
   end
   let(:server_url) { 'wss://app.one-link.kz/janus-sipuni' }
+  let(:registration_instance_id) do
+    profile.acquire_browser_registration_lease!(client_instance_id: 'tab-owner', user_id: user.id)
+           .fetch(:registration_instance_id)
+  end
   let(:ticket) do
     Telephony::JanusWebsocketTicket.issue(
       server_url: server_url,
       account: account,
       user: user,
-      sip_profile: profile
+      sip_profile: profile,
+      registration_instance_id: registration_instance_id
     )
   end
   let(:headers) do

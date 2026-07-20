@@ -196,7 +196,7 @@ describe('useCallsStore', () => {
     ]);
   });
 
-  it('replaces stale native SIP cards for the same client even when a delayed branch has another logical key', () => {
+  it('keeps same-session native SIP calls separate when their logical keys differ', () => {
     const store = useCallsStore();
 
     store.addCall({
@@ -224,13 +224,177 @@ describe('useCallsStore', () => {
       toNumber: '8 701 745 00 00',
     });
 
-    expect(store.calls).toEqual([
-      expect.objectContaining({
-        callSid: 'current-operator-branch',
-        logicalCallKey: 'janus-inbound:canonical-key',
-        fromNumber: '+7 (707) 281-70-60',
-      }),
+    expect(store.calls.map(call => call.callSid)).toEqual([
+      'stale-operator-branch',
+      'current-operator-branch',
     ]);
+  });
+
+  it('keeps simultaneous sparse native SIP calls with different logical keys', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'sparse-call-one',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni-inbound:sparse-one',
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+    });
+    store.addCall({
+      callSid: 'sparse-call-two',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      logicalCallKey: 'sipuni-inbound:sparse-two',
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+    });
+
+    expect(store.calls.map(call => call.callSid)).toEqual([
+      'sparse-call-one',
+      'sparse-call-two',
+    ]);
+  });
+
+  it('keeps an unkeyed sparse call separate from a keyed call in a reused conversation', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'keyed-sparse-call',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 28745,
+      logicalCallKey: 'sipuni-inbound:keyed-call',
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+    });
+    store.addCall({
+      callSid: 'unkeyed-sparse-call',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      conversationId: 28745,
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+    });
+
+    expect(store.calls.map(call => call.callSid)).toEqual([
+      'keyed-sparse-call',
+      'unkeyed-sparse-call',
+    ]);
+  });
+
+  it('keeps an uncorrelated providerless message event separate from the local Janus branch', () => {
+    const store = useCallsStore();
+
+    store.addCall({
+      callSid: 'janus-local-206',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      sipProfileId: 80,
+      janusSessionKey: 'sip_profile:80',
+      logicalCallKey: 'janus-inbound:canonical',
+      fromNumber: 'sip:+15555551002@example.test',
+      toNumber: '+15555551001',
+      browserJoinSupported: true,
+    });
+    store.addCall({
+      callSid: 'message-event-without-provider',
+      accountId: 43,
+      callDirection: 'inbound',
+      inboxId: 194,
+      conversationId: 28744,
+      fromNumber: '+1 (555) 555-1002',
+      toNumber: '+1 (555) 555-1001',
+      status: 'ringing',
+    });
+
+    expect(store.calls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          callSid: 'janus-local-206',
+          provider: 'sipuni',
+          sipProfileId: 80,
+          janusSessionKey: 'sip_profile:80',
+          browserJoinSupported: true,
+        }),
+        expect.objectContaining({
+          callSid: 'message-event-without-provider',
+          conversationId: 28744,
+        }),
+      ])
+    );
+    expect(store.calls).toHaveLength(2);
+  });
+
+  it('removes a providerless stale modal when the answered logical call terminates', async () => {
+    const store = useCallsStore();
+    store.calls.push({
+      callSid: 'providerless-ghost',
+      accountId: 43,
+      callDirection: 'inbound',
+      inboxId: 194,
+      conversationId: 28744,
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+      isActive: false,
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'answered-branch-206',
+      status: 'completed',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      conversationId: 28744,
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+      logicalCallTerminal: true,
+    });
+
+    await vi.waitFor(() => expect(store.calls).toEqual([]));
+  });
+
+  it('keeps an active providerless call during unkeyed terminal fallback cleanup', async () => {
+    const store = useCallsStore();
+    store.calls.push({
+      callSid: 'active-providerless-call',
+      accountId: 43,
+      callDirection: 'inbound',
+      inboxId: 194,
+      conversationId: 28746,
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+      isActive: true,
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'other-unkeyed-call',
+      status: 'completed',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      conversationId: 28746,
+      fromNumber: '+770****7060',
+      toNumber: '+770****0000',
+      logicalCallTerminal: true,
+    });
+
+    await vi.waitFor(() =>
+      expect(store.calls).toEqual([
+        expect.objectContaining({
+          callSid: 'active-providerless-call',
+          isActive: true,
+        }),
+      ])
+    );
   });
 
   it('keeps simultaneous native SIP calls from different clients separate', () => {
@@ -262,6 +426,42 @@ describe('useCallsStore', () => {
       'first-client-call',
       'second-client-call',
     ]);
+  });
+
+  it('keeps a distinct simultaneous logical call for the same client after another call terminates', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'same-client-first-call',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      logicalCallKey: 'janus-inbound:same-client-first',
+      fromNumber: '+77072817060',
+      toNumber: '+77017450000',
+    });
+
+    store.handleCallStatusChanged({
+      callSid: 'same-client-second-call',
+      status: 'completed',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      logicalCallKey: 'janus-inbound:same-client-second',
+      fromNumber: '+77072817060',
+      toNumber: '+77017450000',
+      logicalCallTerminal: true,
+    });
+
+    await vi.waitFor(() => {
+      expect(store.calls).toEqual([
+        expect.objectContaining({
+          callSid: 'same-client-first-call',
+          logicalCallKey: 'janus-inbound:same-client-first',
+        }),
+      ]);
+    });
   });
 
   it('removes a deduped Janus SIP inbound card when a sibling branch terminates', () => {
@@ -802,6 +1002,7 @@ describe('useCallsStore', () => {
         call_direction: 'inbound',
         inbox_id: 194,
         logical_call_key: 'janus-inbound:canonical',
+        related_call_sids: ['stale-modal-a', 'stale-modal-b'],
         from_number: '+77072817060',
         to_number: '+77017450000',
         claimed_by_user_id: 1,
@@ -811,6 +1012,43 @@ describe('useCallsStore', () => {
 
     expect(store.calls).toEqual([]);
   }, 10000);
+
+  it('keeps a distinct simultaneous logical call for the same client after a foreign claim', async () => {
+    const store = useCallsStore();
+    store.addCall({
+      callSid: 'same-client-unclaimed-call',
+      accountId: 43,
+      provider: 'sipuni',
+      callDirection: 'inbound',
+      inboxId: 194,
+      logicalCallKey: 'janus-inbound:same-client-unclaimed',
+      fromNumber: '+77072817060',
+      toNumber: '+77017450000',
+    });
+
+    await store.handleCallClaimed(
+      {
+        account_id: 43,
+        call_sid: 'same-client-claimed-call',
+        provider: 'sipuni',
+        call_direction: 'inbound',
+        inbox_id: 194,
+        logical_call_key: 'janus-inbound:same-client-claimed',
+        from_number: '+77072817060',
+        to_number: '+77017450000',
+        claimed_by_user_id: 1,
+      },
+      113
+    );
+
+    expect(store.calls).toEqual([
+      expect.objectContaining({
+        callSid: 'same-client-unclaimed-call',
+        logicalCallKey: 'janus-inbound:same-client-unclaimed',
+      }),
+    ]);
+    expect(endClientCallMock).not.toHaveBeenCalled();
+  });
 
   it('ends an active Sipuni browser client when another operator claims the call', async () => {
     const store = useCallsStore();

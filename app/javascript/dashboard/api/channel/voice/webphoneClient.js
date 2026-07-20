@@ -944,11 +944,14 @@ class WebphoneClient extends EventTarget {
 
     const client = this.nativeSipClients[sessionKey];
     if (expectedClient && client !== expectedClient) return;
-    if (this.nativeSipClients[sessionKey] === client) {
-      delete this.nativeSipClients[sessionKey];
-      delete this.nativeSipClientGenerations[sessionKey];
+    try {
+      await client?.destroyDevice?.(destroyOptions);
+    } finally {
+      if (this.nativeSipClients[sessionKey] === client) {
+        delete this.nativeSipClients[sessionKey];
+        delete this.nativeSipClientGenerations[sessionKey];
+      }
     }
-    await client?.destroyDevice?.(destroyOptions);
   }
 
   unsupportedSessionFromResponse(
@@ -1127,6 +1130,20 @@ class WebphoneClient extends EventTarget {
     });
   }
 
+  bindCurrentCallReference(payload = {}) {
+    const provider = payload.provider || this.activeProvider;
+    const sessionKey = this.resolveSessionKey(payload);
+    const client = this.getClient(provider, { ...payload, sessionKey });
+    if (!client || typeof client.bindCurrentCallReference !== 'function') {
+      return false;
+    }
+
+    return client.bindCurrentCallReference({
+      callRef: payload.callRef || payload.call_ref || payload.callSid,
+      janusCallRef: payload.janusCallRef || payload.janus_call_ref,
+    });
+  }
+
   async waitForPendingIncomingCall(payload = {}, { timeoutMs = 2500 } = {}) {
     const provider = payload.provider || this.activeProvider;
     const sessionKey = this.resolveSessionKey(payload);
@@ -1235,26 +1252,34 @@ class WebphoneClient extends EventTarget {
     ];
   }
 
-  destroyNativeSession(sessionKey) {
+  async destroyNativeSession(sessionKey) {
     const client = this.nativeSipClients[sessionKey];
     const provider = this.nativeSessionDescriptor(sessionKey).provider;
-    delete this.nativeSipClients[sessionKey];
-    delete this.nativeSipClientGenerations[sessionKey];
-    delete this.sessions[sessionKey];
-    this.forgetNativeSessionConfig(sessionKey);
-    if (provider && this.providerSessions[provider]?.sessionKey === sessionKey)
-      this.refreshProviderFallback(provider);
-    if (this.activeSessionKey === sessionKey) this.activeSessionKey = null;
-    if (
-      provider &&
-      this.activeProvider === provider &&
-      !Object.values(this.sessions).some(
-        session => session.provider === provider
-      )
-    ) {
-      this.activeProvider = null;
+    try {
+      await client?.destroyDevice?.();
+    } finally {
+      if (this.nativeSipClients[sessionKey] === client) {
+        delete this.nativeSipClients[sessionKey];
+        delete this.nativeSipClientGenerations[sessionKey];
+        delete this.sessions[sessionKey];
+        this.forgetNativeSessionConfig(sessionKey);
+        if (
+          provider &&
+          this.providerSessions[provider]?.sessionKey === sessionKey
+        )
+          this.refreshProviderFallback(provider);
+        if (this.activeSessionKey === sessionKey) this.activeSessionKey = null;
+        if (
+          provider &&
+          this.activeProvider === provider &&
+          !Object.values(this.sessions).some(
+            session => session.provider === provider
+          )
+        ) {
+          this.activeProvider = null;
+        }
+      }
     }
-    return client?.destroyDevice?.();
   }
 
   destroyDevice(providerOrPayload = this.activeProvider) {

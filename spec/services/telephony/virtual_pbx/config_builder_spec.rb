@@ -228,6 +228,30 @@ RSpec.describe Telephony::VirtualPbx::ConfigBuilder do
     expect(payload.to_json).not_to include('do-not-return-binotel-secret')
   end
 
+  it 'does not invalidate settings version for browser presence lease heartbeats' do
+    voice_channel = create_native_sip_channel(
+      phone_number: "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
+    )
+    profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: voice_channel.inbox,
+      user: operator,
+      internal_extension: '4141',
+      availability_mode: 'browser_webphone'
+    )
+    builder = described_class.new(account: account)
+    initial_version = builder.for_inbox(voice_channel.inbox.id).fetch(:configuration_version)
+
+    profile.acquire_browser_registration_lease!(client_instance_id: 'tab-owner', user_id: operator.id)
+    profile.ensure_registration_config_version!
+
+    expect(builder.for_inbox(voice_channel.inbox.id).fetch(:configuration_version)).to eq(initial_version)
+
+    profile.update!(internal_extension: '4142')
+    expect(builder.for_inbox(voice_channel.inbox.id).fetch(:configuration_version)).not_to eq(initial_version)
+  end
+
   it 'exposes non-secret Asterisk analog connection details for settings edits' do
     service = Telephony::VirtualPbx::ProvisioningService.new(account: account, current_user: operator)
     result = service.create_channel(

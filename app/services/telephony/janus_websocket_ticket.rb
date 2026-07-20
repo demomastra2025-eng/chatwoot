@@ -11,8 +11,9 @@ class Telephony::JanusWebsocketTicket
   REVOKED_PROFILE_STATUSES = %w[disabled deleting failed].freeze
 
   class << self
-    def issue(server_url:, account:, user:, sip_profile:)
+    def issue(server_url:, account:, user:, sip_profile:, registration_instance_id:)
       validate_scope!(account: account, user: user, sip_profile: sip_profile)
+      validate_registration_instance_id!(registration_instance_id)
       endpoint = endpoint_for(server_url)
 
       verifier.generate(
@@ -23,17 +24,27 @@ class Telephony::JanusWebsocketTicket
           user_id: user.id,
           sip_profile_id: sip_profile.id,
           origin: endpoint.fetch(:origin),
-          path: endpoint.fetch(:path)
+          path: endpoint.fetch(:path),
+          registration_instance_id: registration_instance_id
         },
         expires_in: ttl,
         purpose: PURPOSE
       )
     end
 
-    def url_for(server_url:, account:, user:, sip_profile:)
+    def url_for(server_url:, account:, user:, sip_profile:, registration_instance_id:)
       uri = parse_server_url(server_url)
       query = URI.decode_www_form(uri.query.to_s).reject { |key, _value| key == QUERY_PARAM }
-      query << [QUERY_PARAM, issue(server_url: server_url, account: account, user: user, sip_profile: sip_profile)]
+      query << [
+        QUERY_PARAM,
+        issue(
+          server_url: server_url,
+          account: account,
+          user: user,
+          sip_profile: sip_profile,
+          registration_instance_id: registration_instance_id
+        )
+      ]
       uri.query = URI.encode_www_form(query)
       uri.to_s
     end
@@ -82,19 +93,27 @@ class Telephony::JanusWebsocketTicket
 
     def active_profile?(payload)
       Telephony::SipProfile.uncached do
-        profile_exists = Telephony::SipProfile
-                         .where(
-                           id: payload[:sip_profile_id],
-                           account_id: payload[:account_id],
-                           user_id: payload[:user_id],
-                           enabled: true,
-                           availability_mode: 'browser_webphone'
-                         )
-                         .where.not(status: REVOKED_PROFILE_STATUSES)
-                         .exists?
+        profile = Telephony::SipProfile
+                  .where(
+                    id: payload[:sip_profile_id],
+                    account_id: payload[:account_id],
+                    user_id: payload[:user_id],
+                    enabled: true,
+                    availability_mode: 'browser_webphone'
+                  )
+                  .where.not(status: REVOKED_PROFILE_STATUSES)
+                  .first
         account_user_exists = AccountUser.exists?(account_id: payload[:account_id], user_id: payload[:user_id])
-        profile_exists && account_user_exists
+        lease_valid = payload[:registration_instance_id].present? &&
+                      profile&.browser_registration_lease_valid?(payload[:registration_instance_id])
+        profile.present? && account_user_exists && lease_valid
       end
+    end
+
+    def validate_registration_instance_id!(registration_instance_id)
+      return if registration_instance_id.present?
+
+      raise ArgumentError, 'Janus WebSocket ticket requires browser registration ownership'
     end
 
     def consume_once?(jti)

@@ -429,6 +429,26 @@ describe('janusSipVoiceClient', () => {
     expect(pluginDetachMock).toHaveBeenCalledTimes(1);
   });
 
+  it('uses the server-issued registration instance for the Janus presence lease', async () => {
+    await JanusSipVoiceClient.initializeDevice(
+      {
+        ...sipuniSession,
+        registrationInstanceId: 'server-issued-registration',
+      },
+      { inboxId: 4769 }
+    );
+
+    expect(updatePresenceMock).toHaveBeenLastCalledWith(
+      true,
+      expect.objectContaining({
+        inboxId: 4769,
+        context: expect.objectContaining({
+          registration_instance_id: 'server-issued-registration',
+        }),
+      })
+    );
+  });
+
   it('releases the browser registration lease with a keepalive request on page unload', async () => {
     await JanusSipVoiceClient.initializeDevice(sipuniSession, {
       inboxId: 4769,
@@ -876,10 +896,12 @@ describe('janusSipVoiceClient', () => {
   it('drops routing after two consecutive Rails heartbeat failures', async () => {
     const client = createJanusSipVoiceClient();
     const unregisteredHandler = vi.fn();
+    const detach = vi.fn();
+    const destroy = vi.fn();
     client.sessionConfig =
       JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
-    client.janus = {};
-    client.sipHandle = {};
+    client.janus = { destroy };
+    client.sipHandle = { detach };
     client.registered = true;
     client.registrationInstanceId = 'registration-heartbeat';
     client.inboxId = 4769;
@@ -898,6 +920,38 @@ describe('janusSipVoiceClient', () => {
         }),
       })
     );
+    expect(detach).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(client.sipHandle).toBeNull();
+    expect(client.janus).toBeNull();
+  });
+
+  it('retires the old Janus registration when its browser lease is fenced', async () => {
+    const client = createJanusSipVoiceClient();
+    const detach = vi.fn();
+    const destroy = vi.fn();
+    client.sessionConfig =
+      JanusSipVoiceClientClass.normalizeSessionConfig(sipuniSession);
+    client.janus = { destroy };
+    client.sipHandle = { detach };
+    client.initialized = true;
+    client.registered = true;
+    client.registrationInstanceId = 'registration-old-owner';
+    client.inboxId = 4769;
+    updatePresenceMock.mockResolvedValueOnce({
+      presence_update_accepted: false,
+      registered_for_routing: false,
+      reason: 'sip_profile_registration_lease_conflict',
+    });
+
+    await client.refreshPresenceRegistration();
+
+    expect(client.registered).toBe(false);
+    expect(client.initialized).toBe(false);
+    expect(detach).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(client.sipHandle).toBeNull();
+    expect(client.janus).toBeNull();
   });
 
   it('does not schedule an application-level SIP REGISTER refresh', async () => {
@@ -1079,6 +1133,22 @@ describe('janusSipVoiceClient', () => {
       vi.useRealTimers();
       await client.destroyDevice();
     }
+  });
+
+  it('binds a backend canonical reference to the current incoming Janus call', () => {
+    const client = createJanusSipVoiceClient();
+    client.currentCallRef = 'raw-janus-call-id';
+    client.currentJanusCallId = 'raw-janus-call-id';
+    client.currentCallDirection = 'inbound';
+
+    expect(
+      client.bindCurrentCallReference({
+        callRef: 'binotel:janus:40:raw-janus-call-id',
+        janusCallRef: 'raw-janus-call-id',
+      })
+    ).toBe(true);
+    expect(client.currentCallRef).toBe('binotel:janus:40:raw-janus-call-id');
+    expect(client.currentJanusCallId).toBe('raw-janus-call-id');
   });
 
   it('does not hang up a newer call when cleanup carries a stale call reference', async () => {

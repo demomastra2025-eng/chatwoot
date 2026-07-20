@@ -48,6 +48,15 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
   end
 
+  def put_with_configuration_version(path, params:, headers:, as:)
+    inbox_id = path.split('/').last
+    configuration_version = Telephony::VirtualPbx::ConfigBuilder.new(account: account).for_inbox(inbox_id)[:configuration_version]
+    put path,
+        params: params.merge(expected_configuration_version: configuration_version),
+        headers: headers,
+        as: as
+  end
+
   def create_reference_channel
     voice_channel = create(
       :channel_voice,
@@ -541,7 +550,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
     voice_channel.inbox.inbox_members.find_or_create_by!(user_id: agent.id)
 
-    put "#{base_path}/#{voice_channel.inbox.id}",
+    put_with_configuration_version "#{base_path}/#{voice_channel.inbox.id}",
         params: {
           dry_run: false,
           remote_commit: true,
@@ -596,6 +605,27 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       sip_host: 'sip53.binotel.com'
     )
     expect(body.to_json).not_to include('do-not-return-binotel-profile-secret')
+  end
+
+  it 'rejects a stale Virtual PBX PATCH without overwriting a newer configuration' do
+    post base_path, params: valid_create_payload.merge(dry_run: false), headers: headers, as: :json
+    ui_config = response.parsed_body.dig('payload', 'ui_config')
+    inbox = Inbox.find(ui_config.fetch('inbox_id'))
+    stale_version = ui_config.fetch('configuration_version')
+    inbox.update!(name: 'Newer channel name')
+
+    put "#{base_path}/#{inbox.id}",
+        params: {
+          dry_run: false,
+          expected_configuration_version: stale_version,
+          virtual_pbx_channel: { channel_name: 'Stale channel name' }
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('VIRTUAL_PBX_CONFIGURATION_STALE')
+    expect(inbox.reload.name).to eq('Newer channel name')
   end
 
   it 'keeps remote mutation disabled by default for non-dry-run saves' do
@@ -664,7 +694,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     Inbox.find(inbox_id).inbox_members.find_or_create_by!(user_id: agent.id)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: true,
@@ -705,7 +735,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -760,7 +790,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
     profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
 
-    put "#{base_path}/#{inbox.id}",
+    put_with_configuration_version "#{base_path}/#{inbox.id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -809,7 +839,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
     profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
 
-    put "#{base_path}/#{inbox.id}",
+    put_with_configuration_version "#{base_path}/#{inbox.id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -857,7 +887,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox = Inbox.find(response.parsed_body.dig('payload', 'ui_config', 'inbox_id'))
     old_profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
 
-    put "#{base_path}/#{inbox.id}",
+    put_with_configuration_version "#{base_path}/#{inbox.id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -888,7 +918,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -935,7 +965,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     Inbox.find(inbox_id).inbox_members.find_or_create_by!(user_id: agent.id)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: true,
@@ -1006,7 +1036,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     other_account = create(:account)
     outsider = create(:user, account: other_account, role: :agent)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           profiles: [
             {
@@ -1031,7 +1061,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           profiles: [
             {
@@ -1134,7 +1164,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox.inbox_members.find_or_create_by!(user_id: agent.id)
     inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1173,7 +1203,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     end
     profile_ids_before = inbox.telephony_sip_profiles.index_by(&:user_id).transform_values(&:id)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1204,7 +1234,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     end
     expect(credentials_after).to eq(credentials_before)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1236,7 +1266,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     end
     expect(credentials_after_extension_change).to eq(credentials_before)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1265,7 +1295,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     end
     expect(credentials_after_username_only).to eq(credentials_before)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1297,7 +1327,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     end
     expect(credentials_after_username_change_without_password).to eq(credentials_before)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1328,7 +1358,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       [second_agent.id, '208', nil, nil, nil]
     )
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: { dry_run: false, remote_commit: false, channel_name: 'Renamed Sipuni line' },
         headers: headers,
         as: :json
@@ -1353,7 +1383,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
     inbox.inbox_members.find_or_create_by!(user_id: replacement_agent.id)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1391,7 +1421,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       :credentials_ref
     )
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1464,7 +1494,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     second_agent = create(:user, account: account, role: :agent)
     inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,
@@ -1560,7 +1590,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     post base_path, params: valid_create_payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: { dry_run: false, remote_commit: false, channel_name: 'Renamed Sipuni line', routing: { fallback_mode: 'operator' } },
         headers: headers,
         as: :json
@@ -1587,7 +1617,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       status: 'created'
     )
 
-    put "#{base_path}/#{inbox_id}",
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
         params: { dry_run: false, remote_commit: false, channel_name: 'Blocked rename' },
         headers: headers,
         as: :json
@@ -1613,7 +1643,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     second_inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     second_binding = Telephony::NumberBinding.find_by!(inbox_id: second_inbox_id)
 
-    put "#{base_path}/#{first_inbox_id}",
+    put_with_configuration_version "#{base_path}/#{first_inbox_id}",
         params: {
           dry_run: false,
           remote_commit: false,

@@ -236,7 +236,16 @@ class Telephony::EventsIngestionService
     broadcast_realtime_call_status!(call_session) if call_session.present? && realtime_status_event?
 
     if call_session.present? && terminal_late_terminal_event
-      reconcile_stale_terminal_voice_message!(call_session, account, event)
+      duplicate_terminal_branch = duplicate_broadcast_branch?(call_session)
+      if duplicate_terminal_branch
+        linked_runtime_call_sessions = reconcile_linked_runtime_call_sessions!(account, call_session)
+      end
+      call_session = attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account) || call_session
+      if duplicate_terminal_branch
+        run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
+      else
+        reconcile_stale_terminal_voice_message!(call_session, account, event)
+      end
     elsif call_session.present? && !immutable_ai_finalized_late_event && !terminal_late_non_terminal_event
       run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
     end
@@ -297,6 +306,9 @@ class Telephony::EventsIngestionService
 
     begin
       call_session.reload
+      call_session = attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account) || call_session
+      call_session.reload
+
       recovered_terminal_message = reconcile_stale_terminal_voice_message!(call_session, account, event) if call_session.terminal?
       return if recovered_terminal_message.in?([false, :nonterminal])
 
@@ -412,7 +424,6 @@ class Telephony::EventsIngestionService
   def realtime_call_status_payload(call_session)
     metadata = call_session.metadata.to_h.deep_stringify_keys
     route_metadata = metadata['metadata'].is_a?(Hash) ? metadata['metadata'] : {}
-    contact = call_session.contact
     sip_profile_id = route_metadata['telephony_sip_profile_id'] ||
                      route_metadata['target_sip_profile_id'] ||
                      Array.wrap(route_metadata['operator_candidate_sip_profile_ids']).first
@@ -427,12 +438,14 @@ class Telephony::EventsIngestionService
                         else
                           call_session
                         end
-    operator_claim = [call_session, canonical_session, *logical_group_sessions].uniq.filter_map do |session|
+    presentation_session = canonical_session.conversation.present? ? canonical_session : call_session
+    contact = presentation_session.contact || call_session.contact
+    operator_claim = [canonical_session, call_session, *logical_group_sessions].uniq.filter_map do |session|
       session_claim = session.metadata.to_h.deep_stringify_keys['operator_claim']
       session_claim if session_claim.is_a?(Hash) && session_claim.present?
     end.first || {}
     canonical_logical_key = canonical_session.logical_call_key
-    logical_call_terminal = logical_group_sessions.all?(&:terminal?)
+    logical_call_terminal = native_sip_logical_call_terminal?(logical_group_sessions)
 
     {
       account_id: call_session.account_id,
@@ -443,11 +456,11 @@ class Telephony::EventsIngestionService
       status: call_session.canonical_status,
       call_direction: call_session.direction,
       direction: call_session.direction,
-      conversation_id: call_session.conversation&.display_id,
-      conversation_display_id: call_session.conversation&.display_id,
-      conversation_db_id: call_session.conversation_id,
-      inbox_id: call_session.inbox_id,
-      number_ref: call_session.number_binding&.number_ref,
+      conversation_id: presentation_session.conversation&.display_id,
+      conversation_display_id: presentation_session.conversation&.display_id,
+      conversation_db_id: presentation_session.conversation_id,
+      inbox_id: presentation_session.inbox_id || call_session.inbox_id,
+      number_ref: presentation_session.number_binding&.number_ref || call_session.number_binding&.number_ref,
       logical_call_key: canonical_logical_key,
       logicalCallKey: canonical_logical_key,
       logical_call_root_ref: canonical_session.external_call_ref,
@@ -456,16 +469,16 @@ class Telephony::EventsIngestionService
       relatedCallSids: logical_group_sessions.map(&:external_call_ref).uniq,
       logical_call_terminal: logical_call_terminal,
       logicalCallTerminal: logical_call_terminal,
-      contact_id: call_session.contact_id,
-      sender_id: call_session.contact_id,
-      from_number: call_session.from_number,
-      to_number: call_session.to_number,
+      contact_id: presentation_session.contact_id || call_session.contact_id,
+      sender_id: presentation_session.contact_id || call_session.contact_id,
+      from_number: presentation_session.from_number || call_session.from_number,
+      to_number: presentation_session.to_number || call_session.to_number,
       caller: realtime_call_status_caller_payload(contact, call_session),
       operator_claim: operator_claim,
       operator_candidates: route_metadata['operator_candidates'],
       operator_internal_extension: operator_claim['internal_extension'].presence || route_metadata['operator_internal_extension'],
       show_calls_handled_by_other_operators:
-        call_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true,
+        presentation_session.inbox&.channel&.try(:show_calls_handled_by_other_operators?) == true,
       sip_profile_id: sip_profile_id,
       sipProfileId: sip_profile_id,
       janus_call_ref: route_metadata['janus_call_ref'],
@@ -494,6 +507,7 @@ class Telephony::EventsIngestionService
       call_session.reload
       next :nonterminal unless call_session.terminal?
       next unless native_sip_call_session?(call_session)
+      next if duplicate_broadcast_branch?(call_session)
       next unless stale_terminal_voice_message?(call_session)
 
       recovery_messages = native_sip_recovery_messages(call_session)
@@ -649,6 +663,7 @@ class Telephony::EventsIngestionService
       child_call_session.with_lock do
         child_call_session.reload
         if child_call_session.terminal?
+          propagate_linked_runtime_child_answer!(parent_call_session, child_call_session)
           reconciled_call_sessions << child_call_session
           next
         end
@@ -659,6 +674,16 @@ class Telephony::EventsIngestionService
       end
     end
     reconciled_call_sessions
+  end
+
+  def propagate_linked_runtime_child_answer!(parent_call_session, child_call_session)
+    return unless child_call_session.status == 'completed' && parent_call_session.answered_at.present?
+
+    attributes = {
+      answered_at: child_call_session.answered_at || parent_call_session.answered_at,
+      answered_by: child_call_session.answered_by || parent_call_session.answered_by
+    }.compact
+    child_call_session.update!(attributes) if attributes.any? { |key, value| child_call_session.public_send(key) != value }
   end
 
   def resolved_provider(account = nil, call_session = nil, inbox: nil, number_binding: nil)
@@ -697,6 +722,8 @@ class Telephony::EventsIngestionService
 
     {
       status: parent_call_session.status,
+      answered_at: child_call_session.answered_at || parent_call_session.answered_at,
+      answered_by: child_call_session.answered_by || parent_call_session.answered_by,
       ended_at: child_call_session.ended_at || ended_at,
       ended_by: child_call_session.ended_by || parent_call_session.ended_by || resolved_ended_by,
       end_reason: child_call_session.end_reason || parent_call_session.end_reason || resolved_end_reason || parent_call_session.status,
@@ -1360,11 +1387,11 @@ class Telephony::EventsIngestionService
       account: account,
       inbox: inbox,
       from_number: normalized_caller_number || caller_number || call_session.from_number,
-      call_sid: call_ref,
+      call_sid: call_session.external_call_ref.presence || call_ref,
       reuse_existing_conversation: reuse_existing_conversation,
       excluded_conversation_id: excluded_conversation_id,
       conversation_identifier: conversation_identifier,
-      build_voice_message: build_voice_message
+      build_voice_message: build_voice_message && !native_sip_call_session?(call_session)
     )
   end
 
@@ -1721,6 +1748,41 @@ class Telephony::EventsIngestionService
     session.answered_at.present? ||
       session.metadata.to_h['operator_claim'].present? ||
       %w[in_progress completed].include?(session.canonical_status)
+  end
+
+  def native_sip_logical_call_terminal?(sessions)
+    sessions.all?(&:terminal?)
+  end
+
+  def attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account)
+    return unless duplicate_broadcast_branch?(call_session)
+
+    call_session.reload
+    canonical_session = call_session.canonical_logical_call_session
+    return if canonical_session.id == call_session.id
+
+    canonical_session.reload
+    validate_call_session_tenant_links!(canonical_session, account)
+    ensure_conversation!(canonical_session, account) if canonical_session.conversation.blank?
+    canonical_session.reload
+    validate_call_session_tenant_links!(canonical_session, account)
+    call_session.update!(
+      conversation: canonical_session.conversation,
+      contact: canonical_session.contact,
+      inbox: canonical_session.inbox,
+      number_binding: canonical_session.number_binding
+    )
+    canonical_session
+  end
+
+  def duplicate_broadcast_branch?(call_session)
+    metadata = call_session.metadata.to_h.deep_stringify_keys
+    route_reason = metadata['route_reason'].presence ||
+                   metadata.dig('metadata', 'route_reason').presence ||
+                   metadata.dig('last_payload', 'route_reason').presence ||
+                   metadata.dig('last_payload', 'metadata', 'route_reason').presence
+
+    route_reason == 'duplicate_broadcast_branch'
   end
 
   def mark_linked_runtime_duplicate_message!(call_session, canonical_message)

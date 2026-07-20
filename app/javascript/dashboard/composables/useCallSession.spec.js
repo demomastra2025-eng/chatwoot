@@ -5,6 +5,7 @@ import { createApp } from 'vue';
 const {
   addEventListenerMock,
   answerAiIncomingCallMock,
+  bindCurrentCallReferenceMock,
   bootstrapIncomingSupportMock,
   destroyDeviceMock,
   endClientCallMock,
@@ -26,6 +27,7 @@ const {
 } = vi.hoisted(() => ({
   addEventListenerMock: vi.fn(),
   answerAiIncomingCallMock: vi.fn(),
+  bindCurrentCallReferenceMock: vi.fn(),
   bootstrapIncomingSupportMock: vi.fn(),
   destroyDeviceMock: vi.fn(),
   endClientCallMock: vi.fn(),
@@ -77,6 +79,7 @@ vi.mock('dashboard/api/channel/voice/webphoneClient', () => ({
   default: {
     addEventListener: addEventListenerMock,
     answerAiIncomingCall: answerAiIncomingCallMock,
+    bindCurrentCallReference: bindCurrentCallReferenceMock,
     bootstrapIncomingSupport: bootstrapIncomingSupportMock,
     destroyDevice: destroyDeviceMock,
     endClientCall: endClientCallMock,
@@ -546,6 +549,14 @@ describe('useCallSession', () => {
       janus_session_id: 'janus-session-40',
       janus_handle_id: 'janus-handle-40',
       internal_extension: '901',
+    });
+    expect(bindCurrentCallReferenceMock).toHaveBeenCalledWith({
+      provider: 'binotel',
+      inboxId: 4770,
+      sessionKey: 'sip_profile:40',
+      sipProfileId: 40,
+      callRef: 'binotel:janus:call-1',
+      janusCallRef: 'raw-janus-call-id',
     });
     expect(useCallsStore().calls).toEqual([
       expect.objectContaining({
@@ -1295,6 +1306,37 @@ describe('useCallSession', () => {
       status: 'ringing',
     });
     expect(callsStore.calls).toEqual([]);
+  });
+
+  it('releases an answered canonical browser SIP call after Janus loss even when the local store lost it', async () => {
+    let disconnectHandler;
+    addEventListenerMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'call:disconnected') disconnectHandler = handler;
+    });
+
+    mountUseCallSession();
+    await disconnectHandler?.({
+      detail: {
+        provider: 'binotel',
+        callRef: 'binotel:local:answered-without-local-store',
+        callDirection: 'outbound',
+        callMediaAccepted: true,
+        reason: 'janus_destroyed',
+      },
+    });
+
+    expect(reportBrowserSipAnsweredMock).toHaveBeenCalledWith(
+      'binotel:local:answered-without-local-store',
+      { answered_at: expect.any(String) }
+    );
+    expect(rejectBackendCallMock).toHaveBeenCalledWith(
+      'binotel:local:answered-without-local-store',
+      expect.objectContaining({
+        ended_at: expect.any(String),
+        reason: 'browser_janus_session_lost',
+        status: 'completed',
+      })
+    );
   });
 
   it('correlates a raw Janus disconnect with the canonical inbound call ref', async () => {

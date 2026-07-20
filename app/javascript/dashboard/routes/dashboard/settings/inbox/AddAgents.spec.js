@@ -102,6 +102,7 @@ describe('AddAgents', () => {
     getVirtualPbxStatusMock.mockResolvedValue({
       payload: {
         ui_config: {
+          configuration_version: 'sipuni-configuration-v1',
           channel: { provider_kind: 'sipuni' },
           employees: [],
         },
@@ -128,6 +129,7 @@ describe('AddAgents', () => {
     expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
       '4690',
       {
+        expected_configuration_version: 'sipuni-configuration-v1',
         profiles: [
           {
             profile_kind: 'human_operator',
@@ -159,6 +161,7 @@ describe('AddAgents', () => {
     getVirtualPbxStatusMock.mockResolvedValue({
       payload: {
         ui_config: {
+          configuration_version: 'binotel-configuration-v1',
           channel: { provider_kind: 'binotel' },
           employees: [],
         },
@@ -181,6 +184,7 @@ describe('AddAgents', () => {
     expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
       '4690',
       {
+        expected_configuration_version: 'binotel-configuration-v1',
         profiles: [
           {
             profile_kind: 'human_operator',
@@ -203,6 +207,7 @@ describe('AddAgents', () => {
     getVirtualPbxStatusMock.mockResolvedValue({
       payload: {
         ui_config: {
+          configuration_version: 'asterisk-configuration-v1',
           channel: { provider_kind: 'asterisk_analog' },
           employees: [],
         },
@@ -225,6 +230,7 @@ describe('AddAgents', () => {
     expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
       '4690',
       {
+        expected_configuration_version: 'asterisk-configuration-v1',
         profiles: [
           {
             profile_kind: 'human_operator',

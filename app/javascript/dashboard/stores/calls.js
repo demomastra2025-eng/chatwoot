@@ -127,6 +127,16 @@ const TERMINAL_CALL_SUPPRESSION_MS = 5 * 60 * 1000;
 const isNativeBrowserSipCall = call =>
   NATIVE_BROWSER_SIP_PROVIDERS.has(call?.provider);
 
+const nativeSipProvidersCompatible = (call, callData) => {
+  const providers = [call?.provider, callData?.provider].filter(isPresent);
+  if (!providers.length) return false;
+  if (providers.some(provider => !NATIVE_BROWSER_SIP_PROVIDERS.has(provider))) {
+    return false;
+  }
+
+  return new Set(providers).size === 1;
+};
+
 const isInboundCall = call => {
   const direction = call?.callDirection || call?.direction;
   return direction === 'inbound';
@@ -137,11 +147,7 @@ const sameNativeSipConversation = (
   callData,
   { allowCallSidMismatch = false } = {}
 ) => {
-  if (
-    !isNativeBrowserSipCall(call) ||
-    !isNativeBrowserSipCall(callData) ||
-    call?.provider !== callData?.provider
-  ) {
+  if (!nativeSipProvidersCompatible(call, callData)) {
     return false;
   }
 
@@ -160,10 +166,7 @@ const sameNativeSipConversation = (
 };
 
 const sameNativeSipInboundBranch = (call, callData) => {
-  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
-    return false;
-  }
-  if (call?.provider !== callData?.provider) return false;
+  if (!nativeSipProvidersCompatible(call, callData)) return false;
   if (!isInboundCall(call) || !isInboundCall(callData)) return false;
   if (!callScopesMatchForDeduplication(call, callData)) return false;
 
@@ -171,10 +174,7 @@ const sameNativeSipInboundBranch = (call, callData) => {
 };
 
 const sameNativeSipLogicalCall = (call, callData) => {
-  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
-    return false;
-  }
-  if (call?.provider !== callData?.provider) return false;
+  if (!nativeSipProvidersCompatible(call, callData)) return false;
   if (!isInboundCall(call) || !isInboundCall(callData)) return false;
   if (!sameKnownScopeValue(call?.accountId, callData?.accountId)) return false;
   if (!sameKnownScopeValue(callInboxId(call), callInboxId(callData)))
@@ -209,14 +209,28 @@ const callToIdentity = call =>
 const sameNativeSipInboundCustomer = (
   call,
   callData,
-  { allowPartialScope = false } = {}
+  { allowPartialScope = false, requireCompatibleLogicalKey = false } = {}
 ) => {
-  if (!isNativeBrowserSipCall(call) || !isNativeBrowserSipCall(callData)) {
-    return false;
-  }
-  if (call?.provider !== callData?.provider) return false;
+  if (!nativeSipProvidersCompatible(call, callData)) return false;
   if (!isInboundCall(call) || !isInboundCall(callData)) return false;
   if (!sameKnownScopeValue(call?.accountId, callData?.accountId)) return false;
+
+  const logicalKey = callLogicalKey(call);
+  const candidateLogicalKey = callLogicalKey(callData);
+  if (
+    requireCompatibleLogicalKey &&
+    (!isPresent(logicalKey) || !isPresent(candidateLogicalKey))
+  ) {
+    return false;
+  }
+  if (
+    requireCompatibleLogicalKey &&
+    isPresent(logicalKey) &&
+    isPresent(candidateLogicalKey) &&
+    !sameValue(logicalKey, candidateLogicalKey)
+  ) {
+    return false;
+  }
 
   const scopeMatches = allowPartialScope
     ? callScopeMatches(call, callData)
@@ -237,7 +251,12 @@ const sameNativeSipInboundCustomer = (
 const sameReplaceableNativeSipIncomingCall = (call, callData) =>
   !call?.isActive &&
   !callData?.isActive &&
-  sameNativeSipInboundCustomer(call, callData);
+  sameNativeSipInboundCustomer(call, callData, {
+    allowPartialScope:
+      !callHasPhysicalSessionScope(call) ||
+      !callHasPhysicalSessionScope(callData),
+    requireCompatibleLogicalKey: true,
+  });
 
 const sameLiveCall = (call, callData) =>
   sameCallSid(call, callData) ||
@@ -293,7 +312,10 @@ const buildCallState = (callData, existingCall = null) => {
   const preserveExistingCallSid =
     existingCall &&
     !isSameProviderCall &&
-    sameNativeSipInboundBranch(existingCall, callData);
+    (sameNativeSipInboundBranch(existingCall, callData) ||
+      (callHasPhysicalSessionScope(existingCall) &&
+        !callHasPhysicalSessionScope(callData) &&
+        sameReplaceableNativeSipIncomingCall(existingCall, callData)));
   const hasStatusUpdate = hasOwn(callData, 'status');
   const stageValue = key => {
     if (hasOwn(callData, key)) return callData[key] ?? null;
@@ -313,6 +335,11 @@ const buildCallState = (callData, existingCall = null) => {
     callSid: preserveExistingCallSid
       ? existingCall.callSid
       : (callData?.callSid ?? existingCall?.callSid),
+    provider: displayValue('provider'),
+    callDirection: displayValue('callDirection'),
+    conversationId: displayValue('conversationId'),
+    inboxId: displayValue('inboxId'),
+    senderId: displayValue('senderId'),
     callEvent: stageValue('callEvent'),
     callLeg: stageValue('callLeg'),
     rawStatus: stageValue('rawStatus'),
@@ -339,13 +366,19 @@ const buildCallState = (callData, existingCall = null) => {
     ),
     serverManagedVoiceCall: displayValue('serverManagedVoiceCall'),
     browserJoinUnsupportedReason: displayValue('browserJoinUnsupportedReason'),
-    isActive: isSameProviderCall ? existingCall?.isActive || false : false,
-    browserJoined: isSameProviderCall
-      ? existingCall?.browserJoined || false
-      : false,
+    isActive:
+      isSameProviderCall || preserveExistingCallSid
+        ? existingCall?.isActive || false
+        : false,
+    browserJoined:
+      isSameProviderCall || preserveExistingCallSid
+        ? existingCall?.browserJoined || false
+        : false,
     browserJoinSupported:
       callData?.browserJoinSupported ??
-      (isSameProviderCall ? existingCall?.browserJoinSupported : null) ??
+      (isSameProviderCall || preserveExistingCallSid
+        ? existingCall?.browserJoinSupported
+        : null) ??
       null,
   };
 };
@@ -495,11 +528,16 @@ export const useCallsStore = defineStore('calls', {
             : callData
         );
         this.removeCall(callSid, {
+          accountId,
           conversationId,
           provider,
           callDirection,
           logicalCallKey,
           inboxId,
+          contactId,
+          fromNumber,
+          toNumber,
+          caller,
           sipProfileId,
           janusSessionKey,
           forceLogicalTerminal: logicalCallTerminal === true,
@@ -550,7 +588,11 @@ export const useCallsStore = defineStore('calls', {
       if (claimedByAnotherOperator) {
         const matchesClaimedLogicalCall = item =>
           sameCallSid(item, callData) ||
-          sameNativeSipLogicalCall(item, callData);
+          sameNativeSipLogicalCall(item, callData) ||
+          sameNativeSipInboundCustomer(item, callData, {
+            allowPartialScope: true,
+            requireCompatibleLogicalKey: true,
+          });
         const removedCalls = this.calls.filter(matchesClaimedLogicalCall);
         this.calls = this.calls.filter(
           item => !matchesClaimedLogicalCall(item)
@@ -898,11 +940,16 @@ export const useCallsStore = defineStore('calls', {
     async removeCall(
       callSid,
       {
+        accountId,
         conversationId,
         provider,
         callDirection,
         logicalCallKey,
         inboxId,
+        contactId,
+        fromNumber,
+        toNumber,
+        caller,
         sipProfileId,
         janusSessionKey,
         cleanupClaimedBrowserCall: cleanupClaimed = false,
@@ -911,11 +958,16 @@ export const useCallsStore = defineStore('calls', {
     ) {
       const target = {
         callSid,
+        accountId,
         conversationId,
         provider,
         callDirection,
         logicalCallKey,
         inboxId,
+        contactId,
+        fromNumber,
+        toNumber,
+        caller,
         sipProfileId,
         janusSessionKey,
       };
@@ -935,6 +987,28 @@ export const useCallsStore = defineStore('calls', {
         (forceLogicalTerminal ||
           !call.isActive ||
           (sameCallSid(call, target) && callScopeMatchesExactly(call, target)));
+      const matchesTerminalCustomer = call => {
+        if (!forceLogicalTerminal) return false;
+        if (
+          sameNativeSipInboundCustomer(call, target, {
+            allowPartialScope: true,
+            requireCompatibleLogicalKey: true,
+          })
+        ) {
+          return true;
+        }
+
+        return (
+          !call?.isActive &&
+          !isPresent(call?.provider) &&
+          !isPresent(callLogicalKey(call)) &&
+          !isPresent(callLogicalKey(target)) &&
+          hasSharedConversationKey(call, target) &&
+          sameNativeSipInboundCustomer(call, target, {
+            allowPartialScope: true,
+          })
+        );
+      };
       const matchesDirectCall = call =>
         sameCallSid(call, target) &&
         !preservesScopedActiveBranch(call) &&
@@ -942,11 +1016,19 @@ export const useCallsStore = defineStore('calls', {
           forceLogicalTerminal ||
           callScopeMatchesExactly(call, target) ||
           sameNativeSipLogicalCall(call, target));
-      if (sidCandidates.length > 1 && !this.calls.some(matchesLogicalBranch)) {
+      if (
+        sidCandidates.length > 1 &&
+        !this.calls.some(
+          call => matchesLogicalBranch(call) || matchesTerminalCustomer(call)
+        )
+      ) {
         return;
       }
       const directMatches = this.calls.filter(
-        call => matchesDirectCall(call) || matchesLogicalBranch(call)
+        call =>
+          matchesDirectCall(call) ||
+          matchesLogicalBranch(call) ||
+          matchesTerminalCustomer(call)
       );
       let matchingCalls = directMatches;
       if (!matchingCalls.length) {
@@ -1085,6 +1167,7 @@ export const useCallsStore = defineStore('calls', {
           (scopeMatchesClaim(call) &&
             sameNativeSipInboundCustomer(call, scopedCallData, {
               allowPartialScope: true,
+              requireCompatibleLogicalKey: true,
             })));
       const claimedCallCandidates = this.calls.filter(matchesClaimedCall);
       const exactSessionMatches = claimHasSessionScope
@@ -1266,7 +1349,10 @@ export const useCallsStore = defineStore('calls', {
         const sameCustomerCall = sameNativeSipInboundCustomer(
           call,
           targetCall,
-          { allowPartialScope: true }
+          {
+            allowPartialScope: true,
+            requireCompatibleLogicalKey: true,
+          }
         );
         return !sameLogicalCall && !sameCustomerCall;
       });

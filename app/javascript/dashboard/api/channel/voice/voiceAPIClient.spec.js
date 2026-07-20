@@ -14,6 +14,7 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
         },
       },
     },
+    get: vi.fn(() => Promise.resolve({ data: { payload: {} } })),
     post: vi.fn(() => Promise.resolve({ data: { payload: {} } })),
     patch: vi.fn(() => Promise.resolve({ data: { payload: {} } })),
     delete: vi.fn(() => Promise.resolve({ data: { payload: {} } })),
@@ -23,6 +24,7 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
     window.axios = axiosMock;
     window.fetch = vi.fn(() => Promise.resolve({ ok: true }));
     window.history.pushState({}, '', '/app/accounts/530/settings/inboxes/42');
+    axiosMock.get.mockClear();
     axiosMock.post.mockClear();
     axiosMock.patch.mockClear();
     axiosMock.delete.mockClear();
@@ -40,6 +42,17 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
     expect(axiosMock.post).toHaveBeenCalledWith(
       '/api/v1/accounts/530/telephony/virtual_pbx_channels/42/provision',
       { remote_commit: false, include_diagnostics: false }
+    );
+  });
+
+  it('sends the browser instance when requesting an inbox conference token', async () => {
+    await voiceAPIClient.getWebphoneToken(42);
+
+    expect(axiosMock.get).toHaveBeenCalledWith(
+      '/api/v1/accounts/530/inboxes/42/conference/token',
+      {
+        params: { client_instance_id: expect.any(String) },
+      }
     );
   });
 
@@ -75,6 +88,23 @@ describe('#VoiceAPI virtual PBX remote commit defaults', () => {
           dry_run: false,
           remote_commit: false,
         },
+      }
+    );
+  });
+
+  it('sends the optimistic configuration version outside the channel payload', async () => {
+    await voiceAPIClient.updateVirtualPbxChannel(42, {
+      expected_configuration_version: 'configuration-v3',
+      channel_name: 'PBX',
+    });
+
+    expect(axiosMock.patch).toHaveBeenCalledWith(
+      '/api/v1/accounts/530/telephony/virtual_pbx_channels/42',
+      {
+        virtual_pbx_channel: { channel_name: 'PBX' },
+        expected_configuration_version: 'configuration-v3',
+        dry_run: false,
+        remote_commit: false,
       }
     );
   });

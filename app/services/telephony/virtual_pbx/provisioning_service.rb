@@ -177,6 +177,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def update_channel(inbox_id:, payload:, dry_run: true, remote_commit: false, include_diagnostics: false)
     existing_config = config_builder.for_inbox(inbox_id)
+    expected_configuration_version = payload.to_h.with_indifferent_access[:expected_configuration_version]
     normalized = normalize_payload(payload, fallback: existing_config)
     remote_commit = remote_commit_for(normalized[:provider_kind] || existing_config[:provider_kind], remote_commit)
     errors = validation_errors(
@@ -198,7 +199,8 @@ class Telephony::VirtualPbx::ProvisioningService
                              steps: update_steps(normalized, existing_config), include_diagnostics: include_diagnostics)
     end
 
-    mutation_result = update_local_channel!(inbox_id, normalized)
+    verify_configuration_version!(existing_config, expected_configuration_version)
+    mutation_result = update_local_channel!(inbox_id, normalized, expected_configuration_version)
     payload = mutation_payload(
       'update',
       mutation_result,
@@ -251,6 +253,21 @@ class Telephony::VirtualPbx::ProvisioningService
   private
 
   attr_reader :account, :current_user, :config_builder
+
+  def verify_configuration_version!(config, expected_version)
+    current_version = config[:configuration_version]
+    if expected_version.present? && current_version.present? &&
+       ActiveSupport::SecurityUtils.secure_compare(expected_version.to_s, current_version.to_s)
+      return
+    end
+
+    raise Telephony::Error.new(
+      code: 'VIRTUAL_PBX_CONFIGURATION_STALE',
+      message: 'Virtual PBX configuration changed; reload it before saving',
+      status: :conflict,
+      details: { expected_configuration_version: expected_version, current_configuration_version: current_version }
+    )
+  end
 
   def product_payload(operation:, config:, include_diagnostics:, extra: {})
     payload = {
@@ -381,6 +398,7 @@ class Telephony::VirtualPbx::ProvisioningService
     source = payload.to_h.deep_stringify_keys
     fallback_phone_numbers = fallback&.fetch(:phone_numbers, {}) || {}
     fallback_routing = fallback&.fetch(:routing, {}) || {}
+    fallback_metadata = fallback&.fetch(:metadata, {}) || {}
 
     provider_kind = normalize_provider_kind(source['provider_kind'].presence || fallback&.dig(:provider_kind))
     ingress_number = normalize_technical_number(
@@ -418,7 +436,7 @@ class Telephony::VirtualPbx::ProvisioningService
       profiles: profiles_supplied ? normalize_profiles(source['profiles']) : normalize_existing_profiles(fallback&.dig(:profiles)),
       profiles_supplied: profiles_supplied,
       routing: normalize_routing(source['routing'] || {}, fallback_routing, profiles_supplied: profiles_supplied),
-      metadata: normalize_metadata(source['metadata'] || {})
+      metadata: normalize_metadata(fallback_metadata.to_h.deep_stringify_keys.merge(source['metadata'].to_h.deep_stringify_keys))
     }.compact
 
     normalized[:profiles] = normalized[:profiles].map do |profile|
@@ -742,15 +760,18 @@ class Telephony::VirtualPbx::ProvisioningService
     result
   end
 
-  def update_local_channel!(inbox_id, payload)
+  def update_local_channel!(inbox_id, payload, expected_configuration_version)
     result = nil
     ActiveRecord::Base.transaction do
       inbox = account.inboxes.find(inbox_id)
       channel = inbox.channel
+      inbox.lock!
+      channel.lock!
       binding = inbox.telephony_number_binding
       previous_user_ids = inbox.telephony_sip_profiles.pluck(:user_id).compact
       previous_sip_profile_ids = inbox.telephony_sip_profiles.pluck(:id)
       existing_config = config_builder.for_inbox(inbox_id)
+      verify_configuration_version!(existing_config, expected_configuration_version)
       refs = generated_refs_for(payload, existing_config)
       provider_connection = upsert_provider_connection!(payload, existing: binding&.provider_connection, refs: refs)
 
@@ -869,10 +890,10 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def provider_connection_metadata(payload, connection)
-    metadata = (payload[:metadata] || {}).to_h.with_indifferent_access
+    existing_metadata = connection.metadata.to_h.with_indifferent_access
+    metadata = existing_metadata.merge((payload[:metadata] || {}).to_h.with_indifferent_access)
     return metadata unless payload[:provider_kind].to_s == 'asterisk_analog'
 
-    existing_metadata = connection.metadata.to_h.with_indifferent_access
     if metadata[:outbound_dial_format].blank? && existing_metadata[:outbound_dial_format].present?
       metadata[:outbound_dial_format] = existing_metadata[:outbound_dial_format]
     end
@@ -908,7 +929,10 @@ class Telephony::VirtualPbx::ProvisioningService
       provider_connection: provider_connection,
       managed_by: MANAGED_BY_ONELINK,
       ownership_status: LOCAL_OWNERSHIP_STATUS,
-      metadata: payload[:metadata].merge(provider_kind: payload[:provider_kind], source: payload.dig(:metadata, 'source')).compact,
+      metadata: binding.metadata.to_h.merge(payload[:metadata]).merge(
+        provider_kind: payload[:provider_kind],
+        source: payload.dig(:metadata, 'source')
+      ).compact,
       last_synced_at: Time.current
     )
     binding.save!

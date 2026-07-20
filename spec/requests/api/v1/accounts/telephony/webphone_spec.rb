@@ -14,6 +14,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   def sip_presence_params(profile, overrides = {})
+    profile.acquire_browser_registration_lease!(client_instance_id: 'test-tab', user_id: profile.user_id)
+
     {
       sip_profile_id: profile.id,
       account_id: profile.account_id,
@@ -23,7 +25,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       sip_host: profile.sip_host,
       agent_aor: profile.agent_aor,
       registration_config_version: profile.registration_config_version,
-      registration_instance_id: "registration-#{profile.id}",
+      registration_instance_id: profile.reload.metadata.dig('browser_registration_lease', 'registration_instance_id') ||
+        "registration-#{profile.id}",
       janus_session_id: "janus-session-#{profile.id}",
       janus_handle_id: "janus-handle-#{profile.id}",
       session_key: "sip_profile:#{profile.id}"
@@ -31,6 +34,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
   end
 
   def mark_sip_profile_registered!(profile)
+    profile.acquire_browser_registration_lease!(client_instance_id: 'test-tab', user_id: profile.user_id)
     profile.update_browser_registration!(registered: true, registration_context: sip_presence_params(profile))
   end
 
@@ -62,7 +66,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     instagram_inbox = create(:channel_instagram, account: account).inbox
 
     post path,
-         params: { inbox_id: instagram_inbox.id },
+         params: { client_instance_id: 'test-tab', inbox_id: instagram_inbox.id },
          headers: headers,
          as: :json
 
@@ -127,7 +131,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       TELEPHONY_JANUS_ICE_SERVERS_JSON: "'[{\"urls\":\"stun:stun.l.google.com:19302\"}]'"
     ) do
       post path,
-           params: { inbox_id: sipuni_inbox.id },
+           params: { client_instance_id: 'test-tab', inbox_id: sipuni_inbox.id },
            headers: headers,
            as: :json
     end
@@ -212,7 +216,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       SIPUNI_INTEGRATION_SECRET: nil
     ) do
       post path,
-           params: { inbox_id: sipuni_inbox.id },
+           params: { client_instance_id: 'test-tab', inbox_id: sipuni_inbox.id },
            headers: headers,
            as: :json
     end
@@ -271,7 +275,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       TELEPHONY_BINOTEL_JANUS_SERVER_RECORDING_ENABLED: 'false'
     ) do
       post path,
-           params: { inbox_id: binotel_inbox.id },
+           params: { client_instance_id: 'test-tab', inbox_id: binotel_inbox.id },
            headers: headers,
            as: :json
     end
@@ -301,6 +305,56 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['recording_strategy']).to eq('browser_fallback')
   end
 
+  it 'grants one Janus bootstrap lease per SIP profile across browser tabs' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+
+    with_modified_env(TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-binotel') do
+      post path,
+           params: { inbox_id: binotel_profile.inbox_id, client_instance_id: 'tab-owner' },
+           headers: headers,
+           as: :json
+      owner_payload = response.parsed_body.fetch('payload')
+
+      post path,
+           params: { inbox_id: binotel_profile.inbox_id, client_instance_id: 'tab-competing' },
+           headers: headers,
+           as: :json
+      competing_payload = response.parsed_body.fetch('payload')
+
+      expect(owner_payload).to include(
+        'calling_supported' => true,
+        'registration_instance_id' => be_present,
+        'registration_lease_expires_at' => be_present
+      )
+      expect(competing_payload).to include(
+        'calling_supported' => false,
+        'reason' => 'sip_profile_registration_lease_owned_by_another_tab'
+      )
+      expect(competing_payload['registration_instance_id']).to be_nil
+      expect(competing_payload['janus_server']).to be_nil
+      expect(competing_payload.keys).not_to include('sip', 'sip_username', 'sipUsername', 'sip_password', 'sipPassword')
+    end
+  end
+
+  it 'requires a browser client instance before issuing a Janus ticket' do
+    _sipuni_profile, binotel_profile, _asterisk_profile = create_native_janus_browser_profiles
+
+    with_modified_env(TELEPHONY_BINOTEL_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-binotel') do
+      post path,
+           params: { inbox_id: binotel_profile.inbox_id },
+           headers: headers,
+           as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include(
+      'calling_supported' => false,
+      'reason' => 'webphone_client_instance_id_required'
+    )
+    expect(payload['janus_server']).to be_nil
+    expect(payload.keys).not_to include('sip', 'sip_username', 'sipUsername', 'sip_password', 'sipPassword')
+  end
+
   it 'uses Janus server recording with a browser safety fallback when enabled' do
     sipuni_profile, binotel_profile, asterisk_profile = create_native_janus_browser_profiles
 
@@ -316,7 +370,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       TELEPHONY_JANUS_RECORDING_FILENAME_PREFIX: 'janus-prod'
     ) do
       post path,
-           params: { inbox_id: asterisk_profile.inbox_id },
+           params: { client_instance_id: 'test-tab', inbox_id: asterisk_profile.inbox_id },
            headers: headers,
            as: :json
 
@@ -325,7 +379,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       expect_janus_server_recording(payload, 'asterisk_analog')
 
       post path,
-           params: { inbox_id: sipuni_profile.inbox_id },
+           params: { client_instance_id: 'test-tab', inbox_id: sipuni_profile.inbox_id },
            headers: headers,
            as: :json
 
@@ -333,7 +387,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       expect_janus_server_recording(sipuni_payload, 'sipuni')
 
       post path,
-           params: { inbox_id: binotel_profile.inbox_id },
+           params: { client_instance_id: 'test-tab', inbox_id: binotel_profile.inbox_id },
            headers: headers,
            as: :json
 
@@ -350,7 +404,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       TELEPHONY_ASTERISK_ANALOG_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-asterisk'
     ) do
       post path,
-           params: { inbox_id: asterisk_profile.inbox_id },
+           params: { client_instance_id: 'test-tab', inbox_id: asterisk_profile.inbox_id },
            headers: headers,
            as: :json
     end
@@ -379,7 +433,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       SIPUNI_WEBHOOK_TOKEN: nil,
       TELEPHONY_SIPUNI_WEBHOOK_TOKEN: nil
     ) do
-      post path, headers: headers, as: :json
+      post path, params: { client_instance_id: 'test-tab' }, headers: headers, as: :json
     end
 
     payload = response.parsed_body.fetch('payload')
@@ -453,7 +507,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
     expect(route_metadata).to include(
       'source' => 'browser_janus_sip',
-      'registration_instance_id' => "registration-#{binotel_profile.id}",
+      'registration_instance_id' => binotel_profile.metadata.dig('browser_registration_lease', 'registration_instance_id'),
       'registration_config_version' => binotel_profile.registration_config_version,
       'target_sip_profile_id' => binotel_profile.id,
       'target_user_id' => administrator.id,
@@ -482,7 +536,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
 
     expect(response).to have_http_status(:ok)
     call_session = account.telephony_call_sessions.find_by!('external_call_ref LIKE ?', "%#{raw_call_ref}%")
-    expect(call_session.metadata.dig('metadata', 'registration_instance_id')).to eq("registration-#{binotel_profile.id}")
+    active_registration_instance_id = binotel_profile.reload.metadata.dig('browser_registration_lease', 'registration_instance_id')
+    expect(call_session.metadata.dig('metadata', 'registration_instance_id')).to eq(active_registration_instance_id)
   end
 
   it 'rejects a legacy incoming event when its Janus session does not match the active browser lease' do
@@ -972,7 +1027,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     post path,
-         params: { inbox_id: sipuni_inbox.id },
+         params: { client_instance_id: 'test-tab', inbox_id: sipuni_inbox.id },
          headers: headers,
          as: :json
 
@@ -1006,7 +1061,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     post path,
-         params: { inbox_id: binotel_inbox.id },
+         params: { client_instance_id: 'test-tab', inbox_id: binotel_inbox.id },
          headers: headers,
          as: :json
 
@@ -1051,7 +1106,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     with_modified_env(
       TELEPHONY_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni'
     ) do
-      post path, headers: headers, as: :json
+      post path, params: { client_instance_id: 'test-tab' }, headers: headers, as: :json
     end
 
     payload = response.parsed_body.fetch('payload')
@@ -1082,7 +1137,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     )
 
     post path,
-         params: { inbox_id: voice_inbox.id },
+         params: { client_instance_id: 'test-tab', inbox_id: voice_inbox.id },
          headers: headers,
          as: :json
 
@@ -1290,7 +1345,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       agent_aor: 'sip:current-login@ats01.kz.sipuni.com',
       availability_mode: 'browser_webphone'
     )
-    current_context = sip_presence_params(sip_profile).merge(registration_instance_id: 'current-registration')
+    current_context = sip_presence_params(sip_profile)
 
     post "/api/v1/accounts/#{account.id}/telephony/webphone/presence",
          params: { registered: true, inbox_id: voice_inbox.id }.merge(current_context),
@@ -2126,6 +2181,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       account: account,
       inbox: voice_inbox,
       number_binding: Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id),
+      contact: create(:contact, account: account),
+      conversation: nil,
       provider: 'sipuni',
       external_call_ref: 'sipuni:janus:51:claimed-profile-offline',
       status: 'in_progress',
@@ -2150,7 +2207,7 @@ RSpec.describe 'Telephony Webphone API', type: :request do
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:ok)
+    expect(response).to have_http_status(:ok), response.parsed_body.inspect
     expect(call_session.reload).to have_attributes(
       status: 'completed',
       ended_by: "user:#{administrator.id}",
@@ -2181,6 +2238,8 @@ RSpec.describe 'Telephony Webphone API', type: :request do
       inbox: voice_inbox,
       number_binding: Telephony::NumberBinding.find_by!(inbox_id: voice_inbox.id),
       agent_binding: legacy_binding,
+      contact: create(:contact, account: account),
+      conversation: nil,
       provider: 'sipuni',
       external_call_ref: 'sipuni:janus:51:profile-with-legacy-binding',
       status: 'in_progress',

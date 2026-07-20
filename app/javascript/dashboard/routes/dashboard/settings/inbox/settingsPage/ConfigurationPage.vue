@@ -866,6 +866,8 @@ export default {
     virtualPbxUpdatePayload() {
       const form = this.virtualPbxForm;
       const payload = {
+        expected_configuration_version:
+          this.virtualPbxConfig?.configuration_version,
         provider_kind: form.providerKind,
         channel_name: form.channelName.trim(),
         display_phone_number: form.displayPhoneNumber.trim(),
@@ -874,8 +876,6 @@ export default {
           fallback_mode: 'reject',
           operator_distribution_mode:
             form.operatorDistributionMode || 'broadcast',
-          show_calls_handled_by_other_operators:
-            form.showCallsHandledByOtherOperators,
         },
         profiles: this.virtualPbxProfilesPayload(),
         metadata: {
@@ -1298,26 +1298,6 @@ export default {
                 </option>
               </select>
             </label>
-          </div>
-
-          <div
-            :class="{ 'pointer-events-none opacity-60': isVirtualPbxReadOnly }"
-            :aria-disabled="isVirtualPbxReadOnly"
-          >
-            <SettingsToggleSection
-              v-model="virtualPbxForm.showCallsHandledByOtherOperators"
-              :disabled="isVirtualPbxReadOnly"
-              :header="
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.LABEL'
-                )
-              "
-              :description="
-                $t(
-                  'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.DESCRIPTION'
-                )
-              "
-            />
           </div>
 
           <div

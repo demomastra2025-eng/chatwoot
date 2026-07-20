@@ -197,7 +197,6 @@ describe('ConfigurationPage Virtual PBX management', () => {
           mode: 'operator',
           fallback_mode: 'reject',
           operator_distribution_mode: 'broadcast',
-          show_calls_handled_by_other_operators: false,
         },
         connection: {
           host: 'ats01.kz.sipuni.com',
@@ -229,7 +228,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
-  it('saves visibility of active calls for other operators', async () => {
+  it('does not overwrite handled-call visibility when technical settings are saved', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
     updateVirtualPbxChannelMock.mockClear();
@@ -240,24 +239,10 @@ describe('ConfigurationPage Virtual PBX management', () => {
 
     expect(
       updateVirtualPbxChannelMock.mock.calls[0][1].routing
-        .show_calls_handled_by_other_operators
-    ).toBe(true);
+    ).not.toHaveProperty('show_calls_handled_by_other_operators');
   });
 
-  it('disables handled-call visibility for a read-only Virtual PBX', async () => {
-    getVirtualPbxStatusMock.mockResolvedValue({
-      ...statusPayload,
-      payload: {
-        ...statusPayload.payload,
-        ui_config: {
-          ...statusPayload.payload.ui_config,
-          status: {
-            ...statusPayload.payload.ui_config.status,
-            read_only: true,
-          },
-        },
-      },
-    });
+  it('keeps handled-call visibility out of technical configuration', async () => {
     const wrapper = buildWrapper();
     await flushPromises();
 
@@ -269,7 +254,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
           'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.HANDLED_CALL_VISIBILITY.LABEL'
       );
 
-    expect(visibilityToggle.props('disabled')).toBe(true);
+    expect(visibilityToggle).toBeUndefined();
   });
 
   it('saves employee SIP assignments from settings only', async () => {

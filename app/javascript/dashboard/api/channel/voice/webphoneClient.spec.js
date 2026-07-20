@@ -9,6 +9,7 @@ const {
   janusPrewarmMock,
   janusStopPrewarmMock,
   janusHasPendingIncomingCallMock,
+  janusBindCurrentCallReferenceMock,
   janusWaitForPendingIncomingCallMock,
   janusDestroyMock,
   janusClientFactoryMock,
@@ -19,6 +20,7 @@ const {
   const prewarmMock = vi.fn();
   const stopPrewarmMock = vi.fn();
   const hasPendingIncomingCallMock = vi.fn();
+  const bindCurrentCallReferenceMock = vi.fn();
   const waitForPendingIncomingCallMock = vi.fn();
   const destroyMock = vi.fn();
   const clientInstances = [];
@@ -28,6 +30,7 @@ const {
       initializeDevice: initializeMock,
       joinClientCall: joinMock,
       hasPendingIncomingCall: hasPendingIncomingCallMock,
+      bindCurrentCallReference: bindCurrentCallReferenceMock,
       waitForPendingIncomingCall: waitForPendingIncomingCallMock,
       prewarmMicrophone: prewarmMock,
       stopMicrophonePrewarm: stopPrewarmMock,
@@ -48,6 +51,7 @@ const {
     janusPrewarmMock: prewarmMock,
     janusStopPrewarmMock: stopPrewarmMock,
     janusHasPendingIncomingCallMock: hasPendingIncomingCallMock,
+    janusBindCurrentCallReferenceMock: bindCurrentCallReferenceMock,
     janusWaitForPendingIncomingCallMock: waitForPendingIncomingCallMock,
     janusDestroyMock: destroyMock,
     janusClientInstances: clientInstances,
@@ -346,6 +350,17 @@ describe('webphoneClient', () => {
         janusCallRef: 'incoming-39',
       })
     ).toBe(true);
+    WebphoneClient.bindCurrentCallReference({
+      provider: 'sipuni',
+      inboxId: 4769,
+      sipProfileId: 39,
+      callRef: 'sipuni:janus:39:incoming-39',
+      janusCallRef: 'incoming-39',
+    });
+    expect(janusBindCurrentCallReferenceMock).toHaveBeenCalledWith({
+      callRef: 'sipuni:janus:39:incoming-39',
+      janusCallRef: 'incoming-39',
+    });
   });
 
   it('forwards native Janus SIP connected events with session context', async () => {
@@ -682,6 +697,80 @@ describe('webphoneClient', () => {
     expect(WebphoneClient.nativeSipClients['sip_profile:39']).not.toBe(
       activeClient
     );
+  });
+
+  it('forwards terminal events emitted while a native session is being destroyed', async () => {
+    const sessionKey = 'sip_profile:terminal-release';
+    const client = {
+      addEventListener: vi.fn(),
+      destroyDevice: vi.fn(),
+    };
+    WebphoneClient.sessions[sessionKey] = {
+      provider: 'binotel',
+      sessionKey,
+      inboxId: 4773,
+      sipProfileId: 'terminal-release',
+    };
+    WebphoneClient.nativeSipClients[sessionKey] = client;
+    WebphoneClient.subscribeClient('binotel', client, { sessionKey });
+    const disconnectedListener = client.addEventListener.mock.calls.find(
+      ([eventName]) => eventName === 'call:disconnected'
+    )[1];
+    client.destroyDevice.mockImplementationOnce(async () => {
+      disconnectedListener(
+        new CustomEvent('call:disconnected', {
+          detail: { callRef: 'binotel:local:terminal-release' },
+        })
+      );
+    });
+    const forwarded = vi.fn();
+    WebphoneClient.addEventListener('call:disconnected', forwarded, {
+      once: true,
+    });
+
+    await WebphoneClient.destroyDevice({
+      provider: 'binotel',
+      sessionKey,
+    });
+
+    expect(forwarded).toHaveBeenCalledTimes(1);
+    expect(forwarded.mock.calls[0][0].detail).toMatchObject({
+      provider: 'binotel',
+      sessionKey,
+      callRef: 'binotel:local:terminal-release',
+    });
+    expect(WebphoneClient.nativeSipClients[sessionKey]).toBeUndefined();
+  });
+
+  it('cleans a native session registry even when device teardown fails', async () => {
+    const sessionKey = 'sip_profile:failed-destroy';
+    const client = {
+      addEventListener: vi.fn(),
+      destroyDevice: vi
+        .fn()
+        .mockRejectedValue(new Error('janus_destroy_failed')),
+    };
+    WebphoneClient.nativeSipClients[sessionKey] = client;
+    WebphoneClient.nativeSipClientGenerations[sessionKey] = 8;
+    WebphoneClient.sessions[sessionKey] = {
+      sessionKey,
+      provider: 'binotel',
+    };
+    WebphoneClient.nativeSessionConfigs[sessionKey] = {
+      sessionKey,
+      provider: 'binotel',
+    };
+
+    await expect(
+      WebphoneClient.destroyNativeSession(sessionKey)
+    ).rejects.toThrow('janus_destroy_failed');
+
+    expect(WebphoneClient.nativeSipClients[sessionKey]).toBeUndefined();
+    expect(
+      WebphoneClient.nativeSipClientGenerations[sessionKey]
+    ).toBeUndefined();
+    expect(WebphoneClient.sessions[sessionKey]).toBeUndefined();
+    expect(WebphoneClient.nativeSessionConfigs[sessionKey]).toBeUndefined();
   });
 
   it('does not destroy provider sessions when an explicit session key is stale', async () => {

@@ -284,6 +284,68 @@ RSpec.describe Telephony::CallReconciliationService do
       end
     end
 
+    it 'completes stale native Binotel local outbound calls answered without a terminal browser event' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'binotel',
+        external_call_ref: 'binotel:local:answered-without-terminal-event',
+        provider_call_sid: nil,
+        status: 'in_progress',
+        direction: 'outbound',
+        started_at: now - 2.hours,
+        answered_at: now - 90.minutes,
+        last_event_at: now - 90.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'binotel'
+          }
+        }
+      )
+
+      expect(service.perform).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: now,
+        ended_by: 'native_sip_reconciliation',
+        end_reason: 'native_sip_missing_completed_call',
+        duration_seconds: 5400
+      )
+    end
+
+    it 'completes stale native Binotel local calls when answer evidence outruns the canonical status' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'binotel',
+        external_call_ref: 'binotel:local:answered-before-status-update',
+        provider_call_sid: nil,
+        status: 'ringing',
+        direction: 'outbound',
+        started_at: now - 2.hours,
+        answered_at: now - 90.minutes,
+        last_event_at: now - 90.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'onelink_browser_janus_sip',
+            'provider' => 'binotel'
+          }
+        }
+      )
+
+      expect(service.perform).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: now,
+        ended_by: 'native_sip_reconciliation',
+        end_reason: 'native_sip_missing_completed_call',
+        duration_seconds: 5400
+      )
+    end
+
     it 'closes stale generic pre-answer legacy Sipuni calls and syncs the voice bubble idempotently' do
       conversation = create(
         :conversation,

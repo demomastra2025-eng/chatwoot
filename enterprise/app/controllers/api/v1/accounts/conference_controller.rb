@@ -11,7 +11,11 @@ class Api::V1::Accounts::ConferenceController < Api::V1::Accounts::BaseControlle
     else
       render json: Telephony::WebphoneService.new(
         account: Current.account
-      ).token_for(user: Current.user, inbox: @voice_inbox)
+      ).token_for(
+        user: Current.user,
+        inbox: @voice_inbox,
+        client_instance_id: params[:client_instance_id]
+      )
     end
   end
 

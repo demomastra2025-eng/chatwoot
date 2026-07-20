@@ -120,7 +120,7 @@ class Telephony::NumberBinding < ApplicationRecord
       binding.trunk_ref = nil
       binding.managed_by = config[:managed_by]
       binding.ownership_status = config[:ownership_status].presence || binding.ownership_status || 'legacy_reference'
-      binding.metadata = normalized_metadata(config)
+      binding.metadata = binding.metadata.to_h.merge(normalized_metadata(config))
       binding.last_synced_at = Time.current
       binding.save!
 

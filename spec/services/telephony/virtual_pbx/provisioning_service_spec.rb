@@ -73,6 +73,7 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
     service.update_channel(
       inbox_id: inbox.id,
       payload: sipuni_channel_payload(next_operator).deep_merge(
+        expected_configuration_version: result.dig(:ui_config, :configuration_version),
         profiles: [
           {
             id: sip_profile.id,
@@ -127,5 +128,29 @@ RSpec.describe Telephony::VirtualPbx::ProvisioningService do
 
     expect(inbox.channel.show_calls_handled_by_other_operators?).to be(true)
     expect(result.dig(:ui_config, :routing, :show_calls_handled_by_other_operators)).to be(true)
+  end
+
+  it 'updates handled-call visibility without resubmitting technical settings' do
+    result = service.create_channel(sipuni_channel_payload(operator), dry_run: false)
+    inbox = account.inboxes.find(result.dig(:ui_config, :inbox_id))
+    binding = inbox.telephony_number_binding
+    provider_connection = binding.provider_connection
+    binding.update!(metadata: binding.metadata.to_h.merge('binding_marker' => 'keep'))
+    provider_connection.update!(metadata: provider_connection.metadata.to_h.merge('connection_marker' => 'keep'))
+    expect(binding.reload.metadata).to include('binding_marker' => 'keep')
+
+    update_result = service.update_channel(
+      inbox_id: inbox.id,
+      payload: {
+        expected_configuration_version: service.status(inbox_id: inbox.id).dig(:ui_config, :configuration_version),
+        routing: { show_calls_handled_by_other_operators: true }
+      },
+      dry_run: false
+    )
+
+    expect(inbox.channel.reload.show_calls_handled_by_other_operators?).to be(true)
+    expect(update_result.dig(:ui_config, :routing, :show_calls_handled_by_other_operators)).to be(true)
+    expect(binding.reload.metadata).to include('binding_marker' => 'keep')
+    expect(provider_connection.reload.metadata).to include('connection_marker' => 'keep')
   end
 end

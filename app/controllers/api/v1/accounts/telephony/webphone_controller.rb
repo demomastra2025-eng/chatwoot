@@ -3,7 +3,13 @@ class Api::V1::Accounts::Telephony::WebphoneController < Api::V1::Accounts::Tele
     inbox = Current.account.inboxes.find_by(id: params[:inbox_id]) if params[:inbox_id].present?
     authorize inbox, :show? if inbox.present?
 
-    render_payload(webphone_service.token_for(user: Current.user, inbox: inbox))
+    render_payload(
+      webphone_service.token_for(
+        user: Current.user,
+        inbox: inbox,
+        client_instance_id: params[:client_instance_id]
+      )
+    )
   end
 
   def presence

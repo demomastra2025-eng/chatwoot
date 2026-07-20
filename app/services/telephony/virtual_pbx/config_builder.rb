@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'digest'
+
 class Telephony::VirtualPbx::ConfigBuilder
   MANAGED_BY_ONELINK = 'onelink'
   SECRET_KEY_PATTERN = /(password|secret|token|api[_-]?key|credential|auth)/i
@@ -100,6 +102,7 @@ class Telephony::VirtualPbx::ConfigBuilder
     {
       id: config[:id],
       inbox_id: config[:inbox_id],
+      configuration_version: config[:configuration_version],
       status: ui_status_payload(config, ownership, resources),
       channel: {
         name: config[:name],
@@ -232,6 +235,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       inbox_id: inbox.id,
       channel_id: channel.id,
       account_id: account.id,
+      configuration_version: configuration_version_for(inbox, channel, binding, policy),
       provider: channel.provider,
       provider_kind: provider_kind,
       provider_template: template_for(provider_kind),
@@ -246,6 +250,55 @@ class Telephony::VirtualPbx::ConfigBuilder
       ready: blocking_warnings(warnings).empty?,
       warnings: warnings
     }.compact
+  end
+
+  SIP_PROFILE_RUNTIME_METADATA_KEYS = %w[
+    available
+    browser_registration_lease
+    last_presence_event_at
+    last_presence_sequence
+    last_presence_source
+    last_registration_instance_id
+    last_unregistered_event_at
+    presence
+    registered
+    registration_config_version
+    registration_context
+    registration_context_signature
+    registration_state
+  ].freeze
+
+  def configuration_version_for(inbox, channel, binding, policy)
+    records = [
+      inbox,
+      channel,
+      binding,
+      policy,
+      binding&.provider_connection,
+      *inbox.telephony_sip_profiles.order(:id).to_a
+    ].compact
+
+    payload = records.map { |record| configuration_fingerprint_for(record) }
+    Digest::SHA256.hexdigest(JSON.generate(canonical_configuration_value(payload)))
+  end
+
+  def configuration_fingerprint_for(record)
+    attributes = record.attributes.except('created_at', 'updated_at', 'last_synced_at')
+    if record.is_a?(Telephony::SipProfile)
+      attributes['metadata'] = record.metadata.to_h.except(*SIP_PROFILE_RUNTIME_METADATA_KEYS)
+    end
+    [record.class.base_class.name, attributes]
+  end
+
+  def canonical_configuration_value(value)
+    case value
+    when Hash
+      value.keys.sort.index_with { |key| canonical_configuration_value(value[key]) }
+    when Array
+      value.map { |entry| canonical_configuration_value(entry) }
+    else
+      value
+    end
   end
 
   def phone_parts(channel:, binding:)
