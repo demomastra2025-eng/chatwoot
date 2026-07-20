@@ -14,7 +14,22 @@ RSpec.describe Captain::Tools::Copilot::GetAppointmentService do
     resource = create(:scheduling_resource, account: account, name: 'Dr. Aida')
     contact = create(:contact, account: account, name: 'Aruzhan')
     scheduling_service = create(:scheduling_service, account: account, name: 'Consultation', duration_min: 30)
-    appointment = create(:scheduling_appointment, account: account, resource: resource, contact: contact, service: scheduling_service)
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      contact: contact,
+      conversation: conversation,
+      service: scheduling_service
+    )
+    expect(Scheduling::PayloadBuilder).to receive(:appointment).with(
+      satisfy do |record|
+        record.association(:conversation).loaded? &&
+          record.conversation.association(:inbox).loaded? &&
+          record.conversation.association(:communication_thread).loaded?
+      end
+    ).and_call_original
 
     payload = JSON.parse(service.execute(appointment_id: appointment.id))
 

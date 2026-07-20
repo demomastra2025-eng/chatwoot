@@ -36,6 +36,7 @@ class Scheduling::Appointments::UpsertService
     primary_service = services.first
     company = resolve_company(contact)
     conversation = resolve_conversation
+    ensure_conversation_belongs_to_contact!(conversation, contact)
     created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
     owner = resolve_owner(contact: contact, resource: resource)
 
@@ -388,6 +389,22 @@ class Scheduling::Appointments::UpsertService
     return nil if params[:conversation_display_id].blank?
 
     account.conversations.find_by!(display_id: params[:conversation_display_id])
+  end
+
+  def ensure_conversation_belongs_to_contact!(conversation, contact)
+    return unless conversation_contact_validation_required?
+    return if conversation.blank?
+    return if contact.present? && conversation.contact_id == contact.id
+
+    raise Scheduling::Error.new(
+      code: 'CONVERSATION_CONTACT_MISMATCH',
+      message: 'Conversation must belong to the selected contact',
+      status: :unprocessable_content
+    )
+  end
+
+  def conversation_contact_validation_required?
+    params.key?(:conversation_id) || params.key?(:conversation_display_id) || params.key?(:contact_id)
   end
 
   def resolve_services(current:)

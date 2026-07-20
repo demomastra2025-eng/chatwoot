@@ -1168,6 +1168,13 @@ RSpec.describe Conversation do
       expect(conversation.can_reply?).to be false
       expect(message_window_service).to have_received(:can_reply?)
     end
+
+    it 'returns false without invoking MessageWindowService when the inbox is unavailable' do
+      allow(conversation).to receive(:inbox).and_return(nil)
+
+      expect(conversation.can_reply?).to be false
+      expect(Conversations::MessageWindowService).not_to have_received(:new)
+    end
   end
 
   describe 'reply time calculation flows' do

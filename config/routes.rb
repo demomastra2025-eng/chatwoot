@@ -230,6 +230,7 @@ Rails.application.routes.draw do
             resources :services, only: [:index, :show, :create, :update, :destroy]
             resources :appointments, only: [:index, :show, :create, :update, :destroy] do
               post :cancel, on: :member
+              post :conversation, action: :create_conversation, on: :member
               resources :payments, only: [:create], controller: 'appointment_payments'
               delete :payments, on: :member, to: 'appointment_payments#destroy'
             end

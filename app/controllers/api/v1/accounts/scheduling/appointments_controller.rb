@@ -31,8 +31,8 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     payment_status
   ].freeze
 
-  before_action :set_appointment, only: [:show, :update, :cancel, :destroy]
-  before_action :ensure_editable_appointment!, only: [:update, :cancel, :destroy]
+  before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]
+  before_action :ensure_editable_appointment!, only: [:update, :cancel, :create_conversation, :destroy]
   before_action :ensure_destroyable_appointment!, only: [:destroy]
 
   def index
@@ -82,6 +82,20 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     render_payload(Scheduling::PayloadBuilder.appointment(appointment))
   end
 
+  def create_conversation
+    inbox = Current.account.inboxes.find(create_conversation_params[:inbox_id])
+    authorize inbox, :show?
+    appointment = Scheduling::Appointments::CreateConversationService.new(
+      account: Current.account,
+      appointment: @appointment,
+      inbox: inbox,
+      params: create_conversation_params,
+      actor: Current.user
+    ).perform
+
+    render_payload(Scheduling::PayloadBuilder.appointment(appointment))
+  end
+
   def destroy
     @appointment.destroy!
     head :no_content
@@ -91,6 +105,10 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def appointment_params
     params.permit(*APPOINTMENT_PARAM_KEYS, service_ids: [], custom_attributes: {})
+  end
+
+  def create_conversation_params
+    params.permit(:contact_id, :contact_inbox_id, :inbox_id, :source_id)
   end
 
   def filter_by_range(scope)
@@ -132,7 +150,13 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def appointments_with_payload_associations
-    Current.account.scheduling_appointments.includes(:payments, :expense, :contact, :resource, conversation: :communication_thread)
+    Current.account.scheduling_appointments.includes(
+      :payments,
+      :expense,
+      :contact,
+      :resource,
+      conversation: [:communication_thread, :inbox]
+    )
   end
 
   def filter_by_reference_params(scope)

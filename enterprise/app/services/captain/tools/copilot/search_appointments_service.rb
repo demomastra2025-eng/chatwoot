@@ -14,7 +14,13 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
   param :limit, type: :number, desc: 'Maximum number of appointments to return', required: false
 
   def execute(client_name: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil, limit: nil)
-    appointments = account.scheduling_appointments.includes(:resource, :service, :company, :contact)
+    appointments = account.scheduling_appointments.includes(
+      :resource,
+      :service,
+      :company,
+      :contact,
+      conversation: [:inbox, :communication_thread]
+    )
     appointments = appointments.where(contact_id: contact_id) if contact_id.present?
     appointments = appointments.where(resource_id: resource_id) if resource_id.present?
     appointments = appointments.where(status: status) if status.present?

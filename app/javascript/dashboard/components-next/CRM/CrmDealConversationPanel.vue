@@ -56,6 +56,14 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  loadErrorI18nKey: {
+    type: String,
+    default: 'CRM.ERRORS.LOAD_TITLE',
+  },
+  placeholderI18nPrefix: {
+    type: String,
+    default: 'CRM.DEALS.CONVERSATION_PLACEHOLDER',
+  },
   visible: {
     type: Boolean,
     default: false,
@@ -75,6 +83,16 @@ const getConversationById = useMapGetter('getConversationById');
 const getAllConversations = useMapGetter('getAllConversations');
 const currentChat = useMapGetter('getSelectedChat');
 
+const translateDynamicKey = key => {
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  return t(key);
+};
+const loadErrorText = computed(() =>
+  translateDynamicKey(props.loadErrorI18nKey)
+);
+const placeholderText = key =>
+  translateDynamicKey(`${props.placeholderI18nPrefix}.${key}`);
+
 const ui = reactive({
   error: null,
   isLoading: false,
@@ -89,6 +107,12 @@ const normalizePositiveNumber = value => {
     ? normalizedValue
     : 0;
 };
+
+// Conversation API/store records expose the public display id as `id`.
+const resolvedConversationDisplayId = conversation =>
+  normalizePositiveNumber(
+    conversation?.display_id || conversation?.displayId || conversation?.id
+  );
 
 const normalizedConversationId = computed(() =>
   normalizePositiveNumber(props.conversationId)
@@ -139,7 +163,7 @@ const conversationByDisplayId = computed(() => {
 
   return (getAllConversations.value || []).find(conversation => {
     return (
-      normalizePositiveNumber(conversation.display_id) ===
+      resolvedConversationDisplayId(conversation) ===
       normalizedConversationDisplayId.value
     );
   });
@@ -162,29 +186,26 @@ const activeConversation = computed(() => {
     return null;
   }
 
-  return (
-    getConversationById.value(conversationApiId.value) ||
-    getConversationById.value(normalizedConversationId.value) ||
-    conversationByDisplayId.value ||
-    null
-  );
+  if (normalizedConversationDisplayId.value) {
+    return conversationByDisplayId.value;
+  }
+
+  return getConversationById.value(normalizedConversationId.value) || null;
 });
 const activeCommunicationThread = computed(() => {
   if (!communicationThreadApiId.value) {
     return null;
   }
 
+  if (normalizedCommunicationThreadDisplayId.value) {
+    return communicationThreadByDisplayId.value;
+  }
+
   return (
-    getConversationById.value(
-      communicationThreadApiId.value,
-      'communication_thread'
-    ) ||
     getConversationById.value(
       normalizedCommunicationThreadId.value,
       'communication_thread'
-    ) ||
-    communicationThreadByDisplayId.value ||
-    null
+    ) || null
   );
 });
 const activeChat = computed(() =>
@@ -195,44 +216,27 @@ const activeChat = computed(() =>
 
 const isConversationReady = computed(() => {
   const currentChatId = normalizePositiveNumber(currentChat.value?.id);
-  const currentChatDisplayId = normalizePositiveNumber(
-    currentChat.value?.display_id || currentChat.value?.displayId
-  );
+  const currentChatDisplayId = resolvedConversationDisplayId(currentChat.value);
   const currentChatThreadId = normalizePositiveNumber(
     currentChat.value?.communication_thread_id ||
       currentChat.value?.communicationThreadId
   );
 
-  const candidateConversationIds = new Set(
-    (isCommunicationThreadTarget.value
-      ? [
-          normalizedCommunicationThreadId.value,
-          normalizedCommunicationThreadDisplayId.value,
-          communicationThreadApiId.value,
-        ]
-      : [
-          normalizedConversationId.value,
-          normalizedConversationDisplayId.value,
-          conversationApiId.value,
-        ]
-    ).filter(Boolean)
-  );
-
   if (isCommunicationThreadTarget.value) {
-    return (
-      currentChat.value?.is_communication_thread &&
-      (candidateConversationIds.has(currentChatId) ||
-        candidateConversationIds.has(currentChatDisplayId) ||
-        candidateConversationIds.has(currentChatThreadId))
-    );
+    const matchesTarget = normalizedCommunicationThreadDisplayId.value
+      ? currentChatDisplayId === normalizedCommunicationThreadDisplayId.value ||
+        currentChatThreadId === normalizedCommunicationThreadDisplayId.value
+      : currentChatId === normalizedCommunicationThreadId.value ||
+        currentChatThreadId === normalizedCommunicationThreadId.value;
+
+    return currentChat.value?.is_communication_thread && matchesTarget;
   }
 
-  return (
-    !currentChat.value?.is_communication_thread &&
-    (candidateConversationIds.has(currentChatId) ||
-      (normalizedConversationDisplayId.value &&
-        currentChatDisplayId === normalizedConversationDisplayId.value))
-  );
+  const matchesTarget = normalizedConversationDisplayId.value
+    ? currentChatDisplayId === normalizedConversationDisplayId.value
+    : currentChatId === normalizedConversationId.value;
+
+  return !currentChat.value?.is_communication_thread && matchesTarget;
 });
 
 const clearConversationState = () => {
@@ -294,32 +298,36 @@ const activateConversation = async () => {
   }
 
   const requestId = activationRequestId.value + 1;
+  const targetApiId = chatApiId.value;
+  const targetIsCommunicationThread = isCommunicationThreadTarget.value;
   activationRequestId.value = requestId;
   ui.error = null;
   ui.isLoading = true;
 
+  const isCurrentActivation = () =>
+    requestId === activationRequestId.value &&
+    props.visible &&
+    chatApiId.value === targetApiId &&
+    isCommunicationThreadTarget.value === targetIsCommunicationThread;
+
   try {
-    if (
-      requestId !== activationRequestId.value ||
-      !props.visible ||
-      !chatApiId.value
-    ) {
-      return;
-    }
+    if (!isCurrentActivation()) return;
     let conversation = activeChat.value;
 
     if (!conversation) {
       conversation =
         (await store.dispatch(
-          isCommunicationThreadTarget.value
+          targetIsCommunicationThread
             ? 'getCommunicationThread'
             : 'getConversation',
-          chatApiId.value
+          targetApiId
         )) || activeChat.value;
     }
 
+    if (!isCurrentActivation()) return;
+
     if (!conversation) {
-      throw new Error(t('CRM.ERRORS.LOAD_TITLE'));
+      throw new Error(loadErrorText.value);
     }
 
     await store.dispatch('setActiveChat', { data: conversation });
@@ -379,12 +387,19 @@ watch(
 );
 
 watch(
-  [() => props.visible, chatApiId],
-  ([isVisible, apiId]) => {
+  [() => props.visible, chatApiId, isCommunicationThreadTarget],
+  ([isVisible, apiId, isThread], previousValues = []) => {
     if (!isVisible || !apiId) {
       invalidateActivation();
       resetPanelState();
       return;
+    }
+
+    const [wasVisible, previousApiId, wasThread] = previousValues;
+    if (wasVisible && (previousApiId !== apiId || wasThread !== isThread)) {
+      invalidateActivation();
+      resetPanelState();
+      clearConversationState();
     }
 
     activateConversation();
@@ -435,22 +450,20 @@ onBeforeUnmount(() => {
 
               <div class="grid gap-2">
                 <h3 class="text-base font-semibold text-n-slate-12">
-                  {{ $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.TITLE') }}
+                  {{ placeholderText('TITLE') }}
                 </h3>
                 <p class="text-sm leading-6 text-n-slate-11">
                   {{
                     contactOptions.length
-                      ? $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.DESCRIPTION')
-                      : $t(
-                          'CRM.DEALS.CONVERSATION_PLACEHOLDER.NO_CONTACT_DESCRIPTION'
-                        )
+                      ? placeholderText('DESCRIPTION')
+                      : placeholderText('NO_CONTACT_DESCRIPTION')
                   }}
                 </p>
               </div>
 
               <div v-if="!contactOptions.length" class="flex justify-center">
                 <Button
-                  :label="$t('CRM.DEALS.CONVERSATION_PLACEHOLDER.ADD_CONTACT')"
+                  :label="placeholderText('ADD_CONTACT')"
                   icon="i-lucide-user-plus"
                   :disabled="!canManage"
                   @click="emit('addContact')"
@@ -459,14 +472,14 @@ onBeforeUnmount(() => {
 
               <div v-else class="grid gap-3 text-left">
                 <SchedulingSelectField
-                  :label="$t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CONTACT')"
+                  :label="placeholderText('CONTACT')"
                   :model-value="selectedPlaceholderContactId"
                   :options="contactOptions"
                   :disabled="isCreatingConversation"
                   @update:model-value="updateSelectedContact"
                 />
                 <SchedulingSelectField
-                  :label="$t('CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOX')"
+                  :label="placeholderText('INBOX')"
                   :model-value="selectedInboxId"
                   :options="inboxOptions"
                   :disabled="
@@ -474,15 +487,11 @@ onBeforeUnmount(() => {
                     isLoadingInboxes ||
                     isLoadingCommunicationThread
                   "
-                  :empty-state="
-                    $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.NO_INBOXES')
-                  "
+                  :empty-state="placeholderText('NO_INBOXES')"
                   @update:model-value="selectedInboxId = $event"
                 />
                 <Button
-                  :label="
-                    $t('CRM.DEALS.CONVERSATION_PLACEHOLDER.CREATE_DIALOG')
-                  "
+                  :label="placeholderText('CREATE_DIALOG')"
                   icon="i-lucide-message-square-plus"
                   :is-loading="isCreatingConversation"
                   :disabled="!canCreateConversation"
@@ -495,8 +504,8 @@ onBeforeUnmount(() => {
           <SchedulingErrorState
             v-else-if="ui.error"
             class="m-4"
-            :title="$t('CRM.ERRORS.LOAD_TITLE')"
-            :description="ui.error?.message || $t('CRM.ERRORS.LOAD_TITLE')"
+            :title="loadErrorText"
+            :description="ui.error?.message || loadErrorText"
             @retry="activateConversation"
           />
 

@@ -105,6 +105,20 @@
         "completed": "Done"
       }
     },
+    "CONVERSATION_PLACEHOLDER": {
+      "ADD_CONTACT": "Add contact",
+      "CONTACT": "Contact",
+      "CREATE_DIALOG": "Create dialog",
+      "CREATE_ERROR": "Could not create a dialog",
+      "CREATED": "Dialog created and linked to the appointment",
+      "DESCRIPTION": "No dialog has been created yet. Select a contact and channel to create one and link it to this appointment.",
+      "INBOX": "Channel",
+      "INBOXES_LOAD_ERROR": "Could not load contact channels",
+      "LOAD_ERROR": "Could not load dialog",
+      "NO_CONTACT_DESCRIPTION": "Add a contact to this appointment before creating a dialog.",
+      "NO_INBOXES": "No channel is available for this contact to create a dialog",
+      "TITLE": "No dialog created yet"
+    },
     "APPOINTMENT_FORM": {
       "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",
       "APPOINTMENT_TITLE": "Appointment details",

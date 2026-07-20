@@ -2,9 +2,10 @@ module Scheduling::PayloadBuilder
   module_function
 
   def appointment(appointment, payments: nil, expense_record: nil)
-    conversation = appointment.conversation
-    chat_conversation = conversation || appointment_chat_conversation(appointment)
-    communication_thread = appointment_communication_thread(appointment, chat_conversation)
+    conversation = available_conversation(appointment.conversation)
+    explicit_communication_thread = conversation&.communication_thread
+    legacy_chat_conversation = conversation || appointment_chat_conversation(appointment)
+    legacy_communication_thread = appointment_communication_thread(appointment, legacy_chat_conversation)
 
     {
       id: appointment.id,
@@ -16,12 +17,17 @@ module Scheduling::PayloadBuilder
       service_ids: appointment.custom_attributes['service_ids'].presence || Array(appointment.service_id).compact,
       services: appointment.custom_attributes['services'].presence || [],
       company_id: appointment.company_id,
-      conversation_id: appointment.conversation_id,
+      conversation_id: conversation&.id,
       conversation_display_id: conversation&.display_id,
-      communication_thread_id: communication_thread&.id,
-      communication_thread_display_id: communication_thread&.display_id,
-      chat_conversation_id: chat_conversation&.id,
-      chat_conversation_display_id: chat_conversation&.display_id,
+      appointment_conversation_id: conversation&.id,
+      appointment_conversation_display_id: conversation&.display_id,
+      appointment_communication_thread_id: explicit_communication_thread&.id,
+      appointment_communication_thread_display_id: explicit_communication_thread&.display_id,
+      conversation_creation_supported: true,
+      communication_thread_id: legacy_communication_thread&.id,
+      communication_thread_display_id: legacy_communication_thread&.display_id,
+      chat_conversation_id: legacy_chat_conversation&.id,
+      chat_conversation_display_id: legacy_chat_conversation&.display_id,
       created_by_id: appointment.created_by_id,
       owner_id: appointment.owner_id,
       service_name_snapshot: appointment.service_name_snapshot,
@@ -60,6 +66,10 @@ module Scheduling::PayloadBuilder
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
     }
+  end
+
+  def available_conversation(conversation)
+    conversation if conversation&.inbox.present?
   end
 
   def appointment_chat_conversation(appointment)

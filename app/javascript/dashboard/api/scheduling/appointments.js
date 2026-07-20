@@ -25,6 +25,10 @@ class SchedulingAppointmentsAPI extends ApiClient {
   cancel(id) {
     return axios.post(`${this.url}/${id}/cancel`);
   }
+
+  createConversation(id, data) {
+    return axios.post(`${this.url}/${id}/conversation`, data);
+  }
 }
 
 export default new SchedulingAppointmentsAPI();

@@ -1,5 +1,12 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 
@@ -61,6 +68,10 @@ import {
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
 import { useSchedulingCalendarStore } from 'dashboard/stores/scheduling/calendar';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import {
+  buildContactableInboxesList,
+  fetchContactableInboxes,
+} from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
 
 const { t, locale } = useI18n();
 const calendarStore = useSchedulingCalendarStore();
@@ -82,6 +93,17 @@ const appointmentFilterDraft = reactive({
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const appointmentDeleteDialogRef = ref(null);
 const showAppointmentConversationPanel = ref(false);
+const appointmentConversationDraft = reactive({
+  contactId: '',
+  contactableInboxes: [],
+  contextRequestId: 0,
+  isCreating: false,
+  isLoadingInboxes: false,
+});
+const appointmentContactableInboxesByContactId = ref({});
+const appointmentConversationContactCreateRequested = ref(false);
+let appointmentConversationCreateRequestId = 0;
+let appointmentConversationDisposed = false;
 
 const inlineContactForm = reactive({
   birthDate: '',
@@ -392,57 +414,132 @@ const drawerConfirmLabel = computed(() =>
     : t('SCHEDULING.GENERAL.CREATE')
 );
 
+const appointmentConversationMatchesSelectedContact = computed(() => {
+  const persistedContactId = Number(
+    formStore.selectedAppointment?.contactId ||
+      formStore.selectedAppointment?.contact_id
+  );
+  const selectedContactId = Number(formStore.form.contactId);
+
+  if (!persistedContactId && !selectedContactId) return true;
+  return persistedContactId === selectedContactId;
+});
+
+const selectedAppointmentConversationValue = (...keys) => {
+  if (!appointmentConversationMatchesSelectedContact.value) return '';
+
+  return keys.reduce(
+    (value, key) => value || formStore.selectedAppointment?.[key],
+    ''
+  );
+};
+
+const hasExplicitAppointmentConversation = computed(
+  () =>
+    Number(
+      selectedAppointmentConversationValue(
+        'appointmentConversationId',
+        'appointment_conversation_id',
+        'conversationId',
+        'conversation_id'
+      )
+    ) > 0
+);
+
 const appointmentChatConversationId = computed(() => {
+  if (!hasExplicitAppointmentConversation.value) return 0;
+
   const conversationId = Number(
-    formStore.selectedAppointment?.chatConversationId ||
-      formStore.selectedAppointment?.chat_conversation_id ||
-      formStore.form.conversationId
+    selectedAppointmentConversationValue(
+      'appointmentConversationId',
+      'appointment_conversation_id',
+      'conversationId',
+      'conversation_id'
+    )
   );
   return Number.isFinite(conversationId) && conversationId > 0
     ? conversationId
     : 0;
 });
 
-const appointmentChatConversationDisplayId = computed(() =>
-  String(
-    formStore.selectedAppointment?.chatConversationDisplayId ||
-      formStore.selectedAppointment?.chat_conversation_display_id ||
-      formStore.selectedAppointment?.conversationDisplayId ||
-      formStore.selectedAppointment?.conversation_display_id ||
-      ''
-  ).replace(/[^\d]/g, '')
+const appointmentChatConversationDisplayId = computed(() => {
+  if (!hasExplicitAppointmentConversation.value) return '';
+
+  return String(
+    selectedAppointmentConversationValue(
+      'appointmentConversationDisplayId',
+      'appointment_conversation_display_id',
+      'conversationDisplayId',
+      'conversation_display_id'
+    )
+  ).replace(/[^\d]/g, '');
+});
+
+const appointmentCommunicationThreadId = computed(() => {
+  if (!hasExplicitAppointmentConversation.value) return '';
+
+  return String(
+    selectedAppointmentConversationValue(
+      'appointmentCommunicationThreadId',
+      'appointment_communication_thread_id',
+      'communicationThreadId',
+      'communication_thread_id'
+    )
+  ).replace(/[^\d]/g, '');
+});
+
+const appointmentCommunicationThreadDisplayId = computed(() => {
+  if (!hasExplicitAppointmentConversation.value) return '';
+
+  return String(
+    selectedAppointmentConversationValue(
+      'appointmentCommunicationThreadDisplayId',
+      'appointment_communication_thread_display_id',
+      'communicationThreadDisplayId',
+      'communication_thread_display_id'
+    )
+  ).replace(/[^\d]/g, '');
+});
+const hasAppointmentConversationTarget = computed(
+  () =>
+    !!appointmentCommunicationThreadDisplayId.value ||
+    !!appointmentCommunicationThreadId.value ||
+    !!appointmentChatConversationDisplayId.value ||
+    !!appointmentChatConversationId.value
 );
 
-const appointmentCommunicationThreadId = computed(() =>
-  String(
-    formStore.selectedAppointment?.communicationThreadId ||
-      formStore.selectedAppointment?.communication_thread_id ||
-      ''
-  ).replace(/[^\d]/g, '')
-);
+const appointmentConversationContacts = computed(() => {
+  const contactId = Number(formStore.form.contactId);
+  if (!Number.isFinite(contactId) || contactId <= 0) return [];
 
-const appointmentCommunicationThreadDisplayId = computed(() =>
-  String(
-    formStore.selectedAppointment?.communicationThreadDisplayId ||
-      formStore.selectedAppointment?.communication_thread_display_id ||
-      ''
-  ).replace(/[^\d]/g, '')
-);
+  const contact = formStore.selectedContact;
+  return [
+    {
+      id: contactId,
+      label: [
+        contact?.fullName || formStore.form.clientName,
+        contact?.phone || formStore.form.clientPhone,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      value: contactId,
+    },
+  ];
+});
 
 const canOpenAppointmentConversation = computed(
+  () => formStore.mode === 'edit'
+);
+const canManageAppointmentConversation = computed(
   () =>
     formStore.mode === 'edit' &&
-    !!(
-      appointmentCommunicationThreadDisplayId.value ||
-      appointmentChatConversationDisplayId.value
-    )
+    formStore.selectedAppointment?.conversationCreationSupported === true &&
+    formStore.selectedAppointment?.source !== 'medelement'
 );
-
 const shouldShowAppointmentConversationPanel = computed(
   () =>
-    formStore.mode === 'edit' &&
-    showAppointmentConversationPanel.value &&
-    canOpenAppointmentConversation.value
+    canOpenAppointmentConversation.value &&
+    showAppointmentConversationPanel.value
 );
 
 const appointmentDrawerModalClass = computed(() => [
@@ -665,9 +762,148 @@ const loadPage = async () => {
   await fetchCalendar();
 };
 
+const resetAppointmentConversationDraft = () => {
+  appointmentConversationDraft.contextRequestId += 1;
+  appointmentConversationDraft.contactId = formStore.form.contactId || '';
+  appointmentConversationDraft.contactableInboxes = [];
+  appointmentConversationDraft.isCreating = false;
+  appointmentConversationDraft.isLoadingInboxes = false;
+};
+
+const setAppointmentConversationContact = contactId => {
+  const normalizedContactId = Number(contactId);
+  appointmentConversationDraft.contextRequestId += 1;
+  appointmentConversationDraft.contactId =
+    Number.isFinite(normalizedContactId) && normalizedContactId > 0
+      ? normalizedContactId
+      : '';
+  appointmentConversationDraft.contactableInboxes = [];
+  appointmentConversationDraft.isLoadingInboxes = false;
+  return appointmentConversationDraft.contextRequestId;
+};
+
+const loadAppointmentConversationInboxes = async contextRequestId => {
+  appointmentConversationDraft.contactableInboxes = [];
+  const contactId = appointmentConversationDraft.contactId;
+  if (!contactId) return;
+
+  const cachedInboxes =
+    appointmentContactableInboxesByContactId.value[contactId];
+  if (cachedInboxes) {
+    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
+      appointmentConversationDraft.contactableInboxes = cachedInboxes;
+    }
+    return;
+  }
+
+  appointmentConversationDraft.isLoadingInboxes = true;
+
+  try {
+    const contactableInboxes = buildContactableInboxesList(
+      await fetchContactableInboxes(contactId)
+    );
+    appointmentContactableInboxesByContactId.value = {
+      ...appointmentContactableInboxesByContactId.value,
+      [contactId]: contactableInboxes,
+    };
+    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
+      appointmentConversationDraft.contactableInboxes = contactableInboxes;
+    }
+  } catch {
+    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
+      appointmentConversationDraft.contactableInboxes = [];
+      useAlert(t('SCHEDULING.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'));
+    }
+  } finally {
+    if (contextRequestId === appointmentConversationDraft.contextRequestId) {
+      appointmentConversationDraft.isLoadingInboxes = false;
+    }
+  }
+};
+
+const loadAppointmentConversationContext = async contactId => {
+  if (
+    hasAppointmentConversationTarget.value &&
+    Number(contactId) === Number(formStore.form.contactId)
+  ) {
+    return [];
+  }
+
+  const contextRequestId = setAppointmentConversationContact(contactId);
+
+  if (!appointmentConversationDraft.contactId) return [];
+
+  await loadAppointmentConversationInboxes(contextRequestId);
+  return [];
+};
+
+const createAppointmentConversation = async ({ contactId, inbox }) => {
+  const appointmentId = Number(formStore.recordId);
+  if (
+    appointmentConversationDraft.isCreating ||
+    !canManageAppointmentConversation.value ||
+    !Number.isFinite(appointmentId) ||
+    appointmentId <= 0 ||
+    !inbox
+  ) {
+    return;
+  }
+
+  const normalizedContactId = Number(contactId);
+  const inboxId = Number(inbox.value || inbox.id);
+  if (
+    !Number.isFinite(normalizedContactId) ||
+    normalizedContactId <= 0 ||
+    !Number.isFinite(inboxId) ||
+    inboxId <= 0
+  ) {
+    return;
+  }
+
+  const contextRequestId = appointmentConversationDraft.contextRequestId;
+  const isCurrentContext = () =>
+    !appointmentConversationDisposed &&
+    contextRequestId === appointmentConversationDraft.contextRequestId &&
+    Number(formStore.recordId) === appointmentId &&
+    Number(formStore.form.contactId) === normalizedContactId;
+  appointmentConversationCreateRequestId += 1;
+  const createRequestId = appointmentConversationCreateRequestId;
+  appointmentConversationDraft.isCreating = true;
+
+  try {
+    await formStore.createAndLinkConversation(
+      {
+        appointmentId,
+        contactId: normalizedContactId,
+        inbox,
+      },
+      calendarStore,
+      isCurrentContext
+    );
+    if (!isCurrentContext()) return;
+    resetAppointmentConversationDraft();
+    showAppointmentConversationPanel.value = true;
+    useAlert(t('SCHEDULING.CONVERSATION_PLACEHOLDER.CREATED'));
+  } catch (error) {
+    if (isCurrentContext()) {
+      useAlert(
+        error?.response
+          ? formatErrorMessage(error)
+          : error?.message ||
+              t('SCHEDULING.CONVERSATION_PLACEHOLDER.CREATE_ERROR')
+      );
+    }
+  } finally {
+    if (createRequestId === appointmentConversationCreateRequestId) {
+      appointmentConversationDraft.isCreating = false;
+    }
+  }
+};
+
 const openCreateAppointment = (slot, defaults = {}) => {
   pendingCreateCustomFieldDefaultsHydration.value = true;
   showAppointmentConversationPanel.value = false;
+  appointmentConversationContactCreateRequested.value = false;
   formStore.openCreate(slot, {
     customAttributes: buildDefaultCustomAttributes(
       appointmentFieldDefinitions.value
@@ -678,14 +914,9 @@ const openCreateAppointment = (slot, defaults = {}) => {
 
 const openEditAppointment = appointment => {
   formStore.openEdit(appointment);
-  showAppointmentConversationPanel.value = !!(
-    appointment?.communicationThreadDisplayId ||
-    appointment?.communication_thread_display_id ||
-    appointment?.chatConversationDisplayId ||
-    appointment?.chat_conversation_display_id ||
-    appointment?.conversationDisplayId ||
-    appointment?.conversation_display_id
-  );
+  resetAppointmentConversationDraft();
+  appointmentConversationContactCreateRequested.value = false;
+  showAppointmentConversationPanel.value = true;
 };
 
 const handleAnchorDateSelect = async nextDate => {
@@ -764,8 +995,10 @@ const consumeAppointmentPrefillQuery = async () => {
 const handleDrawerClose = () => {
   appointmentDeleteDialogRef.value?.close();
   showAppointmentConversationPanel.value = false;
+  appointmentConversationContactCreateRequested.value = false;
   formStore.close();
   formStore.reset();
+  resetAppointmentConversationDraft();
   contactEditorMode.value = null;
   resetInlineContactForm();
 };
@@ -782,8 +1015,18 @@ const fillInlineContactForm = source => {
 };
 
 const closeInlineContactEditor = () => {
+  const shouldReopenConversationPanel =
+    appointmentConversationContactCreateRequested.value &&
+    formStore.mode === 'edit';
+
+  appointmentConversationContactCreateRequested.value = false;
   contactEditorMode.value = null;
   resetInlineContactForm();
+
+  if (shouldReopenConversationPanel) {
+    resetAppointmentConversationDraft();
+    showAppointmentConversationPanel.value = true;
+  }
 };
 
 const openInlineContactCreate = () => {
@@ -794,6 +1037,14 @@ const openInlineContactCreate = () => {
   }
 
   fillInlineContactForm(formStore.form);
+};
+
+const handleAppointmentConversationAddContact = () => {
+  if (!canManageAppointmentConversation.value) return;
+
+  appointmentConversationContactCreateRequested.value = true;
+  showAppointmentConversationPanel.value = false;
+  openInlineContactCreate();
 };
 
 const openInlineContactEdit = () => {
@@ -900,6 +1151,17 @@ watch(
 );
 
 const handleContactSelect = contactId => {
+  const previousContactId = Number(formStore.form.contactId);
+  const nextContactId = Number(contactId);
+  const contactChanged = previousContactId !== nextContactId;
+
+  formStore.updateField('contactId', contactId || '');
+  if (contactChanged) {
+    formStore.updateField('conversationDisplayId', '');
+    formStore.updateField('conversationId', '');
+    resetAppointmentConversationDraft();
+  }
+
   if (!contactId) {
     formStore.selectedContact = null;
     closeInlineContactEditor();
@@ -1025,6 +1287,12 @@ watch(
   },
   { immediate: true }
 );
+
+onBeforeUnmount(() => {
+  appointmentConversationDisposed = true;
+  appointmentConversationDraft.contextRequestId += 1;
+  appointmentConversationCreateRequestId += 1;
+});
 
 onMounted(async () => {
   calendarStore.hydratePreferences();
@@ -1284,10 +1552,7 @@ onMounted(async () => {
                             "
                             @open="handleContactDropdownOpen"
                             @search="formStore.searchContacts($event)"
-                            @update:model-value="
-                              formStore.updateField('contactId', $event);
-                              handleContactSelect($event);
-                            "
+                            @update:model-value="handleContactSelect"
                           />
                         </div>
                         <Input
@@ -1594,10 +1859,23 @@ onMounted(async () => {
             "
             :conversation-id="appointmentChatConversationId"
             :conversation-display-id="appointmentChatConversationDisplayId"
+            :contacts="appointmentConversationContacts"
+            :contactable-inboxes="
+              appointmentConversationDraft.contactableInboxes
+            "
+            :selected-contact-id="appointmentConversationDraft.contactId"
+            :can-manage="canManageAppointmentConversation"
+            :is-creating-conversation="appointmentConversationDraft.isCreating"
+            :is-loading-inboxes="appointmentConversationDraft.isLoadingInboxes"
+            load-error-i18n-key="SCHEDULING.CONVERSATION_PLACEHOLDER.LOAD_ERROR"
+            placeholder-i18n-prefix="SCHEDULING.CONVERSATION_PLACEHOLDER"
             :visible="
               formStore.isOpen && shouldShowAppointmentConversationPanel
             "
+            @add-contact="handleAppointmentConversationAddContact"
             @close="showAppointmentConversationPanel = false"
+            @create-conversation="createAppointmentConversation"
+            @select-contact="loadAppointmentConversationContext"
           />
         </div>
       </div>

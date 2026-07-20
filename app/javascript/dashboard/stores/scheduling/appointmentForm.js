@@ -422,7 +422,75 @@ export const useSchedulingAppointmentFormStore = defineStore(
           payload.service_ids = [];
         }
 
+        const selectedAppointmentContactId = Number(
+          this.selectedAppointment?.contactId || 0
+        );
+        const formContactId = Number(normalizedForm.contactId || 0);
+        if (
+          this.mode === 'edit' &&
+          this.selectedAppointment &&
+          selectedAppointmentContactId !== formContactId
+        ) {
+          payload.conversation_id = null;
+          delete payload.conversation_display_id;
+        }
+
         return payload;
+      },
+
+      async createAndLinkConversation(
+        { appointmentId = this.recordId, contactId, inbox },
+        calendarStore,
+        shouldApplyResponse = () => true
+      ) {
+        const normalizedAppointmentId = Number(appointmentId);
+        const normalizedContactId = Number(contactId);
+        const normalizedInboxId = Number(inbox?.value || inbox?.id);
+
+        if (
+          !Number.isFinite(normalizedAppointmentId) ||
+          normalizedAppointmentId <= 0
+        ) {
+          throw new Error('An existing appointment is required');
+        }
+        if (
+          !Number.isFinite(normalizedContactId) ||
+          normalizedContactId <= 0 ||
+          !Number.isFinite(normalizedInboxId) ||
+          normalizedInboxId <= 0
+        ) {
+          throw new Error('A contact and inbox are required');
+        }
+
+        const { data } = await SchedulingAppointmentsAPI.createConversation(
+          normalizedAppointmentId,
+          {
+            contact_id: normalizedContactId,
+            contact_inbox_id: inbox.contactInboxId || undefined,
+            inbox_id: normalizedInboxId,
+            source_id: inbox.sourceId || undefined,
+          }
+        );
+        const appointment = normalizePayload(data);
+
+        if (!shouldApplyResponse()) return appointment;
+
+        calendarStore.syncAppointment(appointment);
+        if (
+          this.mode === 'edit' &&
+          Number(this.recordId) === normalizedAppointmentId &&
+          Number(this.form.contactId) === normalizedContactId
+        ) {
+          this.selectedAppointment = appointment;
+          this.form = {
+            ...this.form,
+            contactId: appointment.contactId || normalizedContactId,
+            conversationDisplayId: appointment.conversationDisplayId || '',
+            conversationId: appointment.conversationId || '',
+          };
+        }
+
+        return appointment;
       },
 
       async submit(calendarStore) {

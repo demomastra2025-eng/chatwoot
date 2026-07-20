@@ -7,6 +7,7 @@ import { useSchedulingAppointmentFormStore } from './appointmentForm';
 vi.mock('dashboard/api/scheduling/appointments', () => ({
   default: {
     create: vi.fn(),
+    createConversation: vi.fn(),
     delete: vi.fn(),
     update: vi.fn(),
   },
@@ -159,6 +160,243 @@ describe('useSchedulingAppointmentFormStore', () => {
       conversation_display_id: 185,
     });
     expect(store.buildPayload()).not.toHaveProperty('conversation_id');
+  });
+
+  it('atomically creates and links a conversation without closing the drawer', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = {
+      syncAppointment: vi.fn(),
+    };
+
+    store.openEdit({
+      contactId: 7,
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    SchedulingAppointmentsAPI.createConversation.mockResolvedValue({
+      data: {
+        payload: {
+          contact_id: 7,
+          conversation_display_id: 185,
+          conversation_id: 11963,
+          id: 11,
+        },
+      },
+    });
+
+    const appointment = await store.createAndLinkConversation(
+      {
+        contactId: 7,
+        inbox: { contactInboxId: 91, sourceId: 'source-7', value: 3 },
+      },
+      calendarStore
+    );
+
+    expect(SchedulingAppointmentsAPI.createConversation).toHaveBeenCalledWith(
+      11,
+      {
+        contact_id: 7,
+        contact_inbox_id: 91,
+        inbox_id: 3,
+        source_id: 'source-7',
+      }
+    );
+    expect(calendarStore.syncAppointment).toHaveBeenCalledWith(appointment);
+    expect(store.selectedAppointment).toEqual(appointment);
+    expect(store.form).toMatchObject({
+      contactId: 7,
+      conversationDisplayId: 185,
+      conversationId: 11963,
+    });
+    expect(store.isOpen).toBe(true);
+  });
+
+  it('does not overwrite a different appointment opened while dialog linking is in flight', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = {
+      syncAppointment: vi.fn(),
+    };
+    let resolveCreateConversation;
+
+    store.openEdit({
+      contactId: 7,
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    SchedulingAppointmentsAPI.createConversation.mockReturnValue(
+      new Promise(resolve => {
+        resolveCreateConversation = resolve;
+      })
+    );
+
+    const linkPromise = store.createAndLinkConversation(
+      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+      calendarStore,
+      () => false
+    );
+    store.openEdit({
+      contactId: 8,
+      endsAt: '2026-03-09T11:30:00.000Z',
+      id: 12,
+      resourceId: 3,
+      startsAt: '2026-03-09T11:00:00.000Z',
+    });
+    resolveCreateConversation({
+      data: {
+        payload: {
+          contact_id: 7,
+          conversation_display_id: 185,
+          conversation_id: 11963,
+          id: 11,
+        },
+      },
+    });
+
+    await linkPromise;
+
+    expect(SchedulingAppointmentsAPI.createConversation).toHaveBeenCalledWith(
+      11,
+      {
+        contact_id: 7,
+        contact_inbox_id: undefined,
+        inbox_id: 3,
+        source_id: undefined,
+      }
+    );
+    expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
+    expect(store.selectedAppointment).toMatchObject({ id: 12, contactId: 8 });
+    expect(store.form).toMatchObject({ contactId: 8 });
+  });
+
+  it('does not restore a stale contact changed while dialog creation is in flight', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = { syncAppointment: vi.fn() };
+    let resolveCreateConversation;
+
+    store.openEdit({
+      contactId: 7,
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    SchedulingAppointmentsAPI.createConversation.mockReturnValue(
+      new Promise(resolve => {
+        resolveCreateConversation = resolve;
+      })
+    );
+
+    const linkPromise = store.createAndLinkConversation(
+      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+      calendarStore,
+      () => false
+    );
+    store.updateField('contactId', 8);
+    resolveCreateConversation({
+      data: {
+        payload: {
+          contact_id: 7,
+          conversation_display_id: 185,
+          conversation_id: 11963,
+          id: 11,
+        },
+      },
+    });
+
+    await linkPromise;
+
+    expect(calendarStore.syncAppointment).not.toHaveBeenCalled();
+    expect(store.form).toMatchObject({ contactId: 8 });
+    expect(store.form.conversationId).toBe('');
+    expect(store.selectedAppointment).toMatchObject({ id: 11, contactId: 7 });
+  });
+
+  it('clears an old linked conversation when the appointment contact changes', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      contactId: 7,
+      conversationDisplayId: 185,
+      conversationId: 11963,
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    store.updateField('contactId', 8);
+
+    expect(store.buildPayload()).toMatchObject({
+      contact_id: 8,
+      conversation_id: null,
+    });
+    expect(store.buildPayload()).not.toHaveProperty('conversation_display_id');
+  });
+
+  it('ignores an older response when same-context requests resolve out of order', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = { syncAppointment: vi.fn() };
+    const resolvers = [];
+    let activeRequest = 1;
+
+    store.openEdit({
+      contactId: 7,
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+    SchedulingAppointmentsAPI.createConversation.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          resolvers.push(resolve);
+        })
+    );
+
+    const firstRequest = store.createAndLinkConversation(
+      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+      calendarStore,
+      () => activeRequest === 1
+    );
+    activeRequest = 2;
+    const secondRequest = store.createAndLinkConversation(
+      { appointmentId: 11, contactId: 7, inbox: { value: 3 } },
+      calendarStore,
+      () => activeRequest === 2
+    );
+
+    resolvers[1]({
+      data: {
+        payload: {
+          contact_id: 7,
+          conversation_display_id: 202,
+          conversation_id: 12002,
+          id: 11,
+        },
+      },
+    });
+    await secondRequest;
+    resolvers[0]({
+      data: {
+        payload: {
+          contact_id: 7,
+          conversation_display_id: 201,
+          conversation_id: 12001,
+          id: 11,
+        },
+      },
+    });
+    await firstRequest;
+
+    expect(calendarStore.syncAppointment).toHaveBeenCalledTimes(1);
+    expect(calendarStore.syncAppointment).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationId: 12002 })
+    );
+    expect(store.form.conversationId).toBe(12002);
+    expect(store.selectedAppointment.conversationId).toBe(12002);
   });
 
   it('defaults prepaid payment method to cash when prepaid amount is positive', () => {

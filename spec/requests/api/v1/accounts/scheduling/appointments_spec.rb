@@ -107,6 +107,147 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.conversation_id).to eq(conversation.id)
   end
 
+  it 'does not confuse a created conversation display id with another internal id' do
+    colliding_id = Conversation.maximum(:id).to_i + 10_000
+    other_conversation = create(
+      :conversation,
+      id: colliding_id,
+      account: account,
+      contact: contact
+    )
+    conversation = create(
+      :conversation,
+      account: account,
+      contact: contact,
+      display_id: other_conversation.id
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { conversation_display_id: conversation.display_id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.conversation_id).to eq(conversation.id)
+    expect(appointment.conversation_id).not_to eq(other_conversation.id)
+  end
+
+  it 'atomically creates and links a conversation to an appointment' do
+    inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
+    create(:inbox_member, user: agent, inbox: inbox)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    expect do
+      post "#{path}/#{appointment.id}/conversation",
+           params: {
+             contact_id: contact.id,
+             contact_inbox_id: contact_inbox.id,
+             inbox_id: inbox.id
+           },
+           headers: headers,
+           as: :json
+    end.to change(Conversation, :count).by(1)
+
+    expect(response).to have_http_status(:ok)
+    conversation = appointment.reload.conversation
+    expect(conversation).to have_attributes(
+      account_id: account.id,
+      assignee_id: agent.id,
+      contact_id: contact.id,
+      inbox_id: inbox.id
+    )
+    expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
+    expect(response_body.dig('payload', 'conversation_display_id')).to eq(conversation.display_id)
+
+    expect do
+      post "#{path}/#{appointment.id}/conversation",
+           params: {
+             contact_id: contact.id,
+             contact_inbox_id: contact_inbox.id,
+             inbox_id: inbox.id
+           },
+           headers: headers,
+           as: :json
+    end.not_to change(Conversation, :count)
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload.conversation_id).to eq(conversation.id)
+    expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
+  end
+
+  it 'rejects a contact inbox outside the selected contact and inbox scope' do
+    inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
+    create(:inbox_member, user: agent, inbox: inbox)
+    another_contact = create(:contact, account: account)
+    another_contact_inbox = create(:contact_inbox, contact: another_contact, inbox: inbox)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    expect do
+      post "#{path}/#{appointment.id}/conversation",
+           params: {
+             contact_id: contact.id,
+             contact_inbox_id: another_contact_inbox.id,
+             inbox_id: inbox.id
+           },
+           headers: headers,
+           as: :json
+    end.not_to change(Conversation, :count)
+
+    expect(response).to have_http_status(:not_found)
+    expect(appointment.reload.conversation_id).to be_nil
+  end
+
+  it 'rejects a conversation that belongs to another contact' do
+    another_contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: another_contact)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: { conversation_display_id: conversation.display_id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(appointment.reload.conversation_id).to be_nil
+  end
+
   it 'clears the linked conversation when conversation_id is explicitly blank' do
     conversation = create(:conversation, account: account, contact: contact)
     appointment = create(
@@ -131,7 +272,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.conversation_id).to be_nil
   end
 
-  it 'exposes a contact communication thread as the appointment drawer chat target' do
+  it 'separates an explicit appointment target from legacy inferred contact history' do
     conversation = create(:conversation, account: account, contact: contact)
     communication_thread = create(:communication_thread, account: account, contact: contact)
     create(
@@ -155,12 +296,94 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     get "#{path}/#{appointment.id}", headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(response_body.dig('payload', 'conversation_id')).to be_nil
-    expect(response_body.dig('payload', 'conversation_display_id')).to be_nil
-    expect(response_body.dig('payload', 'communication_thread_id')).to eq(communication_thread.id)
-    expect(response_body.dig('payload', 'communication_thread_display_id')).to eq(communication_thread.display_id)
-    expect(response_body.dig('payload', 'chat_conversation_id')).to eq(conversation.id)
-    expect(response_body.dig('payload', 'chat_conversation_display_id')).to eq(conversation.display_id)
+    expect(response_body.fetch('payload')).to include(
+      'conversation_id' => nil,
+      'conversation_display_id' => nil,
+      'appointment_conversation_id' => nil,
+      'appointment_conversation_display_id' => nil,
+      'appointment_communication_thread_id' => nil,
+      'appointment_communication_thread_display_id' => nil,
+      'conversation_creation_supported' => true,
+      'communication_thread_id' => communication_thread.id,
+      'communication_thread_display_id' => communication_thread.display_id,
+      'chat_conversation_id' => conversation.id,
+      'chat_conversation_display_id' => conversation.display_id
+    )
+  end
+
+  it 'ignores an unavailable contact conversation when building the appointment drawer chat target' do
+    unavailable_inbox = create(:inbox, account: account)
+    unavailable_conversation = create(
+      :conversation,
+      account: account,
+      contact: contact,
+      inbox: unavailable_inbox
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    unavailable_inbox.delete
+
+    get "#{path}/#{appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.fetch('payload')).to include(
+      'conversation_id' => nil,
+      'conversation_display_id' => nil,
+      'appointment_conversation_id' => nil,
+      'appointment_conversation_display_id' => nil,
+      'conversation_creation_supported' => true,
+      'communication_thread_id' => nil,
+      'communication_thread_display_id' => nil,
+      'chat_conversation_id' => unavailable_conversation.id,
+      'chat_conversation_display_id' => unavailable_conversation.display_id
+    )
+    expect(unavailable_conversation.reload.inbox).to be_nil
+  end
+
+  it 'ignores an explicitly linked conversation when its inbox is unavailable' do
+    unavailable_inbox = create(:inbox, account: account)
+    unavailable_conversation = create(
+      :conversation,
+      account: account,
+      contact: contact,
+      inbox: unavailable_inbox
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      conversation: unavailable_conversation,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    unavailable_inbox.delete
+
+    get "#{path}/#{appointment.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.fetch('payload')).to include(
+      'conversation_id' => nil,
+      'conversation_display_id' => nil,
+      'appointment_conversation_id' => nil,
+      'appointment_conversation_display_id' => nil,
+      'conversation_creation_supported' => true,
+      'communication_thread_id' => nil,
+      'communication_thread_display_id' => nil,
+      'chat_conversation_id' => unavailable_conversation.id,
+      'chat_conversation_display_id' => unavailable_conversation.display_id
+    )
+    expect(appointment.reload.conversation_id).to eq(unavailable_conversation.id)
   end
 
   it 'keeps an explicit appointment conversation ahead of a separate contact thread target' do
@@ -191,6 +414,9 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response_body.dig('payload', 'conversation_id')).to eq(explicit_conversation.id)
     expect(response_body.dig('payload', 'conversation_display_id')).to eq(explicit_conversation.display_id)
+    expect(response_body.dig('payload', 'appointment_conversation_id')).to eq(explicit_conversation.id)
+    expect(response_body.dig('payload', 'appointment_conversation_display_id')).to eq(explicit_conversation.display_id)
+    expect(response_body.dig('payload', 'conversation_creation_supported')).to be(true)
     expect(response_body.dig('payload', 'communication_thread_id')).to be_nil
     expect(response_body.dig('payload', 'communication_thread_display_id')).to be_nil
     expect(response_body.dig('payload', 'chat_conversation_id')).to eq(explicit_conversation.id)
