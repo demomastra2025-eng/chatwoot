@@ -773,6 +773,37 @@ describe('webphoneClient', () => {
     expect(WebphoneClient.nativeSessionConfigs[sessionKey]).toBeUndefined();
   });
 
+  it('emits registry changes when a native SIP session is added and removed', async () => {
+    const sessionKey = 'sip_profile:registry-events';
+    const sessionsChanged = vi.fn();
+    WebphoneClient.addEventListener('call:sessions-changed', sessionsChanged);
+
+    WebphoneClient.rememberSession({
+      sessionKey,
+      provider: 'sipuni',
+      inboxId: 4771,
+      registered: true,
+    });
+    await WebphoneClient.destroyNativeSession(sessionKey);
+
+    expect(sessionsChanged).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        detail: { sessionKey, action: 'updated' },
+      })
+    );
+    expect(sessionsChanged).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        detail: { sessionKey, action: 'removed' },
+      })
+    );
+    WebphoneClient.removeEventListener(
+      'call:sessions-changed',
+      sessionsChanged
+    );
+  });
+
   it('does not destroy provider sessions when an explicit session key is stale', async () => {
     const activeDestroyMock = vi.fn();
     WebphoneClient.sessions['sip_profile:active'] = {

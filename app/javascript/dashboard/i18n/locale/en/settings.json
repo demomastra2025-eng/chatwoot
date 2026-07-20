@@ -473,6 +473,17 @@
     "AGENT_ASSIGNMENT": "Agent Assignment",
     "SET_AVAILABILITY_TITLE": "Set yourself as",
     "SET_YOUR_AVAILABILITY": "Set your availability",
+    "SIP_TELEPHONY": {
+      "LABEL": "SIP telephony",
+      "RECONNECT": "Reconnect SIP",
+      "CHANNEL_FALLBACK": "Channel #{id}",
+      "STATUS": {
+        "READY": "Ready for calls",
+        "CONNECTING": "Connecting…",
+        "DISCONNECTED": "Disconnected",
+        "ERROR": "Connection error"
+      }
+    },
     "SLA": "SLA",
     "CUSTOM_ROLES": "Custom Roles",
     "BETA": "Beta",

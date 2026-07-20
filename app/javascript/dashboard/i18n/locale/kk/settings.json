@@ -455,7 +455,18 @@
     "REPORTS_TEAM": "Team",
     "AGENT_ASSIGNMENT": "Employee Assignment",
     "SET_AVAILABILITY_TITLE": "Set yourself as",
-    "SET_YOUR_AVAILABILITY": "Set your availability",
+    "SET_YOUR_AVAILABILITY": "Желідегі қолжетімділік",
+    "SIP_TELEPHONY": {
+      "LABEL": "SIP-телефония",
+      "RECONNECT": "SIP-ті қайта қосу",
+      "CHANNEL_FALLBACK": "Арна #{id}",
+      "STATUS": {
+        "READY": "Қоңырауларға дайын",
+        "CONNECTING": "Қосылуда…",
+        "DISCONNECTED": "Қосылмаған",
+        "ERROR": "Қосылу қатесі"
+      }
+    },
     "SLA": "SLA",
     "CUSTOM_ROLES": "Custom Roles",
     "BETA": "Beta",

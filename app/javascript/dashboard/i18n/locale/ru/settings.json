@@ -473,6 +473,17 @@
     "AGENT_ASSIGNMENT": "Назначение сотруднику",
     "SET_AVAILABILITY_TITLE": "Установить себя",
     "SET_YOUR_AVAILABILITY": "Доступность в сети",
+    "SIP_TELEPHONY": {
+      "LABEL": "SIP-телефония",
+      "RECONNECT": "Переподключить SIP",
+      "CHANNEL_FALLBACK": "Канал #{id}",
+      "STATUS": {
+        "READY": "Готова к звонкам",
+        "CONNECTING": "Подключение…",
+        "DISCONNECTED": "Не подключена",
+        "ERROR": "Ошибка подключения"
+      }
+    },
     "SLA": "SLA",
     "CUSTOM_ROLES": "Роли",
     "BETA": "Бета",

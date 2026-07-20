@@ -670,7 +670,14 @@ class WebphoneClient extends EventTarget {
   rememberSession(session) {
     if (!session) return;
 
-    if (session.sessionKey) this.sessions[session.sessionKey] = session;
+    if (session.sessionKey) {
+      this.sessions[session.sessionKey] = session;
+      this.dispatchEvent(
+        new CustomEvent('call:sessions-changed', {
+          detail: { sessionKey: session.sessionKey, action: 'updated' },
+        })
+      );
+    }
     if (!session.provider) return;
 
     const existing = this.providerSessions[session.provider];
@@ -1255,6 +1262,7 @@ class WebphoneClient extends EventTarget {
   async destroyNativeSession(sessionKey) {
     const client = this.nativeSipClients[sessionKey];
     const provider = this.nativeSessionDescriptor(sessionKey).provider;
+    const hadSession = Boolean(this.sessions[sessionKey]);
     try {
       await client?.destroyDevice?.();
     } finally {
@@ -1277,6 +1285,13 @@ class WebphoneClient extends EventTarget {
           )
         ) {
           this.activeProvider = null;
+        }
+        if (hadSession) {
+          this.dispatchEvent(
+            new CustomEvent('call:sessions-changed', {
+              detail: { sessionKey, action: 'removed' },
+            })
+          );
         }
       }
     }
