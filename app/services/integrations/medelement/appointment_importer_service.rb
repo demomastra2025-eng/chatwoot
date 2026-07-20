@@ -61,7 +61,7 @@ class Integrations::Medelement::AppointmentImporterService
   def client_attributes(contact, reception)
     {
       client_name: client_name(contact, reception),
-      client_phone: contact&.phone_number,
+      client_phone: contact_phone(contact),
       client_identifier: contact&.identifier.presence || contact&.custom_attributes&.dig('iin'),
       client_birth_date: contact&.custom_attributes&.dig('birth_date'),
       client_gender: contact&.custom_attributes&.dig('gender')
@@ -79,6 +79,11 @@ class Integrations::Medelement::AppointmentImporterService
 
   def client_name(contact, reception)
     contact&.name.presence || "Patient #{reception['PATIENT_CODE']}"
+  end
+
+  def contact_phone(contact)
+    contact&.phone_number.presence ||
+      Array(contact&.custom_attributes&.dig('secondary_phones')).compact_blank.first
   end
 
   def custom_attributes(appointment, reception, import_context)

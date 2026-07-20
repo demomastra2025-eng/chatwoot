@@ -195,6 +195,44 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
   end
 
+  it 'creates and links a conversation without making an imported Medelement appointment editable' do
+    inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
+    create(:inbox_member, user: agent, inbox: inbox)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: inbox)
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      source: 'medelement',
+      external_ref: 'medelement:reception:conversation-test',
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes
+    )
+    original_attributes = appointment.attributes.except('conversation_id', 'updated_at')
+
+    expect do
+      post "#{path}/#{appointment.id}/conversation",
+           params: {
+             contact_id: contact.id,
+             contact_inbox_id: contact_inbox.id,
+             inbox_id: inbox.id
+           },
+           headers: headers,
+           as: :json
+    end.to change(Conversation, :count).by(1)
+
+    expect(response).to have_http_status(:ok)
+    expect(appointment.reload).to have_attributes(
+      conversation_id: be_present,
+      source: 'medelement',
+      external_ref: 'medelement:reception:conversation-test'
+    )
+    expect(appointment.attributes.except('conversation_id', 'updated_at')).to eq(original_attributes)
+    expect(response_body.dig('payload', 'external_conversation_creation_supported')).to be(true)
+  end
+
   it 'rejects a contact inbox outside the selected contact and inbox scope' do
     inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
     create(:inbox_member, user: agent, inbox: inbox)

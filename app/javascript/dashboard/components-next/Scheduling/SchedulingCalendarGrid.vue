@@ -6,6 +6,7 @@ import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomField
 import {
   buildDayListForView,
   formatDateKey,
+  isAppointmentProviderOwned,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 
 import SchedulingKanbanBoard from './SchedulingKanbanBoard.vue';
@@ -166,6 +167,8 @@ const resourceName = (resourceId, resourceNameFromAppointment) =>
   resourceNameFromAppointment || resourceNamesById.value[resourceId] || '—';
 
 const handleStatusChange = payload => {
+  if (isAppointmentProviderOwned(payload.appointment)) return;
+
   emit('changeStatus', payload);
 };
 </script>
@@ -267,6 +270,7 @@ const handleStatusChange = payload => {
                 @click.stop
               >
                 <SchedulingStatusMenu
+                  v-if="!isAppointmentProviderOwned(appointment)"
                   :model-value="appointment.status"
                   @update:model-value="
                     handleStatusChange({ appointment, status: $event })

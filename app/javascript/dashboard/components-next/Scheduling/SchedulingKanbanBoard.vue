@@ -6,6 +6,7 @@ import Draggable from 'vuedraggable';
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import SchedulingStatusMenu from './SchedulingStatusMenu.vue';
 import { APPOINTMENT_STATUS_ICONS } from 'dashboard/routes/dashboard/scheduling/constants';
+import { isAppointmentProviderOwned } from 'dashboard/routes/dashboard/scheduling/helpers';
 
 const props = defineProps({
   appointments: {
@@ -136,13 +137,20 @@ const appointmentSubtitle = appointment => {
 };
 
 const emitStatusChange = (appointment, status) => {
-  if (!appointment || appointment.status === status) return;
+  if (
+    !appointment ||
+    appointment.status === status ||
+    isAppointmentProviderOwned(appointment)
+  )
+    return;
 
   appointment.status = status;
   emit('changeStatus', { appointment, status });
 };
 
 const moveAppointmentToStatus = (appointment, nextStatus) => {
+  if (isAppointmentProviderOwned(appointment)) return;
+
   const currentStatus = statusOrder.find(status =>
     boardColumns.value[status].some(item => item.id === appointment.id)
   );
@@ -171,6 +179,9 @@ const handleColumnChange = (event, status) => {
   const appointment = boardColumns.value[status][event.added.newIndex];
   emitStatusChange(appointment, status);
 };
+
+const canMoveAppointment = event =>
+  !isAppointmentProviderOwned(event.draggedContext.element);
 </script>
 
 <template>
@@ -204,6 +215,7 @@ const handleColumnChange = (event, status) => {
 
           <Draggable
             :list="boardColumns[column.value]"
+            :move="canMoveAppointment"
             animation="180"
             class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3"
             ghost-class="scheduling-kanban-card-ghost"
@@ -229,6 +241,7 @@ const handleColumnChange = (event, status) => {
                   </div>
 
                   <SchedulingStatusMenu
+                    v-if="!isAppointmentProviderOwned(element)"
                     :model-value="element.status"
                     neutral
                     @update:model-value="

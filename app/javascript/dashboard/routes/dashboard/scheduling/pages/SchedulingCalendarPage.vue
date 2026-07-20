@@ -45,7 +45,12 @@ import {
   formatSchedulingErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/scheduling/shared';
-import { formatCalendarTitle } from '../helpers';
+import {
+  canCreateAppointmentConversation,
+  formatCalendarTitle,
+  isAppointmentProviderOwned,
+  resolveAppointmentConversationTarget,
+} from '../helpers';
 import {
   appointmentMatchesCustomFieldFilters,
   buildSchedulingAdvancedCustomFieldOperatorOptions,
@@ -217,6 +222,11 @@ const appointmentRemainingAmount = appointment => {
 
 const appointmentPaymentAmount = computed(() =>
   appointmentRemainingAmount(formStore.selectedAppointment)
+);
+const isSelectedAppointmentProviderOwned = computed(
+  () =>
+    formStore.mode === 'edit' &&
+    isAppointmentProviderOwned(formStore.selectedAppointment)
 );
 
 const filterableResources = computed(() =>
@@ -425,81 +435,23 @@ const appointmentConversationMatchesSelectedContact = computed(() => {
   return persistedContactId === selectedContactId;
 });
 
-const selectedAppointmentConversationValue = (...keys) => {
-  if (!appointmentConversationMatchesSelectedContact.value) return '';
-
-  return keys.reduce(
-    (value, key) => value || formStore.selectedAppointment?.[key],
-    ''
-  );
-};
-
-const hasExplicitAppointmentConversation = computed(
-  () =>
-    Number(
-      selectedAppointmentConversationValue(
-        'appointmentConversationId',
-        'appointment_conversation_id',
-        'conversationId',
-        'conversation_id'
-      )
-    ) > 0
+const appointmentConversationTarget = computed(() =>
+  appointmentConversationMatchesSelectedContact.value
+    ? resolveAppointmentConversationTarget(formStore.selectedAppointment)
+    : resolveAppointmentConversationTarget(null)
 );
-
-const appointmentChatConversationId = computed(() => {
-  if (!hasExplicitAppointmentConversation.value) return 0;
-
-  const conversationId = Number(
-    selectedAppointmentConversationValue(
-      'appointmentConversationId',
-      'appointment_conversation_id',
-      'conversationId',
-      'conversation_id'
-    )
-  );
-  return Number.isFinite(conversationId) && conversationId > 0
-    ? conversationId
-    : 0;
-});
-
-const appointmentChatConversationDisplayId = computed(() => {
-  if (!hasExplicitAppointmentConversation.value) return '';
-
-  return String(
-    selectedAppointmentConversationValue(
-      'appointmentConversationDisplayId',
-      'appointment_conversation_display_id',
-      'conversationDisplayId',
-      'conversation_display_id'
-    )
-  ).replace(/[^\d]/g, '');
-});
-
-const appointmentCommunicationThreadId = computed(() => {
-  if (!hasExplicitAppointmentConversation.value) return '';
-
-  return String(
-    selectedAppointmentConversationValue(
-      'appointmentCommunicationThreadId',
-      'appointment_communication_thread_id',
-      'communicationThreadId',
-      'communication_thread_id'
-    )
-  ).replace(/[^\d]/g, '');
-});
-
-const appointmentCommunicationThreadDisplayId = computed(() => {
-  if (!hasExplicitAppointmentConversation.value) return '';
-
-  return String(
-    selectedAppointmentConversationValue(
-      'appointmentCommunicationThreadDisplayId',
-      'appointment_communication_thread_display_id',
-      'communicationThreadDisplayId',
-      'communication_thread_display_id'
-    )
-  ).replace(/[^\d]/g, '');
-});
+const appointmentChatConversationId = computed(
+  () => appointmentConversationTarget.value.conversationId
+);
+const appointmentChatConversationDisplayId = computed(
+  () => appointmentConversationTarget.value.conversationDisplayId
+);
+const appointmentCommunicationThreadId = computed(
+  () => appointmentConversationTarget.value.communicationThreadId
+);
+const appointmentCommunicationThreadDisplayId = computed(
+  () => appointmentConversationTarget.value.communicationThreadDisplayId
+);
 const hasAppointmentConversationTarget = computed(
   () =>
     !!appointmentCommunicationThreadDisplayId.value ||
@@ -533,8 +485,7 @@ const canOpenAppointmentConversation = computed(
 const canManageAppointmentConversation = computed(
   () =>
     formStore.mode === 'edit' &&
-    formStore.selectedAppointment?.conversationCreationSupported === true &&
-    formStore.selectedAppointment?.source !== 'medelement'
+    canCreateAppointmentConversation(formStore.selectedAppointment)
 );
 const shouldShowAppointmentConversationPanel = computed(
   () =>
@@ -1200,6 +1151,8 @@ const resetAppointmentFilters = async () => {
 };
 
 const handleAppointmentSubmit = async () => {
+  if (isSelectedAppointmentProviderOwned.value) return;
+
   try {
     await formStore.submit(calendarStore);
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
@@ -1210,6 +1163,8 @@ const handleAppointmentSubmit = async () => {
 };
 
 const handleAppointmentCancel = async () => {
+  if (isSelectedAppointmentProviderOwned.value) return;
+
   try {
     await formStore.cancel(calendarStore);
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
@@ -1220,10 +1175,14 @@ const handleAppointmentCancel = async () => {
 };
 
 const openAppointmentDeleteDialog = () => {
+  if (isSelectedAppointmentProviderOwned.value) return;
+
   appointmentDeleteDialogRef.value?.open();
 };
 
 const handleAppointmentDelete = async () => {
+  if (isSelectedAppointmentProviderOwned.value) return;
+
   try {
     await formStore.destroy(calendarStore);
     appointmentDeleteDialogRef.value?.close();
@@ -1239,6 +1198,8 @@ const updateAppointmentMutation = async (
   patch,
   { refresh = false } = {}
 ) => {
+  if (isAppointmentProviderOwned(appointment)) return;
+
   try {
     const { data } = await SchedulingAppointmentsAPI.update(
       appointment.id,
@@ -1477,7 +1438,11 @@ onMounted(async () => {
               <Button
                 size="sm"
                 :is-loading="formStore.ui.isSaving"
-                :disabled="formStore.isFormInvalid || formStore.ui.isSaving"
+                :disabled="
+                  formStore.isFormInvalid ||
+                  formStore.ui.isSaving ||
+                  isSelectedAppointmentProviderOwned
+                "
                 :label="drawerConfirmLabel"
                 @click="handleAppointmentSubmit"
               />
@@ -1817,6 +1782,7 @@ onMounted(async () => {
                 >
                   <div class="flex flex-wrap items-center gap-2">
                     <Button
+                      v-if="!isSelectedAppointmentProviderOwned"
                       size="sm"
                       variant="faded"
                       color="ruby"
@@ -1836,7 +1802,10 @@ onMounted(async () => {
                       "
                     />
                     <Button
-                      v-if="formStore.form.status === 'cancelled'"
+                      v-if="
+                        !isSelectedAppointmentProviderOwned &&
+                        formStore.form.status === 'cancelled'
+                      "
                       size="sm"
                       variant="ghost"
                       color="ruby"

@@ -93,11 +93,7 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
   end
 
   it 'rolls the conversation back when appointment linking fails' do
-    upsert = instance_double(Scheduling::Appointments::UpsertService)
-    allow(Scheduling::Appointments::UpsertService).to receive(:new).and_return(upsert)
-    allow(upsert).to receive(:perform).and_raise(
-      Scheduling::Error.new(code: 'TEST_FAILURE', message: 'link failed', status: :unprocessable_content)
-    )
+    allow(appointment).to receive(:update_columns).and_raise(ActiveRecord::ActiveRecordError, 'link failed')
 
     expect do
       described_class.new(
@@ -107,7 +103,7 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
         params: params,
         actor: actor
       ).perform
-    end.to raise_error(Scheduling::Error, 'link failed')
+    end.to raise_error(ActiveRecord::ActiveRecordError, 'link failed')
     expect(Conversation.count).to eq(0)
   end
 end

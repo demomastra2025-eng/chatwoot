@@ -44,6 +44,7 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
 
     expect(contact.phone_number).to be_blank
     expect(contact.custom_attributes['phone_conflict_comment']).to include('+77015235543')
+    expect(contact.custom_attributes['secondary_phones']).to include('+77015235543')
   end
 
   it 'does not refresh a fresh contact' do

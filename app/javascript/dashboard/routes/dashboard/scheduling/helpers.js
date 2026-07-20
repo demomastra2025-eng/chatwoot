@@ -25,6 +25,87 @@ const normalizeLocale = locale => locale?.replace(/_/g, '-') || undefined;
 const formatLocalizedDate = (value, locale, options) =>
   new Intl.DateTimeFormat(normalizeLocale(locale), options).format(value);
 
+const firstPresentValue = (source, keys) =>
+  keys.reduce((value, key) => value || source?.[key], '');
+
+const numericId = value => {
+  const id = Number(value);
+  return Number.isFinite(id) && id > 0 ? id : 0;
+};
+
+const displayId = value => String(value || '').replace(/[^\d]/g, '');
+
+export const canCreateAppointmentConversation = appointment =>
+  appointment?.conversationCreationSupported === true &&
+  (appointment?.source !== 'medelement' ||
+    appointment?.externalConversationCreationSupported === true);
+
+export const isAppointmentProviderOwned = appointment =>
+  appointment?.source === 'medelement';
+
+export const resolveAppointmentConversationTarget = appointment => {
+  const explicitConversationId = numericId(
+    firstPresentValue(appointment, [
+      'appointmentConversationId',
+      'appointment_conversation_id',
+      'conversationId',
+      'conversation_id',
+    ])
+  );
+  const hasExplicitConversation = explicitConversationId > 0;
+  const conversationId =
+    explicitConversationId ||
+    numericId(
+      firstPresentValue(appointment, [
+        'chatConversationId',
+        'chat_conversation_id',
+      ])
+    );
+  const explicitConversationDisplayId = displayId(
+    firstPresentValue(appointment, [
+      'appointmentConversationDisplayId',
+      'appointment_conversation_display_id',
+      'conversationDisplayId',
+      'conversation_display_id',
+    ])
+  );
+  const conversationDisplayId = hasExplicitConversation
+    ? explicitConversationDisplayId
+    : displayId(
+        firstPresentValue(appointment, [
+          'chatConversationDisplayId',
+          'chat_conversation_display_id',
+        ])
+      );
+  const threadIdKeys = [
+    'appointmentCommunicationThreadId',
+    'appointment_communication_thread_id',
+  ];
+  const threadDisplayIdKeys = [
+    'appointmentCommunicationThreadDisplayId',
+    'appointment_communication_thread_display_id',
+  ];
+
+  if (!hasExplicitConversation) {
+    threadIdKeys.push('communicationThreadId', 'communication_thread_id');
+    threadDisplayIdKeys.push(
+      'communicationThreadDisplayId',
+      'communication_thread_display_id'
+    );
+  }
+
+  return {
+    communicationThreadDisplayId: displayId(
+      firstPresentValue(appointment, threadDisplayIdKeys)
+    ),
+    communicationThreadId: displayId(
+      firstPresentValue(appointment, threadIdKeys)
+    ),
+    conversationDisplayId,
+    conversationId,
+  };
+};
+
 export const toDate = value => {
   if (value instanceof Date) return value;
   if (!value) return new Date();

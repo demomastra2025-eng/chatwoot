@@ -58,20 +58,14 @@ class Scheduling::Appointments::CreateConversationService
     ensure_conversation_absent!
     contact_inbox = resolve_contact_inbox(contact)
     conversation = ConversationBuilder.new(
-      params: { assignee_id: actor&.id },
+      params: {},
       contact_inbox: contact_inbox
     ).perform
     raise ActiveRecord::RecordInvalid, conversation unless conversation.persisted?
 
-    Scheduling::Appointments::UpsertService.new(
-      account: account,
-      params: {
-        contact_id: contact.id,
-        conversation_id: conversation.id
-      },
-      appointment: appointment,
-      actor: actor
-    ).perform
+    conversation.update_columns(assignee_id: actor.id, updated_at: Time.current) if actor.present?
+    appointment.update_columns(conversation_id: conversation.id, updated_at: Time.current)
+    appointment.reload
   end
 
   def resolve_contact_inbox(contact)

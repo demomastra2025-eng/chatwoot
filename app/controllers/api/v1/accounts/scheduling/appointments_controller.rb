@@ -32,7 +32,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   ].freeze
 
   before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]
-  before_action :ensure_editable_appointment!, only: [:update, :cancel, :create_conversation, :destroy]
+  before_action :ensure_editable_appointment!, only: [:update, :cancel, :destroy]
   before_action :ensure_destroyable_appointment!, only: [:destroy]
 
   def index

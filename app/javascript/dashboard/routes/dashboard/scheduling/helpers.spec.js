@@ -1,11 +1,19 @@
 import {
   buildCalendarRange,
+  canCreateAppointmentConversation,
   deriveVisibleMinuteWindow,
   getServicePriceForResource,
+  isAppointmentProviderOwned,
+  resolveAppointmentConversationTarget,
   shiftAnchorDate,
 } from './helpers';
 
 describe('scheduling helpers', () => {
+  it('identifies provider-owned Medelement appointments', () => {
+    expect(isAppointmentProviderOwned({ source: 'medelement' })).toBe(true);
+    expect(isAppointmentProviderOwned({ source: 'manual' })).toBe(false);
+  });
+
   it('builds a week range anchored to Monday', () => {
     const { from, to } = buildCalendarRange('week', '2026-03-11T08:00:00.000Z');
 
@@ -84,5 +92,64 @@ describe('scheduling helpers', () => {
     );
 
     expect(price).toBe(12000);
+  });
+
+  it('uses the existing contact thread when an appointment has no explicit conversation link', () => {
+    const target = resolveAppointmentConversationTarget({
+      appointment_conversation_id: null,
+      communication_thread_id: 9700,
+      communication_thread_display_id: 1312,
+      chat_conversation_id: 28708,
+      chat_conversation_display_id: 2932,
+    });
+
+    expect(target).toEqual({
+      communicationThreadDisplayId: '1312',
+      communicationThreadId: '9700',
+      conversationDisplayId: '2932',
+      conversationId: 28708,
+    });
+  });
+
+  it('keeps an explicit appointment conversation instead of an unrelated contact thread fallback', () => {
+    const target = resolveAppointmentConversationTarget({
+      appointmentConversationId: 42,
+      communicationThreadId: 9700,
+      communicationThreadDisplayId: 1312,
+      chatConversationId: 28708,
+      chatConversationDisplayId: 2932,
+    });
+
+    expect(target).toEqual({
+      communicationThreadDisplayId: '',
+      communicationThreadId: '',
+      conversationDisplayId: '',
+      conversationId: 42,
+    });
+  });
+
+  it('requires the new API capability before creating a conversation for a Medelement appointment', () => {
+    expect(
+      canCreateAppointmentConversation({
+        conversationCreationSupported: true,
+        source: 'medelement',
+      })
+    ).toBe(false);
+    expect(
+      canCreateAppointmentConversation({
+        conversationCreationSupported: true,
+        externalConversationCreationSupported: true,
+        source: 'medelement',
+      })
+    ).toBe(true);
+  });
+
+  it('preserves conversation creation for manual appointments', () => {
+    expect(
+      canCreateAppointmentConversation({
+        conversationCreationSupported: true,
+        source: 'manual',
+      })
+    ).toBe(true);
   });
 });

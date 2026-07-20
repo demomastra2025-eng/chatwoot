@@ -24,6 +24,7 @@ module Scheduling::PayloadBuilder
       appointment_communication_thread_id: explicit_communication_thread&.id,
       appointment_communication_thread_display_id: explicit_communication_thread&.display_id,
       conversation_creation_supported: true,
+      external_conversation_creation_supported: true,
       communication_thread_id: legacy_communication_thread&.id,
       communication_thread_display_id: legacy_communication_thread&.display_id,
       chat_conversation_id: legacy_chat_conversation&.id,
