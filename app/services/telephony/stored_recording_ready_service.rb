@@ -16,15 +16,23 @@ class Telephony::StoredRecordingReadyService
 
   def perform
     validate!
-    return duplicate_response if recording_already_stored?
+    if recording_already_stored?
+      sync_voice_message_recording!(call_session)
+      return duplicate_response
+    end
 
     updated_call_session = Telephony::EventsIngestionService.new(payload: recording_ready_payload).perform
+    sync_voice_message_recording!(updated_call_session)
     response_payload(updated_call_session, status: 'ok')
   end
 
   private
 
   attr_reader :payload, :headers
+
+  def sync_voice_message_recording!(session)
+    Telephony::VoiceMessageRecordingSyncService.new(call_session: session).perform
+  end
 
   def validate!
     validate_required_payload!

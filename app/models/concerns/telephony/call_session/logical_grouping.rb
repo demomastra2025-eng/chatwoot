@@ -21,15 +21,20 @@ module Telephony::CallSession::LogicalGrouping
       logical_metadata_value(nested_payload, 'logical_call_group_ref', 'bridge_call_ref', 'bridgeCallRef')
   end
 
+  def logical_history_group_ref
+    metadata.to_h.deep_stringify_keys.dig('history_handoff', 'group_ref').to_s.strip.presence
+  end
+
   def logical_history_key
     return "session:#{id}" unless direction == 'inbound'
 
-    group_key = logical_call_key.presence || logical_call_group_ref.presence
+    group_key = logical_history_group_ref.presence || logical_call_key.presence || logical_call_group_ref.presence
     return "session:#{id}" if group_key.blank?
 
     ['logical', provider, inbox_id, group_key].join(':')
   end
 
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def logical_group_sessions(window: LOGICAL_GROUP_WINDOW)
     candidates = logical_group_candidate_scope(window: window).to_a
     candidates << self unless candidates.any? { |candidate| candidate.id == id }
@@ -57,20 +62,38 @@ module Telephony::CallSession::LogicalGrouping
 
     candidates.select { |candidate| selected_ids.include?(candidate.id) }
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 
   def canonical_logical_call_session
-    sessions = logical_group_sessions
-    sessions.min_by do |session|
-      root_rank = session.logical_call_group_ref.blank? || session.logical_call_group_ref == session.external_call_ref ? 0 : 1
-      [root_rank, session.started_at || session.created_at || Time.zone.at(0), session.id || 0]
-    end || self
+    logical_group_sessions.min_by { |session| logical_session_sort_key(session) } || self
   end
 
   def canonical_logical_call_key
     canonical_logical_call_session.logical_call_key.presence || logical_call_key
   end
 
+  def logical_group_voice_message
+    message = exact_voice_message
+    return message if message.present?
+
+    scoped_logical_group_sessions.sort_by { |session| logical_session_sort_key(session) }
+                                 .filter_map(&:exact_voice_message)
+                                 .first
+  end
+
   private
+
+  def scoped_logical_group_sessions
+    expected_scope = [account_id, inbox_id, conversation_id]
+    logical_group_sessions.select do |session|
+      expected_scope == [session.account_id, session.inbox_id, session.conversation_id]
+    end
+  end
+
+  def logical_session_sort_key(session)
+    root_rank = session.logical_call_group_ref.blank? || session.logical_call_group_ref == session.external_call_ref ? 0 : 1
+    [root_rank, session.started_at || session.created_at || Time.zone.at(0), session.id || 0]
+  end
 
   def logical_group_candidate_scope(window:)
     reference_time = started_at || created_at || Time.current

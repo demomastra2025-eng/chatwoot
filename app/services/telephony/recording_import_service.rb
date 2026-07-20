@@ -18,7 +18,10 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
 
   def perform
     validate!
-    return duplicate_response if recording_already_stored?
+    if recording_already_stored?
+      sync_voice_message_recording!(call_session)
+      return duplicate_response
+    end
 
     Tempfile.create(["#{recording_source}-recording-import", '.wav'], binmode: true) do |file|
       actual = download_recording!(file)
@@ -120,7 +123,12 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
   def ingest_recording_ready!(storage_key:, byte_size:)
     call_session = Telephony::EventsIngestionService.new(payload: ingestion_payload(storage_key: storage_key, byte_size: byte_size)).perform
     mark_import_stored!(call_session, storage_key)
+    sync_voice_message_recording!(call_session)
     response_payload(call_session, status: 'ok', storage_key: storage_key)
+  end
+
+  def sync_voice_message_recording!(session)
+    Telephony::VoiceMessageRecordingSyncService.new(call_session: session).perform
   end
 
   def mark_import_stored!(call_session, storage_key)
@@ -193,7 +201,7 @@ class Telephony::RecordingImportService # rubocop:disable Metrics/ClassLength
       source_id: expected_source_id,
       conversation_id: call_session.conversation&.display_id,
       conversation_db_id: call_session.conversation_id,
-      message_id: call_session.exact_voice_message&.id,
+      message_id: call_session.logical_group_voice_message&.id,
       recording_ref: storage_key,
       storage_key: storage_key
     }.compact

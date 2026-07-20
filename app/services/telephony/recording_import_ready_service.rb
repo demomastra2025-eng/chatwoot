@@ -13,10 +13,14 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
     validate!
 
     enqueued = false
+    stored_duplicate = false
     result = nil
     call_session.with_lock do
       call_session.reload
-      result = duplicate_response if recording_already_stored?
+      if recording_already_stored?
+        result = duplicate_response
+        stored_duplicate = true
+      end
       result ||= queued_response if import_already_queued?
       next if result.present?
 
@@ -26,6 +30,7 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
     end
 
     Telephony::RecordingImportJob.perform_later(job_payload) if enqueued
+    sync_voice_message_recording! if stored_duplicate
     result
   end
 
@@ -101,8 +106,12 @@ class Telephony::RecordingImportReadyService # rubocop:disable Metrics/ClassLeng
       source_id: expected_source_id,
       conversation_id: call_session.conversation&.display_id,
       conversation_db_id: call_session.conversation_id,
-      message_id: call_session.exact_voice_message&.id
+      message_id: call_session.logical_group_voice_message&.id
     }.compact
+  end
+
+  def sync_voice_message_recording!
+    Telephony::VoiceMessageRecordingSyncService.new(call_session: call_session).perform
   end
 
   def job_payload

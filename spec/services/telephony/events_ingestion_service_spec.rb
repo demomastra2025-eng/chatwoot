@@ -101,6 +101,52 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'replaces the browser recording URL and token in the voice message when Janus recording arrives' do
+      browser_storage_key = 'voice-recordings/sipuni/1/call/browser.webm'
+      janus_storage_key = 'voice-recordings/janus/1/call/dual.wav'
+      browser_result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-browser-recording-before-janus',
+          event: 'recording_ready',
+          recording_ref: browser_storage_key,
+          storage_key: browser_storage_key,
+          content_type: 'audio/webm',
+          sha256: 'browser-sha256',
+          recorded_by: 'browser',
+          duration_seconds: 5,
+          metadata: { recording: { writer: 'browser_janus_media_recorder', storage_provider: 'local' } }
+        )
+      ).perform
+      browser_message = browser_result.exact_voice_message
+      expect(browser_message.content_attributes.dig('data', 'recording_ref')).to eq(browser_storage_key)
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-janus-recording-after-browser',
+          event: 'recording_ready',
+          recording_ref: janus_storage_key,
+          storage_key: janus_storage_key,
+          content_type: 'audio/wav',
+          sha256: 'janus-sha256',
+          recorded_by: 'janus',
+          layout: 'dual_channel',
+          duration_seconds: 5,
+          metadata: { recording: { writer: 'janus_recording_postprocessor', storage_provider: 'local' } }
+        )
+      ).perform
+
+      message_data = result.exact_voice_message.reload.content_attributes.fetch('data')
+      recording_url = message_data.fetch('recording_url')
+      recording_token = Rack::Utils.parse_nested_query(URI.parse(recording_url).query).fetch('recording_token')
+      expect(result.reload.recording_ref).to eq(janus_storage_key)
+      expect(message_data['recording_ref']).to eq(janus_storage_key)
+      expect(message_data.dig('recording', 'storage_key')).to eq(janus_storage_key)
+      expect(Telephony::CallRecordingPlaybackUrl.valid?(token: recording_token, call_session: result,
+                                                        storage_key: janus_storage_key)).to be(true)
+      expect(Telephony::CallRecordingPlaybackUrl.valid?(token: recording_token, call_session: result,
+                                                        storage_key: browser_storage_key)).to be(false)
+    end
+
     it 'rejects a call session linked to a conversation from another account before side effects' do
       foreign_account = create(:account)
       foreign_conversation = create(:conversation, account: foreign_account)
@@ -3696,6 +3742,83 @@ RSpec.describe Telephony::EventsIngestionService do
       )
       expect(duplicate_session.reload.conversation).to eq(canonical_conversation)
       expect(canonical_conversation.messages.voice_calls.pluck(:source_id)).to eq([canonical_session.voice_call_source_id])
+    end
+
+    it 'collapses a rapid terminal Janus handoff after syncing the current voice message' do
+      current_created_at = Time.current.change(usec: 0)
+      identity = {
+        'telephony_sip_profile_id' => 70,
+        'registration_instance_id' => 'registration-instance-handoff',
+        'janus_session_id' => 'janus-session-handoff',
+        'janus_handle_id' => 'janus-handle-handoff'
+      }
+      previous = create(
+        :telephony_call_session,
+        account: account,
+        conversation: existing_call_session.conversation,
+        contact: existing_call_session.contact,
+        inbox: existing_call_session.inbox,
+        number_binding: existing_call_session.number_binding,
+        provider: 'binotel',
+        direction: 'inbound',
+        external_call_ref: 'binotel:janus:70:previous-handoff',
+        status: 'no_answer',
+        started_at: current_created_at - 18.seconds,
+        ended_at: current_created_at - 1.second,
+        end_reason: 'remote_hangup',
+        from_number: '+770****7060',
+        to_number: '+770****1744',
+        created_at: current_created_at - 18.seconds,
+        metadata: {
+          'metadata' => identity.merge(
+            'logical_call_key' => 'janus-inbound:previous-handoff',
+            'logical_call_group_ref' => 'binotel:janus:70:previous-handoff'
+          )
+        }
+      )
+      existing_call_session.update!(
+        provider: 'binotel',
+        direction: 'inbound',
+        external_call_ref: 'binotel:janus:70:current-handoff',
+        status: 'ringing',
+        started_at: current_created_at,
+        from_number: '+770****7060',
+        to_number: '+770****1744',
+        created_at: current_created_at,
+        metadata: {
+          'metadata' => identity.merge(
+            'logical_call_key' => 'janus-inbound:current-handoff',
+            'logical_call_group_ref' => 'binotel:janus:70:current-handoff'
+          )
+        }
+      )
+      previous_message = create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        source_id: previous.voice_call_source_id,
+        content_attributes: { 'data' => { 'call_sid' => previous.external_call_ref, 'status' => 'no_answer' } }
+      )
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-terminal-native-sip-handoff',
+          call_ref: existing_call_session.external_call_ref,
+          provider: 'binotel',
+          event: 'operator_no_answer',
+          status: 'no_answer',
+          direction: 'inbound',
+          reason: 'remote_hangup',
+          occurred_at: (current_created_at + 10.seconds).iso8601
+        )
+      ).perform
+
+      expect(result.reload.logical_call_key).to eq('janus-inbound:current-handoff')
+      expect(result.logical_history_key).to eq(previous.reload.logical_history_key)
+      expect(Message.exists?(previous_message.id)).to be(false)
+      expect(result.exact_voice_message).to be_present
     end
 
     it 'preserves a nearby redial without explicit native SIP group identity' do

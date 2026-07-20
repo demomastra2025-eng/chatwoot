@@ -320,6 +320,7 @@ class Telephony::EventsIngestionService
         sync_voice_message!(call_session)
       end
       linked_runtime_call_sessions.each { |linked_call_session| sync_voice_message!(linked_call_session) }
+      collapse_terminal_native_sip_handoff!(call_session) if call_session.terminal?
       enqueue_external_recording_cache(call_session)
       enqueue_call_recording_transcription(call_session) if resolved_event_type == 'recording_ready'
     rescue *RETRYABLE_DATABASE_ERRORS => e
@@ -341,6 +342,10 @@ class Telephony::EventsIngestionService
       )
       call_session
     end
+  end
+
+  def collapse_terminal_native_sip_handoff!(call_session)
+    Telephony::TerminalNativeSipHandoffService.new(call_session: call_session).perform
   end
 
   def realtime_status_event?
