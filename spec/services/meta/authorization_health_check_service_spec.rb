@@ -22,8 +22,12 @@ RSpec.describe Meta::AuthorizationHealthCheckService do
 
     it 'requires both matching identity and app subscription' do
       stub_request(:get, 'https://graph.instagram.com/v22.0/me')
-        .with(query: hash_including('access_token' => 'ig-token'))
-        .to_return(status: 200, body: { id: 'ig-123', username: 'company' }.to_json, headers: { 'Content-Type' => 'application/json' })
+        .with(query: hash_including('fields' => 'user_id,username', 'access_token' => 'ig-token'))
+        .to_return(
+          status: 200,
+          body: { id: 'app-scoped-123', user_id: 'ig-123', username: 'company' }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
       stub_request(:get, 'https://graph.instagram.com/v22.0/ig-123/subscribed_apps')
         .with(query: hash_including('access_token' => 'ig-token'))
         .to_return(status: 200, body: { data: [{ id: 'ig-app' }] }.to_json, headers: { 'Content-Type' => 'application/json' })
@@ -32,6 +36,22 @@ RSpec.describe Meta::AuthorizationHealthCheckService do
 
       expect(result).to be_healthy
       expect(result.metadata).to include('asset_id' => 'ig-123', 'subscription_present' => true)
+    end
+
+    it 'rejects a different professional account user_id even when the app-scoped id matches' do
+      stub_request(:get, 'https://graph.instagram.com/v22.0/me')
+        .with(query: hash_including('fields' => 'user_id,username', 'access_token' => 'ig-token'))
+        .to_return(
+          status: 200,
+          body: { id: 'ig-123', user_id: 'other-ig-user' }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      result = described_class.new(channel).result
+
+      expect(result).to be_action_required
+      expect(result.reason).to eq('asset_mismatch')
+      expect(result.metadata).to include('expected_id' => 'ig-123', 'actual_id' => 'other-ig-user')
     end
 
     it 'marks a locally expired token as action required without a Graph request' do
@@ -71,10 +91,10 @@ RSpec.describe Meta::AuthorizationHealthCheckService do
       expect(result).not_to be_action_required
     end
 
-    it 'treats a malformed successful identity response as transient' do
+    it 'treats a successful identity response without user_id as transient' do
       stub_request(:get, 'https://graph.instagram.com/v22.0/me')
         .with(query: hash_including('access_token' => 'ig-token'))
-        .to_return(status: 200, body: {}.to_json, headers: { 'Content-Type' => 'application/json' })
+        .to_return(status: 200, body: { id: 'app-scoped-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
 
       result = described_class.new(channel).result
 
@@ -85,7 +105,7 @@ RSpec.describe Meta::AuthorizationHealthCheckService do
     it 'treats a malformed successful subscription response as transient' do
       stub_request(:get, 'https://graph.instagram.com/v22.0/me')
         .with(query: hash_including('access_token' => 'ig-token'))
-        .to_return(status: 200, body: { id: 'ig-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
+        .to_return(status: 200, body: { user_id: 'ig-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
       stub_request(:get, 'https://graph.instagram.com/v22.0/ig-123/subscribed_apps')
         .with(query: hash_including('access_token' => 'ig-token'))
         .to_return(status: 200, body: {}.to_json, headers: { 'Content-Type' => 'application/json' })
@@ -99,7 +119,7 @@ RSpec.describe Meta::AuthorizationHealthCheckService do
     it 'distinguishes missing webhook subscription from invalid credentials' do
       stub_request(:get, 'https://graph.instagram.com/v22.0/me')
         .with(query: hash_including('access_token' => 'ig-token'))
-        .to_return(status: 200, body: { id: 'ig-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
+        .to_return(status: 200, body: { user_id: 'ig-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
       stub_request(:get, 'https://graph.instagram.com/v22.0/ig-123/subscribed_apps')
         .with(query: hash_including('access_token' => 'ig-token'))
         .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })

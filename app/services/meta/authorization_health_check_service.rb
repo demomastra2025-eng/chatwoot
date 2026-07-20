@@ -63,8 +63,9 @@ class Meta::AuthorizationHealthCheckService
     version = GlobalConfigService.load('INSTAGRAM_API_VERSION', 'v22.0')
     identity = graph_get(
       "#{INSTAGRAM_GRAPH_BASE_URI}/#{version}/me",
-      query: { fields: 'id,username', access_token: token }.merge(appsecret_proof_query(token, 'INSTAGRAM_APP_SECRET')),
-      expected_id: @channel.instagram_id
+      query: { fields: 'user_id,username', access_token: token }.merge(appsecret_proof_query(token, 'INSTAGRAM_APP_SECRET')),
+      expected_id: @channel.instagram_id,
+      id_field: 'user_id'
     )
     return identity unless identity.healthy?
 
@@ -122,18 +123,19 @@ class Meta::AuthorizationHealthCheckService
     )
   end
 
-  def graph_get(url, query:, expected_id: nil)
+  def graph_get(url, query:, expected_id: nil, id_field: 'id')
     response = HTTParty.get(url, query: query, headers: { 'Accept' => 'application/json' }, timeout: REQUEST_TIMEOUT)
     return failed_response_result(response) unless response.respond_to?(:success?) && response.success?
 
     payload = parsed_response(response)
-    return malformed_response_result if payload['id'].blank?
+    actual_id = payload[id_field]
+    return malformed_response_result if actual_id.blank?
 
-    if expected_id.present? && payload['id'].to_s != expected_id.to_s
-      return action_required_result('asset_mismatch', metadata: { 'expected_id' => expected_id.to_s, 'actual_id' => payload['id'].to_s })
+    if expected_id.present? && actual_id.to_s != expected_id.to_s
+      return action_required_result('asset_mismatch', metadata: { 'expected_id' => expected_id.to_s, 'actual_id' => actual_id.to_s })
     end
 
-    healthy_result(metadata: { 'asset_id' => payload['id'].to_s }.compact_blank)
+    healthy_result(metadata: { 'asset_id' => actual_id.to_s }.compact_blank)
   end
 
   def subscription_result(url, query:, expected_app_id:, metadata: {})
