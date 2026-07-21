@@ -11,6 +11,7 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
+import VoiceAgentPreview from 'dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
 
@@ -320,6 +321,13 @@ const handleDeleteSuccess = () => {
                 :show-automation-settings="false"
                 show-voice-settings
                 :show-submit-button="false"
+              />
+              <VoiceAgentPreview
+                v-if="assistant?.id"
+                :assistant-id="assistant.id"
+                :configured-provider="
+                  assistant.config?.voice_settings?.provider || 'gemini-live'
+                "
               />
             </div>
           </div>

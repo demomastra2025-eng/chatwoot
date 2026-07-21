@@ -5,9 +5,10 @@ const EventEmitter = require('node:events');
 const { createJanusRuntimeMediaStreamFactory } = require('../src/janus/runtime-stream');
 
 class FakeWebSocket extends EventEmitter {
-  constructor(url) {
+  constructor(url, options) {
     super();
     this.url = url;
+    this.options = options;
     this.sent = [];
     FakeWebSocket.instances.push(this);
     queueMicrotask(() => this.emit('open'));
@@ -35,7 +36,8 @@ test('createJanusRuntimeMediaStreamFactory opens only Janus SIP runtime stream r
       media_session_ref: 'janus-media-1',
       runtime_stream: {
         runtime_session_id: 'janus-rt-1',
-        stream_url: 'ws://janus-ai-gateway/sessions/janus-rt-1/runtime-stream?token=secret',
+        stream_url: 'ws://janus-ai-gateway/sessions/janus-rt-1/runtime-stream',
+        stream_token: 'secret',
         codec: 'pcm_s16le',
         input_sample_rate: 16000,
         output_sample_rate: 8000
@@ -47,7 +49,8 @@ test('createJanusRuntimeMediaStreamFactory opens only Janus SIP runtime stream r
   assert.equal(stream.streamRef, 'janus-rt-1');
   assert.equal(stream.mediaSessionRef, 'janus-media-1');
   assert.equal(stream.transport, 'janus_sip');
-  assert.equal(FakeWebSocket.instances[0].url, 'ws://janus-ai-gateway/sessions/janus-rt-1/runtime-stream?token=secret');
+  assert.equal(FakeWebSocket.instances[0].url, 'ws://janus-ai-gateway/sessions/janus-rt-1/runtime-stream');
+  assert.equal(FakeWebSocket.instances[0].options.headers.authorization, 'Bearer secret');
 
   let seen;
   stream.onPayload(payload => { seen = payload; });

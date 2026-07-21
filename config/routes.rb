@@ -88,6 +88,7 @@ Rails.application.routes.draw do
                 delete :avatar
                 post :playground
                 get :prompt_preview
+                post :voice_preview
               end
               collection do
                 get :tools

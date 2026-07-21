@@ -5,7 +5,7 @@ require 'fileutils'
 
 # rubocop:disable Metrics/ClassLength
 class Telephony::StoredRecordingReadyService
-  SUPPORTED_RECORDED_BY = %w[janus browser].freeze
+  SUPPORTED_RECORDED_BY = %w[janus browser pipecat].freeze
   SUPPORTED_LAYOUTS = %w[mixed_mono mono mixed_stereo stereo dual_channel].freeze
   DEFAULT_CONTENT_TYPE = 'audio/wav'
 

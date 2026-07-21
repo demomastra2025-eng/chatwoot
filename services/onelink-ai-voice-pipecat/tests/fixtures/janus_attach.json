@@ -1,0 +1,30 @@
+{
+  "call_ref": "sipuni:janus-ai:call-1",
+  "bridge_call_ref": "sipuni:janus:operator-safe-ref",
+  "account_id": "42",
+  "inbox_id": "9",
+  "conversation_id": "7",
+  "call_session_id": "456",
+  "provider": "sipuni",
+  "transport": "janus_sip",
+  "sip_profile": {
+    "id": "12",
+    "profile_kind": "voice_agent",
+    "voice_agent": true,
+    "internal_extension": "9098",
+    "sip_username": "ai-agent-9098"
+  },
+  "runtime_stream": {
+    "runtime_session_id": "runtime-session-1",
+    "stream_url": "ws://media.internal/runtime-stream",
+    "stream_token": "stream-token-fixture-1234567890"
+  },
+  "janus": {
+    "session_id": "janus-session-1",
+    "handle_id": "janus-handle-1"
+  },
+  "routing": {
+    "action": "ai",
+    "reason": "pending_conversation_ai_route"
+  }
+}

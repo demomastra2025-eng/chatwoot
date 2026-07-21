@@ -123,7 +123,8 @@ test('Janus server call facade answers through media-server and exposes runtime 
         mediaCalls.push(['createRuntimeAgent', sessionId, payload]);
         return {
           runtime_session_id: 'runtime-1',
-          stream_url: 'ws://media-server/sessions/media-session-1/runtime-stream?token=t1',
+          stream_url: 'ws://media-server/sessions/media-session-1/runtime-stream',
+          stream_token: 't1',
           codec: 'pcm_s16le',
           input_sample_rate: 16000,
           output_sample_rate: 8000
@@ -143,7 +144,8 @@ test('Janus server call facade answers through media-server and exposes runtime 
 
   assert.equal(stream.streamRef, 'runtime-1');
   assert.equal(stream.mediaSessionRef, 'media-session-1');
-  assert.equal(facade.request.runtime_stream.stream_url, 'ws://media-server/sessions/media-session-1/runtime-stream?token=t1');
+  assert.equal(facade.request.runtime_stream.stream_url, 'ws://media-server/sessions/media-session-1/runtime-stream');
+  assert.equal(facade.request.runtime_stream.stream_token, 't1');
   assert.deepEqual(mediaCalls[0], [
     'createSession',
     {
@@ -241,8 +243,9 @@ test('Janus server call facade negotiates native offerless SIP INVITEs', async (
   ]);
 });
 
-test('Janus server call facade transfers AI calls to an operator with SIP REFER', async () => {
+test('Janus server call facade buffers a transfer outcome received before the SIP REFER ack', async () => {
   const janusMessages = [];
+  let acknowledgeTransfer;
   const facade = new JanusSipServerCallFacade({
     profile: normalizeServerProfile({
       id: 12,
@@ -262,7 +265,7 @@ test('Janus server call facade transfers AI calls to an operator with SIP REFER'
       client: {
         async pluginMessage(payload) {
           janusMessages.push(payload);
-          return { janus: 'ack' };
+          return new Promise(resolve => { acknowledgeTransfer = resolve; });
         }
       }
     },
@@ -270,16 +273,16 @@ test('Janus server call facade transfers AI calls to an operator with SIP REFER'
     runtimeMediaStreamFactory: async () => ({})
   });
 
-  const leg = await facade.dial({ agent_aor: 'sip:1001@example.test' });
-  let answered = false;
-  leg.once('answered', () => { answered = true; });
+  const legPromise = facade.dial({ agent_aor: 'sip:1001@example.test' });
   facade.handleJanusEvent('notify', { content: 'SIP/2.0 200 OK' });
+  acknowledgeTransfer({ janus: 'ack' });
+  const leg = await legPromise;
 
   assert.deepEqual(janusMessages[0].body, {
     request: 'transfer',
     uri: 'sip:1001@example.test'
   });
-  assert.equal(answered, true);
+  assert.equal(leg.terminalOutcome, 'answered');
 });
 
 test('Janus server call facade tears down media when runtime-agent setup fails', async () => {
@@ -375,6 +378,131 @@ test('Janus server call facade tears down a late media session after caller hang
   assert.equal(runtimeAgentCalls, 0);
   assert.deepEqual(janusMessages, []);
   assert.deepEqual(terminated, [['media-late', 'janus_answer_failed']]);
+});
+
+test('Janus server profile hands a selected call to Pipecat with one prepared media stream', async () => {
+  const order = [];
+  const attached = [];
+  let legacyCalls = 0;
+  const profile = normalizeServerProfile({
+    id: 16,
+    account_id: 42,
+    inbox_id: 9,
+    provider: 'sipuni',
+    sip_username: 'ai-agent',
+    sip_password: 'secret',
+    sip_host: 'sip.example.test'
+  });
+  const session = new JanusSipServerProfileSession({
+    app: { async handleCall() { legacyCalls += 1; } },
+    profile,
+    janusUrl: 'ws://janus.test/ws',
+    mediaServerClient: {
+      async createSession() {
+        order.push('create_media');
+        return { session_id: 'media-pipecat-1', meta_sdp_answer: 'v=0\r\nanswer' };
+      },
+      async createRuntimeAgent() {
+        order.push('create_runtime');
+        return {
+          runtime_session_id: 'runtime-pipecat-1',
+          stream_url: 'ws://media-server/sessions/runtime-pipecat-1/runtime-stream',
+          stream_token: 'runtime-stream-token-1234567890',
+          codec: 'pcm_s16le',
+          input_sample_rate: 16000,
+          output_sample_rate: 8000
+        };
+      },
+      async terminateSession() {}
+    },
+    WebSocketImpl: class {},
+    runtimeMediaStreamFactory: async () => ({}),
+    runtimeSelector: { select: () => 'pipecat' },
+    pipecatClient: {
+      isAvailable: () => true,
+      async ensureAvailable() { order.push('ready'); },
+      async preflightJanus(payload) {
+        order.push('preflight');
+        assert.equal(payload.call_ref, 'sipuni:janus-server:16:pipecat-1');
+      },
+      async attachJanus(payload) {
+        order.push('attach');
+        attached.push(payload);
+        return { session_id: 'pipecat-session-1' };
+      }
+    },
+    pipecatRuntimeControl: {
+      register() {
+        return {
+          id: 'control-1',
+          control_url: 'http://voice-runtime:8081/internal/pipecat/runtime-control/control-1',
+          token: 'runtime-control-token-1234567890'
+        };
+      }
+    },
+    logger: { log() {} }
+  });
+  session.sessionId = 100;
+  session.client = {
+    async pluginMessage() { order.push('accept'); }
+  };
+
+  await session.handleIncomingCall({
+    event: { jsep: { type: 'offer', sdp: 'v=0\r\noffer' } },
+    result: { call_id: 'pipecat-1', username: 'sip:+77000000000@sip.example.test' },
+    handle: { id: 200, activeCallId: null }
+  });
+
+  assert.equal(legacyCalls, 0);
+  assert.deepEqual(order, ['ready', 'preflight', 'create_media', 'create_runtime', 'accept', 'attach']);
+  assert.equal(attached.length, 1);
+  assert.equal(attached[0].runtime_stream.runtime_session_id, 'runtime-pipecat-1');
+  assert.equal(attached[0].runtime_stream.output_sample_rate, 8000);
+  assert.equal(attached[0].runtime_stream.stream_token, 'runtime-stream-token-1234567890');
+  assert.equal(attached[0].runtime_control.control_url, 'http://voice-runtime:8081/internal/pipecat/runtime-control/control-1');
+  assert.deepEqual(attached[0].routing, {
+    action: 'ai',
+    reason: 'server_janus_sip_ai_voice'
+  });
+});
+
+test('Janus server Pipecat preflight failure happens before answering media', async () => {
+  const order = [];
+  const session = new JanusSipServerProfileSession({
+    app: { async handleCall() {} },
+    profile: normalizeServerProfile({
+      id: 99,
+      account_id: 42,
+      inbox_id: 9,
+      provider: 'sipuni',
+      sip_username: 'ai-agent',
+      sip_password: 'secret',
+      sip_host: 'sip.example.test'
+    }),
+    janusUrl: 'ws://janus.test/ws',
+    mediaServerClient: {},
+    WebSocketImpl: class {},
+    runtimeMediaStreamFactory: async () => ({}),
+    runtimeSelector: { select: () => 'pipecat' },
+    pipecatClient: {
+      isAvailable: () => true,
+      async ensureAvailable() { order.push('ready'); },
+      async preflightJanus() {
+        order.push('preflight');
+        throw new Error('provider unavailable');
+      },
+      async attachJanus() { order.push('attach'); }
+    },
+    logger: { log() {} }
+  });
+  const facade = {
+    request: { call_ref: 'sipuni:test', routing: { action: 'ai' } },
+    async answer() { order.push('answer'); }
+  };
+
+  await assert.rejects(session.startPipecatCall(facade), /provider unavailable/);
+
+  assert.deepEqual(order, ['ready', 'preflight']);
 });
 
 test('Janus server profile routes offerless INVITEs through the native call facade', async () => {

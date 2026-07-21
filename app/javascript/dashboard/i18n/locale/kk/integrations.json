@@ -562,6 +562,8 @@
         "VOICE_SETTINGS": {
           "TITLE": "Voice агент баптаулары",
           "DESCRIPTION": "Телефондағы voice агенттің моделін, дауысын және сөйлесу мінезін баптаңыз.",
+          "ACTIVE_RUNTIME": "Белсенді voice runtime",
+          "RUNTIME_NOTE": "Қоңыраулар Captain нұсқауларын, құралдарын, білім базасын және операторға аудару ережелерін қолданады. Gemini Live, OpenAI Realtime, ElevenLabs және OpenRouter бар Cartesia қолжетімді.",
           "PROVIDER": "Провайдер",
           "MODEL": "Модель",
           "VOICE": "Дауыс",
@@ -579,6 +581,25 @@
           "MAX_DURATION_SEC": "Максималды ұзақтығы (секунд)",
           "INTERRUPTIONS": "Клиенттің сөзін бөлуіне рұқсат ету",
           "INTERRUPTIONS_DESCRIPTION": "Қосулы болса, клиент жауап кезінде агентті тоқтата алады."
+        },
+        "VOICE_PREVIEW": {
+          "TITLE": "Voice-агентпен сөйлесу",
+          "DESCRIPTION": "Сақталған нұсқауларды, дауысты және сөзді бөлуді микрофон арқылы тексеріңіз. Тест қоңырау, диалог немесе жазба жасамайды.",
+          "START": "Сөйлесуді бастау",
+          "STOP": "Аяқтау",
+          "STATUS": {
+            "IDLE": "Дайын",
+            "CONNECTING": "Қосылуда",
+            "LISTENING": "Тыңдап тұр",
+            "SPEAKING": "Сөйлеп тұр",
+            "ERROR": "Қате"
+          },
+          "ERROR": {
+            "MICROPHONE": "Браузерде микрофонға қол жеткізуге рұқсат беріңіз.",
+            "EXPIRED": "Сессия мерзімі аяқталды. Сөйлесуді қайта бастаңыз.",
+            "CONNECTION": "Voice runtime байланысы үзілді.",
+            "UNAVAILABLE": "Voice preview қолжетімсіз. Runtime және таңдалған провайдер кілттерін тексеріңіз."
+          }
         },
         "RESOLUTION_MESSAGE": {
           "LABEL": "Resolution Message",

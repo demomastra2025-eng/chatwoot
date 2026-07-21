@@ -133,4 +133,41 @@ describe('AssistantSystemSettingsForm', () => {
       interruptions_enabled: false,
     });
   });
+
+  it.each([
+    ['openai-realtime', 'gpt-realtime-2', 'alloy'],
+    ['elevenlabs', 'openai/gpt-5.4-mini', 'Xb7hH8MSUJpSbSDYk0k2'],
+    ['cartesia', 'openai/gpt-5.4-mini', '71a7ad14-091c-4e8e-a314-022ece01c121'],
+  ])(
+    'applies compatible model and voice defaults for %s',
+    async (provider, model, voice) => {
+      const wrapper = buildWrapper({ assistant: { id: 58, config: {} } });
+
+      wrapper.vm.updateVoiceProvider(provider);
+      const payload = await wrapper.vm.buildPayload();
+
+      expect(payload.assistant.config.voice_settings).toEqual(
+        expect.objectContaining({ provider, model, voice })
+      );
+    }
+  );
+
+  it('loads provider-specific defaults from a partial saved voice config', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        config: { voice_settings: { provider: 'openai-realtime' } },
+      },
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.voice_settings).toEqual(
+      expect.objectContaining({
+        provider: 'openai-realtime',
+        model: 'gpt-realtime-2',
+        voice: 'alloy',
+      })
+    );
+  });
 });

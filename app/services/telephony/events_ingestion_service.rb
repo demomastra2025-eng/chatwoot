@@ -237,9 +237,7 @@ class Telephony::EventsIngestionService
 
     if call_session.present? && terminal_late_terminal_event
       duplicate_terminal_branch = duplicate_broadcast_branch?(call_session)
-      if duplicate_terminal_branch
-        linked_runtime_call_sessions = reconcile_linked_runtime_call_sessions!(account, call_session)
-      end
+      linked_runtime_call_sessions = reconcile_linked_runtime_call_sessions!(account, call_session) if duplicate_terminal_branch
       call_session = attach_duplicate_broadcast_branch_to_canonical_conversation!(call_session, account) || call_session
       if duplicate_terminal_branch
         run_side_effects!(call_session, account, event, linked_runtime_call_sessions: linked_runtime_call_sessions)
@@ -1436,9 +1434,7 @@ class Telephony::EventsIngestionService
       contact_id: contact.id,
       status: :open
     }
-    unless native_sip_call_session?(call_session) && reuse_existing_conversation
-      attrs[:identifier] = conversation_identifier || call_ref
-    end
+    attrs[:identifier] = conversation_identifier || call_ref unless native_sip_call_session?(call_session) && reuse_existing_conversation
 
     account.conversations.create!(attrs)
   end
@@ -1638,7 +1634,9 @@ class Telephony::EventsIngestionService
         presentation_session.conversation = call_session.conversation
         ensure_canonical_native_sip_voice_message!(presentation_session, call_session.conversation)
       end
-      sync_voice_message_without_group_lock!(presentation_session)
+      message = sync_voice_message_without_group_lock!(presentation_session)
+      mark_linked_runtime_duplicate_message!(call_session, message) if presentation_session.id != call_session.id
+      message
     end
   end
 
@@ -1732,6 +1730,16 @@ class Telephony::EventsIngestionService
 
   def native_sip_group_presentation_session(call_session)
     sessions = call_session.logical_group_sessions.map(&:reload)
+    linked_parent_ref = sessions.filter_map do |session|
+      session.metadata.to_h.dig('ai_voice', 'linked_parent_terminal', 'bridge_call_ref').presence
+    end.first
+    if linked_parent_ref.present?
+      linked_parent = call_session.account.telephony_call_sessions.find_by(external_call_ref: linked_parent_ref)
+      if linked_parent.present? && linked_parent.conversation_id == call_session.conversation_id && linked_parent.inbox_id == call_session.inbox_id
+        return linked_parent.reload
+      end
+    end
+
     canonical_session = call_session.canonical_logical_call_session
     answered_sessions = sessions.select { |session| native_sip_answer_evidence?(session) }
     return canonical_session.reload if answered_sessions.blank?
@@ -1790,6 +1798,8 @@ class Telephony::EventsIngestionService
 
   def mark_linked_runtime_duplicate_message!(call_session, canonical_message)
     duplicate = call_session.exact_voice_message
+    linked_runtime_child = call_session.metadata.to_h.dig('ai_voice', 'linked_parent_terminal').present?
+    duplicate = build_voice_message!(call_session) if duplicate.blank? && canonical_message.present? && linked_runtime_child
     return if duplicate.blank? || canonical_message.blank? || duplicate.id == canonical_message.id
 
     duplicate_attrs = normalized_content_attributes(duplicate)

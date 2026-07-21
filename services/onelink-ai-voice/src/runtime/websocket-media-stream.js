@@ -18,11 +18,17 @@ function createWebsocketRuntimeMediaStreamFactory({
 
     const streamUrl = String(runtimeStream.stream_url || runtimeStream.streamUrl || '').trim();
     if (!streamUrl) throw new Error('runtime stream_url is required');
+    const parsedStreamUrl = new URL(streamUrl);
+    if (!['ws:', 'wss:'].includes(parsedStreamUrl.protocol)) throw new Error('runtime stream_url must use ws or wss');
+    if (parsedStreamUrl.searchParams.has('token')) throw new Error('runtime stream token must not be carried in the URL');
+    const streamToken = String(runtimeStream.stream_token || runtimeStream.streamToken || '').trim();
+    if (!streamToken) throw new Error('runtime stream_token is required');
 
     const runtimeSessionId = String(runtimeStream.runtime_session_id || runtimeStream.runtimeSessionId || '').trim();
     const stream = new WebsocketRuntimeMediaStream({
       WebSocketImpl,
       url: streamUrl,
+      token: streamToken,
       callRef: request.call_ref || request.callRef,
       streamRef: runtimeSessionId || request.stream_ref || request.streamRef,
       mediaSessionRef: request.media_session_ref || request.mediaSessionRef || runtimeSessionId,
@@ -38,10 +44,11 @@ function createWebsocketRuntimeMediaStreamFactory({
 }
 
 class WebsocketRuntimeMediaStream extends EventEmitter {
-  constructor({ WebSocketImpl, url, callRef, streamRef, mediaSessionRef, inputMimeType, outputType, inputType, transport }) {
+  constructor({ WebSocketImpl, url, token, callRef, streamRef, mediaSessionRef, inputMimeType, outputType, inputType, transport }) {
     super();
     this.WebSocketImpl = WebSocketImpl;
     this.url = url;
+    this.token = token;
     this.callRef = callRef;
     this.streamRef = streamRef || callRef;
     this.mediaSessionRef = mediaSessionRef || this.streamRef;
@@ -53,7 +60,9 @@ class WebsocketRuntimeMediaStream extends EventEmitter {
   }
 
   open() {
-    this.ws = new this.WebSocketImpl(this.url);
+    this.ws = new this.WebSocketImpl(this.url, {
+      headers: { authorization: 'Bearer ' + this.token }
+    });
     wireWebSocket(this.ws, {
       onOpen: () => this.emit('open'),
       onMessage: message => this.handleMessage(message),

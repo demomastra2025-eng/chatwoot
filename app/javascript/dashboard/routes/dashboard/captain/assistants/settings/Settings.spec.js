@@ -241,4 +241,24 @@ describe('Captain assistant settings page', () => {
       }),
     });
   });
+
+  it('renders direct Pipecat preview in the dedicated voice tab', async () => {
+    const wrapper = mountComponent();
+    const voiceTab = wrapper
+      .findAll('button')
+      .find(
+        button =>
+          button.text() === 'CAPTAIN.ASSISTANTS.SETTINGS.TABS.VOICE_AGENT.LABEL'
+      );
+
+    expect(wrapper.find('[data-test-id="voice-agent-preview"]').exists()).toBe(
+      false
+    );
+    await voiceTab.trigger('click');
+
+    expect(wrapper.find('[data-test-id="voice-agent-preview"]').exists()).toBe(
+      true
+    );
+    expect(wrapper.text()).toContain('gemini-live');
+  });
 });

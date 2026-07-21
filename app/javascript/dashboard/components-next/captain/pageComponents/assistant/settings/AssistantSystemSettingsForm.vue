@@ -57,24 +57,70 @@ const DEFAULT_VOICE_SETTINGS = {
 
 const VOICE_PROVIDER_OPTIONS = Object.freeze([
   { value: 'gemini-live', label: 'Gemini Live' },
+  { value: 'openai-realtime', label: 'OpenAI Realtime' },
+  { value: 'elevenlabs', label: 'ElevenLabs + OpenRouter' },
+  { value: 'cartesia', label: 'Cartesia + OpenRouter' },
 ]);
 
-const VOICE_MODEL_OPTIONS = Object.freeze([
-  {
-    value: 'gemini-3.1-flash-live-preview',
-    label: 'Gemini 3.1 Flash Live Preview',
+const VOICE_PROVIDER_PRESETS = Object.freeze({
+  'gemini-live': {
+    model: 'gemini-3.1-flash-live-preview',
+    voice: 'sulafat',
+    models: [
+      {
+        value: 'gemini-3.1-flash-live-preview',
+        label: 'Gemini 3.1 Flash Live Preview',
+      },
+      { value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' },
+    ],
+    voices: [
+      { value: 'sulafat', label: 'Sulafat' },
+      { value: 'aoede', label: 'Aoede' },
+      { value: 'charon', label: 'Charon' },
+      { value: 'fenrir', label: 'Fenrir' },
+      { value: 'kore', label: 'Kore' },
+      { value: 'puck', label: 'Puck' },
+    ],
   },
-  { value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' },
-]);
-
-const VOICE_VOICE_OPTIONS = Object.freeze([
-  { value: 'sulafat', label: 'Sulafat' },
-  { value: 'aoede', label: 'Aoede' },
-  { value: 'charon', label: 'Charon' },
-  { value: 'fenrir', label: 'Fenrir' },
-  { value: 'kore', label: 'Kore' },
-  { value: 'puck', label: 'Puck' },
-]);
+  'openai-realtime': {
+    model: 'gpt-realtime-2',
+    voice: 'alloy',
+    models: [
+      { value: 'gpt-realtime-2', label: 'GPT Realtime 2' },
+      { value: 'gpt-4o-realtime-preview', label: 'GPT-4o Realtime Preview' },
+    ],
+    voices: [
+      { value: 'alloy', label: 'Alloy' },
+      { value: 'coral', label: 'Coral' },
+      { value: 'sage', label: 'Sage' },
+      { value: 'shimmer', label: 'Shimmer' },
+      { value: 'verse', label: 'Verse' },
+    ],
+  },
+  elevenlabs: {
+    model: 'openai/gpt-5.4-mini',
+    voice: 'Xb7hH8MSUJpSbSDYk0k2',
+    models: [
+      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenRouter)' },
+      { value: 'openai/gpt-5.4', label: 'GPT-5.4 (OpenRouter)' },
+    ],
+    voices: [{ value: 'Xb7hH8MSUJpSbSDYk0k2', label: 'ElevenLabs default' }],
+  },
+  cartesia: {
+    model: 'openai/gpt-5.4-mini',
+    voice: '71a7ad14-091c-4e8e-a314-022ece01c121',
+    models: [
+      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenRouter)' },
+      { value: 'openai/gpt-5.4', label: 'GPT-5.4 (OpenRouter)' },
+    ],
+    voices: [
+      {
+        value: '71a7ad14-091c-4e8e-a314-022ece01c121',
+        label: 'Cartesia multilingual',
+      },
+    ],
+  },
+});
 
 const VOICE_LANGUAGE_OPTIONS = Object.freeze([
   { value: 'ru-KZ', label: 'Русский (Казахстан)' },
@@ -149,11 +195,22 @@ const optionsWithCurrentValue = (options, value) => {
 const voiceProviderOptions = computed(() =>
   optionsWithCurrentValue(VOICE_PROVIDER_OPTIONS, state.voiceSettings.provider)
 );
+const voiceProviderPreset = computed(
+  () =>
+    VOICE_PROVIDER_PRESETS[state.voiceSettings.provider] ||
+    VOICE_PROVIDER_PRESETS['gemini-live']
+);
 const voiceModelOptions = computed(() =>
-  optionsWithCurrentValue(VOICE_MODEL_OPTIONS, state.voiceSettings.model)
+  optionsWithCurrentValue(
+    voiceProviderPreset.value.models,
+    state.voiceSettings.model
+  )
 );
 const voiceVoiceOptions = computed(() =>
-  optionsWithCurrentValue(VOICE_VOICE_OPTIONS, state.voiceSettings.voice)
+  optionsWithCurrentValue(
+    voiceProviderPreset.value.voices,
+    state.voiceSettings.voice
+  )
 );
 const voiceLanguageOptions = computed(() =>
   optionsWithCurrentValue(VOICE_LANGUAGE_OPTIONS, state.voiceSettings.language)
@@ -166,6 +223,15 @@ const voiceSettingsSummary = computed(
       state.voiceSettings.voice
     )}`
 );
+
+const updateVoiceProvider = provider => {
+  const preset = VOICE_PROVIDER_PRESETS[provider];
+  if (!preset) return;
+
+  state.voiceSettings.provider = provider;
+  state.voiceSettings.model = preset.model;
+  state.voiceSettings.voice = preset.voice;
+};
 
 const temperatureOrDefault = value => {
   if (value === null || value === undefined || value === '') return 1;
@@ -187,10 +253,13 @@ const updateStateFromAssistant = assistant => {
   state.historyMessageLimit = Number(config.history_message_limit || 0);
 
   const voiceSettings = config.voice_settings || {};
+  const provider = voiceSettings.provider || DEFAULT_VOICE_SETTINGS.provider;
+  const providerPreset =
+    VOICE_PROVIDER_PRESETS[provider] || VOICE_PROVIDER_PRESETS['gemini-live'];
   state.voiceSettings = {
-    provider: voiceSettings.provider || DEFAULT_VOICE_SETTINGS.provider,
-    model: voiceSettings.model || DEFAULT_VOICE_SETTINGS.model,
-    voice: voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,
+    provider,
+    model: voiceSettings.model || providerPreset.model,
+    voice: voiceSettings.voice || providerPreset.voice,
     language: voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
     systemPrompt:
       voiceSettings.system_prompt ?? DEFAULT_VOICE_SETTINGS.systemPrompt,
@@ -568,9 +637,10 @@ defineExpose({
             {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.PROVIDER') }}
           </label>
           <Select
-            v-model="state.voiceSettings.provider"
+            :model-value="state.voiceSettings.provider"
             :options="voiceProviderOptions"
             class="w-full"
+            @update:model-value="updateVoiceProvider"
           />
         </div>
         <div class="flex flex-col gap-1.5">

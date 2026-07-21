@@ -122,4 +122,50 @@ RSpec.describe Telephony::AiVoice::JanusSipRuntimeClient do
       end
     end
   end
+
+  describe '#create_preview' do
+    it 'posts the context to the dedicated Pipecat runtime with its own token' do
+      with_modified_env(
+        ONELINK_AI_VOICE_BASE_URL: 'http://legacy.internal:8081',
+        ONELINK_AI_VOICE_INTERNAL_TOKEN: 'legacy-secret',
+        ONELINK_AI_VOICE_PIPECAT_BASE_URL: 'http://pipecat.internal:8084/',
+        ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN: 'pipecat-secret'
+      ) do
+        context = { account_id: 42, ai: { provider: 'cartesia' }, tools: [] }
+        stub = stub_request(:post, 'http://pipecat.internal:8084/internal/voice-previews')
+               .with(headers: { 'Authorization' => 'Bearer pipecat-secret', 'Content-Type' => 'application/json' }) do |request|
+                 expect(JSON.parse(request.body)).to eq('context' => context.deep_stringify_keys)
+               end
+               .to_return(
+                 status: 200,
+                 body: { token: 'opaque-token', expires_in: 60, websocket_path: '/voice-preview/ws' }.to_json,
+                 headers: { 'Content-Type' => 'application/json' }
+               )
+
+        response = described_class.new.create_preview(context)
+
+        expect(response).to include('token' => 'opaque-token', 'expires_in' => 60, 'websocket_path' => '/voice-preview/ws')
+        expect(stub).to have_been_requested
+      end
+    end
+
+    it 'fails closed when Pipecat returns a malformed successful response' do
+      with_modified_env(
+        ONELINK_AI_VOICE_PIPECAT_BASE_URL: 'http://pipecat.internal:8084',
+        ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN: 'pipecat-secret'
+      ) do
+        stub_request(:post, 'http://pipecat.internal:8084/internal/voice-previews')
+          .to_return(status: 200, body: {}.to_json, headers: { 'Content-Type' => 'application/json' })
+
+        expect { described_class.new.create_preview({}) }
+          .to raise_error(described_class::AttachError, /invalid capability response/)
+      end
+    end
+
+    it 'fails closed when the Pipecat URL is missing' do
+      with_modified_env(ONELINK_AI_VOICE_PIPECAT_BASE_URL: nil, ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN: nil) do
+        expect { described_class.new.create_preview({}) }.to raise_error(described_class::ConnectionError, /PIPECAT/)
+      end
+    end
+  end
 end

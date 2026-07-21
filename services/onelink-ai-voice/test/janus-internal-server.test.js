@@ -65,7 +65,8 @@ test('Janus internal attach endpoint starts the current voice app with Janus run
     sip_profile: voiceAgentSipProfile(),
     runtime_stream: {
       runtime_session_id: 'janus-rt-1',
-      stream_url: 'ws://janus-ai-gateway/sessions/janus-rt-1/runtime-stream?token=t1',
+      stream_url: 'ws://janus-ai-gateway/sessions/janus-rt-1/runtime-stream',
+      stream_token: 't1',
       codec: 'pcm_s16le',
       input_sample_rate: 16000,
       output_sample_rate: 8000
@@ -116,6 +117,7 @@ test('Janus internal attach endpoint starts RTP forwarders only when explicitly 
   const req = fakeReq({
     body: {
       call_ref: 'sipuni:janus-ai:call-2',
+      routing: { action: 'ai' },
       sip_profile: voiceAgentSipProfile(),
       janus: {
         unique_id: 'sip-handle-unique',
@@ -128,7 +130,8 @@ test('Janus internal attach endpoint starts RTP forwarders only when explicitly 
       },
       runtime_stream: {
         runtime_session_id: 'janus-rt-2',
-        stream_url: 'ws://janus-ai-gateway/sessions/janus-rt-2/runtime-stream?token=t2'
+        stream_url: 'ws://janus-ai-gateway/sessions/janus-rt-2/runtime-stream',
+        stream_token: 't2'
       }
     }
   });
@@ -185,6 +188,7 @@ test('Janus internal attach endpoint can create an in-process RTP bridge runtime
   const req = fakeReq({
     body: {
       call_ref: 'sipuni:janus-ai:call-bridge',
+      routing: { action: 'ai' },
       sip_profile: voiceAgentSipProfile(),
       janus: {
         unique_id: 'sip-handle-bridge',
@@ -224,7 +228,7 @@ test('Janus internal attach endpoint can create a browser Janus media bridge run
       };
     },
     streamUrlForSession(session) {
-      return `wss://dev.one-link.kz/ai-voice/janus-sip/browser-media/${session.id}?token=t1`;
+      return `wss://dev.one-link.kz/ai-voice/janus-sip/browser-media/${session.id}/t1`;
     }
   };
   const handler = createJanusInternalHandler({
@@ -235,6 +239,7 @@ test('Janus internal attach endpoint can create a browser Janus media bridge run
   const req = fakeReq({
     body: {
       call_ref: 'sipuni:janus-ai:call-browser',
+      routing: { action: 'ai' },
       sip_profile: voiceAgentSipProfile(),
       janus: {
         browser_bridge: { enabled: true }
@@ -250,7 +255,7 @@ test('Janus internal attach endpoint can create a browser Janus media bridge run
     runtime_session_id: 'janus-browser-session-1',
     stream_ref: 'janus-browser-stream-1',
     media_session_ref: 'janus-browser-media-1',
-    stream_url: 'wss://dev.one-link.kz/ai-voice/janus-sip/browser-media/janus-browser-session-1?token=t1'
+    stream_url: 'wss://dev.one-link.kz/ai-voice/janus-sip/browser-media/janus-browser-session-1/t1'
   });
   assert.equal(handled.payload.runtime_stream.kind, 'browser_janus_bridge');
   assert.equal(handled.payload.runtime_stream.runtime_session_id, 'janus-browser-session-1');
@@ -266,6 +271,7 @@ test('Janus internal attach endpoint fails closed when RTP forward is requested 
   const req = fakeReq({
     body: {
       call_ref: 'sipuni:janus-ai:call-3',
+      routing: { action: 'ai' },
       sip_profile: voiceAgentSipProfile(),
       janus: {
         unique_id: 'sip-handle-unique',
@@ -331,6 +337,227 @@ test('Janus internal attach endpoint can be limited to Sipuni only', async () =>
     provider: 'binotel',
     allowed_providers: ['sipuni']
   });
+});
+
+test('Janus internal attach fails closed when Pipecat is selected without server-side media ownership', async () => {
+  let legacyCalls = 0;
+  let pipecatCalls = 0;
+  let bridgeCalls = 0;
+  const handler = createJanusInternalHandler({
+    app: { handleCall: async () => { legacyCalls += 1; } },
+    internalToken: 'voice-secret',
+    runtimeSelector: { select: () => 'pipecat' },
+    pipecatClient: {
+      async attachJanus() { pipecatCalls += 1; }
+    },
+    browserBridgeManager: {
+      async createSession() { bridgeCalls += 1; }
+    }
+  });
+  const req = fakeReq({
+    body: {
+      call_ref: 'sipuni:janus-ai:pipecat-1',
+      account_id: '42',
+      inbox_id: '9',
+      provider: 'sipuni',
+      sip_profile: voiceAgentSipProfile(),
+      routing: { action: 'ai' }
+    }
+  });
+  const res = fakeRes();
+
+  await dispatch(handler, req, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.json().error, 'pipecat_internal_janus_unsupported');
+  assert.equal(legacyCalls, 0);
+  assert.equal(pipecatCalls, 0);
+  assert.equal(bridgeCalls, 0);
+});
+
+test('Janus internal attach rejects non-AI routes before starting either consumer', async () => {
+  let runtimeSelections = 0;
+  let legacyCalls = 0;
+  const handler = createJanusInternalHandler({
+    app: { handleCall: async () => { legacyCalls += 1; } },
+    internalToken: 'voice-secret',
+    runtimeSelector: { select: () => { runtimeSelections += 1; return 'pipecat'; } },
+    pipecatClient: { attachJanus: async () => { throw new Error('must not run'); } }
+  });
+  const req = fakeReq({
+    body: {
+      call_ref: 'sipuni:janus-ai:operator-route',
+      sip_profile: voiceAgentSipProfile(),
+      routing: { action: 'operator' }
+    }
+  });
+  const res = fakeRes();
+
+  await dispatch(handler, req, res);
+
+  assert.equal(res.statusCode, 422);
+  assert.equal(res.json().error, 'non_ai_route_not_supported');
+  assert.equal(runtimeSelections, 0);
+  assert.equal(legacyCalls, 0);
+});
+
+test('Janus internal attach rejects a missing routing action before selecting a runtime', async () => {
+  let runtimeSelections = 0;
+  const handler = createJanusInternalHandler({
+    app: { handleCall: async () => { throw new Error('must not run'); } },
+    internalToken: 'voice-secret',
+    runtimeSelector: { select: () => { runtimeSelections += 1; return 'pipecat'; } },
+    pipecatClient: { attachJanus: async () => { throw new Error('must not run'); } }
+  });
+  const req = fakeReq({
+    body: {
+      call_ref: 'sipuni:janus-ai:missing-route',
+      sip_profile: voiceAgentSipProfile()
+    }
+  });
+  const res = fakeRes();
+
+  await dispatch(handler, req, res);
+
+  assert.equal(res.statusCode, 422);
+  assert.equal(res.json().error, 'ai_route_required');
+  assert.equal(runtimeSelections, 0);
+});
+
+test('Janus Pipecat availability fence runs before RTP bridge side effects', async () => {
+  let bridgeCalls = 0;
+  const handler = createJanusInternalHandler({
+    app: { handleCall: async () => { throw new Error('must not run'); } },
+    internalToken: 'voice-secret',
+    runtimeSelector: { select: () => 'pipecat' },
+    pipecatClient: {
+      isAvailable: () => false,
+      attachJanus: async () => { throw new Error('must not run'); }
+    },
+    rtpBridgeManager: {
+      async createSession() {
+        bridgeCalls += 1;
+        throw new Error('must not run');
+      }
+    }
+  });
+  const req = fakeReq({
+    body: {
+      call_ref: 'sipuni:janus-ai:pipecat-unavailable',
+      account_id: '42',
+      provider: 'sipuni',
+      sip_profile: voiceAgentSipProfile(),
+      routing: { action: 'ai' },
+      janus: { rtp_bridge: { enabled: true } }
+    }
+  });
+  const res = fakeRes();
+
+  await dispatch(handler, req, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.json().error, 'pipecat_internal_janus_unsupported');
+  assert.equal(bridgeCalls, 0);
+});
+
+test('Janus Pipecat selection requires its dedicated browser bridge without RTP side effects', async () => {
+  let bridgeCalls = 0;
+  const handler = createJanusInternalHandler({
+    app: { handleCall: async () => { throw new Error('must not run'); } },
+    internalToken: 'voice-secret',
+    runtimeSelector: { select: () => 'pipecat' },
+    pipecatClient: {
+      isAvailable: () => true,
+      attachJanus: async () => { throw new Error('must not run'); }
+    },
+    rtpBridgeManager: {
+      createSession: async () => { bridgeCalls += 1; }
+    }
+  });
+  const req = fakeReq({
+    body: {
+      call_ref: 'sipuni:janus-ai:missing-stream',
+      sip_profile: voiceAgentSipProfile(),
+      routing: { action: 'ai' },
+      janus: { rtp_bridge: { enabled: true } }
+    }
+  });
+  const res = fakeRes();
+
+  await dispatch(handler, req, res);
+
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.json().error, 'pipecat_internal_janus_unsupported');
+  assert.equal(bridgeCalls, 0);
+});
+
+test('Janus legacy attach rolls back bridge and forward resources after a synchronous failure', async () => {
+  let rtpCloses = 0;
+  let browserCloses = 0;
+  const stopped = [];
+  const handler = createJanusInternalHandler({
+    app: { handleCall: () => { throw new Error('voice app failed'); } },
+    internalToken: 'voice-secret',
+    rtpBridgeManager: {
+      async createSession() {
+        return {
+          id: 'rtp-session',
+          inboundSsrc: 123,
+          streamRef: 'rtp-stream',
+          mediaSessionRef: 'rtp-media',
+          close() { rtpCloses += 1; }
+        };
+      },
+      forwardStreamsForSession() {
+        return [{ type: 'peer_audio', host: 'voice', port: 40000 }];
+      }
+    },
+    browserBridgeManager: {
+      createSession() {
+        return {
+          id: 'browser-session',
+          streamRef: 'browser-stream',
+          mediaSessionRef: 'browser-media',
+          close() { browserCloses += 1; }
+        };
+      },
+      streamUrlForSession() { return 'ws://voice/browser-session'; }
+    },
+    rtpForwardController: {
+      async startForwarders() {
+        return { forwarders: [{ stream_id: 1001 }] };
+      },
+      async stopForwarders(payload) { stopped.push(payload); }
+    }
+  });
+  const req = fakeReq({
+    body: {
+      call_ref: 'sipuni:janus-ai:rollback',
+      routing: { action: 'ai' },
+      sip_profile: voiceAgentSipProfile(),
+      janus: {
+        unique_id: 'sip-handle-rollback',
+        session_id: '123',
+        handle_id: '456',
+        rtp_bridge: { enabled: true },
+        browser_bridge: { enabled: true },
+        rtp_forward: { enabled: true }
+      }
+    }
+  });
+  const res = fakeRes();
+
+  await dispatch(handler, req, res);
+
+  assert.equal(res.statusCode, 502);
+  assert.equal(rtpCloses, 1);
+  assert.equal(browserCloses, 1);
+  assert.deepEqual(stopped, [{
+    uniqueId: 'sip-handle-rollback',
+    sessionId: '123',
+    handleId: '456',
+    streamIds: [1001]
+  }]);
 });
 
 test('Janus internal attach endpoint fails closed without a matching bearer token', async () => {

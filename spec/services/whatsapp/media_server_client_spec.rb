@@ -20,7 +20,8 @@ RSpec.describe Whatsapp::MediaServerClient do
                  status: 201,
                  body: {
                    runtime_session_id: 'rt-session-1',
-                   stream_url: 'ws://media.example/sessions/session-1/runtime-stream?token=redacted',
+                   stream_url: 'ws://media.example/sessions/session-1/runtime-stream',
+                   stream_token: 'redacted',
                    codec: 'pcm_s16le'
                  }.to_json,
                  headers: { 'Content-Type' => 'application/json' }

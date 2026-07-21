@@ -61,10 +61,10 @@ class JanusBrowserBridgeManager {
     return this.sessions.get(String(id || ''));
   }
 
-  streamUrlForSession(session) {
+  streamUrlForSession(session, { includeToken = true } = {}) {
     if (!session) return '';
-    const query = new URLSearchParams({ token: session.token });
-    const path = `${this.path}/${encodeURIComponent(session.id)}?${query.toString()}`;
+    const tokenPath = includeToken ? `/${encodeURIComponent(session.token)}` : '';
+    const path = `${this.path}/${encodeURIComponent(session.id)}${tokenPath}`;
     return this.publicBaseUrl ? `${this.publicBaseUrl}${path}` : path;
   }
 
@@ -72,14 +72,18 @@ class JanusBrowserBridgeManager {
     const parsed = requestUrl(req);
     if (!parsed || !parsed.pathname.startsWith(`${this.path}/`)) return false;
 
-    const sessionId = safeDecodeURIComponent(parsed.pathname.slice(this.path.length + 1));
+    const pathParts = parsed.pathname.slice(this.path.length + 1).split('/');
+    const sessionId = safeDecodeURIComponent(pathParts[0]);
+    const pathToken = safeDecodeURIComponent(pathParts[1] || '');
     const session = this.getSession(sessionId);
     const origin = normalizeOrigin(req.headers?.origin);
+    const headerToken = bearerToken(req.headers?.authorization);
     if (
+      pathParts.length > 2 ||
       !session ||
       session.tokenConsumed ||
-      !secureTokenMatch(parsed.searchParams.get('token'), session.token) ||
-      (this.allowedOrigins.size > 0 && !this.allowedOrigins.has(origin))
+      !secureTokenMatch(pathToken || headerToken, session.token) ||
+      (!headerToken && this.allowedOrigins.size > 0 && !this.allowedOrigins.has(origin))
     ) {
       socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
       socket.destroy();
@@ -286,6 +290,11 @@ function secureTokenMatch(left, right) {
   const leftBuffer = Buffer.from(String(left || ''));
   const rightBuffer = Buffer.from(String(right || ''));
   return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function bearerToken(value) {
+  const match = /^Bearer\s+([^\s]+)$/i.exec(String(value || '').trim());
+  return match ? match[1] : '';
 }
 
 function createTimer(callback, timeoutMs) {

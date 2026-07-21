@@ -51,7 +51,13 @@ function loadConfig(env = process.env) {
     janusRtpBridgeOutputPayloadType: parseInteger(env.VOICE_AGENT_JANUS_RTP_BRIDGE_OUTPUT_PAYLOAD_TYPE || env.ONELINK_AI_VOICE_JANUS_RTP_BRIDGE_OUTPUT_PAYLOAD_TYPE, 0),
     janusBrowserBridgeEnabled: parseBoolean(env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_ENABLED || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_ENABLED, false),
     janusBrowserBridgePath: env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_PATH || env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_PATH || '/ai-voice/janus-sip/browser-media',
-    janusBrowserBridgePublicBaseUrl: (env.VOICE_AGENT_PUBLIC_BASE_URL || env.ONELINK_AI_VOICE_PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
+    janusBrowserBridgePublicBaseUrl: (
+      env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_PUBLIC_BASE_URL ||
+      env.ONELINK_AI_VOICE_JANUS_BROWSER_BRIDGE_PUBLIC_BASE_URL ||
+      env.VOICE_AGENT_PUBLIC_BASE_URL ||
+      env.ONELINK_AI_VOICE_PUBLIC_BASE_URL ||
+      ''
+    ).replace(/\/+$/, ''),
     janusBrowserBridgeAllowedOrigins: parseList(
       env.VOICE_AGENT_JANUS_BROWSER_BRIDGE_ALLOWED_ORIGINS || env.FRONTEND_URL || ''
     ),
@@ -84,6 +90,17 @@ function loadConfig(env = process.env) {
     janusMediaServerUrl: (env.VOICE_AGENT_JANUS_MEDIA_SERVER_URL || env.ONELINK_AI_VOICE_JANUS_MEDIA_SERVER_URL || env.MEDIA_SERVER_URL || '').replace(/\/+$/, ''),
     janusMediaServerToken: env.VOICE_AGENT_JANUS_MEDIA_SERVER_TOKEN || env.ONELINK_AI_VOICE_JANUS_MEDIA_SERVER_TOKEN || env.MEDIA_SERVER_AUTH_TOKEN || env.AUTH_TOKEN || '',
     whatsappAttachPath: env.VOICE_AGENT_WHATSAPP_ATTACH_PATH || env.ONELINK_AI_VOICE_WHATSAPP_ATTACH_PATH || env.AI_VOICE_WHATSAPP_ATTACH_PATH || '/internal/whatsapp-cloud/calls',
+    pipecatEnabled: parseBoolean(env.ONELINK_AI_VOICE_PIPECAT_ENABLED, false),
+    pipecatBaseUrl: String(env.ONELINK_AI_VOICE_PIPECAT_BASE_URL || '').replace(/\/+$/, ''),
+    pipecatToken: env.ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN || env.ONELINK_AI_VOICE_INTERNAL_TOKEN || env.AI_VOICE_INTERNAL_TOKEN || '',
+    pipecatTimeoutMs: parseInteger(env.ONELINK_AI_VOICE_PIPECAT_ATTACH_TIMEOUT_MS, 5_000),
+    pipecatControlBaseUrl: String(env.ONELINK_AI_VOICE_PIPECAT_CONTROL_BASE_URL || '').replace(/\/+$/, ''),
+    pipecatControlPath: env.ONELINK_AI_VOICE_PIPECAT_CONTROL_PATH || '/internal/pipecat/runtime-control',
+    pipecatControlTtlMs: parseInteger(env.ONELINK_AI_VOICE_PIPECAT_CONTROL_TTL_MS, 300_000),
+    pipecatProviders: parseList(env.ONELINK_AI_VOICE_PIPECAT_PROVIDERS || ''),
+    pipecatAccountIds: parseList(env.ONELINK_AI_VOICE_PIPECAT_ACCOUNT_IDS || ''),
+    pipecatChannelIds: parseList(env.ONELINK_AI_VOICE_PIPECAT_CHANNEL_IDS || ''),
+    pipecatPercentage: parseFloatValue(env.ONELINK_AI_VOICE_PIPECAT_PERCENTAGE, 0),
     sessionTtlMs: parseInteger(env.VOICE_AGENT_SESSION_TTL_MS, 3_600_000),
     onelinkTimeoutMs: parseInteger(env.VOICE_AGENT_ONELINK_TIMEOUT_MS || env.VOICE_AGENT_ONELINK_AI_TIMEOUT_MS, 10_000),
     contextBootstrapTimeoutMs: parseInteger(env.VOICE_AGENT_CONTEXT_BOOTSTRAP_TIMEOUT_MS || env.VOICE_AGENT_CONTEXT_TIMEOUT_MS, 2_500),

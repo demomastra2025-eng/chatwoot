@@ -269,6 +269,52 @@ RSpec.describe 'Internal Voice Recording Import API', type: :request do
     FileUtils.rm_f(fixture[:path]) if defined?(fixture) && fixture.present?
   end
 
+  it 'accepts already stored Pipecat dual-channel AI voice recordings' do
+    recording_body = "RIFF\x24\x00\x00\x00WAVEfmt pipecat audio".b
+    stored_sha256 = Digest::SHA256.hexdigest(recording_body)
+    storage_key = "voice-recordings/pipecat/#{account.id}/#{call_ref}/#{stored_sha256}.wav"
+    recording_path = Rails.root.join('storage', storage_key)
+    FileUtils.mkdir_p(recording_path.dirname)
+    File.binwrite(recording_path, recording_body)
+
+    stored_payload = {
+      call_ref: call_ref,
+      account_id: account.id,
+      storage_key: storage_key,
+      size_bytes: recording_body.bytesize,
+      duration_sec: 9,
+      sha256: stored_sha256,
+      recorded_by: 'pipecat',
+      layout: 'dual_channel',
+      mode: 'ai_voice',
+      channels: 2,
+      channel_layout: 'caller_left_ai_right',
+      content_type: 'audio/wav',
+      writer: 'pipecat_runtime'
+    }
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/recordings/stored',
+           params: stored_payload,
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:accepted)
+    expect(call_session.reload.recording_ref).to eq(storage_key)
+    expect(call_session.metadata['recording']).to include(
+      'storage_key' => storage_key,
+      'sha256' => stored_sha256,
+      'recorded_by' => 'pipecat',
+      'layout' => 'dual_channel',
+      'mode' => 'ai_voice',
+      'channel_layout' => 'caller_left_ai_right',
+      'writer' => 'pipecat_runtime'
+    )
+  ensure
+    FileUtils.rm_f(recording_path) if defined?(recording_path) && recording_path.present?
+  end
+
   it 'rejects stored recording storage keys that clean outside the storage root' do
     stored_payload = {
       call_ref: call_ref,

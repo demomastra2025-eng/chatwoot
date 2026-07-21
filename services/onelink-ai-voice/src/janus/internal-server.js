@@ -1,4 +1,5 @@
 const { EventEmitter } = require('node:events');
+const { assertAiRoute } = require('../runtime/selector');
 
 const DEFAULT_ATTACH_PATH = '/internal/janus-sip/calls';
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -10,7 +11,8 @@ function createJanusInternalHandler({
   rtpForwardController = null,
   rtpBridgeManager = null,
   browserBridgeManager = null,
-  allowedProviders = []
+  allowedProviders = [],
+  runtimeSelector = null
 } = {}) {
   const attachPath = normalizePath(path);
   return function janusInternalHandler(req, res) {
@@ -32,13 +34,31 @@ function createJanusInternalHandler({
     }
 
     readJsonBody(req)
-      .then(payload => handleAttach({ app, payload, res, rtpForwardController, rtpBridgeManager, browserBridgeManager, allowedProviders }))
+      .then(payload => handleAttach({
+        app,
+        payload,
+        res,
+        rtpForwardController,
+        rtpBridgeManager,
+        browserBridgeManager,
+        allowedProviders,
+        runtimeSelector
+      }))
       .catch(error => writeJson(res, error.statusCode || 400, { error: error.code || 'invalid_json' }));
     return true;
   };
 }
 
-async function handleAttach({ app, payload, res, rtpForwardController = null, rtpBridgeManager = null, browserBridgeManager = null, allowedProviders = [] }) {
+async function handleAttach({
+  app,
+  payload,
+  res,
+  rtpForwardController = null,
+  rtpBridgeManager = null,
+  browserBridgeManager = null,
+  allowedProviders = [],
+  runtimeSelector = null
+}) {
   const request = normalizeAttachPayload(payload || {});
   if (!request.call_ref && !request.callRef) {
     writeJson(res, 422, { error: 'call_ref_required' });
@@ -58,10 +78,23 @@ async function handleAttach({ app, payload, res, rtpForwardController = null, rt
   }
 
   const callRef = request.call_ref || request.callRef;
+  const resources = {
+    rtpBridgeSession: null,
+    browserBridgeSession: null,
+    rtpForwardResult: null
+  };
   try {
-    await prepareRequestedRtpBridge({ request, rtpBridgeManager });
-    await prepareRequestedBrowserBridge({ request, browserBridgeManager });
-    await startRequestedRtpForward({ request, rtpForwardController });
+    assertAiRoute(request);
+    const runtimeEngine = runtimeSelector?.select?.(request) || 'legacy';
+    if (runtimeEngine === 'pipecat') {
+      const error = new Error('Pipecat requires the server-side Janus media runtime');
+      error.code = 'pipecat_internal_janus_unsupported';
+      error.statusCode = 503;
+      throw error;
+    }
+    resources.rtpBridgeSession = await prepareRequestedRtpBridge({ request, rtpBridgeManager });
+    resources.browserBridgeSession = await prepareRequestedBrowserBridge({ request, browserBridgeManager });
+    resources.rtpForwardResult = await startRequestedRtpForward({ request, rtpForwardController });
     const run = app.handleCall(buildJanusCallFacade(request), request);
     observeVoiceAppRun(run, callRef);
     writeJson(res, 202, {
@@ -72,13 +105,61 @@ async function handleAttach({ app, payload, res, rtpForwardController = null, rt
       browser_bridge: request.janus?.browser_bridge_result
     });
   } catch (error) {
-    writeJson(res, 502, { error: error.code || 'attach_failed', message: sanitizeMessage(error?.message) });
+    await rollbackRequestedJanusResources({
+      request,
+      resources,
+      rtpForwardController,
+      callRef
+    });
+    writeJson(res, error.statusCode || 502, {
+      error: error.code || 'attach_failed',
+      message: sanitizeMessage(error?.message)
+    });
   }
 }
 
-async function prepareRequestedBrowserBridge({ request, browserBridgeManager }) {
+async function rollbackRequestedJanusResources({
+  request,
+  resources,
+  rtpForwardController,
+  callRef
+}) {
+  const streamIds = forwarderStreamIds(resources.rtpForwardResult);
+  if (streamIds.length > 0 && typeof rtpForwardController?.stopForwarders === 'function') {
+    try {
+      await rtpForwardController.stopForwarders({
+        uniqueId: request.janus?.unique_id,
+        sessionId: request.janus?.session_id,
+        handleId: request.janus?.handle_id,
+        streamIds
+      });
+    } catch (error) {
+      logAttachError('rollback_rtp_forward', callRef, error);
+    }
+  }
+  for (const [scope, session] of [
+    ['rollback_browser_bridge', resources.browserBridgeSession],
+    ['rollback_rtp_bridge', resources.rtpBridgeSession]
+  ]) {
+    try {
+      session?.close?.();
+    } catch (error) {
+      logAttachError(scope, callRef, error);
+    }
+  }
+}
+
+function forwarderStreamIds(result) {
+  const forwarders = result?.forwarders || result?.streams || [];
+  if (!Array.isArray(forwarders)) return [];
+  return forwarders
+    .map(forwarder => Number(forwarder?.stream_id || forwarder?.streamId || forwarder?.id))
+    .filter(value => Number.isInteger(value) && value > 0);
+}
+
+async function prepareRequestedBrowserBridge({ request, browserBridgeManager, required = false }) {
   const browserBridge = request.janus?.browser_bridge || request.browser_bridge;
-  if (!browserBridge || browserBridge.enabled !== true) return null;
+  if (!required && (!browserBridge || browserBridge.enabled !== true)) return null;
   if (!browserBridgeManager || typeof browserBridgeManager.createSession !== 'function') {
     const error = new Error('janus browser bridge manager is not configured');
     error.code = 'janus_browser_bridge_unavailable';
@@ -90,22 +171,36 @@ async function prepareRequestedBrowserBridge({ request, browserBridgeManager }) 
     mediaSessionRef: request.media_session_ref || request.mediaSessionRef,
     streamRef: request.stream_ref || request.streamRef
   });
-  request.stream_ref = request.stream_ref || session.streamRef;
-  request.media_session_ref = request.media_session_ref || session.mediaSessionRef;
-  request.runtime_stream = {
-    ...(request.runtime_stream || {}),
-    kind: 'browser_janus_bridge',
-    runtime_session_id: session.id,
-    input_mime_type: 'audio/pcm;rate=16000',
-    output_mime_type: 'audio/pcm;rate=8000'
-  };
-  request.janus.browser_bridge_result = {
-    runtime_session_id: session.id,
-    stream_ref: session.streamRef,
-    media_session_ref: session.mediaSessionRef,
-    stream_url: browserBridgeManager.streamUrlForSession(session)
-  };
-  return session;
+  try {
+    request.stream_ref = request.stream_ref || session.streamRef;
+    request.media_session_ref = request.media_session_ref || session.mediaSessionRef;
+    request.runtime_stream = {
+      ...(request.runtime_stream || {}),
+      kind: 'browser_janus_bridge',
+      runtime_session_id: session.id,
+      ...(required ? {
+        stream_url: browserBridgeManager.streamUrlForSession(session, { includeToken: false }),
+        stream_token: session.token,
+        codec: 'pcm_s16le',
+        input_sample_rate: 16000,
+        output_sample_rate: 8000
+      } : {}),
+      input_mime_type: 'audio/pcm;rate=16000',
+      output_mime_type: 'audio/pcm;rate=8000'
+    };
+    if (!required) {
+      request.janus.browser_bridge_result = {
+        runtime_session_id: session.id,
+        stream_ref: session.streamRef,
+        media_session_ref: session.mediaSessionRef,
+        stream_url: browserBridgeManager.streamUrlForSession(session)
+      };
+    }
+    return session;
+  } catch (error) {
+    session?.close?.();
+    throw error;
+  }
 }
 
 async function prepareRequestedRtpBridge({ request, rtpBridgeManager }) {
@@ -126,30 +221,35 @@ async function prepareRequestedRtpBridge({ request, rtpBridgeManager }) {
     output: rtpBridge.output || {}
   });
 
-  request.stream_ref = request.stream_ref || session.streamRef;
-  request.media_session_ref = request.media_session_ref || session.mediaSessionRef;
-  request.runtime_stream = {
-    ...(request.runtime_stream || {}),
-    kind: 'janus_rtp_bridge',
-    runtime_session_id: session.id,
-    input_mime_type: 'audio/pcm;rate=16000',
-    output_mime_type: 'audio/pcm;rate=8000'
-  };
-  request.janus.rtp_bridge_result = {
-    runtime_session_id: session.id,
-    inbound_ssrc: session.inboundSsrc,
-    stream_ref: session.streamRef,
-    media_session_ref: session.mediaSessionRef
-  };
-
-  const rtpForward = request.janus.rtp_forward || {};
-  if (rtpForward.enabled === true && (!Array.isArray(rtpForward.streams) || rtpForward.streams.length === 0)) {
-    request.janus.rtp_forward = {
-      ...rtpForward,
-      streams: rtpBridgeManager.forwardStreamsForSession(session, rtpForward.stream || {})
+  try {
+    request.stream_ref = request.stream_ref || session.streamRef;
+    request.media_session_ref = request.media_session_ref || session.mediaSessionRef;
+    request.runtime_stream = {
+      ...(request.runtime_stream || {}),
+      kind: 'janus_rtp_bridge',
+      runtime_session_id: session.id,
+      input_mime_type: 'audio/pcm;rate=16000',
+      output_mime_type: 'audio/pcm;rate=8000'
     };
+    request.janus.rtp_bridge_result = {
+      runtime_session_id: session.id,
+      inbound_ssrc: session.inboundSsrc,
+      stream_ref: session.streamRef,
+      media_session_ref: session.mediaSessionRef
+    };
+
+    const rtpForward = request.janus.rtp_forward || {};
+    if (rtpForward.enabled === true && (!Array.isArray(rtpForward.streams) || rtpForward.streams.length === 0)) {
+      request.janus.rtp_forward = {
+        ...rtpForward,
+        streams: rtpBridgeManager.forwardStreamsForSession(session, rtpForward.stream || {})
+      };
+    }
+    return session;
+  } catch (error) {
+    session?.close?.();
+    throw error;
   }
-  return session;
 }
 
 async function startRequestedRtpForward({ request, rtpForwardController }) {
@@ -236,7 +336,7 @@ function normalizeAttachPayload(payload) {
       rtp_bridge: payload.rtp_bridge || payload.rtpBridge || janus.rtp_bridge || janus.rtpBridge,
       browser_bridge: payload.browser_bridge || payload.browserBridge || janus.browser_bridge || janus.browserBridge
     },
-    routing: payload.routing || payload.route_decision || payload.routeDecision || { action: 'ai', reason: 'janus_sip_ai_voice_attach' }
+    routing: payload.routing || payload.route_decision || payload.routeDecision
   };
   return normalized;
 }

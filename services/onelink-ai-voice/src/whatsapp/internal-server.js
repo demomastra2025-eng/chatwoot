@@ -1,13 +1,23 @@
 const { EventEmitter } = require('node:events');
+const { assertAiRoute } = require('../runtime/selector');
+const { assertPipecatRuntimeStream } = require('../runtime/pipecat-stream-contract');
 
 const DEFAULT_ATTACH_PATH = '/internal/whatsapp-cloud/calls';
+const DEFAULT_PREFLIGHT_PATH = '/internal/whatsapp-cloud/preflight';
 const MAX_BODY_BYTES = 1024 * 1024;
 
-function createWhatsappInternalHandler({ app, internalToken = '', path = DEFAULT_ATTACH_PATH } = {}) {
+function createWhatsappInternalHandler({
+  app,
+  internalToken = '',
+  path = DEFAULT_ATTACH_PATH,
+  runtimeSelector = null,
+  pipecatClient = null
+} = {}) {
   const attachPath = normalizePath(path);
+  const preflightPath = preflightPathFor(attachPath);
   return function whatsappInternalHandler(req, res) {
     const pathname = requestPath(req);
-    if (req.method !== 'POST' || pathname !== attachPath) return false;
+    if (req.method !== 'POST' || ![attachPath, preflightPath].includes(pathname)) return false;
 
     res.setHeader('content-type', 'application/json');
     if (!String(internalToken || '').trim()) {
@@ -18,19 +28,55 @@ function createWhatsappInternalHandler({ app, internalToken = '', path = DEFAULT
       writeJson(res, 401, { error: 'unauthorized' });
       return true;
     }
-    if (!app || typeof app.handleCall !== 'function') {
+    if (pathname === attachPath && (!app || typeof app.handleCall !== 'function')) {
       writeJson(res, 503, { error: 'voice_app_unavailable' });
       return true;
     }
 
     readJsonBody(req)
-      .then(payload => handleAttach({ app, payload, res }))
+      .then(payload => pathname === preflightPath
+        ? handlePreflight({ payload, res, runtimeSelector, pipecatClient })
+        : handleAttach({ app, payload, res, runtimeSelector, pipecatClient }))
       .catch(error => writeJson(res, error.statusCode || 400, { error: error.code || 'invalid_json' }));
     return true;
   };
 }
 
-async function handleAttach({ app, payload, res }) {
+async function handlePreflight({ payload, res, runtimeSelector = null, pipecatClient = null }) {
+  const request = normalizeAttachPayload(payload || {});
+  if (!request.call_ref && !request.callRef) {
+    writeJson(res, 422, { error: 'call_ref_required' });
+    return;
+  }
+
+  try {
+    assertAiRoute(request);
+    const runtimeEngine = runtimeSelector?.select?.(request) || 'legacy';
+    if (runtimeEngine === 'pipecat') {
+      if (
+        !pipecatClient ||
+        typeof pipecatClient.preflightWhatsapp !== 'function' ||
+        (typeof pipecatClient.isAvailable === 'function' && !pipecatClient.isAvailable())
+      ) {
+        const error = new Error('Pipecat runtime client is not configured');
+        error.code = 'pipecat_runtime_unavailable';
+        error.statusCode = 503;
+        throw error;
+      }
+      assertPipecatRuntimeStream(request);
+      if (typeof pipecatClient.ensureAvailable === 'function') await pipecatClient.ensureAvailable();
+      await pipecatClient.preflightWhatsapp(request);
+    }
+    writeJson(res, 200, { status: 'ready', runtime_engine: runtimeEngine });
+  } catch (error) {
+    writeJson(res, error.statusCode || 502, {
+      error: error.code || 'preflight_failed',
+      message: sanitizeMessage(error?.message)
+    });
+  }
+}
+
+async function handleAttach({ app, payload, res, runtimeSelector = null, pipecatClient = null }) {
   const request = normalizeAttachPayload(payload || {});
   if (!request.call_ref && !request.callRef) {
     writeJson(res, 422, { error: 'call_ref_required' });
@@ -39,6 +85,31 @@ async function handleAttach({ app, payload, res }) {
 
   const callRef = request.call_ref || request.callRef;
   try {
+    assertAiRoute(request);
+    const runtimeEngine = runtimeSelector?.select?.(request) || 'legacy';
+    if (runtimeEngine === 'pipecat') {
+      if (
+        !pipecatClient ||
+        typeof pipecatClient.attachWhatsapp !== 'function' ||
+        (typeof pipecatClient.isAvailable === 'function' && !pipecatClient.isAvailable())
+      ) {
+        const error = new Error('Pipecat runtime client is not configured');
+        error.code = 'pipecat_runtime_unavailable';
+        error.statusCode = 503;
+        throw error;
+      }
+      assertPipecatRuntimeStream(request);
+      if (typeof pipecatClient.ensureAvailable === 'function') await pipecatClient.ensureAvailable();
+      const attached = await pipecatClient.attachWhatsapp(request);
+      writeJson(res, 202, {
+        status: 'accepted',
+        mode: 'accepted',
+        runtime_engine: 'pipecat',
+        call_ref: callRef,
+        session_id: attached?.session_id
+      });
+      return;
+    }
     const run = app.handleCall(buildWhatsappCallFacade(request), request);
     observeVoiceAppRun(run, callRef);
     writeJson(res, 202, {
@@ -47,7 +118,10 @@ async function handleAttach({ app, payload, res }) {
       call_ref: callRef
     });
   } catch (error) {
-    writeJson(res, 502, { error: 'attach_failed', message: sanitizeMessage(error?.message) });
+    writeJson(res, error.statusCode || 502, {
+      error: error.code || 'attach_failed',
+      message: sanitizeMessage(error?.message)
+    });
   }
 }
 
@@ -95,13 +169,14 @@ function normalizeAttachPayload(payload) {
     account_id: payload.account_id || payload.accountId,
     inbox_id: payload.inbox_id || payload.inboxId,
     conversation_id: payload.conversation_id || payload.conversationId,
+    provider: payload.provider || 'whatsapp_cloud',
     whatsapp_call_id: payload.whatsapp_call_id || payload.whatsappCallId,
     call_session_id: payload.call_session_id || payload.callSessionId,
     media_session_ref: payload.media_session_ref || payload.mediaSessionRef || payload.media_session_id || payload.mediaSessionId,
     media_session_id: payload.media_session_id || payload.mediaSessionId,
     stream_ref: payload.stream_ref || payload.streamRef || runtimeStream.runtime_session_id || runtimeStream.runtimeSessionId,
     runtime_stream: runtimeStream,
-    routing: payload.routing || payload.route_decision || payload.routeDecision || { action: 'ai', reason: 'whatsapp_cloud_ai_voice_attach' }
+    routing: payload.routing || payload.route_decision || payload.routeDecision
   };
   return normalized;
 }
@@ -155,6 +230,10 @@ function normalizePath(path) {
   return value.startsWith('/') ? value : `/${value}`;
 }
 
+function preflightPathFor(attachPath) {
+  return attachPath === DEFAULT_ATTACH_PATH ? DEFAULT_PREFLIGHT_PATH : `${attachPath.replace(/\/+$/, '')}/preflight`;
+}
+
 function sanitizeMessage(message = '') {
   return String(message || '').slice(0, 200);
 }
@@ -166,6 +245,7 @@ function writeJson(res, statusCode, body) {
 
 module.exports = {
   DEFAULT_ATTACH_PATH,
+  DEFAULT_PREFLIGHT_PATH,
   createWhatsappInternalHandler,
   buildWhatsappCallFacade,
   normalizeAttachPayload

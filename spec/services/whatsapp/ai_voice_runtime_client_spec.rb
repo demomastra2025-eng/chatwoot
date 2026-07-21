@@ -14,10 +14,11 @@ RSpec.describe Whatsapp::AiVoiceRuntimeClient do
         media_session_id: 'media-session-1',
         runtime_stream: {
           runtime_session_id: 'rt-session-1',
-          stream_url: 'ws://media/sessions/media-session-1/runtime-stream?token=runtime-token',
+          stream_url: 'ws://media/sessions/media-session-1/runtime-stream',
+          stream_token: 'runtime-token',
           codec: 'pcm_s16le',
           input_sample_rate: 16_000,
-          output_sample_rate: 24_000
+          output_sample_rate: 8_000
         },
         routing: {
           action: 'ai_accept',
@@ -43,10 +44,11 @@ RSpec.describe Whatsapp::AiVoiceRuntimeClient do
                  )
                  expect(body['runtime_stream']).to include(
                    'runtime_session_id' => 'rt-session-1',
-                   'stream_url' => 'ws://media/sessions/media-session-1/runtime-stream?token=runtime-token',
+                   'stream_url' => 'ws://media/sessions/media-session-1/runtime-stream',
+                   'stream_token' => 'runtime-token',
                    'codec' => 'pcm_s16le',
                    'input_sample_rate' => 16_000,
-                   'output_sample_rate' => 24_000
+                   'output_sample_rate' => 8_000
                  )
                  expect(body['routing']).to include(
                    'action' => 'ai_accept',
@@ -76,6 +78,38 @@ RSpec.describe Whatsapp::AiVoiceRuntimeClient do
                .to_return(status: 202, body: { status: 'accepted' }.to_json, headers: { 'Content-Type' => 'application/json' })
 
         described_class.new.attach_call(payload)
+
+        expect(stub).to have_been_requested
+      end
+    end
+
+    it 'preflights the same contract before provider acceptance' do
+      with_modified_env(ONELINK_AI_VOICE_BASE_URL: 'http://voice.internal:8083', ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        stub = stub_request(:post, 'http://voice.internal:8083/internal/whatsapp-cloud/preflight')
+               .with(headers: { 'Authorization' => 'Bearer voice-secret' })
+               .to_return(
+                 status: 200,
+                 body: { status: 'ready', runtime_engine: 'pipecat' }.to_json,
+                 headers: { 'Content-Type' => 'application/json' }
+               )
+
+        response = described_class.new.preflight_call(payload)
+
+        expect(response).to include('status' => 'ready', 'runtime_engine' => 'pipecat')
+        expect(stub).to have_been_requested
+      end
+    end
+
+    it 'derives the preflight path from an explicit attach path override' do
+      with_modified_env(
+        ONELINK_AI_VOICE_BASE_URL: 'http://voice.internal:8083',
+        ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret',
+        ONELINK_AI_VOICE_WHATSAPP_ATTACH_PATH: '/custom/whatsapp/calls'
+      ) do
+        stub = stub_request(:post, 'http://voice.internal:8083/custom/whatsapp/calls/preflight')
+               .to_return(status: 200, body: { status: 'ready' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+        described_class.new.preflight_call(payload)
 
         expect(stub).to have_been_requested
       end

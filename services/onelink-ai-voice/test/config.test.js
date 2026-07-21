@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadConfig } = require('../src/config');
+const { createJanusBrowserBridgeManager } = require('../src/index');
 
 test('loadConfig defaults to Gemini Live with production voice model and sulafat voice', () => {
   const config = loadConfig({});
@@ -35,6 +36,16 @@ test('loadConfig defaults to Gemini Live with production voice model and sulafat
   assert.deepEqual(config.janusServerProviderWsUrls, { sipuni: '', binotel: '', asterisk_analog: '' });
   assert.equal(config.janusMediaServerUrl, '');
   assert.equal(config.janusMediaServerToken, '');
+  assert.equal(config.pipecatEnabled, false);
+  assert.equal(config.pipecatBaseUrl, '');
+  assert.equal(config.pipecatToken, '');
+  assert.equal(config.pipecatControlBaseUrl, '');
+  assert.equal(config.pipecatControlPath, '/internal/pipecat/runtime-control');
+  assert.equal(config.pipecatControlTtlMs, 300_000);
+  assert.equal(config.pipecatPercentage, 0);
+  assert.deepEqual(config.pipecatProviders, []);
+  assert.deepEqual(config.pipecatAccountIds, []);
+  assert.deepEqual(config.pipecatChannelIds, []);
   assert.equal(config.outputMaxBufferedMs, 15_000);
   assert.equal(config.postToolContinuationMs, 4_000);
   assert.equal(config.clearAudioOnInterrupt, false);
@@ -115,8 +126,20 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
     VOICE_AGENT_JANUS_SERVER_ASTERISK_ANALOG_WS_URL: 'ws://janus-asterisk:8189',
     VOICE_AGENT_JANUS_MEDIA_SERVER_URL: 'http://media-server:4000/',
     VOICE_AGENT_JANUS_MEDIA_SERVER_TOKEN: 'media-token',
-    VOICE_AGENT_PUBLIC_BASE_URL: 'wss://dev.one-link.kz/',
+    VOICE_AGENT_PUBLIC_BASE_URL: 'wss://public.one-link.kz/',
+    VOICE_AGENT_JANUS_BROWSER_BRIDGE_PUBLIC_BASE_URL: 'ws://onelink_ai_voice:8081/',
     VOICE_AGENT_WHATSAPP_ATTACH_PATH: '/custom/whatsapp/calls',
+    ONELINK_AI_VOICE_PIPECAT_ENABLED: 'true',
+    ONELINK_AI_VOICE_PIPECAT_BASE_URL: 'http://pipecat:8084/',
+    ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN: 'pipecat-token',
+    ONELINK_AI_VOICE_PIPECAT_ATTACH_TIMEOUT_MS: '7500',
+    ONELINK_AI_VOICE_PIPECAT_CONTROL_BASE_URL: 'http://voice-runtime:8081/',
+    ONELINK_AI_VOICE_PIPECAT_CONTROL_PATH: '/custom/pipecat/control',
+    ONELINK_AI_VOICE_PIPECAT_CONTROL_TTL_MS: '600000',
+    ONELINK_AI_VOICE_PIPECAT_PROVIDERS: 'sipuni, whatsapp_cloud',
+    ONELINK_AI_VOICE_PIPECAT_ACCOUNT_IDS: '42, 77',
+    ONELINK_AI_VOICE_PIPECAT_CHANNEL_IDS: '9, 10',
+    ONELINK_AI_VOICE_PIPECAT_PERCENTAGE: '25',
     VOICE_AGENT_REALTIME_OUTPUT_MAX_BUFFERED_MS: '1500',
     VOICE_AGENT_REALTIME_POST_TOOL_CONTINUATION_MS: '2500',
     VOICE_AGENT_REALTIME_VAD_PREFIX_PADDING_MS: '140',
@@ -151,7 +174,7 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
   assert.equal(config.janusRtpBridgeOutputPayloadType, 0);
   assert.equal(config.janusBrowserBridgeEnabled, true);
   assert.equal(config.janusBrowserBridgePath, '/custom/browser-media');
-  assert.equal(config.janusBrowserBridgePublicBaseUrl, 'wss://dev.one-link.kz');
+  assert.equal(config.janusBrowserBridgePublicBaseUrl, 'ws://onelink_ai_voice:8081');
   assert.deepEqual(config.janusBrowserBridgeAllowedOrigins, [
     'https://app.one-link.kz',
     'https://dev.one-link.kz'
@@ -176,6 +199,17 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
   assert.equal(config.janusMediaServerUrl, 'http://media-server:4000');
   assert.equal(config.janusMediaServerToken, 'media-token');
   assert.equal(config.whatsappAttachPath, '/custom/whatsapp/calls');
+  assert.equal(config.pipecatEnabled, true);
+  assert.equal(config.pipecatBaseUrl, 'http://pipecat:8084');
+  assert.equal(config.pipecatToken, 'pipecat-token');
+  assert.equal(config.pipecatTimeoutMs, 7500);
+  assert.equal(config.pipecatControlBaseUrl, 'http://voice-runtime:8081');
+  assert.equal(config.pipecatControlPath, '/custom/pipecat/control');
+  assert.equal(config.pipecatControlTtlMs, 600_000);
+  assert.deepEqual(config.pipecatProviders, ['sipuni', 'whatsapp_cloud']);
+  assert.deepEqual(config.pipecatAccountIds, ['42', '77']);
+  assert.deepEqual(config.pipecatChannelIds, ['9', '10']);
+  assert.equal(config.pipecatPercentage, 25);
   assert.equal(config.outputMaxBufferedMs, 1500);
   assert.equal(config.postToolContinuationMs, 2500);
   assert.equal(config.prefixPaddingMs, 140);
@@ -184,4 +218,19 @@ test('loadConfig accepts AI voice env aliases for Rails and realtime tuning', ()
   assert.equal(config.speechEndSensitivity, 'END_SENSITIVITY_LOW');
   assert.equal(config.turnCoverage, 'TURN_INCLUDES_ALL_INPUT');
   assert.equal(config.interruptionMode, 'provider');
+});
+
+test('Pipecat enablement creates the Janus browser bridge required for cross-process media', () => {
+  assert.equal(createJanusBrowserBridgeManager({ janusBrowserBridgeEnabled: false, pipecatEnabled: false }), null);
+
+  const manager = createJanusBrowserBridgeManager({
+    janusBrowserBridgeEnabled: false,
+    pipecatEnabled: true,
+    janusBrowserBridgePath: '/internal/browser-media',
+    janusBrowserBridgePublicBaseUrl: 'ws://onelink_ai_voice:8081'
+  });
+
+  assert.ok(manager);
+  assert.equal(manager.path, '/internal/browser-media');
+  assert.equal(manager.publicBaseUrl, 'ws://onelink_ai_voice:8081');
 });

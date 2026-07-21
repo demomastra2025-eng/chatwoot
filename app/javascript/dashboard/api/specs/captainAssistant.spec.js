@@ -7,6 +7,7 @@ describe('#CaptainAssistantAPI', () => {
     expect(captainAssistantAPI).toHaveProperty('create');
     expect(captainAssistantAPI).toHaveProperty('update');
     expect(captainAssistantAPI).toHaveProperty('promptPreview');
+    expect(captainAssistantAPI).toHaveProperty('voicePreview');
   });
 
   describe('assistant payload contract', () => {

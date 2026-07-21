@@ -2,7 +2,6 @@ package server
 
 import (
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chatwoot/chatwoot-media-server/internal/config"
+	"github.com/chatwoot/chatwoot-media-server/internal/session"
 )
 
 func TestResolveAudioSourceRejectsTraversalAndSymlinkEscape(t *testing.T) {
@@ -78,11 +78,14 @@ func TestBuildRuntimeAgentContractReturnsScopedOneTimeStreamShape(t *testing.T) 
 	if !strings.HasPrefix(resp.RuntimeSessionID, "rt_media-session-1_") {
 		t.Fatalf("unexpected runtime session id %q", resp.RuntimeSessionID)
 	}
-	if !strings.HasPrefix(resp.StreamURL, "ws://media.internal/sessions/media-session-1/runtime-stream?") {
+	if resp.StreamURL != "ws://media.internal/sessions/media-session-1/runtime-stream" {
 		t.Fatalf("unexpected stream url %q", resp.StreamURL)
 	}
-	if tokenFromRuntimeStreamURL(t, resp.StreamURL) == "" {
-		t.Fatal("expected stream url token")
+	if resp.StreamToken == "" {
+		t.Fatal("expected separate stream token")
+	}
+	if strings.Contains(resp.StreamURL, resp.StreamToken) {
+		t.Fatal("stream url leaked capability token")
 	}
 	if strings.Contains(resp.StreamURL, "whatsapp:wa-call-1") {
 		t.Fatalf("stream url leaked call ref: %q", resp.StreamURL)
@@ -95,13 +98,35 @@ func TestBuildRuntimeAgentContractReturnsScopedOneTimeStreamShape(t *testing.T) 
 	}
 }
 
+func TestRuntimeAgentRequestMatchesSessionScope(t *testing.T) {
+	info := session.Info{CallID: "wa-call-1", AccountID: "42"}
+	tests := []struct {
+		name string
+		req  RuntimeAgentRequest
+		want bool
+	}{
+		{name: "canonical WhatsApp call ref", req: RuntimeAgentRequest{CallRef: "whatsapp:wa-call-1", AccountID: "42"}, want: true},
+		{name: "raw provider call ref", req: RuntimeAgentRequest{CallRef: "wa-call-1", AccountID: "42"}, want: true},
+		{name: "wrong account", req: RuntimeAgentRequest{CallRef: "whatsapp:wa-call-1", AccountID: "43"}, want: false},
+		{name: "wrong call", req: RuntimeAgentRequest{CallRef: "whatsapp:wa-call-2", AccountID: "42"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := runtimeAgentRequestMatchesSession(tt.req, info); got != tt.want {
+				t.Fatalf("runtime agent scope match = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRuntimeStreamGrantIsScopedOneTimeAndExpires(t *testing.T) {
 	h := NewHandlers(&config.Config{}, nil)
 	resp, err := h.buildRuntimeAgentContract("media-session-1", RuntimeAgentRequest{CallRef: "whatsapp:wa-call-1", AccountID: "42"}, "media.internal")
 	if err != nil {
 		t.Fatalf("expected runtime agent contract: %v", err)
 	}
-	token := tokenFromRuntimeStreamURL(t, resp.StreamURL)
+	token := resp.StreamToken
 
 	if _, ok, status, _ := h.consumeRuntimeStreamGrant("wrong-session", token); ok || status != http.StatusUnauthorized {
 		t.Fatalf("expected wrong-session token to be rejected with 401, ok=%v status=%d", ok, status)
@@ -139,11 +164,15 @@ func TestRuntimeStreamGrantCleanupRemovesAbandonedExpiredTokens(t *testing.T) {
 	}
 }
 
-func tokenFromRuntimeStreamURL(t *testing.T, rawURL string) string {
-	t.Helper()
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		t.Fatalf("failed to parse stream url %q: %v", rawURL, err)
+func TestRuntimeStreamTokenAcceptsOnlyBearer(t *testing.T) {
+	bearer, _ := http.NewRequest(http.MethodGet, "http://media/runtime-stream", nil)
+	bearer.Header.Set("Authorization", "Bearer header-token")
+	if token := runtimeStreamToken(bearer); token != "header-token" {
+		t.Fatalf("unexpected bearer token %q", token)
 	}
-	return parsed.Query().Get("token")
+
+	legacy, _ := http.NewRequest(http.MethodGet, "http://media/runtime-stream?token=query-token", nil)
+	if token := runtimeStreamToken(legacy); token != "" {
+		t.Fatalf("expected query token to be rejected, got %q", token)
+	}
 }

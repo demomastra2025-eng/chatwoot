@@ -1,0 +1,22 @@
+{
+  "call_ref": "whatsapp:wa-call-1",
+  "account_id": "42",
+  "inbox_id": "9",
+  "conversation_id": "7",
+  "whatsapp_call_id": "123",
+  "call_session_id": "456",
+  "provider_call_id": "wa-call-1",
+  "media_session_id": "media-session-1",
+  "runtime_stream": {
+    "runtime_session_id": "rt-session-1",
+    "stream_url": "ws://media.invalid/sessions/media-session-1/runtime-stream",
+    "stream_token": "fake-token",
+    "codec": "pcm_s16le",
+    "input_sample_rate": 16000,
+    "output_sample_rate": 8000
+  },
+  "routing": {
+    "action": "ai_accept",
+    "reason": "conversation_pending_ai_voice_enabled"
+  }
+}

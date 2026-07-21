@@ -12,10 +12,30 @@ const { JanusSipRtpForwardController } = require('./janus/rtp-forward');
 const { JanusMediaServerClient, JanusSipServerRuntimeManager } = require('./janus/server-runtime');
 const { createWhatsappInternalHandler } = require('./whatsapp/internal-server');
 const { createWhatsappRuntimeMediaStreamFactory } = require('./whatsapp/runtime-stream');
+const { PipecatAttachClient } = require('./pipecat/attach-client');
+const { PipecatRuntimeControlRegistry } = require('./pipecat/runtime-control');
+const { RuntimeSelector } = require('./runtime/selector');
 const { loadConfig } = require('./config');
 
 async function main() {
   const config = loadConfig();
+  const runtimeSelector = new RuntimeSelector({
+    enabled: config.pipecatEnabled,
+    providers: config.pipecatProviders,
+    accountIds: config.pipecatAccountIds,
+    channelIds: config.pipecatChannelIds,
+    percentage: config.pipecatPercentage
+  });
+  const pipecatClient = new PipecatAttachClient({
+    baseUrl: config.pipecatBaseUrl,
+    token: config.pipecatToken,
+    timeoutMs: config.pipecatTimeoutMs
+  });
+  const pipecatRuntimeControl = new PipecatRuntimeControlRegistry({
+    baseUrl: config.pipecatControlBaseUrl,
+    path: config.pipecatControlPath,
+    ttlMs: config.pipecatControlTtlMs
+  });
   const janusRtpBridgeManager = createJanusRtpBridgeManager(config);
   const janusBrowserBridgeManager = createJanusBrowserBridgeManager(config);
   const client = new OnelinkClient({
@@ -67,14 +87,30 @@ async function main() {
     })
   });
 
-  const janusServerRuntime = createJanusServerRuntimeManager({ config, app, client });
+  const janusServerRuntime = createJanusServerRuntimeManager({
+    config,
+    app,
+    client,
+    runtimeSelector,
+    pipecatClient,
+    pipecatRuntimeControl
+  });
   const health = createHealthServer({
     registry,
     port: config.apiPort,
     diagnostics: () => ({
-      janus_server_runtime: janusServerRuntimeDiagnostics(janusServerRuntime)
+      janus_server_runtime: janusServerRuntimeDiagnostics(janusServerRuntime),
+      pipecat_selector: {
+        enabled: config.pipecatEnabled,
+        providers: config.pipecatProviders,
+        account_ids: config.pipecatAccountIds,
+        channel_ids: config.pipecatChannelIds,
+        percentage: config.pipecatPercentage,
+        configured: Boolean(config.pipecatBaseUrl && config.pipecatToken)
+      }
     }),
     handlers: [
+      pipecatRuntimeControl.handleRequest.bind(pipecatRuntimeControl),
       createJanusInternalHandler({
         app,
         internalToken: config.internalToken,
@@ -82,12 +118,16 @@ async function main() {
         rtpForwardController: createJanusRtpForwardController(config),
         rtpBridgeManager: janusRtpBridgeManager,
         browserBridgeManager: janusBrowserBridgeManager,
-        allowedProviders: config.janusAllowedProviders
+        allowedProviders: config.janusAllowedProviders,
+        runtimeSelector,
+        pipecatClient
       }),
       createWhatsappInternalHandler({
         app,
         internalToken: config.internalToken,
-        path: config.whatsappAttachPath
+        path: config.whatsappAttachPath,
+        runtimeSelector,
+        pipecatClient
       })
     ],
     upgradeHandlers: [
@@ -168,7 +208,7 @@ function createJanusRtpBridgeManager(config = {}) {
 module.exports.createJanusRtpBridgeManager = createJanusRtpBridgeManager;
 
 function createJanusBrowserBridgeManager(config = {}) {
-  if (!config.janusBrowserBridgeEnabled) return null;
+  if (!config.janusBrowserBridgeEnabled && !config.pipecatEnabled) return null;
   return new JanusBrowserBridgeManager({
     path: config.janusBrowserBridgePath,
     publicBaseUrl: config.janusBrowserBridgePublicBaseUrl,
@@ -183,7 +223,14 @@ function createJanusBrowserBridgeManager(config = {}) {
 
 module.exports.createJanusBrowserBridgeManager = createJanusBrowserBridgeManager;
 
-function createJanusServerRuntimeManager({ config = {}, app, client } = {}) {
+function createJanusServerRuntimeManager({
+  config = {},
+  app,
+  client,
+  runtimeSelector = null,
+  pipecatClient = null,
+  pipecatRuntimeControl = null
+} = {}) {
   if (!config.janusServerRuntimeEnabled) return null;
   const staticProfiles = Array.isArray(config.janusServerProfiles) ? config.janusServerProfiles : [];
   return new JanusSipServerRuntimeManager({
@@ -200,7 +247,10 @@ function createJanusServerRuntimeManager({ config = {}, app, client } = {}) {
       : null,
     syncIntervalMs: config.janusServerProfileSyncIntervalMs,
     maxCallsPerProfile: config.janusServerMaxCallsPerProfile,
-    registrationConcurrency: config.janusServerRegistrationConcurrency
+    registrationConcurrency: config.janusServerRegistrationConcurrency,
+    runtimeSelector,
+    pipecatClient,
+    pipecatRuntimeControl
   });
 }
 

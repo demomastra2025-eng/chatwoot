@@ -156,6 +156,7 @@ type RuntimeAgentRequest struct {
 type RuntimeAgentResponse struct {
 	RuntimeSessionID string    `json:"runtime_session_id"`
 	StreamURL        string    `json:"stream_url"`
+	StreamToken      string    `json:"stream_token"`
 	Codec            string    `json:"codec"`
 	InputSampleRate  int       `json:"input_sample_rate"`
 	OutputSampleRate int       `json:"output_sample_rate"`
@@ -266,7 +267,11 @@ func (h *Handlers) GetSession(w http.ResponseWriter, r *http.Request) {
 // short-lived, one-time media stream attach contract for the AI voice runtime.
 func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	if h.manager != nil && h.manager.GetSession(sessionID) == nil {
+	var mediaSession *session.Session
+	if h.manager != nil {
+		mediaSession = h.manager.GetSession(sessionID)
+	}
+	if h.manager != nil && mediaSession == nil {
 		writeError(w, http.StatusNotFound, "session not found")
 		return
 	}
@@ -278,6 +283,10 @@ func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.TrimSpace(req.CallRef) == "" || strings.TrimSpace(req.AccountID) == "" {
 		writeError(w, http.StatusBadRequest, "call_ref and account_id are required")
+		return
+	}
+	if mediaSession != nil && !runtimeAgentRequestMatchesSession(req, mediaSession.GetInfo()) {
+		writeError(w, http.StatusForbidden, "runtime agent scope mismatch")
 		return
 	}
 
@@ -296,12 +305,20 @@ func (h *Handlers) RuntimeAgent(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, resp)
 }
 
+func runtimeAgentRequestMatchesSession(req RuntimeAgentRequest, info session.Info) bool {
+	accountID := strings.TrimSpace(req.AccountID)
+	callRef := strings.TrimSpace(req.CallRef)
+	callID := strings.TrimSpace(info.CallID)
+	return accountID == strings.TrimSpace(info.AccountID) &&
+		(callRef == callID || callRef == "whatsapp:"+callID)
+}
+
 // RuntimeStream is the authenticated-by-token WebSocket endpoint for the
 // transport-neutral AI voice runtime stream. It consumes the one-time grant and
 // bridges runtime AUDIO_OUT frames to Meta as Opus/RTP.
 func (h *Handlers) RuntimeStream(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("id")
-	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	token := runtimeStreamToken(r)
 	grant, ok, status, message := h.validateRuntimeStreamGrant(sessionID, token)
 	if !ok {
 		writeError(w, status, message)
@@ -898,12 +915,21 @@ func (h *Handlers) buildRuntimeAgentContract(sessionID string, req RuntimeAgentR
 
 	return RuntimeAgentResponse{
 		RuntimeSessionID: runtimeSessionID,
-		StreamURL:        fmt.Sprintf("ws://%s/sessions/%s/runtime-stream?token=%s", host, sessionID, token),
+		StreamURL:        fmt.Sprintf("ws://%s/sessions/%s/runtime-stream", host, sessionID),
+		StreamToken:      token,
 		Codec:            "pcm_s16le",
 		InputSampleRate:  16000,
 		OutputSampleRate: 8000,
 		ExpiresAt:        expiresAt,
 	}, nil
+}
+
+func runtimeStreamToken(r *http.Request) string {
+	parts := strings.Fields(r.Header.Get("Authorization"))
+	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+		return strings.TrimSpace(parts[1])
+	}
+	return ""
 }
 
 func (h *Handlers) storeRuntimeStreamGrant(grant runtimeStreamGrant) {

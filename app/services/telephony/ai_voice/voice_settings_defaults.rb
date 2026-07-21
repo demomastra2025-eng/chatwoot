@@ -69,6 +69,25 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'ambient_noise_outbound_only' => true
   }.freeze
 
+  PROVIDER_DEFAULTS = {
+    'gemini-live' => {
+      'model' => 'gemini-3.1-flash-live-preview',
+      'voice' => 'sulafat'
+    }.freeze,
+    'openai-realtime' => {
+      'model' => 'gpt-realtime-2',
+      'voice' => 'alloy'
+    }.freeze,
+    'elevenlabs' => {
+      'model' => 'openai/gpt-5.4-mini',
+      'voice' => 'Xb7hH8MSUJpSbSDYk0k2'
+    }.freeze,
+    'cartesia' => {
+      'model' => 'openai/gpt-5.4-mini',
+      'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
+    }.freeze
+  }.freeze
+
   BOOLEAN_KEYS = %w[
     interruptions_enabled clear_audio_on_interrupt finish_current_word_on_interrupt interrupt_ack_enabled
     silence_prompt_enabled end_call_on_silence_enabled proactive_audio_enabled affective_dialog_enabled
@@ -95,8 +114,10 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   class << self
     def normalize(raw_settings = {})
       raw = raw_settings.respond_to?(:to_h) ? raw_settings.to_h.deep_stringify_keys : {}
-      DEFAULTS.merge(raw).each_with_object({}) do |(key, value), normalized|
-        normalized[key] = normalize_value(key, value_or_default(key, value))
+      provider = raw['provider'].presence || DEFAULTS['provider']
+      defaults = DEFAULTS.merge(PROVIDER_DEFAULTS.fetch(provider, {}))
+      defaults.merge(raw).each_with_object({}) do |(key, value), normalized|
+        normalized[key] = normalize_value(key, value_or_default(key, value, defaults))
       end
     end
 
@@ -115,10 +136,10 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       value
     end
 
-    def value_or_default(key, value)
-      return value unless DEFAULTS.key?(key)
-      return DEFAULTS[key] if value.nil?
-      return DEFAULTS[key] if value.is_a?(String) && value.strip.blank?
+    def value_or_default(key, value, defaults)
+      return value unless defaults.key?(key)
+      return defaults[key] if value.nil?
+      return defaults[key] if value.is_a?(String) && value.strip.blank?
 
       value
     end

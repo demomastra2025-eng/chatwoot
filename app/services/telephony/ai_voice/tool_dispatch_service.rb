@@ -1,7 +1,8 @@
 class Telephony::AiVoice::ToolDispatchService
   class UnknownToolError < StandardError; end
 
-  REALTIME_FAQ_LOOKUP_TIMEOUT_MS = 1_500
+  REALTIME_FAQ_LOOKUP_TIMEOUT_MS = 10_000
+  REALTIME_CAPTAIN_TOOL_TIMEOUT_MS = 15_000
   REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 900
 
   VOICE_TOOL_CATALOG = [
@@ -110,7 +111,7 @@ class Telephony::AiVoice::ToolDispatchService
         scope: Captain::ToolAccess::SCOPE_AGENT,
         enabled: true,
         realtime_safe: true,
-        timeout_ms: tool_id == 'faq_lookup' ? REALTIME_FAQ_LOOKUP_TIMEOUT_MS : 1_000,
+        timeout_ms: tool_id == 'faq_lookup' ? REALTIME_FAQ_LOOKUP_TIMEOUT_MS : REALTIME_CAPTAIN_TOOL_TIMEOUT_MS,
         foreground_wait_ms: tool_id == 'faq_lookup' ? REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS : nil,
         risk_level: tool[:risk_level],
         parameters: captain_tool_parameters(captain_assistant, tool)

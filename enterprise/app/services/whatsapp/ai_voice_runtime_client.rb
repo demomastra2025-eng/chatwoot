@@ -13,18 +13,14 @@ class Whatsapp::AiVoiceRuntimeClient
 
   TIMEOUT = 5
   DEFAULT_ATTACH_PATH = '/internal/whatsapp-cloud/calls'.freeze
+  DEFAULT_PREFLIGHT_PATH = '/internal/whatsapp-cloud/preflight'.freeze
+
+  def preflight_call(payload)
+    request(preflight_url, payload, operation: 'Preflight')
+  end
 
   def attach_call(payload)
-    response = HTTParty.post(
-      attach_url,
-      headers: auth_headers,
-      body: normalize_payload(payload).to_json,
-      timeout: TIMEOUT
-    )
-    parse_response(response)
-  rescue Errno::ECONNREFUSED, Net::OpenTimeout, Net::ReadTimeout, SocketError => e
-    Rails.logger.error "[WHATSAPP AI VOICE RUNTIME] Attach connection failed: #{e.class} #{e.message}"
-    raise ConnectionError, "AI voice runtime unavailable: #{e.message}"
+    request(attach_url, payload, operation: 'Attach')
   end
 
   def enabled?
@@ -33,11 +29,24 @@ class Whatsapp::AiVoiceRuntimeClient
 
   private
 
-  def parse_response(response)
+  def request(url, payload, operation:)
+    response = HTTParty.post(
+      url,
+      headers: auth_headers,
+      body: normalize_payload(payload).to_json,
+      timeout: TIMEOUT
+    )
+    parse_response(response, operation: operation)
+  rescue Errno::ECONNREFUSED, Net::OpenTimeout, Net::ReadTimeout, SocketError => e
+    Rails.logger.error "[WHATSAPP AI VOICE RUNTIME] #{operation} connection failed: #{e.class} #{e.message}"
+    raise ConnectionError, "AI voice runtime unavailable: #{e.message}"
+  end
+
+  def parse_response(response, operation:)
     unless response.success?
-      Rails.logger.error "[WHATSAPP AI VOICE RUNTIME] Attach failed: status=#{response.code} body=#{response.body}"
+      Rails.logger.error "[WHATSAPP AI VOICE RUNTIME] #{operation} failed: status=#{response.code} body=#{response.body}"
       raise AttachError.new(
-        "AI voice runtime attach failed (#{response.code})",
+        "AI voice runtime #{operation.downcase} failed (#{response.code})",
         http_status: response.code,
         response_body: response.body
       )
@@ -49,6 +58,10 @@ class Whatsapp::AiVoiceRuntimeClient
 
   def attach_url
     "#{required_base_url}#{attach_path}"
+  end
+
+  def preflight_url
+    "#{required_base_url}#{preflight_path}"
   end
 
   def required_base_url
@@ -64,6 +77,12 @@ class Whatsapp::AiVoiceRuntimeClient
 
   def attach_path
     path = ENV.fetch('ONELINK_AI_VOICE_WHATSAPP_ATTACH_PATH', ENV.fetch('AI_VOICE_WHATSAPP_ATTACH_PATH', DEFAULT_ATTACH_PATH)).to_s
+    path.start_with?('/') ? path : "/#{path}"
+  end
+
+  def preflight_path
+    default_path = attach_path == DEFAULT_ATTACH_PATH ? DEFAULT_PREFLIGHT_PATH : "#{attach_path.sub(%r{/+\z}, '')}/preflight"
+    path = ENV.fetch('ONELINK_AI_VOICE_WHATSAPP_PREFLIGHT_PATH', default_path).to_s
     path.start_with?('/') ? path : "/#{path}"
   end
 

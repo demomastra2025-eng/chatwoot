@@ -13,6 +13,7 @@ class Telephony::AiVoice::JanusSipRuntimeClient
 
   TIMEOUT = 3
   DEFAULT_ATTACH_PATH = '/internal/janus-sip/calls'.freeze
+  DEFAULT_PREVIEW_PATH = '/internal/voice-previews'.freeze
 
   def attach_call(payload)
     response = HTTParty.post(
@@ -31,6 +32,19 @@ class Telephony::AiVoice::JanusSipRuntimeClient
     base_url.present? && auth_token_value.present?
   end
 
+  def create_preview(context)
+    response = HTTParty.post(
+      preview_url,
+      headers: preview_auth_headers,
+      body: { context: context }.to_json,
+      timeout: TIMEOUT
+    )
+    validate_preview_response!(parse_response(response))
+  rescue Errno::ECONNREFUSED, Net::OpenTimeout, Net::ReadTimeout, SocketError => e
+    Rails.logger.error "[AI VOICE PREVIEW] Connection failed: #{e.class} #{e.message}"
+    raise ConnectionError, "AI voice runtime unavailable: #{e.message}"
+  end
+
   private
 
   def parse_response(response)
@@ -47,8 +61,37 @@ class Telephony::AiVoice::JanusSipRuntimeClient
     parsed.is_a?(Hash) ? parsed : {}
   end
 
+  def validate_preview_response!(response)
+    valid = response['token'].to_s.present? &&
+            response['websocket_path'] == '/voice-preview/ws' &&
+            response['expires_in'].to_i.positive?
+    return response if valid
+
+    raise AttachError, 'AI voice preview returned an invalid capability response'
+  end
+
   def attach_url
     "#{required_base_url}#{attach_path}"
+  end
+
+  def preview_url
+    path = ENV.fetch('ONELINK_AI_VOICE_PREVIEW_PATH', DEFAULT_PREVIEW_PATH).to_s
+    path = "/#{path}" unless path.start_with?('/')
+    "#{preview_base_url}#{path}"
+  end
+
+  def preview_base_url
+    url = ENV.fetch('ONELINK_AI_VOICE_PIPECAT_BASE_URL', '').to_s.sub(%r{/+\z}, '')
+    raise ConnectionError, 'ONELINK_AI_VOICE_PIPECAT_BASE_URL is required' if url.blank?
+
+    url
+  end
+
+  def preview_auth_headers
+    token = ENV.fetch('ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN', '').to_s
+    raise ConnectionError, 'ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN is required' if token.blank?
+
+    { 'Content-Type' => 'application/json', 'Authorization' => "Bearer #{token}" }
   end
 
   def required_base_url

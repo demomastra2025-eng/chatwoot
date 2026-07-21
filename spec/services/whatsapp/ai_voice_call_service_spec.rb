@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::AiVoiceCallService do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
   let(:channel) do
     create(
       :channel_whatsapp,
@@ -66,8 +66,6 @@ RSpec.describe Whatsapp::AiVoiceCallService do
       ice_servers: [],
       account_id: account.id
     ).and_return({ 'session_id' => 'media-ai-1', 'meta_sdp_answer' => 'meta-answer' })
-    expect(provider).to receive(:pre_accept_call).with(call.provider_call_id, 'meta-answer').and_return(true)
-    expect(provider).to receive(:accept_call).with(call.provider_call_id, 'meta-answer').and_return(true)
     expect(media_client).to receive(:create_runtime_agent).with(
       'media-ai-1',
       call_ref: "whatsapp:#{call.provider_call_id}",
@@ -77,12 +75,23 @@ RSpec.describe Whatsapp::AiVoiceCallService do
     ).and_return(
       {
         'runtime_session_id' => 'rt-wa-1',
-        'stream_url' => 'ws://media-server/sessions/media-ai-1/runtime-stream?token=redacted',
+        'stream_url' => 'ws://media-server/sessions/media-ai-1/runtime-stream',
+        'stream_token' => 'redacted',
         'codec' => 'pcm_s16le',
         'input_sample_rate' => 16_000,
-        'output_sample_rate' => 24_000
+        'output_sample_rate' => 8_000
       }
     )
+    expect(runtime_client).to receive(:preflight_call).with(
+      hash_including(
+        call_ref: "whatsapp:#{call.provider_call_id}",
+        account_id: account.id,
+        media_session_id: 'media-ai-1',
+        runtime_stream: hash_including('runtime_session_id' => 'rt-wa-1')
+      )
+    ).ordered.and_return({ 'status' => 'ready', 'runtime_engine' => 'pipecat' })
+    expect(provider).to receive(:pre_accept_call).with(call.provider_call_id, 'meta-answer').ordered.and_return(true)
+    expect(provider).to receive(:accept_call).with(call.provider_call_id, 'meta-answer').ordered.and_return(true)
     expect(runtime_client).to receive(:attach_call).with(
       hash_including(
         call_ref: "whatsapp:#{call.provider_call_id}",
@@ -96,7 +105,7 @@ RSpec.describe Whatsapp::AiVoiceCallService do
           'runtime_session_id' => 'rt-wa-1',
           'codec' => 'pcm_s16le',
           'input_sample_rate' => 16_000,
-          'output_sample_rate' => 24_000
+          'output_sample_rate' => 8_000
         ),
         routing: hash_including(
           action: 'ai_accept',
@@ -147,13 +156,13 @@ RSpec.describe Whatsapp::AiVoiceCallService do
     )
   end
 
-  it 'fails closed and cleans up when media-server runtime contract creation fails after Meta accepted the call' do
+  it 'fails closed without accepting Meta when media-server runtime contract creation fails' do
     expect(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-ai-2', 'meta_sdp_answer' => 'meta-answer' })
-    expect(provider).to receive(:pre_accept_call).with(call.provider_call_id, 'meta-answer').and_return(true)
-    expect(provider).to receive(:accept_call).with(call.provider_call_id, 'meta-answer').and_return(true)
     expect(media_client).to receive(:create_runtime_agent).and_raise(Whatsapp::MediaServerClient::SessionError, 'runtime attach failed')
+    expect(provider).not_to receive(:pre_accept_call)
+    expect(provider).not_to receive(:accept_call)
     expect(runtime_client).not_to receive(:attach_call)
-    expect(provider).to receive(:terminate_call).with(call.provider_call_id)
+    expect(provider).not_to receive(:terminate_call)
     expect(media_client).to receive(:terminate_session).with('media-ai-2')
 
     with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
@@ -161,7 +170,7 @@ RSpec.describe Whatsapp::AiVoiceCallService do
     end
 
     call.reload
-    expect(call.status).to eq('failed')
+    expect(call.status).to eq('ringing')
     expect(call.meta['ai_voice']).to include(
       'state' => 'failed',
       'runtime_transport' => 'whatsapp_cloud',
@@ -177,12 +186,14 @@ RSpec.describe Whatsapp::AiVoiceCallService do
     expect(media_client).to receive(:create_runtime_agent).and_return(
       {
         'runtime_session_id' => 'rt-wa-3',
-        'stream_url' => 'ws://media-server/sessions/media-ai-3/runtime-stream?token=runtime-token',
+        'stream_url' => 'ws://media-server/sessions/media-ai-3/runtime-stream',
+        'stream_token' => 'runtime-token',
         'codec' => 'pcm_s16le',
         'input_sample_rate' => 16_000,
-        'output_sample_rate' => 24_000
+        'output_sample_rate' => 8_000
       }
     )
+    expect(runtime_client).to receive(:preflight_call).and_return({ 'status' => 'ready', 'runtime_engine' => 'pipecat' })
     expect(runtime_client).to receive(:attach_call).and_raise(Whatsapp::AiVoiceRuntimeClient::AttachError, 'runtime attach failed')
     expect(provider).to receive(:terminate_call).with(call.provider_call_id)
     expect(media_client).to receive(:terminate_session).with('media-ai-3')
@@ -200,5 +211,82 @@ RSpec.describe Whatsapp::AiVoiceCallService do
       ended_by: 'system',
       end_reason: 'ai_voice_runtime_attach_failed'
     )
+  end
+
+  it 'fails preflight before accepting the call on Meta' do
+    expect(media_client).to receive(:create_session).and_return({ 'session_id' => 'media-ai-preflight', 'meta_sdp_answer' => 'meta-answer' })
+    expect(media_client).to receive(:create_runtime_agent).and_return(
+      {
+        'runtime_session_id' => 'rt-wa-preflight',
+        'stream_url' => 'ws://media-server/sessions/media-ai-preflight/runtime-stream',
+        'stream_token' => 'runtime-token',
+        'codec' => 'pcm_s16le',
+        'input_sample_rate' => 16_000,
+        'output_sample_rate' => 8_000
+      }
+    )
+    expect(runtime_client).to receive(:preflight_call).and_raise(Whatsapp::AiVoiceRuntimeClient::AttachError, 'provider preflight failed')
+    expect(runtime_client).not_to receive(:attach_call)
+    expect(provider).not_to receive(:pre_accept_call)
+    expect(provider).not_to receive(:accept_call)
+    expect(provider).not_to receive(:terminate_call)
+    expect(media_client).to receive(:terminate_session).with('media-ai-preflight')
+
+    with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      expect { described_class.new(call: call, routing_decision: routing_decision).perform }
+        .to raise_error(Whatsapp::AiVoiceRuntimeClient::AttachError)
+    end
+
+    expect(call.reload).to be_ringing
+    expect(account.telephony_call_sessions.find_by!(external_call_ref: "whatsapp:#{call.provider_call_id}").status).to eq('failed')
+  end
+
+  it 'keeps reservation ownership until post-answer persistence completes' do
+    expect(media_client).to receive(:create_session).and_return(
+      { 'session_id' => 'media-ai-post-answer', 'meta_sdp_answer' => 'meta-answer' }
+    )
+    expect(media_client).to receive(:create_runtime_agent).and_return(
+      {
+        'runtime_session_id' => 'rt-wa-post-answer',
+        'stream_url' => 'ws://media-server/sessions/media-ai-post-answer/runtime-stream',
+        'stream_token' => 'runtime-token',
+        'codec' => 'pcm_s16le',
+        'input_sample_rate' => 16_000,
+        'output_sample_rate' => 8_000
+      }
+    )
+    expect(runtime_client).to receive(:preflight_call).and_return({ 'status' => 'ready', 'runtime_engine' => 'pipecat' })
+    expect(provider).to receive(:pre_accept_call).with(call.provider_call_id, 'meta-answer').and_return(true)
+    expect(provider).to receive(:accept_call).with(call.provider_call_id, 'meta-answer').and_return(true)
+    expect(runtime_client).to receive(:attach_call).and_return({ 'status' => 'accepted' })
+    expect(Whatsapp::CallMessageBuilder).to receive(:update_status!).and_raise(ActiveRecord::RecordInvalid)
+    expect(provider).to receive(:terminate_call).with(call.provider_call_id)
+    expect(media_client).to receive(:terminate_session).with('media-ai-post-answer')
+
+    with_modified_env(MEDIA_SERVER_URL: 'http://media-server:4000', MEDIA_SERVER_AUTH_TOKEN: 'secret') do
+      expect { described_class.new(call: call, routing_decision: routing_decision).perform }
+        .to raise_error(ActiveRecord::RecordInvalid)
+    end
+
+    call.reload
+    expect(call.status).to eq('failed')
+    expect(call.meta.dig('ai_voice', 'state')).to eq('failed')
+    expect(call.meta.dig('ai_voice', 'reservation_owner_token')).to be_nil
+    expect(account.telephony_call_sessions.find_by!(external_call_ref: "whatsapp:#{call.provider_call_id}").status).to eq('failed')
+  end
+
+  it 'lets only the reservation owner create media or accept a concurrent duplicate callback' do
+    owner = described_class.new(call: call, routing_decision: routing_decision)
+    expect(owner.send(:reserve_call!)).to be(true)
+    expect(media_client).not_to receive(:create_session)
+    expect(runtime_client).not_to receive(:preflight_call)
+    expect(runtime_client).not_to receive(:attach_call)
+    expect(provider).not_to receive(:pre_accept_call)
+    expect(provider).not_to receive(:accept_call)
+
+    duplicate_result = described_class.new(call: call.reload, routing_decision: routing_decision).perform
+
+    expect(duplicate_result).to eq(call)
+    expect(call.reload.meta.dig('ai_voice', 'state')).to eq('reserving')
   end
 end

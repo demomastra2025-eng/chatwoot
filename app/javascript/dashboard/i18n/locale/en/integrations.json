@@ -785,7 +785,7 @@
           "TITLE": "Voice settings",
           "DESCRIPTION": "Configure the realtime voice transport used when this Captain handles phone calls. Secrets stay in runtime environment variables.",
           "ACTIVE_RUNTIME": "Active voice runtime",
-          "RUNTIME_NOTE": "Calls use the same Captain instructions, tools, knowledge base, and handoff rules as chat. Gemini Live remains the dedicated realtime voice provider.",
+          "RUNTIME_NOTE": "Calls use the same Captain instructions, tools, knowledge base, and handoff rules as chat. Choose Gemini Live, OpenAI Realtime, ElevenLabs, or Cartesia with OpenRouter.",
           "PROVIDER": "Realtime provider",
           "MODEL": "Realtime model",
           "VOICE": "Voice",
@@ -803,6 +803,25 @@
           "MAX_DURATION_SEC": "Max call duration, seconds",
           "INTERRUPTIONS": "Allow interruptions",
           "INTERRUPTIONS_DESCRIPTION": "Let the caller interrupt the AI while it is speaking."
+        },
+        "VOICE_PREVIEW": {
+          "TITLE": "Talk to the voice agent",
+          "DESCRIPTION": "Test the saved instructions, voice, and interruptions with your microphone. The preview creates no call, conversation, or recording.",
+          "START": "Start conversation",
+          "STOP": "End",
+          "STATUS": {
+            "IDLE": "Ready",
+            "CONNECTING": "Connecting",
+            "LISTENING": "Listening",
+            "SPEAKING": "Speaking",
+            "ERROR": "Error"
+          },
+          "ERROR": {
+            "MICROPHONE": "Allow microphone access in your browser.",
+            "EXPIRED": "The session expired. Start the conversation again.",
+            "CONNECTION": "The connection to the voice runtime was interrupted.",
+            "UNAVAILABLE": "Voice preview is unavailable. Check the runtime and the selected provider credentials."
+          }
         },
         "DESCRIPTION": {
           "LABEL": "Description",

@@ -2,7 +2,8 @@ class Whatsapp::AiVoiceCallService
   pattr_initialize [:call!, :routing_decision!]
 
   def perform
-    ensure_ai_routable!
+    return call unless reserve_call!
+
     broadcast_ai_answering
 
     media_session_id = nil
@@ -14,11 +15,13 @@ class Whatsapp::AiVoiceCallService
       media_session_id = session_response['session_id']
       meta_sdp_answer = session_response['meta_sdp_answer']
 
-      accept_on_provider!(meta_sdp_answer)
-      provider_accepted = true
       runtime_contract = create_runtime_agent!(media_session_id)
       call_session = ensure_call_session!(media_session_id, runtime_contract)
-      attach_runtime!(media_session_id, runtime_contract, call_session)
+      runtime_payload = runtime_payload(media_session_id, runtime_contract, call_session)
+      preflight_runtime!(runtime_payload)
+      accept_on_provider!(meta_sdp_answer)
+      provider_accepted = true
+      attach_runtime!(runtime_payload)
       mark_answered!(media_session_id, runtime_contract, call_session)
     rescue StandardError
       terminate_on_provider if provider_accepted
@@ -33,6 +36,30 @@ class Whatsapp::AiVoiceCallService
   end
 
   private
+
+  def reserve_call!
+    @reservation_owner_token = SecureRandom.uuid
+    call.with_lock do
+      call.reload
+      reservation = call.meta.to_h['ai_voice'].to_h
+      if reservation['reservation_key'] == runtime_call_ref && reservation['state'].in?(%w[reserving answered failed])
+        false
+      else
+        ensure_ai_routable!
+        call.update!(
+          meta: call.meta.to_h.merge(
+            'ai_voice' => {
+              'state' => 'reserving',
+              'reservation_key' => runtime_call_ref,
+              'reservation_owner_token' => @reservation_owner_token,
+              'reserved_at' => Time.current.iso8601
+            }
+          )
+        )
+        true
+      end
+    end
+  end
 
   def ensure_ai_routable!
     raise Whatsapp::CallErrors::NotRinging, 'Call is not in ringing state' unless call.ringing?
@@ -74,13 +101,11 @@ class Whatsapp::AiVoiceCallService
     timestamp = Time.current
     session.assign_attributes(
       provider: 'whatsapp_cloud',
-      status: 'in_progress',
+      status: 'ringing',
       direction: 'inbound',
       from_number: call.contact&.phone_number,
       to_number: call.inbox&.channel&.try(:phone_number),
       started_at: session.started_at || timestamp,
-      answered_at: session.answered_at || timestamp,
-      answered_by: 'ai_agent',
       conversation: call.conversation,
       contact: call.contact,
       inbox: call.inbox,
@@ -95,8 +120,8 @@ class Whatsapp::AiVoiceCallService
     retry
   end
 
-  def attach_runtime!(media_session_id, runtime_contract, call_session)
-    runtime_client.attach_call(
+  def runtime_payload(media_session_id, runtime_contract, call_session)
+    {
       call_ref: runtime_call_ref,
       account_id: call.account_id,
       inbox_id: call.inbox_id,
@@ -112,30 +137,59 @@ class Whatsapp::AiVoiceCallService
         conversation_status: routing_decision.conversation_status,
         captain_assistant_id: routing_decision.assistant&.id
       }.compact
-    )
+    }
+  end
+
+  def preflight_runtime!(payload)
+    runtime_client.preflight_call(payload)
+  end
+
+  def attach_runtime!(payload)
+    runtime_client.attach_call(payload)
   end
 
   def mark_answered!(media_session_id, runtime_contract, call_session)
     call.with_lock do
       call.reload
+      raise Whatsapp::CallErrors::NotRinging, 'AI voice reservation ownership was lost' unless reservation_owned?
       raise Whatsapp::CallErrors::NotRinging, 'Call is not in ringing state' unless call.ringing?
 
       call.update!(
         status: 'in_progress',
         started_at: Time.current,
         media_session_id: media_session_id,
-        meta: (call.meta || {}).merge('ai_voice' => ai_voice_meta('answered', media_session_id, runtime_contract, call_session))
+        meta: (call.meta || {}).merge(
+          'ai_voice' => ai_voice_meta('answered', media_session_id, runtime_contract, call_session, preserve_owner: true)
+        )
       )
     end
 
+    call_session.update!(
+      status: 'in_progress',
+      answered_at: call_session.answered_at || Time.current,
+      answered_by: 'ai_agent'
+    )
+
     Whatsapp::CallMessageBuilder.update_status!(call: call, status: 'in_progress')
     update_conversation_call_status('ai_answered')
+    release_reservation_owner!
+  end
+
+  def release_reservation_owner!
+    call.with_lock do
+      call.reload
+      next unless reservation_owned?
+
+      ai_voice = call.meta.to_h['ai_voice'].to_h.except('reservation_owner_token', 'reserved_at')
+      call.update!(meta: call.meta.to_h.merge('ai_voice' => ai_voice))
+    end
   end
 
   def mark_failed!(terminal: false)
     call.with_lock do
       call.reload
       next if call.terminal?
+      next unless reservation_owned?
 
       attrs = { meta: (call.meta || {}).merge('ai_voice' => ai_voice_meta('failed')) }
       attrs[:status] = 'failed' if terminal
@@ -155,9 +209,10 @@ class Whatsapp::AiVoiceCallService
     Rails.logger.error "[WHATSAPP AI VOICE CALL] Failed to mark call session #{call_session&.id} failed: #{e.message}"
   end
 
-  def ai_voice_meta(state, media_session_id = nil, runtime_contract = nil, call_session = nil)
-    {
+  def ai_voice_meta(state, media_session_id = nil, runtime_contract = nil, call_session = nil, preserve_owner: false)
+    metadata = {
       'state' => state,
+      'reservation_key' => runtime_call_ref,
       'captain_assistant_id' => routing_decision.assistant&.id,
       'runtime_transport' => 'whatsapp_cloud',
       'call_ref' => runtime_call_ref,
@@ -166,6 +221,16 @@ class Whatsapp::AiVoiceCallService
       'call_session_id' => call_session&.id,
       'updated_at' => Time.current.iso8601
     }.compact
+    return metadata unless preserve_owner
+
+    metadata.merge(
+      'reservation_owner_token' => @reservation_owner_token,
+      'reserved_at' => call.meta.to_h.dig('ai_voice', 'reserved_at')
+    ).compact
+  end
+
+  def reservation_owned?
+    call.meta.to_h.dig('ai_voice', 'reservation_owner_token') == @reservation_owner_token
   end
 
   def runtime_metadata(media_session_id, runtime_contract)

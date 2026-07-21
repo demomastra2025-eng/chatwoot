@@ -61,6 +61,17 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(response).to have_http_status(:unauthorized)
   end
 
+  it 'accepts the dedicated Pipecat callback token' do
+    with_modified_env(ONELINK_AI_VOICE_PIPECAT_CALLBACK_TOKEN: 'pipecat-callback-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer pipecat-callback-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+  end
+
   it 'returns low-latency context for the OneLink managed voice service' do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       get '/internal/voice/ai/context',
@@ -130,6 +141,37 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
     end_call_tool = body['tools'].find { |tool| tool['name'] == 'end_call' }
     expect(end_call_tool['timeout_ms']).to be >= 5000
+  end
+
+  [
+    ['openai-realtime', 'gpt-realtime-2', 'alloy'],
+    ['elevenlabs', 'openai/gpt-5.4-mini', 'Xb7hH8MSUJpSbSDYk0k2']
+  ].each do |provider, model, voice|
+    it "returns #{provider} provider settings without applying Gemini defaults" do
+      assistant.update!(
+        config: assistant.config.merge(
+          'voice_settings' => {
+            'provider' => provider,
+            'model' => model,
+            'voice' => voice
+          }
+        )
+      )
+
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        get '/internal/voice/ai/context',
+            params: { call_ref: call_session.external_call_ref, account_id: account.id },
+            headers: { 'Authorization' => 'Bearer voice-secret' },
+            as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['ai']).to include(
+        'provider' => provider,
+        'model' => model,
+        'voice' => voice
+      )
+    end
   end
 
   it 'preserves outbound provider and transport metadata for existing call sessions' do
@@ -456,7 +498,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     faq_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'faq_lookup' }
-    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 1500, 'foreground_wait_ms' => 900)
+    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 10_000, 'foreground_wait_ms' => 900)
   end
 
   it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do

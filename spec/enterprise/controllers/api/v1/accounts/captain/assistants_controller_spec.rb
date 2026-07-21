@@ -114,6 +114,60 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
     # rubocop:enable RSpec/MultipleExpectations
   end
 
+  describe 'POST /api/v1/accounts/{account.id}/captain/assistants/{id}/voice_preview' do
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:context) { { call_ref: 'preview:assistant' } }
+    let(:runtime_client) do
+      instance_double(
+        Telephony::AiVoice::JanusSipRuntimeClient,
+        create_preview: {
+          'token' => 'opaque-token',
+          'expires_in' => 60,
+          'websocket_path' => '/voice-preview/ws',
+          'internal' => 'not-rendered'
+        }
+      )
+    end
+
+    before do
+      builder = instance_double(Telephony::AiVoice::PreviewContextBuilder, perform: context)
+      allow(Telephony::AiVoice::PreviewContextBuilder).to receive(:new).with(assistant: assistant).and_return(builder)
+      allow(Telephony::AiVoice::JanusSipRuntimeClient).to receive(:new).and_return(runtime_client)
+    end
+
+    it 'requires authentication' do
+      post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/voice_preview", as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'returns only the ephemeral browser capability fields' do
+      post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/voice_preview",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(json_response).to eq(
+        token: 'opaque-token',
+        expires_in: 60,
+        websocket_path: '/voice-preview/ws'
+      )
+      expect(runtime_client).to have_received(:create_preview).with(context)
+    end
+
+    it 'returns service unavailable when Pipecat rejects the preview capability' do
+      allow(runtime_client).to receive(:create_preview)
+        .and_raise(Telephony::AiVoice::JanusSipRuntimeClient::AttachError, 'invalid capability response')
+
+      post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/voice_preview",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:service_unavailable)
+      expect(json_response).to eq(error: 'voice_preview_unavailable')
+    end
+  end
+
   describe 'GET /api/v1/accounts/{account.id}/captain/assistants/context_fields' do
     let(:deal_field_definition) do
       create(

@@ -1,6 +1,8 @@
 const { EventEmitter } = require('node:events');
 const crypto = require('node:crypto');
 const WebSocket = require('ws');
+const { assertAiRoute } = require('../runtime/selector');
+const { assertPipecatRuntimeStream } = require('../runtime/pipecat-stream-contract');
 const { createJanusRuntimeMediaStreamFactory } = require('./runtime-stream');
 
 const DEFAULT_PLUGIN = 'janus.plugin.sip';
@@ -277,6 +279,9 @@ class JanusSipServerRuntimeManager {
     syncIntervalMs = 15000,
     maxCallsPerProfile = 4,
     registrationConcurrency = 10,
+    runtimeSelector = null,
+    pipecatClient = null,
+    pipecatRuntimeControl = null,
     logger = console
   } = {}) {
     if (!app || typeof app.handleCall !== 'function') throw new Error('voice app is required');
@@ -290,6 +295,9 @@ class JanusSipServerRuntimeManager {
     this.syncIntervalMs = syncIntervalMs;
     this.maxCallsPerProfile = positiveInteger(maxCallsPerProfile, 4);
     this.registrationConcurrency = positiveInteger(registrationConcurrency, 10);
+    this.runtimeSelector = runtimeSelector;
+    this.pipecatClient = pipecatClient;
+    this.pipecatRuntimeControl = pipecatRuntimeControl;
     this.logger = logger;
     this.sessions = new Map();
     this.syncTimer = null;
@@ -384,6 +392,9 @@ class JanusSipServerRuntimeManager {
         WebSocketImpl: this.WebSocketImpl,
         runtimeMediaStreamFactory: this.runtimeMediaStreamFactory,
         maxCalls: profile.max_concurrent_calls || this.maxCallsPerProfile,
+        runtimeSelector: this.runtimeSelector,
+        pipecatClient: this.pipecatClient,
+        pipecatRuntimeControl: this.pipecatRuntimeControl,
         logger: this.logger
       });
       try {
@@ -455,6 +466,9 @@ class JanusSipServerProfileSession {
     WebSocketImpl,
     runtimeMediaStreamFactory,
     maxCalls = 4,
+    runtimeSelector = null,
+    pipecatClient = null,
+    pipecatRuntimeControl = null,
     logger
   }) {
     this.app = app;
@@ -463,6 +477,9 @@ class JanusSipServerProfileSession {
     this.mediaServerClient = mediaServerClient;
     this.runtimeMediaStreamFactory = runtimeMediaStreamFactory;
     this.maxCalls = positiveInteger(maxCalls, 4);
+    this.runtimeSelector = runtimeSelector;
+    this.pipecatClient = pipecatClient;
+    this.pipecatRuntimeControl = pipecatRuntimeControl;
     this.logger = logger;
     this.sessionId = null;
     this.handleId = null;
@@ -753,6 +770,11 @@ class JanusSipServerProfileSession {
     });
     let run;
     try {
+      const runtimeEngine = this.runtimeSelector?.select?.(facade.request) || 'legacy';
+      if (runtimeEngine === 'pipecat') {
+        await this.startPipecatCall(facade);
+        return;
+      }
       run = this.app.handleCall(facade, facade.request);
     } catch (error) {
       this.log('janus_server_handle_call_failed', { error: error.message });
@@ -768,6 +790,57 @@ class JanusSipServerProfileSession {
         this.log('janus_server_handle_call_failed', { error: error.message });
         await facade.hangup().catch(() => {});
       });
+  }
+
+  async startPipecatCall(facade) {
+    assertAiRoute(facade.request);
+    if (
+      !this.pipecatClient ||
+      typeof this.pipecatClient.attachJanus !== 'function' ||
+      (typeof this.pipecatClient.isAvailable === 'function' && !this.pipecatClient.isAvailable())
+    ) {
+      const error = new Error('Pipecat runtime client is not configured');
+      error.code = 'pipecat_runtime_unavailable';
+      error.statusCode = 503;
+      throw error;
+    }
+    if (typeof this.pipecatClient.ensureAvailable === 'function') {
+      await this.pipecatClient.ensureAvailable();
+    }
+    if (typeof this.pipecatClient.preflightJanus !== 'function') {
+      const error = new Error('Pipecat provider preflight is not configured');
+      error.code = 'pipecat_preflight_unavailable';
+      error.statusCode = 503;
+      throw error;
+    }
+    await this.pipecatClient.preflightJanus(facade.request);
+    await facade.answer();
+    assertPipecatRuntimeStream(facade.request);
+    const capability = this.pipecatRuntimeControl?.register?.(facade);
+    if (!capability) {
+      const error = new Error('Pipecat runtime control is not configured');
+      error.code = 'runtime_control_unavailable';
+      error.statusCode = 503;
+      throw error;
+    }
+    facade.request.runtime_control = {
+      control_url: capability.control_url,
+      token: capability.token
+    };
+    let attached;
+    try {
+      attached = await this.pipecatClient.attachJanus(facade.request);
+    } catch (error) {
+      this.pipecatRuntimeControl.release?.(capability.id);
+      throw error;
+    }
+    this.log('janus_server_pipecat_attached', {
+      call_ref: facade.request.call_ref,
+      account_id: facade.request.account_id,
+      inbox_id: facade.request.inbox_id,
+      session_id: attached?.session_id
+    });
+    return attached;
   }
 
   updateProfile(profile) {
@@ -898,6 +971,7 @@ class JanusSipServerCallFacade extends EventEmitter {
       this.request.runtime_stream = {
         runtime_session_id: runtime.runtime_session_id,
         stream_url: runtime.stream_url,
+        stream_token: runtime.stream_token,
         codec: runtime.codec,
         input_sample_rate: runtime.input_sample_rate,
         output_sample_rate: runtime.output_sample_rate,
@@ -976,8 +1050,12 @@ class JanusSipServerCallFacade extends EventEmitter {
     if (!String(uri || '').trim()) return false;
 
     const leg = new EventEmitter();
+    leg.terminalOutcome = null;
     this.transferLeg = leg;
-    this.once('end', () => leg.emit('end'));
+    this.once('end', () => {
+      leg.terminalOutcome ||= 'end';
+      leg.emit('end');
+    });
     try {
       await this.janus.client.pluginMessage({
         sessionId: this.janus.sessionId,
@@ -1047,7 +1125,10 @@ class JanusSipServerCallFacade extends EventEmitter {
       return;
     }
     if (eventName === 'plugin_error') {
-      if (this.transferLeg) this.transferLeg.emit('failed', result);
+      if (this.transferLeg) {
+        this.transferLeg.terminalOutcome = 'failed';
+        this.transferLeg.emit('failed', result);
+      }
       else this.emit('failed', result);
       this.terminateMediaSession('janus_plugin_error').catch(() => {});
       this.emitEnd();
@@ -1062,12 +1143,16 @@ class JanusSipServerCallFacade extends EventEmitter {
 
     const status = sipNotifyStatus(result.content);
     if (status >= 200 && status < 300) {
+      this.transferLeg.terminalOutcome = 'answered';
       this.transferLeg.emit('answered', result);
     } else if (status === 486) {
+      this.transferLeg.terminalOutcome = 'busy';
       this.transferLeg.emit('busy', result);
     } else if (status === 408 || status === 480) {
+      this.transferLeg.terminalOutcome = 'no_answer';
       this.transferLeg.emit('no_answer', result);
     } else if (status >= 300) {
+      this.transferLeg.terminalOutcome = 'failed';
       this.transferLeg.emit('failed', result);
     }
   }
@@ -1096,6 +1181,10 @@ function buildIncomingRequest({ profile, providerCallId, caller, janus }) {
     app_ref: profile.app_ref,
     direction: 'inbound',
     transport: 'janus_sip',
+    routing: {
+      action: 'ai',
+      reason: 'server_janus_sip_ai_voice'
+    },
     caller_number: callerNumber,
     ingress_number: profile.ingress_number || profile.phone_number || profile.number_ref,
     sip_profile: profile.sip_profile,

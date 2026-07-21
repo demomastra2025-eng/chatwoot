@@ -785,7 +785,7 @@
           "TITLE": "Настройки голоса",
           "DESCRIPTION": "Настройте realtime voice transport для звонков, которые обрабатывает этот Captain. Секреты остаются только в переменных окружения runtime.",
           "ACTIVE_RUNTIME": "Активный голосовой runtime",
-          "RUNTIME_NOTE": "Звонки используют те же инструкции Captain, инструменты, базу знаний и правила передачи оператору, что и чат. Gemini Live остается отдельным realtime voice provider.",
+          "RUNTIME_NOTE": "Звонки используют те же инструкции Captain, инструменты, базу знаний и правила передачи оператору, что и чат. Доступны Gemini Live, OpenAI Realtime, ElevenLabs и Cartesia с OpenRouter.",
           "PROVIDER": "Realtime provider",
           "MODEL": "Realtime model",
           "VOICE": "Голос",
@@ -803,6 +803,25 @@
           "MAX_DURATION_SEC": "Максимальная длительность, сек.",
           "INTERRUPTIONS": "Разрешить перебивания",
           "INTERRUPTIONS_DESCRIPTION": "Позволяет клиенту перебивать AI, пока он говорит."
+        },
+        "VOICE_PREVIEW": {
+          "TITLE": "Поговорить с voice-агентом",
+          "DESCRIPTION": "Проверьте сохранённые инструкции, голос и перебивания через микрофон. Тест не создаёт звонок, диалог или запись.",
+          "START": "Начать разговор",
+          "STOP": "Завершить",
+          "STATUS": {
+            "IDLE": "Готов",
+            "CONNECTING": "Подключение",
+            "LISTENING": "Слушает",
+            "SPEAKING": "Говорит",
+            "ERROR": "Ошибка"
+          },
+          "ERROR": {
+            "MICROPHONE": "Разрешите доступ к микрофону в браузере.",
+            "EXPIRED": "Сессия устарела. Запустите разговор ещё раз.",
+            "CONNECTION": "Соединение с voice runtime прервано.",
+            "UNAVAILABLE": "Voice preview сейчас недоступен. Проверьте runtime и ключи выбранного провайдера."
+          }
         },
         "DESCRIPTION": {
           "LABEL": "Описание",

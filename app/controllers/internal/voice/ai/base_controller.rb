@@ -22,6 +22,7 @@ class Internal::Voice::Ai::BaseController < ApplicationController
     [
       ENV.fetch('VOICE_AGENT_ONELINK_AI_SHARED_SECRET', '').presence,
       ENV.fetch('ONELINK_AI_VOICE_INTERNAL_TOKEN', '').presence,
+      ENV.fetch('ONELINK_AI_VOICE_PIPECAT_CALLBACK_TOKEN', '').presence,
       ENV.fetch('AI_VOICE_INTERNAL_TOKEN', '').presence,
       ENV.fetch('ONELINK_INTERNAL_SECRET', '').presence,
       ENV.fetch('ONELINK_INTERNAL_TOKEN', '').presence

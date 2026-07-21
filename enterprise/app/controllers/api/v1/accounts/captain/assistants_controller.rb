@@ -12,7 +12,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   before_action :current_account
   before_action -> { check_authorization(Captain::Assistant) }
 
-  before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview]
+  before_action :set_assistant, only: [:show, :update, :destroy, :playground, :avatar, :prompt_preview, :voice_preview]
 
   def index
     @assistants = account_assistants.ordered
@@ -72,6 +72,16 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
 
   def prompt_preview
     render json: Captain::Assistant::PromptPreviewService.new(assistant: @assistant).preview
+  end
+
+  def voice_preview
+    context = Telephony::AiVoice::PreviewContextBuilder.new(assistant: @assistant).perform
+    preview = Telephony::AiVoice::JanusSipRuntimeClient.new.create_preview(context)
+    render json: preview.slice('token', 'expires_in', 'websocket_path')
+  rescue Telephony::AiVoice::JanusSipRuntimeClient::ConnectionError,
+         Telephony::AiVoice::JanusSipRuntimeClient::AttachError => e
+    Rails.logger.warn "[AI VOICE PREVIEW] assistant=#{@assistant.id} unavailable: #{e.class} #{e.message}"
+    render json: { error: 'voice_preview_unavailable' }, status: :service_unavailable
   end
 
   def context_fields

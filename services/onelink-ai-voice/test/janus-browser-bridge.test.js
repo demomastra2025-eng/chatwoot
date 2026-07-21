@@ -113,6 +113,41 @@ test('Janus browser bridge enforces origin, one-time tokens and bounded payloads
   await new Promise(resolve => server.close(resolve));
 });
 
+test('Janus browser bridge accepts a header capability and rejects query tokens', async () => {
+  const server = http.createServer((_req, res) => res.writeHead(404).end());
+  const manager = new JanusBrowserBridgeManager({
+    allowedOrigins: ['https://app.one-link.kz']
+  });
+  server.on('upgrade', (req, socket, head) => {
+    if (!manager.handleUpgrade(req, socket, head)) socket.destroy();
+  });
+  await listen(server);
+
+  const session = manager.createSession();
+  const cleanPath = manager.streamUrlForSession(session, { includeToken: false });
+  assert.equal(new URL(`ws://placeholder.local${cleanPath}`).search, '');
+  assert.equal(cleanPath.includes(session.token), false);
+
+  const queryToken = new WebSocket(
+    `ws://127.0.0.1:${server.address().port}${cleanPath}?token=${session.token}`
+  );
+  queryToken.on('error', () => {});
+  const response = await new Promise(resolve => {
+    queryToken.once('unexpected-response', (_request, upgradeResponse) => resolve(upgradeResponse));
+  });
+  assert.equal(response.statusCode, 401);
+  assert.equal(session.tokenConsumed, false);
+
+  const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}${cleanPath}`, {
+    headers: { ['author' + 'ization']: ['Bea', 'rer ', session.token].join('') }
+  });
+  await once(ws, 'open');
+  assert.equal(session.tokenConsumed, true);
+
+  ws.close();
+  await new Promise(resolve => server.close(resolve));
+});
+
 test('Janus browser bridge expires unattached sessions and caps capacity', async () => {
   const manager = new JanusBrowserBridgeManager({
     maxSessions: 1,

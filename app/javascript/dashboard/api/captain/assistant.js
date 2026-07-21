@@ -34,6 +34,10 @@ class CaptainAssistant extends ApiClient {
     return axios.get(`${this.url}/${assistantId}/prompt_preview`);
   }
 
+  voicePreview(assistantId) {
+    return axios.post(`${this.url}/${assistantId}/voice_preview`);
+  }
+
   create(data) {
     return axios.post(this.url, normalizeAssistantPayload(data));
   }
