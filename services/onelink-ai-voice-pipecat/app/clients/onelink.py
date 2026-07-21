@@ -99,6 +99,13 @@ class OnelinkClient:
             retryable=False,
         )
 
+    async def send_heartbeat(self, correlation: Correlation) -> dict[str, Any]:
+        return await self._request(
+            "/internal/voice/ai/heartbeat",
+            body=correlation.payload(),
+            retryable=True,
+        )
+
     async def send_event(
         self,
         correlation: Correlation,

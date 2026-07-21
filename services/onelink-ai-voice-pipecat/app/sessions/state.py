@@ -142,6 +142,12 @@ class SessionState:
         except (OnelinkApiError, TimeoutError):
             return False
 
+    async def safe_heartbeat(self) -> dict[str, Any] | None:
+        try:
+            return await self.client.send_heartbeat(self.correlation)
+        except (OnelinkApiError, TimeoutError):
+            return None
+
     async def safe_control(
         self,
         action: str,

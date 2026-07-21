@@ -106,6 +106,22 @@ async def test_mutating_tool_is_not_retried(correlation):
     assert attempts == 1
 
 
+@pytest.mark.asyncio
+async def test_heartbeat_uses_the_dedicated_lease_endpoint(correlation):
+    captured = []
+
+    def handler(request):
+        captured.append(request)
+        return httpx.Response(200, json={"status": "ok", "terminal": False})
+
+    async with make_client(handler) as client:
+        result = await client.send_heartbeat(correlation)
+
+    assert result == {"status": "ok", "terminal": False}
+    assert captured[0].url.path == "/internal/voice/ai/heartbeat"
+    assert json.loads(captured[0].content) == correlation.payload()
+
+
 def test_redaction_removes_tokens_capability_queries_and_secret_fields():
     value = {
         "authorization": "Bearer secret-token",

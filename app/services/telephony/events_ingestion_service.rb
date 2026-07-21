@@ -31,8 +31,10 @@ class Telephony::EventsIngestionService
   ].freeze
   RECONCILIATION_EVENT_SOURCES = %w[
     bridge_reconciliation
+    max_call_duration_reconciliation
     native_sip_reconciliation
     generic_pre_answer_reconciliation
+    runtime_lease_reconciliation
     sipuni_local_outbound_reconciliation
     sipuni_provider_reconciliation
   ].freeze
@@ -833,8 +835,17 @@ class Telephony::EventsIngestionService
     return call_session.status if status.blank?
     return call_session.status if stale_event?(call_session)
     return call_session.status if call_session.terminal? && !terminal_status?(status)
+    return call_session.status if regressive_non_terminal_status?(call_session, status)
 
     outbound_unanswered_terminal_status(call_session, status) || status
+  end
+
+  def regressive_non_terminal_status?(call_session, status)
+    progress = %w[created ringing connecting in_progress]
+    current_index = progress.index(call_session.canonical_status)
+    incoming_index = progress.index(status)
+
+    current_index.present? && incoming_index.present? && incoming_index < current_index
   end
 
   def next_agent_binding(call_session, resolved_agent_binding, status)

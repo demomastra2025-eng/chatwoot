@@ -38,6 +38,8 @@
 #  fk_rails_...  (number_binding_id => telephony_number_bindings.id)
 #
 class Telephony::RoutingPolicy < ApplicationRecord
+  include Telephony::RoutingPolicy::CallDurationLimit
+
   self.table_name = 'telephony_routing_policies'
 
   VALID_MODES = %w[operator app ai reject voicemail ivr].freeze

@@ -76,6 +76,7 @@ export default {
         connectionPassword: '',
         routingMode: 'operator',
         operatorDistributionMode: 'broadcast',
+        maxCallDurationMinutes: 30,
         showCallsHandledByOtherOperators: false,
         profiles: [],
       },
@@ -730,6 +731,9 @@ export default {
         routingMode: routing.mode || 'operator',
         operatorDistributionMode:
           routing.operator_distribution_mode || 'broadcast',
+        maxCallDurationMinutes: Math.round(
+          Number(routing.max_call_duration_seconds || 1800) / 60
+        ),
         showCallsHandledByOtherOperators:
           routing.show_calls_handled_by_other_operators === true,
         profiles: this.normalizeVirtualPbxProfiles(
@@ -876,6 +880,8 @@ export default {
           fallback_mode: 'reject',
           operator_distribution_mode:
             form.operatorDistributionMode || 'broadcast',
+          max_call_duration_seconds:
+            Number(form.maxCallDurationMinutes || 30) * 60,
         },
         profiles: this.virtualPbxProfilesPayload(),
         metadata: {
@@ -1297,6 +1303,27 @@ export default {
                   {{ option.label }}
                 </option>
               </select>
+            </label>
+            <label class="mt-4 flex flex-col gap-1 text-sm text-n-slate-12">
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MAX_CALL_DURATION.LABEL')
+              }}
+              <input
+                v-model.number="virtualPbxForm.maxCallDurationMinutes"
+                class="rounded-lg border border-n-weak py-2 text-sm"
+                :disabled="isVirtualPbxReadOnly"
+                type="number"
+                min="5"
+                max="240"
+                step="5"
+              />
+              <span class="text-xs text-n-slate-11">
+                {{
+                  $t(
+                    'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.MAX_CALL_DURATION.DESCRIPTION'
+                  )
+                }}
+              </span>
             </label>
           </div>
 

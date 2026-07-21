@@ -510,6 +510,10 @@
             "BROADCAST": "Ring all available operators",
             "TARGETED": "Route by employee extension"
           },
+          "MAX_CALL_DURATION": {
+            "LABEL": "Maximum call duration, minutes",
+            "DESCRIPTION": "When the limit is reached, OneLink ends the connection and closes the call card. Allowed range: 5–240 minutes."
+          },
           "HANDLED_CALL_VISIBILITY": {
             "LABEL": "Show active calls to other operators",
             "DESCRIPTION": "After an operator answers, show the other operators who is handling the call. The card is informational and cannot be answered.",

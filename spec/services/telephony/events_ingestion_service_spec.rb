@@ -406,6 +406,20 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'does not regress an in-progress call when a late event has no timestamp' do
+      existing_call_session.update!(status: 'in_progress', answered_at: 1.minute.ago)
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-late-session-started-without-time-1',
+          event: 'session_started',
+          status: 'ringing'
+        ).except(:occurred_at)
+      ).perform
+
+      expect(result.reload.status).to eq('in_progress')
+    end
+
     it 'uses the persisted inbound caller when a later provider event omits phone fields' do
       caller_number = '+77014181818'
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox

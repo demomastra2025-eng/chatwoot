@@ -929,6 +929,7 @@ Rails.application.routes.draw do
   get 'internal/voice/ai/janus-sip/profiles', to: 'internal/voice/ai/janus_sip_profiles#index'
   post 'internal/voice/ai/control', to: 'internal/voice/ai/control#create'
   post 'internal/voice/ai/event', to: 'internal/voice/ai/events#create'
+  post 'internal/voice/ai/heartbeat', to: 'internal/voice/ai/heartbeats#create'
   post 'internal/voice/ai/finalize', to: 'internal/voice/ai/finalizations#create'
   post 'internal/voice/recordings/ready', to: 'internal/voice/recordings#ready'
   post 'internal/voice/recordings/stored', to: 'internal/voice/recordings#stored'

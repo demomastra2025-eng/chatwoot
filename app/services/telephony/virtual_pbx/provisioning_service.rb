@@ -192,9 +192,7 @@ class Telephony::VirtualPbx::ProvisioningService
       errors << error('managed_ownership_required',
                       'Legacy/reference resources are read-only until managed migration is approved')
     end
-    if block_update_for_active_calls?(inbox_id, payload)
-      errors << error('active_calls_present', 'Channel has active calls and cannot be updated')
-    end
+    errors << error('active_calls_present', 'Channel has active calls and cannot be updated') if block_update_for_active_calls?(inbox_id, payload)
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'update', normalized_payload: normalized, errors: errors, existing_config: existing_config,
@@ -554,6 +552,7 @@ class Telephony::VirtualPbx::ProvisioningService
       fallback_mode: source['fallback_mode'].presence || fallback[:fallback_mode] || DEFAULT_FALLBACK_MODE,
       ai_enabled: normalized_routing_ai_enabled(source, fallback),
       operator_distribution_mode: normalized_operator_distribution_mode(source, fallback),
+      max_call_duration_seconds: normalized_max_call_duration_seconds(source, fallback),
       show_calls_handled_by_other_operators: normalized_show_calls_handled_by_other_operators(source, fallback),
       operator_agent_aor: normalized_operator_agent_aor(source, fallback, profiles_supplied: profiles_supplied)
     }.compact
@@ -570,6 +569,15 @@ class Telephony::VirtualPbx::ProvisioningService
     value = DEFAULT_OPERATOR_DISTRIBUTION_MODE if value.blank?
 
     Telephony::RoutingPolicy.normalized_operator_distribution_mode(value)
+  end
+
+  def normalized_max_call_duration_seconds(source, fallback)
+    value = source.key?('max_call_duration_seconds') ? source['max_call_duration_seconds'] : fallback[:max_call_duration_seconds]
+    value = Telephony::RoutingPolicy::DEFAULT_MAX_CALL_DURATION_SECONDS if value.blank?
+
+    Integer(value.to_s, 10)
+  rescue ArgumentError, TypeError
+    value
   end
 
   def normalized_show_calls_handled_by_other_operators(source, fallback)
@@ -610,6 +618,12 @@ class Telephony::VirtualPbx::ProvisioningService
       end
       errors << error('channel_name_required', 'channel_name is required') if payload[:channel_name].blank?
       errors << error('display_phone_number_required', 'display_phone_number is required') if payload[:display_phone_number].blank?
+      unless payload.dig(:routing, :max_call_duration_seconds).to_i.between?(
+        Telephony::RoutingPolicy::MIN_MAX_CALL_DURATION_SECONDS,
+        Telephony::RoutingPolicy::MAX_MAX_CALL_DURATION_SECONDS
+      )
+        errors << error('max_call_duration_invalid', 'max_call_duration_seconds must be between 300 and 14400')
+      end
       if payload[:display_phone_number].present? && !payload[:display_phone_number].match?(/\A\+[1-9]\d{1,14}\z/)
         errors << error('display_phone_number_invalid', 'display_phone_number must be an E.164 external number')
       end
@@ -953,7 +967,8 @@ class Telephony::VirtualPbx::ProvisioningService
       operator_agent_aor: operator_agent_aor_for(payload),
       settings: (policy.settings || {}).merge(
         'virtual_pbx_local' => true,
-        'operator_distribution_mode' => payload.dig(:routing, :operator_distribution_mode)
+        'operator_distribution_mode' => payload.dig(:routing, :operator_distribution_mode),
+        'max_call_duration_seconds' => payload.dig(:routing, :max_call_duration_seconds)
       )
     )
     policy.save!
@@ -1114,6 +1129,7 @@ class Telephony::VirtualPbx::ProvisioningService
       routing_mode: payload.dig(:routing, :mode),
       fallback_mode: payload.dig(:routing, :fallback_mode),
       operator_distribution_mode: payload.dig(:routing, :operator_distribution_mode),
+      max_call_duration_seconds: payload.dig(:routing, :max_call_duration_seconds),
       show_calls_handled_by_other_operators: payload.dig(:routing, :show_calls_handled_by_other_operators),
       operator_agent_aor: operator_agent_aor_for(payload),
       provider_connection_id: provider_connection.id,

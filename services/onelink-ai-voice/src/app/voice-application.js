@@ -31,6 +31,7 @@ class VoiceApplication {
     initialGreetingRetryMs = parsePositiveInt(process.env.VOICE_AGENT_INITIAL_GREETING_RETRY_MS, 2_500),
     answerTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_ANSWER_TIMEOUT_MS, 5_000),
     contextBootstrapTimeoutMs = parsePositiveInt(process.env.VOICE_AGENT_CONTEXT_BOOTSTRAP_TIMEOUT_MS, 2_500),
+    runtimeHeartbeatIntervalMs = parsePositiveInt(process.env.VOICE_AGENT_RUNTIME_HEARTBEAT_INTERVAL_MS, 15_000),
     realtimeAudioDiagnosticsEnabled = envFlag('VOICE_AGENT_REALTIME_AUDIO_DIAGNOSTICS_ENABLED')
   } = {}) {
     if (!client) throw new Error('client is required');
@@ -52,6 +53,7 @@ class VoiceApplication {
     this.initialGreetingRetryMs = initialGreetingRetryMs;
     this.answerTimeoutMs = answerTimeoutMs;
     this.contextBootstrapTimeoutMs = contextBootstrapTimeoutMs;
+    this.runtimeHeartbeatIntervalMs = runtimeHeartbeatIntervalMs;
     this.realtimeAudioDiagnosticsEnabled = realtimeAudioDiagnosticsEnabled;
   }
 
@@ -123,6 +125,14 @@ class VoiceApplication {
       to: requestPayload.ingress_number || requestPayload.to,
       direction: requestPayload.direction || 'inbound'
     });
+    const runtimeLifecycleGuard = createRuntimeLifecycleGuard({
+      app: this,
+      call,
+      session,
+      requestPayload,
+      routeDecision,
+      heartbeatIntervalMs: this.runtimeHeartbeatIntervalMs
+    });
     if (callerHangupTracker.emitted()) return callerHangupResult();
 
     if (routeAction === 'operator') {
@@ -178,6 +188,7 @@ class VoiceApplication {
       callerHangupTracker.disarm();
       await this.safeBridgeEvent('session_failed', session, requestPayload, routeDecision, { reason: routeDecision.reason || 'route_rejected' });
       await rejectCall(call, routeDecision);
+      runtimeLifecycleGuard.stop('route_rejected');
       this.registry?.update?.(callRef, { routeDecision, state: 'rejected' });
       return { session, decision: routeDecision, mode: 'reject', completion: Promise.resolve() };
     }
@@ -3110,6 +3121,87 @@ function requestAppRef(requestPayload = {}) {
   return requestPayload?.app_ref || requestPayload?.appRef;
 }
 
+function createRuntimeLifecycleGuard({
+  app,
+  call,
+  session,
+  routeDecision = {},
+  heartbeatIntervalMs = 15_000,
+  maxDurationSeconds = null
+} = {}) {
+  let stopped = false;
+  let terminalizing = false;
+  let heartbeatTimer = null;
+  let durationTimer = null;
+  const durationSeconds = maxDurationSeconds || routeMaxCallDurationSeconds(routeDecision);
+
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearTimer(heartbeatTimer);
+    clearTimer(durationTimer);
+    heartbeatTimer = null;
+    durationTimer = null;
+  };
+
+  const terminateTransport = async reason => {
+    if (terminalizing) return;
+    terminalizing = true;
+    stop();
+    await hangupSafely(call, reason);
+    app?.registry?.close?.(session?.callRef, reason);
+    try {
+      await session?.close?.('end_call', {
+        final_status: 'completed',
+        reason,
+        ended_by: 'system',
+        source: 'runtime_lifecycle_guard'
+      });
+    } catch (_error) {
+      // Transport termination is authoritative; finalization is retried by reconciliation.
+    }
+  };
+
+  const sendHeartbeat = async () => {
+    if (stopped || typeof app?.client?.sendHeartbeat !== 'function') return;
+
+    try {
+      const response = await app.client.sendHeartbeat(session.scopedPayload({
+        runtime_engine: 'onelink-ai-voice-node',
+        runtime_session_id: session.aiSessionId || session.callRef
+      }));
+      if (response?.terminal) {
+        stop();
+        await hangupSafely(call, 'server_terminal_state');
+      }
+    } catch (_error) {
+      // A transient control-plane failure must not interrupt active media.
+    }
+  };
+
+  for (const eventName of callEndEvents()) registerOnce(call, eventName, stop);
+
+  void sendHeartbeat();
+  if (heartbeatIntervalMs > 0 && typeof app?.client?.sendHeartbeat === 'function') {
+    heartbeatTimer = setInterval(() => { void sendHeartbeat(); }, heartbeatIntervalMs);
+    heartbeatTimer.unref?.();
+  }
+  durationTimer = setTimeout(() => { void terminateTransport('max_duration'); }, durationSeconds * 1_000);
+  durationTimer.unref?.();
+
+  return { stop, enforceMaxDuration: () => terminateTransport('max_duration') };
+}
+
+function routeMaxCallDurationSeconds(routeDecision = {}) {
+  const rawValue = routeDecision.max_call_duration_seconds ??
+    routeDecision.maxCallDurationSeconds ??
+    routeDecision.call_limits?.max_duration_sec ??
+    routeDecision.callLimits?.maxDurationSec;
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed)) return 30 * 60;
+  return Math.min(Math.max(parsed, 5 * 60), 4 * 60 * 60);
+}
+
 async function rejectCall(call, routeDecision = {}) {
   const reason = routeDecision.reason || routeDecision.message || 'route_rejected';
   if (typeof call?.reject === 'function') return call.reject({ reason });
@@ -3172,4 +3264,11 @@ function loadStreamConstants() {
   };
 }
 
-module.exports = { VoiceApplication, buildSystemPrompt, normalizeContextTools, normalizeCallPayload };
+module.exports = {
+  VoiceApplication,
+  buildSystemPrompt,
+  createRuntimeLifecycleGuard,
+  normalizeContextTools,
+  normalizeCallPayload,
+  routeMaxCallDurationSeconds
+};

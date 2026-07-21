@@ -23,6 +23,7 @@ from app.sessions.state import SessionState
 
 logger = logging.getLogger(__name__)
 OUTBOX_REPLAY_INTERVAL_SECONDS = 5.0
+RUNTIME_HEARTBEAT_INTERVAL_SECONDS = 15.0
 
 
 class RecorderCloser(Protocol):
@@ -176,6 +177,7 @@ class PipecatSessionRunner:
                     recorder=recorder,
                     runtime_stream=runtime_stream,
                     requested_action=requested_action,
+                    control_client=control_client,
                 )
             except asyncio.CancelledError:
                 if not state.finalized:
@@ -228,6 +230,7 @@ class PipecatSessionRunner:
         recorder: DualChannelRecorder | None,
         runtime_stream: RuntimeStream,
         requested_action: dict[str, str | None],
+        control_client: RuntimeControlClient | None,
     ) -> None:
         terminal = TerminalDecision()
         assembly: PipelineAssembly | None = None
@@ -243,15 +246,27 @@ class PipecatSessionRunner:
             )
             self._register_handlers(assembly, state, terminal)
             watchdog = asyncio.create_task(
-                self._watchdog(context, state, assembly, terminal, requested_action),
+                self._watchdog(
+                    context,
+                    state,
+                    assembly,
+                    terminal,
+                    requested_action,
+                    control_client,
+                ),
                 name=f"pipecat-watchdog:{context.call_ref}",
+            )
+            heartbeat = asyncio.create_task(
+                self._heartbeat_loop(context, state, assembly, terminal),
+                name=f"pipecat-heartbeat:{context.call_ref}",
             )
             try:
                 runner = WorkerRunner(handle_sigint=False, handle_sigterm=False)
                 await runner.run(assembly.worker)
             finally:
                 watchdog.cancel()
-                await asyncio.gather(watchdog, return_exceptions=True)
+                heartbeat.cancel()
+                await asyncio.gather(watchdog, heartbeat, return_exceptions=True)
             if not terminal.decided:
                 await terminal.set("completed", "runtime_closed")
         except asyncio.CancelledError:
@@ -309,6 +324,7 @@ class PipecatSessionRunner:
         assembly: PipelineAssembly,
         terminal: TerminalDecision,
         requested_action: dict[str, str | None],
+        control_client: RuntimeControlClient | None,
     ) -> None:
         started = time.monotonic()
         observed_user_turn = state.user_turn
@@ -323,10 +339,8 @@ class PipecatSessionRunner:
                 return
             now = time.monotonic()
             if now - started >= context.ai.max_duration_sec:
-                if context.ai.closing_message:
-                    await _queue_exact_message(assembly, context.ai.closing_message)
-                    await asyncio.sleep(2.0)
                 await terminal.set("completed", "max_duration")
+                await _end_call_safely(control_client)
                 await assembly.worker.cancel(reason="max_duration")
                 return
 
@@ -354,6 +368,30 @@ class PipecatSessionRunner:
                 await terminal.set("completed", "max_silence")
                 await assembly.worker.cancel(reason="max_silence")
                 return
+
+    async def _heartbeat_loop(
+        self,
+        context: VoiceContext,
+        state: SessionState,
+        assembly: PipelineAssembly,
+        terminal: TerminalDecision,
+    ) -> None:
+        while not terminal.decided:
+            response = await state.safe_heartbeat()
+            if response and response.get("terminal"):
+                await terminal.set("completed", "server_terminal_state")
+                await assembly.worker.cancel(reason="server_terminal_state")
+                return
+            await asyncio.sleep(RUNTIME_HEARTBEAT_INTERVAL_SECONDS)
+
+
+async def _end_call_safely(control_client: RuntimeControlClient | None) -> None:
+    if control_client is None:
+        return
+    try:
+        await control_client.execute({"action": "end_call"})
+    except (OnelinkApiError, TimeoutError):
+        pass
 
 
 async def _close_recorder(

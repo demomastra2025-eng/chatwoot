@@ -1,5 +1,6 @@
 class Telephony::CallReconciliationService
   DEFAULT_GENERIC_PRE_ANSWER_STALE_AFTER = 1.hour
+  DEFAULT_RUNTIME_LEASE_STALE_AFTER = 90.seconds
   DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
   DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER = 5.minutes
   DEFAULT_SIPUNI_PROVIDER_IN_PROGRESS_STALE_AFTER = 1.hour
@@ -13,11 +14,15 @@ class Telephony::CallReconciliationService
   SOURCE_SIPUNI_PROVIDER_RECONCILIATION = 'sipuni_provider_reconciliation'.freeze
   SOURCE_NATIVE_SIP_RECONCILIATION = 'native_sip_reconciliation'.freeze
   SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION = 'generic_pre_answer_reconciliation'.freeze
+  SOURCE_MAX_CALL_DURATION_RECONCILIATION = 'max_call_duration_reconciliation'.freeze
+  SOURCE_RUNTIME_LEASE_RECONCILIATION = 'runtime_lease_reconciliation'.freeze
   RETRYABLE_RECONCILIATION_SOURCES = [
     SOURCE_SIPUNI_LOCAL_OUTBOUND_RECONCILIATION,
     SOURCE_SIPUNI_PROVIDER_RECONCILIATION,
     SOURCE_NATIVE_SIP_RECONCILIATION,
-    SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION
+    SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION,
+    SOURCE_MAX_CALL_DURATION_RECONCILIATION,
+    SOURCE_RUNTIME_LEASE_RECONCILIATION
   ].freeze
 
   GENERIC_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
@@ -51,6 +56,10 @@ class Telephony::CallReconciliationService
       'TELEPHONY_GENERIC_PRE_ANSWER_STALE_AFTER_SECONDS',
       DEFAULT_GENERIC_PRE_ANSWER_STALE_AFTER
     )
+    @runtime_lease_stale_after = positive_env_duration(
+      'TELEPHONY_RUNTIME_LEASE_STALE_AFTER_SECONDS',
+      DEFAULT_RUNTIME_LEASE_STALE_AFTER
+    )
     @sipuni_local_outbound_missing_after = positive_env_duration(
       'TELEPHONY_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER_SECONDS',
       DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER
@@ -82,6 +91,8 @@ class Telephony::CallReconciliationService
 
     retry_failed_reconciliation_events!(result)
     repair_invalid_unanswered_actors!(result)
+    reconcile_max_call_duration_sessions!(result)
+    reconcile_expired_runtime_leases!(result)
     reconcile_missing_sipuni_local_outbound_sessions!(result)
     reconcile_missing_sipuni_provider_sessions!(result)
     reconcile_missing_native_sip_local_outbound_sessions!(result)
@@ -115,8 +126,94 @@ class Telephony::CallReconciliationService
 
   attr_reader :account, :now,
               :generic_pre_answer_stale_after,
+              :runtime_lease_stale_after,
               :native_sip_in_progress_stale_after, :native_sip_local_outbound_missing_after, :native_sip_pre_answer_stale_after,
               :sipuni_local_outbound_missing_after, :sipuni_provider_in_progress_stale_after, :sipuni_provider_ringing_stale_after
+
+  def reconcile_max_call_duration_sessions!(result)
+    scope = Telephony::CallSession.active
+                                  .where.not(answered_at: nil)
+                                  .where(answered_at: ..(now - Telephony::RoutingPolicy::MIN_MAX_CALL_DURATION_SECONDS))
+                                  .includes(number_binding: :routing_policy)
+    scope = scope.where(account_id: account.id) if account.present?
+
+    scope.find_each do |session|
+      routing_policy = session.number_binding&.routing_policy
+      next if routing_policy.blank?
+
+      limit_seconds = routing_policy.max_call_duration_seconds
+      next if session.answered_at > now - limit_seconds
+
+      result[:checked] += 1
+      reconcile_answered_session!(
+        session,
+        result,
+        source: SOURCE_MAX_CALL_DURATION_RECONCILIATION,
+        reason: 'max_duration'
+      )
+    end
+  end
+
+  def reconcile_expired_runtime_leases!(result)
+    scope = Telephony::CallSession.active
+                                  .where(status: 'in_progress')
+                                  .where("metadata -> 'runtime_lease' IS NOT NULL")
+    scope = scope.where(account_id: account.id) if account.present?
+
+    scope.find_each do |session|
+      next unless runtime_lease_expired?(session)
+
+      result[:checked] += 1
+      reconcile_answered_session!(
+        session,
+        result,
+        source: SOURCE_RUNTIME_LEASE_RECONCILIATION,
+        reason: 'runtime_lease_expired',
+        guard: ->(locked_session) { runtime_lease_expired?(locked_session) }
+      )
+    end
+  end
+
+  def reconcile_answered_session!(session, result, source:, reason:, guard: nil)
+    reconciled = false
+    session.with_lock do
+      session.reload
+      next if session.terminal?
+      next if guard.present? && !guard.call(session)
+
+      session.update!(answered_reconciliation_attributes(session, source: source, reason: reason))
+      reconciled = true
+    end
+    return unless reconciled
+
+    apply_reconciliation_outcome!(result, reconciliation_outcome(session, 'completed', source: source))
+  rescue StandardError
+    result[:errors] += 1
+  end
+
+  def runtime_lease_expired?(session)
+    heartbeat_at = session.metadata.to_h.dig('runtime_lease', 'heartbeat_at')
+    return false if heartbeat_at.blank?
+
+    Time.iso8601(heartbeat_at.to_s) <= now - runtime_lease_stale_after
+  rescue ArgumentError
+    false
+  end
+
+  def answered_reconciliation_attributes(session, source:, reason:)
+    started_at = session.answered_at || session.started_at || now
+    {
+      status: 'completed',
+      ended_at: now,
+      ended_by: 'system',
+      end_reason: reason,
+      duration_seconds: [now.to_i - started_at.to_i, 0].max,
+      last_event_at: [session.last_event_at, now].compact.max,
+      metadata: session.metadata.to_h.deep_merge(
+        'reconciliation' => { 'source' => source, 'reason' => reason, 'reconciled_at' => now.iso8601(3) }
+      )
+    }
+  end
 
   def sipuni_local_outbound_missing_scope
     scope = Telephony::CallSession.active

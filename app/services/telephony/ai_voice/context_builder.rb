@@ -47,6 +47,7 @@ class Telephony::AiVoice::ContextBuilder
       provider: session.provider,
       direction: session.direction,
       transport: transport_payload(session),
+      call_limits: { max_duration_sec: routing_policy&.max_call_duration_seconds || Telephony::RoutingPolicy::DEFAULT_MAX_CALL_DURATION_SECONDS },
       caller_number: session.from_number || caller_number,
       ingress_number: session.to_number || ingress_number,
       ai: ai_payload,
@@ -384,7 +385,9 @@ class Telephony::AiVoice::ContextBuilder
   def ai_settings
     @ai_settings ||= begin
       legacy_settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
-      Telephony::AiVoice::VoiceSettingsDefaults.normalize(legacy_settings.merge(captain_voice_settings))
+      normalized = Telephony::AiVoice::VoiceSettingsDefaults.normalize(legacy_settings.merge(captain_voice_settings))
+      channel_limit = routing_policy&.max_call_duration_seconds || Telephony::RoutingPolicy::DEFAULT_MAX_CALL_DURATION_SECONDS
+      normalized.merge('max_duration_sec' => [normalized['max_duration_sec'].to_i, channel_limit].min)
     end
   end
 

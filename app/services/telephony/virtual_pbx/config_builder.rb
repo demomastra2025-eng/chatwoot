@@ -131,6 +131,7 @@ class Telephony::VirtualPbx::ConfigBuilder
         fallback_mode: routing[:fallback_mode],
         ai_enabled: routing[:ai_enabled],
         operator_distribution_mode: routing[:operator_distribution_mode],
+        max_call_duration_seconds: routing[:max_call_duration_seconds],
         show_calls_handled_by_other_operators: routing[:show_calls_handled_by_other_operators],
         operator_target_configured: routing[:operator_agent_aor].present? || routing[:operator_agent_ref].present?
       }.compact,
@@ -284,9 +285,7 @@ class Telephony::VirtualPbx::ConfigBuilder
 
   def configuration_fingerprint_for(record)
     attributes = record.attributes.except('created_at', 'updated_at', 'last_synced_at')
-    if record.is_a?(Telephony::SipProfile)
-      attributes['metadata'] = record.metadata.to_h.except(*SIP_PROFILE_RUNTIME_METADATA_KEYS)
-    end
+    attributes['metadata'] = record.metadata.to_h.except(*SIP_PROFILE_RUNTIME_METADATA_KEYS) if record.is_a?(Telephony::SipProfile)
     [record.class.base_class.name, attributes]
   end
 
@@ -392,9 +391,7 @@ class Telephony::VirtualPbx::ConfigBuilder
   end
 
   def routing_payload(channel:, binding:, policy:)
-    if binding.blank? && policy.blank?
-      return { show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators? }
-    end
+    return { show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators? } if binding.blank? && policy.blank?
 
     provider_owned_sip = provider_owned_sip_provider?(binding&.provider)
     {
@@ -404,6 +401,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       operator_agent_ref: policy&.operator_agent_ref,
       operator_agent_aor: policy&.resolved_operator_agent_aor,
       operator_distribution_mode: policy&.operator_distribution_mode,
+      max_call_duration_seconds: policy&.max_call_duration_seconds || Telephony::RoutingPolicy::DEFAULT_MAX_CALL_DURATION_SECONDS,
       show_calls_handled_by_other_operators: channel.show_calls_handled_by_other_operators?,
       fallback_mode: policy&.fallback_mode,
       ai_enabled: policy&.ai_enabled,

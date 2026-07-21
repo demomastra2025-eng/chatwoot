@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 import pytest
 
 from app.clients.onelink import OnelinkApiError
@@ -7,6 +9,7 @@ from app.sessions import runner as runner_module
 from app.sessions.runner import (
     PipecatSessionRunner,
     _close_recorder,
+    _end_call_safely,
     _execute_terminal_action,
     _filter_tools_for_transport,
     _rails_manages_end_call,
@@ -56,6 +59,15 @@ class RecordingRuntimeControlClient:
     async def execute(self, result):
         self.actions.append(result)
         return {"status": "accepted"}
+
+
+@pytest.mark.asyncio
+async def test_hard_timeout_transport_end_call_is_direct_and_bounded():
+    control = RecordingRuntimeControlClient()
+
+    await _end_call_safely(cast(Any, control))
+
+    assert control.actions == [{"action": "end_call"}]
 
 
 @pytest.mark.asyncio

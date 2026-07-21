@@ -894,6 +894,7 @@ class Telephony::InboundRoutingService
       logical_call_group_ref: logical_call_group_ref,
       voice_agent_sip_profile_id: voice_agent_sip_profile&.id,
       operator_distribution_mode: operator_distribution_mode,
+      max_call_duration_seconds: routing_policy.max_call_duration_seconds,
       recording: recording_payload
     }
 

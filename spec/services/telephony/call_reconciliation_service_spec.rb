@@ -751,6 +751,119 @@ RSpec.describe Telephony::CallReconciliationService do
     end
   end
 
+  describe 'runtime lifecycle reconciliation' do
+    it 'closes an answered call when the channel duration limit is reached' do
+      binding = create(:telephony_number_binding, account: account)
+      policy = create(:telephony_routing_policy, account: account, number_binding: binding)
+      policy.max_call_duration_seconds = 900
+      policy.save!
+      conversation = create(:conversation, account: account, inbox: binding.inbox)
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: conversation.contact,
+        inbox: binding.inbox,
+        number_binding: binding,
+        provider: 'legacy_provider',
+        external_call_ref: 'legacy:max-duration-1',
+        status: 'in_progress',
+        direction: 'inbound',
+        started_at: now - 20.minutes,
+        answered_at: now - 16.minutes,
+        last_event_at: now - 1.minute
+      )
+      voice_call_message_for(call_session, conversation, message_type: :incoming)
+
+      expect(service.perform).to include(checked: 1, updated: 1, errors: 0)
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_at: now,
+        ended_by: 'system',
+        end_reason: 'max_duration',
+        duration_seconds: 960
+      )
+      expect(conversation.reload.additional_attributes).to include('call_status' => 'completed')
+      expect(conversation.messages.last.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(Telephony::EventsIngestionService::RECONCILIATION_EVENT_SOURCES).to include('max_call_duration_reconciliation')
+    end
+
+    it 'closes an in-progress call only when its runtime lease expires' do
+      expired_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'legacy_provider',
+        external_call_ref: 'legacy:expired-runtime-lease-1',
+        status: 'in_progress',
+        direction: 'inbound',
+        started_at: now - 10.minutes,
+        answered_at: now - 9.minutes,
+        last_event_at: now,
+        metadata: {
+          'runtime_lease' => {
+            'owner' => 'pipecat',
+            'runtime_session_id' => 'runtime-expired-1',
+            'heartbeat_at' => (now - 2.minutes).iso8601(3)
+          }
+        }
+      )
+      unleased_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'legacy_provider',
+        external_call_ref: 'legacy:no-runtime-lease-1',
+        status: 'in_progress',
+        direction: 'inbound',
+        started_at: now - 10.minutes,
+        answered_at: now - 9.minutes,
+        last_event_at: now - 2.minutes,
+        metadata: {}
+      )
+      voice_call_message_for(expired_session, expired_session.conversation, message_type: :incoming)
+
+      expect(service.perform).to include(checked: 1, updated: 1, errors: 0)
+      expect(expired_session.reload).to have_attributes(
+        status: 'completed',
+        ended_by: 'system',
+        end_reason: 'runtime_lease_expired'
+      )
+      expect(expired_session.conversation.reload.additional_attributes).to include('call_status' => 'completed')
+      expect(expired_session.conversation.messages.last.content_attributes.dig('data', 'status')).to eq('completed')
+      expect(unleased_session.reload.status).to eq('in_progress')
+      expect(Telephony::EventsIngestionService::RECONCILIATION_EVENT_SOURCES).to include('runtime_lease_reconciliation')
+    end
+
+    it 'does not expire a runtime lease renewed after candidate selection' do
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'legacy_provider',
+        status: 'in_progress',
+        answered_at: now - 5.minutes,
+        metadata: {
+          'runtime_lease' => {
+            'owner' => 'pipecat',
+            'runtime_session_id' => 'runtime-renewed-1',
+            'heartbeat_at' => (now - 2.minutes).iso8601(3)
+          }
+        }
+      )
+      checks = 0
+      allow(service).to receive(:runtime_lease_expired?).and_wrap_original do |method, session|
+        checks += 1
+        if checks == 2
+          metadata = session.metadata.to_h.deep_dup
+          metadata['runtime_lease']['heartbeat_at'] = now.iso8601(3)
+          session.update_columns(metadata: metadata) # rubocop:disable Rails/SkipsModelValidations
+        end
+        method.call(session.reload)
+      end
+
+      expect(service.perform).to include(checked: 1, updated: 0, errors: 0)
+      expect(call_session.reload.status).to eq('in_progress')
+    end
+  end
+
   def create_generic_pre_answer_session(
     direction:,
     route_action:,

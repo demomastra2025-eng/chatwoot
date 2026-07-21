@@ -70,6 +70,81 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
+  it 'renews the runtime lease without creating a telephony event' do
+    previous_event_count = account.telephony_events.count
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/heartbeat',
+           params: {
+             account_id: account.id,
+             call_session_id: call_session.id,
+             call_ref: call_session.external_call_ref,
+             runtime_engine: 'pipecat',
+             runtime_session_id: 'runtime-heartbeat-1'
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include(
+      'status' => 'ok',
+      'terminal' => false,
+      'call_session_id' => call_session.id
+    )
+    expect(call_session.reload.metadata['runtime_lease']).to include(
+      'owner' => 'pipecat',
+      'runtime_session_id' => 'runtime-heartbeat-1'
+    )
+    expect(account.telephony_events.count).to eq(previous_event_count)
+  end
+
+  it 'rejects a heartbeat that tries to replace another runtime lease owner' do
+    call_session.update!(
+      metadata: {
+        'runtime_lease' => {
+          'owner' => 'pipecat',
+          'runtime_session_id' => 'runtime-owner-1',
+          'heartbeat_at' => 5.seconds.ago.iso8601(3)
+        }
+      }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/heartbeat',
+           params: {
+             account_id: account.id,
+             call_session_id: call_session.id,
+             runtime_engine: 'onelink-ai-voice-node',
+             runtime_session_id: 'runtime-owner-2'
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:conflict)
+    expect(call_session.reload.metadata['runtime_lease']).to include(
+      'owner' => 'pipecat',
+      'runtime_session_id' => 'runtime-owner-1'
+    )
+  end
+
+  it 'requires account scope for runtime heartbeats' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/heartbeat',
+           params: {
+             call_session_id: call_session.id,
+             runtime_engine: 'pipecat',
+             runtime_session_id: 'runtime-unscoped-1'
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(call_session.reload.metadata['runtime_lease']).to be_blank
+  end
+
   it 'persists degraded recording metadata without making it a call terminal status' do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/event',
