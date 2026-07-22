@@ -41,6 +41,7 @@ const customTool = {
   auth_type: 'none',
   auth_config: {},
   allow_file_artifacts: true,
+  request_body_type: 'json',
   param_schema: [],
 };
 
@@ -70,6 +71,33 @@ describe('ToolTestPanel', () => {
     expect(validateBeforeRun).toHaveBeenCalledOnce();
     expect(mocks.dispatch).toHaveBeenCalledWith('captainCustomTools/testTool', {
       customTool,
+      testPayload: {
+        agent_params: {},
+        context_values: {},
+      },
+    });
+  });
+
+  it('includes the selected request body type in an unsaved draft test', async () => {
+    const formUrlencodedTool = {
+      ...customTool,
+      http_method: 'POST',
+      request_body_type: 'form_urlencoded',
+      request_template: '{"name":"{{ name }}"}',
+    };
+    const wrapper = shallowMount(ToolTestPanel, {
+      props: {
+        customTool: formUrlencodedTool,
+        validateBeforeRun: vi.fn().mockResolvedValue(true),
+      },
+    });
+
+    const buttons = wrapper.findAllComponents(Button);
+    await buttons[1].trigger('click');
+    await flushPromises();
+
+    expect(mocks.dispatch).toHaveBeenCalledWith('captainCustomTools/testTool', {
+      customTool: formUrlencodedTool,
       testPayload: {
         agent_params: {},
         context_values: {},

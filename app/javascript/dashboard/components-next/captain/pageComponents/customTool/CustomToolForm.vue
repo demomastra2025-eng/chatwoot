@@ -27,7 +27,7 @@ const props = defineProps({
   mode: {
     type: String,
     default: 'create',
-    validator: value => ['create', 'edit'].includes(value),
+    validator: value => ['create', 'edit', 'duplicate'].includes(value),
   },
   tool: {
     type: Object,
@@ -59,6 +59,7 @@ const createInitialState = () => ({
   description: '',
   endpoint_url: '',
   http_method: 'GET',
+  request_body_type: 'json',
   request_template: '',
   response_template: '',
   auth_type: 'none',
@@ -226,6 +227,7 @@ const applyToolState = tool => {
       description: tool.description || '',
       endpoint_url: tool.endpoint_url || '',
       http_method: tool.http_method || 'GET',
+      request_body_type: tool.request_body_type || 'json',
       request_template: tool.request_template || '',
       response_template: tool.response_template || '',
       auth_type: tool.auth_type || 'none',
@@ -242,8 +244,13 @@ const applyToolState = tool => {
 watch(
   () => [props.mode, props.tool],
   ([mode, tool]) => {
-    if (mode === 'edit' && tool?.id) {
+    if (['edit', 'duplicate'].includes(mode) && tool?.id) {
       applyToolState(tool);
+      if (mode === 'duplicate') {
+        state.title = t('CAPTAIN.CUSTOM_TOOLS.DUPLICATE.TITLE_COPY', {
+          title: tool.title,
+        });
+      }
       return;
     }
 
@@ -284,6 +291,27 @@ const httpMethodOptions = computed(() =>
 const showRequestTemplate = computed(
   () => !['GET', 'HEAD'].includes(state.http_method)
 );
+
+const requestBodyTypeOptions = computed(() => [
+  {
+    value: 'json',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_BODY_TYPES.JSON'),
+  },
+  {
+    value: 'form_urlencoded',
+    label: t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_BODY_TYPES.FORM_URLENCODED'),
+  },
+]);
+
+const requestBodyHelpText = computed(() => {
+  if (state.request_body_type === 'form_urlencoded') {
+    return t(
+      'CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.FORM_URLENCODED_HELP_TEXT'
+    );
+  }
+
+  return t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.HELP_TEXT');
+});
 
 const responseTemplatePlaceholder = computed(() => '{{ response.some_field }}');
 
@@ -423,6 +451,7 @@ const toolDraftForTesting = computed(() => ({
   description: state.description,
   endpoint_url: state.endpoint_url,
   http_method: state.http_method,
+  request_body_type: state.request_body_type,
   request_template: showRequestTemplate.value ? state.request_template : '',
   response_template: state.response_template,
   auth_type: state.auth_type,
@@ -506,7 +535,7 @@ const handleSubmit = async () => {
     return;
   }
 
-  if (props.mode === 'create') {
+  if (props.mode !== 'edit') {
     isAutoTesting.value = true;
     let testResult;
     try {
@@ -528,6 +557,7 @@ const handleSubmit = async () => {
   emit('submit', {
     ...state,
     auth_config: normalizeAuthConfig(state.auth_type, state.auth_config),
+    request_body_type: state.request_body_type,
     request_template: showRequestTemplate.value ? state.request_template : '',
     param_schema: state.param_schema.map(serializeParamForPayload),
   });
@@ -638,6 +668,17 @@ const handleSubmit = async () => {
       />
     </div>
 
+    <div v-if="showRequestTemplate" class="flex flex-col gap-1">
+      <label class="mb-0.5 text-sm font-medium text-n-slate-12">
+        {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_BODY_TYPE.LABEL') }}
+      </label>
+      <ComboBox
+        v-model="state.request_body_type"
+        :options="requestBodyTypeOptions"
+        class="[&>div>button]:bg-n-alpha-black2"
+      />
+    </div>
+
     <TextArea
       v-if="showRequestTemplate"
       v-model="state.request_template"
@@ -647,7 +688,7 @@ const handleSubmit = async () => {
       class="[&_textarea]:font-mono"
     />
     <p v-if="showRequestTemplate" class="text-xs text-n-slate-11 -mt-2">
-      {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.HELP_TEXT') }}
+      {{ requestBodyHelpText }}
     </p>
 
     <TextArea

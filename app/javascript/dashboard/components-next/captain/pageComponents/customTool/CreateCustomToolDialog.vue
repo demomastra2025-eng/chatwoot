@@ -16,7 +16,7 @@ const props = defineProps({
   type: {
     type: String,
     default: 'create',
-    validator: value => ['create', 'edit'].includes(value),
+    validator: value => ['create', 'edit', 'duplicate'].includes(value),
   },
 });
 
@@ -33,19 +33,29 @@ const updateTool = toolDetails =>
     ...toolDetails,
   });
 
-const dialogCopy = computed(() =>
-  props.type === 'edit'
-    ? {
-        title: t('CAPTAIN.CUSTOM_TOOLS.EDIT.TITLE'),
-        successMessage: t('CAPTAIN.CUSTOM_TOOLS.EDIT.SUCCESS_MESSAGE'),
-        errorMessage: t('CAPTAIN.CUSTOM_TOOLS.EDIT.ERROR_MESSAGE'),
-      }
-    : {
-        title: t('CAPTAIN.CUSTOM_TOOLS.CREATE.TITLE'),
-        successMessage: t('CAPTAIN.CUSTOM_TOOLS.CREATE.SUCCESS_MESSAGE'),
-        errorMessage: t('CAPTAIN.CUSTOM_TOOLS.CREATE.ERROR_MESSAGE'),
-      }
-);
+const dialogCopy = computed(() => {
+  if (props.type === 'edit') {
+    return {
+      title: t('CAPTAIN.CUSTOM_TOOLS.EDIT.TITLE'),
+      successMessage: t('CAPTAIN.CUSTOM_TOOLS.EDIT.SUCCESS_MESSAGE'),
+      errorMessage: t('CAPTAIN.CUSTOM_TOOLS.EDIT.ERROR_MESSAGE'),
+    };
+  }
+
+  if (props.type === 'duplicate') {
+    return {
+      title: t('CAPTAIN.CUSTOM_TOOLS.DUPLICATE.TITLE'),
+      successMessage: t('CAPTAIN.CUSTOM_TOOLS.DUPLICATE.SUCCESS_MESSAGE'),
+      errorMessage: t('CAPTAIN.CUSTOM_TOOLS.DUPLICATE.ERROR_MESSAGE'),
+    };
+  }
+
+  return {
+    title: t('CAPTAIN.CUSTOM_TOOLS.CREATE.TITLE'),
+    successMessage: t('CAPTAIN.CUSTOM_TOOLS.CREATE.SUCCESS_MESSAGE'),
+    errorMessage: t('CAPTAIN.CUSTOM_TOOLS.CREATE.ERROR_MESSAGE'),
+  };
+});
 
 const createTool = toolDetails =>
   store.dispatch('captainCustomTools/create', toolDetails);

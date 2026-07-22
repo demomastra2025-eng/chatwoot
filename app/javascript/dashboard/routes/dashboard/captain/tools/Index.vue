@@ -74,10 +74,6 @@ const sortTools = tools =>
     return leftTitle.localeCompare(rightTitle);
   });
 
-const systemTools = computed(() =>
-  sortTools(catalogTools.value.filter(tool => isSystemTool(tool)))
-);
-
 const publicTools = computed(() =>
   sortTools(
     catalogTools.value.filter(
@@ -163,6 +159,12 @@ const handleEdit = tool => {
   nextTick(() => createDialogRef.value.dialogRef.open());
 };
 
+const handleDuplicate = tool => {
+  dialogType.value = 'duplicate';
+  selectedTool.value = tool;
+  nextTick(() => createDialogRef.value.dialogRef.open());
+};
+
 const handleEditMcpServer = async server => {
   try {
     const response = await store.dispatch('captainMcpServers/show', server.id);
@@ -193,6 +195,8 @@ const handleAction = ({ action, id }) => {
   const tool = customTools.value.find(customTool => customTool.id === id);
   if (action === 'edit') {
     handleEdit(tool);
+  } else if (action === 'duplicate') {
+    handleDuplicate(tool);
   } else if (action === 'delete') {
     handleDelete(tool);
   }
@@ -279,9 +283,7 @@ onMounted(() => {
       !customToolFlags.fetchingList && !!customTools.length
     "
     :is-fetching="isFetching"
-    :is-empty="
-      !customTools.length && !mcpServers.length && !catalogTools.length
-    "
+    :is-empty="!customTools.length && !mcpServers.length && !publicTools.length"
     :feature-flag="FEATURE_FLAGS.CAPTAIN_V2"
     :show-know-more="false"
     :show-assistant-switcher="false"
@@ -298,20 +300,7 @@ onMounted(() => {
 
     <template #body>
       <div class="flex flex-col gap-6">
-        <section class="grid gap-3 md:grid-cols-3">
-          <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-4">
-            <p
-              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
-            >
-              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.SYSTEM') }}
-            </p>
-            <p class="mt-2 text-2xl font-semibold text-n-slate-12">
-              {{ systemTools.length }}
-            </p>
-            <p class="mt-1 text-sm text-n-slate-11">
-              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.SYSTEM_DESCRIPTION') }}
-            </p>
-          </div>
+        <section class="grid gap-3 md:grid-cols-2">
           <div class="rounded-2xl border border-n-weak bg-n-solid-1 p-4">
             <p
               class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-10"
@@ -337,42 +326,6 @@ onMounted(() => {
             <p class="mt-1 text-sm text-n-slate-11">
               {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.PUBLIC_DESCRIPTION') }}
             </p>
-          </div>
-        </section>
-
-        <section v-if="systemTools.length" class="flex flex-col gap-3">
-          <div class="flex items-center gap-2 px-1">
-            <span
-              class="text-xs font-medium uppercase tracking-[0.08em] text-n-slate-11"
-            >
-              {{ $t('CAPTAIN.CUSTOM_TOOLS.CATEGORIES.SYSTEM') }}
-            </span>
-            <span class="text-xs text-n-slate-11">
-              {{ systemTools.length }}
-            </span>
-          </div>
-          <div class="grid gap-3 md:grid-cols-2">
-            <article
-              v-for="tool in systemTools"
-              :key="tool.id"
-              class="rounded-xl border border-n-weak bg-n-solid-1 p-4"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <h3 class="truncate text-sm font-medium text-n-slate-12">
-                    {{ tool.title || tool.id }}
-                  </h3>
-                  <p class="mt-1 line-clamp-2 text-sm text-n-slate-11">
-                    {{ tool.description }}
-                  </p>
-                </div>
-                <span
-                  class="shrink-0 rounded-full bg-n-alpha-2 px-2 py-0.5 text-[0.6875rem] font-medium text-n-slate-11"
-                >
-                  {{ toolSourceMeta(tool, tool.scope_name) }}
-                </span>
-              </div>
-            </article>
           </div>
         </section>
 

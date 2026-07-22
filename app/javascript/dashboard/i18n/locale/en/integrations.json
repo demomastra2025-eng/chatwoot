@@ -2144,6 +2144,7 @@
       },
       "OPTIONS": {
         "EDIT_TOOL": "Edit tool",
+        "DUPLICATE_TOOL": "Duplicate tool",
         "DELETE_TOOL": "Delete tool"
       },
       "CREATE": {
@@ -2155,6 +2156,12 @@
         "TITLE": "Edit Custom Tool",
         "SUCCESS_MESSAGE": "Custom tool updated successfully",
         "ERROR_MESSAGE": "Failed to update custom tool"
+      },
+      "DUPLICATE": {
+        "TITLE": "Duplicate Custom Tool",
+        "TITLE_COPY": "{title} (copy)",
+        "SUCCESS_MESSAGE": "Custom tool copy created successfully",
+        "ERROR_MESSAGE": "Failed to duplicate custom tool"
       },
       "DELETE": {
         "TITLE": "Delete Custom Tool",
@@ -2179,6 +2186,13 @@
         },
         "HTTP_METHOD": {
           "LABEL": "Method"
+        },
+        "REQUEST_BODY_TYPE": {
+          "LABEL": "Body format"
+        },
+        "REQUEST_BODY_TYPES": {
+          "JSON": "JSON (application/json)",
+          "FORM_URLENCODED": "URL-encoded (application/x-www-form-urlencoded)"
         },
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
@@ -2269,7 +2283,8 @@
         "REQUEST_TEMPLATE": {
           "LABEL": "Request Body Template (Optional)",
           "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
-          "HELP_TEXT": "Request templates support the same Liquid variables as the endpoint URL. Only fields allowed in the assistant's Context access settings are exposed to custom tools."
+          "HELP_TEXT": "Request templates support the same Liquid variables as the endpoint URL. Only fields allowed in the assistant's Context access settings are exposed to custom tools.",
+          "FORM_URLENCODED_HELP_TEXT": "Provide a JSON object with form fields. After Liquid values are rendered, OneLink safely converts it into an application/x-www-form-urlencoded body."
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Response Template (Optional)",

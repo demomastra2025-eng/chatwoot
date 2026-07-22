@@ -404,6 +404,7 @@ const buildRequestPayload = () => ({
     description: props.customTool.description,
     endpoint_url: props.customTool.endpoint_url,
     http_method: props.customTool.http_method,
+    request_body_type: props.customTool.request_body_type || 'json',
     request_template: props.customTool.request_template,
     response_template: props.customTool.response_template,
     auth_type: props.customTool.auth_type,

@@ -63,6 +63,7 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
       :description,
       :endpoint_url,
       :http_method,
+      :request_body_type,
       :request_template,
       :response_template,
       :auth_type,

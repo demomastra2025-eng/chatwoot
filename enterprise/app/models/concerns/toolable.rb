@@ -57,7 +57,14 @@ module Concerns::Toolable
   def build_request_body(params, template_context: params)
     return nil if request_template.blank?
 
-    render_template(request_template, template_context)
+    rendered_body = render_template(request_template, template_context)
+    return rendered_body unless request_body_form_urlencoded?
+
+    encode_form_request_body(rendered_body)
+  end
+
+  def request_content_type
+    request_body_form_urlencoded? ? 'application/x-www-form-urlencoded' : 'application/json'
   end
 
   def build_request_headers(params)
@@ -170,6 +177,28 @@ module Concerns::Toolable
   end
 
   private
+
+  def encode_form_request_body(rendered_body)
+    form_fields = JSON.parse(rendered_body)
+    raise ArgumentError, 'URL-encoded request body template must render a JSON object' unless form_fields.is_a?(Hash)
+
+    URI.encode_www_form(form_request_pairs(form_fields))
+  rescue JSON::ParserError
+    raise ArgumentError, 'URL-encoded request body template must render a JSON object'
+  end
+
+  def form_request_pairs(form_fields)
+    form_fields.flat_map do |key, value|
+      values = value.is_a?(Array) ? value : [value]
+      values.map { |item| [key, form_request_value(item)] }
+    end
+  end
+
+  def form_request_value(value)
+    return JSON.generate(Captain::EncodingNormalizer.utf8(value)) if value.is_a?(Hash) || value.is_a?(Array)
+
+    value
+  end
 
   def apply_query_params_to_url(url, params)
     query_params = request_params_for_location(Captain::CustomTool::PARAM_REQUEST_LOCATION_QUERY, params)

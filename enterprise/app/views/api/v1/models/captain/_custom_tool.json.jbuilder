@@ -5,6 +5,7 @@ json.group_name custom_tool.group_name
 json.description custom_tool.description
 json.endpoint_url custom_tool.endpoint_url
 json.http_method custom_tool.http_method
+json.request_body_type custom_tool.request_body_type
 json.request_template custom_tool.request_template
 json.response_template custom_tool.response_template
 json.auth_type custom_tool.auth_type

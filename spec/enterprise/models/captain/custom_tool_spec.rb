@@ -26,6 +26,43 @@ RSpec.describe Captain::CustomTool, type: :model do
                                                                  'api_key' => 'api_key').backed_by_column_of_type(:string).with_prefix(:auth)
     }
 
+    describe 'URL-encoded request template' do
+      it 'accepts a JSON object with Liquid values' do
+        tool = build(
+          :captain_custom_tool,
+          http_method: 'POST',
+          request_body_type: 'form_urlencoded',
+          request_template: '{"name":"{{ name }}","count":{{ count }}}'
+        )
+
+        expect(tool).to be_valid
+      end
+
+      it 'rejects a non-JSON request template' do
+        tool = build(
+          :captain_custom_tool,
+          http_method: 'POST',
+          request_body_type: 'form_urlencoded',
+          request_template: 'name={{ name }}'
+        )
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:request_template]).to include('must be a JSON object for URL-encoded requests')
+      end
+
+      it 'rejects a JSON array request template' do
+        tool = build(
+          :captain_custom_tool,
+          http_method: 'POST',
+          request_body_type: 'form_urlencoded',
+          request_template: '["{{ name }}"]'
+        )
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:request_template]).to include('must render to a JSON object for URL-encoded requests')
+      end
+    end
+
     describe 'slug uniqueness' do
       let(:account) { create(:account) }
 

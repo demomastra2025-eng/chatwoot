@@ -1323,6 +1323,7 @@
       },
       "OPTIONS": {
         "EDIT_TOOL": "Edit tool",
+        "DUPLICATE_TOOL": "Құралды көшіру",
         "DELETE_TOOL": "Delete tool"
       },
       "CREATE": {
@@ -1334,6 +1335,12 @@
         "TITLE": "Edit Custom Tool",
         "SUCCESS_MESSAGE": "Custom tool updated successfully",
         "ERROR_MESSAGE": "Failed to update custom tool"
+      },
+      "DUPLICATE": {
+        "TITLE": "Пайдаланушы құралын көшіру",
+        "TITLE_COPY": "{title} (көшірме)",
+        "SUCCESS_MESSAGE": "Пайдаланушы құралының көшірмесі жасалды",
+        "ERROR_MESSAGE": "Пайдаланушы құралын көшіру мүмкін болмады"
       },
       "DELETE": {
         "TITLE": "Delete Custom Tool",
@@ -1358,6 +1365,13 @@
         },
         "HTTP_METHOD": {
           "LABEL": "Әдіс"
+        },
+        "REQUEST_BODY_TYPE": {
+          "LABEL": "Body пішімі"
+        },
+        "REQUEST_BODY_TYPES": {
+          "JSON": "JSON (application/json)",
+          "FORM_URLENCODED": "URL-encoded (application/x-www-form-urlencoded)"
         },
         "ENDPOINT_URL": {
           "LABEL": "Endpoint URL",
@@ -1448,7 +1462,8 @@
         "REQUEST_TEMPLATE": {
           "LABEL": "Сұрау денесінің шаблоны (міндетті емес)",
           "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
-          "HELP_TEXT": "Request template endpoint URL сияқты Liquid айнымалыларын қолдайды. Custom tools ішінде ассистенттің Context access баптауларында рұқсат етілген өрістер ғана қолжетімді."
+          "HELP_TEXT": "Request template endpoint URL сияқты Liquid айнымалыларын қолдайды. Custom tools ішінде ассистенттің Context access баптауларында рұқсат етілген өрістер ғана қолжетімді.",
+          "FORM_URLENCODED_HELP_TEXT": "Форма өрістерін JSON объектісімен беріңіз. Liquid мәндері қойылғаннан кейін OneLink оны қауіпсіз application/x-www-form-urlencoded body пішіміне түрлендіреді."
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Жауап шаблоны (міндетті емес)",

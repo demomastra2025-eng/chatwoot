@@ -232,8 +232,8 @@ class Captain::Tools::HttpRequestExecutor
       masked_params,
       template_context: masked_template_context
     )
-    execution_headers = @custom_tool.build_request_headers(request_params)
     execution_body = @custom_tool.build_request_body(request_params, template_context: template_context)
+    execution_headers = @custom_tool.build_request_headers(request_params)
 
     preview = {
       resolved_params: masked_params,
@@ -506,7 +506,7 @@ class Captain::Tools::HttpRequestExecutor
 
     if body.present? && request.request_body_permitted?
       request.body = body
-      request['Content-Type'] = 'application/json'
+      request['Content-Type'] = @custom_tool.request_content_type
     end
 
     request

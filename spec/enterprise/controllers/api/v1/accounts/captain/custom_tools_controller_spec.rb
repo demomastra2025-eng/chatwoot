@@ -93,7 +93,9 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
           title: 'Fetch Order Status',
           description: 'Fetches order status from external API',
           endpoint_url: 'https://api.example.com/orders/{{ order_id }}',
-          http_method: 'GET',
+          http_method: 'POST',
+          request_body_type: 'form_urlencoded',
+          request_template: '{"order_id":"{{ order_id }}"}',
           enabled: true,
           param_schema: [
             { name: 'order_id', type: 'string', description: 'The order ID', required: true }
@@ -131,6 +133,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
         expect(json_response[:description]).to eq('Fetches order status from external API')
         expect(json_response[:enabled]).to be(true)
         expect(json_response[:allow_file_artifacts]).to be(true)
+        expect(json_response[:request_body_type]).to eq('form_urlencoded')
         expect(json_response[:slug]).to eq('custom_fetch_order_status')
         expect(json_response[:param_schema]).to eq([
                                                      {

@@ -2144,6 +2144,7 @@
       },
       "OPTIONS": {
         "EDIT_TOOL": "Редактировать инструмент",
+        "DUPLICATE_TOOL": "Дублировать инструмент",
         "DELETE_TOOL": "Удалить инструмент"
       },
       "CREATE": {
@@ -2155,6 +2156,12 @@
         "TITLE": "Редактировать пользовательский инструмент",
         "SUCCESS_MESSAGE": "Пользовательский инструмент успешно обновлен",
         "ERROR_MESSAGE": "Не удалось обновить пользовательский инструмент"
+      },
+      "DUPLICATE": {
+        "TITLE": "Дублировать пользовательский инструмент",
+        "TITLE_COPY": "{title} (копия)",
+        "SUCCESS_MESSAGE": "Копия пользовательского инструмента создана",
+        "ERROR_MESSAGE": "Не удалось дублировать пользовательский инструмент"
       },
       "DELETE": {
         "TITLE": "Удаление пользовательского инструмента",
@@ -2179,6 +2186,13 @@
         },
         "HTTP_METHOD": {
           "LABEL": "Метод"
+        },
+        "REQUEST_BODY_TYPE": {
+          "LABEL": "Формат body"
+        },
+        "REQUEST_BODY_TYPES": {
+          "JSON": "JSON (application/json)",
+          "FORM_URLENCODED": "URL-encoded (application/x-www-form-urlencoded)"
         },
         "ENDPOINT_URL": {
           "LABEL": "URL endpoint",
@@ -2269,7 +2283,8 @@
         "REQUEST_TEMPLATE": {
           "LABEL": "Шаблон тела запроса (необязательно)",
           "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
-          "HELP_TEXT": "Шаблоны запроса поддерживают те же Liquid-переменные, что и URL endpoint. В custom tools доступны только поля, разрешённые в настройках доступа к контексту у ассистента."
+          "HELP_TEXT": "Шаблоны запроса поддерживают те же Liquid-переменные, что и URL endpoint. В custom tools доступны только поля, разрешённые в настройках доступа к контексту у ассистента.",
+          "FORM_URLENCODED_HELP_TEXT": "Укажите JSON-объект с полями формы. После подстановки Liquid значений OneLink безопасно преобразует его в application/x-www-form-urlencoded body."
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Шаблон ответа (необязательно)",

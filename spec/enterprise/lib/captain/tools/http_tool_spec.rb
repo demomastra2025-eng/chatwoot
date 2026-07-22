@@ -124,6 +124,31 @@ RSpec.describe Captain::Tools::HttpTool, type: :model do
       end
     end
 
+    context 'with URL-encoded POST request' do
+      before do
+        custom_tool.update!(
+          http_method: 'POST',
+          endpoint_url: 'https://example.com/oauth/token',
+          request_body_type: 'form_urlencoded',
+          request_template: '{"grant_type":"client_credentials","scope":"{{ scope }}"}',
+          response_template: nil
+        )
+        stub_request(:post, 'https://example.com/oauth/token')
+          .with(
+            body: 'grant_type=client_credentials&scope=contacts%3Aread+contacts%3Awrite',
+            headers: { 'Content-Type' => 'application/x-www-form-urlencoded' }
+          )
+          .to_return(status: 200, body: '{"access_token":"token"}')
+      end
+
+      it 'encodes the rendered body and sends the matching content type' do
+        result = tool.perform(tool_context, scope: 'contacts:read contacts:write')
+
+        expect(result).to eq('{"access_token":"token"}')
+        expect(WebMock).to have_requested(:post, 'https://example.com/oauth/token')
+      end
+    end
+
     context 'with HEAD request' do
       before do
         custom_tool.update!(

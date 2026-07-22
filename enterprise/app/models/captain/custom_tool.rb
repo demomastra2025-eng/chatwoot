@@ -13,6 +13,7 @@
 #  http_method          :string           default("GET"), not null
 #  param_schema         :jsonb
 #  request_template     :text
+#  request_body_type    :string           default("json"), not null
 #  response_template    :text
 #  slug                 :string           not null
 #  title                :string           not null
@@ -71,6 +72,7 @@ class Captain::CustomTool < ApplicationRecord
   ].freeze
   HTTP_METHODS = %w[GET POST PUT PATCH DELETE HEAD OPTIONS].freeze
   REQUEST_BODY_HTTP_METHODS = %w[POST PUT PATCH DELETE OPTIONS].freeze
+  REQUEST_BODY_TYPES = %w[json form_urlencoded].freeze
   SAFE_READ_ONLY_HTTP_METHODS = %w[GET HEAD OPTIONS].freeze
   READ_ONLY_ACTION_TOKENS = %w[
     get list search find lookup fetch query retrieve read show check calculate estimate recommend suggest preview
@@ -127,6 +129,7 @@ class Captain::CustomTool < ApplicationRecord
 
   enum :http_method, HTTP_METHODS.index_by(&:itself), validate: true
   enum :auth_type, %w[none bearer basic api_key].index_by(&:itself), default: :none, validate: true, prefix: :auth
+  enum :request_body_type, REQUEST_BODY_TYPES.index_by(&:itself), default: :json, validate: true, prefix: :request_body
 
   before_validation :normalize_group_name
   before_validation :generate_slug
@@ -143,6 +146,7 @@ class Captain::CustomTool < ApplicationRecord
   validate :validate_auth_configuration
   validate :validate_param_schema_sources
   validate :validate_template_syntax
+  validate :validate_form_urlencoded_request_template
 
   scope :enabled, -> { where(enabled: true) }
 
@@ -417,6 +421,18 @@ class Captain::CustomTool < ApplicationRecord
     validate_template_attribute(:endpoint_url)
     validate_template_attribute(:request_template)
     validate_template_attribute(:response_template)
+  end
+
+  def validate_form_urlencoded_request_template
+    return unless request_body_form_urlencoded? && request_template.present?
+
+    sample_template = request_template.gsub(/\{\{.*?\}\}/m, '0')
+    parsed_template = JSON.parse(sample_template)
+    return if parsed_template.is_a?(Hash)
+
+    errors.add(:request_template, 'must render to a JSON object for URL-encoded requests')
+  rescue JSON::ParserError
+    errors.add(:request_template, 'must be a JSON object for URL-encoded requests')
   end
 
   def validate_template_attribute(attribute_name)

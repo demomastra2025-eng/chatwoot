@@ -881,6 +881,35 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(body[:payload].pluck(:contact_inbox_id)).to contain_exactly(first_conversation.contact_inbox_id, second_contact_inbox.id)
     end
 
+    it 'keeps private notes in the timeline while excluding activity messages' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      private_note = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :outgoing,
+        private: true,
+        content: 'Captain handoff note'
+      )
+      activity_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :activity
+      )
+      thread = conversation.reload.communication_thread
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      message_ids = response.parsed_body['payload'].pluck('id')
+      expect(message_ids).to include(private_note.id)
+      expect(message_ids).not_to include(activity_message.id)
+    end
+
     it 'uses timeline order for cursor pagination instead of raw message ids' do
       conversation = create(:conversation, account: account)
       create(:inbox_member, user: agent, inbox: conversation.inbox)

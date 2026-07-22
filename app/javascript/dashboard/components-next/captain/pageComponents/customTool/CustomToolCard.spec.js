@@ -99,4 +99,14 @@ describe('CustomToolCard', () => {
       expect.arrayContaining(['text-sm', 'text-n-slate-11', 'flex-1'])
     );
   });
+
+  it('exposes the duplicate action in the tool menu', () => {
+    const wrapper = buildWrapper();
+
+    expect(wrapper.vm.menuItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ action: 'duplicate', value: 'duplicate' }),
+      ])
+    );
+  });
 });

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: key => key,
+    t: (key, params) => (params?.title ? `${params.title} (copy)` : key),
   }),
 }));
 
@@ -45,10 +45,11 @@ const ToolTestPanelStub = defineComponent({
   },
 });
 
-const buildWrapper = () =>
+const buildWrapper = (props = {}) =>
   shallowMount(CustomToolForm, {
     props: {
       mode: 'create',
+      ...props,
     },
     global: {
       stubs: {
@@ -84,6 +85,9 @@ describe('CustomToolForm create flow', () => {
 
     expect(mocks.runTestForCreate).toHaveBeenCalledOnce();
     expect(wrapper.emitted('submit')).toHaveLength(1);
+    expect(wrapper.emitted('submit')[0][0]).toMatchObject({
+      request_body_type: 'json',
+    });
   });
 
   it('does not create the tool when the real test request fails', async () => {
@@ -101,5 +105,36 @@ describe('CustomToolForm create flow', () => {
     expect(mocks.alert).toHaveBeenCalledWith(
       'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.REQUIRED_SUCCESS'
     );
+  });
+
+  it('prefills a duplicate and creates it as a new tool', async () => {
+    mocks.runTestForCreate.mockResolvedValue({
+      response: { successful: true, status: 200 },
+    });
+    const wrapper = buildWrapper({
+      mode: 'duplicate',
+      tool: {
+        id: 42,
+        title: 'CRM lookup',
+        description: 'Lookup contact',
+        endpoint_url: 'https://api.example.com/contacts',
+        http_method: 'POST',
+        request_body_type: 'form_urlencoded',
+        request_template: '{"phone":"{{ phone }}"}',
+        auth_type: 'none',
+        auth_config: {},
+        param_schema: [],
+      },
+    });
+
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    expect(mocks.runTestForCreate).toHaveBeenCalledOnce();
+    expect(wrapper.emitted('submit')[0][0]).toMatchObject({
+      title: 'CRM lookup (copy)',
+      request_body_type: 'form_urlencoded',
+      request_template: '{"phone":"{{ phone }}"}',
+    });
   });
 });

@@ -26,7 +26,7 @@ class CommunicationThreadMessageFinder
   end
 
   def messages
-    Message.chat
+    Message.where.not(message_type: :activity)
            .where(account_id: current_account.id, conversation_id: accessible_conversations.select(:id))
            .includes(:attachments, :sender, sender: { avatar_attachment: [:blob] })
   end
