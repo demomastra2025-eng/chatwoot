@@ -43,7 +43,8 @@ class Whatsapp::TokenHealthCheckService
         code: token_health.dig('error', 'code'),
         type: token_health.dig('error', 'type') || 'WhatsAppTokenHealth'
       )
-    elsif @channel.provider_authorization_error_recorded?
+    elsif token_health['status'] != Whatsapp::TokenInspectionService::EXPIRING_SOON_STATUS &&
+          @channel.provider_authorization_error_recorded?
       @channel.reauthorized! if @channel.respond_to?(:reauthorized!)
       @channel.clear_provider_authorization_error!
     end

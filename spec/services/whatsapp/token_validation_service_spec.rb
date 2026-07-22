@@ -32,6 +32,64 @@ describe Whatsapp::TokenValidationService do
       end
     end
 
+    context 'when Embedded Signup requires a permanent server token' do
+      let(:service) do
+        described_class.new(
+          access_token,
+          waba_id,
+          phone_number_id: phone_number_id,
+          require_non_expiring_system_user: true
+        )
+      end
+
+      before do
+        token_inspection = instance_double(Whatsapp::TokenInspectionService, perform: token_health)
+        allow(Whatsapp::TokenInspectionService).to receive(:new).and_return(token_inspection)
+      end
+
+      context 'with a non-expiring system user token' do
+        let(:token_health) do
+          {
+            'status' => 'healthy',
+            'token_type' => 'SYSTEM_USER',
+            'never_expires' => true
+          }
+        end
+
+        it 'accepts the token' do
+          expect(service.perform).to eq(token_health)
+        end
+      end
+
+      context 'with an expiring system user token' do
+        let(:token_health) do
+          {
+            'status' => 'expiring',
+            'token_type' => 'SYSTEM_USER',
+            'expires_at' => 20.days.from_now.iso8601
+          }
+        end
+
+        it 'rejects the Meta configuration before storing the token' do
+          expect { service.perform }.to raise_error(described_class::NON_EXPIRING_SYSTEM_USER_TOKEN_ERROR)
+        end
+      end
+
+      context 'when Meta returns a user token' do
+        let(:token_health) do
+          {
+            'status' => 'healthy',
+            'token_type' => 'USER',
+            'expires_at' => 60.days.from_now.iso8601
+          }
+        end
+
+        it 'rejects the token type intended for interactive user activity' do
+          expect { service.perform }.to raise_error(described_class::NON_EXPIRING_SYSTEM_USER_TOKEN_ERROR)
+        end
+      end
+    end
+
     context 'when required permissions are missing' do
       let(:token_health) do
         {

@@ -200,6 +200,8 @@ export const getInboxHealthStatus = inbox => {
   ];
   const errorInfo = errorInfoFrom(sources);
   const detail = errorInfo.detail;
+  const whatsappTokenExpiring =
+    providerConfig.token_health?.status === 'expiring';
   const combinedState = [
     detail,
     stateFrom(inbox, ['lifecycle_state', 'connection_state', 'status']),
@@ -237,6 +239,21 @@ export const getInboxHealthStatus = inbox => {
   const isWhatsappWebOpen =
     whatsappWebLifecycleState === WHATSAPP_WEB_CONNECTED_STATE &&
     whatsappWebConnectionState === WHATSAPP_WEB_OPEN_CONNECTION_STATE;
+
+  if (
+    whatsappTokenExpiring &&
+    !inbox.reauthorization_required &&
+    !inbox.requires_reauthorization
+  ) {
+    return {
+      id: 'token_expiring',
+      tone: 'amber',
+      icon: 'i-lucide-clock-alert',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING',
+      descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING_DESCRIPTION',
+      detail,
+    };
+  }
 
   if (inbox.reauthorization_required || inbox.requires_reauthorization) {
     return {

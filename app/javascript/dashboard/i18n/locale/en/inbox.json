@@ -78,6 +78,7 @@
       "DESCRIPTION": "Your WhatsApp connection has expired. Please reconnect to continue receiving and sending messages.",
       "BUTTON_TEXT": "Reconnect WhatsApp",
       "PRESERVE_DATA_DESCRIPTION": "WhatsApp authorization expired. Reconnect the same phone number via Meta; the inbox, conversations, messages, and settings will stay in place.",
+      "EXPIRING_DESCRIPTION": "Your WhatsApp authorization expires soon. Reconnect the same number through Meta now; the inbox, conversations, messages, and settings will stay in place.",
       "LOADING_FACEBOOK": "Loading Facebook SDK...",
       "SUCCESS": "WhatsApp reconnected successfully",
       "ERROR": "Failed to reconnect WhatsApp. Please try again.",

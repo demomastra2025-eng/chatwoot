@@ -68,9 +68,18 @@ const actionLabel = computed(() => {
   return t('INBOX.REAUTHORIZE.BUTTON_TEXT');
 });
 
+const tokenExpiresSoon = computed(
+  () =>
+    !props.inbox.reauthorization_required &&
+    props.inbox.provider_config?.token_health?.status === 'expiring'
+);
+
 const description = computed(() => {
   if (props.whatsappRegistrationIncomplete) {
     return t('INBOX_MGMT.WHATSAPP_REGISTRATION_INCOMPLETE');
+  }
+  if (tokenExpiresSoon.value) {
+    return t('INBOX.REAUTHORIZE.EXPIRING_DESCRIPTION');
   }
   return t('INBOX.REAUTHORIZE.PRESERVE_DATA_DESCRIPTION');
 });

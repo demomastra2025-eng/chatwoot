@@ -778,6 +778,7 @@ export default {
         reauthorization_required: this.$t(
           'INBOX_MGMT.HEALTH_STATUS.REAUTHORIZATION_REQUIRED'
         ),
+        token_expiring: this.$t('INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING'),
         webhook_signature_invalid: this.$t(
           'INBOX_MGMT.HEALTH_STATUS.WEBHOOK_SIGNATURE_INVALID'
         ),
@@ -801,6 +802,9 @@ export default {
         ),
         reauthorization_required: this.$t(
           'INBOX_MGMT.HEALTH_STATUS.REAUTHORIZATION_REQUIRED_DESCRIPTION'
+        ),
+        token_expiring: this.$t(
+          'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING_DESCRIPTION'
         ),
         webhook_signature_invalid: this.$t(
           'INBOX_MGMT.HEALTH_STATUS.WEBHOOK_SIGNATURE_INVALID_DESCRIPTION'
@@ -914,9 +918,17 @@ export default {
     isEmbeddedSignupWhatsApp() {
       return this.inbox.provider_config?.source === 'embedded_signup';
     },
+    whatsappTokenExpiring() {
+      return (
+        this.isAWhatsAppCloudChannel &&
+        !this.inbox.reauthorization_required &&
+        this.inbox.provider_config?.token_health?.status === 'expiring'
+      );
+    },
     whatsappUnauthorized() {
       return (
-        this.isAWhatsAppCloudChannel && this.inbox.reauthorization_required
+        this.isAWhatsAppCloudChannel &&
+        (this.inbox.reauthorization_required || this.whatsappTokenExpiring)
       );
     },
     whatsappRegistrationIncomplete() {

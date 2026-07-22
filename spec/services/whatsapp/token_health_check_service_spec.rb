@@ -77,6 +77,46 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
     end
   end
 
+  context 'when token expires soon' do
+    let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService, perform: expiring_token_health) }
+    let(:expiring_token_health) do
+      {
+        'status' => 'expiring',
+        'checked_at' => Time.current.iso8601,
+        'expires_at' => 20.days.from_now.iso8601,
+        'token_type' => 'SYSTEM_USER',
+        'waba_access' => true,
+        'phone_number_access' => true
+      }
+    end
+
+    it 'records the warning without marking a working channel as disconnected' do
+      described_class.new(channel).perform
+
+      expect(channel.reload.provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY]).to include('status' => 'expiring')
+      expect(channel.reauthorization_required?).to be(false)
+      expect(channel.provider_config).not_to include('authorization_error')
+      expect(channel.meta_credential_health).to have_attributes(status: 'expiring', reason: 'expiring')
+    end
+
+    it 'preserves a concurrent provider authorization failure' do
+      channel.record_provider_configuration_error!(
+        'Expired token',
+        code: 190,
+        type: 'OAuthException'
+      )
+
+      described_class.new(channel).perform
+
+      expect(channel.reauthorization_required?).to be(true)
+      expect(channel.reload.provider_config).to include(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => hash_including('message' => 'Expired token')
+      )
+      expect(channel.provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY]).to include('status' => 'expiring')
+    end
+  end
+
   context 'when provider-returned token health contains credential-bearing fields' do
     let(:one_time_code) { 'one-time-oauth-code' }
     let(:token_inspection_service) do

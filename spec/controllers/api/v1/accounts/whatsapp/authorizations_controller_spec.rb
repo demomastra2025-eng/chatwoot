@@ -436,6 +436,48 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
         end
       end
 
+      context 'when token expires soon' do
+        let(:expiring_channel) do
+          channel = build(
+            :channel_whatsapp,
+            account: account,
+            provider: 'whatsapp_cloud',
+            provider_config: {
+              'api_key' => 'test_token',
+              'phone_number_id' => '123456',
+              'business_account_id' => '654321',
+              'source' => 'embedded_signup',
+              'token_health' => { 'status' => 'expiring' }
+            }
+          )
+          allow(channel).to receive(:validate_provider_config).and_return(true)
+          allow(channel).to receive(:sync_templates).and_return(true)
+          allow(channel).to receive(:setup_webhooks).and_return(true)
+          channel.save!
+          channel
+        end
+        let(:expiring_inbox) { create(:inbox, channel: expiring_channel, account: account) }
+
+        it 'allows proactive reauthorization while the channel is still connected' do
+          embedded_signup_service = instance_double(Whatsapp::EmbeddedSignupService, perform: expiring_channel)
+          allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(embedded_signup_service)
+          allow(expiring_channel).to receive(:inbox).and_return(expiring_inbox)
+
+          post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
+               params: {
+                 inbox_id: expiring_inbox.id,
+                 code: 'test',
+                 business_id: 'business_123',
+                 waba_id: 'waba_123',
+                 phone_number_id: 'phone_123'
+               },
+               headers: administrator.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
+        end
+      end
+
       context 'when channel is not WhatsApp' do
         let(:facebook_channel) do
           stub_request(:post, 'https://graph.facebook.com/v3.2/me/subscribed_apps')

@@ -12,6 +12,7 @@ describe Whatsapp::EmbeddedSignupService do
   end
   let(:service) { described_class.new(account: account, params: params) }
   let(:access_token) { 'test_access_token' }
+  let(:require_non_expiring_system_user_token) { false }
   let(:token_health) do
     {
       'status' => 'healthy',
@@ -33,6 +34,11 @@ describe Whatsapp::EmbeddedSignupService do
     before do
       allow(GlobalConfig).to receive(:clear_cache)
 
+      allow(GlobalConfigService).to receive(:load).and_call_original
+      allow(GlobalConfigService).to receive(:load)
+        .with('WHATSAPP_REQUIRE_NON_EXPIRING_SYSTEM_USER_TOKEN', false)
+        .and_return(require_non_expiring_system_user_token)
+
       # Mock service dependencies
       token_exchange = instance_double(Whatsapp::TokenExchangeService)
       allow(Whatsapp::TokenExchangeService).to receive(:new).with(params[:code]).and_return(token_exchange)
@@ -45,7 +51,12 @@ describe Whatsapp::EmbeddedSignupService do
 
       validation_service = instance_double(Whatsapp::TokenValidationService)
       allow(Whatsapp::TokenValidationService).to receive(:new)
-        .with(access_token, params[:waba_id], phone_number_id: params[:phone_number_id]).and_return(validation_service)
+        .with(
+          access_token,
+          params[:waba_id],
+          phone_number_id: params[:phone_number_id],
+          require_non_expiring_system_user: require_non_expiring_system_user_token
+        ).and_return(validation_service)
       allow(validation_service).to receive(:perform).and_return(token_health)
 
       channel_creation = instance_double(Whatsapp::ChannelCreationService)
@@ -73,6 +84,14 @@ describe Whatsapp::EmbeddedSignupService do
 
       result = service.perform
       expect(result).to eq(channel)
+    end
+
+    context 'when non-expiring token enforcement is enabled' do
+      let(:require_non_expiring_system_user_token) { true }
+
+      it 'requires the native non-expiring system-user token contract' do
+        expect(service.perform).to eq(channel)
+      end
     end
 
     it 'stores token health metadata on the channel' do

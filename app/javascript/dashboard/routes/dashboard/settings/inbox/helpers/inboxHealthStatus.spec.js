@@ -81,6 +81,33 @@ describe('#getInboxHealthStatus', () => {
     });
   });
 
+  it('shows an actionable warning before a WhatsApp Cloud token expires', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        reauthorization_required: false,
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({
+      id: 'token_expiring',
+      tone: 'amber',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING',
+    });
+  });
+
+  it('prioritizes a failed token over stale expiry metadata', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        reauthorization_required: true,
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({
+      id: 'reauthorization_required',
+      tone: 'ruby',
+    });
+  });
+
   it('detects reauthorization_required from legacy payload aliases', () => {
     expect(
       getInboxHealthStatus({ id: 1, requires_reauthorization: true })

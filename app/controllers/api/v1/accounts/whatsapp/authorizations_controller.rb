@@ -62,12 +62,17 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   end
 
   def validate_reauthorization_required
-    return if @inbox.channel.reauthorization_required? || can_upgrade_to_embedded_signup?
+    return if @inbox.channel.reauthorization_required? || can_upgrade_to_embedded_signup? || token_expiring?
 
     render json: {
       success: false,
       message: I18n.t('inbox.reauthorization.not_required')
     }, status: :unprocessable_content
+  end
+
+  def token_expiring?
+    token_health_status = @inbox.channel.provider_config.to_h.dig('token_health', 'status')
+    token_health_status == Whatsapp::TokenInspectionService::EXPIRING_SOON_STATUS
   end
 
   def can_upgrade_to_embedded_signup?

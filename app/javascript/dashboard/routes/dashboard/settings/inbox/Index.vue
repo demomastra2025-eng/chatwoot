@@ -404,6 +404,17 @@ const getStatus = inbox => {
     };
   }
 
+  if (
+    inbox.provider_config?.token_health?.status === 'expiring' &&
+    !inbox.reauthorization_required &&
+    !inbox.requires_reauthorization
+  ) {
+    return {
+      label: t('INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING'),
+      class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
+    };
+  }
+
   if (inbox.reauthorization_required || inbox.requires_reauthorization) {
     return {
       label: t('INBOX_MGMT.LIST.STATUS.NEEDS_AUTH'),
