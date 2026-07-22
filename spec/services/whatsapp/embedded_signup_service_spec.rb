@@ -92,9 +92,26 @@ describe Whatsapp::EmbeddedSignupService do
       it 'requires the native non-expiring system-user token contract' do
         expect(service.perform).to eq(channel)
       end
+
+      it 'rejects an expiring token before channel persistence' do
+        inspection_service = instance_double(
+          Whatsapp::TokenInspectionService,
+          perform: {
+            'status' => 'expiring',
+            'token_type' => 'SYSTEM_USER',
+            'never_expires' => false
+          }
+        )
+        allow(Whatsapp::TokenInspectionService).to receive(:new).and_return(inspection_service)
+        allow(Whatsapp::TokenValidationService).to receive(:new).and_call_original
+
+        expect(Whatsapp::ChannelCreationService).not_to receive(:new)
+
+        expect { service.perform }.to raise_error(RuntimeError, /non-expiring SYSTEM_USER token/)
+      end
     end
 
-    it 'stores token health metadata on the channel' do
+    it 'persists token health metadata on the channel' do
       expect(channel).to receive(:store_token_health!).with(token_health)
 
       service.perform

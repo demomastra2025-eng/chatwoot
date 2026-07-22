@@ -182,6 +182,17 @@
   display_title: 'WhatsApp API Version'
   description: 'Configure this if you want to use a different WhatsApp API version. Make sure its prefixed with `v`'
   value: 'v22.0'
+- name: WHATSAPP_PROACTIVE_REAUTHORIZATION_ENABLED
+  value: false
+  display_title: 'Enable proactive WhatsApp reauthorization'
+  description: 'Show the reconnect action for expiring WhatsApp Cloud tokens after all web instances support the proactive reauthorization API'
+  type: boolean
+  locked: false
+- name: WHATSAPP_REQUIRE_NON_EXPIRING_SYSTEM_USER_TOKEN
+  value: false
+  display_title: 'Require non-expiring WhatsApp system-user tokens'
+  description: 'Require new and reauthorized WhatsApp Cloud channels to use SYSTEM_USER tokens configured to never expire'
+  type: boolean
   locked: false
 # ------- End of WhatsApp Channel Related Config ------- #
 

@@ -71,6 +71,7 @@ const actionLabel = computed(() => {
 const tokenExpiresSoon = computed(
   () =>
     !props.inbox.reauthorization_required &&
+    !props.inbox.requires_reauthorization &&
     props.inbox.provider_config?.token_health?.status === 'expiring'
 );
 

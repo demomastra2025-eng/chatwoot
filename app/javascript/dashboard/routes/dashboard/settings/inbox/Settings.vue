@@ -920,15 +920,20 @@ export default {
     },
     whatsappTokenExpiring() {
       return (
+        window.chatwootConfig?.whatsappProactiveReauthorizationEnabled ===
+          true &&
         this.isAWhatsAppCloudChannel &&
         !this.inbox.reauthorization_required &&
+        !this.inbox.requires_reauthorization &&
         this.inbox.provider_config?.token_health?.status === 'expiring'
       );
     },
     whatsappUnauthorized() {
       return (
         this.isAWhatsAppCloudChannel &&
-        (this.inbox.reauthorization_required || this.whatsappTokenExpiring)
+        (this.inbox.reauthorization_required ||
+          this.inbox.requires_reauthorization ||
+          this.whatsappTokenExpiring)
       );
     },
     whatsappRegistrationIncomplete() {

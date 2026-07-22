@@ -22,7 +22,7 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
     allow(Whatsapp::TokenInspectionService).to receive(:new).and_return(token_inspection_service)
   end
 
-  context 'when token health is valid' do
+  context 'when token health is explicitly healthy' do
     let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService, perform: healthy_token_health) }
     let(:healthy_token_health) do
       {
@@ -33,7 +33,7 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
       }
     end
 
-    it 'stores token health and clears a stale provider authorization error' do
+    it 'stores token health and clears an unchanged provider authorization error' do
       channel.record_provider_configuration_error!(
         'Expired token',
         code: 190,
@@ -47,6 +47,26 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
       expect(channel.provider_config).not_to include('authorization_status')
       expect(channel.provider_config).not_to include('authorization_error')
       expect(channel.meta_credential_health).to have_attributes(status: 'healthy', reason: 'healthy')
+    end
+
+    it 'preserves a provider authorization failure recorded during inspection' do
+      allow(token_inspection_service).to receive(:perform) do
+        channel.record_provider_configuration_error!(
+          'Concurrent OAuth failure',
+          code: 190,
+          type: 'OAuthException'
+        )
+        healthy_token_health
+      end
+
+      described_class.new(channel).perform
+
+      expect(channel.reauthorization_required?).to be(true)
+      expect(channel.reload.provider_config).to include(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => hash_including('message' => 'Concurrent OAuth failure')
+      )
+      expect(channel.provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY]).to include('status' => 'healthy')
     end
   end
 
@@ -100,11 +120,14 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
     end
 
     it 'preserves a concurrent provider authorization failure' do
-      channel.record_provider_configuration_error!(
-        'Expired token',
-        code: 190,
-        type: 'OAuthException'
-      )
+      allow(token_inspection_service).to receive(:perform) do
+        channel.record_provider_configuration_error!(
+          'Expired token',
+          code: 190,
+          type: 'OAuthException'
+        )
+        expiring_token_health
+      end
 
       described_class.new(channel).perform
 
@@ -117,7 +140,35 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
     end
   end
 
-  context 'when provider-returned token health contains credential-bearing fields' do
+  context 'when reauthorization rotates the credential during inspection' do
+    let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService) }
+    let(:stale_token_health) do
+      {
+        'status' => 'invalid',
+        'checked_at' => Time.current.iso8601,
+        'error' => { 'code' => 190, 'message' => 'Old token expired' }
+      }
+    end
+
+    it 'ignores the stale result from the previous credential' do
+      allow(token_inspection_service).to receive(:perform) do
+        channel.with_lock do
+          channel.reload
+          channel.update_column(:provider_config, channel.provider_config.merge('api_key' => 'rotated-token'))
+        end
+        stale_token_health
+      end
+
+      described_class.new(channel).perform
+
+      expect(channel.reload.provider_config['api_key']).to eq('rotated-token')
+      expect(channel.provider_config).not_to include(Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY)
+      expect(channel.reauthorization_required?).to be(false)
+      expect(channel.meta_credential_health).to be_nil
+    end
+  end
+
+  context 'when token health contains credential-bearing fields' do
     let(:one_time_code) { 'one-time-oauth-code' }
     let(:token_inspection_service) do
       instance_double(
@@ -170,7 +221,31 @@ RSpec.describe Whatsapp::TokenHealthCheckService do
     end
   end
 
-  context 'when channel is not WhatsApp Cloud API' do
+  context 'when token inspection fails transiently' do
+    let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService) }
+
+    it 'stores unknown health without clearing an existing hard authorization state' do
+      channel.record_provider_configuration_error!(
+        'Provider rejected the credential',
+        code: 190,
+        type: 'OAuthException'
+      )
+      allow(token_inspection_service).to receive(:perform).and_raise(StandardError, 'temporary provider outage')
+      allow(Rails.logger).to receive(:error)
+
+      result = described_class.new(channel).perform
+
+      expect(result).to include('status' => 'unknown')
+      expect(channel.reauthorization_required?).to be(true)
+      expect(channel.reload.provider_config).to include(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => hash_including('message' => 'Provider rejected the credential')
+      )
+      expect(channel.provider_config[Channel::Whatsapp::TOKEN_HEALTH_CONFIG_KEY]).to include('status' => 'unknown')
+    end
+  end
+
+  context 'when the channel is not WhatsApp Cloud API' do
     let(:token_inspection_service) { instance_double(Whatsapp::TokenInspectionService) }
 
     it 'does not inspect tokens for 360dialog channels' do

@@ -95,7 +95,7 @@ describe('#getInboxHealthStatus', () => {
     });
   });
 
-  it('prioritizes a failed token over stale expiry metadata', () => {
+  it('keeps hard token failure above stale expiry metadata', () => {
     expect(
       getInboxHealthStatus({
         id: 1,
@@ -108,7 +108,27 @@ describe('#getInboxHealthStatus', () => {
     });
   });
 
-  it('detects reauthorization_required from legacy payload aliases', () => {
+  it('keeps runtime disconnection above stale expiry metadata', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        connection_state: 'disconnected',
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({ id: 'disconnected', tone: 'ruby' });
+  });
+
+  it('keeps provider failures above stale expiry metadata', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        runtime_state: { last_error: 'Provider temporarily unavailable' },
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({ id: 'provider_unavailable' });
+  });
+
+  it('detects reauthorization from legacy payload aliases', () => {
     expect(
       getInboxHealthStatus({ id: 1, requires_reauthorization: true })
     ).toMatchObject({ id: 'reauthorization_required' });

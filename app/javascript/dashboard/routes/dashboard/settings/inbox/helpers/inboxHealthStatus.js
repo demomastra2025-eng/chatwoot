@@ -240,21 +240,6 @@ export const getInboxHealthStatus = inbox => {
     whatsappWebLifecycleState === WHATSAPP_WEB_CONNECTED_STATE &&
     whatsappWebConnectionState === WHATSAPP_WEB_OPEN_CONNECTION_STATE;
 
-  if (
-    whatsappTokenExpiring &&
-    !inbox.reauthorization_required &&
-    !inbox.requires_reauthorization
-  ) {
-    return {
-      id: 'token_expiring',
-      tone: 'amber',
-      icon: 'i-lucide-clock-alert',
-      labelKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING',
-      descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING_DESCRIPTION',
-      detail,
-    };
-  }
-
   if (inbox.reauthorization_required || inbox.requires_reauthorization) {
     return {
       id: 'reauthorization_required',
@@ -375,12 +360,23 @@ export const getInboxHealthStatus = inbox => {
     };
   }
 
-  return {
-    id: 'connected',
-    tone: 'teal',
-    icon: 'i-lucide-check-circle',
-    labelKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED',
-    descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED_DESCRIPTION',
-    detail: '',
-  };
+  const finalStatus = whatsappTokenExpiring
+    ? {
+        id: 'token_expiring',
+        tone: 'amber',
+        icon: 'i-lucide-clock-alert',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING',
+        descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING_DESCRIPTION',
+        detail,
+      }
+    : {
+        id: 'connected',
+        tone: 'teal',
+        icon: 'i-lucide-check-circle',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED',
+        descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED_DESCRIPTION',
+        detail: '',
+      };
+
+  return finalStatus;
 };

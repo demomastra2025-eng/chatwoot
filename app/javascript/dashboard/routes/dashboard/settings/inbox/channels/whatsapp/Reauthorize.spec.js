@@ -25,12 +25,17 @@ vi.mock('./utils', () => ({
   getWhatsAppEmbeddedSignupConfigErrors: vi.fn().mockReturnValue([]),
 }));
 
-const buildWrapper = (tokenStatus, reauthorizationRequired = false) =>
+const buildWrapper = (
+  tokenStatus,
+  reauthorizationRequired = false,
+  requiresReauthorization = false
+) =>
   shallowMount(Reauthorize, {
     props: {
       inbox: {
         id: 1,
         reauthorization_required: reauthorizationRequired,
+        requires_reauthorization: requiresReauthorization,
         provider_config: {
           token_health: { status: tokenStatus },
         },
@@ -55,8 +60,16 @@ describe('WhatsApp Reauthorize', () => {
     ).toBe('INBOX.REAUTHORIZE.EXPIRING_DESCRIPTION');
   });
 
-  it('prioritizes the standard reconnection explanation after token failure', () => {
+  it('prioritizes the standard explanation after token failure', () => {
     const wrapper = buildWrapper('expiring', true);
+
+    expect(
+      wrapper.findComponent(InboxReconnectionRequired).props('description')
+    ).toBe('INBOX.REAUTHORIZE.PRESERVE_DATA_DESCRIPTION');
+  });
+
+  it('prioritizes the standard explanation for the legacy alias', () => {
+    const wrapper = buildWrapper('expiring', false, true);
 
     expect(
       wrapper.findComponent(InboxReconnectionRequired).props('description')
