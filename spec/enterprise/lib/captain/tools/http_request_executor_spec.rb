@@ -77,6 +77,15 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
       .with(headers: { 'X-Tenant-ID' => 'tenant-42' })
   end
 
+  it 'does not let legacy custom headers override the configured request content type' do
+    allow(custom_tool).to receive(:build_request_headers).and_return('Content-Type' => 'text/plain')
+
+    executor.call('lead_name' => 'Alice')
+
+    expect(WebMock).to have_requested(:post, 'https://example.com/leads')
+      .with(headers: { 'Content-Type' => 'application/json' })
+  end
+
   it 'does not let custom headers override authentication or OneLink metadata' do
     custom_tool.update!(
       auth_type: 'bearer',

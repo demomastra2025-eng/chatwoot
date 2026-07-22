@@ -61,6 +61,7 @@ class Captain::CustomTool < ApplicationRecord
   FORBIDDEN_REQUEST_HEADER_NAMES = %w[
     connection
     content-length
+    content-type
     host
     keep-alive
     proxy-authenticate

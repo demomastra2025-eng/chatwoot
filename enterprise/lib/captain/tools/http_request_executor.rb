@@ -460,6 +460,7 @@ class Captain::Tools::HttpRequestExecutor
 
     request = build_http_request(uri, body)
     apply_custom_headers(request, headers)
+    apply_request_content_type(request, body)
     apply_authentication(request)
     apply_metadata_headers(request)
 
@@ -504,12 +505,15 @@ class Captain::Tools::HttpRequestExecutor
       uri.request_uri
     )
 
-    if body.present? && request.request_body_permitted?
-      request.body = body
-      request['Content-Type'] = @custom_tool.request_content_type
-    end
+    request.body = body if body.present? && request.request_body_permitted?
 
     request
+  end
+
+  def apply_request_content_type(request, body)
+    return unless body.present? && request.request_body_permitted?
+
+    request['Content-Type'] = @custom_tool.request_content_type
   end
 
   def apply_authentication(request)

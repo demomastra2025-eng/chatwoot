@@ -58,12 +58,13 @@ class Captain::PromptRegistry
       )
     end
 
-    def render_inline!(template, variables: {}, include_snippets: false)
+    def render_inline!(template, variables: {}, include_snippets: false, filters: [])
       render_template(
         Liquid::Template.parse(template, error_mode: :strict),
         variables: variables,
         include_snippets: include_snippets,
-        normalize: false
+        normalize: false,
+        filters: filters
       )
     end
 
@@ -101,11 +102,11 @@ class Captain::PromptRegistry
       hash.deep_stringify_keys
     end
 
-    def render_template(liquid_template, variables:, include_snippets:, normalize:)
+    def render_template(liquid_template, variables:, include_snippets:, normalize:, filters: [])
       rendered = liquid_template.render!(
         stringify_keys(variables),
         registers: include_snippets ? { file_system: snippet_file_system } : {},
-        filters: [MarkdownFilters],
+        filters: [MarkdownFilters, *filters],
         strict_variables: true,
         strict_filters: true
       )
