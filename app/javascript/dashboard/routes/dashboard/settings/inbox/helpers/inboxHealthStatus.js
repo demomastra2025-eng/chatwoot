@@ -200,6 +200,8 @@ export const getInboxHealthStatus = inbox => {
   ];
   const errorInfo = errorInfoFrom(sources);
   const detail = errorInfo.detail;
+  const whatsappTokenExpiring =
+    providerConfig.token_health?.status === 'expiring';
   const combinedState = [
     detail,
     stateFrom(inbox, ['lifecycle_state', 'connection_state', 'status']),
@@ -358,12 +360,23 @@ export const getInboxHealthStatus = inbox => {
     };
   }
 
-  return {
-    id: 'connected',
-    tone: 'teal',
-    icon: 'i-lucide-check-circle',
-    labelKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED',
-    descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED_DESCRIPTION',
-    detail: '',
-  };
+  const finalStatus = whatsappTokenExpiring
+    ? {
+        id: 'token_expiring',
+        tone: 'amber',
+        icon: 'i-lucide-clock-alert',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING',
+        descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING_DESCRIPTION',
+        detail,
+      }
+    : {
+        id: 'connected',
+        tone: 'teal',
+        icon: 'i-lucide-check-circle',
+        labelKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED',
+        descriptionKey: 'INBOX_MGMT.HEALTH_STATUS.CONNECTED_DESCRIPTION',
+        detail: '',
+      };
+
+  return finalStatus;
 };

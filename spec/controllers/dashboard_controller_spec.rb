@@ -35,7 +35,7 @@ describe '/app/login', type: :request do
       expect(body_class).not_to include('auth-page-scrollable')
     end
 
-    it 'exposes the WhatsApp Graph API version to the embedded signup UI' do
+    it 'renders the configured WhatsApp Graph API version for embedded signup' do
       allow(GlobalConfigService).to receive(:load).and_call_original
       allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
 
@@ -43,9 +43,27 @@ describe '/app/login', type: :request do
 
       expect(response.body).to include("whatsappApiVersion: 'v22.0'")
     end
+
+    it 'keeps proactive reauthorization hidden by default' do
+      allow(GlobalConfigService).to receive(:load).and_call_original
+      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_PROACTIVE_REAUTHORIZATION_ENABLED', false).and_return(false)
+
+      get '/app'
+
+      expect(response.body).to include('whatsappProactiveReauthorizationEnabled: false')
+    end
+
+    it 'exposes proactive reauthorization after rollout activation' do
+      allow(GlobalConfigService).to receive(:load).and_call_original
+      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_PROACTIVE_REAUTHORIZATION_ENABLED', false).and_return('true')
+
+      get '/app'
+
+      expect(response.body).to include('whatsappProactiveReauthorizationEnabled: true')
+    end
   end
 
-  context 'with DEFAULT_LOCALE' do
+  context 'with configured DEFAULT_LOCALE' do
     it 'renders the dashboard' do
       with_modified_env DEFAULT_LOCALE: 'en_US' do
         get '/app/login'

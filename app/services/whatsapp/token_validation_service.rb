@@ -1,13 +1,18 @@
 class Whatsapp::TokenValidationService
-  def initialize(access_token, waba_id, phone_number_id: nil)
+  NON_EXPIRING_SYSTEM_USER_TOKEN_ERROR = 'Meta Embedded Signup must issue a non-expiring SYSTEM_USER token. ' \
+                                           'Set token expiration to Never in the active Facebook Login for Business configuration and retry.'.freeze
+
+  def initialize(access_token, waba_id, phone_number_id: nil, require_non_expiring_system_user: false)
     @access_token = access_token
     @waba_id = waba_id
     @phone_number_id = phone_number_id
+    @require_non_expiring_system_user = require_non_expiring_system_user
   end
 
   def perform
     token_health = inspect_token
     raise validation_error_message(token_health) if reauthorization_required?(token_health)
+    raise NON_EXPIRING_SYSTEM_USER_TOKEN_ERROR unless acceptable_token_lifetime?(token_health)
 
     token_health
   end
@@ -24,6 +29,12 @@ class Whatsapp::TokenValidationService
 
   def reauthorization_required?(token_health)
     Whatsapp::TokenInspectionService::REAUTHORIZATION_STATUSES.include?(token_health['status'])
+  end
+
+  def acceptable_token_lifetime?(token_health)
+    return true unless @require_non_expiring_system_user
+
+    token_health['token_type'] == 'SYSTEM_USER' && token_health['never_expires'] == true
   end
 
   def validation_error_message(token_health)

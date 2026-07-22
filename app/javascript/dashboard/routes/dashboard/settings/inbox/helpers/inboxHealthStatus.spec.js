@@ -81,7 +81,54 @@ describe('#getInboxHealthStatus', () => {
     });
   });
 
-  it('detects reauthorization_required from legacy payload aliases', () => {
+  it('shows an actionable warning before a WhatsApp Cloud token expires', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        reauthorization_required: false,
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({
+      id: 'token_expiring',
+      tone: 'amber',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING',
+    });
+  });
+
+  it('keeps hard token failure above stale expiry metadata', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        reauthorization_required: true,
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({
+      id: 'reauthorization_required',
+      tone: 'ruby',
+    });
+  });
+
+  it('keeps runtime disconnection above stale expiry metadata', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        connection_state: 'disconnected',
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({ id: 'disconnected', tone: 'ruby' });
+  });
+
+  it('keeps provider failures above stale expiry metadata', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        runtime_state: { last_error: 'Provider temporarily unavailable' },
+        provider_config: { token_health: { status: 'expiring' } },
+      })
+    ).toMatchObject({ id: 'provider_unavailable' });
+  });
+
+  it('detects reauthorization from legacy payload aliases', () => {
     expect(
       getInboxHealthStatus({ id: 1, requires_reauthorization: true })
     ).toMatchObject({ id: 'reauthorization_required' });
