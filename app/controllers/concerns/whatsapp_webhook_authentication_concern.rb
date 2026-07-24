@@ -6,9 +6,7 @@ module WhatsappWebhookAuthenticationConcern
 
   def valid_token?(token)
     return explicit_callback_token_valid?(token) if request.path_parameters[:phone_number].present?
-
-    referenced_channel = manual_callback_channel
-    return channel_verify_token_matches?(referenced_channel, token) if referenced_channel.present?
+    return channel_verify_token_matches?(manual_callback_channel, token) if request.query_parameters['channel_id'].present?
 
     global_verify_token = GlobalConfigService.load('WHATSAPP_WEBHOOK_VERIFY_TOKEN', nil)
     global_verify_token.present? && ActiveSupport::SecurityUtils.secure_compare(token.to_s, global_verify_token.to_s)

@@ -18,6 +18,7 @@ class Meta::CredentialDataSanitizer
         webhook_verify_token|verify_token|code|token|verification_pin|pin)"\s*:\s*")[^"]+("?)
   /ix
   LABELED_SECRET = /((?:webhook[_-]?verify[_-]?token|verify[_-]?token)\s*:\s*)[^\s,}"']+/ix
+  LABELED_PIN = /((?:(?:registration|verification)\s+)?pin(?:\s+(?:is|was))?\s*[:=]?\s*)\d{4,8}\b/i
   BEARER_SECRET = /(Bearer\s+)[^\s,"']+/i
 
   class << self
@@ -68,6 +69,7 @@ class Meta::CredentialDataSanitizer
       safe.gsub(QUERY_SECRET, '\\1[FILTERED]')
           .gsub(JSON_SECRET, '\\1[FILTERED]\\2')
           .gsub(LABELED_SECRET, '\\1[FILTERED]')
+          .gsub(LABELED_PIN, '\\1[FILTERED]')
           .gsub(BEARER_SECRET, '\\1[FILTERED]')
     end
   end

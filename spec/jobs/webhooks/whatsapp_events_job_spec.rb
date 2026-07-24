@@ -610,6 +610,35 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       job.perform_now(mismatched_params, verified_context(channel, channel_id: channel.id))
     end
 
+    it 'rejects a fully verified explicit route when the payload omits the WABA identity' do
+      missing_waba_params = {
+        object: 'whatsapp_business_account',
+        phone_number: channel.phone_number,
+        entry: [{ changes: [{ field: 'account_update', value: { event: 'ACCOUNT_RECONNECTED' } }] }]
+      }.with_indifferent_access
+      allow(Whatsapp::AccountUpdateService).to receive(:new)
+
+      job.perform_now(missing_waba_params, verified_context(channel, channel_id: channel.id))
+
+      expect(Whatsapp::AccountUpdateService).not_to have_received(:new)
+    end
+
+    it 'rejects a fully verified metadata-free explicit route for another WABA' do
+      mismatched_waba_params = {
+        object: 'whatsapp_business_account',
+        phone_number: channel.phone_number,
+        entry: [{
+          id: 'different-waba-id',
+          changes: [{ field: 'account_update', value: { event: 'ACCOUNT_RECONNECTED' } }]
+        }]
+      }.with_indifferent_access
+      allow(Whatsapp::AccountUpdateService).to receive(:new)
+
+      job.perform_now(mismatched_waba_params, verified_context(channel, channel_id: channel.id))
+
+      expect(Whatsapp::AccountUpdateService).not_to have_received(:new)
+    end
+
     it 'does not fall back to the only WABA channel when phone metadata mismatches' do
       mismatched_params = {
         object: 'whatsapp_business_account',

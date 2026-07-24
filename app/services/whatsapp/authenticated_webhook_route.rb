@@ -100,13 +100,43 @@ class Whatsapp::AuthenticatedWebhookRoute
   end
 
   def explicit_route_waba_matches?
-    return true unless @verification_context[:legacy_signed] == true
     return true if @verification_context[:waba_scoped] == true
+    return true unless explicit_route?
 
-    valid = @channel.present? && payload_waba_ids.one? &&
-            @channel.provider_config.to_h['business_account_id'].to_s == payload_waba_ids.first
+    valid = @channel.present? && (payload_waba_matches? || payload_metadata_matches?)
     Rails.logger.warn('[WHATSAPP_WEBHOOK] refused payload because explicit callback WABA does not match payload WABA') unless valid
     valid
+  end
+
+  def explicit_route?
+    @verification_context[:channel_id].present? || channel_identity[:route_phone].present?
+  end
+
+  def payload_waba_matches?
+    payload_waba_ids.one? && @channel.provider_config.to_h['business_account_id'].to_s == payload_waba_ids.first
+  end
+
+  def payload_metadata_matches?
+    return false if payload_waba_ids.present?
+
+    metadata = Array(@payload[:entry]).flat_map { |entry| Array(entry[:changes]) }
+                                      .filter_map { |change| change.dig(:value, :metadata).presence }
+    metadata.present? && metadata.all? { |item| metadata_matches_channel?(item) }
+  end
+
+  def metadata_matches_channel?(metadata)
+    metadata = metadata.to_h.with_indifferent_access
+    phone_number_id = metadata[:phone_number_id].presence
+    display_phone = metadata[:display_phone_number].presence
+    return false if phone_number_id.blank? && display_phone.blank?
+
+    phone_matches = phone_number_id.blank? || phone_number_id.to_s == @channel.provider_config.to_h['phone_number_id'].to_s
+    display_matches = display_phone.blank? || normalized_phone(display_phone) == normalized_phone(@channel.phone_number)
+    phone_matches && display_matches
+  end
+
+  def normalized_phone(value)
+    value.to_s.delete_prefix('+')
   end
 
   def waba_ownership_matches?

@@ -131,6 +131,23 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
 
       expect(response).to have_http_status(:unauthorized)
     end
+
+    it 'does not fall back to the global token for an unknown or inactive channel id' do
+      with_modified_env WHATSAPP_WEBHOOK_VERIFY_TOKEN: 'global-verify-token' do
+        [0, channel.id].each do |channel_id|
+          channel.inbox.mark_pending_deletion! if channel_id == channel.id
+          get '/webhooks/whatsapp',
+              params: {
+                'channel_id' => channel_id,
+                'hub.challenge' => 'manual-challenge',
+                'hub.mode' => 'subscribe',
+                'hub.verify_token' => 'global-verify-token'
+              }
+
+          expect(response).to have_http_status(:unauthorized)
+        end
+      end
+    end
   end
 
   describe 'POST /webhooks/whatsapp/{:phone_number}' do
@@ -412,6 +429,26 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
             }
           }]
         }]
+      }.to_json
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+
+      post_whatsapp_webhook(
+        "/webhooks/whatsapp/#{channel.phone_number}",
+        payload,
+        signature: signature_for(payload, route_secret),
+        env: {}
+      )
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+    end
+
+    it 'rejects a signed explicit callback without a WABA identity' do
+      route_secret = 'explicit-route-secret'
+      channel.update!(provider_config: channel.provider_config.merge('app_secret' => route_secret))
+      payload = {
+        object: 'whatsapp_business_account',
+        entry: [{ changes: [{ field: 'account_update', value: { event: 'ACCOUNT_RECONNECTED' } }] }]
       }.to_json
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
 

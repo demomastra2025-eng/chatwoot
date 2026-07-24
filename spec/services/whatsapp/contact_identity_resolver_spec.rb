@@ -125,6 +125,29 @@ RSpec.describe Whatsapp::ContactIdentityResolver do
       .with(whatsapp_channel.id, 0, pending_event.id)
   end
 
+  it 'holds the coexistence channel lock through contact creation and pending-ledger lookup' do
+    whatsapp_channel.update!(
+      provider_config: whatsapp_channel.provider_config.merge('embedded_signup_flow' => 'coexistence')
+    )
+    lock_held = false
+    allow(whatsapp_channel).to receive(:with_lock) do |&block|
+      lock_held = true
+      block.call
+    ensure
+      lock_held = false
+    end
+    allow(ContactInboxSourceIdResolver).to receive(:new).and_wrap_original do |method, *args|
+      expect(lock_held).to be(true)
+      method.call(*args)
+    end
+    allow(Whatsapp::CoexistenceContactPendingEvent).to receive(:where).and_wrap_original do |method, *args|
+      expect(lock_held).to be(true)
+      method.call(*args)
+    end
+
+    described_class.new(inbox: inbox, message: message, contact_params: contact_params).perform
+  end
+
   it 'does not enqueue coexistence pending-contact replay for another phone identity' do
     whatsapp_channel.update!(
       provider_config: whatsapp_channel.provider_config.merge('embedded_signup_flow' => 'coexistence')

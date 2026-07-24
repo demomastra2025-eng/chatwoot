@@ -53,5 +53,11 @@ RSpec.describe Meta::CredentialDataSanitizer do
       expect(result.fetch('message')).not_to include('query-secret', 'json-secret', 'labeled-secret')
       expect(result.fetch('message').scan('[FILTERED]').size).to eq(3)
     end
+
+    it 'redacts short PIN values only when they are labeled as credentials' do
+      result = described_class.sanitize('Registration PIN 123456 is invalid; order 654321 remains visible')
+
+      expect(result).to eq('Registration PIN [FILTERED] is invalid; order 654321 remains visible')
+    end
   end
 end

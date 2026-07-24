@@ -9,9 +9,8 @@ class Whatsapp::ContactIdentityResolver
   def perform
     return if source_ids.blank?
 
-    contact_inbox = find_or_create_contact_inbox
-    sync_contact_identifiers(contact_inbox)
-    resolved_contact_inbox = preferred_contact_inbox(contact_inbox)
+    channel = coexistence_channel
+    resolved_contact_inbox = channel.present? ? channel.with_lock { resolve_contact_identity } : resolve_contact_identity
     enqueue_pending_contact_event_reconciliation
     resolved_contact_inbox
   end
@@ -66,6 +65,14 @@ class Whatsapp::ContactIdentityResolver
 
   private
 
+  def resolve_contact_identity
+    contact_inbox = find_or_create_contact_inbox
+    sync_contact_identifiers(contact_inbox)
+    resolved_contact_inbox = preferred_contact_inbox(contact_inbox)
+    prepare_pending_contact_event_reconciliation
+    resolved_contact_inbox
+  end
+
   def find_or_create_contact_inbox
     ContactInboxSourceIdResolver.new(
       inbox: inbox,
@@ -93,10 +100,9 @@ class Whatsapp::ContactIdentityResolver
     ).perform
   end
 
-  def enqueue_pending_contact_event_reconciliation
-    channel = inbox.channel
-    return unless channel.is_a?(Channel::Whatsapp)
-    return unless channel.provider_config.to_h['embedded_signup_flow'] == 'coexistence'
+  def prepare_pending_contact_event_reconciliation
+    channel = coexistence_channel
+    return if channel.blank?
 
     phone_identities = source_ids.filter_map do |identifier|
       phone_source_id = self.class.phone_source_id(identifier)
@@ -108,7 +114,21 @@ class Whatsapp::ContactIdentityResolver
     matching_until_id = scope.matching_phone_identities(phone_identities).maximum(:id)
     return if matching_until_id.blank?
 
-    Whatsapp::CoexistenceContactPendingEventReconciliationJob.perform_later(channel.id, 0, matching_until_id)
+    @pending_contact_event_reconciliation_arguments = [channel.id, 0, matching_until_id]
+  end
+
+  def enqueue_pending_contact_event_reconciliation
+    return if @pending_contact_event_reconciliation_arguments.blank?
+
+    Whatsapp::CoexistenceContactPendingEventReconciliationJob.perform_later(*@pending_contact_event_reconciliation_arguments)
+  end
+
+  def coexistence_channel
+    channel = inbox.channel
+    return unless channel.is_a?(Channel::Whatsapp)
+    return unless channel.provider_config.to_h['embedded_signup_flow'] == 'coexistence'
+
+    channel
   end
 
   def contact_attributes

@@ -28,15 +28,37 @@ class Webhooks::WhatsappController < ActionController::API
   def webhook_matches_channel_waba?(channel)
     return true if channel.blank?
 
-    waba_matches = webhook_waba_ids.empty? || webhook_waba_ids.all?(channel.provider_config.to_h['business_account_id'].to_s)
-    phone_id_matches = webhook_phone_number_ids.empty? || webhook_phone_number_ids.all?(channel.provider_config.to_h['phone_number_id'].to_s)
-    waba_matches && phone_id_matches
+    webhook_routing_identity_present? && webhook_waba_ids_match?(channel) && webhook_phone_ids_match?(channel) &&
+      webhook_display_phones_match?(channel)
+  end
+
+  def webhook_routing_identity_present?
+    webhook_waba_ids.present? || webhook_phone_number_ids.present? || webhook_display_phone_numbers.present?
+  end
+
+  def webhook_waba_ids_match?(channel)
+    webhook_waba_ids.empty? ||
+      (webhook_waba_ids.one? && webhook_waba_ids.first == channel.provider_config.to_h['business_account_id'].to_s)
+  end
+
+  def webhook_phone_ids_match?(channel)
+    webhook_phone_number_ids.empty? || webhook_phone_number_ids.all?(channel.provider_config.to_h['phone_number_id'].to_s)
+  end
+
+  def webhook_display_phones_match?(channel)
+    webhook_display_phone_numbers.empty? || webhook_display_phone_numbers.all?(channel.phone_number.to_s)
   end
 
   def webhook_phone_number_ids
     @webhook_phone_number_ids ||= webhook_changes.filter_map do |change|
       change.dig(:value, :metadata, :phone_number_id).presence
     end.map(&:to_s).uniq
+  end
+
+  def webhook_display_phone_numbers
+    @webhook_display_phone_numbers ||= webhook_changes.filter_map do |change|
+      normalized_phone_number(change.dig(:value, :metadata, :display_phone_number))
+    end.uniq
   end
 
   def webhook_waba_ids
