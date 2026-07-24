@@ -102,6 +102,82 @@ RSpec.describe Whatsapp::ContactIdentityResolver do
     expect(contact_inbox.contact.name).to eq("+#{sender_phone_source_id}")
   end
 
+  it 'enqueues matching coexistence pending-contact replay after resolving the identity' do
+    whatsapp_channel.update!(
+      provider_config: whatsapp_channel.provider_config.merge('embedded_signup_flow' => 'coexistence')
+    )
+    pending_event = Whatsapp::CoexistenceContactPendingEvent.create!(
+      account_id: whatsapp_channel.account_id,
+      channel_id: whatsapp_channel.id,
+      event_key: 'pending-remove',
+      reason: 'missing_contact_identity',
+      phone_identity: sender_phone_source_id,
+      entry: {
+        action: 'remove',
+        contact: { phone_number: "+#{sender_phone_source_id}" },
+        metadata: { timestamp: '1700000000' }
+      }
+    )
+
+    expect do
+      described_class.new(inbox: inbox, message: message, contact_params: contact_params).perform
+    end.to have_enqueued_job(Whatsapp::CoexistenceContactPendingEventReconciliationJob)
+      .with(whatsapp_channel.id, 0, pending_event.id)
+  end
+
+  it 'does not enqueue coexistence pending-contact replay for another phone identity' do
+    whatsapp_channel.update!(
+      provider_config: whatsapp_channel.provider_config.merge('embedded_signup_flow' => 'coexistence')
+    )
+    Whatsapp::CoexistenceContactPendingEvent.create!(
+      account_id: whatsapp_channel.account_id,
+      channel_id: whatsapp_channel.id,
+      event_key: 'unrelated-remove',
+      reason: 'missing_contact_identity',
+      phone_identity: '7709999',
+      entry: {
+        action: 'remove',
+        contact: { phone_number: '+77009999999' },
+        metadata: { timestamp: '1700000000' }
+      }
+    )
+
+    expect do
+      described_class.new(inbox: inbox, message: message, contact_params: contact_params).perform
+    end.not_to have_enqueued_job(Whatsapp::CoexistenceContactPendingEventReconciliationJob)
+  end
+
+  it 'enqueues a legacy pending replay when Brazil phone formats normalize to the same identity' do
+    old_format = '554188887777'
+    new_format = '5541988887777'
+    whatsapp_channel.update!(
+      provider_config: whatsapp_channel.provider_config.merge('embedded_signup_flow' => 'coexistence')
+    )
+    Whatsapp::CoexistenceContactSyncService.new(
+      channel: whatsapp_channel,
+      value: {
+        state_sync: [{
+          action: 'remove',
+          contact: { phone_number: old_format },
+          metadata: { timestamp: '1700000001' }
+        }]
+      }
+    ).perform
+    pending_event = Whatsapp::CoexistenceContactPendingEvent.find_by!(channel: whatsapp_channel)
+    pending_event.update!(phone_identity: nil)
+    brazil_message = message.merge(from: new_format, from_user_id: nil, from_parent_user_id: nil)
+    brazil_contact_params = contact_params.merge(wa_id: new_format, user_id: nil, parent_user_id: nil)
+
+    perform_enqueued_jobs(only: Whatsapp::CoexistenceContactPendingEventReconciliationJob) do
+      described_class.new(inbox: inbox, message: brazil_message, contact_params: brazil_contact_params).perform
+    end
+
+    contact = inbox.contact_inboxes.find_by!(source_id: new_format).contact
+    state = contact.reload.additional_attributes.dig('whatsapp_business_app_contacts', inbox.id.to_s)
+    expect(state).to include('state' => 'removed', 'timestamp' => 1_700_000_001)
+    expect(Whatsapp::CoexistenceContactPendingEvent.where(channel: whatsapp_channel)).to be_empty
+  end
+
   it 'does not treat BSUID values as phone numbers' do
     expect(described_class.normalize_source_id(bsuid_source_id)).to eq(bsuid_source_id)
     expect(described_class.phone_number_for(bsuid_source_id)).to be_nil

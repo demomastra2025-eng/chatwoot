@@ -255,7 +255,7 @@ describe('#getters', () => {
       expect(result[0].name).toBe('approved_template');
     });
 
-    it('filters out interactive templates (LIST, PRODUCT, CATALOG)', () => {
+    it('filters unsupported LIST and PRODUCT templates but keeps supported CATALOG templates', () => {
       const interactiveTemplates = [
         {
           name: 'list_template',
@@ -299,8 +299,10 @@ describe('#getters', () => {
       };
 
       const result = getters.getFilteredWhatsAppTemplates(state)(1);
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('regular_template');
+      expect(result.map(template => template.name)).toEqual([
+        'catalog_template',
+        'regular_template',
+      ]);
     });
 
     it('filters out location templates', () => {
@@ -338,7 +340,7 @@ describe('#getters', () => {
       expect(result[0].name).toBe('regular_template');
     });
 
-    it('filters out authentication templates', () => {
+    it('includes approved authentication templates in the send selector', () => {
       const authenticationTemplates = [
         {
           name: 'auth_template',
@@ -367,11 +369,13 @@ describe('#getters', () => {
       };
 
       const result = getters.getFilteredWhatsAppTemplates(state)(1);
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('regular_template');
+      expect(result.map(template => template.name)).toEqual([
+        'auth_template',
+        'regular_template',
+      ]);
     });
 
-    it('filters out advanced unsupported templates (CAROUSEL, LIMITED_TIME_OFFER)', () => {
+    it('filters unsupported limited-time offers but keeps supported carousels', () => {
       const advancedTemplates = [
         {
           name: 'carousel_template',
@@ -407,8 +411,10 @@ describe('#getters', () => {
       };
 
       const result = getters.getFilteredWhatsAppTemplates(state)(1);
-      expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('regular_template');
+      expect(result.map(template => template.name)).toEqual([
+        'carousel_template',
+        'regular_template',
+      ]);
     });
 
     it('filters out templates without a body component', () => {

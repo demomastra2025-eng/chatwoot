@@ -1,8 +1,21 @@
 # rubocop:disable Metrics/ClassLength
 class Whatsapp::TemplateRequestBuilderService
-  SUPPORTED_CATEGORIES = %w[UTILITY MARKETING].freeze
+  SUPPORTED_CATEGORIES = %w[UTILITY MARKETING AUTHENTICATION].freeze
   SUPPORTED_HEADER_TYPES = %w[none text image video document].freeze
-  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL COPY_CODE PHONE_NUMBER].freeze
+  SUPPORTED_BUTTON_TYPES = %w[QUICK_REPLY URL COPY_CODE PHONE_NUMBER CATALOG].freeze
+  CAROUSEL_HEADER_TYPES = %w[image video].freeze
+  CAROUSEL_BUTTON_TYPES = %w[QUICK_REPLY URL PHONE_NUMBER].freeze
+  BUTTON_BUILDERS = {
+    'QUICK_REPLY' => :build_quick_reply_button,
+    'URL' => :build_url_button,
+    'COPY_CODE' => :build_copy_code_button,
+    'PHONE_NUMBER' => :build_phone_number_button,
+    'CATALOG' => :build_catalog_button
+  }.freeze
+  MAX_TEMPLATE_BUTTONS = 10
+  MAX_CAROUSEL_BUTTONS = 2
+  MIN_CAROUSEL_CARDS = 2
+  MAX_CAROUSEL_CARDS = 10
   TEMPLATE_NAME_FORMAT = /\A[a-z0-9_]+\z/
   PHONE_NUMBER_FORMAT = /\A\+[1-9]\d{1,14}\z/
   VARIABLE_PATTERN = /{{\s*(\d+)\s*}}/
@@ -24,6 +37,9 @@ class Whatsapp::TemplateRequestBuilderService
   private
 
   def build_components
+    return build_authentication_components if category == 'AUTHENTICATION'
+    return build_carousel_components if config[:carousel_cards].present?
+
     components = [build_body_component]
     header_component = build_header_component
     components << header_component if header_component.present?
@@ -35,6 +51,117 @@ class Whatsapp::TemplateRequestBuilderService
     components << buttons_component if buttons_component.present?
 
     components
+  end
+
+  def build_authentication_components
+    validate_authentication_configuration!
+
+    components = [
+      {
+        type: 'BODY',
+        add_security_recommendation: ActiveModel::Type::Boolean.new.cast(config.fetch(:add_security_recommendation, true))
+      }
+    ]
+
+    code_expiration_minutes = optional_integer_value(:code_expiration_minutes)
+    if code_expiration_minutes
+      raise ArgumentError, 'Authentication code expiration must be between 1 and 90 minutes' unless code_expiration_minutes.between?(1, 90)
+
+      components << { type: 'FOOTER', code_expiration_minutes: code_expiration_minutes }
+    end
+
+    components << {
+      type: 'BUTTONS',
+      buttons: [{ type: 'OTP', otp_type: 'COPY_CODE' }]
+    }
+    components
+  end
+
+  def validate_authentication_configuration!
+    has_custom_components = header_type != 'none' || config[:body_text].present? || config[:footer_text].present? ||
+                            Array(config[:buttons]).any? || config[:carousel_cards].present?
+    return unless has_custom_components
+
+    raise ArgumentError, 'Authentication templates use preset text and an OTP button; custom components are not supported'
+  end
+
+  def build_carousel_components
+    raise ArgumentError, 'Carousel templates must use the MARKETING category' unless category == 'MARKETING'
+    if header_type != 'none' || config[:footer_text].present? || Array(config[:buttons]).any?
+      raise ArgumentError, 'Carousel templates only support a top-level body and card components'
+    end
+
+    cards = Array(config[:carousel_cards]).map.with_index do |card, index|
+      build_carousel_card(card.with_indifferent_access, index)
+    end
+    raise ArgumentError, 'Carousel templates require between 2 and 10 cards' unless cards.size.between?(MIN_CAROUSEL_CARDS, MAX_CAROUSEL_CARDS)
+
+    validate_matching_carousel_card_structures!(cards)
+    [build_body_component, { type: 'CAROUSEL', cards: cards }]
+  end
+
+  def build_carousel_card(card, index)
+    components = [build_carousel_header_component(card, index)]
+    body_component = build_carousel_body_component(card, index)
+    components << body_component if body_component
+    buttons_component = build_carousel_buttons_component(card, index)
+    components << buttons_component if buttons_component
+    { components: components }
+  end
+
+  def build_carousel_header_component(card, index)
+    card_header_type = card.fetch(:header_type, '').to_s.downcase
+    raise ArgumentError, "Carousel card #{index + 1} header must be image or video" unless CAROUSEL_HEADER_TYPES.include?(card_header_type)
+
+    handle = asset_upload_service.upload(
+      url: required_value(card[:sample_media_url], "Carousel card #{index + 1} sample media URL is required"),
+      media_type: card_header_type
+    )
+    {
+      type: 'HEADER',
+      format: card_header_type.upcase,
+      example: { header_handle: [handle] }
+    }
+  end
+
+  def build_carousel_body_component(card, index)
+    return if card[:body_text].blank?
+
+    text = required_value(card[:body_text], "Carousel card #{index + 1} body text is required")
+    raise ArgumentError, "Carousel card #{index + 1} body text cannot exceed 160 characters" if text.length > 160
+
+    variables = extract_variables(text, context: "Carousel card #{index + 1} body text", allow_dangling: false)
+    component = { type: 'BODY', text: text }
+    examples = example_values_from(card[:body_examples], variables, "Carousel card #{index + 1} body text")
+    component[:example] = { body_text: [examples] } if examples.present?
+    component
+  end
+
+  def build_carousel_buttons_component(card, index)
+    buttons = Array(card[:buttons]).filter_map do |button|
+      next if button.blank?
+
+      normalized_button = button.with_indifferent_access
+      button_type = normalized_button.fetch(:type, '').to_s.upcase
+      raise ArgumentError, "Unsupported carousel card #{index + 1} button type: #{button_type}" unless CAROUSEL_BUTTON_TYPES.include?(button_type)
+
+      build_button(normalized_button)
+    end
+    return if buttons.blank?
+    raise ArgumentError, "Carousel card #{index + 1} can have up to 2 buttons" if buttons.size > MAX_CAROUSEL_BUTTONS
+
+    { type: 'BUTTONS', buttons: buttons }
+  end
+
+  def validate_matching_carousel_card_structures!(cards)
+    signatures = cards.map do |card|
+      card[:components].map do |component|
+        component[:type] == 'BUTTONS' ? [component[:type], component[:buttons].pluck(:type)] : component[:type]
+      end
+    end
+    return if signatures.uniq.one?
+
+    raise ArgumentError, 'All carousel cards must use the same component and button structure'
   end
 
   def build_body_component
@@ -107,7 +234,7 @@ class Whatsapp::TemplateRequestBuilderService
     end
 
     return if buttons.blank?
-    raise ArgumentError, 'You can add up to 3 buttons' if buttons.size > 3
+    raise ArgumentError, 'You can add up to 10 buttons' if buttons.size > MAX_TEMPLATE_BUTTONS
 
     {
       type: 'BUTTONS',
@@ -117,18 +244,10 @@ class Whatsapp::TemplateRequestBuilderService
 
   def build_button(button)
     button_type = button.fetch(:type, '').to_s.upcase
-    raise ArgumentError, "Unsupported button type: #{button_type}" unless SUPPORTED_BUTTON_TYPES.include?(button_type)
+    builder = BUTTON_BUILDERS[button_type]
+    raise ArgumentError, "Unsupported button type: #{button_type}" if builder.blank?
 
-    case button_type
-    when 'QUICK_REPLY'
-      build_quick_reply_button(button)
-    when 'URL'
-      build_url_button(button)
-    when 'COPY_CODE'
-      build_copy_code_button(button)
-    when 'PHONE_NUMBER'
-      build_phone_number_button(button)
-    end
+    send(builder, button)
   end
 
   def build_quick_reply_button(button)
@@ -184,10 +303,23 @@ class Whatsapp::TemplateRequestBuilderService
     }
   end
 
+  def build_catalog_button(button)
+    raise ArgumentError, 'Catalog buttons are only supported for MARKETING templates' unless category == 'MARKETING'
+
+    {
+      type: 'CATALOG',
+      text: required_value(button[:text], 'Catalog button text is required')
+    }
+  end
+
   def example_values_for(key, variables, label)
+    example_values_from(config[key], variables, label)
+  end
+
+  def example_values_from(raw_values, variables, label)
     return [] if variables.blank?
 
-    values_hash = config[key].presence&.with_indifferent_access || {}
+    values_hash = raw_values.presence&.with_indifferent_access || {}
     variables.map do |variable|
       required_value(values_hash[variable], "#{label} example for {{#{variable}}} is required")
     end
@@ -268,6 +400,15 @@ class Whatsapp::TemplateRequestBuilderService
 
   def string_value(key)
     config[key].to_s.strip
+  end
+
+  def optional_integer_value(key)
+    value = config[key]
+    return if value.blank?
+
+    Integer(value.to_s, 10)
+  rescue ArgumentError, TypeError
+    raise ArgumentError, "#{key.to_s.humanize} must be an integer"
   end
 
   def required_value(value, error_message)

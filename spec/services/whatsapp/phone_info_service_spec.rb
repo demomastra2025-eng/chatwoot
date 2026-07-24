@@ -113,6 +113,38 @@ describe Whatsapp::PhoneInfoService do
       end
     end
 
+    context 'when resolving a standard number from the official WABA-only event' do
+      let(:phone_number_id) { nil }
+      let(:service) do
+        described_class.new(waba_id, nil, access_token, allow_unambiguous_selection: true)
+      end
+      let(:phone_response) do
+        {
+          'data' => [
+            {
+              'id' => 'only-phone',
+              'display_phone_number' => '77010000001',
+              'verified_name' => 'Cloud Business',
+              'code_verification_status' => 'VERIFIED'
+            }
+          ]
+        }
+      end
+
+      it 'selects the only accessible phone number' do
+        expect(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(phone_response)
+
+        expect(service.perform).to include(phone_number_id: 'only-phone')
+      end
+
+      it 'fails closed when several phone numbers are accessible' do
+        phone_response['data'] << phone_response['data'].first.merge('id' => 'second-phone')
+        allow(api_client).to receive(:fetch_phone_numbers).with(waba_id).and_return(phone_response)
+
+        expect { service.perform }.to raise_error(/Multiple eligible phone numbers/)
+      end
+    end
+
     context 'when specific phone_number_id is not found' do
       let(:phone_number_id) { 'different_id' }
       let(:phone_response) do
@@ -135,6 +167,43 @@ describe Whatsapp::PhoneInfoService do
       it 'raises an error instead of creating the inbox for a different number' do
         expect { service.perform }
           .to raise_error(/Phone number different_id is not available for WABA test_waba_id/)
+      end
+    end
+
+    context 'when resolving a coexistence number from the official WABA-only event' do
+      let(:phone_number_id) { nil }
+      let(:service) { described_class.new(waba_id, nil, access_token, coexistence: true) }
+      let(:phone_response) do
+        {
+          'data' => [
+            {
+              'id' => 'cloud-only',
+              'display_phone_number' => '77010000001',
+              'platform_type' => 'CLOUD_API',
+              'is_on_biz_app' => false
+            },
+            {
+              'id' => 'business-app-phone',
+              'display_phone_number' => '77010000002',
+              'verified_name' => 'Business App',
+              'code_verification_status' => 'VERIFIED',
+              'platform_type' => 'CLOUD_API',
+              'is_on_biz_app' => true
+            }
+          ]
+        }
+      end
+
+      it 'selects only the phone Meta marks as connected to the Business app' do
+        expect(api_client).to receive(:fetch_phone_numbers)
+          .with(waba_id, after: nil, fields: described_class::PHONE_NUMBER_FIELDS)
+          .and_return(phone_response)
+
+        expect(service.perform).to include(
+          phone_number_id: 'business-app-phone',
+          is_on_biz_app: true,
+          platform_type: 'CLOUD_API'
+        )
       end
     end
 

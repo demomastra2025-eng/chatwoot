@@ -96,6 +96,14 @@ const telegramReactionSummary = computed(() => {
   });
 });
 
+const whatsappReactionSummary = computed(() => {
+  const reactions = contentAttributes.value?.whatsappReactions || {};
+
+  return Object.values(reactions)
+    .map(reaction => reaction?.emoji)
+    .filter(Boolean);
+});
+
 const handleSeeOriginal = () => {
   renderOriginal.value = !renderOriginal.value;
 };
@@ -141,6 +149,12 @@ const handleSeeOriginal = () => {
           {{ $t('CONVERSATION.TELEGRAM.REACTIONS') }}
         </span>
         <span>{{ telegramReactionSummary.join(' · ') }}</span>
+      </div>
+      <div
+        v-if="whatsappReactionSummary.length"
+        class="text-sm text-n-slate-11 flex flex-wrap items-center gap-1"
+      >
+        <span>{{ whatsappReactionSummary.join(' ') }}</span>
       </div>
       <CaptainToolExecutionGroup
         :additional-attributes="additionalAttributes"

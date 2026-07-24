@@ -1,5 +1,6 @@
 class Webhooks::WhatsappController < ActionController::API
   include MetaTokenVerifyConcern
+  include WhatsappWebhookAuthenticationConcern
 
   before_action :verify_meta_signature!, only: :process_payload
 
@@ -7,62 +8,92 @@ class Webhooks::WhatsappController < ActionController::API
     log_webhook_request
 
     if inactive_whatsapp_number?
-      Rails.logger.warn("Rejected webhook for inactive WhatsApp number: #{params[:phone_number]}")
+      Rails.logger.warn("Rejected webhook for inactive WhatsApp number: #{request.path_parameters[:phone_number]}")
       render json: { error: 'Inactive WhatsApp number' }, status: :unprocessable_content
       return
     end
 
-    Webhooks::WhatsappEventsJob.perform_later(
-      params.to_unsafe_hash,
-      { hmac_verified: meta_signature_verified? }
-    )
+    webhook_job_payloads.each do |payload|
+      Webhooks::WhatsappEventsJob.perform_later(payload, routing_verification_context)
+    end
     head :ok
   end
 
   private
 
-  def valid_token?(token)
-    channel = Channel::Whatsapp.find_by(phone_number: params[:phone_number])
-    whatsapp_webhook_verify_token = channel.provider_config['webhook_verify_token'] if channel.present?
-    token == whatsapp_webhook_verify_token if whatsapp_webhook_verify_token.present?
+  def default_callback?
+    request.path_parameters[:phone_number].blank?
   end
 
-  def meta_app_secrets
-    [
-      *channel_meta_app_secrets(whatsapp_channel),
-      GlobalConfigService.load('WHATSAPP_APP_SECRET', nil)
-    ]
+  def webhook_matches_channel_waba?(channel)
+    return true if channel.blank?
+
+    waba_matches = webhook_waba_ids.empty? || webhook_waba_ids.all?(channel.provider_config.to_h['business_account_id'].to_s)
+    phone_id_matches = webhook_phone_number_ids.empty? || webhook_phone_number_ids.all?(channel.provider_config.to_h['phone_number_id'].to_s)
+    waba_matches && phone_id_matches
+  end
+
+  def webhook_phone_number_ids
+    @webhook_phone_number_ids ||= webhook_changes.filter_map do |change|
+      change.dig(:value, :metadata, :phone_number_id).presence
+    end.map(&:to_s).uniq
+  end
+
+  def webhook_waba_ids
+    @webhook_waba_ids ||= webhook_entries.filter_map { |entry| entry[:id].presence }.map(&:to_s).uniq
   end
 
   def whatsapp_channel
-    @whatsapp_channel ||= whatsapp_business_payload_channel || Channel::Whatsapp.find_by(phone_number: params[:phone_number])
+    @whatsapp_channel ||= channel_from_path || whatsapp_business_payload_channel
+  end
+
+  def channel_from_path
+    phone_number = request.path_parameters[:phone_number]
+    Channel::Whatsapp.find_by(phone_number: phone_number) if phone_number.present?
   end
 
   def meta_signature_verification_required?
+    return true if request.path_parameters[:phone_number].blank?
     return true if whatsapp_channel.blank?
-    return false unless whatsapp_channel.provider == 'whatsapp_cloud'
-    return true if meta_app_secrets.compact_blank.present?
-    return true if embedded_signup_channel?
 
-    Rails.logger.warn("[WHATSAPP_WEBHOOK] skipping HMAC validation: missing app secret for channel=#{whatsapp_channel.id}")
-    false
-  end
-
-  def embedded_signup_channel?
-    whatsapp_channel.provider_config.to_h.with_indifferent_access[:source] == 'embedded_signup'
+    whatsapp_channel.provider == 'whatsapp_cloud'
   end
 
   def whatsapp_business_payload_channel
     return unless params[:object] == 'whatsapp_business_account'
 
-    metadata = params.dig(:entry, 0, :changes, 0, :value, :metadata)
-    return if metadata.blank?
+    metadata = webhook_changes.filter_map { |change| change.dig(:value, :metadata) }.first
+    channel = channel_from_webhook_metadata(metadata) if metadata.present?
+    return channel if channel.present?
 
+    channel_from_waba_entry_ids
+  end
+
+  def webhook_changes
+    webhook_entries.flat_map { |entry| Array(entry[:changes]) }
+  end
+
+  def webhook_entries
+    Array(params[:entry]).map { |entry| entry.to_unsafe_h.with_indifferent_access }
+  end
+
+  def channel_from_waba_entry_ids
+    waba_ids = webhook_entries.filter_map { |entry| entry[:id] }.map(&:to_s).uniq
+    return if waba_ids.empty?
+
+    owner_account_id = Channel::Whatsapp.unambiguous_waba_owner_account_id(waba_ids)
+    return if owner_account_id.blank?
+
+    channels = Channel::Whatsapp.active_cloud.for_waba(waba_ids).where(account_id: owner_account_id).limit(2).to_a
+    channels.one? ? channels.first : nil
+  end
+
+  def channel_from_webhook_metadata(metadata)
     phone_number = normalized_phone_number(metadata[:display_phone_number])
     phone_number_id = metadata[:phone_number_id]
     channel = Channel::Whatsapp.find_by(phone_number: phone_number)
 
-    return channel if channel && channel.provider_config['phone_number_id'] == phone_number_id
+    return channel if channel&.provider == 'whatsapp_cloud' && channel.provider_config['phone_number_id'] == phone_number_id
   end
 
   def normalized_phone_number(phone_number)
@@ -72,8 +103,68 @@ class Webhooks::WhatsappController < ActionController::API
     phone_number.start_with?('+') ? phone_number : "+#{phone_number}"
   end
 
+  def job_params
+    job_params = params.to_unsafe_hash
+    route_phone_number = request.path_parameters[:phone_number]
+    if route_phone_number.present?
+      job_params['phone_number'] = route_phone_number
+    else
+      job_params.delete('phone_number')
+    end
+    job_params
+  end
+
+  def webhook_job_payloads
+    params = job_params
+    return [params] unless default_callback? && account_update_webhook?
+
+    Whatsapp::WebhookBatchNormalizer.new(params: params).perform.map { |payload| with_legacy_account_update_route(payload) }
+  end
+
+  def account_update_webhook?
+    webhook_changes.any? { |change| change[:field] == 'account_update' }
+  end
+
+  def with_legacy_account_update_route(payload)
+    return payload unless payload.dig(:entry, 0, :changes, 0, :field) == 'account_update'
+
+    waba_id = payload.dig(:entry, 0, :id).to_s
+    owner_account_id = Channel::Whatsapp.unambiguous_waba_owner_account_id(waba_id)
+    return payload if waba_id.blank? || owner_account_id.blank?
+
+    route_phone = Channel::Whatsapp.lifecycle_cloud.for_waba(waba_id).where(account_id: owner_account_id).order(:id).pick(:phone_number)
+    route_phone.present? ? payload.merge(phone_number: route_phone) : payload
+  end
+
+  def routing_verification_context
+    return waba_scoped_verification_context if default_callback?
+
+    {
+      hmac_verified: meta_signature_verified?,
+      channel_id: whatsapp_channel&.id,
+      channel_identity: Whatsapp::AuthenticatedWebhookRoute.identity_snapshot(whatsapp_channel, request.path_parameters[:phone_number]),
+      waba_account_ids: authenticated_waba_account_ids
+    }
+  end
+
+  def waba_scoped_verification_context
+    {
+      hmac_verified: meta_signature_verified?,
+      channel_id: nil,
+      channel_identity: {},
+      waba_account_ids: authenticated_waba_account_ids,
+      waba_scoped: true
+    }
+  end
+
+  def authenticated_waba_account_ids
+    webhook_waba_ids.index_with do |waba_id|
+      Channel::Whatsapp.unambiguous_waba_owner_account_id(waba_id)
+    end
+  end
+
   def inactive_whatsapp_number?
-    phone_number = params[:phone_number]
+    phone_number = request.path_parameters[:phone_number]
     return false if phone_number.blank?
 
     inactive_numbers = GlobalConfig.get_value('INACTIVE_WHATSAPP_NUMBERS').to_s
@@ -95,7 +186,7 @@ class Webhooks::WhatsappController < ActionController::API
     [
       '[WHATSAPP_WEBHOOK] received',
       "request_id=#{request.request_id}",
-      "phone_number=#{params[:phone_number]}",
+      "phone_number=#{request.path_parameters[:phone_number]}",
       "object=#{params[:object] || 'unknown'}",
       "entries=#{Array(params[:entry]).size}",
       "changes=#{changes.size}",
@@ -109,11 +200,5 @@ class Webhooks::WhatsappController < ActionController::API
 
   def webhook_value_count(values, key)
     values.sum { |value| Array(value[key] || value[key.to_s]).size }
-  end
-
-  def webhook_changes
-    Array(params[:entry]).flat_map do |entry|
-      Array(entry[:changes] || entry['changes'])
-    end
   end
 end

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Meta::AuthorizationHealthCheckService
+  include Meta::WhatsappAuthorizationHealthHelpers
+
   GRAPH_BASE_URI = 'https://graph.facebook.com'
   INSTAGRAM_GRAPH_BASE_URI = 'https://graph.instagram.com'
   REQUEST_TIMEOUT = 10
@@ -115,12 +117,15 @@ class Meta::AuthorizationHealthCheckService
     return action_required_result('token_missing') if token.blank?
     return action_required_result('asset_missing') if phone_number_id.blank?
 
-    version = GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0')
-    graph_get(
+    version = GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0')
+    identity = graph_get(
       "#{GRAPH_BASE_URI}/#{version}/#{phone_number_id}",
       query: { fields: 'id', access_token: token }.merge(Whatsapp::FacebookApiClient.appsecret_proof_query(token).to_h),
       expected_id: phone_number_id
     )
+    return identity unless identity.healthy?
+
+    whatsapp_configuration_result(identity, version)
   end
 
   def graph_get(url, query:, expected_id: nil, id_field: 'id')

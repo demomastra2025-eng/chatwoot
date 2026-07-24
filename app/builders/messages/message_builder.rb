@@ -127,6 +127,8 @@ class Messages::MessageBuilder
 
   def validate_whatsapp_outbound_content!
     return unless whatsapp_public_outgoing?
+
+    validate_whatsapp_rich_payload! if whatsapp_rich_payload.present?
     return if deliverable_content_present?
 
     raise ArgumentError, BLANK_WHATSAPP_OUTBOUND_ERROR
@@ -137,7 +139,18 @@ class Messages::MessageBuilder
   end
 
   def deliverable_content_present?
-    @params[:content].present? || attachments_present? || template_params.present?
+    @params[:content].present? || attachments_present? || template_params.present? || whatsapp_rich_payload.present?
+  end
+
+  def whatsapp_rich_payload
+    content_attributes.to_h.with_indifferent_access[:whatsapp_payload]
+  end
+
+  def validate_whatsapp_rich_payload!
+    Whatsapp::OutboundRichMessageBuilder.new(
+      payload: whatsapp_rich_payload,
+      conversation: @conversation
+    ).build
   end
 
   def attachments_present?

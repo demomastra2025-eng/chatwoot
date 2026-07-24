@@ -1,14 +1,5 @@
 class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts::BaseController
-  SAFE_PROVIDER_CONFIG_KEYS = %w[
-    phone_number_id
-    business_account_id
-    business_id
-    source
-    calling_enabled
-    calling_capable
-    calling_capabilities
-    token_health
-  ].freeze
+  AUTHORIZATION_ONLY_PROVIDER_CONFIG_KEYS = %w[calling_capabilities token_health].freeze
 
   class MissingRequiredParametersError < ArgumentError
     attr_reader :missing_parameters
@@ -33,12 +24,27 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
     render_error_response(e)
   end
 
+  def log_session
+    payload = session_params.to_h.compact_blank.transform_values { |value| value.to_s.first(128) }
+    return render json: { error: 'Missing Embedded Signup event' }, status: :unprocessable_content if payload['event'].blank?
+
+    Rails.logger.info(
+      {
+        event: 'whatsapp_embedded_signup_session',
+        account_id: Current.account.id,
+        user_id: Current.user&.id,
+        session: payload
+      }.to_json
+    )
+    head :accepted
+  end
+
   private
 
   def process_embedded_signup
     service = Whatsapp::EmbeddedSignupService.new(
       account: Current.account,
-      params: params.permit(:code, :business_id, :waba_id, :phone_number_id).to_h.symbolize_keys,
+      params: params.permit(:code, :business_id, :waba_id, :phone_number_id, :signup_type).to_h.symbolize_keys,
       inbox_id: params[:inbox_id]
     )
     service.perform
@@ -105,35 +111,74 @@ class Api::V1::Accounts::Whatsapp::AuthorizationsController < Api::V1::Accounts:
   def safe_provider_config(channel)
     return nil unless Current.account_user&.administrator?
 
-    channel.provider_config.to_h.slice(*SAFE_PROVIDER_CONFIG_KEYS)
+    public_config = Whatsapp::ProviderConfigPresenter.new(channel).perform
+    authorization_config = channel.provider_config.to_h.slice(*AUTHORIZATION_ONLY_PROVIDER_CONFIG_KEYS)
+    safe_authorization_config = Meta::CredentialDataSanitizer.sanitize(
+      authorization_config,
+      secrets: Meta::CredentialDataSanitizer.channel_secrets(channel)
+    )
+    public_config.merge(safe_authorization_config)
   end
 
   def render_error_response(error)
-    Rails.logger.error "[WHATSAPP AUTHORIZATION] Embedded signup error: #{error.message}"
-    Rails.logger.error error.backtrace.join("\n") if error.backtrace.present?
+    logged_message = sanitized_authorization_error(error.message)
+    safe_backtrace = sanitized_authorization_error(Array(error.backtrace).join("\n"))
+    Rails.logger.error "[WHATSAPP AUTHORIZATION] Embedded signup error: #{logged_message}"
+    Rails.logger.error safe_backtrace if safe_backtrace.present?
 
     response = {
       success: false,
-      error: error.message
-    }
-
-    if error.is_a?(MissingRequiredParametersError)
-      response[:error_code] = 'missing_required_parameters'
-      response[:details] = { missing_parameters: error.missing_parameters }
-    end
+      error: client_authorization_error(error)
+    }.merge(error_response_details(error))
 
     render json: response, status: :unprocessable_content
+  end
+
+  def error_response_details(error)
+    case error
+    when MissingRequiredParametersError
+      { error_code: 'missing_required_parameters', details: { missing_parameters: error.missing_parameters } }
+    when Whatsapp::ReauthorizationService::PhoneNumberMismatchError
+      { error_code: 'phone_number_mismatch' }
+    when Whatsapp::EmbeddedSignupService::ReauthorizationFlowMismatchError
+      { error_code: 'reauthorization_flow_mismatch' }
+    when Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError
+      { error_code: 'reauthorization_flow_required' }
+    else
+      { error_code: 'authorization_failed' }
+    end
+  end
+
+  def sanitized_authorization_error(value)
+    channel = @inbox&.channel
+    secrets = [params[:code], *Meta::CredentialDataSanitizer.channel_secrets(channel)].compact_blank
+    Meta::CredentialDataSanitizer.sanitize(value.to_s.first(5000), secrets: secrets)
+  end
+
+  def client_authorization_error(error)
+    safe_error = error.is_a?(MissingRequiredParametersError) ||
+                 error.is_a?(Whatsapp::ReauthorizationService::PhoneNumberMismatchError) ||
+                 error.is_a?(Whatsapp::EmbeddedSignupService::ReauthorizationFlowMismatchError) ||
+                 error.is_a?(Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError)
+    return sanitized_authorization_error(error.message) if safe_error
+
+    'WhatsApp authorization failed. Please check the connection details and try again.'
   end
 
   def validate_embedded_signup_params!
     missing_params = []
     missing_params << 'code' if params[:code].blank?
-    missing_params << 'business_id' if params[:business_id].blank?
-    missing_params << 'waba_id' if params[:waba_id].blank?
-    missing_params << 'phone_number_id' if params[:phone_number_id].blank?
+    missing_params << 'waba_id' if params[:waba_id].blank? && params[:inbox_id].blank?
 
     return if missing_params.empty?
 
     raise MissingRequiredParametersError, missing_params
+  end
+
+  def session_params
+    params.permit(
+      :event, :version, :current_step, :error_code, :session_id, :event_timestamp,
+      :business_id, :waba_id, :phone_number_id
+    )
   end
 end

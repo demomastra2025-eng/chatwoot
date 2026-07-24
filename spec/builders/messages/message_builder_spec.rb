@@ -65,6 +65,50 @@ describe Messages::MessageBuilder do
           expect(message.attachments.first.file_type).to eq('image')
         end
       end
+
+      context 'when a structured WhatsApp payload is present' do
+        before do
+          create(:message, account: account, inbox: inbox, conversation: conversation, message_type: 'incoming', source_id: 'wamid.INBOUND')
+        end
+
+        let(:params) do
+          ActionController::Parameters.new(
+            content: '',
+            content_attributes: {
+              whatsapp_payload: {
+                type: 'location',
+                location: { latitude: 51.1694, longitude: 71.4491, name: 'OneLink HQ' }
+              }
+            }
+          )
+        end
+
+        it 'accepts the rich payload as deliverable content' do
+          message = message_builder
+
+          expect(message.content).to eq('')
+          expect(message.content_attributes.dig('whatsapp_payload', 'type')).to eq('location')
+        end
+      end
+
+      context 'when the structured WhatsApp payload is invalid' do
+        let(:params) do
+          ActionController::Parameters.new(
+            content: 'fallback',
+            content_attributes: {
+              whatsapp_payload: {
+                type: 'location',
+                location: { latitude: 999, longitude: 71.4491 }
+              }
+            }
+          )
+        end
+
+        it 'raises before creating the outgoing message' do
+          expect { message_builder }.to raise_error(ArgumentError, /WhatsApp location latitude/)
+          expect(conversation.messages.outgoing).to be_empty
+        end
+      end
     end
 
     context 'when campaign_id and template_params are both provided' do

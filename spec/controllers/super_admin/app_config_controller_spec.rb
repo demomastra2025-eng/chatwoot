@@ -65,6 +65,18 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response.body).not_to include('test-openrouter-secret-value')
       end
 
+      it 'does not render configured WhatsApp secrets on the embedded config page' do
+        upsert_installation_config('WHATSAPP_APP_SECRET', 'test-whatsapp-app-secret')
+        upsert_installation_config('WHATSAPP_WEBHOOK_VERIFY_TOKEN', 'test-whatsapp-verify-token')
+        sign_in(super_admin, scope: :super_admin)
+
+        get '/super_admin/app_config?config=whatsapp_embedded'
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include('Configured — leave blank to keep current key')
+        expect(response.body).not_to include('test-whatsapp-app-secret', 'test-whatsapp-verify-token')
+      end
+
       it 'does not expose legacy direct-provider Captain key fields in Super Admin config' do
         allow(ChatwootHub).to receive(:pricing_plan).and_return('enterprise')
         sign_in(super_admin, scope: :super_admin)
@@ -167,6 +179,23 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(response).to have_http_status(:found)
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_API_KEY')&.value).to eq('test-openrouter-secret-value')
         expect(InstallationConfig.find_by(name: 'CAPTAIN_OPENROUTER_ENDPOINT')&.value).to eq('https://openrouter.example/api/v1')
+      end
+
+      it 'keeps existing WhatsApp secrets when their masked fields are submitted blank' do
+        upsert_installation_config('WHATSAPP_APP_SECRET', 'test-whatsapp-app-secret')
+        upsert_installation_config('WHATSAPP_WEBHOOK_VERIFY_TOKEN', 'test-whatsapp-verify-token')
+        sign_in(super_admin, scope: :super_admin)
+
+        post '/super_admin/app_config?config=whatsapp_embedded', params: {
+          app_config: {
+            WHATSAPP_APP_SECRET: '',
+            WHATSAPP_WEBHOOK_VERIFY_TOKEN: ''
+          }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_APP_SECRET')&.value).to eq('test-whatsapp-app-secret')
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN')&.value).to eq('test-whatsapp-verify-token')
       end
     end
   end

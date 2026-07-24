@@ -24,7 +24,7 @@ class Whatsapp::CsatTemplateService
       headers: api_headers,
       query: graph_api_query(name: template_name)
     )
-    { success: response.success?, response_body: response.body }
+    { success: response.success?, response_body: sanitized_provider_text(response.body) }
   end
 
   def get_template_status(template_name)
@@ -45,8 +45,9 @@ class Whatsapp::CsatTemplateService
       }
     }
   rescue StandardError => e
-    Rails.logger.error "Error fetching template status: #{e.message}"
-    { success: false, error: e.message }
+    safe_message = sanitized_provider_text(e.message)
+    Rails.logger.error "Error fetching template status: #{safe_message}"
+    { success: false, error: safe_message }
   end
 
   private
@@ -116,13 +117,21 @@ class Whatsapp::CsatTemplateService
         status: TEMPLATE_STATUS_PENDING
       }
     else
-      Rails.logger.error "WhatsApp template creation failed: #{response.code} - #{response.body}"
-      {
-        success: false,
-        error: 'Template creation failed',
-        response_body: response.body
-      }
+      template_creation_failure(response)
     end
+  end
+
+  def template_creation_failure(response)
+    safe_body = sanitized_provider_text(response.body)
+    Rails.logger.error "WhatsApp template creation failed: #{response.code} - #{safe_body}"
+    { success: false, error: 'Template creation failed', response_body: safe_body }
+  end
+
+  def sanitized_provider_text(value)
+    Meta::CredentialDataSanitizer.sanitize(
+      value.to_s.first(5000),
+      secrets: Meta::CredentialDataSanitizer.channel_secrets(@whatsapp_channel)
+    )
   end
 
   def business_account_path
@@ -147,6 +156,6 @@ class Whatsapp::CsatTemplateService
   end
 
   def api_version
-    @api_version ||= GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0')
+    @api_version ||= GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0')
   end
 end

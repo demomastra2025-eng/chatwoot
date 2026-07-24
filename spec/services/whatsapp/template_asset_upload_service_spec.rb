@@ -13,7 +13,7 @@ RSpec.describe Whatsapp::TemplateAssetUploadService do
 
   before do
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_APP_ID', '').and_return('app-123')
-    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v22.0')
   end
 
   describe '#upload' do
@@ -61,6 +61,21 @@ RSpec.describe Whatsapp::TemplateAssetUploadService do
       expect(service.upload(url: 'https://cdn.example.com/sample.jpg', media_type: 'image')).to eq('uploaded-handle-123')
     ensure
       file&.close!
+    end
+
+    it 'redacts credentials from provider upload errors' do
+      response = instance_double(
+        HTTParty::Response,
+        success?: false,
+        body: '{"error":"access_token=test-access-token"}'
+      )
+
+      expect do
+        service.send(:parse_response, response, 'Upload failed')
+      end.to raise_error(RuntimeError) { |error|
+        expect(error.message).to include('[FILTERED]')
+        expect(error.message).not_to include('test-access-token')
+      }
     end
   end
 end

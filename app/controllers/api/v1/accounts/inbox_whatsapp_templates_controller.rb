@@ -1,4 +1,17 @@
 class Api::V1::Accounts::InboxWhatsappTemplatesController < Api::V1::Accounts::BaseController
+  TEMPLATE_FIELDS = %i[
+    name language category add_security_recommendation code_expiration_minutes
+    header_type header_text body_text footer_text sample_media_url
+  ].freeze
+  BUTTON_FIELDS = %i[type text url example phone_number].freeze
+  CAROUSEL_CARD_FIELDS = [
+    :header_type,
+    :sample_media_url,
+    :body_text,
+    { body_examples: {} },
+    { buttons: %i[type text url example phone_number] }
+  ].freeze
+
   before_action :fetch_inbox
   before_action :validate_whatsapp_cloud_channel
   before_action :prevent_csat_template_deletion!, only: [:destroy]
@@ -41,9 +54,13 @@ class Api::V1::Accounts::InboxWhatsappTemplatesController < Api::V1::Accounts::B
   end
 
   def render_failure(result)
+    safe_result = Meta::CredentialDataSanitizer.sanitize(
+      result.slice(:error, :details),
+      secrets: Meta::CredentialDataSanitizer.channel_secrets(@inbox.channel)
+    )
     render json: {
-      error: result[:error],
-      details: result[:details]
+      error: safe_result[:error],
+      details: safe_result[:details]
     }, status: :unprocessable_content
   end
 
@@ -53,17 +70,11 @@ class Api::V1::Accounts::InboxWhatsappTemplatesController < Api::V1::Accounts::B
 
   def template_params
     params.require(:template).permit(
-      :name,
-      :language,
-      :category,
-      :header_type,
-      :header_text,
-      :body_text,
-      :footer_text,
-      :sample_media_url,
+      *TEMPLATE_FIELDS,
       body_examples: {},
       header_examples: {},
-      buttons: %i[type text url example phone_number]
+      buttons: BUTTON_FIELDS,
+      carousel_cards: CAROUSEL_CARD_FIELDS
     )
   end
 end

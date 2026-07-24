@@ -143,6 +143,7 @@ export default {
       healthData: null,
       isLoadingHealth: false,
       healthError: null,
+      healthRequestId: 0,
       isRegisteringWebhook: false,
       widgetBubblePosition: 'right',
       widgetBubbleType: 'standard',
@@ -1242,21 +1243,38 @@ export default {
       }
     },
     async fetchHealthData() {
-      if (!this.inbox) return;
+      const inboxId = this.inbox?.id;
+      this.healthRequestId += 1;
+      const requestId = this.healthRequestId;
+      this.healthData = null;
+      this.healthError = null;
+
+      if (!inboxId) {
+        this.isLoadingHealth = false;
+        return;
+      }
 
       if (!this.isAWhatsAppCloudChannel) {
+        this.isLoadingHealth = false;
         return;
       }
 
       try {
         this.isLoadingHealth = true;
-        this.healthError = null;
-        const response = await InboxHealthAPI.getHealthStatus(this.inbox.id);
+        const response = await InboxHealthAPI.getHealthStatus(inboxId);
+        if (requestId !== this.healthRequestId || this.inbox?.id !== inboxId) {
+          return;
+        }
         this.healthData = response.data;
       } catch (error) {
+        if (requestId !== this.healthRequestId || this.inbox?.id !== inboxId) {
+          return;
+        }
         this.healthError = error.message || 'Failed to fetch health data';
       } finally {
-        this.isLoadingHealth = false;
+        if (requestId === this.healthRequestId) {
+          this.isLoadingHealth = false;
+        }
       }
     },
     async registerWebhook() {
@@ -5159,6 +5177,7 @@ export default {
         <div v-if="selectedTabKey === 'whatsapp-health'">
           <AccountHealth
             :health-data="healthData"
+            :recovery-data="inbox.provider_config"
             :is-registering-webhook="isRegisteringWebhook"
             @register-webhook="registerWebhook"
           />

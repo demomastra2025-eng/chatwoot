@@ -3,7 +3,7 @@ require 'rails_helper'
 describe Whatsapp::Providers::WhatsappCloudService do
   subject(:service) { described_class.new(whatsapp_channel: whatsapp_channel) }
 
-  let(:api_version) { 'v22.0' }
+  let(:api_version) { 'v25.0' }
   let(:conversation) { create(:conversation, inbox: whatsapp_channel.inbox) }
   let(:whatsapp_channel) { create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false) }
 
@@ -20,7 +20,8 @@ describe Whatsapp::Providers::WhatsappCloudService do
   let(:whatsapp_response) { { messages: [{ id: 'message_id' }] } }
 
   before do
-    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return(api_version)
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return(api_version)
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_APP_SECRET', '').and_return('')
     stub_request(:get, "https://graph.facebook.com/#{api_version}/123456789/message_templates")
   end
 
@@ -31,7 +32,7 @@ describe Whatsapp::Providers::WhatsappCloudService do
           .with(
             body: {
               messaging_product: 'whatsapp',
-              context: nil,
+              recipient_type: 'individual',
               to: '+123456789',
               text: { body: message.content },
               type: 'text'
@@ -41,11 +42,158 @@ describe Whatsapp::Providers::WhatsappCloudService do
         expect(service.send_message('+123456789', message)).to eq 'message_id'
       end
 
+      it 'sends a structured location message instead of falling back to text' do
+        message.update!(
+          content_attributes: {
+            whatsapp_payload: {
+              type: 'location',
+              location: { latitude: 51.1694, longitude: 71.4491, name: 'OneLink HQ', address: 'Astana' }
+            }
+          }
+        )
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: '+123456789',
+              location: {
+                latitude: 51.1694,
+                longitude: 71.4491,
+                name: 'OneLink HQ',
+                address: 'Astana'
+              },
+              type: 'location'
+            }.to_json
+          )
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_message('+123456789', message)).to eq 'message_id'
+      end
+
+      it 'sends a structured contacts message' do
+        recipient = '+15550001111'
+        message.update!(
+          content_attributes: {
+            whatsapp_payload: {
+              type: 'contacts',
+              contacts: [{
+                name: { formatted_name: 'Ada Lovelace', first_name: 'Ada' },
+                phones: [{ phone: recipient, type: 'mobile', wa_id: '15550001111' }]
+              }]
+            }
+          }
+        )
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: recipient,
+              contacts: [{
+                name: { formatted_name: 'Ada Lovelace', first_name: 'Ada' },
+                phones: [{ phone: recipient, type: 'mobile', wa_id: '15550001111' }]
+              }],
+              type: 'contacts'
+            }.to_json
+          )
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_message(recipient, message)).to eq 'message_id'
+      end
+
+      it 'sends a reaction only for a target in the same conversation' do
+        recipient = '+15550001111'
+        target = create(
+          :message,
+          conversation: conversation,
+          inbox: whatsapp_channel.inbox,
+          account: conversation.account,
+          message_type: 'incoming',
+          source_id: 'wamid.REACTION_TARGET'
+        )
+        message.update!(
+          content_attributes: {
+            whatsapp_payload: {
+              type: 'reaction',
+              reaction: { message_id: target.source_id, emoji: '👍' }
+            }
+          }
+        )
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: recipient,
+              reaction: { message_id: 'wamid.REACTION_TARGET', emoji: '👍' },
+              type: 'reaction'
+            }.to_json
+          )
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_message(recipient, message)).to eq 'message_id'
+      end
+
+      it 'sends an interactive CTA URL message' do
+        recipient = '+15550001111'
+        message.update!(
+          content_attributes: {
+            whatsapp_payload: {
+              type: 'cta_url',
+              cta_url: {
+                body: 'Tap the button below.',
+                display_text: 'Open',
+                url: 'https://example.com/action'
+              }
+            }
+          }
+        )
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              to: recipient,
+              interactive: {
+                type: 'cta_url',
+                body: { text: 'Tap the button below.' },
+                action: {
+                  name: 'cta_url',
+                  parameters: { display_text: 'Open', url: 'https://example.com/action' }
+                }
+              },
+              type: 'interactive'
+            }.to_json
+          )
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_message(recipient, message)).to eq 'message_id'
+      end
+
+      it 'uses recipient without to when the destination is a BSUID' do
+        bsuid = 'US.13491208655302741918'
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .with(
+            body: {
+              messaging_product: 'whatsapp',
+              recipient_type: 'individual',
+              recipient: bsuid,
+              text: { body: message.content },
+              type: 'text'
+            }.to_json
+          )
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_message(bsuid, message)).to eq 'message_id'
+      end
+
       it 'calls message endpoints for a reply to messages' do
         stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
           .with(
             body: {
               messaging_product: 'whatsapp',
+              recipient_type: 'individual',
               context: {
                 message_id: message.source_id
               },
@@ -124,6 +272,82 @@ describe Whatsapp::Providers::WhatsappCloudService do
           'whatsapp_cloud_send_retry_error_code' => 1,
           'whatsapp_cloud_send_retry_error_message' => 'An unknown error has occurred'
         )
+      end
+
+      it 'defers the 21st Coexistence message without calling Meta' do
+        whatsapp_channel.update!(
+          provider_config: whatsapp_channel.provider_config.merge('embedded_signup_flow' => 'coexistence')
+        )
+        message.update!(source_id: nil)
+        allow(Redis::Alfred).to receive(:incr).and_return(21)
+        request = stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+
+        freeze_time do
+          expect do
+            expect(service.send_message('+123****6789', message)).to be_nil
+          end.to have_enqueued_job(SendReplyJob).with(message.id).on_queue('outbound_messages').at(1.second.from_now)
+
+          expect(Time.zone.parse(message.reload.content_attributes['whatsapp_cloud_send_retry_next_at'])).to eq(1.second.from_now)
+        end
+
+        expect(request).not_to have_been_requested
+        expect(message.content_attributes['whatsapp_cloud_coexistence_throttled']).to be(true)
+      end
+
+      it 'suppresses automatic retries when the provider delivery outcome is unknown' do
+        message.update!(source_id: nil)
+        request = stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages").to_timeout
+
+        expect do
+          expect(service.send_message('+123****6789', message)).to be_nil
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(request).to have_been_requested.once
+        expect(message.reload).to be_sent
+        expect(message.source_id).to be_nil
+        expect(message.content_attributes).to include(
+          'whatsapp_cloud_delivery_outcome_unknown' => true,
+          'whatsapp_cloud_delivery_outcome_error_class' => 'Net::OpenTimeout'
+        )
+
+        service.send_message('+123****6789', message)
+        expect(request).to have_been_requested.once
+      end
+
+      it 'suppresses automatic retries when a successful response has no message acknowledgement' do
+        message.update!(source_id: nil)
+        request = stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+                  .to_return(status: 200, body: { messages: [] }.to_json, headers: response_headers)
+
+        expect do
+          expect(service.send_message('+123****6789', message)).to be_nil
+        end.not_to have_enqueued_job(SendReplyJob)
+
+        expect(request).to have_been_requested.once
+        expect(message.reload).to be_sent
+        expect(message.content_attributes).to include(
+          'whatsapp_cloud_delivery_outcome_unknown' => true,
+          'whatsapp_cloud_delivery_outcome_error_class' => 'Whatsapp::Providers::BaseService::DeliveryAcknowledgementMissingError'
+        )
+
+        service.send_message('+123****6789', message)
+        expect(request).to have_been_requested.once
+      end
+
+      it 'suppresses a later template send while the delivery outcome remains unknown' do
+        message.update!(
+          source_id: nil,
+          content_attributes: {
+            'whatsapp_cloud_delivery_outcome_unknown' => true,
+            'whatsapp_cloud_delivery_outcome_unknown_at' => 1.minute.ago.iso8601,
+            'whatsapp_cloud_delivery_outcome_error_class' => 'Net::ReadTimeout'
+          }
+        )
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_template('+123****6789', {}, message)).to be_nil
+        expect(a_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")).not_to have_been_made
       end
 
       it 'uses the bounded transient backoff sequence for official WhatsApp Cloud temporary service errors' do
@@ -332,6 +556,7 @@ describe Whatsapp::Providers::WhatsappCloudService do
           .with(
             body: hash_including({
                                    messaging_product: 'whatsapp',
+                                   recipient_type: 'individual',
                                    to: '+123456789',
                                    type: 'image',
                                    image: WebMock::API.hash_including({ caption: message.content, link: anything })
@@ -351,6 +576,7 @@ describe Whatsapp::Providers::WhatsappCloudService do
           .with(
             body: hash_including({
                                    messaging_product: 'whatsapp',
+                                   recipient_type: 'individual',
                                    to: '+123456789',
                                    type: 'document',
                                    document: WebMock::API.hash_including({ filename: 'sample.pdf', caption: message.content, link: anything })
@@ -359,6 +585,41 @@ describe Whatsapp::Providers::WhatsappCloudService do
           .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
         expect(service.send_message('+123456789', message)).to eq 'message_id'
       end
+    end
+  end
+
+  describe '#mark_message_read' do
+    it 'marks an incoming provider message as read through the Messages API' do
+      stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+        .with(body: {
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: 'wamid.incoming.1'
+        }.to_json)
+        .to_return(status: 200, body: { success: true }.to_json, headers: response_headers)
+
+      expect(service.mark_message_read('wamid.incoming.1')).to be(true)
+    end
+  end
+
+  describe '#send_typing_indicator' do
+    it 'marks the latest incoming message read and enables the text typing indicator' do
+      stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+        .with(body: {
+          messaging_product: 'whatsapp',
+          status: 'read',
+          message_id: 'wamid.incoming.2',
+          typing_indicator: { type: 'text' }
+        }.to_json)
+        .to_return(status: 200, body: { success: true }.to_json, headers: response_headers)
+
+      expect(service.send_typing_indicator('wamid.incoming.2')).to be(true)
+    end
+
+    it 'does not call Meta without an incoming message id' do
+      expect(HTTParty).not_to receive(:post)
+
+      expect(service.send_typing_indicator(nil)).to be(false)
     end
   end
 
@@ -444,6 +705,23 @@ describe Whatsapp::Providers::WhatsappCloudService do
       expect { service.initiate_call('15551234567', 'sdp_offer') }
         .to raise_error(Whatsapp::CallErrors::CallFailed, 'Failed to initiate call')
     end
+
+    it 'redacts channel credentials from call errors and logs' do
+      secret = whatsapp_channel.provider_config['api_key']
+      allow(Rails.logger).to receive(:error)
+      stub_request(:post, calls_url).to_return(
+        status: 400,
+        body: { error: { code: '138006', error_user_msg: "access_token=#{secret}" } }.to_json,
+        headers: response_headers
+      )
+
+      expect { service.initiate_call('15551234567', 'sdp_offer') }
+        .to raise_error(Whatsapp::CallErrors::NoCallPermission) { |error|
+          expect(error.message).to include('[FILTERED]')
+          expect(error.message).not_to include(secret)
+        }
+      expect(Rails.logger).to have_received(:error).with(a_string_including('[FILTERED]'))
+    end
   end
 
   describe '#send_interactive message' do
@@ -461,14 +739,19 @@ describe Whatsapp::Providers::WhatsappCloudService do
         stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
           .with(
             body: {
-              messaging_product: 'whatsapp', to: '+123456789',
+              messaging_product: 'whatsapp', recipient_type: 'individual', to: '+123456789',
               interactive: {
                 type: 'button',
                 body: {
                   text: 'test'
                 },
-                action: '{"buttons":[{"type":"reply","reply":{"id":"Burito","title":"Burito"}},{"type":"reply",' \
-                        '"reply":{"id":"Pasta","title":"Pasta"}},{"type":"reply","reply":{"id":"Sushi","title":"Sushi"}}]}'
+                action: {
+                  buttons: [
+                    { type: 'reply', reply: { id: 'Burito', title: 'Burito' } },
+                    { type: 'reply', reply: { id: 'Pasta', title: 'Pasta' } },
+                    { type: 'reply', reply: { id: 'Sushi', title: 'Sushi' } }
+                  ]
+                }
               }, type: 'interactive'
             }.to_json
           ).to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
@@ -483,12 +766,12 @@ describe Whatsapp::Providers::WhatsappCloudService do
         expected_action = {
           button: I18n.t('conversations.messages.whatsapp.list_button_label'),
           sections: [{ rows: %w[Burito Pasta Sushi Salad].map { |i| { id: i, title: i } } }]
-        }.to_json
+        }
 
         stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
           .with(
             body: {
-              messaging_product: 'whatsapp', to: '+123456789',
+              messaging_product: 'whatsapp', recipient_type: 'individual', to: '+123456789',
               interactive: {
                 type: 'list',
                 body: {
@@ -540,6 +823,18 @@ describe Whatsapp::Providers::WhatsappCloudService do
           .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
 
         expect(service.send_template('+123456789', template_info, message)).to eq('message_id')
+      end
+
+      it 'uses recipient without to for a BSUID template destination' do
+        bsuid = 'US.13491208655302741918'
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/123456789/messages")
+          .with(body: {
+            messaging_product: 'whatsapp', recipient_type: 'individual', recipient: bsuid,
+            type: 'template', template: template_body[:template]
+          }.to_json)
+          .to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+
+        expect(service.send_template(bsuid, template_info, message)).to eq('message_id')
       end
     end
   end

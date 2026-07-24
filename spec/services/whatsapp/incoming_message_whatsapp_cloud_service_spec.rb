@@ -31,6 +31,16 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       }.with_indifferent_access
     end
 
+    it 'releases the dedup mutex when message processing raises' do
+      dedup_lock = instance_double(Whatsapp::MessageDedupLock, acquire!: true, release!: true)
+      service = described_class.new(inbox: whatsapp_channel.inbox, params: params)
+      allow(Whatsapp::MessageDedupLock).to receive(:new).and_return(dedup_lock)
+      allow(service).to receive(:set_contact).and_raise(StandardError, 'temporary failure')
+
+      expect { service.perform }.to raise_error(StandardError, 'temporary failure')
+      expect(dedup_lock).to have_received(:release!)
+    end
+
     context 'when valid attachment message params' do
       it 'creates appropriate conversations, message and contacts' do
         stub_media_url_request
@@ -73,6 +83,46 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         expect(whatsapp_channel.inbox.messages.first.content).to eq('Check out my product!')
         expect(whatsapp_channel.inbox.messages.first.attachments.present?).to be false
         expect(whatsapp_channel.authorization_error_count).to eq(1)
+      end
+    end
+
+    context 'when an order message is received' do
+      it 'persists the structured order without attempting a media download' do
+        order_params = params.deep_dup
+        order_params[:entry][0][:changes][0][:value][:messages] = [{
+          from: '2423423243',
+          id: 'wamid.ORDER_MESSAGE_ID',
+          timestamp: '1750096325',
+          type: 'order',
+          order: {
+            catalog_id: 'catalog-1',
+            text: 'Love these!',
+            product_items: [{
+              product_retailer_id: 'sku-7',
+              quantity: 2,
+              item_price: 30,
+              currency: 'USD'
+            }]
+          }
+        }]
+
+        expect(Down).not_to receive(:download)
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: order_params).perform
+
+        message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.ORDER_MESSAGE_ID')
+        expect(message.content).to eq('Love these!')
+        expect(message.attachments).to be_empty
+        expect(message.content_attributes['whatsapp_order']).to eq(
+          'catalog_id' => 'catalog-1',
+          'text' => 'Love these!',
+          'product_items' => [{
+            'product_retailer_id' => 'sku-7',
+            'quantity' => 2,
+            'item_price' => 30,
+            'currency' => 'USD'
+          }]
+        )
       end
     end
 
@@ -427,15 +477,37 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
     end
 
     context 'when WhatsApp Cloud delivery status webhooks arrive out of order' do
+      it 'normalizes Meta played status to read' do
+        message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :delivered, source_id: 'wamid.PLAYED_MESSAGE')
+
+        described_class.new(
+          inbox: whatsapp_channel.inbox,
+          params: status_update_params(source_id: message.source_id, status: 'played')
+        ).perform
+
+        expect(message.reload).to be_read
+      end
+
       it 'does not downgrade a delivered message back to sent' do
         message = create(:message, inbox: whatsapp_channel.inbox, message_type: :outgoing, status: :delivered, source_id: 'wamid.DELIVERED_MESSAGE')
 
         described_class.new(
           inbox: whatsapp_channel.inbox,
-          params: status_update_params(source_id: message.source_id, status: 'sent')
+          params: status_update_params(
+            source_id: message.source_id,
+            status: 'sent',
+            delivery_metadata: {
+              conversation: { id: 'conversation-1', origin: { type: 'marketing' } },
+              pricing: { billable: true, category: 'marketing', pricing_model: 'PMP' }
+            }
+          )
         ).perform
 
         expect(message.reload).to be_delivered
+        expect(message.content_attributes['whatsapp_delivery']).to eq(
+          'conversation' => { 'id' => 'conversation-1', 'origin' => { 'type' => 'marketing' } },
+          'pricing' => { 'billable' => true, 'category' => 'marketing', 'pricing_model' => 'PMP' }
+        )
       end
 
       it 'does not downgrade a read message back to delivered' do
@@ -573,19 +645,35 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
         expect(confirmation_request.resolution_source).to eq('text')
         expect(confirmation_request.resolution_metadata).to include('resolver' => 'deterministic_text')
       end
+
+      it 'does not resolve confirmations while importing historical messages' do
+        text_params = confirmation_reply_params(
+          source_id: confirmation_source_id,
+          message_id: 'wamid.HISTORICAL_CONFIRM_TEXT',
+          message: { type: 'text', text: { body: 'Да' } }
+        )
+        previous_value = Current.suppress_runtime_events
+        Current.suppress_runtime_events = true
+
+        described_class.new(inbox: whatsapp_channel.inbox, params: text_params).perform
+
+        expect(confirmation_request.reload).to be_pending
+      ensure
+        Current.suppress_runtime_events = previous_value
+      end
     end
   end
 
   # Métodos auxiliares para reduzir o tamanho do exemplo
 
-  def status_update_params(source_id:, status:)
+  def status_update_params(source_id:, status:, delivery_metadata: {})
     {
       phone_number: whatsapp_channel.phone_number,
       object: 'whatsapp_business_account',
       entry: [{
         changes: [{
           value: {
-            statuses: [{ id: source_id, status: status, timestamp: Time.current.to_i.to_s }]
+            statuses: [{ id: source_id, status: status, timestamp: Time.current.to_i.to_s }.merge(delivery_metadata)]
           }
         }]
       }]

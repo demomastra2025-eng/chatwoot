@@ -24,17 +24,48 @@ class Whatsapp::IncomingMessageBaseService
   private
 
   def process_messages
-    # We don't support reactions & ephemeral message now, we need to skip processing the message
-    # if the webhook event is a reaction or an ephermal message or an unsupported message.
-    return if unprocessable_message_type?(messages_data.first)
+    message = messages_data.first
+    return if mutation_service(message).perform
+    return if ignore_unsupported_message?(message)
 
     # Multiple webhook events can be received for the same message due to
     # misconfigurations in the Meta business manager account.
     # We use an atomic Redis SET NX to prevent concurrent workers from both
     # processing the same message simultaneously.
-    return if find_message_by_source_id(messages_data.first[:id])
-    return unless lock_message_source_id!
+    if find_message_by_source_id(message[:id])
+      process_history_media_follow_up
+      return
+    end
 
+    with_message_dedup_lock { process_new_message }
+  end
+
+  def mutation_service(message)
+    Whatsapp::IncomingMessageMutationService.new(inbox: inbox, message: message, outgoing_echo: outgoing_echo)
+  end
+
+  def ignore_unsupported_message?(message)
+    return false unless unprocessable_message_type?(message)
+
+    Rails.logger.info("[WHATSAPP] Ignored unsupported message type=#{message[:type]} event_id=#{message[:id]}")
+    true
+  end
+
+  def with_message_dedup_lock
+    dedup_lock = message_dedup_lock
+    return unless dedup_lock&.acquire!
+
+    begin
+      yield
+    rescue ActiveRecord::RecordNotUnique
+      @message = Message.find_by(source_id: messages_data.first[:id].to_s, inbox_id: inbox.id)
+      after_message_persisted(@message) if @message.present?
+    ensure
+      dedup_lock.release!
+    end
+  end
+
+  def process_new_message
     set_contact
     return unless @contact
     return if @contact.blocked? && !outgoing_echo
@@ -45,9 +76,6 @@ class Whatsapp::IncomingMessageBaseService
       set_conversation
       create_messages
     end
-  rescue ActiveRecord::RecordNotUnique
-    @message = Message.find_by(source_id: messages_data.first[:id].to_s, inbox_id: inbox.id)
-    after_message_persisted(@message) if @message.present?
   end
 
   def process_statuses
@@ -106,6 +134,48 @@ class Whatsapp::IncomingMessageBaseService
     after_message_persisted(@message)
   end
 
+  def process_history_media_follow_up
+    return unless history_media_placeholder?(@message)
+    return unless media_follow_up?
+
+    dedup_lock = message_dedup_lock
+    return unless dedup_lock&.acquire!
+
+    begin
+      upgrade_history_media_placeholder
+    ensure
+      dedup_lock.release!
+    end
+  end
+
+  def upgrade_history_media_placeholder
+    @message.reload
+    return unless history_media_placeholder?(@message)
+    return unless attach_history_media
+
+    attachment_payload = messages_data.first[message_type.to_sym].to_h.with_indifferent_access
+    @message.content = attachment_payload[:caption]
+    @message.content_attributes = @message.content_attributes.to_h.merge(
+      'whatsapp_message_type' => message_type,
+      'whatsapp_history_media_follow_up' => true
+    )
+    @message.save!
+  end
+
+  def attach_history_media
+    previous_attachment_count = @message.attachments.size
+    attach_files
+    @message.attachments.size > previous_attachment_count
+  end
+
+  def history_media_placeholder?(message)
+    message.content_attributes.to_h['whatsapp_history_original_type'] == 'media_placeholder' && message.attachments.empty?
+  end
+
+  def media_follow_up?
+    %w[audio document image sticker video].include?(message_type) && messages_data.first[message_type.to_sym].present?
+  end
+
   def set_contact
     if outgoing_echo
       set_contact_from_echo
@@ -154,7 +224,7 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def attach_files
-    return if %w[text button interactive location contacts unsupported].include?(message_type)
+    return if %w[text button interactive location contacts order unsupported].include?(message_type)
 
     attachment_payload = messages_data.first[message_type.to_sym]
     @message.content ||= attachment_payload[:caption]

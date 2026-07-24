@@ -197,7 +197,14 @@ end
 if resource.whatsapp?
   json.message_templates resource.channel.try(:message_templates)
   json.message_templates_last_updated resource.channel.try(:message_templates_last_updated)
-  json.provider_config resource.channel.try(:provider_config) if Current.account_user&.administrator?
+  if Current.account_user&.administrator?
+    provider_config = Whatsapp::ProviderConfigPresenter.new(resource.channel).perform
+    include_setup_token = defined?(include_whatsapp_setup_token) && include_whatsapp_setup_token == true
+    if include_setup_token && resource.channel.provider_config.to_h['source'] != 'embedded_signup'
+      provider_config['webhook_verify_token'] = resource.channel.provider_config.to_h['webhook_verify_token']
+    end
+    json.provider_config provider_config
+  end
   json.reauthorization_required resource.channel.try(:reauthorization_required?)
   json.calling_enabled resource.channel.try(:calling_enabled?) || false
   json.media_server_enabled defined?(Call) ? Call.media_server_enabled?(inbox: resource) : false

@@ -194,7 +194,12 @@ describe Whatsapp::IncomingMessageService do
         params = {
           'contacts' => [{ 'profile' => { 'name' => 'Sojan Jose' }, 'wa_id' => '2423423243' }],
           'messages' => [{
-            'errors' => [{ 'code': 131_051, 'title': 'Message type is currently not supported.' }],
+            'errors' => [{
+              'code': 131_051,
+              'title': 'Message type unknown',
+              'message': 'Message type unknown',
+              'error_data': { 'details': 'Message type is currently not supported.' }
+            }],
             :from => '2423423243', :id => 'wamid.SDFADSf23sfasdafasdfa',
             :timestamp => '1667047370', :type => 'unsupported'
           }]
@@ -212,7 +217,8 @@ describe Whatsapp::IncomingMessageService do
           'whatsapp_unavailable_message' => true,
           'is_unsupported' => true,
           'whatsapp_error_code' => 131_051,
-          'whatsapp_error_title' => 'Message type is currently not supported.'
+          'whatsapp_error_title' => 'Message type unknown',
+          'whatsapp_error_message' => 'Message type is currently not supported.'
         )
       end
 

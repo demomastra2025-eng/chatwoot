@@ -37,11 +37,11 @@ describe '/app/login', type: :request do
 
     it 'renders the configured WhatsApp Graph API version for embedded signup' do
       allow(GlobalConfigService).to receive(:load).and_call_original
-      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
+      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v25.0')
 
       get '/app'
 
-      expect(response.body).to include("whatsappApiVersion: 'v22.0'")
+      expect(response.body).to include("whatsappApiVersion: 'v25.0'")
     end
 
     it 'keeps proactive reauthorization hidden by default' do

@@ -854,3 +854,59 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 });
+
+describe('ConfigurationPage WhatsApp coexistence synchronization', () => {
+  const coexistenceInbox = {
+    id: 84,
+    name: 'WhatsApp coexistence',
+    channel_type: 'Channel::Whatsapp',
+    provider: 'whatsapp_cloud',
+    provider_config: {
+      source: 'embedded_signup',
+      embedded_signup_flow: 'coexistence',
+      coexistence_sync: {
+        state: 'history_failed',
+        history_progress: 75,
+        last_error: 'History import needs recovery',
+        history_failed_messages: [{ id: 'wamid.failed' }],
+      },
+    },
+    members: [],
+  };
+
+  it('shows status, progress, failure count, and recovery action', () => {
+    const wrapper = buildWrapper({ inbox: coexistenceInbox });
+
+    expect(
+      wrapper.find('[data-testid="whatsapp-coexistence-sync-status"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="whatsapp-coexistence-sync-recover"]').exists()
+    ).toBe(true);
+    expect(wrapper.vm.coexistenceSyncStateLabel).toBe(
+      'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.HISTORY_FAILED'
+    );
+    expect(wrapper.vm.coexistenceSyncProgress).toBe(75);
+    expect(wrapper.vm.coexistenceSyncFailureCount).toBe(1);
+    expect(wrapper.text()).toContain('History import needs recovery');
+  });
+
+  it('does not offer recovery for a completed synchronization', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...coexistenceInbox,
+        provider_config: {
+          ...coexistenceInbox.provider_config,
+          coexistence_sync: { state: 'completed', history_progress: 100 },
+        },
+      },
+    });
+
+    expect(
+      wrapper.find('[data-testid="whatsapp-coexistence-sync-status"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-testid="whatsapp-coexistence-sync-recover"]').exists()
+    ).toBe(false);
+  });
+});

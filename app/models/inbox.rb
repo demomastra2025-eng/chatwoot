@@ -267,13 +267,7 @@ class Inbox < ApplicationRecord
       "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/sms/#{channel.phone_number.delete_prefix('+')}"
     when 'Channel::Line'
       "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/line/#{channel.line_channel_id}"
-    when 'Channel::TelegramPersonal'
-      channel.callback_webhook_url
-    when 'Channel::Weixin'
-      channel.callback_webhook_url
-    when 'Channel::Whatsapp'
-      "#{ENV.fetch('FRONTEND_URL', nil)}/webhooks/whatsapp/#{channel.phone_number}"
-    when 'Channel::VkCommunity'
+    when 'Channel::TelegramPersonal', 'Channel::Weixin', 'Channel::Whatsapp', 'Channel::VkCommunity'
       channel.callback_webhook_url
     end
   end

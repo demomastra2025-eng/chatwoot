@@ -7,11 +7,15 @@ import {
 
 export const DEFAULT_TEMPLATE_LANGUAGE = 'en';
 export const DEFAULT_TEMPLATE_CATEGORY = 'UTILITY';
-export const MAX_TEMPLATE_BUTTONS = 3;
+export const MAX_TEMPLATE_BUTTONS = 10;
+export const MAX_CAROUSEL_BUTTONS = 2;
+export const MIN_CAROUSEL_CARDS = 2;
+export const MAX_CAROUSEL_CARDS = 10;
 
 export const TEMPLATE_CATEGORY_OPTIONS = [
   { label: 'Utility', value: 'UTILITY' },
   { label: 'Marketing', value: 'MARKETING' },
+  { label: 'Authentication', value: 'AUTHENTICATION' },
 ];
 
 export const TEMPLATE_HEADER_TYPE_OPTIONS = [
@@ -27,6 +31,7 @@ export const TEMPLATE_BUTTON_TYPE_OPTIONS = [
   { label: 'URL button', value: 'URL' },
   { label: 'Copy code', value: 'COPY_CODE' },
   { label: 'Phone number', value: 'PHONE_NUMBER' },
+  { label: 'View catalog', value: 'CATALOG' },
 ];
 
 export const createEmptyTemplateButton = () => ({
@@ -35,6 +40,14 @@ export const createEmptyTemplateButton = () => ({
   url: '',
   example: '',
   phoneNumber: '',
+});
+
+export const createEmptyCarouselCard = () => ({
+  headerType: 'image',
+  sampleMediaUrl: '',
+  bodyText: '',
+  bodyExamples: {},
+  buttons: [],
 });
 
 export const createEmptyWhatsAppTemplateForm = () => ({
@@ -49,6 +62,10 @@ export const createEmptyWhatsAppTemplateForm = () => ({
   bodyExamples: {},
   headerExamples: {},
   buttons: [],
+  addSecurityRecommendation: true,
+  codeExpirationMinutes: 10,
+  isCarousel: false,
+  carouselCards: [],
 });
 
 function compareTemplateNames(left, right) {
@@ -133,11 +150,58 @@ export const extractSequentialTemplateVariables = text => {
   };
 };
 
+const normalizeTemplateButton = button => {
+  const payload = {
+    type: button.type,
+    text: compactString(button.text),
+    url: compactString(button.url),
+    example: compactString(button.example),
+    phone_number: compactString(button.phoneNumber),
+  };
+
+  return payload;
+};
+
+const normalizeCarouselCard = card => ({
+  header_type: card.headerType,
+  sample_media_url: compactString(card.sampleMediaUrl),
+  body_text: compactString(card.bodyText),
+  body_examples: compactObject(card.bodyExamples),
+  buttons: card.buttons.map(normalizeTemplateButton),
+});
+
 export const buildWhatsAppTemplatePayload = form => {
-  return {
+  const basePayload = {
     name: compactString(form.name),
     language: form.language,
     category: form.category,
+  };
+
+  if (form.category === 'AUTHENTICATION') {
+    return {
+      ...basePayload,
+      add_security_recommendation: Boolean(form.addSecurityRecommendation),
+      code_expiration_minutes: Number(form.codeExpirationMinutes),
+    };
+  }
+
+  if (form.isCarousel) {
+    return {
+      ...basePayload,
+      header_type: 'none',
+      header_text: '',
+      body_text: compactString(form.bodyText),
+      footer_text: '',
+      sample_media_url: '',
+      body_examples: compactObject(form.bodyExamples),
+      header_examples: {},
+      buttons: [],
+      carousel_cards: form.carouselCards.map(normalizeCarouselCard),
+    };
+  }
+
+  return {
+    ...basePayload,
     header_type: form.headerType,
     header_text: compactString(form.headerText),
     body_text: compactString(form.bodyText),
@@ -145,13 +209,7 @@ export const buildWhatsAppTemplatePayload = form => {
     sample_media_url: compactString(form.sampleMediaUrl),
     body_examples: compactObject(form.bodyExamples),
     header_examples: compactObject(form.headerExamples),
-    buttons: form.buttons.map(button => ({
-      type: button.type,
-      text: compactString(button.text),
-      url: compactString(button.url),
-      example: compactString(button.example),
-      phone_number: compactString(button.phoneNumber),
-    })),
+    buttons: form.buttons.map(normalizeTemplateButton),
   };
 };
 

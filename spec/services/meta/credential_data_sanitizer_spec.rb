@@ -10,6 +10,7 @@ RSpec.describe Meta::CredentialDataSanitizer do
           'api_key' => 'secret-api-key',
           'refresh_token' => 'secret-refresh-token',
           'oauth_code' => 'one-time-code',
+          'verification_pin' => '123456',
           'token' => 'bare-token',
           'message' => 'provider failure'
         }
@@ -25,13 +26,32 @@ RSpec.describe Meta::CredentialDataSanitizer do
       secret = 'known-provider-token'
       input = <<~TEXT
         token=#{secret} access_token=query-token code=one-time-code Authorization: Bearer bearer-token
-        {"client_secret":"json-secret","refresh_token":"refresh-secret"}
+        verification_pin=123456 {"client_secret":"json-secret","refresh_token":"refresh-secret","pin":"654321"}
       TEXT
 
       result = described_class.sanitize(input, secrets: [secret])
 
-      expect(result).not_to include(secret, 'query-token', 'one-time-code', 'bearer-token', 'json-secret', 'refresh-secret')
-      expect(result).to include('token=[FILTERED]', 'access_token=[FILTERED]', 'code=[FILTERED]', 'Bearer [FILTERED]')
+      expect(result).not_to include(secret, 'query-token', 'one-time-code', 'bearer-token', 'json-secret', 'refresh-secret', '123456', '654321')
+      expect(result).to include(
+        'token=[FILTERED]', 'access_token=[FILTERED]', 'code=[FILTERED]', 'Bearer [FILTERED]', 'verification_pin=[FILTERED]'
+      )
+    end
+
+    it 'redacts generic webhook verify tokens from structured and string representations' do
+      input = {
+        'webhook_verify_token' => 'hash-secret',
+        'message' => <<~TEXT
+          webhook_verify_token=query-secret
+          {"webhook_verify_token":"json-secret"}
+          webhook_verify_token: labeled-secret
+        TEXT
+      }
+
+      result = described_class.sanitize(input)
+
+      expect(result).not_to have_key('webhook_verify_token')
+      expect(result.fetch('message')).not_to include('query-secret', 'json-secret', 'labeled-secret')
+      expect(result.fetch('message').scan('[FILTERED]').size).to eq(3)
     end
   end
 end

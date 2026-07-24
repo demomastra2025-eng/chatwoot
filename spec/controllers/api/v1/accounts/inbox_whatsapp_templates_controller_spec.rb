@@ -99,6 +99,28 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       expect(response.parsed_body['error']).to eq('WhatsApp template management is only available for WhatsApp Cloud channels')
     end
 
+    it 'sanitizes service failures at the account-facing response boundary' do
+      secret = 'template-controller-secret'
+      whatsapp_channel.update!(provider_config: whatsapp_channel.provider_config.merge('api_key' => secret))
+      allow(management_service).to receive(:create_template).and_return(
+        success: false,
+        error: "Bearer #{secret}",
+        details: { token: secret, diagnostic: "access_token=#{secret}" }
+      )
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
+           headers: admin.create_new_auth_token,
+           params: valid_params,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include(
+        'error' => 'Bearer [FILTERED]',
+        'details' => { 'diagnostic' => 'access_token=[FILTERED]' }
+      )
+      expect(response.body).not_to include(secret)
+    end
+
     it 'returns the updated inbox payload after create' do
       whatsapp_channel.update!(
         message_templates: [
@@ -148,6 +170,115 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
            headers: admin.create_new_auth_token,
            params: phone_number_template_params,
+           as: :json
+
+      expect(response).to have_http_status(:created)
+    end
+
+    it 'passes authentication preset params through to template management' do
+      expect(management_service).to receive(:create_template).with(
+        hash_including(
+          'category' => 'AUTHENTICATION',
+          'add_security_recommendation' => true,
+          'code_expiration_minutes' => 10
+        )
+      ).and_return({ success: true, template: {} })
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
+           headers: admin.create_new_auth_token,
+           params: {
+             template: {
+               name: 'login_code',
+               language: 'en_US',
+               category: 'AUTHENTICATION',
+               add_security_recommendation: true,
+               code_expiration_minutes: 10
+             }
+           },
+           as: :json
+
+      expect(response).to have_http_status(:created)
+    end
+
+    it 'strips unverified Flow creation fields at the API boundary' do
+      expect(management_service).to receive(:create_template) do |template_config|
+        expect(template_config['buttons']).to eq([{ 'type' => 'FLOW', 'text' => 'Sign up' }])
+        { success: true, template: {} }
+      end
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
+           headers: admin.create_new_auth_token,
+           params: {
+             template: {
+               name: 'signup_flow',
+               language: 'en_US',
+               category: 'MARKETING',
+               body_text: 'Complete your registration.',
+               buttons: [
+                 {
+                   type: 'FLOW',
+                   text: 'Sign up',
+                   flow_id: '123456789',
+                   flow_action: 'navigate',
+                   navigate_screen: 'WELCOME_SCREEN'
+                 }
+               ]
+             }
+           },
+           as: :json
+
+      expect(response).to have_http_status(:created)
+    end
+
+    it 'passes structured carousel cards through to template management' do
+      expect(management_service).to receive(:create_template).with(
+        hash_including(
+          'carousel_cards' => [
+            hash_including(
+              'header_type' => 'image',
+              'sample_media_url' => 'https://example.com/card-1.jpg',
+              'body_text' => 'Product one',
+              'buttons' => [
+                hash_including('type' => 'QUICK_REPLY', 'text' => 'Choose')
+              ]
+            ),
+            hash_including(
+              'header_type' => 'image',
+              'sample_media_url' => 'https://example.com/card-2.jpg',
+              'body_text' => 'Product two'
+            )
+          ]
+        )
+      ).and_return({ success: true, template: {} })
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
+           headers: admin.create_new_auth_token,
+           params: {
+             template: {
+               name: 'product_carousel',
+               language: 'en_US',
+               category: 'MARKETING',
+               body_text: 'Choose a product.',
+               carousel_cards: [
+                 {
+                   header_type: 'image',
+                   sample_media_url: 'https://example.com/card-1.jpg',
+                   body_text: 'Product one',
+                   body_examples: {},
+                   buttons: [
+                     { type: 'QUICK_REPLY', text: 'Choose' }
+                   ]
+                 },
+                 {
+                   header_type: 'image',
+                   sample_media_url: 'https://example.com/card-2.jpg',
+                   body_text: 'Product two',
+                   body_examples: {},
+                   buttons: [{ type: 'QUICK_REPLY', text: 'Choose' }]
+                 }
+               ]
+             }
+           },
            as: :json
 
       expect(response).to have_http_status(:created)

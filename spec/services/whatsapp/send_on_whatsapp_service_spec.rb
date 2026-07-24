@@ -152,8 +152,42 @@ describe Whatsapp::SendOnWhatsappService do
         described_class.new(message: message).perform
 
         expect(message.reload.status).to eq('failed')
-        expect(message.external_error).to eq(described_class::MISSING_PHONE_RECIPIENT_ERROR)
+        expect(message.external_error).to eq(described_class::MISSING_RECIPIENT_ERROR)
         expect(WebMock).not_to have_requested(:post, 'https://waba.360dialog.io/v1/messages')
+      end
+
+      it 'sends Cloud API session replies through recipient when only a BSUID exists' do
+        contact = create(:contact, account: whatsapp_cloud_channel.account, phone_number: nil)
+        contact_inbox = create(:contact_inbox, inbox: whatsapp_cloud_channel.inbox, contact: contact, source_id: 'KZ.4378991855667096')
+        conversation = create(:conversation, account: whatsapp_cloud_channel.account, inbox: whatsapp_cloud_channel.inbox,
+                                             contact: contact, contact_inbox: contact_inbox)
+        create(:message, message_type: :incoming, content: 'test', conversation: conversation, account: conversation.account)
+        message = create(:message, message_type: :outgoing, content: 'reply', conversation: conversation, account: conversation.account)
+
+        stub_request(:post, "https://graph.facebook.com/v22.0/#{whatsapp_cloud_channel.provider_config['phone_number_id']}/messages")
+          .with(body: {
+            messaging_product: 'whatsapp', recipient_type: 'individual', recipient: contact_inbox.source_id,
+            text: { body: 'reply' }, type: 'text'
+          }.to_json)
+          .to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.source_id).to eq('123456789')
+      end
+
+      it 'rejects Cloud API authentication templates when only a BSUID exists' do
+        contact = create(:contact, account: whatsapp_cloud_channel.account, phone_number: nil)
+        contact_inbox = create(:contact_inbox, inbox: whatsapp_cloud_channel.inbox, contact: contact, source_id: 'KZ.4378991855667096')
+        conversation = create(:conversation, account: whatsapp_cloud_channel.account, inbox: whatsapp_cloud_channel.inbox,
+                                             contact: contact, contact_inbox: contact_inbox)
+        message = create(:message, message_type: :outgoing, conversation: conversation, account: conversation.account,
+                                   additional_attributes: { template_params: { category: 'AUTHENTICATION', name: 'otp' } })
+
+        described_class.new(message: message).perform
+
+        expect(message.reload).to have_attributes(status: 'failed', external_error: described_class::BSUID_AUTHENTICATION_TEMPLATE_ERROR)
+        expect(WebMock).not_to have_requested(:post, %r{graph\.facebook\.com/.*/messages})
       end
 
       it 'marks blank session replies without attachments as failed before calling WhatsApp' do

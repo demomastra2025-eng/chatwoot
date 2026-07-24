@@ -1,5 +1,5 @@
 module Whatsapp::Providers::WhatsappCloudCallMethods
-  WHATSAPP_CALLING_API_VERSION_FALLBACK = 'v22.0'.freeze
+  WHATSAPP_CALLING_API_VERSION_FALLBACK = 'v25.0'.freeze
 
   def pre_accept_call(call_id, sdp_answer)
     call_api('pre_accept_call', call_action_body(call_id, 'pre_accept', sdp_answer))
@@ -24,7 +24,9 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
     )
 
     unless response.success?
-      Rails.logger.error "[WHATSAPP CALL] send_call_permission_request failed: status=#{response.code} body=#{response.body}"
+      Rails.logger.error(
+        "[WHATSAPP CALL] send_call_permission_request failed: status=#{response.code} body=#{sanitized_call_response(response)}"
+      )
       return nil
     end
 
@@ -56,7 +58,11 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
     url = "#{calls_phone_id_path}/calls"
     Rails.logger.info "[WHATSAPP CALL] #{action_name} POST #{url} body=#{body.except(:session).to_json}"
     response = HTTParty.post(url, headers: api_headers, body: body.to_json)
-    Rails.logger.error "[WHATSAPP CALL] #{action_name} failed: status=#{response.code} body=#{response.body}" unless response.success?
+    unless response.success?
+      Rails.logger.error(
+        "[WHATSAPP CALL] #{action_name} failed: status=#{response.code} body=#{sanitized_call_response(response)}"
+      )
+    end
     response.success?
   end
 
@@ -84,11 +90,24 @@ module Whatsapp::Providers::WhatsappCloudCallMethods
 
     parsed = response.parsed_response.is_a?(Hash) ? response.parsed_response : {}
     error_code = parsed&.dig('error', 'code')
-    error_msg = parsed&.dig('error', 'error_user_msg') || 'Failed to initiate call'
-    Rails.logger.error "[WHATSAPP CALL] initiate_call failed: status=#{response.code} body=#{response.body}"
+    error_msg = sanitized_call_text(parsed&.dig('error', 'error_user_msg') || 'Failed to initiate call')
+    Rails.logger.error(
+      "[WHATSAPP CALL] initiate_call failed: status=#{response.code} body=#{sanitized_call_response(response)}"
+    )
 
     raise Whatsapp::CallErrors::NoCallPermission, error_msg if error_code.to_i == 138_006
 
     raise Whatsapp::CallErrors::CallFailed, error_msg
+  end
+
+  def sanitized_call_response(response)
+    sanitized_call_text(response.body.to_s.first(5000))
+  end
+
+  def sanitized_call_text(value)
+    Meta::CredentialDataSanitizer.sanitize(
+      value.to_s,
+      secrets: Meta::CredentialDataSanitizer.channel_secrets(whatsapp_channel)
+    )
   end
 end

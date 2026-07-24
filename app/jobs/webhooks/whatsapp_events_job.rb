@@ -1,16 +1,104 @@
 class Webhooks::WhatsappEventsJob < MutexApplicationJob
+  include Webhooks::WhatsappLifecycleEventHelpers
+  include Webhooks::WhatsappLegacyVerificationHelpers
+
   queue_as :whatsapp_inbound
   retry_on LockAcquisitionError, wait: 1.second, attempts: 8
+  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
+  retry_on Whatsapp::IncomingMessageMutationService::TargetNotFoundError, wait: 5.seconds, attempts: 120
 
   def perform(params = {}, options = {})
-    hmac_verified = options.with_indifferent_access[:hmac_verified] == true
-    channel = find_channel_from_whatsapp_business_payload(params)
-    log_webhook_dispatch(channel, params)
+    dispatch_changes(params, options.with_indifferent_access)
+  end
 
-    return log_inactive_channel(channel, params) if channel_is_inactive?(channel)
-    return unless continue_after_account_update?(channel, params, hmac_verified)
+  def dispatch_changes(params, verification_context)
+    webhook_payloads(params).each do |payload|
+      channel = find_channel_from_whatsapp_business_payload(payload)
+      log_webhook_dispatch(channel, payload)
+      route_context = verification_context_for(channel, payload, verification_context)
+      dispatch_authenticated_change(channel, payload, route_context)
+    end
+  end
 
-    dispatch_message_payload(channel, message_dispatch_params(params))
+  def dispatch_authenticated_change(channel, payload, verification_context)
+    route = Whatsapp::AuthenticatedWebhookRoute.new(
+      channel: channel,
+      payload: payload,
+      verification_context: verification_context
+    )
+    route.with_verified_route do
+      dispatch_change(channel, payload, verification_context[:hmac_verified] == true)
+    end
+  end
+
+  def webhook_payloads(params)
+    Whatsapp::WebhookBatchNormalizer.new(params: params).perform
+  end
+
+  def dispatch_change(channel, payload, hmac_verified)
+    field = webhook_fields(payload).first
+    if field == 'account_update'
+      handle_account_updates(payload) if trusted_account_update?(channel, hmac_verified)
+      return
+    end
+
+    if Whatsapp::LifecycleWebhookService::FIELDS.include?(field)
+      handle_lifecycle_updates(channel, field, payload) if trusted_lifecycle_update?(channel, hmac_verified)
+      return
+    end
+
+    return if log_inactive_payload?(channel, payload)
+
+    dispatch_non_account_change(channel, payload)
+  end
+
+  def log_inactive_payload?(channel, payload)
+    return false unless channel_is_inactive?(channel)
+
+    log_inactive_channel(channel, payload)
+    true
+  end
+
+  def dispatch_non_account_change(channel, payload)
+    case webhook_fields(payload).first
+    when 'history', 'smb_app_state_sync'
+      enqueue_coexistence_sync(channel, webhook_fields(payload).first, payload)
+    else
+      dispatch_message_payload(channel, payload)
+    end
+  end
+
+  def coexistence_field?(payload)
+    %w[history smb_app_state_sync].include?(webhook_fields(payload).first)
+  end
+
+  def change_value(params)
+    params.dig(:entry, 0, :changes, 0, :value).to_h.with_indifferent_access
+  end
+
+  def enqueue_coexistence_sync(channel, field, params)
+    routing_context = Whatsapp::WebhookChannelResolver.new(params: params).routing_context
+    coexistence_channels(channel, params).each do |coexistence_channel|
+      channel_context = routing_context.merge(
+        sync_generation: coexistence_channel.provider_config.dig('coexistence_sync', 'generation')
+      )
+      provider_event_at = params.dig(:entry, 0, :time)
+      channel_context[:provider_event_at] = provider_event_at if provider_event_at.present?
+      Whatsapp::CoexistenceWebhookSyncJob.perform_later(
+        coexistence_channel.id,
+        field,
+        change_value(params).to_h,
+        channel_context
+      )
+    end
+  end
+
+  def coexistence_channels(channel, params)
+    resolved_channel = Whatsapp::WebhookChannelResolver.new(params: params).perform
+    return Channel::Whatsapp.none if channel.blank? || resolved_channel.blank?
+    return Channel::Whatsapp.none unless resolved_channel.provider_config.to_h['embedded_signup_flow'] == 'coexistence'
+
+    Channel::Whatsapp.active_cloud.where(id: resolved_channel.id)
   end
 
   # Detects if the webhook is an SMB message echo event (message sent from WhatsApp Business app)
@@ -56,13 +144,6 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     Rails.logger.warn("Inactive WhatsApp channel: #{phone_number}")
   end
 
-  def continue_after_account_update?(channel, params, hmac_verified)
-    return true unless account_update_event?(params)
-
-    handle_account_updates(channel, params) if trusted_account_update?(channel, hmac_verified)
-    non_account_update_event?(params)
-  end
-
   def dispatch_message_payload(channel, params)
     if message_echo_event?(params)
       handle_message_echo(channel, params)
@@ -76,41 +157,23 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   end
 
   def trusted_account_update?(channel, hmac_verified)
-    return true if hmac_verified && channel.provider == 'whatsapp_cloud'
+    return true if hmac_verified && (channel.blank? || channel.provider == 'whatsapp_cloud')
 
     Rails.logger.warn(
-      "[WHATSAPP ACCOUNT UPDATE] ignored untrusted event channel=#{channel.id} " \
-      "provider=#{channel.provider} hmac_verified=#{hmac_verified}"
+      "[WHATSAPP ACCOUNT UPDATE] ignored untrusted event channel=#{channel&.id || 'none'} " \
+      "provider=#{channel&.provider || 'none'} hmac_verified=#{hmac_verified}"
     )
     false
   end
 
-  def non_account_update_event?(params)
-    webhook_fields(params).any? { |field| field != 'account_update' }
-  end
-
-  def message_dispatch_params(params)
-    return params unless account_update_event?(params)
-
-    payload = params.to_h.deep_dup.with_indifferent_access
-    payload[:entry] = Array(payload[:entry]).filter_map do |entry|
-      entry = entry.to_h.with_indifferent_access
-      changes = Array(entry[:changes]).reject { |change| change.to_h.with_indifferent_access[:field] == 'account_update' }
-      entry.merge(changes: changes) if changes.present?
-    end
-    payload
-  end
-
-  def handle_account_updates(callback_channel, params)
-    account_update_channels(callback_channel, params).find_each do |channel|
+  def handle_account_updates(params)
+    account_update_channels(params).find_each do |channel|
       Whatsapp::AccountUpdateService.new(channel: channel, params: params).perform
     end
   end
 
-  def account_update_channels(callback_channel, params)
-    Channel::Whatsapp
-      .where(account_id: callback_channel.account_id, provider: 'whatsapp_cloud')
-      .where("provider_config ->> 'business_account_id' IN (?)", account_update_waba_ids(params))
+  def account_update_channels(params)
+    Whatsapp::AccountUpdateChannelResolver.new(waba_ids: account_update_waba_ids(params)).resolve
   end
 
   def account_update_waba_ids(params)
@@ -135,37 +198,13 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   def channel_is_inactive?(channel)
     return true if channel.blank?
     return true unless channel.account.active?
+    return true if channel.inbox.blank? || channel.inbox.deleting_at.present?
 
     false
   end
 
-  def find_channel_by_url_param(params)
-    return unless params[:phone_number]
-
-    Channel::Whatsapp.find_by(phone_number: params[:phone_number])
-  end
-
   def find_channel_from_whatsapp_business_payload(params)
-    # for the case where facebook cloud api support multiple numbers for a single app
-    # https://github.com/chatwoot/chatwoot/issues/4712#issuecomment-1173838350
-    # we will give priority to the phone_number in the payload
-    if params[:object] == 'whatsapp_business_account'
-      payload_channel = get_channel_from_wb_payload(params)
-      return payload_channel if payload_channel.present?
-      return find_channel_by_url_param(params) if account_update_event?(params)
-
-      return nil
-    end
-
-    find_channel_by_url_param(params)
-  end
-
-  def get_channel_from_wb_payload(wb_params)
-    phone_number = "+#{wb_params[:entry].first[:changes].first.dig(:value, :metadata, :display_phone_number)}"
-    phone_number_id = wb_params[:entry].first[:changes].first.dig(:value, :metadata, :phone_number_id)
-    channel = Channel::Whatsapp.find_by(phone_number: phone_number)
-    # validate to ensure the phone number id matches the whatsapp channel
-    return channel if channel && channel.provider_config['phone_number_id'] == phone_number_id
+    Whatsapp::WebhookRouteResolver.new(params: params).perform
   end
 
   def log_webhook_dispatch(channel, params)

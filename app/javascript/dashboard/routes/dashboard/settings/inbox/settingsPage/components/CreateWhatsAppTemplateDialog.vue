@@ -10,14 +10,19 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages.js';
+import WhatsAppTemplateCarouselEditor from './WhatsAppTemplateCarouselEditor.vue';
 import {
   buildWhatsAppTemplatePayload,
+  createEmptyCarouselCard,
   createEmptyTemplateButton,
   createEmptyWhatsAppTemplateForm,
   DEFAULT_TEMPLATE_LANGUAGE,
   extractSequentialTemplateVariables,
   hasDanglingTemplateVariable,
+  MAX_CAROUSEL_BUTTONS,
+  MAX_CAROUSEL_CARDS,
   MAX_TEMPLATE_BUTTONS,
+  MIN_CAROUSEL_CARDS,
   TEMPLATE_BUTTON_TYPE_OPTIONS,
   TEMPLATE_CATEGORY_OPTIONS,
   TEMPLATE_HEADER_TYPE_OPTIONS,
@@ -72,6 +77,10 @@ const categoryOptions = computed(() => [
     ...TEMPLATE_CATEGORY_OPTIONS[1],
     label: t('WHATSAPP_TEMPLATES.MANAGEMENT.CATEGORY_OPTIONS.MARKETING'),
   },
+  {
+    ...TEMPLATE_CATEGORY_OPTIONS[2],
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.CATEGORY_OPTIONS.AUTHENTICATION'),
+  },
 ]);
 
 const headerTypeOptions = computed(() => [
@@ -114,12 +123,22 @@ const buttonTypeOptions = computed(() => [
     ...TEMPLATE_BUTTON_TYPE_OPTIONS[3],
     label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.PHONE_NUMBER'),
   },
+  {
+    ...TEMPLATE_BUTTON_TYPE_OPTIONS[4],
+    label: t('WHATSAPP_TEMPLATES.MANAGEMENT.BUTTON_OPTIONS.CATALOG'),
+  },
 ]);
 
 const buttonUsesText = buttonType => buttonType !== 'COPY_CODE';
 const buttonUsesUrl = buttonType => buttonType === 'URL';
 const buttonUsesCopyCode = buttonType => buttonType === 'COPY_CODE';
 const buttonUsesPhoneNumber = buttonType => buttonType === 'PHONE_NUMBER';
+const buttonUsesCatalog = buttonType => buttonType === 'CATALOG';
+
+const isAuthentication = computed(() => form.category === 'AUTHENTICATION');
+const isStandardTemplate = computed(
+  () => !isAuthentication.value && !form.isCarousel
+);
 
 const bodyVariableInfo = computed(() =>
   extractSequentialTemplateVariables(form.bodyText)
@@ -130,6 +149,74 @@ const headerVariableInfo = computed(() =>
     : { variables: [], error: '' }
 );
 
+const appendCarouselButtonErrors = (button, index, errors) => {
+  if (!button.text.trim()) {
+    errors.push(
+      t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_TEXT_REQUIRED', {
+        index,
+      })
+    );
+  }
+
+  if (buttonUsesUrl(button.type)) {
+    const urlVariableInfo = extractSequentialTemplateVariables(button.url);
+    if (!button.url.trim()) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_URL_REQUIRED', {
+          index,
+        })
+      );
+    }
+    if (urlVariableInfo.error) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_URL_INVALID', {
+          index,
+        })
+      );
+    }
+    if (urlVariableInfo.variables.length > 1) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_URL_SINGLE_VARIABLE', {
+          index,
+        })
+      );
+    }
+    if (
+      urlVariableInfo.variables.length === 1 &&
+      !/{{\s*\d+\s*}}$/.test(button.url.trim())
+    ) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_URL_SUFFIX', {
+          index,
+        })
+      );
+    }
+    if (urlVariableInfo.variables.length === 1 && !button.example.trim()) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_EXAMPLE_REQUIRED', {
+          index,
+        })
+      );
+    }
+  }
+
+  if (buttonUsesPhoneNumber(button.type)) {
+    if (!button.phoneNumber.trim()) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_PHONE_NUMBER_REQUIRED', {
+          index,
+        })
+      );
+    } else if (!PHONE_NUMBER_PATTERN.test(button.phoneNumber.trim())) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_PHONE_NUMBER_INVALID', {
+          index,
+        })
+      );
+    }
+  }
+};
+
 const validationErrors = computed(() => {
   const errors = [];
 
@@ -137,6 +224,21 @@ const validationErrors = computed(() => {
     errors.push(t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.NAME_REQUIRED'));
   } else if (!/^[a-z0-9_]+$/.test(form.name.trim())) {
     errors.push(t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.NAME_FORMAT'));
+  }
+
+  if (isAuthentication.value) {
+    const expirationMinutes = Number(form.codeExpirationMinutes);
+    if (
+      !Number.isInteger(expirationMinutes) ||
+      expirationMinutes < 1 ||
+      expirationMinutes > 90
+    ) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.AUTH_EXPIRATION_RANGE')
+      );
+    }
+
+    return [...new Set(errors)];
   }
 
   if (!form.bodyText.trim()) {
@@ -162,6 +264,108 @@ const validationErrors = computed(() => {
       );
     }
   });
+
+  if (form.isCarousel) {
+    if (form.category !== 'MARKETING') {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_MARKETING_ONLY')
+      );
+    }
+    if (
+      form.carouselCards.length < MIN_CAROUSEL_CARDS ||
+      form.carouselCards.length > MAX_CAROUSEL_CARDS
+    ) {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_CARD_LIMIT')
+      );
+    }
+
+    const cardSignatures = form.carouselCards.map(card =>
+      [
+        card.bodyText.trim() ? 'BODY' : '',
+        ...card.buttons.map(button => button.type),
+      ].join('|')
+    );
+    if (new Set(cardSignatures).size > 1) {
+      errors.push(t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_STRUCTURE'));
+    }
+
+    form.carouselCards.forEach((card, cardIndex) => {
+      const visibleCardIndex = cardIndex + 1;
+
+      if (!['image', 'video'].includes(card.headerType)) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_HEADER_TYPE', {
+            index: visibleCardIndex,
+          })
+        );
+      }
+      if (!card.sampleMediaUrl.trim()) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_MEDIA_REQUIRED', {
+            index: visibleCardIndex,
+          })
+        );
+      }
+      if (card.bodyText.trim().length > 160) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_BODY_LENGTH', {
+            index: visibleCardIndex,
+          })
+        );
+      }
+
+      const cardVariableInfo = extractSequentialTemplateVariables(
+        card.bodyText
+      );
+      if (cardVariableInfo.error) errors.push(cardVariableInfo.error);
+      if (hasDanglingTemplateVariable(card.bodyText)) {
+        errors.push(
+          t(
+            'WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_BODY_VARIABLE_POSITION',
+            { index: visibleCardIndex }
+          )
+        );
+      }
+      cardVariableInfo.variables.forEach(variable => {
+        if (!String(card.bodyExamples?.[variable] || '').trim()) {
+          errors.push(
+            t(
+              'WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_BODY_EXAMPLE_REQUIRED',
+              {
+                index: visibleCardIndex,
+                variable: placeholderToken(variable),
+              }
+            )
+          );
+        }
+      });
+
+      if (card.buttons.length > MAX_CAROUSEL_BUTTONS) {
+        errors.push(
+          t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_BUTTON_LIMIT', {
+            index: visibleCardIndex,
+          })
+        );
+      }
+      card.buttons.forEach((button, buttonIndex) => {
+        if (!['QUICK_REPLY', 'URL', 'PHONE_NUMBER'].includes(button.type)) {
+          errors.push(
+            t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_BUTTON_TYPE', {
+              index: visibleCardIndex,
+            })
+          );
+        }
+        appendCarouselButtonErrors(
+          button,
+          `${visibleCardIndex}.${buttonIndex + 1}`,
+          errors
+        );
+      });
+    });
+
+    return [...new Set(errors)];
+  }
 
   if (form.headerType === 'text') {
     if (!form.headerText.trim()) {
@@ -214,6 +418,12 @@ const validationErrors = computed(() => {
         t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.BUTTON_TEXT_REQUIRED', {
           index: buttonIndex,
         })
+      );
+    }
+
+    if (buttonUsesCatalog(button.type) && form.category !== 'MARKETING') {
+      errors.push(
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CATALOG_MARKETING_ONLY')
       );
     }
 
@@ -328,6 +538,13 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => form.category,
+  category => {
+    if (category === 'AUTHENTICATION') form.isCarousel = false;
+  }
+);
+
 const resetForm = () => {
   Object.assign(form, createEmptyWhatsAppTemplateForm());
   submitError.value = '';
@@ -358,6 +575,25 @@ const updateButtonType = (index, type) => {
         : '',
     phoneNumber: buttonUsesPhoneNumber(type) ? currentButton.phoneNumber : '',
   };
+};
+
+const toggleCarousel = event => {
+  form.isCarousel = event.target.checked;
+  if (!form.isCarousel) return;
+
+  form.category = 'MARKETING';
+  form.headerType = 'none';
+  form.headerText = '';
+  form.footerText = '';
+  form.sampleMediaUrl = '';
+  form.headerExamples = {};
+  form.buttons = [];
+  if (form.carouselCards.length < MIN_CAROUSEL_CARDS) {
+    form.carouselCards = Array.from(
+      { length: MIN_CAROUSEL_CARDS },
+      createEmptyCarouselCard
+    );
+  }
 };
 
 const open = () => {
@@ -442,6 +678,60 @@ defineExpose({
       </div>
 
       <div
+        v-if="isAuthentication"
+        class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+      >
+        <div class="space-y-1">
+          <p class="mb-0 text-sm font-medium text-n-slate-12">
+            {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.AUTHENTICATION.TITLE') }}
+          </p>
+          <p class="mb-0 text-sm text-n-slate-11">
+            {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.AUTHENTICATION.HINT') }}
+          </p>
+        </div>
+        <label class="flex items-center gap-2 text-sm text-n-slate-12">
+          <input
+            v-model="form.addSecurityRecommendation"
+            type="checkbox"
+            class="h-4 w-4 rounded border-n-weak"
+          />
+          {{
+            t(
+              'WHATSAPP_TEMPLATES.MANAGEMENT.AUTHENTICATION.SECURITY_RECOMMENDATION'
+            )
+          }}
+        </label>
+        <Input
+          v-model="form.codeExpirationMinutes"
+          type="number"
+          min="1"
+          max="90"
+          :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.AUTHENTICATION.EXPIRATION')"
+        />
+      </div>
+
+      <label
+        v-if="!isAuthentication"
+        class="flex items-start gap-3 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
+      >
+        <input
+          :checked="form.isCarousel"
+          type="checkbox"
+          class="mt-0.5 h-4 w-4 rounded border-n-weak"
+          @change="toggleCarousel"
+        />
+        <span class="space-y-1">
+          <span class="block text-sm font-medium text-n-slate-12">
+            {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.CAROUSEL.ENABLE') }}
+          </span>
+          <span class="block text-sm text-n-slate-11">
+            {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.CAROUSEL.ENABLE_HINT') }}
+          </span>
+        </span>
+      </label>
+
+      <div
+        v-if="!isAuthentication"
         class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
       >
         <div class="space-y-1">
@@ -450,10 +740,7 @@ defineExpose({
           </p>
           <p class="text-sm text-n-slate-11">
             {{
-              t(
-                'WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT',
-                exampleVariables
-              )
+              t('WHATSAPP_TEMPLATES.MANAGEMENT.VARIABLE_HINT', exampleVariables)
             }}
           </p>
         </div>
@@ -496,7 +783,13 @@ defineExpose({
         </div>
       </div>
 
+      <WhatsAppTemplateCarouselEditor
+        v-if="form.isCarousel"
+        v-model="form.carouselCards"
+      />
+
       <div
+        v-if="isStandardTemplate"
         class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
       >
         <div class="flex flex-col gap-1">
@@ -561,6 +854,7 @@ defineExpose({
       </div>
 
       <TextArea
+        v-if="isStandardTemplate"
         v-model="form.footerText"
         :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.FOOTER_TEXT')"
         auto-height
@@ -570,6 +864,7 @@ defineExpose({
       />
 
       <div
+        v-if="isStandardTemplate"
         class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
       >
         <div class="flex items-center justify-between gap-3">

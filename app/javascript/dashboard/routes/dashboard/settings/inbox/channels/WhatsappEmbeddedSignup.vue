@@ -9,14 +9,18 @@ import NextButton from 'next/button/Button.vue';
 import LoadingState from 'dashboard/components/widgets/LoadingState.vue';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
 import globalConstants from 'dashboard/constants/globals.js';
+import WhatsappChannel from 'dashboard/api/channel/whatsappChannel';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 import {
   setupFacebookSdk,
   initWhatsAppEmbeddedSignup,
   createMessageHandler,
   isValidBusinessData,
+  embeddedSignupFlowForEvent,
+  EMBEDDED_SIGNUP_FLOW,
   isEmbeddedSignupErrorEvent,
   isEmbeddedSignupFinishEvent,
+  embeddedSignupSessionData,
   getWhatsAppEmbeddedSignupConfigErrors,
 } from './whatsapp/utils';
 
@@ -34,6 +38,8 @@ const processingMessage = ref('');
 const authCodeReceived = ref(false);
 const authCode = ref(null);
 const businessData = ref(null);
+const signupFlow = ref(null);
+const requestedSignupFlow = ref(EMBEDDED_SIGNUP_FLOW.STANDARD);
 const isAuthenticating = ref(false);
 let handleSignupMessage = null;
 let signupTimeout = null;
@@ -157,7 +163,8 @@ const completeSignupFlow = async businessDataParam => {
   try {
     const params = {
       code: authorizationCode,
-      business_id: businessDataParam.business_id,
+      signup_type: signupFlow.value,
+      business_id: businessDataParam.business_id || '',
       waba_id: businessDataParam.waba_id,
       phone_number_id: businessDataParam?.phone_number_id || '',
     };
@@ -179,11 +186,26 @@ const completeSignupFlow = async businessDataParam => {
 
 // Message handling
 const handleEmbeddedSignupData = async data => {
+  WhatsappChannel.logEmbeddedSignupSession(
+    embeddedSignupSessionData(data)
+  ).catch(() => {});
+
   if (isEmbeddedSignupFinishEvent(data)) {
     const businessDataLocal = data.data;
+    const flow = embeddedSignupFlowForEvent(data);
 
-    if (isValidBusinessData(businessDataLocal)) {
+    if (flow !== requestedSignupFlow.value) {
+      handleSignupError({
+        error: t(
+          'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.INVALID_BUSINESS_DATA'
+        ),
+      });
+      return;
+    }
+
+    if (isValidBusinessData(businessDataLocal, flow)) {
       businessData.value = businessDataLocal;
+      signupFlow.value = flow;
       if (authCodeReceived.value && authCode.value) {
         await completeSignupFlow(businessDataLocal);
       } else {
@@ -198,16 +220,17 @@ const handleEmbeddedSignupData = async data => {
         ),
       });
     }
-  } else if (data.event === 'CANCEL') {
-    handleSignupCancellation();
   } else if (isEmbeddedSignupErrorEvent(data)) {
+    const details = data.data || data;
     handleSignupError({
       error:
-        data.error_message ||
+        details.error_message ||
         t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.SIGNUP_ERROR'),
-      error_id: data.error_id,
-      session_id: data.session_id,
+      error_id: details.error_code || data.error_id,
+      session_id: details.session_id || data.session_id,
     });
+  } else if (data.event === 'CANCEL') {
+    handleSignupCancellation();
   }
 };
 
@@ -218,7 +241,9 @@ function setupMessageListener() {
   window.addEventListener('message', handleSignupMessage);
 }
 
-const launchEmbeddedSignup = async () => {
+const launchEmbeddedSignup = async (flow = EMBEDDED_SIGNUP_FLOW.STANDARD) => {
+  if (isAuthenticating.value || isProcessing.value) return;
+
   const configurationError = getEmbeddedSignupConfigurationError();
   if (configurationError) {
     handleSignupError({ error: configurationError });
@@ -229,6 +254,8 @@ const launchEmbeddedSignup = async () => {
     authCode.value = null;
     authCodeReceived.value = false;
     businessData.value = null;
+    signupFlow.value = null;
+    requestedSignupFlow.value = flow;
     setupMessageListener();
     isAuthenticating.value = true;
     processingMessage.value = t(
@@ -243,7 +270,8 @@ const launchEmbeddedSignup = async () => {
 
     startSignupTimeout();
     const code = await initWhatsAppEmbeddedSignup(
-      window.chatwootConfig?.whatsappConfigurationId
+      window.chatwootConfig?.whatsappConfigurationId,
+      flow
     );
 
     authCode.value = code;
@@ -331,16 +359,26 @@ onBeforeUnmount(() => {
         </I18nT>
       </div>
 
-      <div class="flex mt-4">
+      <div class="flex flex-col gap-2 mt-4">
         <NextButton
           :disabled="isAuthenticating"
           :is-loading="isAuthenticating"
           faded
           slate
           class="w-full"
-          @click="launchEmbeddedSignup"
+          @click="launchEmbeddedSignup(EMBEDDED_SIGNUP_FLOW.STANDARD)"
         >
-          {{ $t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.SUBMIT_BUTTON') }}
+          {{ $t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.STANDARD_BUTTON') }}
+        </NextButton>
+        <NextButton
+          :disabled="isAuthenticating"
+          :is-loading="isAuthenticating"
+          faded
+          slate
+          class="w-full"
+          @click="launchEmbeddedSignup(EMBEDDED_SIGNUP_FLOW.COEXISTENCE)"
+        >
+          {{ $t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.COEXISTENCE_BUTTON') }}
         </NextButton>
       </div>
     </div>

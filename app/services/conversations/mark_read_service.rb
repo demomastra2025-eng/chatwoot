@@ -44,6 +44,10 @@ class Conversations::MarkReadService
     case channel
     when Channel::WhatsappWeb
       { whatsapp_web_messages: unread_incoming_messages_for_sync(:source_id) }
+    when Channel::Whatsapp
+      return {} unless channel.provider == 'whatsapp_cloud'
+
+      { whatsapp_cloud_messages: unread_incoming_messages_for_sync(:source_id, :created_at, :content_attributes) }
     when Channel::Telegram
       return {} if @conversation.additional_attributes['business_connection_id'].blank?
 
@@ -66,6 +70,7 @@ class Conversations::MarkReadService
 
   def sync_mark_read_receipts(sync_payload)
     sync_whatsapp_web_messages_read!(sync_payload[:whatsapp_web_messages])
+    sync_whatsapp_cloud_messages_read!(sync_payload[:whatsapp_cloud_messages])
     sync_telegram_messages_read!(sync_payload[:telegram_messages])
     sync_telegram_personal_messages_read!(sync_payload[:telegram_personal_messages])
   end
@@ -74,6 +79,15 @@ class Conversations::MarkReadService
     return if messages.blank?
 
     WhatsappWeb::MarkMessagesReadService.new(
+      conversation: @conversation,
+      messages: messages
+    ).perform
+  end
+
+  def sync_whatsapp_cloud_messages_read!(messages)
+    return if messages.blank?
+
+    Whatsapp::MarkMessagesReadService.new(
       conversation: @conversation,
       messages: messages
     ).perform

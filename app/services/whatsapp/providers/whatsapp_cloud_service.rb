@@ -7,6 +7,14 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   TRANSIENT_SEND_RETRY_ERROR_CODE_KEY = 'whatsapp_cloud_send_retry_error_code'.freeze
   TRANSIENT_SEND_RETRY_ERROR_MESSAGE_KEY = 'whatsapp_cloud_send_retry_error_message'.freeze
   TRANSIENT_SEND_RETRY_NEXT_AT_KEY = 'whatsapp_cloud_send_retry_next_at'.freeze
+  DELIVERY_OUTCOME_UNKNOWN_KEY = 'whatsapp_cloud_delivery_outcome_unknown'.freeze
+  DELIVERY_OUTCOME_UNKNOWN_KEYS = [
+    DELIVERY_OUTCOME_UNKNOWN_KEY,
+    'whatsapp_cloud_delivery_outcome_unknown_at',
+    'whatsapp_cloud_delivery_outcome_error_class'
+  ].freeze
+  COEXISTENCE_THROUGHPUT_LIMIT = 20
+  COEXISTENCE_THROTTLE_KEY = 'whatsapp_cloud_coexistence_throttled'.freeze
   TRANSIENT_SEND_RETRY_KEYS = [
     TRANSIENT_SEND_RETRY_COUNT_KEY,
     TRANSIENT_SEND_RETRY_ERROR_CODE_KEY,
@@ -18,18 +26,27 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     return false if message.blank?
 
     content_attributes = message.content_attributes.to_h.deep_stringify_keys
-    message.sent? && message.source_id.blank? && content_attributes[TRANSIENT_SEND_RETRY_COUNT_KEY].to_i.positive? &&
+    retry_queued = content_attributes[TRANSIENT_SEND_RETRY_COUNT_KEY].to_i.positive? || content_attributes[COEXISTENCE_THROTTLE_KEY]
+    message.sent? && message.source_id.blank? && retry_queued &&
       content_attributes[TRANSIENT_SEND_RETRY_NEXT_AT_KEY].present?
   end
 
   def self.transient_send_retry_metadata(message)
-    message.content_attributes.to_h.deep_stringify_keys.slice(*TRANSIENT_SEND_RETRY_KEYS)
+    message.content_attributes.to_h.deep_stringify_keys.slice(*TRANSIENT_SEND_RETRY_KEYS, COEXISTENCE_THROTTLE_KEY)
+  end
+
+  def self.delivery_outcome_unknown?(message)
+    ActiveModel::Type::Boolean.new.cast(message&.content_attributes.to_h.deep_stringify_keys[DELIVERY_OUTCOME_UNKNOWN_KEY])
   end
 
   def send_message(phone_number, message)
     @message = message
+    return if suppress_ambiguous_delivery_retry?(message)
+    return if defer_for_coexistence_throughput?(message)
 
-    if message.attachments.present?
+    if rich_message_payload.present?
+      send_rich_message(phone_number, message)
+    elsif message.attachments.present?
       send_attachment_message(phone_number, message)
     elsif message.content_type == 'input_select'
       send_interactive_text_message(phone_number, message)
@@ -39,24 +56,21 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def send_template(phone_number, template_info, message)
+    return if suppress_ambiguous_delivery_retry?(message)
+    return if defer_for_coexistence_throughput?(message)
+
     template_body = template_body_parameters(template_info)
+    recipient_payload = outbound_recipient_payload(phone_number)
 
     request_body = {
       messaging_product: 'whatsapp',
       recipient_type: 'individual', # Only individual messages supported (not group messages)
-      to: phone_number,
+      **recipient_payload,
       type: 'template',
       template: template_body
     }
 
-    response = HTTParty.post(
-      "#{phone_id_path}/messages",
-      headers: api_headers,
-      query: graph_api_query,
-      body: request_body.to_json
-    )
-
-    process_response(response, message)
+    post_message(request_body, message)
   end
 
   def process_response(response, message)
@@ -156,6 +170,41 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     "#{api_base_path}/#{api_version}/#{media_id}"
   end
 
+  def mark_message_read(message_id)
+    response = HTTParty.post(
+      "#{phone_id_path}/messages",
+      headers: api_headers,
+      query: graph_api_query,
+      body: {
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: message_id
+      }.to_json,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response.success?
+  end
+
+  def send_typing_indicator(message_id)
+    return false if message_id.blank?
+
+    response = HTTParty.post(
+      "#{phone_id_path}/messages",
+      headers: api_headers,
+      query: graph_api_query,
+      body: {
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: message_id,
+        typing_indicator: { type: 'text' }
+      }.to_json,
+      timeout: request_timeout
+    )
+    record_provider_authorization_error(response) unless response.success?
+    response.success?
+  end
+
   private
 
   def request_timeout = ENV.fetch('WHATSAPP_CLOUD_API_TIMEOUT', 20).to_i
@@ -214,7 +263,9 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     return if message.blank?
 
     content_attributes = message.content_attributes.to_h.deep_stringify_keys
-    updated_attributes = content_attributes.except(*TRANSIENT_SEND_RETRY_KEYS, 'external_error')
+    updated_attributes = content_attributes.except(
+      *TRANSIENT_SEND_RETRY_KEYS, *DELIVERY_OUTCOME_UNKNOWN_KEYS, COEXISTENCE_THROTTLE_KEY, 'external_error'
+    )
     return if updated_attributes == content_attributes
 
     message.update!(content_attributes: updated_attributes)
@@ -243,24 +294,33 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
   end
 
   def api_version
-    @api_version ||= GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0')
+    @api_version ||= GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0')
+  end
+
+  def send_rich_message(phone_number, message)
+    built_payload = Whatsapp::OutboundRichMessageBuilder.new(
+      payload: rich_message_payload,
+      conversation: message.conversation
+    ).build
+    body = outbound_message_body(
+      phone_number,
+      built_payload[:type],
+      built_payload[:content],
+      context: whatsapp_reply_context(message)
+    )
+
+    post_message(body, message)
+  end
+
+  def rich_message_payload
+    @message.content_attributes.to_h.with_indifferent_access[:whatsapp_payload]
   end
 
   def send_text_message(phone_number, message)
-    response = HTTParty.post(
-      "#{phone_id_path}/messages",
-      headers: api_headers,
-      query: graph_api_query,
-      body: {
-        messaging_product: 'whatsapp',
-        context: whatsapp_reply_context(message),
-        to: phone_number,
-        text: { body: message.outgoing_content },
-        type: 'text'
-      }.to_json
+    body = outbound_message_body(
+      phone_number, 'text', { body: message.outgoing_content }, context: whatsapp_reply_context(message)
     )
-
-    process_response(response, message)
+    post_message(body, message)
   end
 
   def send_attachment_message(phone_number, message)
@@ -269,20 +329,8 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     type_content = { link: attachment.download_url }
     type_content['caption'] = message.outgoing_content unless %w[audio sticker].include?(type)
     type_content['filename'] = attachment.file.filename if type == 'document'
-    response = HTTParty.post(
-      "#{phone_id_path}/messages",
-      headers: api_headers,
-      query: graph_api_query,
-      body: {
-        :messaging_product => 'whatsapp',
-        :context => whatsapp_reply_context(message),
-        'to' => phone_number,
-        'type' => type,
-        type.to_s => type_content
-      }.to_json
-    )
-
-    process_response(response, message)
+    body = outbound_message_body(phone_number, type, type_content, context: whatsapp_reply_context(message))
+    post_message(body, message)
   end
 
   def error_message(response)
@@ -336,22 +384,86 @@ class Whatsapp::Providers::WhatsappCloudService < Whatsapp::Providers::BaseServi
     }
   end
 
+  def outbound_message_body(phone_number, type, content, context: nil)
+    body = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      context: context
+    }.compact.merge(outbound_recipient_payload(phone_number))
+    body[type] = content
+    body[:type] = type
+    body
+  end
+
+  def outbound_recipient_payload(identifier)
+    bsuid = Whatsapp::ContactIdentityResolver.bsuid_source_id(identifier)
+    return { recipient: bsuid } if bsuid.present?
+
+    { to: identifier }
+  end
+
   def send_interactive_text_message(phone_number, message)
     payload = create_payload_based_on_items(message)
+    body = outbound_message_body(phone_number, 'interactive', payload)
 
+    post_message(body, message)
+  end
+
+  def post_message(body, message)
     response = HTTParty.post(
       "#{phone_id_path}/messages",
       headers: api_headers,
       query: graph_api_query,
-      body: {
-        messaging_product: 'whatsapp',
-        to: phone_number,
-        interactive: payload,
-        type: 'interactive'
-      }.to_json
+      body: body.to_json,
+      timeout: request_timeout
     )
 
     process_response(response, message)
+  rescue Timeout::Error, EOFError, Errno::ECONNRESET, Errno::ETIMEDOUT,
+         Whatsapp::Providers::BaseService::DeliveryAcknowledgementMissingError => e
+    record_unknown_delivery_outcome!(message, e)
+    nil
+  end
+
+  def record_unknown_delivery_outcome!(message, error)
+    content_attributes = message.content_attributes.to_h.deep_stringify_keys.except(*TRANSIENT_SEND_RETRY_KEYS, 'external_error')
+    content_attributes.merge!(
+      DELIVERY_OUTCOME_UNKNOWN_KEY => true,
+      'whatsapp_cloud_delivery_outcome_unknown_at' => Time.current.iso8601,
+      'whatsapp_cloud_delivery_outcome_error_class' => error.class.name
+    )
+    message.update!(status: :sent, external_error: nil, content_attributes: content_attributes)
+    Rails.logger.warn("[WHATSAPP_CLOUD] delivery outcome unknown; automatic retry suppressed message_id=#{message.id} error=#{error.class}")
+  end
+
+  def suppress_ambiguous_delivery_retry?(message)
+    return false unless self.class.delivery_outcome_unknown?(message)
+
+    Rails.logger.warn("[WHATSAPP_CLOUD] duplicate send suppressed after unknown delivery outcome message_id=#{message.id}")
+    true
+  end
+
+  def defer_for_coexistence_throughput?(message)
+    return false unless whatsapp_channel.provider_config.to_h['embedded_signup_flow'] == 'coexistence'
+
+    counter_key = "whatsapp:coexistence:throughput:#{whatsapp_channel.id}:#{Time.current.to_i}"
+    count = Redis::Alfred.incr(counter_key)
+    Redis::Alfred.expire(counter_key, 120) if count == 1
+    return false if count <= COEXISTENCE_THROUGHPUT_LIMIT
+
+    wait = ((count - 1) / COEXISTENCE_THROUGHPUT_LIMIT).seconds
+    retry_at = wait.from_now
+    content_attributes = coexistence_retry_content_attributes(message, retry_at)
+    message.update!(status: :sent, external_error: nil, content_attributes: content_attributes)
+    SendReplyJob.set(wait: wait).perform_later(message.id)
+    true
+  end
+
+  def coexistence_retry_content_attributes(message, retry_at)
+    message.content_attributes.to_h.deep_stringify_keys.except('external_error').merge(
+      COEXISTENCE_THROTTLE_KEY => true,
+      TRANSIENT_SEND_RETRY_NEXT_AT_KEY => retry_at.iso8601
+    )
   end
 end
 

@@ -1898,7 +1898,13 @@ RSpec.describe 'Inboxes API', type: :request do
         end
 
         it 'handles template sync errors gracefully' do
-          allow_any_instance_of(Channel::Whatsapp).to receive(:sync_templates).and_raise(StandardError, 'Job failed')
+          secret = whatsapp_channel.provider_config['api_key']
+          # The request reloads the polymorphic channel, so this failure must be stubbed across instances.
+          # rubocop:disable RSpec/AnyInstance
+          allow_any_instance_of(Channel::Whatsapp).to receive(:sync_templates)
+            .and_raise(StandardError, "Job failed access_token=#{secret}")
+          # rubocop:enable RSpec/AnyInstance
+          allow(Rails.logger).to receive(:error)
 
           post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",
                headers: admin.create_new_auth_token,
@@ -1906,7 +1912,9 @@ RSpec.describe 'Inboxes API', type: :request do
 
           expect(response).to have_http_status(:internal_server_error)
           json_response = response.parsed_body
-          expect(json_response['error']).to eq('Job failed')
+          expect(json_response['error']).to eq('Template sync failed. Please check provider configuration and try again.')
+          expect(json_response['error']).not_to include(secret, 'access_token')
+          expect(Rails.logger).to have_received(:error).with(include('access_token=[FILTERED]'))
         end
       end
 
@@ -1947,7 +1955,7 @@ RSpec.describe 'Inboxes API', type: :request do
         verified_name: 'Test Business',
         name_status: 'APPROVED',
         quality_rating: 'GREEN',
-        messaging_limit_tier: 'TIER_1000',
+        messaging_limit: 10_000,
         account_mode: 'LIVE',
         business_id: 'business123'
       }
@@ -1980,7 +1988,7 @@ RSpec.describe 'Inboxes API', type: :request do
             'verified_name' => 'Test Business',
             'name_status' => 'APPROVED',
             'quality_rating' => 'GREEN',
-            'messaging_limit_tier' => 'TIER_1000',
+            'messaging_limit' => 10_000,
             'account_mode' => 'LIVE',
             'business_id' => 'business123'
           )
@@ -2018,7 +2026,9 @@ RSpec.describe 'Inboxes API', type: :request do
         end
 
         it 'handles service errors gracefully' do
-          allow(health_service).to receive(:fetch_health_status).and_raise(StandardError, 'API Error')
+          secret = whatsapp_channel.provider_config['api_key']
+          allow(health_service).to receive(:fetch_health_status).and_raise(StandardError, "API Error access_token=#{secret}")
+          allow(Rails.logger).to receive(:error)
 
           get "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/health",
               headers: admin.create_new_auth_token,
@@ -2026,7 +2036,9 @@ RSpec.describe 'Inboxes API', type: :request do
 
           expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
-          expect(json_response['error']).to include('API Error')
+          expect(json_response['error']).to eq('Unable to fetch WhatsApp health data. Please try again.')
+          expect(json_response['error']).not_to include(secret, 'access_token')
+          expect(Rails.logger).to have_received(:error).with(include('access_token=[FILTERED]'))
         end
       end
 
@@ -2116,6 +2128,31 @@ RSpec.describe 'Inboxes API', type: :request do
       expect(response.parsed_body['id']).to eq(whatsapp_inbox.id)
       expect(response.parsed_body['message_templates'].first['name']).to eq('appointment_confirmation')
       expect(response.parsed_body['message_templates'].first['status']).to eq('APPROVED')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/inboxes/{inbox.id}/register_webhook' do
+    let(:whatsapp_channel) do
+      create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud', sync_templates: false, validate_provider_config: false)
+    end
+    let(:whatsapp_inbox) { whatsapp_channel.inbox }
+
+    it 'returns a generic error and logs sanitized provider details' do
+      secret = whatsapp_channel.provider_config.fetch('api_key')
+      setup_service = instance_double(Whatsapp::WebhookSetupService)
+      allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(setup_service)
+      allow(setup_service).to receive(:register_callback)
+        .and_raise(StandardError, "POST https://graph.facebook.com/subscribed_apps access_token=#{secret}")
+      allow(Rails.logger).to receive(:error)
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/register_webhook",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['error']).to eq('Webhook registration failed. Please try again.')
+      expect(response.parsed_body['error']).not_to include(secret, 'graph.facebook.com')
+      expect(Rails.logger).to have_received(:error).with(include('access_token=[FILTERED]'))
     end
   end
 end

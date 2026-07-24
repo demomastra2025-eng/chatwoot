@@ -376,7 +376,9 @@
             "TEXT": "To learn more about integrated signup, pricing, and limitations, visit {link}.",
             "LINK_TEXT": "this link"
           },
-          "SUBMIT_BUTTON": "Connect with WhatsApp Business",
+          "SUBMIT_BUTTON": "WhatsApp Business-пен қосу",
+          "STANDARD_BUTTON": "Жаңа Cloud API нөмірін қосу",
+          "COEXISTENCE_BUTTON": "WhatsApp Business қолданбасындағы нөмірді қосу",
           "AUTH_PROCESSING": "Authenticating with Meta",
           "WAITING_FOR_BUSINESS_INFO": "Please complete business setup in the Meta window...",
           "PROCESSING": "Setting up your WhatsApp Business Account",
@@ -1315,6 +1317,13 @@
       "DESCRIPTION": "Review your WhatsApp account status, messaging limits, and quality. Update settings or resolve issues if needed",
       "GO_TO_SETTINGS": "Go to Meta Business Manager",
       "NO_DATA": "Health data is not available",
+      "RECOVERY": {
+        "TITLE": "Қосылым және қалпына келтіру күйі",
+        "CALLBACK": "Webhook callback тіркеуі",
+        "COEXISTENCE_SYNC": "WhatsApp Business синхрондауы",
+        "LIFECYCLE": "Meta lifecycle оқиғалары",
+        "EVENTS": "Өңделген оқиғалар: {count}"
+      },
       "FIELDS": {
         "DISPLAY_PHONE_NUMBER": {
           "LABEL": "Display phone number",
@@ -1433,6 +1442,27 @@
       "WHATSAPP_LOGIN_CANCELLED": "WhatsApp login was cancelled. Please try again.",
       "WHATSAPP_WEBHOOK_TITLE": "Webhook растау токені",
       "WHATSAPP_WEBHOOK_SUBHEADER": "Бұл токен webhook endpoint түпнұсқалығын тексеру үшін қолданылады.",
+      "WHATSAPP_WEBHOOK_CALLBACK_TITLE": "Webhook callback URL мекенжайы",
+      "WHATSAPP_WEBHOOK_REDACTED_SUBHEADER": "Қауіпсіздік үшін растау токені тек бастапқы баптау кезінде көрсетіледі және API арқылы қайтарылмайды.",
+      "WHATSAPP_COEXISTENCE_SYNC_TITLE": "WhatsApp Business қолданбасымен синхрондау",
+      "WHATSAPP_COEXISTENCE_SYNC_DESCRIPTION": "WhatsApp Business қолданбасынан контактілер мен хабарлар тарихын бір рет импорттау күйі.",
+      "WHATSAPP_COEXISTENCE_SYNC_PROGRESS": "Хабарлар тарихы: {progress}%",
+      "WHATSAPP_COEXISTENCE_SYNC_FAILURES": "Қалпына келтіруді күтіп тұрған хабарлар: {count}",
+      "WHATSAPP_COEXISTENCE_SYNC_RECOVER_BUTTON": "Қайта авторизациялап, синхрондауды қайта бастау",
+      "WHATSAPP_COEXISTENCE_SYNC_STATES": {
+        "PENDING": "Іске қосуды күтуде",
+        "REQUESTING": "Meta-дан деректер сұралуда",
+        "REQUESTED": "Сұрау қабылданды",
+        "SYNCING": "Синхрондау орындалуда",
+        "RECONCILING": "Сұрау нәтижесі тексерілуде",
+        "COMPLETED": "Синхрондау аяқталды",
+        "HISTORY_DECLINED": "Хабарлар тарихын бөлісу қабылданбады",
+        "HISTORY_FAILED": "Хабарлар тарихын импорттауды қалпына келтіру қажет",
+        "REQUEST_OUTCOME_UNKNOWN": "Meta сұрауының нәтижесі белгісіз",
+        "MANUAL_RECOVERY_REQUIRED": "Қолмен қалпына келтіру қажет",
+        "FAILED": "Синхрондау қатесі",
+        "UNKNOWN": "Синхрондау күйі қолжетімсіз"
+      },
       "WHATSAPP_TEMPLATES_SYNC_TITLE": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",

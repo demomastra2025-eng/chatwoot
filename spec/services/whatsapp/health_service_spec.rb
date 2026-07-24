@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Whatsapp::HealthService do
-  let(:api_version) { 'v22.0' }
+  let(:api_version) { 'v25.0' }
   let(:whatsapp_channel) do
     create(:channel_whatsapp, provider: 'whatsapp_cloud',
                               provider_config: {
@@ -16,7 +16,7 @@ RSpec.describe Whatsapp::HealthService do
 
   before do
     allow(GlobalConfigService).to receive(:load).and_call_original
-    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return(api_version)
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return(api_version)
   end
 
   it 'marks the channel for reauthorization when Meta health check returns an invalid token error' do
@@ -86,7 +86,7 @@ RSpec.describe Whatsapp::HealthService do
           verified_name: 'Healthy Business',
           name_status: 'APPROVED',
           quality_rating: 'GREEN',
-          messaging_limit_tier: 'TIER_1000',
+          whatsapp_business_manager_messaging_limit: 10_000,
           account_mode: 'LIVE',
           platform_type: 'CLOUD_API',
           throughput: { 'level' => 'STANDARD' }
@@ -97,10 +97,38 @@ RSpec.describe Whatsapp::HealthService do
     result = described_class.new(whatsapp_channel).fetch_health_status
 
     expect(result[:verified_name]).to eq('Healthy Business')
+    expect(result[:messaging_limit]).to eq(10_000)
     expect(result[:business_id]).to eq('business-1')
     expect(whatsapp_channel.reload.reauthorization_required?).to be(false)
     expect(whatsapp_channel.provider_config).not_to include('authorization_status')
     expect(whatsapp_channel.provider_config).not_to include('authorization_error')
+  end
+
+  it 'sends the access token only in the Authorization header and reports the embedded callback URL' do
+    access_token = whatsapp_channel.provider_config.fetch('api_key')
+    request = stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+              .with do |provider_request|
+      query = URI.decode_www_form(provider_request.uri.query.to_s).to_h
+      provider_request.headers['Authorization'] == "Bearer #{access_token}" && !query.key?('access_token')
+    end.to_return(status: 200, body: { id: '123456789' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+    with_modified_env('FRONTEND_URL' => 'https://app.example.test') do
+      result = described_class.new(whatsapp_channel).fetch_health_status
+      expect(result[:expected_webhook_url]).to eq('https://app.example.test/webhooks/whatsapp')
+    end
+    expect(request).to have_been_requested.once
+  end
+
+  it 'reports the channel-bound callback URL for manual channels' do
+    whatsapp_channel.update!(provider_config: whatsapp_channel.provider_config.merge('source' => 'manual'))
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(status: 200, body: { id: '123456789' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+    with_modified_env('FRONTEND_URL' => 'https://app.example.test') do
+      result = described_class.new(whatsapp_channel).fetch_health_status
+      expect(result[:expected_webhook_url])
+        .to eq("https://app.example.test/webhooks/whatsapp?channel_id=#{whatsapp_channel.id}")
+    end
   end
 
   it 'does not clear a non-token reauthorization flag when health check is healthy' do
@@ -115,7 +143,7 @@ RSpec.describe Whatsapp::HealthService do
           verified_name: 'Healthy Business',
           name_status: 'APPROVED',
           quality_rating: 'GREEN',
-          messaging_limit_tier: 'TIER_1000',
+          whatsapp_business_manager_messaging_limit: 10_000,
           account_mode: 'LIVE',
           platform_type: 'CLOUD_API',
           throughput: { 'level' => 'STANDARD' }

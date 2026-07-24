@@ -39,7 +39,7 @@ class Whatsapp::TemplateParameterConverterService
     return false unless processed_params.is_a?(Hash)
 
     # Enhanced format has component-based structure
-    component_keys = %w[body header footer buttons]
+    component_keys = %w[body header footer buttons catalog carousel]
     has_component_structure = processed_params.keys.any? { |k| component_keys.include?(k) }
 
     # Additional validation for enhanced format
@@ -53,7 +53,9 @@ class Whatsapp::TemplateParameterConverterService
   def validate_enhanced_structure(params)
     valid_body?(params['body']) &&
       valid_header?(params['header']) &&
-      valid_buttons?(params['buttons'])
+      valid_buttons?(params['buttons']) &&
+      valid_catalog?(params['catalog']) &&
+      valid_carousel?(params['carousel'])
   end
 
   def valid_body?(body)
@@ -69,6 +71,17 @@ class Whatsapp::TemplateParameterConverterService
     return false unless buttons.is_a?(Array)
 
     buttons.all? { |b| b.is_a?(Hash) && b['type'] }
+  end
+
+  def valid_catalog?(catalog)
+    catalog.nil? || catalog.is_a?(Hash)
+  end
+
+  def valid_carousel?(carousel)
+    return true if carousel.nil?
+    return false unless carousel.is_a?(Hash) && carousel['cards'].is_a?(Array)
+
+    carousel['cards'].all?(Hash)
   end
 
   def convert_legacy_to_enhanced(legacy_params, _template)

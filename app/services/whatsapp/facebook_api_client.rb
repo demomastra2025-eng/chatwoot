@@ -2,7 +2,10 @@ require 'openssl'
 
 class Whatsapp::FacebookApiClient
   BASE_URI = 'https://graph.facebook.com'.freeze
-  WEBHOOK_DEFAULT_FIELDS = %w[messages account_update smb_message_echoes calls].freeze
+  include Whatsapp::FacebookApiClientWebhookFields
+  include Whatsapp::FacebookApiClientWebhookSubscriptionHelpers
+  WEBHOOK_DEFAULT_FIELDS = Whatsapp::FacebookApiClientWebhookFields::FIELDS
+  COEXISTENCE_WEBHOOK_FIELDS = %w[history smb_app_state_sync].freeze
 
   class << self
     def appsecret_proof_query(access_token)
@@ -36,9 +39,13 @@ class Whatsapp::FacebookApiClient
     end
   end
 
+  class WebhookRecoveryAnchorRequiredError < StandardError; end
+  class WebhookSubscriptionCompensationError < WebhookRecoveryAnchorRequiredError; end
+  class WebhookCallbackOutcomeUnknownError < WebhookRecoveryAnchorRequiredError; end
+
   def initialize(access_token = nil)
     @access_token = access_token
-    @api_version = GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0')
+    @api_version = GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0')
   end
 
   def exchange_code_for_token(code)
@@ -54,16 +61,29 @@ class Whatsapp::FacebookApiClient
     handle_response(response, 'Token exchange failed', secrets: [code])
   end
 
-  def fetch_phone_numbers(waba_id, after: nil)
-    query = query_with_access_token
+  def fetch_phone_numbers(waba_id, after: nil, fields: nil)
+    query = appsecret_proof_query
     query[:after] = after if after.present?
+    query[:fields] = Array(fields).join(',') if fields.present?
 
     response = HTTParty.get(
       "#{BASE_URI}/#{@api_version}/#{waba_id}/phone_numbers",
+      headers: request_headers,
       query: query
     )
 
     handle_response(response, 'WABA phone numbers fetch failed')
+  end
+
+  def request_smb_app_data(phone_number_id, sync_type)
+    response = HTTParty.post(
+      "#{BASE_URI}/#{@api_version}/#{phone_number_id}/smb_app_data",
+      headers: request_headers,
+      query: appsecret_proof_query,
+      body: { messaging_product: 'whatsapp', sync_type: sync_type }.to_json
+    )
+
+    handle_response(response, "#{sync_type} synchronization request failed")
   end
 
   def debug_token(input_token)
@@ -100,53 +120,10 @@ class Whatsapp::FacebookApiClient
     data['code_verification_status'] == 'VERIFIED'
   end
 
-  def subscribe_waba_webhook(waba_id, callback_url, verify_token, subscribed_fields: webhook_subscribed_fields)
-    # Step 1: Subscribe app to WABA first (required before override)
-    # Meta requires the app to be subscribed before using override_callback_uri
-    # See: https://github.com/chatwoot/chatwoot/issues/13097
-    subscribe_app_to_waba(waba_id)
-
-    # Step 2: Override callback URL for this specific WABA
-    override_waba_callback(waba_id, callback_url, verify_token, subscribed_fields: subscribed_fields)
-  end
-
-  def subscribe_app_to_waba(waba_id)
-    response = HTTParty.post(
-      "#{BASE_URI}/#{@api_version}/#{waba_id}/subscribed_apps",
-      headers: request_headers,
-      query: appsecret_proof_query
-    )
-
-    handle_response(response, 'App subscription to WABA failed')
-  end
-
-  def override_waba_callback(waba_id, callback_url, verify_token, subscribed_fields: webhook_subscribed_fields)
-    response = HTTParty.post(
-      "#{BASE_URI}/#{@api_version}/#{waba_id}/subscribed_apps",
-      headers: request_headers,
-      query: appsecret_proof_query,
-      body: {
-        override_callback_uri: callback_url,
-        verify_token: verify_token,
-        subscribed_fields: subscribed_fields
-      }.to_json
-    )
-
-    handle_response(response, 'Webhook callback override failed')
-  end
-
-  def unsubscribe_waba_webhook(waba_id)
-    response = HTTParty.delete(
-      "#{BASE_URI}/#{@api_version}/#{waba_id}/subscribed_apps",
-      headers: request_headers,
-      query: appsecret_proof_query
-    )
-
-    handle_response(response, 'Webhook unsubscription failed')
-  end
-
-  def webhook_subscribed_fields
-    WEBHOOK_DEFAULT_FIELDS
+  def webhook_subscribed_fields(coexistence: false)
+    fields = WEBHOOK_DEFAULT_FIELDS.dup
+    fields.concat(COEXISTENCE_WEBHOOK_FIELDS) if coexistence
+    fields.uniq
   end
 
   private
@@ -162,10 +139,6 @@ class Whatsapp::FacebookApiClient
     app_id = GlobalConfigService.load('WHATSAPP_APP_ID', '')
     app_secret = GlobalConfigService.load('WHATSAPP_APP_SECRET', '')
     "#{app_id}|#{app_secret}"
-  end
-
-  def query_with_access_token
-    { access_token: @access_token }.merge(appsecret_proof_query)
   end
 
   def appsecret_proof_query
