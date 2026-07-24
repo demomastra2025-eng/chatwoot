@@ -2,6 +2,7 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   include Api::V1::InboxesHelper
   rescue_from Telephony::Error, with: :render_telephony_error
   rescue_from Whatsapp::WabaLock::LockAcquisitionError, with: :render_waba_lock_contention
+  rescue_from WhatsappWeb::LifecycleLock::LockAcquisitionError, with: :render_whatsapp_web_lock_contention
 
   VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
 
@@ -123,14 +124,12 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def refresh_whatsapp_web_qr
-    if truthy_param?(:status_only)
-      @inbox.channel.sync_connection_state!
-      recover_whatsapp_web_auth_artifact_if_needed!
-      render_whatsapp_web_inbox(include_qr_code: truthy_param?(:include_qr_code) == true)
-    else
-      @inbox.channel.refresh_qr!(artifact_type: params[:artifact_type].presence || 'qr')
-      render_whatsapp_web_inbox
-    end
+    return sync_and_render_whatsapp_web_status! if truthy_param?(:status_only)
+
+    @inbox.channel.refresh_qr!(artifact_type: params[:artifact_type].presence || 'qr')
+    render_whatsapp_web_inbox
+  rescue WhatsappWeb::LifecycleLock::LockAcquisitionError => e
+    render_whatsapp_web_lock_contention(e)
   rescue StandardError => e
     log_whatsapp_web_runtime_error('refresh_whatsapp_web_qr', e)
     if truthy_param?(:status_only)
@@ -144,6 +143,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def reconnect_whatsapp_web
     @inbox.channel.reconnect!
     render_whatsapp_web_inbox
+  rescue WhatsappWeb::LifecycleLock::LockAcquisitionError => e
+    render_whatsapp_web_lock_contention(e)
   rescue StandardError => e
     log_whatsapp_web_runtime_error('reconnect_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
@@ -152,6 +153,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def reauthorize_whatsapp_web
     @inbox.channel.reauthorize!
     render_whatsapp_web_inbox
+  rescue WhatsappWeb::LifecycleLock::LockAcquisitionError => e
+    render_whatsapp_web_lock_contention(e)
   rescue StandardError => e
     log_whatsapp_web_runtime_error('reauthorize_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
@@ -160,6 +163,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def disconnect_whatsapp_web
     @inbox.channel.disconnect!
     render_whatsapp_web_inbox
+  rescue WhatsappWeb::LifecycleLock::LockAcquisitionError => e
+    render_whatsapp_web_lock_contention(e)
   rescue StandardError => e
     log_whatsapp_web_runtime_error('disconnect_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
@@ -168,6 +173,8 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   def repair_whatsapp_web
     @inbox.channel.repair!
     render_whatsapp_web_inbox
+  rescue WhatsappWeb::LifecycleLock::LockAcquisitionError => e
+    render_whatsapp_web_lock_contention(e)
   rescue StandardError => e
     log_whatsapp_web_runtime_error('repair_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
@@ -565,17 +572,23 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render json: { deleting: true }, status: :accepted
   end
 
-  def recover_whatsapp_web_auth_artifact_if_needed!
-    return unless truthy_param?(:include_qr_code)
+  def sync_and_render_whatsapp_web_status!
+    if truthy_param?(:include_qr_code)
+      artifact_type = params[:artifact_type].presence || @inbox.channel.auth_artifact_type || 'qr'
+      @inbox.channel.sync_connection_state!(refresh_qr: true, artifact_type: artifact_type)
+    else
+      @inbox.channel.sync_connection_state!
+    end
 
-    channel = @inbox.channel
-    return unless channel.respond_to?(:auth_artifact_valid?) && channel.respond_to?(:refresh_qr!)
-    return if channel.qr_code.present? || channel.auth_artifact_valid?
-    return if channel.lifecycle_state == 'qr_scanned' && channel.auth_artifact_scanned_recent?
-    return if channel.lifecycle_state.in?(%w[connected failed deleting])
-    return if channel.connection_state.in?(%w[open refused reconnecting])
+    render_whatsapp_web_inbox(include_qr_code: whatsapp_web_qr_payload_requested?)
+  end
 
-    channel.refresh_qr!(artifact_type: params[:artifact_type].presence || channel.auth_artifact_type || 'qr')
+  def whatsapp_web_qr_payload_requested?
+    truthy_param?(:include_qr_code) == true && @inbox.channel.lifecycle_state.in?(%w[waiting_for_qr qr_ready])
+  end
+
+  def render_whatsapp_web_lock_contention(error)
+    render json: { error: error.message }, status: :conflict
   end
 
   def truthy_param?(key)

@@ -1,5 +1,6 @@
 class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseService
   EVOLUTION_INTEGRATION = 'WHATSAPP-BAILEYS'.freeze
+  REQUEST_TIMEOUT_SECONDS = 20
   MEDIA_UNAVAILABLE_STATUSES = [403, 404, 410].freeze
   ECHO_JOB_CLASSES = [
     Channels::WhatsappWeb::OutgoingEchoJob.name,
@@ -140,13 +141,14 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def disconnect!
     response = request(:delete, "/instance/logout/#{channel.instance_name}")
     verify_disconnected_runtime!(response)
+    observed_at = Time.current
     channel.update!(
       lifecycle_state: 'disconnected',
       connection_state: 'close',
       qr_code: {},
       last_error: nil,
-      last_synced_at: Time.current,
-      sync_state: channel.cleared_auth_artifact_sync_state
+      last_synced_at: observed_at,
+      sync_state: channel.cleared_auth_artifact_sync_state.merge('last_runtime_event_at' => observed_at.iso8601)
     )
   end
 
@@ -161,34 +163,13 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def sync_connection_state!
-    response = request(:get, "/instance/connectionState/#{channel.instance_name}")
-    state = response.dig('instance', 'state')
-    normalized_state = normalized_connection_state(state)
-    lifecycle_state = lifecycle_state_for(state, channel.qr_code.present?)
-    clear_auth_artifacts = normalized_state == 'open'
-
-    attributes = {
-      connection_state: normalized_state,
-      lifecycle_state: lifecycle_state,
-      last_error: runtime_error_for_state(normalized_state, channel.last_error),
-      last_synced_at: Time.current
-    }
-    if clear_auth_artifacts
-      attributes[:qr_code] = {}
-      attributes[:sync_state] = channel.cleared_auth_artifact_sync_state
+    normalized_state = channel.with_lock do
+      channel.reload
+      sync_connection_state_under_lock!
     end
 
-    channel.update!(attributes)
     request_history_sync_if_provider_ready if normalized_state == 'open'
-  rescue RequestError => e
-    raise unless e.status == 404
-
-    channel.update!(
-      connection_state: 'unknown',
-      lifecycle_state: 'failed',
-      last_error: 'Evolution instance not found',
-      last_synced_at: Time.current
-    )
+    channel
   end
 
   def diagnostics
@@ -357,6 +338,48 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   private
 
+  def sync_connection_state_under_lock!
+    response = request(:get, "/instance/connectionState/#{channel.instance_name}")
+    state = response.dig('instance', 'state')
+    normalized_state = normalized_connection_state(state)
+    observed_at = Time.current
+    channel.update!(runtime_state_attributes(state, normalized_state, observed_at))
+    normalized_state
+  rescue RequestError => e
+    raise unless e.status == 404
+
+    mark_missing_runtime_instance!
+  end
+
+  def runtime_state_attributes(state, normalized_state, observed_at)
+    attributes = {
+      connection_state: normalized_state,
+      lifecycle_state: lifecycle_state_for(state, channel.qr_code.present?),
+      last_error: runtime_error_for_state(normalized_state, channel.last_error),
+      last_synced_at: observed_at,
+      sync_state: runtime_sync_state(normalized_state, observed_at)
+    }
+    attributes[:qr_code] = {} if normalized_state == 'open'
+    attributes
+  end
+
+  def runtime_sync_state(normalized_state, observed_at)
+    base_state = normalized_state == 'open' ? channel.cleared_auth_artifact_sync_state : channel.sync_state_payload
+    base_state.merge('last_runtime_event_at' => observed_at.iso8601)
+  end
+
+  def mark_missing_runtime_instance!
+    observed_at = Time.current
+    channel.update!(
+      connection_state: 'unknown',
+      lifecycle_state: 'failed',
+      last_error: 'Evolution instance not found',
+      last_synced_at: observed_at,
+      sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => observed_at.iso8601)
+    )
+    'unknown'
+  end
+
   def instance_exists?
     request(:get, "/instance/connectionState/#{channel.instance_name}")
     true
@@ -436,6 +459,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def request_history_sync_if_provider_ready
+    channel.reload
+    return unless channel.connection_state == 'open'
     return unless channel.history_sync_enabled?
     return if channel.provider_history_synced_at.blank?
     return if channel.full_history_baseline_current?
@@ -793,7 +818,8 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def request(method, path, body: nil)
     url = "#{base_url}#{path}"
     options = {
-      headers: request_headers
+      headers: request_headers,
+      timeout: REQUEST_TIMEOUT_SECONDS
     }
     options[:body] = body.to_json if body.present?
 
@@ -864,7 +890,18 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   end
 
   def apply_runtime_configuration!
-    request(:post, "/webhook/set/#{channel.instance_name}", body: webhook_payload)
+    webhook = request(:post, "/webhook/set/#{channel.instance_name}", body: webhook_payload)
+    verify_webhook_configuration!(webhook)
     request(:post, "/settings/set/#{channel.instance_name}", body: settings_payload)
+  end
+
+  def verify_webhook_configuration!(webhook)
+    return if webhook.is_a?(Hash) && webhook['enabled'] == true && webhook['url'] == channel.webhook_callback_url
+
+    raise RequestError.new(
+      'Evolution did not persist the expected WhatsApp Web webhook configuration',
+      status: 502,
+      body: webhook.is_a?(Hash) ? webhook.except('url', 'headers') : { response_type: webhook.class.name }
+    )
   end
 end

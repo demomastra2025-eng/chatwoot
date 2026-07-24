@@ -188,6 +188,7 @@ export default {
       weixinQrCode: '',
       whatsappWebRenderedQrCode: '',
       whatsappWebPollingInterval: null,
+      isWhatsappWebPollingEnabled: false,
       telegramPersonalPollingInterval: null,
       linkedinPersonalPollingInterval: null,
       weixinPollingInterval: null,
@@ -237,6 +238,14 @@ export default {
     },
     isWhatsappWebConnected() {
       return hasOpenWhatsappWebSession(this.inbox);
+    },
+    isWhatsappWebLifecycleBusy() {
+      return (
+        this.isRefreshingWhatsappWebStatus ||
+        this.isRunningWhatsappWebRecovery ||
+        this.isRunningWhatsappWebReauthorization ||
+        this.isRunningWhatsappWebDisconnect
+      );
     },
     whatsappWebQrValue() {
       return this.whatsappWebEvolutionState.qrcode?.code || '';
@@ -1385,7 +1394,8 @@ export default {
       if (
         !this.isAWhatsAppWebInbox ||
         !this.currentInboxId ||
-        this.isWhatsappWebDeleting
+        this.isWhatsappWebDeleting ||
+        this.isWhatsappWebLifecycleBusy
       ) {
         return;
       }
@@ -1395,7 +1405,9 @@ export default {
         await this.$store.dispatch('inboxes/refreshWhatsappWebQr', {
           inboxId: this.currentInboxId,
           statusOnly: true,
-          includeQrCode: true,
+          includeQrCode: ['waiting_for_qr', 'qr_ready'].includes(
+            this.whatsappWebLifecycleState
+          ),
         });
       } catch (error) {
         // Diagnostics should stay non-blocking in settings.
@@ -1510,8 +1522,9 @@ export default {
       }
     },
     stopWhatsappWebPolling() {
+      this.isWhatsappWebPollingEnabled = false;
       if (this.whatsappWebPollingInterval) {
-        window.clearInterval(this.whatsappWebPollingInterval);
+        window.clearTimeout(this.whatsappWebPollingInterval);
         this.whatsappWebPollingInterval = null;
       }
     },
@@ -1544,9 +1557,13 @@ export default {
         return;
       }
 
-      this.whatsappWebPollingInterval = window.setInterval(() => {
-        this.syncWhatsappWebStatus();
-        this.fetchWhatsappWebDiagnostics();
+      this.isWhatsappWebPollingEnabled = true;
+      this.whatsappWebPollingInterval = window.setTimeout(async () => {
+        this.whatsappWebPollingInterval = null;
+        await this.syncWhatsappWebStatus();
+        if (this.isWhatsappWebPollingEnabled) {
+          this.syncWhatsappWebPolling();
+        }
       }, WHATSAPP_WEB_POLL_INTERVAL_MS);
     },
     stopTelegramPersonalPolling() {
@@ -2259,7 +2276,7 @@ export default {
       return 'text-n-slate-10';
     },
     async disconnectWhatsappWeb() {
-      if (this.isWhatsappWebDeleting) {
+      if (this.isWhatsappWebDeleting || this.isWhatsappWebLifecycleBusy) {
         return;
       }
 
@@ -2281,7 +2298,7 @@ export default {
       }
     },
     async recoverWhatsappWeb() {
-      if (this.isWhatsappWebDeleting) {
+      if (this.isWhatsappWebDeleting || this.isWhatsappWebLifecycleBusy) {
         return;
       }
 
@@ -2303,7 +2320,7 @@ export default {
       }
     },
     async reauthorizeWhatsappWeb() {
-      if (this.isWhatsappWebDeleting) {
+      if (this.isWhatsappWebDeleting || this.isWhatsappWebLifecycleBusy) {
         return;
       }
 
@@ -3170,6 +3187,7 @@ export default {
                             )
                           "
                           :is-loading="isRunningWhatsappWebRecovery"
+                          :disabled="isWhatsappWebLifecycleBusy"
                           @click="recoverWhatsappWeb"
                         />
                         <NextButton
@@ -3180,6 +3198,7 @@ export default {
                             $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REAUTHORIZE')
                           "
                           :is-loading="isRunningWhatsappWebReauthorization"
+                          :disabled="isWhatsappWebLifecycleBusy"
                           @click="reauthorizeWhatsappWeb"
                         />
                         <NextButton
@@ -3188,6 +3207,7 @@ export default {
                           icon="i-lucide-log-out"
                           :label="$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.DISCONNECT')"
                           :is-loading="isRunningWhatsappWebDisconnect"
+                          :disabled="isWhatsappWebLifecycleBusy"
                           @click="disconnectWhatsappWeb"
                         />
                       </div>

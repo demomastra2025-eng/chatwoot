@@ -5,7 +5,10 @@ class Channels::WhatsappWeb::ProvisionJob < ApplicationJob
     channel = Channel::WhatsappWeb.find_by(id: channel_id)
     return if channel.blank?
 
-    channel.provider_service.provision!
+    channel.provision!
+  rescue WhatsappWeb::LifecycleLock::LockAcquisitionError => e
+    Rails.logger.info("[WHATSAPP WEB] Provisioning deferred for channel #{channel_id}: #{e.message}")
+    raise
   rescue StandardError => e
     Rails.logger.error("[WHATSAPP WEB] Provisioning failed for channel #{channel_id}: #{e.message}")
     channel&.mark_failed!(e.message)

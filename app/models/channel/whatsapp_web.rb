@@ -121,8 +121,41 @@ class Channel::WhatsappWeb < ApplicationRecord
     end
   end
 
-  delegate :provision!, :refresh_qr!, :reconnect!, :reauthorize!, :disconnect!, :repair!, :sync_connection_state!, :diagnostics,
-           :send_message, :update_message, to: :provider_service
+  delegate :diagnostics, :send_message, :update_message, to: :provider_service
+
+  def provision!
+    with_provider_lifecycle_lock { provider_service.provision! }
+  end
+
+  def refresh_qr!(artifact_type: 'qr')
+    with_provider_lifecycle_lock { provider_service.refresh_qr!(artifact_type: artifact_type) }
+  end
+
+  def reconnect!
+    with_provider_lifecycle_lock { provider_service.reconnect! }
+  end
+
+  def reauthorize!
+    with_provider_lifecycle_lock { provider_service.reauthorize! }
+  end
+
+  def disconnect!
+    with_provider_lifecycle_lock { provider_service.disconnect! }
+  end
+
+  def repair!
+    with_provider_lifecycle_lock { provider_service.repair! }
+  end
+
+  def sync_connection_state!(refresh_qr: false, artifact_type: 'qr')
+    with_provider_lifecycle_lock do
+      service = provider_service
+      service.sync_connection_state!
+      synced_runtime_event_at = sync_state_payload['last_runtime_event_at']
+      refresh_qr_after_connection_sync!(service, artifact_type, synced_runtime_event_at) if refresh_qr
+      self
+    end
+  end
 
   def generated_inbox_name
     phone_number.delete_prefix('+')
@@ -333,7 +366,10 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   def teardown_provider_instance!
-    provider_service.destroy_remote_instance!
+    with_provider_lifecycle_lock { provider_service.destroy_remote_instance! }
+  rescue WhatsappWeb::LifecycleLock::LockAcquisitionError => e
+    Rails.logger.warn("[WHATSAPP WEB] Provider teardown blocked for #{instance_name}: #{e.message}")
+    raise
   rescue StandardError => e
     Rails.logger.warn("[WHATSAPP WEB] Failed to tear down instance #{instance_name}: #{e.message}")
     true
@@ -563,6 +599,20 @@ class Channel::WhatsappWeb < ApplicationRecord
   end
 
   private
+
+  def with_provider_lifecycle_lock(&)
+    WhatsappWeb::LifecycleLock.new(channel_id: id).with_lock(&)
+  end
+
+  def refresh_qr_after_connection_sync!(service, artifact_type, expected_runtime_event_at)
+    with_lock do
+      reload
+      next unless sync_state_payload['last_runtime_event_at'] == expected_runtime_event_at
+      next unless lifecycle_state.in?(%w[waiting_for_qr qr_ready])
+
+      service.refresh_qr!(artifact_type: artifact_type)
+    end
+  end
 
   def auth_artifact_payload_present?
     case auth_artifact_type

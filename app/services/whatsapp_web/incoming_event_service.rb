@@ -7,12 +7,25 @@ class WhatsappWeb::IncomingEventService
   AUTHENTICATION_REQUIRED_STATUS_VALUES = %w[reauth_required authentication_required].freeze
   FAILURE_STATUS_VALUES = %w[error failed refused bad_session].freeze
   REMOVED_INSTANCE_MESSAGE = 'Evolution instance was removed. Run repair or reconnect to create a new session.'.freeze
+  RUNTIME_STATE_EVENTS = %w[qrcode.updated connection.update status.instance logout.instance remove.instance].freeze
 
   pattr_initialize [:channel!, :payload!]
 
   def perform
     return if channel.inbox&.deleting?
 
+    if RUNTIME_STATE_EVENTS.include?(event_name)
+      return unless process_runtime_state_event
+    else
+      process_event
+    end
+
+    touch_last_synced_at!
+  end
+
+  private
+
+  def process_event
     case event_name
     when 'qrcode.updated'
       process_qrcode_update
@@ -45,11 +58,51 @@ class WhatsappWeb::IncomingEventService
     when 'messaging-history.set'
       process_history_sync_complete
     end
-
-    touch_last_synced_at!
   end
 
-  private
+  def process_runtime_state_event
+    processed = channel.with_lock do
+      channel.reload
+      next false if stale_runtime_state_event?
+
+      process_event
+      channel.update!(
+        sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => runtime_event_watermark.iso8601)
+      )
+      true
+    end
+
+    processed == true
+  end
+
+  def stale_runtime_state_event?
+    return false if authoritative_disconnection_event?
+
+    last_event_at = parse_event_time(channel.sync_state_payload['last_runtime_event_at'])
+    last_event_at.present? && runtime_event_at < last_event_at
+  end
+
+  def authoritative_disconnection_event?
+    return true if event_name.in?(%w[logout.instance remove.instance])
+
+    status_value = (event_data[:status] || event_data[:state] || event_data[:connection]).to_s.downcase
+    status_value.in?(DISCONNECTED_STATUS_VALUES + AUTHENTICATION_REQUIRED_STATUS_VALUES + FAILURE_STATUS_VALUES) ||
+      event_data[:disconnectionReasonCode].present?
+  end
+
+  def runtime_event_at
+    @runtime_event_at ||= parse_event_time(payload[:date_time] || payload[:dateTime]) || Time.current
+  end
+
+  def runtime_event_watermark
+    [parse_event_time(channel.sync_state_payload['last_runtime_event_at']), runtime_event_at].compact.max
+  end
+
+  def parse_event_time(value)
+    value.present? ? Time.zone.parse(value.to_s) : nil
+  rescue ArgumentError
+    nil
+  end
 
   def event_name
     @event_name ||= payload[:event].to_s
@@ -278,19 +331,19 @@ class WhatsappWeb::IncomingEventService
   end
 
   def mark_connected_from_history_events!
-    return if channel.connection_state == 'open' &&
-              channel.lifecycle_state == 'connected' &&
-              channel.qr_code.blank? &&
-              channel.last_error.blank?
+    channel.with_lock do
+      channel.reload
+      next unless channel.connection_state == 'open'
+      next if channel.lifecycle_state == 'connected' && channel.qr_code.blank? && channel.last_error.blank?
 
-    channel.update!(
-      connection_state: 'open',
-      lifecycle_state: 'connected',
-      qr_code: {},
-      last_error: nil,
-      last_synced_at: Time.current,
-      sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
-    )
+      channel.update!(
+        lifecycle_state: 'connected',
+        qr_code: {},
+        last_error: nil,
+        last_synced_at: Time.current,
+        sync_state: channel.sync_state_payload.merge('qr_generated_at' => nil)
+      )
+    end
   end
 
   def request_history_sync_if_provider_ready!

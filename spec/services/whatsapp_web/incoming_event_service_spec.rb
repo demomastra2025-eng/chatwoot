@@ -706,6 +706,61 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.lifecycle_state).to eq('disconnected')
     end
 
+    it 'ignores an older open event after a newer authoritative disconnect' do
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'status.instance',
+          date_time: '2026-07-24T15:42:00.000Z',
+          data: { status: 'closed', disconnectionReasonCode: 401 }
+        }.with_indifferent_access
+      ).perform
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'connection.update',
+          date_time: '2026-07-24T15:41:59.000Z',
+          data: { state: 'open' }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
+      expect(channel.sync_state_payload['last_runtime_event_at']).to eq('2026-07-24T15:42:00Z')
+    end
+
+    it 'applies delayed authentication failures without regressing the runtime watermark' do
+      channel.update!(
+        connection_state: 'open',
+        lifecycle_state: 'connected',
+        sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => '2026-07-24T15:43:00Z')
+      )
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'status.instance',
+          date_time: '2026-07-24T15:42:00.000Z',
+          data: { status: 'closed', disconnectionReasonCode: 401 }
+        }.with_indifferent_access
+      ).perform
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'connection.update',
+          date_time: '2026-07-24T15:42:30.000Z',
+          data: { state: 'open' }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
+      expect(channel.sync_state_payload['last_runtime_event_at']).to eq('2026-07-24T15:43:00Z')
+    end
+
     it 'treats reauth_required status.instance events as disconnected instead of failed' do
       described_class.new(
         channel: channel,
@@ -760,6 +815,7 @@ RSpec.describe WhatsappWeb::IncomingEventService do
     end
 
     it 'treats messages.set as a successful connection without starting an early history sync' do
+      channel.update!(connection_state: 'open', lifecycle_state: 'waiting_for_qr')
       expect(WhatsappWeb::HistoryImportService).not_to receive(:new)
 
       expect do
@@ -789,6 +845,22 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.lifecycle_state).to eq('connected')
       expect(channel.connection_state).to eq('open')
       expect(channel.qr_code).to eq({})
+    end
+
+    it 'does not let a late history batch resurrect a disconnected runtime' do
+      channel.update!(connection_state: 'close', lifecycle_state: 'disconnected')
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'messages.set',
+          data: []
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('close')
+      expect(channel.lifecycle_state).to eq('disconnected')
     end
 
     it 'does not enqueue a sync job when imports are disabled' do

@@ -12,6 +12,7 @@ describe WhatsappWeb::Providers::EvolutionService do
   end
 
   let(:channel) { create(:channel_whatsapp_web) }
+  let(:valid_webhook_response) { { 'enabled' => true, 'url' => channel.webhook_callback_url } }
 
   describe '#request' do
     it 'normalizes Evolution deleting-instance JSON errors before raising' do
@@ -32,7 +33,11 @@ describe WhatsappWeb::Providers::EvolutionService do
         }
       )
 
-      allow(HTTParty).to receive(:get).and_return(response)
+      expect(HTTParty).to receive(:get)
+        .with(
+          "https://evolution.example.com/instance/connect/#{channel.instance_name}",
+          hash_including(timeout: 20)
+        ).and_return(response)
 
       expect do
         service.send(:request, :get, "/instance/connect/#{channel.instance_name}")
@@ -188,7 +193,8 @@ describe WhatsappWeb::Providers::EvolutionService do
 
       allow(service).to receive(:instance_exists?).and_return(false)
       allow(service).to receive(:request).with(:post, '/instance/create', body: anything).and_return(response)
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
 
       service.provision!
@@ -210,7 +216,8 @@ describe WhatsappWeb::Providers::EvolutionService do
       allow(service).to receive(:repair!).and_raise(provider_error)
       allow(service).to receive(:request).with(:delete, "/instance/delete/#{channel.instance_name}").and_return({})
       allow(service).to receive(:request).with(:post, '/instance/create', body: anything).and_return(response)
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
 
       service.provision!
@@ -226,7 +233,8 @@ describe WhatsappWeb::Providers::EvolutionService do
     it 'reapplies webhook and settings before syncing state' do
       service = described_class.new(channel: channel)
 
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
       allow(service).to receive(:sync_connection_state!).and_return(channel)
       allow(service).to receive(:refresh_qr!).and_return(channel)
@@ -237,10 +245,33 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(service).to have_received(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything)
     end
 
+    it 'fails repair when Evolution keeps a stale webhook target' do
+      service = described_class.new(channel: channel)
+      allow(service).to receive(:request)
+        .with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+        .and_return('enabled' => true, 'url' => 'https://app.example.com/webhooks/whatsapp_web/stale')
+
+      expect { service.repair! }
+        .to raise_error(described_class::RequestError, /did not persist the expected/)
+      expect(service).not_to have_received(:request)
+        .with(:post, "/settings/set/#{channel.instance_name}", body: anything)
+    end
+
+    it 'fails repair when Evolution does not confirm the persisted webhook target' do
+      service = described_class.new(channel: channel)
+      allow(service).to receive(:request)
+        .with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+        .and_return({})
+
+      expect { service.repair! }
+        .to raise_error(described_class::RequestError, /did not persist the expected/)
+    end
+
     it 'does not request fresh auth artifacts when repair leaves the session disconnected' do
       service = described_class.new(channel: channel)
 
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
       allow(service).to receive(:sync_connection_state!) do
         channel.update!(connection_state: 'close', lifecycle_state: 'disconnected', qr_code: {})
@@ -255,7 +286,8 @@ describe WhatsappWeb::Providers::EvolutionService do
     it 'does not force a fresh qr while Evolution is already reconnecting automatically' do
       service = described_class.new(channel: channel)
 
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
       allow(service).to receive(:sync_connection_state!) do
         channel.update!(connection_state: 'reconnecting', lifecycle_state: 'reconnecting')
@@ -274,7 +306,8 @@ describe WhatsappWeb::Providers::EvolutionService do
       allow(service).to receive(:sync_connection_state!) do
         channel.update!(connection_state: 'close', lifecycle_state: 'disconnected', qr_code: {})
       end
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
       allow(service).to receive(:refresh_qr!).and_return(channel)
 
@@ -297,7 +330,8 @@ describe WhatsappWeb::Providers::EvolutionService do
       allow(service).to receive(:sync_from_runtime_response!) do
         channel.update!(connection_state: 'open', lifecycle_state: 'connected', qr_code: {})
       end
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
       allow(service).to receive(:refresh_qr!).and_return(channel)
 
@@ -352,6 +386,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       service.disconnect!
 
       expect(channel.reload).to have_attributes(connection_state: 'close', lifecycle_state: 'disconnected')
+      expect(channel.sync_state_payload['last_runtime_event_at']).to be_present
     end
 
     it 'does not report success while Evolution still reports open' do
@@ -369,6 +404,27 @@ describe WhatsappWeb::Providers::EvolutionService do
   end
 
   describe '#sync_connection_state!' do
+    it 'keeps the provider observation and local state write inside one row lock' do
+      service = described_class.new(channel: channel)
+      inside_row_lock = false
+      allow(channel).to receive(:with_lock) do |&operation|
+        inside_row_lock = true
+        operation.call
+      ensure
+        inside_row_lock = false
+      end
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}") do
+          expect(inside_row_lock).to be(true)
+          { 'instance' => { 'state' => 'close' } }
+        end
+
+      service.sync_connection_state!
+
+      expect(inside_row_lock).to be(false)
+      expect(channel.reload.connection_state).to eq('close')
+    end
+
     it 'clears the stored qr code when the runtime is already connected' do
       service = described_class.new(channel: channel)
       channel.update!(
@@ -386,6 +442,7 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(channel.reload.connection_state).to eq('open')
       expect(channel.lifecycle_state).to eq('connected')
       expect(channel.qr_code).to eq({})
+      expect(channel.sync_state_payload['last_runtime_event_at']).to be_present
     end
 
     it 'preserves the last provider error when status sync only reports a refused state' do
@@ -492,7 +549,8 @@ describe WhatsappWeb::Providers::EvolutionService do
         '/instance/create',
         body: hash_including(qrcode: false)
       ).and_return(response)
-      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything).and_return({})
+      allow(service).to receive(:request).with(:post, "/webhook/set/#{channel.instance_name}", body: anything)
+                                         .and_return(valid_webhook_response)
       allow(service).to receive(:request).with(:post, "/settings/set/#{channel.instance_name}", body: anything).and_return({})
 
       service.provision!

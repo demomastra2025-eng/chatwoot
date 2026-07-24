@@ -480,7 +480,7 @@ describe('#actions', () => {
       expect(axios.post).not.toHaveBeenCalled();
     });
 
-    it('deduplicates in-flight status sync requests for the same inbox', async () => {
+    it('deduplicates in-flight status sync requests across qr payload modes', async () => {
       let resolveRequest;
       axios.post.mockReturnValue(
         new Promise(resolve => {
@@ -494,7 +494,7 @@ describe('#actions', () => {
       );
       const secondRequest = actions.refreshWhatsappWebQr(
         { commit, state: { records: [] } },
-        { inboxId: 123, statusOnly: true }
+        { inboxId: 123, statusOnly: true, includeQrCode: true }
       );
 
       expect(axios.post).toHaveBeenCalledTimes(1);
@@ -508,6 +508,30 @@ describe('#actions', () => {
   });
 
   describe('#reconnectWhatsappWeb', () => {
+    it('blocks reconnect while a status operation is in flight', async () => {
+      let resolveRequest;
+      axios.post.mockReturnValue(
+        new Promise(resolve => {
+          resolveRequest = resolve;
+        })
+      );
+
+      const statusRequest = actions.refreshWhatsappWebQr(
+        { commit, state: { records: [] } },
+        { inboxId: 123, statusOnly: true }
+      );
+
+      await expect(
+        actions.reconnectWhatsappWeb({ commit }, 123)
+      ).rejects.toThrow(
+        'Another WhatsApp Web operation is already in progress'
+      );
+      expect(axios.post).toHaveBeenCalledTimes(1);
+
+      resolveRequest({ data: inboxList[0] });
+      await statusRequest;
+    });
+
     it('updates the inbox when reconnect succeeds', async () => {
       axios.post.mockResolvedValue({ data: inboxList[0] });
 

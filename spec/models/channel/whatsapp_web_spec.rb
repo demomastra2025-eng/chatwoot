@@ -62,6 +62,81 @@ RSpec.describe Channel::WhatsappWeb do
     end
   end
 
+  describe 'provider lifecycle operations' do
+    it 'routes reconnect through the shared lifecycle lock' do
+      channel = create(:channel_whatsapp_web)
+      provider = instance_double(WhatsappWeb::Providers::EvolutionService, reconnect!: channel)
+      lifecycle_lock = instance_double(WhatsappWeb::LifecycleLock)
+
+      allow(channel).to receive(:provider_service).and_return(provider)
+      allow(WhatsappWeb::LifecycleLock).to receive(:new).with(channel_id: channel.id).and_return(lifecycle_lock)
+      expect(lifecycle_lock).to receive(:with_lock).and_yield
+
+      expect(channel.reconnect!).to eq(channel)
+    end
+
+    it 'keeps status sync and QR recovery in the same lifecycle lock' do
+      channel = create(:channel_whatsapp_web)
+      provider = instance_double(WhatsappWeb::Providers::EvolutionService)
+      lifecycle_lock = instance_double(WhatsappWeb::LifecycleLock)
+
+      allow(channel).to receive(:provider_service).and_return(provider)
+      allow(WhatsappWeb::LifecycleLock).to receive(:new).with(channel_id: channel.id).and_return(lifecycle_lock)
+      expect(lifecycle_lock).to receive(:with_lock).once.and_yield
+      expect(provider).to receive(:sync_connection_state!) do
+        channel.update!(lifecycle_state: 'waiting_for_qr', connection_state: 'connecting')
+      end
+      expect(provider).to receive(:refresh_qr!).with(artifact_type: 'qr')
+
+      channel.sync_connection_state!(refresh_qr: true, artifact_type: 'qr')
+    end
+
+    it 'does not refresh QR after an authoritative runtime event supersedes the poll result' do
+      channel = create(:channel_whatsapp_web)
+      provider = instance_double(WhatsappWeb::Providers::EvolutionService)
+      lifecycle_lock = instance_double(WhatsappWeb::LifecycleLock)
+      polled_at = '2026-07-24T20:00:00Z'
+      disconnected_at = '2026-07-24T20:00:01Z'
+
+      allow(channel).to receive(:provider_service).and_return(provider)
+      allow(WhatsappWeb::LifecycleLock).to receive(:new).with(channel_id: channel.id).and_return(lifecycle_lock)
+      allow(lifecycle_lock).to receive(:with_lock).and_yield
+      allow(provider).to receive(:sync_connection_state!) do
+        channel.update!(
+          lifecycle_state: 'waiting_for_qr',
+          connection_state: 'connecting',
+          sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => polled_at)
+        )
+      end
+      allow(channel).to receive(:with_lock) do |&block|
+        described_class.where(id: channel.id).update_all(
+          lifecycle_state: 'disconnected',
+          connection_state: 'close',
+          sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => disconnected_at)
+        )
+        block.call
+      end
+
+      expect(provider).not_to receive(:refresh_qr!)
+
+      channel.sync_connection_state!(refresh_qr: true, artifact_type: 'qr')
+
+      expect(channel.reload.lifecycle_state).to eq('disconnected')
+      expect(channel.connection_state).to eq('close')
+    end
+
+    it 'does not swallow lifecycle lock contention during provider teardown' do
+      channel = create(:channel_whatsapp_web)
+      lifecycle_lock = instance_double(WhatsappWeb::LifecycleLock)
+      allow(WhatsappWeb::LifecycleLock).to receive(:new).with(channel_id: channel.id).and_return(lifecycle_lock)
+      allow(lifecycle_lock).to receive(:with_lock)
+        .and_raise(WhatsappWeb::LifecycleLock::LockAcquisitionError, 'already in progress')
+
+      expect { channel.teardown_provider_instance! }
+        .to raise_error(WhatsappWeb::LifecycleLock::LockAcquisitionError)
+    end
+  end
+
   describe 'runtime identity updates' do
     it 'does not allow changing the phone number after creation' do
       channel = create(:channel_whatsapp_web)

@@ -49,10 +49,12 @@ const isDashboardDarkTheme = ref(
 );
 const whatsappWebThemeObserver = ref(null);
 const whatsappWebPollingInterval = ref(null);
+const isWhatsappWebPollingEnabled = ref(false);
 const whatsappWebRedirectTimeout = ref(null);
 const whatsappWebThemedQrCode = ref('');
 const isRequestingWhatsappWebCode = ref(false);
 const isRequestingWhatsappWebQr = ref(false);
+const isSyncingWhatsappWebStatus = ref(false);
 const isDocumentVisible = ref(
   typeof document === 'undefined'
     ? true
@@ -365,6 +367,15 @@ const isWhatsappWebConnected = computed(() => {
 
 const isWhatsappWebDeleting = computed(() => {
   return isInboxPendingDeletion(currentInbox.value);
+});
+
+const isWhatsappWebLifecycleBusy = computed(() => {
+  return (
+    isRefreshingWhatsappWebQr.value ||
+    isRequestingWhatsappWebCode.value ||
+    isRequestingWhatsappWebQr.value ||
+    isSyncingWhatsappWebStatus.value
+  );
 });
 
 const isWhatsappWebHistorySyncing = computed(() => {
@@ -1002,7 +1013,7 @@ async function refreshWhatsappWebQr({
     return;
   }
 
-  if (isWhatsappWebDeleting.value) {
+  if (isWhatsappWebDeleting.value || isWhatsappWebLifecycleBusy.value) {
     return;
   }
 
@@ -1062,8 +1073,9 @@ async function refreshWhatsappWebQr({
 }
 
 function stopWhatsappWebPolling() {
+  isWhatsappWebPollingEnabled.value = false;
   if (whatsappWebPollingInterval.value) {
-    window.clearInterval(whatsappWebPollingInterval.value);
+    window.clearTimeout(whatsappWebPollingInterval.value);
     whatsappWebPollingInterval.value = null;
   }
 }
@@ -1116,6 +1128,34 @@ function shouldPollWhatsappWebStatus() {
   );
 }
 
+async function fetchWhatsappWebStatus() {
+  if (
+    !isWhatsappWebSetupFlow.value ||
+    !isDocumentVisible.value ||
+    !currentInbox.value?.id ||
+    isWhatsappWebDeleting.value ||
+    isWhatsappWebConnected.value ||
+    isWhatsappWebLifecycleBusy.value
+  ) {
+    return;
+  }
+
+  try {
+    isSyncingWhatsappWebStatus.value = true;
+    await store.dispatch('inboxes/refreshWhatsappWebQr', {
+      inboxId: currentInbox.value.id,
+      statusOnly: true,
+      includeQrCode: ['waiting_for_qr', 'qr_ready'].includes(
+        whatsappWebStatus.value
+      ),
+    });
+  } catch (error) {
+    // Status sync stays best-effort during setup.
+  } finally {
+    isSyncingWhatsappWebStatus.value = false;
+  }
+}
+
 function syncWhatsappWebPolling() {
   stopWhatsappWebPolling();
 
@@ -1123,37 +1163,14 @@ function syncWhatsappWebPolling() {
     return;
   }
 
-  whatsappWebPollingInterval.value = window.setInterval(() => {
-    store
-      .dispatch('inboxes/refreshWhatsappWebQr', {
-        inboxId: currentInbox.value.id,
-        statusOnly: true,
-        includeQrCode: true,
-      })
-      .catch(() => {});
+  isWhatsappWebPollingEnabled.value = true;
+  whatsappWebPollingInterval.value = window.setTimeout(async () => {
+    whatsappWebPollingInterval.value = null;
+    await fetchWhatsappWebStatus();
+    if (isWhatsappWebPollingEnabled.value) {
+      syncWhatsappWebPolling();
+    }
   }, 5000);
-}
-
-async function fetchWhatsappWebStatus() {
-  if (
-    !isWhatsappWebSetupFlow.value ||
-    !isDocumentVisible.value ||
-    !currentInbox.value?.id ||
-    isWhatsappWebDeleting.value ||
-    isWhatsappWebConnected.value
-  ) {
-    return;
-  }
-
-  try {
-    await store.dispatch('inboxes/refreshWhatsappWebQr', {
-      inboxId: currentInbox.value.id,
-      statusOnly: true,
-      includeQrCode: true,
-    });
-  } catch (error) {
-    // Status sync stays best-effort during setup.
-  }
 }
 
 async function ensureInboxLoaded() {
@@ -1599,6 +1616,7 @@ onBeforeUnmount(() => {
                       outline
                       slate
                       :is-loading="isRequestingWhatsappWebCode"
+                      :disabled="isWhatsappWebLifecycleBusy"
                       :label="whatsappWebRequestCodeButtonLabel"
                       icon="i-lucide-key-round"
                       @click="refreshWhatsappWebQr({ artifactType: 'code' })"
@@ -1651,6 +1669,7 @@ onBeforeUnmount(() => {
                       slate
                       icon="i-lucide-qr-code"
                       :is-loading="isRequestingWhatsappWebQr"
+                      :disabled="isWhatsappWebLifecycleBusy"
                       :label="whatsappWebRequestQrButtonLabel"
                       @click="refreshWhatsappWebQr({ artifactType: 'qr' })"
                     />

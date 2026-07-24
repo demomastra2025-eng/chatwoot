@@ -32,7 +32,29 @@ export const state = {
   },
 };
 
-const whatsappWebRefreshRequests = new Map();
+const whatsappWebLifecycleRequests = new Map();
+const WHATSAPP_WEB_OPERATION_IN_PROGRESS =
+  'Another WhatsApp Web operation is already in progress';
+const runWhatsappWebLifecycleRequest = (
+  inboxId,
+  operation,
+  { reuseExisting = false } = {}
+) => {
+  const requestKey = String(inboxId);
+  const existingRequest = whatsappWebLifecycleRequests.get(requestKey);
+
+  if (existingRequest) {
+    return reuseExisting
+      ? existingRequest
+      : Promise.reject(new Error(WHATSAPP_WEB_OPERATION_IN_PROGRESS));
+  }
+
+  const request = operation().finally(() =>
+    whatsappWebLifecycleRequests.delete(requestKey)
+  );
+  whatsappWebLifecycleRequests.set(requestKey, request);
+  return request;
+};
 const telegramPersonalDiagnosticsRequests = new Map();
 const telegramPersonalDiagnosticsCache = new Map();
 const TELEGRAM_PERSONAL_DIAGNOSTICS_COOLDOWN_MS = 3000;
@@ -966,9 +988,6 @@ export const actions = {
               : {}),
           }
         : {};
-    const requestKey = isStatusOnly
-      ? `${inboxId}:status:${includeQrCode ? 'with_qr' : 'state_only'}`
-      : `${inboxId}:refresh:${artifactType || 'qr'}`;
     const currentInbox = inboxGetters?.getInbox
       ? inboxGetters.getInbox(inboxId)
       : null;
@@ -977,82 +996,85 @@ export const actions = {
       return currentInbox;
     }
 
-    if (whatsappWebRefreshRequests.has(requestKey)) {
-      return whatsappWebRefreshRequests.get(requestKey);
-    }
+    return runWhatsappWebLifecycleRequest(
+      inboxId,
+      () =>
+        InboxesAPI.refreshWhatsappWebQr(inboxId, requestPayload)
+          .then(response => {
+            const existingInbox = state.records.find(
+              record => record.id === response.data.id
+            );
+            const inboxPayload = isStatusOnly
+              ? mergeWhatsappWebInboxPayload(
+                  existingInbox,
+                  response.data,
+                  includeQrCode
+                )
+              : response.data;
 
-    const request = InboxesAPI.refreshWhatsappWebQr(inboxId, requestPayload)
-      .then(response => {
-        const existingInbox = state.records.find(
-          record => record.id === response.data.id
-        );
-        const inboxPayload = isStatusOnly
-          ? mergeWhatsappWebInboxPayload(
-              existingInbox,
-              response.data,
-              includeQrCode
-            )
-          : response.data;
+            commit(types.default.EDIT_INBOXES, inboxPayload);
+            return inboxPayload;
+          })
+          .catch(error => {
+            if ([404, 410].includes(error?.response?.status)) {
+              commit(types.default.DELETE_INBOXES, inboxId);
+              return null;
+            }
 
-        commit(types.default.EDIT_INBOXES, inboxPayload);
-        return inboxPayload;
-      })
-      .catch(error => {
-        if ([404, 410].includes(error?.response?.status)) {
-          commit(types.default.DELETE_INBOXES, inboxId);
-          return null;
-        }
-
-        throw new Error(error?.response?.data?.error || error.message);
-      })
-      .finally(() => {
-        whatsappWebRefreshRequests.delete(requestKey);
-      });
-
-    whatsappWebRefreshRequests.set(requestKey, request);
-    return request;
+            throw new Error(error?.response?.data?.error || error.message);
+          }),
+      { reuseExisting: isStatusOnly }
+    );
   },
   reconnectWhatsappWeb: async ({ commit }, inboxId) => {
-    try {
-      const response = await InboxesAPI.reconnectWhatsappWeb(inboxId);
-      const reconnectedInbox = response.data;
+    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+      try {
+        const response = await InboxesAPI.reconnectWhatsappWeb(inboxId);
+        const reconnectedInbox = response.data;
 
-      commit(types.default.EDIT_INBOXES, reconnectedInbox);
-      return reconnectedInbox;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
+        commit(types.default.EDIT_INBOXES, reconnectedInbox);
+        return reconnectedInbox;
+      } catch (error) {
+        throw new Error(error?.response?.data?.error || error.message);
+      }
+    });
   },
   reauthorizeWhatsappWeb: async ({ commit }, inboxId) => {
-    try {
-      const response = await InboxesAPI.reauthorizeWhatsappWeb(inboxId);
-      const reauthorizedInbox = response.data;
+    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+      try {
+        const response = await InboxesAPI.reauthorizeWhatsappWeb(inboxId);
+        const reauthorizedInbox = response.data;
 
-      commit(types.default.EDIT_INBOXES, reauthorizedInbox);
-      return reauthorizedInbox;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
+        commit(types.default.EDIT_INBOXES, reauthorizedInbox);
+        return reauthorizedInbox;
+      } catch (error) {
+        throw new Error(error?.response?.data?.error || error.message);
+      }
+    });
   },
   disconnectWhatsappWeb: async ({ commit }, inboxId) => {
-    try {
-      const response = await InboxesAPI.disconnectWhatsappWeb(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
-      return response.data;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
+    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+      try {
+        const response = await InboxesAPI.disconnectWhatsappWeb(inboxId);
+        commit(types.default.EDIT_INBOXES, response.data);
+        return response.data;
+      } catch (error) {
+        throw new Error(error?.response?.data?.error || error.message);
+      }
+    });
   },
   repairWhatsappWeb: async ({ commit }, inboxId) => {
-    try {
-      const response = await InboxesAPI.repairWhatsappWeb(inboxId);
-      const repairedInbox = response.data;
+    return runWhatsappWebLifecycleRequest(inboxId, async () => {
+      try {
+        const response = await InboxesAPI.repairWhatsappWeb(inboxId);
+        const repairedInbox = response.data;
 
-      commit(types.default.EDIT_INBOXES, repairedInbox);
-      return repairedInbox;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
+        commit(types.default.EDIT_INBOXES, repairedInbox);
+        return repairedInbox;
+      } catch (error) {
+        throw new Error(error?.response?.data?.error || error.message);
+      }
+    });
   },
   getWhatsappWebDiagnostics: async (_, inboxId) => {
     try {
