@@ -93,6 +93,11 @@ setup_ruby_environment() {
 setup_ruby_environment
 load_env
 
+# Keep the browser voice preview on the locally published Pipecat runtime in DEV.
+# Production receives these values from docker-compose.production.yml instead.
+export ONELINK_AI_VOICE_PIPECAT_BASE_URL="${ONELINK_AI_VOICE_PIPECAT_BASE_URL:-http://127.0.0.1:18084}"
+export ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN="${ONELINK_AI_VOICE_PIPECAT_INTERNAL_TOKEN:-${ONELINK_AI_VOICE_INTERNAL_TOKEN:-}}"
+
 guard_dev_environment() {
   if [[ "${RAILS_ENV:-development}" == "production" || "${NODE_ENV:-development}" == "production" ]]; then
     printf 'Refusing to start dev-hybrid with production environment variables.\n' >&2

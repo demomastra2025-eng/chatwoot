@@ -259,6 +259,6 @@ describe('Captain assistant settings page', () => {
     expect(wrapper.find('[data-test-id="voice-agent-preview"]').exists()).toBe(
       true
     );
-    expect(wrapper.text()).toContain('gemini-live');
+    expect(wrapper.text()).toContain('Gemini Live');
   });
 });

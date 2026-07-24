@@ -15,6 +15,13 @@ class Telephony::AiVoice::JanusSipRuntimeClient
   DEFAULT_ATTACH_PATH = '/internal/janus-sip/calls'.freeze
   DEFAULT_PREVIEW_PATH = '/internal/voice-previews'.freeze
 
+  def self.preview_error_response(error)
+    capacity_error = error.is_a?(AttachError) && error.http_status.to_i == 429
+    error_code = capacity_error ? 'preview_capacity_exhausted' : 'voice_preview_unavailable'
+    status = capacity_error ? :too_many_requests : :service_unavailable
+    { json: { error: error_code }, status: status }
+  end
+
   def attach_call(payload)
     response = HTTParty.post(
       attach_url,

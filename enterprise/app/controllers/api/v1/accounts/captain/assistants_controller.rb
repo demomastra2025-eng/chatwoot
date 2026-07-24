@@ -81,7 +81,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   rescue Telephony::AiVoice::JanusSipRuntimeClient::ConnectionError,
          Telephony::AiVoice::JanusSipRuntimeClient::AttachError => e
     Rails.logger.warn "[AI VOICE PREVIEW] assistant=#{@assistant.id} unavailable: #{e.class} #{e.message}"
-    render json: { error: 'voice_preview_unavailable' }, status: :service_unavailable
+    render(**Telephony::AiVoice::JanusSipRuntimeClient.preview_error_response(e))
   end
 
   def context_fields

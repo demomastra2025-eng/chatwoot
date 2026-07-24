@@ -28,6 +28,8 @@ const { isImpersonating } = useImpersonation();
 
 const { AVAILABILITY_STATUS_KEYS } = wootConstants;
 const NATIVE_SIP_PROVIDERS = new Set(['asterisk_analog', 'sipuni', 'binotel']);
+const SIP_STANDBY_REASON =
+  'sip_profile_registration_lease_owned_by_another_tab';
 const sipSessions = ref([]);
 const connectingSipSessionKeys = ref(new Set());
 
@@ -52,6 +54,7 @@ const sipStatus = session => {
     return 'connecting';
   }
   if (session.registered === true) return 'ready';
+  if (session.reason === SIP_STANDBY_REASON) return 'standby';
   if (
     session.callingSupported === false ||
     /error|fail|timeout|auth|credential|password/i.test(session.reason || '')
@@ -76,6 +79,11 @@ const sipStatusConfig = session => {
       label: t('SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED'),
       icon: 'i-lucide-refresh-cw',
       color: 'text-[#ca244d]',
+    },
+    standby: {
+      label: t('SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB'),
+      icon: 'i-lucide-monitor',
+      color: 'text-n-slate-11',
     },
     error: {
       label: t('SIDEBAR.SIP_TELEPHONY.STATUS.ERROR'),

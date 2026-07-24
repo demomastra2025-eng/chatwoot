@@ -54,6 +54,8 @@ const translations = {
   'SIDEBAR.SIP_TELEPHONY.STATUS.READY': 'Готова к звонкам',
   'SIDEBAR.SIP_TELEPHONY.STATUS.CONNECTING': 'Подключение…',
   'SIDEBAR.SIP_TELEPHONY.STATUS.DISCONNECTED': 'Не подключена',
+  'SIDEBAR.SIP_TELEPHONY.STATUS.ACTIVE_IN_ANOTHER_TAB':
+    'Активна в другой вкладке',
   'SIDEBAR.SIP_TELEPHONY.STATUS.ERROR': 'Ошибка подключения',
 };
 const translate = (key, params = {}) =>
@@ -214,6 +216,28 @@ describe('SidebarProfileMenuStatus', () => {
     resolveReconnect();
     await flushPromises();
     expect(indicator.text()).toContain('Готова к звонкам');
+  });
+
+  it('shows a non-error standby state when SIP is active in another tab', async () => {
+    webphoneClient.sessions = {
+      'sip_profile:83': sipSession({
+        registered: false,
+        callingSupported: false,
+        reason: 'sip_profile_registration_lease_owned_by_another_tab',
+      }),
+    };
+
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    const indicator = wrapper.get('[data-testid="sip-telephony-indicator"]');
+    expect(indicator.text()).toContain('Активна в другой вкладке');
+    expect(indicator.attributes('disabled')).toBeDefined();
+    expect(indicator.attributes('title')).toBe('Активна в другой вкладке');
+    expect(indicator.classes()).toContain('text-n-slate-11');
+    expect(indicator.find('i').attributes('data-icon')).toBe(
+      'i-lucide-monitor'
+    );
   });
 
   it('shows a reconnectable error for a failed SIP session', async () => {

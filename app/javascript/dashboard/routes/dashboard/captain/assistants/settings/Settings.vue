@@ -313,6 +313,13 @@ const handleDeleteSuccess = () => {
                   t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.VOICE_AGENT.DESCRIPTION')
                 "
               />
+              <VoiceAgentPreview
+                v-if="assistant?.id"
+                :assistant-id="assistant.id"
+                :configured-provider="
+                  assistant.config?.voice_settings?.provider || 'gemini-live'
+                "
+              />
               <AssistantSystemSettingsForm
                 ref="voiceSystemFormRef"
                 :assistant="assistant"
@@ -321,13 +328,6 @@ const handleDeleteSuccess = () => {
                 :show-automation-settings="false"
                 show-voice-settings
                 :show-submit-button="false"
-              />
-              <VoiceAgentPreview
-                v-if="assistant?.id"
-                :assistant-id="assistant.id"
-                :configured-provider="
-                  assistant.config?.voice_settings?.provider || 'gemini-live'
-                "
               />
             </div>
           </div>

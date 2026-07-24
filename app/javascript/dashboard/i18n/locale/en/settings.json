@@ -482,6 +482,7 @@
         "READY": "Ready for calls",
         "CONNECTING": "Connecting…",
         "DISCONNECTED": "Disconnected",
+        "ACTIVE_IN_ANOTHER_TAB": "Active in another tab",
         "ERROR": "Connection error"
       }
     },

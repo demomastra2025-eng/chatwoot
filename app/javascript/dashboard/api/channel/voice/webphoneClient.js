@@ -9,6 +9,9 @@ const WEBPHONE_NATIVE_SIP_RETRY_DELAYS_MS = [
 ];
 const WEBPHONE_NATIVE_SIP_RETRY_JITTER_RATIO = 0.2;
 const WEBPHONE_NATIVE_SIP_CREDENTIAL_FAILURE_CODES = new Set([401, 403, 407]);
+const WEBPHONE_NATIVE_SIP_STANDBY_REASON =
+  'sip_profile_registration_lease_owned_by_another_tab';
+const WEBPHONE_NATIVE_SIP_STANDBY_RETRY_DELAY_MS = 5_000;
 
 const FORWARDED_EVENTS = [
   'call:connected',
@@ -130,6 +133,21 @@ class WebphoneClient extends EventTarget {
     return (
       WEBPHONE_NATIVE_SIP_CREDENTIAL_FAILURE_CODES.has(status) ||
       WEBPHONE_NATIVE_SIP_CREDENTIAL_FAILURE_CODES.has(sipCode)
+    );
+  }
+
+  static isNativeSipStandby(session = {}) {
+    return session?.reason === WEBPHONE_NATIVE_SIP_STANDBY_REASON;
+  }
+
+  static nativeSipStandbyRetryDelay(random = Math.random) {
+    const jitter =
+      WEBPHONE_NATIVE_SIP_STANDBY_RETRY_DELAY_MS *
+      WEBPHONE_NATIVE_SIP_RETRY_JITTER_RATIO;
+    return Math.round(
+      WEBPHONE_NATIVE_SIP_STANDBY_RETRY_DELAY_MS -
+        jitter +
+        random() * jitter * 2
     );
   }
 
@@ -324,9 +342,12 @@ class WebphoneClient extends EventTarget {
     if (state.blocked) return;
 
     this.nativeSessionRetryState[sessionKey] = state;
-    const delay = immediate
-      ? 0
-      : WebphoneClient.nativeSipRetryDelay(state.attempt);
+    let delay = 0;
+    if (!immediate) {
+      delay = WebphoneClient.isNativeSipStandby(state)
+        ? WebphoneClient.nativeSipStandbyRetryDelay()
+        : WebphoneClient.nativeSipRetryDelay(state.attempt);
+    }
     this.nativeSessionRetryTimers[sessionKey] = window.setTimeout(() => {
       this.retryNativeSession(sessionKey);
     }, delay);
@@ -386,6 +407,15 @@ class WebphoneClient extends EventTarget {
           nativeGeneration: generation,
         });
         if (!this.isNativeSessionOwner(sessionKey, generation)) return null;
+
+        if (WebphoneClient.isNativeSipStandby(session)) {
+          this.nativeSessionRetryState[sessionKey] = {
+            ...state,
+            reason: session.reason,
+            blocked: false,
+          };
+          return session;
+        }
 
         delete this.nativeSessionRetryState[sessionKey];
         return session;
@@ -1038,7 +1068,21 @@ class WebphoneClient extends EventTarget {
       this.rememberSession(resolvedSession);
       if (this.activeSessionKey === sessionKey) this.activeSessionKey = null;
       if (this.activeProvider === provider) this.activeProvider = null;
-      if (isNative) this.forgetNativeSessionConfig(sessionKey);
+      if (isNative && WebphoneClient.isNativeSipStandby(resolvedSession)) {
+        this.rememberNativeSessionConfig(sessionKey, response, {
+          inboxId: resolvedInboxId,
+          provider,
+        });
+        this.nativeSessionRetryState[sessionKey] = {
+          ...this.nativeSessionConfigs[sessionKey],
+          attempt: 0,
+          blocked: false,
+          reason: resolvedSession.reason,
+        };
+        this.scheduleNativeSessionRetry(sessionKey);
+      } else if (isNative) {
+        this.forgetNativeSessionConfig(sessionKey);
+      }
       return resolvedSession;
     }
 

@@ -166,6 +166,22 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       expect(response).to have_http_status(:service_unavailable)
       expect(json_response).to eq(error: 'voice_preview_unavailable')
     end
+
+    it 'preserves the safe capacity error when all preview slots are occupied' do
+      error = Telephony::AiVoice::JanusSipRuntimeClient::AttachError.new(
+        'preview capacity exhausted',
+        http_status: 429,
+        response_body: { error: 'preview_capacity_exhausted' }.to_json
+      )
+      allow(runtime_client).to receive(:create_preview).and_raise(error)
+
+      post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/voice_preview",
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:too_many_requests)
+      expect(json_response).to eq(error: 'preview_capacity_exhausted')
+    end
   end
 
   describe 'GET /api/v1/accounts/{account.id}/captain/assistants/context_fields' do

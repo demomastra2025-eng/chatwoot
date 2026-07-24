@@ -47,6 +47,11 @@ from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
 from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import BaseTransport
+from pipecat.turns.user_start.transcription_user_turn_start_strategy import (
+    TranscriptionUserTurnStartStrategy,
+)
+from pipecat.turns.user_start.vad_user_turn_start_strategy import VADUserTurnStartStrategy
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 from app.api.models import RuntimeStream
 from app.config import Settings
@@ -169,7 +174,12 @@ def build_pipeline(
 
     if context.ai.provider == "gemini-live":
         llm_context = LLMContext(messages=initial_messages)
-        aggregators = _aggregators(llm_context, state, vad)
+        aggregators = _aggregators(
+            llm_context,
+            state,
+            vad,
+            interruptions_enabled=context.ai.interruptions_enabled,
+        )
         llm = GeminiLiveLLMService(
             api_key=credentials["gemini_api_key"],
             tools=tools,
@@ -194,10 +204,15 @@ def build_pipeline(
             transport.output(),
             aggregators.assistant(),
         ]
-        start_on_connect = False
+        start_on_connect = True
     elif context.ai.provider == "openai-realtime":
         llm_context = LLMContext(messages=initial_messages, tools=tools)
-        aggregators = _aggregators(llm_context, state, vad)
+        aggregators = _aggregators(
+            llm_context,
+            state,
+            vad,
+            interruptions_enabled=context.ai.interruptions_enabled,
+        )
         llm = OpenAIRealtimeLLMService(
             api_key=credentials["openai_api_key"],
             settings=OpenAIRealtimeLLMService.Settings(
@@ -238,7 +253,13 @@ def build_pipeline(
         start_on_connect = True
     else:
         llm_context = LLMContext(messages=initial_messages, tools=tools)
-        aggregators = _aggregators(llm_context, state, vad, realtime_service_mode=False)
+        aggregators = _aggregators(
+            llm_context,
+            state,
+            vad,
+            interruptions_enabled=context.ai.interruptions_enabled,
+            realtime_service_mode=False,
+        )
         language = _provider_language(context.ai.language)
         if context.ai.provider == "cartesia":
             stt = CartesiaSTTService(
@@ -339,15 +360,28 @@ def _aggregators(
     state: SessionState,
     vad: SileroVADAnalyzer,
     *,
+    interruptions_enabled: bool,
     realtime_service_mode: bool = True,
 ) -> LLMContextAggregatorPair:
     aggregators = LLMContextAggregatorPair(
         llm_context,
-        user_params=LLMUserAggregatorParams(vad_analyzer=vad),
+        user_params=LLMUserAggregatorParams(
+            vad_analyzer=vad,
+            user_turn_strategies=_user_turn_strategies(interruptions_enabled),
+        ),
         realtime_service_mode=realtime_service_mode,
     )
     _register_transcript_handlers(aggregators, state)
     return aggregators
+
+
+def _user_turn_strategies(interruptions_enabled: bool) -> UserTurnStrategies:
+    return UserTurnStrategies(
+        start=[
+            VADUserTurnStartStrategy(enable_interruptions=interruptions_enabled),
+            TranscriptionUserTurnStartStrategy(enable_interruptions=interruptions_enabled),
+        ]
+    )
 
 
 def _build_tools(

@@ -627,6 +627,112 @@ describe('webphoneClient', () => {
     }
   });
 
+  it('keeps a competing tab on standby and takes over after the lease is released', async () => {
+    vi.useFakeTimers();
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const standbySession = {
+      provider: 'sipuni',
+      sip_profile_id: 39,
+      inbox_id: 4769,
+      calling_supported: false,
+      reason: 'sip_profile_registration_lease_owned_by_another_tab',
+    };
+    const activeSession = {
+      ...standbySession,
+      calling_supported: true,
+      reason: null,
+      janusServer:
+        'wss://dev.one-link.kz/janus-sipuni?janus_ticket=takeover-ticket',
+      sip: {
+        username: 'line-39',
+        password: 'secret',
+        host: 'sipuni.test',
+      },
+    };
+    getWebphoneTokenMock.mockResolvedValue({
+      multi_session: true,
+      sessions: [standbySession],
+    });
+    getNativeWebphoneTokenMock
+      .mockResolvedValueOnce(standbySession)
+      .mockResolvedValueOnce(activeSession);
+    janusInitializeMock.mockImplementation(async session => ({
+      provider: session.provider,
+      sessionKey: session.sessionKey,
+      inboxId: session.inbox_id,
+      sipProfileId: session.sip_profile_id,
+      callingSupported: true,
+      registered: true,
+    }));
+
+    try {
+      const response = await WebphoneClient.bootstrapIncomingSupport();
+
+      expect(response.sessions[0]).toMatchObject({
+        callingSupported: false,
+        registered: false,
+        reason: 'sip_profile_registration_lease_owned_by_another_tab',
+      });
+      expect(janusInitializeMock).not.toHaveBeenCalled();
+      expect(
+        WebphoneClient.nativeSessionConfigs['sip_profile:39']
+      ).toBeDefined();
+      expect(
+        WebphoneClient.nativeSessionRetryTimers['sip_profile:39']
+      ).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(4_999);
+
+      expect(getNativeWebphoneTokenMock).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(getNativeWebphoneTokenMock).toHaveBeenCalledTimes(1);
+      expect(janusInitializeMock).not.toHaveBeenCalled();
+      expect(WebphoneClient.sessions['sip_profile:39']).toMatchObject({
+        registered: false,
+        reason: 'sip_profile_registration_lease_owned_by_another_tab',
+      });
+      expect(
+        WebphoneClient.nativeSessionRetryTimers['sip_profile:39']
+      ).toBeDefined();
+
+      await vi.advanceTimersByTimeAsync(4_999);
+
+      expect(getNativeWebphoneTokenMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(getNativeWebphoneTokenMock).toHaveBeenCalledTimes(2);
+      expect(janusInitializeMock).toHaveBeenCalledTimes(1);
+      expect(WebphoneClient.sessions['sip_profile:39']).toMatchObject({
+        callingSupported: true,
+        registered: true,
+      });
+      expect(
+        WebphoneClient.nativeSessionRetryState['sip_profile:39']
+      ).toBeUndefined();
+      expect(
+        WebphoneClient.nativeSessionRetryTimers['sip_profile:39']
+      ).toBeUndefined();
+    } finally {
+      Object.values(WebphoneClient.nativeSessionRetryTimers || {}).forEach(
+        timer => window.clearTimeout(timer)
+      );
+      WebphoneClient.nativeSessionRetryTimers = {};
+      WebphoneClient.nativeSessionRetryState = {};
+      randomSpy.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('bounds standby polling jitter between four and six seconds', () => {
+    const clientClass = WebphoneClient.constructor;
+
+    expect(clientClass.nativeSipStandbyRetryDelay(() => 0)).toBe(4_000);
+    expect(clientClass.nativeSipStandbyRetryDelay(() => 1)).toBe(6_000);
+  });
+
   it('fences normal refreshes while a native session retry owns a newer generation', async () => {
     const initialSession = {
       provider: 'sipuni',

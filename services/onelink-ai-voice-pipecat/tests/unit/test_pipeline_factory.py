@@ -16,7 +16,11 @@ from pipecat.transcriptions.language import Language
 from app.api.models import RuntimeStream
 from app.config import Settings
 from app.pipeline.context import ToolDefinition, VoiceContext
-from app.pipeline.factory import GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION, build_pipeline
+from app.pipeline.factory import (
+    GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION,
+    _user_turn_strategies,
+    build_pipeline,
+)
 
 
 def _settings(**overrides) -> Settings:
@@ -70,7 +74,7 @@ def _runtime_stream() -> RuntimeStream:
             "gemini-3.1-flash-live-preview",
             "sulafat",
             GeminiLiveLLMService,
-            False,
+            True,
         ),
         ("openai-realtime", "gpt-realtime-2", "alloy", OpenAIRealtimeLLMService, True),
         (
@@ -109,9 +113,7 @@ def test_builds_supported_provider_pipeline(
         expected_stt_class = (
             CartesiaSTTService if provider == "cartesia" else ElevenLabsRealtimeSTTService
         )
-        expected_tts_class = (
-            CartesiaTTSService if provider == "cartesia" else ElevenLabsTTSService
-        )
+        expected_tts_class = CartesiaTTSService if provider == "cartesia" else ElevenLabsTTSService
         assert isinstance(stt, expected_stt_class)
         assert isinstance(tts, expected_tts_class)
         if provider == "elevenlabs":
@@ -135,6 +137,14 @@ def test_builds_supported_provider_pipeline(
     else:
         assert assembly.input_resampler is None
         assert assembly.output_resampler is None
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_user_turn_strategies_honor_interruption_setting(enabled):
+    strategies = _user_turn_strategies(enabled)
+
+    assert strategies.start
+    assert all(strategy._enable_interruptions is enabled for strategy in strategies.start)
 
 
 def test_gemini_with_tools_announces_before_formal_function_call():

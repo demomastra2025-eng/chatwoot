@@ -560,20 +560,20 @@
           "PLACEHOLDER": "Enter handoff message"
         },
         "VOICE_SETTINGS": {
-          "TITLE": "Voice агент баптаулары",
-          "DESCRIPTION": "Телефондағы voice агенттің моделін, дауысын және сөйлесу мінезін баптаңыз.",
-          "ACTIVE_RUNTIME": "Белсенді voice runtime",
-          "RUNTIME_NOTE": "Қоңыраулар Captain нұсқауларын, құралдарын, білім базасын және операторға аудару ережелерін қолданады. Gemini Live, OpenAI Realtime, ElevenLabs және OpenRouter бар Cartesia қолжетімді.",
+          "TITLE": "Дауыстық AI-агент баптаулары",
+          "DESCRIPTION": "Телефон қоңырауларын өңдейтін дауыстық AI-агенттің платформасын, моделін, дауысын және сөйлеу мәнерін баптаңыз.",
+          "ACTIVE_RUNTIME": "Белсенді дауыстық платформа",
+          "RUNTIME_NOTE": "Қоңырауларда чаттағыдай агент нұсқаулары, құралдар, білім базасы және операторға аудару ережелері қолданылады. Gemini Live, OpenAI Realtime, ElevenLabs және OpenRouter арқылы Cartesia қолжетімді.",
           "PROVIDER": "Провайдер",
           "MODEL": "Модель",
           "VOICE": "Дауыс",
           "LANGUAGE": "Тіл",
-          "SYSTEM_PROMPT": "Голос нұсқаулары",
+          "SYSTEM_PROMPT": "Дауыстық нұсқаулар",
           "SYSTEM_PROMPT_PLACEHOLDER": "Мысалы: қысқа сөйле, markdown қолданба, бір уақытта бір сұрақ қой",
-          "SYSTEM_PROMPT_DESCRIPTION": "Тек телефон voice-агентіне арналған қосымша нұсқаулар. Олар Captain негізгі нұсқауларының үстіне қосылады.",
+          "SYSTEM_PROMPT_DESCRIPTION": "Тек дауыстық AI-агентке арналған қосымша нұсқаулар. Олар агенттің негізгі нұсқауларын толықтырады.",
           "VOICE_CHARACTER_PROMPT": "Дауыс мінезі",
-          "VOICE_CHARACTER_PROMPT_PLACEHOLDER": "Мысалы: жылы наставник, төмен энергия, жұмсақ пауза, күлкісіз",
-          "VOICE_CHARACTER_PROMPT_DESCRIPTION": "Тембр, мінез, эмоция, қарқын, интонация, күлкі, пауза, тыныс, акцент, дикция, энергия және тыйымдар үшін бөлек voice-performance блок.",
+          "VOICE_CHARACTER_PROMPT_PLACEHOLDER": "Мысалы: жылы тәлімгер, баяу қарқын, жұмсақ кідірістер, күлкісіз",
+          "VOICE_CHARACTER_PROMPT_DESCRIPTION": "Тембр, мінез, эмоция, қарқын, интонация, күлкі, кідіріс, тыныс, акцент, дикция, энергия және тыйымдарға арналған бөлек дауыс баптаулары.",
           "FIRST_MESSAGE": "Бірінші хабарлама",
           "FIRST_MESSAGE_PLACEHOLDER": "Қоңырау басында айтылатын сәлемдесу",
           "TRANSFER_MESSAGE": "Операторға аудару хабарламасы",
@@ -583,10 +583,13 @@
           "INTERRUPTIONS_DESCRIPTION": "Қосулы болса, клиент жауап кезінде агентті тоқтата алады."
         },
         "VOICE_PREVIEW": {
-          "TITLE": "Voice-агентпен сөйлесу",
+          "TITLE": "Дауыстық AI-агентпен сөйлесу",
           "DESCRIPTION": "Сақталған нұсқауларды, дауысты және сөзді бөлуді микрофон арқылы тексеріңіз. Тест қоңырау, диалог немесе жазба жасамайды.",
           "START": "Сөйлесуді бастау",
+          "CANCEL": "Бас тарту",
           "STOP": "Аяқтау",
+          "MUTE": "Микрофонды өшіру",
+          "UNMUTE": "Микрофонды қосу",
           "STATUS": {
             "IDLE": "Дайын",
             "CONNECTING": "Қосылуда",
@@ -597,8 +600,11 @@
           "ERROR": {
             "MICROPHONE": "Браузерде микрофонға қол жеткізуге рұқсат беріңіз.",
             "EXPIRED": "Сессия мерзімі аяқталды. Сөйлесуді қайта бастаңыз.",
-            "CONNECTION": "Voice runtime байланысы үзілді.",
-            "UNAVAILABLE": "Voice preview қолжетімсіз. Runtime және таңдалған провайдер кілттерін тексеріңіз."
+            "CONNECTION": "Дауыстық платформамен байланыс үзілді.",
+            "UNAVAILABLE": "Дауысты алдын ала тексеру қолжетімсіз. Платформаны және таңдалған провайдер кілттерін тексеріңіз.",
+            "CAPACITY": "Барлық сынақ сессиялары бос емес. Бірнеше секундтан кейін қайталаңыз.",
+            "ORIGIN": "Бұл бетке дауысты алдын ала тексеруді іске қосуға рұқсат жоқ.",
+            "PROTOCOL": "Дауыстық платформа қате жауап берді. Сөйлесуді қайта бастаңыз."
           }
         },
         "RESOLUTION_MESSAGE": {
@@ -850,8 +856,8 @@
             "DESCRIPTION": "Assistant profile, product context, avatar, core capabilities, runtime behavior, and lifecycle controls."
           },
           "VOICE_AGENT": {
-            "LABEL": "Voice agent",
-            "DESCRIPTION": "Realtime voice settings for this assistant."
+            "LABEL": "Дауыстық AI-агент",
+            "DESCRIPTION": "Осы агенттің нақты уақыттағы дауыс баптаулары."
           },
           "PROMPTS": {
             "LABEL": "Prompts",
