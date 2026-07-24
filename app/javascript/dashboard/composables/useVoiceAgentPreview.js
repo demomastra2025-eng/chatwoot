@@ -4,6 +4,8 @@ import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 const INPUT_SAMPLE_RATE = 16000;
 const INPUT_FRAME_SAMPLES = 320;
 const DEFAULT_OUTPUT_SAMPLE_RATE = 8000;
+const OUTPUT_FRAME_DURATION_MS = 20;
+const PCM_BYTES_PER_SAMPLE = Int16Array.BYTES_PER_ELEMENT;
 const READY_TIMEOUT_MS = 10000;
 const AUDIO_WORKLET_TIMEOUT_MS = 2000;
 
@@ -15,13 +17,17 @@ const bytesToBase64 = bytes => {
   return window.btoa(binary);
 };
 
-const base64ToInt16 = value => {
+const base64ToInt16 = (value, expectedByteLength) => {
   if (typeof value !== 'string' || !value) {
+    throw new Error('invalid_audio_payload');
+  }
+  const maxEncodedLength = Math.ceil(expectedByteLength / 3) * 4;
+  if (value.length > maxEncodedLength) {
     throw new Error('invalid_audio_payload');
   }
   const binary = window.atob(value);
   const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
-  if (!bytes.length || bytes.byteLength % Int16Array.BYTES_PER_ELEMENT !== 0) {
+  if (bytes.byteLength !== expectedByteLength) {
     throw new Error('invalid_audio_payload');
   }
   return new Int16Array(bytes.buffer);
@@ -158,7 +164,12 @@ export function useVoiceAgentPreview(assistantId) {
 
   const playOutput = encoded => {
     if (!audioContext) return;
-    const pcm = base64ToInt16(encoded);
+    const expectedByteLength =
+      (outputSampleRate.value *
+        OUTPUT_FRAME_DURATION_MS *
+        PCM_BYTES_PER_SAMPLE) /
+      1000;
+    const pcm = base64ToInt16(encoded, expectedByteLength);
     let peak = 0;
     for (let index = 0; index < pcm.length; index += 1) {
       peak = Math.max(peak, Math.abs(pcm[index] / 0x8000));
@@ -479,6 +490,12 @@ export function useVoiceAgentPreview(assistantId) {
             await fail('protocol', attempt);
             return;
           }
+          if (
+            message.mime_type !== `audio/pcm;rate=${outputSampleRate.value}`
+          ) {
+            await fail('protocol', attempt);
+            return;
+          }
           try {
             playOutput(message.data);
           } catch {
@@ -496,6 +513,8 @@ export function useVoiceAgentPreview(assistantId) {
             origin_forbidden: 'origin',
           };
           await fail(runtimeErrors[message.code] || 'unavailable', attempt);
+        } else {
+          await fail('protocol', attempt);
         }
       };
       socket.onerror = () => {

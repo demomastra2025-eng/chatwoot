@@ -11,12 +11,16 @@ class VoicePreviewOutputProcessor extends AudioWorkletProcessor {
     this.bufferedSamples = 0;
     this.isPlaying = false;
     this.emptyRenderCount = 0;
+    this.startupRenderCount = 0;
     this.port.onmessage = event => {
       if (event.data?.type === 'clear') {
         this.clear();
         return;
       }
       if (event.data?.type !== 'audio' || !event.data.samples?.length) return;
+      if (!this.isPlaying && this.bufferedSamples === 0) {
+        this.startupRenderCount = 0;
+      }
       this.queue.push(event.data.samples);
       this.bufferedSamples += event.data.samples.length;
       this.emptyRenderCount = 0;
@@ -28,6 +32,7 @@ class VoicePreviewOutputProcessor extends AudioWorkletProcessor {
     this.queueOffset = 0;
     this.bufferedSamples = 0;
     this.emptyRenderCount = 0;
+    this.startupRenderCount = 0;
     if (this.isPlaying) this.port.postMessage({ type: 'idle' });
     this.isPlaying = false;
   }
@@ -38,9 +43,21 @@ class VoicePreviewOutputProcessor extends AudioWorkletProcessor {
     output.fill(0);
 
     const prebufferSamples = sampleRate * PREBUFFER_SECONDS;
-    if (!this.isPlaying && this.bufferedSamples < prebufferSamples) return true;
+    if (!this.isPlaying && this.bufferedSamples > 0) {
+      this.startupRenderCount += 1;
+    }
+    const startupRenderLimit = Math.ceil(
+      prebufferSamples / RENDER_QUANTUM_SAMPLES
+    );
+    if (
+      !this.isPlaying &&
+      this.bufferedSamples < prebufferSamples &&
+      this.startupRenderCount < startupRenderLimit
+    )
+      return true;
     if (!this.isPlaying && this.bufferedSamples > 0) {
       this.isPlaying = true;
+      this.startupRenderCount = 0;
       this.port.postMessage({ type: 'playing' });
     }
 

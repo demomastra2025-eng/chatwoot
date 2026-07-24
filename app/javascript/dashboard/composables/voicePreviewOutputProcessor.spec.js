@@ -56,6 +56,34 @@ describe('voicePreviewOutputProcessor', () => {
     });
   });
 
+  it('flushes a short initial burst after the bounded startup wait', () => {
+    const processor = new OutputProcessor();
+    processor.port.onmessage({
+      data: { type: 'audio', samples: new Float32Array(960).fill(0.5) },
+    });
+    const output = new Float32Array(128);
+    const startupRenderLimit = Math.ceil((48000 * 0.1) / output.length);
+
+    for (let index = 0; index < startupRenderLimit - 1; index += 1) {
+      processor.process([], [[output]]);
+    }
+    expect(processor.port.postMessage).not.toHaveBeenCalled();
+
+    processor.process([], [[output]]);
+    expect(output.some(sample => sample === 0.5)).toBe(true);
+    expect(processor.port.postMessage).toHaveBeenCalledWith({
+      type: 'playing',
+    });
+
+    for (let index = 0; index < 100 && processor.isPlaying; index += 1) {
+      processor.process([], [[output]]);
+    }
+    expect(processor.isPlaying).toBe(false);
+    expect(processor.port.postMessage).toHaveBeenLastCalledWith({
+      type: 'idle',
+    });
+  });
+
   it('clears buffered audio immediately on interruption', () => {
     const processor = new OutputProcessor();
     processor.port.onmessage({

@@ -179,7 +179,11 @@ describe('useVoiceAgentPreview', () => {
     const context = FakeAudioContext.sources;
     const pcm = window.btoa(String.fromCharCode(...new Uint8Array(320)));
     socket.onmessage({
-      data: JSON.stringify({ type: 'AUDIO_OUT', data: pcm }),
+      data: JSON.stringify({
+        type: 'AUDIO_OUT',
+        data: pcm,
+        mime_type: 'audio/pcm;rate=8000',
+      }),
     });
     expect(context[0].start).toHaveBeenCalledOnce();
     expect(preview.status.value).toBe('speaking');
@@ -243,7 +247,11 @@ describe('useVoiceAgentPreview', () => {
     );
     const pcm = window.btoa(String.fromCharCode(...new Uint8Array(320)));
     await socket.onmessage({
-      data: JSON.stringify({ type: 'AUDIO_OUT', data: pcm }),
+      data: JSON.stringify({
+        type: 'AUDIO_OUT',
+        data: pcm,
+        mime_type: 'audio/pcm;rate=8000',
+      }),
     });
 
     expect(outputNode.port.postMessage).toHaveBeenCalledOnce();
@@ -332,7 +340,11 @@ describe('useVoiceAgentPreview', () => {
     });
     const pcm = window.btoa(String.fromCharCode(...new Uint8Array(320)));
     await socket.onmessage({
-      data: JSON.stringify({ type: 'AUDIO_OUT', data: pcm }),
+      data: JSON.stringify({
+        type: 'AUDIO_OUT',
+        data: pcm,
+        mime_type: 'audio/pcm;rate=8000',
+      }),
     });
 
     expect(FakeAudioWorkletNode.instances).toHaveLength(0);
@@ -340,7 +352,33 @@ describe('useVoiceAgentPreview', () => {
     expect(preview.status.value).toBe('speaking');
   });
 
-  it('rejects malformed runtime audio and closes the session cleanly', async () => {
+  it.each([
+    [
+      'invalid base64 audio',
+      {
+        type: 'AUDIO_OUT',
+        data: '%',
+        mime_type: 'audio/pcm;rate=8000',
+      },
+    ],
+    [
+      'unexpected audio MIME type',
+      {
+        type: 'AUDIO_OUT',
+        data: window.btoa(String.fromCharCode(...new Uint8Array(320))),
+        mime_type: 'audio/pcm;rate=16000',
+      },
+    ],
+    [
+      'oversized audio frame',
+      {
+        type: 'AUDIO_OUT',
+        data: window.btoa(String.fromCharCode(...new Uint8Array(3200))),
+        mime_type: 'audio/pcm;rate=8000',
+      },
+    ],
+    ['unknown runtime event', { type: 'UNKNOWN' }],
+  ])('rejects %s and closes the session cleanly', async (_label, message) => {
     mount(
       defineComponent({
         setup() {
@@ -360,13 +398,14 @@ describe('useVoiceAgentPreview', () => {
       }),
     });
     await socket.onmessage({
-      data: JSON.stringify({ type: 'AUDIO_OUT', data: '%' }),
+      data: JSON.stringify(message),
     });
 
     expect(preview.status.value).toBe('error');
     expect(preview.errorCode.value).toBe('protocol');
     expect(preview.isConnected.value).toBe(false);
     expect(socket.close).toHaveBeenCalledWith(1000, 'preview_stopped');
+    expect(stream.getTracks()[0].stop).toHaveBeenCalledOnce();
   });
 
   it('does not resurrect a session stopped while microphone access is pending', async () => {
