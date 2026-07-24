@@ -9,14 +9,17 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
   let(:document_chunk) do
     document.document_chunks.create!(account: account, assistant: assistant, chunk_index: 0, content: 'Refund policy source')
   end
-
-  before do
+  let(:faq_response) do
     create(:captain_assistant_response, assistant: assistant, account: account, documentable: document, document_chunk: document_chunk,
                                         question: 'Refund?', answer: 'Refund in 14 days', status: 'approved')
+  end
+
+  before do
+    faq_response
     translate_service = instance_double(Captain::Llm::TranslateQueryService)
     allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translate_service)
     allow(translate_service).to receive(:translate).and_return('refund')
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: document_chunk.id))
+    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.where(id: faq_response.id))
   end
 
   it 'returns normalized faq matches payload' do
@@ -24,26 +27,26 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
 
     expect(payload['query']).to eq('refund')
     expect(payload['total_count']).to eq(1)
-    expect(payload['lookup_strategy']).to eq('semantic_chunk')
+    expect(payload['lookup_strategy']).to eq('semantic_faq')
     expect(payload['matches'].first).to include(
-      'type' => 'document_chunk',
-      'answer' => 'Refund policy source',
-      'document_id' => document.id,
+      'type' => 'faq_response',
+      'answer' => 'Refund in 14 days',
+      'id' => faq_response.id,
       'document_chunk_id' => document_chunk.id
     )
     expect(payload['retrieval_trace']).to include(
-      'strategy' => 'semantic_chunk',
+      'strategy' => 'semantic_faq',
       'degraded' => false,
       'semantic_attempted' => true,
       'match_count' => 1,
-      'response_ids' => [],
+      'response_ids' => [faq_response.id],
       'document_ids' => [document.id],
       'document_chunk_ids' => [document_chunk.id]
     )
   end
 
   it 'serves repeated translated semantic lookups from the answer cache' do
-    expect(Captain::DocumentChunk).to receive(:search).once.and_return(Captain::DocumentChunk.where(id: document_chunk.id))
+    expect(Captain::AssistantResponse).to receive(:search).once.and_return(Captain::AssistantResponse.where(id: faq_response.id))
 
     first_payload = JSON.parse(service.execute(query: 'возврат'))
     second_payload = JSON.parse(service.execute(query: 'вернуть деньги'))
@@ -59,50 +62,8 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     expect(second_payload['matches'].first).to include('document_chunk_id' => document_chunk.id)
   end
 
-  it 'reranks semantic chunks and exposes rerank scores in the retrieval trace' do
-    second_document = create(:captain_document, account: account, assistant: assistant)
-    second_chunk = second_document.document_chunks.create!(
-      account: account,
-      assistant: assistant,
-      chunk_index: 0,
-      content: 'Warranty refund source'
-    )
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [document_chunk.id, second_chunk.id]))
-    reranker = instance_double(Captain::Documents::Reranker)
-    allow(Captain::Documents::Reranker).to receive(:new).with(account: account).and_return(reranker)
-    allow(reranker).to receive(:call).and_return(
-      Captain::Documents::Reranker::Result.new(
-        documents: [second_chunk, document_chunk],
-        trace: {
-          attempted: true,
-          enabled: true,
-          degraded: false,
-          model: 'cohere/rerank-v3.5',
-          scores: [
-            { document_chunk_id: second_chunk.id, relevance_score: 0.91 },
-            { document_chunk_id: document_chunk.id, relevance_score: 0.31 }
-          ]
-        }
-      )
-    )
-
-    payload = JSON.parse(service.execute(query: 'refund'))
-
-    expect(payload['matches'].first).to include('document_chunk_id' => second_chunk.id, 'answer' => 'Warranty refund source')
-    expect(payload['retrieval_trace']['rerank']).to include(
-      'attempted' => true,
-      'enabled' => true,
-      'degraded' => false,
-      'model' => 'cohere/rerank-v3.5'
-    )
-    expect(payload['retrieval_trace']['rerank']['scores']).to include(
-      { 'document_chunk_id' => second_chunk.id, 'relevance_score' => 0.91 },
-      { 'document_chunk_id' => document_chunk.id, 'relevance_score' => 0.31 }
-    )
-  end
-
   it 'falls back to keyword matches when semantic lookup is unavailable' do
-    allow(Captain::DocumentChunk).to receive(:search)
+    allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(service.execute(query: 'refund'))
@@ -128,7 +89,7 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
   end
 
   it 'marks semantic lookup as not configured when embeddings are not configured' do
-    allow(Captain::DocumentChunk).to receive(:search)
+    allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'OpenRouter embeddings are not configured.')
 
     payload = JSON.parse(service.execute(query: 'refund'))
@@ -143,7 +104,7 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
   end
 
   it 'degrades to keyword matches when semantic lookup times out' do
-    allow(Captain::DocumentChunk).to receive(:search).and_raise(Timeout::Error, 'execution expired')
+    allow(Captain::AssistantResponse).to receive(:search).and_raise(Timeout::Error, 'execution expired')
 
     payload = JSON.parse(service.execute(query: 'refund'))
 
@@ -215,7 +176,7 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
       chunk_index: 0,
       content: 'Chunkonly refund source'
     )
-    allow(Captain::DocumentChunk).to receive(:search)
+    allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(service.execute(query: 'chunkonly'))
@@ -229,8 +190,8 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
   end
 
   it 'falls back to keyword matches when semantic lookup returns no matches' do
-    document_chunk.update!(embedding_status: :indexed, embedding: Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1))
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.none)
+    faq_response.update!(embedding: Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1))
+    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.none)
 
     payload = JSON.parse(service.execute(query: 'refund'))
 
@@ -256,7 +217,7 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
 
   it 'can skip translation and semantic lookup for realtime voice fallback' do
     expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
-    expect(Captain::DocumentChunk).not_to receive(:search)
+    expect(Captain::AssistantResponse).not_to receive(:search)
 
     payload = JSON.parse(service.execute(query: 'refund', semantic: false))
 
@@ -274,28 +235,58 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     )
   end
 
-  it 'shares general chunks but hides another assistant personal chunks from semantic lookup' do
+  it 'requests semantic FAQ results in the current assistant visibility scope' do
     other_assistant = create(:captain_assistant, account: account)
-    general_document = create(:captain_document, account: account, assistant: other_assistant, visibility: :general)
-    personal_document = create(:captain_document, account: account, assistant: other_assistant, visibility: :personal)
-    general_chunk = general_document.document_chunks.create!(
+    general_response = create(
+      :captain_assistant_response,
       account: account,
       assistant: other_assistant,
-      chunk_index: 0,
-      content: 'Shared workspace policy source'
+      visibility: :general,
+      question: 'Shared workspace policy',
+      answer: 'Shared workspace policy source'
     )
-    personal_chunk = personal_document.document_chunks.create!(
-      account: account,
-      assistant: other_assistant,
-      chunk_index: 0,
-      content: 'Private assistant policy source'
-    )
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [general_chunk.id, personal_chunk.id]))
+    expect(Captain::AssistantResponse).to receive(:search).with(
+      'refund',
+      account_id: account.id,
+      assistant_id: assistant.id,
+      limit: 5
+    ).and_return(Captain::AssistantResponse.where(id: general_response.id))
 
     payload = JSON.parse(service.execute(query: 'workspace visibility'))
 
-    expect(payload.dig('retrieval_trace', 'document_chunk_ids')).to contain_exactly(general_chunk.id)
+    expect(payload.dig('retrieval_trace', 'response_ids')).to contain_exactly(general_response.id)
     expect(payload['matches'].map { |match| match['answer'] }).to contain_exactly('Shared workspace policy source')
+  end
+
+  it 'returns an exact FAQ before translation, cache, and semantic lookup even when it has no embedding' do
+    allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_later)
+    exact = create(
+      :captain_assistant_response,
+      account: account,
+      assistant: nil,
+      question: 'Что такое ADAMANT CLUB?',
+      answer: 'Закрытый бизнес-клуб.',
+      embedding: nil,
+      created_at: 1.day.ago
+    )
+    expect(exact.embedding).to be_nil
+    create(
+      :captain_assistant_response,
+      account: account,
+      assistant: nil,
+      question: 'Кто основатель клуба?',
+      answer: 'Основатель ADAMANT CLUB.',
+      embedding: Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1),
+      created_at: Time.current
+    )
+    expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
+    expect(Captain::Knowledge::AnswerCache).not_to receive(:new)
+    expect(Captain::AssistantResponse).not_to receive(:search)
+
+    payload = JSON.parse(service.execute(query: 'Что такое ADAMANT CLUB?'))
+
+    expect(payload['lookup_strategy']).to eq('lexical_exact')
+    expect(payload['matches'].first).to include('id' => exact.id, 'answer' => 'Закрытый бизнес-клуб.')
   end
 
   it 'shares general FAQ entries but hides another assistant personal entries from lexical lookup' do

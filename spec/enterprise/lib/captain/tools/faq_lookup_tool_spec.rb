@@ -9,11 +9,14 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   let(:document_chunk) do
     document.document_chunks.create!(account: account, assistant: assistant, chunk_index: 0, content: 'Password reset source')
   end
-
-  before do
+  let(:faq_response) do
     create(:captain_assistant_response, assistant: assistant, account: account, documentable: document, document_chunk: document_chunk,
                                         question: 'How to reset password?', answer: 'Click forgot password', status: 'approved')
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: document_chunk.id))
+  end
+
+  before do
+    faq_response
+    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.where(id: faq_response.id))
   end
 
   it 'returns normalized faq payload' do
@@ -21,21 +24,21 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
 
     expect(payload['query']).to eq('password reset')
     expect(payload['total_count']).to eq(1)
-    expect(payload['matches'].first).to include('type' => 'document_chunk', 'answer' => 'Password reset source')
-    expect(payload['matches'].first).to include('document_id' => document.id, 'document_chunk_id' => document_chunk.id)
+    expect(payload['matches'].first).to include('type' => 'faq_response', 'answer' => 'Click forgot password')
+    expect(payload['matches'].first).to include('id' => faq_response.id, 'document_chunk_id' => document_chunk.id)
     expect(payload['retrieval_trace']).to include(
-      'strategy' => 'semantic_chunk',
+      'strategy' => 'semantic_faq',
       'degraded' => false,
       'semantic_attempted' => true,
       'match_count' => 1,
-      'response_ids' => [],
+      'response_ids' => [faq_response.id],
       'document_ids' => [document.id],
       'document_chunk_ids' => [document_chunk.id]
     )
   end
 
   it 'serves repeated semantic lookups from the answer cache' do
-    expect(Captain::DocumentChunk).to receive(:search).once.and_return(Captain::DocumentChunk.where(id: document_chunk.id))
+    expect(Captain::AssistantResponse).to receive(:search).once.and_return(Captain::AssistantResponse.where(id: faq_response.id))
 
     first_payload = JSON.parse(tool.perform(tool_context, query: 'password reset'))
     second_payload = JSON.parse(tool.perform(tool_context, query: ' password   reset '))
@@ -51,53 +54,8 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     expect(second_payload['matches'].first).to include('document_chunk_id' => document_chunk.id)
   end
 
-  it 'reranks semantic chunks and exposes rerank scores in the retrieval trace' do
-    second_document = create(:captain_document, account: account, assistant: assistant)
-    second_chunk = second_document.document_chunks.create!(
-      account: account,
-      assistant: assistant,
-      chunk_index: 0,
-      content: 'Account recovery source'
-    )
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [document_chunk.id, second_chunk.id]))
-    reranker = instance_double(Captain::Documents::Reranker)
-    allow(Captain::Documents::Reranker).to receive(:new).with(account: account).and_return(reranker)
-    allow(reranker).to receive(:call) do |query:, documents:, top_n:|
-      expect(query).to eq('password reset')
-      expect(documents).to contain_exactly(document_chunk, second_chunk)
-      expect(top_n).to eq(5)
-      Captain::Documents::Reranker::Result.new(
-        documents: [second_chunk, document_chunk],
-        trace: {
-          attempted: true,
-          enabled: true,
-          degraded: false,
-          model: 'cohere/rerank-v3.5',
-          scores: [
-            { document_chunk_id: second_chunk.id, relevance_score: 0.96 },
-            { document_chunk_id: document_chunk.id, relevance_score: 0.42 }
-          ]
-        }
-      )
-    end
-
-    payload = JSON.parse(tool.perform(tool_context, query: 'password reset'))
-
-    expect(payload['matches'].first).to include('document_chunk_id' => second_chunk.id, 'answer' => 'Account recovery source')
-    expect(payload['retrieval_trace']['rerank']).to include(
-      'attempted' => true,
-      'enabled' => true,
-      'degraded' => false,
-      'model' => 'cohere/rerank-v3.5'
-    )
-    expect(payload['retrieval_trace']['rerank']['scores']).to include(
-      { 'document_chunk_id' => second_chunk.id, 'relevance_score' => 0.96 },
-      { 'document_chunk_id' => document_chunk.id, 'relevance_score' => 0.42 }
-    )
-  end
-
   it 'falls back to exact/keyword FAQ lookup when semantic lookup is unavailable' do
-    allow(Captain::DocumentChunk).to receive(:search)
+    allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
@@ -122,7 +80,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   end
 
   it 'returns an empty lexical payload when embeddings are unavailable and no keyword matches' do
-    allow(Captain::DocumentChunk).to receive(:search)
+    allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(tool.perform(tool_context, query: 'pricing'))
@@ -137,7 +95,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   end
 
   it 'marks semantic lookup as not configured when embeddings are not configured' do
-    allow(Captain::DocumentChunk).to receive(:search)
+    allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsUnavailableError, 'OpenRouter embeddings are not configured.')
 
     payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
@@ -152,7 +110,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   end
 
   it 'degrades to lexical lookup when semantic lookup times out' do
-    allow(Captain::DocumentChunk).to receive(:search).and_raise(Timeout::Error, 'execution expired')
+    allow(Captain::AssistantResponse).to receive(:search).and_raise(Timeout::Error, 'execution expired')
 
     payload = JSON.parse(tool.perform(tool_context, query: 'reset password'))
 
@@ -224,7 +182,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       chunk_index: 0,
       content: 'Chunkonly recovery source'
     )
-    allow(Captain::DocumentChunk).to receive(:search)
+    allow(Captain::AssistantResponse).to receive(:search)
       .and_raise(Captain::Llm::EmbeddingService::EmbeddingsError, 'Failed to create an embedding')
 
     payload = JSON.parse(tool.perform(tool_context, query: 'chunkonly'))
@@ -238,7 +196,7 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   end
 
   it 'can skip semantic lookup for realtime voice calls' do
-    expect(Captain::DocumentChunk).not_to receive(:search)
+    expect(Captain::AssistantResponse).not_to receive(:search)
 
     payload = JSON.parse(tool.perform(tool_context, query: 'reset password', semantic: false))
 
@@ -255,27 +213,56 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     )
   end
 
-  it 'shares general chunks but hides another assistant personal chunks' do
+  it 'requests semantic FAQ results in the current assistant visibility scope' do
     other_assistant = create(:captain_assistant, account: account)
-    general_document = create(:captain_document, account: account, assistant: other_assistant, visibility: :general)
-    personal_document = create(:captain_document, account: account, assistant: other_assistant, visibility: :personal)
-    general_chunk = general_document.document_chunks.create!(
+    general_response = create(
+      :captain_assistant_response,
       account: account,
       assistant: other_assistant,
-      chunk_index: 0,
-      content: 'Shared account recovery source'
+      visibility: :general,
+      question: 'Shared account recovery',
+      answer: 'Shared account recovery source'
     )
-    personal_chunk = personal_document.document_chunks.create!(
-      account: account,
-      assistant: other_assistant,
-      chunk_index: 0,
-      content: 'Private account recovery source'
-    )
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [general_chunk.id, personal_chunk.id]))
+    expect(Captain::AssistantResponse).to receive(:search).with(
+      'account recovery',
+      account_id: account.id,
+      assistant_id: assistant.id,
+      limit: 5
+    ).and_return(Captain::AssistantResponse.where(id: general_response.id))
 
     payload = JSON.parse(tool.perform(tool_context, query: 'account recovery'))
 
-    expect(payload.dig('retrieval_trace', 'document_chunk_ids')).to contain_exactly(general_chunk.id)
+    expect(payload.dig('retrieval_trace', 'response_ids')).to contain_exactly(general_response.id)
     expect(payload['matches'].map { |match| match['answer'] }).to contain_exactly('Shared account recovery source')
+  end
+
+  it 'returns an exact FAQ before cache and semantic lookup even when it has no embedding' do
+    allow(Captain::Llm::UpdateEmbeddingJob).to receive(:perform_later)
+    exact = create(
+      :captain_assistant_response,
+      account: account,
+      assistant: nil,
+      question: 'Что такое ADAMANT CLUB?',
+      answer: 'Закрытый бизнес-клуб.',
+      embedding: nil,
+      created_at: 1.day.ago
+    )
+    expect(exact.embedding).to be_nil
+    create(
+      :captain_assistant_response,
+      account: account,
+      assistant: nil,
+      question: 'Кто основатель клуба?',
+      answer: 'Основатель ADAMANT CLUB.',
+      embedding: Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1),
+      created_at: Time.current
+    )
+    expect(Captain::Knowledge::AnswerCache).not_to receive(:new)
+    expect(Captain::AssistantResponse).not_to receive(:search)
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'Что такое ADAMANT CLUB?'))
+
+    expect(payload['lookup_strategy']).to eq('lexical_exact')
+    expect(payload['matches'].first).to include('id' => exact.id, 'answer' => 'Закрытый бизнес-клуб.')
   end
 end

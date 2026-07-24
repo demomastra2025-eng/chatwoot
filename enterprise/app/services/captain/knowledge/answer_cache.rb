@@ -5,7 +5,8 @@ require 'timeout'
 
 class Captain::Knowledge::AnswerCache
   DEFAULT_TTL = 24.hours
-  CACHEABLE_STRATEGY = 'semantic_chunk'
+  CACHEABLE_STRATEGIES = %w[semantic_chunk semantic_faq].freeze
+  RETRIEVAL_VERSION = 'faq-response-v2'
   QUERY_EMBEDDING_TIMEOUT_SECONDS = 4
 
   def initialize(account:, assistant:, query:, semantic: true, ttl: DEFAULT_TTL)
@@ -131,7 +132,7 @@ class Captain::Knowledge::AnswerCache
   def cacheable_payload?(payload)
     normalized = normalized_payload(payload)
     trace = normalized['retrieval_trace'].to_h
-    normalized['lookup_strategy'] == CACHEABLE_STRATEGY &&
+    CACHEABLE_STRATEGIES.include?(normalized['lookup_strategy']) &&
       normalized['total_count'].to_i.positive? &&
       trace['degraded'] != true
   end
@@ -177,6 +178,7 @@ class Captain::Knowledge::AnswerCache
   def source_fingerprint
     @source_fingerprint ||= Digest::SHA256.hexdigest(
       [
+        RETRIEVAL_VERSION,
         account.id,
         scope_fingerprint(account.captain_documents),
         scope_fingerprint(Captain::DocumentChunk.where(account_id: account.id)),

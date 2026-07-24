@@ -41,6 +41,20 @@ RSpec.describe Captain::Knowledge::AnswerCache do
     )
   end
 
+  it 'versions the source fingerprint to invalidate entries from older retrieval algorithms' do
+    cache = described_class.new(account: account, assistant: assistant, query: 'Refund policy')
+    legacy_fingerprint = Digest::SHA256.hexdigest(
+      [
+        account.id,
+        cache.send(:scope_fingerprint, account.captain_documents),
+        cache.send(:scope_fingerprint, Captain::DocumentChunk.where(account_id: account.id)),
+        cache.send(:scope_fingerprint, account.captain_assistant_responses.approved)
+      ].join(':')
+    )
+
+    expect(cache.send(:source_fingerprint)).not_to eq(legacy_fingerprint)
+  end
+
   it 'returns exact cache hits without recomputing retrieval' do
     described_class.new(account: account, assistant: assistant, query: 'Refund policy').write(payload)
 

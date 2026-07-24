@@ -75,13 +75,76 @@ class Captain::AssistantResponse < ApplicationRecord
   enum status: { pending: 0, approved: 1 }
   enum visibility: { general: 0, personal: 1 }, _prefix: :visibility
 
-  def self.search(query, account_id: nil)
+  def self.search(query, account_id:, assistant_id: nil, limit: 5)
+    return none if account_id.blank?
+
     embedding = Captain::Llm::EmbeddingService.new(account_id: account_id).get_embedding(
       query,
       input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
     )
-    nearest_neighbors(:embedding, embedding, distance: 'cosine').limit(5)
+    nearest_neighbors(:embedding, embedding, distance: 'cosine')
+      .approved
+      .visible_to_assistant(assistant_id)
+      .where(account_id: account_id)
+      .where.not(embedding: nil)
+      .limit(limit)
   end
+
+  def self.lexical_search(query, account_id:, assistant_id: nil, limit: 5)
+    tokens = lexical_tokens(query)
+    return none if account_id.blank? || tokens.blank?
+
+    bind_values = lexical_bind_values(tokens)
+
+    approved
+      .visible_to_assistant(assistant_id)
+      .where(account_id: account_id)
+      .where(lexical_conditions(tokens), bind_values)
+      .order(Arel.sql(lexical_ranking(query, tokens, bind_values)))
+      .limit(limit)
+  end
+
+  def self.exact_search(query, account_id:, assistant_id: nil, limit: 5)
+    normalized_query = query.to_s.squish.downcase
+    return none if account_id.blank? || normalized_query.blank?
+
+    approved
+      .visible_to_assistant(assistant_id)
+      .where(account_id: account_id)
+      .where('LOWER(BTRIM(question)) = ?', normalized_query)
+      .order(created_at: :desc)
+      .limit(limit)
+  end
+
+  def self.lexical_tokens(query)
+    query.to_s.downcase.scan(/[\p{Alnum}]+/).select { |token| token.length >= 3 }.uniq.first(5)
+  end
+
+  def self.lexical_bind_values(tokens)
+    tokens.each_with_index.to_h do |token, index|
+      ["term_#{index}".to_sym, "%#{ActiveRecord::Base.sanitize_sql_like(token)}%"]
+    end
+  end
+
+  def self.lexical_conditions(tokens)
+    tokens.each_index.map do |index|
+      "LOWER(question) LIKE :term_#{index} OR LOWER(answer) LIKE :term_#{index}"
+    end.join(' OR ')
+  end
+
+  def self.lexical_ranking(query, tokens, bind_values)
+    relevance = tokens.each_index.map do |index|
+      "CASE WHEN LOWER(question) LIKE :term_#{index} THEN 2 ELSE 0 END + " \
+        "CASE WHEN LOWER(answer) LIKE :term_#{index} THEN 1 ELSE 0 END"
+    end.join(' + ')
+    sanitize_sql_array(
+      [
+        "CASE WHEN LOWER(BTRIM(question)) = :exact_query THEN 0 ELSE 1 END, (#{relevance}) DESC, created_at DESC",
+        bind_values.merge(exact_query: query.to_s.squish.downcase)
+      ]
+    )
+  end
+  private_class_method :lexical_tokens, :lexical_bind_values, :lexical_conditions, :lexical_ranking
 
   private
 

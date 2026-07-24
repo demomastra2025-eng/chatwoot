@@ -3,6 +3,7 @@ require 'rails_helper'
 RSpec.describe Captain::AssistantResponse, type: :model do
   describe '.search' do
     let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
 
     it 'embeds semantic queries as search_query input' do
       embedding = Array.new(Captain::Llm::EmbeddingService::VECTOR_DIMENSIONS, 0.1)
@@ -12,9 +13,71 @@ RSpec.describe Captain::AssistantResponse, type: :model do
         .with('shipping policy', input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE)
         .and_return(embedding)
 
-      results = described_class.search('shipping policy', account_id: account.id)
+      results = described_class.search('shipping policy', account_id: account.id, assistant_id: assistant.id)
 
       expect(results.to_sql).to include('captain_assistant_responses')
+      expect(results.to_sql).to include(%("captain_assistant_responses"."account_id" = #{account.id}))
+      expect(results.to_sql).to include(%("captain_assistant_responses"."embedding" IS NOT NULL))
+      expect(results.to_sql).to include("captain_assistant_responses.assistant_id = #{assistant.id}")
+    end
+  end
+
+  describe '.lexical_search' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'ranks an exact question ahead of newer partial matches' do
+      exact = create(
+        :captain_assistant_response,
+        account: account,
+        assistant: nil,
+        question: ' Что такое ADAMANT CLUB?',
+        answer: 'Закрытый бизнес-клуб.',
+        created_at: 1.day.ago
+      )
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: nil,
+        question: 'Кто основатель клуба?',
+        answer: 'Основатель ADAMANT CLUB.',
+        created_at: Time.current
+      )
+
+      results = described_class.lexical_search(
+        'Что такое ADAMANT CLUB?',
+        account_id: account.id,
+        assistant_id: assistant.id
+      )
+
+      expect(results.first).to eq(exact)
+    end
+
+    it 'ranks more matching terms ahead of freshness' do
+      relevant = create(
+        :captain_assistant_response,
+        account: account,
+        assistant: nil,
+        question: 'ADAMANT CLUB membership',
+        answer: 'All membership details.',
+        created_at: 1.day.ago
+      )
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: nil,
+        question: 'ADAMANT news',
+        answer: 'Latest update.',
+        created_at: Time.current
+      )
+
+      results = described_class.lexical_search(
+        'ADAMANT CLUB membership pricing',
+        account_id: account.id,
+        assistant_id: assistant.id
+      )
+
+      expect(results.first).to eq(relevant)
     end
   end
 

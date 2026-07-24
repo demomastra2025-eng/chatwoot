@@ -19,6 +19,9 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
     translated_query = query
 
     Timeout.timeout(TOTAL_LOOKUP_TIMEOUT_SECONDS, TotalLookupTimeout) do
+      exact_payload = exact_faq_payload(query)
+      return formatted_payload(exact_payload) if exact_payload.present?
+
       translated_query = semantic ? translated_query_for(query) : query
 
       cache = answer_cache(query: translated_query, semantic: semantic)
@@ -39,6 +42,24 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   end
 
   private
+
+  def exact_faq_payload(query)
+    responses = Captain::AssistantResponse.exact_search(
+      query,
+      account_id: account.id,
+      assistant_id: assistant.id,
+      limit: SEMANTIC_RESULT_LIMIT
+    )
+    return if responses.blank?
+
+    faq_result_payload(
+      query: query,
+      translated_query: query,
+      responses: responses,
+      lookup_strategy: 'lexical_exact',
+      trace_context: trace_context(semantic_attempted: false)
+    )
+  end
 
   def semantic_payload(query:, translated_query:, semantic:)
     responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(translated_query, query, semantic: semantic)
@@ -82,7 +103,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
     if semantic
       responses, rerank_trace = semantic_responses(query)
-      return [responses, 'semantic_chunk', nil, rerank_trace] if responses.any?
+      return [responses, 'semantic_faq', nil, rerank_trace] if responses.any?
     end
 
     responses = lexical_fallback_responses(query, fallback_query)
@@ -91,7 +112,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def fallback_reason_for(semantic: true)
     return unless semantic
-    return 'chunk_embeddings_unindexed' if account_document_chunks.needs_embedding_reindex.exists?
+    return 'faq_embeddings_unindexed' if visible_faq_responses.exists?(embedding: nil)
 
     'semantic_no_matches'
   end
@@ -136,6 +157,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
       document_ids: document_ids_for(responses),
       document_chunk_ids: document_chunk_ids_for(responses),
       embedding_status_counts: embedding_status_counts,
+      faq_embedding_counts: faq_embedding_counts,
       rerank: trace_context[:rerank],
       sources: sources_for(responses)
     }.compact
@@ -179,17 +201,13 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def semantic_responses(query)
     Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
-      candidates = Captain::DocumentChunk.search(query, account_id: account.id)
-                                         .visible_to_assistant(assistant.id)
-                                         .where(account_id: account.id)
-                                         .limit(SEMANTIC_RESULT_LIMIT)
-                                         .to_a
-      rerank_result = Captain::Documents::Reranker.new(account: account).call(
-        query: query,
-        documents: candidates,
-        top_n: SEMANTIC_RESULT_LIMIT
-      )
-      [rerank_result.documents, rerank_result.trace]
+      responses = Captain::AssistantResponse.search(
+        query,
+        account_id: account.id,
+        assistant_id: assistant.id,
+        limit: SEMANTIC_RESULT_LIMIT
+      ).to_a
+      [responses, nil]
     end
   end
 
@@ -201,31 +219,22 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def lexical_fallback_responses(*queries)
     queries.compact.each do |candidate_query|
+      faq_responses = Captain::AssistantResponse.lexical_search(
+        candidate_query,
+        account_id: account.id,
+        assistant_id: assistant.id,
+        limit: SEMANTIC_RESULT_LIMIT
+      )
+      return faq_responses if faq_responses.any?
+
       tokens = lexical_tokens(candidate_query)
       next if tokens.blank?
-
-      faq_responses = lexical_faq_responses(tokens)
-      return faq_responses if faq_responses.any?
 
       document_chunks = lexical_document_chunks(tokens)
       return document_chunks if document_chunks.any?
     end
 
     Captain::AssistantResponse.none
-  end
-
-  def lexical_faq_responses(tokens)
-    conditions = tokens.each_with_index.map do |_token, index|
-      "LOWER(question) LIKE :term_#{index} OR LOWER(answer) LIKE :term_#{index}"
-    end.join(' OR ')
-    bind_values = lexical_bind_values(tokens)
-
-    account.captain_assistant_responses
-           .approved
-           .visible_to_assistant(assistant.id)
-           .where(conditions, bind_values)
-           .ordered
-           .limit(5)
   end
 
   def lexical_document_chunks(tokens)
@@ -247,6 +256,17 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
 
   def account_document_chunks
     Captain::DocumentChunk.where(account_id: account.id).visible_to_assistant(assistant.id)
+  end
+
+  def faq_embedding_counts
+    {
+      indexed: visible_faq_responses.where.not(embedding: nil).count,
+      unindexed: visible_faq_responses.where(embedding: nil).count
+    }
+  end
+
+  def visible_faq_responses
+    account.captain_assistant_responses.approved.visible_to_assistant(assistant.id)
   end
 
   def lexical_tokens(*queries)
