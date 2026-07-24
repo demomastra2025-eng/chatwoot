@@ -722,6 +722,34 @@ RSpec.describe Captain::CustomTool, type: :model do
 
         expect(result).to eq('{ "phone": "+1234567890", "order_id": "ORD-42" }')
       end
+
+      it 'JSON-escapes Liquid values before encoding a form request body' do
+        tool = create(
+          :captain_custom_tool,
+          account: account,
+          http_method: 'POST',
+          request_body_type: 'form_urlencoded',
+          request_template: '{"name":"{{ name }}","path":"{{ path }}","note":"{{ note }}","city":"{{ city }}","count":{{ count }}}'
+        )
+
+        result = tool.build_request_body(
+          {
+            name: 'O"Connor',
+            path: 'C:\\Users\\OneLink',
+            note: "first\nsecond",
+            city: 'Алматы',
+            count: 2
+          }
+        )
+
+        expect(URI.decode_www_form(result).to_h).to eq(
+          'name' => 'O"Connor',
+          'path' => 'C:\\Users\\OneLink',
+          'note' => "first\nsecond",
+          'city' => 'Алматы',
+          'count' => '2'
+        )
+      end
     end
 
     describe '#build_auth_headers' do

@@ -434,10 +434,18 @@ const getStatus = inbox => {
     };
   }
 
-  return {
-    label: t('INBOX_MGMT.LIST.STATUS.ACTIVE'),
-    class: 'bg-n-teal-3 text-n-teal-11 border-n-teal-5',
-  };
+  const tokenExpiring =
+    inbox.provider_config?.token_health?.status === 'expiring';
+
+  return tokenExpiring
+    ? {
+        label: t('INBOX_MGMT.HEALTH_STATUS.TOKEN_EXPIRING'),
+        class: 'bg-n-amber-3 text-n-amber-11 border-n-amber-5',
+      }
+    : {
+        label: t('INBOX_MGMT.LIST.STATUS.ACTIVE'),
+        class: 'bg-n-teal-3 text-n-teal-11 border-n-teal-5',
+      };
 };
 
 const inboxesList = computed(() => {

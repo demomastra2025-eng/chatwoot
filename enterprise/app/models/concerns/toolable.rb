@@ -1,6 +1,13 @@
 module Concerns::Toolable
   extend ActiveSupport::Concern
 
+  module JsonRequestFilters
+    def json_request_value(input)
+      encoded_value = JSON.generate(Captain::EncodingNormalizer.utf8(input))
+      input.is_a?(String) ? encoded_value[1...-1] : encoded_value
+    end
+  end
+
   # Isolated namespace for user-defined custom tool classes.
   # Keeps them separate from built-in classes in Captain::Tools.
   module CustomTools; end
@@ -57,10 +64,9 @@ module Concerns::Toolable
   def build_request_body(params, template_context: params)
     return nil if request_template.blank?
 
-    rendered_body = render_template(request_template, template_context)
-    return rendered_body unless request_body_form_urlencoded?
+    return render_template(request_template, template_context) unless request_body_form_urlencoded?
 
-    encode_form_request_body(rendered_body)
+    encode_form_request_body(render_form_request_template(request_template, template_context))
   end
 
   def request_content_type
@@ -177,6 +183,18 @@ module Concerns::Toolable
   end
 
   private
+
+  def render_form_request_template(template, context)
+    escaped_template = template.gsub(/\{\{(.*?)\}\}/m) do
+      "{{#{Regexp.last_match(1)} | json_request_value }}"
+    end
+
+    Captain::PromptRegistry.render_inline!(
+      escaped_template,
+      variables: context,
+      filters: [JsonRequestFilters]
+    )
+  end
 
   def encode_form_request_body(rendered_body)
     form_fields = JSON.parse(rendered_body)

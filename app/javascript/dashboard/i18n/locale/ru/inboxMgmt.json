@@ -14,6 +14,8 @@
       "DISCONNECTED_DESCRIPTION": "Канал не подключен. Переподключите его перед ожиданием новых сообщений.",
       "REAUTHORIZATION_REQUIRED": "Нужна повторная авторизация",
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Переподключите канал, чтобы восстановить доставку сообщений.",
+      "TOKEN_EXPIRING": "Авторизация WhatsApp скоро истечёт",
+      "TOKEN_EXPIRING_DESCRIPTION": "Переподключите канал через Meta до истечения срока, чтобы доставка сообщений не прерывалась.",
       "WEBHOOK_SIGNATURE_INVALID": "Некорректная подпись webhook",
       "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Проверьте секрет webhook или callback URL у провайдера перед повторной попыткой.",
       "PROVIDER_UNAVAILABLE": "Провайдер недоступен",

@@ -14,6 +14,8 @@
       "DISCONNECTED_DESCRIPTION": "The channel is not connected. Reconnect it before expecting new messages.",
       "REAUTHORIZATION_REQUIRED": "Reauthorization required",
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Reconnect this channel to resume message delivery.",
+      "TOKEN_EXPIRING": "WhatsApp authorization expires soon",
+      "TOKEN_EXPIRING_DESCRIPTION": "Reconnect through Meta before expiration to avoid interrupted message delivery.",
       "WEBHOOK_SIGNATURE_INVALID": "Webhook signature invalid",
       "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Check the provider webhook secret or callback URL before retrying.",
       "PROVIDER_UNAVAILABLE": "Provider unavailable",

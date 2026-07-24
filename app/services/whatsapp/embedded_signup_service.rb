@@ -38,7 +38,12 @@ class Whatsapp::EmbeddedSignupService
   end
 
   def validate_token_access(access_token)
-    Whatsapp::TokenValidationService.new(access_token, @waba_id, phone_number_id: @phone_number_id).perform
+    Whatsapp::TokenValidationService.new(
+      access_token,
+      @waba_id,
+      phone_number_id: @phone_number_id,
+      require_non_expiring_system_user: require_non_expiring_system_user_token?
+    ).perform
   end
 
   def store_token_health(channel, token_health)
@@ -132,6 +137,12 @@ class Whatsapp::EmbeddedSignupService
   def channel_in_pending_state?(health_data)
     health_data[:platform_type] == 'NOT_APPLICABLE' ||
       health_data.dig(:throughput, 'level') == 'NOT_APPLICABLE'
+  end
+
+  def require_non_expiring_system_user_token?
+    ActiveModel::Type::Boolean.new.cast(
+      GlobalConfigService.load('WHATSAPP_REQUIRE_NON_EXPIRING_SYSTEM_USER_TOKEN', false)
+    )
   end
 
   def validate_parameters!

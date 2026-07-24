@@ -39,6 +39,7 @@
         whatsappAppId: '<%= @global_config['WHATSAPP_APP_ID'] %>',
         whatsappConfigurationId: '<%= @global_config['WHATSAPP_CONFIGURATION_ID'] %>',
         whatsappApiVersion: '<%= @global_config['WHATSAPP_API_VERSION'] %>',
+        whatsappProactiveReauthorizationEnabled: <%= @global_config['WHATSAPP_PROACTIVE_REAUTHORIZATION_ENABLED'].to_json.html_safe %>,
         signupEnabled: '<%= @global_config['ENABLE_ACCOUNT_SIGNUP'] %>',
         isEnterprise: '<%= @global_config['IS_ENTERPRISE'] %>',
         isMfaEnabled: '<%= Chatwoot.mfa_enabled? %>',

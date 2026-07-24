@@ -14,6 +14,8 @@
       "DISCONNECTED_DESCRIPTION": "Арна қосылмаған. Жаңа хабарламаларды күтер алдында қайта қосыңыз.",
       "REAUTHORIZATION_REQUIRED": "Қайта авторизация қажет",
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Хабарлама жеткізуді қалпына келтіру үшін арнаны қайта қосыңыз.",
+      "TOKEN_EXPIRING": "WhatsApp авторизациясының мерзімі жақында аяқталады",
+      "TOKEN_EXPIRING_DESCRIPTION": "Хабарламалар жеткізілімі үзілмеуі үшін мерзімі аяқталғанға дейін арнаны Meta арқылы қайта қосыңыз.",
       "WEBHOOK_SIGNATURE_INVALID": "Webhook қолтаңбасы қате",
       "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Қайталап көруден бұрын провайдердегі webhook құпиясын немесе callback URL-ды тексеріңіз.",
       "PROVIDER_UNAVAILABLE": "Провайдер қолжетімсіз",

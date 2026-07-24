@@ -12,9 +12,9 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
       end
     end
 
-    context 'when it is an authenticated user' do
-      let(:agent) { create(:user, account: account, role: :agent) }
+    context 'when it is an authenticated administrator' do
       let(:administrator) { create(:user, account: account, role: :administrator) }
+      let(:agent) { administrator }
 
       context 'when authenticated user makes request' do
         it 'returns unprocessable entity when code is missing' do
@@ -285,6 +285,8 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
       allow(channel).to receive(:validate_provider_config).and_return(true)
       allow(channel).to receive(:sync_templates).and_return(true)
       allow(channel).to receive(:setup_webhooks).and_return(true)
+      allow(channel).to receive(:provider_authorization_healthy?).and_return(false)
+      allow(channel).to receive(:provider_authorization_transient_failure?).and_return(false)
       channel.save!
       # Call authorization_error! twice to reach the threshold
       channel.authorization_error!
@@ -406,7 +408,28 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
         end
       end
 
-      context 'when reauthorization is not required' do
+      context 'when inbox belongs to another account' do
+        it 'returns not found without invoking embedded signup' do
+          foreign_inbox = create(:inbox, account: create(:account))
+
+          expect(Whatsapp::EmbeddedSignupService).not_to receive(:new)
+
+          post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
+               params: {
+                 inbox_id: foreign_inbox.id,
+                 code: 'test',
+                 business_id: 'test',
+                 waba_id: 'test',
+                 phone_number_id: 'test'
+               },
+               headers: administrator.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:not_found)
+        end
+      end
+
+      context 'when channel does not require reauthorization' do
         let(:fresh_channel) do
           channel = build(:channel_whatsapp, account: account, provider: 'whatsapp_cloud',
                                              provider_config: {
@@ -433,6 +456,48 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
           expect(response).to have_http_status(:unprocessable_content)
           json_response = response.parsed_body
           expect(json_response['success']).to be false
+        end
+      end
+
+      context 'when token expires soon' do
+        let(:expiring_channel) do
+          channel = build(
+            :channel_whatsapp,
+            account: account,
+            provider: 'whatsapp_cloud',
+            provider_config: {
+              'api_key' => 'test_token',
+              'phone_number_id' => '123456',
+              'business_account_id' => '654321',
+              'source' => 'embedded_signup',
+              'token_health' => { 'status' => 'expiring' }
+            }
+          )
+          allow(channel).to receive(:validate_provider_config).and_return(true)
+          allow(channel).to receive(:sync_templates).and_return(true)
+          allow(channel).to receive(:setup_webhooks).and_return(true)
+          channel.save!
+          channel
+        end
+        let(:expiring_inbox) { create(:inbox, channel: expiring_channel, account: account) }
+
+        it 'allows proactive reauthorization while the channel is still connected' do
+          embedded_signup_service = instance_double(Whatsapp::EmbeddedSignupService, perform: expiring_channel)
+          allow(Whatsapp::EmbeddedSignupService).to receive(:new).and_return(embedded_signup_service)
+          allow(expiring_channel).to receive(:inbox).and_return(expiring_inbox)
+
+          post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
+               params: {
+                 inbox_id: expiring_inbox.id,
+                 code: 'test',
+                 business_id: 'business_123',
+                 waba_id: 'waba_123',
+                 phone_number_id: 'phone_123'
+               },
+               headers: administrator.create_new_auth_token,
+               as: :json
+
+          expect(response).to have_http_status(:success)
         end
       end
 
@@ -469,30 +534,17 @@ RSpec.describe 'WhatsApp Authorization API', type: :request do
         create(:inbox_member, inbox: whatsapp_inbox, user: agent)
       end
 
-      it 'returns unprocessable_entity error' do
-        allow(whatsapp_channel).to receive(:reauthorization_required?).and_return(true)
-
-        # Stub the embedded signup service to prevent HTTP calls
-        embedded_signup_service = instance_double(Whatsapp::EmbeddedSignupService)
-        allow(Whatsapp::EmbeddedSignupService).to receive(:new).with(
-          account: account,
-          params: {
-            code: 'test',
-            business_id: 'test',
-            waba_id: 'test',
-            phone_number_id: 'phone'
-          },
-          inbox_id: whatsapp_inbox.id
-        ).and_return(embedded_signup_service)
-        allow(embedded_signup_service).to receive(:perform).and_return(whatsapp_channel)
+      it 'forbids proactive reauthorization of an expiring channel' do
+        whatsapp_channel.reauthorized!
+        whatsapp_channel.store_token_health!('status' => 'expiring')
+        expect(Whatsapp::EmbeddedSignupService).not_to receive(:new)
 
         post "/api/v1/accounts/#{account.id}/whatsapp/authorization",
              params: { inbox_id: whatsapp_inbox.id, code: 'test', business_id: 'test', waba_id: 'test', phone_number_id: 'phone' },
              headers: agent.create_new_auth_token,
              as: :json
 
-        # Agents should get unprocessable_entity since they can find the inbox but channel doesn't need reauth
-        expect(response).to have_http_status(:unprocessable_content)
+        expect(response).to have_http_status(:unauthorized)
       end
     end
 
