@@ -51,5 +51,20 @@ describe Whatsapp::MessageDedupLock do
       wins = results.count { |r| r }
       expect(wins).to eq(1), "Expected exactly 1 winner but got #{wins}. Results: #{results.inspect}"
     end
+
+    it 'can be acquired again after the owner releases it' do
+      lock.acquire!
+
+      expect(lock.release!).to be(true)
+      expect(described_class.new(inbox_id: inbox_id, source_id: source_id).acquire!).to be_truthy
+    end
+
+    it 'does not release a lock owned by another instance' do
+      lock.acquire!
+      other = described_class.new(inbox_id: inbox_id, source_id: source_id)
+
+      expect(other.release!).to be(false)
+      expect(other.acquire!).to be_falsy
+    end
   end
 end

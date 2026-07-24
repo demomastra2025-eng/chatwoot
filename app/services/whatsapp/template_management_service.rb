@@ -11,11 +11,13 @@ class Whatsapp::TemplateManagementService
 
     create_success_result(response.parsed_response, request_body)
   rescue ArgumentError => e
-    failure_result(e.message)
+    failure_result(sanitized_provider_data(e.message))
   rescue StandardError => e
     return handle_timeout_recovery(request_body, e) if request_body && recoverable_timeout_error?(e)
 
-    Rails.logger.error "[WHATSAPP TEMPLATE MANAGEMENT] create failed for channel=#{whatsapp_channel.id}: #{e.class}: #{e.message}"
+    Rails.logger.error(
+      "[WHATSAPP TEMPLATE MANAGEMENT] create failed for channel=#{whatsapp_channel.id}: #{e.class}: #{sanitized_provider_data(e.message)}"
+    )
     internal_failure_result(e)
   end
 
@@ -29,7 +31,9 @@ class Whatsapp::TemplateManagementService
 
     { success: true }
   rescue StandardError => e
-    Rails.logger.error "[WHATSAPP TEMPLATE MANAGEMENT] delete failed for channel=#{whatsapp_channel.id}: #{e.class}: #{e.message}"
+    Rails.logger.error(
+      "[WHATSAPP TEMPLATE MANAGEMENT] delete failed for channel=#{whatsapp_channel.id}: #{e.class}: #{sanitized_provider_data(e.message)}"
+    )
     internal_failure_result(e)
   end
 
@@ -81,7 +85,7 @@ class Whatsapp::TemplateManagementService
     { success: true, recovered: true, template: template }
   rescue StandardError => e
     Rails.logger.warn(
-      "[WHATSAPP TEMPLATE MANAGEMENT] recovery failed for channel=#{whatsapp_channel.id}: #{e.class}: #{e.message}"
+      "[WHATSAPP TEMPLATE MANAGEMENT] recovery failed for channel=#{whatsapp_channel.id}: #{e.class}: #{sanitized_provider_data(e.message)}"
     )
     failure_result(nil)
   end
@@ -171,9 +175,9 @@ class Whatsapp::TemplateManagementService
   def provider_failure_result(response, default_message:)
     error_payload = parse_provider_error(response.body)
     failure_result(
-      error_payload[:user_message] || default_message,
-      details: error_payload[:details],
-      response_body: response.body
+      sanitized_provider_data(error_payload[:user_message].presence || default_message),
+      details: sanitized_provider_data(error_payload[:details]),
+      response_body: sanitized_provider_data(response.body)
     )
   end
 
@@ -193,12 +197,21 @@ class Whatsapp::TemplateManagementService
       }.compact
     }
   rescue JSON::ParserError
-    { user_message: nil, details: response_body }
+    { user_message: nil, details: nil }
   end
 
   def failure_result(error, details: nil, response_body: nil)
     { success: false, error: error, details: details, response_body: response_body }
   end
 
-  def internal_failure_result(error) = failure_result(error.message, details: nil, response_body: nil)
+  def internal_failure_result(_error)
+    failure_result('Template operation failed. Please try again.', details: nil, response_body: nil)
+  end
+
+  def sanitized_provider_data(data)
+    Meta::CredentialDataSanitizer.sanitize(
+      data,
+      secrets: Meta::CredentialDataSanitizer.channel_secrets(whatsapp_channel)
+    )
+  end
 end

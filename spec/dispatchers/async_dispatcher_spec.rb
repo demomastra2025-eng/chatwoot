@@ -24,4 +24,10 @@ describe AsyncDispatcher do
       dispatcher.dispatch('message.updated', timestamp, data)
     end
   end
+
+  describe '#listeners' do
+    it 'registers WhatsApp typing propagation' do
+      expect(dispatcher.listeners).to include(WhatsappTypingListener.instance)
+    end
+  end
 end

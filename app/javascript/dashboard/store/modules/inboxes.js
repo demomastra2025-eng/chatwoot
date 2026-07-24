@@ -11,6 +11,7 @@ import AnalyticsHelper from '../../helper/AnalyticsHelper';
 import camelcaseKeys from 'camelcase-keys';
 import { ACCOUNT_EVENTS } from '../../helper/AnalyticsHelper/events';
 import { isInboxPendingDeletion } from 'dashboard/helper/whatsappWeb';
+import { storeOneTimeWebhookVerifyToken } from 'shared/helpers/whatsappCloudCredentials';
 import { channelActions, buildInboxData } from './inboxes/channelActions';
 import {
   COMPONENT_TYPES,
@@ -544,11 +545,6 @@ export const getters = {
         return false;
       }
 
-      // Filter out authentication templates
-      if (String(template.category).toUpperCase() === 'AUTHENTICATION') {
-        return false;
-      }
-
       // Only show templates we can preview and populate reliably
       const hasBodyComponent = template.components.some(
         component =>
@@ -770,6 +766,10 @@ export const actions = {
     try {
       commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: true });
       const response = await WebChannel.create(params);
+      storeOneTimeWebhookVerifyToken(
+        response.data.id,
+        params.channel?.provider_config?.webhook_verify_token
+      );
       commit(types.default.ADD_INBOXES, response.data);
       commit(types.default.SET_INBOXES_UI_FLAG, { isCreating: false });
       const { channel = {} } = params;

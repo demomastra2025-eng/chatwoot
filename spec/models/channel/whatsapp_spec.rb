@@ -6,7 +6,7 @@ require Rails.root.join 'spec/models/concerns/reauthorizable_shared.rb'
 RSpec.describe Channel::Whatsapp do
   before do
     allow(GlobalConfigService).to receive(:load).and_call_original
-    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v22.0')
   end
 
   describe 'concerns' do
@@ -72,6 +72,49 @@ RSpec.describe Channel::Whatsapp do
           changed_attributes: { 'reauthorization_required' => [true, false] }
         )
       end
+
+      it 'keeps the recovery requirement durable when Redis state is lost' do
+        channel.prompt_reauthorization!
+        Redis::Alfred.delete(channel.send(:reauthorization_required_key))
+
+        expect(channel.reload.provider_config['reauthorization_required']).to be(true)
+        expect(channel.reauthorization_required?).to be(true)
+      end
+
+      it 'clears the durable recovery requirement after successful reauthorization' do
+        channel.prompt_reauthorization!
+
+        channel.reauthorized!
+
+        expect(channel.reload.provider_config).not_to have_key('reauthorization_required')
+        expect(channel.reauthorization_required?).to be(false)
+      end
+
+      it 'commits the durable clear before cache invalidation becomes observable' do
+        channel.prompt_reauthorization!
+        inbox = channel.inbox
+        allow(channel).to receive(:inbox).and_return(inbox)
+        expect(inbox).to receive(:update_account_cache) do
+          expect(channel.reload.provider_config).not_to have_key('reauthorization_required')
+        end
+
+        channel.reauthorized!
+      end
+
+      it 'restores the durable requirement when clear side effects fail so the transition can retry' do
+        channel.prompt_reauthorization!
+        inbox = channel.inbox
+        allow(channel).to receive(:inbox).and_return(inbox)
+        allow(inbox).to receive(:update_account_cache).and_raise('cache unavailable')
+
+        expect { channel.reauthorized! }.to raise_error('cache unavailable')
+        expect(channel.reload.provider_config['reauthorization_required']).to be(true)
+
+        allow(inbox).to receive(:update_account_cache).and_return(true)
+        channel.reauthorized!
+
+        expect(channel.reload.reauthorization_required?).to be(false)
+      end
     end
   end
 
@@ -90,6 +133,81 @@ RSpec.describe Channel::Whatsapp do
                      id: '123456789', name: 'test_template'
                    }] }.to_json)
       expect(channel.save).to be(true)
+    end
+  end
+
+  describe 'WABA routing ownership validation' do
+    let(:account) { create(:account) }
+    let(:waba_id) { "waba-routing-#{SecureRandom.hex(6)}" }
+
+    def cloud_config(waba_id, flow: 'standard')
+      {
+        'api_key' => 'test_key',
+        'phone_number_id' => SecureRandom.hex(6),
+        'business_account_id' => waba_id,
+        'source' => 'embedded_signup',
+        'embedded_signup_flow' => flow
+      }
+    end
+
+    def candidate_channel(account:, waba_id:, flow:)
+      described_class.new(
+        account: account,
+        phone_number: "+1555#{SecureRandom.random_number(10**7).to_s.rjust(7, '0')}",
+        provider: 'whatsapp_cloud',
+        provider_config: cloud_config(waba_id, flow: flow)
+      ).tap { |channel| allow(channel).to receive(:validate_provider_config) }
+    end
+
+    it 'rejects a WABA already owned by another account' do
+      existing = create(:channel_whatsapp, account: create(:account), provider: 'whatsapp_cloud',
+                                           validate_provider_config: false, sync_templates: false)
+      existing.update!(provider_config: cloud_config(waba_id))
+      candidate = candidate_channel(account: account, waba_id: waba_id, flow: 'standard')
+
+      expect(candidate).not_to be_valid
+      expect(candidate.errors.of_kind?(:provider_config, :invalid)).to be(true)
+    end
+
+    it 'keeps a pending-deletion inbox in lifecycle ownership checks' do
+      existing = create(:channel_whatsapp, account: create(:account), provider: 'whatsapp_cloud',
+                                           validate_provider_config: false, sync_templates: false)
+      existing.update!(provider_config: cloud_config(waba_id))
+      existing.inbox.update!(deleting_at: Time.current)
+      candidate = candidate_channel(account: account, waba_id: waba_id, flow: 'standard')
+
+      expect(candidate).not_to be_valid
+      expect(candidate.errors.of_kind?(:provider_config, :invalid)).to be(true)
+    end
+
+    it 'keeps a suspended account as a lifecycle owner until remote teardown is confirmed' do
+      suspended_account = create(:account, status: :suspended)
+      existing = create(:channel_whatsapp, account: suspended_account, provider: 'whatsapp_cloud',
+                                           validate_provider_config: false, sync_templates: false)
+      existing.update!(provider_config: cloud_config(waba_id))
+
+      candidate = candidate_channel(account: account, waba_id: waba_id, flow: 'standard')
+
+      expect(candidate).not_to be_valid
+      expect(candidate.errors.of_kind?(:provider_config, :invalid)).to be(true)
+    end
+
+    it 'allows a standard and coexistence sibling in the same account' do
+      existing = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud',
+                                           validate_provider_config: false, sync_templates: false)
+      existing.update!(provider_config: cloud_config(waba_id))
+
+      expect(candidate_channel(account: account, waba_id: waba_id, flow: 'coexistence')).to be_valid
+    end
+
+    it 'rejects a second coexistence channel for the same WABA' do
+      existing = create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud',
+                                           validate_provider_config: false, sync_templates: false)
+      existing.update!(provider_config: cloud_config(waba_id, flow: 'coexistence'))
+      candidate = candidate_channel(account: account, waba_id: waba_id, flow: 'coexistence')
+
+      expect(candidate).not_to be_valid
+      expect(candidate.errors.of_kind?(:provider_config, :taken)).to be(true)
     end
   end
 
@@ -129,6 +247,41 @@ RSpec.describe Channel::Whatsapp do
                        sync_templates: false)
 
       expect(channel.provider_config['webhook_verify_token']).to eq '123'
+    end
+  end
+
+  describe '#callback_webhook_url' do
+    it 'uses the channel-bound default callback for manual Cloud setup' do
+      channel = build_stubbed(
+        :channel_whatsapp,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'source' => 'manual' }
+      )
+
+      with_modified_env('FRONTEND_URL' => 'https://app.example.test') do
+        expect(channel.callback_webhook_url)
+          .to eq("https://app.example.test/webhooks/whatsapp?channel_id=#{channel.id}")
+      end
+    end
+
+    it 'uses the global default callback for embedded Cloud setup' do
+      channel = build_stubbed(
+        :channel_whatsapp,
+        provider: 'whatsapp_cloud',
+        provider_config: { 'source' => 'embedded_signup' }
+      )
+
+      with_modified_env('FRONTEND_URL' => 'https://app.example.test') do
+        expect(channel.callback_webhook_url).to eq('https://app.example.test/webhooks/whatsapp')
+      end
+    end
+
+    it 'preserves the explicit phone callback for the legacy provider' do
+      channel = build_stubbed(:channel_whatsapp, provider: 'default', phone_number: '+1234567890')
+
+      with_modified_env('FRONTEND_URL' => 'https://app.example.test') do
+        expect(channel.callback_webhook_url).to eq('https://app.example.test/webhooks/whatsapp/+1234567890')
+      end
     end
   end
 
@@ -527,6 +680,24 @@ RSpec.describe Channel::Whatsapp do
 
       expect(channel).not_to have_received(:prompt_reauthorization!)
       expect(channel.reload.provider_authorization_error_recorded?).to be(true)
+    end
+  end
+
+  describe '#setup_webhooks' do
+    it 'redacts channel credentials before logging setup errors' do
+      channel = create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      api_key = channel.provider_config['api_key']
+      verify_token = channel.provider_config['webhook_verify_token']
+      allow(channel).to receive(:perform_webhook_setup)
+        .and_raise("provider error access_token=#{api_key} verify_token=#{verify_token}")
+      allow(channel).to receive(:prompt_reauthorization!)
+      allow(Rails.logger).to receive(:error)
+
+      channel.setup_webhooks
+
+      expect(Rails.logger).to have_received(:error).with(include('access_token=[FILTERED]', 'verify_token=[FILTERED]'))
+      expect(Rails.logger).not_to have_received(:error).with(include(api_key))
+      expect(Rails.logger).not_to have_received(:error).with(include(verify_token))
     end
   end
 end

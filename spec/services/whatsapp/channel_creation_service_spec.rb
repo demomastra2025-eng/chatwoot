@@ -85,6 +85,24 @@ describe Whatsapp::ChannelCreationService do
         expect(inbox.name).to eq('Test Business WhatsApp')
         expect(inbox.account).to eq(account)
       end
+
+      it 'does not create a sibling while the WABA routing lock is held by another session' do
+        ready = Queue.new
+        release = Queue.new
+        holder = Thread.new do
+          Whatsapp::WabaLock.new(waba_info[:waba_id]).with_lock do
+            ready << true
+            release.pop
+          end
+        end
+        ready.pop
+
+        expect { service.perform }.to raise_error(Whatsapp::WabaLock::LockAcquisitionError)
+          .and not_change(Channel::Whatsapp, :count)
+      ensure
+        release << true
+        holder&.value
+      end
     end
 
     context 'when channel already exists for the phone number' do

@@ -9,7 +9,7 @@ export const loadFacebookSdk = async () => {
 };
 
 export const initializeFacebook = (appId, apiVersion) => {
-  const version = apiVersion || 'v22.0';
+  const version = apiVersion || 'v25.0';
   return new Promise(resolve => {
     const init = () => {
       window.FB.init({
@@ -29,17 +29,24 @@ export const initializeFacebook = (appId, apiVersion) => {
   });
 };
 
+export const EMBEDDED_SIGNUP_FLOW = {
+  STANDARD: 'standard',
+  COEXISTENCE: 'coexistence',
+};
+
+export const embeddedSignupFlowForEvent = data => {
+  return data?.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING'
+    ? EMBEDDED_SIGNUP_FLOW.COEXISTENCE
+    : EMBEDDED_SIGNUP_FLOW.STANDARD;
+};
+
 export const isValidBusinessData = businessData => {
-  return !!(
-    businessData &&
-    businessData.business_id &&
-    businessData.waba_id &&
-    businessData.phone_number_id
-  );
+  return !!businessData?.waba_id;
 };
 
 const EMBEDDED_SIGNUP_FINISH_EVENTS = [
   'FINISH',
+  'FINISH_ONLY_WABA',
   'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
 ];
 
@@ -48,7 +55,25 @@ export const isEmbeddedSignupFinishEvent = data => {
 };
 
 export const isEmbeddedSignupErrorEvent = data => {
-  return ['ERROR', 'error'].includes(data?.event);
+  return (
+    ['ERROR', 'error'].includes(data?.event) ||
+    (data?.event === 'CANCEL' && !!data?.data?.error_code)
+  );
+};
+
+export const embeddedSignupSessionData = data => {
+  const details = data?.data || {};
+  return {
+    event: data?.event,
+    version: data?.version,
+    current_step: details.current_step,
+    error_code: details.error_code,
+    session_id: details.session_id,
+    event_timestamp: details.timestamp,
+    business_id: details.business_id,
+    waba_id: details.waba_id,
+    phone_number_id: details.phone_number_id,
+  };
 };
 
 export const getWhatsAppEmbeddedSignupConfigErrors = config => {
@@ -97,8 +122,20 @@ export const createMessageHandler = onEmbeddedSignupData => {
   };
 };
 
-export const initWhatsAppEmbeddedSignup = configId => {
+export const initWhatsAppEmbeddedSignup = (
+  configId,
+  flow = EMBEDDED_SIGNUP_FLOW.STANDARD
+) => {
   return new Promise((resolve, reject) => {
+    const extras =
+      flow === EMBEDDED_SIGNUP_FLOW.COEXISTENCE
+        ? {
+            setup: {},
+            featureType: 'whatsapp_business_app_onboarding',
+            sessionInfoVersion: '3',
+          }
+        : {};
+
     window.FB.login(
       response => {
         if (response.authResponse && response.authResponse.code) {
@@ -113,14 +150,14 @@ export const initWhatsAppEmbeddedSignup = configId => {
         config_id: configId,
         response_type: 'code',
         override_default_response_type: true,
-        extras: { setup: {} },
+        extras,
       }
     );
   });
 };
 
 export const setupFacebookSdk = async (appId, apiVersion) => {
-  const version = apiVersion || 'v22.0';
+  const version = apiVersion || 'v25.0';
   await loadFacebookSdk();
   await initializeFacebook(appId, version);
 };

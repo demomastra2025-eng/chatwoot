@@ -6,6 +6,7 @@ import { required } from '@vuelidate/validators';
 import router from '../../../../index';
 import { getInboxFlowRouteName } from '../helpers/inboxFlowRoutes';
 import { isPhoneE164OrEmpty, isNumber } from 'shared/helpers/Validators';
+import { generateWebhookVerifyToken } from 'shared/helpers/whatsappCloudCredentials';
 
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -43,6 +44,7 @@ export default {
       }
 
       try {
+        const webhookVerifyToken = generateWebhookVerifyToken();
         const whatsappChannel = await this.$store.dispatch(
           'inboxes/createChannel',
           {
@@ -55,6 +57,7 @@ export default {
                 api_key: this.apiKey,
                 phone_number_id: this.phoneNumberId,
                 business_account_id: this.businessAccountId,
+                webhook_verify_token: webhookVerifyToken,
               },
             },
           }
@@ -154,7 +157,9 @@ export default {
         </span>
         <input
           v-model="apiKey"
-          type="text"
+          type="password"
+          autocomplete="off"
+          spellcheck="false"
           :placeholder="$t('INBOX_MGMT.ADD.WHATSAPP.API_KEY.PLACEHOLDER')"
           @blur="v$.apiKey.$touch"
         />

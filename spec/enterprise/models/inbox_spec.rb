@@ -6,7 +6,7 @@ RSpec.describe Inbox do
   let!(:inbox) { create(:inbox) }
 
   before do
-    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v22.0')
   end
 
   describe 'member_ids_with_assignment_capacity' do

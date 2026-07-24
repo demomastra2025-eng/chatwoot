@@ -393,6 +393,84 @@ describe('templateHelper', () => {
       });
     });
 
+    it('uses one body OTP value for authentication templates', () => {
+      const result = buildTemplateParameters(
+        {
+          category: 'AUTHENTICATION',
+          components: [
+            { type: 'BODY', text: 'Your code is {{1}}' },
+            {
+              type: 'BUTTONS',
+              buttons: [{ type: 'URL', url: 'https://wa.me/otp/{{1}}' }],
+            },
+          ],
+        },
+        false
+      );
+
+      expect(result).toEqual({ body: { 1: '' } });
+    });
+
+    it('builds an optional catalog thumbnail parameter', () => {
+      const result = buildTemplateParameters(
+        {
+          category: 'MARKETING',
+          components: [
+            {
+              type: 'BUTTONS',
+              buttons: [{ type: 'CATALOG', text: 'View catalog' }],
+            },
+          ],
+        },
+        false
+      );
+
+      expect(result).toEqual({
+        catalog: { thumbnail_product_retailer_id: '' },
+      });
+    });
+
+    it('builds per-card media, body, and dynamic button parameters for carousels', () => {
+      const result = buildTemplateParameters(
+        {
+          category: 'MARKETING',
+          components: [
+            {
+              type: 'CAROUSEL',
+              cards: [
+                {
+                  components: [
+                    { type: 'HEADER', format: 'IMAGE' },
+                    { type: 'BODY', text: 'Product {{1}}' },
+                    {
+                      type: 'BUTTONS',
+                      buttons: [
+                        { type: 'QUICK_REPLY' },
+                        { type: 'URL', url: 'https://example.com/{{1}}' },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        false
+      );
+
+      expect(result.carousel.cards).toEqual([
+        {
+          card_index: 0,
+          header: { media_id: '', media_type: 'image' },
+          body: { 1: '' },
+          buttons: [
+            { index: 0, type: 'quick_reply', parameter: '' },
+            { index: 1, type: 'url', parameter: '' },
+          ],
+        },
+      ]);
+    });
+
     it('should validate that replaceTemplateVariables preserves unreplaced variables', () => {
       const templateText = 'Hi {{name}}, order {{order_id}} is {{status}}';
       const partialParams = {

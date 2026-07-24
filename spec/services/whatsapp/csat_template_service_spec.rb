@@ -22,7 +22,8 @@ RSpec.describe Whatsapp::CsatTemplateService do
   before do
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with('WHATSAPP_CLOUD_BASE_URL', anything).and_return('https://graph.facebook.com')
-    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return('v22.0')
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v22.0')
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_APP_SECRET', '').and_return('')
   end
 
   describe '#generate_template_name' do
@@ -196,6 +197,7 @@ RSpec.describe Whatsapp::CsatTemplateService do
           'Authorization' => "Bearer #{whatsapp_channel.provider_config['api_key']}",
           'Content-Type' => 'application/json'
         },
+        query: {},
         body: expected_body.to_json
       )
 
@@ -243,6 +245,17 @@ RSpec.describe Whatsapp::CsatTemplateService do
         expect(Rails.logger).to receive(:error).with('WhatsApp template creation failed: 400 - {"error": "Invalid template"}')
         service.create_template(template_config)
       end
+
+      it 'redacts credentials from the returned body and log' do
+        allow(error_response).to receive(:body)
+          .and_return("{\"error\":\"access_token=#{whatsapp_channel.provider_config['api_key']}\"}")
+
+        result = service.create_template(template_config)
+
+        expect(result[:response_body]).to include('[FILTERED]')
+        expect(result[:response_body]).not_to include(whatsapp_channel.provider_config['api_key'])
+        expect(Rails.logger).to have_received(:error).with(a_string_including('[FILTERED]'))
+      end
     end
   end
 
@@ -253,11 +266,12 @@ RSpec.describe Whatsapp::CsatTemplateService do
       # rubocop:enable RSpec/VerifiedDoubles
 
       expect(HTTParty).to receive(:delete).with(
-        "https://graph.facebook.com/v22.0/#{whatsapp_channel.provider_config['business_account_id']}/message_templates?name=test_template",
+        "https://graph.facebook.com/v22.0/#{whatsapp_channel.provider_config['business_account_id']}/message_templates",
         headers: {
           'Authorization' => "Bearer #{whatsapp_channel.provider_config['api_key']}",
           'Content-Type' => 'application/json'
-        }
+        },
+        query: { name: 'test_template' }
       ).and_return(mock_response)
 
       result = service.delete_template('test_template')
@@ -270,8 +284,8 @@ RSpec.describe Whatsapp::CsatTemplateService do
       # rubocop:enable RSpec/VerifiedDoubles
 
       expect(HTTParty).to receive(:delete).with(
-        "https://graph.facebook.com/v22.0/#{whatsapp_channel.provider_config['business_account_id']}/message_templates?name=#{expected_template_name}",
-        anything
+        "https://graph.facebook.com/v22.0/#{whatsapp_channel.provider_config['business_account_id']}/message_templates",
+        hash_including(query: { name: expected_template_name })
       ).and_return(mock_response)
 
       service.delete_template
@@ -285,6 +299,19 @@ RSpec.describe Whatsapp::CsatTemplateService do
 
       result = service.delete_template('test_template')
       expect(result).to eq({ success: false, response_body: '{"error": "Template not found"}' })
+    end
+
+    it 'redacts credentials from the delete response body' do
+      secret = whatsapp_channel.provider_config['api_key']
+      # rubocop:disable RSpec/VerifiedDoubles
+      mock_response = double('response', success?: false, body: "{\"error\":\"access_token=#{secret}\"}")
+      # rubocop:enable RSpec/VerifiedDoubles
+      allow(HTTParty).to receive(:delete).and_return(mock_response)
+
+      result = service.delete_template('test_template')
+
+      expect(result[:response_body]).to include('[FILTERED]')
+      expect(result[:response_body]).not_to include(secret)
     end
   end
 
@@ -301,11 +328,12 @@ RSpec.describe Whatsapp::CsatTemplateService do
                                                                    }])
 
       expect(HTTParty).to receive(:get).with(
-        "https://graph.facebook.com/v22.0/#{whatsapp_channel.provider_config['business_account_id']}/message_templates?name=test_template",
+        "https://graph.facebook.com/v22.0/#{whatsapp_channel.provider_config['business_account_id']}/message_templates",
         headers: {
           'Authorization' => "Bearer #{whatsapp_channel.provider_config['api_key']}",
           'Content-Type' => 'application/json'
-        }
+        },
+        query: { name: 'test_template' }
       ).and_return(mock_response)
 
       service.get_template_status('test_template')

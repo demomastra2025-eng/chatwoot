@@ -18,15 +18,17 @@ module Api::V1::Accounts::Concerns::WhatsappHealthManagement
     @inbox.reload
     render 'api/v1/accounts/inboxes/show', status: :ok
   rescue StandardError => e
-    render status: :internal_server_error, json: { error: e.message }
+    log_whatsapp_operation_error('TEMPLATE SYNC', e)
+    render status: :internal_server_error,
+           json: { error: 'Template sync failed. Please check provider configuration and try again.' }
   end
 
   def health
     health_data = Whatsapp::HealthService.new(@inbox.channel).fetch_health_status
     render json: health_data
   rescue StandardError => e
-    Rails.logger.error "[INBOX HEALTH] Error fetching health data: #{e.message}"
-    render json: { error: e.message }, status: :unprocessable_entity
+    log_whatsapp_operation_error('HEALTH', e)
+    render json: { error: 'Unable to fetch WhatsApp health data. Please try again.' }, status: :unprocessable_entity
   end
 
   def register_webhook
@@ -34,11 +36,17 @@ module Api::V1::Accounts::Concerns::WhatsappHealthManagement
 
     render json: { message: 'Webhook registered successfully' }, status: :ok
   rescue StandardError => e
-    Rails.logger.error "[INBOX WEBHOOK] Webhook registration failed: #{e.message}"
-    render json: { error: e.message }, status: :unprocessable_entity
+    log_whatsapp_operation_error('WEBHOOK', e)
+    render json: { error: 'Webhook registration failed. Please try again.' }, status: :unprocessable_entity
   end
 
   private
+
+  def log_whatsapp_operation_error(operation, error)
+    secrets = Meta::CredentialDataSanitizer.channel_secrets(@inbox&.channel)
+    safe_message = Meta::CredentialDataSanitizer.sanitize(error.message.to_s.first(1000), secrets: secrets)
+    Rails.logger.error "[INBOX #{operation}] WhatsApp operation failed: #{safe_message}"
+  end
 
   def validate_whatsapp_cloud_channel
     return if @inbox.channel.is_a?(Channel::Whatsapp) && @inbox.channel.provider == 'whatsapp_cloud'

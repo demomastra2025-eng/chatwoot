@@ -25,6 +25,10 @@ module Redis::Alfred
       $alfred.with { |conn| conn.del(key) }
     end
 
+    def delete_if_value(key, value)
+      Redis::CompareAndDelete.call($alfred, key, value)
+    end
+
     # increment a key by 1. throws error if key value is incompatible
     # sets key to 0 before operation if key doesn't exist
     def incr(key)
@@ -138,6 +142,27 @@ module Redis::Alfred
     # exclusive score is specified by prefixing (
     def zremrangebyscore(key, range_start, range_end)
       $alfred.with { |conn| conn.zremrangebyscore(key, range_start, range_end) }
+    end
+  end
+end
+
+class Redis::CompareAndDelete
+  SCRIPT = <<~LUA.freeze
+    if redis.call('get', KEYS[1]) == ARGV[1] then
+      return redis.call('del', KEYS[1])
+    end
+    return 0
+  LUA
+
+  def self.call(connection_pool, key, value)
+    connection_pool.with do |connection|
+      if defined?(::MockRedis) && connection.redis.instance_of?(::MockRedis)
+        next 0 unless connection.get(key) == value
+
+        next connection.del(key)
+      end
+
+      connection.call_with_namespace(:eval, SCRIPT, keys: [key], argv: [value])
     end
   end
 end

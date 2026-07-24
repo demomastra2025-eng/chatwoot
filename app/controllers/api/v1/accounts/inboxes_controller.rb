@@ -1,6 +1,7 @@
 class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   include Api::V1::InboxesHelper
   rescue_from Telephony::Error, with: :render_telephony_error
+  rescue_from Whatsapp::WabaLock::LockAcquisitionError, with: :render_waba_lock_contention
 
   VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
 
@@ -45,30 +46,35 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def create
-    ActiveRecord::Base.transaction do
-      channel = create_channel
-      @inbox = Current.account.inboxes.build(
-        {
-          name: inbox_name(channel),
-          channel: channel
-        }.merge(
-          permitted_params.except(:channel)
+    Whatsapp::WabaLock.with_locks(whatsapp_create_waba_ids) do
+      ActiveRecord::Base.transaction do
+        channel = create_channel
+        @inbox = Current.account.inboxes.build(
+          {
+            name: inbox_name(channel),
+            channel: channel
+          }.merge(
+            permitted_params.except(:channel)
+          )
         )
-      )
-      @inbox.save!
-      sync_voice_telephony!(channel)
+        @inbox.save!
+        sync_voice_telephony!(channel)
+      end
     end
   end
 
   def update
     @sync_telegram_personal_channel_after_update = false
 
-    ActiveRecord::Base.transaction do
-      inbox_params = permitted_params.except(:channel, :csat_config)
-      inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
-      @inbox.update!(inbox_params)
-      update_inbox_working_hours
-      update_channel if channel_update_required?
+    with_stable_whatsapp_update_locks do
+      ActiveRecord::Base.transaction do
+        @inbox.channel.lock! if @inbox.channel.is_a?(Channel::Whatsapp)
+        inbox_params = permitted_params.except(:channel, :csat_config)
+        inbox_params[:csat_config] = format_csat_config(permitted_params[:csat_config]) if permitted_params[:csat_config].present?
+        @inbox.update!(inbox_params)
+        update_inbox_working_hours
+        update_channel if channel_update_required?
+      end
     end
 
     sync_telegram_personal_channel_after_update!
@@ -191,6 +197,45 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     channel_type_from_params.create!(channel_create_attributes)
   end
 
+  def whatsapp_create_waba_ids
+    channel_params = (params[:channel]&.to_unsafe_h || {}).with_indifferent_access
+    return [] unless channel_params[:type] == 'whatsapp' && channel_params[:provider] == 'whatsapp_cloud'
+
+    [channel_params.dig(:provider_config, :business_account_id)]
+  end
+
+  def whatsapp_update_waba_ids
+    return [] unless @inbox.channel.is_a?(Channel::Whatsapp)
+
+    channel_params = (params[:channel]&.to_unsafe_h || {}).with_indifferent_access
+    target_provider = channel_params[:provider].presence || @inbox.channel.provider
+    return [] unless @inbox.channel.provider == 'whatsapp_cloud' || target_provider == 'whatsapp_cloud'
+
+    [
+      @inbox.channel.provider_config.to_h['business_account_id'],
+      channel_params.dig(:provider_config, :business_account_id)
+    ]
+  end
+
+  def with_stable_whatsapp_update_locks
+    loop do
+      locked_waba_ids = normalized_waba_ids(whatsapp_update_waba_ids)
+      stable_identity = false
+      result = Whatsapp::WabaLock.with_locks(locked_waba_ids) do
+        @inbox.channel.reload if @inbox.channel.is_a?(Channel::Whatsapp)
+        next unless (normalized_waba_ids(whatsapp_update_waba_ids) - locked_waba_ids).empty?
+
+        stable_identity = true
+        yield
+      end
+      return result if stable_identity
+    end
+  end
+
+  def normalized_waba_ids(waba_ids)
+    Array(waba_ids).compact_blank.map(&:to_s).uniq
+  end
+
   def allowed_channel_types
     types = %w[web_widget api email line telegram telegram_personal linkedin_personal weixin whatsapp whatsapp_web sms vk_community]
     types << 'voice' if defined?(Channel::Voice)
@@ -222,7 +267,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def reauthorize_and_update_channel(channel_attributes)
-    channel_params = normalized_channel_update_params(channel_attributes)
+    identity_guard = Whatsapp::ChannelIdentityUpdateGuard.new(@inbox.channel)
+    identity_guard.validate!(permitted_params(channel_attributes)[:channel])
+    channel_params = identity_guard.validate!(normalized_channel_update_params(channel_attributes))
     @inbox.channel.reauthorized! if @inbox.channel.respond_to?(:reauthorized!)
     @inbox.channel.update!(channel_params)
     @sync_telegram_personal_channel_after_update ||= telegram_personal_runtime_state_update?(channel_params)
@@ -370,6 +417,10 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     body = { code: error.code, error: error.message }
     body[:details] = error.details if error.details.present?
     render json: body, status: error.status
+  end
+
+  def render_waba_lock_contention(_error)
+    render json: { error: 'Another WhatsApp Business Account operation is already in progress' }, status: :conflict
   end
 
   def inbox_attributes

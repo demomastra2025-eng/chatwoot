@@ -26,6 +26,10 @@ import {
   isWhatsappWebConnected as hasOpenWhatsappWebSession,
 } from 'dashboard/helper/whatsappWeb';
 import { getInboxFlowRouteName } from './helpers/inboxFlowRoutes';
+import {
+  clearOneTimeWebhookVerifyToken,
+  getOneTimeWebhookVerifyToken,
+} from 'shared/helpers/whatsappCloudCredentials';
 
 const { t } = useI18n();
 const route = useRoute();
@@ -521,6 +525,13 @@ const shouldShowWhatsAppWebhookDetails = computed(() => {
   return (
     isAWhatsAppCloudChannel.value &&
     currentInbox.value.provider_config?.source !== 'embedded_signup'
+  );
+});
+
+const whatsappWebhookVerifyToken = computed(() => {
+  return (
+    currentInbox.value?.provider_config?.webhook_verify_token ||
+    getOneTimeWebhookVerifyToken(currentInboxId.value)
   );
 });
 
@@ -1404,6 +1415,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  clearOneTimeWebhookVerifyToken(currentInboxId.value);
   stopWhatsappWebPolling();
   stopTelegramPersonalPolling();
   stopWeixinPolling();
@@ -1458,10 +1470,7 @@ onBeforeUnmount(() => {
               )
             }}
           </p>
-          <woot-code
-            lang="html"
-            :script="currentInbox.provider_config.webhook_verify_token"
-          />
+          <woot-code lang="html" :script="whatsappWebhookVerifyToken" />
         </div>
         <div class="w-[50%] max-w-[50%] ml-[25%]">
           <woot-code

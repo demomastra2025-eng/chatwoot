@@ -167,7 +167,11 @@ class Whatsapp::TemplateAssetUploadService
   def parse_response(response, error_message)
     return response.parsed_response if response.success?
 
-    raise "#{error_message}: #{response.body}"
+    safe_body = Meta::CredentialDataSanitizer.sanitize(
+      response.body.to_s.first(5000),
+      secrets: Meta::CredentialDataSanitizer.channel_secrets(whatsapp_channel)
+    )
+    raise "#{error_message}: #{safe_body}"
   end
 
   def access_token
@@ -183,7 +187,7 @@ class Whatsapp::TemplateAssetUploadService
   end
 
   def api_version
-    @api_version ||= GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0')
+    @api_version ||= GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0')
   end
 
   def app_id

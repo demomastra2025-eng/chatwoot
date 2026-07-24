@@ -3,12 +3,12 @@ require 'rails_helper'
 describe Whatsapp::FacebookApiClient do
   let(:access_token) { 'test_access_token' }
   let(:api_client) { described_class.new(access_token) }
-  let(:api_version) { 'v22.0' }
+  let(:api_version) { 'v25.0' }
   let(:app_id) { 'test_app_id' }
   let(:app_secret) { 'test_app_secret' }
 
   before do
-    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v22.0').and_return(api_version)
+    allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return(api_version)
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_APP_ID', '').and_return(app_id)
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_APP_SECRET', '').and_return(app_secret)
   end
@@ -71,7 +71,7 @@ describe Whatsapp::FacebookApiClient do
     context 'when successful' do
       before do
         stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/phone_numbers")
-          .with(query: { access_token: access_token })
+          .with(headers: { 'Authorization' => "Bearer #{access_token}" })
           .to_return(
             status: 200,
             body: { data: [{ id: '123', display_phone_number: '1234567890' }] }.to_json,
@@ -89,7 +89,7 @@ describe Whatsapp::FacebookApiClient do
     context 'when failed' do
       before do
         stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/phone_numbers")
-          .with(query: { access_token: access_token })
+          .with(headers: { 'Authorization' => "Bearer #{access_token}" })
           .to_return(
             status: 403,
             body: { error: { message: "Access denied for #{access_token}", access_token: access_token } }.to_json,
@@ -112,8 +112,8 @@ describe Whatsapp::FacebookApiClient do
   end
 
   describe '#webhook_subscribed_fields' do
-    it 'includes account lifecycle, message echo, and Calling webhook fields' do
-      expect(api_client.webhook_subscribed_fields).to eq(%w[messages account_update smb_message_echoes calls])
+    it 'preserves the standard webhook subscription fields' do
+      expect(api_client.webhook_subscribed_fields).to eq(described_class::WEBHOOK_DEFAULT_FIELDS)
     end
   end
 
@@ -197,6 +197,27 @@ describe Whatsapp::FacebookApiClient do
     let(:verify_token) { 'test_verify_token' }
     let(:subscribed_fields) { api_client.webhook_subscribed_fields }
 
+    before do
+      stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+        .to_return(
+          status: 200,
+          body: { data: [] }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+    end
+
+    context 'when subscription preflight times out' do
+      before do
+        stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps").to_timeout
+      end
+
+      it 'fails without mutating the existing remote subscription state' do
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }.to raise_error(Net::OpenTimeout)
+        expect(a_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+    end
+
     context 'when successful' do
       before do
         # Step 1: Subscribe app to WABA (no body)
@@ -239,10 +260,56 @@ describe Whatsapp::FacebookApiClient do
             body: ''
           )
           .to_return(status: 400, body: { error: 'App subscription to WABA failed' }.to_json)
+        stub_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
       end
 
-      it 'raises an error' do
-        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }.to raise_error(/App subscription to WABA failed/)
+      it 'preserves an unknown outcome without deleting a potentially sibling-owned subscription' do
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+    end
+
+    context 'when the app subscription transport outcome is unknown' do
+      before do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .with(body: '')
+          .to_timeout
+        stub_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+      end
+
+      it 'requires reconciliation without destructive compensation' do
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+    end
+
+    context 'when the app subscription HTTP outcome is unknown' do
+      before do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .with(body: '')
+          .to_return(status: 500, body: { error: 'Temporary upstream failure' }.to_json)
+        stub_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+      end
+
+      it 'preserves the potentially accepted subscription for reconciliation' do
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+
+      it 'also preserves an HTTP 408 subscription outcome for reconciliation' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .with(body: '')
+          .to_return(status: 408, body: { error: 'Request timeout' }.to_json)
+
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
       end
     end
 
@@ -268,11 +335,93 @@ describe Whatsapp::FacebookApiClient do
                     subscribed_fields: subscribed_fields }.to_json
           )
           .to_return(status: 400, body: { error: 'Webhook callback override failed' }.to_json)
+        stub_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
       end
 
-      it 'raises an error' do
-        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }.to raise_error(/Webhook callback override failed/)
+      it 'preserves the partial subscription and requires reconciliation' do
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
       end
+    end
+
+    context 'when the app was already subscribed' do
+      before do
+        stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(
+            status: 200,
+            body: { data: [{ id: app_id }] }.to_json,
+            headers: { 'Content-Type' => 'application/json' }
+          )
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .with(body: { override_callback_uri: callback_url, verify_token: verify_token,
+                        subscribed_fields: subscribed_fields }.to_json)
+          .to_return(status: 400, body: { error: 'Webhook callback override failed' }.to_json)
+      end
+
+      it 'requires a recovery anchor for every error returned after the callback override POST' do
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps").with(body: '')).not_to have_been_made
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+
+      it 'requires a recovery anchor when an existing callback override returns HTTP 5xx' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .with(body: { override_callback_uri: callback_url, verify_token: verify_token,
+                        subscribed_fields: subscribed_fields }.to_json)
+          .to_return(status: 500, body: { error: 'Temporary upstream failure' }.to_json)
+
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+
+      it 'requires a recovery anchor when an existing callback override returns HTTP 408' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .with(body: { override_callback_uri: callback_url, verify_token: verify_token,
+                        subscribed_fields: subscribed_fields }.to_json)
+          .to_return(status: 408, body: { error: 'Request timeout' }.to_json)
+
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+
+      it 'requires a recovery anchor when the existing callback override outcome is unknown' do
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .with(body: { override_callback_uri: callback_url, verify_token: verify_token,
+                        subscribed_fields: subscribed_fields }.to_json)
+          .to_timeout
+
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:delete, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).not_to have_been_made
+      end
+    end
+  end
+
+  describe '#request_smb_app_data' do
+    it 'requests the official WhatsApp Business app history sync endpoint' do
+      request = stub_request(:post, "https://graph.facebook.com/#{api_version}/phone-1/smb_app_data")
+                .with(
+                  headers: { 'Authorization' => "Bearer #{access_token}", 'Content-Type' => 'application/json' },
+                  body: { messaging_product: 'whatsapp', sync_type: 'history' }.to_json
+                ).to_return(
+                  status: 200,
+                  body: { request_id: 'history-request' }.to_json,
+                  headers: { 'Content-Type' => 'application/json' }
+                )
+
+      expect(api_client.request_smb_app_data('phone-1', 'history')).to include('request_id' => 'history-request')
+      expect(request).to have_been_requested.once
+    end
+
+    it 'adds the coexistence-only webhook fields without changing standard subscriptions' do
+      expect(api_client.webhook_subscribed_fields).to eq(described_class::WEBHOOK_DEFAULT_FIELDS)
+      expect(api_client.webhook_subscribed_fields(coexistence: true))
+        .to eq(described_class::WEBHOOK_DEFAULT_FIELDS + %w[history smb_app_state_sync])
     end
   end
 

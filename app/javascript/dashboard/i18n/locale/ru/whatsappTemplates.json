@@ -44,6 +44,11 @@
       "MEDIA_URL_LABEL": "Введите {type} URL",
       "DOCUMENT_NAME_PLACEHOLDER": "Введите имя файла документа (например, Invoice_2025.pdf)",
       "BUTTON_PARAMETER": "Введите параметр кнопки",
+      "CATALOG_THUMBNAIL_LABEL": "Товар на обложке каталога (необязательно)",
+      "CATALOG_THUMBNAIL_PLACEHOLDER": "Введите retailer ID товара",
+      "CAROUSEL_CARD_LABEL": "Карточка карусели {index}",
+      "CAROUSEL_MEDIA_ID_PLACEHOLDER": "Введите Meta media ID",
+      "CAROUSEL_BUTTON_PLACEHOLDER": "Введите параметр кнопки {index}",
       "INSERT_ATTRIBUTE": "Вставить атрибут",
       "CHANGE_ATTRIBUTE": "Изменить атрибут",
       "CLEAR_ATTRIBUTE": "Очистить атрибут",
@@ -56,7 +61,7 @@
       "PAGE_TITLE": "Библиотека шаблонов WhatsApp",
       "PAGE_DESCRIPTION": "Создавайте и управляйте шаблонами WhatsApp Cloud для этого канала. Новые шаблоны отправляются в Meta на проверку и появляются здесь после обновления локального кэша.",
       "SUPPORTED_TITLE": "Поддерживаемый конструктор шаблонов",
-      "SUPPORTED_DESCRIPTION": "Этот конструктор поддерживает основной текст, текстовый или медиа-заголовок, футер, кнопки быстрого ответа, URL-кнопки, кнопки копирования кода и кнопки звонка.",
+      "SUPPORTED_DESCRIPTION": "Конструктор поддерживает сервисные и маркетинговые шаблоны, шаблоны аутентификации с копированием кода, каталог и медиа-карусели.",
       "PARAMETERS_TITLE": "Параметры",
       "LAST_SYNC": "Последняя синхронизация: {timestamp}",
       "NOT_SYNCED_YET": "Синхронизация ещё не выполнялась",
@@ -83,9 +88,37 @@
       "ADD_BUTTON": "Добавить кнопку",
       "NO_BUTTONS": "Кнопки необязательны. Оставьте этот блок пустым для простого текстового шаблона.",
       "BUTTON_TITLE": "Кнопка {index}",
+      "AUTHENTICATION": {
+        "TITLE": "Шаблон аутентификации",
+        "HINT": "Meta задаёт текст сообщения и OTP-кнопку копирования кода. Можно менять только поддерживаемые параметры пресета.",
+        "SECURITY_RECOMMENDATION": "Добавить рекомендацию Meta по безопасности",
+        "EXPIRATION": "Срок действия кода в минутах"
+      },
+      "CAROUSEL": {
+        "ENABLE": "Использовать медиа-карусель",
+        "ENABLE_HINT": "Создаёт маркетинговую карусель из 2–10 карточек с изображениями или видео и одинаковой структурой компонентов.",
+        "TITLE": "Карточки карусели",
+        "HINT": "Во всех карточках должны совпадать наличие основного текста и порядок типов кнопок.",
+        "ADD_CARD": "Добавить карточку",
+        "CARD_TITLE": "Карточка {index}",
+        "CARD_BODY": "Текст карточки"
+      },
+      "FLOW": {
+        "ACTION": "Действие Flow",
+        "ACTION_NAVIGATE": "Переход на экран",
+        "ACTION_DATA_EXCHANGE": "Обмен данными",
+        "NAVIGATE_SCREEN": "ID первого экрана",
+        "NAVIGATE_SCREEN_PLACEHOLDER": "WELCOME_SCREEN",
+        "FLOW_ID": "ID существующего Flow",
+        "FLOW_ID_PLACEHOLDER": "123456789",
+        "FLOW_JSON": "Встроенный Flow JSON",
+        "FLOW_JSON_PLACEHOLDER": "{\"version\":\"7.1\",\"screens\":[]}",
+        "REFERENCE_HINT": "Укажите ровно один источник: ID существующего Flow или встроенный Flow JSON."
+      },
       "CATEGORY_OPTIONS": {
         "UTILITY": "Сервисный",
-        "MARKETING": "Маркетинговый"
+        "MARKETING": "Маркетинговый",
+        "AUTHENTICATION": "Аутентификация"
       },
       "HEADER_OPTIONS": {
         "NONE": "Без заголовка",
@@ -98,7 +131,9 @@
         "QUICK_REPLY": "Быстрый ответ",
         "URL": "URL-кнопка",
         "COPY_CODE": "Копирование кода",
-        "PHONE_NUMBER": "Телефон"
+        "PHONE_NUMBER": "Телефон",
+        "CATALOG": "Открыть каталог",
+        "FLOW": "Открыть Flow"
       },
       "FIELDS": {
         "LANGUAGE": "Язык",
@@ -152,7 +187,24 @@
         "BUTTON_COPY_CODE_REQUIRED": "Для кнопки {index} нужен пример промокода.",
         "BUTTON_COPY_CODE_LENGTH": "Промокод для кнопки {index} может содержать до 15 символов.",
         "BUTTON_PHONE_NUMBER_REQUIRED": "Для кнопки {index} нужен номер телефона.",
-        "BUTTON_PHONE_NUMBER_INVALID": "Номер телефона у кнопки {index} должен быть в формате E.164."
+        "BUTTON_PHONE_NUMBER_INVALID": "Номер телефона у кнопки {index} должен быть в формате E.164.",
+        "CATALOG_MARKETING_ONLY": "Кнопка каталога доступна только для маркетинговых шаблонов.",
+        "AUTH_EXPIRATION_RANGE": "Срок действия кода должен быть целым числом от 1 до 90 минут.",
+        "CAROUSEL_MARKETING_ONLY": "Карусели доступны только для маркетинговых шаблонов.",
+        "CAROUSEL_CARD_LIMIT": "Карусель должна содержать от 2 до 10 карточек.",
+        "CAROUSEL_STRUCTURE": "Во всех карточках карусели должны совпадать наличие основного текста и порядок типов кнопок.",
+        "CAROUSEL_HEADER_TYPE": "В карточке {index} должен быть заголовок с изображением или видео.",
+        "CAROUSEL_MEDIA_REQUIRED": "Для карточки {index} нужен URL тестового медиа.",
+        "CAROUSEL_BODY_LENGTH": "Текст карточки {index} может содержать до 160 символов.",
+        "CAROUSEL_BODY_VARIABLE_POSITION": "Текст карточки {index} не может начинаться или заканчиваться переменной.",
+        "CAROUSEL_BODY_EXAMPLE_REQUIRED": "Для карточки {index} нужен пример значения переменной {variable}.",
+        "CAROUSEL_BUTTON_LIMIT": "В карточке {index} может быть не более 2 кнопок.",
+        "CAROUSEL_BUTTON_TYPE": "Карточка {index} поддерживает только быстрый ответ, URL и телефон.",
+        "FLOW_MARKETING_ONLY": "Кнопка Flow доступна только для маркетинговых шаблонов.",
+        "FLOW_REFERENCE_XOR": "Для кнопки Flow {index} нужен ровно один источник: Flow ID или встроенный Flow JSON.",
+        "FLOW_JSON_INVALID": "Кнопка Flow {index} содержит некорректный JSON.",
+        "FLOW_ACTION_INVALID": "У кнопки Flow {index} указано неподдерживаемое действие.",
+        "FLOW_SCREEN_REQUIRED": "Для перехода кнопке Flow {index} нужен ID первого экрана."
       }
     }
   }

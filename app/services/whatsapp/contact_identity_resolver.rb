@@ -11,7 +11,9 @@ class Whatsapp::ContactIdentityResolver
 
     contact_inbox = find_or_create_contact_inbox
     sync_contact_identifiers(contact_inbox)
-    preferred_contact_inbox(contact_inbox)
+    resolved_contact_inbox = preferred_contact_inbox(contact_inbox)
+    enqueue_pending_contact_event_reconciliation
+    resolved_contact_inbox
   end
 
   def source_id
@@ -91,6 +93,24 @@ class Whatsapp::ContactIdentityResolver
     ).perform
   end
 
+  def enqueue_pending_contact_event_reconciliation
+    channel = inbox.channel
+    return unless channel.is_a?(Channel::Whatsapp)
+    return unless channel.provider_config.to_h['embedded_signup_flow'] == 'coexistence'
+
+    phone_identities = source_ids.filter_map do |identifier|
+      phone_source_id = self.class.phone_source_id(identifier)
+      processed_phone_identity(phone_source_id) if phone_source_id.present?
+    end
+    return if phone_identities.empty?
+
+    scope = Whatsapp::CoexistenceContactPendingEvent.where(account_id: channel.account_id, channel_id: channel.id)
+    matching_until_id = scope.matching_phone_identities(phone_identities).maximum(:id)
+    return if matching_until_id.blank?
+
+    Whatsapp::CoexistenceContactPendingEventReconciliationJob.perform_later(channel.id, 0, matching_until_id)
+  end
+
   def contact_attributes
     {
       name: contact_name,
@@ -141,5 +161,9 @@ class Whatsapp::ContactIdentityResolver
 
   def processed_source_id(normalized_source_id)
     Whatsapp::PhoneNumberNormalizationService.new(inbox).normalize_and_find_contact_by_provider(normalized_source_id, :cloud)
+  end
+
+  def processed_phone_identity(source_id)
+    Whatsapp::PhoneNumberNormalizationService.new(inbox).canonical_source_id(source_id, :cloud)
   end
 end

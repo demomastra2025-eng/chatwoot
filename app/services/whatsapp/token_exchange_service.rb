@@ -19,7 +19,7 @@ class Whatsapp::TokenExchangeService
     response = @api_client.exchange_code_for_token(@code)
     access_token = response['access_token']
 
-    raise "No access token in response: #{response}" if access_token.blank?
+    raise 'No access token in provider response' if access_token.blank?
 
     access_token
   end

@@ -33,6 +33,46 @@ RSpec.describe DeleteObjectJob, type: :job do
         expect { inbox.reload }.to raise_error(ActiveRecord::RecordNotFound)
       end
 
+      it 'preserves WhatsApp inbox data when fail-closed webhook teardown aborts deletion' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_inbox)
+        teardown_service = instance_double(Whatsapp::WebhookTeardownService)
+        allow(Whatsapp::WebhookTeardownService).to receive(:new).with(whatsapp_channel).and_return(teardown_service)
+        allow(teardown_service).to receive(:perform).and_raise(Whatsapp::WebhookTeardownService::WebhookTeardownError, 'unsubscribe failed')
+
+        expect { described_class.perform_now(whatsapp_inbox) }
+          .to raise_error(Whatsapp::WebhookTeardownService::WebhookTeardownError)
+
+        expect(Inbox.exists?(whatsapp_inbox.id)).to be(true)
+        expect(Channel::Whatsapp.exists?(whatsapp_channel.id)).to be(true)
+        expect(Conversation.exists?(conversation.id)).to be(true)
+      end
+
+      it 'destroys the WhatsApp channel before purging its inbox data' do
+        whatsapp_channel = create(
+          :channel_whatsapp,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        whatsapp_inbox = whatsapp_channel.inbox
+        conversation = create(:conversation, account: whatsapp_channel.account, inbox: whatsapp_inbox)
+        teardown_service = instance_double(Whatsapp::WebhookTeardownService, perform: true)
+        allow(Whatsapp::WebhookTeardownService).to receive(:new).with(whatsapp_channel).and_return(teardown_service)
+
+        described_class.perform_now(whatsapp_inbox)
+
+        expect(Channel::Whatsapp.exists?(whatsapp_channel.id)).to be(false)
+        expect(Inbox.exists?(whatsapp_inbox.id)).to be(false)
+        expect(Conversation.exists?(conversation.id)).to be(false)
+      end
+
       it 'keeps telephony call audit records when destroying an inbox' do
         conversation = create(:conversation, account: account, inbox: inbox)
         call_session = create(

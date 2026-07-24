@@ -31,14 +31,16 @@ describe Whatsapp::TokenExchangeService do
     end
 
     context 'when response has no access token' do
-      let(:token_response) { { 'error' => 'Invalid code' } }
+      let(:token_response) { { 'error' => 'Invalid code', 'refresh_token' => 'provider-refresh-secret' } }
 
       before do
         allow(api_client).to receive(:exchange_code_for_token).with(code).and_return(token_response)
       end
 
       it 'raises an error' do
-        expect { service.perform }.to raise_error(/No access token in response/)
+        expect { service.perform }.to raise_error('No access token in provider response') do |error|
+          expect(error.message).not_to include('provider-refresh-secret')
+        end
       end
     end
   end

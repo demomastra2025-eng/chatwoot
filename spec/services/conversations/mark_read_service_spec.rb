@@ -82,6 +82,56 @@ RSpec.describe Conversations::MarkReadService do
       end
     end
 
+    context 'when syncing WhatsApp Cloud read receipts' do
+      let(:channel) do
+        create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      end
+      let(:contact) { create(:contact, account: channel.account) }
+      let(:contact_inbox) { create(:contact_inbox, contact: contact, inbox: channel.inbox, source_id: '15551234567') }
+      let(:conversation) do
+        create(
+          :conversation,
+          account: channel.account,
+          inbox: channel.inbox,
+          contact: contact,
+          contact_inbox: contact_inbox,
+          agent_last_seen_at: 30.minutes.ago
+        )
+      end
+      let!(:incoming_message) do
+        create(
+          :message,
+          account: channel.account,
+          inbox: channel.inbox,
+          conversation: conversation,
+          sender: contact,
+          message_type: :incoming,
+          source_id: 'wamid.cloud-incoming-1',
+          created_at: 5.minutes.ago
+        )
+      end
+
+      it 'passes provider ids and timestamps to the Cloud sync service' do
+        sync_service = instance_double(Whatsapp::MarkMessagesReadService, perform: true)
+        projected_message = nil
+        expected_conversation = conversation
+
+        expect(Whatsapp::MarkMessagesReadService).to receive(:new) do |conversation:, messages:|
+          expect(conversation).to eq(expected_conversation)
+          projected_message = messages.find { |message| message.id == incoming_message.id }
+          sync_service
+        end
+        expect(sync_service).to receive(:perform)
+
+        described_class.new(conversation: conversation, user: user).perform
+
+        expect(projected_message).to have_attributes(
+          source_id: 'wamid.cloud-incoming-1',
+          created_at: incoming_message.reload.created_at
+        )
+      end
+    end
+
     context 'when syncing Telegram Personal read receipts' do
       let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
       let(:channel) { create(:channel_telegram_personal, account: account) }

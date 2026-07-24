@@ -89,6 +89,80 @@ export default {
     isEmbeddedSignupWhatsApp() {
       return this.inbox.provider_config?.source === 'embedded_signup';
     },
+    isCoexistenceWhatsApp() {
+      return (
+        this.isEmbeddedSignupWhatsApp &&
+        this.inbox.provider_config?.embedded_signup_flow === 'coexistence'
+      );
+    },
+    coexistenceSync() {
+      return this.inbox.provider_config?.coexistence_sync || null;
+    },
+    coexistenceSyncStateLabel() {
+      const state = this.coexistenceSync?.state || 'pending';
+      const stateLabels = {
+        pending: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.PENDING'
+        ),
+        requesting: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.REQUESTING'
+        ),
+        requested: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.REQUESTED'
+        ),
+        syncing: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.SYNCING'
+        ),
+        reconciling: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.RECONCILING'
+        ),
+        completed: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.COMPLETED'
+        ),
+        failed: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.FAILED'
+        ),
+        history_failed: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.HISTORY_FAILED'
+        ),
+        history_declined: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.HISTORY_DECLINED'
+        ),
+        request_outcome_unknown: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.REQUEST_OUTCOME_UNKNOWN'
+        ),
+        manual_recovery_required: this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.MANUAL_RECOVERY_REQUIRED'
+        ),
+      };
+      return (
+        stateLabels[state] ||
+        this.$t(
+          'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_STATES.UNKNOWN'
+        )
+      );
+    },
+    coexistenceSyncProgress() {
+      const progress = Number(this.coexistenceSync?.history_progress);
+      if (!Number.isFinite(progress)) return null;
+      return Math.min(Math.max(progress, 0), 100);
+    },
+    coexistenceSyncFailureCount() {
+      return this.coexistenceSync?.history_failed_messages?.length || 0;
+    },
+    coexistenceRecoveryRequired() {
+      const recoveryStates = [
+        'failed',
+        'history_failed',
+        'history_declined',
+        'request_outcome_unknown',
+        'manual_recovery_required',
+      ];
+      return (
+        recoveryStates.includes(this.coexistenceSync?.state) ||
+        this.coexistenceSync?.contacts_state === 'manual_recovery_required'
+      );
+    },
     whatsappAppId() {
       return window.chatwootConfig?.whatsappAppId;
     },
@@ -433,10 +507,7 @@ export default {
           channel: {},
         };
 
-        payload.channel.provider_config = {
-          ...this.inbox.provider_config,
-          api_key: this.whatsAppInboxAPIKey,
-        };
+        payload.channel.provider_config = { api_key: this.whatsAppInboxAPIKey };
 
         await this.$store.dispatch('inboxes/updateInbox', payload);
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
@@ -1769,6 +1840,66 @@ export default {
   </div>
   <div v-else-if="isAWhatsAppChannel && !isATwilioChannel">
     <div v-if="inbox.provider_config">
+      <SettingsFieldSection
+        v-if="isCoexistenceWhatsApp && coexistenceSync"
+        :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_TITLE')"
+        :help-text="
+          $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_DESCRIPTION')
+        "
+      >
+        <div
+          data-testid="whatsapp-coexistence-sync-status"
+          class="flex flex-col gap-2 items-start"
+        >
+          <p class="mb-0 text-sm font-medium text-n-slate-12">
+            {{ coexistenceSyncStateLabel }}
+          </p>
+          <p
+            v-if="coexistenceSyncProgress !== null"
+            class="mb-0 text-sm text-n-slate-11"
+          >
+            {{
+              $t(
+                'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_PROGRESS',
+                {
+                  progress: coexistenceSyncProgress,
+                }
+              )
+            }}
+          </p>
+          <p
+            v-if="coexistenceSyncFailureCount"
+            class="mb-0 text-sm text-n-amber-11"
+          >
+            {{
+              $t(
+                'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_FAILURES',
+                {
+                  count: coexistenceSyncFailureCount,
+                }
+              )
+            }}
+          </p>
+          <p
+            v-if="coexistenceSync.last_error"
+            class="mb-0 text-sm text-n-ruby-11"
+          >
+            {{ coexistenceSync.last_error }}
+          </p>
+          <NextButton
+            v-if="coexistenceRecoveryRequired"
+            data-testid="whatsapp-coexistence-sync-recover"
+            @click="handleReconfigure"
+          >
+            {{
+              $t(
+                'INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_COEXISTENCE_SYNC_RECOVER_BUTTON'
+              )
+            }}
+          </NextButton>
+        </div>
+      </SettingsFieldSection>
+
       <!-- Embedded Signup Section -->
       <template v-if="isEmbeddedSignupWhatsApp">
         <SettingsFieldSection
@@ -1789,20 +1920,14 @@ export default {
       <!-- Manual Setup Section -->
       <template v-else>
         <SettingsFieldSection
-          :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_TITLE')"
+          :label="
+            $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_CALLBACK_TITLE')
+          "
           :help-text="
-            $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_SUBHEADER')
+            $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_WEBHOOK_REDACTED_SUBHEADER')
           "
         >
-          <woot-code :script="inbox.provider_config.webhook_verify_token" />
-        </SettingsFieldSection>
-        <SettingsFieldSection
-          :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_TITLE')"
-          :help-text="
-            $t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_SUBHEADER')
-          "
-        >
-          <woot-code :script="inbox.provider_config.api_key" />
+          <woot-code :script="inbox.callback_webhook_url" />
         </SettingsFieldSection>
         <SettingsFieldSection
           :label="$t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_SECTION_UPDATE_TITLE')"
@@ -1815,7 +1940,8 @@ export default {
           >
             <woot-input
               v-model="whatsAppInboxAPIKey"
-              type="text"
+              type="password"
+              autocomplete="off"
               class="flex-1 mr-2 [&>input]:!mb-0"
               :placeholder="
                 $t(

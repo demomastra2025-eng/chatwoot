@@ -377,6 +377,8 @@
             "LINK_TEXT": "this link"
           },
           "SUBMIT_BUTTON": "Connect with WhatsApp Business",
+          "STANDARD_BUTTON": "Connect a new Cloud API number",
+          "COEXISTENCE_BUTTON": "Connect an existing WhatsApp Business app number",
           "AUTH_PROCESSING": "Authenticating with Meta",
           "WAITING_FOR_BUSINESS_INFO": "Please complete business setup in the Meta window...",
           "PROCESSING": "Setting up your WhatsApp Business Account",
@@ -1477,6 +1479,13 @@
       "DESCRIPTION": "Review your WhatsApp account status, messaging limits, and quality. Update settings or resolve issues if needed",
       "GO_TO_SETTINGS": "Go to Meta Business Manager",
       "NO_DATA": "Health data is not available",
+      "RECOVERY": {
+        "TITLE": "Connection and recovery status",
+        "CALLBACK": "Webhook callback registration",
+        "COEXISTENCE_SYNC": "WhatsApp Business synchronization",
+        "LIFECYCLE": "Meta lifecycle events",
+        "EVENTS": "Events processed: {count}"
+      },
       "FIELDS": {
         "DISPLAY_PHONE_NUMBER": {
           "LABEL": "Display phone number",
@@ -1495,8 +1504,8 @@
           "TOOLTIP": "WhatsApp quality rating for your account"
         },
         "MESSAGING_LIMIT_TIER": {
-          "LABEL": "Messaging limit tier",
-          "TOOLTIP": "Daily messaging limit for your account"
+          "LABEL": "Portfolio messaging limit",
+          "TOOLTIP": "Daily messaging limit shared by the business portfolio"
         },
         "ACCOUNT_MODE": {
           "LABEL": "Account mode",
@@ -1593,6 +1602,25 @@
       "WHATSAPP_EMBEDDED_SIGNUP_SUBHEADER": "This inbox is connected through WhatsApp embedded signup.",
       "WHATSAPP_EMBEDDED_SIGNUP_DESCRIPTION": "You can reconfigure this inbox to update your WhatsApp Business settings.",
       "WHATSAPP_RECONFIGURE_BUTTON": "Reconfigure",
+      "WHATSAPP_COEXISTENCE_SYNC_TITLE": "WhatsApp Business app synchronization",
+      "WHATSAPP_COEXISTENCE_SYNC_DESCRIPTION": "Status of the one-time contacts and message history import from the WhatsApp Business app.",
+      "WHATSAPP_COEXISTENCE_SYNC_PROGRESS": "Message history: {progress}%",
+      "WHATSAPP_COEXISTENCE_SYNC_FAILURES": "Messages awaiting recovery: {count}",
+      "WHATSAPP_COEXISTENCE_SYNC_RECOVER_BUTTON": "Reauthorize and restart sync",
+      "WHATSAPP_COEXISTENCE_SYNC_STATES": {
+        "PENDING": "Waiting to start",
+        "REQUESTING": "Requesting data from Meta",
+        "REQUESTED": "Request accepted",
+        "SYNCING": "Synchronizing",
+        "RECONCILING": "Reconciling the request result",
+        "COMPLETED": "Synchronization completed",
+        "FAILED": "Synchronization failed",
+        "HISTORY_FAILED": "Message history import requires recovery",
+        "HISTORY_DECLINED": "Message history sharing was declined",
+        "REQUEST_OUTCOME_UNKNOWN": "Meta request result is unknown",
+        "MANUAL_RECOVERY_REQUIRED": "Manual recovery is required",
+        "UNKNOWN": "Synchronization status is unavailable"
+      },
       "WHATSAPP_CONNECT_TITLE": "Connect to WhatsApp Business",
       "WHATSAPP_CONNECT_SUBHEADER": "Upgrade to WhatsApp embedded signup for easier management.",
       "WHATSAPP_CONNECT_DESCRIPTION": "Connect this inbox to WhatsApp Business for enhanced features and easier management.",
@@ -1606,6 +1634,8 @@
       "WHATSAPP_LOGIN_CANCELLED": "WhatsApp login was cancelled. Please try again.",
       "WHATSAPP_WEBHOOK_TITLE": "Webhook Verification Token",
       "WHATSAPP_WEBHOOK_SUBHEADER": "This token is used to verify the authenticity of the webhook endpoint.",
+      "WHATSAPP_WEBHOOK_CALLBACK_TITLE": "Webhook Callback URL",
+      "WHATSAPP_WEBHOOK_REDACTED_SUBHEADER": "For security, the verification token is shown only during initial setup and is never returned by the API.",
       "WHATSAPP_TEMPLATES_SYNC_TITLE": "Sync Templates",
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Manually sync message templates from WhatsApp to update your available templates.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Sync Templates",

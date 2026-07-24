@@ -1,18 +1,21 @@
 class Whatsapp::ChannelCreationService
-  def initialize(account, waba_info, phone_info, access_token)
+  def initialize(account, waba_info, phone_info, access_token, signup_type: 'standard')
     @account = account
     @waba_info = waba_info
     @phone_info = phone_info
     @access_token = access_token
+    @signup_type = signup_type
   end
 
   def perform
     validate_parameters!
 
-    existing_channel = find_existing_channel
-    raise I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: existing_channel.phone_number) if existing_channel
+    Whatsapp::WabaLock.new(@waba_info[:waba_id]).with_lock do
+      existing_channel = find_existing_channel
+      raise I18n.t('errors.whatsapp.phone_number_already_exists', phone_number: existing_channel.phone_number) if existing_channel
 
-    create_channel_with_inbox
+      create_channel_with_inbox
+    end
   end
 
   private
@@ -54,11 +57,23 @@ class Whatsapp::ChannelCreationService
       business_account_id: @waba_info[:waba_id],
       business_id: @waba_info[:business_id],
       source: 'embedded_signup',
+      embedded_signup_flow: @signup_type,
       calling_capable: @phone_info[:calling_capable],
       calling_capabilities: @phone_info[:calling_capabilities]
     }.compact.tap do |config|
       config[:calling_enabled] = true if @phone_info[:calling_capable]
+      config[:coexistence_sync] = coexistence_sync_config if @signup_type == 'coexistence'
     end
+  end
+
+  def coexistence_sync_config
+    now = Time.current
+    {
+      generation: SecureRandom.uuid,
+      state: 'pending',
+      onboarded_at: now.iso8601,
+      deadline_at: (now + 24.hours).iso8601
+    }
   end
 
   def create_inbox(channel)

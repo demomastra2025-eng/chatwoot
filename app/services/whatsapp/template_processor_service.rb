@@ -1,13 +1,13 @@
 class Whatsapp::TemplateProcessorService
+  include Whatsapp::TemplateInteractiveComponentHelpers
+
   UNSUPPORTED_COMPONENT_TYPES = %w[
     LIST
     PRODUCT
-    CATALOG
-    CAROUSEL
     LIMITED_TIME_OFFER
     CALL_PERMISSION_REQUEST
   ].freeze
-  UNSUPPORTED_CATEGORIES = %w[AUTHENTICATION].freeze
+  UNSUPPORTED_CATEGORIES = [].freeze
   UNSUPPORTED_HEADER_FORMATS = %w[LOCATION].freeze
 
   pattr_initialize [:channel!, :template_params, :message]
@@ -33,12 +33,17 @@ class Whatsapp::TemplateProcessorService
     return unless channel.message_templates.is_a?(Array)
 
     channel.message_templates.find do |template|
-      template['name'] == template_params['name'] &&
-        template['language']&.downcase == template_params['language']&.downcase &&
-        template['status']&.downcase == 'approved' &&
-        namespace_matches?(template) &&
-        supported_template?(template)
+      template_identity_matches?(template) && template_available?(template)
     end
+  end
+
+  def template_identity_matches?(template)
+    template['name'] == template_params['name'] &&
+      template['language']&.downcase == template_params['language']&.downcase
+  end
+
+  def template_available?(template)
+    template['status']&.downcase == 'approved' && namespace_matches?(template) && supported_template?(template)
   end
 
   def processed_templates_params
@@ -60,7 +65,7 @@ class Whatsapp::TemplateProcessorService
     components.concat(process_header_components(processed_params))
     components.concat(process_body_components(processed_params, template))
     components.concat(process_footer_components(processed_params))
-    components.concat(process_button_components(processed_params))
+    components.concat(process_interactive_components(template, processed_params))
 
     @template_params = components
   end

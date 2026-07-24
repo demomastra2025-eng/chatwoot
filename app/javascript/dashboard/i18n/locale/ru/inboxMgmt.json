@@ -377,6 +377,8 @@
             "LINK_TEXT": "данную ссылку"
           },
           "SUBMIT_BUTTON": "Связать с WhatsApp Business",
+          "STANDARD_BUTTON": "Подключить новый номер Cloud API",
+          "COEXISTENCE_BUTTON": "Подключить номер из приложения WhatsApp Business",
           "AUTH_PROCESSING": "Аутентификация с помощью Meta",
           "WAITING_FOR_BUSINESS_INFO": "Пожалуйста, завершите настройку бизнеса в окне Meta...",
           "PROCESSING": "Настройте свой WhatsApp Business аккаунт",
@@ -1477,6 +1479,13 @@
       "DESCRIPTION": "Проверьте состояние учетной записи WhatsApp, ограничения на сообщения и качество. Обновите настройки или решите проблемы при необходимости",
       "GO_TO_SETTINGS": "Перейти к Meta Business Manager",
       "NO_DATA": "Данные о здоровье отсутствуют",
+      "RECOVERY": {
+        "TITLE": "Состояние подключения и восстановления",
+        "CALLBACK": "Регистрация webhook callback",
+        "COEXISTENCE_SYNC": "Синхронизация WhatsApp Business",
+        "LIFECYCLE": "События Meta lifecycle",
+        "EVENTS": "Событий обработано: {count}"
+      },
       "FIELDS": {
         "DISPLAY_PHONE_NUMBER": {
           "LABEL": "Показать номер телефона",
@@ -1495,8 +1504,8 @@
           "TOOLTIP": "Оценка качества WhatsApp для вашего аккаунта"
         },
         "MESSAGING_LIMIT_TIER": {
-          "LABEL": "Лимит сообщений",
-          "TOOLTIP": "Лимит ежедневных сообщений для вашего аккаунта"
+          "LABEL": "Лимит сообщений портфолио",
+          "TOOLTIP": "Общий суточный лимит сообщений бизнес-портфолио"
         },
         "ACCOUNT_MODE": {
           "LABEL": "Режим аккаунта",
@@ -1593,6 +1602,25 @@
       "WHATSAPP_EMBEDDED_SIGNUP_SUBHEADER": "Этот почтовый ящик подключён через WhatsApp Embedded Signup.",
       "WHATSAPP_EMBEDDED_SIGNUP_DESCRIPTION": "Вы можете перенастроить этот почтовый ящик для обновления параметров WhatsApp Business.",
       "WHATSAPP_RECONFIGURE_BUTTON": "Изменить настройки",
+      "WHATSAPP_COEXISTENCE_SYNC_TITLE": "Синхронизация с приложением WhatsApp Business",
+      "WHATSAPP_COEXISTENCE_SYNC_DESCRIPTION": "Статус одноразового импорта контактов и истории сообщений из приложения WhatsApp Business.",
+      "WHATSAPP_COEXISTENCE_SYNC_PROGRESS": "История сообщений: {progress}%",
+      "WHATSAPP_COEXISTENCE_SYNC_FAILURES": "Сообщений ожидают восстановления: {count}",
+      "WHATSAPP_COEXISTENCE_SYNC_RECOVER_BUTTON": "Авторизоваться повторно и перезапустить синхронизацию",
+      "WHATSAPP_COEXISTENCE_SYNC_STATES": {
+        "PENDING": "Ожидает запуска",
+        "REQUESTING": "Запрашиваем данные у Meta",
+        "REQUESTED": "Запрос принят",
+        "SYNCING": "Синхронизация выполняется",
+        "RECONCILING": "Уточняем результат запроса",
+        "COMPLETED": "Синхронизация завершена",
+        "FAILED": "Ошибка синхронизации",
+        "HISTORY_FAILED": "Требуется восстановить импорт истории",
+        "HISTORY_DECLINED": "Передача истории сообщений отклонена",
+        "REQUEST_OUTCOME_UNKNOWN": "Результат запроса Meta неизвестен",
+        "MANUAL_RECOVERY_REQUIRED": "Требуется ручное восстановление",
+        "UNKNOWN": "Статус синхронизации недоступен"
+      },
       "WHATSAPP_CONNECT_TITLE": "Подключение к WhatsApp Business",
       "WHATSAPP_CONNECT_SUBHEADER": "Обновитесь до WhatsApp embedded signup, чтобы облегчить управление.",
       "WHATSAPP_CONNECT_DESCRIPTION": "Подключите этот почтовый ящик к WhatsApp Business для расширения функций и упрощения управления.",
@@ -1606,6 +1634,8 @@
       "WHATSAPP_LOGIN_CANCELLED": "Вход в WhatsApp был отменен. Пожалуйста, попробуйте еще раз.",
       "WHATSAPP_WEBHOOK_TITLE": "Токен авторизации Webhook",
       "WHATSAPP_WEBHOOK_SUBHEADER": "Этот токен используется для проверки подлинности конечной точки веб-хука.",
+      "WHATSAPP_WEBHOOK_CALLBACK_TITLE": "URL обратного вызова Webhook",
+      "WHATSAPP_WEBHOOK_REDACTED_SUBHEADER": "В целях безопасности токен подтверждения показывается только при первоначальной настройке и никогда не возвращается через API.",
       "WHATSAPP_TEMPLATES_SYNC_TITLE": "Синхронизировать шаблоны",
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Вручную синхронизируйте шаблоны сообщений из WhatsApp, чтобы обновить доступные шаблоны.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Синхронизировать шаблоны",

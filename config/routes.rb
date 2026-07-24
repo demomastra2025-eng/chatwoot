@@ -572,7 +572,9 @@ Rails.application.routes.draw do
           end
 
           namespace :whatsapp do
-            resource :authorization, only: [:create]
+            resource :authorization, only: [:create] do
+              post :session, action: :log_session
+            end
           end
 
           resources :whatsapp_calls, only: [:show] do
@@ -886,6 +888,8 @@ Rails.application.routes.draw do
   post 'webhooks/weixin/:webhook_identifier', to: 'webhooks/weixin#process_payload'
   post 'webhooks/vk/:callback_id', to: 'webhooks/vk#process_payload'
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
+  get 'webhooks/whatsapp', to: 'webhooks/whatsapp#verify'
+  post 'webhooks/whatsapp', to: 'webhooks/whatsapp#process_payload'
   get 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#verify'
   post 'webhooks/whatsapp/:phone_number', to: 'webhooks/whatsapp#process_payload'
   post 'webhooks/whatsapp_web/:webhook_identifier', to: 'webhooks/whatsapp_web#process_payload'

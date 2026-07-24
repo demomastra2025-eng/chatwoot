@@ -71,10 +71,15 @@ class DeleteObjectJob < ApplicationJob
 
   def teardown_remote_dependencies(object)
     return unless object.is_a?(Inbox)
-    return object.channel&.teardown_provider_instance! if object.whatsapp_web?
-    return object.channel&.teardown_runtime! if object.telegram_personal?
 
-    nil
+    channel = object.channel
+    # Destroy WhatsApp channels before purging conversations. Their fail-closed
+    # webhook teardown can abort, and valid customer data must remain intact on failure.
+    case channel
+    when Channel::Whatsapp then channel.destroy!
+    when Channel::WhatsappWeb then channel.teardown_provider_instance!
+    when Channel::TelegramPersonal then channel.teardown_runtime!
+    end
   end
 
   def prepare_telephony_dependencies(object)

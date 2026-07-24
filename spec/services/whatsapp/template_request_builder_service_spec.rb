@@ -292,5 +292,158 @@ RSpec.describe Whatsapp::TemplateRequestBuilderService do
         ).call
       end.to raise_error(ArgumentError, 'Phone number buttons must use E.164 format')
     end
+
+    it 'builds a preset copy-code authentication template' do
+      result = described_class.new(
+        template_config: {
+          name: 'login_code',
+          language: 'en_US',
+          category: 'authentication',
+          add_security_recommendation: true,
+          code_expiration_minutes: 10
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(result).to eq(
+        name: 'login_code',
+        language: 'en_US',
+        category: 'AUTHENTICATION',
+        components: [
+          { type: 'BODY', add_security_recommendation: true },
+          { type: 'FOOTER', code_expiration_minutes: 10 },
+          { type: 'BUTTONS', buttons: [{ type: 'OTP', otp_type: 'COPY_CODE' }] }
+        ]
+      )
+    end
+
+    it 'rejects custom components for authentication templates' do
+      expect do
+        described_class.new(
+          template_config: {
+            name: 'broken_login_code',
+            language: 'en_US',
+            category: 'authentication',
+            body_text: 'Custom OTP body'
+          },
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(
+        ArgumentError,
+        'Authentication templates use preset text and an OTP button; custom components are not supported'
+      )
+    end
+
+    it 'builds the fixed catalog button for marketing templates' do
+      result = described_class.new(
+        template_config: {
+          name: 'browse_catalog',
+          language: 'en_US',
+          category: 'marketing',
+          body_text: 'Browse our latest products.',
+          buttons: [{ type: 'CATALOG', text: 'View catalog' }]
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(result[:components].last).to eq(
+        type: 'BUTTONS',
+        buttons: [{ type: 'CATALOG', text: 'View catalog' }]
+      )
+    end
+
+    it 'rejects catalog buttons outside marketing templates' do
+      expect do
+        described_class.new(
+          template_config: {
+            name: 'utility_catalog',
+            language: 'en_US',
+            category: 'utility',
+            body_text: 'Browse products.',
+            buttons: [{ type: 'CATALOG', text: 'View catalog' }]
+          },
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'Catalog buttons are only supported for MARKETING templates')
+    end
+
+    it 'rejects Flow creation until an authoritative template contract is implemented' do
+      expect do
+        described_class.new(
+          template_config: {
+            name: 'signup_flow',
+            language: 'en_US',
+            category: 'marketing',
+            body_text: 'Open the form.',
+            buttons: [{ type: 'FLOW', text: 'Open' }]
+          },
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'Unsupported button type: FLOW')
+    end
+
+    it 'builds validated media carousel cards with uploaded handles' do
+      allow(asset_upload_service).to receive(:upload)
+        .with(url: 'https://example.com/card-1.jpg', media_type: 'image')
+        .and_return('4:card-1')
+      allow(asset_upload_service).to receive(:upload)
+        .with(url: 'https://example.com/card-2.jpg', media_type: 'image')
+        .and_return('4:card-2')
+
+      result = described_class.new(
+        template_config: {
+          name: 'summer_products',
+          language: 'en_US',
+          category: 'marketing',
+          body_text: 'Choose a summer product.',
+          carousel_cards: [
+            {
+              header_type: 'image',
+              sample_media_url: 'https://example.com/card-1.jpg',
+              body_text: 'Product one',
+              buttons: [{ type: 'QUICK_REPLY', text: 'Choose one' }]
+            },
+            {
+              header_type: 'image',
+              sample_media_url: 'https://example.com/card-2.jpg',
+              body_text: 'Product two',
+              buttons: [{ type: 'QUICK_REPLY', text: 'Choose two' }]
+            }
+          ]
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      carousel = result[:components].second
+      expect(carousel[:type]).to eq('CAROUSEL')
+      expect(carousel[:cards].size).to eq(2)
+      expect(carousel[:cards].first).to eq(
+        components: [
+          { type: 'HEADER', format: 'IMAGE', example: { header_handle: ['4:card-1'] } },
+          { type: 'BODY', text: 'Product one' },
+          { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Choose one' }] }
+        ]
+      )
+    end
+
+    it 'requires every carousel card to use the same component structure' do
+      allow(asset_upload_service).to receive(:upload).and_return('4:sample')
+
+      expect do
+        described_class.new(
+          template_config: {
+            name: 'broken_carousel',
+            language: 'en_US',
+            category: 'marketing',
+            body_text: 'Choose a product.',
+            carousel_cards: [
+              { header_type: 'image', sample_media_url: 'https://example.com/1.jpg', body_text: 'One' },
+              { header_type: 'image', sample_media_url: 'https://example.com/2.jpg' }
+            ]
+          },
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(ArgumentError, 'All carousel cards must use the same component and button structure')
+    end
   end
 end

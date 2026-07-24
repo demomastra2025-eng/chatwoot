@@ -80,7 +80,7 @@ describe Whatsapp::EmbeddedSignupService do
     end
 
     it 'creates channel and sets up webhooks' do
-      expect(channel).to receive(:setup_webhooks).with(strict: true)
+      expect(channel).to receive(:setup_webhooks).with(strict: true, force_registration: true)
 
       result = service.perform
       expect(result).to eq(channel)
@@ -121,8 +121,7 @@ describe Whatsapp::EmbeddedSignupService do
       baseline_open_transactions = ActiveRecord::Base.connection.open_transactions
 
       allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
-      allow_any_instance_of(Channel::Whatsapp).to receive(:validate_provider_config).and_return(true)
-      allow_any_instance_of(Channel::Whatsapp).to receive(:sync_templates).and_return(true)
+      stub_new_channel_callbacks
 
       webhook_service = instance_double(Whatsapp::WebhookSetupService)
       allow(webhook_service).to receive(:perform).and_return(true)
@@ -197,9 +196,7 @@ describe Whatsapp::EmbeddedSignupService do
 
       it 'rolls back the new inbox/channel and fails when strict webhook setup fails' do
         allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
-        allow_any_instance_of(Channel::Whatsapp).to receive(:validate_provider_config).and_return(true)
-        allow_any_instance_of(Channel::Whatsapp).to receive(:sync_templates).and_return(true)
-        allow_any_instance_of(Channel::Whatsapp).to receive(:teardown_webhooks).and_return(true)
+        stub_new_channel_callbacks(teardown: true)
         webhook_service = instance_double(Whatsapp::WebhookSetupService)
         allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
         allow(webhook_service).to receive(:perform).and_raise('Webhook setup error')
@@ -210,10 +207,83 @@ describe Whatsapp::EmbeddedSignupService do
           .and not_change(Channel::Whatsapp, :count)
           .and not_change(Inbox, :count)
       end
+
+      it 'does not mutate the remote subscription again when callback setup failed cleanly' do
+        allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
+        stub_new_channel_callbacks
+        webhook_service = instance_double(Whatsapp::WebhookSetupService)
+        allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
+        error = Whatsapp::WebhookSetupService::CallbackSetupError.new('Webhook setup failed cleanly')
+        allow(webhook_service).to receive(:perform).and_raise(error)
+        expect(Whatsapp::WebhookTeardownService).not_to receive(:new)
+
+        expect do
+          service.perform
+        end.to raise_error(error)
+          .and not_change(Channel::Whatsapp, :count)
+          .and not_change(Inbox, :count)
+      end
+
+      it 'preserves the new channel as a recovery anchor when remote compensation fails' do
+        allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
+        stub_new_channel_callbacks(teardown: true)
+        webhook_service = instance_double(Whatsapp::WebhookSetupService)
+        allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
+        error = Whatsapp::FacebookApiClient::WebhookSubscriptionCompensationError.new('Compensation failed')
+        allow(webhook_service).to receive(:perform).and_raise(error)
+
+        expect do
+          service.perform
+        end.to raise_error(error)
+          .and change(Channel::Whatsapp, :count).by(1)
+          .and change(Inbox, :count).by(1)
+
+        expect(Channel::Whatsapp.order(:id).last.reauthorization_required?).to be(true)
+      end
+
+      it 'preserves the new channel as a recovery anchor when callback outcome is unknown' do
+        allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
+        stub_new_channel_callbacks(teardown: true)
+        webhook_service = instance_double(Whatsapp::WebhookSetupService)
+        allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
+        error = Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError.new('Callback outcome unknown')
+        allow(webhook_service).to receive(:perform).and_raise(error)
+
+        expect do
+          service.perform
+        end.to raise_error(error)
+          .and change(Channel::Whatsapp, :count).by(1)
+          .and change(Inbox, :count).by(1)
+
+        expect(Channel::Whatsapp.order(:id).last.reauthorization_required?).to be(true)
+      end
+
+      it 'preserves the new channel when the remote callback changed before local recovery finalization failed' do
+        allow(Whatsapp::ChannelCreationService).to receive(:new).and_call_original
+        stub_new_channel_callbacks(teardown: true)
+        webhook_service = instance_double(Whatsapp::WebhookSetupService)
+        allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
+        error = Whatsapp::WebhookSetupService::PostMutationRecoveryError.new('Recovery persistence failed')
+        allow(webhook_service).to receive(:perform).and_raise(error)
+
+        expect do
+          service.perform
+        end.to raise_error(error)
+          .and change(Channel::Whatsapp, :count).by(1)
+          .and change(Inbox, :count).by(1)
+
+        expect(Channel::Whatsapp.order(:id).last.reauthorization_required?).to be(true)
+      end
     end
 
     context 'with reauthorization flow' do
-      let(:inbox_id) { 123 }
+      let(:params) { super().merge(signup_type: 'standard') }
+      let(:existing_channel) do
+        create(:channel_whatsapp, account: account, provider: 'whatsapp_cloud',
+                                  validate_provider_config: false, sync_templates: false)
+      end
+      let(:existing_inbox) { existing_channel.inbox || create(:inbox, account: account, channel: existing_channel) }
+      let(:inbox_id) { existing_inbox.id }
       let(:reauth_service) { instance_double(Whatsapp::ReauthorizationService) }
       let(:service_with_inbox) do
         described_class.new(account: account, params: params, inbox_id: inbox_id)
@@ -225,9 +295,10 @@ describe Whatsapp::EmbeddedSignupService do
           inbox_id: inbox_id,
           phone_number_id: params[:phone_number_id],
           business_id: params[:business_id],
-          waba_id: params[:waba_id]
+          waba_id: params[:waba_id],
+          signup_type: 'standard'
         ).and_return(reauth_service)
-        allow(reauth_service).to receive(:perform).with(access_token, phone_info).and_return(channel)
+        allow(reauth_service).to receive(:perform).with(access_token, phone_info).and_yield(channel).and_return(channel)
 
         allow(channel).to receive(:phone_number).and_return('+1234567890')
         allow(channel).to receive(:reauthorized!)
@@ -242,22 +313,148 @@ describe Whatsapp::EmbeddedSignupService do
       end
 
       it 'uses ReauthorizationService and sets up webhooks' do
-        expect(reauth_service).to receive(:perform)
-        expect(channel).to receive(:setup_webhooks).with(strict: true)
+        existing_channel.update!(provider_config: existing_channel.provider_config.merge(
+          'embedded_signup_flow' => 'standard',
+          'phone_number_id' => params[:phone_number_id],
+          'business_account_id' => params[:waba_id],
+          'business_id' => params[:business_id]
+        ))
+        expect(reauth_service).to receive(:perform).and_yield(channel).and_return(channel)
+        expect(channel).to receive(:setup_webhooks).with(strict: true, force_registration: false)
         expect(channel).to receive(:reauthorized!)
 
         result = service_with_inbox.perform
         expect(result).to eq(channel)
       end
 
-      context 'with real channel requiring reauthorization' do
-        let(:inbox) { create(:inbox, account: account) }
-        let(:whatsapp_channel) do
-          create(:channel_whatsapp, account: account, phone_number: '+1234567890',
-                                    validate_provider_config: false, sync_templates: false)
+      context 'when the requested flow conflicts with the persisted channel flow' do
+        let(:existing_channel) do
+          create(
+            :channel_whatsapp,
+            account: account,
+            provider: 'whatsapp_cloud',
+            provider_config: { 'embedded_signup_flow' => 'coexistence' },
+            validate_provider_config: false,
+            sync_templates: false
+          )
         end
-        let(:service_with_real_inbox) { described_class.new(account: account, params: params, inbox_id: inbox.id) }
+
+        it 'rejects the mode transition before exchanging the authorization code' do
+          expect(Whatsapp::TokenExchangeService).not_to receive(:new)
+
+          expect { service_with_inbox.perform }
+            .to raise_error(Whatsapp::EmbeddedSignupService::ReauthorizationFlowMismatchError)
+        end
+      end
+
+      context 'when the completion event conflicts with the persisted provider identity' do
+        let(:existing_channel) do
+          create(
+            :channel_whatsapp,
+            account: account,
+            provider: 'whatsapp_cloud',
+            provider_config: {
+              'embedded_signup_flow' => 'standard',
+              'phone_number_id' => 'persisted-phone',
+              'business_account_id' => 'persisted-waba',
+              'business_id' => 'persisted-business'
+            },
+            validate_provider_config: false,
+            sync_templates: false
+          )
+        end
+
+        it 'rejects the identity transition before exchanging the authorization code' do
+          expect(Whatsapp::TokenExchangeService).not_to receive(:new)
+
+          expect { service_with_inbox.perform }
+            .to raise_error(Whatsapp::ReauthorizationService::IdentityMismatchError)
+        end
+      end
+
+      context 'when a legacy channel has no persisted flow and the user made no selection' do
+        let(:params) { super().except(:signup_type) }
+
+        it 'fails closed before exchanging the authorization code' do
+          expect(Whatsapp::TokenExchangeService).not_to receive(:new)
+
+          expect { service_with_inbox.perform }
+            .to raise_error(Whatsapp::EmbeddedSignupService::ReauthorizationFlowRequiredError)
+        end
+      end
+
+      context 'when a known standard channel receives the official WABA-only event' do
+        let(:params) { { code: 'test_authorization_code', waba_id: 'server_waba_id' } }
         let(:phone_info) do
+          {
+            phone_number_id: 'server_phone_id',
+            phone_number: '+123****7890',
+            verified: true,
+            business_name: 'Test Business'
+          }
+        end
+        let(:existing_channel) do
+          create(
+            :channel_whatsapp,
+            account: account,
+            provider: 'whatsapp_cloud',
+            validate_provider_config: false,
+            sync_templates: false
+          ).tap do |record|
+            record.update!(provider_config: record.provider_config.merge(
+              'embedded_signup_flow' => 'standard',
+              'phone_number_id' => 'server_phone_id',
+              'business_account_id' => 'server_waba_id',
+              'business_id' => 'server_business_id'
+            ))
+          end
+        end
+
+        before do
+          phone_service = instance_double(Whatsapp::PhoneInfoService, perform: phone_info)
+          allow(Whatsapp::PhoneInfoService).to receive(:new)
+            .with('server_waba_id', 'server_phone_id', access_token)
+            .and_return(phone_service)
+
+          validation_service = instance_double(Whatsapp::TokenValidationService, perform: token_health)
+          allow(Whatsapp::TokenValidationService).to receive(:new)
+            .with(
+              access_token,
+              'server_waba_id',
+              phone_number_id: 'server_phone_id',
+              require_non_expiring_system_user: false
+            ).and_return(validation_service)
+
+          allow(Whatsapp::ReauthorizationService).to receive(:new).with(
+            account: account,
+            inbox_id: inbox_id,
+            phone_number_id: 'server_phone_id',
+            business_id: 'server_business_id',
+            waba_id: 'server_waba_id',
+            signup_type: 'standard'
+          ).and_return(reauth_service)
+        end
+
+        it 'uses server-owned phone and business identifiers' do
+          expect(service_with_inbox.perform).to eq(channel)
+        end
+      end
+
+      context 'with real channel requiring reauthorization' do
+        let(:whatsapp_channel) do
+          create(:channel_whatsapp, account: account, phone_number: '+123****7890',
+                                    provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+        end
+
+        def inbox
+          @inbox ||= create(:inbox, account: account)
+        end
+
+        def service_with_real_inbox
+          described_class.new(account: account, params: params, inbox_id: inbox.id)
+        end
+
+        def phone_info
           {
             phone_number_id: params[:phone_number_id],
             phone_number: whatsapp_channel.phone_number,
@@ -268,6 +465,12 @@ describe Whatsapp::EmbeddedSignupService do
 
         before do
           inbox.update!(channel: whatsapp_channel)
+          whatsapp_channel.update!(provider_config: whatsapp_channel.provider_config.merge(
+            'embedded_signup_flow' => 'standard',
+            'phone_number_id' => params[:phone_number_id],
+            'business_account_id' => params[:waba_id],
+            'business_id' => params[:business_id]
+          ))
           whatsapp_channel.prompt_reauthorization!
 
           setup_reauthorization_mocks
@@ -283,17 +486,24 @@ describe Whatsapp::EmbeddedSignupService do
           expect(whatsapp_channel.reauthorization_required?).to be false
         end
 
-        it 'rolls back reauthorization config when strict webhook setup fails' do
+        it 'keeps committed reauthorization config when strict webhook setup fails' do
           original_provider_config = whatsapp_channel.reload.provider_config.deep_dup
           allow(Whatsapp::ReauthorizationService).to receive(:new).and_call_original
-          allow_any_instance_of(Channel::Whatsapp).to receive(:validate_provider_config).and_return(true)
+          provider_service = instance_double(Whatsapp::Providers::WhatsappCloudService, validate_provider_config?: true)
+          allow(Whatsapp::Providers::WhatsappCloudService).to receive(:new).and_return(provider_service)
           webhook_service = instance_double(Whatsapp::WebhookSetupService)
           allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
           allow(webhook_service).to receive(:perform).and_raise('Webhook setup error')
 
           expect { service_with_real_inbox.perform }.to raise_error('Webhook setup error')
 
-          expect(whatsapp_channel.reload.provider_config).to eq(original_provider_config)
+          persisted_config = whatsapp_channel.reload.provider_config
+          expect(persisted_config).not_to eq(original_provider_config)
+          expect(persisted_config).to include(
+            'api_key' => 'test_access_token',
+            'business_account_id' => 'test_waba_id',
+            'phone_number_id' => 'test_phone_number_id'
+          )
           expect(whatsapp_channel.reauthorization_required?).to be(true)
         end
 
@@ -302,7 +512,8 @@ describe Whatsapp::EmbeddedSignupService do
         def setup_reauthorization_mocks
           reauth_service = stub_reauthorization_service
 
-          allow(reauth_service).to receive(:perform) do
+          allow(reauth_service).to receive(:perform) do |*, &block|
+            block.call(whatsapp_channel)
             whatsapp_channel
           end
 
@@ -316,7 +527,8 @@ describe Whatsapp::EmbeddedSignupService do
             inbox_id: inbox.id,
             phone_number_id: params[:phone_number_id],
             business_id: params[:business_id],
-            waba_id: params[:waba_id]
+            waba_id: params[:waba_id],
+            signup_type: 'standard'
           ).and_return(reauth_service)
           reauth_service
         end
@@ -329,6 +541,78 @@ describe Whatsapp::EmbeddedSignupService do
                                                                               throughput: { 'level' => 'STANDARD' },
                                                                               messaging_limit_tier: 'TIER_1000'
                                                                             })
+        end
+      end
+    end
+
+    context 'with WhatsApp Business app coexistence onboarding' do
+      let(:params) do
+        {
+          code: 'coexistence_code',
+          waba_id: 'coexistence_waba',
+          signup_type: 'coexistence'
+        }
+      end
+      let(:phone_info) do
+        {
+          phone_number_id: 'coexistence_phone_id',
+          phone_number: '+77010002030',
+          verified: true,
+          business_name: 'Business App',
+          is_on_biz_app: true,
+          platform_type: 'CLOUD_API'
+        }
+      end
+
+      before do
+        phone_service = instance_double(Whatsapp::PhoneInfoService, perform: phone_info)
+        allow(Whatsapp::PhoneInfoService).to receive(:new)
+          .with(params[:waba_id], nil, access_token, coexistence: true)
+          .and_return(phone_service)
+
+        validation_service = instance_double(Whatsapp::TokenValidationService, perform: token_health)
+        allow(Whatsapp::TokenValidationService).to receive(:new)
+          .with(
+            access_token,
+            params[:waba_id],
+            phone_number_id: phone_info[:phone_number_id],
+            require_non_expiring_system_user: false
+          )
+          .and_return(validation_service)
+
+        channel_creation = instance_double(Whatsapp::ChannelCreationService, perform: channel)
+        allow(Whatsapp::ChannelCreationService).to receive(:new)
+          .with(
+            account,
+            { waba_id: params[:waba_id], business_id: nil, business_name: phone_info[:business_name] },
+            phone_info,
+            access_token,
+            signup_type: 'coexistence'
+          ).and_return(channel_creation)
+        allow(channel).to receive(:id).and_return(42)
+        allow(channel).to receive(:provider_config).and_return(
+          'coexistence_sync' => { 'generation' => 'generation-1' }
+        )
+      end
+
+      it 'resolves the selected business-app phone and schedules the mandatory sync' do
+        expect { service.perform }.to have_enqueued_job(Whatsapp::CoexistenceSyncJob).with(42, 'generation-1')
+        expect(channel).to have_received(:setup_webhooks).with(strict: true, force_registration: false)
+      end
+
+      it 'rejects a phone that Meta does not mark as coexistence' do
+        phone_info[:is_on_biz_app] = false
+
+        expect { service.perform }.to raise_error(/not connected to both WhatsApp Business app and Cloud API/)
+      end
+    end
+
+    def stub_new_channel_callbacks(teardown: false)
+      allow(Channel::Whatsapp).to receive(:build).and_wrap_original do |original, *args|
+        original.call(*args).tap do |built_channel|
+          allow(built_channel).to receive(:validate_provider_config).and_return(true)
+          allow(built_channel).to receive(:sync_templates).and_return(true)
+          allow(built_channel).to receive(:teardown_webhooks).and_return(true) if teardown
         end
       end
     end

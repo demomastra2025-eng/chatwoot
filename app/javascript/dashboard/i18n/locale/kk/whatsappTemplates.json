@@ -50,7 +50,12 @@
       "FIELD_PICKER_SEARCH_PLACEHOLDER": "Search attributes",
       "FIELD_PICKER_EMPTY": "No matching attributes found",
       "FIELD_PICKER_LOADING": "Loading attributes...",
-      "FIELD_PICKER_DEFAULT": "Attributes"
+      "FIELD_PICKER_DEFAULT": "Attributes",
+      "CAROUSEL_CARD_LABEL": "Карусель карточкасы {index}",
+      "CAROUSEL_MEDIA_ID_PLACEHOLDER": "Meta медиа ID мәнін енгізіңіз",
+      "CAROUSEL_BUTTON_PLACEHOLDER": "{index} түймесінің параметрін енгізіңіз",
+      "CATALOG_THUMBNAIL_LABEL": "Каталог мұқабасындағы тауар (міндетті емес)",
+      "CATALOG_THUMBNAIL_PLACEHOLDER": "Тауардың retailer ID мәнін енгізіңіз"
     },
     "MANAGEMENT": {
       "PAGE_TITLE": "WhatsApp template library",
@@ -84,7 +89,8 @@
       "BUTTON_TITLE": "Button {index}",
       "CATEGORY_OPTIONS": {
         "UTILITY": "Utility",
-        "MARKETING": "Marketing"
+        "MARKETING": "Marketing",
+        "AUTHENTICATION": "Түпнұсқалықты растау"
       },
       "HEADER_OPTIONS": {
         "NONE": "No header",
@@ -97,7 +103,36 @@
         "QUICK_REPLY": "Quick reply",
         "URL": "URL button",
         "COPY_CODE": "Copy code",
-        "PHONE_NUMBER": "Phone number"
+        "PHONE_NUMBER": "Phone number",
+        "CATALOG": "Каталогты ашу",
+        "FLOW": "Flow ашу"
+      },
+      "AUTHENTICATION": {
+        "TITLE": "Түпнұсқалықты растау үлгісі",
+        "HINT": "Meta хабар мәтіні мен кодты көшіруге арналған OTP түймесін береді. Тек қолдау көрсетілетін үлгі параметрлерін өзгертуге болады.",
+        "SECURITY_RECOMMENDATION": "Meta қауіпсіздік ұсынымын қосу",
+        "EXPIRATION": "Кодтың жарамдылық мерзімі, минут"
+      },
+      "CAROUSEL": {
+        "ENABLE": "Медиа-карусельді пайдалану",
+        "ENABLE_HINT": "Құрылымы бірдей, суреті немесе видеосы бар 2–10 карточкадан тұратын маркетингтік карусель жасайды.",
+        "TITLE": "Карусель карточкалары",
+        "HINT": "Барлық карточкада негізгі мәтіннің болуы және түйме түрлерінің реті бірдей болуы керек.",
+        "CARD_TITLE": "Карточка {index}",
+        "CARD_BODY": "Карточка мәтіні",
+        "ADD_CARD": "Карточка қосу"
+      },
+      "FLOW": {
+        "ACTION": "Flow әрекеті",
+        "ACTION_NAVIGATE": "Экранға өту",
+        "ACTION_DATA_EXCHANGE": "Деректер алмасу",
+        "FLOW_ID": "Бар Flow ID",
+        "FLOW_ID_PLACEHOLDER": "123456789",
+        "FLOW_JSON": "Кірістірілген Flow JSON",
+        "FLOW_JSON_PLACEHOLDER": "{\"version\":\"7.1\",\"screens\":[]}",
+        "NAVIGATE_SCREEN": "Бастапқы экран ID",
+        "NAVIGATE_SCREEN_PLACEHOLDER": "WELCOME_SCREEN",
+        "REFERENCE_HINT": "Тек бір дереккөзді көрсетіңіз: бар Flow ID немесе кірістірілген Flow JSON."
       },
       "FIELDS": {
         "LANGUAGE": "Language",
@@ -151,7 +186,24 @@
         "BUTTON_COPY_CODE_REQUIRED": "Button {index} needs a sample coupon code.",
         "BUTTON_COPY_CODE_LENGTH": "Button {index} coupon code can be up to 15 characters.",
         "BUTTON_PHONE_NUMBER_REQUIRED": "Button {index} phone number is required.",
-        "BUTTON_PHONE_NUMBER_INVALID": "Button {index} phone number must use E.164 format."
+        "BUTTON_PHONE_NUMBER_INVALID": "Button {index} phone number must use E.164 format.",
+        "AUTH_EXPIRATION_RANGE": "Кодтың жарамдылық мерзімі 1-ден 90 минутқа дейінгі бүтін сан болуы керек.",
+        "CAROUSEL_MARKETING_ONLY": "Карусельдер тек маркетингтік үлгілер үшін қолжетімді.",
+        "CAROUSEL_CARD_LIMIT": "Карусельде 2-ден 10-ға дейін карточка болуы керек.",
+        "CAROUSEL_STRUCTURE": "Карусельдің барлық карточкасында негізгі мәтіннің болуы және түйме түрлерінің реті бірдей болуы керек.",
+        "CAROUSEL_HEADER_TYPE": "{index} карточкасында сурет немесе видео тақырыбы болуы керек.",
+        "CAROUSEL_MEDIA_REQUIRED": "{index} карточкасына сынақ медиа URL қажет.",
+        "CAROUSEL_BODY_LENGTH": "{index} карточкасының мәтіні 160 таңбаға дейін болуы мүмкін.",
+        "CAROUSEL_BODY_VARIABLE_POSITION": "{index} карточкасының мәтіні айнымалыдан басталмауы немесе аяқталмауы керек.",
+        "CAROUSEL_BODY_EXAMPLE_REQUIRED": "{index} карточкасындағы {variable} айнымалысы үшін мысал мәні қажет.",
+        "CAROUSEL_BUTTON_LIMIT": "{index} карточкасында ең көбі 2 түйме болуы мүмкін.",
+        "CAROUSEL_BUTTON_TYPE": "{index} карточкасы тек жылдам жауап, URL және телефон нөмірі түймелерін қолдайды.",
+        "CATALOG_MARKETING_ONLY": "Каталог түймесі тек маркетингтік үлгілер үшін қолжетімді.",
+        "FLOW_MARKETING_ONLY": "Flow түймесі тек маркетингтік үлгілер үшін қолжетімді.",
+        "FLOW_ACTION_INVALID": "{index} Flow түймесінде қолдау көрсетілмейтін әрекет көрсетілген.",
+        "FLOW_REFERENCE_XOR": "{index} Flow түймесіне тек бір дереккөз қажет: Flow ID немесе кірістірілген Flow JSON.",
+        "FLOW_JSON_INVALID": "{index} Flow түймесінде жарамсыз JSON бар.",
+        "FLOW_SCREEN_REQUIRED": "Өту әрекеті үшін {index} Flow түймесіне бастапқы экран ID қажет."
       }
     }
   }

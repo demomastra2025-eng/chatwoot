@@ -10,9 +10,15 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
 
   private
 
+  def process_statuses
+    status_payload = @processed_params[:statuses]&.first
+    status_payload[:status] = 'read' if status_payload&.[](:status) == 'played'
+    super
+  end
+
   def after_message_persisted(message)
     super
-    return if outgoing_echo || message.blank? || !message.incoming?
+    return if Current.suppress_runtime_events || outgoing_echo || message.blank? || !message.incoming?
 
     Confirmations::WhatsappReplyResolver.new(
       account: inbox.account,
@@ -28,9 +34,25 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
   end
 
   def update_message_with_status(message, status)
-    return if lower_delivery_status?(message.status, status[:status])
+    metadata_changed = persist_delivery_metadata(message, status)
+    if lower_delivery_status?(message.status, status[:status])
+      message.save! if metadata_changed
+      return
+    end
 
     super
+  end
+
+  def persist_delivery_metadata(message, status)
+    delivery_metadata = status.to_h.with_indifferent_access.slice(:conversation, :pricing).deep_stringify_keys
+    return false if delivery_metadata.empty?
+
+    content_attributes = message.content_attributes.to_h.deep_stringify_keys
+    updated_attributes = content_attributes.merge('whatsapp_delivery' => delivery_metadata)
+    return false if updated_attributes == content_attributes
+
+    message.content_attributes = updated_attributes
+    true
   end
 
   def lower_delivery_status?(current_status, incoming_status)

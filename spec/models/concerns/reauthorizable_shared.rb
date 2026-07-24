@@ -104,11 +104,14 @@ shared_examples_for 'reauthorizable' do
       allow(obj).to receive(handler_method).and_raise(StandardError, 'queue unavailable')
 
       expect { obj.prompt_reauthorization! }.to raise_error(StandardError, 'queue unavailable')
-      expect(obj.reauthorization_required?).to be(false)
+      durable_reauthorization = model.const_defined?(:DURABLE_REAUTHORIZATION_CONFIG_KEY)
+      expect(obj.reauthorization_required?).to be(durable_reauthorization)
 
       allow(obj).to receive(handler_method).and_return(true)
       expect(obj.prompt_reauthorization!).to be(true)
       expect(obj.reauthorization_required?).to be(true)
+      expect(Redis::Alfred.get(obj.send(:reauthorization_required_key))).to be_present
+      expect(obj).to have_received(handler_method).twice
     end
   end
 

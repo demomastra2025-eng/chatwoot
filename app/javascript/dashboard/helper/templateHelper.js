@@ -8,13 +8,12 @@ export const COMPONENT_TYPES = {
   BODY: 'BODY',
   FOOTER: 'FOOTER',
   BUTTONS: 'BUTTONS',
+  CAROUSEL: 'CAROUSEL',
 };
 export const MEDIA_FORMATS = ['IMAGE', 'VIDEO', 'DOCUMENT'];
 export const UNSUPPORTED_TEMPLATE_COMPONENT_TYPES = [
   'LIST',
   'PRODUCT',
-  'CATALOG',
-  'CAROUSEL',
   'LIMITED_TIME_OFFER',
   'CALL_PERMISSION_REQUEST',
 ];
@@ -55,6 +54,47 @@ export const replaceTemplateVariables = (
 
     return previewMode ? renderTemplateFieldReferencePreview(value) : value;
   });
+};
+
+const buildCarouselCardParameters = (card, cardIndex) => {
+  const header = findComponentByType(card, COMPONENT_TYPES.HEADER);
+  const body = findComponentByType(card, COMPONENT_TYPES.BODY);
+  const buttons = findComponentByType(card, COMPONENT_TYPES.BUTTONS);
+  const bodyVariables = extractTemplateVariables(body?.text);
+
+  return {
+    card_index: cardIndex,
+    header: {
+      media_id: '',
+      media_type: header?.format?.toLowerCase() || '',
+    },
+    body: Object.fromEntries(bodyVariables.map(variable => [variable, ''])),
+    buttons: (buttons?.buttons || []).flatMap((button, buttonIndex) => {
+      const type = button.type?.toLowerCase();
+      const supportsParameter =
+        type === 'quick_reply' ||
+        (type === 'url' && button.url?.includes('{{'));
+      if (!supportsParameter) return [];
+
+      return [{ index: buttonIndex, type, parameter: '' }];
+    }),
+  };
+};
+
+const addInteractiveTemplateParameters = (template, allVariables) => {
+  if (template.category?.toUpperCase() === 'AUTHENTICATION') return;
+
+  const buttons = findComponentByType(template, COMPONENT_TYPES.BUTTONS);
+  if (buttons?.buttons?.some(button => button.type === 'CATALOG')) {
+    allVariables.catalog = { thumbnail_product_retailer_id: '' };
+  }
+
+  const carousel = findComponentByType(template, COMPONENT_TYPES.CAROUSEL);
+  if (carousel) {
+    allVariables.carousel = {
+      cards: (carousel.cards || []).map(buildCarouselCardParameters),
+    };
+  }
 };
 
 export const buildTemplateParameters = (template, hasMediaHeaderValue) => {
@@ -99,6 +139,8 @@ export const buildTemplateParameters = (template, hasMediaHeaderValue) => {
   );
 
   buttonComponents.forEach(buttonComponent => {
+    if (template.category?.toUpperCase() === 'AUTHENTICATION') return;
+
     if (buttonComponent.buttons) {
       buttonComponent.buttons.forEach((button, index) => {
         // Handle URL buttons with variables
@@ -126,6 +168,8 @@ export const buildTemplateParameters = (template, hasMediaHeaderValue) => {
       });
     }
   });
+
+  addInteractiveTemplateParameters(template, allVariables);
 
   return allVariables;
 };

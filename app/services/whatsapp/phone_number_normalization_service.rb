@@ -14,19 +14,18 @@ class Whatsapp::PhoneNumberNormalizationService
   def normalize_and_find_contact_by_provider(raw_number, provider)
     # Extract clean number based on provider format
     clean_number = extract_clean_number(raw_number, provider)
-
-    # Find appropriate normalizer for the country
-    normalizer = find_normalizer_for_country(clean_number)
-    return format_for_provider(clean_number, provider) unless normalizer
-
-    # Normalize the clean number
-    normalized_clean_number = normalizer.normalize(clean_number)
-
-    # Format for provider and check for existing contact
-    provider_format = format_for_provider(normalized_clean_number, provider)
+    provider_format = canonical_source_id(clean_number, provider)
     existing_contact_inbox = find_existing_contact_inbox(provider_format)
 
     existing_contact_inbox&.source_id || format_for_provider(clean_number, provider)
+  end
+
+  def canonical_source_id(raw_number, provider)
+    clean_number = extract_clean_number(raw_number, provider)
+    normalizer = find_normalizer_for_country(clean_number)
+    normalized_clean_number = normalizer ? normalizer.normalize(clean_number) : clean_number
+
+    format_for_provider(normalized_clean_number, provider)
   end
 
   private

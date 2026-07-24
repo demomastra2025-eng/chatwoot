@@ -9,6 +9,8 @@
 ######################################
 
 class Whatsapp::Providers::BaseService
+  class DeliveryAcknowledgementMissingError < StandardError; end
+
   pattr_initialize [:whatsapp_channel!]
 
   def send_message(_phone_number, _message)
@@ -40,9 +42,12 @@ class Whatsapp::Providers::BaseService
   end
 
   def process_response(response, message)
-    parsed_response = response.parsed_response
+    parsed_response = response.parsed_response.to_h
     if response.success? && parsed_response['error'].blank?
-      parsed_response['messages'].first['id']
+      message_id = Array(parsed_response['messages']).first.to_h['id'].presence
+      raise DeliveryAcknowledgementMissingError, 'Provider response did not include a message acknowledgement' if message_id.blank?
+
+      message_id
     else
       handle_error(response, message)
       nil
@@ -115,7 +120,7 @@ class Whatsapp::Providers::BaseService
   def create_button_payload(message)
     buttons = create_buttons(message.content_attributes['items'])
     json_hash = { 'buttons' => buttons }
-    create_payload('button', message.outgoing_content, JSON.generate(json_hash))
+    create_payload('button', message.outgoing_content, json_hash)
   end
 
   def create_list_payload(message)
@@ -123,6 +128,6 @@ class Whatsapp::Providers::BaseService
     section1 = { 'rows' => rows }
     sections = [section1]
     json_hash = { :button => I18n.t('conversations.messages.whatsapp.list_button_label'), 'sections' => sections }
-    create_payload('list', message.outgoing_content, JSON.generate(json_hash))
+    create_payload('list', message.outgoing_content, json_hash)
   end
 end

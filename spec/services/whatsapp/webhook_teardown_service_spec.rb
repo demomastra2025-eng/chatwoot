@@ -30,12 +30,147 @@ RSpec.describe Whatsapp::WebhookTeardownService do
         expect(api_client).to have_received(:unsubscribe_waba_webhook).with('test_waba_id')
       end
 
-      it 'handles errors gracefully without raising' do
+      it 'moves the shared WABA callback to a surviving Cloud channel' do
+        sibling = create(
+          :channel_whatsapp,
+          account: channel.account,
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        sibling.update!(provider_config: sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+        setup_service = instance_double(Whatsapp::WebhookSetupService, register_callback: true)
+        allow(Whatsapp::WebhookSetupService).to receive(:new).with(sibling).and_return(setup_service)
+
+        expect(Whatsapp::FacebookApiClient).not_to receive(:new)
+
+        service.perform
+
+        expect(setup_service).to have_received(:register_callback)
+      end
+
+      it 'refuses last-owner unsubscribe while a sibling inbox is pending deletion' do
+        sibling = create(
+          :channel_whatsapp,
+          account: channel.account,
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        sibling.update!(provider_config: sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+        sibling.inbox.update!(deleting_at: Time.current)
+
+        expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+        expect(Whatsapp::FacebookApiClient).not_to receive(:new)
+
+        expect { service.perform }.to raise_error(Whatsapp::WebhookTeardownService::WebhookHandoffError)
+      end
+
+      it 'does not hand off the callback within a suspended account' do
+        sibling = create(
+          :channel_whatsapp,
+          account: channel.account,
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        sibling.update!(provider_config: sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+        channel.account.update!(status: :suspended)
+        api_client = instance_double(Whatsapp::FacebookApiClient, unsubscribe_waba_webhook: true)
+        allow(Whatsapp::FacebookApiClient).to receive(:new).with('test_api_key').and_return(api_client)
+
+        expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+
+        service.perform
+
+        expect(api_client).to have_received(:unsubscribe_waba_webhook).with('test_waba_id')
+      end
+
+      it 'blocks channel deletion when the sibling callback handoff fails' do
+        sibling = create(
+          :channel_whatsapp,
+          account: channel.account,
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        sibling.update!(provider_config: sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+        setup_service = instance_double(Whatsapp::WebhookSetupService)
+        allow(setup_service).to receive(:register_callback).and_raise(StandardError, 'handoff unavailable')
+        allow(Whatsapp::WebhookSetupService).to receive(:new).with(sibling).and_return(setup_service)
+
+        expect { channel.destroy! }.to raise_error(Whatsapp::WebhookTeardownService::WebhookHandoffError)
+        expect(Channel::Whatsapp.exists?(channel.id)).to be(true)
+      end
+
+      it 'does not move or unsubscribe a WABA that also appears in another account' do
+        sibling = create(
+          :channel_whatsapp,
+          account: create(:account),
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        sibling.update!(provider_config: sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+        allow(Rails.logger).to receive(:error)
+
+        expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+        expect(Whatsapp::FacebookApiClient).not_to receive(:new)
+
+        expect { service.perform }.to raise_error(Whatsapp::WebhookTeardownService::WebhookHandoffError)
+
+        expect(Rails.logger).to have_received(:error)
+          .with('[WHATSAPP] Webhook teardown refused because WABA ownership spans multiple accounts')
+      end
+
+      it 'refuses teardown while a foreign WABA owner is pending deletion' do
+        foreign_sibling = create(
+          :channel_whatsapp,
+          account: create(:account),
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        foreign_sibling.update!(provider_config: foreign_sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+        foreign_sibling.inbox.update!(deleting_at: Time.current)
+
+        expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+        expect(Whatsapp::FacebookApiClient).not_to receive(:new)
+
+        expect { service.perform }.to raise_error(Whatsapp::WebhookTeardownService::WebhookHandoffError)
+      end
+
+      it 'refuses callback handoff when both local and cross-account siblings share the WABA' do
+        local_sibling = create(
+          :channel_whatsapp,
+          account: channel.account,
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        local_sibling.update!(provider_config: local_sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+        foreign_sibling = create(
+          :channel_whatsapp,
+          account: create(:account),
+          provider: 'whatsapp_cloud',
+          validate_provider_config: false,
+          sync_templates: false
+        )
+        foreign_sibling.update!(provider_config: foreign_sibling.provider_config.merge('business_account_id' => 'test_waba_id'))
+
+        expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+        expect(Whatsapp::FacebookApiClient).not_to receive(:new)
+
+        expect { service.perform }.to raise_error(Whatsapp::WebhookTeardownService::WebhookHandoffError)
+      end
+
+      it 'blocks channel deletion when the final WABA unsubscribe fails' do
         api_client = instance_double(Whatsapp::FacebookApiClient)
         allow(Whatsapp::FacebookApiClient).to receive(:new).and_return(api_client)
         allow(api_client).to receive(:unsubscribe_waba_webhook).and_raise(StandardError, 'API Error')
 
-        expect { service.perform }.not_to raise_error
+        expect { channel.destroy! }.to raise_error(Whatsapp::WebhookTeardownService::WebhookTeardownError)
+        expect(Channel::Whatsapp.exists?(channel.id)).to be(true)
       end
     end
 

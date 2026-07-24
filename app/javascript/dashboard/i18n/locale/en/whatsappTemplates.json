@@ -44,6 +44,11 @@
       "MEDIA_URL_LABEL": "Enter {type} URL",
       "DOCUMENT_NAME_PLACEHOLDER": "Enter document filename (e.g., Invoice_2025.pdf)",
       "BUTTON_PARAMETER": "Enter button parameter",
+      "CATALOG_THUMBNAIL_LABEL": "Catalog thumbnail product (optional)",
+      "CATALOG_THUMBNAIL_PLACEHOLDER": "Enter a product retailer ID",
+      "CAROUSEL_CARD_LABEL": "Carousel card {index}",
+      "CAROUSEL_MEDIA_ID_PLACEHOLDER": "Enter a Meta media ID",
+      "CAROUSEL_BUTTON_PLACEHOLDER": "Enter button {index} parameter",
       "INSERT_ATTRIBUTE": "Insert attribute",
       "CHANGE_ATTRIBUTE": "Change attribute",
       "CLEAR_ATTRIBUTE": "Clear attribute",
@@ -56,7 +61,7 @@
       "PAGE_TITLE": "WhatsApp template library",
       "PAGE_DESCRIPTION": "Create and manage WhatsApp Cloud templates for this channel. New templates are submitted to Meta for review and appear here as soon as the local cache updates.",
       "SUPPORTED_TITLE": "Supported template builder",
-      "SUPPORTED_DESCRIPTION": "This builder supports body text, text or media headers, footer text, quick reply buttons, URL buttons, copy code buttons, and phone number buttons.",
+      "SUPPORTED_DESCRIPTION": "This builder supports standard utility and marketing templates, authentication copy-code templates, catalog buttons, and media carousels.",
       "PARAMETERS_TITLE": "Parameters",
       "LAST_SYNC": "Last sync: {timestamp}",
       "NOT_SYNCED_YET": "Not synced yet",
@@ -83,9 +88,37 @@
       "ADD_BUTTON": "Add button",
       "NO_BUTTONS": "Buttons are optional. Leave this empty for a simple text template.",
       "BUTTON_TITLE": "Button {index}",
+      "AUTHENTICATION": {
+        "TITLE": "Authentication preset",
+        "HINT": "Meta supplies the message text and copy-code OTP button. Only the supported preset options can be changed.",
+        "SECURITY_RECOMMENDATION": "Add Meta's security recommendation",
+        "EXPIRATION": "Code expiration in minutes"
+      },
+      "CAROUSEL": {
+        "ENABLE": "Use a media carousel",
+        "ENABLE_HINT": "Creates a marketing carousel with 2–10 image or video cards that share one component structure.",
+        "TITLE": "Carousel cards",
+        "HINT": "Every card must use the same optional body and button type order.",
+        "ADD_CARD": "Add card",
+        "CARD_TITLE": "Card {index}",
+        "CARD_BODY": "Card body"
+      },
+      "FLOW": {
+        "ACTION": "Flow action",
+        "ACTION_NAVIGATE": "Navigate to a screen",
+        "ACTION_DATA_EXCHANGE": "Data exchange",
+        "NAVIGATE_SCREEN": "Initial screen ID",
+        "NAVIGATE_SCREEN_PLACEHOLDER": "WELCOME_SCREEN",
+        "FLOW_ID": "Existing Flow ID",
+        "FLOW_ID_PLACEHOLDER": "123456789",
+        "FLOW_JSON": "Inline Flow JSON",
+        "FLOW_JSON_PLACEHOLDER": "{\"version\":\"7.1\",\"screens\":[]}",
+        "REFERENCE_HINT": "Provide exactly one source: an existing Flow ID or inline Flow JSON."
+      },
       "CATEGORY_OPTIONS": {
         "UTILITY": "Utility",
-        "MARKETING": "Marketing"
+        "MARKETING": "Marketing",
+        "AUTHENTICATION": "Authentication"
       },
       "HEADER_OPTIONS": {
         "NONE": "No header",
@@ -98,7 +131,9 @@
         "QUICK_REPLY": "Quick reply",
         "URL": "URL button",
         "COPY_CODE": "Copy code",
-        "PHONE_NUMBER": "Phone number"
+        "PHONE_NUMBER": "Phone number",
+        "CATALOG": "View catalog",
+        "FLOW": "Open Flow"
       },
       "FIELDS": {
         "LANGUAGE": "Language",
@@ -152,7 +187,24 @@
         "BUTTON_COPY_CODE_REQUIRED": "Button {index} needs a sample coupon code.",
         "BUTTON_COPY_CODE_LENGTH": "Button {index} coupon code can be up to 15 characters.",
         "BUTTON_PHONE_NUMBER_REQUIRED": "Button {index} phone number is required.",
-        "BUTTON_PHONE_NUMBER_INVALID": "Button {index} phone number must use E.164 format."
+        "BUTTON_PHONE_NUMBER_INVALID": "Button {index} phone number must use E.164 format.",
+        "CATALOG_MARKETING_ONLY": "Catalog buttons are only available for marketing templates.",
+        "AUTH_EXPIRATION_RANGE": "Code expiration must be a whole number from 1 to 90 minutes.",
+        "CAROUSEL_MARKETING_ONLY": "Carousels are only available for marketing templates.",
+        "CAROUSEL_CARD_LIMIT": "A carousel must contain from 2 to 10 cards.",
+        "CAROUSEL_STRUCTURE": "Every carousel card must use the same optional body and button type order.",
+        "CAROUSEL_HEADER_TYPE": "Carousel card {index} must use an image or video header.",
+        "CAROUSEL_MEDIA_REQUIRED": "Carousel card {index} needs a sample media URL.",
+        "CAROUSEL_BODY_LENGTH": "Carousel card {index} body can be up to 160 characters.",
+        "CAROUSEL_BODY_VARIABLE_POSITION": "Carousel card {index} body cannot start or end with a variable.",
+        "CAROUSEL_BODY_EXAMPLE_REQUIRED": "Carousel card {index} needs a sample value for {variable}.",
+        "CAROUSEL_BUTTON_LIMIT": "Carousel card {index} can contain up to 2 buttons.",
+        "CAROUSEL_BUTTON_TYPE": "Carousel card {index} only supports quick reply, URL, and phone number buttons.",
+        "FLOW_MARKETING_ONLY": "Flow buttons are only available for marketing templates.",
+        "FLOW_REFERENCE_XOR": "Flow button {index} needs exactly one source: Flow ID or inline Flow JSON.",
+        "FLOW_JSON_INVALID": "Flow button {index} contains invalid JSON.",
+        "FLOW_ACTION_INVALID": "Flow button {index} has an unsupported action.",
+        "FLOW_SCREEN_REQUIRED": "Flow button {index} needs an initial screen ID for navigate actions."
       }
     }
   }

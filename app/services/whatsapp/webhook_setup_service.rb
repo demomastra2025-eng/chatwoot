@@ -1,29 +1,50 @@
+# The setup service coordinates an intentionally broad provider transaction.
+# rubocop:disable Metrics/ClassLength
 class Whatsapp::WebhookSetupService
-  def initialize(channel, waba_id = nil, access_token = nil, strict: false)
+  class CallbackSetupError < RuntimeError; end
+  class StaleRecoveryIdentityError < RuntimeError; end
+  class PostMutationRecoveryError < Whatsapp::FacebookApiClient::WebhookRecoveryAnchorRequiredError; end
+
+  CALLBACK_RECOVERY_KEY = Whatsapp::WebhookCallbackRecoveryService::CONFIG_KEY
+  CALLBACK_RECOVERY_ACTIVE_STATES = Whatsapp::WebhookCallbackRecoveryService::ACTIVE_STATES
+
+  # Positional arguments are retained for the existing setup callers.
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(channel, waba_id = nil, access_token = nil, strict: false, force_registration: false, recovery_generation: nil)
     @channel = channel
     @waba_id = waba_id || channel.provider_config['business_account_id']
     @access_token = access_token || channel.provider_config['api_key']
     @api_client = Whatsapp::FacebookApiClient.new(@access_token)
     @strict = strict
+    @force_registration = force_registration
+    @recovery_generation = recovery_generation
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def perform
     validate_parameters!
 
-    # Register phone number if either condition is met:
-    # 1. Phone number is not verified (code_verification_status != 'VERIFIED')
-    # 2. Phone number needs registration (pending provisioning state)
-    register_phone_number if !phone_number_verified? || phone_number_needs_registration?
-
-    setup_webhook
+    with_waba_lock do
+      setup_webhook
+      register_phone_number if register_phone_number?
+    end
   end
 
-  def register_callback
+  def register_callback(schedule_recovery: true)
     validate_parameters!
-    setup_webhook
+    with_waba_lock { setup_webhook(schedule_recovery: schedule_recovery) }
+  end
+
+  def require_manual_callback_recovery!(error)
+    changed = callback_recovery.manual_recovery_required!(error)
+    @channel.prompt_reauthorization! if changed
   end
 
   private
+
+  def with_waba_lock(&)
+    Whatsapp::WabaLock.new(@waba_id).with_lock(&)
+  end
 
   def validate_parameters!
     raise ArgumentError, 'Channel is required' if @channel.blank?
@@ -35,44 +56,182 @@ class Whatsapp::WebhookSetupService
     phone_number_id = @channel.provider_config['phone_number_id']
     pin = fetch_or_create_pin
 
-    @api_client.register_phone_number(phone_number_id, pin)
     store_pin(pin)
+    @api_client.register_phone_number(phone_number_id, pin)
   rescue StandardError => e
-    Rails.logger.warn("[WHATSAPP] Phone registration failed#{@strict ? '' : ' but continuing'}: #{e.message}")
-    raise if @strict
+    safe_message = sanitized_error_message(e)
+    Rails.logger.warn("[WHATSAPP] Phone registration failed#{@strict ? '' : ' but continuing'}: #{safe_message}")
+    raise StandardError, safe_message if @strict
   end
 
   def fetch_or_create_pin
     # Check if we have a stored PIN for this phone number
     existing_pin = @channel.provider_config['verification_pin']
-    return existing_pin.to_i if existing_pin.present?
+    return existing_pin.to_s if existing_pin.present?
 
     # Generate a new 6-digit PIN if none exists
-    SecureRandom.random_number(900_000) + 100_000
+    (SecureRandom.random_number(900_000) + 100_000).to_s
   end
 
   def store_pin(pin)
-    # Store the PIN in provider_config for future use
+    return if @channel.provider_config['verification_pin'].to_s == pin.to_s
+
     @channel.provider_config['verification_pin'] = pin
     @channel.save!
   end
 
-  def setup_webhook
-    callback_url = build_callback_url
-    verify_token = @channel.provider_config['webhook_verify_token']
+  # Recovery writes intentionally stay adjacent to the remote callback mutation.
+  def setup_webhook(schedule_recovery: true)
+    remote_callback_updated = false
+    recovery_target = nil
+    validate_waba_ownership!
+    validate_recovery_identity!
+    callback_url, verify_token, recovery_target = callback_details
 
-    @api_client.subscribe_waba_webhook(@waba_id, callback_url, verify_token)
+    callback_recovery.updating!(**recovery_target)
+    subscribe_waba_callback(callback_url, verify_token)
+    remote_callback_updated = true
+    callback_recovery.resolved!(**recovery_target)
 
+  rescue Whatsapp::FacebookApiClient::WebhookRecoveryAnchorRequiredError => e
+    preserve_callback_recovery!(recovery_target, e, schedule_recovery: schedule_recovery)
+    Rails.logger.error("[WHATSAPP] Webhook setup failed: #{sanitized_error_message(e)}")
+    raise
+  rescue StaleRecoveryIdentityError
+    raise
   rescue StandardError => e
-    Rails.logger.error("[WHATSAPP] Webhook setup failed: #{e.message}")
-    raise "Webhook setup failed: #{e.message}"
+    handle_setup_error!(recovery_target, e, remote_callback_updated, schedule_recovery)
+  end
+
+  def handle_setup_error!(recovery_target, error, remote_callback_updated, schedule_recovery)
+    raise_post_mutation_recovery_error!(recovery_target, error, schedule_recovery: schedule_recovery) if remote_callback_updated
+
+    raise_callback_setup_error!(recovery_target, error)
+  end
+
+  def raise_post_mutation_recovery_error!(recovery_target, cause, schedule_recovery:)
+    recovery_error = PostMutationRecoveryError.new(
+      'Webhook callback was updated but the local recovery state could not be finalized'
+    )
+    preserve_callback_recovery!(recovery_target, recovery_error, schedule_recovery: schedule_recovery)
+    Rails.logger.error("[WHATSAPP] Webhook callback recovery finalization failed: #{sanitized_error_message(cause)}")
+    raise recovery_error
+  end
+
+  def raise_callback_setup_error!(recovery_target, error)
+    callback_recovery.failed!(**recovery_target, error: error) if recovery_target.present?
+    safe_message = sanitized_error_message(error)
+    Rails.logger.error("[WHATSAPP] Webhook setup failed: #{safe_message}")
+    raise CallbackSetupError, "Webhook setup failed: #{safe_message}"
+  end
+
+  def preserve_callback_recovery!(recovery_target, error, schedule_recovery:)
+    callback_recovery.outcome_unknown!(**recovery_target, error: error)
+  rescue StandardError => e
+    Rails.logger.error("[WHATSAPP] Failed to persist callback recovery state: #{sanitized_error_message(e)}")
+  ensure
+    schedule_callback_reconciliation if schedule_recovery
+  end
+
+  def schedule_callback_reconciliation
+    generation = callback_recovery.generation
+    Whatsapp::WebhookCallbackReconciliationJob.perform_later(@channel.id, @waba_id, generation)
+  rescue StandardError => e
+    Rails.logger.error("[WHATSAPP] Failed to schedule callback reconciliation: #{sanitized_error_message(e)}")
+  end
+
+  def callback_details
+    callback_url = build_callback_url
+    verify_token = callback_verify_token
+    [callback_url, verify_token, callback_recovery_target(callback_url, verify_token)]
   end
 
   def build_callback_url
-    frontend_url = ENV.fetch('FRONTEND_URL', nil)
-    phone_number = @channel.phone_number
+    @channel.callback_webhook_url
+  end
 
-    "#{frontend_url}/webhooks/whatsapp/#{phone_number}"
+  def callback_verify_token
+    return global_verify_token unless @channel.manual_webhook_callback?
+
+    @channel.provider_config['webhook_verify_token'].presence ||
+      raise(ArgumentError, 'Channel WhatsApp webhook verify token is required')
+  end
+
+  def global_verify_token
+    GlobalConfigService.load('WHATSAPP_WEBHOOK_VERIFY_TOKEN', nil).presence ||
+      raise(ArgumentError, 'Global WhatsApp webhook verify token is required')
+  end
+
+  def subscribe_waba_callback(callback_url, verify_token)
+    return @api_client.subscribe_waba_webhook(@waba_id, callback_url, verify_token) unless coexistence_subscription_required?
+
+    @api_client.subscribe_waba_webhook(
+      @waba_id,
+      callback_url,
+      verify_token,
+      subscribed_fields: webhook_subscribed_fields
+    )
+  end
+
+  def webhook_subscribed_fields
+    return Whatsapp::FacebookApiClient::WEBHOOK_DEFAULT_FIELDS unless coexistence_subscription_required?
+
+    @api_client.webhook_subscribed_fields(coexistence: true)
+  end
+
+  def callback_recovery_target(callback_url, verify_token)
+    { callback_url: callback_url, verify_token: verify_token, subscribed_fields: webhook_subscribed_fields }
+  end
+
+  def callback_recovery
+    @callback_recovery ||= Whatsapp::WebhookCallbackRecoveryService.new(
+      @channel,
+      @waba_id,
+      secrets: [@access_token],
+      generation: @recovery_generation
+    )
+  end
+
+  def validate_recovery_identity!
+    return if @recovery_generation.blank?
+
+    config = @channel.reload.provider_config.to_h
+    recovery = config[CALLBACK_RECOVERY_KEY].to_h
+    return if config['business_account_id'].to_s == @waba_id.to_s && recovery['waba_id'].to_s == @waba_id.to_s &&
+              recovery['generation'].to_s == @recovery_generation.to_s
+
+    raise StaleRecoveryIdentityError, 'Webhook callback recovery identity is stale'
+  end
+
+  def channel_coexistence?
+    @channel.provider_config.to_h['embedded_signup_flow'] == 'coexistence'
+  end
+
+  def coexistence_subscription_required?
+    return true if channel_coexistence?
+
+    Channel::Whatsapp.lifecycle_cloud
+                     .where.not(id: @channel.id)
+                     .for_waba(@waba_id)
+                     .where("provider_config ->> 'embedded_signup_flow' = 'coexistence'")
+                     .exists?
+  end
+
+  def validate_waba_ownership!
+    account_ids = Channel::Whatsapp.lifecycle_cloud.for_waba(@waba_id)
+                                   .distinct
+                                   .limit(2)
+                                   .pluck(:account_id)
+    return if account_ids.empty? || (account_ids.one? && account_ids.first == @channel.account_id)
+
+    raise 'Webhook setup refused because WABA ownership spans multiple accounts'
+  end
+
+  def register_phone_number?
+    return false if channel_coexistence?
+    return true if @force_registration
+
+    !phone_number_verified? || phone_number_needs_registration?
   end
 
   def phone_number_verified?
@@ -86,7 +245,7 @@ class Whatsapp::WebhookSetupService
     verified
   rescue StandardError => e
     # If verification check fails, assume not verified to be safe
-    Rails.logger.error("[WHATSAPP] Phone verification status check failed: #{e.message}")
+    Rails.logger.error("[WHATSAPP] Phone verification status check failed: #{sanitized_error_message(e)}")
     false
   end
 
@@ -97,7 +256,7 @@ class Whatsapp::WebhookSetupService
     phone_number_in_pending_state?
 
   rescue StandardError => e
-    Rails.logger.error("[WHATSAPP] Phone registration check failed: #{e.message}")
+    Rails.logger.error("[WHATSAPP] Phone registration check failed: #{sanitized_error_message(e)}")
     # Conservative approach: don't register if we can't determine the state
     false
   end
@@ -115,8 +274,14 @@ class Whatsapp::WebhookSetupService
       health_data.dig(:throughput, :level) == 'NOT_APPLICABLE'
 
   rescue StandardError => e
-    Rails.logger.error("[WHATSAPP] Health status check failed: #{e.message}")
+    Rails.logger.error("[WHATSAPP] Health status check failed: #{sanitized_error_message(e)}")
     # If health check fails, assume registration is not needed to avoid errors
     false
   end
+
+  def sanitized_error_message(error)
+    secrets = [@access_token, *Meta::CredentialDataSanitizer.channel_secrets(@channel)].compact_blank
+    Meta::CredentialDataSanitizer.sanitize(error.message.to_s.first(5000), secrets: secrets)
+  end
 end
+# rubocop:enable Metrics/ClassLength

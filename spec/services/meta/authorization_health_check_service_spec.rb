@@ -9,7 +9,11 @@ RSpec.describe Meta::AuthorizationHealthCheckService do
         'FACEBOOK_API_VERSION' => 'v25.0',
         'FB_APP_ID' => 'fb-app',
         'FB_APP_SECRET' => 'fb-secret',
-        'WHATSAPP_API_VERSION' => 'v22.0'
+        'WHATSAPP_API_VERSION' => 'v25.0',
+        'WHATSAPP_APP_ID' => 'wa-app',
+        'WHATSAPP_APP_SECRET' => 'wa-secret',
+        'WHATSAPP_CONFIGURATION_ID' => 'wa-v4-config',
+        'WHATSAPP_WEBHOOK_VERIFY_TOKEN' => 'wa-verify-token'
       }.fetch(key, default)
     end
     allow(Whatsapp::FacebookApiClient).to receive(:appsecret_proof_query).and_return({})
@@ -229,11 +233,43 @@ RSpec.describe Meta::AuthorizationHealthCheckService do
     end
 
     it 'verifies exact phone-number access' do
+      stub_request(:get, 'https://graph.facebook.com/v25.0/phone-123')
+        .with(query: hash_including('access_token' => 'wa-token'))
+        .to_return(status: 200, body: { id: 'phone-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      result = described_class.new(channel).result
+
+      expect(result).to be_healthy
+      expect(result.metadata).to include('graph_version' => 'v25.0', 'embedded_signup_version' => 'v4')
+    end
+
+    it 'reports a stale Graph version without invalidating working channel credentials' do
+      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v22.0')
       stub_request(:get, 'https://graph.facebook.com/v22.0/phone-123')
         .with(query: hash_including('access_token' => 'wa-token'))
         .to_return(status: 200, body: { id: 'phone-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
 
-      expect(described_class.new(channel).result).to be_healthy
+      result = described_class.new(channel).result
+
+      expect(result).to be_degraded
+      expect(result.reason).to eq('graph_version_stale')
+      expect(result.metadata).to include('configured_version' => 'v22.0', 'minimum_version' => 'v25.0')
+    end
+
+    it 'reports missing Embedded Signup v4 prerequisites after validating the channel asset' do
+      allow(GlobalConfigService).to receive(:load).with('WHATSAPP_CONFIGURATION_ID', nil).and_return(nil)
+      stub_request(:get, 'https://graph.facebook.com/v25.0/phone-123')
+        .with(query: hash_including('access_token' => 'wa-token'))
+        .to_return(status: 200, body: { id: 'phone-123' }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      result = described_class.new(channel).result
+
+      expect(result).to be_degraded
+      expect(result.reason).to eq('embedded_signup_configuration_missing')
+      expect(result.metadata).to include(
+        'missing_config' => ['WHATSAPP_CONFIGURATION_ID'],
+        'required_embedded_signup_version' => 'v4'
+      )
     end
   end
 

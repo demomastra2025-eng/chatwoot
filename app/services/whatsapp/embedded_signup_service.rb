@@ -1,18 +1,28 @@
 class Whatsapp::EmbeddedSignupService
+  VALID_SIGNUP_TYPES = %w[standard coexistence].freeze
+
+  class ReauthorizationFlowMismatchError < ArgumentError; end
+  class ReauthorizationFlowRequiredError < ArgumentError; end
+
   def initialize(account:, params:, inbox_id: nil)
     @account = account
     @code = params[:code]
-    @business_id = params[:business_id]
+    @business_id = params[:business_id].presence
     @waba_id = params[:waba_id]
-    @phone_number_id = params[:phone_number_id]
+    @phone_number_id = params[:phone_number_id].presence
+    @signup_type = params[:signup_type].presence
     @inbox_id = inbox_id
   end
 
   def perform
+    resolve_reauthorization_context!
+    @signup_type ||= 'standard'
     validate_parameters!
 
     access_token = exchange_code_for_token
     phone_info = fetch_phone_info(access_token)
+    @phone_number_id = phone_info[:phone_number_id]
+    validate_coexistence_phone!(phone_info) if coexistence?
     token_health = validate_token_access(access_token)
 
     channel = create_or_reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
@@ -20,6 +30,10 @@ class Whatsapp::EmbeddedSignupService
     # (platform_type: NOT_APPLICABLE) would incorrectly trigger a disconnect email right after
     # a successful reauth. Only run health check for new channel creation.
     check_channel_health_and_prompt_reauth(channel) if @inbox_id.blank?
+    if coexistence?
+      generation = channel.provider_config.dig('coexistence_sync', 'generation')
+      Whatsapp::CoexistenceSyncJob.perform_later(channel.id, generation)
+    end
     channel
 
   rescue StandardError => e
@@ -34,7 +48,10 @@ class Whatsapp::EmbeddedSignupService
   end
 
   def fetch_phone_info(access_token)
-    Whatsapp::PhoneInfoService.new(@waba_id, @phone_number_id, access_token).perform
+    options = {}
+    options[:coexistence] = true if coexistence?
+    options[:allow_unambiguous_selection] = true if @phone_number_id.blank? && !coexistence?
+    Whatsapp::PhoneInfoService.new(@waba_id, @phone_number_id, access_token, **options).perform
   end
 
   def validate_token_access(access_token)
@@ -56,24 +73,26 @@ class Whatsapp::EmbeddedSignupService
   def create_or_reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
     return reauthorize_channel_with_webhooks(access_token, phone_info, token_health) if @inbox_id.present?
 
-    channel = create_or_reauthorize_channel(access_token, phone_info)
-    store_token_health(channel, token_health)
-    setup_webhooks!(channel)
-    channel
-  rescue StandardError
-    cleanup_failed_initial_channel(channel)
-    raise
+    Whatsapp::WabaLock.new(@waba_id).with_lock do
+      channel = nil
+      begin
+        channel = create_or_reauthorize_channel(access_token, phone_info)
+        store_token_health(channel, token_health)
+        setup_webhooks!(channel)
+        channel
+      rescue StandardError => e
+        cleanup_failed_initial_channel(channel, teardown_webhook: !clean_callback_setup_failure?(e)) unless webhook_recovery_anchor_required?(e)
+        raise
+      end
+    end
   end
 
   def reauthorize_channel_with_webhooks(access_token, phone_info, token_health)
-    channel = nil
-    ActiveRecord::Base.transaction do
-      channel = create_or_reauthorize_channel(access_token, phone_info)
+    create_or_reauthorize_channel(access_token, phone_info) do |channel|
       store_token_health(channel, token_health)
       setup_webhooks!(channel)
       mark_channel_reauthorized(channel)
     end
-    channel
   end
 
   def mark_channel_reauthorized(channel)
@@ -87,29 +106,46 @@ class Whatsapp::EmbeddedSignupService
     # 3. The channel is marked with source: 'embedded_signup' to skip the after_commit callback
     # For initial signup, this must run after the channel transaction commits; Meta verifies
     # the callback URL immediately and the public verifier reads the channel token from DB.
-    channel.setup_webhooks(strict: true)
+    channel.setup_webhooks(strict: true, force_registration: @inbox_id.blank? && !coexistence?)
   end
 
-  def cleanup_failed_initial_channel(channel)
+  def cleanup_failed_initial_channel(channel, teardown_webhook: true)
     return if channel.blank?
 
-    channel.inbox&.destroy!
+    inbox = channel.inbox
+    unless teardown_webhook
+      channel.skip_webhook_teardown = true
+      channel.destroy!
+    end
+    inbox&.destroy!
   rescue StandardError => e
     Rails.logger.error("[WHATSAPP] Failed to cleanup channel after embedded signup error: #{safe_error_message(e, channel: channel)}")
   end
 
-  def create_or_reauthorize_channel(access_token, phone_info)
+  def webhook_recovery_anchor_required?(error)
+    error.is_a?(Whatsapp::FacebookApiClient::WebhookRecoveryAnchorRequiredError)
+  end
+
+  def clean_callback_setup_failure?(error)
+    error.is_a?(Whatsapp::WebhookSetupService::CallbackSetupError)
+  end
+
+  def create_or_reauthorize_channel(access_token, phone_info, &)
     if @inbox_id.present?
-      Whatsapp::ReauthorizationService.new(
+      options = {
         account: @account,
         inbox_id: @inbox_id,
         phone_number_id: @phone_number_id,
         business_id: @business_id,
         waba_id: @waba_id
-      ).perform(access_token, phone_info)
+      }
+      options[:signup_type] = @signup_type
+      Whatsapp::ReauthorizationService.new(**options).perform(access_token, phone_info, &)
     else
       waba_info = { waba_id: @waba_id, business_id: @business_id, business_name: phone_info[:business_name] }
-      Whatsapp::ChannelCreationService.new(@account, waba_info, phone_info, access_token).perform
+      return Whatsapp::ChannelCreationService.new(@account, waba_info, phone_info, access_token).perform unless coexistence?
+
+      Whatsapp::ChannelCreationService.new(@account, waba_info, phone_info, access_token, signup_type: @signup_type).perform
     end
   end
 
@@ -146,14 +182,43 @@ class Whatsapp::EmbeddedSignupService
   end
 
   def validate_parameters!
-    missing_params = []
-    missing_params << 'code' if @code.blank?
-    missing_params << 'business_id' if @business_id.blank?
-    missing_params << 'waba_id' if @waba_id.blank?
-    missing_params << 'phone_number_id' if @phone_number_id.blank?
+    raise ArgumentError, 'Unsupported WhatsApp Embedded Signup type' unless VALID_SIGNUP_TYPES.include?(@signup_type)
+
+    missing_params = required_signup_parameters.filter_map do |name|
+      name.to_s if instance_variable_get("@#{name}").blank?
+    end
 
     return if missing_params.empty?
 
     raise ArgumentError, "Required parameters are missing: #{missing_params.join(', ')}"
+  end
+
+  def required_signup_parameters
+    %i[code waba_id]
+  end
+
+  def resolve_reauthorization_context!
+    return if @inbox_id.blank?
+
+    channel = @account.inboxes.find(@inbox_id).channel
+    config = channel.provider_config.to_h
+    flows = [config['embedded_signup_flow'], @signup_type].compact_blank.uniq
+    raise ReauthorizationFlowMismatchError, 'WhatsApp reauthorization flow does not match the existing channel' if flows.many?
+    raise ReauthorizationFlowRequiredError, 'Select the existing WhatsApp connection type before reconnecting' if flows.empty?
+
+    @signup_type = flows.first
+    @phone_number_id = Whatsapp::ReauthorizationService.resolve_identifier(config['phone_number_id'], @phone_number_id)
+    @business_id = Whatsapp::ReauthorizationService.resolve_identifier(config['business_id'], @business_id)
+    @waba_id = Whatsapp::ReauthorizationService.resolve_identifier(config['business_account_id'], @waba_id)
+  end
+
+  def coexistence?
+    @signup_type == 'coexistence'
+  end
+
+  def validate_coexistence_phone!(phone_info)
+    return if phone_info[:is_on_biz_app] && phone_info[:platform_type] == 'CLOUD_API'
+
+    raise 'Selected number is not connected to both WhatsApp Business app and Cloud API'
   end
 end

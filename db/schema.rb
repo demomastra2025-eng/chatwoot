@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_22_090000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_23_023333) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2971,6 +2971,22 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_22_090000) do
     t.index ["account_id", "url"], name: "index_webhooks_on_account_id_and_url", unique: true
   end
 
+  create_table "whatsapp_coexistence_contact_pending_events", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.bigint "channel_id", null: false
+    t.string "event_key", null: false
+    t.string "reason", null: false
+    t.jsonb "entry", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "phone_identity"
+    t.index ["account_id", "channel_id", "id"], name: "idx_wa_coex_contact_pending_account_channel"
+    t.index ["account_id", "channel_id", "phone_identity", "id"], name: "idx_wa_coex_pending_phone_identity", where: "(phone_identity IS NOT NULL)"
+    t.index ["account_id"], name: "idx_on_account_id_f7abdfbcb1"
+    t.index ["channel_id", "event_key"], name: "idx_wa_coex_contact_pending_channel_event", unique: true
+    t.index ["channel_id"], name: "idx_on_channel_id_d91985ff7a"
+  end
+
   create_table "whatsapp_flow_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id", null: false
@@ -3220,6 +3236,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_22_090000) do
   add_foreign_key "telephony_sip_profiles", "inboxes"
   add_foreign_key "telephony_sip_profiles", "telephony_provider_connections", column: "provider_connection_id"
   add_foreign_key "telephony_sip_profiles", "users"
+  add_foreign_key "whatsapp_coexistence_contact_pending_events", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_coexistence_contact_pending_events", "channel_whatsapp", column: "channel_id", on_delete: :cascade
   add_foreign_key "whatsapp_flow_sessions", "accounts"
   add_foreign_key "whatsapp_flow_sessions", "conversations"
   add_foreign_key "whatsapp_flow_sessions", "inboxes"

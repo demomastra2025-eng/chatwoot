@@ -20,22 +20,24 @@
 class Channel::Whatsapp < ApplicationRecord
   include Channelable
   include Reauthorizable
+  include Whatsapp::DurableReauthorization
   include WhatsappProviderLifecycle
+  include WhatsappChannelRouting
 
   self.table_name = 'channel_whatsapp'
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
 
   # default at the moment is 360dialog lets change later.
   PROVIDERS = %w[default whatsapp_cloud].freeze
-  AUTHORIZATION_FAILURE_CONFIG_KEYS = %w[authorization_status authorization_error].freeze
-  TOKEN_HEALTH_CONFIG_KEY = 'token_health'.freeze
   PROVIDER_LIFECYCLE_CONFIG_KEY = 'provider_lifecycle'.freeze
   AUTHORIZATION_ERROR_CODE = 190
+
   before_validation :ensure_webhook_verify_token
 
   validates :provider, inclusion: { in: PROVIDERS }
   validates :phone_number, presence: true, uniqueness: true
   validate :validate_provider_config
+  validate ->(channel) { Whatsapp::WabaRoutingOwnershipValidator.new(channel).validate }, unless: :skip_waba_routing_ownership_validation
 
   has_one :meta_credential_health,
           as: :channel,
@@ -43,7 +45,7 @@ class Channel::Whatsapp < ApplicationRecord
           dependent: :destroy
 
   after_create :sync_templates
-  before_destroy :teardown_webhooks
+  before_destroy :teardown_webhooks, unless: :skip_webhook_teardown
   after_commit :setup_webhooks, on: :create, if: :should_auto_setup_webhooks?
 
   def name
@@ -99,10 +101,11 @@ class Channel::Whatsapp < ApplicationRecord
   delegate :media_url, to: :provider_service
   delegate :api_headers, to: :provider_service
 
-  def setup_webhooks(strict: false)
-    perform_webhook_setup(strict: strict)
+  def setup_webhooks(strict: false, force_registration: false)
+    perform_webhook_setup(strict: strict, force_registration: force_registration)
   rescue StandardError => e
-    Rails.logger.error "[WHATSAPP] Webhook setup failed: #{e.message}"
+    safe_message = sanitize_provider_metadata('message' => e.message)['message']
+    Rails.logger.error "[WHATSAPP] Webhook setup failed: #{safe_message}"
     prompt_reauthorization!
     raise if strict
   end
@@ -229,11 +232,11 @@ class Channel::Whatsapp < ApplicationRecord
     errors.add(:provider_config, 'Invalid Credentials') unless provider_service.validate_provider_config?
   end
 
-  def perform_webhook_setup(strict: false)
+  def perform_webhook_setup(strict: false, force_registration: false)
     business_account_id = provider_config['business_account_id']
     api_key = provider_config['api_key']
-
-    Whatsapp::WebhookSetupService.new(self, business_account_id, api_key, strict: strict).perform
+    options = { strict: strict, force_registration: force_registration }
+    Whatsapp::WebhookSetupService.new(self, business_account_id, api_key, **options).perform
   end
 
   def teardown_webhooks

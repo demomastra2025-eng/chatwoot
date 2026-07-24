@@ -14,6 +14,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  recoveryData: {
+    type: Object,
+    default: null,
+  },
 });
 
 const emit = defineEmits(['registerWebhook']);
@@ -50,7 +54,7 @@ const healthItems = computed(() => {
     verified_name: verifiedName,
     name_status: nameStatus,
     quality_rating: qualityRating,
-    messaging_limit_tier: messagingLimitTier,
+    messaging_limit: messagingLimit,
     account_mode: accountMode,
   } = props.healthData;
 
@@ -90,9 +94,9 @@ const healthItems = computed(() => {
       type: 'quality',
     },
     {
-      key: 'messagingLimitTier',
+      key: 'messagingLimit',
       label: t('INBOX_MGMT.ACCOUNT_HEALTH.FIELDS.MESSAGING_LIMIT_TIER.LABEL'),
-      value: messagingLimitTier || 'UNKNOWN',
+      value: messagingLimit || 'UNKNOWN',
       tooltip: t(
         'INBOX_MGMT.ACCOUNT_HEALTH.FIELDS.MESSAGING_LIMIT_TIER.TOOLTIP'
       ),
@@ -157,6 +161,62 @@ const webhookUrlMismatch = computed(
     webhookConfigured.value &&
     webhookUrl.value !== props.healthData?.expected_webhook_url
 );
+
+const recoveryItems = computed(() => {
+  const data = props.recoveryData || {};
+  const callback = data.webhook_callback_recovery;
+  const sync = data.coexistence_sync;
+  const lifecycle = data.meta_webhook_lifecycle;
+  const lifecycleEventCount = Object.values(lifecycle?.counters || {}).reduce(
+    (total, count) => total + Number(count || 0),
+    0
+  );
+
+  return [
+    callback && {
+      key: 'callback',
+      label: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.CALLBACK'),
+      value: callback.state,
+      detail: callback.last_error,
+    },
+    sync && {
+      key: 'sync',
+      label: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.COEXISTENCE_SYNC'),
+      value: sync.state,
+      detail: sync.last_error,
+    },
+    lifecycle && {
+      key: 'lifecycle',
+      label: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.LIFECYCLE'),
+      value: t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.EVENTS', {
+        count: lifecycleEventCount,
+      }),
+      detail: lifecycle.last_event_at,
+    },
+  ].filter(Boolean);
+});
+
+const formatRecoveryState = state =>
+  String(state || 'unknown').replaceAll('_', ' ');
+
+const recoveryToneClass = state => {
+  const normalizedState = String(state || '');
+  if (['resolved', 'completed'].includes(normalizedState)) {
+    return 'text-n-teal-11';
+  }
+  if (
+    [
+      'failed',
+      'history_failed',
+      'history_declined',
+      'manual_recovery_required',
+      'outcome_unknown',
+    ].some(failureState => normalizedState.includes(failureState))
+  ) {
+    return 'text-n-ruby-11';
+  }
+  return 'text-n-amber-11';
+};
 
 const handleRegisterWebhook = () => {
   emit('registerWebhook');
@@ -298,6 +358,33 @@ const handleRegisterWebhook = () => {
             <Icon icon="i-lucide-activity" class="mb-2 w-8 h-8" />
             <p class="text-body-main text-n-slate-11">
               {{ t('INBOX_MGMT.ACCOUNT_HEALTH.NO_DATA') }}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="recoveryItems.length" class="pt-6 space-y-3">
+        <h3 class="text-heading-4 text-n-slate-12">
+          {{ t('INBOX_MGMT.ACCOUNT_HEALTH.RECOVERY.TITLE') }}
+        </h3>
+        <div class="grid grid-cols-1 gap-4 xs:grid-cols-2">
+          <div
+            v-for="item in recoveryItems"
+            :key="item.key"
+            data-testid="whatsapp-recovery-status"
+            class="flex flex-col gap-2 p-4 rounded-lg border border-n-weak bg-n-solid-1"
+          >
+            <span class="text-body-main font-medium text-n-slate-11">
+              {{ item.label }}
+            </span>
+            <span
+              class="inline-flex self-start px-2 py-0.5 min-h-6 text-label-small capitalize rounded-md bg-n-alpha-2"
+              :class="recoveryToneClass(item.value)"
+            >
+              {{ formatRecoveryState(item.value) }}
+            </span>
+            <p v-if="item.detail" class="mb-0 text-body-small text-n-slate-10">
+              {{ item.detail }}
             </p>
           </div>
         </div>

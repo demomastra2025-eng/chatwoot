@@ -149,6 +149,10 @@ const bodyParamEntries = computed(() =>
   }))
 );
 
+const hasInteractiveParams = computed(() =>
+  Boolean(processedParams.value.catalog || processedParams.value.carousel)
+);
+
 const renderedTemplate = computed(() => {
   return replaceTemplateVariables(bodyText.value, processedParams.value);
 });
@@ -165,7 +169,13 @@ const rawRenderedTemplate = computed(() => {
 });
 
 const isFormInvalid = computed(() => {
-  if (!hasVariables.value && !hasMediaHeader.value) return false;
+  if (
+    !hasVariables.value &&
+    !hasMediaHeader.value &&
+    !hasInteractiveParams.value
+  ) {
+    return false;
+  }
 
   if (hasMediaHeader.value && !processedParams.value.header?.media_url) {
     return true;
@@ -191,6 +201,17 @@ const isFormInvalid = computed(() => {
     );
     if (hasEmptyButtonParameter) return true;
   }
+
+  const carouselCards = processedParams.value.carousel?.cards || [];
+  const hasInvalidCarouselCard = carouselCards.some(card => {
+    if (!card.header?.media_id) return true;
+    if (Object.values(card.body || {}).some(value => !value)) return true;
+
+    return (card.buttons || []).some(
+      button => button.type === 'url' && !button.parameter
+    );
+  });
+  if (hasInvalidCarouselCard) return true;
 
   return false;
 });
@@ -228,7 +249,7 @@ const updateMediaName = value => {
 
 const sendMessage = () => {
   v$.value.$touch();
-  if (v$.value.$invalid) return;
+  if (v$.value.$invalid || isFormInvalid.value) return;
 
   const { name, category, language, namespace } = props.template;
 
@@ -268,6 +289,7 @@ defineExpose({
   processedParams,
   hasVariables,
   hasMediaHeader,
+  hasInteractiveParams,
   isDocumentTemplate,
   headerComponent,
   renderedTemplate,
@@ -305,7 +327,7 @@ defineExpose({
       </div>
     </div>
 
-    <div v-if="hasVariables || hasMediaHeader">
+    <div v-if="hasVariables || hasMediaHeader || hasInteractiveParams">
       <div v-if="headerParamEntries.length" class="mb-4">
         <p class="mb-2.5 text-sm font-semibold">
           {{ t('WHATSAPP_TEMPLATES.PARSER.HEADER_VARIABLES_LABEL') }}
@@ -403,6 +425,68 @@ defineExpose({
           />
         </div>
       </div>
+      <div v-if="processedParams.catalog" class="mb-4">
+        <p class="mb-2.5 text-sm font-semibold">
+          {{ t('WHATSAPP_TEMPLATES.PARSER.CATALOG_THUMBNAIL_LABEL') }}
+        </p>
+        <TemplateParamInput
+          v-model="processedParams.catalog.thumbnail_product_retailer_id"
+          type="text"
+          class="w-full"
+          :placeholder="
+            t('WHATSAPP_TEMPLATES.PARSER.CATALOG_THUMBNAIL_PLACEHOLDER')
+          "
+        />
+      </div>
+
+      <div v-if="processedParams.carousel" class="flex flex-col gap-4 mb-4">
+        <div
+          v-for="(card, cardIndex) in processedParams.carousel.cards"
+          :key="`carousel-card-${card.card_index}`"
+          class="p-3 border rounded-lg border-n-weak"
+        >
+          <p class="mb-2.5 text-sm font-semibold">
+            {{
+              t('WHATSAPP_TEMPLATES.PARSER.CAROUSEL_CARD_LABEL', {
+                index: cardIndex + 1,
+              })
+            }}
+          </p>
+          <TemplateParamInput
+            v-model="card.header.media_id"
+            type="text"
+            class="w-full mb-2.5"
+            :placeholder="
+              t('WHATSAPP_TEMPLATES.PARSER.CAROUSEL_MEDIA_ID_PLACEHOLDER')
+            "
+          />
+          <TemplateParamInput
+            v-for="(_, variable) in card.body"
+            :key="`carousel-${card.card_index}-body-${variable}`"
+            v-model="card.body[variable]"
+            type="text"
+            class="w-full mb-2.5"
+            :placeholder="
+              t('WHATSAPP_TEMPLATES.PARSER.VARIABLE_PLACEHOLDER', {
+                variable,
+              })
+            "
+          />
+          <TemplateParamInput
+            v-for="button in card.buttons"
+            :key="`carousel-${card.card_index}-button-${button.index}`"
+            v-model="button.parameter"
+            type="text"
+            class="w-full mb-2.5"
+            :placeholder="
+              t('WHATSAPP_TEMPLATES.PARSER.CAROUSEL_BUTTON_PLACEHOLDER', {
+                index: button.index + 1,
+              })
+            "
+          />
+        </div>
+      </div>
+
       <p
         v-if="v$.$dirty && v$.$invalid"
         class="p-2.5 text-center rounded-md bg-n-ruby-9/20 text-n-ruby-9"

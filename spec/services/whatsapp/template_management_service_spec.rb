@@ -106,6 +106,41 @@ RSpec.describe Whatsapp::TemplateManagementService do
       expect(result[:recovered]).to be(true)
       expect(whatsapp_channel.reload.message_templates.first['id']).to eq('remote-template-id')
     end
+
+    it 'sanitizes provider failure payloads before returning them' do
+      secret = 'template-provider-secret'
+      whatsapp_channel.update!(provider_config: whatsapp_channel.provider_config.merge('api_key' => secret))
+      response = instance_double(
+        HTTParty::Response,
+        success?: false,
+        body: { error: { message: "access_token=#{secret}", code: 190, error_user_title: "Bearer #{secret}" } }.to_json
+      )
+      allow(provider_service).to receive(:create_template).with(request_body).and_return(response)
+
+      result = described_class.new(whatsapp_channel: whatsapp_channel).create_template({})
+
+      expect(result).to include(success: false)
+      expect(result[:error]).to include('[FILTERED]')
+      expect(result[:details]).to include(code: 190, title: 'Bearer [FILTERED]')
+      expect(result[:response_body]).to include('[FILTERED]')
+      expect(result.to_s).not_to include(secret)
+    end
+
+    it 'returns a generic account-facing error and sanitizes logs for provider exceptions' do
+      secret = 'template-exception-secret'
+      whatsapp_channel.update!(provider_config: whatsapp_channel.provider_config.merge('api_key' => secret))
+      allow(Rails.logger).to receive(:error)
+      allow(provider_service).to receive(:create_template)
+        .with(request_body)
+        .and_raise(StandardError, "request failed access_token=#{secret}")
+
+      result = described_class.new(whatsapp_channel: whatsapp_channel).create_template({})
+
+      expect(result).to include(success: false, error: 'Template operation failed. Please try again.')
+      expect(result.to_s).not_to include(secret)
+      expect(Rails.logger).to have_received(:error).with(a_string_including('[FILTERED]'))
+      expect(Rails.logger).not_to have_received(:error).with(a_string_including(secret))
+    end
   end
 
   describe '#delete_template' do

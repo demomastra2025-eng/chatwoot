@@ -4,7 +4,7 @@ class Whatsapp::HealthService
   def initialize(channel)
     @channel = channel
     @access_token = channel.provider_config['api_key']
-    @api_version = GlobalConfigService.load('WHATSAPP_API_VERSION', 'v22.0')
+    @api_version = GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0')
   end
 
   def fetch_health_status
@@ -25,9 +25,9 @@ class Whatsapp::HealthService
 
     response = HTTParty.get(
       "#{BASE_URI}/#{@api_version}/#{phone_number_id}",
+      headers: { 'Authorization' => "Bearer #{@access_token}" },
       query: {
-        fields: health_fields,
-        access_token: @access_token
+        fields: health_fields
       }.merge(graph_api_query)
     )
 
@@ -41,7 +41,7 @@ class Whatsapp::HealthService
     %w[
       id
       quality_rating
-      messaging_limit_tier
+      whatsapp_business_manager_messaging_limit
       code_verification_status
       account_mode
       display_phone_number
@@ -79,7 +79,7 @@ class Whatsapp::HealthService
       verified_name: response['verified_name'],
       name_status: response['name_status'],
       quality_rating: response['quality_rating'],
-      messaging_limit_tier: response['messaging_limit_tier'],
+      messaging_limit: response['whatsapp_business_manager_messaging_limit'],
       account_mode: response['account_mode'],
       code_verification_status: response['code_verification_status'],
       webhook_configuration: response['webhook_configuration'],
@@ -93,10 +93,7 @@ class Whatsapp::HealthService
   end
 
   def build_expected_webhook_url
-    frontend_url = ENV.fetch('FRONTEND_URL', nil)
-    return nil if frontend_url.blank?
-
-    "#{frontend_url}/webhooks/whatsapp/#{@channel.phone_number}"
+    @channel.callback_webhook_url if ENV.fetch('FRONTEND_URL', nil).present?
   end
 
   def safe_provider_data(data)
