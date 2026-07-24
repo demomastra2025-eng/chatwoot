@@ -425,6 +425,7 @@ Rails.application.routes.draw do
             post :reset_secret, on: :member
             post :refresh_whatsapp_web_qr, on: :member
             post :reconnect_whatsapp_web, on: :member
+            post :reauthorize_whatsapp_web, on: :member
             post :disconnect_whatsapp_web, on: :member
             post :repair_whatsapp_web, on: :member
             get :whatsapp_web_diagnostics, on: :member

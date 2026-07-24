@@ -151,6 +151,7 @@ export default {
       isLoadingWhatsappWebDiagnostics: false,
       isRefreshingWhatsappWebStatus: false,
       isRunningWhatsappWebRecovery: false,
+      isRunningWhatsappWebReauthorization: false,
       isRunningWhatsappWebDisconnect: false,
       telegramPersonalDiagnostics: null,
       isLoadingTelegramPersonalDiagnostics: false,
@@ -2266,6 +2267,29 @@ export default {
         this.isRunningWhatsappWebRecovery = false;
       }
     },
+    async reauthorizeWhatsappWeb() {
+      if (this.isWhatsappWebDeleting) {
+        return;
+      }
+
+      try {
+        this.isRunningWhatsappWebReauthorization = true;
+        await this.$store.dispatch(
+          'inboxes/reauthorizeWhatsappWeb',
+          this.currentInboxId
+        );
+
+        await this.fetchWhatsappWebDiagnostics();
+        useAlert(this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REAUTHORIZE_SUCCESS'));
+      } catch (error) {
+        useAlert(
+          error.message ||
+            this.$t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REAUTHORIZE_ERROR')
+        );
+      } finally {
+        this.isRunningWhatsappWebReauthorization = false;
+      }
+    },
     async updateInbox() {
       const bubbleSettings = {
         position: this.widgetBubblePosition,
@@ -3112,6 +3136,16 @@ export default {
                           "
                           :is-loading="isRunningWhatsappWebRecovery"
                           @click="recoverWhatsappWeb"
+                        />
+                        <NextButton
+                          outline
+                          slate
+                          icon="i-lucide-qr-code"
+                          :label="
+                            $t('INBOX_MGMT.EDIT.WHATSAPP_WEB.REAUTHORIZE')
+                          "
+                          :is-loading="isRunningWhatsappWebReauthorization"
+                          @click="reauthorizeWhatsappWeb"
                         />
                         <NextButton
                           outline

@@ -1023,6 +1023,17 @@ export const actions = {
       throw new Error(error?.response?.data?.error || error.message);
     }
   },
+  reauthorizeWhatsappWeb: async ({ commit }, inboxId) => {
+    try {
+      const response = await InboxesAPI.reauthorizeWhatsappWeb(inboxId);
+      const reauthorizedInbox = response.data;
+
+      commit(types.default.EDIT_INBOXES, reauthorizedInbox);
+      return reauthorizedInbox;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
   disconnectWhatsappWeb: async ({ commit }, inboxId) => {
     try {
       const response = await InboxesAPI.disconnectWhatsappWeb(inboxId);

@@ -121,7 +121,7 @@ class Channel::WhatsappWeb < ApplicationRecord
     end
   end
 
-  delegate :provision!, :refresh_qr!, :reconnect!, :disconnect!, :repair!, :sync_connection_state!, :diagnostics,
+  delegate :provision!, :refresh_qr!, :reconnect!, :reauthorize!, :disconnect!, :repair!, :sync_connection_state!, :diagnostics,
            :send_message, :update_message, to: :provider_service
 
   def generated_inbox_name

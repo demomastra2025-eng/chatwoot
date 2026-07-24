@@ -1083,6 +1083,29 @@ RSpec.describe 'Inboxes API', type: :request do
       end
     end
 
+    describe 'POST /api/v1/accounts/:account_id/inboxes/:id/reauthorize_whatsapp_web' do
+      it 'forces reauthorization and returns the fresh QR' do
+        provider_service = instance_double(WhatsappWeb::Providers::EvolutionService)
+        allow(WhatsappWeb::Providers::EvolutionService).to receive(:new).and_return(provider_service)
+        expect(provider_service).to receive(:reauthorize!) do
+          inbox.reload.channel.update!(
+            lifecycle_state: 'qr_ready',
+            connection_state: 'connecting',
+            qr_code: { 'base64' => 'fresh-reauth-qr' },
+            last_synced_at: Time.current
+          )
+        end
+
+        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/reauthorize_whatsapp_web",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'status')).to eq('qr_ready')
+        expect(response.parsed_body.dig('additional_attributes', 'evolution', 'qrcode', 'base64')).to eq('fresh-reauth-qr')
+      end
+    end
+
     describe 'GET /api/v1/accounts/:account_id/inboxes/:id/whatsapp_web_diagnostics' do
       it 'returns provider diagnostics' do
         allow_any_instance_of(Channel::WhatsappWeb).to receive(:diagnostics).and_return(

@@ -82,6 +82,10 @@ class InboxPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def reauthorize_whatsapp_web?
+    @account_user.administrator?
+  end
+
   def disconnect_whatsapp_web?
     @account_user.administrator?
   end

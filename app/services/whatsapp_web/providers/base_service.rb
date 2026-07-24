@@ -13,6 +13,10 @@ class WhatsappWeb::Providers::BaseService
     raise 'Overwrite this method in child class'
   end
 
+  def reauthorize!
+    raise 'Overwrite this method in child class'
+  end
+
   def disconnect!
     raise 'Overwrite this method in child class'
   end

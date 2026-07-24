@@ -552,6 +552,39 @@ describe('#actions', () => {
     });
   });
 
+  describe('#reauthorizeWhatsappWeb', () => {
+    it('commits the inbox returned by the reauthorization endpoint', async () => {
+      const reauthorizedInbox = {
+        id: 123,
+        channel_type: 'Channel::WhatsappWeb',
+      };
+      axios.post.mockResolvedValue({ data: reauthorizedInbox });
+
+      const response = await actions.reauthorizeWhatsappWeb({ commit }, 123);
+
+      expect(response).toEqual(reauthorizedInbox);
+      expect(axios.post).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/reauthorize_whatsapp_web'
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        reauthorizedInbox
+      );
+    });
+
+    it('surfaces provider errors', async () => {
+      axios.post.mockRejectedValue({
+        response: { data: { error: 'reauthorization failed' } },
+      });
+
+      const error = await actions
+        .reauthorizeWhatsappWeb({ commit }, 123)
+        .catch(result => result);
+
+      expect(error.message).toBe('reauthorization failed');
+    });
+  });
+
   describe('#reauthorizeWhatsApp', () => {
     it('merges returned provider config and clears local authorization errors', async () => {
       const currentInbox = {

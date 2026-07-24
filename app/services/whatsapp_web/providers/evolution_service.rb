@@ -120,23 +120,31 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     channel
   end
 
+  def reauthorize!
+    apply_runtime_configuration!
+    response = request(:post, "/instance/reauthorize/#{channel.instance_name}", body: {})
+    sync_from_runtime_response!(response)
+    channel.reload
+
+    unless channel.connection_state == 'open' || channel.qr_code.present?
+      raise RequestError.new(
+        'Evolution did not return a new WhatsApp authorization artifact',
+        status: 502,
+        body: response
+      )
+    end
+
+    channel
+  end
+
   def disconnect!
-    request(:delete, "/instance/logout/#{channel.instance_name}")
+    response = request(:delete, "/instance/logout/#{channel.instance_name}")
+    verify_disconnected_runtime!(response)
     channel.update!(
       lifecycle_state: 'disconnected',
       connection_state: 'close',
       qr_code: {},
       last_error: nil,
-      last_synced_at: Time.current,
-      sync_state: channel.cleared_auth_artifact_sync_state
-    )
-  rescue RequestError => e
-    raise unless e.status == 400
-
-    channel.update!(
-      lifecycle_state: 'disconnected',
-      connection_state: 'close',
-      qr_code: {},
       last_synced_at: Time.current,
       sync_state: channel.cleared_auth_artifact_sync_state
     )
@@ -791,9 +799,44 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
     response = HTTParty.public_send(method, url, options)
     parsed = parse_response(response)
-    return parsed if response.success?
+    return parsed if response.success? && !provider_error_response?(parsed)
 
-    raise RequestError.new(parsed_error_message(parsed, response), status: response.code, body: parsed)
+    raise RequestError.new(
+      parsed_error_message(parsed, response),
+      status: provider_error_status(parsed, response),
+      body: parsed
+    )
+  end
+
+  def provider_error_response?(parsed)
+    return false unless parsed.is_a?(Hash)
+
+    parsed['error'] == true || parsed['statusCode'].to_i >= 400
+  end
+
+  def provider_error_status(parsed, response)
+    status = parsed.is_a?(Hash) ? parsed['statusCode'].to_i : 0
+    return status if status >= 400
+
+    response.success? ? 502 : response.code
+  end
+
+  def verify_disconnected_runtime!(response)
+    state = response.dig('instance', 'state') if response.is_a?(Hash)
+    3.times do |attempt|
+      break if normalized_connection_state(state) == 'close'
+
+      sleep(0.2) if attempt.positive?
+      state = request(:get, "/instance/connectionState/#{channel.instance_name}").dig('instance', 'state')
+    end
+
+    return if normalized_connection_state(state) == 'close'
+
+    raise RequestError.new(
+      "Evolution did not disconnect WhatsApp runtime (state: #{state.presence || 'unknown'})",
+      status: 502,
+      body: response
+    )
   end
 
   def parse_response(response)

@@ -38,6 +38,23 @@ describe WhatsappWeb::Providers::EvolutionService do
         service.send(:request, :get, "/instance/connect/#{channel.instance_name}")
       end.to raise_error(described_class::RequestError, Channel::WhatsappWeb::INSTANCE_BEING_DELETED_MESSAGE)
     end
+
+    it 'raises when Evolution returns an error payload with HTTP 200' do
+      service = described_class.new(channel: channel)
+      response = instance_double(
+        HTTParty::Response,
+        success?: true,
+        code: 200,
+        body: { error: true, statusCode: 500, message: 'provider failed' }.to_json,
+        parsed_response: { 'error' => true, 'statusCode' => 500, 'message' => 'provider failed' }
+      )
+
+      allow(HTTParty).to receive(:post).and_return(response)
+
+      expect do
+        service.send(:request, :post, "/instance/restart/#{channel.instance_name}", body: {})
+      end.to raise_error(described_class::RequestError) { |error| expect(error.status).to eq(500) }
+    end
   end
 
   describe '#refresh_qr!' do
@@ -289,6 +306,65 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(service).to have_received(:request)
         .with(:post, "/instance/restart/#{channel.instance_name}", body: {})
       expect(service).not_to have_received(:refresh_qr!)
+    end
+  end
+
+  describe '#reauthorize!' do
+    it 'forces a new authorization cycle and stores the returned QR' do
+      service = described_class.new(channel: channel)
+      response = { 'instance' => { 'state' => 'connecting' }, 'qrcode' => { 'base64' => 'fresh-qr' } }
+
+      allow(service).to receive(:request)
+        .with(:post, "/instance/reauthorize/#{channel.instance_name}", body: {})
+        .and_return(response)
+      allow(service).to receive(:sync_from_runtime_response!) do
+        channel.update!(connection_state: 'connecting', lifecycle_state: 'qr_ready', qr_code: { 'base64' => 'fresh-qr' })
+      end
+      allow(service).to receive(:apply_runtime_configuration!)
+
+      expect(service.reauthorize!).to eq(channel)
+      expect(channel.reload.qr_code).to include('base64' => 'fresh-qr')
+      expect(service).to have_received(:apply_runtime_configuration!)
+    end
+
+    it 'fails when Evolution does not return an open session or authorization artifact' do
+      service = described_class.new(channel: channel)
+      response = { 'instance' => { 'state' => 'connecting' }, 'status' => 'reauth_required' }
+
+      allow(service).to receive(:request).and_return(response)
+      allow(service).to receive(:sync_from_runtime_response!) do
+        channel.update!(connection_state: 'connecting', lifecycle_state: 'waiting_for_qr', qr_code: {})
+      end
+      allow(service).to receive(:apply_runtime_configuration!)
+
+      expect { service.reauthorize! }.to raise_error(described_class::RequestError, /did not return/)
+      expect(service).to have_received(:apply_runtime_configuration!)
+    end
+  end
+
+  describe '#disconnect!' do
+    it 'marks the channel disconnected only after Evolution confirms close' do
+      service = described_class.new(channel: channel)
+      allow(service).to receive(:request)
+        .with(:delete, "/instance/logout/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'close' } })
+
+      service.disconnect!
+
+      expect(channel.reload).to have_attributes(connection_state: 'close', lifecycle_state: 'disconnected')
+    end
+
+    it 'does not report success while Evolution still reports open' do
+      service = described_class.new(channel: channel)
+      allow(service).to receive(:request)
+        .with(:delete, "/instance/logout/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'open' } })
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return({ 'instance' => { 'state' => 'open' } })
+      allow(service).to receive(:sleep)
+
+      expect { service.disconnect! }.to raise_error(described_class::RequestError, /did not disconnect/)
     end
   end
 

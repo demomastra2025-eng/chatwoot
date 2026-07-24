@@ -44,6 +44,10 @@ class Inboxes extends CacheEnabledApiClient {
     return axios.post(`${this.url}/${inboxId}/reconnect_whatsapp_web`);
   }
 
+  reauthorizeWhatsappWeb(inboxId) {
+    return axios.post(`${this.url}/${inboxId}/reauthorize_whatsapp_web`);
+  }
+
   disconnectWhatsappWeb(inboxId) {
     return axios.post(`${this.url}/${inboxId}/disconnect_whatsapp_web`);
   }

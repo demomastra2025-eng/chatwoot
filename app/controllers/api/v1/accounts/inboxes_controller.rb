@@ -11,14 +11,14 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   before_action :check_authorization, except: [:show]
   before_action :render_pending_deletion_response,
                 only: [:update, :avatar, :set_agent_bot, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
-                       :disconnect_whatsapp_web, :repair_whatsapp_web]
+                       :reauthorize_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web]
   before_action :render_pending_deletion_diagnostics,
                 only: [:whatsapp_web_diagnostics]
 
   include Api::V1::Accounts::Concerns::WhatsappHealthManagement
   before_action :validate_whatsapp_web_channel,
                 only: [:refresh_whatsapp_web_qr, :reconnect_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web,
-                       :whatsapp_web_diagnostics]
+                       :reauthorize_whatsapp_web, :whatsapp_web_diagnostics]
 
   def index
     scope = Current.account.inboxes.active.order_by_name
@@ -140,6 +140,14 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render_whatsapp_web_inbox
   rescue StandardError => e
     log_whatsapp_web_runtime_error('reconnect_whatsapp_web', e)
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
+  def reauthorize_whatsapp_web
+    @inbox.channel.reauthorize!
+    render_whatsapp_web_inbox
+  rescue StandardError => e
+    log_whatsapp_web_runtime_error('reauthorize_whatsapp_web', e)
     render json: { error: e.message }, status: :unprocessable_content
   end
 
