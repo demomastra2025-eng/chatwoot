@@ -2,6 +2,8 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   include Webhooks::WhatsappLifecycleEventHelpers
   include Webhooks::WhatsappLegacyVerificationHelpers
 
+  MESSAGE_ECHO_FIELDS = %w[message_echoes smb_message_echoes].freeze
+
   queue_as :whatsapp_inbound
   retry_on LockAcquisitionError, wait: 1.second, attempts: 8
   retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
@@ -101,7 +103,7 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     Channel::Whatsapp.active_cloud.where(id: resolved_channel.id)
   end
 
-  # Detects if the webhook is an SMB message echo event (message sent from WhatsApp Business app)
+  # Detects if the webhook is a message echo event (message sent from WhatsApp Business app)
   # This is part of WhatsApp coexistence feature where businesses can respond from both
   # Chatwoot and the WhatsApp Business app, with messages synced to Chatwoot.
   #
@@ -118,11 +120,11 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   #   }]
   # }
   #
-  # Echo message payload (field: "smb_message_echoes"):
+  # Echo message payload (field: "message_echoes" or legacy "smb_message_echoes"):
   # {
   #   "entry": [{
   #     "changes": [{
-  #       "field": "smb_message_echoes",
+  #       "field": "message_echoes",
   #       "value": {
   #         "message_echoes": [{ "from": "971545296927", "to": "919745786257", "id": "wamid...", "text": { "body": "Hi" } }]
   #       }
@@ -131,12 +133,12 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   # }
   #
   # Key differences:
-  # - field: "smb_message_echoes" instead of "messages"
+  # - field: "message_echoes" (or legacy "smb_message_echoes") instead of "messages"
   # - message_echoes[] instead of messages[]
   # - "from" is the business number, "to" is the contact (reversed from regular messages)
   # - No "contacts" array in echo payload
   def message_echo_event?(params)
-    params.dig(:entry, 0, :changes, 0, :field) == 'smb_message_echoes'
+    MESSAGE_ECHO_FIELDS.include?(params.dig(:entry, 0, :changes, 0, :field))
   end
 
   def log_inactive_channel(channel, params)

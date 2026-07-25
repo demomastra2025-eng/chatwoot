@@ -3,6 +3,7 @@ module Whatsapp::FacebookApiClientWebhookFields
     messages
     account_update
     smb_message_echoes
+    message_echoes
     calls
     account_alerts
     account_review_update

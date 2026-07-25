@@ -738,7 +738,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       expect(dispatched_value[:contacts]).to be_empty
     end
 
-    it 'dispatches every Business App echo from a batched change independently' do
+    it 'dispatches every legacy Business App echo from a batched change independently' do
       echo_params = {
         object: 'whatsapp_business_account',
         entry: [{ changes: [{
@@ -764,6 +764,33 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       job.perform_now(echo_params, verified_context(channel, channel_id: channel.id))
 
       expect(dispatched_ids).to eq(%w[wamid.echo.1 wamid.echo.2])
+    end
+
+    it 'dispatches the current Meta message echo field as outgoing' do
+      echo_params = {
+        object: 'whatsapp_business_account',
+        entry: [{ changes: [{
+          field: 'message_echoes',
+          value: {
+            metadata: {
+              phone_number_id: channel.provider_config['phone_number_id'],
+              display_phone_number: channel.phone_number.delete('+')
+            },
+            message_echoes: [{ id: 'wamid.echo.current', to: '111' }]
+          }
+        }] }]
+      }.with_indifferent_access
+      message_service = instance_double(Whatsapp::IncomingMessageWhatsappCloudService, perform: true)
+
+      expect(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new).with(
+        inbox: channel.inbox,
+        params: hash_including(
+          entry: [hash_including(changes: [hash_including(field: 'message_echoes')])]
+        ),
+        outgoing_echo: true
+      ).and_return(message_service)
+
+      job.perform_now(echo_params, verified_context(channel, channel_id: channel.id))
     end
 
     it 'routes coexistence history and contact-state changes to their dedicated importers' do

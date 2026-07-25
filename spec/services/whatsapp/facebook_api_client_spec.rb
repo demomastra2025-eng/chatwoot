@@ -115,6 +115,11 @@ describe Whatsapp::FacebookApiClient do
     it 'preserves the standard webhook subscription fields' do
       expect(api_client.webhook_subscribed_fields).to eq(described_class::WEBHOOK_DEFAULT_FIELDS)
     end
+
+    it 'subscribes to current and legacy Meta message echo fields' do
+      expect(api_client.webhook_subscribed_fields).to include('message_echoes')
+      expect(api_client.webhook_subscribed_fields).to include('smb_message_echoes')
+    end
   end
 
   describe '#debug_token' do
