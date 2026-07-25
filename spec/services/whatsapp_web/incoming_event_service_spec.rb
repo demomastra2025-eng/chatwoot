@@ -706,6 +706,120 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.lifecycle_state).to eq('disconnected')
     end
 
+    it 'ignores a late runtime failure from an older lifecycle operation' do
+      operation_id = channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'current-operation')
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'status.instance',
+          data: {
+            status: 'closed',
+            disconnectionReasonCode: 401,
+            lifecycleOperationId: 'superseded-operation'
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('connecting')
+      expect(channel.lifecycle_state).to eq('waiting_for_qr')
+      expect(channel.lifecycle_operation_id).to eq(operation_id)
+    end
+
+    it 'accepts matching lifecycle events and records terminal completion', :aggregate_failures do
+      operation_id = channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'current-operation')
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'qrcode.updated',
+          data: {
+            lifecycleOperationId: operation_id,
+            lifecycleEventSequence: 1,
+            qrcode: { base64: 'data:image/png;base64,current', code: 'current-code' }
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.lifecycle_state).to eq('qr_ready')
+      expect(channel.lifecycle_operation_id).to eq(operation_id)
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'connection.update',
+          data: { state: 'open', lifecycleOperationId: operation_id, lifecycleEventSequence: 3 }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('open')
+      expect(channel.lifecycle_state).to eq('connected')
+      expect(channel.lifecycle_operation_id).to eq(operation_id)
+      expect(channel).not_to be_lifecycle_operation_pending
+      expect(channel.sync_state_payload['lifecycle_operation_completed_at']).to be_present
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'status.instance',
+          data: {
+            status: 'closed',
+            disconnectionReasonCode: 401,
+            lifecycleOperationId: operation_id,
+            lifecycleEventSequence: 2
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('open')
+      expect(channel.lifecycle_state).to eq('connected')
+    end
+
+    it 'does not adopt an unfenced terminal callback from an unknown operation' do
+      channel.update!(connection_state: 'open', lifecycle_state: 'connected')
+
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'status.instance',
+          data: {
+            status: 'closed',
+            disconnectionReasonCode: 401,
+            lifecycleOperationId: 'unknown-operation',
+            lifecycleEventSequence: 1
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('open')
+      expect(channel.lifecycle_state).to eq('connected')
+      expect(channel.lifecycle_operation_id).to be_nil
+    end
+
+    it 'adopts a sequenced open callback when there is no active causal fence' do
+      described_class.new(
+        channel: channel,
+        payload: {
+          event: 'connection.update',
+          data: {
+            state: 'open',
+            lifecycleOperationId: 'reconciled-operation',
+            lifecycleEventSequence: 4
+          }
+        }.with_indifferent_access
+      ).perform
+
+      channel.reload
+      expect(channel.connection_state).to eq('open')
+      expect(channel.lifecycle_operation_id).to eq('reconciled-operation')
+      expect(channel.sync_state_payload['lifecycle_operation_completed_at']).to be_present
+    end
+
     it 'ignores an older open event after a newer authoritative disconnect' do
       described_class.new(
         channel: channel,
@@ -731,7 +845,7 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       expect(channel.sync_state_payload['last_runtime_event_at']).to eq('2026-07-24T15:42:00Z')
     end
 
-    it 'applies delayed authentication failures without regressing the runtime watermark' do
+    it 'ignores delayed authentication failures older than the current runtime watermark' do
       channel.update!(
         connection_state: 'open',
         lifecycle_state: 'connected',
@@ -756,8 +870,8 @@ RSpec.describe WhatsappWeb::IncomingEventService do
       ).perform
 
       channel.reload
-      expect(channel.connection_state).to eq('close')
-      expect(channel.lifecycle_state).to eq('disconnected')
+      expect(channel.connection_state).to eq('open')
+      expect(channel.lifecycle_state).to eq('connected')
       expect(channel.sync_state_payload['last_runtime_event_at']).to eq('2026-07-24T15:43:00Z')
     end
 

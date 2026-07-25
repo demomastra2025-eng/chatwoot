@@ -344,34 +344,39 @@ describe WhatsappWeb::Providers::EvolutionService do
   end
 
   describe '#reauthorize!' do
-    it 'forces a new authorization cycle and stores the returned QR' do
+    it 'accepts the asynchronous authorization cycle without waiting for a QR' do
       service = described_class.new(channel: channel)
-      response = { 'instance' => { 'state' => 'connecting' }, 'qrcode' => { 'base64' => 'fresh-qr' } }
+      response = {
+        'accepted' => true,
+        'lifecycleOperationId' => 'provider-operation',
+        'startedAt' => Time.current.iso8601,
+        'instance' => { 'state' => 'reauthorizing' }
+      }
 
       allow(service).to receive(:request)
-        .with(:post, "/instance/reauthorize/#{channel.instance_name}", body: {})
+        .with(
+          :post,
+          "/instance/reauthorize/#{channel.instance_name}",
+          body: hash_including(lifecycleOperationId: kind_of(String))
+        )
         .and_return(response)
-      allow(service).to receive(:sync_from_runtime_response!) do
-        channel.update!(connection_state: 'connecting', lifecycle_state: 'qr_ready', qr_code: { 'base64' => 'fresh-qr' })
-      end
       allow(service).to receive(:apply_runtime_configuration!)
 
       expect(service.reauthorize!).to eq(channel)
-      expect(channel.reload.qr_code).to include('base64' => 'fresh-qr')
+      expect(channel.reload).to have_attributes(connection_state: 'connecting', lifecycle_state: 'waiting_for_qr')
+      expect(channel.qr_code).to eq({})
+      expect(channel.lifecycle_operation_id).to eq('provider-operation')
       expect(service).to have_received(:apply_runtime_configuration!)
     end
 
-    it 'fails when Evolution does not return an open session or authorization artifact' do
+    it 'keeps the causal operation pending when the acknowledgement arrives after the HTTP timeout' do
       service = described_class.new(channel: channel)
-      response = { 'instance' => { 'state' => 'connecting' }, 'status' => 'reauth_required' }
-
-      allow(service).to receive(:request).and_return(response)
-      allow(service).to receive(:sync_from_runtime_response!) do
-        channel.update!(connection_state: 'connecting', lifecycle_state: 'waiting_for_qr', qr_code: {})
-      end
       allow(service).to receive(:apply_runtime_configuration!)
+      allow(service).to receive(:request).and_raise(Net::ReadTimeout)
 
-      expect { service.reauthorize! }.to raise_error(described_class::RequestError, /did not return/)
+      expect(service.reauthorize!).to eq(channel)
+      expect(channel.reload).to be_lifecycle_operation_pending
+      expect(channel).to have_attributes(connection_state: 'connecting', lifecycle_state: 'waiting_for_qr')
       expect(service).to have_received(:apply_runtime_configuration!)
     end
   end
@@ -477,6 +482,53 @@ describe WhatsappWeb::Providers::EvolutionService do
       expect(channel.connection_state).to eq('reconnecting')
       expect(channel.lifecycle_state).to eq('reconnecting')
       expect(channel.last_error).to be_nil
+    end
+
+    it 'preserves a provider lifecycle fence while asynchronous reauthorization is running' do
+      service = described_class.new(channel: channel)
+      operation_id = channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'operation-1')
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return({
+                      'instance' => {
+                        'state' => 'reauthorizing',
+                        'lifecycleOperationId' => operation_id
+                      }
+                    })
+
+      service.sync_connection_state!
+
+      channel.reload
+      expect(channel.connection_state).to eq('connecting')
+      expect(channel.lifecycle_state).to eq('waiting_for_qr')
+      expect(channel.lifecycle_operation_id).to eq(operation_id)
+    end
+
+    it 'adopts and completes a newer provider operation through bounded status reconciliation', :aggregate_failures do
+      service = described_class.new(channel: channel)
+      channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'old-operation')
+      channel.update!(sync_state: channel.completed_lifecycle_operation_sync_state)
+
+      allow(service).to receive(:request)
+        .with(:get, "/instance/connectionState/#{channel.instance_name}")
+        .and_return(
+          { 'instance' => { 'state' => 'reauthorizing', 'lifecycleOperationId' => 'new-operation' } },
+          { 'instance' => { 'state' => 'open', 'lifecycleOperationId' => 'new-operation' } }
+        )
+
+      service.sync_connection_state!
+
+      expect(channel.reload.lifecycle_operation_id).to eq('new-operation')
+      expect(channel).to be_lifecycle_operation_pending
+      expect(channel.sync_state_payload['lifecycle_operation_completed_at']).to be_nil
+
+      service.sync_connection_state!
+
+      expect(channel.reload.connection_state).to eq('open')
+      expect(channel.lifecycle_operation_id).to eq('new-operation')
+      expect(channel).not_to be_lifecycle_operation_pending
+      expect(channel.sync_state_payload['lifecycle_operation_completed_at']).to be_present
     end
 
     it 'preserves a recent scanned QR lifecycle during status-only sync while still connecting' do

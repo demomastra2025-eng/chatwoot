@@ -6,6 +6,9 @@ class WhatsappWeb::IncomingEventService
   DISCONNECTED_STATUS_VALUES = %w[closed close logout logged_out disconnected].freeze
   AUTHENTICATION_REQUIRED_STATUS_VALUES = %w[reauth_required authentication_required].freeze
   FAILURE_STATUS_VALUES = %w[error failed refused bad_session].freeze
+  LIFECYCLE_TERMINAL_STATUS_VALUES = (
+    ['open'] + DISCONNECTED_STATUS_VALUES + AUTHENTICATION_REQUIRED_STATUS_VALUES + FAILURE_STATUS_VALUES
+  ).freeze
   REMOVED_INSTANCE_MESSAGE = 'Evolution instance was removed. Run repair or reconnect to create a new session.'.freeze
   RUNTIME_STATE_EVENTS = %w[qrcode.updated connection.update status.instance logout.instance remove.instance].freeze
 
@@ -63,12 +66,14 @@ class WhatsappWeb::IncomingEventService
   def process_runtime_state_event
     processed = channel.with_lock do
       channel.reload
+      next false if superseded_lifecycle_operation_event?
+      next false if unadoptable_lifecycle_operation_event?
       next false if stale_runtime_state_event?
 
       process_event
-      channel.update!(
-        sync_state: channel.sync_state_payload.merge('last_runtime_event_at' => runtime_event_watermark.iso8601)
-      )
+      sync_state = lifecycle_event_sync_state.merge('last_runtime_event_at' => runtime_event_watermark.iso8601)
+      sync_state = sync_state.merge('lifecycle_operation_completed_at' => runtime_event_watermark.iso8601) if lifecycle_operation_terminal_event?
+      channel.update!(sync_state: sync_state)
       true
     end
 
@@ -76,18 +81,80 @@ class WhatsappWeb::IncomingEventService
   end
 
   def stale_runtime_state_event?
-    return false if authoritative_disconnection_event?
+    if matching_lifecycle_operation_event? && event_lifecycle_sequence.present?
+      return event_lifecycle_sequence <= channel.sync_state_payload['last_runtime_event_sequence'].to_i
+    end
 
     last_event_at = parse_event_time(channel.sync_state_payload['last_runtime_event_at'])
     last_event_at.present? && runtime_event_at < last_event_at
   end
 
-  def authoritative_disconnection_event?
+  def superseded_lifecycle_operation_event?
+    return false unless channel.lifecycle_operation_fence_active?
+    return event_lifecycle_operation_id != channel.lifecycle_operation_id if event_lifecycle_operation_id.present?
+
+    channel.lifecycle_operation_pending?
+  end
+
+  def unadoptable_lifecycle_operation_event?
+    return false if event_lifecycle_operation_id.blank? || matching_lifecycle_operation_event?
+    return false if adoptable_lifecycle_operation_event?
+
+    true
+  end
+
+  def adoptable_lifecycle_operation_event?
+    return false if event_lifecycle_sequence.blank?
+    return normalized_qrcode_payload.present? if event_name == 'qrcode.updated'
+
+    normalized_runtime_status_value.in?(%w[connecting reconnecting open])
+  end
+
+  def matching_lifecycle_operation_event?
+    event_lifecycle_operation_id.present? &&
+      ActiveSupport::SecurityUtils.secure_compare(event_lifecycle_operation_id, channel.lifecycle_operation_id.to_s)
+  end
+
+  def event_lifecycle_operation_id
+    @event_lifecycle_operation_id ||= (
+      event_data[:lifecycleOperationId] ||
+      event_data[:lifecycle_operation_id] ||
+      payload[:lifecycleOperationId] ||
+      payload[:lifecycle_operation_id]
+    ).to_s.presence
+  end
+
+  def event_lifecycle_sequence
+    value = event_data[:lifecycleEventSequence] || event_data[:lifecycle_event_sequence]
+    value.to_i if value.present?
+  end
+
+  def lifecycle_event_sync_state
+    state = channel.sync_state_payload
+    return state if event_lifecycle_operation_id.blank?
+
+    same_operation = event_lifecycle_operation_id == channel.lifecycle_operation_id
+    state.merge(
+      'lifecycle_operation_id' => event_lifecycle_operation_id,
+      'lifecycle_operation_kind' => same_operation ? channel.lifecycle_operation_kind : 'reauthorize',
+      'lifecycle_operation_started_at' => same_operation ? state['lifecycle_operation_started_at'] : runtime_event_at.iso8601,
+      'lifecycle_operation_completed_at' => nil,
+      'last_runtime_event_sequence' => event_lifecycle_sequence || (state['last_runtime_event_sequence'] if same_operation)
+    )
+  end
+
+  def lifecycle_operation_terminal_event?
+    return false if event_lifecycle_operation_id.blank?
     return true if event_name.in?(%w[logout.instance remove.instance])
 
-    status_value = (event_data[:status] || event_data[:state] || event_data[:connection]).to_s.downcase
-    status_value.in?(DISCONNECTED_STATUS_VALUES + AUTHENTICATION_REQUIRED_STATUS_VALUES + FAILURE_STATUS_VALUES) ||
-      event_data[:disconnectionReasonCode].present?
+    return true if normalized_runtime_status_value.in?(LIFECYCLE_TERMINAL_STATUS_VALUES)
+    return true if NON_RECOVERABLE_DISCONNECTION_CODES.include?(event_data[:disconnectionReasonCode].to_i)
+
+    event_name == 'qrcode.updated' && normalized_qrcode_payload.blank?
+  end
+
+  def normalized_runtime_status_value
+    (event_data[:status] || event_data[:state] || event_data[:connection]).to_s.downcase
   end
 
   def runtime_event_at

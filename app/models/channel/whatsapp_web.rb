@@ -42,6 +42,7 @@ class Channel::WhatsappWeb < ApplicationRecord
   CONNECTION_STATES = %w[open connecting reconnecting close refused unknown].freeze
   AUTH_ARTIFACT_TTL = 60.seconds
   SCANNED_AUTH_ARTIFACT_TTL = 2.minutes
+  LIFECYCLE_OPERATION_TTL = 10.minutes
   AUTH_ARTIFACT_TYPES = {
     'qr' => 'qr',
     'code' => 'pairing_code',
@@ -71,6 +72,11 @@ class Channel::WhatsappWeb < ApplicationRecord
     'auth_artifact_type' => nil,
     'auth_artifact_expires_at' => nil,
     'auth_artifact_scanned_at' => nil,
+    'lifecycle_operation_id' => nil,
+    'lifecycle_operation_kind' => nil,
+    'lifecycle_operation_started_at' => nil,
+    'lifecycle_operation_completed_at' => nil,
+    'last_runtime_event_sequence' => nil,
     'label_map' => {}
   }.freeze
   HISTORY_SYNC_REQUEST_STALE_AFTER = 30.minutes
@@ -359,6 +365,72 @@ class Channel::WhatsappWeb < ApplicationRecord
       'auth_artifact_expires_at' => nil,
       'auth_artifact_scanned_at' => nil
     )
+  end
+
+  def begin_lifecycle_operation!(kind:, operation_id: SecureRandom.uuid, started_at: Time.current)
+    with_lock do
+      next lifecycle_operation_id if lifecycle_operation_pending?(at: started_at) && lifecycle_operation_kind == kind.to_s
+
+      update!(
+        connection_state: 'connecting',
+        lifecycle_state: 'waiting_for_qr',
+        qr_code: {},
+        last_error: nil,
+        sync_state: cleared_auth_artifact_sync_state.merge(
+          'lifecycle_operation_id' => operation_id,
+          'lifecycle_operation_kind' => kind.to_s,
+          'lifecycle_operation_started_at' => started_at.iso8601,
+          'lifecycle_operation_completed_at' => nil,
+          'last_runtime_event_sequence' => nil
+        )
+      )
+      operation_id
+    end
+  end
+
+  def lifecycle_operation_id
+    sync_state_payload['lifecycle_operation_id'].presence
+  end
+
+  def lifecycle_operation_kind
+    sync_state_payload['lifecycle_operation_kind'].presence
+  end
+
+  def lifecycle_operation_pending?(at: Time.current)
+    started_at = parse_auth_artifact_time(sync_state_payload['lifecycle_operation_started_at'])
+    lifecycle_operation_id.present? &&
+      sync_state_payload['lifecycle_operation_completed_at'].blank? &&
+      started_at.present? &&
+      started_at + LIFECYCLE_OPERATION_TTL > at
+  end
+
+  def lifecycle_operation_fence_active?(at: Time.current)
+    started_at = parse_auth_artifact_time(sync_state_payload['lifecycle_operation_started_at'])
+    lifecycle_operation_id.present? && started_at.present? && started_at + LIFECYCLE_OPERATION_TTL > at
+  end
+
+  def completed_lifecycle_operation_sync_state(completed_at: Time.current)
+    return sync_state_payload if lifecycle_operation_id.blank?
+
+    sync_state_payload.merge('lifecycle_operation_completed_at' => completed_at.iso8601)
+  end
+
+  def adopt_lifecycle_operation!(operation_id:, kind:, started_at: Time.current, expected_operation_id: nil)
+    with_lock do
+      next lifecycle_operation_id if lifecycle_operation_id == operation_id
+      next lifecycle_operation_id if expected_operation_id.present? && lifecycle_operation_id != expected_operation_id
+
+      update!(
+        sync_state: sync_state_payload.merge(
+          'lifecycle_operation_id' => operation_id,
+          'lifecycle_operation_kind' => kind.to_s,
+          'lifecycle_operation_started_at' => started_at.iso8601,
+          'lifecycle_operation_completed_at' => nil,
+          'last_runtime_event_sequence' => nil
+        )
+      )
+      operation_id
+    end
   end
 
   def label_map

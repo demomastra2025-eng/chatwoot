@@ -123,18 +123,20 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   def reauthorize!
     apply_runtime_configuration!
-    response = request(:post, "/instance/reauthorize/#{channel.instance_name}", body: {})
-    sync_from_runtime_response!(response)
-    channel.reload
+    operation_id = channel.begin_lifecycle_operation!(kind: :reauthorize)
+    response = request(
+      :post,
+      "/instance/reauthorize/#{channel.instance_name}",
+      body: { lifecycleOperationId: operation_id }
+    )
+    synchronize_reauthorization_acceptance!(response, operation_id)
 
-    unless channel.connection_state == 'open' || channel.qr_code.present?
-      raise RequestError.new(
-        'Evolution did not return a new WhatsApp authorization artifact',
-        status: 502,
-        body: response
-      )
-    end
-
+    channel
+  rescue Net::ReadTimeout => e
+    Rails.logger.warn(
+      "[WHATSAPP WEB] Reauthorization acknowledgement timed out for #{channel.instance_name}; " \
+      "keeping lifecycle operation pending for provider reconciliation: #{e.class}"
+    )
     channel
   end
 
@@ -338,12 +340,27 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
 
   private
 
+  def synchronize_reauthorization_acceptance!(response, requested_operation_id)
+    return sync_from_runtime_response!(response) unless response['accepted'] == true
+
+    accepted_operation_id = response['lifecycleOperationId'].presence || response.dig('instance', 'lifecycleOperationId').presence
+    return if accepted_operation_id.blank? || accepted_operation_id == requested_operation_id
+
+    channel.adopt_lifecycle_operation!(
+      operation_id: accepted_operation_id,
+      kind: :reauthorize,
+      started_at: parse_runtime_time(response['startedAt']) || Time.current,
+      expected_operation_id: requested_operation_id
+    )
+  end
+
   def sync_connection_state_under_lock!
     response = request(:get, "/instance/connectionState/#{channel.instance_name}")
     state = response.dig('instance', 'state')
     normalized_state = normalized_connection_state(state)
     observed_at = Time.current
-    channel.update!(runtime_state_attributes(state, normalized_state, observed_at))
+    operation_id = response.dig('instance', 'lifecycleOperationId').presence
+    channel.update!(runtime_state_attributes(state, normalized_state, observed_at, operation_id))
     normalized_state
   rescue RequestError => e
     raise unless e.status == 404
@@ -351,21 +368,51 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
     mark_missing_runtime_instance!
   end
 
-  def runtime_state_attributes(state, normalized_state, observed_at)
+  def runtime_state_attributes(state, normalized_state, observed_at, operation_id)
     attributes = {
       connection_state: normalized_state,
       lifecycle_state: lifecycle_state_for(state, channel.qr_code.present?),
       last_error: runtime_error_for_state(normalized_state, channel.last_error),
       last_synced_at: observed_at,
-      sync_state: runtime_sync_state(normalized_state, observed_at)
+      sync_state: runtime_sync_state(normalized_state, observed_at, operation_id)
     }
     attributes[:qr_code] = {} if normalized_state == 'open'
     attributes
   end
 
-  def runtime_sync_state(normalized_state, observed_at)
-    base_state = normalized_state == 'open' ? channel.cleared_auth_artifact_sync_state : channel.sync_state_payload
-    base_state.merge('last_runtime_event_at' => observed_at.iso8601)
+  def runtime_sync_state(normalized_state, observed_at, operation_id)
+    terminal_state = normalized_state.in?(%w[open close refused])
+    base_state = if terminal_state
+                   completed_runtime_sync_state
+                 else
+                   channel.sync_state_payload
+                 end
+    return base_state.merge('last_runtime_event_at' => observed_at.iso8601) if operation_id.blank?
+
+    base_state.merge(
+      runtime_lifecycle_sync_state(base_state, terminal_state, observed_at, operation_id),
+      'last_runtime_event_at' => observed_at.iso8601
+    )
+  end
+
+  def runtime_lifecycle_sync_state(base_state, terminal_state, observed_at, operation_id)
+    same_operation = operation_id == channel.lifecycle_operation_id
+    {
+      'lifecycle_operation_id' => operation_id,
+      'lifecycle_operation_kind' => same_operation ? channel.lifecycle_operation_kind : 'reauthorize',
+      'lifecycle_operation_started_at' => same_operation ? base_state['lifecycle_operation_started_at'] : observed_at.iso8601,
+      'lifecycle_operation_completed_at' => terminal_state ? observed_at.iso8601 : (base_state['lifecycle_operation_completed_at'] if same_operation),
+      'last_runtime_event_sequence' => same_operation ? base_state['last_runtime_event_sequence'] : nil
+    }
+  end
+
+  def completed_runtime_sync_state
+    channel.completed_lifecycle_operation_sync_state.merge(
+      'qr_generated_at' => nil,
+      'auth_artifact_type' => nil,
+      'auth_artifact_expires_at' => nil,
+      'auth_artifact_scanned_at' => nil
+    )
   end
 
   def mark_missing_runtime_instance!
@@ -426,7 +473,10 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
         generated_at: Time.zone.parse(qr_payload['generated_at']),
         expires_at: Time.zone.parse(qr_payload['expires_at'])
       )
-    elsif %w[open reconnecting close refused].include?(attributes[:connection_state])
+    elsif %w[open close refused].include?(attributes[:connection_state])
+      attributes[:qr_code] = {}
+      attributes[:sync_state] = completed_runtime_sync_state
+    elsif attributes[:connection_state] == 'reconnecting'
       attributes[:qr_code] = {}
       attributes[:sync_state] = channel.cleared_auth_artifact_sync_state
     end
@@ -526,7 +576,7 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
   def normalized_connection_state(state)
     value = state.to_s
     return 'open' if value == 'open'
-    return 'connecting' if value == 'connecting'
+    return 'connecting' if value.in?(%w[connecting reauthorizing])
     return 'reconnecting' if value == 'reconnecting'
     return 'close' if value == 'reauth_required'
     return 'close' if value.in?(%w[close closed disconnected])
@@ -542,6 +592,12 @@ class WhatsappWeb::Providers::EvolutionService < WhatsappWeb::Providers::BaseSer
                                                         payload['error'].is_a?(String) ? payload['error'] : nil,
                                                         labeled_runtime_value('status code', payload['statusCode'])
                                                       ))
+  end
+
+  def parse_runtime_time(value)
+    value.present? ? Time.zone.parse(value.to_s) : nil
+  rescue ArgumentError
+    nil
   end
 
   def runtime_error_for_state(normalized_state, runtime_error)

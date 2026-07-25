@@ -63,6 +63,65 @@ RSpec.describe Channel::WhatsappWeb do
   end
 
   describe 'provider lifecycle operations' do
+    it 'keeps one causal operation ID while reauthorization is pending' do
+      freeze_time do
+        channel = create(:channel_whatsapp_web)
+
+        first_id = channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'operation-1')
+        duplicate_id = channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'operation-2')
+
+        expect(first_id).to eq('operation-1')
+        expect(duplicate_id).to eq(first_id)
+        expect(channel.reload).to be_lifecycle_operation_pending
+        expect(channel.connection_state).to eq('connecting')
+        expect(channel.lifecycle_state).to eq('waiting_for_qr')
+        expect(channel.qr_code).to eq({})
+      end
+    end
+
+    it 'allows a new causal operation after the pending fence expires' do
+      channel = create(:channel_whatsapp_web)
+      channel.begin_lifecycle_operation!(
+        kind: :reauthorize,
+        operation_id: 'operation-1',
+        started_at: Channel::WhatsappWeb::LIFECYCLE_OPERATION_TTL.ago - 1.second
+      )
+
+      expect(channel.reload).not_to be_lifecycle_operation_pending
+      expect(channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'operation-2')).to eq('operation-2')
+    end
+
+    it 'does not clear a projected QR artifact when a pending command is retried' do
+      channel = create(:channel_whatsapp_web)
+      channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'operation-1')
+      channel.update!(lifecycle_state: 'qr_ready', qr_code: { 'code' => 'current-code' })
+
+      duplicate_id = channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'operation-2')
+
+      expect(duplicate_id).to eq('operation-1')
+      expect(channel.reload.lifecycle_state).to eq('qr_ready')
+      expect(channel.qr_code).to eq('code' => 'current-code')
+    end
+
+    it 'does not overwrite a provider operation that already superseded the requested ID' do
+      channel = create(:channel_whatsapp_web)
+      channel.begin_lifecycle_operation!(kind: :reauthorize, operation_id: 'requested-operation')
+      channel.adopt_lifecycle_operation!(
+        operation_id: 'accepted-operation',
+        kind: :reauthorize,
+        expected_operation_id: 'requested-operation'
+      )
+
+      result = channel.adopt_lifecycle_operation!(
+        operation_id: 'late-operation',
+        kind: :reauthorize,
+        expected_operation_id: 'requested-operation'
+      )
+
+      expect(result).to eq('accepted-operation')
+      expect(channel.reload.lifecycle_operation_id).to eq('accepted-operation')
+    end
+
     it 'routes reconnect through the shared lifecycle lock' do
       channel = create(:channel_whatsapp_web)
       provider = instance_double(WhatsappWeb::Providers::EvolutionService, reconnect!: channel)
