@@ -8,6 +8,7 @@ import { CONVERSATION_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { useConversationFilterContext } from './provider.js';
 import { useSnakeCase } from 'dashboard/composables/useTransformKeys';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import wootConstants from 'dashboard/constants/globals';
 
 import Button from 'next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -44,8 +45,18 @@ const { t } = useI18n();
 const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
 
+const defaultStatusFilter = () => ({
+  ...DEFAULT_FILTER,
+  values: [
+    {
+      id: wootConstants.STATUS_TYPE.OPEN,
+      name: t('CHAT_LIST.CHAT_STATUS_FILTER_ITEMS.open.TEXT'),
+    },
+  ],
+});
+
 const resetFilter = () => {
-  filters.value = [{ ...DEFAULT_FILTER }];
+  filters.value = [defaultStatusFilter()];
 };
 
 const removeFilter = index => {
