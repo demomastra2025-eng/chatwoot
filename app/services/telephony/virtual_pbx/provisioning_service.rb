@@ -470,7 +470,7 @@ class Telephony::VirtualPbx::ProvisioningService
       host: first_present(source['host'], fallback[:host], template[:default_host]),
       port: normalize_port(port_source),
       transport: first_present(source['transport'], fallback[:transport], template[:default_transport], 'udp'),
-      sip_domain: first_present(source['sip_domain'], fallback[:sip_domain], fallback_metadata[:sip_domain]),
+      sip_domain: normalize_sip_domain(first_present(source['sip_domain'], fallback[:sip_domain], fallback_metadata[:sip_domain])),
       outbound_proxy: first_present(
         source['outbound_proxy'],
         fallback[:outbound_proxy],
@@ -497,6 +497,10 @@ class Telephony::VirtualPbx::ProvisioningService
 
     port = normalized.to_i
     port if (1..65_535).cover?(port)
+  end
+
+  def normalize_sip_domain(value)
+    value.to_s.strip.downcase.presence
   end
 
   def normalize_profiles(source)
