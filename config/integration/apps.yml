@@ -504,6 +504,7 @@ medelement:
       'sync_specialists',
       'sync_receptions',
       'sync_patients',
+      'write_enabled',
     ]
   settings_json_schema:
     {
@@ -515,6 +516,7 @@ medelement:
           'sync_specialists': { 'type': 'boolean' },
           'sync_receptions': { 'type': 'boolean' },
           'sync_patients': { 'type': 'boolean' },
+          'write_enabled': { 'type': 'boolean' },
           'receptions_days_back': { 'type': 'integer', 'minimum': 0, 'maximum': 30 },
           'receptions_days_forward': { 'type': 'integer', 'minimum': 0, 'maximum': 365 },
           'throttle_ms': { 'type': 'integer', 'minimum': 0, 'maximum': 5000 },
@@ -571,6 +573,13 @@ medelement:
         'type': 'checkbox',
         'name': 'sync_patients',
         'value': true,
+      },
+      {
+        'label': 'Enable confirmed write operations',
+        'type': 'checkbox',
+        'name': 'write_enabled',
+        'value': false,
+        'help': 'Allows only explicitly confirmed patient and reception commands. Imported records remain protected from generic edits.',
       },
       {
         'label': 'Sync frequency',

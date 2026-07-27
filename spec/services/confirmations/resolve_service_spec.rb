@@ -44,6 +44,23 @@ RSpec.describe Confirmations::ResolveService do
     expect(resolved.resolution_source).to eq('manual')
   end
 
+  it 'enqueues Medelement command resolution only for a linked provider command' do
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later)
+    request.update!(metadata: request.metadata.to_h.merge('medelement_provider_command_id' => 123))
+
+    described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
+
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id)
+  end
+
+  it 'does not enqueue Medelement command resolution for an unrelated confirmation' do
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later)
+
+    described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
+
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_received(:perform_later)
+  end
+
   it 'marks a request as requiring reschedule' do
     resolved = described_class.new(account: account, confirmation_request: request, decision: 'reschedule_requested', source: 'text').perform
 

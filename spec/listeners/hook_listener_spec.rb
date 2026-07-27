@@ -143,4 +143,33 @@ describe HookListener do
       end
     end
   end
+
+  describe 'Medelement contact enrichment events' do
+    let(:event_name) { 'contact.created' }
+    let(:contact_created_event) { Events::Base.new(event_name, Time.zone.now, contact: conversation.contact) }
+
+    before do
+      account.enable_features!('scheduling')
+      schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)
+      allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
+    end
+
+    it 'enqueues an enabled account hook for contact creation' do
+      hook = create(:integrations_hook, :medelement, account: account)
+
+      expect(HookJob)
+        .to receive(:perform_later)
+        .with(hook, 'contact.created', { contact: conversation.contact })
+
+      listener.contact_created(contact_created_event)
+    end
+
+    it 'does not enqueue Medelement for unrelated conversation events' do
+      create(:integrations_hook, :medelement, account: account)
+
+      expect(HookJob).not_to receive(:perform_later)
+
+      listener.conversation_created(conversation_event)
+    end
+  end
 end

@@ -45,12 +45,19 @@ class Confirmations::ResolveService
 
     raise Confirmations::ExpiredRequestError, 'confirmation request expired' if expired
 
+    enqueue_provider_command_resolution(resolved_request)
     resolved_request
   end
 
   private
 
   attr_reader :account, :confirmation_request, :decision, :source, :actor, :message, :confidence, :metadata
+
+  def enqueue_provider_command_resolution(resolved_request)
+    return if resolved_request.metadata.to_h['medelement_provider_command_id'].blank?
+
+    Integrations::Medelement::ProviderCommandConfirmationJob.perform_later(resolved_request.id)
+  end
 
   def validate_input!
     validate_decision!

@@ -2,104 +2,122 @@ class Integrations::Medelement::Client
   class ApiError < StandardError
     attr_reader :status
 
-    def initialize(message, status: nil)
+    def initialize(message, status: nil, ambiguous: false)
       super(message)
       @status = status
+      @ambiguous = ambiguous
+    end
+
+    def ambiguous?
+      @ambiguous
+    end
+
+    def retryable?
+      status.nil? || status == 408 || status == 429 || status >= 500
     end
   end
 
   BASE_URL = 'https://api3.medelement.com'.freeze
-  EMPTY_RECEPTIONS_MESSAGE = 'Приемы не найдены'.freeze
-  REQUEST_TIMEOUT = 20
 
   def initialize(configuration:)
-    @configuration = configuration
+    @request = Integrations::Medelement::Request.new(configuration: configuration)
   end
 
   def get_patient(patient_code:)
-    get("/doctor/v1/patient/#{patient_code}")
+    request.call(:get, "/doctor/v1/patient/#{patient_code}", operation: 'patient')
   end
 
-  def get_receptions(company_cabinet_code:, specialist_code:, begin_datetime:, end_datetime:)
-    response = HTTParty.post(
-      "#{BASE_URL}/v1/timetable/get_receptions",
-      basic_auth: basic_auth,
-      body: {
-        companyCabinetCode: company_cabinet_code,
-        specialistCode: specialist_code,
-        beginDatetime: begin_datetime,
-        endDatetime: end_datetime
-      },
-      headers: form_headers,
-      timeout: REQUEST_TIMEOUT
+  def search_patients_by_phone(phone_number:, skip: 0)
+    phone = Integrations::Medelement::PhoneNumber.new(phone_number)
+    response = request.indexed_get(
+      '/doctor/v1/patients',
+      operation: 'patient search',
+      query: phone.query(skip: skip),
+      empty_not_found: true
     )
 
-    parsed_response = response.parsed_response
-    return [] if empty_receptions_response?(response, parsed_response)
-
-    return Array(parsed_response['receptions']) if response.success?
-
-    raise ApiError.new('Medelement receptions request failed', status: response.code.to_i)
-  rescue SocketError, Timeout::Error, EOFError, Errno::ECONNRESET, Errno::ECONNREFUSED,
-         OpenSSL::SSL::SSLError => e
-    raise ApiError, "Medelement receptions transport failed: #{e.class}"
+    Array(response).select { |patient| phone.matches_patient?(patient) }
   end
 
   def specialists
-    response = get('/v1/timetable/get_specialists')
-    return response.values if response.is_a?(Hash)
+    response = request.call(:get, '/v1/timetable/get_specialists', operation: 'specialists')
+    response.is_a?(Hash) ? response.values : Array(response)
+  end
 
-    Array(response)
+  def nomenclatures(skip: 0, query: nil)
+    params = { skip: skip }
+    params[:q] = query if query.present?
+    Array(request.call(:get, '/v1/doctor/nomenclatures', operation: 'nomenclatures', query: params))
+  end
+
+  def timetable(specialist_code:, starts_on:, ends_on:)
+    request.call(
+      :get,
+      '/v1/timetable/get_timetable',
+      operation: 'timetable',
+      query: {
+        date: [provider_date(starts_on), provider_date(ends_on)],
+        specialistCode: specialist_code
+      }
+    )
+  end
+
+  def get_receptions(company_cabinet_code:, specialist_code:, begin_datetime:, end_datetime:, skip: 0)
+    request.receptions(
+      company_cabinet_code: company_cabinet_code,
+      specialist_code: specialist_code,
+      begin_datetime: begin_datetime,
+      end_datetime: end_datetime,
+      skip: skip
+    )
+  end
+
+  def get_reception(reception_code:, version: :v2)
+    api_version = version.to_sym == :v1 ? 'v1' : 'v2'
+    request.call(:get, "/#{api_version}/doctor/reception/#{reception_code}", operation: 'reception')
+  end
+
+  def search_receptions(params:)
+    response = request.call(
+      :post,
+      '/v2/doctor/reception/search_with_service',
+      operation: 'reception search',
+      body: params
+    )
+    response.is_a?(Hash) ? Array(response['receptions']) : Array(response)
+  end
+
+  def create_patient(params:)
+    request.call(:post, '/doctor/v1/patient', operation: 'patient create', body: URI.encode_www_form(params), write: true)
+  end
+
+  def update_patient(params:)
+    request.call(:put, '/doctor/v1/patient', operation: 'patient update', body: URI.encode_www_form(params), write: true)
+  end
+
+  def create_reception(params:)
+    request.call(:post, '/v1/doctor/reception', operation: 'reception create', body: params, write: true)
+  end
+
+  def move_reception(params:)
+    request.call(:post, '/v2/doctor/reception/change_reception_date', operation: 'reception move', body: params, write: true)
+  end
+
+  def remove_reception(reception_code:)
+    request.call(
+      :post,
+      '/v2/doctor/reception/remove',
+      operation: 'reception remove',
+      body: { reception_code: reception_code },
+      write: true
+    )
   end
 
   private
 
-  attr_reader :configuration
+  attr_reader :request
 
-  def basic_auth
-    {
-      username: configuration.company_login,
-      password: configuration.password
-    }
-  end
-
-  def form_headers
-    headers.merge('Content-Type' => 'application/x-www-form-urlencoded')
-  end
-
-  def get(path)
-    response = HTTParty.get(
-      "#{BASE_URL}#{path}",
-      basic_auth: basic_auth,
-      headers: headers,
-      timeout: REQUEST_TIMEOUT
-    )
-
-    parsed_response = response.parsed_response
-    return parsed_response if response.success?
-
-    raise ApiError.new("Medelement request failed for #{path}", status: response.code.to_i)
-  rescue SocketError, Timeout::Error, EOFError, Errno::ECONNRESET, Errno::ECONNREFUSED,
-         OpenSSL::SSL::SSLError => e
-    raise ApiError, "Medelement transport failed for #{path}: #{e.class}"
-  end
-
-  def headers
-    {
-      'Accept' => 'application/json',
-      'X-Integrator-Key' => configuration.integrator_key
-    }
-  end
-
-  def empty_receptions_response?(response, parsed_response)
-    return false unless response.code.to_i == 404
-
-    messages = [
-      response.body.to_s,
-      parsed_response.is_a?(Hash) ? parsed_response['message'] : nil,
-      parsed_response
-    ]
-
-    messages.any? { |message| message.to_s.include?(EMPTY_RECEPTIONS_MESSAGE) }
+  def provider_date(value)
+    value.to_date.strftime('%d.%m.%Y')
   end
 end

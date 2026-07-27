@@ -1,4 +1,13 @@
 class HookJob < MutexApplicationJob
+  INTEGRATION_PROCESSORS = {
+    'slack' => :process_slack_integration,
+    'dialogflow' => :process_dialogflow_integration,
+    'google_translate' => :google_translate_integration,
+    'leadsquared' => :process_leadsquared_integration_with_lock,
+    'macrocrm' => :process_macrocrm_integration,
+    'medelement' => :process_medelement_integration
+  }.freeze
+
   retry_on LockAcquisitionError, wait: 3.seconds, attempts: 3
 
   queue_as :medium
@@ -6,18 +15,8 @@ class HookJob < MutexApplicationJob
   def perform(hook, event_name, event_data = {})
     return if hook.disabled?
 
-    case hook.app_id
-    when 'slack'
-      process_slack_integration(hook, event_name, event_data)
-    when 'dialogflow'
-      process_dialogflow_integration(hook, event_name, event_data)
-    when 'google_translate'
-      google_translate_integration(hook, event_name, event_data)
-    when 'leadsquared'
-      process_leadsquared_integration_with_lock(hook, event_name, event_data)
-    when 'macrocrm'
-      process_macrocrm_integration(hook, event_name, event_data)
-    end
+    processor = INTEGRATION_PROCESSORS[hook.app_id]
+    send(processor, hook, event_name, event_data) if processor
   rescue StandardError => e
     Rails.logger.error e
   end
@@ -90,5 +89,15 @@ class HookJob < MutexApplicationJob
     return if message.blank?
 
     Integrations::Macrocrm::SyncJob.perform_later(hook.id, event_name, message.id)
+  end
+
+  def process_medelement_integration(hook, event_name, event_data)
+    return unless ['contact.created', 'contact.updated'].include?(event_name)
+    return unless hook.feature_allowed?
+
+    contact = event_data[:contact]
+    return if contact.blank?
+
+    Integrations::Medelement::PatientEnrichmentJob.perform_later(hook.id, contact.id)
   end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_27_103000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_27_150000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1980,6 +1980,42 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_27_103000) do
     t.index ["account_id"], name: "index_macros_on_account_id"
   end
 
+  create_table "medelement_provider_commands", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "hook_id"
+    t.bigint "appointment_id"
+    t.bigint "contact_id"
+    t.bigint "confirmation_request_id"
+    t.bigint "requested_by_id"
+    t.string "operation", null: false
+    t.string "status", default: "awaiting_confirmation", null: false
+    t.string "idempotency_key", null: false
+    t.string "provider_patient_code"
+    t.string "provider_reception_code"
+    t.string "company_cabinet_code"
+    t.datetime "desired_starts_at"
+    t.datetime "desired_ends_at"
+    t.jsonb "execution_state", default: {}, null: false
+    t.integer "attempt_count", default: 0, null: false
+    t.string "last_error_code"
+    t.integer "last_error_status"
+    t.datetime "confirmed_at"
+    t.datetime "executed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying])::text[])))"
+    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying])::text[])))"
+    t.index ["account_id", "idempotency_key"], name: "idx_medelement_commands_account_idempotency", unique: true
+    t.index ["account_id"], name: "index_medelement_provider_commands_on_account_id"
+    t.index ["appointment_id", "status"], name: "idx_medelement_commands_appointment_status"
+    t.index ["appointment_id"], name: "index_medelement_provider_commands_on_appointment_id"
+    t.index ["confirmation_request_id"], name: "index_medelement_provider_commands_on_confirmation_request_id"
+    t.index ["contact_id"], name: "index_medelement_provider_commands_on_contact_id"
+    t.index ["hook_id", "status"], name: "idx_medelement_commands_hook_status"
+    t.index ["hook_id"], name: "index_medelement_provider_commands_on_hook_id"
+    t.index ["requested_by_id"], name: "index_medelement_provider_commands_on_requested_by_id"
+  end
+
   create_table "mentions", force: :cascade do |t|
     t.bigint "user_id", null: false
     t.bigint "conversation_id", null: false
@@ -3203,6 +3239,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_27_103000) do
   add_foreign_key "llm_event_annotations", "llm_events"
   add_foreign_key "llm_event_annotations", "users"
   add_foreign_key "llm_usage_events", "llm_events", on_delete: :cascade
+  add_foreign_key "medelement_provider_commands", "accounts", on_delete: :cascade
+  add_foreign_key "medelement_provider_commands", "confirmation_requests", on_delete: :nullify
+  add_foreign_key "medelement_provider_commands", "contacts", on_delete: :nullify
+  add_foreign_key "medelement_provider_commands", "integrations_hooks", column: "hook_id", on_delete: :nullify
+  add_foreign_key "medelement_provider_commands", "scheduling_appointments", column: "appointment_id", on_delete: :nullify
+  add_foreign_key "medelement_provider_commands", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "meta_ad_referrals", "accounts", on_delete: :cascade
   add_foreign_key "meta_ad_referrals", "communication_threads", on_delete: :nullify
   add_foreign_key "meta_ad_referrals", "contacts", on_delete: :nullify

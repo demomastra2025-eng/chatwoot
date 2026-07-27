@@ -78,6 +78,10 @@ class Integrations::Medelement::Configuration
     zone&.name || Scheduling::Constants::DEFAULT_TIMEZONE
   end
 
+  def write_enabled?
+    boolean_setting('write_enabled', false)
+  end
+
   private
 
   attr_reader :hook

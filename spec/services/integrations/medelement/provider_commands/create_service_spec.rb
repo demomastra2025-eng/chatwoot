@@ -1,0 +1,156 @@
+require 'rails_helper'
+
+RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
+  subject(:perform) do
+    described_class.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      operation: 'create_reception',
+      idempotency_key: idempotency_key,
+      company_cabinet_code: 'cabinet-1',
+      actor: user
+    ).perform
+  end
+
+  let(:account) { create(:account) }
+  let(:user) { create(:user, :administrator, account: account) }
+  let(:contact) { create(:contact, account: account, name: 'Ivanov Ivan', phone_number: '+77000000001') }
+  let(:resource) do
+    create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+  end
+  let(:appointment) { create(:scheduling_appointment, account: account, contact: contact, resource: resource) }
+  let(:idempotency_key) { 'create-reception-1' }
+  let(:hook_settings) { attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true) }
+  let(:hook) { create(:integrations_hook, :medelement, account: account, settings: hook_settings) }
+
+  before do
+    account.enable_features!('scheduling')
+    schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)
+    allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
+  end
+
+  it 'persists an awaiting-confirmation command without executing the provider write' do
+    command = perform
+
+    expect(command).to be_awaiting_confirmation
+    expect(command.confirmation_request).to be_pending
+    expect(command.confirmation_request.metadata).to include(
+      'medelement_provider_command_id' => command.id,
+      'operation' => 'create_reception'
+    )
+    expect(command).to have_attributes(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      contact: contact,
+      company_cabinet_code: 'cabinet-1',
+      attempt_count: 0
+    )
+  end
+
+  it 'returns the same command for a repeated idempotency key' do
+    first = perform
+
+    expect(perform).to eq(first)
+    expect(Integrations::Medelement::ProviderCommand.where(account: account).count).to eq(1)
+    metadata = { 'medelement_provider_command_id' => first.id, 'operation' => 'create_reception' }
+    expect(ConfirmationRequest.where(account: account, metadata: metadata).count).to eq(1)
+  end
+
+  it 'rejects a second unfinished command for the same appointment' do
+    perform
+
+    expect do
+      described_class.new(
+        account: account,
+        hook: hook,
+        appointment: appointment,
+        operation: 'create_reception',
+        idempotency_key: 'create-reception-2',
+        company_cabinet_code: 'cabinet-1'
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_IN_PROGRESS') }
+  end
+
+  it 'rejects patient creation through an appointment while a contact command is unfinished' do
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      status: 'queued',
+      idempotency_key: 'patient-command'
+    )
+
+    expect { perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_IN_PROGRESS') }
+  end
+
+  it 'rejects a second unfinished patient update for the same contact' do
+    contact.update!(custom_attributes: contact.custom_attributes.merge('medelement_patient_code' => 'patient-1'))
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'update_patient',
+      status: 'queued',
+      provider_patient_code: 'patient-1',
+      idempotency_key: 'first-patient-update'
+    )
+
+    expect do
+      described_class.new(
+        account: account,
+        hook: hook,
+        contact: contact,
+        operation: 'update_patient',
+        idempotency_key: 'second-patient-update'
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_IN_PROGRESS') }
+  end
+
+  it 'rejects a contact that does not match the appointment' do
+    other_contact = create(:contact, account: account)
+
+    expect do
+      described_class.new(
+        account: account,
+        hook: hook,
+        appointment: appointment,
+        contact: other_contact,
+        operation: 'create_reception',
+        idempotency_key: 'wrong-contact',
+        company_cabinet_code: 'cabinet-1'
+      ).perform
+    end.to raise_error(ArgumentError, 'contact must match the appointment contact')
+  end
+
+  it 'fails closed when provider writes are disabled' do
+    hook.update!(settings: hook.settings.merge('write_enabled' => false))
+
+    expect { perform }.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_WRITE_DISABLED') }
+    expect(Integrations::Medelement::ProviderCommand.where(account: account)).to be_empty
+  end
+
+  it 'rejects an appointment from another account' do
+    other_appointment = create(:scheduling_appointment)
+
+    expect do
+      described_class.new(
+        account: account,
+        hook: hook,
+        appointment: other_appointment,
+        operation: 'create_reception',
+        idempotency_key: 'cross-account',
+        company_cabinet_code: 'cabinet-1'
+      ).perform
+    end.to raise_error(ArgumentError, 'appointment must belong to the current account')
+  end
+end

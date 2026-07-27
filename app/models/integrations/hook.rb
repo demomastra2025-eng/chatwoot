@@ -21,6 +21,7 @@ class Integrations::Hook < ApplicationRecord
   before_validation :ensure_hook_type
   before_validation :ensure_reference_id
   after_create :trigger_setup_if_crm
+  before_destroy :ensure_no_unfinished_medelement_provider_commands, if: :medelement?
   after_commit :sync_medelement_schedule, on: [:create, :update], if: :medelement?
   after_destroy_commit :destroy_medelement_schedule, if: :medelement?
   after_destroy_commit :enqueue_medelement_cleanup, if: :medelement?
@@ -200,6 +201,13 @@ class Integrations::Hook < ApplicationRecord
 
   def enqueue_medelement_cleanup
     Integrations::Medelement::CleanupJob.perform_later(account_id)
+  end
+
+  def ensure_no_unfinished_medelement_provider_commands
+    return unless Integrations::Medelement::ProviderCommand.where(hook_id: id).unfinished.exists?
+
+    errors.add(:base, 'Cannot remove Medelement integration while provider commands are unfinished')
+    throw(:abort)
   end
 
   def sync_medelement_schedule

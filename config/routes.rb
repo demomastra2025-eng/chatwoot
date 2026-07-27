@@ -238,6 +238,7 @@ Rails.application.routes.draw do
               resources :payments, only: [:create], controller: 'appointment_payments'
               delete :payments, on: :member, to: 'appointment_payments#destroy'
             end
+            resources :provider_commands, only: [:index, :show, :create]
             resources :payments, only: [:index]
             resources :expenses, only: [:index] do
               collection do

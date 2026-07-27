@@ -14,6 +14,12 @@ trigger_scheduled_items_job:
   class: 'TriggerScheduledItemsJob'
   queue: scheduled_jobs
 
+# durable outbox dispatch and ambiguous-state recovery for Medelement writes
+medelement_provider_command_dispatcher_job:
+  cron: '*/1 * * * *'
+  class: 'Integrations::Medelement::ProviderCommandDispatcherJob'
+  queue: scheduled_jobs
+
 # executed every minute to keep Weixin Personal gateway pollers synced after gateway restarts
 weixin_sync_channels_job:
   cron: '*/1 * * * *'

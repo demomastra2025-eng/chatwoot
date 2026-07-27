@@ -73,4 +73,114 @@ RSpec.describe Integrations::Medelement::Client do
       )
     end
   end
+
+  describe '#search_patients_by_phone' do
+    it 'uses documented phone components and keeps exact matches only' do
+      response = instance_double(
+        Net::HTTPOK,
+        code: '200',
+        body: [
+          { 'PROFILE_CODE' => 'exact', 'PATIENT_PHONE_2' => '+7-X-701-X-1234567' },
+          { 'PROFILE_CODE' => 'similar', 'PATIENT_PHONE_2' => '+7-X-701-X-1234568' }
+        ].to_json
+      )
+      allow(response).to receive(:is_a?).with(Net::HTTPSuccess).and_return(true)
+      http = instance_double(Net::HTTP)
+      allow(http).to receive(:request) do |request|
+        expect(request.path).to end_with(
+          '?patient_phone_2%5B0%5D=7&patient_phone_2%5B1%5D=701&patient_phone_2%5B2%5D=1234567&skip=0'
+        )
+        response
+      end
+      allow(Net::HTTP).to receive(:start).and_yield(http)
+
+      result = client.search_patients_by_phone(phone_number: '+77011234567')
+
+      expect(result.pluck('PROFILE_CODE')).to eq(['exact'])
+    end
+
+    it 'normalizes the provider 404 empty-array contract' do
+      response = instance_double(Net::HTTPNotFound, code: '404', body: '[]')
+      allow(Net::HTTP).to receive(:start).and_yield(instance_double(Net::HTTP, request: response))
+
+      expect(client.search_patients_by_phone(phone_number: '+77011234567')).to eq([])
+    end
+  end
+
+  describe 'write endpoints' do
+    it 'routes patient and reception mutations to the documented methods and paths' do
+      create_patient = stub_request(:post, "#{described_class::BASE_URL}/doctor/v1/patient")
+                       .with(body: hash_including('profile_code' => 'patient-1'))
+                       .to_return(status: 201, body: '{"profile_code":"patient-1"}', headers: { 'Content-Type' => 'application/json' })
+      update_patient = stub_request(:put, "#{described_class::BASE_URL}/doctor/v1/patient")
+                       .with(body: hash_including('profile_code' => 'patient-1'))
+                       .to_return(status: 201, body: '{}', headers: { 'Content-Type' => 'application/json' })
+      create_reception = stub_request(:post, "#{described_class::BASE_URL}/v1/doctor/reception")
+                         .with(body: hash_including('patient_code' => 'patient-1'))
+                         .to_return(status: 201, body: '{"RECEPTION_CODE":"reception-1"}', headers: { 'Content-Type' => 'application/json' })
+      move_reception = stub_request(:post, "#{described_class::BASE_URL}/v2/doctor/reception/change_reception_date")
+                       .with(body: hash_including('paient_code' => 'patient-1', 'reception_code' => 'reception-1'))
+                       .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+      remove_reception = stub_request(:post, "#{described_class::BASE_URL}/v2/doctor/reception/remove")
+                         .with(body: { 'reception_code' => 'reception-1' })
+                         .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+      client.create_patient(params: { profile_code: 'patient-1' })
+      client.update_patient(params: { profile_code: 'patient-1' })
+      client.create_reception(params: { patient_code: 'patient-1' })
+      client.move_reception(params: { paient_code: 'patient-1', reception_code: 'reception-1' })
+      client.remove_reception(reception_code: 'reception-1')
+
+      expect([create_patient, update_patient, create_reception, move_reception, remove_reception])
+        .to all(have_been_requested.once)
+    end
+  end
+
+  describe 'write ambiguity' do
+    it 'marks transport failures as ambiguous and retryable' do
+      stub_request(:post, "#{described_class::BASE_URL}/v1/doctor/reception")
+        .to_raise(Errno::ECONNRESET)
+
+      expect { client.create_reception(params: { patient_code: 'patient-1' }) }
+        .to raise_error(Integrations::Medelement::Client::ApiError) { |error|
+          expect(error).to be_ambiguous
+          expect(error).to be_retryable
+          expect(error.message).not_to include('patient-1')
+        }
+    end
+
+    it 'keeps provider validation failures non-ambiguous and non-retryable' do
+      stub_request(:post, "#{described_class::BASE_URL}/v1/doctor/reception")
+        .to_return(status: 422, body: '{"patient_phone":"sensitive"}')
+
+      expect { client.create_reception(params: { patient_code: 'patient-1' }) }
+        .to raise_error(Integrations::Medelement::Client::ApiError) { |error|
+          expect(error).not_to be_ambiguous
+          expect(error).not_to be_retryable
+          expect(error.status).to eq(422)
+          expect(error.message).not_to include('sensitive')
+        }
+    end
+  end
+
+  describe '#timetable' do
+    it 'sends the documented two-boundary date array' do
+      stub = stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
+             .with(
+               query: {
+                 'date' => ['27.07.2026', '28.07.2026'],
+                 'specialistCode' => 'specialist-1'
+               }
+             )
+             .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+      client.timetable(
+        specialist_code: 'specialist-1',
+        starts_on: Date.new(2026, 7, 27),
+        ends_on: Date.new(2026, 7, 28)
+      )
+
+      expect(stub).to have_been_requested.once
+    end
+  end
 end

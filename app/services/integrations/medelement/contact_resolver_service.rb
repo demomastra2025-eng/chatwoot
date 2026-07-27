@@ -11,22 +11,22 @@ class Integrations::Medelement::ContactResolverService
     @client = client
   end
 
-  def sync_patient!(patient_code)
+  def sync_patient!(patient_code, preferred_contact: nil)
     existing_contact = find_by_patient_code(patient_code)
-    return existing_contact if fresh?(existing_contact)
+    return existing_contact if preferred_contact.nil? && fresh?(existing_contact)
 
     patient = client.get_patient(patient_code: patient_code)
     return existing_contact if patient.blank?
 
-    upsert_contact(patient)
+    upsert_contact(patient, preferred_contact: preferred_contact)
   end
 
   private
 
   attr_reader :account, :client
 
-  def contact_for_lookup(patient_code:, iin:, email:)
-    find_by_patient_code(patient_code) ||
+  def contact_for_lookup(patient_code:, iin:, email:, preferred_contact: nil)
+    preferred_contact || find_by_patient_code(patient_code) ||
       find_by_identifier(iin) ||
       find_by_email(email)
   end
@@ -34,7 +34,7 @@ class Integrations::Medelement::ContactResolverService
   def find_by_email(email)
     return if email.blank?
 
-    account.contacts.find_by(email: email.downcase)
+    account.contacts.from_email(email)
   end
 
   def find_by_identifier(identifier)
@@ -107,22 +107,28 @@ class Integrations::Medelement::ContactResolverService
     PHONE_FIELDS.filter_map { |field| normalize_phone(patient[field]) }.uniq - Array(main_phone_value)
   end
 
-  def upsert_contact(patient)
+  def resolved_phone(contact, patient)
+    source_phone = main_phone(patient)
+    conflicting_contact = account.contacts.where(phone_number: source_phone).where.not(id: contact.id).first if source_phone.present?
+    return [source_phone, source_phone, nil] if conflicting_contact.blank?
+
+    [source_phone, nil, "Phone #{source_phone} already belongs to contact ##{conflicting_contact.id}"]
+  end
+
+  # Coordinates identity lookup, uniqueness checks and custom-attribute persistence as one unit.
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
+  def upsert_contact(patient, preferred_contact: nil)
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
     iin = normalize_iin(patient['IIN'])
     email = patient['PATIENT_EMAIL'].to_s.downcase.presence
-    contact = contact_for_lookup(patient_code: patient_code, iin: iin, email: email) || account.contacts.new
+    contact = contact_for_lookup(
+      patient_code: patient_code,
+      iin: iin,
+      email: email,
+      preferred_contact: preferred_contact
+    ) || account.contacts.new
 
-    source_phone = main_phone(patient)
-    phone = source_phone
-    phone_conflict_comment = nil
-    if phone.present?
-      conflicting_contact = account.contacts.where(phone_number: phone).where.not(id: contact.id).first
-      if conflicting_contact.present?
-        phone_conflict_comment = "Phone #{phone} already belongs to contact ##{conflicting_contact.id}"
-        phone = nil
-      end
-    end
+    source_phone, phone, phone_conflict_comment = resolved_phone(contact, patient)
 
     contact.skip_runtime_events = true
     contact.account ||= account
@@ -149,4 +155,5 @@ class Integrations::Medelement::ContactResolverService
     contact.save!
     contact
   end
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 end

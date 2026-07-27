@@ -191,4 +191,30 @@ RSpec.describe HookJob do
       end
     end
   end
+
+  context 'when processing Medelement contact enrichment' do
+    let(:contact) { create(:contact, account: account, phone_number: '+77011234567') }
+    let(:medelement_hook) { create(:integrations_hook, :medelement, account: account) }
+
+    before do
+      account.enable_features!('scheduling')
+      schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)
+      allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
+      allow(Integrations::Medelement::PatientEnrichmentJob).to receive(:perform_later)
+    end
+
+    it 'enqueues enrichment for a contact event' do
+      described_class.perform_now(medelement_hook, 'contact.updated', contact: contact)
+
+      expect(Integrations::Medelement::PatientEnrichmentJob)
+        .to have_received(:perform_later)
+        .with(medelement_hook.id, contact.id)
+    end
+
+    it 'ignores unrelated events' do
+      described_class.perform_now(medelement_hook, 'conversation.created', contact: contact)
+
+      expect(Integrations::Medelement::PatientEnrichmentJob).not_to have_received(:perform_later)
+    end
+  end
 end
