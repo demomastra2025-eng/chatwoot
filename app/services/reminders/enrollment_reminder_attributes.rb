@@ -25,7 +25,7 @@ class Reminders::EnrollmentReminderAttributes
       'timing_mode' => 'absolute',
       'scheduled_at' => step.due_at,
       'relative_anchor' => nil,
-      'relative_offset_seconds' => nil,
+      'relative_offset_seconds' => 0,
       'relative_time_mode' => Reminder::RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME,
       'relative_time_of_day' => nil
     )

@@ -25,7 +25,7 @@ class Reminders::ConversationResolver
       contact_id: contact_inbox.contact_id,
       contact_inbox_id: contact_inbox.id,
       status: :open,
-      additional_attributes: base_additional_attributes
+      additional_attributes: base_additional_attributes(contact_inbox)
     )
     conversation.update!(waiting_since: nil)
     conversation
@@ -50,10 +50,21 @@ class Reminders::ConversationResolver
     contact_inbox
   end
 
-  def base_additional_attributes
-    return {} unless reminder.target_inbox&.email?
+  def base_additional_attributes(contact_inbox)
+    return { mail_subject: reminder.metadata['mail_subject'].presence || reminder.body.to_s.truncate(80) } if reminder.target_inbox&.email?
+    return telegram_additional_attributes(contact_inbox) if reminder.target_inbox&.channel_type == 'Channel::Telegram'
 
-    { mail_subject: reminder.metadata['mail_subject'].presence || reminder.body.to_s.truncate(80) }
+    {}
+  end
+
+  def telegram_additional_attributes(contact_inbox)
+    latest_conversation = contact_inbox.conversations
+                                       .order(last_activity_at: :desc, created_at: :desc, id: :desc)
+                                       .first
+    attributes = (latest_conversation&.additional_attributes || {}).slice('chat_id', 'business_connection_id')
+    attributes['chat_id'] = attributes['chat_id'].presence || contact_inbox.source_id
+
+    attributes
   end
 
   def target_conversation
