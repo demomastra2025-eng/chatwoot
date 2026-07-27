@@ -22,7 +22,7 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
   end
 
   before do
-    allow(client).to receive(:specialists).and_return(
+    allow(client).to receive(:get_specialists).and_return(
       [
         {
           'specialistCode' => '27492901726817790',

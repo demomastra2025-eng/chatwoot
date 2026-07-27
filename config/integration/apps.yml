@@ -527,6 +527,13 @@ medelement:
   settings_form_schema:
     [
       {
+        'label': 'Integrator Key',
+        'type': 'password',
+        'name': 'integrator_key',
+        'validation': 'required',
+        'store': 'secret_settings',
+      },
+      {
         'label': 'Company Login',
         'type': 'text',
         'name': 'company_login',

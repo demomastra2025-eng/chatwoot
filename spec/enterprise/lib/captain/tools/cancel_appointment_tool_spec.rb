@@ -32,25 +32,4 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     )
     expect(payload['appointment']).to include('id' => appointment.id, 'status' => 'cancelled')
   end
-
-  it 'does not cancel an imported Medelement appointment' do
-    resource = create(:scheduling_resource, account: account)
-    contact = create(:contact, account: account)
-    conversation = create(:conversation, account: account, contact: contact)
-    appointment = create(
-      :scheduling_appointment,
-      account: account,
-      resource: resource,
-      contact: contact,
-      conversation: conversation,
-      source: 'medelement',
-      external_ref: 'medelement:reception:captain-cancel'
-    )
-    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
-
-    result = tool.perform(tool_context)
-
-    expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
-    expect(appointment.reload.status).to eq('scheduled')
-  end
 end

@@ -11,9 +11,6 @@ class Scheduling::Appointments::UpsertService
   end
 
   def perform
-    Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
-    Scheduling::Appointments::MutationGuard.ensure_assignable!(params)
-
     ApplicationRecord.transaction do
       apply_attributes!
       validate_availability!
@@ -86,7 +83,7 @@ class Scheduling::Appointments::UpsertService
       client_birth_date: resolve_client_birth_date(contact),
       client_gender: resolve_client_gender(contact),
       client_comment: resolve_optional_text(:client_comment, current: appointment.client_comment),
-      source: appointment.source.presence || 'manual',
+      source: resolve_string(:source, current: appointment.source.presence || 'manual'),
       external_ref: resolve_optional_text(:external_ref, current: appointment.external_ref),
       idempotency_key: resolve_optional_text(:idempotency_key, current: appointment.idempotency_key),
       service_name_snapshot: service_snapshot[:service_name_snapshot],

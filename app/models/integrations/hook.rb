@@ -149,8 +149,7 @@ class Integrations::Hook < ApplicationRecord
     return unless medelement?
     return if access_token.blank?
 
-    missing_keys = %w[company_login password].reject { |key| secret_settings[key].present? }
-    missing_keys.unshift('integrator_key') if Integrations::Medelement::Configuration.new(hook: self).integrator_key.blank?
+    missing_keys = %w[integrator_key company_login password].reject { |key| secret_settings[key].present? }
     return if missing_keys.blank?
 
     errors.add(:access_token, "is missing required Medelement credentials: #{missing_keys.join(', ')}")

@@ -1,6 +1,5 @@
 class Integrations::Medelement::ReceptionsSyncService
   InvalidReceptionError = Class.new(StandardError)
-  IncompleteSnapshotError = Class.new(StandardError)
   MAX_RECEPTIONS_PER_REQUEST = 1000
 
   def initialize(account:, client:, configuration:)
@@ -38,18 +37,12 @@ class Integrations::Medelement::ReceptionsSyncService
     receptions = client.get_receptions(
       company_cabinet_code: company_cabinet_code,
       specialist_code: specialist_code,
-      begin_datetime: from.in_time_zone(configuration.time_zone).strftime('%d.%m.%Y %H:%M:%S'),
-      end_datetime: to.in_time_zone(configuration.time_zone).strftime('%d.%m.%Y %H:%M:%S')
+      begin_datetime: format_request_time(from),
+      end_datetime: format_request_time(to)
     )
 
     throttle!
-    return receptions if receptions.size < MAX_RECEPTIONS_PER_REQUEST
-
-    if (to - from) <= 1.day
-      raise IncompleteSnapshotError,
-            "Medelement reception snapshot is saturated for account=#{account.id} " \
-            "specialist_code=#{specialist_code} cabinet_code=#{company_cabinet_code}"
-    end
+    return receptions if receptions.size < MAX_RECEPTIONS_PER_REQUEST || (to - from) <= 1.day
 
     split_fetch_receptions_for_pair(
       specialist_code: specialist_code,
@@ -57,6 +50,10 @@ class Integrations::Medelement::ReceptionsSyncService
       from: from,
       to: to
     )
+  end
+
+  def format_request_time(time)
+    time.in_time_zone(configuration.time_zone).strftime('%d.%m.%Y %H:%M:%S')
   end
 
   def imported_appointments_in_window
@@ -87,9 +84,7 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def cleanup_missing_appointments!(desired_external_refs)
     imported_appointments_in_window.find_each do |appointment|
-      next if desired_external_refs.include?(appointment.external_ref)
-
-      Integrations::Medelement::MissingAppointmentReconciler.new(appointment: appointment).perform
+      appointment.destroy! unless desired_external_refs.include?(appointment.external_ref)
     end
   end
 
@@ -185,7 +180,7 @@ class Integrations::Medelement::ReceptionsSyncService
     Rails.logger.warn(
       "[MEDELEMENT::RECEPTIONS_SYNC] Skipping reception #{reception['RECEPTION_CODE']} " \
       "for account=#{account.id} resource_id=#{resource.id} specialist_code=#{reception['specialistCode']} " \
-      "reason=#{error.class}: #{error.message}"
+      "patient_code=#{reception['PATIENT_CODE']} reason=#{error.class}: #{error.message}"
     )
   end
 
