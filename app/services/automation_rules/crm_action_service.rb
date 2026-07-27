@@ -13,9 +13,12 @@ class AutomationRules::CrmActionService
       @record.reload
       action = action.with_indifferent_access
       begin
+        @current_action_id = action[:action_id]
         send(action[:action_name], action[:action_params])
       rescue StandardError => e
         ChatwootExceptionTracker.new(e, account: @account).capture_exception
+      ensure
+        @current_action_id = nil
       end
     end
   ensure
@@ -81,7 +84,7 @@ class AutomationRules::CrmActionService
   end
 
   def create_touch(action_params)
-    touch_action_service.create_touch(action_params)
+    touch_action_service.create_touch(action_params, action_id: @current_action_id)
   end
 
   def cancel_touches(action_params)

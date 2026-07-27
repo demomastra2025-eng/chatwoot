@@ -85,4 +85,15 @@ RSpec.describe Reminders::MaterializeDueEnrollmentsJob do
     expect(attempted_ids).to eq([first_enrollment.id, second_enrollment.id])
     expect(exception_tracker).to have_received(:capture_exception).once
   end
+
+  it 'chains another batch without retrying failed candidates from the current run' do
+    stub_const("#{described_class}::BATCH_SIZE", 2)
+    enrollments = create_list(:touch_plan_enrollment, 3, next_due_at: 1.minute.ago)
+    allow(Reminders::MaterializeEnrollmentStepService).to receive(:new).and_return(
+      instance_double(Reminders::MaterializeEnrollmentStepService, perform: nil)
+    )
+
+    expect { described_class.perform_now }
+      .to have_enqueued_job(described_class).with(1, enrollments.first(2).map(&:id))
+  end
 end

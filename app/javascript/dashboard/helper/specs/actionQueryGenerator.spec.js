@@ -53,4 +53,22 @@ describe('#actionQueryGenerator', () => {
       },
     ]);
   });
+
+  it('preserves the stable action id while serializing edited actions', () => {
+    expect(
+      actionQueryGenerator([
+        {
+          action_id: 'stable-action-id',
+          action_name: 'add_label',
+          action_params: [{ id: 'priority', name: 'Priority' }],
+        },
+      ])
+    ).toEqual([
+      {
+        action_id: 'stable-action-id',
+        action_name: 'add_label',
+        action_params: ['priority'],
+      },
+    ]);
+  });
 });

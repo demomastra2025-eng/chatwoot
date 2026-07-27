@@ -11,11 +11,12 @@ class Reminders::SyncEnrollmentService
       return
     end
 
-    enrollment_scope.active.find_each do |enrollment|
+    enrollment_scope.where(status: %w[active paused]).find_each do |enrollment|
       enrollment.with_lock do
         enrollment.reload
-        next unless enrollment.active?
+        next unless enrollment.active? || enrollment.paused?
 
+        clear_terminal_at_activation!(enrollment)
         Reminders::EnrollmentScheduleService.new(enrollment: enrollment).refresh_next_due!
       end
     end
@@ -32,16 +33,18 @@ class Reminders::SyncEnrollmentService
   end
 
   def terminal_remindable?
-    return remindable.status.in?(%w[cancelled completed]) if remindable.is_a?(Scheduling::Appointment)
+    return remindable.status.in?(%w[cancelled completed no_show]) if remindable.is_a?(Scheduling::Appointment)
     return remindable.closed? || remindable.archived_at.present? if remindable.is_a?(Crm::Deal)
 
     true
   end
 
   def cancel_terminal_enrollments!(reason: 'remindable_terminal')
-    enrollment_scope.where(status: %w[active completed]).find_each do |enrollment|
+    enrollment_scope.where(status: %w[active paused completed]).find_each do |enrollment|
+      next if enrollment.metadata['allow_terminal_at_activation']
+
       cancelled_reminder = cancel_open_materialized_reminders(enrollment)
-      next unless enrollment.active? || cancelled_reminder
+      next unless enrollment.active? || enrollment.paused? || cancelled_reminder
 
       enrollment.cancel!(reason: reason, metadata: { synced_at: Time.current.iso8601 })
     end
@@ -62,5 +65,11 @@ class Reminders::SyncEnrollmentService
 
   def reason_for_cancelled_reminder
     'cancelled because the source entity became terminal'
+  end
+
+  def clear_terminal_at_activation!(enrollment)
+    return unless enrollment.metadata['allow_terminal_at_activation']
+
+    enrollment.update!(metadata: enrollment.metadata.except('allow_terminal_at_activation'))
   end
 end

@@ -124,6 +124,7 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
       :assistant_id,
       entity_kinds: [],
       touches: [
+        :step_id,
         :action_type,
         :content_kind,
         :text_mode,

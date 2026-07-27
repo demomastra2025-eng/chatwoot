@@ -38,8 +38,10 @@ class AutomationRules::TouchActionService
     reminders
   end
 
-  def create_touch(action_params)
+  def create_touch(action_params = nil, action_id: nil, **keyword_params)
+    action_params = keyword_params if action_params.nil? && keyword_params.present?
     params = normalize_touch_params(action_params)
+    return create_deferred_touch(params, action_id) if deferred_action?(params, action_id)
 
     reminder = Reminder.transaction do
       created_reminder = Reminders::CreateService.new(
@@ -76,6 +78,24 @@ class AutomationRules::TouchActionService
   end
 
   private
+
+  def deferred_action?(params, action_id)
+    action_id.present? && Reminders::DeferredAutomationActionPolicy.new(
+      account: account,
+      remindable: record,
+      definition: params
+    ).eligible?
+  end
+
+  def create_deferred_touch(params, action_id)
+    Reminders::EnrollAutomationActionService.new(
+      account: account,
+      rule: rule,
+      action_id: action_id,
+      remindable: record,
+      definition: params
+    ).perform
+  end
 
   def delay_minutes(params)
     Integer(params[LEGACY_DELAY_MINUTES_FIELD] || 0)

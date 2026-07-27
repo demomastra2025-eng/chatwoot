@@ -38,6 +38,17 @@ RSpec.describe Reminders::SyncEnrollmentService do
     expect(enrollment.reload).to be_cancelled
   end
 
+  it 'cancels a feature-paused enrollment when the appointment becomes terminal' do
+    enrollment.update!(
+      status: 'paused',
+      metadata: enrollment.metadata.merge('paused_reason' => Reminders::DeferredMaterializationPolicy::FEATURE_NAME)
+    )
+
+    appointment.update!(status: 'cancelled')
+
+    expect(enrollment.reload).to be_cancelled
+  end
+
   it 'retains a cancelled audit enrollment after the appointment is destroyed' do
     enrollment
 
@@ -78,5 +89,25 @@ RSpec.describe Reminders::SyncEnrollmentService do
 
     expect(deal_enrollment.reload).to be_cancelled
     expect(deal_enrollment.remindable).to be_nil
+  end
+
+  it 'clears the activation terminal exemption after reopening the appointment' do
+    appointment = create(:scheduling_appointment, status: 'completed')
+    enrollment = create(
+      :touch_plan_enrollment,
+      account: appointment.account,
+      remindable: appointment,
+      status: 'active',
+      metadata: { 'allow_terminal_at_activation' => true }
+    )
+
+    described_class.new(remindable: appointment).perform
+    expect(enrollment.reload).to be_active
+
+    appointment.update!(status: 'scheduled')
+    expect(enrollment.reload.metadata).not_to have_key('allow_terminal_at_activation')
+
+    appointment.update!(status: 'completed')
+    expect(enrollment.reload).to be_cancelled
   end
 end

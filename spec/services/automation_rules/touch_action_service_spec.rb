@@ -318,6 +318,143 @@ RSpec.describe AutomationRules::TouchActionService do
       expect(touch.reload).to be_cancelled
       expect(touch.last_error).to eq('отменен из-за рассылки')
     end
+
+    it 'defers appointment automation touches and reads the current action at materialization' do
+      account.enable_features!('deferred_touch_materialization', 'scheduling')
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        conversation: conversation,
+        starts_at: 1.day.from_now,
+        ends_at: 1.day.from_now + 30.minutes
+      )
+      action_definition = {
+        body: 'Original automation text',
+        timing_mode: 'relative',
+        relative_anchor: 'appointment.starts_at',
+        relative_offset_seconds: -1.day.to_i,
+        timezone: 'UTC'
+      }
+      appointment_rule = create(
+        :automation_rule,
+        account: account,
+        event_name: 'appointment_created',
+        conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+        actions: [{ action_name: 'create_touch', action_params: action_definition }]
+      )
+      action = appointment_rule.actions.first
+      appointment_service = described_class.new(
+        rule: appointment_rule,
+        account: account,
+        record: appointment,
+        entity_kind: 'appointment'
+      )
+
+      enrollment = appointment_service.create_touch(action['action_params'], action_id: action['action_id'])
+      appointment_rule.update!(
+        actions: [action.merge('action_params' => action_definition.merge(body: 'Current automation text'))]
+      )
+      claim = Reminders::MaterializeEnrollmentStepService.new(
+        enrollment: enrollment,
+        now: enrollment.reload.next_due_at + 1.minute
+      ).perform
+
+      expect(enrollment).to be_a(TouchPlanEnrollment)
+      expect(claim.reminder.body).to eq('Current automation text')
+      expect(claim.reminder.metadata).to include('post_delivery_automation_rule_id' => appointment_rule.id)
+      expect(
+        appointment_service.create_touch(action['action_params'], action_id: action['action_id']).id
+      ).to eq(enrollment.id)
+      expect(account.touch_plan_enrollments.where(automation_rule: appointment_rule, remindable: appointment).count).to eq(1)
+    end
+
+    it 'cancels a deferred automation enrollment when the source rule is disabled' do
+      account.enable_features!('deferred_touch_materialization', 'scheduling')
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        conversation: conversation,
+        starts_at: 1.day.from_now,
+        ends_at: 1.day.from_now + 30.minutes
+      )
+      appointment_rule = create(
+        :automation_rule,
+        account: account,
+        event_name: 'appointment_created',
+        conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+        actions: [
+          {
+            action_name: 'create_touch',
+            action_params: {
+              body: 'Deferred automation touch',
+              timing_mode: 'relative',
+              relative_anchor: 'appointment.starts_at',
+              relative_offset_seconds: -1.day.to_i,
+              timezone: 'UTC'
+            }
+          }
+        ]
+      )
+      action = appointment_rule.actions.first
+      enrollment = described_class.new(
+        rule: appointment_rule,
+        account: account,
+        record: appointment,
+        entity_kind: 'appointment'
+      ).create_touch(action['action_params'], action_id: action['action_id'])
+
+      appointment_rule.update!(active: false)
+      Reminders::ReconcileEnrollmentService.new(enrollment: enrollment).perform
+
+      expect(enrollment.reload).to be_cancelled
+      expect(account.reminders.where(remindable: appointment)).to be_empty
+    end
+
+    it 'keeps a post-completion appointment action eligible at activation' do
+      account.enable_features!('deferred_touch_materialization', 'scheduling')
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        conversation: conversation,
+        status: 'completed'
+      )
+      appointment_rule = create(
+        :automation_rule,
+        account: account,
+        event_name: 'appointment_completed',
+        actions: [
+          {
+            action_name: 'create_touch',
+            action_params: {
+              body: 'Post-completion follow-up',
+              timing_mode: 'relative',
+              relative_anchor: 'touch.created_at',
+              relative_offset_seconds: 0,
+              timezone: 'UTC'
+            }
+          }
+        ]
+      )
+      action = appointment_rule.actions.first
+      enrollment = described_class.new(
+        rule: appointment_rule,
+        account: account,
+        record: appointment,
+        entity_kind: 'appointment'
+      ).create_touch(action['action_params'], action_id: action['action_id'])
+
+      claim = Reminders::MaterializeEnrollmentStepService.new(
+        enrollment: enrollment,
+        now: enrollment.next_due_at + 1.minute
+      ).perform
+
+      expect(claim).to be_materialized
+      expect(claim.reminder.body).to eq('Post-completion follow-up')
+      expect(enrollment.metadata['allow_terminal_at_activation']).to be(true)
+    end
   end
 
   describe '#cancel_touches' do

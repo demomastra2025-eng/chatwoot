@@ -99,5 +99,74 @@ RSpec.describe Reminders::SyncRemindableService do
       expect(touch.reload.scheduled_at.to_i).to eq(manual_scheduled_at.to_i)
       expect(touch.last_materialized_anchor_at).to be_nil
     end
+
+    it 'drops a stale appointment conversation and routes to the current contact' do
+      account = create(:account)
+      inbox = create(:inbox, account: account)
+      old_contact = create(:contact, account: account)
+      current_contact = create(:contact, account: account)
+      old_contact_inbox = create(:contact_inbox, contact: old_contact, inbox: inbox)
+      current_contact_inbox = create(:contact_inbox, contact: current_contact, inbox: inbox)
+      stale_conversation = create(
+        :conversation,
+        account: account,
+        inbox: inbox,
+        contact: old_contact,
+        contact_inbox: old_contact_inbox
+      )
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: old_contact,
+        conversation: stale_conversation
+      )
+      touch = create(
+        :reminder,
+        account: account,
+        remindable: appointment,
+        conversation: stale_conversation,
+        target_conversation: stale_conversation,
+        target_contact: old_contact,
+        target_contact_inbox: old_contact_inbox,
+        target_inbox: inbox,
+        status: :pending
+      )
+
+      appointment.update!(contact: current_contact)
+      described_class.new(remindable: appointment).perform
+
+      expect(touch.reload).to have_attributes(
+        target_contact_id: current_contact.id,
+        target_contact_inbox_id: current_contact_inbox.id,
+        target_conversation_id: nil,
+        conversation_id: nil
+      )
+    end
+
+    it 'routes deal touches to the explicit primary contact instead of association order' do
+      account = create(:account)
+      inbox = create(:inbox, account: account)
+      first_contact = create(:contact, account: account)
+      primary_contact = create(:contact, account: account)
+      first_contact_inbox = create(:contact_inbox, contact: first_contact, inbox: inbox)
+      create(:contact_inbox, contact: primary_contact, inbox: inbox)
+      deal = create(:crm_deal, account: account)
+      create(:crm_deal_contact, account: account, deal: deal, contact: first_contact, primary: false)
+      create(:crm_deal_contact, account: account, deal: deal, contact: primary_contact, primary: true)
+      deal.reload
+      touch = create(
+        :reminder,
+        account: account,
+        remindable: deal,
+        target_contact: first_contact,
+        target_contact_inbox: first_contact_inbox,
+        target_inbox: inbox,
+        status: :pending
+      )
+
+      described_class.new(remindable: deal).perform
+
+      expect(touch.reload.target_contact_id).to eq(primary_contact.id)
+    end
   end
 end

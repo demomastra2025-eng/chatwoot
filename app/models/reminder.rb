@@ -680,8 +680,10 @@ class Reminder < ApplicationRecord
   end
 
   def hydrate_from_appointment(appointment)
-    hydrate_from_conversation(appointment.conversation) if appointment.conversation.present?
-    self.target_contact ||= appointment.contact
+    hydrate_from_current_entity_contact(
+      contact: appointment.contact,
+      conversation: appointment.conversation
+    )
   end
 
   def hydrate_from_conversation(record)
@@ -695,8 +697,25 @@ class Reminder < ApplicationRecord
   end
 
   def hydrate_from_deal(deal)
-    hydrate_from_conversation(deal.originating_conversation) if deal.originating_conversation.present?
-    self.target_contact ||= deal.contacts.first
+    hydrate_from_current_entity_contact(
+      contact: deal.primary_contact || deal.contacts.first,
+      conversation: deal.originating_conversation
+    )
+  end
+
+  def hydrate_from_current_entity_contact(contact:, conversation:)
+    return hydrate_from_conversation(conversation) if contact.blank?
+
+    self.target_contact = contact
+    self.target_inbox ||= conversation&.inbox
+    clear_stale_contact_routes(contact)
+    hydrate_from_conversation(conversation) if conversation&.contact_id == contact.id
+  end
+
+  def clear_stale_contact_routes(contact)
+    self.conversation = nil if self.conversation&.contact_id != contact.id
+    self.target_conversation = nil if target_conversation&.contact_id != contact.id
+    self.target_contact_inbox = nil if target_contact_inbox&.contact_id != contact.id
   end
 
   def hydrate_from_task(task)

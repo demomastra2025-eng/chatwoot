@@ -112,6 +112,7 @@ class AutomationRule < ApplicationRecord
   include Reauthorizable
 
   belongs_to :account
+  has_many :touch_plan_enrollments, dependent: :nullify
   has_many_attached :files
   account_storage_attachments :files
 
@@ -130,7 +131,10 @@ class AutomationRule < ApplicationRecord
   validate :query_operator_value
   validates :account_id, presence: true
 
+  before_validation :normalize_action_ids
+  before_destroy :cancel_live_touch_enrollments, prepend: true
   after_update_commit :reauthorized!, if: -> { saved_change_to_conditions? }
+  after_update_commit :reconcile_live_touch_enrollments, if: -> { saved_change_to_actions? || saved_change_to_active? }
 
   scope :active, -> { where(active: true) }
 
@@ -182,6 +186,42 @@ class AutomationRule < ApplicationRecord
   end
 
   private
+
+  def normalize_action_ids
+    existing_actions = actions_in_database
+    seen_action_ids = Set.new
+    self.actions = Array(actions).each_with_index.map do |raw_action, index|
+      action = raw_action.to_h.deep_stringify_keys
+      next action unless action['action_name'] == 'create_touch'
+
+      action_id = action['action_id'].presence || existing_actions[index].to_h.deep_stringify_keys['action_id'].presence
+      action_id = SecureRandom.uuid if action_id.blank? || seen_action_ids.include?(action_id)
+      action['action_id'] = action_id
+      seen_action_ids << action_id
+      action
+    end
+  end
+
+  def actions_in_database
+    value = attribute_in_database('actions')
+    value = JSON.parse(value) if value.is_a?(String)
+    Array(value)
+  rescue JSON::ParserError
+    []
+  end
+
+  def reconcile_live_touch_enrollments
+    Reminders::ReconcileSourceEnrollmentsJob.perform_later('AutomationRule', id)
+  end
+
+  def cancel_live_touch_enrollments
+    touch_plan_enrollments.find_each do |enrollment|
+      Reminders::CancelEnrollmentService.new(
+        enrollment: enrollment,
+        reason: 'live automation action was deleted'
+      ).perform
+    end
+  end
 
   # rubocop:disable Metrics/CyclomaticComplexity
   def json_conditions_format

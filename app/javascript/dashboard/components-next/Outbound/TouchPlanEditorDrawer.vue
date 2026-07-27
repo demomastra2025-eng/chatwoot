@@ -457,6 +457,7 @@ const createStep = (seed = {}) => {
     scheduledAt: seed.scheduled_at
       ? toDateTimeInputValue(seed.scheduled_at)
       : '',
+    sourceStepId: seed.step_id || '',
     templateBody:
       seed.content_kind === 'channel_template' ? seed.body || '' : '',
     templateLanguage:
@@ -960,6 +961,7 @@ const buildPayload = () => {
     entity_kinds: derivedEntityKinds.value,
     name: String(form.name || '').trim(),
     touches: form.steps.map(step => ({
+      ...(step.sourceStepId ? { step_id: step.sourceStepId } : {}),
       ...(resolvedDeliveryInboxId.value
         ? { target_inbox_id: resolvedDeliveryInboxId.value }
         : {}),

@@ -12,7 +12,7 @@ RSpec.describe Reminders::ExecutionScheduleGuard do
   end
 
   def appointment_touch(appointment)
-    create(
+    touch = create(
       :reminder,
       account: appointment.account,
       remindable: appointment,
@@ -25,6 +25,9 @@ RSpec.describe Reminders::ExecutionScheduleGuard do
       scheduled_at: nil,
       body: 'Appointment touch'
     )
+    contact_inbox = create(:contact_inbox, contact: touch.target_contact, inbox: touch.target_inbox)
+    touch.update!(target_contact_inbox: contact_inbox)
+    touch
   end
 
   it 'cancels a relative touch whose scheduled time passed before creation' do

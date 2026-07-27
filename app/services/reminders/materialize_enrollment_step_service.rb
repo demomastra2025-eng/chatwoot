@@ -26,6 +26,7 @@ class Reminders::MaterializeEnrollmentStepService
   def process_locked_enrollment
     return process_inactive_enrollment unless enrollment.active?
     return pause_enrollment! unless feature_enabled?
+    return cancel_unavailable_source! unless definition_resolver.source_available?
 
     schedule = Reminders::EnrollmentScheduleService.new(enrollment: enrollment)
     return cancel_terminal!(schedule) if schedule.terminal_remindable?
@@ -98,6 +99,7 @@ class Reminders::MaterializeEnrollmentStepService
       attributes: reminder_attributes(step, claim)
     ).perform
     apply_automation_provenance!(reminder)
+    Reminders::SyncRemindableService.new(remindable: enrollment.remindable).perform
     Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
     claim.update!(status: 'materialized', reminder: reminder, materialized_at: now)
     schedule.refresh_next_due!
@@ -119,14 +121,7 @@ class Reminders::MaterializeEnrollmentStepService
   end
 
   def reminder_attributes(step, claim)
-    step.definition.with_indifferent_access.merge(
-      metadata: step.definition.to_h.fetch('metadata', {}).to_h.merge(
-        'touch_source' => enrollment.metadata['touch_source'],
-        'touch_plan_enrollment_id' => enrollment.id,
-        'touch_occurrence_claim_id' => claim.id,
-        'touch_occurrence_key' => claim.occurrence_key
-      ).compact
-    )
+    Reminders::EnrollmentReminderAttributes.new(enrollment: enrollment, step: step, claim: claim).call
   end
 
   def enrollment_creator
@@ -136,9 +131,17 @@ class Reminders::MaterializeEnrollmentStepService
   end
 
   def apply_automation_provenance!(reminder)
-    return unless enrollment.metadata['actor_type'] == 'AutomationRule'
+    return unless enrollment.automation_rule.present? || enrollment.metadata['actor_type'] == 'AutomationRule'
 
-    rule = AutomationRule.find_by(id: enrollment.metadata['actor_id'], account_id: enrollment.account_id)
+    rule = enrollment.automation_rule || AutomationRule.find_by(id: enrollment.metadata['actor_id'], account_id: enrollment.account_id)
     reminder.mark_automation_provenance!(rule) if rule.present?
+  end
+
+  def cancel_unavailable_source!
+    enrollment.cancel!(reason: 'live_source_unavailable', metadata: { evaluated_at: now.iso8601 })
+  end
+
+  def definition_resolver
+    @definition_resolver ||= Reminders::EnrollmentDefinitionResolver.new(enrollment: enrollment)
   end
 end

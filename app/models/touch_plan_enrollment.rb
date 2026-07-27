@@ -4,6 +4,7 @@ class TouchPlanEnrollment < ApplicationRecord
 
   belongs_to :account
   belongs_to :reminder_group, optional: true
+  belongs_to :automation_rule, optional: true
   belongs_to :remindable, polymorphic: true, optional: true
 
   has_many :touch_occurrence_claims, dependent: :destroy
@@ -13,6 +14,7 @@ class TouchPlanEnrollment < ApplicationRecord
   validates :plan_snapshot, presence: true
   validates :plan_digest, :activated_at, :idempotency_key, presence: true
   validates :idempotency_key, uniqueness: { scope: :account_id }
+  validate :validate_live_source
   validate :validate_account_boundaries
   validate :validate_remindable_type
 
@@ -45,6 +47,17 @@ class TouchPlanEnrollment < ApplicationRecord
 
     errors.add(:remindable, 'must belong to the same account') if remindable.present? && remindable.account_id != account_id
     errors.add(:reminder_group, 'must belong to the same account') if reminder_group.present? && reminder_group.account_id != account_id
+    errors.add(:automation_rule, 'must belong to the same account') if automation_rule.present? && automation_rule.account_id != account_id
+  end
+
+  def validate_live_source
+    source_count = [reminder_group_id, automation_rule_id].compact.size
+    return if cancelled? && source_count.zero?
+
+    errors.add(:base, 'must have exactly one live source') unless source_count == 1
+    return if automation_rule_id.blank? || source_action_id.present?
+
+    errors.add(:source_action_id, 'must be present for an automation source')
   end
 
   def validate_remindable_type

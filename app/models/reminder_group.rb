@@ -49,6 +49,8 @@ class ReminderGroup < ApplicationRecord
   scope :for_assistant_workspace, ->(assistant_id) { where(assistant_id: [assistant_id, nil]) }
 
   before_validation :normalize_json_fields
+  before_destroy :cancel_live_touch_enrollments, prepend: true
+  after_update_commit :reconcile_live_enrollments, if: :saved_change_to_touches?
 
   def archive!
     update!(active: false, archived_at: Time.current)
@@ -62,8 +64,43 @@ class ReminderGroup < ApplicationRecord
 
   def normalize_json_fields
     self.entity_kinds = Array(entity_kinds).map(&:to_s).uniq
-    self.touches = Array(touches).map do |item|
-      Reminders::DefinitionNormalizer.call(item)
+    self.touches = normalize_touch_ids
+  end
+
+  def normalize_touch_ids
+    existing_touches = touches_in_database
+    seen_step_ids = Set.new
+    Array(touches).each_with_index.map do |item, index|
+      definition = Reminders::DefinitionNormalizer.call(item)
+      if definition.is_a?(Hash)
+        previous_step_id = existing_touches[index].to_h.deep_stringify_keys['step_id']
+        step_id = definition['step_id'].presence || previous_step_id.to_s
+        step_id = SecureRandom.uuid if step_id.blank? || seen_step_ids.include?(step_id)
+        definition['step_id'] = step_id
+        seen_step_ids << step_id
+      end
+      definition
+    end
+  end
+
+  def touches_in_database
+    value = attribute_in_database('touches')
+    value = JSON.parse(value) if value.is_a?(String)
+    Array(value)
+  rescue JSON::ParserError
+    []
+  end
+
+  def reconcile_live_enrollments
+    Reminders::ReconcileSourceEnrollmentsJob.perform_later('ReminderGroup', id)
+  end
+
+  def cancel_live_touch_enrollments
+    touch_plan_enrollments.find_each do |enrollment|
+      Reminders::CancelEnrollmentService.new(
+        enrollment: enrollment,
+        reason: 'live touch plan was deleted'
+      ).perform
     end
   end
 

@@ -70,10 +70,10 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       deal.closed_at = resolve_closed_at(stage: stage, stage_changing: stage_changing)
       deal.save!
       auto_apply_default_touch_plan! if new_record
-      sync_related_touches!
       reposition_deal!(requested_position) if requested_position.present?
 
       contacts_changed = sync_contacts!(contacts: contacts, primary_contact: primary_contact)
+      sync_related_touches!
       sync_owner_to_primary_contact!(primary_contact)
       realtime_event_name = realtime_event_name_for(
         new_record: new_record,

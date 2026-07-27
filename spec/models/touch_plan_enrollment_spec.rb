@@ -19,4 +19,11 @@ RSpec.describe TouchPlanEnrollment do
 
     expect(enrollment.reload.remindable).to be_nil
   end
+
+  it 'allows a source-less legacy enrollment to be repaired by cancellation' do
+    enrollment.reminder_group = nil
+    enrollment.status = 'cancelled'
+
+    expect(enrollment).to be_valid
+  end
 end

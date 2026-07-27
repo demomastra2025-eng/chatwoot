@@ -2,6 +2,24 @@ require 'rails_helper'
 require Rails.root.join 'spec/models/concerns/reauthorizable_shared.rb'
 
 RSpec.describe AutomationRule do
+  describe 'action identity' do
+    it 'preserves omitted action ids on update and deduplicates client-provided ids' do
+      rule = create(
+        :automation_rule,
+        actions: [{ action_name: 'create_touch', action_params: { body: 'Initial', delay_minutes: 5 } }]
+      )
+      original_action = rule.actions.first
+      original_action_id = original_action['action_id']
+
+      updated_params = original_action['action_params'].merge('body' => 'Updated')
+      rule.update!(actions: [original_action.except('action_id').merge('action_params' => updated_params)])
+      expect(rule.reload.actions.first['action_id']).to eq(original_action_id)
+
+      rule.update!(actions: [rule.actions.first, rule.actions.first])
+      expect(rule.reload.actions.pluck('action_id').uniq.size).to eq(2)
+    end
+  end
+
   describe 'concerns' do
     it_behaves_like 'reauthorizable'
   end

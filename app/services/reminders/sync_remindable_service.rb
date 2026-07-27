@@ -3,32 +3,47 @@ class Reminders::SyncRemindableService
 
   attr_reader :remindable
 
-  def initialize(remindable:)
+  def initialize(remindable:, allow_processing: false)
     @remindable = remindable
+    @allow_processing = allow_processing
   end
 
   def perform
     remindable.reminders.open_statuses.find_each do |touch|
-      sync_touch!(touch)
-    rescue StandardError => e
-      ChatwootExceptionTracker.new(e, account: remindable.account).capture_exception
+      perform_for(touch)
     end
+  end
+
+  def perform_for(touch, lock: true, raise_errors: false)
+    lock ? touch.with_lock { sync_locked_touch!(touch) } : sync_locked_touch!(touch)
+  rescue StandardError => e
+    raise if raise_errors
+
+    ChatwootExceptionTracker.new(e, account: remindable.account).capture_exception
   end
 
   private
 
-  def sync_touch!(touch)
-    touch.with_lock do
-      touch.reload
-      next unless touch.editable?
+  def refreshable_processing_touch?(touch)
+    @allow_processing && touch.processing? && !touch.delivery_materialized?
+  end
 
-      touch.assign_attributes(sync_attributes_for(touch))
-      touch.scheduled_at_will_change! if touch.relative? && !touch.manual_schedule_override?
-      next unless touch.changed?
+  def sync_locked_touch!(touch)
+    touch.reload
+    return unless syncable_touch?(touch)
 
-      touch.save!
-      touch.approve! if touch.draft? && touch.ready_for_pending?
-    end
+    touch.assign_attributes(sync_attributes_for(touch))
+    touch.scheduled_at_will_change! if touch.relative? && !touch.manual_schedule_override?
+    persist_sync!(touch) if touch.changed?
+  end
+
+  def syncable_touch?(touch)
+    touch.editable? || refreshable_processing_touch?(touch)
+  end
+
+  def persist_sync!(touch)
+    touch.save!
+    touch.approve! if touch.draft? && touch.ready_for_pending?
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
@@ -82,7 +97,7 @@ class Reminders::SyncRemindableService
   def route_invalid_for_current_contact?(touch, contact)
     return false if touch.target_inbox_id.blank? || contact.blank?
 
-    !contactable_inbox_ids(contact).include?(touch.target_inbox_id)
+    contactable_inbox_ids(contact).exclude?(touch.target_inbox_id)
   end
 
   def contactable_inbox_ids(contact)
@@ -114,7 +129,7 @@ class Reminders::SyncRemindableService
     when Conversation, Scheduling::Appointment
       remindable.contact
     when Crm::Deal
-      remindable.contacts.first
+      remindable.primary_contact || remindable.contacts.first
     when Crm::Task
       remindable.deal&.contacts&.first
     end
@@ -124,10 +139,18 @@ class Reminders::SyncRemindableService
     case remindable
     when Conversation
       remindable
-    when Crm::Deal, Crm::Task
+    when Crm::Deal
+      matching_conversation(remindable.originating_conversation)
+    when Crm::Task
       remindable.originating_conversation
     when Scheduling::Appointment
-      remindable.conversation
+      matching_conversation(remindable.conversation)
     end
+  end
+
+  def matching_conversation(conversation)
+    return if conversation.blank?
+
+    conversation if conversation.contact_id == desired_contact&.id
   end
 end

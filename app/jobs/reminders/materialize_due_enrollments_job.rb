@@ -2,19 +2,32 @@ class Reminders::MaterializeDueEnrollmentsJob < ApplicationJob
   queue_as :scheduled_jobs
 
   BATCH_SIZE = 100
+  MAX_CHAINED_BATCHES = 10
 
-  def perform
-    processed_ids = []
+  def perform(batch_number = 0, excluded_ids = [])
+    processed_ids = Array(excluded_ids).map(&:to_i)
+    batch_ids = []
 
     BATCH_SIZE.times do
       enrollment_id = process_next_enrollment(processed_ids)
       break if enrollment_id.blank?
 
       processed_ids << enrollment_id
+      batch_ids << enrollment_id
     end
+
+    enqueue_next_batch(batch_number, processed_ids, batch_ids)
   end
 
   private
+
+  def enqueue_next_batch(batch_number, processed_ids, batch_ids)
+    return if batch_ids.size < BATCH_SIZE
+    return if batch_number >= MAX_CHAINED_BATCHES
+    return unless candidate_enrollments.where.not(id: processed_ids).exists?
+
+    self.class.perform_later(batch_number + 1, processed_ids)
+  end
 
   def process_next_enrollment(excluded_ids)
     enrollment_id = nil

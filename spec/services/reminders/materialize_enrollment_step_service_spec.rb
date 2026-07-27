@@ -86,6 +86,108 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     expect(account.reminders.where(remindable: appointment).count).to eq(1)
   end
 
+  it 'creates one claim when two workers materialize the same occurrence concurrently' do
+    enrollment_id = enrollment.id
+    now = enrollment.next_due_at + 1.minute
+    barrier = Concurrent::CyclicBarrier.new(2)
+    errors = Concurrent::Array.new
+
+    threads = Array.new(2) do
+      Thread.new do
+        ActiveRecord::Base.connection_pool.with_connection do
+          worker_enrollment = TouchPlanEnrollment.find(enrollment_id)
+          barrier.wait
+          described_class.new(enrollment: worker_enrollment, now: now).perform
+        rescue StandardError => e
+          errors << e
+        end
+      end
+    end
+    threads.each(&:join)
+
+    expect(errors).to be_empty
+    expect(enrollment.touch_occurrence_claims.count).to eq(1)
+    expect(account.reminders.where(remindable: appointment).count).to eq(1)
+  end
+
+  it 'materializes the current plan text instead of the enrollment snapshot' do
+    original_snapshot_body = enrollment.plan_snapshot.first['body']
+    reminder_group.update!(touches: [reminder_group.touches.first.merge('body' => 'Current plan text')])
+
+    claim = described_class.new(enrollment: enrollment, now: enrollment.reload.next_due_at + 1.minute).perform
+
+    expect(original_snapshot_body).not_to eq('Current plan text')
+    expect(claim.reminder.body).to eq('Current plan text')
+  end
+
+  it 'refreshes the live plan definition immediately before delivery' do
+    claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute).perform
+    reminder_group.update!(touches: [reminder_group.touches.first.merge('body' => 'Latest pre-send text')])
+    claim.reminder.mark_processing!
+
+    result = Reminders::ExecutionScheduleGuard.new(reminder: claim.reminder).perform
+
+    expect(result).to eq(Reminders::ExecutionScheduleGuard::CONTINUE)
+    expect(claim.reminder.reload.body).to eq('Latest pre-send text')
+  end
+
+  it 'does not consume a payload when the final guard refreshes its live definition' do
+    claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute).perform
+    touch = claim.reminder
+    processing_claim = touch.mark_processing!
+    execution_updated_at = touch.reload.updated_at
+    reminder_group.update!(touches: [reminder_group.touches.first.merge('body' => 'Changed inside final lock')])
+    executed = false
+
+    result = Reminders::ExecutionLockService.new(
+      reminder: touch,
+      processing_claim: processing_claim,
+      execution_updated_at: execution_updated_at
+    ).perform do
+      executed = true
+    end
+
+    expect(result).to be_nil
+    expect(executed).to be(false)
+    expect(touch.reload).not_to be_processing
+    expect(touch.body).to eq('Changed inside final lock')
+  end
+
+  it 'stops delivery when a live plan edit moves the materialized step into the future' do
+    claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute).perform
+    reminder_group.update!(
+      touches: [reminder_group.touches.first.merge('relative_offset_seconds' => 1.day.to_i)]
+    )
+    claim.reminder.mark_processing!
+
+    result = Reminders::ExecutionScheduleGuard.new(reminder: claim.reminder).perform
+
+    expect(result).to eq(Reminders::ExecutionScheduleGuard::STOP)
+    expect(claim.reminder.reload).not_to be_processing
+    expect(claim.reminder.scheduled_at.to_i).to eq((appointment.starts_at + 1.day).to_i)
+  end
+
+  it 'keeps step identity stable when plan steps are reordered' do
+    reminder_group.update!(
+      touches: [
+        reminder_group.touches.first.merge('body' => 'First step'),
+        reminder_group.touches.first.except('step_id').merge(
+          'body' => 'Second step',
+          'relative_offset_seconds' => -23.hours.to_i
+        )
+      ]
+    )
+    first_claim = described_class.new(enrollment: enrollment, now: enrollment.reload.next_due_at + 1.minute).perform
+
+    reminder_group.update!(touches: reminder_group.touches.reverse)
+    second_claim = described_class.new(enrollment: enrollment, now: enrollment.reload.next_due_at + 1.minute).perform
+
+    expect(first_claim.reminder.body).to eq('First step')
+    expect(second_claim.reminder.body).to eq('Second step')
+    expect(enrollment.touch_occurrence_claims.count).to eq(2)
+    expect(account.reminders.where(remindable: appointment).pluck(:body)).to contain_exactly('First step', 'Second step')
+  end
+
   it 'skips a trigger that is older than the grace window' do
     claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 10.minutes).perform
 

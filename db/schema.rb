@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_27_074501) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_27_103000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2948,9 +2948,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_27_074501) do
     t.jsonb "metadata", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "automation_rule_id"
+    t.string "source_action_id"
+    t.index ["account_id", "automation_rule_id", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action", unique: true, where: "(((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))"
     t.index ["account_id", "idempotency_key"], name: "idx_touch_plan_enrollments_on_account_idempotency", unique: true
     t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))"
     t.index ["account_id"], name: "index_touch_plan_enrollments_on_account_id"
+    t.index ["automation_rule_id"], name: "index_touch_plan_enrollments_on_automation_rule_id"
     t.index ["remindable_type", "remindable_id", "status"], name: "idx_touch_plan_enrollments_on_remindable_status"
     t.index ["remindable_type", "remindable_id"], name: "index_touch_plan_enrollments_on_remindable"
     t.index ["reminder_group_id"], name: "index_touch_plan_enrollments_on_reminder_group_id"
@@ -3285,6 +3289,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_27_074501) do
   add_foreign_key "touch_occurrence_claims", "reminders"
   add_foreign_key "touch_occurrence_claims", "touch_plan_enrollments"
   add_foreign_key "touch_plan_enrollments", "accounts"
+  add_foreign_key "touch_plan_enrollments", "automation_rules"
   add_foreign_key "touch_plan_enrollments", "reminder_groups"
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "channel_whatsapp", column: "channel_id", on_delete: :cascade

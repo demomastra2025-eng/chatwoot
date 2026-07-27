@@ -793,7 +793,7 @@
         "ADD_STEP": "Add step",
         "REMOVE_STEP": "Remove step",
         "STEP_TITLE": "Step {index}",
-        "STEP_DESCRIPTION": "Each step becomes a scheduled touch when the follow-up is applied.",
+        "STEP_DESCRIPTION": "After the follow-up is applied, unsent steps use the latest text and timing from the plan.",
         "ENTITY_KIND_PLACEHOLDER": "Select at least one entity type",
         "COMPATIBILITY_WARNING": "This relative anchor is not available for every selected entity type. If you apply the plan to another type, this step may stay in draft until the route and schedule can be resolved.",
         "FIELDS": {
@@ -965,7 +965,7 @@
       "ADD_STEP": "Add step",
       "REMOVE_STEP": "Remove step",
       "STEP_TITLE": "Step {index}",
-      "STEP_DESCRIPTION": "Each step becomes a scheduled touch when the follow-up is applied.",
+      "STEP_DESCRIPTION": "After the follow-up is applied, unsent steps use the latest text and timing from the plan.",
       "ENTITY_KIND_PLACEHOLDER": "Entity types are derived from the steps below",
       "COMPATIBILITY_WARNING": "This relative anchor is not available for every selected entity type. If you apply the plan to another type, this step may stay in draft until the route and schedule can be resolved.",
       "FIELDS": {

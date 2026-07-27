@@ -4,7 +4,6 @@ import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 
 import TouchPlansAPI from 'dashboard/api/touchPlans';
-import TouchesAPI from 'dashboard/api/touches';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
@@ -190,19 +189,6 @@ const applyTouchPlan = async touchPlan => {
       remindable_id: entityContext.value.remindableId,
       remindable_type: entityContext.value.remindableType,
     });
-
-    if (
-      entityContext.value.remindableId &&
-      entityContext.value.remindableType
-    ) {
-      await TouchesAPI.get({
-        remindable_id: entityContext.value.remindableId,
-        remindable_type: entityContext.value.remindableType,
-        ...(entityContext.value.conversationId
-          ? { conversation_id: entityContext.value.conversationId }
-          : {}),
-      });
-    }
 
     useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.PLANS.APPLY_SUCCESS'));
   } catch (error) {

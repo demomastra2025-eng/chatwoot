@@ -10,6 +10,7 @@ class Reminders::ExecutionScheduleGuard
   end
 
   def perform
+    sync_live_definition!
     return stop_for_invalid_deferred_enrollment! if invalid_deferred_enrollment?
     return CONTINUE unless refreshable?
 
@@ -19,6 +20,10 @@ class Reminders::ExecutionScheduleGuard
     return stop_for_rescheduled_touch! if reminder.scheduled_at&.future?
 
     CONTINUE
+  end
+
+  def live_definition_refreshed?
+    @live_definition_refreshed == true
   end
 
   private
@@ -45,15 +50,56 @@ class Reminders::ExecutionScheduleGuard
   def invalid_deferred_enrollment?
     return false unless deferred_enrollment?
     return true if deferred_enrollment.blank?
-    return true if invalid_deferred_status?
-    return true if deferred_enrollment.completed? && !current_materialized_claim?
 
-    Reminders::EnrollmentScheduleService.new(enrollment: deferred_enrollment).terminal_remindable?
+    [
+      invalid_deferred_status?,
+      completed_without_current_claim?,
+      !deferred_source_available?,
+      deferred_step.blank?,
+      deferred_terminal_remindable?
+    ].any?
+  end
+
+  def sync_live_definition!
+    return unless deferred_enrollment?
+    return if deferred_enrollment.blank? || invalid_deferred_status?
+    return unless deferred_source_available?
+    return if deferred_step.blank? || deferred_claim.blank?
+
+    attributes_before_sync = reminder.attributes.except('updated_at')
+    Reminders::SyncMaterializedEnrollmentReminderService.new(
+      enrollment: deferred_enrollment,
+      claim: deferred_claim,
+      reminder: reminder,
+      step: deferred_step,
+      lock: false
+    ).perform
+    reminder.reload
+    @live_definition_refreshed = attributes_before_sync != reminder.attributes.except('updated_at')
+  end
+
+  def deferred_source_available?
+    Reminders::EnrollmentDefinitionResolver.new(enrollment: deferred_enrollment).source_available?
+  end
+
+  def deferred_step
+    return @deferred_step if defined?(@deferred_step)
+
+    steps = Reminders::EnrollmentScheduleService.new(enrollment: deferred_enrollment).current_steps
+    @deferred_step = steps.find { |step| step.step_key == deferred_claim&.step_key }
   end
 
   def invalid_deferred_status?
     deferred_enrollment.cancelled? ||
       (deferred_enrollment.paused? && !feature_paused_materialized_claim?)
+  end
+
+  def completed_without_current_claim?
+    deferred_enrollment.completed? && !current_materialized_claim?
+  end
+
+  def deferred_terminal_remindable?
+    Reminders::EnrollmentScheduleService.new(enrollment: deferred_enrollment).terminal_remindable?
   end
 
   def current_materialized_claim?

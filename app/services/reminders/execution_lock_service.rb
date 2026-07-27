@@ -26,18 +26,27 @@ class Reminders::ExecutionLockService
     result = nil
     reminder.with_lock do
       reminder.reload
-      if reminder.processing? && current_execution_claim?
-        result = if reminder.delivery_materialized?
-                   Reminders::ExecutionFinisher.materialized_message_for(reminder)
-                 elsif stale_execution?
-                   reset_stale_execution!
-                   nil
-                 elsif execution_schedule_ready?
-                   yield
-                 end
-      end
+      result = locked_execution_result(&)
     end
     result
+  end
+
+  def locked_execution_result
+    return unless executable_claim?
+    return Reminders::ExecutionFinisher.materialized_message_for(reminder) if reminder.delivery_materialized?
+    return reset_stale_execution! if stale_execution?
+    return unless execution_schedule_ready?
+    return reset_stale_execution! if refreshed_or_stale?
+
+    yield
+  end
+
+  def executable_claim?
+    reminder.processing? && current_execution_claim?
+  end
+
+  def refreshed_or_stale?
+    @live_definition_refreshed || stale_execution?
   end
 
   def current_execution_claim?
@@ -50,9 +59,13 @@ class Reminders::ExecutionLockService
 
   def reset_stale_execution!
     reminder.update!(status: :pending, processing_started_at: nil)
+    nil
   end
 
   def execution_schedule_ready?
-    Reminders::ExecutionScheduleGuard.new(reminder: reminder).perform == Reminders::ExecutionScheduleGuard::CONTINUE
+    guard = Reminders::ExecutionScheduleGuard.new(reminder: reminder)
+    result = guard.perform
+    @live_definition_refreshed = guard.live_definition_refreshed?
+    result == Reminders::ExecutionScheduleGuard::CONTINUE
   end
 end
