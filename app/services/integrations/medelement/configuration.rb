@@ -1,4 +1,5 @@
 class Integrations::Medelement::Configuration
+  INTEGRATOR_KEY_ENV = 'MEDELEMENT_INTEGRATOR_KEY'.freeze
   DEFAULT_DAYS_BACK = 3
   DEFAULT_DAYS_FORWARD = 70
   DEFAULT_THROTTLE_MS = 275
@@ -16,7 +17,7 @@ class Integrations::Medelement::Configuration
   end
 
   def integrator_key
-    credentials['integrator_key'].to_s
+    ENV[INTEGRATOR_KEY_ENV].presence || credentials['integrator_key'].to_s
   end
 
   def organization_id

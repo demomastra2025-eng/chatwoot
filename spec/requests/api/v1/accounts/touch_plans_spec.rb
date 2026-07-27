@@ -38,6 +38,7 @@ RSpec.describe 'Touch Plans API', type: :request do
            entity_kinds: ['appointment'],
            touches: [
              {
+               entity_kind: 'appointment',
                action_type: 'send_message',
                content_kind: 'free_text',
                timing_mode: 'relative',
@@ -55,6 +56,7 @@ RSpec.describe 'Touch Plans API', type: :request do
 
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'name')).to eq('New patient sequence')
+    expect(response.parsed_body.dig('payload', 'touches', 0, 'entity_kind')).to eq('appointment')
     expect(response.parsed_body.dig('payload', 'touches', 0, 'text_mode')).to eq('dynamic')
     expect(
       response.parsed_body.dig('payload', 'touches', 0, 'relative_time_mode')
@@ -101,6 +103,25 @@ RSpec.describe 'Touch Plans API', type: :request do
                repeat_mode: 'once',
                body: 'Should not resolve a related conversation',
                post_delivery_action: 'resolve_conversation'
+             }
+           ]
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(account.reminder_groups).to be_empty
+  end
+
+  it 'rejects a declared entity kind without a matching or shared step' do
+    post path,
+         params: {
+           name: 'Incomplete mixed plan',
+           entity_kinds: %w[appointment deal],
+           touches: [
+             {
+               entity_kind: 'appointment',
+               body: 'Appointment-only follow-up'
              }
            ]
          },

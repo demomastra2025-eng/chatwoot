@@ -23,7 +23,10 @@ class Reminders::DeferredMaterializationPolicy
   private
 
   def definitions
-    @definitions ||= reminder_group.touches.map { |definition| Reminders::DefinitionNormalizer.call(definition) }
+    @definitions ||= Reminders::ApplicableDefinitions.call(
+      definitions: reminder_group.touches,
+      remindable: remindable
+    )
   end
 
   def supported_definition?(definition)

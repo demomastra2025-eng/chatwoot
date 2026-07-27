@@ -41,6 +41,28 @@ RSpec.describe Reminders::PlanApplicationService do
     expect(account.reminders.where(remindable: appointment)).to be_empty
   end
 
+  it 'defers only matching steps from a mixed appointment and deal plan' do
+    account.enable_features!('deferred_touch_materialization')
+    reminder_group.update!(
+      entity_kinds: %w[appointment deal],
+      touches: [
+        reminder_group.touches.first.merge('entity_kind' => 'appointment'),
+        reminder_group.touches.first.merge(
+          'step_id' => nil,
+          'entity_kind' => 'deal',
+          'relative_anchor' => 'deal.expected_close_on',
+          'body' => 'Deal reminder'
+        )
+      ]
+    )
+
+    result = perform
+
+    expect(result.execution_mode).to eq('deferred')
+    expect(result.enrollment.plan_snapshot.pluck('entity_kind')).to eq(['appointment'])
+    expect(result.enrollment.plan_snapshot.pluck('body')).to eq(['Appointment reminder'])
+  end
+
   it 'reuses an open enrollment when the same plan application is retried' do
     account.enable_features!('deferred_touch_materialization')
     service = described_class.new(

@@ -40,6 +40,11 @@ import {
 } from 'dashboard/components-next/Outbound/touchTiming';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
 import {
+  buildTouchPlanStepEntityScope,
+  touchPlanStepEntityKindPayload,
+  touchPlanStepEntityKinds,
+} from 'dashboard/components-next/Outbound/touchPlanEntityScope';
+import {
   getInboxIconByType,
   getInboxSource,
   INBOX_TYPES,
@@ -403,8 +408,9 @@ const defaultEntityKind = () => {
 };
 
 const inferStepEntityKind = seed => {
-  if (seed.entityKind) {
-    return seed.entityKind;
+  const explicitEntityKind = seed.entity_kind || seed.entityKind;
+  if (explicitEntityKind) {
+    return explicitEntityKind;
   }
 
   const supportedKinds = touchAnchorSupportedEntityKinds(seed.relative_anchor);
@@ -418,6 +424,11 @@ const inferStepEntityKind = seed => {
 
 const createStep = (seed = {}) => {
   const entityKind = inferStepEntityKind(seed);
+  const entityScope = buildTouchPlanStepEntityScope({
+    seed,
+    inferredEntityKind: entityKind,
+    planEntityKinds: props.touchPlan?.entity_kinds,
+  });
   const availableAnchors = buildTouchAnchorOptions({
     t,
     entityKinds: entityKind,
@@ -437,7 +448,7 @@ const createStep = (seed = {}) => {
     autoCancelOnIncoming: seed.auto_cancel_on_incoming ?? false,
     body: seed.content_kind === 'channel_template' ? '' : seed.body || '',
     contentKind: seed.content_kind || 'free_text',
-    entityKind,
+    ...entityScope,
     instructions: seed.instructions || '',
     localId: allocateStepId(),
     relativeAnchor:
@@ -489,7 +500,7 @@ const stepAnchorOptions = step => {
 };
 
 const stepSupportedEntityKinds = step => {
-  return step.entityKind ? [step.entityKind] : [];
+  return touchPlanStepEntityKinds(step);
 };
 
 const derivedEntityKinds = computed(() => {
@@ -745,10 +756,26 @@ const updateStep = (localId, patch) => {
       return step;
     }
 
+    const nextPatch = { ...patch };
+    const legacySharedEntityKinds = touchPlanStepEntityKinds(step);
+    const changesEntityScope = Object.hasOwn(patch, 'entityKind');
+    const changesToEntitySpecificAnchor =
+      Object.hasOwn(patch, 'relativeAnchor') &&
+      legacySharedEntityKinds.some(
+        entityKind =>
+          !touchAnchorSupportedEntityKinds(patch.relativeAnchor).includes(
+            entityKind
+          )
+      );
+
+    if (changesEntityScope || changesToEntitySpecificAnchor) {
+      nextPatch.legacySharedEntityKinds = [];
+    }
+
     return normalizeStepAnchorForEntityKind(
       normalizeStepRelativeTimeForUnit({
         ...step,
-        ...patch,
+        ...nextPatch,
       })
     );
   });
@@ -962,6 +989,7 @@ const buildPayload = () => {
     name: String(form.name || '').trim(),
     touches: form.steps.map(step => ({
       ...(step.sourceStepId ? { step_id: step.sourceStepId } : {}),
+      ...touchPlanStepEntityKindPayload(step),
       ...(resolvedDeliveryInboxId.value
         ? { target_inbox_id: resolvedDeliveryInboxId.value }
         : {}),

@@ -36,7 +36,10 @@ class Reminders::EnrollGroupService
   private
 
   def normalized_definitions
-    reminder_group.touches.map { |definition| Reminders::DefinitionNormalizer.call(definition) }
+    Reminders::ApplicableDefinitions.call(
+      definitions: reminder_group.touches,
+      remindable: remindable
+    )
   end
 
   def open_enrollment

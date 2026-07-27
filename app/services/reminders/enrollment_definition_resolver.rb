@@ -24,7 +24,12 @@ class Reminders::EnrollmentDefinitionResolver
   private
 
   def raw_definitions
-    return enrollment.reminder_group.touches if enrollment.reminder_group_id.present?
+    if enrollment.reminder_group_id.present?
+      return Reminders::ApplicableDefinitions.call(
+        definitions: enrollment.reminder_group.touches,
+        remindable: enrollment.remindable
+      )
+    end
 
     [normalize_automation_params(automation_action.fetch('action_params'))]
   end

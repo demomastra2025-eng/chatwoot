@@ -30,5 +30,47 @@ RSpec.describe Integrations::Medelement::Client do
 
       expect(result).to eq([])
     end
+
+    it 'does not include provider response bodies in API errors' do
+      stub_request(:post, "#{described_class::BASE_URL}/v1/timetable/get_receptions")
+        .to_return(
+          status: 500,
+          body: '{"patient_phone":"+77001234567"}',
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      request = lambda do
+        client.get_receptions(
+          company_cabinet_code: 'cabinet-1',
+          specialist_code: 'specialist-1',
+          begin_datetime: '01.04.2026 00:00:00',
+          end_datetime: '30.04.2026 23:59:59'
+        )
+      end
+
+      expect(&request).to raise_error(Integrations::Medelement::Client::ApiError) do |error|
+        expect(error.status).to eq(500)
+        expect(error.message).not_to include('+77001234567')
+      end
+    end
+
+    it 'normalizes connection resets as retryable API errors without transport details' do
+      stub_request(:post, "#{described_class::BASE_URL}/v1/timetable/get_receptions")
+        .to_raise(Errno::ECONNRESET)
+
+      request = lambda do
+        client.get_receptions(
+          company_cabinet_code: 'cabinet-1',
+          specialist_code: 'specialist-1',
+          begin_datetime: '01.04.2026 00:00:00',
+          end_datetime: '30.04.2026 23:59:59'
+        )
+      end
+
+      expect(&request).to raise_error(
+        Integrations::Medelement::Client::ApiError,
+        'Medelement receptions transport failed: Errno::ECONNRESET'
+      )
+    end
   end
 end

@@ -1,5 +1,5 @@
 class Reminders::EnrollmentReminderAttributes
-  SOURCE_ONLY_KEYS = %w[step_id delay_minutes].freeze
+  SOURCE_ONLY_KEYS = %w[step_id delay_minutes entity_kind].freeze
 
   attr_reader :claim, :enrollment, :step
 

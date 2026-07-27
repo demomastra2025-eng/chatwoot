@@ -40,6 +40,7 @@ class ReminderGroup < ApplicationRecord
 
   validates :name, presence: true
   validate :validate_entity_kinds
+  validate :validate_touch_entity_kinds
   validate :validate_assistant_account
   validate :validate_touches
   validate :validate_post_delivery_actions
@@ -111,6 +112,19 @@ class ReminderGroup < ApplicationRecord
     errors.add(:entity_kinds, "contains unsupported kinds: #{unsupported_kinds.join(', ')}")
   end
 
+  def validate_touch_entity_kinds
+    touch_entity_kinds = explicit_touch_entity_kinds
+    unsupported_kinds = touch_entity_kinds - entity_kinds
+    errors.add(:touches, "contains entity kinds outside plan scope: #{unsupported_kinds.join(', ')}") if unsupported_kinds.present?
+
+    return if touches.blank? || legacy_shared_touch?
+
+    uncovered_kinds = entity_kinds - touch_entity_kinds
+    return if uncovered_kinds.blank?
+
+    errors.add(:touches, "does not cover plan entity kinds: #{uncovered_kinds.join(', ')}")
+  end
+
   def validate_assistant_account
     return if assistant.blank? || account.blank?
     return if assistant.account_id == account_id
@@ -130,12 +144,34 @@ class ReminderGroup < ApplicationRecord
     end
     return if post_delivery_touches.blank?
 
-    valid = entity_kinds == ['conversation'] && post_delivery_touches.all? do |touch|
-      supported_post_delivery_action?(touch)
-    end
-    return if valid
+    return if post_delivery_touches.all? { |touch| conversation_post_delivery_touch?(touch) }
 
     errors.add(:touches, 'contains an unsupported post-delivery action')
+  end
+
+  def explicit_touch_entity_kinds
+    touches.filter_map do |touch|
+      next unless touch.is_a?(Hash)
+
+      touch.with_indifferent_access[:entity_kind].to_s.presence
+    end.uniq
+  end
+
+  def legacy_shared_touch?
+    touches.any? do |touch|
+      touch.is_a?(Hash) && touch.with_indifferent_access[:entity_kind].blank?
+    end
+  end
+
+  def conversation_post_delivery_touch?(touch)
+    definition = touch.with_indifferent_access
+    entity_scope_is_conversation = if definition[:entity_kind].present?
+                                     definition[:entity_kind] == 'conversation'
+                                   else
+                                     entity_kinds == ['conversation']
+                                   end
+
+    entity_scope_is_conversation && supported_post_delivery_action?(touch)
   end
 
   def supported_post_delivery_action?(touch)

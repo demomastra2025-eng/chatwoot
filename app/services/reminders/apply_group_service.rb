@@ -38,7 +38,10 @@ class Reminders::ApplyGroupService
   def perform
     raise ArgumentError, 'Touch plan does not support this entity kind' unless reminder_group.entity_kind_supported?(entity_kind)
 
-    definitions = reminder_group.touches.map { |definition| Reminders::DefinitionNormalizer.call(definition) }
+    definitions = Reminders::ApplicableDefinitions.call(
+      definitions: reminder_group.touches,
+      remindable: remindable
+    )
     definitions.each { |definition| validate_post_delivery_action!(definition) }
 
     account.reminders.transaction do
@@ -49,18 +52,7 @@ class Reminders::ApplyGroupService
   private
 
   def entity_kind
-    case remindable
-    when Conversation
-      'conversation'
-    when Crm::Deal
-      'deal'
-    when Crm::Task
-      'task'
-    when Scheduling::Appointment
-      'appointment'
-    else
-      raise ArgumentError, "Unsupported remindable: #{remindable.class.name}"
-    end
+    Reminders::ApplicableDefinitions.entity_kind_for(remindable)
   end
 
   def create_reminder!(definition)

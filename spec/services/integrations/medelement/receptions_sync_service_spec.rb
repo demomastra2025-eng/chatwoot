@@ -61,7 +61,7 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
-  it 'deletes stale Medelement appointments that are missing from the snapshot while keeping manual ones' do
+  it 'requires two complete snapshots before tombstoning a missing Medelement appointment' do
     travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
       stale_imported = create(
         :scheduling_appointment,
@@ -83,8 +83,78 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
 
       service.perform
 
-      expect(account.scheduling_appointments.exists?(stale_imported.id)).to be(false)
+      stale_imported.reload
+      expect(stale_imported.status).to eq('scheduled')
+      expect(stale_imported.custom_attributes['medelement_missing_syncs']).to eq(1)
+
+      service.perform
+
+      stale_imported.reload
+      expect(stale_imported.status).to eq('cancelled')
+      expect(stale_imported.payment_status).to eq('cancelled')
+      expect(stale_imported.custom_attributes['source_mode']).to eq('provider_tombstone')
+      expect(stale_imported.custom_attributes['medelement_removed_at']).to be_present
       expect(account.scheduling_appointments.exists?(manual.id)).to be(true)
+    end
+  end
+
+  it 'restores a tombstoned appointment when it reappears in a complete snapshot' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        resource: resource,
+        source: 'medelement',
+        external_ref: 'medelement:reception:restored',
+        starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 0, 0),
+        ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 20, 0),
+        client_name: 'Imported'
+      )
+      allow(client).to receive(:get_receptions).and_return([])
+
+      service.perform
+      service.perform
+
+      expect(appointment.reload.status).to eq('cancelled')
+
+      restored_reception = reception_payload.first.merge('RECEPTION_CODE' => 'restored')
+      allow(client).to receive(:get_receptions).and_return([restored_reception])
+
+      service.perform
+
+      appointment.reload
+      expect(appointment.status).to eq('scheduled')
+      expect(appointment.custom_attributes['source_mode']).to eq('imported')
+      expect(appointment.custom_attributes).not_to include(
+        'medelement_missing_since',
+        'medelement_missing_syncs',
+        'medelement_removed_at'
+      )
+    end
+  end
+
+  it 'fails closed without cleanup when a one-day provider snapshot is saturated' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      existing_import = create(
+        :scheduling_appointment,
+        account: account,
+        resource: resource,
+        source: 'medelement',
+        external_ref: 'medelement:reception:existing',
+        starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 20, 11, 0, 0),
+        ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 20, 11, 20, 0),
+        client_name: 'Imported'
+      )
+      allow(configuration).to receive(:receptions_days_back).and_return(0)
+      allow(configuration).to receive(:receptions_days_forward).and_return(0)
+      allow(client).to receive(:get_receptions).and_return(
+        Array.new(described_class::MAX_RECEPTIONS_PER_REQUEST, reception_payload.first)
+      )
+
+      expect { service.perform }.to raise_error(described_class::IncompleteSnapshotError)
+
+      expect(existing_import.reload.status).to eq('scheduled')
+      expect(existing_import.custom_attributes).not_to include('medelement_missing_syncs')
     end
   end
 

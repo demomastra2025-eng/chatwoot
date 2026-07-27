@@ -13,23 +13,27 @@ class Integrations::Medelement::SpecialistsSyncService
   end
 
   def perform
-    client.get_specialists.each do |payload|
-      specialist_code = payload['specialistCode'].to_s
-      resource = find_resource(specialist_code) || account.scheduling_resources.new
-      resource.account ||= account
-      resource.name = payload['userName'].to_s
-      resource.timezone = configuration.time_zone
-      resource.slot_duration_min = payload['receptionTime'].to_i.clamp(5, 720)
-      resource.active = payload['isSchedulePublished'].to_i == 1
-      resource.custom_attributes = resource.custom_attributes.merge(resource_custom_attributes(payload, specialist_code))
-      resource.save!
-      sync_default_work_rules!(resource)
-    end
+    client.specialists.each { |payload| sync_specialist!(payload) }
   end
 
   private
 
   attr_reader :account, :client, :configuration
+
+  def sync_specialist!(payload)
+    specialist_code = payload['specialistCode'].to_s
+    resource = find_resource(specialist_code) || account.scheduling_resources.new
+    resource.assign_attributes(
+      account: resource.account || account,
+      name: payload['userName'].to_s,
+      timezone: configuration.time_zone,
+      slot_duration_min: payload['receptionTime'].to_i.clamp(5, 720),
+      active: payload['isSchedulePublished'].to_i == 1,
+      custom_attributes: resource.custom_attributes.merge(resource_custom_attributes(payload, specialist_code))
+    )
+    resource.save!
+    sync_default_work_rules!(resource)
+  end
 
   def find_resource(specialist_code)
     account.scheduling_resources.find_by("custom_attributes ->> 'medelement_specialist_code' = ?", specialist_code.to_s)

@@ -14,8 +14,10 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     create(
       :reminder_group,
       account: account,
+      entity_kinds: ['appointment'],
       touches: [
         attributes_for(:reminder).slice(:body).merge(
+          entity_kind: 'appointment',
           timing_mode: 'relative',
           relative_anchor: 'appointment.starts_at',
           relative_offset_seconds: -1.day.to_i,

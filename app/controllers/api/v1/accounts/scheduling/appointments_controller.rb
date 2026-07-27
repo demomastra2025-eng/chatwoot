@@ -19,7 +19,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     client_birth_date
     client_gender
     client_comment
-    source
     external_ref
     idempotency_key
     service_name_snapshot
@@ -182,13 +181,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def ensure_editable_appointment!
-    return unless @appointment.source == 'medelement'
-
-    raise Scheduling::Error.new(
-      code: 'APPOINTMENT_READ_ONLY',
-      message: 'Imported Medelement appointments are read-only',
-      status: :unprocessable_content
-    )
+    Scheduling::Appointments::MutationGuard.ensure_editable!(@appointment)
   end
 
   def ensure_destroyable_appointment!

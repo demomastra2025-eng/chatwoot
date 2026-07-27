@@ -46,6 +46,28 @@ RSpec.describe Reminders::ApplyGroupService do
       expect(implicit_default.metadata).not_to have_key('auto_cancel_on_incoming_explicit')
     end
 
+    it 'applies only matching and legacy steps from a mixed entity plan' do
+      reminder_group = create(
+        :reminder_group,
+        account: account,
+        entity_kinds: %w[conversation appointment],
+        touches: [
+          touch_definition(body: 'Conversation only').merge(entity_kind: 'conversation'),
+          touch_definition(body: 'Appointment only').merge(entity_kind: 'appointment'),
+          touch_definition(body: 'Legacy shared step')
+        ]
+      )
+
+      reminders = described_class.new(
+        account: account,
+        reminder_group: reminder_group,
+        remindable: conversation,
+        actor: actor
+      ).perform
+
+      expect(reminders.pluck(:body)).to contain_exactly('Conversation only', 'Legacy shared step')
+    end
+
     it 'propagates a safe post-delivery action from conversation touch plans' do
       forged_rule = create(:automation_rule, account: account)
       reminder_group = create(

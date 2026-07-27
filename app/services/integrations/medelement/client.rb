@@ -1,5 +1,12 @@
 class Integrations::Medelement::Client
-  class ApiError < StandardError; end
+  class ApiError < StandardError
+    attr_reader :status
+
+    def initialize(message, status: nil)
+      super(message)
+      @status = status
+    end
+  end
 
   BASE_URL = 'https://api3.medelement.com'.freeze
   EMPTY_RECEPTIONS_MESSAGE = 'Приемы не найдены'.freeze
@@ -32,12 +39,13 @@ class Integrations::Medelement::Client
 
     return Array(parsed_response['receptions']) if response.success?
 
-    raise ApiError, "Medelement receptions request failed: HTTP #{response.code} #{parsed_response}"
-  rescue SocketError, Net::OpenTimeout, Net::ReadTimeout, Timeout::Error => e
-    raise ApiError, "Medelement receptions request failed: #{e.message}"
+    raise ApiError.new('Medelement receptions request failed', status: response.code.to_i)
+  rescue SocketError, Timeout::Error, EOFError, Errno::ECONNRESET, Errno::ECONNREFUSED,
+         OpenSSL::SSL::SSLError => e
+    raise ApiError, "Medelement receptions transport failed: #{e.class}"
   end
 
-  def get_specialists
+  def specialists
     response = get('/v1/timetable/get_specialists')
     return response.values if response.is_a?(Hash)
 
@@ -70,9 +78,10 @@ class Integrations::Medelement::Client
     parsed_response = response.parsed_response
     return parsed_response if response.success?
 
-    raise ApiError, "Medelement request failed for #{path}: HTTP #{response.code} #{parsed_response}"
-  rescue SocketError, Net::OpenTimeout, Net::ReadTimeout, Timeout::Error => e
-    raise ApiError, "Medelement request failed for #{path}: #{e.message}"
+    raise ApiError.new("Medelement request failed for #{path}", status: response.code.to_i)
+  rescue SocketError, Timeout::Error, EOFError, Errno::ECONNRESET, Errno::ECONNREFUSED,
+         OpenSSL::SSL::SSLError => e
+    raise ApiError, "Medelement transport failed for #{path}: #{e.class}"
   end
 
   def headers
