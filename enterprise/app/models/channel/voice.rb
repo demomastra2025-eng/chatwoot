@@ -24,8 +24,8 @@ class Channel::Voice < ApplicationRecord
   CURRENT_FONOSTER_OPERATOR_AGENT_AOR = 'sip:1001@operator.cloud.vconsult.kz'.freeze
   STALE_FONOSTER_OPERATOR_AGENT_AORS = ['sip:1001@company.example'].freeze
 
-  PROVIDERS = %w[twilio fonoster asterisk_analog sipuni binotel].freeze
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDERS = %w[twilio fonoster asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
 
   validates :phone_number, presence: true, uniqueness: true
   validates :provider, presence: true, inclusion: { in: PROVIDERS }
@@ -100,7 +100,7 @@ class Channel::Voice < ApplicationRecord
       validate_twilio_config
     when 'fonoster'
       validate_fonoster_config
-    when 'asterisk_analog', 'sipuni', 'binotel'
+    when 'asterisk_analog', 'sipuni', 'binotel', 'beeline'
       validate_provider_owned_sip_config
     end
   end

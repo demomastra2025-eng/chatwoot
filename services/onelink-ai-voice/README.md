@@ -109,6 +109,7 @@ Required server-side Janus env:
 - `VOICE_AGENT_JANUS_SERVER_SIPUNI_WS_URL=ws://janus_gateway:8188`
 - `VOICE_AGENT_JANUS_SERVER_BINOTEL_WS_URL=ws://janus_gateway:8188`
 - `VOICE_AGENT_JANUS_SERVER_ASTERISK_ANALOG_WS_URL=ws://host.docker.internal:8189`
+- `VOICE_AGENT_JANUS_SERVER_BEELINE_WS_URL=ws://janus_gateway:8188`
 - `VOICE_AGENT_JANUS_MEDIA_SERVER_URL=http://chatwoot_media_server:4000`
 - `VOICE_AGENT_JANUS_MEDIA_SERVER_TOKEN=<MEDIA_SERVER_AUTH_TOKEN>`
 - `VOICE_AGENT_JANUS_SERVER_PROFILES_PATH=/internal/voice/ai/janus-sip/profiles`

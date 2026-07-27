@@ -3,7 +3,7 @@ require 'digest'
 class Telephony::TerminalNativeSipHandoffService
   HANDOFF_WINDOW = 2.seconds
   LOCK_RETRIES = 2
-  NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
   UNANSWERED_STATUSES = %w[missed no_answer rejected].freeze
   RUNTIME_IDENTITY_KEYS = %w[
     registration_instance_id

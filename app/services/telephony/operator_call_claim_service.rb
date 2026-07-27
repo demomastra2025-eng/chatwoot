@@ -1,5 +1,5 @@
 class Telephony::OperatorCallClaimService
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
 
   def initialize(account:, user:, call_ref:)
     @account = account

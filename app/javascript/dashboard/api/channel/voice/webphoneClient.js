@@ -26,6 +26,7 @@ const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
   'binotel',
+  'beeline',
 ]);
 
 const looksLikeTwilioSession = response => {
@@ -76,6 +77,7 @@ class WebphoneClient extends EventTarget {
       asterisk_analog: JanusSipVoiceClient,
       sipuni: JanusSipVoiceClient,
       binotel: JanusSipVoiceClient,
+      beeline: JanusSipVoiceClient,
     };
 
     this.subscribeClient('twilio', TwilioVoiceClient);

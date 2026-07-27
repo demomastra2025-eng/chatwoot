@@ -4,7 +4,7 @@ class Telephony::InboundRoutingService
   DEFAULT_REJECT_MESSAGE = 'We are unable to connect your call right now.'.freeze
   OPERATOR_CANDIDATE_LIMIT = 20
   DUPLICATE_BROADCAST_BRANCH_WINDOW = 5.seconds
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
 
   OperatorCandidate = Struct.new(:source, :agent_binding, :sip_profile, keyword_init: true) do
     def agent_binding_id

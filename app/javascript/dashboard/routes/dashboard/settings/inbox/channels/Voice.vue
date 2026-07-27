@@ -26,6 +26,7 @@ const PROVIDER_TYPES = {
   ASTERISK_ANALOG: 'asterisk_analog',
   SIPUNI: 'sipuni',
   BINOTEL: 'binotel',
+  BEELINE: 'beeline',
   TWILIO: 'twilio',
 };
 
@@ -36,6 +37,7 @@ const PROVIDER_BADGES = {
   [PROVIDER_TYPES.SIPUNI]: channelBadgePath('sipuni.png'),
   [PROVIDER_TYPES.BINOTEL]: channelBadgePath('binotel.png'),
   [PROVIDER_TYPES.ASTERISK_ANALOG]: channelBadgePath('Asterisk.png'),
+  [PROVIDER_TYPES.BEELINE]: channelBadgePath('beeline-sign-logo.png'),
 };
 
 const kazakhstanState = reactive({
@@ -44,9 +46,17 @@ const kazakhstanState = reactive({
   providerKind: '',
   providerAccountNumber: '',
   ingressNumber: '',
-  connectionHost: '',
+  connectionHost:
+    route.query.provider === PROVIDER_TYPES.BEELINE
+      ? 'cloudpbx.beeline.kz'
+      : '',
   connectionPort: '5060',
   connectionTransport: 'udp',
+  connectionSipDomain: '',
+  connectionOutboundProxy:
+    route.query.provider === PROVIDER_TYPES.BEELINE
+      ? '46.227.186.231:6050'
+      : '',
   outboundDialFormat: 'kz_trunk',
 });
 
@@ -87,6 +97,9 @@ const isSipuniProvider = computed(
 const isBinotelProvider = computed(
   () => selectedProvider.value === PROVIDER_TYPES.BINOTEL
 );
+const isBeelineProvider = computed(
+  () => selectedProvider.value === PROVIDER_TYPES.BEELINE
+);
 const isAsteriskAnalogSelectedProvider = computed(
   () => selectedProvider.value === PROVIDER_TYPES.ASTERISK_ANALOG
 );
@@ -94,11 +107,13 @@ const isDirectProviderOwnedSipProvider = computed(
   () =>
     isSipuniProvider.value ||
     isBinotelProvider.value ||
+    isBeelineProvider.value ||
     isAsteriskAnalogSelectedProvider.value
 );
 const selectedVirtualPbxProviderKind = computed(() => {
   if (isSipuniProvider.value) return 'sipuni';
   if (isBinotelProvider.value) return 'binotel';
+  if (isBeelineProvider.value) return 'beeline';
   if (isAsteriskAnalogSelectedProvider.value) return 'asterisk_analog';
 
   return kazakhstanState.providerKind;
@@ -137,6 +152,13 @@ const availableProviders = computed(() => [
     imageUrl: PROVIDER_BADGES[PROVIDER_TYPES.BINOTEL],
   },
   {
+    key: PROVIDER_TYPES.BEELINE,
+    title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.BEELINE'),
+    description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.BEELINE_DESC'),
+    icon: 'i-ph-phone-call-fill channel-icon-voice',
+    imageUrl: PROVIDER_BADGES[PROVIDER_TYPES.BEELINE],
+  },
+  {
     key: PROVIDER_TYPES.TWILIO,
     title: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.TWILIO'),
     description: t('INBOX_MGMT.ADD.VOICE.PROVIDERS.TWILIO_DESC'),
@@ -158,6 +180,8 @@ const kazakhstanValidationRules = computed(() => ({
   providerKind: isDirectProviderOwnedSipProvider.value ? {} : { required },
   connectionHost: { required },
   connectionPort: { required, isValidSipPort },
+  connectionSipDomain: isBeelineProvider.value ? { required } : {},
+  connectionOutboundProxy: isBeelineProvider.value ? { required } : {},
 }));
 
 const twilioValidationRules = computed(() => ({
@@ -186,6 +210,10 @@ const virtualPbxProviderOptions = computed(() => [
   {
     value: 'asterisk_analog',
     label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.ASTERISK_ANALOG'),
+  },
+  {
+    value: 'beeline',
+    label: t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.BEELINE'),
   },
 ]);
 
@@ -227,6 +255,12 @@ const kazakhstanFormErrors = computed(() => ({
   connectionPort: kazakhstanV$.value.connectionPort?.$error
     ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.INVALID')
     : '',
+  connectionSipDomain: kazakhstanV$.value.connectionSipDomain?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.REQUIRED')
+    : '',
+  connectionOutboundProxy: kazakhstanV$.value.connectionOutboundProxy?.$error
+    ? t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.REQUIRED')
+    : '',
 }));
 
 const twilioFormErrors = computed(() => ({
@@ -256,6 +290,13 @@ function selectProvider(provider) {
   }
   if (provider === PROVIDER_TYPES.ASTERISK_ANALOG) {
     kazakhstanState.providerKind = 'asterisk_analog';
+  }
+  if (provider === PROVIDER_TYPES.BEELINE) {
+    kazakhstanState.providerKind = 'beeline';
+    kazakhstanState.connectionHost = 'cloudpbx.beeline.kz';
+    kazakhstanState.connectionPort = '5060';
+    kazakhstanState.connectionTransport = 'udp';
+    kazakhstanState.connectionOutboundProxy = '46.227.186.231:6050';
   }
 
   router.push({
@@ -292,6 +333,13 @@ function getVirtualPbxPayload() {
   if (isAsteriskAnalogProvider.value) {
     connection.port = kazakhstanState.connectionPort.trim();
     connection.transport = kazakhstanState.connectionTransport;
+  }
+  if (isBeelineProvider.value) {
+    connection.port = '5060';
+    connection.transport = 'udp';
+    connection.sip_domain = kazakhstanState.connectionSipDomain.trim();
+    connection.outbound_proxy = kazakhstanState.connectionOutboundProxy.trim();
+    connection.codec = 'pcma';
   }
 
   const payload = {
@@ -451,7 +499,8 @@ async function createTwilioChannel() {
           selectedProvider === PROVIDER_TYPES.KAZAKHSTAN ||
           selectedProvider === PROVIDER_TYPES.SIPUNI ||
           selectedProvider === PROVIDER_TYPES.ASTERISK_ANALOG ||
-          selectedProvider === PROVIDER_TYPES.BINOTEL
+          selectedProvider === PROVIDER_TYPES.BINOTEL ||
+          selectedProvider === PROVIDER_TYPES.BEELINE
         "
         class="flex flex-col gap-4 flex-wrap mx-0"
         @submit.prevent="createKazakhstanChannel"
@@ -526,6 +575,38 @@ async function createTwilioChannel() {
           :message-type="kazakhstanFormErrors.connectionHost ? 'error' : 'info'"
           @blur="kazakhstanV$.connectionHost?.$touch"
         />
+
+        <template v-if="isBeelineProvider">
+          <Input
+            v-model="kazakhstanState.connectionSipDomain"
+            :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.LABEL')"
+            :placeholder="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.PLACEHOLDER')
+            "
+            :message="kazakhstanFormErrors.connectionSipDomain"
+            :message-type="
+              kazakhstanFormErrors.connectionSipDomain ? 'error' : 'info'
+            "
+            @blur="kazakhstanV$.connectionSipDomain?.$touch"
+          />
+          <Input
+            v-model="kazakhstanState.connectionOutboundProxy"
+            :label="t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.LABEL')"
+            :placeholder="
+              t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.PLACEHOLDER')
+            "
+            :message="kazakhstanFormErrors.connectionOutboundProxy"
+            :message-type="
+              kazakhstanFormErrors.connectionOutboundProxy ? 'error' : 'info'
+            "
+            @blur="kazakhstanV$.connectionOutboundProxy?.$touch"
+          />
+          <p
+            class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11"
+          >
+            {{ t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_CONFIG_HINT') }}
+          </p>
+        </template>
 
         <div
           v-if="isVirtualPbxAdvancedVisible && isAsteriskAnalogProvider"

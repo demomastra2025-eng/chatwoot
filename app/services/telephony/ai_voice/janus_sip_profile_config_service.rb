@@ -37,11 +37,14 @@ class Telephony::AiVoice::JanusSipProfileConfigService
   def profile_context(profile)
     binding = profile.inbox&.telephony_number_binding
     connection = profile.provider_connection || binding&.provider_connection
+    connection_metadata = connection&.metadata.to_h.with_indifferent_access
     {
       binding: binding,
       connection: connection,
       routing_policy: binding&.routing_policy,
-      sip_host: profile.sip_host.presence || connection&.host,
+      sip_host: connection_metadata[:sip_domain].presence || profile.sip_host.presence || connection&.host,
+      sip_proxy: connection_metadata[:outbound_proxy],
+      sip_codec: connection_metadata[:codec],
       sip_password: profile.sip_password.presence
     }
   end
@@ -75,7 +78,9 @@ class Telephony::AiVoice::JanusSipProfileConfigService
       sip_password: context[:sip_password],
       sip_host: context[:sip_host],
       sip_port: connection&.port || 5060,
-      sip_transport: connection&.transport.presence || 'udp'
+      sip_transport: connection&.transport.presence || 'udp',
+      sip_proxy: context[:sip_proxy],
+      sip_codec: context[:sip_codec]
     }
   end
 

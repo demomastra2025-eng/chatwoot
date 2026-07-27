@@ -57,7 +57,9 @@ const agentList = computed(() => store.getters['agents/getAgents']);
 const isVirtualPbxVoiceInbox = computed(
   () =>
     props.inbox.channel_type === 'Channel::Voice' &&
-    ['asterisk_analog', 'sipuni', 'binotel'].includes(props.inbox.provider)
+    ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
+      props.inbox.provider
+    )
 );
 
 const selectedAgentNames = computed(() =>

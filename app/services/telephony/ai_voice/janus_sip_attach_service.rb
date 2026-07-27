@@ -1,5 +1,5 @@
 class Telephony::AiVoice::JanusSipAttachService
-  SUPPORTED_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  SUPPORTED_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
 
   pattr_initialize [:call_session!, :routing_decision!, :sip_profile!, :params!, { runtime_client: nil }]
 

@@ -28,8 +28,8 @@ class Telephony::CallReconciliationService
   GENERIC_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   SIPUNI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
-  NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
-  NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS = %w[asterisk_analog binotel].freeze
+  NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS = %w[asterisk_analog binotel beeline].freeze
 
   STATUS_PROGRESS = {
     'created' => 0,
@@ -121,7 +121,8 @@ class Telephony::CallReconciliationService
     "(provider = 'sipuni' AND direction = 'outbound' AND provider_call_sid IS NULL AND external_call_ref LIKE 'sipuni:local:%')",
     "(provider = 'sipuni' AND provider_call_sid IS NOT NULL)",
     "(#{JANUS_NATIVE_SIP_REF_SQL})",
-    "(provider IN ('asterisk_analog', 'binotel') AND direction = 'outbound' AND provider_call_sid IS NULL AND (#{NATIVE_SIP_LOCAL_REF_SQL}))"
+    "(provider IN ('asterisk_analog', 'binotel', 'beeline') AND direction = 'outbound' " \
+    "AND provider_call_sid IS NULL AND (#{NATIVE_SIP_LOCAL_REF_SQL}))"
   ].join(' OR ').freeze
 
   attr_reader :account, :now,

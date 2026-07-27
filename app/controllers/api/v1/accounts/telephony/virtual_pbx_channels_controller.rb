@@ -103,7 +103,7 @@ class Api::V1::Accounts::Telephony::VirtualPbxChannelsController < Api::V1::Acco
       :provider_number,
       :tel_url,
       :expected_configuration_version,
-      connection: %i[host port transport username password send_register],
+      connection: %i[host port transport sip_domain outbound_proxy codec username password send_register],
       routing: %i[mode fallback_mode ai_enabled operator_agent_aor operator_distribution_mode show_calls_handled_by_other_operators],
       metadata: %i[environment source notes outbound_dial_format outboundDialFormat dial_format dialFormat],
       profiles: %i[id user_id profile_kind internal_extension sip_username sip_password enabled availability_mode]

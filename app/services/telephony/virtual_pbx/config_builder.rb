@@ -5,7 +5,7 @@ require 'digest'
 class Telephony::VirtualPbx::ConfigBuilder
   MANAGED_BY_ONELINK = 'onelink'
   SECRET_KEY_PATTERN = /(password|secret|token|api[_-]?key|credential|auth)/i
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
   UNKNOWN_PROVIDER_TEMPLATE = {
     label: 'SIP provider',
     default_transport: 'udp',
@@ -36,6 +36,17 @@ class Telephony::VirtualPbx::ConfigBuilder
       label: 'Binotel',
       default_transport: 'udp',
       default_port: 5060,
+      allows_display_ingress_split: true,
+      default_route_mode: 'operator',
+      default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
+    },
+    'beeline' => {
+      label: 'Билайн',
+      default_host: 'cloudpbx.beeline.kz',
+      default_transport: 'udp',
+      default_port: 5060,
+      default_outbound_proxy: '46.227.186.231:6050',
+      default_codec: 'pcma',
       allows_display_ingress_split: true,
       default_route_mode: 'operator',
       default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
@@ -118,6 +129,9 @@ class Telephony::VirtualPbx::ConfigBuilder
         host: provider_connection[:host],
         port: provider_connection[:port],
         transport: provider_connection[:transport],
+        sip_domain: provider_connection_metadata[:sip_domain],
+        outbound_proxy: provider_connection_metadata[:outbound_proxy],
+        codec: provider_connection_metadata[:codec],
         outbound_dial_format: provider_connection_metadata[:outbound_dial_format],
         outboundDialFormat: provider_connection_metadata[:outbound_dial_format],
         send_register: provider_connection[:send_register],
@@ -535,6 +549,7 @@ class Telephony::VirtualPbx::ConfigBuilder
     return 'asterisk_analog' if key.in?(%w[asterisk asterisk_analog analog asteriskanalog])
     return 'binotel' if key.include?('binotel')
     return 'sipuni' if key.include?('sipuni')
+    return 'beeline' if key.include?('beeline')
 
     PROVIDER_TEMPLATES.key?(key) ? key : nil
   end
@@ -552,6 +567,7 @@ class Telephony::VirtualPbx::ConfigBuilder
 
     return 'binotel' if values.include?('binotel')
     return 'sipuni' if values.include?('sipuni')
+    return 'beeline' if values.include?('beeline') || values.include?('cloudpbx')
     return 'asterisk_analog' if values.include?('asterisk') || values.include?('analog')
 
     nil

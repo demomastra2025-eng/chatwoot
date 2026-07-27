@@ -51,7 +51,7 @@
 class Telephony::ProviderConnection < ApplicationRecord
   self.table_name = 'telephony_provider_connections'
 
-  PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
   STATUSES = %w[draft active disabled deleting failed].freeze
   OWNERSHIP_STATUSES = %w[local managed legacy_reference read_only deleting].freeze
   MANAGED_BY_ONELINK = 'onelink'

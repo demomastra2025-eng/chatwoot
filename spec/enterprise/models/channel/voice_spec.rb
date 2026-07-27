@@ -96,6 +96,23 @@ RSpec.describe Channel::Voice do
       expect(binotel_channel).to be_valid
     end
 
+    it 'accepts native Beeline provider config' do
+      account = create(:account)
+      provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'beeline')
+      beeline_channel = build(
+        :channel_voice,
+        account: account,
+        provider: 'beeline',
+        provider_config: {
+          number_ref: 'beeline-main-line',
+          provider_connection_id: provider_connection.id,
+          routing_mode: 'operator'
+        }
+      )
+
+      expect(beeline_channel).to be_valid
+    end
+
     it 'keeps legacy Fonoster provider config valid during native SIP rollout' do
       fonoster_channel = build(
         :channel_voice,

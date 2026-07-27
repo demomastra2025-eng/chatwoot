@@ -5,7 +5,7 @@ require 'fileutils'
 require 'securerandom'
 
 class Telephony::BrowserRecordingUploadService
-  BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
   DEFAULT_MAX_BYTES = 100.megabytes
   AUDIO_CONTENT_TYPES = {
     'audio/webm' => '.webm',

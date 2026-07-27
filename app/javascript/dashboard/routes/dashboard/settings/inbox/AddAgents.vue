@@ -103,17 +103,17 @@ export default {
       );
     },
     isVirtualPbxProfileAssignmentInbox() {
-      return ['sipuni', 'binotel', 'asterisk_analog'].includes(
+      return ['sipuni', 'binotel', 'asterisk_analog', 'beeline'].includes(
         this.virtualPbxProviderKind
       );
     },
     isVirtualPbxSipCredentialsVisible() {
-      return ['asterisk_analog', 'sipuni', 'binotel'].includes(
+      return ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
         this.virtualPbxProviderKind
       );
     },
     isVirtualPbxLocalNativeProvider() {
-      return ['asterisk_analog', 'sipuni', 'binotel'].includes(
+      return ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
         this.virtualPbxProviderKind
       );
     },

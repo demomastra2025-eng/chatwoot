@@ -654,6 +654,65 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
+  it('renders Beeline SIP domain and proxy fields and preserves the fixed transport contract', async () => {
+    getVirtualPbxStatusMock.mockResolvedValue({
+      payload: {
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'beeline',
+            provider_label: 'Beeline Cloud PBX',
+          },
+          connection: {
+            provider_kind: 'beeline',
+            provider_label: 'Beeline Cloud PBX',
+            host: 'cloudpbx.beeline.kz',
+            port: 5060,
+            transport: 'udp',
+            sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+            outbound_proxy: '46.227.186.231:6050',
+            codec: 'pcma',
+          },
+        },
+      },
+    });
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'beeline',
+      },
+    });
+    await flushPromises();
+    updateVirtualPbxChannelMock.mockClear();
+
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.LABEL'
+    );
+    expect(wrapper.text()).toContain(
+      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.LABEL'
+    );
+
+    await wrapper.vm.updateVirtualPbxChannel();
+    await flushPromises();
+
+    expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        provider_kind: 'beeline',
+        connection: {
+          host: 'cloudpbx.beeline.kz',
+          port: '5060',
+          transport: 'udp',
+          sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+          outbound_proxy: '46.227.186.231:6050',
+          codec: 'pcma',
+        },
+      }),
+      { dryRun: false, remoteCommit: false }
+    );
+  });
+
   it('shows a masked placeholder for already configured employee SIP passwords', async () => {
     const wrapper = buildWrapper();
     await flushPromises();

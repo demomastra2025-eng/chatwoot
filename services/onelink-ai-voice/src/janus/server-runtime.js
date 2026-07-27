@@ -1257,12 +1257,9 @@ function normalizeSipContract(source, sipProfile = {}) {
   const host = source.sip_host || source.sipHost || source.host;
   const port = source.sip_port || source.sipPort || source.port || 5060;
   const transport = String(source.sip_transport || source.sipTransport || source.transport || 'udp').toLowerCase();
+  const codec = String(source.sip_codec || source.sipCodec || source.codec || '').toLowerCase();
   const uri = source.uri || (username && host ? `sip:${username}@${host}` : '');
-  let proxy = source.proxy;
-  if (!proxy && host) {
-    proxy = `sip:${host}${port ? `:${port}` : ''}`;
-    if (transport === 'tcp' || transport === 'tls') proxy += `;transport=${transport}`;
-  }
+  const proxy = normalizeSipProxy(source.proxy || source.sip_proxy || source.sipProxy, { host, port, transport });
   return compact({
     username,
     auth_username: source.auth_username || source.authUsername || username,
@@ -1270,10 +1267,22 @@ function normalizeSipContract(source, sipProfile = {}) {
     host,
     port,
     transport,
+    codec,
     uri,
     proxy,
     display_name: source.display_name || source.displayName
   });
+}
+
+function normalizeSipProxy(value, { host, port, transport }) {
+  let proxy = String(value || '').trim();
+  if (!proxy && host) proxy = `${host}${port ? `:${port}` : ''}`;
+  if (!proxy) return '';
+  if (!/^sips?:/i.test(proxy)) proxy = `sip:${proxy}`;
+  if ((transport === 'tcp' || transport === 'tls') && !/;transport=/i.test(proxy)) {
+    proxy += `;transport=${transport}`;
+  }
+  return proxy;
 }
 
 function parseServerProfilesJson(value) {

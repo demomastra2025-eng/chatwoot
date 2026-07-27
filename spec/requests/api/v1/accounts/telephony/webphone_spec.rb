@@ -166,6 +166,83 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['recording_fallback_strategy']).to eq('browser_fallback')
   end
 
+  it 'returns Beeline SIP domain, outbound proxy, and PCMA in the Janus contract' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'beeline',
+      host: 'cloudpbx.beeline.kz',
+      port: 5060,
+      transport: 'udp',
+      metadata: {
+        sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+        outbound_proxy: '46.227.186.231:6050',
+        codec: 'pcma'
+      }
+    )
+    beeline_channel = create(
+      :channel_voice,
+      account: account,
+      provider: 'beeline',
+      phone_number: '+77000001001',
+      provider_config: {
+        provider_kind: 'beeline',
+        provider_connection_id: provider_connection.id,
+        number_ref: 'beeline-browser-number-ref',
+        routing_mode: 'operator',
+        operator_distribution_mode: 'broadcast'
+      }
+    )
+    create(:inbox_member, inbox: beeline_channel.inbox, user: administrator)
+    sip_profile = create(
+      :telephony_sip_profile,
+      account: account,
+      inbox: beeline_channel.inbox,
+      user: administrator,
+      internal_extension: '1001',
+      provider_connection: provider_connection,
+      sip_username: '1001',
+      sip_password: 'test-beeline-password',
+      sip_host: 'vpbx-company-test.cloudpbx.beeline.kz',
+      agent_ref: 'local-profile-beeline-1001',
+      availability_mode: 'browser_webphone',
+      status: 'active',
+      agent_aor: 'sip:1001@vpbx-company-test.cloudpbx.beeline.kz'
+    )
+
+    with_modified_env(
+      TELEPHONY_BEELINE_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-sipuni',
+      TELEPHONY_JANUS_SERVER_RECORDING_ENABLED: 'false'
+    ) do
+      post path,
+           params: { client_instance_id: 'test-tab', inbox_id: beeline_channel.inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['provider']).to eq('beeline')
+    expect_authorized_janus_url(
+      payload['janus_server'],
+      server_url: 'wss://dev.one-link.kz/janus-sipuni',
+      profile: sip_profile
+    )
+    expect(payload['sip']).to include(
+      'username' => '1001',
+      'auth_username' => '1001',
+      'password' => 'test-beeline-password',
+      'host' => 'vpbx-company-test.cloudpbx.beeline.kz',
+      'port' => 5060,
+      'transport' => 'udp',
+      'uri' => 'sip:1001@vpbx-company-test.cloudpbx.beeline.kz',
+      'proxy' => 'sip:46.227.186.231:6050',
+      'codec' => 'pcma',
+      'internal_extension' => '1001'
+    )
+    expect(payload['recording_strategy']).to eq('browser_fallback')
+  end
+
   it 'falls back to browser recording for native Sipuni browser profiles without webhook/API recording' do
     provider_connection = create(
       :telephony_provider_connection,

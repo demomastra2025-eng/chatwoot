@@ -71,6 +71,9 @@ export default {
         connectionHost: '',
         connectionPort: '5060',
         connectionTransport: 'udp',
+        connectionSipDomain: '',
+        connectionOutboundProxy: '',
+        connectionCodec: '',
         outboundDialFormat: 'kz_trunk',
         connectionUsername: '',
         connectionPassword: '',
@@ -175,7 +178,9 @@ export default {
     isVirtualPbxVoiceInbox() {
       return (
         this.inbox.channel_type === 'Channel::Voice' &&
-        ['asterisk_analog', 'sipuni', 'binotel'].includes(this.inbox.provider)
+        ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
+          this.inbox.provider
+        )
       );
     },
     isSipuniVoiceInbox() {
@@ -242,7 +247,7 @@ export default {
       );
     },
     isVirtualPbxSipCredentialsVisible() {
-      return ['asterisk_analog', 'sipuni', 'binotel'].includes(
+      return ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
         this.virtualPbxProviderKind
       );
     },
@@ -250,7 +255,7 @@ export default {
       return ['sipuni', 'binotel'].includes(this.virtualPbxProviderKind);
     },
     isVirtualPbxLocalNativeProvider() {
-      return ['asterisk_analog', 'sipuni', 'binotel'].includes(
+      return ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
         this.virtualPbxProviderKind
       );
     },
@@ -277,6 +282,9 @@ export default {
     },
     isVirtualPbxAsteriskAnalog() {
       return this.virtualPbxProviderKind === 'asterisk_analog';
+    },
+    isVirtualPbxBeeline() {
+      return this.virtualPbxProviderKind === 'beeline';
     },
     virtualPbxTransportOptions() {
       return ['udp', 'tcp', 'tls'];
@@ -321,6 +329,12 @@ export default {
           value: 'asterisk_analog',
           label: this.$t(
             'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.ASTERISK_ANALOG'
+          ),
+        },
+        {
+          value: 'beeline',
+          label: this.$t(
+            'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.BEELINE'
           ),
         },
       ];
@@ -793,6 +807,16 @@ export default {
         connectionHost: providerConnection.host || '',
         connectionPort: String(providerConnection.port || 5060),
         connectionTransport: providerConnection.transport || 'udp',
+        connectionSipDomain:
+          providerConnection.sip_domain ||
+          providerConnectionMetadata.sip_domain ||
+          '',
+        connectionOutboundProxy:
+          providerConnection.outbound_proxy ||
+          providerConnectionMetadata.outbound_proxy ||
+          '',
+        connectionCodec:
+          providerConnection.codec || providerConnectionMetadata.codec || '',
         outboundDialFormat:
           providerConnection.outbound_dial_format ||
           providerConnectionMetadata.outbound_dial_format ||
@@ -835,6 +859,16 @@ export default {
       if (!form.connectionHost.trim()) {
         useAlert(
           this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_HOST.REQUIRED')
+        );
+        return false;
+      }
+      if (
+        this.isVirtualPbxBeeline &&
+        (!form.connectionSipDomain.trim() ||
+          !form.connectionOutboundProxy.trim())
+      ) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_REQUIRED_FIELDS')
         );
         return false;
       }
@@ -971,6 +1005,13 @@ export default {
       if (this.isVirtualPbxAsteriskAnalog) {
         payload.connection.port = form.connectionPort.trim();
         payload.connection.transport = form.connectionTransport;
+      }
+      if (this.isVirtualPbxBeeline) {
+        payload.connection.port = '5060';
+        payload.connection.transport = 'udp';
+        payload.connection.sip_domain = form.connectionSipDomain.trim();
+        payload.connection.outbound_proxy = form.connectionOutboundProxy.trim();
+        payload.connection.codec = 'pcma';
       }
 
       return payload;
@@ -1432,6 +1473,42 @@ export default {
                 />
               </label>
               <label
+                v-if="isVirtualPbxBeeline"
+                class="flex flex-col gap-1 text-sm text-n-slate-12"
+              >
+                {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.LABEL') }}
+                <input
+                  v-model="virtualPbxForm.connectionSipDomain"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="text"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.SIP_DOMAIN.PLACEHOLDER'
+                    )
+                  "
+                />
+              </label>
+              <label
+                v-if="isVirtualPbxBeeline"
+                class="flex flex-col gap-1 text-sm text-n-slate-12"
+              >
+                {{
+                  $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.LABEL')
+                }}
+                <input
+                  v-model="virtualPbxForm.connectionOutboundProxy"
+                  class="rounded-lg border border-n-weak py-2 text-sm"
+                  :disabled="isVirtualPbxReadOnly"
+                  type="text"
+                  :placeholder="
+                    $t(
+                      'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.OUTBOUND_PROXY.PLACEHOLDER'
+                    )
+                  "
+                />
+              </label>
+              <label
                 v-if="isVirtualPbxAsteriskAnalog"
                 class="flex flex-col gap-1 text-sm text-n-slate-12"
               >
@@ -1495,6 +1572,12 @@ export default {
                 </select>
               </label>
             </div>
+            <p
+              v-if="isVirtualPbxBeeline"
+              class="mt-4 rounded-lg bg-n-slate-2 p-3 text-sm text-n-slate-11"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.BEELINE_CONFIG_HINT') }}
+            </p>
           </div>
 
           <div

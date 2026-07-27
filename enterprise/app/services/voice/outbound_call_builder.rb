@@ -1,7 +1,7 @@
 require 'digest'
 
 class Voice::OutboundCallBuilder
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
 
   attr_reader :account, :inbox, :user, :contact
 

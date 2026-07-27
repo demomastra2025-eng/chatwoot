@@ -2,12 +2,12 @@ require 'digest'
 require 'uri'
 
 class Telephony::WebphoneService
-  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_MANAGED_EXTERNAL_EXTENSION_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
   PROVIDER_EXTENSION_MODES = %w[external_extension provider_extension].freeze
-  JANUS_SIP_WEBPHONE_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  JANUS_SIP_WEBPHONE_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
   JANUS_SIP_PROVIDER_RECORDING_API_PROVIDERS = %w[sipuni].freeze
-  JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
-  JANUS_SIP_SERVER_RECORDING_PROVIDERS = %w[asterisk_analog sipuni binotel].freeze
+  JANUS_SIP_BROWSER_RECORDING_FALLBACK_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  JANUS_SIP_SERVER_RECORDING_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
   SIPUNI_PROVIDER_WEBHOOK_CORRELATION_WINDOW = 2.minutes
   BROWSER_SIP_INCOMING_SOURCE = 'browser_janus_sip'.freeze
 
@@ -516,42 +516,65 @@ class Telephony::WebphoneService
 
   def janus_sip_credentials_for(profile)
     provider_connection = profile.provider_connection
-    host = provider_connection&.host.presence || profile.sip_host.presence
+    {
+      username: profile.sip_username.presence || provider_connection&.username,
+      password: profile.sip_password
+    }.merge(janus_sip_connection_settings(profile))
+  end
+
+  def janus_sip_connection_settings(profile)
+    provider_connection = profile.provider_connection
+    connection_metadata = provider_connection&.metadata.to_h.with_indifferent_access
+    server_host = provider_connection&.host.presence
+    host = connection_metadata[:sip_domain].presence || server_host || profile.sip_host.presence
     port = provider_connection&.port.presence || 5060
     transport = provider_connection&.transport.presence || 'udp'
-    username = profile.sip_username.presence || provider_connection&.username
 
     {
-      username: username,
-      password: profile.sip_password,
       host: host,
+      server_host: server_host,
       port: port,
-      transport: transport
+      transport: transport,
+      proxy: janus_sip_proxy_uri(connection_metadata, host: host, server_host: server_host, port: port, transport: transport),
+      codec: connection_metadata[:codec]
     }
+  end
+
+  def janus_sip_proxy_uri(connection_metadata, host:, server_host:, port:, transport:)
+    explicit_proxy = connection_metadata[:outbound_proxy].presence
+    proxy_source = explicit_proxy || server_host || host
+
+    sip_proxy_uri(proxy_source, explicit_proxy.present? ? nil : port, transport)
   end
 
   def janus_sip_contract(credentials, profile)
     host = credentials[:host]
     username = credentials[:username]
     uri = sip_uri(username, host)
-    proxy = sip_proxy_uri(host, credentials[:port], credentials[:transport])
     dialing = janus_sip_dialing_contract(profile)
 
-    {
+    sip_contract = {
       username: username,
-      auth_username: username,
-      authUsername: username,
       password: credentials[:password],
       host: host,
       port: credentials[:port],
       transport: credentials[:transport],
       uri: uri,
-      proxy: proxy,
+      proxy: credentials[:proxy],
+      codec: credentials[:codec],
       internal_extension: profile.internal_extension,
       internalExtension: profile.internal_extension,
       display_name: profile.user&.name,
       displayName: profile.user&.name
-    }.merge(dialing).compact
+    }
+    sip_contract.merge(janus_sip_auth_contract(username)).merge(dialing).compact
+  end
+
+  def janus_sip_auth_contract(username)
+    {
+      auth_username: username,
+      authUsername: username
+    }
   end
 
   def janus_sip_flat_contract(sip)
@@ -611,7 +634,7 @@ class Telephony::WebphoneService
   def sip_proxy_uri(host, port, transport)
     return if host.blank?
 
-    uri = "sip:#{host}"
+    uri = host.to_s.match?(/\Asips?:/i) ? host.to_s : "sip:#{host}"
     uri = "#{uri}:#{port}" if port.present?
     transport = transport.to_s.downcase
     uri = "#{uri};transport=#{transport}" if transport.in?(%w[tcp tls])

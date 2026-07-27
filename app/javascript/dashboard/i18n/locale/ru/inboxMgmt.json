@@ -412,6 +412,8 @@
           "ASTERISK_ANALOG_DESC": "Подключите сторонний Asterisk как отдельный SIP-провайдер через браузерный вебфон.",
           "BINOTEL": "Binotel",
           "BINOTEL_DESC": "Подключите Binotel как отдельный SIP-провайдер через браузерный вебфон.",
+          "BEELINE": "Билайн",
+          "BEELINE_DESC": "Подключите облачную АТС Билайн через Janus SIP и браузерный вебфон.",
           "TWILIO": "Twilio",
           "TWILIO_DESC": "Подключите номера Twilio и браузерные звонки."
         },
@@ -431,7 +433,8 @@
             "PLACEHOLDER": "Выберите провайдера",
             "SIPUNI": "Sipuni",
             "BINOTEL": "Binotel",
-            "ASTERISK_ANALOG": "Asterisk аналоговый"
+            "ASTERISK_ANALOG": "Asterisk аналоговый",
+            "BEELINE": "Билайн"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Номер/аккаунт у провайдера",
@@ -444,9 +447,19 @@
             "REQUIRED": "Технический номер обязателен"
           },
           "CONNECTION_HOST": {
-            "LABEL": "SIP host URL",
+            "LABEL": "SIP server",
             "PLACEHOLDER": "PBX host или endpoint транка",
             "REQUIRED": "SIP host URL обязателен"
+          },
+          "SIP_DOMAIN": {
+            "LABEL": "SIP domain",
+            "PLACEHOLDER": "vpbx-company-XXXX.CLOUDPBX.BEELINE.KZ",
+            "REQUIRED": "SIP domain обязателен"
+          },
+          "OUTBOUND_PROXY": {
+            "LABEL": "SIP proxy",
+            "PLACEHOLDER": "46.227.186.231:6050",
+            "REQUIRED": "SIP proxy обязателен"
           },
           "CONNECTION_PORT": {
             "LABEL": "SIP port",
@@ -528,6 +541,8 @@
           "MANAGEMENT_SUBTITLE": "OneLink управляет настройками канала, сотрудниками и SIP-доступами через Janus SIP.",
           "CURRENT_USER_REQUIRED": "Текущий пользователь нужен для создания SIP-профиля сотрудника",
           "REQUIRED_FIELDS": "Заполните название inbox и витринный номер",
+          "BEELINE_REQUIRED_FIELDS": "Для Билайн заполните SIP server, SIP domain и SIP proxy",
+          "BEELINE_CONFIG_HINT": "Билайн: транспорт UDP, кодек G.711 A-law (PCMA). Username/Login и пароль SIP-аккаунта укажите для сотрудника на следующем шаге.",
           "READ_ONLY": "У этого канала legacy/read-only владение, его нельзя менять из OneLink.",
           "LOAD_ERROR": "Не удалось загрузить конфигурацию Виртуальной АТС.",
           "CREATE_SUCCESS": "Канал Виртуальной АТС создан",

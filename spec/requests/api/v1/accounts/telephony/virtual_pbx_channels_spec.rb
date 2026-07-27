@@ -46,6 +46,15 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       'default_transport' => 'udp',
       'allows_display_ingress_split' => true
     )
+    expect(payload.dig('provider_templates', 'beeline')).to include(
+      'label' => 'Билайн',
+      'default_host' => 'cloudpbx.beeline.kz',
+      'default_port' => 5060,
+      'default_transport' => 'udp',
+      'default_outbound_proxy' => '46.227.186.231:6050',
+      'default_codec' => 'pcma',
+      'allows_display_ingress_split' => true
+    )
   end
 
   def put_with_configuration_version(path, params:, headers:, as:)
@@ -381,7 +390,80 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(body.dig('provisioning_plan', 'items')).to all(include('status' => 'ready'))
   end
 
-  it 'accepts local-only create dry-run without shared provider password' do
+  it 'creates Beeline Cloud PBX channels with domain, proxy, UDP, and PCMA settings' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'beeline',
+      channel_name: 'Beeline Cloud PBX',
+      display_phone_number: '+77000001001',
+      provider_account_number: '1001',
+      ingress_number: '1001',
+      connection: {
+        host: 'cloudpbx.beeline.kz',
+        port: 5060,
+        transport: 'udp',
+        sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+        outbound_proxy: '46.227.186.231:6050',
+        codec: 'pcma'
+      },
+      metadata: { source: 'virtual_pbx_ui' }
+    )
+
+    post base_path, params: payload.merge(dry_run: false, remote_commit: true), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body.fetch('errors')).to eq([])
+    inbox = Inbox.find(body.dig('ui_config', 'inbox_id'))
+    connection = inbox.telephony_number_binding.provider_connection
+
+    expect(body).to include(
+      'operation' => 'create',
+      'dry_run' => false,
+      'valid' => true,
+      'local_commit' => true,
+      'remote_commit' => false,
+      'status' => 'local_committed'
+    )
+    expect(inbox.channel.provider).to eq('beeline')
+    expect(connection).to have_attributes(
+      provider_kind: 'beeline',
+      host: 'cloudpbx.beeline.kz',
+      port: 5060,
+      transport: 'udp'
+    )
+    expect(connection.metadata).to include(
+      'sip_domain' => 'vpbx-company-test.cloudpbx.beeline.kz',
+      'outbound_proxy' => '46.227.186.231:6050',
+      'codec' => 'pcma'
+    )
+  end
+
+  it 'rejects Beeline settings that violate the fixed UDP and PCMA contract' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'beeline',
+      connection: {
+        host: 'cloudpbx.beeline.kz',
+        port: 5070,
+        transport: 'tcp',
+        sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+        outbound_proxy: 'proxy.cloudpbx.beeline.kz:6050',
+        codec: 'pcmu'
+      }
+    )
+
+    post base_path, params: payload.merge(dry_run: true, remote_commit: false), headers: headers, as: :json
+
+    body = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(body['valid']).to be(false)
+    expect(body.fetch('errors').pluck('code')).to include(
+      'beeline_port_invalid',
+      'beeline_transport_invalid',
+      'beeline_codec_invalid'
+    )
+  end
+
+  it 'accepts local-only create dry-run without shared provider credentials for Sipuni' do
     payload = valid_create_payload.deep_dup
     payload[:connection].delete(:username)
     payload[:connection].delete(:password)
@@ -551,33 +633,33 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     voice_channel.inbox.inbox_members.find_or_create_by!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{voice_channel.inbox.id}",
-        params: {
-          dry_run: false,
-          remote_commit: true,
-          provider_kind: 'binotel',
-          channel_name: '+17770005555',
-          display_phone_number: '+17770005555',
-          provider_account_number: '+17770005555',
-          ingress_number: '+17770005555',
-          connection: { host: 'sip53.binotel.com' },
-          routing: {
-            mode: 'operator',
-            fallback_mode: 'reject',
-            operator_distribution_mode: 'broadcast'
-          },
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '901',
-              sip_username: 'pq4dyw5f',
-              sip_password: 'do-not-return-binotel-profile-secret',
-              availability_mode: 'browser_webphone',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: true,
+                                     provider_kind: 'binotel',
+                                     channel_name: '+17770005555',
+                                     display_phone_number: '+17770005555',
+                                     provider_account_number: '+17770005555',
+                                     ingress_number: '+17770005555',
+                                     connection: { host: 'sip53.binotel.com' },
+                                     routing: {
+                                       mode: 'operator',
+                                       fallback_mode: 'reject',
+                                       operator_distribution_mode: 'broadcast'
+                                     },
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '901',
+                                         sip_username: 'pq4dyw5f',
+                                         sip_password: 'do-not-return-binotel-profile-secret',
+                                         availability_mode: 'browser_webphone',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
@@ -711,22 +793,22 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     Inbox.find(inbox_id).inbox_members.find_or_create_by!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: true,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '207',
-              sip_username: 'manager-207-login',
-              sip_password: 'raw-profile-password',
-              availability_mode: 'browser_webphone',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: true,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '207',
+                                         sip_username: 'manager-207-login',
+                                         sip_password: 'raw-profile-password',
+                                         availability_mode: 'browser_webphone',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     profile = Inbox.find(inbox_id).telephony_sip_profiles.find_by!(user_id: agent.id)
@@ -752,22 +834,22 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              profile_kind: 'voice_agent',
-              internal_extension: '9098',
-              sip_username: 'ai-agent-9098',
-              sip_password: 'raw-ai-profile-password',
-              availability_mode: 'browser_webphone',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         profile_kind: 'voice_agent',
+                                         internal_extension: '9098',
+                                         sip_username: 'ai-agent-9098',
+                                         sip_password: 'raw-ai-profile-password',
+                                         availability_mode: 'browser_webphone',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     profile = Inbox.find(inbox_id).telephony_sip_profiles.find_by!(profile_kind: 'voice_agent')
@@ -807,22 +889,22 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox.id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              id: profile.id,
-              profile_kind: 'voice_agent',
-              internal_extension: '9098',
-              sip_username: 'ai-agent-9098',
-              sip_password: 'raw-ai-profile-password',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         id: profile.id,
+                                         profile_kind: 'voice_agent',
+                                         internal_extension: '9098',
+                                         sip_username: 'ai-agent-9098',
+                                         sip_password: 'raw-ai-profile-password',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(inbox.telephony_sip_profiles.reload.count).to eq(1)
@@ -856,21 +938,21 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox.id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              id: profile.id,
-              profile_kind: 'voice_agent',
-              internal_extension: '9098',
-              sip_username: 'agent-9098',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         id: profile.id,
+                                         profile_kind: 'voice_agent',
+                                         internal_extension: '9098',
+                                         sip_username: 'agent-9098',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -904,20 +986,20 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     old_profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox.id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              profile_kind: 'voice_agent',
-              internal_extension: '207',
-              sip_username: 'agent-207',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         profile_kind: 'voice_agent',
+                                         internal_extension: '207',
+                                         sip_username: 'agent-207',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -935,28 +1017,28 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              profile_kind: 'voice_agent',
-              internal_extension: '9098',
-              sip_username: 'ai-agent-9098',
-              sip_password: 'raw-ai-profile-password',
-              enabled: true
-            },
-            {
-              profile_kind: 'voice_agent',
-              internal_extension: '9099',
-              sip_username: 'ai-agent-9099',
-              sip_password: 'raw-ai-profile-password-2',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         profile_kind: 'voice_agent',
+                                         internal_extension: '9098',
+                                         sip_username: 'ai-agent-9098',
+                                         sip_password: 'raw-ai-profile-password',
+                                         enabled: true
+                                       },
+                                       {
+                                         profile_kind: 'voice_agent',
+                                         internal_extension: '9099',
+                                         sip_username: 'ai-agent-9099',
+                                         sip_password: 'raw-ai-profile-password-2',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'status')).to eq('validation_failed')
@@ -982,24 +1064,24 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     Inbox.find(inbox_id).inbox_members.find_or_create_by!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: true,
-          connection: {
-            host: '10.77.0.5',
-            port: 5070,
-            transport: 'tcp'
-          },
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '9098',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: true,
+                                     connection: {
+                                       host: '10.77.0.5',
+                                       port: 5070,
+                                       transport: 'tcp'
+                                     },
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '9098',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
@@ -1053,19 +1135,19 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     outsider = create(:user, account: other_account, role: :agent)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          profiles: [
-            {
-              user_id: outsider.id,
-              internal_extension: '207',
-              sip_username: '056124100014',
-              sip_password: 'do-not-return-this-profile-secret',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     profiles: [
+                                       {
+                                         user_id: outsider.id,
+                                         internal_extension: '207',
+                                         sip_username: '056124100014',
+                                         sip_password: 'do-not-return-this-profile-secret',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
@@ -1078,19 +1160,19 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '207',
-              sip_username: '056124100014',
-              sip_password: 'do-not-return-this-profile-secret',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '207',
+                                         sip_username: '056124100014',
+                                         sip_password: 'do-not-return-this-profile-secret',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
@@ -1181,28 +1263,28 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '207',
-              sip_username: 'manager-207-login',
-              sip_password: 'do-not-return-this-profile-secret',
-              enabled: true
-            },
-            {
-              user_id: second_agent.id,
-              internal_extension: '208',
-              sip_username: 'manager-208-login',
-              sip_password: 'do-not-return-second-profile-secret',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '207',
+                                         sip_username: 'manager-207-login',
+                                         sip_password: 'do-not-return-this-profile-secret',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '208',
+                                         sip_username: 'manager-208-login',
+                                         sip_password: 'do-not-return-second-profile-secret',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(inbox.reload.inbox_members.pluck(:user_id)).to contain_exactly(agent.id, second_agent.id)
@@ -1220,24 +1302,24 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     profile_ids_before = inbox.telephony_sip_profiles.index_by(&:user_id).transform_values(&:id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '207',
-              enabled: true
-            },
-            {
-              user_id: second_agent.id,
-              internal_extension: '208',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '207',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '208',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -1251,24 +1333,24 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(credentials_after).to eq(credentials_before)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '217',
-              enabled: true
-            },
-            {
-              user_id: second_agent.id,
-              internal_extension: '208',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '217',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '208',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -1283,26 +1365,26 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(credentials_after_extension_change).to eq(credentials_before)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '217',
-              sip_username: 'manager-207-login',
-              enabled: true
-            },
-            {
-              user_id: second_agent.id,
-              internal_extension: '208',
-              sip_username: 'manager-208-login',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '217',
+                                         sip_username: 'manager-207-login',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '208',
+                                         sip_username: 'manager-208-login',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -1312,26 +1394,26 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(credentials_after_username_only).to eq(credentials_before)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '217',
-              sip_username: '056124100099',
-              enabled: true
-            },
-            {
-              user_id: second_agent.id,
-              internal_extension: '208',
-              sip_username: '056124100015',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '217',
+                                         sip_username: '056124100099',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '208',
+                                         sip_username: '056124100015',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'valid')).to be(false)
@@ -1344,26 +1426,26 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(credentials_after_username_change_without_password).to eq(credentials_before)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '217',
-              sip_username: '',
-              enabled: true
-            },
-            {
-              user_id: second_agent.id,
-              internal_extension: '208',
-              sip_username: nil,
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '217',
+                                         sip_username: '',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '208',
+                                         sip_username: nil,
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     profile_credentials = inbox.reload.telephony_sip_profiles.pluck(
@@ -1375,9 +1457,9 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: { dry_run: false, remote_commit: false, channel_name: 'Renamed Sipuni line' },
-        headers: headers,
-        as: :json
+                                   params: { dry_run: false, remote_commit: false, channel_name: 'Renamed Sipuni line' },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(inbox.reload.telephony_sip_profiles.pluck(:user_id, :internal_extension, :sip_username)).to contain_exactly(
@@ -1400,28 +1482,28 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox.inbox_members.find_or_create_by!(user_id: replacement_agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '504',
-              sip_username: '056124100020',
-              sip_password: 'first-profile-secret',
-              enabled: true
-            },
-            {
-              user_id: second_agent.id,
-              internal_extension: '505',
-              sip_username: '056124100021',
-              sip_password: 'second-profile-secret',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '504',
+                                         sip_username: '056124100020',
+                                         sip_password: 'first-profile-secret',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '505',
+                                         sip_username: '056124100021',
+                                         sip_password: 'second-profile-secret',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -1438,25 +1520,25 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: agent.id,
-              internal_extension: '504',
-              enabled: true
-            },
-            {
-              user_id: replacement_agent.id,
-              internal_extension: '505',
-              sip_username: '056124100021',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: agent.id,
+                                         internal_extension: '504',
+                                         enabled: true
+                                       },
+                                       {
+                                         user_id: replacement_agent.id,
+                                         internal_extension: '505',
+                                         sip_username: '056124100021',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -1511,22 +1593,22 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox.inbox_members.find_or_create_by!(user_id: second_agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          profiles: [
-            {
-              user_id: second_agent.id,
-              internal_extension: '505',
-              sip_username: '056124100015',
-              sip_password: 'do-not-return-second-profile-secret',
-              availability_mode: 'browser_webphone',
-              enabled: true
-            }
-          ]
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [
+                                       {
+                                         user_id: second_agent.id,
+                                         internal_extension: '505',
+                                         sip_username: '056124100015',
+                                         sip_password: 'do-not-return-second-profile-secret',
+                                         availability_mode: 'browser_webphone',
+                                         enabled: true
+                                       }
+                                     ]
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'errors')).to eq([])
@@ -1607,9 +1689,10 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: { dry_run: false, remote_commit: false, channel_name: 'Renamed Sipuni line', routing: { fallback_mode: 'operator' } },
-        headers: headers,
-        as: :json
+                                   params: { dry_run: false, remote_commit: false, channel_name: 'Renamed Sipuni line',
+                                             routing: { fallback_mode: 'operator' } },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')
@@ -1634,9 +1717,9 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     )
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",
-        params: { dry_run: false, remote_commit: false, channel_name: 'Blocked rename' },
-        headers: headers,
-        as: :json
+                                   params: { dry_run: false, remote_commit: false, channel_name: 'Blocked rename' },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')
@@ -1660,15 +1743,15 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     second_binding = Telephony::NumberBinding.find_by!(inbox_id: second_inbox_id)
 
     put_with_configuration_version "#{base_path}/#{first_inbox_id}",
-        params: {
-          dry_run: false,
-          remote_commit: false,
-          display_phone_number: '+15558671003',
-          provider_account_number: '056124100015',
-          ingress_number: '056124100015'
-        },
-        headers: headers,
-        as: :json
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     display_phone_number: '+15558671003',
+                                     provider_account_number: '056124100015',
+                                     ingress_number: '056124100015'
+                                   },
+                                   headers: headers,
+                                   as: :json
 
     expect(response).to have_http_status(:ok)
     payload = response.parsed_body.fetch('payload')

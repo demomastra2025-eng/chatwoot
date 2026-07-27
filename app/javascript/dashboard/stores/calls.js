@@ -121,6 +121,7 @@ const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
   'binotel',
+  'beeline',
 ]);
 const TERMINAL_CALL_SUPPRESSION_MS = 5 * 60 * 1000;
 

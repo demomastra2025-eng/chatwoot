@@ -412,6 +412,8 @@
           "ASTERISK_ANALOG_DESC": "Үшінші тарап Asterisk жүйесін браузердегі вебфон арқылы жеке SIP-провайдер ретінде қосыңыз.",
           "BINOTEL": "Binotel",
           "BINOTEL_DESC": "Binotel провайдерін браузердегі вебфон арқылы жеке SIP-провайдер ретінде қосыңыз.",
+          "BEELINE": "Beeline Cloud PBX",
+          "BEELINE_DESC": "Beeline Cloud PBX қызметін Janus SIP және браузер вебфоны арқылы қосыңыз.",
           "TWILIO": "Twilio",
           "TWILIO_DESC": "Twilio нөмірлерін және браузер арқылы қоңырауларды қосыңыз."
         },
@@ -430,7 +432,8 @@
             "LABEL": "Virtual PBX провайдері",
             "SIPUNI": "Sipuni / ішкі Asterisk",
             "BINOTEL": "Binotel",
-            "ASTERISK_ANALOG": "Asterisk analog"
+            "ASTERISK_ANALOG": "Asterisk analog",
+            "BEELINE": "Beeline Cloud PBX"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Провайдердегі нөмір/аккаунт",
@@ -443,9 +446,19 @@
             "REQUIRED": "Техникалық нөмір міндетті"
           },
           "CONNECTION_HOST": {
-            "LABEL": "SIP host",
+            "LABEL": "SIP server",
             "PLACEHOLDER": "PBX host немесе trunk endpoint",
             "REQUIRED": "SIP host міндетті"
+          },
+          "SIP_DOMAIN": {
+            "LABEL": "SIP domain",
+            "PLACEHOLDER": "vpbx-company-XXXX.CLOUDPBX.BEELINE.KZ",
+            "REQUIRED": "SIP domain міндетті"
+          },
+          "OUTBOUND_PROXY": {
+            "LABEL": "SIP proxy",
+            "PLACEHOLDER": "46.227.186.231:6050",
+            "REQUIRED": "SIP proxy міндетті"
           },
           "CONNECTION_PORT": {
             "LABEL": "SIP port",
@@ -521,6 +534,8 @@
           "MANAGEMENT_SUBTITLE": "OneLink арна баптауларын, қызметкерлерді және SIP қолжетімдерін Janus SIP арқылы басқарады.",
           "CURRENT_USER_REQUIRED": "Қызметкердің SIP профилін құру үшін ағымдағы пайдаланушы қажет",
           "REQUIRED_FIELDS": "Inbox атауын және көрсетілетін нөмірді толтырыңыз",
+          "BEELINE_REQUIRED_FIELDS": "Beeline үшін SIP server, SIP domain және SIP proxy толтырыңыз",
+          "BEELINE_CONFIG_HINT": "Beeline Cloud PBX UDP және G.711 A-law (PCMA) қолданады. SIP аккаунтының Username/Login және құпиясөзін келесі қадамда қызметкерге енгізіңіз.",
           "READ_ONLY": "Бұл арнада legacy/read-only иелік бар, оны OneLink арқылы өзгертуге болмайды.",
           "LOAD_ERROR": "Virtual PBX конфигурациясын жүктеу мүмкін болмады.",
           "CREATE_SUCCESS": "Virtual PBX арнасы құрылды",

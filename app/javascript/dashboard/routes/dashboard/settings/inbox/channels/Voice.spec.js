@@ -209,6 +209,47 @@ describe('Voice channel setup', () => {
     });
   });
 
+  it('creates a Beeline Cloud PBX channel with provider SIP routing defaults', async () => {
+    routeMock.query = { provider: 'beeline' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 7001 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+
+    Object.assign(wrapper.vm.kazakhstanState, {
+      channelName: 'Beeline Cloud PBX',
+      phoneNumber: '+7 700 000 1001',
+      connectionHost: 'cloudpbx.beeline.kz',
+      connectionSipDomain: 'vpbx-company-test.cloudpbx.beeline.kz',
+      connectionOutboundProxy: '46.227.186.231:6050',
+    });
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(options).toEqual({ dryRun: false, remoteCommit: false });
+    expect(payload).toMatchObject({
+      provider_kind: 'beeline',
+      channel_name: 'Beeline Cloud PBX',
+      connection: {
+        host: 'cloudpbx.beeline.kz',
+        port: '5060',
+        transport: 'udp',
+        sip_domain: 'vpbx-company-test.cloudpbx.beeline.kz',
+        outbound_proxy: '46.227.186.231:6050',
+        codec: 'pcma',
+      },
+    });
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inboxes_add_agents',
+      params: {
+        accountId: 530,
+        inbox_id: 7001,
+      },
+      query: { provider: 'beeline' },
+    });
+  });
+
   it('does not require shared Sipuni credentials before creating a Virtual PBX channel', async () => {
     routeMock.query = { provider: 'sipuni' };
     createVirtualPbxChannelMock.mockResolvedValue({

@@ -33,6 +33,29 @@ test('normalizeServerProfile builds a voice-agent-only SIP contract', () => {
   assert.equal(profile.provider, 'sipuni');
 });
 
+test('normalizeServerProfile preserves Rails Beeline proxy and codec contract', () => {
+  const profile = normalizeServerProfile({
+    id: 13,
+    account_id: 42,
+    inbox_id: 10,
+    number_ref: 'beeline-main',
+    provider: 'beeline',
+    internal_extension: '1001',
+    sip_username: 'agent-1001',
+    sip_password: 'secret',
+    sip_host: 'tenant.cloudpbx.beeline.kz',
+    sip_port: 5060,
+    sip_transport: 'udp',
+    sip_proxy: '46.227.186.231:6050',
+    sip_codec: 'pcma'
+  });
+
+  assert.equal(profile.sip.uri, 'sip:agent-1001@tenant.cloudpbx.beeline.kz');
+  assert.equal(profile.sip.proxy, 'sip:46.227.186.231:6050');
+  assert.equal(profile.sip.codec, 'pcma');
+  assert.equal(profile.provider, 'beeline');
+});
+
 test('parseServerProfilesJson returns an empty list on blank or invalid env values', () => {
   assert.deepEqual(parseServerProfilesJson(''), []);
   assert.deepEqual(parseServerProfilesJson('{broken'), []);
@@ -758,18 +781,21 @@ test('Janus server runtime applies provider-specific Janus WebSocket URLs', () =
     { id: 1, provider: 'sipuni' },
     { id: 2, provider: 'binotel' },
     { id: 3, provider: 'asterisk_analog' },
-    { id: 4, provider: 'custom' }
+    { id: 4, provider: 'beeline' },
+    { id: 5, provider: 'custom' }
   ], {
     janusServerWsUrl: 'ws://janus-default:8188',
     janusServerProviderWsUrls: {
       sipuni: 'ws://janus-sipuni:8188',
       binotel: 'ws://janus-binotel:8188',
-      asterisk_analog: 'ws://janus-asterisk:8189'
+      asterisk_analog: 'ws://janus-asterisk:8189',
+      beeline: 'ws://janus-beeline:8188'
     }
   });
 
   assert.equal(profiles[0].janus_url, 'ws://janus-sipuni:8188');
   assert.equal(profiles[1].janus_url, 'ws://janus-binotel:8188');
   assert.equal(profiles[2].janus_url, 'ws://janus-asterisk:8189');
-  assert.equal(profiles[3].janus_url, 'ws://janus-default:8188');
+  assert.equal(profiles[3].janus_url, 'ws://janus-beeline:8188');
+  assert.equal(profiles[4].janus_url, 'ws://janus-default:8188');
 });

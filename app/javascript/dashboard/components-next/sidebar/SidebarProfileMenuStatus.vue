@@ -27,7 +27,12 @@ const currentUserInboxes = useMapGetter('inboxes/getInboxes');
 const { isImpersonating } = useImpersonation();
 
 const { AVAILABILITY_STATUS_KEYS } = wootConstants;
-const NATIVE_SIP_PROVIDERS = new Set(['asterisk_analog', 'sipuni', 'binotel']);
+const NATIVE_SIP_PROVIDERS = new Set([
+  'asterisk_analog',
+  'sipuni',
+  'binotel',
+  'beeline',
+]);
 const SIP_STANDBY_REASON =
   'sip_profile_registration_lease_owned_by_another_tab';
 const sipSessions = ref([]);

@@ -412,6 +412,8 @@
           "ASTERISK_ANALOG_DESC": "Connect a third-party Asterisk as a separate SIP provider through the browser webphone.",
           "BINOTEL": "Binotel",
           "BINOTEL_DESC": "Connect Binotel as a separate SIP provider through the browser webphone.",
+          "BEELINE": "Beeline Cloud PBX",
+          "BEELINE_DESC": "Connect Beeline Cloud PBX through Janus SIP and the browser webphone.",
           "TWILIO": "Twilio",
           "TWILIO_DESC": "Connect Twilio phone numbers and browser calling."
         },
@@ -431,7 +433,8 @@
             "PLACEHOLDER": "Select provider",
             "SIPUNI": "Sipuni",
             "BINOTEL": "Binotel",
-            "ASTERISK_ANALOG": "Asterisk analog"
+            "ASTERISK_ANALOG": "Asterisk analog",
+            "BEELINE": "Beeline Cloud PBX"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Provider account number",
@@ -444,9 +447,19 @@
             "REQUIRED": "Ingress number is required"
           },
           "CONNECTION_HOST": {
-            "LABEL": "SIP host",
+            "LABEL": "SIP server",
             "PLACEHOLDER": "PBX host or trunk endpoint",
             "REQUIRED": "SIP host is required"
+          },
+          "SIP_DOMAIN": {
+            "LABEL": "SIP domain",
+            "PLACEHOLDER": "vpbx-company-XXXX.CLOUDPBX.BEELINE.KZ",
+            "REQUIRED": "SIP domain is required"
+          },
+          "OUTBOUND_PROXY": {
+            "LABEL": "SIP proxy",
+            "PLACEHOLDER": "46.227.186.231:6050",
+            "REQUIRED": "SIP proxy is required"
           },
           "CONNECTION_PORT": {
             "LABEL": "SIP port",
@@ -528,6 +541,8 @@
           "MANAGEMENT_SUBTITLE": "OneLink manages the channel settings, employees, and SIP access through Janus SIP.",
           "CURRENT_USER_REQUIRED": "Current user is required to create an employee SIP profile",
           "REQUIRED_FIELDS": "Fill in inbox name and display phone",
+          "BEELINE_REQUIRED_FIELDS": "Fill in SIP server, SIP domain, and SIP proxy for Beeline",
+          "BEELINE_CONFIG_HINT": "Beeline Cloud PBX uses UDP and G.711 A-law (PCMA). Enter the SIP account Username/Login and password for the employee on the next step.",
           "READ_ONLY": "This channel uses legacy/read-only ownership and cannot be changed from OneLink.",
           "LOAD_ERROR": "We were not able to load Virtual PBX configuration.",
           "CREATE_SUCCESS": "Virtual PBX channel has been created",

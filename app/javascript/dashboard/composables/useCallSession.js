@@ -36,22 +36,26 @@ const BROWSER_CALLING_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
   'binotel',
+  'beeline',
   'twilio',
 ]);
 const NATIVE_BROWSER_SIP_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
   'binotel',
+  'beeline',
 ]);
 const JANUS_NATIVE_BROWSER_SIP_PROVIDERS = new Set([
   'asterisk_analog',
   'sipuni',
   'binotel',
+  'beeline',
 ]);
 const BROWSER_SIP_INCOMING_REPORT_PROVIDERS = new Set([
   'asterisk_analog',
   'binotel',
   'sipuni',
+  'beeline',
 ]);
 const STALE_BROWSER_SIP_INCOMING_STATUSES = new Set([404, 409, 422]);
 
@@ -257,7 +261,7 @@ export function useCallSession() {
   const incomingVoiceInboxId = computed(() => {
     const call = incomingCalls.value.find(item => {
       return (
-        ['asterisk_analog', 'sipuni', 'binotel', 'twilio'].includes(
+        ['asterisk_analog', 'sipuni', 'binotel', 'beeline', 'twilio'].includes(
           item?.provider
         ) &&
         Number.isFinite(Number(item?.inboxId)) &&

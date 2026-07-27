@@ -145,7 +145,12 @@ const isCallButtonBusy = computed(
     whatsappCallsStore.isAccepting
 );
 
-const BROWSER_SIP_PROVIDERS = new Set(['asterisk_analog', 'sipuni', 'binotel']);
+const BROWSER_SIP_PROVIDERS = new Set([
+  'asterisk_analog',
+  'sipuni',
+  'binotel',
+  'beeline',
+]);
 
 const isBrowserSipInbox = inbox => BROWSER_SIP_PROVIDERS.has(inbox?.provider);
 

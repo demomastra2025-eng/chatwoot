@@ -42,6 +42,7 @@ class Telephony::EventsIngestionService
     asterisk_analog
     sipuni
     binotel
+    beeline
   ].freeze
   ACCOUNT_METADATA_KEYS = %w[
     onelink_account_id

@@ -3,7 +3,7 @@
 require 'cgi'
 
 class Telephony::VirtualPbx::ProvisioningService
-  ALLOWED_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  ALLOWED_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
   DEFAULT_ROUTE_MODE = 'operator'
   DEFAULT_FALLBACK_MODE = 'reject'
   DEFAULT_OPERATOR_DISTRIBUTION_MODE = Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
@@ -12,8 +12,8 @@ class Telephony::VirtualPbx::ProvisioningService
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
   DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT = 'kz_trunk'
-  PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel].freeze
-  LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel].freeze
+  PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
+  LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
   LEGACY_PROVIDER_CONFIG_KEYS = %i[
     app_ref
     runtime_app_ref
@@ -450,6 +450,7 @@ class Telephony::VirtualPbx::ProvisioningService
   def normalize_connection(source, provider_kind, fallback)
     source = source.to_h.deep_stringify_keys
     fallback = (fallback || {}).with_indifferent_access
+    fallback_metadata = fallback[:metadata].to_h.with_indifferent_access
     template = Telephony::VirtualPbx::ConfigBuilder::PROVIDER_TEMPLATES.fetch(provider_kind, {})
     port_source = source.key?('port') ? source['port'] : first_present(fallback[:port], template[:default_port], 5060)
     username = first_present(
@@ -466,9 +467,17 @@ class Telephony::VirtualPbx::ProvisioningService
                     end
 
     {
-      host: first_present(source['host'], fallback[:host]),
+      host: first_present(source['host'], fallback[:host], template[:default_host]),
       port: normalize_port(port_source),
       transport: first_present(source['transport'], fallback[:transport], template[:default_transport], 'udp'),
+      sip_domain: first_present(source['sip_domain'], fallback[:sip_domain], fallback_metadata[:sip_domain]),
+      outbound_proxy: first_present(
+        source['outbound_proxy'],
+        fallback[:outbound_proxy],
+        fallback_metadata[:outbound_proxy],
+        template[:default_outbound_proxy]
+      ),
+      codec: first_present(source['codec'], fallback[:codec], fallback_metadata[:codec], template[:default_codec])&.downcase,
       username: username,
       password: password,
       send_register: send_register
@@ -614,7 +623,7 @@ class Telephony::VirtualPbx::ProvisioningService
     [].tap do |errors|
       unless payload[:provider_kind].in?(ALLOWED_PROVIDER_KINDS)
         errors << error('provider_kind_invalid',
-                        'provider_kind must be asterisk_analog, sipuni, or binotel')
+                        'provider_kind must be asterisk_analog, sipuni, binotel, or beeline')
       end
       errors << error('channel_name_required', 'channel_name is required') if payload[:channel_name].blank?
       errors << error('display_phone_number_required', 'display_phone_number is required') if payload[:display_phone_number].blank?
@@ -630,6 +639,7 @@ class Telephony::VirtualPbx::ProvisioningService
       errors << error('ingress_number_required', 'ingress_number is required') if payload[:ingress_number].blank?
       errors << error('connection_host_required', 'connection.host is required') if payload.dig(:connection, :host).blank?
       errors << connection_port_invalid_error if payload.dig(:connection, :port).blank?
+      errors.concat(beeline_connection_errors(payload)) if payload[:provider_kind] == 'beeline'
       if check_duplicate_number_ref && number_ref_taken?(payload, exclude_inbox_id: exclude_inbox_id)
         errors << error('number_ref_taken', 'Generated number_ref is already used by another channel')
       end
@@ -639,6 +649,19 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def connection_port_invalid_error
     error('connection_port_invalid', 'connection.port must be an integer between 1 and 65535')
+  end
+
+  def beeline_connection_errors(payload)
+    connection = payload[:connection].to_h.with_indifferent_access
+    [].tap do |errors|
+      errors << error('beeline_sip_domain_required', 'connection.sip_domain is required for Beeline Cloud PBX') if connection[:sip_domain].blank?
+      if connection[:outbound_proxy].blank?
+        errors << error('beeline_outbound_proxy_required', 'connection.outbound_proxy is required for Beeline Cloud PBX')
+      end
+      errors << error('beeline_port_invalid', 'Beeline Cloud PBX requires SIP port 5060') unless connection[:port] == 5060
+      errors << error('beeline_transport_invalid', 'Beeline Cloud PBX requires UDP transport') unless connection[:transport] == 'udp'
+      errors << error('beeline_codec_invalid', 'Beeline Cloud PBX requires G.711 A-law (PCMA)') unless connection[:codec] == 'pcma'
+    end
   end
 
   def profile_errors(profiles, inbox_id: nil)
@@ -909,7 +932,10 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def provider_connection_metadata(payload, connection)
     existing_metadata = connection.metadata.to_h.with_indifferent_access
-    metadata = existing_metadata.merge((payload[:metadata] || {}).to_h.with_indifferent_access)
+    connection_metadata = payload[:connection].to_h.with_indifferent_access.slice(:sip_domain, :outbound_proxy, :codec)
+    metadata = existing_metadata
+               .merge((payload[:metadata] || {}).to_h.with_indifferent_access)
+               .merge(connection_metadata)
     return metadata unless payload[:provider_kind].to_s == 'asterisk_analog'
 
     if metadata[:outbound_dial_format].blank? && existing_metadata[:outbound_dial_format].present?
@@ -1165,7 +1191,7 @@ class Telephony::VirtualPbx::ProvisioningService
   def generated_profile_aor(profile, payload)
     if local_native_provider_kind?(payload[:provider_kind])
       username = profile[:sip_username].presence || profile[:internal_extension].presence || 'operator'
-      host = payload.dig(:connection, :host).presence || 'voice.local'
+      host = connection_sip_domain(payload)
       return "sip:#{username}@#{host}"
     end
 
@@ -1175,10 +1201,14 @@ class Telephony::VirtualPbx::ProvisioningService
   end
 
   def profile_sip_host(profile, payload)
-    return payload.dig(:connection, :host) if local_native_provider_kind?(payload[:provider_kind])
+    return connection_sip_domain(payload) if local_native_provider_kind?(payload[:provider_kind])
     return operator_sip_domain if browser_webphone_profile?(profile, payload)
 
     payload.dig(:connection, :host)
+  end
+
+  def connection_sip_domain(payload)
+    payload.dig(:connection, :sip_domain).presence || payload.dig(:connection, :host).presence || 'voice.local'
   end
 
   def browser_webphone_profile?(profile, payload)
