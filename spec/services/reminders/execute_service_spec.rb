@@ -641,9 +641,11 @@ RSpec.describe Reminders::ExecuteService do
         create(
           :reminder,
           account: account,
+          conversation: conversation,
           target_conversation: conversation,
           target_inbox: whatsapp_channel.inbox,
           target_contact: contact,
+          target_contact_inbox: contact_inbox,
           remindable: appointment,
           status: :processing,
           content_kind: :channel_template,

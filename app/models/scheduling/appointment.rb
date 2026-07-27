@@ -73,6 +73,7 @@ class Scheduling::Appointment < ApplicationRecord
 
   after_create_commit :dispatch_created_event
   after_update_commit :dispatch_updated_events
+  after_update_commit :sync_deferred_touch_enrollments
 
   belongs_to :account
   belongs_to :company, optional: true
@@ -86,10 +87,12 @@ class Scheduling::Appointment < ApplicationRecord
   has_one :expense, class_name: 'Scheduling::Expense', dependent: :destroy_async, inverse_of: :appointment
   has_many :payments, -> { order(:created_at, :id) }, class_name: 'Scheduling::Payment', dependent: :destroy_async, inverse_of: :appointment
   has_many :reminders, as: :remindable, dependent: :nullify
+  has_many :touch_plan_enrollments, as: :remindable, dependent: :nullify
 
   before_validation :sync_account_id
   before_validation :inherit_contact_owner
   before_validation :assign_duration_min
+  before_destroy :cancel_deferred_touch_enrollments, prepend: true
   after_commit :sync_contact_owner_from_owner, if: :saved_change_to_owner_id?
 
   validates :client_name, :starts_at, :ends_at, :source, presence: true
@@ -162,6 +165,14 @@ class Scheduling::Appointment < ApplicationRecord
   end
 
   private
+
+  def sync_deferred_touch_enrollments
+    Reminders::SyncEnrollmentService.new(remindable: self).perform
+  end
+
+  def cancel_deferred_touch_enrollments
+    Reminders::SyncEnrollmentService.new(remindable: self).cancel_before_destroy!
+  end
 
   def changed_attributes_payload
     previous_changes.except('updated_at', :updated_at)

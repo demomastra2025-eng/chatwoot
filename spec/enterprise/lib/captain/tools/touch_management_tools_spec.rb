@@ -64,6 +64,64 @@ RSpec.describe 'Captain touch management public tools', type: :model do
     expect(account.reminders.exists?(touch.id)).to be(false)
   end
 
+  it 'returns deferred enrollment metadata when Captain applies an appointment plan', :aggregate_failures do
+    account.enable_features!('scheduling', 'deferred_touch_materialization')
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      conversation: conversation,
+      starts_at: 2.days.from_now,
+      ends_at: 2.days.from_now + 30.minutes
+    )
+    touch_plan = create(
+      :reminder_group,
+      account: account,
+      assistant: assistant,
+      entity_kinds: ['appointment'],
+      touches: [
+        touch_definition.merge(
+          relative_anchor: 'appointment.starts_at',
+          relative_offset_seconds: -1.day.to_i
+        )
+      ]
+    )
+
+    payload = JSON.parse(
+      Captain::Tools::ApplyTouchPlanTool.new(assistant).perform(
+        tool_context,
+        touch_plan_id: touch_plan.id,
+        remindable_kind: 'appointment'
+      )
+    )
+    enrollment = account.touch_plan_enrollments.sole
+    cancel_payload = JSON.parse(
+      Captain::Tools::CancelTouchesTool.new(assistant).perform(
+        tool_context,
+        touch_plan_id: touch_plan.id,
+        remindable_kind: 'appointment',
+        reason: 'Stop deferred plan'
+      )
+    )
+
+    expect(payload).to include(
+      'action' => 'apply_touch_plan',
+      'touch_plan_id' => touch_plan.id,
+      'touch_plan_name' => touch_plan.name,
+      'execution_mode' => 'deferred',
+      'enrollment_id' => enrollment.id,
+      'created_count' => 0
+    )
+    expect(payload.dig('meta', 'execution_mode')).to eq('deferred')
+    expect(payload.dig('meta', 'enrollment_id')).to eq(enrollment.id)
+    expect(cancel_payload).to include(
+      'cancelled_enrollment_count' => 1,
+      'cancelled_enrollment_ids' => [enrollment.id],
+      'remaining_open_enrollment_count' => 0
+    )
+    expect(enrollment.reload).to be_cancelled
+    expect(account.reminders.where(remindable: appointment)).to be_empty
+  end
+
   it 'creates, applies, cancels, and archives touch plans through public tools' do
     create_payload = JSON.parse(Captain::Tools::CreateTouchPlanTool.new(assistant).perform(
                                   tool_context,

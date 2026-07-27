@@ -37,17 +37,23 @@ class Api::V1::Accounts::TouchPlansController < Api::V1::Accounts::OutboundBaseC
   def apply
     authorize @touch_plan, :apply?
 
-    created_touches = Reminders::ApplyGroupService.new(
+    result = Reminders::PlanApplicationService.new(
       account: Current.account,
       reminder_group: @touch_plan,
       remindable: load_remindable!,
-      actor: Current.user
+      actor: Current.user,
+      source: 'api'
     ).perform
 
     render_payload(
-      created_touches.map { |touch| Outbound::PayloadBuilder.touch_payload(touch) },
+      result.touches.map { |touch| Outbound::PayloadBuilder.touch_payload(touch) },
       status: :created,
-      meta: { count: created_touches.size }
+      meta: {
+        count: result.touches.size,
+        execution_mode: result.execution_mode,
+        enrollment_id: result.enrollment&.id,
+        next_due_at: result.enrollment&.next_due_at&.iso8601
+      }.compact
     )
   end
 

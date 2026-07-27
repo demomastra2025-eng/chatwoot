@@ -22,6 +22,7 @@ class Reminders::BulkCancelService
     ensure_account_boundary!
 
     result = initial_result
+    cancel_enrollments(result)
     terminal_scope.find_each do |reminder|
       result[:skipped_touches] << skipped_touch_payload(reminder, skip_reason_for(reminder))
     end
@@ -50,8 +51,37 @@ class Reminders::BulkCancelService
       failed_count: 0,
       failures: [],
       already_terminal_count: terminal_scope.count,
-      remaining_open_count: nil
+      remaining_open_count: nil,
+      cancelled_enrollment_count: 0,
+      cancelled_enrollment_ids: [],
+      enrollment_failed_count: 0,
+      enrollment_failures: [],
+      remaining_open_enrollment_count: nil
     }
+  end
+
+  def cancel_enrollments(result)
+    enrollment_scope.find_each do |enrollment|
+      enrollment.with_lock do
+        enrollment.reload
+        next unless enrollment.active? || enrollment.paused?
+
+        enrollment.cancel!(reason: reason, metadata: audit_metadata)
+        result[:cancelled_enrollment_count] += 1
+        result[:cancelled_enrollment_ids] << enrollment.id
+      end
+    rescue StandardError => e
+      result[:enrollment_failed_count] += 1
+      result[:enrollment_failures] << { enrollment_id: enrollment.id, error: e.message }
+    end
+    result[:remaining_open_enrollment_count] = enrollment_scope.count
+  end
+
+  def enrollment_scope
+    scope = account.touch_plan_enrollments.where(remindable: remindable, status: %w[active paused])
+    scope = scope.where(reminder_group: reminder_group) if reminder_group.present?
+    scope = scope.where("metadata ->> 'touch_source' = ?", touch_source) if touch_source.present?
+    scope
   end
 
   def collect_result(result, reminder)

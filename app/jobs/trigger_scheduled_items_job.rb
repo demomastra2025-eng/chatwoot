@@ -21,6 +21,7 @@ class TriggerScheduledItemsJob < ApplicationJob
     Channels::Whatsapp::TemplatesSyncSchedulerJob.perform_later
 
     # Job to execute due touches
+    Reminders::MaterializeDueEnrollmentsJob.perform_later
     Reminders::ProcessPendingRemindersJob.perform_later
   end
 end

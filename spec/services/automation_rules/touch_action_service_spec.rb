@@ -281,6 +281,7 @@ RSpec.describe AutomationRules::TouchActionService do
         record: appointment,
         entity_kind: 'appointment'
       )
+      contact_inbox
 
       touch = appointment_service.create_touch([
                                                  {

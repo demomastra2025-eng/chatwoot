@@ -144,14 +144,15 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
     touch_plan = find_kept_touch_plan!(touch_plan_id: touch_plan_id, touch_plan_name: touch_plan_name)
     ensure_touch_plan_supports!(touch_plan, normalized_kind)
 
-    created_touches = ::Reminders::ApplyGroupService.new(
+    result = ::Reminders::PlanApplicationService.new(
       account: account,
       reminder_group: touch_plan,
       remindable: remindable,
-      actor: actor
+      actor: actor,
+      source: 'captain'
     ).perform
-    tag_created_plan_touches!(created_touches, touch_plan)
-    created_touches
+    tag_created_plan_touches!(result.touches, touch_plan)
+    result
   end
 
   def archive_touch_plan(touch_plan_id: nil, touch_plan_name: nil)

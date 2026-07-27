@@ -662,10 +662,17 @@
         "OPEN_PLANS": "Apply follow-up",
         "OPEN_EXECUTION": "Open execution",
         "OPEN_NEXT_STEP": "Edit timing or content if this follow-up needs to change.",
+        "PLAN_TITLE": "Plan “{name}”",
+        "NEXT_TRIGGER": "Next trigger: {time}",
+        "WAITING_TRIGGER": "Waiting for its trigger — the touch will be created before delivery",
+        "CANCEL_PLAN": "Stop plan",
+        "PLAN_CANCELLED": "Touch plan stopped.",
+        "PLAN_CANCEL_ERROR": "Could not stop the touch plan.",
         "FAILED_TITLE": "{count} touches need attention",
         "FAILED_NOTE": "Open execution to review failed or cancelled touches for this record.",
         "SUMMARY": {
           "OPEN": "Open",
+          "PLANS": "Active plans",
           "DRAFTS": "Drafts",
           "DONE": "Completed"
         }

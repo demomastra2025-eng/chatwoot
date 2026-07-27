@@ -18,6 +18,17 @@ class TouchesAPI extends ApiClient {
   cancel(id, payload = {}) {
     return axios.post(`${this.url}/${id}/cancel`, payload);
   }
+
+  getEnrollments(params = {}) {
+    return axios.get(`${this.baseUrl()}/touch_plan_enrollments`, { params });
+  }
+
+  cancelEnrollment(id, payload = {}) {
+    return axios.post(
+      `${this.baseUrl()}/touch_plan_enrollments/${id}/cancel`,
+      payload
+    );
+  }
 }
 
 export default new TouchesAPI();

@@ -10,12 +10,13 @@ class Reminders::DefaultPlanService
   def perform
     return [] if reminder_group.blank?
 
-    Reminders::ApplyGroupService.new(
+    Reminders::PlanApplicationService.new(
       account: account,
       reminder_group: reminder_group,
       remindable: remindable,
-      actor: actor
-    ).perform
+      actor: actor,
+      source: 'default_plan'
+    ).perform.touches
   rescue StandardError => e
     ChatwootExceptionTracker.new(e, account: account).capture_exception
     []

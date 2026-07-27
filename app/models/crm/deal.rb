@@ -88,6 +88,7 @@ class Crm::Deal < ApplicationRecord
   has_many :events, as: :eventable, class_name: '::Crm::Event', dependent: :destroy_async
   has_many :comments, as: :commentable, class_name: '::Crm::Comment', dependent: :destroy_async
   has_many :reminders, as: :remindable, dependent: :nullify
+  has_many :touch_plan_enrollments, as: :remindable, dependent: :nullify
 
   validates :title, presence: true
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
@@ -110,7 +111,9 @@ class Crm::Deal < ApplicationRecord
   before_validation :normalize_closing_reasons
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
+  before_destroy :cancel_deferred_touch_enrollments, prepend: true
   after_commit :sync_primary_contact_owner, if: :saved_change_to_owner_id?
+  after_update_commit :sync_deferred_touch_enrollments
 
   def primary_contact
     deal_contacts.find(&:primary?)&.contact
@@ -180,6 +183,14 @@ class Crm::Deal < ApplicationRecord
   end
 
   private
+
+  def sync_deferred_touch_enrollments
+    Reminders::SyncEnrollmentService.new(remindable: self).perform
+  end
+
+  def cancel_deferred_touch_enrollments
+    Reminders::SyncEnrollmentService.new(remindable: self).cancel_before_destroy!
+  end
 
   def currency_required_when_amount_present
     return if amount_minor.blank? || currency.present?

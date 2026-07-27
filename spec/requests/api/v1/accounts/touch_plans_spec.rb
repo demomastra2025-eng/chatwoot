@@ -154,6 +154,25 @@ RSpec.describe 'Touch Plans API', type: :request do
     expect(account.reminders.where(reminder_group: touch_plan).count).to eq(1)
   end
 
+  it 'enrolls an eligible appointment plan without future reminders when deferred mode is enabled' do
+    account.enable_features!('deferred_touch_materialization')
+    touch_plan = create(:reminder_group, account: account, entity_kinds: ['appointment'])
+
+    post "#{path}/#{touch_plan.id}/apply",
+         params: {
+           remindable_type: 'Scheduling::Appointment',
+           remindable_id: appointment.id
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body['payload']).to eq([])
+    expect(response.parsed_body['meta']).to include('count' => 0, 'execution_mode' => 'deferred')
+    expect(response.parsed_body.dig('meta', 'enrollment_id')).to eq(account.touch_plan_enrollments.sole.id)
+    expect(account.reminders.where(reminder_group: touch_plan)).to be_empty
+  end
+
   it 'applies a conversation touch plan using the conversation display identifier' do
     conversation = create(:conversation, account: account)
     conversation.update!(display_id: 88)

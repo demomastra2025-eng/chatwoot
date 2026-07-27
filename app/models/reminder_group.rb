@@ -36,6 +36,7 @@ class ReminderGroup < ApplicationRecord
   belongs_to :creator, class_name: 'User', optional: true
 
   has_many :reminders, dependent: :nullify
+  has_many :touch_plan_enrollments, dependent: :nullify
 
   validates :name, presence: true
   validate :validate_entity_kinds

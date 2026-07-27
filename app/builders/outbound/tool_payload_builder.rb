@@ -45,9 +45,10 @@ module Outbound::ToolPayloadBuilder
     }.compact
   end
 
-  def apply_touch_plan_payload(touches)
-    touch_data = touches.map { |touch| Outbound::PayloadBuilder.touch_payload(touch) }
-    touch_plan = touches.first&.reminder_group
+  def apply_touch_plan_payload(result)
+    touch_data = result.touches.map { |touch| Outbound::PayloadBuilder.touch_payload(touch) }
+    touch_plan = result.touch_plan
+    application_metadata = result.payload_metadata
 
     {
       action: 'apply_touch_plan',
@@ -56,8 +57,8 @@ module Outbound::ToolPayloadBuilder
       created_count: touch_data.size,
       touch_ids: touch_data.pluck(:id),
       touches: touch_data,
-      meta: { count: touch_data.size }
-    }.compact
+      meta: application_metadata.merge(count: touch_data.size)
+    }.merge(application_metadata).compact
   end
 
   def cancel_touches_payload(result:, reason: nil)
@@ -72,6 +73,11 @@ module Outbound::ToolPayloadBuilder
       skipped_count: result[:skipped_count],
       failed_count: result[:failed_count],
       remaining_open_count: result[:remaining_open_count],
+      cancelled_enrollment_count: result[:cancelled_enrollment_count],
+      cancelled_enrollment_ids: result[:cancelled_enrollment_ids],
+      enrollment_failed_count: result[:enrollment_failed_count],
+      enrollment_failures: result[:enrollment_failures],
+      remaining_open_enrollment_count: result[:remaining_open_enrollment_count],
       cancelled_touch_ids: result[:cancelled_touch_ids],
       skipped_touches: result[:skipped_touches],
       failures: result[:failures],

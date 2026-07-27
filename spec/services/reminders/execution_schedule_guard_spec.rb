@@ -58,4 +58,31 @@ RSpec.describe Reminders::ExecutionScheduleGuard do
     expect(touch.scheduled_at.to_i).to eq(zone.parse("#{moved_start.to_date - 1} 10:00").to_i)
     expect(touch.last_materialized_anchor_at.to_i).to eq(moved_start.to_i)
   end
+
+  it 'cancels a claimed deferred touch when its enrollment was cancelled' do
+    appointment = appointment_at(2.days.from_now)
+    enrollment = create(:touch_plan_enrollment, account: appointment.account, remindable: appointment)
+    touch = appointment_touch(appointment)
+    claim = create(
+      :touch_occurrence_claim,
+      account: appointment.account,
+      touch_plan_enrollment: enrollment,
+      reminder: touch,
+      status: 'materialized'
+    )
+    touch.update!(
+      metadata: {
+        'touch_plan_enrollment_id' => enrollment.id,
+        'touch_occurrence_claim_id' => claim.id
+      }
+    )
+    touch.mark_processing!
+    enrollment.cancel!(reason: 'test')
+
+    result = described_class.new(reminder: touch).perform
+
+    expect(result).to eq(described_class::STOP)
+    expect(touch.reload).to be_cancelled
+    expect(claim.reload).to be_skipped
+  end
 end

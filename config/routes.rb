@@ -178,6 +178,9 @@ Rails.application.routes.draw do
             post :apply, on: :member
             post :archive, on: :member
           end
+          resources :touch_plan_enrollments, only: [:index] do
+            post :cancel, on: :member
+          end
           resources :automation_rules, only: [:index, :create, :show, :update, :destroy] do
             post :clone
           end

@@ -80,6 +80,8 @@ class Account < ApplicationRecord
   has_many :confirmation_requests, dependent: :destroy_async
   has_many :reminders, dependent: :destroy_async
   has_many :reminder_groups, dependent: :destroy_async
+  has_many :touch_plan_enrollments, dependent: :destroy_async
+  has_many :touch_occurrence_claims, dependent: :destroy_async
   has_many :canned_responses, dependent: :destroy_async
   has_many :categories, dependent: :destroy_async, class_name: '::Category'
   has_many :contacts, dependent: :destroy_async

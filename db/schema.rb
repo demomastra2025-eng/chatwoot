@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_23_023333) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_27_074501) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2912,6 +2912,51 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_023333) do
     t.index ["user_id"], name: "index_telephony_sip_profiles_on_user_id"
   end
 
+  create_table "touch_occurrence_claims", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "touch_plan_enrollment_id", null: false
+    t.bigint "reminder_id"
+    t.string "step_key", null: false
+    t.string "occurrence_key", null: false
+    t.datetime "due_at", null: false
+    t.string "status", default: "claimed", null: false
+    t.datetime "claimed_at", null: false
+    t.datetime "materialized_at"
+    t.text "last_error"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_touch_occurrence_claims_on_account_id"
+    t.index ["reminder_id"], name: "idx_touch_occurrence_claims_on_unique_reminder", unique: true, where: "(reminder_id IS NOT NULL)"
+    t.index ["reminder_id"], name: "index_touch_occurrence_claims_on_reminder_id"
+    t.index ["status", "claimed_at"], name: "idx_touch_occurrence_claims_stale"
+    t.index ["touch_plan_enrollment_id", "occurrence_key"], name: "idx_touch_occurrence_claims_on_enrollment_occurrence", unique: true
+    t.index ["touch_plan_enrollment_id"], name: "index_touch_occurrence_claims_on_touch_plan_enrollment_id"
+  end
+
+  create_table "touch_plan_enrollments", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "reminder_group_id"
+    t.string "remindable_type"
+    t.bigint "remindable_id"
+    t.string "status", default: "active", null: false
+    t.jsonb "plan_snapshot", default: [], null: false
+    t.string "plan_digest", null: false
+    t.datetime "next_due_at"
+    t.datetime "activated_at", null: false
+    t.string "idempotency_key", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "idempotency_key"], name: "idx_touch_plan_enrollments_on_account_idempotency", unique: true
+    t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))"
+    t.index ["account_id"], name: "index_touch_plan_enrollments_on_account_id"
+    t.index ["remindable_type", "remindable_id", "status"], name: "idx_touch_plan_enrollments_on_remindable_status"
+    t.index ["remindable_type", "remindable_id"], name: "index_touch_plan_enrollments_on_remindable"
+    t.index ["reminder_group_id"], name: "index_touch_plan_enrollments_on_reminder_group_id"
+    t.index ["status", "next_due_at"], name: "idx_touch_plan_enrollments_due"
+  end
+
   create_table "users", id: :serial, force: :cascade do |t|
     t.string "provider", default: "email", null: false
     t.string "uid", default: "", null: false
@@ -3236,6 +3281,11 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_023333) do
   add_foreign_key "telephony_sip_profiles", "inboxes"
   add_foreign_key "telephony_sip_profiles", "telephony_provider_connections", column: "provider_connection_id"
   add_foreign_key "telephony_sip_profiles", "users"
+  add_foreign_key "touch_occurrence_claims", "accounts"
+  add_foreign_key "touch_occurrence_claims", "reminders"
+  add_foreign_key "touch_occurrence_claims", "touch_plan_enrollments"
+  add_foreign_key "touch_plan_enrollments", "accounts"
+  add_foreign_key "touch_plan_enrollments", "reminder_groups"
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "channel_whatsapp", column: "channel_id", on_delete: :cascade
   add_foreign_key "whatsapp_flow_sessions", "accounts"

@@ -38,7 +38,9 @@ const router = useRouter();
 const { accountScopedRoute } = useAccount();
 
 const touches = ref([]);
+const enrollments = ref([]);
 const isLoading = ref(false);
+const cancellingEnrollmentId = ref(null);
 const isEditorOpen = ref(false);
 const editingTouch = ref(null);
 
@@ -78,8 +80,8 @@ const summaryItems = computed(() => [
   },
   {
     key: 'plans',
-    label: t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.SUMMARY.DRAFTS'),
-    value: touchCounts.value.draft,
+    label: t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.SUMMARY.PLANS'),
+    value: enrollments.value.length,
   },
   {
     key: 'history',
@@ -176,26 +178,51 @@ const openTouchEditor = touch => {
 async function fetchTouches() {
   if (!hasRemindable.value) {
     touches.value = [];
+    enrollments.value = [];
     return;
   }
 
   isLoading.value = true;
 
   try {
-    const { data } = await TouchesAPI.get({
+    const params = {
       ...(props.conversationId
         ? { conversation_id: props.conversationId }
         : {}),
       remindable_id: props.remindableId,
       remindable_type: props.remindableType,
-    });
-    touches.value = data.payload || [];
+    };
+    const [{ data: touchesData }, { data: enrollmentsData }] =
+      await Promise.all([
+        TouchesAPI.get(params),
+        TouchesAPI.getEnrollments(params),
+      ]);
+    touches.value = touchesData.payload || [];
+    enrollments.value = enrollmentsData.payload || [];
   } catch (error) {
     useAlert(
       error?.message || t('OUTBOUND_WORKSPACE.TOUCHES.ERRORS.LOAD_TOUCHES')
     );
   } finally {
     isLoading.value = false;
+  }
+}
+
+async function cancelEnrollment(enrollment) {
+  cancellingEnrollmentId.value = enrollment.id;
+  try {
+    await TouchesAPI.cancelEnrollment(enrollment.id, {
+      reason: 'cancelled_from_entity_card',
+    });
+    useAlert(t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.PLAN_CANCELLED'));
+    await fetchTouches();
+  } catch (error) {
+    useAlert(
+      error?.message ||
+        t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.PLAN_CANCEL_ERROR')
+    );
+  } finally {
+    cancellingEnrollmentId.value = null;
   }
 }
 
@@ -300,8 +327,46 @@ watch(
       <span>{{ $t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.LOADING') }}</span>
     </div>
 
+    <div v-if="!isLoading && enrollments.length" class="mt-4 grid gap-3">
+      <div
+        v-for="enrollment in enrollments"
+        :key="`enrollment-${enrollment.id}`"
+        class="rounded-xl bg-n-brand/5 px-3 py-3 outline outline-1 outline-n-brand/20"
+      >
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="mb-1 truncate text-sm font-medium text-n-slate-12">
+              {{
+                $t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.PLAN_TITLE', {
+                  name: enrollment.reminder_group_name,
+                })
+              }}
+            </p>
+            <p class="mb-1 text-xs text-n-slate-11">
+              {{
+                $t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.NEXT_TRIGGER', {
+                  time: formatDateTime(enrollment.next_due_at),
+                })
+              }}
+            </p>
+            <p class="mb-0 text-xs text-n-brand">
+              {{ $t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.WAITING_TRIGGER') }}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            color="slate"
+            variant="faded"
+            :is-loading="cancellingEnrollmentId === enrollment.id"
+            :label="$t('OUTBOUND_WORKSPACE.TOUCHES.ENTITY_CARD.CANCEL_PLAN')"
+            @click="cancelEnrollment(enrollment)"
+          />
+        </div>
+      </div>
+    </div>
+
     <div
-      v-else-if="!upcomingTouches.length"
+      v-if="!isLoading && !enrollments.length && !upcomingTouches.length"
       class="grid gap-3 py-4 text-sm text-n-slate-11"
     >
       <p class="mb-0">
@@ -323,7 +388,7 @@ watch(
       </div>
     </div>
 
-    <div v-else class="mt-4 grid gap-3">
+    <div v-if="!isLoading && upcomingTouches.length" class="mt-4 grid gap-3">
       <div
         v-for="touch in upcomingTouches"
         :key="touch.id"

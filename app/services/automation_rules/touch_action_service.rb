@@ -22,12 +22,14 @@ class AutomationRules::TouchActionService
   def apply_touch_plan(action_params)
     reminder_group = load_touch_plan!(action_params)
 
-    reminders = Reminders::ApplyGroupService.new(
+    result = Reminders::PlanApplicationService.new(
       account: account,
       reminder_group: reminder_group,
       remindable: record,
-      actor: rule
+      actor: rule,
+      source: 'automation'
     ).perform
+    reminders = result.touches
 
     reminders.each do |reminder|
       Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
