@@ -840,6 +840,27 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body['code']).to eq('DUPLICATE_EXTERNAL_REF')
   end
 
+  it 'ignores client-supplied appointment source while preserving generic external references' do
+    post path,
+         params: base_params.merge(source: 'medelement', external_ref: 'external-booking-1'),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'source')).to eq('manual')
+    expect(response_body.dig('payload', 'external_ref')).to eq('external-booking-1')
+  end
+
+  it 'rejects client-supplied external references from the Medelement namespace' do
+    post path,
+         params: base_params.merge(external_ref: ' medelement:reception:spoofed'),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('APPOINTMENT_EXTERNAL_REF_RESERVED')
+  end
+
   it 'rejects invalid IIN values in appointment payloads' do
     post path, params: base_params.merge(client_identifier: '123456789012'), headers: headers, as: :json
 

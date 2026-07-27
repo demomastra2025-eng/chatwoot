@@ -3,6 +3,11 @@ class Integrations::Medelement::AppointmentImporterService
   PRIMARY_APPOINTMENT_TYPE = 'primary'.freeze
   AWAITING_PAYMENT_STATUS = 'awaiting_payment'.freeze
   MIN_DURATION_MINUTES = 5
+  RECONCILIATION_ATTRIBUTE_KEYS = %w[
+    medelement_missing_since
+    medelement_missing_syncs
+    medelement_removed_at
+  ].freeze
 
   def initialize(account:)
     @account = account
@@ -113,7 +118,7 @@ class Integrations::Medelement::AppointmentImporterService
   end
 
   def custom_attributes(appointment, reception, import_context)
-    appointment.custom_attributes.merge(
+    appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(
       'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
       'medelement_patient_code' => reception['PATIENT_CODE'].to_s.presence,
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,

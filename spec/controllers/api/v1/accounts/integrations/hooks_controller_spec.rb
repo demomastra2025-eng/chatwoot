@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe 'Integration Hooks API', type: :request do
   around do |example|
-    with_modified_env('FRONTEND_URL' => 'https://app.example.com') do
+    with_modified_env('FRONTEND_URL' => 'https://app.example.com', 'MEDELEMENT_INTEGRATOR_KEY' => 'project-integrator-key') do
       example.run
     end
   end
@@ -29,7 +29,6 @@ RSpec.describe 'Integration Hooks API', type: :request do
       app_id: 'medelement',
       status: 'enabled',
       secret_settings: {
-        integrator_key: 'integration-key',
         company_login: 'company-login',
         password: 'super-secret'
       },
@@ -118,7 +117,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
         hook = Integrations::Hook.last
 
         expect(hook.app_id).to eq 'medelement'
-        expect(hook.secret_settings['integrator_key']).to eq 'integration-key'
+        expect(hook.secret_settings).not_to have_key('integrator_key')
         expect(hook.secret_settings['company_login']).to eq 'company-login'
         expect(hook.secret_settings['password']).to eq 'super-secret'
         expect(hook.settings['sync_interval_hours']).to eq(24)

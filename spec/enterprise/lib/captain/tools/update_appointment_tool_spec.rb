@@ -45,4 +45,25 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
   it 'exposes custom_attributes as an object parameter' do
     expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end
+
+  it 'does not update an imported Medelement appointment' do
+    resource = create(:scheduling_resource, account: account)
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      contact: contact,
+      conversation: conversation,
+      source: 'medelement',
+      external_ref: 'medelement:reception:captain-update'
+    )
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
+
+    result = tool.perform(tool_context, client_comment: 'Changed by Captain')
+
+    expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
+    expect(appointment.reload.client_comment).to be_nil
+  end
 end

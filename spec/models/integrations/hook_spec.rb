@@ -41,6 +41,35 @@ RSpec.describe Integrations::Hook do
       expect(hook.errors[:access_token].join).to include('password')
     end
 
+    it 'uses the project Medelement integrator key with per-company credentials' do
+      account = create(:account)
+      account.enable_features!('scheduling')
+
+      with_modified_env('MEDELEMENT_INTEGRATOR_KEY' => 'project-integrator-key') do
+        hook = build(:integrations_hook,
+                     :medelement,
+                     account: account,
+                     access_token: { company_login: 'company-login', password: 'company-password' }.to_json)
+
+        expect(hook).to be_valid
+      end
+    end
+
+    it 'requires a Medelement integrator key when the project key is not configured' do
+      account = create(:account)
+      account.enable_features!('scheduling')
+
+      with_modified_env('MEDELEMENT_INTEGRATOR_KEY' => nil) do
+        hook = build(:integrations_hook,
+                     :medelement,
+                     account: account,
+                     access_token: { company_login: 'company-login', password: 'company-password' }.to_json)
+
+        expect(hook).not_to be_valid
+        expect(hook.errors[:access_token].join).to include('integrator_key')
+      end
+    end
+
     it 'requires Kaspi Pay session secrets for enabled hooks' do
       hook = build(:integrations_hook,
                    :kaspi_pay,
