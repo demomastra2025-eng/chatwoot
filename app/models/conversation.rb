@@ -278,11 +278,12 @@ class Conversation < ApplicationRecord
 
   def execute_after_update_commit_callbacks
     handle_resolved_status_change
+    runtime_events_suppressed = runtime_events_suppressed?
+    notify_status_change unless runtime_events_suppressed
     refresh_communication_thread! if communication_threads_enabled? && !skip_communication_thread_refresh
     sync_contact_owner_from_assignee
-    return if runtime_events_suppressed?
+    return if runtime_events_suppressed
 
-    notify_status_change
     notify_ai_transfer
     create_activity
     notify_conversation_updation

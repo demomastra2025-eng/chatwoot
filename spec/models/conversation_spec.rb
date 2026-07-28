@@ -215,6 +215,17 @@ RSpec.describe Conversation do
                                                                     changed_attributes: changed_attributes, performed_by: nil)
     end
 
+    it 'dispatches status events before refreshing an enabled communication thread' do
+      account.enable_features!('communication_threads')
+
+      conversation.update!(status: :resolved)
+
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_RESOLVED, kind_of(Time), conversation: conversation, notifiable_assignee_change: false,
+                                                                     changed_attributes: nil, performed_by: nil)
+      expect(conversation.reload.communication_thread).to be_present
+    end
+
     it 'runs conversation pending event only when status changes to pending' do
       conversation.update!(status: :pending)
       status_change = conversation.status_change
