@@ -502,6 +502,7 @@ medelement:
       'sync_interval_hours',
       'sync_time_of_day',
       'sync_specialists',
+      'sync_services',
       'sync_receptions',
       'sync_patients',
       'write_enabled',
@@ -514,6 +515,7 @@ medelement:
           'organization_id': { 'type': 'string' },
           'timezone': { 'type': 'string' },
           'sync_specialists': { 'type': 'boolean' },
+          'sync_services': { 'type': 'boolean' },
           'sync_receptions': { 'type': 'boolean' },
           'sync_patients': { 'type': 'boolean' },
           'write_enabled': { 'type': 'boolean' },
@@ -560,6 +562,12 @@ medelement:
         'label': 'Sync specialists',
         'type': 'checkbox',
         'name': 'sync_specialists',
+        'value': true,
+      },
+      {
+        'label': 'Sync services and prices',
+        'type': 'checkbox',
+        'name': 'sync_services',
         'value': true,
       },
       {

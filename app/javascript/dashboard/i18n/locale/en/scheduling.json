@@ -15,6 +15,23 @@
       "LIST": "List",
       "KANBAN": "Board"
     },
+    "MEDELEMENT": {
+      "CABINET": "MedElement office",
+      "CABINET_REQUIRED": "Select a MedElement office for this appointment",
+      "CONFIRM_ACTION": "Confirm and send",
+      "CONFIRM_DESCRIPTION": "The appointment for “{name}” will be changed in MedElement. The action will be recorded in the confirmation audit log.",
+      "CONFIRM_TITLE": "Confirm the MedElement change",
+      "CONTACT_REQUIRED": "Select a contact before creating an appointment in MedElement",
+      "CREATE_ACTION": "Create in MedElement",
+      "CREATE_CONFIRM_TITLE": "Create the appointment in MedElement?",
+      "FAILED": "MedElement did not apply the change: {code}",
+      "MOVE_CONFIRM_TITLE": "Move the appointment in MedElement?",
+      "QUEUED": "The MedElement command was confirmed and queued",
+      "RECONCILING": "MedElement is still reconciling the provider result. The calendar will update after reconciliation.",
+      "REMOVE_CONFIRM_TITLE": "Cancel the appointment in MedElement?",
+      "RESOURCE_CHANGE_UNSUPPORTED": "Changing the specialist for a MedElement appointment is not supported yet. Change only the date or time.",
+      "SUCCESS": "The change was successfully applied in MedElement"
+    },
     "GENERAL": {
       "ACTIVE": "Active",
       "ACTIVATE": "Activate",

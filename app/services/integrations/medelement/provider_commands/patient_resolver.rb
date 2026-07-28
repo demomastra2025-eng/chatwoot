@@ -1,13 +1,14 @@
 class Integrations::Medelement::ProviderCommands::PatientResolver
-  def initialize(command:, client:)
+  def initialize(command:, client:, before_create: nil)
     @command = command
     @client = client
+    @before_create = before_create
   end
 
   def resolve!(allow_create:)
-    return command.provider_patient_code if command.provider_patient_code.present?
+    return snapshot_patient_code if snapshot_patient_code.present?
 
-    matches = client.search_patients_by_phone(phone_number: command.contact.phone_number)
+    matches = client.search_patients_by_phone(phone_number: patient_snapshot.fetch('phone_number'))
     return link_patient!(patient_code(matches.first)) if matches.one?
     raise reconciliation_error('patient_match_ambiguous') if matches.many?
     raise deterministic_error('patient_not_found') unless allow_create
@@ -17,12 +18,13 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
 
   private
 
-  attr_reader :command, :client
+  attr_reader :command, :client, :before_create
 
   def create_patient!
-    mark_write_phase!('patient_create')
-    payload = Integrations::Medelement::ProviderCommands::PatientPayloadBuilder.new(contact: command.contact).build
-    response = client.create_patient(params: payload)
+    raise ArgumentError, 'before_create callback is required for patient writes' unless before_create
+
+    before_create.call
+    response = client.create_patient(params: patient_snapshot.fetch('payload'))
     code = patient_code(response)
     raise reconciliation_error('patient_create_missing_ref') if code.blank?
 
@@ -62,8 +64,12 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     payload['profile_code'].presence || payload['PROFILE_CODE'].presence || payload['PATIENT_CODE'].presence
   end
 
-  def mark_write_phase!(phase)
-    command.update!(execution_state: command.execution_state.merge('write_phase' => phase))
+  def patient_snapshot
+    @patient_snapshot ||= command.request_snapshot.fetch('patient')
+  end
+
+  def snapshot_patient_code
+    command.request_snapshot['provider_patient_code'].presence
   end
 
   def reconciliation_error(code)

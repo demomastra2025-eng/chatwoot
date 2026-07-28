@@ -15,6 +15,10 @@ class HookPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def import_catalog?
+    @account_user.administrator?
+  end
+
   def destroy?
     @account_user.administrator?
   end

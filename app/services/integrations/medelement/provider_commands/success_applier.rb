@@ -10,29 +10,31 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     end
   end
 
-  def reception_created!(reception_code:)
+  def reception_created!(reception_code:, patient_code:)
     ApplicationRecord.transaction do
       appointment.update!(
+        starts_at: snapshot_time('destination_starts_at'),
+        ends_at: snapshot_time('destination_ends_at'),
         source: 'medelement',
         external_ref: "medelement:reception:#{reception_code}",
         custom_attributes: appointment.custom_attributes.to_h.merge(
           'medelement_reception_code' => reception_code,
-          'medelement_patient_code' => command.provider_patient_code,
-          'medelement_cabinet_code' => command.company_cabinet_code,
+          'medelement_patient_code' => patient_code,
+          'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
           'medelement_provider_sync_status' => 'succeeded'
         )
       )
-      complete_command!(provider_reception_code: reception_code)
+      complete_command!(provider_reception_code: reception_code, provider_patient_code: patient_code)
     end
   end
 
   def reception_moved!
     ApplicationRecord.transaction do
       appointment.update!(
-        starts_at: command.desired_starts_at,
-        ends_at: command.desired_ends_at,
+        starts_at: snapshot_time('destination_starts_at'),
+        ends_at: snapshot_time('destination_ends_at'),
         custom_attributes: appointment.custom_attributes.to_h.merge(
-          'medelement_cabinet_code' => command.company_cabinet_code,
+          'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
           'medelement_provider_sync_status' => 'succeeded'
         )
       )
@@ -56,6 +58,10 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def appointment
     command.appointment
+  end
+
+  def snapshot_time(key)
+    Time.iso8601(command.request_snapshot.fetch('reception').fetch(key))
   end
 
   def touch_contact_sync!

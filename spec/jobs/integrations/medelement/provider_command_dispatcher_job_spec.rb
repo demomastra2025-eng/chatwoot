@@ -26,7 +26,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     awaiting = create_command(status: 'awaiting_confirmation', confirmation_request: confirmed_request)
     queued = create_command(status: 'queued')
     reconciliation = create_command(status: 'reconciliation_required')
-    stale = create_command(status: 'processing')
+    stale = create_command(status: 'processing', execution_state: { 'write_phase' => 'patient_create' })
     stale.update!(updated_at: 20.minutes.ago)
 
     described_class.perform_now
@@ -39,9 +39,20 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     expect(stale.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'executor_stale')
   end
 
+  it 'requeues stale processing that crashed before recording a write phase' do
+    stale = create_command(status: 'processing')
+    stale.update!(updated_at: 20.minutes.ago)
+
+    described_class.perform_now
+
+    expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(stale.id)
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob).not_to have_received(:perform_later).with(stale.id)
+    expect(stale.reload).to have_attributes(status: 'queued', last_error_code: 'executor_stale_before_write')
+  end
+
   private
 
-  def create_command(status:, confirmation_request: nil)
+  def create_command(status:, confirmation_request: nil, execution_state: {})
     Integrations::Medelement::ProviderCommand.create!(
       account: account,
       hook: hook,
@@ -49,6 +60,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
       confirmation_request: confirmation_request,
       operation: 'create_patient',
       status: status,
+      execution_state: execution_state,
       idempotency_key: SecureRandom.uuid
     )
   end

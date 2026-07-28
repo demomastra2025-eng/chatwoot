@@ -21,25 +21,14 @@ class Integrations::Medelement::ProviderCommands::CreateService
   # rubocop:enable Metrics/ParameterLists
 
   def perform
+    validator.validate_identity!
+    intent_fingerprint = idempotency_fingerprint
     existing = command_scope.find_by(idempotency_key: idempotency_key)
-    return existing if existing.present?
+    return resolve_idempotent_duplicate!(existing, intent_fingerprint) if existing.present?
 
-    validate!
-    command = nil
-    ApplicationRecord.transaction do
-      command = command_scope.create!(command_attributes)
-      command.update!(confirmation_request: create_confirmation_request(command))
-    end
-    command
+    create_new_command!(intent_fingerprint)
   rescue ActiveRecord::RecordNotUnique
-    duplicate = command_scope.find_by(idempotency_key: idempotency_key)
-    return duplicate if duplicate.present?
-
-    raise Scheduling::Error.new(
-      code: 'MEDELEMENT_COMMAND_IN_PROGRESS',
-      message: 'Another Medelement command is already in progress for this target',
-      status: :conflict
-    )
+    resolve_record_not_unique!(intent_fingerprint)
   end
 
   private
@@ -51,8 +40,8 @@ class Integrations::Medelement::ProviderCommands::CreateService
     Integrations::Medelement::ProviderCommand.where(account: account)
   end
 
-  def validate!
-    Integrations::Medelement::ProviderCommands::Validator.new(
+  def validator
+    @validator ||= Integrations::Medelement::ProviderCommands::Validator.new(
       account: account,
       hook: hook,
       appointment: appointment,
@@ -60,10 +49,18 @@ class Integrations::Medelement::ProviderCommands::CreateService
       operation: operation,
       idempotency_key: idempotency_key,
       company_cabinet_code: company_cabinet_code
-    ).validate!
+    )
   end
 
-  def command_attributes
+  def create_new_command!(intent_fingerprint)
+    validator.validate_request!
+    snapshot = request_snapshot
+    request_fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(snapshot)
+    validator.validate_runtime!
+    persist_command!(snapshot: snapshot, request_fingerprint: request_fingerprint, intent_fingerprint: intent_fingerprint)
+  end
+
+  def command_attributes(snapshot:, request_fingerprint:, intent_fingerprint:)
     {
       hook: hook,
       appointment: appointment,
@@ -75,21 +72,98 @@ class Integrations::Medelement::ProviderCommands::CreateService
       provider_reception_code: reception_code,
       company_cabinet_code: company_cabinet_code.presence,
       desired_starts_at: desired_starts_at,
-      desired_ends_at: desired_ends_at
+      desired_ends_at: desired_ends_at,
+      execution_state: {
+        'request_snapshot' => snapshot,
+        'request_fingerprint' => request_fingerprint,
+        'idempotency_fingerprint' => intent_fingerprint
+      }
     }
   end
+
+  def persist_command!(snapshot:, request_fingerprint:, intent_fingerprint:)
+    ApplicationRecord.transaction do
+      command = command_scope.create!(
+        command_attributes(
+          snapshot: snapshot,
+          request_fingerprint: request_fingerprint,
+          intent_fingerprint: intent_fingerprint
+        )
+      )
+      confirmation_request = create_confirmation_request(command)
+      confirmation_state = command.execution_state.merge('confirmation_request_id' => confirmation_request.id)
+      command.update!(confirmation_request: confirmation_request, execution_state: confirmation_state)
+      command
+    end
+  end
+
+  def request_snapshot
+    Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      contact: contact,
+      actor: actor,
+      operation: operation,
+      company_cabinet_code: company_cabinet_code,
+      desired_starts_at: desired_starts_at,
+      desired_ends_at: desired_ends_at
+    ).build
+  end
+
+  def resolve_idempotent_duplicate!(existing, intent_fingerprint)
+    return existing if existing.execution_state.to_h['idempotency_fingerprint'] == intent_fingerprint
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_IDEMPOTENCY_KEY_REUSED',
+      message: 'Medelement idempotency key was already used for a different command',
+      status: :conflict
+    )
+  end
+
+  def resolve_record_not_unique!(intent_fingerprint)
+    duplicate = command_scope.find_by(idempotency_key: idempotency_key)
+    return resolve_idempotent_duplicate!(duplicate, intent_fingerprint) if duplicate.present?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_COMMAND_IN_PROGRESS',
+      message: 'Another Medelement command is already in progress for this target',
+      status: :conflict
+    )
+  end
+
+  def idempotency_fingerprint
+    intent = {
+      'account_id' => account.id,
+      'hook_id' => hook.id,
+      'appointment_id' => appointment&.id,
+      'contact_id' => contact&.id,
+      'requested_by_id' => actor&.id,
+      'operation' => operation,
+      'company_cabinet_code' => company_cabinet_code.presence,
+      'desired_starts_at' => serialized_time(desired_starts_at),
+      'desired_ends_at' => serialized_time(desired_ends_at)
+    }.compact
+    Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(intent)
+  end
+
+  def serialized_time(value) = value&.utc&.iso8601(6)
 
   def create_confirmation_request(command)
     Confirmations::CreateService.new(
       account: account,
       title: confirmation_title,
-      body: confirmation_body,
+      body: confirmation_body(command.request_snapshot),
       conversation: appointment&.conversation,
       contact: contact,
       subject: appointment,
       expires_at: CONFIRMATION_TTL.from_now,
       requester: actor,
-      metadata: { 'medelement_provider_command_id' => command.id, 'operation' => operation },
+      metadata: {
+        'medelement_provider_command_id' => command.id,
+        'operation' => operation,
+        'request_fingerprint' => command.execution_state.fetch('request_fingerprint')
+      },
       idempotency_key: "medelement-provider-command:#{idempotency_key}"
     ).perform
   end
@@ -115,10 +189,17 @@ class Integrations::Medelement::ProviderCommands::CreateService
     }.fetch(operation)
   end
 
-  def confirmation_body
-    return "Новая дата: #{desired_starts_at.in_time_zone.iso8601} — #{desired_ends_at.in_time_zone.iso8601}" if operation == 'move_reception'
-    return "Операция #{operation} для записи ##{appointment.id}" if appointment.present?
+  def confirmation_body(snapshot)
+    reception = snapshot['reception']
+    return patient_confirmation_body(snapshot) if reception.blank?
 
-    "Операция #{operation} для контакта ##{contact.id}"
+    "Операция #{operation} для записи ##{snapshot['appointment_id']}: " \
+      "#{reception['destination_starts_at']} — #{reception['destination_ends_at']}; " \
+      "специалист #{reception['specialist_code']}; кабинет #{snapshot['company_cabinet_code']}"
+  end
+
+  def patient_confirmation_body(snapshot)
+    phone_number = snapshot.dig('patient', 'phone_number')
+    "Операция #{operation} для контакта ##{snapshot['contact_id']}; телефон #{phone_number}"
   end
 end

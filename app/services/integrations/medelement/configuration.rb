@@ -50,6 +50,10 @@ class Integrations::Medelement::Configuration
     boolean_setting('sync_receptions', true)
   end
 
+  def sync_services?
+    boolean_setting('sync_services', true)
+  end
+
   def sync_specialists?
     boolean_setting('sync_specialists', true)
   end

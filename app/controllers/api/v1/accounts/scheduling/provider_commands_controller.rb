@@ -1,5 +1,5 @@
 class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accounts::Scheduling::BaseController
-  before_action :set_command, only: [:show]
+  before_action :set_command, only: [:show, :confirm]
 
   def index
     commands = command_scope.order(created_at: :desc).limit(index_limit)
@@ -27,6 +27,28 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
     render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(command), status: :created)
   end
 
+  def confirm
+    confirmation_request = @command.confirmation_request
+    if confirmation_request.blank?
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_CONFIRMATION_NOT_FOUND',
+        message: 'Provider command confirmation request not found',
+        status: :unprocessable_entity
+      )
+    end
+
+    Confirmations::ResolveService.new(
+      account: Current.account,
+      confirmation_request: confirmation_request,
+      decision: 'confirmed',
+      source: 'manual',
+      actor: Current.user,
+      metadata: { surface: 'scheduling_dashboard' }
+    ).perform
+
+    render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(@command.reload))
+  end
+
   private
 
   def command_scope
@@ -38,7 +60,10 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
   end
 
   def medelement_hook
-    Integrations::Hook.where(account: Current.account, app_id: 'medelement').find(command_params[:hook_id])
+    scope = Integrations::Hook.where(account: Current.account, app_id: 'medelement')
+    return scope.find(command_params[:hook_id]) if command_params[:hook_id].present?
+
+    scope.where(status: Integrations::Hook.statuses[:enabled]).order(:id).first!
   end
 
   def appointment

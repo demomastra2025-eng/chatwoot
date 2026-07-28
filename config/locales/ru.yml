@@ -368,8 +368,8 @@ ru:
       description: Синхронизируйте сообщения WhatsApp с MacroCRM. Интеграция находит или создает контакт, находит или создает заявку и записывает каждое сообщение как заметку в MacroCRM.
     medelement:
       name: Medelement
-      short_description: Импорт специалистов, приемов и пациентов из Medelement в расписание.
-      description: Подключите Medelement, чтобы импортировать специалистов, приемы и данные пациентов в Onelink Scheduling, не смешивая импортную логику с обычным manual flow.
+      short_description: Импорт специалистов, кабинетов, услуг, приемов и пациентов из Medelement в расписание.
+      description: Подключите Medelement, чтобы импортировать специалистов, кабинеты, услуги, приемы и данные пациентов в Onelink Scheduling, не смешивая импортную логику с обычным manual flow.
   captain:
     copilot_message_required: Необходимо ввести сообщение
     copilot_error: Пожалуйста, подключите AI-агента к этому каналу, чтобы использовать Ассистента

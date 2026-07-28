@@ -5,7 +5,7 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:contact) { create(:contact, account: account, name: 'Ivanov Ivan', phone_number: '+77001234567') }
   let(:hook_settings) { attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true) }
-  let(:hook) { create(:integrations_hook, :medelement, account: account, settings: hook_settings) }
+  let(:hook) { create(:integrations_hook, :medelement, account: account, settings: hook_settings, status: :enabled) }
   let(:path) { "/api/v1/accounts/#{account.id}/scheduling/provider_commands" }
   let(:headers) { agent.create_new_auth_token }
 
@@ -31,6 +31,24 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     expect(response.parsed_body.dig('payload', 'confirmation', 'status')).to eq('pending')
     expect(response.parsed_body.dig('payload', 'confirmation')).not_to have_key('token')
     expect(Integrations::Medelement::ProviderCommand.last).to have_attributes(contact: contact, attempt_count: 0)
+  end
+
+  it 'resolves the active Medelement hook when hook_id is omitted' do
+    hook
+
+    expect do
+      post path,
+           params: {
+             contact_id: contact.id,
+             operation: 'create_patient',
+             idempotency_key: 'patient-proposal-default-hook'
+           },
+           headers: headers,
+           as: :json
+    end.to change(Integrations::Medelement::ProviderCommand, :count).by(1)
+
+    expect(response).to have_http_status(:created)
+    expect(Integrations::Medelement::ProviderCommand.last.hook).to eq(hook)
   end
 
   it 'fails closed when write capability is disabled' do
@@ -78,6 +96,40 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.fetch('payload').pluck('id')).to eq([own_command.id])
+  end
+
+  it 'confirms an awaiting command as the authenticated user' do
+    command = Integrations::Medelement::ProviderCommands::CreateService.new(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      idempotency_key: 'dashboard-confirm-command',
+      actor: agent
+    ).perform
+
+    expect do
+      post "#{path}/#{command.id}/confirm", headers: headers, as: :json
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandConfirmationJob)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'confirmation', 'status')).to eq('confirmed')
+    expect(command.confirmation_request.reload).to have_attributes(
+      status: 'confirmed',
+      resolution_source: 'manual',
+      resolved_by: agent
+    )
+  end
+
+  it 'does not confirm a command from another account' do
+    other_account = create(:account).tap { |record| record.enable_features!('scheduling') }
+    other_contact = create(:contact, account: other_account)
+    other_hook = create(:integrations_hook, :medelement, account: other_account)
+    other_command = create_command(account: other_account, hook: other_hook, contact: other_contact)
+
+    post "#{path}/#{other_command.id}/confirm", headers: headers, as: :json
+
+    expect(response).to have_http_status(:not_found)
   end
 
   private

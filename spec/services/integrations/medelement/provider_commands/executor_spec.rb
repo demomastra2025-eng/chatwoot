@@ -1,7 +1,9 @@
 require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
-  subject(:perform) { described_class.new(command: command).perform }
+  subject(:perform) { executor.perform }
+
+  let(:executor) { described_class.new(command: command) }
 
   let(:account) { create(:account).tap { |record| record.enable_features!('scheduling') } }
   let(:contact) do
@@ -41,7 +43,23 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
   let(:operation) { 'create_patient' }
   let(:command_attributes) { {} }
   let(:command) do
-    Integrations::Medelement::ProviderCommand.create!(
+    request_snapshot = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      contact: contact,
+      operation: operation,
+      company_cabinet_code: command_attributes[:company_cabinet_code],
+      desired_starts_at: command_attributes[:desired_starts_at],
+      desired_ends_at: command_attributes[:desired_ends_at]
+    ).build
+    request_fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(request_snapshot)
+    request_execution_state = {
+      'request_snapshot' => request_snapshot,
+      'request_fingerprint' => request_fingerprint,
+      'confirmation_request_id' => confirmation_request.id
+    }
+    record = Integrations::Medelement::ProviderCommand.create!(
       {
         account: account,
         hook: hook,
@@ -51,9 +69,18 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         operation: operation,
         status: 'queued',
         confirmed_at: Time.current,
-        idempotency_key: SecureRandom.uuid
+        idempotency_key: SecureRandom.uuid,
+        execution_state: request_execution_state
       }.merge(command_attributes)
     )
+    confirmation_request.update!(
+      metadata: {
+        'medelement_provider_command_id' => record.id,
+        'operation' => record.operation,
+        'request_fingerprint' => request_fingerprint
+      }
+    )
+    record
   end
   let(:client) { instance_double(Integrations::Medelement::Client) }
 
@@ -70,6 +97,30 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       perform
 
       expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'execution_gate_closed', attempt_count: 1)
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+  end
+
+  context 'when the confirmed request snapshot is invalid' do
+    it 'fails closed before constructing a provider client' do
+      command.execution_state['request_snapshot']['operation'] = 'update_patient'
+      command.save!
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'request_snapshot_invalid')
+      expect(Integrations::Medelement::Client).not_to have_received(:new)
+    end
+  end
+
+  context 'when the confirmation binding is invalid after queueing' do
+    it 'fails closed before constructing a provider client' do
+      command
+      confirmation_request.update!(metadata: confirmation_request.metadata.merge('operation' => 'update_patient'))
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'confirmation_snapshot_invalid')
       expect(Integrations::Medelement::Client).not_to have_received(:new)
     end
   end
@@ -119,6 +170,27 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(command.reload).to be_succeeded
     end
 
+    it 'uses the confirmed patient payload after the contact changes' do
+      confirmed_payload = command.request_snapshot.fetch('patient').fetch('payload')
+      contact.update!(name: 'Changed Person')
+      allow(client).to receive(:update_patient).and_return({})
+
+      perform
+
+      expect(client).to have_received(:update_patient).once.with(params: confirmed_payload)
+    end
+
+    it 'applies the patient code from the exact payload after the command column changes' do
+      command.update_column(:provider_patient_code, 'patient-2') # rubocop:disable Rails/SkipsModelValidations
+      allow(client).to receive(:update_patient).and_return({})
+
+      perform
+
+      expect(client).to have_received(:update_patient).once.with(params: hash_including('profile_code' => 'patient-1'))
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-1')
+      expect(command.execution_state).to include('write_provider_patient_code' => 'patient-1')
+    end
+
     it 'fails a deterministic provider validation error without reconciliation' do
       allow(client).to receive(:update_patient).and_raise(
         Integrations::Medelement::Client::ApiError.new('invalid', status: 422, ambiguous: false)
@@ -132,6 +204,23 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         last_error_status: 422
       )
       expect(client).to have_received(:update_patient).once
+    end
+
+    it 'fences a stale executor after a replacement claims the recovered command' do
+      allow(client).to receive(:update_patient)
+      allow(executor).to receive(:validate_execution_gate!) do
+        command.update_column(:updated_at, 20.minutes.ago) # rubocop:disable Rails/SkipsModelValidations
+        Integrations::Medelement::ProviderCommandDispatcherJob.perform_now
+        replacement = described_class.new(command: command.reload)
+        allow(replacement).to receive(:validate_execution_gate!)
+        allow(replacement).to receive(:execute_operation!)
+        replacement.perform
+      end
+
+      perform
+
+      expect(client).not_to have_received(:update_patient)
+      expect(command.reload).to have_attributes(status: 'processing', attempt_count: 2, last_error_code: nil)
     end
   end
 
@@ -166,6 +255,66 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(appointment.custom_attributes).to include('medelement_reception_code' => 'reception-1')
     end
 
+    it 'uses the confirmed reception snapshot after local appointment and resource changes' do
+      appointment.update!(client_comment: 'Confirmed details')
+      snapshot = command.request_snapshot.fetch('reception')
+      confirmed_starts_at = Time.iso8601(snapshot.fetch('destination_starts_at'))
+      confirmed_ends_at = Time.iso8601(snapshot.fetch('destination_ends_at'))
+      appointment.update!(
+        starts_at: confirmed_starts_at + 2.days,
+        ends_at: confirmed_ends_at + 2.days,
+        client_comment: 'Changed details'
+      )
+      resource.update!(
+        custom_attributes: resource.custom_attributes.merge('medelement_specialist_code' => 'specialist-2')
+      )
+      allow_available_destination(starts_at: confirmed_starts_at, ends_at: confirmed_ends_at)
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+
+      perform
+
+      expect(client).to have_received(:create_reception).once.with(
+        params: hash_including(
+          specialist_code: 'specialist-1',
+          starttime: confirmed_starts_at.in_time_zone('Asia/Almaty').strftime('%d.%m.%Y %H:%M'),
+          description: 'Confirmed details'
+        )
+      )
+      expect(appointment.reload).to have_attributes(starts_at: confirmed_starts_at, ends_at: confirmed_ends_at)
+    end
+
+    it 'uses the snapshot timezone for timetable dates after the hook timezone changes' do
+      confirmed_starts_at = Time.iso8601('2026-07-30T20:30:00Z')
+      confirmed_ends_at = confirmed_starts_at + 30.minutes
+      appointment.update!(starts_at: confirmed_starts_at, ends_at: confirmed_ends_at)
+      command
+      hook.update!(settings: hook.settings.merge('timezone' => 'UTC'))
+      allow_available_destination(starts_at: confirmed_starts_at, ends_at: confirmed_ends_at)
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+
+      perform
+
+      expect(client).to have_received(:timetable).with(
+        specialist_code: 'specialist-1',
+        starts_on: Date.new(2026, 7, 31),
+        ends_on: Date.new(2026, 7, 31)
+      )
+      expect(client).to have_received(:create_reception).with(
+        params: hash_including(starttime: '31.07.2026 01:30')
+      )
+    end
+
+    it 'applies the patient code that was sent after the command column changes' do
+      command.update_column(:provider_patient_code, 'patient-2') # rubocop:disable Rails/SkipsModelValidations
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+
+      perform
+
+      expect(command.reload.provider_patient_code).to eq('patient-1')
+      expect(appointment.reload.custom_attributes).to include('medelement_patient_code' => 'patient-1')
+    end
+
     it 'blocks a write outside the provider working timetable' do
       allow(client).to receive(:timetable).and_return({})
       allow(client).to receive(:get_receptions)
@@ -194,14 +343,35 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         Integrations::Medelement::Client::ApiError.new('ambiguous', status: 500, ambiguous: true)
       )
 
-      perform
+      expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob).with(command.id)
 
       expect(command.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'provider_http_error')
       expect(command.execution_state).to include(
         'write_phase' => 'reception_create',
-        'preflight_reception_codes' => ['existing-1']
+        'preflight_reception_codes' => ['existing-1'],
+        'write_provider_patient_code' => 'patient-1'
       )
       expect(client).to have_received(:create_reception).once
+    end
+
+    context 'when patient identity is resolved only during execution' do
+      let(:contact_custom_attributes) { {} }
+
+      it 'freezes the resolved patient code before an ambiguous reception write' do
+        allow(client).to receive(:search_patients_by_phone).and_return([{ 'PROFILE_CODE' => 'patient-1' }])
+        allow_available_destination
+        allow(client).to receive(:create_reception).and_raise(
+          Integrations::Medelement::Client::ApiError.new('ambiguous', status: 500, ambiguous: true)
+        )
+
+        expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob).with(command.id)
+
+        expect(command.reload).to have_attributes(status: 'reconciliation_required', provider_patient_code: 'patient-1')
+        expect(command.execution_state).to include(
+          'write_phase' => 'reception_create',
+          'write_provider_patient_code' => 'patient-1'
+        )
+      end
     end
   end
 

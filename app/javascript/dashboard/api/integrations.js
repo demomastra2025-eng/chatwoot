@@ -58,6 +58,15 @@ class IntegrationsAPI extends ApiClient {
     );
   }
 
+  importHookCatalog(hookId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return axios.post(
+      `${this.baseUrl()}/integrations/hooks/${hookId}/import_catalog`,
+      formData
+    );
+  }
+
   connectShopify({ shopDomain }) {
     return axios.post(`${this.baseUrl()}/integrations/shopify/auth`, {
       shop_domain: shopDomain,

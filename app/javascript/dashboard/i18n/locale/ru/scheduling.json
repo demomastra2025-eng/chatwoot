@@ -15,6 +15,23 @@
       "LIST": "Список",
       "KANBAN": "Доска"
     },
+    "MEDELEMENT": {
+      "CABINET": "Кабинет MedElement",
+      "CABINET_REQUIRED": "Выберите кабинет MedElement для этой записи",
+      "CONFIRM_ACTION": "Подтвердить и отправить",
+      "CONFIRM_DESCRIPTION": "Запись «{name}» будет изменена в MedElement. Действие попадёт в журнал подтверждений.",
+      "CONFIRM_TITLE": "Подтвердите изменение в MedElement",
+      "CONTACT_REQUIRED": "Для записи в MedElement выберите клиента",
+      "CREATE_ACTION": "Создать в MedElement",
+      "CREATE_CONFIRM_TITLE": "Создать запись в MedElement?",
+      "FAILED": "MedElement не применил изменение: {code}",
+      "MOVE_CONFIRM_TITLE": "Перенести запись в MedElement?",
+      "QUEUED": "Команда MedElement подтверждена и поставлена в очередь",
+      "RECONCILING": "MedElement ещё сверяет результат операции. Календарь обновится после завершения сверки.",
+      "REMOVE_CONFIRM_TITLE": "Отменить запись в MedElement?",
+      "RESOURCE_CHANGE_UNSUPPORTED": "Смена специалиста для записи MedElement пока не поддерживается. Измените только дату или время.",
+      "SUCCESS": "Изменение успешно применено в MedElement"
+    },
     "GENERAL": {
       "ACTIVE": "Активно",
       "ACTIVATE": "Активировать",

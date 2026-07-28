@@ -44,7 +44,51 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
     status.in?(TERMINAL_STATUSES)
   end
 
+  def request_snapshot
+    execution_state.to_h['request_snapshot'].to_h
+  end
+
+  def request_snapshot_valid?
+    stored_fingerprint = execution_state.to_h['request_fingerprint'].to_s
+    computed_fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(request_snapshot)
+    fingerprint_valid = request_snapshot.present? && fingerprints_match?(stored_fingerprint, computed_fingerprint)
+
+    fingerprint_valid && request_snapshot_target_matches?
+  end
+
+  def confirmation_matches_request_snapshot?(confirmation = confirmation_request)
+    return false unless confirmation_binding_matches?(confirmation)
+
+    fingerprints_match?(
+      confirmation.metadata.to_h['request_fingerprint'].to_s,
+      execution_state.to_h['request_fingerprint'].to_s
+    )
+  end
+
   private
+
+  def confirmation_binding_matches?(confirmation)
+    metadata = confirmation&.metadata.to_h
+    confirmation.present? && confirmation.account_id == account_id &&
+      confirmation.id == execution_state.to_h['confirmation_request_id'] &&
+      metadata['medelement_provider_command_id'].to_s == id.to_s &&
+      metadata['operation'].to_s == operation
+  end
+
+  def fingerprints_match?(first, second)
+    first.present? && first.bytesize == second.bytesize && ActiveSupport::SecurityUtils.secure_compare(first, second)
+  end
+
+  def request_snapshot_target_matches?
+    {
+      'account_id' => account_id,
+      'hook_id' => hook_id,
+      'appointment_id' => appointment_id,
+      'contact_id' => contact_id,
+      'requested_by_id' => requested_by_id,
+      'operation' => operation
+    }.all? { |key, value| request_snapshot[key] == value }
+  end
 
   def normalize_execution_state
     self.execution_state = execution_state.to_h if execution_state.blank? || execution_state.respond_to?(:to_h)

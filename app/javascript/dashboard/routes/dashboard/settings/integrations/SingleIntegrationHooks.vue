@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineProps, defineEmits } from 'vue';
+import { computed, defineProps, defineEmits, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useStore } from 'vuex';
@@ -39,6 +39,9 @@ const isMedelement = computed(() => props.integrationId === 'medelement');
 const isMacrocrm = computed(() => props.integrationId === 'macrocrm');
 const medelementMetadata = computed(() => connectedHook.value?.metadata || {});
 const macrocrmMetadata = computed(() => connectedHook.value?.metadata || {});
+const medelementCatalogFileInput = ref(null);
+const medelementCatalogFile = ref(null);
+const medelementCatalogMaxBytes = 5 * 1024 * 1024;
 
 const hasCustomLogo = computed(
   () =>
@@ -203,6 +206,78 @@ async function runSyncNow() {
   }
 }
 
+function resetMedelementCatalogFile() {
+  medelementCatalogFile.value = null;
+  if (medelementCatalogFileInput.value) {
+    medelementCatalogFileInput.value.value = '';
+  }
+}
+
+function openMedelementCatalogFilePicker() {
+  medelementCatalogFileInput.value?.click();
+}
+
+function selectMedelementCatalogFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+
+  if (!file.name.toLowerCase().endsWith('.json')) {
+    resetMedelementCatalogFile();
+    useAlert(t('INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.INVALID_TYPE'));
+    return;
+  }
+
+  if (file.size > medelementCatalogMaxBytes) {
+    resetMedelementCatalogFile();
+    useAlert(t('INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.FILE_TOO_LARGE'));
+    return;
+  }
+
+  medelementCatalogFile.value = file;
+}
+
+function importErrorMessage(error) {
+  const errorCode = error?.response?.data?.code;
+  const messages = {
+    missing_file: t('INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.MISSING_FILE'),
+    file_too_large: t(
+      'INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.FILE_TOO_LARGE'
+    ),
+    invalid_json: t('INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.INVALID_JSON'),
+    invalid_payload: t(
+      'INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.INVALID_PAYLOAD'
+    ),
+    import_in_progress: t(
+      'INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.IMPORT_IN_PROGRESS'
+    ),
+  };
+  return (
+    messages[errorCode] ||
+    t('INTEGRATION_APPS.MEDELEMENT.IMPORT.ERRORS.GENERIC')
+  );
+}
+
+async function importMedelementCatalog() {
+  if (!medelementCatalogFile.value) return;
+
+  try {
+    const response = await store.dispatch('integrations/importHookCatalog', {
+      hookId: connectedHook.value.id,
+      file: medelementCatalogFile.value,
+    });
+    useAlert(
+      t('INTEGRATION_APPS.MEDELEMENT.IMPORT.SUCCESS', {
+        specialists: response?.result?.specialists?.imported_count || 0,
+        services: response?.result?.services?.imported_count || 0,
+        links: response?.result?.services?.linked_count || 0,
+      })
+    );
+    resetMedelementCatalogFile();
+  } catch (error) {
+    useAlert(importErrorMessage(error));
+  }
+}
+
 async function copyMacrocrmWebhookUrl() {
   if (!macrocrmWebhookUrl.value) {
     return;
@@ -314,6 +389,54 @@ async function copyMacrocrmWebhookUrl() {
               <p class="mt-1 break-all text-sm font-medium text-n-slate-12">
                 {{ detail.value }}
               </p>
+            </div>
+          </div>
+
+          <div v-if="isMedelement" class="mt-4 rounded-md bg-n-alpha-2 p-4">
+            <p class="text-sm font-medium text-n-slate-12">
+              {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.TITLE') }}
+            </p>
+            <p class="mt-1 text-sm leading-6 text-n-slate-11">
+              {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.DESCRIPTION') }}
+              <a
+                href="/downloads/medelement-catalog-sample.json"
+                download="medelement-catalog-sample.json"
+                class="text-n-blue-11"
+              >
+                {{ $t('INTEGRATION_APPS.MEDELEMENT.IMPORT.DOWNLOAD_SAMPLE') }}
+              </a>
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-2">
+              <NextButton
+                faded
+                slate
+                size="sm"
+                icon="i-lucide-upload"
+                :label="$t('INTEGRATION_APPS.MEDELEMENT.IMPORT.CHOOSE_FILE')"
+                :disabled="uiFlags.isImportingHookCatalog"
+                @click="openMedelementCatalogFilePicker"
+              />
+              <span
+                v-if="medelementCatalogFile"
+                class="max-w-64 truncate text-sm text-n-slate-11"
+              >
+                {{ medelementCatalogFile.name }}
+              </span>
+              <NextButton
+                v-if="medelementCatalogFile"
+                blue
+                size="sm"
+                :label="$t('INTEGRATION_APPS.MEDELEMENT.IMPORT.BUTTON')"
+                :is-loading="uiFlags.isImportingHookCatalog"
+                @click="importMedelementCatalog"
+              />
+              <input
+                ref="medelementCatalogFileInput"
+                type="file"
+                accept=".json,application/json"
+                class="hidden"
+                @change="selectMedelementCatalogFile"
+              />
             </div>
           </div>
 

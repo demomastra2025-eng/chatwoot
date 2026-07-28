@@ -1,0 +1,42 @@
+{
+  "specialists": [
+    {
+      "specialistCode": "SPECIALIST-001",
+      "fullName": "Пример специалиста",
+      "specialty": "Терапевт",
+      "schedulePublished": true,
+      "slotDurationMin": 30,
+      "cabinetCodes": ["CABINET-001"]
+    }
+  ],
+  "cabinets": [
+    {
+      "companyCabinetCode": "CABINET-001",
+      "cabinetName": "Кабинет терапевта",
+      "cabinetNumber": "101",
+      "active": true
+    }
+  ],
+  "services": [
+    {
+      "serviceCode": "SERVICE-001",
+      "name": "Первичный приём",
+      "durationMin": 30,
+      "basePrice": 10000,
+      "category": "Консультации",
+      "direction": "Терапия",
+      "serviceType": "consultation",
+      "active": true
+    }
+  ],
+  "specialistServices": [
+    {
+      "specialistCode": "SPECIALIST-001",
+      "serviceCode": "SERVICE-001",
+      "price": 10000,
+      "compensationType": "percent",
+      "compensationValue": 0,
+      "active": true
+    }
+  ]
+}

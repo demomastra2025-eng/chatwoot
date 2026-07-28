@@ -84,6 +84,7 @@ FactoryBot.define do
           'organization_id' => '412849431501753534',
           'timezone' => 'Asia/Almaty',
           'sync_specialists' => true,
+          'sync_services' => true,
           'sync_receptions' => true,
           'sync_patients' => true,
           'sync_interval_hours' => 24,

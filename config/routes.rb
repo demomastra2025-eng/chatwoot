@@ -238,7 +238,9 @@ Rails.application.routes.draw do
               resources :payments, only: [:create], controller: 'appointment_payments'
               delete :payments, on: :member, to: 'appointment_payments#destroy'
             end
-            resources :provider_commands, only: [:index, :show, :create]
+            resources :provider_commands, only: [:index, :show, :create] do
+              post :confirm, on: :member
+            end
             resources :payments, only: [:index]
             resources :expenses, only: [:index] do
               collection do
@@ -607,6 +609,7 @@ Rails.application.routes.draw do
               member do
                 post :process_event
                 post :run_sync
+                post :import_catalog
               end
             end
             resource :slack, only: [:create, :update, :destroy], controller: 'slack' do

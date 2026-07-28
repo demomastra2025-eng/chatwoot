@@ -55,6 +55,25 @@
     "DISCONNECT": {
       "BUTTON_TEXT": "Disconnect"
     },
+    "MEDELEMENT": {
+      "IMPORT": {
+        "TITLE": "Каталогты импорттау",
+        "DESCRIPTION": "Мамандар, кабинеттер, қызметтер және дәрігер–қызмет байланыстары бар толық JSON пакетін жүктеңіз. Қате файл қолданылмайды.",
+        "DOWNLOAD_SAMPLE": "Үлгіні жүктеп алу",
+        "CHOOSE_FILE": "JSON таңдау",
+        "BUTTON": "Импорттау",
+        "SUCCESS": "Импортталды: {specialists} маман, {services} қызмет, {links} байланыс.",
+        "ERRORS": {
+          "MISSING_FILE": "Каталогтың JSON файлын таңдаңыз.",
+          "FILE_TOO_LARGE": "Каталог файлы 5 МБ-тан аспауы керек.",
+          "INVALID_TYPE": "Тек JSON файлдары қолданылады.",
+          "INVALID_JSON": "Файлда қате JSON бар.",
+          "INVALID_PAYLOAD": "Каталог құрылымы қате немесе белгісіз байланыстар бар.",
+          "IMPORT_IN_PROGRESS": "MedElement синхрондауы немесе импорты орындалып жатыр. Кейінірек қайталап көріңіз.",
+          "GENERIC": "Каталогты импорттау мүмкін болмады. Қайталап көріңіз."
+        }
+      }
+    },
     "SIDEBAR_DESCRIPTION": {
       "DIALOGFLOW": "Dialogflow is a natural language processing platform for building conversational interfaces. Integrating it with {installationName} lets bots handle queries first and transfer them to agents when needed. It helps qualify leads and reduce agent workload by answering FAQs. To add Dialogflow, create a Service Account in Google Console and share the credentials. Refer to the docs for details"
     }

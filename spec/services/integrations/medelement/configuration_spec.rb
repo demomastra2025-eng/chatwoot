@@ -24,4 +24,16 @@ RSpec.describe Integrations::Medelement::Configuration do
       end
     end
   end
+
+  describe '#sync_services?' do
+    it 'is enabled by default for existing hooks' do
+      expect(configuration.sync_services?).to be(true)
+    end
+
+    it 'respects an explicit disabled setting' do
+      allow(hook).to receive(:settings).and_return('sync_services' => false)
+
+      expect(configuration.sync_services?).to be(false)
+    end
+  end
 end

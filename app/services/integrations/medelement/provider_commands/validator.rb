@@ -20,6 +20,21 @@ class Integrations::Medelement::ProviderCommands::Validator
     validate_operation_prerequisites!
   end
 
+  def validate_request!
+    validate_identity!
+    validate_operation_prerequisites!
+  end
+
+  def validate_identity!
+    validate_operation!
+    validate_associations!
+  end
+
+  def validate_runtime!
+    validate_write_capability!
+    validate_concurrency!
+  end
+
   private
 
   attr_reader :account, :hook, :appointment, :contact, :operation, :idempotency_key, :company_cabinet_code

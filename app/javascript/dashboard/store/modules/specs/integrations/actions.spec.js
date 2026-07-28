@@ -180,4 +180,33 @@ describe('#actions', () => {
       ]);
     });
   });
+
+  describe('#importHookCatalog', () => {
+    const file = new File(['{}'], 'catalog.json', {
+      type: 'application/json',
+    });
+
+    it('sends correct actions if API is success', async () => {
+      const data = { result: { specialists: { imported_count: 1 } } };
+      axios.post.mockResolvedValue({ data });
+      await expect(
+        actions.importHookCatalog({ commit }, { hookId: 2, file })
+      ).resolves.toEqual(data);
+      expect(commit.mock.calls).toEqual([
+        [types.SET_INTEGRATIONS_UI_FLAG, { isImportingHookCatalog: true }],
+        [types.SET_INTEGRATIONS_UI_FLAG, { isImportingHookCatalog: false }],
+      ]);
+    });
+
+    it('resets the loading flag if API is error', async () => {
+      axios.post.mockRejectedValue(errorMessage);
+      await expect(
+        actions.importHookCatalog({ commit }, { hookId: 2, file })
+      ).rejects.toEqual(errorMessage);
+      expect(commit.mock.calls).toEqual([
+        [types.SET_INTEGRATIONS_UI_FLAG, { isImportingHookCatalog: true }],
+        [types.SET_INTEGRATIONS_UI_FLAG, { isImportingHookCatalog: false }],
+      ]);
+    });
+  });
 });

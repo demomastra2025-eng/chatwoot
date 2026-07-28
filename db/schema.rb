@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_27_150000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_28_110000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2536,6 +2536,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_27_150000) do
     t.jsonb "custom_attributes", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index "account_id, ((custom_attributes ->> 'medelement_nomenclature_code'::text))", name: "idx_scheduling_services_account_medelement_code_unique", unique: true, where: "((custom_attributes ->> 'medelement_nomenclature_code'::text) IS NOT NULL)"
     t.index ["account_id", "active", "name"], name: "idx_scheduling_services_on_account_active_name"
     t.index ["account_id"], name: "index_scheduling_services_on_account_id"
   end

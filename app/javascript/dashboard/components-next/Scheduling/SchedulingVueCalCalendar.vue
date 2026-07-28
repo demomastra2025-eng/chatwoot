@@ -19,7 +19,6 @@ import {
   deriveVisibleMinuteWindow,
   formatDateKey,
   formatTimeLabel,
-  isAppointmentProviderOwned,
   minuteOfDayFromDate,
   snapMinute,
   toDate,
@@ -1007,8 +1006,8 @@ const appointmentEvents = computed(() => {
       muted: Boolean(appointment.muted),
       cancelled: Boolean(appointment.cancelled),
       durationMin: appointment.durationMin,
-      draggable: !isAppointmentProviderOwned(appointment),
-      resizable: !isAppointmentProviderOwned(appointment),
+      draggable: true,
+      resizable: true,
       class: `scheduling-vue-cal__appointment scheduling-vue-cal__appointment--${appointment.status || 'scheduled'}`,
     };
   });

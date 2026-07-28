@@ -72,6 +72,23 @@
         "BUTTON": "Run sync now",
         "SUCCESS": "Medelement sync has been queued. Imported data may appear in a few minutes.",
         "ERROR": "Could not start Medelement sync. Please try again later."
+      },
+      "IMPORT": {
+        "TITLE": "Catalog import",
+        "DESCRIPTION": "Upload a complete JSON package containing specialists, cabinets, services, and doctor–service links. Invalid files are not applied.",
+        "DOWNLOAD_SAMPLE": "Download sample",
+        "CHOOSE_FILE": "Choose JSON",
+        "BUTTON": "Import",
+        "SUCCESS": "Imported: {specialists} specialists, {services} services, and {links} links.",
+        "ERRORS": {
+          "MISSING_FILE": "Choose a catalog JSON file.",
+          "FILE_TOO_LARGE": "The catalog file must not exceed 5 MB.",
+          "INVALID_TYPE": "Only JSON files are supported.",
+          "INVALID_JSON": "The file contains invalid JSON.",
+          "INVALID_PAYLOAD": "The catalog structure is invalid or contains unknown links.",
+          "IMPORT_IN_PROGRESS": "A MedElement sync or catalog import is already running. Try again later.",
+          "GENERIC": "Could not import the catalog. Please try again."
+        }
       }
     },
     "MACROCRM": {

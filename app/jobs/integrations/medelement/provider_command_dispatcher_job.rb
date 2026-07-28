@@ -14,14 +14,25 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
   private
 
   def mark_stale_processing_commands!
-    # A single atomic update is required so competing dispatcher runs cannot recover the same stale command twice.
-    Integrations::Medelement::ProviderCommand
-      .processing
-      .where(updated_at: ...STALE_PROCESSING_AGE.ago)
-      # rubocop:disable Rails/SkipsModelValidations
+    stale_commands = Integrations::Medelement::ProviderCommand.processing.where(updated_at: ...STALE_PROCESSING_AGE.ago)
+
+    # Each conditional update is atomic. Once one dispatcher changes the status, competing runs no longer match it.
+    # A command that crashed before recording a write phase is safe to retry; a started write must be reconciled.
+    # rubocop:disable Rails/SkipsModelValidations
+    stale_commands
+      .where("NULLIF(execution_state ->> 'write_phase', '') IS NULL")
+      .update_all(
+        status: 'queued',
+        last_error_code: 'executor_stale_before_write',
+        last_error_status: nil,
+        updated_at: Time.current
+      )
+    stale_commands
+      .where("NULLIF(execution_state ->> 'write_phase', '') IS NOT NULL")
       .update_all(
         status: 'reconciliation_required',
         last_error_code: 'executor_stale',
+        last_error_status: nil,
         updated_at: Time.current
       )
     # rubocop:enable Rails/SkipsModelValidations

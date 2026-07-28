@@ -1,7 +1,9 @@
 require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
-  subject(:perform) do
+  subject(:perform) { service.perform }
+
+  let(:service) do
     described_class.new(
       account: account,
       hook: hook,
@@ -10,7 +12,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
       idempotency_key: idempotency_key,
       company_cabinet_code: 'cabinet-1',
       actor: user
-    ).perform
+    )
   end
 
   let(:account) { create(:account) }
@@ -44,7 +46,15 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     expect(command.confirmation_request).to be_pending
     expect(command.confirmation_request.metadata).to include(
       'medelement_provider_command_id' => command.id,
-      'operation' => 'create_reception'
+      'operation' => 'create_reception',
+      'request_fingerprint' => command.execution_state.fetch('request_fingerprint')
+    )
+    expect(command.execution_state).to include('confirmation_request_id' => command.confirmation_request_id)
+    expect(command.confirmation_matches_request_snapshot?).to be(true)
+    expect(command.confirmation_request.body).to include(
+      command.request_snapshot.dig('reception', 'destination_starts_at'),
+      'специалист specialist-1',
+      'кабинет cabinet-1'
     )
     expect(command).to have_attributes(
       account: account,
@@ -57,12 +67,38 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
   end
 
   it 'returns the same command for a repeated idempotency key' do
-    first = perform
+    first = service.perform
+    appointment.update!(client_comment: 'Changed after the original request')
+    second = service.perform
 
-    expect(perform).to eq(first)
+    expect(second).to eq(first)
+    expect(first.id).to eq(second.id)
     expect(Integrations::Medelement::ProviderCommand.where(account: account).count).to eq(1)
     metadata = { 'medelement_provider_command_id' => first.id, 'operation' => 'create_reception' }
-    expect(ConfirmationRequest.where(account: account, metadata: metadata).count).to eq(1)
+    expect(
+      ConfirmationRequest.where(account: account).where('metadata @> ?', metadata.to_json).count
+    ).to eq(1)
+    expect(first.request_snapshot_valid?).to be(true)
+    expect(first.execution_state).to include('idempotency_fingerprint')
+  end
+
+  it 'rejects reuse of an idempotency key for a different command payload' do
+    service.perform
+
+    expect do
+      described_class.new(
+        account: account,
+        hook: hook,
+        appointment: appointment,
+        operation: 'create_reception',
+        idempotency_key: idempotency_key,
+        company_cabinet_code: 'cabinet-2',
+        actor: user
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error|
+      expect(error.code).to eq('MEDELEMENT_IDEMPOTENCY_KEY_REUSED')
+      expect(error.status).to eq(409)
+    }
   end
 
   it 'rejects a second unfinished command for the same appointment' do

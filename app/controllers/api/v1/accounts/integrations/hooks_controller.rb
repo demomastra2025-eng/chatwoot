@@ -1,7 +1,10 @@
 class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::BaseController
+  MEDELEMENT_CATALOG_MAX_BYTES = 5.megabytes
+  MEDELEMENT_CATALOG_LOCK_TIMEOUT = 10.minutes
+
   before_action :fetch_hook, except: [:create]
   before_action :check_authorization
-  before_action :ensure_medelement_hook!, only: [:run_sync]
+  before_action :ensure_medelement_hook!, only: [:run_sync, :import_catalog]
 
   def create
     @hook = Current.account.hooks.create!(normalized_params)
@@ -38,6 +41,27 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
 
     Integrations::Medelement::SyncJob.perform_later(@hook.id)
     render json: { message: 'Medelement sync queued successfully' }, status: :accepted
+  end
+
+  def import_catalog
+    upload = params[:file]
+    return render_import_error('missing_file', 'Select a JSON catalog file') unless upload.respond_to?(:read)
+    return render_import_error('file_too_large', 'Catalog file must not exceed 5 MB', status: 413) if upload.size > MEDELEMENT_CATALOG_MAX_BYTES
+
+    with_medelement_sync_lock do
+      payload = JSON.parse(upload.read)
+      result = Integrations::Medelement::CatalogImportService.new(
+        account: Current.account,
+        configuration: Integrations::Medelement::Configuration.new(hook: @hook),
+        payload: payload
+      ).perform
+
+      render json: { message: 'Medelement catalog imported successfully', result: result }
+    end
+  rescue JSON::ParserError
+    render_import_error('invalid_json', 'Catalog file must contain valid JSON')
+  rescue Integrations::Medelement::CatalogImportService::InvalidPayloadError => e
+    render_import_error('invalid_payload', e.message)
   end
 
   private
@@ -79,5 +103,20 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
 
   def ensure_medelement_hook!
     raise ActiveRecord::RecordNotFound unless @hook.medelement?
+  end
+
+  def render_import_error(code, message, status: :unprocessable_content)
+    render json: { code: code, message: message }, status: status
+  end
+
+  def with_medelement_sync_lock
+    lock_manager = Redis::LockManager.new
+    lock_key = format(Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: Current.account.id)
+    acquired = lock_manager.lock(lock_key, MEDELEMENT_CATALOG_LOCK_TIMEOUT)
+    return render_import_error('import_in_progress', 'Medelement catalog sync is already running', status: :conflict) unless acquired
+
+    yield
+  ensure
+    lock_manager&.unlock(lock_key) if acquired
   end
 end

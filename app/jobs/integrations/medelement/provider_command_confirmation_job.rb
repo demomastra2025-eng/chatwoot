@@ -37,9 +37,19 @@ class Integrations::Medelement::ProviderCommandConfirmationJob < ApplicationJob
 
     case confirmation_request.status
     when 'confirmed'
+      return fail_confirmation_binding!(command) unless command.confirmation_matches_request_snapshot?(confirmation_request)
+
       command.update!(status: 'queued', confirmed_at: confirmation_request.resolved_at || Time.current)
     when 'declined', 'reschedule_requested', 'expired'
       command.update!(status: 'declined', executed_at: Time.current)
     end
+  end
+
+  def fail_confirmation_binding!(command)
+    command.update!(
+      status: 'failed',
+      executed_at: Time.current,
+      last_error_code: 'confirmation_snapshot_invalid'
+    )
   end
 end

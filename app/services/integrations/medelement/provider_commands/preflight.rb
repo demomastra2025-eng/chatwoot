@@ -23,14 +23,10 @@ class Integrations::Medelement::ProviderCommands::Preflight
 
   attr_reader :command, :client, :configuration
 
-  def appointment
-    command.appointment
-  end
-
   def verify_remote_reception!
     return if command.create_patient? || command.update_patient?
 
-    remote = client.get_reception(reception_code: command.provider_reception_code)
+    remote = client.get_reception(reception_code: provider_reception_code)
     verify_remote_patient!(remote)
     verify_remote_specialist!(remote)
     verify_remote_state!(remote)
@@ -39,8 +35,8 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def verify_remote_patient!(remote)
-    return if command.provider_patient_code.blank?
-    return if remote_patient_code(remote) == command.provider_patient_code.to_s
+    return if provider_patient_code.blank?
+    return if remote_patient_code(remote) == provider_patient_code.to_s
 
     raise StateChanged, 'Medelement reception patient changed'
   end
@@ -62,7 +58,7 @@ class Integrations::Medelement::ProviderCommands::Preflight
     return [] unless command.create_reception? || command.move_reception?
 
     client.get_receptions(
-      company_cabinet_code: command.company_cabinet_code,
+      company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
       specialist_code: specialist_code,
       begin_datetime: provider_datetime(destination_start),
       end_datetime: provider_datetime(destination_end)
@@ -72,8 +68,8 @@ class Integrations::Medelement::ProviderCommands::Preflight
   def verify_timetable!
     timetable = client.timetable(
       specialist_code: specialist_code,
-      starts_on: destination_start.in_time_zone(configuration.time_zone).to_date,
-      ends_on: destination_end.in_time_zone(configuration.time_zone).to_date
+      starts_on: destination_start.in_time_zone(reception_snapshot.fetch('time_zone')).to_date,
+      ends_on: destination_end.in_time_zone(reception_snapshot.fetch('time_zone')).to_date
     )
     intervals = working_intervals(timetable)
     return if destination_covered?(intervals)
@@ -109,7 +105,7 @@ class Integrations::Medelement::ProviderCommands::Preflight
   def overlap?(receptions)
     receptions.any? do |reception|
       next false if reception['REMOVED'].to_i == 1
-      next false if reception['RECEPTION_CODE'].to_s == command.provider_reception_code.to_s
+      next false if reception['RECEPTION_CODE'].to_s == provider_reception_code.to_s
 
       starts_at = parse_provider_time(reception['STARTTIME'])
       ends_at = parse_provider_time(reception['ENDTIME'])
@@ -128,8 +124,8 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def remote_time_matches_local?(remote)
-    parse_provider_time(remote['STARTTIME'])&.to_i == appointment.starts_at.to_i &&
-      parse_provider_time(remote['ENDTIME'])&.to_i == appointment.ends_at.to_i
+    parse_provider_time(remote['STARTTIME'])&.to_i == snapshot_time('source_starts_at').to_i &&
+      parse_provider_time(remote['ENDTIME'])&.to_i == snapshot_time('source_ends_at').to_i
   end
 
   def specialist_code
@@ -137,22 +133,38 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def local_specialist_code
-    appointment.resource.custom_attributes.to_h['medelement_specialist_code'].to_s
+    reception_snapshot.fetch('specialist_code').to_s
+  end
+
+  def provider_patient_code
+    command.request_snapshot['provider_patient_code'].presence || command.provider_patient_code
+  end
+
+  def provider_reception_code
+    command.request_snapshot['provider_reception_code'].to_s
   end
 
   def destination_start
-    command.move_reception? ? command.desired_starts_at : appointment.starts_at
+    snapshot_time('destination_starts_at')
   end
 
   def destination_end
-    command.move_reception? ? command.desired_ends_at : appointment.ends_at
+    snapshot_time('destination_ends_at')
+  end
+
+  def reception_snapshot
+    @reception_snapshot ||= command.request_snapshot.fetch('reception')
+  end
+
+  def snapshot_time(key)
+    Time.iso8601(reception_snapshot.fetch(key))
   end
 
   def provider_datetime(value)
-    value.in_time_zone(configuration.time_zone).strftime('%d.%m.%Y %H:%M:%S')
+    value.in_time_zone(reception_snapshot.fetch('time_zone')).strftime('%d.%m.%Y %H:%M:%S')
   end
 
   def parse_provider_time(value)
-    ActiveSupport::TimeZone[configuration.time_zone].parse(value.to_s)
+    ActiveSupport::TimeZone[reception_snapshot.fetch('time_zone')].parse(value.to_s)
   end
 end

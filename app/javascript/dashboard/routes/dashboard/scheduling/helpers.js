@@ -43,6 +43,61 @@ export const canCreateAppointmentConversation = appointment =>
 export const isAppointmentProviderOwned = appointment =>
   appointment?.source === 'medelement';
 
+export const medelementCabinetsForResource = resource => {
+  const customAttributes = resource?.customAttributes || {};
+  const cabinets =
+    customAttributes.medelement_cabinets ||
+    customAttributes.medelementCabinets ||
+    [];
+
+  return Array.isArray(cabinets)
+    ? cabinets
+        .map(cabinet => ({
+          code: String(
+            cabinet?.companyCabinetCode ||
+              cabinet?.company_cabinet_code ||
+              cabinet?.COMPANY_CABINET_CODE ||
+              ''
+          ),
+          name: String(
+            cabinet?.companyCabinetName ||
+              cabinet?.company_cabinet_name ||
+              cabinet?.name ||
+              ''
+          ),
+        }))
+        .filter(cabinet => cabinet.code)
+    : [];
+};
+
+export const isMedelementResource = resource => {
+  const customAttributes = resource?.customAttributes || {};
+
+  return Boolean(
+    customAttributes.medelement_specialist_code ||
+      customAttributes.medelementSpecialistCode ||
+      medelementCabinetsForResource(resource).length
+  );
+};
+
+export const resolveAppointmentMedelementCabinetCode = (
+  appointment,
+  resources = []
+) => {
+  const customAttributes = appointment?.customAttributes || {};
+  const explicitCode =
+    customAttributes.medelement_cabinet_code ||
+    customAttributes.medelementCabinetCode;
+  if (explicitCode) return String(explicitCode);
+
+  const resource = resources.find(
+    item => Number(item.id) === Number(appointment?.resourceId)
+  );
+  const cabinets = medelementCabinetsForResource(resource);
+
+  return cabinets.length === 1 ? cabinets[0].code : '';
+};
+
 export const resolveAppointmentConversationTarget = appointment => {
   const explicitConversationId = numericId(
     firstPresentValue(appointment, [
@@ -442,6 +497,28 @@ export const getAppointmentsForColumn = (appointments, column) => {
 
 export const formatCurrency = value => {
   return new Intl.NumberFormat('ru-RU').format(Number(value || 0));
+};
+
+export const buildMedelementProviderCommandParams = ({
+  appointment,
+  companyCabinetCode,
+  operation,
+  patch = {},
+}) => {
+  const params = {
+    appointment_id: appointment.id,
+    operation,
+  };
+
+  if (operation === 'remove_reception') return params;
+
+  params.company_cabinet_code = companyCabinetCode;
+  if (operation === 'move_reception') {
+    params.desired_ends_at = patch.ends_at || appointment.endsAt;
+    params.desired_starts_at = patch.starts_at || appointment.startsAt;
+  }
+
+  return params;
 };
 
 export const getServicePriceForResource = (service, resourceId) => {

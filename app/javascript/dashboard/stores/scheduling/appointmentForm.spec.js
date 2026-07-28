@@ -133,6 +133,33 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.form.prepaidPaymentMethod).toBe('kaspi_qr');
   });
 
+  it('persists the selected Medelement cabinet in appointment custom attributes', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate({}, { resourceId: 3 });
+    store.updateField('medelementCabinetCode', '501');
+
+    expect(store.buildPayload()).toMatchObject({
+      custom_attributes: {
+        medelement_cabinet_code: '501',
+      },
+    });
+  });
+
+  it('hydrates the Medelement cabinet when editing an appointment', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      customAttributes: { medelement_cabinet_code: '502' },
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+
+    expect(store.form.medelementCabinetCode).toBe('502');
+  });
+
   it('keeps the linked conversation display id for the appointment modal chat panel', () => {
     const store = useSchedulingAppointmentFormStore();
 

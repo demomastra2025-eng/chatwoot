@@ -94,4 +94,92 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
 
     expect(resource.reload.work_rules.order(:weekday).pluck(:weekday, :start_minute, :end_minute, :active)).to eq(expected_default_rules)
   end
+
+  it 'imports the normalized specialist and cabinet contract without changing native resource ids' do
+    existing_resource = create(
+      :scheduling_resource,
+      account: account,
+      name: 'Old name',
+      specialty: 'Manual specialty',
+      custom_attributes: { 'medelement_specialist_code' => 'ME-SPEC-001' }
+    )
+    specialists = [
+      {
+        'specialistCode' => 'ME-SPEC-001',
+        'fullName' => 'Imported specialist',
+        'specialty' => 'Radiologist',
+        'schedulePublished' => 1,
+        'slotDurationMin' => 40,
+        'cabinetCodes' => ['ME-CAB-001']
+      }
+    ]
+    cabinets = [
+      {
+        'companyCabinetCode' => 'ME-CAB-001',
+        'cabinetName' => 'MRI room',
+        'cabinetNumber' => '101',
+        'active' => true
+      }
+    ]
+
+    described_class.new(
+      account: account,
+      client: nil,
+      configuration: configuration,
+      source: { specialists: specialists, cabinets: cabinets }
+    ).perform
+
+    resource = existing_resource.reload
+    expect(resource).to have_attributes(
+      id: existing_resource.id,
+      name: 'Imported specialist',
+      specialty: 'Radiologist',
+      slot_duration_min: 40,
+      active: true
+    )
+    expect(resource.custom_attributes['medelement_cabinets']).to contain_exactly(
+      hash_including(
+        'companyCabinetCode' => 'ME-CAB-001',
+        'cabinetName' => 'MRI room'
+      )
+    )
+  end
+
+  it 'preserves a manual specialty when the provider sends no specialty' do
+    resource = create(
+      :scheduling_resource,
+      account: account,
+      specialty: 'Manual specialty',
+      custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
+    )
+
+    described_class.new(account: account, client: client, configuration: configuration).perform
+
+    expect(resource.reload.specialty).to eq('Manual specialty')
+  end
+
+  it 'deactivates only imported specialists missing beyond the grace period' do
+    now = Time.zone.parse('2026-07-28 10:00:00')
+    stale_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'missing-stale',
+        'medelement_last_seen_at' => (now - 8.days).iso8601
+      }
+    )
+    recent_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'missing-recent',
+        'medelement_last_seen_at' => (now - 6.days).iso8601
+      }
+    )
+
+    described_class.new(account: account, client: client, configuration: configuration, now: now).perform
+
+    expect(stale_resource.reload).not_to be_active
+    expect(recent_resource.reload).to be_active
+  end
 end

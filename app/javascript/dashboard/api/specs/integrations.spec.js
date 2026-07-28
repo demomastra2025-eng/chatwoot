@@ -15,6 +15,7 @@ describe('#integrationAPI', () => {
     expect(integrationAPI).toHaveProperty('listAllSlackChannels');
     expect(integrationAPI).toHaveProperty('deleteHook');
     expect(integrationAPI).toHaveProperty('runHookSync');
+    expect(integrationAPI).toHaveProperty('importHookCatalog');
   });
   describe('API calls', () => {
     const originalAxios = window.axios;
@@ -91,6 +92,18 @@ describe('#integrationAPI', () => {
       expect(axiosMock.post).toHaveBeenCalledWith(
         '/api/v1/integrations/hooks/2/run_sync'
       );
+    });
+
+    it('#importHookCatalog', () => {
+      const file = new File(['{}'], 'catalog.json', {
+        type: 'application/json',
+      });
+      integrationAPI.importHookCatalog(2, file);
+
+      const [url, formData] = axiosMock.post.mock.calls.at(-1);
+      expect(url).toBe('/api/v1/integrations/hooks/2/import_catalog');
+      expect(formData).toBeInstanceOf(FormData);
+      expect(formData.get('file')).toBe(file);
     });
 
     it('#sendKaspiPayPhone normalizes cashier phone to local 10 digits', () => {

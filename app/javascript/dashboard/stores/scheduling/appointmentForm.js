@@ -74,6 +74,7 @@ const createDefaultForm = () => ({
   conversationId: '',
   customAttributes: {},
   endsAt: '',
+  medelementCabinetCode: '',
   prepaidAmount: '',
   prepaidPaymentMethod: '',
   resourceId: '',
@@ -192,6 +193,10 @@ export const useSchedulingAppointmentFormStore = defineStore(
           conversationId: appointment.conversationId || '',
           customAttributes: appointment.customAttributes || {},
           endsAt: toDateTimeInputValue(appointment.endsAt),
+          medelementCabinetCode:
+            appointment.customAttributes?.medelement_cabinet_code ||
+            appointment.customAttributes?.medelementCabinetCode ||
+            '',
           prepaidAmount: appointment.prepaidAmount ?? '',
           prepaidPaymentMethod: appointment.prepaidPaymentMethod || '',
           resourceId: appointment.resourceId || '',
@@ -392,7 +397,14 @@ export const useSchedulingAppointmentFormStore = defineStore(
               : normalizedForm.conversationDisplayId
           ),
           conversation_id: toNumeric(normalizedForm.conversationId),
-          custom_attributes: normalizedForm.customAttributes || {},
+          custom_attributes: {
+            ...(normalizedForm.customAttributes || {}),
+            ...(normalizedForm.medelementCabinetCode
+              ? {
+                  medelement_cabinet_code: normalizedForm.medelementCabinetCode,
+                }
+              : {}),
+          },
           ends_at: fromDateTimeInputValue(normalizedForm.endsAt),
           prepaid_amount:
             toIntegerNumeric(normalizedForm.prepaidAmount, 'prepaid_amount') ||
