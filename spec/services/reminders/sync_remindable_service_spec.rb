@@ -35,6 +35,27 @@ RSpec.describe Reminders::SyncRemindableService do
       expect(touch.schedule_revision).to be >= 2
     end
 
+    it 'does not revise an unchanged relative schedule during processing sync' do
+      appointment = create(:scheduling_appointment, starts_at: 1.day.from_now, ends_at: 1.day.from_now + 30.minutes)
+      touch = create(
+        :reminder,
+        account: appointment.account,
+        remindable: appointment,
+        timing_mode: :relative,
+        relative_anchor: 'appointment.starts_at',
+        relative_offset_seconds: -10.minutes.to_i,
+        scheduled_at: nil,
+        body: 'Unchanged appointment touch'
+      )
+      described_class.new(remindable: appointment).perform_for(touch)
+      touch.mark_processing!
+      original_revision = touch.schedule_revision
+
+      described_class.new(remindable: appointment, allow_processing: true).perform_for(touch)
+
+      expect(touch.reload.schedule_revision).to eq(original_revision)
+    end
+
     it 'does not mutate a processing touch after its message was materialized' do
       zone = Time.find_zone!('Asia/Almaty')
       appointment = create(

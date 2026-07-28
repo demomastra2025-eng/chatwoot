@@ -42,9 +42,17 @@ class Reminders::ExecutionScheduleGuard
   end
 
   def missed_relative_schedule?
-    return reminder.scheduled_at < Time.current - DEFERRED_GRACE_WINDOW if deferred_enrollment? && reminder.scheduled_at.present?
+    if deferred_enrollment? && reminder.scheduled_at.present?
+      return false if materialized_deferred_schedule_unchanged?
+
+      return reminder.scheduled_at < Time.current - DEFERRED_GRACE_WINDOW
+    end
 
     reminder.scheduled_at.present? && reminder.created_at.present? && reminder.scheduled_at < reminder.created_at
+  end
+
+  def materialized_deferred_schedule_unchanged?
+    current_materialized_claim? && same_time?(reminder.scheduled_at, deferred_claim.due_at)
   end
 
   def invalid_deferred_enrollment?

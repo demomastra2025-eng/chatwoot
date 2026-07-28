@@ -33,7 +33,7 @@ class Reminders::SyncRemindableService
     return unless syncable_touch?(touch)
 
     touch.assign_attributes(sync_attributes_for(touch))
-    touch.scheduled_at_will_change! if touch.relative? && !touch.manual_schedule_override?
+    touch.scheduled_at_will_change! if touch.relative_schedule_stale?
     persist_sync!(touch) if touch.changed?
   end
 

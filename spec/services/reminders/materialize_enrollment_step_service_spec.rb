@@ -55,6 +55,57 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     expect(claim.reminder.reload).to be_processing
   end
 
+  it 'keeps an accepted materialized reminder executable after queue delay' do
+    due_at = enrollment.next_due_at
+    claim = described_class.new(enrollment: enrollment, now: due_at + 1.minute).perform
+    claim.reminder.mark_processing!
+
+    travel_to(due_at + 10.minutes) do
+      result = Reminders::ExecutionScheduleGuard.new(reminder: claim.reminder).perform
+
+      expect(result).to eq(Reminders::ExecutionScheduleGuard::CONTINUE)
+      expect(claim.reminder.reload).to be_processing
+      expect(claim.reload).to be_materialized
+    end
+  end
+
+  it 'executes a materialized reminder after queue delay when its live definition is unchanged' do
+    due_at = enrollment.next_due_at
+    claim = described_class.new(enrollment: enrollment, now: due_at + 1.minute).perform
+    processing_claim = claim.reminder.mark_processing!
+    execution_updated_at = claim.reminder.reload.updated_at
+    executed = false
+
+    travel_to(due_at + 10.minutes) do
+      result = Reminders::ExecutionLockService.new(
+        reminder: claim.reminder,
+        processing_claim: processing_claim,
+        execution_updated_at: execution_updated_at
+      ).perform { executed = true }
+
+      expect(result).to be(true)
+      expect(executed).to be(true)
+      expect(claim.reminder.reload).to be_processing
+    end
+  end
+
+  it 'skips a delayed materialized reminder whose live definition moved into the past' do
+    due_at = enrollment.next_due_at
+    claim = described_class.new(enrollment: enrollment, now: due_at + 1.minute).perform
+    reminder_group.update!(
+      touches: [reminder_group.touches.first.merge('relative_offset_seconds' => -2.days.to_i)]
+    )
+    claim.reminder.mark_processing!
+
+    travel_to(due_at + 10.minutes) do
+      result = Reminders::ExecutionScheduleGuard.new(reminder: claim.reminder).perform
+
+      expect(result).to eq(Reminders::ExecutionScheduleGuard::STOP)
+      expect(claim.reminder.reload).to be_cancelled
+      expect(claim.reload).to be_skipped
+    end
+  end
+
   it 'keeps a materialized reminder executable when the feature pauses later occurrences' do
     reminder_group.update!(
       touches: [

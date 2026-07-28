@@ -399,6 +399,16 @@ class Reminder < ApplicationRecord
     relative_time_mode == RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY
   end
 
+  def relative_schedule_stale?
+    return false unless relative? && !manual_schedule_override?
+
+    current_anchor = relative_anchor_time
+    return false if current_anchor.blank? && last_materialized_anchor_at.blank?
+
+    current_anchor.blank? || last_materialized_anchor_at.blank? ||
+      current_anchor.to_i != last_materialized_anchor_at.to_i
+  end
+
   # rubocop:disable Metrics/CyclomaticComplexity
   def message_sender
     owner || creator || conversation&.assignee || account&.administrators&.order(:id)&.first
