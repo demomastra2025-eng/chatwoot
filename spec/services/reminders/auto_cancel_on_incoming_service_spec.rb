@@ -137,4 +137,50 @@ RSpec.describe Reminders::AutoCancelOnIncomingService do
     )
     expect(account.reminders.where(remindable: appointment)).to be_empty
   end
+
+  it 'cancels a deferred reminder materialized between the initial scan and enrollment lock' do
+    account.enable_features!('deferred_touch_materialization')
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      conversation: conversation,
+      starts_at: 1.day.from_now,
+      ends_at: 1.day.from_now + 30.minutes
+    )
+    plan = create(
+      :reminder_group,
+      account: account,
+      touches: [
+        {
+          body: 'Do not race the reply',
+          timing_mode: 'relative',
+          relative_anchor: 'appointment.starts_at',
+          relative_offset_seconds: -1.day.to_i,
+          timezone: 'UTC',
+          auto_cancel_on_incoming: true
+        }
+      ]
+    )
+    enrollment = Reminders::EnrollGroupService.new(
+      account: account,
+      reminder_group: plan,
+      remindable: appointment,
+      actor: nil
+    ).perform
+    service = described_class.new(message: incoming_message)
+    allow(service).to receive(:cancel_materialized_reminders!).and_wrap_original do |method|
+      count = method.call
+      Reminders::MaterializeEnrollmentStepService.new(enrollment: enrollment).perform
+      count
+    end
+
+    cancelled_count = service.perform
+
+    reminder = account.reminders.find_by!(remindable: appointment)
+    expect(cancelled_count).to eq(1)
+    expect(reminder).to be_cancelled
+    expect(reminder.last_error).to eq(described_class::CANCELLED_AFTER_INCOMING_REPLY)
+    expect(enrollment.reload).to be_completed
+  end
 end

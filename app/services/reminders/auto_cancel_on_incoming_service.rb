@@ -66,6 +66,9 @@ class Reminders::AutoCancelOnIncomingService
     deferred_enrollment_scope.find_each do |enrollment|
       enrollment.with_lock do
         enrollment.reload
+        next if enrollment.cancelled?
+
+        skipped_count += cancel_materialized_enrollment_reminders!(enrollment)
         next unless enrollment.active? || enrollment.paused?
 
         schedule = Reminders::EnrollmentScheduleService.new(enrollment: enrollment)
@@ -81,6 +84,37 @@ class Reminders::AutoCancelOnIncomingService
       end
     end
     skipped_count
+  end
+
+  def cancel_materialized_enrollment_reminders!(enrollment)
+    enrollment.touch_occurrence_claims.includes(:reminder).sum do |claim|
+      reminder = claim.reminder
+      next 0 unless cancellable_reminder?(reminder)
+
+      cancel_reminder!(reminder) ? 1 : 0
+    end
+  end
+
+  def cancellable_reminder?(reminder)
+    reminder.present? &&
+      Reminder::OPEN_STATUSES.include?(reminder.status) &&
+      !reminder.delivery_materialized? &&
+      explicitly_auto_cancelled?(reminder)
+  end
+
+  def cancel_reminder!(reminder)
+    reminder.with_lock do
+      reminder.reload
+      next false unless cancellable_reminder?(reminder)
+
+      reminder.update!(
+        status: :cancelled,
+        cancelled_at: Time.current,
+        last_error: CANCELLED_AFTER_INCOMING_REPLY,
+        processing_started_at: nil
+      )
+      true
+    end
   end
 
   def create_skipped_claim!(enrollment, step)
@@ -103,7 +137,7 @@ class Reminders::AutoCancelOnIncomingService
                         .select(:id)
 
     message.account.touch_plan_enrollments
-           .where(status: %w[active paused])
+           .where(status: %w[active paused completed])
            .where(
              <<~SQL.squish,
                (remindable_type = :appointment_type AND remindable_id IN (:appointment_ids)) OR

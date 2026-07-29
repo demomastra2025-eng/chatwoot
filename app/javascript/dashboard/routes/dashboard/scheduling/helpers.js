@@ -98,6 +98,36 @@ export const resolveAppointmentMedelementCabinetCode = (
   return cabinets.length === 1 ? cabinets[0].code : '';
 };
 
+export const buildMedelementProviderCommandDetails = ({
+  appointment = {},
+  params = {},
+}) => {
+  const customAttributes = appointment.customAttributes || {};
+  const serviceNames = Array(appointment.services)
+    .map(service => service?.name)
+    .filter(Boolean);
+
+  return {
+    cabinetCode:
+      params.company_cabinet_code ||
+      customAttributes.medelement_cabinet_code ||
+      customAttributes.medelementCabinetCode ||
+      '',
+    currentEndsAt: appointment.endsAt || '',
+    currentStartsAt: appointment.startsAt || '',
+    desiredEndsAt: params.desired_ends_at || '',
+    desiredStartsAt: params.desired_starts_at || '',
+    durationMin:
+      appointment.durationMin || appointment.serviceDurationMinSnapshot || null,
+    operation: params.operation || '',
+    patientName: appointment.clientName || appointment.title || '',
+    price: appointment.serviceAmount ?? null,
+    serviceName:
+      appointment.serviceNameSnapshot || serviceNames.join(', ') || '',
+    specialistName: appointment.resourceName || '',
+  };
+};
+
 export const resolveAppointmentConversationTarget = appointment => {
   const explicitConversationId = numericId(
     firstPresentValue(appointment, [

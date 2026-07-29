@@ -132,15 +132,68 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     expect(response).to have_http_status(:not_found)
   end
 
+  it 'manually cancels a command awaiting reconciliation and exposes retry state' do
+    command = create_command(
+      account: account,
+      hook: hook,
+      contact: contact,
+      status: 'reconciliation_required',
+      execution_state: {
+        'reconciliation_attempts' => 2,
+        'reconciliation_next_at' => 10.minutes.from_now.iso8601
+      }
+    )
+
+    post "#{path}/#{command.id}/cancel", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload')).to include(
+      'status' => 'cancelled',
+      'reconciliation_attempts' => 2,
+      'reconciliation_next_at' => nil,
+      'reconciliation_cancellable' => false,
+      'last_error_code' => 'reconciliation_cancelled_manually'
+    )
+    expect(command.reload.execution_state).to include('reconciliation_cancelled_by_id' => agent.id)
+  end
+
+  it 'rejects cancellation while a provider command is queued for execution' do
+    command = create_command(account: account, hook: hook, contact: contact, status: 'queued')
+
+    post "#{path}/#{command.id}/cancel", headers: headers, as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('MEDELEMENT_COMMAND_NOT_CANCELLABLE')
+    expect(command.reload).to be_queued
+  end
+
+  it 'does not cancel a reconciliation command from another account' do
+    other_account = create(:account).tap { |record| record.enable_features!('scheduling') }
+    other_contact = create(:contact, account: other_account)
+    other_hook = create(:integrations_hook, :medelement, account: other_account)
+    other_command = create_command(
+      account: other_account,
+      hook: other_hook,
+      contact: other_contact,
+      status: 'reconciliation_required'
+    )
+
+    post "#{path}/#{other_command.id}/cancel", headers: headers, as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(other_command.reload).to be_reconciliation_required
+  end
+
   private
 
-  def create_command(account:, hook:, contact:)
+  def create_command(account:, hook:, contact:, status: 'failed', execution_state: {})
     Integrations::Medelement::ProviderCommand.create!(
       account: account,
       hook: hook,
       contact: contact,
       operation: 'create_patient',
-      status: 'failed',
+      status: status,
+      execution_state: execution_state,
       idempotency_key: SecureRandom.uuid
     )
   end

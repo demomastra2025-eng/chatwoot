@@ -21,7 +21,34 @@ RSpec.describe Reminders::ExecuteService do
       expect(touch.reload).to be_completed
       message = conversation.messages.outgoing.last
       expect(message.additional_attributes['touch_id']).to eq(touch.id)
+      expect(message.additional_attributes).not_to include('automation_rule_id', 'touch_origin')
       expect(message.content).to include(conversation.contact.name)
+    end
+
+    it 'adds trusted automation provenance only for an automation reminder' do
+      conversation = create(:conversation)
+      rule = create(:automation_rule, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        body: 'Automated follow-up'
+      )
+      touch.mark_automation_provenance!(rule)
+
+      described_class.new(reminder: touch).perform
+
+      message = conversation.messages.outgoing.last
+      expect(message.additional_attributes).to include(
+        'automation_rule_id' => rule.id,
+        'touch_origin' => 'automation'
+      )
+      expect(message.content_attributes).to include(
+        'automation_rule_id' => rule.id
+      )
     end
 
     it 'materializes an agent touch using Captain-generated content' do

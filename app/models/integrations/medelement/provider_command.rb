@@ -6,6 +6,8 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
     awaiting_confirmation queued processing succeeded failed reconciliation_required declined cancelled
   ].freeze
   TERMINAL_STATUSES = %w[succeeded failed declined cancelled].freeze
+  RECONCILIATION_MAX_ATTEMPTS = 6
+  RECONCILIATION_BACKOFFS = [1.minute, 5.minutes, 15.minutes, 1.hour, 4.hours].freeze
   PATIENT_IDENTITY_WRITE_PREDICATE = <<~SQL.squish.freeze
     contact_id IS NOT NULL AND (
       operation IN ('create_patient', 'update_patient') OR
@@ -42,6 +44,17 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
 
   def terminal?
     status.in?(TERMINAL_STATUSES)
+  end
+
+  def reconciliation_attempts
+    execution_state.to_h['reconciliation_attempts'].to_i
+  end
+
+  def reconciliation_next_at
+    value = execution_state.to_h['reconciliation_next_at'].presence
+    Time.iso8601(value) if value
+  rescue ArgumentError
+    nil
   end
 
   def request_snapshot

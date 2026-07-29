@@ -53,7 +53,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     expect(command.confirmation_matches_request_snapshot?).to be(true)
     expect(command.confirmation_request.body).to include(
       command.request_snapshot.dig('reception', 'destination_starts_at'),
-      'специалист specialist-1',
+      'пациент Ivanov Ivan',
+      '(specialist-1)',
+      'длительность 30 мин',
       'кабинет cabinet-1'
     )
     expect(command).to have_attributes(
@@ -63,6 +65,50 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
       contact: contact,
       company_cabinet_code: 'cabinet-1',
       attempt_count: 0
+    )
+  end
+
+  it 'persists the complete old-to-new move details in the confirmation audit body' do
+    scheduling_service = create(:scheduling_service, account: account, name: 'Консультация')
+    contact.update!(custom_attributes: contact.custom_attributes.merge('medelement_patient_code' => 'patient-1'))
+    appointment.update!(
+      service: scheduling_service,
+      service_name_snapshot: 'Консультация',
+      service_amount: 15_000,
+      duration_min: 45,
+      external_ref: 'medelement:reception:reception-1'
+    )
+    new_starts_at = appointment.starts_at + 1.day
+    new_ends_at = appointment.ends_at + 1.day
+
+    command = described_class.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      operation: 'move_reception',
+      idempotency_key: 'move-reception-audit-1',
+      company_cabinet_code: 'cabinet-1',
+      actor: user,
+      desired_starts_at: new_starts_at,
+      desired_ends_at: new_ends_at
+    ).perform
+
+    body = command.confirmation_request.body
+    expect(body).to include(
+      'пациент Ivanov Ivan',
+      "специалист #{resource.name} (specialist-1)",
+      'услуга Консультация',
+      'цена 15000',
+      'длительность 45 мин',
+      "исходное время #{appointment.starts_at.utc.iso8601(6)} — #{appointment.ends_at.utc.iso8601(6)}",
+      "новое время #{new_starts_at.utc.iso8601(6)} — #{new_ends_at.utc.iso8601(6)}"
+    )
+    expect(command.request_snapshot.fetch('confirmation')).to include(
+      'patient_name' => 'Ivanov Ivan',
+      'specialist_name' => resource.name,
+      'service_name' => 'Консультация',
+      'price' => 15_000,
+      'duration_min' => 45
     )
   end
 

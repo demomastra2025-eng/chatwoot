@@ -31,6 +31,8 @@ import macros from './macros.json';
 import report from './report.json';
 import resetPassword from './resetPassword.json';
 import search from './search.json';
+// Scheduling intentionally uses the complete Russian catalog until a full
+// Kazakh translation is available, avoiding partial keys and raw fallbacks.
 import scheduling from '../ru/scheduling.json';
 import setNewPassword from './setNewPassword.json';
 import settings from './settings.json';

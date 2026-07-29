@@ -6,6 +6,7 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
 
   def perform
     mark_stale_processing_commands!
+    mark_exhausted_reconciliation_commands!
     dispatch_resolved_confirmations
     dispatch_queued_commands
     dispatch_reconciliation_commands
@@ -63,8 +64,33 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
   def dispatch_reconciliation_commands
     Integrations::Medelement::ProviderCommand
       .reconciliation_required
+      .where(
+        "COALESCE((execution_state ->> 'reconciliation_attempts')::integer, 0) < ?",
+        Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
+      )
+      .where(
+        "NULLIF(execution_state ->> 'reconciliation_next_at', '') IS NULL OR " \
+        "(execution_state ->> 'reconciliation_next_at')::timestamptz <= ?",
+        Time.current
+      )
       .limit(BATCH_SIZE)
       .pluck(:id)
       .each { |id| Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(id) }
+  end
+
+  def mark_exhausted_reconciliation_commands!
+    # rubocop:disable Rails/SkipsModelValidations
+    Integrations::Medelement::ProviderCommand
+      .reconciliation_required
+      .where(
+        "COALESCE((execution_state ->> 'reconciliation_attempts')::integer, 0) >= ?",
+        Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
+      )
+      .update_all(
+        status: 'failed',
+        last_error_code: 'reconciliation_exhausted',
+        updated_at: Time.current
+      )
+    # rubocop:enable Rails/SkipsModelValidations
   end
 end

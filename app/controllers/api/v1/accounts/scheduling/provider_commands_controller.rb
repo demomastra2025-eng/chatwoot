@@ -1,5 +1,5 @@
 class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accounts::Scheduling::BaseController
-  before_action :set_command, only: [:show, :confirm]
+  before_action :set_command, only: [:show, :confirm, :cancel]
 
   def index
     commands = command_scope.order(created_at: :desc).limit(index_limit)
@@ -47,6 +47,15 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
     ).perform
 
     render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(@command.reload))
+  end
+
+  def cancel
+    command = Integrations::Medelement::ProviderCommands::CancelService.new(
+      command: @command,
+      actor: Current.user
+    ).perform
+
+    render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(command))
   end
 
   private

@@ -16,6 +16,13 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     create_patient!
   end
 
+  def resolve_existing
+    return snapshot_patient_code if snapshot_patient_code.present?
+
+    matches = client.search_patients_by_phone(phone_number: patient_snapshot.fetch('phone_number'))
+    patient_code(matches.first) if matches.one?
+  end
+
   private
 
   attr_reader :command, :client, :before_create

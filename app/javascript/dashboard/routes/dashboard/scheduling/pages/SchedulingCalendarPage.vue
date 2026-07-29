@@ -46,6 +46,7 @@ import {
   normalizePayload,
 } from 'dashboard/stores/scheduling/shared';
 import {
+  buildMedelementProviderCommandDetails,
   buildMedelementProviderCommandParams,
   canCreateAppointmentConversation,
   formatCalendarTitle,
@@ -301,14 +302,58 @@ const providerCommandTitle = computed(() => {
 
   return t('SCHEDULING.MEDELEMENT.CONFIRM_TITLE');
 });
-const providerCommandDescription = computed(() =>
-  t('SCHEDULING.MEDELEMENT.CONFIRM_DESCRIPTION', {
-    name:
-      pendingProviderAction.value?.appointment?.clientName ||
-      pendingProviderAction.value?.appointment?.title ||
-      '—',
-  })
-);
+const formatProviderCommandDateTime = value => {
+  if (!value) return '—';
+
+  return new Intl.DateTimeFormat(
+    locale.value?.replace(/_/g, '-') || undefined,
+    {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }
+  ).format(new Date(value));
+};
+const formatProviderCommandRange = (startsAt, endsAt) => {
+  const start = formatProviderCommandDateTime(startsAt);
+  const end = formatProviderCommandDateTime(endsAt);
+  return endsAt ? `${start} — ${end}` : start;
+};
+const providerCommandDescription = computed(() => {
+  const action = pendingProviderAction.value || {};
+  const details = buildMedelementProviderCommandDetails(action);
+  const price =
+    details.price === null
+      ? '—'
+      : new Intl.NumberFormat(locale.value?.replace(/_/g, '-') || undefined, {
+          currency: 'KZT',
+          style: 'currency',
+        }).format(details.price);
+  const currentRange = formatProviderCommandRange(
+    details.currentStartsAt,
+    details.currentEndsAt
+  );
+  const time = details.desiredStartsAt
+    ? `${currentRange} → ${formatProviderCommandRange(
+        details.desiredStartsAt,
+        details.desiredEndsAt
+      )}`
+    : currentRange;
+  const rows = [
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_PATIENT')}: ${details.patientName || '—'}`,
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_SPECIALIST')}: ${details.specialistName || '—'}`,
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_SERVICE')}: ${details.serviceName || '—'}`,
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_CABINET')}: ${details.cabinetCode || '—'}`,
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_PRICE')}: ${price}`,
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_DURATION')}: ${details.durationMin || '—'} ${t(
+      'SCHEDULING.GENERAL.MINUTES'
+    )}`,
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_TIME')}: ${time}`,
+  ];
+
+  return `${t('SCHEDULING.MEDELEMENT.CONFIRM_DESCRIPTION', {
+    name: details.patientName || '—',
+  })} ${rows.join(' · ')}`;
+});
 
 const resourceOptions = computed(() =>
   [

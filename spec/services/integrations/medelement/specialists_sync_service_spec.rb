@@ -51,6 +51,50 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     expect(resource.work_rules.order(:weekday).pluck(:weekday, :start_minute, :end_minute, :active)).to eq(expected_default_rules)
     expect(resource.custom_attributes['medelement_default_work_rules_seeded_at']).to be_present
     expect(resource.timezone).to eq('Asia/Almaty')
+    expect(client).to have_received(:specialists).twice
+  end
+
+  it 'rejects an unstable live snapshot before applying any database changes' do
+    existing_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'missing-from-partial-response',
+        'medelement_last_seen_at' => 8.days.ago.iso8601
+      }
+    )
+    stable_first_read = [
+      {
+        'specialistCode' => 'ME-SPEC-001',
+        'userName' => 'Synthetic specialist'
+      }
+    ]
+    allow(client).to receive(:specialists).and_return(stable_first_read, [])
+
+    expect do
+      described_class.new(account: account, client: client, configuration: configuration).perform
+    end.to raise_error(
+      Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError,
+      'Medelement specialists snapshot is empty'
+    ).and not_change(account.scheduling_resources, :count)
+
+    expect(existing_resource.reload).to be_active
+  end
+
+  it 'does not deactivate a stale specialist when a stable live snapshot may be truncated' do
+    existing_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'missing-from-stable-partial-response',
+        'medelement_last_seen_at' => 8.days.ago.iso8601
+      }
+    )
+
+    described_class.new(account: account, client: client, configuration: configuration).perform
+
+    expect(existing_resource.reload).to be_active
+    expect(client).to have_received(:specialists).twice
   end
 
   it 'does not recreate work rules after the default schedule has already been seeded once' do
@@ -177,7 +221,14 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
       }
     )
 
-    described_class.new(account: account, client: client, configuration: configuration, now: now).perform
+    authoritative_source = { specialists: client.specialists, cabinets: [] }
+    described_class.new(
+      account: account,
+      client: nil,
+      configuration: configuration,
+      source: authoritative_source,
+      now: now
+    ).perform
 
     expect(stale_resource.reload).not_to be_active
     expect(recent_resource.reload).to be_active

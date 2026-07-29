@@ -3,8 +3,7 @@ class Integrations::Medelement::SpecialistsSyncService
   LAST_SEEN_AT_KEY = 'medelement_last_seen_at'.freeze
   SPECIALIST_CODE_KEY = 'medelement_specialist_code'.freeze
   MISSING_GRACE_PERIOD = 7.days
-  LEGACY_DEFAULT_WORK_RULE_START_MINUTE = 0
-  LEGACY_DEFAULT_WORK_RULE_END_MINUTE = 1440
+  LEGACY_DEFAULT_WORK_RULE_RANGE = (0..1440)
   DEFAULT_DAY_START_MINUTE = 9 * 60
   DEFAULT_WEEKDAY_END_MINUTE = 18 * 60
   DEFAULT_WEEKEND_END_MINUTE = 15 * 60
@@ -21,10 +20,12 @@ class Integrations::Medelement::SpecialistsSyncService
   end
 
   def perform
-    seen_codes = Array(specialists || client.specialists).filter_map do |payload|
+    rows = specialists || Integrations::Medelement::SpecialistsSnapshotService.new(client: client).perform
+    seen_codes = Array(rows).filter_map do |payload|
       sync_specialist!(normalized_payload(payload))
     end
-    deactivate_stale_specialists!(seen_codes)
+    # Live provider responses have no total/completeness marker; only validated catalog imports pass client: nil.
+    deactivate_stale_specialists!(seen_codes) if client.nil?
 
     { imported_count: seen_codes.size }
   end
@@ -146,8 +147,8 @@ class Integrations::Medelement::SpecialistsSyncService
       (0..6).map do |weekday|
         {
           weekday: weekday,
-          start_minute: LEGACY_DEFAULT_WORK_RULE_START_MINUTE,
-          end_minute: LEGACY_DEFAULT_WORK_RULE_END_MINUTE,
+          start_minute: LEGACY_DEFAULT_WORK_RULE_RANGE.begin,
+          end_minute: LEGACY_DEFAULT_WORK_RULE_RANGE.end,
           active: true
         }
       end

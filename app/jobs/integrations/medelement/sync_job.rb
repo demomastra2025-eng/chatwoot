@@ -6,6 +6,7 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
   retry_on Integrations::Medelement::Client::ApiError, wait: 1.minute, attempts: 3
   retry_on Integrations::Medelement::ReceptionsSyncService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
   retry_on Integrations::Medelement::ServicesSyncService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
+  retry_on Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
   discard_on ActiveRecord::RecordNotFound
 
   def perform(hook_id)

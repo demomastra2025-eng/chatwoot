@@ -1,5 +1,6 @@
 import {
   buildCalendarRange,
+  buildMedelementProviderCommandDetails,
   buildMedelementProviderCommandParams,
   canCreateAppointmentConversation,
   deriveVisibleMinuteWindow,
@@ -102,6 +103,40 @@ describe('scheduling helpers', () => {
         operation: 'remove_reception',
       })
     ).toEqual({ appointment_id: 17, operation: 'remove_reception' });
+  });
+
+  it('builds complete Medelement confirmation details including move before and after values', () => {
+    expect(
+      buildMedelementProviderCommandDetails({
+        appointment: {
+          clientName: 'Айжан Садыкова',
+          durationMin: 45,
+          endsAt: '2026-03-09T10:45:00.000Z',
+          resourceName: 'Д-р Жумабеков',
+          serviceAmount: 25000,
+          serviceNameSnapshot: 'Первичный приём',
+          startsAt: '2026-03-09T10:00:00.000Z',
+        },
+        params: {
+          company_cabinet_code: 'CAB-7',
+          desired_ends_at: '2026-03-10T12:45:00.000Z',
+          desired_starts_at: '2026-03-10T12:00:00.000Z',
+          operation: 'move_reception',
+        },
+      })
+    ).toEqual({
+      cabinetCode: 'CAB-7',
+      currentEndsAt: '2026-03-09T10:45:00.000Z',
+      currentStartsAt: '2026-03-09T10:00:00.000Z',
+      desiredEndsAt: '2026-03-10T12:45:00.000Z',
+      desiredStartsAt: '2026-03-10T12:00:00.000Z',
+      durationMin: 45,
+      operation: 'move_reception',
+      patientName: 'Айжан Садыкова',
+      price: 25000,
+      serviceName: 'Первичный приём',
+      specialistName: 'Д-р Жумабеков',
+    });
   });
 
   it('builds a week range anchored to Monday', () => {

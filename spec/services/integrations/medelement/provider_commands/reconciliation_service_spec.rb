@@ -92,7 +92,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       perform
 
       expect(Integrations::Medelement::Client).not_to have_received(:new)
-      expect(command.reload).to be_reconciliation_required
+      expect(command.reload).to have_attributes(
+        status: 'failed',
+        last_error_code: 'reconciliation_invalid_confirmation'
+      )
     end
 
     it 'does not construct a provider client after the request snapshot changes' do
@@ -103,7 +106,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       perform
 
       expect(Integrations::Medelement::Client).not_to have_received(:new)
-      expect(command.reload).to be_reconciliation_required
+      expect(command.reload).to have_attributes(
+        status: 'failed',
+        last_error_code: 'reconciliation_invalid_request_snapshot'
+      )
     end
   end
 
@@ -119,12 +125,80 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       expect(client).not_to have_received(:create_patient)
     end
 
-    it 'keeps manual reconciliation when no exact match exists' do
+    it 'rejects manual cancellation while the reconciliation claim is in flight' do
+      actor = create(:user, :administrator, account: account)
+      command.update!(execution_state: command.execution_state.merge('execution_started_at' => 1.hour.ago.iso8601))
+      allow(client).to receive(:search_patients_by_phone) do
+        expect(Time.iso8601(command.reload.execution_state.fetch('execution_started_at'))).to be > 1.minute.ago
+        expect do
+          Integrations::Medelement::ProviderCommands::CancelService.new(command: command, actor: actor).perform
+        end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_NOT_CANCELLABLE') }
+        [{ 'PROFILE_CODE' => 'patient-1' }]
+      end
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-1')
+      expect(contact.reload.custom_attributes).to include('medelement_patient_code' => 'patient-1')
+    end
+
+    it 'does not mutate local patient state after losing the reconciliation claim' do
+      allow(client).to receive(:search_patients_by_phone) do
+        state = command.reload.execution_state.except(
+          Integrations::Medelement::ProviderCommands::ReconciliationLifecycle::CLAIM_TOKEN_KEY,
+          Integrations::Medelement::ProviderCommands::ReconciliationLifecycle::CLAIMED_AT_KEY
+        )
+        command.update!(status: 'reconciliation_required', execution_state: state)
+        [{ 'PROFILE_CODE' => 'patient-1' }]
+      end
+
+      perform
+
+      expect(command.reload).to be_reconciliation_required
+      expect(command.provider_patient_code).to be_blank
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to be_blank
+    end
+
+    it 'schedules a bounded retry when no exact match exists' do
       allow(client).to receive(:search_patients_by_phone).and_return([])
 
       perform
 
       expect(command.reload).to be_reconciliation_required
+      expect(command.reconciliation_attempts).to eq(1)
+      expect(command.reconciliation_next_at).to be > Time.current
+      expect(command.last_error_code).to eq('reconciliation_no_match')
+    end
+
+    it 'does not consume another attempt when a duplicate job runs before the backoff is due' do
+      expect(client).to receive(:search_patients_by_phone).once.and_return([])
+
+      perform
+      first_next_at = command.reload.reconciliation_next_at
+      perform
+
+      expect(command.reload).to be_reconciliation_required
+      expect(command.reconciliation_attempts).to eq(1)
+      expect(command.reconciliation_next_at).to eq(first_next_at)
+    end
+
+    it 'fails terminally after the final unresolved attempt' do
+      command.update!(
+        execution_state: command.execution_state.merge(
+          'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS - 1
+        )
+      )
+      allow(client).to receive(:search_patients_by_phone).and_return([])
+
+      perform
+
+      expect(command.reload).to have_attributes(
+        status: 'failed',
+        last_error_code: 'reconciliation_exhausted'
+      )
+      expect(command.reconciliation_attempts).to eq(
+        Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
+      )
     end
   end
 

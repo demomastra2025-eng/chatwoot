@@ -190,16 +190,9 @@ class Integrations::Medelement::ProviderCommands::CreateService
   end
 
   def confirmation_body(snapshot)
-    reception = snapshot['reception']
-    return patient_confirmation_body(snapshot) if reception.blank?
-
-    "Операция #{operation} для записи ##{snapshot['appointment_id']}: " \
-      "#{reception['destination_starts_at']} — #{reception['destination_ends_at']}; " \
-      "специалист #{reception['specialist_code']}; кабинет #{snapshot['company_cabinet_code']}"
-  end
-
-  def patient_confirmation_body(snapshot)
-    phone_number = snapshot.dig('patient', 'phone_number')
-    "Операция #{operation} для контакта ##{snapshot['contact_id']}; телефон #{phone_number}"
+    Integrations::Medelement::ProviderCommands::ConfirmationBodyBuilder.new(
+      operation: operation,
+      snapshot: snapshot
+    ).build
   end
 end

@@ -147,7 +147,12 @@ describe('MessageList', () => {
     const automationMessage = message({
       ...employeeMessage,
       id: 2,
-      additional_attributes: { touch_id: 143, touch_source: 'touch' },
+      additional_attributes: {
+        automation_rule_id: 24,
+        touch_id: 143,
+        touch_origin: 'automation',
+        touch_source: 'touch',
+      },
     });
     const messages = automationFirst
       ? [automationMessage, employeeMessage]
@@ -157,5 +162,35 @@ describe('MessageList', () => {
     const renderedMessages = wrapper.findAllComponents({ name: 'Message' });
 
     expect(renderedMessages[0].props('groupWithNext')).toBe(false);
+  });
+
+  it.each([
+    ['manual employee', {}],
+    [
+      'automation',
+      {
+        automation_rule_id: 24,
+        touch_id: 143,
+        touch_origin: 'automation',
+        touch_source: 'touch',
+      },
+    ],
+  ])('keeps same-provenance %s messages grouped', (_scenario, attributes) => {
+    const createdAt = atLocalNoon(2026, 6, 24);
+    const messages = [1, 2].map(id =>
+      message({
+        id,
+        additional_attributes: attributes,
+        created_at: createdAt,
+        message_type: MESSAGE_TYPES.OUTGOING,
+        sender_id: 7,
+        sender: { id: 7, type: 'User', name: 'Agent' },
+      })
+    );
+
+    const wrapper = createWrapper({ messages });
+    const renderedMessages = wrapper.findAllComponents({ name: 'Message' });
+
+    expect(renderedMessages[0].props('groupWithNext')).toBe(true);
   });
 });

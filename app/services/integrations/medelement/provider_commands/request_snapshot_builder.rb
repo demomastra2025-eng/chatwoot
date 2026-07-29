@@ -53,7 +53,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'desired_starts_at' => timestamp(desired_starts_at),
       'desired_ends_at' => timestamp(desired_ends_at),
       'patient' => patient_snapshot,
-      'reception' => reception_snapshot
+      'reception' => reception_snapshot,
+      'confirmation' => confirmation_snapshot
     }.compact
   end
 
@@ -90,6 +91,18 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'destination_ends_at' => timestamp(destination_ends_at),
       'description' => appointment.client_comment.to_s.presence,
       'nomenclature_code' => nomenclature_code
+    }.compact
+  end
+
+  def confirmation_snapshot
+    return if appointment.blank?
+
+    {
+      'patient_name' => appointment.client_name,
+      'specialist_name' => appointment.resource.name,
+      'service_name' => appointment.service_name_snapshot.presence || appointment.service&.name,
+      'price' => appointment.service_amount,
+      'duration_min' => appointment.duration_min
     }.compact
   end
 

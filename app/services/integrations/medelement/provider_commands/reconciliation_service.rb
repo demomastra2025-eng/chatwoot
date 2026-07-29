@@ -13,37 +13,66 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
 
   def perform
     return unless command.reconciliation_required?
-    return unless command.confirmation_matches_request_snapshot?
-    return unless command.request_snapshot_valid?
+    return unless valid_for_reconciliation?
 
-    initialize_provider!
-    handler = PHASE_HANDLERS[write_phase]
-    send(handler) if handler
-  rescue Integrations::Medelement::Client::ApiError
-    nil
+    @reconciliation_claim_token = lifecycle.claim_attempt!
+    return if reconciliation_claim_token.blank?
+
+    reconcile_write!
+  rescue Integrations::Medelement::Client::ApiError => e
+    if reconciliation_claim_token.present?
+      lifecycle.retry_unresolved!(
+        'reconciliation_provider_error', status: e.status, claim_token: reconciliation_claim_token
+      )
+    end
   rescue StandardError => e
     Rails.logger.warn("[MEDELEMENT::RECONCILIATION] command_id=#{command.id} error=#{e.class}")
-    nil
+    lifecycle.retry_unresolved!('reconciliation_internal_error', claim_token: reconciliation_claim_token) if reconciliation_claim_token.present?
   end
 
   private
 
-  attr_reader :command, :configuration, :client
+  attr_reader :command, :configuration, :client, :reconciliation_claim_token
+
+  def reconcile_write!
+    initialize_provider!
+    handler = PHASE_HANDLERS[write_phase]
+    return lifecycle.fail!('reconciliation_unknown_write_phase', claim_token: reconciliation_claim_token) if handler.blank?
+
+    send(handler)
+    lifecycle.retry_unresolved!('reconciliation_no_match', claim_token: reconciliation_claim_token)
+  end
+
+  def valid_for_reconciliation?
+    return true if command.confirmation_matches_request_snapshot? && command.request_snapshot_valid?
+
+    error_code = if command.confirmation_matches_request_snapshot?
+                   'reconciliation_invalid_request_snapshot'
+                 else
+                   'reconciliation_invalid_confirmation'
+                 end
+    lifecycle.fail!(error_code)
+    false
+  end
+
+  def lifecycle
+    @lifecycle ||= Integrations::Medelement::ProviderCommands::ReconciliationLifecycle.new(command: command)
+  end
 
   def write_phase
     command.execution_state.to_h['write_phase']
   end
 
   def reconcile_patient_create
-    code = Integrations::Medelement::ProviderCommands::PatientResolver.new(command: command, client: client).resolve!(allow_create: false)
+    code = Integrations::Medelement::ProviderCommands::PatientResolver.new(command: command, client: client).resolve_existing
+    return if code.blank?
+
     if command.create_reception?
-      command.update!(status: 'queued', last_error_code: nil, last_error_status: nil)
-      Integrations::Medelement::ProviderCommandJob.perform_later(command.id)
+      applied = success_applier.patient_resolved_for_reception!(patient_code: code)
+      Integrations::Medelement::ProviderCommandJob.perform_later(command.id) if applied
     else
       success_applier.patient!(patient_code: code)
     end
-  rescue Integrations::Medelement::ProviderCommands::ExecutionError
-    nil
   end
 
   def reconcile_patient_update
@@ -174,7 +203,10 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def success_applier
-    @success_applier ||= Integrations::Medelement::ProviderCommands::SuccessApplier.new(command: command)
+    @success_applier ||= Integrations::Medelement::ProviderCommands::SuccessApplier.new(
+      command: command,
+      reconciliation_claim_token: reconciliation_claim_token
+    )
   end
 
   def initialize_provider!

@@ -14,7 +14,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     allow(Integrations::Medelement::ProviderCommandReconciliationJob).to receive(:perform_later)
   end
 
-  it 'dispatches resolved confirmations, queued commands, reconciliation, and marks stale processing' do
+  it 'dispatches resolved confirmations, queued commands, reconciliation, and marks stale processing', :aggregate_failures do
     confirmed_request = create(
       :confirmation_request,
       account: account,
@@ -26,6 +26,16 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     awaiting = create_command(status: 'awaiting_confirmation', confirmation_request: confirmed_request)
     queued = create_command(status: 'queued')
     reconciliation = create_command(status: 'reconciliation_required')
+    future_reconciliation = create_command(
+      status: 'reconciliation_required',
+      execution_state: { 'reconciliation_next_at' => 10.minutes.from_now.iso8601 }
+    )
+    exhausted_reconciliation = create_command(
+      status: 'reconciliation_required',
+      execution_state: {
+        'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
+      }
+    )
     stale = create_command(status: 'processing', execution_state: { 'write_phase' => 'patient_create' })
     stale.update!(updated_at: 20.minutes.ago)
 
@@ -36,7 +46,15 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(queued.id)
     expect(Integrations::Medelement::ProviderCommandReconciliationJob).to have_received(:perform_later).with(reconciliation.id)
     expect(Integrations::Medelement::ProviderCommandReconciliationJob).to have_received(:perform_later).with(stale.id)
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob)
+      .not_to have_received(:perform_later).with(future_reconciliation.id)
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob)
+      .not_to have_received(:perform_later).with(exhausted_reconciliation.id)
     expect(stale.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'executor_stale')
+    expect(exhausted_reconciliation.reload).to have_attributes(
+      status: 'failed',
+      last_error_code: 'reconciliation_exhausted'
+    )
   end
 
   it 'requeues stale processing that crashed before recording a write phase' do

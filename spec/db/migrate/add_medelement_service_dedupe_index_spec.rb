@@ -13,15 +13,17 @@ RSpec.describe AddMedelementServiceDedupeIndex do
     migration.up unless connection.index_name_exists?(:scheduling_services, described_class::INDEX_NAME)
   end
 
-  it 'soft-quarantines existing duplicates before creating the unique index' do
+  it 'preserves non-conflicting specialist prices and audibly quarantines conflicts', :aggregate_failures do
     account = create(:account)
     code_attributes = { 'medelement_nomenclature_code' => test_code }
     keeper = create(:scheduling_service, account: account, custom_attributes: code_attributes)
     duplicate = create(:scheduling_service, account: account, custom_attributes: code_attributes)
-    resources = create_list(:scheduling_resource, 3, account: account)
+    resources = create_list(:scheduling_resource, 4, account: account)
     create(:scheduling_service_price, account: account, service: keeper, resource: resources[0])
     create(:scheduling_service_price, account: account, service: keeper, resource: resources[1])
-    duplicate_price = create(:scheduling_service_price, account: account, service: duplicate, resource: resources[2])
+    create(:scheduling_service_price, account: account, service: keeper, resource: resources[3])
+    migrated_price = create(:scheduling_service_price, account: account, service: duplicate, resource: resources[2])
+    conflicting_price = create(:scheduling_service_price, account: account, service: duplicate, resource: resources[0])
 
     migration.up
 
@@ -29,10 +31,29 @@ RSpec.describe AddMedelementServiceDedupeIndex do
     expect(duplicate.reload).not_to be_active
     expect(duplicate.custom_attributes).to include(
       'medelement_duplicate_nomenclature_code' => test_code,
-      'medelement_duplicate_of_service_id' => keeper.id
+      'medelement_duplicate_of_service_id' => keeper.id,
+      'medelement_duplicate_was_active' => true,
+      'medelement_migrated_price_ids' => [migrated_price.id],
+      'medelement_deactivated_price_ids' => [conflicting_price.id]
     )
     expect(duplicate.custom_attributes).not_to have_key('medelement_nomenclature_code')
-    expect(duplicate_price.reload).not_to be_active
+    expect(migrated_price.reload).to have_attributes(service_id: keeper.id, active: true)
+    expect(conflicting_price.reload).to have_attributes(service_id: duplicate.id, active: false)
     expect(connection.index_name_exists?(:scheduling_services, described_class::INDEX_NAME)).to be(true)
+
+    migration.down
+
+    expect(migrated_price.reload).to have_attributes(service_id: duplicate.id, active: true)
+    expect(conflicting_price.reload).to have_attributes(service_id: duplicate.id, active: true)
+    expect(duplicate.reload).to be_active
+    expect(duplicate.custom_attributes).to include('medelement_nomenclature_code' => test_code)
+    expect(duplicate.custom_attributes.keys).not_to include(
+      'medelement_duplicate_nomenclature_code',
+      'medelement_duplicate_of_service_id',
+      'medelement_duplicate_was_active',
+      'medelement_migrated_price_ids',
+      'medelement_deactivated_price_ids'
+    )
+    expect(connection.index_name_exists?(:scheduling_services, described_class::INDEX_NAME)).to be(false)
   end
 end

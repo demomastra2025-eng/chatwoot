@@ -228,7 +228,12 @@ describe('Message', () => {
 
   it('shows the automation system sender for touch messages', () => {
     const wrapper = createWrapper({
-      additionalAttributes: { touchId: 143, touchSource: 'touch' },
+      additionalAttributes: {
+        automationRuleId: 24,
+        touchId: 143,
+        touchOrigin: 'automation',
+        touchSource: 'touch',
+      },
       sender: {
         id: 1851,
         type: 'User',
@@ -249,9 +254,9 @@ describe('Message', () => {
     );
   });
 
-  it('keeps the employee sender when touch provenance is incomplete', () => {
+  it('keeps the employee sender for a manual scheduled touch', () => {
     const wrapper = createWrapper({
-      additionalAttributes: { touchId: 143 },
+      additionalAttributes: { touchId: 143, touchSource: 'touch' },
       sender: {
         id: 1851,
         type: 'User',

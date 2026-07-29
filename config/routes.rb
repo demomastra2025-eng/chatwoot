@@ -240,6 +240,7 @@ Rails.application.routes.draw do
             end
             resources :provider_commands, only: [:index, :show, :create] do
               post :confirm, on: :member
+              post :cancel, on: :member
             end
             resources :payments, only: [:index]
             resources :expenses, only: [:index] do
