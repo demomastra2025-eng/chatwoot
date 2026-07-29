@@ -16,3 +16,6 @@ export const isAutomationTouchMessage = attributes =>
       touchOrigin(attributes) === 'automation' &&
       automationRuleId(attributes)
   );
+
+export const isManualDelayedTouchMessage = attributes =>
+  isDelayedTouchMessage(attributes) && !isAutomationTouchMessage(attributes);

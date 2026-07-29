@@ -359,7 +359,7 @@
       "WRITE_ACTION": "Write"
     },
     "SENT_BY": "Sent by:",
-    "AUTOMATION_SYSTEM": "Automation system",
+    "AUTOMATION_SYSTEM": "Automation",
     "BOT": "Bot",
     "NATIVE_APP": "Native app",
     "NATIVE_APP_ADVISORY": "This message was sent from the {platform} native app. Reply from {installationName} to maintain the message window.",

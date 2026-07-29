@@ -314,7 +314,7 @@
     "FILE_TYPE_NOT_SUPPORTED": "This {fileName} file type is not supported in this conversation",
     "MESSAGE_ERROR": "Unable to send this message, please try again later",
     "SENT_BY": "Sent by:",
-    "AUTOMATION_SYSTEM": "Автоматтандыру жүйесі",
+    "AUTOMATION_SYSTEM": "Автоматтандыру",
     "BOT": "Robot",
     "NATIVE_APP": "Native app",
     "NATIVE_APP_ADVISORY": "This message was sent from the {platform} native app. Reply from {installationName} to maintain the message window.",

@@ -226,6 +226,13 @@ const variant = computed(() => {
     return MESSAGE_VARIANTS.AGENT;
   }
 
+  if (
+    props.messageType === MESSAGE_TYPES.OUTGOING &&
+    isAutomationTouchMessage(props.additionalAttributes)
+  ) {
+    return MESSAGE_VARIANTS.BOT;
+  }
+
   const senderType = props.sender?.type ?? props.senderType;
   const hasExternalSenderName = !!props.additionalAttributes?.senderName;
   const isBot =
@@ -560,7 +567,10 @@ const avatarInfo = computed(() => {
 
   if (
     props.messageType === MESSAGE_TYPES.OUTGOING &&
-    isAutomationTouchMessage(props.additionalAttributes)
+    isAutomationTouchMessage(props.additionalAttributes) &&
+    ![SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
+      props.sender?.type ?? props.senderType
+    )
   ) {
     return {
       name: t('CONVERSATION.AUTOMATION_SYSTEM'),

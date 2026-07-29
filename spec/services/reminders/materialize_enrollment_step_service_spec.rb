@@ -44,6 +44,23 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     expect(claim.reminder.metadata).to include('touch_plan_enrollment_id' => enrollment.id)
   end
 
+  it 'reraises a unique violation that did not create an occurrence claim' do
+    service = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute)
+    allow(service).to receive(:process_locked_enrollment).and_raise(ActiveRecord::RecordNotUnique)
+
+    expect { service.perform }.to raise_error(ActiveRecord::RecordNotUnique)
+  end
+
+  it 'returns the existing occurrence claim after a duplicate claim race' do
+    now = enrollment.next_due_at + 1.minute
+    claim = described_class.new(enrollment: enrollment, now: now).perform
+    service = described_class.new(enrollment: enrollment, now: now)
+    service.instance_variable_set(:@occurrence_key, claim.occurrence_key)
+    allow(service).to receive(:process_locked_enrollment).and_raise(ActiveRecord::RecordNotUnique)
+
+    expect(service.perform).to eq(claim)
+  end
+
   it 'keeps the materialized reminder executable after the enrollment completes' do
     claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute).perform
     claim.reminder.mark_processing!

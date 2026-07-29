@@ -13,8 +13,11 @@ class Reminders::MaterializeEnrollmentStepService
       enrollment.reload
       process_locked_enrollment
     end
-  rescue ActiveRecord::RecordNotUnique
-    enrollment.touch_occurrence_claims.find_by(occurrence_key: @occurrence_key)
+  rescue ActiveRecord::RecordNotUnique => e
+    duplicate_claim = enrollment.touch_occurrence_claims.find_by(occurrence_key: @occurrence_key)
+    return duplicate_claim if duplicate_claim.present?
+
+    raise e
   end
 
   private

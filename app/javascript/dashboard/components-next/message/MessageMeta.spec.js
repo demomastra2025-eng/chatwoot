@@ -122,6 +122,43 @@ describe('MessageMeta', () => {
     ).toBe(MESSAGE_STATUS.READ);
   });
 
+  it('shows the delayed badge for a manually scheduled message', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.SENT),
+      additionalAttributes: ref({ touchId: 143, touchSource: 'touch' }),
+      contentAttributes: ref({}),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper
+        .findAllComponents({ name: 'Label' })
+        .some(label => label.props('label') === 'Delayed')
+    ).toBe(true);
+  });
+
+  it('hides the delayed badge for an automation touch message', () => {
+    useMessageContextMock.mockReturnValue({
+      ...baseMessageContext(MESSAGE_STATUS.SENT),
+      additionalAttributes: ref({
+        automationRuleId: 24,
+        touchId: 143,
+        touchOrigin: 'automation',
+        touchSource: 'touch',
+      }),
+      contentAttributes: ref({}),
+    });
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper
+        .findAllComponents({ name: 'Label' })
+        .some(label => label.props('label') === 'Delayed')
+    ).toBe(false);
+  });
+
   it('shows an edited marker when the message content was updated', () => {
     useMessageContextMock.mockReturnValue({
       ...baseMessageContext(MESSAGE_STATUS.READ),

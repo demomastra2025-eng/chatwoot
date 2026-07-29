@@ -14,7 +14,7 @@ import {
 } from 'dashboard/helper/metaAdReferralHelper';
 import { useMessageContext } from './provider.js';
 import { useAudioPlaybackState } from './audioPlaybackState';
-import { isDelayedTouchMessage } from './helpers/messageProvenance';
+import { isManualDelayedTouchMessage } from './helpers/messageProvenance';
 
 import { ATTACHMENT_TYPES, MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
@@ -201,7 +201,7 @@ const isCampaignMessage = computed(
   () => !!additionalAttributes.value?.campaignId
 );
 const isDelayedMessage = computed(() =>
-  isDelayedTouchMessage(additionalAttributes.value)
+  isManualDelayedTouchMessage(additionalAttributes.value)
 );
 
 const isEdited = computed(() => !!contentAttributes.value?.edited);

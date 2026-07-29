@@ -35,7 +35,7 @@ vi.mock('vue-i18n', () => ({
       }
       if (key === 'CONVERSATION.SENT_BY') return 'Sent by:';
       if (key === 'CONVERSATION.AUTOMATION_SYSTEM') {
-        return 'Automation system';
+        return 'Automation';
       }
       return key;
     },
@@ -226,7 +226,7 @@ describe('Message', () => {
     });
   });
 
-  it('shows the automation system sender for touch messages', () => {
+  it('shows the automation sender and bot background for touch messages', () => {
     const wrapper = createWrapper({
       additionalAttributes: {
         automationRuleId: 24,
@@ -245,13 +245,40 @@ describe('Message', () => {
     });
 
     expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
-      name: 'Automation system',
+      name: 'Automation',
       src: '',
       iconName: 'i-lucide-workflow',
     });
     expect(wrapper.find('[data-tooltip]').attributes('data-tooltip')).toBe(
-      'Sent by: Automation system'
+      'Sent by: Automation'
     );
+    expect(wrapper.vm.variant).toBe('bot');
+  });
+
+  it('keeps the AI sender identity for AI-generated automation touches', () => {
+    const wrapper = createWrapper({
+      additionalAttributes: {
+        automationRuleId: 24,
+        touchId: 143,
+        touchOrigin: 'automation',
+        touchSource: 'touch',
+      },
+      sender: {
+        id: 18,
+        type: 'captain_assistant',
+        name: 'AI Sales Manager',
+        avatarUrl: 'https://example.com/ai-avatar.png',
+      },
+      senderId: 18,
+      senderType: 'captain_assistant',
+    });
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'AI Sales Manager',
+      src: 'https://example.com/ai-avatar.png',
+      iconName: null,
+    });
+    expect(wrapper.vm.variant).toBe('bot');
   });
 
   it('keeps the employee sender for a manual scheduled touch', () => {

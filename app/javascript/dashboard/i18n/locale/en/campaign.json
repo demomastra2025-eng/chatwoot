@@ -714,7 +714,7 @@
         "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
         "UNSUPPORTED_CHANNEL_WARNING": "This channel does not support outbound message delivery. The touch will fail at execution time instead of sending.",
         "ANCHORS": {
-          "TOUCH_CREATED_AT": "Delayed message created",
+          "TOUCH_CREATED_AT": "Follow-up applied",
           "APPOINTMENT_CREATED_AT": "Appointment created",
           "APPOINTMENT_STARTS_AT": "Appointment starts",
           "APPOINTMENT_ENDS_AT": "Appointment ends",
@@ -868,10 +868,13 @@
       "ROUTING_NOTE": "The system will reuse the current conversation when possible and otherwise resolve the target route at execution time. If a route cannot be resolved, the touch stays in draft instead of sending blindly.",
       "UNSUPPORTED_CHANNEL_WARNING": "This channel does not support outbound message delivery. The touch will fail at execution time instead of sending.",
       "ANCHORS": {
-        "TOUCH_CREATED_AT": "Delayed message created",
+        "TOUCH_CREATED_AT": "Follow-up applied",
+        "APPOINTMENT_CREATED_AT": "Appointment created",
         "APPOINTMENT_STARTS_AT": "Appointment starts",
         "APPOINTMENT_ENDS_AT": "Appointment ends",
+        "TASK_CREATED_AT": "Task created",
         "TASK_DUE_AT": "Task due at",
+        "DEAL_CREATED_AT": "Deal created",
         "DEAL_EXPECTED_CLOSE_ON": "Deal expected close",
         "CONVERSATION_CREATED_AT": "Conversation created",
         "CONVERSATION_LAST_ACTIVITY_AT": "Last activity in conversation",
