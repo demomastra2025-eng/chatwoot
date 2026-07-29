@@ -184,7 +184,12 @@ def test_gemini_disables_native_vad_when_interruptions_are_disabled():
     )
 
     llm = cast(GeminiLiveLLMService, assembly.llm)
-    assert llm._settings.vad.disabled is True
+    vad = llm._settings.vad
+    assert vad.disabled is True
+    assert vad.start_sensitivity is None
+    assert vad.end_sensitivity is None
+    assert vad.prefix_padding_ms is None
+    assert vad.silence_duration_ms is None
 
 
 def test_gemini_falls_back_from_unknown_vad_sensitivity_values():

@@ -458,6 +458,9 @@ def _provider_system_prompt(context: VoiceContext) -> str:
 
 
 def _gemini_vad_params(context: VoiceContext) -> GeminiVADParams:
+    if not context.ai.interruptions_enabled:
+        return GeminiVADParams(disabled=True)
+
     start_sensitivity = context.ai.speech_start_sensitivity
     end_sensitivity = context.ai.speech_end_sensitivity
     if start_sensitivity not in GEMINI_START_SENSITIVITIES:
@@ -466,7 +469,7 @@ def _gemini_vad_params(context: VoiceContext) -> GeminiVADParams:
         end_sensitivity = "END_SENSITIVITY_HIGH"
 
     return GeminiVADParams(
-        disabled=not context.ai.interruptions_enabled,
+        disabled=False,
         start_sensitivity=start_sensitivity,
         end_sensitivity=end_sensitivity,
         prefix_padding_ms=context.ai.prefix_padding_ms,
