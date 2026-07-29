@@ -135,6 +135,8 @@ class AutomationRule < ApplicationRecord
   before_destroy :cancel_live_touch_enrollments, prepend: true
   after_update_commit :reauthorized!, if: -> { saved_change_to_conditions? }
   after_update_commit :reconcile_live_touch_enrollments, if: -> { saved_change_to_actions? || saved_change_to_active? }
+  after_update_commit :backfill_live_appointment_enrollments,
+                      if: -> { saved_change_to_active? && active? && event_name == 'appointment_created' }
 
   scope :active, -> { where(active: true) }
 
@@ -212,6 +214,10 @@ class AutomationRule < ApplicationRecord
 
   def reconcile_live_touch_enrollments
     Reminders::ReconcileSourceEnrollmentsJob.perform_later('AutomationRule', id)
+  end
+
+  def backfill_live_appointment_enrollments
+    Reminders::BackfillAutomationRuleEnrollmentsJob.perform_later(id, updated_at)
   end
 
   def cancel_live_touch_enrollments

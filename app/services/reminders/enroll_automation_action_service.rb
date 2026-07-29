@@ -12,11 +12,11 @@ class Reminders::EnrollAutomationActionService
     @definition = Reminders::DefinitionNormalizer.call(definition)
   end
 
-  def perform
+  def perform(activated_at: Time.current)
     existing_enrollment = open_enrollment
     return existing_enrollment if existing_enrollment.present?
 
-    enrollment = account.touch_plan_enrollments.create!(enrollment_attributes)
+    enrollment = account.touch_plan_enrollments.create!(enrollment_attributes(activated_at))
     Reminders::EnrollmentScheduleService.new(enrollment: enrollment).refresh_next_due!
     enrollment.reload
   rescue ActiveRecord::RecordNotUnique
@@ -25,14 +25,14 @@ class Reminders::EnrollAutomationActionService
 
   private
 
-  def enrollment_attributes
+  def enrollment_attributes(activated_at)
     {
       automation_rule: rule,
       source_action_id: action_id,
       remindable: remindable,
       plan_snapshot: [definition],
       plan_digest: Digest::SHA256.hexdigest(definition.to_json),
-      activated_at: Time.current,
+      activated_at: activated_at,
       idempotency_key: SecureRandom.uuid,
       metadata: {
         'touch_source' => 'automation',
