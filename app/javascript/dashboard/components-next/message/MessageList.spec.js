@@ -33,6 +33,12 @@ vi.mock('./Message.vue', () => ({
   default: {
     name: 'Message',
     inheritAttrs: false,
+    props: {
+      groupWithNext: {
+        type: Boolean,
+        default: false,
+      },
+    },
     template: '<li data-test-id="message" :data-id="$attrs.id" />',
   },
 }));
@@ -124,5 +130,32 @@ describe('MessageList', () => {
     expect(wrapper.text()).toContain('WhatsApp Sales');
     expect(wrapper.text()).toContain('Telegram Support');
     expect(wrapper.findAll('time')).toHaveLength(1);
+  });
+
+  it.each([
+    ['automation then employee', true],
+    ['employee then automation', false],
+  ])('does not group %s messages', (_scenario, automationFirst) => {
+    const createdAt = atLocalNoon(2026, 6, 24);
+    const employeeMessage = message({
+      id: 1,
+      created_at: createdAt,
+      message_type: MESSAGE_TYPES.OUTGOING,
+      sender_id: 7,
+      sender: { id: 7, type: 'User', name: 'Agent' },
+    });
+    const automationMessage = message({
+      ...employeeMessage,
+      id: 2,
+      additional_attributes: { touch_id: 143, touch_source: 'touch' },
+    });
+    const messages = automationFirst
+      ? [automationMessage, employeeMessage]
+      : [employeeMessage, automationMessage];
+
+    const wrapper = createWrapper({ messages });
+    const renderedMessages = wrapper.findAllComponents({ name: 'Message' });
+
+    expect(renderedMessages[0].props('groupWithNext')).toBe(false);
   });
 });

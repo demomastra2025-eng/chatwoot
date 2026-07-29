@@ -33,6 +33,10 @@ vi.mock('vue-i18n', () => ({
       if (key === 'CONVERSATION.NATIVE_APP_ADVISORY') {
         return `This message was sent from the ${params.platform} native app.`;
       }
+      if (key === 'CONVERSATION.SENT_BY') return 'Sent by:';
+      if (key === 'CONVERSATION.AUTOMATION_SYSTEM') {
+        return 'Automation system';
+      }
       return key;
     },
   }),
@@ -219,6 +223,49 @@ describe('Message', () => {
       name: '',
       src: '',
       iconName: 'i-woot-voice',
+    });
+  });
+
+  it('shows the automation system sender for touch messages', () => {
+    const wrapper = createWrapper({
+      additionalAttributes: { touchId: 143, touchSource: 'touch' },
+      sender: {
+        id: 1851,
+        type: 'User',
+        name: 'Akhan Bakhitov',
+        thumbnail: '',
+      },
+      senderId: 1851,
+      senderType: 'User',
+    });
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Automation system',
+      src: '',
+      iconName: 'i-lucide-workflow',
+    });
+    expect(wrapper.find('[data-tooltip]').attributes('data-tooltip')).toBe(
+      'Sent by: Automation system'
+    );
+  });
+
+  it('keeps the employee sender when touch provenance is incomplete', () => {
+    const wrapper = createWrapper({
+      additionalAttributes: { touchId: 143 },
+      sender: {
+        id: 1851,
+        type: 'User',
+        name: 'Akhan Bakhitov',
+        thumbnail: '',
+      },
+      senderId: 1851,
+      senderType: 'User',
+    });
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props()).toMatchObject({
+      name: 'Akhan Bakhitov',
+      src: '',
+      iconName: null,
     });
   });
 });

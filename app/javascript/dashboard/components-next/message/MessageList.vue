@@ -18,6 +18,7 @@ import {
   formatMessageDateDivider,
   messageDateKey,
 } from './messageDateDivider.js';
+import { isAutomationTouchMessage } from './helpers/messageProvenance';
 
 /**
  * Props definition for the component
@@ -190,6 +191,11 @@ const shouldGroupWithNext = (index, searchList) => {
   const next = searchList[index + 1];
 
   if (next.status === 'failed') return false;
+
+  const hasSameAutomationProvenance =
+    isAutomationTouchMessage(current.additionalAttributes) ===
+    isAutomationTouchMessage(next.additionalAttributes);
+  if (!hasSameAutomationProvenance) return false;
 
   const nextSenderId = next.senderId ?? next.sender?.id;
   const currentSenderId = current.senderId ?? current.sender?.id;

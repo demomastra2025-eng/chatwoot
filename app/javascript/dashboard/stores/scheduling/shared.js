@@ -116,7 +116,7 @@ export const extractSchedulingError = error => {
 };
 
 const resolveSchedulingErrorPayload = error => {
-  if (error?.code && error?.message) {
+  if (error?.code && error?.message && !error?.response) {
     return error;
   }
 

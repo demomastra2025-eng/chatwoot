@@ -14,6 +14,7 @@ import {
 } from 'dashboard/helper/metaAdReferralHelper';
 import { useMessageContext } from './provider.js';
 import { useAudioPlaybackState } from './audioPlaybackState';
+import { isDelayedTouchMessage } from './helpers/messageProvenance';
 
 import { ATTACHMENT_TYPES, MESSAGE_STATUS, MESSAGE_TYPES } from './constants';
 
@@ -199,14 +200,9 @@ const statusToShow = computed(() => {
 const isCampaignMessage = computed(
   () => !!additionalAttributes.value?.campaignId
 );
-const isDelayedMessage = computed(() => {
-  return !!(
-    additionalAttributes.value?.touchId ||
-    additionalAttributes.value?.touch_id ||
-    additionalAttributes.value?.touchSource === 'touch' ||
-    additionalAttributes.value?.touch_source === 'touch'
-  );
-});
+const isDelayedMessage = computed(() =>
+  isDelayedTouchMessage(additionalAttributes.value)
+);
 
 const isEdited = computed(() => !!contentAttributes.value?.edited);
 

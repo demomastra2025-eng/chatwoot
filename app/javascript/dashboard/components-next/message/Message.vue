@@ -27,6 +27,7 @@ import {
   MESSAGE_STATUS,
   CONTENT_TYPES,
 } from './constants';
+import { isAutomationTouchMessage } from './helpers/messageProvenance';
 
 import Avatar from 'next/avatar/Avatar.vue';
 
@@ -554,6 +555,17 @@ const avatarInfo = computed(() => {
       name: '',
       src: '',
       iconName,
+    };
+  }
+
+  if (
+    props.messageType === MESSAGE_TYPES.OUTGOING &&
+    isAutomationTouchMessage(props.additionalAttributes)
+  ) {
+    return {
+      name: t('CONVERSATION.AUTOMATION_SYSTEM'),
+      src: '',
+      iconName: 'i-lucide-workflow',
     };
   }
 
