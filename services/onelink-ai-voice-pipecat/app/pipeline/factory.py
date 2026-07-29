@@ -73,6 +73,10 @@ GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
     "сначала коротко скажи собеседнику, что сейчас проверишь информацию. Затем сразу "
     "вызови инструмент и обязательно дождись его результата перед содержательным ответом."
 )
+GEMINI_START_SENSITIVITIES = frozenset(
+    {"START_SENSITIVITY_HIGH", "START_SENSITIVITY_LOW"}
+)
+GEMINI_END_SENSITIVITIES = frozenset({"END_SENSITIVITY_HIGH", "END_SENSITIVITY_LOW"})
 
 
 @dataclass(slots=True)
@@ -190,7 +194,7 @@ def build_pipeline(
                 language=context.ai.language,
                 temperature=context.ai.temperature,
                 max_tokens=context.ai.max_output_tokens,
-                vad=GeminiVADParams(disabled=True),
+                vad=_gemini_vad_params(context),
             ),
             inference_on_context_initialization=True,
         )
@@ -451,6 +455,23 @@ def _provider_system_prompt(context: VoiceContext) -> str:
     if context.ai.provider != "gemini-live" or not context.tools:
         return context.ai.system_prompt
     return f"{context.ai.system_prompt}\n\n{GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION}"
+
+
+def _gemini_vad_params(context: VoiceContext) -> GeminiVADParams:
+    start_sensitivity = context.ai.speech_start_sensitivity
+    end_sensitivity = context.ai.speech_end_sensitivity
+    if start_sensitivity not in GEMINI_START_SENSITIVITIES:
+        start_sensitivity = "START_SENSITIVITY_HIGH"
+    if end_sensitivity not in GEMINI_END_SENSITIVITIES:
+        end_sensitivity = "END_SENSITIVITY_HIGH"
+
+    return GeminiVADParams(
+        disabled=not context.ai.interruptions_enabled,
+        start_sensitivity=start_sensitivity,
+        end_sensitivity=end_sensitivity,
+        prefix_padding_ms=context.ai.prefix_padding_ms,
+        silence_duration_ms=context.ai.silence_duration_ms,
+    )
 
 
 def _provider_language(value: str) -> Language | None:

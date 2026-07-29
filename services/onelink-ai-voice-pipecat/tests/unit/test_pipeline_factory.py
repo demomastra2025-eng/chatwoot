@@ -147,6 +147,65 @@ def test_user_turn_strategies_honor_interruption_setting(enabled):
     assert all(strategy._enable_interruptions is enabled for strategy in strategies.start)
 
 
+def test_gemini_uses_native_vad_with_assistant_turn_settings():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.speech_start_sensitivity = "START_SENSITIVITY_LOW"
+    context.ai.speech_end_sensitivity = "END_SENSITIVITY_LOW"
+    context.ai.prefix_padding_ms = 240
+    context.ai.silence_duration_ms = 650
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    vad = llm._settings.vad
+    assert vad.disabled is False
+    assert vad.start_sensitivity.value == "START_SENSITIVITY_LOW"
+    assert vad.end_sensitivity.value == "END_SENSITIVITY_LOW"
+    assert vad.prefix_padding_ms == 240
+    assert vad.silence_duration_ms == 650
+
+
+def test_gemini_disables_native_vad_when_interruptions_are_disabled():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.interruptions_enabled = False
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    assert llm._settings.vad.disabled is True
+
+
+def test_gemini_falls_back_from_unknown_vad_sensitivity_values():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.speech_start_sensitivity = "UNKNOWN_START"
+    context.ai.speech_end_sensitivity = "UNKNOWN_END"
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    vad = llm._settings.vad
+    assert vad.start_sensitivity.value == "START_SENSITIVITY_HIGH"
+    assert vad.end_sensitivity.value == "END_SENSITIVITY_HIGH"
+
+
 def test_gemini_with_tools_announces_before_formal_function_call():
     context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
     context.tools.append(ToolDefinition(name="faq_lookup", timeout_ms=10_000))
