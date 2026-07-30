@@ -341,6 +341,58 @@ describe('ReplyBottomPanel', () => {
     expect(wrapper.vm.isTogglingCaptain).toBe(false);
   });
 
+  it('keeps the original channel assignment target during an in-flight toggle', async () => {
+    let resolveStatusToggle;
+    const actions = {
+      toggleStatus: vi.fn(
+        () =>
+          new Promise(resolve => {
+            resolveStatusToggle = resolve;
+          })
+      ),
+      assignAgent: vi.fn(),
+    };
+    const currentUser = { id: 7, name: 'Agent' };
+    const wrapper = mountComponent(
+      {
+        conversationId: 999,
+        isCommunicationThread: true,
+        activeReplyChannel: { ...whatsappChannel, status: 'pending' },
+      },
+      {
+        captainEnabled: true,
+        currentUser,
+        conversations: {
+          11: { id: 11, status: 'open', meta: { assignee: null } },
+          22: { id: 22, status: 'pending', meta: { assignee: currentUser } },
+        },
+        inboxes: {
+          101: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+          202: { id: 202, captain_assistant: { id: 6, name: 'Captain 2' } },
+        },
+        actions,
+      }
+    );
+
+    const togglePromise = wrapper.vm.toggleCaptainForConversation();
+    await wrapper.setProps({
+      activeReplyChannel: {
+        ...telegramChannel,
+        can_reply: true,
+        status: 'pending',
+      },
+    });
+    resolveStatusToggle();
+    await togglePromise;
+
+    expect(actions.assignAgent).toHaveBeenCalledWith({
+      conversationId: 11,
+      conversationType: 'conversation',
+      agentId: 7,
+      throwOnError: true,
+    });
+  });
+
   it('enables Captain for the selected open communication-thread channel', async () => {
     const toggleStatus = vi.fn();
     const selectedChannel = {

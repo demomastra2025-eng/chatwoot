@@ -663,19 +663,22 @@ export default {
       this.isTogglingCaptain = true;
       const currentUser = this.$store.getters.getCurrentUser;
       const conversationId = this.captainConversationId;
+      const captainConversation = this.captainConversation;
+      const captainWasEnabled =
+        captainConversation?.status === wootConstants.STATUS_TYPE.PENDING;
+      const assignee = captainConversation?.meta?.assignee;
       const conversationType = this.isCommunicationThread
         ? 'conversation'
         : undefined;
 
       try {
-        if (this.isCaptainEnabledForConversation) {
+        if (captainWasEnabled) {
           await this.$store.dispatch('toggleStatus', {
             conversationId,
             status: wootConstants.STATUS_TYPE.OPEN,
             ...(conversationType ? { conversationType } : {}),
           });
 
-          const assignee = this.captainConversation?.meta?.assignee;
           const needsAssignmentToCurrentUser =
             !assignee || assignee.id !== currentUser?.id;
 
