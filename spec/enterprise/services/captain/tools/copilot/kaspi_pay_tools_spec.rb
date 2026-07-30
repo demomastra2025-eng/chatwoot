@@ -36,7 +36,39 @@ RSpec.describe 'Captain Kaspi Pay tools' do
       expect(payload.dig('payment', 'amount')).to eq(12_000)
       expect(payload.dig('payment', 'qr_token')).to eq('https://pay.kaspi.kz/pay/agent-token')
       expect(payload.dig('payment', 'source')).to include('type' => 'Conversation', 'id' => conversation.id)
+      expect(payload['delivery']).to include('mode' => 'link', 'sent' => true, 'deduplicated' => false)
+      delivery_message = conversation.messages.find(payload.dig('delivery', 'message_id'))
+      expect(delivery_message.content).to include('https://pay.kaspi.kz/pay/agent-token')
       expect(KaspiPay::StatusPollJob).to have_received(:perform_later).with(payload.dig('payment', 'id'))
+    end
+
+    it 'sends a native QR image and deduplicates a retry from the same incoming message' do
+      create(:message, account: account, inbox: conversation.inbox, conversation: conversation, message_type: 'incoming', content: 'Пришлите QR')
+      allow(client).to receive(:create_qr).once.and_return(
+        'StatusCode' => 0,
+        'Data' => {
+          'QrOperationId' => 'agent-qr-image-1',
+          'QrToken' => 'https://pay.kaspi.kz/pay/agent-image-token',
+          'QrOriginalToken' => 'https://qr.kaspi.kz/agent-image-token',
+          'ExpireDate' => 10.minutes.from_now.iso8601,
+          'Amount' => 12_000
+        }
+      )
+      allow(client).to receive(:render_qr_png)
+        .with('https://qr.kaspi.kz/agent-image-token')
+        .and_return("\x89PNG\r\n\x1A\nqr-image".b)
+      tool = described_class.new(assistant)
+      tool_context = Struct.new(:state).new({ conversation: { id: conversation.id } })
+
+      first = JSON.parse(tool.perform(tool_context, amount: 12_000, delivery_mode: 'qr_image'))
+      second = JSON.parse(tool.perform(tool_context, amount: 12_000, delivery_mode: 'qr_image'))
+
+      expect(first.dig('delivery', 'attachment_ids').one?).to be(true)
+      expect(second.dig('payment', 'id')).to eq(first.dig('payment', 'id'))
+      expect(second.dig('delivery', 'message_id')).to eq(first.dig('delivery', 'message_id'))
+      expect(second.dig('delivery', 'deduplicated')).to be(true)
+      expect(client).to have_received(:create_qr).once
+      expect(conversation.messages.outgoing.where(id: first.dig('delivery', 'message_id')).count).to eq(1)
     end
   end
 
@@ -87,6 +119,25 @@ RSpec.describe 'Captain Kaspi Pay tools' do
       expect(payload['action']).to eq('create_kaspi_pay_payment')
       expect(payload.dig('payment', 'source', 'display_id')).to eq(conversation.display_id)
       expect(payload.dig('payment', 'amount')).to eq(20_000)
+    end
+
+    it 'uses the Copilot request as the retry boundary for separate legitimate payments' do
+      allow(client).to receive(:create_qr).and_return(
+        { 'StatusCode' => 0, 'Data' => { 'QrOperationId' => 'assistant-qr-request-1', 'QrToken' => 'https://pay.kaspi.kz/pay/request-1' } },
+        { 'StatusCode' => 0, 'Data' => { 'QrOperationId' => 'assistant-qr-request-2', 'QrToken' => 'https://pay.kaspi.kz/pay/request-2' } }
+      )
+      service = described_class.new(assistant, user: admin, conversation: conversation)
+
+      first = Llm::EventBus.with_context(request_id: 'copilot-request-1') do
+        JSON.parse(service.execute(conversation_id: conversation.display_id, amount: 20_000))
+      end
+      account.kaspi_pay_payments.find(first.dig('payment', 'id')).update!(status: 'paid')
+      second = Llm::EventBus.with_context(request_id: 'copilot-request-2') do
+        JSON.parse(service.execute(conversation_id: conversation.display_id, amount: 20_000))
+      end
+
+      expect(second.dig('payment', 'id')).not_to eq(first.dig('payment', 'id'))
+      expect(client).to have_received(:create_qr).twice
     end
 
     it 'creates an assistant-scope remote invoice when payment_type is invoice' do
@@ -156,15 +207,35 @@ RSpec.describe 'Captain Kaspi Pay tools' do
   end
 
   describe Captain::Tools::Copilot::GetKaspiPayIntegrationStatusService do
-    it 'returns safe integration metadata without secrets for an administrator' do
+    it 'returns safe integration metadata and verified provider session state for an administrator' do
+      allow(client).to receive(:refresh).with(hook: hook).and_return(
+        'success' => true,
+        'tokenSN' => 'refreshed-token',
+        'vtokenSecret' => 'refreshed-secret',
+        'profileId' => 'profile-1',
+        'organizationId' => 'org-1'
+      )
+      service = described_class.new(assistant, user: admin)
+
+      payload = JSON.parse(service.execute(live_check: true))
+
+      expect(payload['connected']).to be(true)
+      expect(payload['local_status']).to eq('enabled')
+      expect(payload['provider_session']).to include('checked' => true, 'healthy' => true, 'status' => 'active')
+      expect(payload.dig('hook', 'metadata')).to include('organization_id' => 'org-1', 'org_name' => 'Test Merchant')
+      expect(payload.to_json).not_to include('vtoken_secret')
+      expect(payload.to_json).not_to include('encrypted-secret')
+      expect(payload.to_json).not_to include('refreshed-secret')
+    end
+
+    it 'defaults to local-only status without making a provider request' do
+      allow(client).to receive(:refresh)
       service = described_class.new(assistant, user: admin)
 
       payload = JSON.parse(service.execute)
 
-      expect(payload['connected']).to be(true)
-      expect(payload.dig('hook', 'metadata')).to include('organization_id' => 'org-1', 'org_name' => 'Test Merchant')
-      expect(payload.to_json).not_to include('vtoken_secret')
-      expect(payload.to_json).not_to include('encrypted-secret')
+      expect(payload['provider_session']).to include('checked' => false, 'status' => 'not_checked')
+      expect(client).not_to have_received(:refresh)
     end
   end
 
@@ -196,7 +267,60 @@ RSpec.describe 'Captain Kaspi Pay tools' do
 
       expect(payload['action']).to eq('refund_kaspi_pay_payment')
       expect(payload.dig('payment', 'id')).to eq(payment.id)
+      expect(payload.dig('payment', 'refunded_amount')).to eq(5_000)
+      expect(payload.dig('payment', 'remaining_refundable_amount')).to eq(10_000)
+      expect(payload.dig('payment', 'partially_refunded')).to be(true)
       expect(payload.to_json).not_to include('vtoken_secret')
+    end
+  end
+
+  describe Captain::Tools::Copilot::CancelKaspiPayInvoiceService do
+    it 'cancels an account-scoped pending invoice' do
+      payment = create(:kaspi_pay_payment, account: account, integration_hook: hook, source: conversation, payment_type: 'invoice',
+                                           kaspi_operation_id: 'invoice-1')
+      allow(client).to receive(:cancel_invoice).with('invoice-1').and_return(
+        'StatusCode' => 0,
+        'Data' => { 'Status' => 'Cancelled' }
+      )
+
+      payload = JSON.parse(described_class.new(assistant, user: admin).execute(payment_id: payment.id))
+
+      expect(payload['action']).to eq('cancel_kaspi_pay_invoice')
+      expect(payload.dig('payment', 'status')).to eq('cancelled')
+      expect(payment.reload.status).to eq('cancelled')
+    end
+  end
+
+  describe Captain::Tools::Copilot::GetKaspiPayProviderHistoryService do
+    it 'returns one normalized provider operations history page' do
+      allow(client).to receive(:operations_history).with(
+        end_date: '2026-07-30', last_transaction_date: nil, statement_period_code: 0
+      ).and_return('StatusCode' => 0, 'Data' => { 'Operations' => [{ 'Id' => 101 }] })
+
+      payload = JSON.parse(described_class.new(assistant, user: admin).execute(kind: 'operations', end_date: '2026-07-30'))
+
+      expect(payload).to include('action' => 'get_kaspi_pay_provider_history', 'kind' => 'operations')
+      expect(payload.dig('data', 'Operations')).to eq([{ 'Id' => 101 }])
+    end
+  end
+
+  describe Captain::Tools::Copilot::GetKaspiPayClientInfoService do
+    it 'returns masked phone and provider client status without exposing the raw phone' do
+      allow(client).to receive(:client_info).with('77011234567').and_return(
+        'StatusCode' => 0,
+        'Data' => { 'ClientName' => 'Test Client', 'ClientStatus' => 'Active' }
+      )
+
+      payload = JSON.parse(described_class.new(assistant, user: admin).execute(phone_number: '+7 (701) 123-45-67'))
+
+      expect(payload).to include(
+        'action' => 'get_kaspi_pay_client_info',
+        'found' => true,
+        'phone_number' => '77*****4567',
+        'client_name' => 'Test Client',
+        'client_status' => 'Active'
+      )
+      expect(payload.to_json).not_to include('77011234567')
     end
   end
 
@@ -236,6 +360,9 @@ RSpec.describe 'Captain Kaspi Pay tools' do
         -> { Captain::Tools::Copilot::GetKaspiPayPaymentService.new(assistant, user: agent).execute(payment_id: payment.id) },
         -> { Captain::Tools::Copilot::SyncKaspiPayPaymentStatusService.new(assistant, user: agent).execute(payment_id: payment.id) },
         -> { Captain::Tools::Copilot::RefundKaspiPayPaymentService.new(assistant, user: agent).execute(payment_id: payment.id, amount: 100) },
+        -> { Captain::Tools::Copilot::CancelKaspiPayInvoiceService.new(assistant, user: agent).execute(payment_id: payment.id) },
+        -> { Captain::Tools::Copilot::GetKaspiPayProviderHistoryService.new(assistant, user: agent).execute(kind: 'invoices') },
+        -> { Captain::Tools::Copilot::GetKaspiPayClientInfoService.new(assistant, user: agent).execute(phone_number: '77011234567') },
         -> { Captain::Tools::Copilot::ReconcileKaspiPayPaymentService.new(assistant, user: agent).execute(payment_id: payment.id) }
       ]
 

@@ -44,6 +44,14 @@ class KaspiPay::AuthService
   end
 
   def refresh!(hook:)
+    hook.with_lock { refresh_without_lock!(hook) }
+  end
+
+  private
+
+  attr_reader :account, :client
+
+  def refresh_without_lock!(hook)
     body = client.refresh(hook: hook)
     unless body['success']
       code = provider_failure_response?(body) ? 'ADAPTER_REQUEST_FAILED' : 'SESSION_REFRESH_FAILED'
@@ -69,10 +77,6 @@ class KaspiPay::AuthService
     hook.update!(access_token: refreshed.to_json, status: 'enabled')
     hook
   end
-
-  private
-
-  attr_reader :account, :client
 
   def normalize_cashier_phone(phone_number)
     digits = phone_number.to_s.gsub(/\D/, '')

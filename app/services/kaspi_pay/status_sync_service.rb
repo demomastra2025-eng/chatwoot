@@ -28,6 +28,7 @@ class KaspiPay::StatusSyncService
 
     sync_status!
   rescue KaspiPay::Error => e
+    return expire_by_ttl!(last_status_response: status_error_payload(e)) if provider_purchase_missing?(e) && expired_by_ttl?
     raise unless e.code == 'ADAPTER_REQUEST_FAILED' && refresh_session_once!
 
     retry
@@ -115,6 +116,27 @@ class KaspiPay::StatusSyncService
     end
 
     payment
+  end
+
+  def status_error_payload(error)
+    details = error.details.to_h
+
+    {
+      'StatusCode' => details['StatusCode'],
+      'Code' => details['Code'],
+      'CodeSubsystem' => details['CodeSubsystem'],
+      'Message' => details['Message'].to_s.first(300).presence,
+      'error_code' => error.code
+    }.compact
+  end
+
+  def provider_purchase_missing?(error)
+    return false unless error.code == 'KASPI_STATUS_FAILED'
+
+    details = error.details.to_h.with_indifferent_access
+    details[:StatusCode].to_i == -99_000_001 &&
+      details[:Code].to_i == 18 &&
+      details[:CodeSubsystem].to_s.casecmp?('QR')
   end
 
   def map_status(provider_status)

@@ -3,10 +3,12 @@ class Captain::Tools::Copilot::CreateKaspiPayPaymentService < Captain::Tools::Co
     'create_kaspi_pay_payment'
   end
 
-  description 'Create a Kaspi Pay QR payment link or remote invoice for an account conversation or appointment. Admin-only in assistant scope; customer-agent scope is limited to the current conversation QR flow.'
+  description 'Create a Kaspi Pay QR payment link or remote invoice for an account conversation or appointment. ' \
+              'Admin-only in assistant scope; customer-agent scope is limited to the current conversation QR flow.'
   param :amount,
         type: :number,
-        desc: 'Payment amount as a whole number in KZT. Required unless appointment_id/current appointment has a remaining amount. Use 15000 for 15000 KZT; do not multiply by 100.',
+        desc: 'Payment amount as a whole number in KZT. Required unless appointment_id/current appointment has a ' \
+              'remaining amount. Use 15000 for 15000 KZT; do not multiply by 100.',
         required: false
   param :conversation_id,
         type: :number,
@@ -30,10 +32,17 @@ class Captain::Tools::Copilot::CreateKaspiPayPaymentService < Captain::Tools::Co
         required: false
   param :idempotency_key,
         type: :string,
-        desc: 'Optional stable key only when retrying the same exact payment request; omit for a new payment link.',
+        desc: 'Optional stable key only when retrying the same exact payment request; omit to derive it from the source and latest incoming message.',
+        required: false
+  param :delivery_mode,
+        type: :string,
+        desc: 'Customer delivery for QR payments: none (default), link, or qr_image. Invoice payments must use ' \
+              'none because Kaspi delivers them by phone.',
         required: false
 
-  def execute(amount: nil, conversation_id: nil, appointment_id: nil, payment_type: nil, phone_number: nil, comment: nil, idempotency_key: nil)
+  # rubocop:disable Metrics/ParameterLists
+  def execute(amount: nil, conversation_id: nil, appointment_id: nil, payment_type: nil, phone_number: nil, comment: nil, idempotency_key: nil,
+              delivery_mode: 'none')
     formatted_kaspi_payload(
       kaspi_pay_operations.create_account_payment(
         amount: amount,
@@ -42,8 +51,10 @@ class Captain::Tools::Copilot::CreateKaspiPayPaymentService < Captain::Tools::Co
         payment_type: payment_type.presence || 'qr',
         phone_number: phone_number,
         comment: comment,
-        idempotency_key: idempotency_key
+        idempotency_key: idempotency_key,
+        delivery_mode: delivery_mode
       )
     )
   end
+  # rubocop:enable Metrics/ParameterLists
 end

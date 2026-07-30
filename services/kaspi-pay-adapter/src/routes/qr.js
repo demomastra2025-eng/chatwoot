@@ -3,6 +3,7 @@ import { KASPI_QRPAY_URL } from '../config.js';
 import { loggedFetch, signedQrPayHeaders } from '../helpers.js';
 import { decryptSecret } from '../crypto.js';
 import { normalizeQrResponse } from '../qr-response.js';
+import { renderKaspiQrPng } from '../qr-renderer.js';
 
 const router = Router();
 
@@ -25,6 +26,22 @@ const requireAuth = (req, res, next) => {
   req.session = session;
   next();
 };
+
+// Render an original Kaspi Unified QR token locally. The global internal HMAC
+// middleware protects this route; no Kaspi session is required for rendering.
+router.post('/render', async (req, res) => {
+  try {
+    const png = await renderKaspiQrPng(req.body.qrToken);
+    res.set({
+      'Cache-Control': 'no-store',
+      'Content-Disposition': 'inline; filename="kaspi-pay-qr.png"',
+      'Content-Type': 'image/png',
+    });
+    res.send(png);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
 router.use(requireAuth);
 

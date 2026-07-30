@@ -179,6 +179,73 @@ RSpec.describe KaspiPay::StatusSyncService do
     expect(stale_payment.reload.status).to eq('expired')
   end
 
+  it 'expires a stale QR when Kaspi no longer knows the purchase instead of leaving it pending forever' do
+    stale_payment = create(
+      :kaspi_pay_payment,
+      account: account,
+      integration_hook: hook,
+      source: create(:conversation, account: account),
+      amount: 15_000,
+      kaspi_operation_id: 'qr-provider-forgotten',
+      status: 'pending',
+      expires_at: 3.minutes.ago
+    )
+    allow(client).to receive(:qr_status).with('qr-provider-forgotten').and_return(
+      'StatusCode' => -99_000_001,
+      'Code' => 18,
+      'CodeSubsystem' => 'QR',
+      'Message' => 'Покупка не найдена'
+    )
+
+    expect { described_class.new(payment: stale_payment).sync! }.not_to raise_error
+
+    stale_payment.reload
+    expect(stale_payment.status).to eq('expired')
+    expect(stale_payment.metadata['last_status_response']).to include(
+      'StatusCode' => -99_000_001,
+      'Code' => 18,
+      'CodeSubsystem' => 'QR',
+      'Message' => 'Покупка не найдена',
+      'error_code' => 'KASPI_STATUS_FAILED'
+    )
+  end
+
+  it 'keeps a stale payment retryable after an unknown provider failure and later records it as paid' do
+    stale_payment = create(
+      :kaspi_pay_payment,
+      account: account,
+      integration_hook: hook,
+      source: create(:conversation, account: account),
+      amount: 15_000,
+      kaspi_operation_id: 'qr-stale-transient',
+      status: 'pending',
+      expires_at: 3.minutes.ago
+    )
+    allow(client).to receive(:qr_status).with('qr-stale-transient').and_return(
+      { 'StatusCode' => -99_000_001, 'Message' => 'Temporary provider failure' },
+      { 'StatusCode' => 0, 'Data' => { 'Status' => 'Processed' } }
+    )
+
+    expect { described_class.new(payment: stale_payment).sync! }
+      .to raise_error(KaspiPay::Error, 'Kaspi Pay status request failed')
+    expect(stale_payment.reload.status).to eq('pending')
+
+    described_class.new(payment: stale_payment).sync!
+
+    expect(stale_payment.reload.status).to eq('paid')
+  end
+
+  it 'still raises a provider error before the local QR expiry threshold' do
+    allow(client).to receive(:qr_status).with('qr-123').and_return(
+      'StatusCode' => -99_000_001,
+      'Message' => 'Temporary provider failure'
+    )
+
+    expect { described_class.new(payment: payment).sync! }
+      .to raise_error(KaspiPay::Error, 'Kaspi Pay status request failed')
+    expect(payment.reload.status).to eq('pending')
+  end
+
   it 'uses invoice details for remote invoice payments' do
     invoice_payment = create(
       :kaspi_pay_payment,

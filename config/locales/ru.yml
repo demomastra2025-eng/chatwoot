@@ -283,6 +283,8 @@ ru:
         expired: "Ссылка Kaspi Pay истекла: %{amount} %{currency}"
         failed: "Оплата Kaspi Pay не прошла: %{amount} %{currency}"
         cancelled: "Оплата Kaspi Pay отменена: %{amount} %{currency}"
+        delivery_link: "Для оплаты %{amount} %{currency} откройте ссылку Kaspi Pay: %{payment_url}"
+        delivery_qr_image: "Для оплаты %{amount} %{currency} отсканируйте QR-код в приложении Kaspi.kz. Если изображение не открылось: %{payment_url}"
       csat:
         not_sent_due_to_messaging_window: Опрос CSAT не отправлен из-за ограничений исходящих сообщений
       auto_resolve:

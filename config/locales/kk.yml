@@ -262,6 +262,8 @@ kk:
         expired: 'Kaspi Pay payment link expired: %{amount} %{currency}'
         failed: 'Kaspi Pay payment failed: %{amount} %{currency}'
         cancelled: 'Kaspi Pay payment cancelled: %{amount} %{currency}'
+        delivery_link: '%{amount} %{currency} төлеу үшін Kaspi Pay сілтемесін ашыңыз: %{payment_url}'
+        delivery_qr_image: '%{amount} %{currency} төлеу үшін Kaspi.kz қолданбасында QR-кодты сканерлеңіз. Сурет ашылмаса: %{payment_url}'
       csat:
         not_sent_due_to_messaging_window: CSAT survey not sent due to outgoing message restrictions
       auto_resolve:

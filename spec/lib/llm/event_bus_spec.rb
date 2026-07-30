@@ -75,6 +75,16 @@ RSpec.describe Llm::EventBus do
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
 
+    it 'exposes the active request id without leaking it after the context ends' do
+      expect(described_class.request_id).to be_nil
+
+      described_class.with_context(request_id: 'req-active') do
+        expect(described_class.request_id).to eq('req-active')
+      end
+
+      expect(described_class.request_id).to be_nil
+    end
+
     it 'publishes canonical names for accepted aliases while recording the alias in payload' do
       alias_matrix = {
         'run.started' => 'llm.run.start',

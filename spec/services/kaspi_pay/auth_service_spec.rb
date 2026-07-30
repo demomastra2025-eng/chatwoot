@@ -50,7 +50,12 @@ RSpec.describe KaspiPay::AuthService do
                       })
     end
 
+    before do
+      allow(hook).to receive(:with_lock).and_yield
+    end
+
     it 'refreshes the adapter session and persists the rotated credentials' do
+      expect(hook).to receive(:with_lock).and_yield
       allow(client).to receive(:refresh).with(hook: hook).and_return(
         'success' => true,
         'tokenSN' => 'new-token-sn',

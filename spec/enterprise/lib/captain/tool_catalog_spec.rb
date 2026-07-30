@@ -71,6 +71,26 @@ RSpec.describe Captain::ToolCatalog do
       end
     end
 
+    it 'keeps Kaspi Pay provider reads assistant-only and confirms invoice cancellation' do
+      create(:integrations_hook, :kaspi_pay, account: account)
+
+      assistant_tools = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
+      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+
+      %w[get_kaspi_pay_client_info get_kaspi_pay_provider_history].each do |tool_id|
+        expect(assistant_tools.find { |tool| tool[:id] == tool_id }).to include(risk_level: 'low')
+      end
+      expect(assistant_tools.find { |tool| tool[:id] == 'cancel_kaspi_pay_invoice' }).to include(
+        risk_level: 'high',
+        requires_confirmation: true
+      )
+      expect(agent_tool_ids).not_to include(
+        'get_kaspi_pay_client_info',
+        'get_kaspi_pay_provider_history',
+        'cancel_kaspi_pay_invoice'
+      )
+    end
+
     it 'includes enabled custom tools for the requested scope' do
       custom_tool = create(:captain_custom_tool, account: account)
 
@@ -352,9 +372,14 @@ RSpec.describe Captain::ToolCatalog do
   def kaspi_pay_connected_tool_ids
     kaspi_pay_agent_payment_tool_ids + %w[
       disconnect_kaspi_pay
+      get_kaspi_pay_client_info
+      get_kaspi_pay_provider_history
       search_kaspi_pay_payments
       get_kaspi_pay_payment
       sync_kaspi_pay_payment_status
+      refund_kaspi_pay_payment
+      cancel_kaspi_pay_invoice
+      reconcile_kaspi_pay_payment
     ]
   end
 end

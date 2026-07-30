@@ -1,8 +1,10 @@
 require 'bigdecimal'
+require 'digest'
 
 class Captain::Tools::Operations::KaspiPayOperations
   DEFAULT_PAYMENT_TYPE = 'qr'.freeze
   ACTIVE_PAYMENT_STATUSES = %w[pending].freeze
+  DELIVERY_MODES = %w[none link qr_image].freeze
 
   def initialize(assistant:, conversation: nil, actor: nil)
     @assistant = assistant
@@ -10,14 +12,17 @@ class Captain::Tools::Operations::KaspiPayOperations
     @actor = actor
   end
 
-  def integration_status
+  def integration_status(live_check: false)
     ensure_account_admin!
 
     hook = account.hooks.find_by(app_id: 'kaspi_pay')
+    provider_session = provider_session_status(hook, live_check: truthy?(live_check))
 
     {
       action: 'get_kaspi_pay_integration_status',
       connected: hook&.enabled? || false,
+      local_status: hook&.status || 'not_configured',
+      provider_session: provider_session,
       hook: KaspiPay::PayloadBuilder.hook(hook)
     }
   end
@@ -66,7 +71,8 @@ class Captain::Tools::Operations::KaspiPayOperations
     { action: 'disconnect_kaspi_pay', connected: false, hook_id: hook.id }
   end
 
-  def create_current_conversation_payment(amount: nil, payment_type: DEFAULT_PAYMENT_TYPE, idempotency_key: nil, phone_number: nil, comment: nil)
+  def create_current_conversation_payment(amount: nil, payment_type: DEFAULT_PAYMENT_TYPE, idempotency_key: nil, phone_number: nil, comment: nil,
+                                          delivery_mode: 'link')
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
 
     source = current_appointment || conversation
@@ -77,12 +83,13 @@ class Captain::Tools::Operations::KaspiPayOperations
       payment_type: payment_type,
       idempotency_key: idempotency_key,
       phone_number: phone_number,
-      comment: comment
+      comment: comment,
+      delivery_mode: delivery_mode
     )
   end
 
   def create_account_payment(amount: nil, payment_type: DEFAULT_PAYMENT_TYPE, idempotency_key: nil, conversation_id: nil, appointment_id: nil,
-                             phone_number: nil, comment: nil)
+                             phone_number: nil, comment: nil, delivery_mode: 'none')
     ensure_account_admin!
 
     source = source_for(conversation_id: conversation_id, appointment_id: appointment_id)
@@ -93,7 +100,8 @@ class Captain::Tools::Operations::KaspiPayOperations
       payment_type: payment_type,
       idempotency_key: idempotency_key,
       phone_number: phone_number,
-      comment: comment
+      comment: comment,
+      delivery_mode: delivery_mode
     )
   end
 
@@ -157,6 +165,64 @@ class Captain::Tools::Operations::KaspiPayOperations
     }
   end
 
+  def cancel_invoice(payment_id:)
+    ensure_account_admin!
+
+    payment = account.kaspi_pay_payments.find(payment_id)
+    payment = KaspiPay::InvoiceCancellationService.new(payment: payment).cancel!
+
+    {
+      action: 'cancel_kaspi_pay_invoice',
+      payment: KaspiPay::PayloadBuilder.payment(payment)
+    }
+  end
+
+  def provider_history(kind:, end_date: nil, last_transaction_date: nil, statement_period_code: 0)
+    ensure_account_admin!
+
+    normalized_kind = kind.to_s
+    raise ArgumentError, 'kind must be operations or invoices' unless normalized_kind.in?(%w[operations invoices])
+
+    history = KaspiPay::HistoryService.new(hook: enabled_hook!)
+    data = if normalized_kind == 'operations'
+             history.operations(
+               end_date: normalize_history_date(end_date.presence || Date.current.iso8601, 'end_date'),
+               last_transaction_date: normalize_optional_history_date(last_transaction_date),
+               statement_period_code: statement_period_code.to_i
+             )
+           else
+             history.invoice_history
+           end
+
+    {
+      action: 'get_kaspi_pay_provider_history',
+      kind: normalized_kind,
+      data: data
+    }
+  end
+
+  def client_info(phone_number:)
+    ensure_account_admin!
+
+    normalized_phone = phone_number.to_s.gsub(/\D/, '')
+    raise ArgumentError, 'phone_number must contain 10 or 11 digits' unless normalized_phone.length.in?([10, 11])
+
+    response = KaspiPay::Client.new(hook: enabled_hook!).client_info(normalized_phone)
+    if response['StatusCode'].present? && response['StatusCode'].to_i != 0
+      raise KaspiPay::Error.new('Kaspi Pay client lookup failed', details: response)
+    end
+
+    data = response['Data'] || response['data'] || {}
+
+    {
+      action: 'get_kaspi_pay_client_info',
+      found: data['ClientName'].present?,
+      phone_number: mask_phone(normalized_phone),
+      client_name: data['ClientName'],
+      client_status: data['ClientStatus']
+    }.compact
+  end
+
   def reconcile_payment(payment_id:, operation_method: 0)
     ensure_account_admin!
 
@@ -201,26 +267,34 @@ class Captain::Tools::Operations::KaspiPayOperations
     assistant.account
   end
 
-  def create_payment(source:, amount:, payment_type:, idempotency_key:, phone_number: nil, comment: nil)
+  def create_payment(source:, amount:, payment_type:, idempotency_key:, delivery_mode:, phone_number: nil, comment: nil)
     normalized_amount = normalize_amount(amount)
     normalized_payment_type = normalize_payment_type(payment_type)
+    normalized_delivery_mode = normalize_delivery_mode(delivery_mode, payment_type: normalized_payment_type)
     hook = enabled_hook!
     creator = KaspiPay::PaymentCreator.new(
       hook: hook,
       source: source,
       amount: normalized_amount,
-      idempotency_key: idempotency_key.presence || default_idempotency_key(source: source, amount: normalized_amount,
-                                                                           payment_type: normalized_payment_type),
+      idempotency_key: idempotency_key.presence || default_idempotency_key(
+        source: source,
+        amount: normalized_amount,
+        payment_type: normalized_payment_type,
+        phone_number: phone_number,
+        comment: comment
+      ),
       payment_type: normalized_payment_type,
       phone_number: phone_number,
       comment: comment
     )
     payment = normalized_payment_type == 'invoice' ? creator.create_invoice! : creator.create_qr!
+    delivery = deliver_payment(payment, mode: normalized_delivery_mode)
 
     {
       action: 'create_kaspi_pay_payment',
-      payment: KaspiPay::PayloadBuilder.payment(payment)
-    }
+      payment: KaspiPay::PayloadBuilder.payment(payment),
+      delivery: delivery
+    }.compact
   end
 
   def source_for(conversation_id:, appointment_id:)
@@ -286,7 +360,33 @@ class Captain::Tools::Operations::KaspiPayOperations
     raise ArgumentError, 'payment_type must be qr or invoice'
   end
 
-  def default_idempotency_key(source:, amount:, payment_type:)
+  def normalize_delivery_mode(delivery_mode, payment_type:)
+    normalized = delivery_mode.presence || 'none'
+    raise ArgumentError, "delivery_mode must be one of: #{DELIVERY_MODES.join(', ')}" unless normalized.in?(DELIVERY_MODES)
+    raise ArgumentError, 'invoice payments must use delivery_mode none' if payment_type == 'invoice' && normalized != 'none'
+
+    normalized
+  end
+
+  def deliver_payment(payment, mode:)
+    return if mode == 'none'
+
+    target_conversation = payment_conversation(payment)
+    raise ArgumentError, 'Kaspi Pay delivery requires a linked conversation' if target_conversation.blank?
+
+    KaspiPay::ConversationDeliveryService.new(
+      payment: payment,
+      conversation: target_conversation,
+      sender: actor || assistant
+    ).deliver!(mode: mode)
+  end
+
+  def payment_conversation(payment)
+    return payment.source if payment.source_type == 'Conversation'
+    return payment.source&.conversation if payment.source_type == 'Scheduling::Appointment'
+  end
+
+  def default_idempotency_key(source:, amount:, payment_type:, phone_number:, comment:)
     source_key = case source
                  when Scheduling::Appointment
                    "appointment:#{source.id}"
@@ -295,8 +395,46 @@ class Captain::Tools::Operations::KaspiPayOperations
                  else
                    'manual'
                  end
+    request_anchor = copilot_request_anchor || source_request_anchor(source)
+    detail_digest = Digest::SHA256.hexdigest([phone_number.to_s.gsub(/\D/, ''), comment.to_s].join(':')).first(16)
 
-    "captain-kaspi-pay:#{source_key}:#{amount}:#{payment_type}:#{SecureRandom.uuid}"
+    "captain-kaspi-pay:#{source_key}:request:#{request_anchor}:#{amount}:#{payment_type}:#{detail_digest}"
+  end
+
+  def copilot_request_anchor
+    return unless actor.is_a?(User)
+
+    request_id = Llm::EventBus.request_id
+    "captain-request:#{request_id}" if request_id.present?
+  end
+
+  def source_request_anchor(source)
+    source_conversation = source.is_a?(Conversation) ? source : source.try(:conversation)
+    incoming_message_id = source_conversation&.messages&.incoming&.order(created_at: :desc, id: :desc)&.pick(:id)
+
+    incoming_message_id || "source-created:#{source.created_at.to_f}"
+  end
+
+  def provider_session_status(hook, live_check:)
+    return { checked: false, status: 'not_checked' } unless live_check
+    return { checked: true, healthy: false, status: 'not_connected' } unless hook&.enabled?
+
+    KaspiPay::AuthService.new(account: account, client: KaspiPay::Client.new(hook: hook)).refresh!(hook: hook)
+    {
+      checked: true,
+      healthy: true,
+      status: 'active',
+      checked_at: Time.current.iso8601
+    }
+  rescue KaspiPay::Error => e
+    {
+      checked: true,
+      healthy: false,
+      status: 'unavailable',
+      error_code: e.code,
+      message: e.message.to_s.first(200),
+      checked_at: Time.current.iso8601
+    }
   end
 
   def ensure_account_admin!
@@ -304,6 +442,22 @@ class Captain::Tools::Operations::KaspiPayOperations
     return if account_user&.administrator?
 
     raise ArgumentError, 'Kaspi Pay admin tools require an account administrator'
+  end
+
+  def normalize_history_date(value, field_name)
+    Date.iso8601(value.to_s).iso8601
+  rescue Date::Error
+    raise ArgumentError, "#{field_name} must be an ISO date (YYYY-MM-DD)"
+  end
+
+  def normalize_optional_history_date(value)
+    return if value.blank?
+
+    normalize_history_date(value, 'last_transaction_date')
+  end
+
+  def mask_phone(phone_number)
+    "#{phone_number.first(2)}*****#{phone_number.last(4)}"
   end
 
   def parse_datetime(value, field_name)

@@ -46,6 +46,31 @@ RSpec.describe KaspiPay::Client do
     end
   end
 
+  describe '#render_qr_png' do
+    it 'renders a Kaspi Unified QR through the HMAC-protected adapter without session headers' do
+      qr_token = 'https://qr.kaspi.kz/original-token'
+      expected_body = { qrToken: qr_token }.to_json
+      png = "\x89PNG\r\n\x1A\nqr-image".b
+      request = stub_request(:post, 'http://kaspi-adapter.test/internal/kaspi/qr/render')
+                .with(
+                  body: expected_body,
+                  headers: internal_headers('POST', '/internal/kaspi/qr/render', expected_body).merge('Content-Type' => 'application/json')
+                )
+                .to_return(status: 200, body: png, headers: { 'Content-Type' => 'image/png' })
+
+      expect(client.render_qr_png(qr_token)).to eq(png)
+      expect(request).to have_been_requested
+    end
+
+    it 'rejects a non-PNG adapter response' do
+      stub_request(:post, 'http://kaspi-adapter.test/internal/kaspi/qr/render')
+        .to_return(status: 200, body: 'not-an-image', headers: { 'Content-Type' => 'text/plain' })
+
+      expect { client.render_qr_png('https://qr.kaspi.kz/original-token') }
+        .to raise_error(KaspiPay::Error) { |error| expect(error.code).to eq('QR_RENDER_INVALID_RESPONSE') }
+    end
+  end
+
   describe '#create_invoice' do
     it 'sends remote invoice payload with session credentials in headers only' do
       expected_body = { phoneNumber: '77011234567', amount: 15_000, comment: 'Order 1' }.to_json
@@ -57,6 +82,18 @@ RSpec.describe KaspiPay::Client do
                 .to_return(status: 200, body: { 'StatusCode' => 0, 'Data' => { 'Id' => 'remote-1' } }.to_json)
 
       client.create_invoice(phone_number: '77011234567', amount: 15_000, comment: 'Order 1')
+
+      expect(request).to have_been_requested
+    end
+  end
+
+  describe '#client_info' do
+    it 'looks up an invoice client with session credentials kept in headers' do
+      request = stub_request(:get, 'http://kaspi-adapter.test/internal/kaspi/invoice/client-info?phoneNumber=77011234567')
+                .with(headers: internal_headers('GET', '/internal/kaspi/invoice/client-info?phoneNumber=77011234567', '').merge(session_headers))
+                .to_return(status: 200, body: { 'StatusCode' => 0, 'Data' => { 'ClientName' => 'Test Client' } }.to_json)
+
+      client.client_info('77011234567')
 
       expect(request).to have_been_requested
     end

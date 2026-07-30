@@ -23,14 +23,25 @@ class KaspiPay::PayloadBuilder
         payment_type: payment.payment_type,
         amount: payment.amount,
         currency: payment.currency,
-        status: payment.status,
-        status_description: payment.status_description,
         source_type: payment.source_type,
         source_id: payment.source_id,
         source: source_payload(payment.source),
         qr_token: payment.qr_token,
         qr_original_token: payment.qr_original_token,
-        receipt_url: payment.receipt_url,
+        receipt_url: payment.receipt_url
+      }.merge(payment_lifecycle_payload(payment), refund_payload(payment)).compact
+    end
+
+    private
+
+    def safe_hook_settings(hook)
+      hook.settings.to_h.slice('default_payment_type', 'latitude', 'longitude')
+    end
+
+    def payment_lifecycle_payload(payment)
+      {
+        status: payment.status,
+        status_description: payment.status_description,
         expires_at: payment.expires_at,
         paid_at: payment.paid_at,
         failed_at: payment.failed_at,
@@ -38,13 +49,17 @@ class KaspiPay::PayloadBuilder
         kaspi_order_number: payment.kaspi_order_number,
         created_at: payment.created_at,
         updated_at: payment.updated_at
-      }.compact
+      }
     end
 
-    private
+    def refund_payload(payment)
+      refunded_amount = payment.metadata.to_h['refund_amount'].to_i
 
-    def safe_hook_settings(hook)
-      hook.settings.to_h.slice('default_payment_type', 'latitude', 'longitude')
+      {
+        refunded_amount: refunded_amount,
+        remaining_refundable_amount: [payment.amount.to_i - refunded_amount, 0].max,
+        partially_refunded: refunded_amount.positive? && payment.status != 'refunded'
+      }
     end
 
     def source_payload(source)

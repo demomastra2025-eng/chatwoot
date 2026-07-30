@@ -1734,13 +1734,13 @@ class Captain::ToolRegistry
         definition(
           id: 'get_kaspi_pay_integration_status',
           title: 'Get Kaspi Pay Integration Status',
-          description: 'Check whether Kaspi Pay is connected for this account without exposing tokens or secrets',
+          description: 'Check local Kaspi Pay connection and optionally verify the live provider session without exposing tokens or secrets',
           group_name: 'Payments',
           icon: 'credit-card',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::GetKaspiPayIntegrationStatusService,
-          risk_level: 'low',
-          idempotent: true
+          risk_level: 'medium',
+          idempotent: false
         ),
         definition(
           id: 'start_kaspi_pay_connection',
@@ -1812,6 +1812,30 @@ class Captain::ToolRegistry
           risk_level: 'medium'
         ),
         definition(
+          id: 'get_kaspi_pay_client_info',
+          title: 'Get Kaspi Pay Client Info',
+          description: 'Admin-only: verify a customer phone number for a Kaspi Pay remote invoice',
+          group_name: 'Payments',
+          icon: 'user-check',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetKaspiPayClientInfoService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
+          id: 'get_kaspi_pay_provider_history',
+          title: 'Get Kaspi Pay Provider History',
+          description: 'Admin-only: read provider operations or remote invoice history for reconciliation',
+          group_name: 'Payments',
+          icon: 'history',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::GetKaspiPayProviderHistoryService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
           id: 'search_kaspi_pay_payments',
           title: 'Search Kaspi Pay Payments',
           description: 'Search Kaspi Pay payments within the current account',
@@ -1853,6 +1877,18 @@ class Captain::ToolRegistry
           icon: 'arrow-counter-clockwise',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::RefundKaspiPayPaymentService,
+          required_integrations: %w[kaspi_pay],
+          risk_level: 'high',
+          requires_confirmation: true
+        ),
+        definition(
+          id: 'cancel_kaspi_pay_invoice',
+          title: 'Cancel Kaspi Pay Invoice',
+          description: 'Admin-only: cancel a pending Kaspi Pay remote invoice',
+          group_name: 'Payments',
+          icon: 'x-circle',
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
+          assistant_tool_class: Captain::Tools::Copilot::CancelKaspiPayInvoiceService,
           required_integrations: %w[kaspi_pay],
           risk_level: 'high',
           requires_confirmation: true

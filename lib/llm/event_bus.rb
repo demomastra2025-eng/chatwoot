@@ -55,6 +55,10 @@ class Llm::EventBus
       end
     end
 
+    def request_id
+      current_context['request_id']
+    end
+
     private
 
     def full_event_name(event_name)

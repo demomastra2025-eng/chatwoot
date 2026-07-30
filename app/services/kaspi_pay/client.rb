@@ -3,6 +3,8 @@ require 'openssl'
 
 class KaspiPay::Client
   DEFAULT_TIMEOUT = 15
+  MAX_QR_PNG_BYTES = 2 * 1024 * 1024
+  PNG_SIGNATURE = "\x89PNG\r\n\x1A\n".b.freeze
 
   def initialize(hook: nil, adapter_url: ENV.fetch('KASPI_PAY_ADAPTER_URL', nil), internal_secret: ENV.fetch('KASPI_PAY_INTERNAL_SECRET', nil))
     @hook = hook
@@ -34,8 +36,21 @@ class KaspiPay::Client
     get('/internal/kaspi/qr/status', { qrOperationId: operation_id }, session_headers)
   end
 
+  def render_qr_png(qr_original_token)
+    ensure_configured!
+    body = { qrToken: qr_original_token }.to_json
+    uri = build_uri('/internal/kaspi/qr/render')
+    response = perform_http(qr_render_request(uri, body), uri, body)
+
+    validate_qr_render_response!(response)
+  end
+
   def create_invoice(phone_number:, amount:, comment: nil)
     post('/internal/kaspi/invoice/create', { phoneNumber: phone_number, amount: amount, comment: comment }.compact, session_headers)
+  end
+
+  def client_info(phone_number)
+    get('/internal/kaspi/invoice/client-info', { phoneNumber: phone_number }, session_headers)
   end
 
   def invoice_details(operation_id)
@@ -69,6 +84,33 @@ class KaspiPay::Client
   private
 
   attr_reader :adapter_url, :hook, :internal_secret
+
+  def qr_render_request(uri, body)
+    Net::HTTP::Post.new(uri).tap do |request|
+      request['Content-Type'] = 'application/json'
+      request.body = body
+    end
+  end
+
+  def validate_qr_render_response!(response)
+    raise_qr_render_error!(response) unless response.is_a?(Net::HTTPSuccess)
+
+    png = response.body.to_s.b
+    valid_png = response['Content-Type'].to_s.start_with?('image/png') && png.start_with?(PNG_SIGNATURE)
+    unless valid_png && png.bytesize <= MAX_QR_PNG_BYTES
+      raise KaspiPay::Error.new('Kaspi Pay adapter returned an invalid QR image', code: 'QR_RENDER_INVALID_RESPONSE')
+    end
+
+    png
+  end
+
+  def raise_qr_render_error!(response)
+    details = JSON.parse(response.body.presence || '{}')
+    message = details['error'].presence || 'Kaspi Pay QR render failed'
+    raise KaspiPay::Error.new(message, code: 'QR_RENDER_FAILED', details: details)
+  rescue JSON::ParserError
+    raise KaspiPay::Error.new('Kaspi Pay adapter returned an invalid QR render error', code: 'QR_RENDER_INVALID_RESPONSE')
+  end
 
   def session_payload(current_hook = hook)
     secrets = current_hook&.secret_settings || {}
@@ -114,11 +156,21 @@ class KaspiPay::Client
   end
 
   def perform(req, uri, body)
+    response = perform_http(req, uri, body)
+    parsed = JSON.parse(response.body.presence || '{}')
+    return parsed if response.is_a?(Net::HTTPSuccess)
+
+    raise KaspiPay::Error.new(parsed['error'].presence || 'Kaspi Pay adapter request failed', code: 'ADAPTER_REQUEST_FAILED', details: parsed)
+  rescue JSON::ParserError
+    raise KaspiPay::Error.new('Kaspi Pay adapter returned invalid JSON', code: 'ADAPTER_INVALID_RESPONSE')
+  end
+
+  def perform_http(req, uri, body)
     timestamp = Time.current.to_i.to_s
     req['X-OneLink-Timestamp'] = timestamp
     req['X-OneLink-Internal-Signature'] = signature(req, uri, timestamp, body)
 
-    response = Net::HTTP.start(
+    Net::HTTP.start(
       uri.host,
       uri.port,
       use_ssl: uri.scheme == 'https',
@@ -127,13 +179,6 @@ class KaspiPay::Client
     ) do |http|
       http.request(req)
     end
-
-    parsed = JSON.parse(response.body.presence || '{}')
-    return parsed if response.is_a?(Net::HTTPSuccess)
-
-    raise KaspiPay::Error.new(parsed['error'].presence || 'Kaspi Pay adapter request failed', code: 'ADAPTER_REQUEST_FAILED', details: parsed)
-  rescue JSON::ParserError
-    raise KaspiPay::Error.new('Kaspi Pay adapter returned invalid JSON', code: 'ADAPTER_INVALID_RESPONSE')
   end
 
   def build_uri(path)
