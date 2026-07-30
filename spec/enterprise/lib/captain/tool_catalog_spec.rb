@@ -80,6 +80,10 @@ RSpec.describe Captain::ToolCatalog do
       %w[get_kaspi_pay_client_info get_kaspi_pay_provider_history].each do |tool_id|
         expect(assistant_tools.find { |tool| tool[:id] == tool_id }).to include(risk_level: 'low')
       end
+      expect(assistant_tools.find { |tool| tool[:id] == 'get_kaspi_pay_integration_status' }).to include(
+        risk_level: 'medium',
+        requires_confirmation: true
+      )
       expect(assistant_tools.find { |tool| tool[:id] == 'cancel_kaspi_pay_invoice' }).to include(
         risk_level: 'high',
         requires_confirmation: true

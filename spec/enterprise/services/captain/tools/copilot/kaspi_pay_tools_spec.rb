@@ -207,6 +207,44 @@ RSpec.describe 'Captain Kaspi Pay tools' do
   end
 
   describe Captain::Tools::Copilot::GetKaspiPayIntegrationStatusService do
+    it 'does not rotate the provider session before exact operator confirmation', :aggregate_failures do
+      allow_any_instance_of(Captain::Copilot::ToolConfirmationGate).to receive(:call).and_call_original
+      allow(client).to receive(:refresh).with(hook: hook).and_return(
+        'success' => true,
+        'tokenSN' => 'confirmed-token',
+        'vtokenSecret' => 'confirmed-secret',
+        'profileId' => 'profile-1',
+        'organizationId' => 'org-1'
+      )
+      copilot_thread = create(:captain_copilot_thread, account: account, user: admin, assistant: assistant)
+      original_access_token = hook.access_token
+      service = described_class.new(assistant, user: admin, copilot_thread: copilot_thread)
+
+      confirmation_payload = JSON.parse(service.execute(live_check: true))
+
+      expect(confirmation_payload.dig('data', 'confirmation_required')).to be(true)
+      expect(confirmation_payload.dig('data', 'tool_id')).to eq('get_kaspi_pay_integration_status')
+      expect(client).not_to have_received(:refresh)
+      expect(hook.reload.access_token).to eq(original_access_token)
+
+      pending_gate = copilot_thread.copilot_messages.assistant_thinking.last
+      confirmation_token = pending_gate.message.dig('confirmation_gate', 'confirmation_token')
+      create(
+        :captain_copilot_message,
+        account: account,
+        copilot_thread: copilot_thread,
+        message_type: 'user',
+        message: { 'content' => "Подтверждаю #{confirmation_token}" }
+      )
+
+      confirmed_payload = JSON.parse(service.execute(live_check: true))
+
+      expect(confirmed_payload.dig('provider_session', 'status')).to eq('active')
+      expect(client).to have_received(:refresh).once
+      expect(hook.reload.secret_settings).to include('token_sn' => 'confirmed-token', 'vtoken_secret' => 'confirmed-secret')
+      expect(pending_gate.reload.message.dig('confirmation_gate', 'status')).to eq('confirmed')
+    end
+
     it 'returns safe integration metadata and verified provider session state for an administrator' do
       allow(client).to receive(:refresh).with(hook: hook).and_return(
         'success' => true,

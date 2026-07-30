@@ -1740,6 +1740,7 @@ class Captain::ToolRegistry
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::GetKaspiPayIntegrationStatusService,
           risk_level: 'medium',
+          requires_confirmation: true,
           idempotent: false
         ),
         definition(
