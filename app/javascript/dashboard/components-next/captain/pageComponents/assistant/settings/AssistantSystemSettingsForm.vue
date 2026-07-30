@@ -88,7 +88,7 @@ const VOICE_PROVIDER_PRESETS = Object.freeze({
       },
       {
         value: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        label: 'Gemini 2.5 Native Audio (Affective Dialog)',
+        label: 'Gemini 2.5 Native Audio',
       },
       { value: 'gemini-2.0-flash-live-001', label: 'Gemini 2.0 Flash Live' },
     ],

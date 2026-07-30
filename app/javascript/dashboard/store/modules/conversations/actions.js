@@ -732,7 +732,7 @@ const actions = {
 
   assignAgent: async (
     { commit, dispatch, state },
-    { conversationId, agentId, conversationType = null }
+    { conversationId, agentId, conversationType = null, throwOnError = false }
   ) => {
     try {
       const communicationThread = getCommunicationThreadTarget(
@@ -757,7 +757,7 @@ const actions = {
         assignee: response.data,
       });
     } catch (error) {
-      // Handle error
+      if (throwOnError) throw error;
     }
   },
 

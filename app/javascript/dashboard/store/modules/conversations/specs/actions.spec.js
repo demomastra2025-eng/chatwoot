@@ -405,5 +405,26 @@ describe('conversation actions', () => {
         name: 'Thread agent',
       });
     });
+
+    it('rethrows assignment failures when the caller requests fail-fast behavior', async () => {
+      const error = new Error('assignment failed');
+      vi.spyOn(ConversationApi, 'assignAgent').mockRejectedValue(error);
+
+      await expect(
+        actions.assignAgent(
+          {
+            commit: vi.fn(),
+            dispatch: vi.fn(),
+            state: { allConversations: [] },
+          },
+          {
+            conversationId: 7,
+            conversationType: 'conversation',
+            agentId: 9,
+            throwOnError: true,
+          }
+        )
+      ).rejects.toThrow('assignment failed');
+    });
   });
 });

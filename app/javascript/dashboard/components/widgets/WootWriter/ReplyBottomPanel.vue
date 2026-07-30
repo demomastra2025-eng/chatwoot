@@ -1,5 +1,6 @@
 <script>
 import { computed, ref } from 'vue';
+import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useKeyboardEvents } from 'dashboard/composables/useKeyboardEvents';
 import FileUpload from 'vue-upload-component';
@@ -284,15 +285,18 @@ export default {
       if (!this.captainConversationId) return {};
 
       // Communication threads keep child conversations as channel summaries;
-      // a full native conversation record is not guaranteed to be loaded.
-      return (
-        this.$store.getters.getConversationById(
-          this.captainConversationId,
-          'conversation'
-        ) ||
-        this.activeReplyChannel ||
-        {}
+      // the selected channel owns the current status while the native record
+      // provides richer metadata such as the assignee.
+      const nativeConversation = this.$store.getters.getConversationById(
+        this.captainConversationId,
+        'conversation'
       );
+      if (!nativeConversation) return this.activeReplyChannel || {};
+
+      return {
+        ...nativeConversation,
+        status: this.activeReplyChannel?.status ?? nativeConversation.status,
+      };
     },
     replyableCommunicationChannels() {
       return getCommunicationReplyChannels(this.communicationChannels);
@@ -676,14 +680,10 @@ export default {
             !assignee || assignee.id !== currentUser?.id;
 
           if (needsAssignmentToCurrentUser && currentUser?.id) {
-            const { avatar_url, ...rest } = currentUser || {};
-            this.$store.dispatch('setCurrentChatAssignee', {
-              conversationId,
-              assignee: { ...rest, thumbnail: avatar_url },
-            });
             await this.$store.dispatch('assignAgent', {
               conversationId,
               agentId: currentUser.id,
+              throwOnError: true,
               ...(conversationType ? { conversationType } : {}),
             });
           }
@@ -694,6 +694,8 @@ export default {
             ...(conversationType ? { conversationType } : {}),
           });
         }
+      } catch {
+        useAlert(this.$t('CONVERSATION.REPLYBOX.BOT_HANDOFF_ERROR'));
       } finally {
         this.isTogglingCaptain = false;
       }

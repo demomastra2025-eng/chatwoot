@@ -1,6 +1,7 @@
 import { shallowMount } from '@vue/test-utils';
 import { createStore } from 'vuex';
 import { describe, expect, it, vi } from 'vitest';
+import { useAlert } from 'dashboard/composables';
 
 import ReplyBottomPanel from './ReplyBottomPanel.vue';
 
@@ -12,6 +13,10 @@ const useWhatsappCallInitiationMock = vi.fn(() => ({
 
 vi.mock('activestorage', () => ({
   start: vi.fn(),
+}));
+
+vi.mock('dashboard/composables', () => ({
+  useAlert: vi.fn(),
 }));
 
 vi.mock('dashboard/composables/useKeyboardEvents', () => ({
@@ -239,17 +244,11 @@ describe('ReplyBottomPanel', () => {
       conversationId: 11,
       status: 'open',
     });
-    expect(actions.setCurrentChatAssignee).toHaveBeenCalledWith({
-      conversationId: 11,
-      assignee: {
-        id: 7,
-        name: 'Agent',
-        thumbnail: '/agent.png',
-      },
-    });
+    expect(actions.setCurrentChatAssignee).not.toHaveBeenCalled();
     expect(actions.assignAgent).toHaveBeenCalledWith({
       conversationId: 11,
       agentId: 7,
+      throwOnError: true,
     });
   });
 
@@ -278,7 +277,7 @@ describe('ReplyBottomPanel', () => {
         captainEnabled: true,
         currentUser,
         conversations: {
-          11: { id: 11, status: 'pending', meta: { assignee: null } },
+          11: { id: 11, status: 'open', meta: { assignee: null } },
         },
         inboxes: {
           101: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
@@ -298,19 +297,48 @@ describe('ReplyBottomPanel', () => {
       conversationType: 'conversation',
       status: 'open',
     });
-    expect(actions.setCurrentChatAssignee).toHaveBeenCalledWith({
-      conversationId: 11,
-      assignee: {
-        id: 7,
-        name: 'Agent',
-        thumbnail: '/agent.png',
-      },
-    });
+    expect(actions.setCurrentChatAssignee).not.toHaveBeenCalled();
     expect(actions.assignAgent).toHaveBeenCalledWith({
       conversationId: 11,
       conversationType: 'conversation',
       agentId: 7,
+      throwOnError: true,
     });
+  });
+
+  it('reports assignment failure without applying an optimistic assignee', async () => {
+    vi.mocked(useAlert).mockClear();
+    const actions = {
+      toggleStatus: vi.fn(),
+      setCurrentChatAssignee: vi.fn(),
+      assignAgent: vi.fn().mockRejectedValue(new Error('assignment failed')),
+    };
+    const wrapper = mountComponent(
+      {
+        conversationId: 999,
+        isCommunicationThread: true,
+        activeReplyChannel: { ...whatsappChannel, status: 'pending' },
+      },
+      {
+        captainEnabled: true,
+        currentUser: { id: 7, name: 'Agent' },
+        conversations: {
+          11: { id: 11, status: 'open', meta: { assignee: null } },
+        },
+        inboxes: {
+          101: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+        },
+        actions,
+      }
+    );
+
+    await wrapper.vm.toggleCaptainForConversation();
+
+    expect(actions.setCurrentChatAssignee).not.toHaveBeenCalled();
+    expect(useAlert).toHaveBeenCalledWith(
+      'CONVERSATION.REPLYBOX.BOT_HANDOFF_ERROR'
+    );
+    expect(wrapper.vm.isTogglingCaptain).toBe(false);
   });
 
   it('enables Captain for the selected open communication-thread channel', async () => {
@@ -328,7 +356,9 @@ describe('ReplyBottomPanel', () => {
       },
       {
         captainEnabled: true,
-        conversations: {},
+        conversations: {
+          22: { id: 22, status: 'pending', meta: { assignee: null } },
+        },
         inboxes: {
           202: { id: 202, captain_assistant: { id: 6, name: 'Captain 2' } },
         },
@@ -347,6 +377,39 @@ describe('ReplyBottomPanel', () => {
       conversationType: 'conversation',
       status: 'pending',
     });
+  });
+
+  it('reacts to selected channel status while the native record stays stale', async () => {
+    const selectedChannel = {
+      ...telegramChannel,
+      can_reply: true,
+      status: 'open',
+    };
+    const wrapper = mountComponent(
+      {
+        conversationId: 999,
+        isCommunicationThread: true,
+        activeReplyChannel: selectedChannel,
+      },
+      {
+        captainEnabled: true,
+        conversations: {
+          22: { id: 22, status: 'open', meta: { assignee: null } },
+        },
+        inboxes: {
+          202: { id: 202, captain_assistant: { id: 6, name: 'Captain 2' } },
+        },
+      }
+    );
+
+    const captainButton = wrapper.find('[data-icon="i-woot-captain"]');
+    expect(captainButton.attributes('aria-pressed')).toBe('false');
+
+    await wrapper.setProps({
+      activeReplyChannel: { ...selectedChannel, status: 'pending' },
+    });
+
+    expect(captainButton.attributes('aria-pressed')).toBe('true');
   });
 
   it('hides Captain when the selected channel inbox has no assistant', () => {
