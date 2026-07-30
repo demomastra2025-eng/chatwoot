@@ -71,6 +71,15 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
       expect(payload['resources'].map { |item| item['id'] }).to eq([therapist.id])
     end
 
+    it 'treats non-positive and blank service ids as an omitted filter' do
+      [0, -1, ''].each do |service_id|
+        payload = JSON.parse(service.execute(service_id: service_id))
+
+        expect(payload.dig('filters', 'service_id')).to be_nil
+        expect(payload['resources'].map { |item| item['id'] }).to contain_exactly(therapist.id, cosmetologist.id)
+      end
+    end
+
     it 'can include inactive specialists when requested' do
       payload = JSON.parse(service.execute(include_inactive: true, query: 'old'))
 

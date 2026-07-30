@@ -14,6 +14,7 @@ class Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService < Captai
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
   def execute(resource_id:, from:, to:, service_id: nil, duration_min: nil, limit: nil)
+    service_id = optional_positive_id(service_id)
     range_from = parse_datetime(from, field_name: 'from', required: true)
     range_to = parse_datetime(to, field_name: 'to', required: true)
     validate_range!(range_from, range_to)

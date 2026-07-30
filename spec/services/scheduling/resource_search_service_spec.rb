@@ -51,6 +51,15 @@ RSpec.describe Scheduling::ResourceSearchService do
     expect(payload[:resources].pluck(:id)).to eq([therapist.id])
   end
 
+  it 'treats non-positive and blank service ids as an omitted filter' do
+    [nil, 0, -1, ''].each do |service_id|
+      payload = perform(service_id: service_id)
+
+      expect(payload[:total_count]).to eq(2)
+      expect(payload[:resources].pluck(:id)).to contain_exactly(therapist.id, cosmetologist.id)
+    end
+  end
+
   it 'caps result limits to protect the agent from unbounded payloads' do
     create_list(:scheduling_resource, 55, account: account)
 

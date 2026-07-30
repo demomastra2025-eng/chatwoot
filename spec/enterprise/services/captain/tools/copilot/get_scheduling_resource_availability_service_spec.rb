@@ -49,6 +49,17 @@ RSpec.describe Captain::Tools::Copilot::GetSchedulingResourceAvailabilityService
       expect(payload['slots'].first['ends_at']).to eq('2026-04-20T09:30:00+05:00')
     end
 
+    it 'treats non-positive and blank service ids as an omitted filter' do
+      [0, -1, ''].each do |service_id|
+        payload = JSON.parse(
+          service.execute(resource_id: resource.id, from: from_time.iso8601, to: to_time.iso8601, service_id: service_id, limit: 1)
+        )
+
+        expect(payload['service']).to be_nil
+        expect(payload['duration_min']).to eq(30)
+      end
+    end
+
     it 'returns an error when the service is not available for the specialist' do
       other_service = create(:scheduling_service, account: account, name: 'Other', duration_min: 60)
 

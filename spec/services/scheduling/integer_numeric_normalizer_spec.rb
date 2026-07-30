@@ -33,4 +33,18 @@ RSpec.describe Scheduling::IntegerNumericNormalizer do
       expect(described_class.normalize_or_zero(nil, field_name: 'amount')).to eq(0)
     end
   end
+
+  describe '.optional_positive_id' do
+    it 'accepts positive integer IDs and integer-valued floats' do
+      expect(described_class.optional_positive_id(12)).to eq(12)
+      expect(described_class.optional_positive_id('12')).to eq(12)
+      expect(described_class.optional_positive_id(12.0)).to eq(12)
+    end
+
+    it 'treats blank, invalid, non-positive, and decimal-syntax values as omitted' do
+      [nil, '', 0, -1, '12.0', BigDecimal('12.0'), 12.5].each do |value|
+        expect(described_class.optional_positive_id(value)).to be_nil
+      end
+    end
+  end
 end

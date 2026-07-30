@@ -46,6 +46,15 @@ RSpec.describe Scheduling::AvailableSlotSearchService do
     expect(payload[:resources].pluck(:id)).not_to include(other_resource.id, external_resource.id)
   end
 
+  it 'treats non-positive and blank service ids as an omitted filter' do
+    [nil, 0, -1, ''].each do |service_id|
+      payload = perform(service_id: service_id, limit: 1)
+
+      expect(payload[:service]).to be_nil
+      expect(payload[:resources].pluck(:id)).to contain_exactly(resource.id, other_resource.id)
+    end
+  end
+
   it 'raises when a requested specialist is outside the account or unavailable for scheduling' do
     expect do
       perform(resource_ids: [external_resource.id])

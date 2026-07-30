@@ -7,7 +7,7 @@ class Scheduling::AvailableSlotSearchService
     @from = from
     @to = to
     @resource_ids = Array(resource_ids).compact_blank.map(&:to_i)
-    @service_id = service_id.presence&.to_i
+    @service_id = Scheduling::IntegerNumericNormalizer.optional_positive_id(service_id)
     @requested_duration_min = duration_min.presence&.to_i
     @limit = normalize_limit(limit)
   end

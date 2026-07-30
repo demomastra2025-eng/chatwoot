@@ -11,6 +11,7 @@ class Captain::Tools::Copilot::SearchSchedulingResourcesService < Captain::Tools
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
 
   def execute(query: nil, search_by: 'all', service_id: nil, include_inactive: false, limit: nil)
+    service_id = optional_positive_id(service_id)
     result = Scheduling::ResourceSearchService.new(
       account: account,
       query: query,

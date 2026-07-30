@@ -12,6 +12,7 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
   param :limit, type: :number, desc: 'Maximum number of slots to return', required: false
 
   def execute(from:, to:, resource_ids: nil, service_id: nil, duration_min: nil, limit: nil)
+    service_id = optional_positive_id(service_id)
     payload = Scheduling::AvailableSlotSearchService.new(
       account: account,
       from: parse_datetime(from, field_name: 'from', required: true),

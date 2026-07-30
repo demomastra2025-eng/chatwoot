@@ -9,6 +9,7 @@ class Captain::Tools::Copilot::ListSchedulingResourcesService < Captain::Tools::
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
 
   def execute(service_id: nil, include_inactive: false, limit: nil)
+    service_id = optional_positive_id(service_id)
     result = Scheduling::ResourceSearchService.new(
       account: account,
       service_id: service_id,

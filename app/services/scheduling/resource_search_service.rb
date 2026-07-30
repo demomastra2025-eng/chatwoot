@@ -6,7 +6,7 @@ class Scheduling::ResourceSearchService
     @query = query.to_s.strip
     @search_by = search_by.to_s.presence || 'all'
     @include_inactive = ActiveModel::Type::Boolean.new.cast(include_inactive)
-    @service_id = service_id
+    @service_id = Scheduling::IntegerNumericNormalizer.optional_positive_id(service_id)
     @limit = normalize_limit(limit)
   end
 

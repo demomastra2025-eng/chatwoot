@@ -47,6 +47,17 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
       expect(payload['slots'].map { |slot| slot['starts_at'] }).not_to include('2026-04-20T10:00:00+05:00')
     end
 
+    it 'treats non-positive and blank service ids as an omitted filter' do
+      [0, -1, ''].each do |service_id|
+        payload = JSON.parse(
+          service.execute(from: from_time.iso8601, to: to_time.iso8601, service_id: service_id, limit: 1)
+        )
+
+        expect(payload['service']).to be_nil
+        expect(payload['resources'].map { |item| item['id'] }).to contain_exactly(resource.id, other_resource.id)
+      end
+    end
+
     it 'returns an error when a requested specialist cannot perform the service' do
       result = service.execute(
         from: from_time.iso8601,
