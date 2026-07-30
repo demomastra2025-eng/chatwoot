@@ -2,11 +2,11 @@ class Telephony::AiVoice::ContextBuilder
   DEFAULT_PROVIDER = 'gemini-live'.freeze
   DEFAULT_MODEL = 'gemini-3.1-flash-live-preview'.freeze
   DEFAULT_VOICE = 'sulafat'.freeze
-  DEFAULT_LANGUAGE = 'ru-KZ'.freeze
+  DEFAULT_LANGUAGE = 'auto'.freeze
   DEFAULT_FIRST_MESSAGE = 'Здравствуйте! Чем могу помочь?'.freeze
   DEFAULT_SYSTEM_PROMPT = <<~PROMPT.squish.freeze
     Ты голосовой ассистент в телефонном звонке.
-    Говори по-русски, коротко и естественно.
+    Говори коротко и естественно.
     Не используй markdown, списки, эмодзи или спецсимволы.
     Отвечай максимум 1-2 короткими предложениями.
     Задавай только один вопрос за раз.
@@ -15,6 +15,10 @@ class Telephony::AiVoice::ContextBuilder
     На вопросы о твоем имени, роли или кто ты отвечай из настроек ассистента и голосовых инструкций, без базы знаний.
     Для действий с заказами, клиентами, переводом звонка или завершением звонка используй инструменты.
     Для вопросов о компании, услугах, тарифах, документах, FAQ или слогане сначала используй доступный инструмент базы знаний, не отвечай из памяти.
+  PROMPT
+  AUTO_LANGUAGE_PROMPT = <<~PROMPT.squish.freeze
+    Отвечай на языке собеседника. При переключении между русским и казахским
+    следуй за языком собеседника.
   PROMPT
   VOICE_RESPONSE_CONTRACT = <<~PROMPT.squish.freeze
     # Voice Response Contract
@@ -188,6 +192,7 @@ class Telephony::AiVoice::ContextBuilder
       base << ai_settings['system_prompt'] if ai_settings['system_prompt'].present?
       base << voice_character_prompt_block if voice_character_prompt.present?
       base << DEFAULT_SYSTEM_PROMPT
+      base << AUTO_LANGUAGE_PROMPT if ai_settings['language'] == 'auto'
       base.compact_blank.join("\n")
     end
   end

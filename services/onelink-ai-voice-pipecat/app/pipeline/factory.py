@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from google.genai.types import ProactivityConfig, ThinkingConfig
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -29,8 +30,9 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.elevenlabs.stt import CommitStrategy, ElevenLabsRealtimeSTTService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.google.gemini_live.llm import (
-    GeminiLiveLLMService,
+    ContextWindowCompressionParams,
     GeminiVADParams,
+    HttpOptions,
 )
 from pipecat.services.llm_service import FunctionCallParams
 from pipecat.services.openai.realtime.events import (
@@ -66,6 +68,7 @@ from app.pipeline.processors import (
 )
 from app.pipeline.tool_dialogue import ToolDialogueCoordinator
 from app.recordings.writer import DualChannelRecorder
+from app.services.gemini_live import OneLinkGeminiLiveLLMService
 from app.sessions.state import SessionState
 
 GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
@@ -73,6 +76,17 @@ GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
     "сначала коротко скажи собеседнику, что сейчас проверишь информацию. Затем сразу "
     "вызови инструмент и обязательно дождись его результата перед содержательным ответом."
 )
+GEMINI_AFFECTIVE_DIALOG_MODELS = frozenset(
+    {"gemini-2.5-flash-native-audio-preview-12-2025"}
+)
+GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
+    {
+        "gemini-3.1-flash-live-preview",
+        "gemini-2.5-flash-native-audio-preview-12-2025",
+    }
+)
+GEMINI_THINKING_LEVEL_MODELS = frozenset({"gemini-3.1-flash-live-preview"})
+GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS
 GEMINI_START_SENSITIVITIES = frozenset(
     {"START_SENSITIVITY_HIGH", "START_SENSITIVITY_LOW"}
 )
@@ -177,6 +191,14 @@ def build_pipeline(
     output_resampler = None
 
     if context.ai.provider == "gemini-live":
+        affective_dialog_enabled = (
+            context.ai.affective_dialog_enabled
+            and context.ai.model in GEMINI_AFFECTIVE_DIALOG_MODELS
+        )
+        proactive_audio_enabled = (
+            context.ai.proactive_audio_enabled
+            and context.ai.model in GEMINI_PROACTIVE_AUDIO_MODELS
+        )
         llm_context = LLMContext(messages=initial_messages)
         aggregators = _aggregators(
             llm_context,
@@ -184,17 +206,34 @@ def build_pipeline(
             vad,
             interruptions_enabled=context.ai.interruptions_enabled,
         )
-        llm = GeminiLiveLLMService(
+        llm = OneLinkGeminiLiveLLMService(
             api_key=credentials["gemini_api_key"],
             tools=tools,
-            settings=GeminiLiveLLMService.Settings(
+            http_options=HttpOptions(
+                api_version="v1alpha" if proactive_audio_enabled else "v1beta"
+            ),
+            settings=OneLinkGeminiLiveLLMService.Settings(
                 model=context.ai.model,
                 system_instruction=_provider_system_prompt(context),
                 voice=context.ai.voice,
-                language=context.ai.language,
+                language=_gemini_language(context),
                 temperature=context.ai.temperature,
                 max_tokens=context.ai.max_output_tokens,
                 vad=_gemini_vad_params(context),
+                context_window_compression=ContextWindowCompressionParams(
+                    enabled=context.ai.context_window_compression_enabled
+                ),
+                thinking=(
+                    ThinkingConfig(thinking_level=context.ai.thinking_level)
+                    if context.ai.model in GEMINI_THINKING_LEVEL_MODELS
+                    else None
+                ),
+                enable_affective_dialog=affective_dialog_enabled,
+                proactivity=(
+                    ProactivityConfig(proactive_audio=True)
+                    if proactive_audio_enabled
+                    else None
+                ),
             ),
             inference_on_context_initialization=True,
         )
@@ -455,6 +494,14 @@ def _provider_system_prompt(context: VoiceContext) -> str:
     if context.ai.provider != "gemini-live" or not context.tools:
         return context.ai.system_prompt
     return f"{context.ai.system_prompt}\n\n{GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION}"
+
+
+def _gemini_language(context: VoiceContext) -> str | None:
+    if context.ai.language != "auto":
+        return context.ai.language
+    if context.ai.model in GEMINI_AUTO_LANGUAGE_MODELS:
+        return None
+    return "ru-KZ"
 
 
 def _gemini_vad_params(context: VoiceContext) -> GeminiVADParams:

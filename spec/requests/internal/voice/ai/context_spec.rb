@@ -97,6 +97,10 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'model' => 'gemini-2.0-flash-live-001',
       'voice' => 'Puck',
       'language' => 'ru-KZ',
+      'thinking_level' => 'minimal',
+      'context_window_compression_enabled' => true,
+      'proactive_audio_enabled' => false,
+      'api_version' => 'v1beta',
       'first_message' => 'Здравствуйте! Чем могу помочь?',
       'interruptions_enabled' => true,
       'interruption_mode' => 'transcript_confirmed',
@@ -118,6 +122,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
     system_prompt = body.dig('ai', 'system_prompt')
     expect(system_prompt).to include('Ты голосовой ассистент в телефонном звонке')
+    expect(system_prompt).not_to include('Отвечай на языке собеседника')
     expect(system_prompt).not_to include('Voice character prompt')
     expect(body['ai']).not_to have_key('voice_character_prompt')
     expect(system_prompt).to include('Отвечай максимум 1-2 короткими предложениями')
@@ -141,6 +146,67 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
     end_call_tool = body['tools'].find { |tool| tool['name'] == 'end_call' }
     expect(end_call_tool['timeout_ms']).to be >= 5000
+  end
+
+  it 'adds language-following instructions only for native Gemini auto language' do
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        model: 'gemini-3.1-flash-live-preview',
+        language: 'auto'
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('ai', 'language')).to eq('auto')
+    expect(response.parsed_body.dig('ai', 'system_prompt')).to include('Отвечай на языке собеседника')
+    expect(response.parsed_body.dig('ai', 'system_prompt')).to include('между русским и казахским')
+  end
+
+  it 'enables proactive audio with the required Gemini preview API' do
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        model: 'gemini-3.1-flash-live-preview',
+        proactive_audio_enabled: true
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['ai']).to include(
+      'proactive_audio_enabled' => true,
+      'api_version' => 'v1alpha'
+    )
+  end
+
+  it 'passes the Captain Gemini affective dialog setting to the voice runtime' do
+    assistant.update!(
+      config: assistant.config.merge(
+        'voice_settings' => { 'affective_dialog_enabled' => true }
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('ai', 'affective_dialog_enabled')).to be(true)
   end
 
   [

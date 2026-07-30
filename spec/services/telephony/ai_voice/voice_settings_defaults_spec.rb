@@ -6,7 +6,12 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       expect(described_class.normalize({})).to include(
         'provider' => 'gemini-live',
         'model' => 'gemini-3.1-flash-live-preview',
-        'voice' => 'sulafat'
+        'voice' => 'sulafat',
+        'language' => 'auto',
+        'thinking_level' => 'minimal',
+        'context_window_compression_enabled' => true,
+        'proactive_audio_enabled' => false,
+        'api_version' => 'v1beta'
       )
     end
 
@@ -14,7 +19,40 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       expect(described_class.normalize(provider: 'openai-realtime')).to include(
         'provider' => 'openai-realtime',
         'model' => 'gpt-realtime-2',
-        'voice' => 'alloy'
+        'voice' => 'alloy',
+        'language' => 'ru-KZ'
+      )
+    end
+
+    it 'does not pass Gemini auto language to another provider' do
+      expect(described_class.normalize(provider: 'openai-realtime', language: 'auto')).to include(
+        'language' => 'ru-KZ'
+      )
+    end
+
+    it 'does not pass auto language to a legacy Gemini model' do
+      expect(described_class.normalize(model: 'gemini-2.0-flash-live-001', language: 'auto')).to include(
+        'language' => 'ru-KZ'
+      )
+    end
+
+    it 'falls back from an unknown Gemini thinking level' do
+      expect(described_class.normalize(thinking_level: 'unknown')).to include(
+        'thinking_level' => 'minimal'
+      )
+    end
+
+    it 'uses the preview API only when proactive audio is enabled for a supported Gemini model' do
+      expect(described_class.normalize(proactive_audio_enabled: true)).to include(
+        'proactive_audio_enabled' => true,
+        'api_version' => 'v1alpha'
+      )
+      expect(described_class.normalize(model: 'gemini-2.0-flash-live-001', proactive_audio_enabled: true)).to include(
+        'proactive_audio_enabled' => false,
+        'api_version' => 'v1beta'
+      )
+      expect(described_class.normalize(provider: 'openai-realtime', proactive_audio_enabled: true)).to include(
+        'proactive_audio_enabled' => false
       )
     end
 
