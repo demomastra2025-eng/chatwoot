@@ -790,6 +790,13 @@
           "MODEL": "Realtime model",
           "VOICE": "Voice",
           "LANGUAGE": "Language",
+          "LANGUAGE_AUTO": "Automatic (follows the caller)",
+          "THINKING_LEVEL": "Reasoning level",
+          "THINKING_LEVEL_DESCRIPTION": "Minimal keeps phone responses fastest. Increase only for complex tool-based tasks.",
+          "THINKING_MINIMAL": "Minimal — fastest",
+          "THINKING_LOW": "Low",
+          "THINKING_MEDIUM": "Medium",
+          "THINKING_HIGH": "High",
           "SYSTEM_PROMPT": "Voice instructions",
           "SYSTEM_PROMPT_PLACEHOLDER": "For example: speak briefly, avoid markdown, ask one question at a time",
           "SYSTEM_PROMPT_DESCRIPTION": "Extra instructions used only by the phone voice agent. They are added on top of the main Captain instructions.",
@@ -802,7 +809,13 @@
           "TRANSFER_MESSAGE_PLACEHOLDER": "Message spoken before transferring to an operator",
           "MAX_DURATION_SEC": "Max call duration, seconds",
           "INTERRUPTIONS": "Allow interruptions",
-          "INTERRUPTIONS_DESCRIPTION": "Let the caller interrupt the AI while it is speaking."
+          "INTERRUPTIONS_DESCRIPTION": "Let the caller interrupt the AI while it is speaking.",
+          "CONTEXT_COMPRESSION": "Long-call context compression",
+          "CONTEXT_COMPRESSION_DESCRIPTION": "Compresses older context so long Gemini calls can continue.",
+          "PROACTIVE_AUDIO": "Proactive Audio",
+          "PROACTIVE_AUDIO_DESCRIPTION": "Lets Gemini skip speech that is not relevant to the conversation. Enabling it uses the preview v1alpha API; disabled by default.",
+          "AFFECTIVE_DIALOG": "Gemini emotional adaptation",
+          "AFFECTIVE_DIALOG_DESCRIPTION": "Natively adapts vocal expression to the caller's tone. Available only with Gemini 2.5 Native Audio and may increase response latency."
         },
         "VOICE_PREVIEW": {
           "TITLE": "Talk to the voice agent",

@@ -790,6 +790,13 @@
           "MODEL": "Модель",
           "VOICE": "Голос",
           "LANGUAGE": "Язык",
+          "LANGUAGE_AUTO": "Автоматически (следовать за собеседником)",
+          "THINKING_LEVEL": "Уровень рассуждения",
+          "THINKING_LEVEL_DESCRIPTION": "Минимальный уровень даёт самый быстрый ответ. Повышайте только для сложных задач с инструментами.",
+          "THINKING_MINIMAL": "Минимальный — быстрее всего",
+          "THINKING_LOW": "Низкий",
+          "THINKING_MEDIUM": "Средний",
+          "THINKING_HIGH": "Высокий",
           "SYSTEM_PROMPT": "Голосовые инструкции",
           "SYSTEM_PROMPT_PLACEHOLDER": "Например: говори коротко, без markdown, задавай один вопрос за раз",
           "SYSTEM_PROMPT_DESCRIPTION": "Дополнительные инструкции только для голосового AI-агента. Они дополняют основные инструкции агента.",
@@ -802,7 +809,13 @@
           "TRANSFER_MESSAGE_PLACEHOLDER": "Фраза перед переводом на оператора",
           "MAX_DURATION_SEC": "Максимальная длительность, сек.",
           "INTERRUPTIONS": "Разрешить перебивания",
-          "INTERRUPTIONS_DESCRIPTION": "Позволяет клиенту перебивать AI, пока он говорит."
+          "INTERRUPTIONS_DESCRIPTION": "Позволяет клиенту перебивать AI, пока он говорит.",
+          "CONTEXT_COMPRESSION": "Сжатие контекста длинного звонка",
+          "CONTEXT_COMPRESSION_DESCRIPTION": "Сжимает старый контекст, чтобы долгие звонки Gemini могли продолжаться.",
+          "PROACTIVE_AUDIO": "Proactive Audio",
+          "PROACTIVE_AUDIO_DESCRIPTION": "Позволяет Gemini не отвечать на речь, не относящуюся к разговору. При включении используется preview API v1alpha; по умолчанию выключено.",
+          "AFFECTIVE_DIALOG": "Эмоциональная адаптация Gemini",
+          "AFFECTIVE_DIALOG_DESCRIPTION": "Нативно адаптирует интонацию к тону собеседника. Доступно только для Gemini 2.5 Native Audio и может увеличить задержку ответа."
         },
         "VOICE_PREVIEW": {
           "TITLE": "Поговорить с голосовым AI-агентом",
