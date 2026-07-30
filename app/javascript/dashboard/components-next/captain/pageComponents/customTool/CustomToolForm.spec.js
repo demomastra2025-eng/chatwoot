@@ -87,6 +87,13 @@ describe('CustomToolForm create flow', () => {
     expect(wrapper.emitted('submit')).toHaveLength(1);
     expect(wrapper.emitted('submit')[0][0]).toMatchObject({
       request_body_type: 'json',
+      http_options: {
+        timeout: { open_seconds: 10, read_seconds: 30 },
+        retry: { enabled: false, max_attempts: 2 },
+        redirects: { enabled: false, max_redirects: 3 },
+        pagination: { enabled: false, max_pages: 10 },
+        batching: { enabled: false, batch_size: 50 },
+      },
     });
   });
 
@@ -124,6 +131,11 @@ describe('CustomToolForm create flow', () => {
         auth_type: 'none',
         auth_config: {},
         param_schema: [],
+        http_options: {
+          timeout: { open_seconds: 4, read_seconds: 40 },
+          retry: { enabled: true, max_attempts: 3, statuses: [429, 503] },
+          idempotency: { enabled: true },
+        },
       },
     });
 
@@ -135,6 +147,11 @@ describe('CustomToolForm create flow', () => {
       title: 'CRM lookup (copy)',
       request_body_type: 'form_urlencoded',
       request_template: '{"phone":"{{ phone }}"}',
+      http_options: {
+        timeout: { open_seconds: 4, read_seconds: 40 },
+        retry: { enabled: true, max_attempts: 3, statuses: [429, 503] },
+        idempotency: { enabled: true },
+      },
     });
   });
 });

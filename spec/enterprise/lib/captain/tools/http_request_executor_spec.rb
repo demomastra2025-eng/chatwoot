@@ -337,4 +337,373 @@ RSpec.describe Captain::Tools::HttpRequestExecutor do
     expect(result).to eq('ERROR: An error occurred while executing the request')
     expect(WebMock).to have_requested(:post, 'https://example.com/leads').once
   end
+
+  it 'retries configured mutating requests with one stable idempotency key' do
+    custom_tool.update!(
+      http_options: {
+        'retry' => { 'enabled' => true, 'max_attempts' => 2, 'backoff_ms' => 0, 'statuses' => [503] },
+        'idempotency' => { 'enabled' => true }
+      }
+    )
+    allow(executor).to receive(:sleep)
+    remove_request_stub(lead_request_stub)
+    idempotency_keys = []
+    attempt = 0
+    stub_request(:post, 'https://example.com/leads').to_return do |request|
+      idempotency_keys << request.headers['Idempotency-Key']
+      attempt += 1
+      attempt == 1 ? { status: 503, body: 'retry' } : { status: 200, body: '{"ok": true}' }
+    end
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('Lead accepted: true')
+    expect(idempotency_keys.length).to eq(2)
+    expect(idempotency_keys.uniq).to contain_exactly(a_string_matching(/\Aonelink-[0-9a-f]{48}\z/))
+  end
+
+  it 'aggregates page-parameter pagination until an empty items page' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [],
+      http_options: {
+        'pagination' => {
+          'enabled' => true,
+          'mode' => 'page_parameter',
+          'parameter_name' => 'page',
+          'start_page' => 1,
+          'max_pages' => 5,
+          'items_path' => 'data'
+        }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    stub_request(:get, 'https://example.com/leads?page=1').to_return(status: 200, body: '{"data":[{"id":1}]}')
+    stub_request(:get, 'https://example.com/leads?page=2').to_return(status: 200, body: '{"data":[{"id":2}]}')
+    stub_request(:get, 'https://example.com/leads?page=3').to_return(status: 200, body: '{"data":[]}')
+
+    result = executor.call({})
+
+    expect(JSON.parse(result)).to eq([{ 'id' => 1 }, { 'id' => 2 }])
+    expect(WebMock).to have_requested(:get, 'https://example.com/leads?page=3').once
+    expect(WebMock).not_to have_requested(:get, 'https://example.com/leads?page=4')
+  end
+
+  it 'follows same-origin next URL pagination and rejects an origin change' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [],
+      http_options: {
+        'pagination' => {
+          'enabled' => true,
+          'mode' => 'next_url',
+          'max_pages' => 5,
+          'items_path' => 'data',
+          'next_url_path' => 'links.next'
+        }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    stub_request(:get, 'https://example.com/leads')
+      .to_return(status: 200, body: '{"data":[{"id":1}],"links":{"next":"/leads?page=2"}}')
+    stub_request(:get, 'https://example.com/leads?page=2')
+      .to_return(status: 200, body: '{"data":[{"id":2}],"links":{"next":"https://other.example/leads?page=3"}}')
+
+    result = executor.call({})
+
+    expect(result).to eq('ERROR: The tool could not run because it is misconfigured')
+    expect(WebMock).not_to have_requested(:get, 'https://other.example/leads?page=3')
+  end
+
+  it 'splits an agent array parameter into bounded sequential requests' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [
+        {
+          'name' => 'items',
+          'type' => 'array',
+          'description' => 'Items to process',
+          'source' => 'agent',
+          'required' => true,
+          'request_location' => 'query',
+          'request_key' => 'items'
+        }
+      ],
+      http_options: {
+        'batching' => { 'enabled' => true, 'items_parameter' => 'items', 'batch_size' => 2, 'interval_ms' => 0 }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    first_batch_stub = stub_request(:get, 'https://example.com/leads').with(query: { 'items' => '[1,2]' })
+    second_batch_stub = stub_request(:get, 'https://example.com/leads').with(query: { 'items' => '[3]' })
+    first_batch_stub.to_return(status: 200, body: '{"accepted":[1,2]}')
+    second_batch_stub.to_return(status: 200, body: '{"accepted":[3]}')
+
+    result = executor.call('items' => [1, 2, 3])
+
+    expect(JSON.parse(result)).to eq([{ 'accepted' => [1, 2] }, { 'accepted' => [3] }])
+  end
+
+  it 'rejects batching payloads above the hard item limit before any request' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [
+        { 'name' => 'items', 'type' => 'array', 'description' => 'Items', 'source' => 'agent', 'required' => true }
+      ],
+      http_options: {
+        'batching' => { 'enabled' => true, 'items_parameter' => 'items', 'batch_size' => 100 }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+
+    result = executor.call('items' => Array.new(501, 'item'))
+
+    expect(result).to eq('ERROR: The tool could not run because items exceeds 500 items')
+    expect(WebMock).not_to have_requested(:get, 'https://example.com/leads')
+  end
+
+  it 'stops a batched flow when the global runtime budget is exhausted' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [
+        {
+          'name' => 'items',
+          'type' => 'array',
+          'description' => 'Items',
+          'source' => 'agent',
+          'required' => true,
+          'request_location' => 'query',
+          'request_key' => 'items'
+        }
+      ],
+      http_options: {
+        'batching' => { 'enabled' => true, 'items_parameter' => 'items', 'batch_size' => 1, 'interval_ms' => 100 }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    allow(executor).to receive(:monotonic_time).and_return(0, 0, 0, 121)
+    first_batch_stub = stub_request(:get, 'https://example.com/leads').with(query: { 'items' => '[1]' })
+    first_batch_stub.to_return(status: 200, body: '{"accepted":[1]}')
+
+    result = executor.call('items' => [1, 2])
+
+    expect(result).to eq('ERROR: An error occurred while executing the request')
+    expect(WebMock).not_to have_requested(:get, 'https://example.com/leads').with(query: { 'items' => '[2]' })
+  end
+
+  it 'follows bounded same-origin redirects' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [],
+      http_options: { 'redirects' => { 'enabled' => true, 'max_redirects' => 2 } }
+    )
+    remove_request_stub(lead_request_stub)
+    stub_request(:get, 'https://example.com/leads')
+      .to_return(status: 302, headers: { 'Location' => '/final' })
+    stub_request(:get, 'https://example.com/final').to_return(status: 200, body: '{"ok":true}')
+
+    result = executor.call({})
+
+    expect(result).to eq('{"ok":true}')
+    expect(WebMock).to have_requested(:get, 'https://example.com/final').once
+  end
+
+  it 'rejects an oversized content length before reading the response body' do
+    stub_const("#{described_class}::MAX_RESPONSE_SIZE", 100)
+    response = Net::HTTPOK.new('1.1', '200', 'OK')
+    response['Content-Length'] = '101'
+    executor.instance_variable_set(:@flow_deadline, Process.clock_gettime(Process::CLOCK_MONOTONIC) + 120)
+
+    expect(response).not_to receive(:read_body)
+    expect { executor.send(:stream_response_body!, response) }
+      .to raise_error(RuntimeError, 'Response size 101 bytes exceeds maximum allowed 100 bytes')
+  end
+
+  it 'interrupts a chunked response before appending bytes above the response limit' do
+    stub_const("#{described_class}::MAX_RESPONSE_SIZE", 100)
+    response = Net::HTTPOK.new('1.1', '200', 'OK')
+    yielded_chunks = 0
+    allow(response).to receive(:read_body) do |&block|
+      ['a' * 100, 'b', 'not-read'].each do |chunk|
+        yielded_chunks += 1
+        block.call(chunk)
+      end
+    end
+    executor.instance_variable_set(:@flow_deadline, Process.clock_gettime(Process::CLOCK_MONOTONIC) + 120)
+
+    expect { executor.send(:stream_response_body!, response) }
+      .to raise_error(RuntimeError, 'Response body size exceeds maximum allowed 100 bytes')
+    expect(yielded_chunks).to eq(2)
+  end
+
+  it 'enforces the absolute deadline while a response is streaming' do
+    response = Net::HTTPOK.new('1.1', '200', 'OK')
+    yielded_chunks = 0
+    allow(response).to receive(:read_body) do |&block|
+      %w[first second not-read].each do |chunk|
+        yielded_chunks += 1
+        block.call(chunk)
+      end
+    end
+    executor.instance_variable_set(:@flow_deadline, 10)
+    allow(executor).to receive(:monotonic_time).and_return(9, 11)
+
+    expect { executor.send(:stream_response_body!, response) }
+      .to raise_error(Timeout::Error, 'HTTP tool flow exceeded its runtime limit')
+    expect(yielded_chunks).to eq(2)
+  end
+
+  it 'stops pagination before retaining responses above the aggregate byte budget' do
+    stub_const("#{described_class}::MAX_RESPONSE_SIZE", 100)
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [],
+      http_options: {
+        'pagination' => {
+          'enabled' => true,
+          'mode' => 'page_parameter',
+          'parameter_name' => 'page',
+          'start_page' => 1,
+          'max_pages' => 3,
+          'items_path' => 'data'
+        }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    page_body = JSON.generate('data' => ['x' * 50])
+    stub_request(:get, 'https://example.com/leads?page=1').to_return(status: 200, body: page_body)
+    stub_request(:get, 'https://example.com/leads?page=2').to_return(status: 200, body: page_body)
+
+    result = executor.call({})
+
+    expect(result).to eq('ERROR: The tool could not run because it is misconfigured')
+    expect(WebMock).to have_requested(:get, 'https://example.com/leads?page=2').once
+    expect(WebMock).not_to have_requested(:get, 'https://example.com/leads?page=3')
+  end
+
+  it 'stops pagination before retaining items above the aggregate item budget' do
+    stub_const("#{described_class}::MAX_AGGREGATE_ITEMS", 2)
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [],
+      http_options: {
+        'pagination' => {
+          'enabled' => true,
+          'mode' => 'page_parameter',
+          'parameter_name' => 'page',
+          'start_page' => 1,
+          'max_pages' => 3,
+          'items_path' => 'data'
+        }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    stub_request(:get, 'https://example.com/leads?page=1').to_return(status: 200, body: '{"data":[1,2]}')
+    stub_request(:get, 'https://example.com/leads?page=2').to_return(status: 200, body: '{"data":[3]}')
+
+    result = executor.call({})
+
+    expect(result).to eq('ERROR: The tool could not run because it is misconfigured')
+    expect(WebMock).to have_requested(:get, 'https://example.com/leads?page=2').once
+    expect(WebMock).not_to have_requested(:get, 'https://example.com/leads?page=3')
+  end
+
+  it 'applies the request budget to actual redirect network hops' do
+    stub_const("#{described_class}::MAX_FLOW_REQUESTS", 1)
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [],
+      http_options: { 'redirects' => { 'enabled' => true, 'max_redirects' => 2 } }
+    )
+    remove_request_stub(lead_request_stub)
+    stub_request(:get, 'https://example.com/leads').to_return(status: 302, headers: { 'Location' => '/final' })
+    stub_request(:get, 'https://example.com/final').to_return(status: 200, body: '{"ok":true}')
+
+    result = executor.call({})
+
+    expect(result).to eq('ERROR: The tool could not run because it is misconfigured')
+    expect(WebMock).to have_requested(:get, 'https://example.com/leads').once
+    expect(WebMock).not_to have_requested(:get, 'https://example.com/final')
+  end
+
+  it 'keeps one idempotency key across retries and redirects of a logical request' do
+    custom_tool.update!(
+      http_options: {
+        'retry' => { 'enabled' => true, 'max_attempts' => 2, 'backoff_ms' => 0, 'statuses' => [503] },
+        'redirects' => { 'enabled' => true, 'max_redirects' => 1 },
+        'idempotency' => { 'enabled' => true }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    idempotency_keys = []
+    final_attempt = 0
+    stub_request(:post, 'https://example.com/leads').to_return do |request|
+      idempotency_keys << request.headers['Idempotency-Key']
+      { status: 307, headers: { 'Location' => '/final' } }
+    end
+    stub_request(:post, 'https://example.com/final').to_return do |request|
+      idempotency_keys << request.headers['Idempotency-Key']
+      final_attempt += 1
+      final_attempt == 1 ? { status: 503, body: 'retry' } : { status: 200, body: '{"ok":true}' }
+    end
+
+    result = executor.call('lead_name' => 'Alice')
+
+    expect(result).to eq('Lead accepted: true')
+    expect(idempotency_keys.length).to eq(4)
+    expect(idempotency_keys.uniq).to contain_exactly(a_string_matching(/\Aonelink-[0-9a-f]{48}\z/))
+  end
+
+  it 'uses different idempotency keys for separate logical batches' do
+    custom_tool.update!(
+      http_method: 'GET',
+      request_template: nil,
+      response_template: nil,
+      param_schema: [
+        {
+          'name' => 'items',
+          'type' => 'array',
+          'description' => 'Items',
+          'source' => 'agent',
+          'required' => true,
+          'request_location' => 'query',
+          'request_key' => 'items'
+        }
+      ],
+      http_options: {
+        'idempotency' => { 'enabled' => true },
+        'batching' => { 'enabled' => true, 'items_parameter' => 'items', 'batch_size' => 1 }
+      }
+    )
+    remove_request_stub(lead_request_stub)
+    idempotency_keys = []
+    stub_request(:get, 'https://example.com/leads').with(query: { 'items' => '["same"]' }).to_return do |request|
+      idempotency_keys << request.headers['Idempotency-Key']
+      { status: 200, body: '{"ok":true}' }
+    end
+
+    result = executor.call('items' => %w[same same])
+
+    expect(JSON.parse(result)).to eq([{ 'ok' => true }, { 'ok' => true }])
+    expect(idempotency_keys.length).to eq(2)
+    expect(idempotency_keys.uniq.length).to eq(2)
+  end
 end

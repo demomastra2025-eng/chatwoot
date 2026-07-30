@@ -1,4 +1,13 @@
 class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::BaseController
+  HTTP_OPTIONS_PERMITTED_PARAMS = [
+    { timeout: [:open_seconds, :read_seconds] },
+    { retry: [:enabled, :max_attempts, :backoff_ms, { statuses: [] }] },
+    { redirects: [:enabled, :max_redirects] },
+    { idempotency: [:enabled] },
+    { pagination: [:enabled, :mode, :parameter_name, :start_page, :max_pages, :interval_ms, :items_path, :next_url_path] },
+    { batching: [:enabled, :items_parameter, :batch_size, :interval_ms] }
+  ].freeze
+
   before_action :current_account
   before_action -> { check_authorization(Captain::CustomTool) }
   before_action :set_custom_tool, only: [:show, :update, :destroy]
@@ -70,6 +79,7 @@ class Api::V1::Accounts::Captain::CustomToolsController < Api::V1::Accounts::Bas
       :enabled,
       :allow_file_artifacts,
       auth_config: {},
+      http_options: HTTP_OPTIONS_PERMITTED_PARAMS,
       param_schema: [:name, :type, :description, :required, :source, :context_path, :fixed_value, :request_location, :request_key]
     )
   end

@@ -2310,6 +2310,69 @@
           "PLACEHOLDER": "Use {'{{'} response.status {'}}'} or {'{{'} r.status {'}}'}; {'{{'} status {'}}'} will not work",
           "HELP_TEXT": "Response templates receive the parsed API result as response and r. Use {'{{'} response.status {'}}'} or {'{{'} r.status {'}}'} instead of root-level fields like {'{{'} status {'}}'}."
         },
+        "HTTP_OPTIONS": {
+          "TITLE": "Advanced HTTP options",
+          "HELP_TEXT": "Safe limits for reliability and multi-request tools. Disabled options preserve the default request behavior.",
+          "INTERVAL": "Interval (ms)",
+          "TIMEOUT": {
+            "OPEN": "Connection timeout (seconds)",
+            "READ": "Response timeout (seconds)"
+          },
+          "RETRY": {
+            "TITLE": "Retry failed requests",
+            "HELP_TEXT": "Mutating requests require idempotency before retries can be enabled.",
+            "ATTEMPTS": "Maximum attempts",
+            "BACKOFF": "Delay between attempts (ms)",
+            "STATUSES": "Retry HTTP statuses"
+          },
+          "REDIRECTS": {
+            "TITLE": "Follow same-origin redirects",
+            "MAX": "Maximum redirects"
+          },
+          "IDEMPOTENCY": {
+            "TITLE": "Idempotency key",
+            "HELP_TEXT": "Adds a stable Idempotency-Key for each logical request and its retries."
+          },
+          "PAGINATION": {
+            "TITLE": "Pagination",
+            "HELP_TEXT": "GET JSON pages only. Results are combined under a strict total response limit.",
+            "MODE": "Pagination mode",
+            "MODES": {
+              "PAGE_PARAMETER": "Increment a page query parameter",
+              "NEXT_URL": "Read the next URL from the response"
+            },
+            "PARAMETER": "Page parameter",
+            "START_PAGE": "First page",
+            "NEXT_URL_PATH": "Next URL JSON path",
+            "ITEMS_PATH": "Items JSON path (optional)",
+            "MAX_PAGES": "Maximum pages"
+          },
+          "BATCHING": {
+            "TITLE": "Array batching",
+            "HELP_TEXT": "Splits one agent array parameter into bounded sequential requests. This does not merge events.",
+            "PARAMETER": "Agent array parameter",
+            "SIZE": "Items per request"
+          },
+          "ERRORS": {
+            "OPEN_TIMEOUT": "Connection timeout must be between 1 and 30 seconds.",
+            "READ_TIMEOUT": "Response timeout must be between 1 and 120 seconds.",
+            "RETRY_ATTEMPTS": "Maximum attempts must be between 1 and 3.",
+            "INTERVAL": "Intervals must be between 0 and 5000 ms.",
+            "RETRY_STATUSES": "Retry statuses may only be 408, 425, 429, 500, 502, 503, or 504.",
+            "IDEMPOTENCY": "Enable idempotency before retrying a mutating request.",
+            "REDIRECTS": "Maximum redirects must be between 1 and 5.",
+            "PAGINATION_METHOD": "Pagination is only available for GET tools.",
+            "FLOW_CONFLICT": "Pagination and batching cannot be enabled together.",
+            "PAGINATION_MODE": "Choose a supported pagination mode.",
+            "START_PAGE": "The first page must be between 0 and 1000000.",
+            "MAX_PAGES": "Maximum pages must be between 1 and 25.",
+            "NEXT_URL_PATH": "Enter the JSON path that contains the next URL.",
+            "PAGE_PARAMETER": "Enter a valid page query parameter name.",
+            "JSON_PATH": "JSON paths may only contain dot-separated letters, numbers, underscores, and hyphens.",
+            "BATCH_PARAMETER": "Choose an agent parameter with the array type.",
+            "BATCH_SIZE": "Batch size must be between 1 and 100."
+          }
+        },
         "ALLOW_FILE_ARTIFACTS": {
           "LABEL": "Allow the agent to use files from this tool response",
           "HELP_TEXT": "When enabled, file links in the HTTP response are exposed as safe artifact candidates. The agent must explicitly choose and send them through native message or touch actions."
@@ -2353,7 +2416,10 @@
           "TEST": {
             "ACTION": "Test tool",
             "ERROR_MESSAGE": "Failed to test this tool",
-            "REQUIRED_SUCCESS": "The tool was not created because its test request must succeed first."
+            "REQUIRED_SUCCESS": "The tool was not created because its test request must succeed first.",
+            "CONFIRM_TITLE": "Run a mutating multi-request test?",
+            "CONFIRM_DESCRIPTION": "This test may change data in the external system and can send up to {requests} network requests: {logicalRequests} logical request(s), up to {attempts} attempt(s), and {redirectHops} redirect hop(s) per attempt.",
+            "CONFIRM_ACTION": "Run test"
           },
           "RESPONSE": {
             "SUCCESS_STATUS": "HTTP {status}",

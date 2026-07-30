@@ -63,6 +63,81 @@ RSpec.describe Captain::CustomTool, type: :model do
       end
     end
 
+    describe 'advanced HTTP options' do
+      it 'normalizes defaults and removes unsupported keys' do
+        tool = build(
+          :captain_custom_tool,
+          http_options: {
+            'timeout' => { 'open_seconds' => '5', 'unsupported' => true },
+            'unsupported' => { 'enabled' => true }
+          }
+        )
+
+        expect(tool).to be_valid
+        expect(tool.http_options).to include(
+          'timeout' => { 'open_seconds' => 5, 'read_seconds' => 30 },
+          'retry' => include('enabled' => false, 'max_attempts' => 2)
+        )
+        expect(tool.http_options).not_to have_key('unsupported')
+        expect(tool.http_options['timeout']).not_to have_key('unsupported')
+      end
+
+      it 'rejects retries for mutating requests without idempotency' do
+        tool = build(
+          :captain_custom_tool,
+          :with_post,
+          http_options: {
+            'retry' => { 'enabled' => true, 'max_attempts' => 3 },
+            'idempotency' => { 'enabled' => false }
+          }
+        )
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:http_options]).to include('idempotency must be enabled before retrying a mutating request')
+      end
+
+      it 'rejects pagination for non-GET requests' do
+        tool = build(
+          :captain_custom_tool,
+          :with_post,
+          http_options: { 'pagination' => { 'enabled' => true } }
+        )
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:http_options]).to include('pagination is only supported for GET tools')
+      end
+
+      it 'requires batching to reference an agent array parameter' do
+        tool = build(
+          :captain_custom_tool,
+          param_schema: [
+            { 'name' => 'items', 'type' => 'string', 'description' => 'Items', 'source' => 'agent' }
+          ],
+          http_options: { 'batching' => { 'enabled' => true, 'items_parameter' => 'items' } }
+        )
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:http_options]).to include('batching.items_parameter must reference an agent array parameter')
+      end
+
+      it 'rejects simultaneous pagination and batching' do
+        tool = build(
+          :captain_custom_tool,
+          http_method: 'GET',
+          param_schema: [
+            { 'name' => 'items', 'type' => 'array', 'description' => 'Items', 'source' => 'agent' }
+          ],
+          http_options: {
+            'pagination' => { 'enabled' => true },
+            'batching' => { 'enabled' => true, 'items_parameter' => 'items' }
+          }
+        )
+
+        expect(tool).not_to be_valid
+        expect(tool.errors[:http_options]).to include('pagination and batching cannot be enabled together')
+      end
+    end
+
     describe 'slug uniqueness' do
       let(:account) { create(:account) }
 

@@ -10,6 +10,7 @@ json.request_template custom_tool.request_template
 json.response_template custom_tool.response_template
 json.auth_type custom_tool.auth_type
 json.auth_config custom_tool.auth_config
+json.http_options custom_tool.effective_http_options
 json.param_schema custom_tool.param_schema
 json.enabled custom_tool.enabled
 json.allow_file_artifacts custom_tool.allow_file_artifacts

@@ -14,6 +14,10 @@ class Captain::Tools::Copilot::CaptainCustomToolAdminTool < Captain::Tools::Copi
     account.captain_custom_tools.order(updated_at: :desc)
   end
 
+  def tool_safety_arguments(arguments)
+    Captain::CustomToolSafetyArgumentSanitizer.call(arguments)
+  end
+
   def find_custom_tool!(tool_id)
     custom_tools_scope.find(tool_id)
   end
@@ -53,6 +57,7 @@ class Captain::Tools::Copilot::CaptainCustomToolAdminTool < Captain::Tools::Copi
     payload.merge!(custom_tool_endpoint_payload(custom_tool))
     payload.merge!(custom_tool_template_payload(custom_tool))
     payload[:auth_config] = redacted_auth_config(custom_tool)
+    payload[:http_options] = custom_tool.effective_http_options
     payload[:param_schema] = filtered_marker(custom_tool.param_schema)
     payload[:param_schema_bytes] = JSON.generate(custom_tool.param_schema || []).bytesize
   end
@@ -105,6 +110,7 @@ class Captain::Tools::Copilot::CaptainCustomToolAdminTool < Captain::Tools::Copi
       response_template: kwargs[:response_template],
       auth_type: normalized_auth_type(kwargs[:auth_type]),
       auth_config: parse_json_hash(kwargs[:auth_config_json], field_name: 'auth_config_json', default: {}),
+      http_options: parse_json_hash(kwargs[:http_options_json], field_name: 'http_options_json', default: {}),
       param_schema: parse_json_array(kwargs[:param_schema_json], field_name: 'param_schema_json', default: []),
       enabled: cast_boolean(kwargs[:enabled], default: true),
       allow_file_artifacts: cast_boolean(kwargs[:allow_file_artifacts], default: true)
@@ -118,11 +124,20 @@ class Captain::Tools::Copilot::CaptainCustomToolAdminTool < Captain::Tools::Copi
       memo[field] = normalized_simple_update_value(field, kwargs[field])
     end
 
+    merge_enum_update_attributes(attributes, kwargs)
+    merge_json_update_attributes(attributes, kwargs)
+    attributes
+  end
+
+  def merge_enum_update_attributes(attributes, kwargs)
     attributes[:http_method] = normalized_http_method(kwargs[:http_method]) if kwargs.key?(:http_method)
     attributes[:auth_type] = normalized_auth_type(kwargs[:auth_type]) if kwargs.key?(:auth_type)
+  end
+
+  def merge_json_update_attributes(attributes, kwargs)
     attributes[:auth_config] = parsed_auth_config(kwargs) if kwargs.key?(:auth_config_json)
+    attributes[:http_options] = parsed_http_options(kwargs) if kwargs.key?(:http_options_json)
     attributes[:param_schema] = parsed_param_schema(kwargs) if kwargs.key?(:param_schema_json)
-    attributes
   end
 
   def normalized_simple_update_value(field, value)
@@ -133,6 +148,10 @@ class Captain::Tools::Copilot::CaptainCustomToolAdminTool < Captain::Tools::Copi
 
   def parsed_auth_config(kwargs)
     parse_json_hash(kwargs[:auth_config_json], field_name: 'auth_config_json', default: {})
+  end
+
+  def parsed_http_options(kwargs)
+    parse_json_hash(kwargs[:http_options_json], field_name: 'http_options_json', default: {})
   end
 
   def parsed_param_schema(kwargs)

@@ -37,6 +37,7 @@ const state = reactive({
 });
 const showSampleErrors = ref(false);
 const lastSuccessfulTestFingerprint = ref('');
+const confirmDialog = ref(null);
 
 const agentParamDefinitions = computed(() =>
   (props.customTool.param_schema || []).filter(
@@ -146,6 +147,7 @@ watch(
     responseTemplate: props.customTool.response_template,
     authType: props.customTool.auth_type,
     authConfig: props.customTool.auth_config,
+    httpOptions: props.customTool.http_options,
     allowFileArtifacts: props.customTool.allow_file_artifacts,
     paramSchema: props.customTool.param_schema,
     agentValues: state.agentValues,
@@ -409,6 +411,7 @@ const buildRequestPayload = () => ({
     response_template: props.customTool.response_template,
     auth_type: props.customTool.auth_type,
     auth_config: props.customTool.auth_config || {},
+    http_options: props.customTool.http_options || {},
     allow_file_artifacts: props.customTool.allow_file_artifacts !== false,
     param_schema: props.customTool.param_schema || [],
   },
@@ -417,6 +420,56 @@ const buildRequestPayload = () => ({
     context_values: { ...state.contextValues },
   },
 });
+
+const isMutatingRequest = computed(
+  () => !['GET', 'HEAD'].includes(props.customTool.http_method)
+);
+
+const logicalRequestCount = () => {
+  const batching = props.customTool.http_options?.batching;
+  if (!batching?.enabled) {
+    return 1;
+  }
+
+  const sampleItems = parseStructuredSampleValue(
+    state.agentValues[batching.items_parameter]
+  );
+  const batchSize = Number(batching.batch_size);
+  if (
+    !Array.isArray(sampleItems) ||
+    !Number.isInteger(batchSize) ||
+    batchSize < 1
+  ) {
+    return 1;
+  }
+
+  return Math.max(1, Math.ceil(sampleItems.length / batchSize));
+};
+
+const requestRiskDetails = computed(() => {
+  const retry = props.customTool.http_options?.retry;
+  const redirects = props.customTool.http_options?.redirects;
+  const attempts = retry?.enabled ? Number(retry.max_attempts) || 1 : 1;
+  const redirectHops = redirects?.enabled
+    ? (Number(redirects.max_redirects) || 0) + 1
+    : 1;
+  const logicalRequests = logicalRequestCount();
+
+  return {
+    logicalRequests,
+    attempts,
+    redirectHops,
+    requests: Math.min(25, logicalRequests * attempts * redirectHops),
+  };
+});
+
+const confirmMutatingMultiRequest = async () => {
+  if (!isMutatingRequest.value || requestRiskDetails.value.requests <= 1) {
+    return true;
+  }
+
+  return Boolean(await confirmDialog.value?.showConfirmation());
+};
 
 const ensureRunnable = async () => {
   const isFormValid = props.validateBeforeRun
@@ -472,6 +525,10 @@ const executeTest = async ({ reuseSuccessfulResult = false } = {}) => {
     return { preview: state.preview, response: state.response };
   }
 
+  if (!(await confirmMutatingMultiRequest())) {
+    return null;
+  }
+
   try {
     const result = await store.dispatch(
       'captainCustomTools/testTool',
@@ -503,6 +560,19 @@ defineExpose({ runTestForCreate });
 </script>
 
 <template>
+  <woot-confirm-modal
+    ref="confirmDialog"
+    :title="t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.CONFIRM_TITLE')"
+    :description="
+      t(
+        'CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.CONFIRM_DESCRIPTION',
+        requestRiskDetails
+      )
+    "
+    :confirm-label="
+      t('CAPTAIN.CUSTOM_TOOLS.FORM.TEST_PANEL.TEST.CONFIRM_ACTION')
+    "
+  />
   <section
     class="flex flex-col gap-3 p-4 rounded-xl border border-n-weak bg-n-alpha-2"
   >

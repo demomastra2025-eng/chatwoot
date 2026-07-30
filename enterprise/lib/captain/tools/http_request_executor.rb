@@ -1,3 +1,6 @@
+require 'digest'
+require 'timeout'
+
 class Captain::Tools::HttpRequestExecutor
   class MissingRequiredParametersError < StandardError; end
   class ToolConfigurationError < StandardError; end
@@ -96,12 +99,18 @@ class Captain::Tools::HttpRequestExecutor
     IPAddr.new('fe80::/10')
   ].freeze
   MAX_RESPONSE_SIZE = 1.megabyte
+  MAX_AGGREGATE_ITEMS = 10_000
+  MAX_BATCH_ITEMS = 500
+  MAX_FLOW_REQUESTS = 25
+  MAX_FLOW_DURATION_SECONDS = 120
   RETRYABLE_HTTP_STATUSES = [408, 425, 429, 500, 502, 503, 504].freeze
   AUTO_RETRYABLE_HTTP_STATUSES = [502, 503, 504].freeze
   AUTO_RETRYABLE_HTTP_METHODS = %w[GET HEAD].freeze
   AUTO_RETRYABLE_CUSTOM_TOOL_SLUGS = %w[custom_search_apartments].freeze
   MAX_HTTP_ATTEMPTS = 2
   RETRY_BACKOFF_SECONDS = 0.25
+  REDIRECT_HTTP_STATUSES = [301, 302, 303, 307, 308].freeze
+  METHOD_PRESERVING_REDIRECT_STATUSES = [307, 308].freeze
 
   def initialize(assistant:, custom_tool:, state: {}, feature: nil, preferences: nil, enforce_safety: false)
     @assistant = assistant
@@ -117,9 +126,9 @@ class Captain::Tools::HttpRequestExecutor
     execution_url = request_preview.delete(:execution_url)
     execution_headers = request_preview.delete(:execution_headers)
     execution_body = request_preview.delete(:execution_body)
-    request_preview.delete(:execution_params)
-    response = execute_http_request(execution_url, execution_body, execution_headers)
-    raw_response_body = normalize_response_body(response.body)
+    execution_params = request_preview.delete(:execution_params)
+    execution = execute_request_flow(execution_url, execution_body, execution_headers, execution_params)
+    raw_response_body = normalize_response_body(execution[:body])
     formatted_body = @custom_tool.format_response(raw_response_body)
     response_with_artifacts(raw_response_body, formatted_body)
   rescue MissingRequiredParametersError => e
@@ -160,13 +169,15 @@ class Captain::Tools::HttpRequestExecutor
     argument_error = preview_safety_error_for(:tool_arguments, execution_params)
     return blocked_details_response(request_preview, argument_error) if argument_error
 
-    response = execute_http_request(
+    execution = execute_request_flow(
       execution_url,
       execution_body,
       execution_headers,
+      execution_params,
       raise_on_http_error: raise_on_http_error
     )
-    raw_response_body = normalize_response_body(response.body)
+    response = execution[:response]
+    raw_response_body = normalize_response_body(execution[:body])
     formatted_body, format_error = format_response_details(raw_response_body)
     if format_error
       return {
@@ -421,28 +432,244 @@ class Captain::Tools::HttpRequestExecutor
     }
   end
 
-  def execute_http_request(url, body, headers = {}, raise_on_http_error: true)
+  def execute_request_flow(url, body, headers, execution_params, raise_on_http_error: true)
+    @request_count = 0
+    @logical_request_count = 0
+    @aggregate_item_count = 0
+    @aggregate_bytes = 2 # Empty JSON array: []
+    @flow_deadline = monotonic_time + MAX_FLOW_DURATION_SECONDS
+
+    if batching_enabled?
+      execute_batched_flow(execution_params, raise_on_http_error: raise_on_http_error)
+    elsif pagination_enabled?
+      execute_paginated_flow(url, body, headers, raise_on_http_error: raise_on_http_error)
+    else
+      response = execute_flow_request(url, body, headers, raise_on_http_error: raise_on_http_error)
+      flow_result(response, response.body)
+    end
+  ensure
+    @flow_deadline = nil
+  end
+
+  def execute_batched_flow(execution_params, raise_on_http_error:)
+    options = http_options['batching']
+    parameter_name = options['items_parameter']
+    items = execution_params[parameter_name]
+    unless items.is_a?(Array) && items.present?
+      raise MissingRequiredParametersError, "The tool could not run because #{parameter_name} must be a non-empty array"
+    end
+    if items.size > MAX_BATCH_ITEMS
+      raise MissingRequiredParametersError, "The tool could not run because #{parameter_name} exceeds #{MAX_BATCH_ITEMS} items"
+    end
+
+    batches = items.each_slice(options['batch_size']).to_a
+    raise ToolConfigurationError, "batching exceeds #{MAX_FLOW_REQUESTS} requests" if batches.size > MAX_FLOW_REQUESTS
+
+    payloads = []
+    last_response = nil
+    batches.each_with_index do |batch, index|
+      request_params = execution_params.merge(parameter_name => batch)
+      url, body, headers = build_execution_request(request_params)
+      last_response = execute_flow_request(url, body, headers, raise_on_http_error: raise_on_http_error)
+      return flow_result(last_response, last_response.body) unless successful_response?(last_response)
+
+      append_aggregate_payloads!(payloads, [parse_flow_json(last_response.body)])
+      wait_between_flow_requests(options['interval_ms']) if index < batches.size - 1
+    end
+
+    flow_result(last_response, serialize_flow_payload(payloads))
+  end
+
+  def execute_paginated_flow(url, body, headers, raise_on_http_error:)
+    options = http_options['pagination']
+    origin = request_origin(url)
+    current_url = paginated_url(url, options, options['start_page'])
+    visited_urls = Set.new
+    payloads = []
+    last_response = nil
+
+    options['max_pages'].times do |page_index|
+      raise ToolConfigurationError, 'pagination produced a repeated URL' unless visited_urls.add?(current_url)
+
+      last_response = execute_flow_request(current_url, body, headers, raise_on_http_error: raise_on_http_error)
+      return flow_result(last_response, last_response.body) unless successful_response?(last_response)
+
+      payload = parse_flow_json(last_response.body)
+      page_items = pagination_items(payload, options['items_path'])
+      break if page_items.respond_to?(:empty?) && page_items.empty?
+
+      append_page_payload(payloads, payload, page_items, options['items_path'])
+      next_url = next_pagination_url(current_url, payload, options, page_index)
+      break if next_url.blank?
+
+      current_url = validate_follow_up_url!(next_url, origin)
+      wait_between_flow_requests(options['interval_ms'])
+    end
+
+    flow_result(last_response, serialize_flow_payload(payloads))
+  end
+
+  def execute_flow_request(url, body, headers, raise_on_http_error:)
+    @logical_request_count += 1
+    execute_http_request(
+      url,
+      body,
+      headers,
+      logical_request_index: @logical_request_count,
+      raise_on_http_error: raise_on_http_error
+    )
+  end
+
+  def build_execution_request(request_params)
+    template_context = build_template_context(request_params, @state)
+    [
+      @custom_tool.build_request_url(request_params, template_context: template_context),
+      @custom_tool.build_request_body(request_params, template_context: template_context),
+      @custom_tool.build_request_headers(request_params)
+    ]
+  end
+
+  def paginated_url(url, options, page_number)
+    return url unless options['mode'] == 'page_parameter'
+
+    with_query_parameter(url, options['parameter_name'], page_number)
+  end
+
+  def next_pagination_url(current_url, payload, options, page_index)
+    if options['mode'] == 'next_url'
+      extract_json_path!(payload, options['next_url_path'], 'pagination.next_url_path').presence
+    elsif page_index + 1 < options['max_pages']
+      paginated_url(current_url, options, options['start_page'] + page_index + 1)
+    end
+  end
+
+  def pagination_items(payload, items_path)
+    return extract_json_path!(payload, items_path, 'pagination.items_path') if items_path.present?
+
+    payload
+  end
+
+  def append_page_payload(payloads, payload, page_items, items_path)
+    if items_path.present? || page_items.is_a?(Array)
+      raise ToolConfigurationError, 'pagination items path must resolve to an array' unless page_items.is_a?(Array)
+
+      append_aggregate_payloads!(payloads, page_items)
+    else
+      append_aggregate_payloads!(payloads, [payload])
+    end
+  end
+
+  def append_aggregate_payloads!(payloads, additions)
+    projected_items = @aggregate_item_count + additions.size
+    if projected_items > MAX_AGGREGATE_ITEMS
+      raise ToolConfigurationError,
+            "aggregated response exceeds #{MAX_AGGREGATE_ITEMS} items"
+    end
+
+    encoded_additions = JSON.generate(Captain::EncodingNormalizer.utf8(additions))
+    projected_bytes = payloads.empty? ? encoded_additions.bytesize : @aggregate_bytes + encoded_additions.bytesize - 1
+    raise ToolConfigurationError, 'aggregated response exceeds the maximum allowed size' if projected_bytes > MAX_RESPONSE_SIZE
+
+    @aggregate_item_count = projected_items
+    @aggregate_bytes = projected_bytes
+    payloads.concat(additions)
+  end
+
+  def extract_json_path!(payload, path, field_name)
+    path.to_s.split('.').reduce(payload) do |value, key|
+      raise ToolConfigurationError, "#{field_name} does not exist in the response" unless value.is_a?(Hash) && value.key?(key)
+
+      value[key]
+    end
+  end
+
+  def parse_flow_json(body)
+    JSON.parse(normalize_response_body(body))
+  rescue JSON::ParserError
+    raise ToolConfigurationError, 'batching and pagination require JSON responses'
+  end
+
+  def serialize_flow_payload(payload)
+    body = JSON.generate(Captain::EncodingNormalizer.utf8(payload))
+    raise ToolConfigurationError, 'aggregated response exceeds the maximum allowed size' if body.bytesize > MAX_RESPONSE_SIZE
+
+    body
+  end
+
+  def flow_result(response, body)
+    { response: response, body: body, request_count: @request_count }
+  end
+
+  def with_query_parameter(url, key, value)
     uri = URI.parse(url)
-    resolved_ip = resolve_public_ip!(uri.host)
-    attempts = auto_retryable_request? ? MAX_HTTP_ATTEMPTS : 1
+    pairs = URI.decode_www_form(uri.query.to_s).reject { |pair_key, _pair_value| pair_key == key }
+    pairs << [key, value.to_s]
+    uri.query = URI.encode_www_form(pairs)
+    uri.to_s
+  end
+
+  def validate_follow_up_url!(url, expected_origin)
+    uri = URI.parse(url.to_s)
+    raise ToolConfigurationError, 'pagination next URL must be absolute' unless uri.absolute?
+    raise ToolConfigurationError, 'pagination next URL must use the same origin' unless request_origin(uri.to_s) == expected_origin
+    raise ToolConfigurationError, 'pagination next URL must not contain user credentials' if uri.userinfo.present?
+
+    uri.to_s
+  rescue URI::InvalidURIError
+    raise ToolConfigurationError, 'pagination returned an invalid next URL'
+  end
+
+  def request_origin(url)
+    uri = URI.parse(url)
+    raise ToolConfigurationError, 'HTTP flow URL must use HTTP or HTTPS' unless %w[http https].include?(uri.scheme)
+
+    [uri.scheme, uri.host, uri.port]
+  rescue URI::InvalidURIError
+    raise ToolConfigurationError, 'HTTP flow URL is invalid'
+  end
+
+  def wait_between_flow_requests(interval_ms)
+    delay = interval_ms.to_f / 1000
+    return unless delay.positive?
+
+    raise Timeout::Error, 'HTTP tool flow exceeded its runtime limit' if flow_time_remaining <= delay
+
+    sleep(delay)
+  end
+
+  def batching_enabled?
+    http_options.dig('batching', 'enabled')
+  end
+
+  def pagination_enabled?
+    http_options.dig('pagination', 'enabled')
+  end
+
+  def http_options
+    @http_options ||= @custom_tool.effective_http_options
+  end
+
+  def execute_http_request(url, body, headers = {}, logical_request_index: 1, raise_on_http_error: true)
+    uri = URI.parse(url)
+    attempts = http_request_attempts
+    idempotency_key = build_idempotency_key(uri, body, logical_request_index)
 
     attempts.times do |attempt_index|
-      response = perform_http_request(uri, resolved_ip, body, headers)
-      validate_response!(response)
+      response = perform_http_request_with_redirects(uri, body, headers, idempotency_key)
 
-      if raise_on_http_error && auto_retryable_response?(response) && retry_remaining?(attempt_index, attempts)
+      if retryable_response_for_request?(response) && retry_remaining?(attempt_index, attempts)
         log_retry_attempt(response.code.to_i, attempt_index + 1, attempts)
-        sleep(RETRY_BACKOFF_SECONDS)
+        wait_before_retry
         next
       end
 
-      raise HttpRequestFailedError.new(response.code, body: response.body) if raise_on_http_error && !response.is_a?(Net::HTTPSuccess)
+      raise HttpRequestFailedError.new(response.code, body: response.body) if raise_on_http_error && !successful_response?(response)
 
       return response
     rescue StandardError => e
-      if retryable_exception?(e) && idempotent_retryable_http_method? && retry_remaining?(attempt_index, attempts)
+      if retryable_exception?(e) && network_retry_allowed? && retry_remaining?(attempt_index, attempts)
         log_retry_attempt(e.class.name, attempt_index + 1, attempts)
-        sleep(RETRY_BACKOFF_SECONDS)
+        wait_before_retry
         next
       end
 
@@ -450,12 +677,50 @@ class Captain::Tools::HttpRequestExecutor
     end
   end
 
-  def perform_http_request(uri, resolved_ip, body, headers)
+  def perform_http_request_with_redirects(initial_uri, body, headers, idempotency_key)
+    uri = initial_uri
+    origin = request_origin(initial_uri.to_s)
+    redirect_count = 0
+
+    loop do
+      enforce_flow_deadline!
+      resolved_ip = resolve_public_ip!(uri.host)
+      response = perform_http_request(uri, resolved_ip, body, headers, idempotency_key)
+      return response unless REDIRECT_HTTP_STATUSES.include?(response.code.to_i)
+      return response unless http_options.dig('redirects', 'enabled')
+
+      max_redirects = http_options.dig('redirects', 'max_redirects')
+      raise ToolConfigurationError, "redirect limit of #{max_redirects} exceeded" if redirect_count >= max_redirects
+
+      uri = redirect_uri!(uri, response, origin)
+      redirect_count += 1
+    end
+  end
+
+  def redirect_uri!(current_uri, response, expected_origin)
+    location = response['location'].to_s
+    raise ToolConfigurationError, 'redirect response is missing a Location header' if location.blank?
+    if Captain::CustomTool::REQUEST_BODY_HTTP_METHODS.include?(@custom_tool.http_method) &&
+       METHOD_PRESERVING_REDIRECT_STATUSES.exclude?(response.code.to_i)
+      raise ToolConfigurationError, 'mutating requests may only follow 307 or 308 redirects'
+    end
+
+    target_uri = URI.join(current_uri.to_s, location)
+    raise ToolConfigurationError, 'redirect URL must use the same origin' unless request_origin(target_uri.to_s) == expected_origin
+    raise ToolConfigurationError, 'redirect URL must not contain user credentials' if target_uri.userinfo.present?
+
+    target_uri
+  rescue URI::InvalidURIError
+    raise ToolConfigurationError, 'redirect response contains an invalid Location URL'
+  end
+
+  def perform_http_request(uri, resolved_ip, body, headers, idempotency_key)
+    consume_network_request!
     http = Net::HTTP.new(uri.host, uri.port)
     http.ipaddr = resolved_ip
     http.use_ssl = uri.scheme == 'https'
-    http.read_timeout = 30
-    http.open_timeout = 10
+    http.read_timeout = bounded_request_timeout(http_options.dig('timeout', 'read_seconds'))
+    http.open_timeout = bounded_request_timeout(http_options.dig('timeout', 'open_seconds'))
     http.max_retries = 0
 
     request = build_http_request(uri, body)
@@ -463,8 +728,69 @@ class Captain::Tools::HttpRequestExecutor
     apply_request_content_type(request, body)
     apply_authentication(request)
     apply_metadata_headers(request)
+    apply_idempotency_header(request, idempotency_key)
 
-    http.request(request)
+    with_flow_deadline do
+      http.request(request) { |response| stream_response_body!(response) }
+    end
+  end
+
+  def consume_network_request!
+    raise ToolConfigurationError, "HTTP flow exceeds #{MAX_FLOW_REQUESTS} requests" if @request_count >= MAX_FLOW_REQUESTS
+
+    enforce_flow_deadline!
+    @request_count += 1
+  end
+
+  def stream_response_body!(response)
+    validate_response_content_length!(response)
+    body = ''.b
+
+    response.read_body do |chunk|
+      enforce_flow_deadline!
+      projected_size = body.bytesize + chunk.bytesize
+      raise "Response body size exceeds maximum allowed #{MAX_RESPONSE_SIZE} bytes" if projected_size > MAX_RESPONSE_SIZE
+
+      body << chunk
+    end
+    response.body = body
+  end
+
+  def validate_response_content_length!(response)
+    content_length = response['content-length']&.to_i
+    return unless content_length && content_length > MAX_RESPONSE_SIZE
+
+    raise "Response size #{content_length} bytes exceeds maximum allowed #{MAX_RESPONSE_SIZE} bytes"
+  end
+
+  def with_flow_deadline(&)
+    remaining = flow_time_remaining
+    raise Timeout::Error, 'HTTP tool flow exceeded its runtime limit' unless remaining.positive?
+
+    Timeout.timeout(remaining, Timeout::Error, 'HTTP tool flow exceeded its runtime limit', &)
+  end
+
+  def enforce_flow_deadline!
+    raise Timeout::Error, 'HTTP tool flow exceeded its runtime limit' unless flow_time_remaining.positive?
+  end
+
+  def bounded_request_timeout(configured_timeout)
+    return configured_timeout unless @flow_deadline
+
+    remaining = flow_time_remaining
+    raise Timeout::Error, 'HTTP tool flow exceeded its runtime limit' unless remaining.positive?
+
+    [configured_timeout.to_f, remaining].min
+  end
+
+  def flow_time_remaining
+    return Float::INFINITY unless @flow_deadline
+
+    @flow_deadline - monotonic_time
+  end
+
+  def monotonic_time
+    Process.clock_gettime(Process::CLOCK_MONOTONIC)
   end
 
   def resolve_public_ip!(hostname)
@@ -481,17 +807,6 @@ class Captain::Tools::HttpRequestExecutor
 
   def private_ip?(ip_address)
     PRIVATE_IP_RANGES.any? { |range| range.include?(ip_address) }
-  end
-
-  def validate_response!(response)
-    content_length = response['content-length']&.to_i
-    if content_length && content_length > MAX_RESPONSE_SIZE
-      raise "Response size #{content_length} bytes exceeds maximum allowed #{MAX_RESPONSE_SIZE} bytes"
-    end
-
-    return unless response.body && response.body.bytesize > MAX_RESPONSE_SIZE
-
-    raise "Response body size #{response.body.bytesize} bytes exceeds maximum allowed #{MAX_RESPONSE_SIZE} bytes"
   end
 
   def build_http_request(uri, body)
@@ -533,6 +848,27 @@ class Captain::Tools::HttpRequestExecutor
     metadata_headers.each { |key, value| request[key] = value }
   end
 
+  def apply_idempotency_header(request, idempotency_key)
+    request['Idempotency-Key'] = idempotency_key if idempotency_key
+  end
+
+  def build_idempotency_key(uri, body, logical_request_index)
+    return unless http_options.dig('idempotency', 'enabled')
+
+    seed = [idempotency_anchor, @custom_tool.slug, @custom_tool.http_method, logical_request_index, uri.to_s, body.to_s].join("\0")
+    "onelink-#{Digest::SHA256.hexdigest(seed).first(48)}"
+  end
+
+  def idempotency_anchor
+    @idempotency_anchor ||= @state[:request_id].presence || @state['request_id'].presence || current_event_request_id || SecureRandom.uuid
+  end
+
+  def current_event_request_id
+    Llm::EventBus.request_id if Llm::EventBus.respond_to?(:request_id)
+  rescue StandardError
+    nil
+  end
+
   def normalize_response_headers(headers)
     headers.to_h.transform_values do |value|
       value.is_a?(Array) && value.one? ? value.first : value
@@ -571,7 +907,7 @@ class Captain::Tools::HttpRequestExecutor
   end
 
   def build_response_details(response, formatted_body:, format_error: nil, successful: nil, raw_response_body: nil)
-    successful = response.is_a?(Net::HTTPSuccess) if successful.nil?
+    successful = successful_response?(response) if successful.nil?
 
     {
       successful: successful,
@@ -677,12 +1013,52 @@ class Captain::Tools::HttpRequestExecutor
     RETRYABLE_HTTP_STATUSES.include?(status.to_i)
   end
 
-  def auto_retryable_response?(response)
-    AUTO_RETRYABLE_HTTP_STATUSES.include?(response.code.to_i)
+  def successful_response?(response)
+    response.is_a?(Net::HTTPSuccess)
   end
 
-  def auto_retryable_request?
+  def http_request_attempts
+    return http_options.dig('retry', 'max_attempts') if configured_retry_enabled?
+    return MAX_HTTP_ATTEMPTS if legacy_auto_retryable_request?
+
+    1
+  end
+
+  def retryable_response_for_request?(response)
+    statuses = if configured_retry_enabled?
+                 http_options.dig('retry', 'statuses')
+               else
+                 AUTO_RETRYABLE_HTTP_STATUSES
+               end
+
+    statuses.include?(response.code.to_i) && (configured_retry_enabled? || legacy_auto_retryable_request?)
+  end
+
+  def configured_retry_enabled?
+    http_options.dig('retry', 'enabled')
+  end
+
+  def legacy_auto_retryable_request?
     idempotent_retryable_http_method? || allowlisted_retryable_post_tool?
+  end
+
+  def network_retry_allowed?
+    return true if idempotent_retryable_http_method?
+
+    configured_retry_enabled? && http_options.dig('idempotency', 'enabled')
+  end
+
+  def retry_backoff_seconds
+    return RETRY_BACKOFF_SECONDS unless configured_retry_enabled?
+
+    http_options.dig('retry', 'backoff_ms').to_f / 1000
+  end
+
+  def wait_before_retry
+    delay = retry_backoff_seconds
+    raise Timeout::Error, 'HTTP tool flow exceeded its runtime limit' if flow_time_remaining <= delay
+
+    sleep(delay)
   end
 
   def idempotent_retryable_http_method?

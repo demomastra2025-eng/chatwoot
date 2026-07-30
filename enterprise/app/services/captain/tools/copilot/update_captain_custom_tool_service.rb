@@ -19,6 +19,10 @@ class Captain::Tools::Copilot::UpdateCaptainCustomToolService < Captain::Tools::
         type: :string,
         desc: 'Optional JSON object for auth config; sensitive values are redacted in previews/audit',
         required: false
+  param :http_options_json,
+        type: :string,
+        desc: 'Optional JSON object for bounded timeout, retry, redirect, idempotency, pagination, and batching options',
+        required: false
   param :param_schema_json, type: :string, desc: 'Optional JSON array of parameter schema entries', required: false
   param :enabled, type: :boolean, desc: 'Optional enabled status', required: false
   param :allow_file_artifacts, type: :boolean, desc: 'Optional file artifact access flag', required: false

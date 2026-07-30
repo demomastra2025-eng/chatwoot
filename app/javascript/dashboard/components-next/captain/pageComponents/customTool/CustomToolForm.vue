@@ -21,6 +21,7 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import CaptainContextFieldsAPI from 'dashboard/api/captain/contextFields';
 import ParamRow from './ParamRow.vue';
 import AuthConfig from './AuthConfig.vue';
+import HttpOptions from './HttpOptions.vue';
 import ToolTestPanel from './ToolTestPanel.vue';
 
 const props = defineProps({
@@ -53,6 +54,42 @@ const PARAM_UI_KEY = '__uiKey';
 const API_KEY_LOCATIONS = ['header', 'query'];
 let nextParamUiKey = 0;
 
+const normalizeHttpOptions = (httpOptions = {}) => ({
+  timeout: {
+    open_seconds: httpOptions.timeout?.open_seconds ?? 10,
+    read_seconds: httpOptions.timeout?.read_seconds ?? 30,
+  },
+  retry: {
+    enabled: Boolean(httpOptions.retry?.enabled),
+    max_attempts: httpOptions.retry?.max_attempts ?? 2,
+    backoff_ms: httpOptions.retry?.backoff_ms ?? 250,
+    statuses: [...(httpOptions.retry?.statuses || [502, 503, 504])],
+  },
+  redirects: {
+    enabled: Boolean(httpOptions.redirects?.enabled),
+    max_redirects: httpOptions.redirects?.max_redirects ?? 3,
+  },
+  idempotency: {
+    enabled: Boolean(httpOptions.idempotency?.enabled),
+  },
+  pagination: {
+    enabled: Boolean(httpOptions.pagination?.enabled),
+    mode: httpOptions.pagination?.mode || 'page_parameter',
+    parameter_name: httpOptions.pagination?.parameter_name || 'page',
+    start_page: httpOptions.pagination?.start_page ?? 1,
+    max_pages: httpOptions.pagination?.max_pages ?? 10,
+    interval_ms: httpOptions.pagination?.interval_ms ?? 0,
+    items_path: httpOptions.pagination?.items_path || '',
+    next_url_path: httpOptions.pagination?.next_url_path || '',
+  },
+  batching: {
+    enabled: Boolean(httpOptions.batching?.enabled),
+    items_parameter: httpOptions.batching?.items_parameter || '',
+    batch_size: httpOptions.batching?.batch_size ?? 50,
+    interval_ms: httpOptions.batching?.interval_ms ?? 0,
+  },
+});
+
 const createInitialState = () => ({
   title: '',
   group_name: '',
@@ -64,6 +101,7 @@ const createInitialState = () => ({
   response_template: '',
   auth_type: 'none',
   auth_config: {},
+  http_options: normalizeHttpOptions(),
   allow_file_artifacts: true,
   param_schema: [],
 });
@@ -235,6 +273,7 @@ const applyToolState = tool => {
         tool.auth_type || 'none',
         tool.auth_config
       ),
+      http_options: normalizeHttpOptions(tool.http_options),
       allow_file_artifacts: tool.allow_file_artifacts !== false,
       param_schema: (tool.param_schema || []).map(createParamState),
     });
@@ -432,6 +471,7 @@ const visibleAuthConfigErrors = computed(() =>
 );
 
 const paramsRef = useTemplateRef('paramsRef');
+const httpOptionsRef = useTemplateRef('httpOptionsRef');
 const toolTestPanelRef = useTemplateRef('toolTestPanelRef');
 const isAutoTesting = ref(false);
 
@@ -456,6 +496,7 @@ const toolDraftForTesting = computed(() => ({
   response_template: state.response_template,
   auth_type: state.auth_type,
   auth_config: normalizeAuthConfig(state.auth_type, state.auth_config),
+  http_options: state.http_options,
   allow_file_artifacts: state.allow_file_artifacts,
   param_schema: state.param_schema.map(serializeParamForPayload),
 }));
@@ -527,7 +568,12 @@ watch(
 const validateBeforeToolTest = async () => {
   const isFormValid = await v$.value.$validate();
   showAuthConfigErrors.value = true;
-  return isFormValid && isAuthConfigValid() && isParamsValid();
+  return (
+    isFormValid &&
+    isAuthConfigValid() &&
+    isParamsValid() &&
+    (httpOptionsRef.value?.validate?.() ?? true)
+  );
 };
 
 const handleSubmit = async () => {
@@ -557,6 +603,7 @@ const handleSubmit = async () => {
   emit('submit', {
     ...state,
     auth_config: normalizeAuthConfig(state.auth_type, state.auth_config),
+    http_options: state.http_options,
     request_body_type: state.request_body_type,
     request_template: showRequestTemplate.value ? state.request_template : '',
     param_schema: state.param_schema.map(serializeParamForPayload),
@@ -701,6 +748,13 @@ const handleSubmit = async () => {
     <p class="text-xs text-n-slate-11 -mt-2">
       {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.RESPONSE_TEMPLATE.HELP_TEXT') }}
     </p>
+
+    <HttpOptions
+      ref="httpOptionsRef"
+      v-model="state.http_options"
+      :http-method="state.http_method"
+      :param-schema="state.param_schema"
+    />
 
     <label
       class="flex gap-3 p-3 rounded-lg border border-n-weak bg-n-alpha-1 cursor-pointer"

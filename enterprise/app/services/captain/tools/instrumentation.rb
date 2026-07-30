@@ -18,7 +18,7 @@ module Captain::Tools::Instrumentation
 
       Captain::ToolSafety.check_arguments!(
         feature: tool_safety_feature,
-        arguments: args,
+        arguments: tool_safety_arguments(args),
         account: tool_safety_account,
         preferences: tool_safety_preferences
       )

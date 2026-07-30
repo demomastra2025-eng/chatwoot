@@ -146,6 +146,43 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
                                                    ])
       end
 
+      it 'persists and returns advanced HTTP options' do
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools",
+             params: {
+               custom_tool: {
+                 title: 'Paginated orders',
+                 endpoint_url: 'https://api.example.com/orders',
+                 http_method: 'GET',
+                 http_options: {
+                   timeout: { open_seconds: 5, read_seconds: 45 },
+                   redirects: { enabled: true, max_redirects: 2 },
+                   pagination: {
+                     enabled: true,
+                     mode: 'next_url',
+                     max_pages: 7,
+                     items_path: 'data.items',
+                     next_url_path: 'links.next'
+                   }
+                 }
+               }
+             },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:http_options]).to include(
+          timeout: { open_seconds: 5, read_seconds: 45 },
+          redirects: { enabled: true, max_redirects: 2 },
+          pagination: include(
+            enabled: true,
+            mode: 'next_url',
+            max_pages: 7,
+            items_path: 'data.items',
+            next_url_path: 'links.next'
+          )
+        )
+      end
+
       it 'persists agent, system context, and fixed parameter sources' do
         post "/api/v1/accounts/#{account.id}/captain/custom_tools",
              params: {

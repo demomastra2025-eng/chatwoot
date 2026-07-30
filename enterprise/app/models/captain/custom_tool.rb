@@ -11,6 +11,7 @@
 #  endpoint_url         :text             not null
 #  group_name           :string
 #  http_method          :string           default("GET"), not null
+#  http_options         :jsonb            not null
 #  param_schema         :jsonb
 #  request_template     :text
 #  request_body_type    :string           default("json"), not null
@@ -30,6 +31,7 @@
 class Captain::CustomTool < ApplicationRecord
   include Concerns::Toolable
   include Concerns::SafeEndpointValidatable
+  include Concerns::CaptainCustomToolHttpOptions
 
   self.table_name = 'captain_custom_tools'
 
@@ -466,9 +468,9 @@ class Captain::CustomTool < ApplicationRecord
     end
 
     errors.add(:param_schema, "parameter #{name} has an invalid type") unless PARAM_TYPES.include?(type)
-    if param_definition['source'] == PARAM_SOURCE_AGENT && description.blank?
-      errors.add(:param_schema, "agent parameter #{name} must define a description")
-    end
+    return unless param_definition['source'] == PARAM_SOURCE_AGENT && description.blank?
+
+    errors.add(:param_schema, "agent parameter #{name} must define a description")
   end
 
   def validate_param_source(param_definition, available_field_ids)
@@ -525,9 +527,9 @@ class Captain::CustomTool < ApplicationRecord
     return unless request_location == PARAM_REQUEST_LOCATION_HEADER
 
     errors.add(:param_schema, "parameter #{name} has an invalid header name") unless request_key.match?(HTTP_HEADER_NAME_FORMAT)
-    if FORBIDDEN_REQUEST_HEADER_NAMES.include?(request_key.downcase)
-      errors.add(:param_schema, "parameter #{name} uses a forbidden header name")
-    end
+    return unless FORBIDDEN_REQUEST_HEADER_NAMES.include?(request_key.downcase)
+
+    errors.add(:param_schema, "parameter #{name} uses a forbidden header name")
   end
 
   def fixed_param_value_blank?(value)

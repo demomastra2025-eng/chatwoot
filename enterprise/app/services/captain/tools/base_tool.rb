@@ -49,6 +49,10 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
     tool_safety_account&.captain_preferences&.dig(:runtime)
   end
 
+  def tool_safety_arguments(arguments)
+    arguments
+  end
+
   def tool_definition
     definition = registry_definition ? registry_definition.to_h : {}
     definition[:id] ||= name

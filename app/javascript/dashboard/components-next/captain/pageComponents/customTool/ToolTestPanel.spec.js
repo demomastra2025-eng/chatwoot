@@ -1,5 +1,5 @@
-import { flushPromises, shallowMount } from '@vue/test-utils';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { config, flushPromises, shallowMount } from '@vue/test-utils';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
@@ -8,11 +8,12 @@ import ToolTestPanel from './ToolTestPanel.vue';
 const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   alert: vi.fn(),
+  confirm: vi.fn(),
 }));
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
-    t: key => key,
+    t: (key, values) => (values ? `${key}:${JSON.stringify(values)}` : key),
   }),
 }));
 
@@ -42,13 +43,34 @@ const customTool = {
   auth_config: {},
   allow_file_artifacts: true,
   request_body_type: 'json',
+  http_options: {},
   param_schema: [],
 };
+
+const previousConfirmModalStub = config.global.stubs['woot-confirm-modal'];
+config.global.stubs['woot-confirm-modal'] = {
+  props: ['description'],
+  template: '<div />',
+  methods: {
+    showConfirmation() {
+      return mocks.confirm(this.description);
+    },
+  },
+};
+
+afterAll(() => {
+  if (previousConfirmModalStub) {
+    config.global.stubs['woot-confirm-modal'] = previousConfirmModalStub;
+  } else {
+    delete config.global.stubs['woot-confirm-modal'];
+  }
+});
 
 describe('ToolTestPanel', () => {
   beforeEach(() => {
     mocks.dispatch.mockReset();
     mocks.alert.mockReset();
+    mocks.confirm.mockReset();
     mocks.dispatch.mockResolvedValue({
       preview: { url: customTool.endpoint_url, body: null },
       response: { successful: true, status: 200, body: '{}' },
@@ -119,6 +141,80 @@ describe('ToolTestPanel', () => {
 
     expect(firstResult.response.successful).toBe(true);
     expect(secondResult.response.successful).toBe(true);
+    expect(mocks.dispatch).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates a successful test when advanced HTTP options change', async () => {
+    const wrapper = shallowMount(ToolTestPanel, {
+      props: {
+        customTool,
+        validateBeforeRun: vi.fn().mockResolvedValue(true),
+      },
+    });
+
+    await wrapper.vm.runTestForCreate();
+    const httpOptions = {
+      timeout: { open_seconds: 5, read_seconds: 45 },
+    };
+    await wrapper.setProps({
+      customTool: { ...customTool, http_options: httpOptions },
+    });
+    await wrapper.vm.runTestForCreate();
+
+    expect(mocks.dispatch).toHaveBeenCalledTimes(2);
+    expect(mocks.dispatch).toHaveBeenLastCalledWith(
+      'captainCustomTools/testTool',
+      expect.objectContaining({
+        customTool: expect.objectContaining({ http_options: httpOptions }),
+      })
+    );
+  });
+
+  it('requires explicit confirmation before a mutating multi-request test', async () => {
+    const confirmModalStub = {
+      props: ['description'],
+      template: '<div />',
+      methods: {
+        showConfirmation() {
+          return mocks.confirm(this.description);
+        },
+      },
+    };
+    const wrapper = shallowMount(ToolTestPanel, {
+      props: {
+        customTool: {
+          ...customTool,
+          http_method: 'POST',
+          http_options: {
+            retry: { enabled: true, max_attempts: 3 },
+            redirects: { enabled: true, max_redirects: 2 },
+            idempotency: { enabled: true },
+          },
+        },
+        validateBeforeRun: vi.fn().mockResolvedValue(true),
+      },
+      global: {
+        stubs: {
+          'woot-confirm-modal': confirmModalStub,
+        },
+      },
+    });
+    mocks.confirm.mockResolvedValueOnce(false);
+
+    const cancelledResult = await wrapper.vm.runTestForCreate();
+
+    expect(cancelledResult).toBeNull();
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.confirm).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '"logicalRequests":1,"attempts":3,"redirectHops":3,"requests":9'
+      )
+    );
+
+    mocks.confirm.mockResolvedValueOnce(true);
+    const confirmedResult = await wrapper.vm.runTestForCreate();
+
+    expect(confirmedResult.response.successful).toBe(true);
     expect(mocks.dispatch).toHaveBeenCalledOnce();
   });
 

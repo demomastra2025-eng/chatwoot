@@ -15,6 +15,10 @@ class Captain::Tools::Copilot::CreateCaptainCustomToolService < Captain::Tools::
   param :response_template, type: :string, desc: 'Optional Liquid response template', required: false
   param :auth_type, type: :string, desc: 'Authentication type: none, bearer, basic, or api_key', required: false
   param :auth_config_json, type: :string, desc: 'JSON object for auth config; sensitive values are redacted in previews/audit', required: false
+  param :http_options_json,
+        type: :string,
+        desc: 'Optional JSON object for bounded timeout, retry, redirect, idempotency, pagination, and batching options',
+        required: false
   param :param_schema_json, type: :string, desc: 'JSON array of parameter schema entries', required: false
   param :enabled, type: :boolean, desc: 'Whether the tool is enabled. Defaults to true.', required: false
   param :allow_file_artifacts, type: :boolean, desc: 'Whether the tool may use file artifacts. Defaults to true.', required: false
