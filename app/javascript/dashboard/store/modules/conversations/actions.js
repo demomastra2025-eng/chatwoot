@@ -732,12 +732,13 @@ const actions = {
 
   assignAgent: async (
     { commit, dispatch, state },
-    { conversationId, agentId }
+    { conversationId, agentId, conversationType = null }
   ) => {
     try {
-      const communicationThread = getCommunicationThreadById(
+      const communicationThread = getCommunicationThreadTarget(
         state,
-        conversationId
+        conversationId,
+        conversationType
       );
       if (communicationThread) {
         const response = await CommunicationThreadApi.update(conversationId, {
@@ -851,6 +852,7 @@ const actions = {
       });
       commit(types.CHANGE_CONVERSATION_STATUS, {
         conversationId,
+        conversationType: 'conversation',
         status: updatedStatus,
         snoozedUntil: updatedSnoozedUntil,
       });

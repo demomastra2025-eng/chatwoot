@@ -4,6 +4,7 @@ import CommunicationThreadApi from '../../../../api/inbox/communicationThread';
 import ConversationApi from '../../../../api/inbox/conversation';
 import types from '../../../mutation-types';
 import actions from '../actions';
+import { mutations } from '../index';
 
 describe('conversation actions', () => {
   afterEach(() => {
@@ -280,6 +281,128 @@ describe('conversation actions', () => {
       expect(commit).toHaveBeenCalledWith(types.SET_ALL_ATTACHMENTS, {
         id: 7,
         data: [{ id: 100, file_type: 'file' }],
+      });
+    });
+  });
+
+  describe('#toggleStatus', () => {
+    it('targets the native conversation when its id collides with a communication thread', async () => {
+      const nativeConversation = {
+        id: 7,
+        status: 'open',
+        meta: {},
+        is_communication_thread: false,
+      };
+      const communicationThread = {
+        id: 7,
+        status: 'open',
+        is_communication_thread: true,
+        channels: [{ conversation_id: 7, status: 'open' }],
+      };
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [nativeConversation, communicationThread],
+      };
+      const commit = vi.fn((type, payload) => mutations[type](state, payload));
+      const conversationToggleSpy = vi
+        .spyOn(ConversationApi, 'toggleStatus')
+        .mockResolvedValue({
+          data: {
+            payload: {
+              current_status: 'pending',
+              snoozed_until: null,
+            },
+          },
+        });
+      const threadUpdateSpy = vi.spyOn(CommunicationThreadApi, 'update');
+
+      await actions.toggleStatus(
+        {
+          commit,
+          state,
+        },
+        {
+          conversationId: 7,
+          conversationType: 'conversation',
+          status: 'pending',
+        }
+      );
+
+      expect(conversationToggleSpy).toHaveBeenCalledWith({
+        conversationId: 7,
+        status: 'pending',
+        snoozedUntil: null,
+        statusReason: null,
+      });
+      expect(threadUpdateSpy).not.toHaveBeenCalled();
+      expect(commit).toHaveBeenCalledWith(types.CHANGE_CONVERSATION_STATUS, {
+        conversationId: 7,
+        conversationType: 'conversation',
+        status: 'pending',
+        snoozedUntil: null,
+      });
+      expect(nativeConversation.status).toBe('pending');
+      expect(communicationThread.status).toBe('open');
+      expect(communicationThread.channels[0].status).toBe('pending');
+    });
+  });
+
+  describe('#assignAgent', () => {
+    it('targets the native conversation when its id collides with a communication thread', async () => {
+      const commit = vi.fn();
+      const assignment = { id: 9, name: 'Agent' };
+      const nativeConversation = {
+        id: 7,
+        meta: { assignee: null },
+        is_communication_thread: false,
+      };
+      const communicationThread = {
+        id: 7,
+        meta: { assignee: { id: 3, name: 'Thread agent' } },
+        is_communication_thread: true,
+      };
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [nativeConversation, communicationThread],
+      };
+      const dispatch = vi.fn((type, payload) => {
+        if (type === 'setCurrentChatAssignee') {
+          mutations[types.ASSIGN_AGENT](state, payload);
+        }
+      });
+      const conversationAssignmentSpy = vi
+        .spyOn(ConversationApi, 'assignAgent')
+        .mockResolvedValue({ data: assignment });
+      const threadUpdateSpy = vi.spyOn(CommunicationThreadApi, 'update');
+
+      await actions.assignAgent(
+        {
+          commit,
+          dispatch,
+          state,
+        },
+        {
+          conversationId: 7,
+          conversationType: 'conversation',
+          agentId: 9,
+        }
+      );
+
+      expect(conversationAssignmentSpy).toHaveBeenCalledWith({
+        conversationId: 7,
+        agentId: 9,
+      });
+      expect(threadUpdateSpy).not.toHaveBeenCalled();
+      expect(dispatch).toHaveBeenCalledWith('setCurrentChatAssignee', {
+        conversationId: 7,
+        assignee: assignment,
+      });
+      expect(nativeConversation.meta.assignee).toEqual(assignment);
+      expect(communicationThread.meta.assignee).toEqual({
+        id: 3,
+        name: 'Thread agent',
       });
     });
   });

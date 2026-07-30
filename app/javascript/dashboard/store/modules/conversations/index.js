@@ -521,6 +521,18 @@ export const mutations = {
       {};
     conversation.snoozed_until = snoozedUntil;
     conversation.status = status;
+
+    if (conversationType !== 'conversation') return;
+
+    _state.allConversations
+      .filter(isCommunicationThread)
+      .flatMap(chat => chat.channels || [])
+      .filter(
+        channel => String(channel.conversation_id) === String(conversationId)
+      )
+      .forEach(channel => {
+        channel.status = status;
+      });
   },
 
   [types.MUTE_CONVERSATION](_state) {

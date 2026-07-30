@@ -268,6 +268,32 @@ export default {
     currentConversation() {
       return this.$store.getters.getConversationById(this.conversationId) || {};
     },
+    captainConversationId() {
+      return this.isCommunicationThread
+        ? this.activeReplyChannel?.conversation_id || null
+        : this.conversationId;
+    },
+    captainInbox() {
+      if (!this.isCommunicationThread) return this.inbox;
+
+      const inboxId = this.activeReplyChannel?.inbox_id;
+      return inboxId ? this.$store.getters['inboxes/getInbox'](inboxId) : null;
+    },
+    captainConversation() {
+      if (!this.isCommunicationThread) return this.currentConversation;
+      if (!this.captainConversationId) return {};
+
+      // Communication threads keep child conversations as channel summaries;
+      // a full native conversation record is not guaranteed to be loaded.
+      return (
+        this.$store.getters.getConversationById(
+          this.captainConversationId,
+          'conversation'
+        ) ||
+        this.activeReplyChannel ||
+        {}
+      );
+    },
     replyableCommunicationChannels() {
       return getCommunicationReplyChannels(this.communicationChannels);
     },
@@ -508,7 +534,9 @@ export default {
       );
       if (!isCaptainEnabledOnAccount) return false;
 
-      return !!this.inbox?.captain_assistant?.id;
+      return Boolean(
+        this.captainConversationId && this.captainInbox?.captain_assistant?.id
+      );
     },
     showVoiceCallButton() {
       if (this.isCallReplyAction) return false;
@@ -534,7 +562,7 @@ export default {
     },
     isCaptainEnabledForConversation() {
       return (
-        this.currentConversation?.status === wootConstants.STATUS_TYPE.PENDING
+        this.captainConversation?.status === wootConstants.STATUS_TYPE.PENDING
       );
     },
     captainToggleTooltip() {
@@ -630,33 +658,40 @@ export default {
 
       this.isTogglingCaptain = true;
       const currentUser = this.$store.getters.getCurrentUser;
+      const conversationId = this.captainConversationId;
+      const conversationType = this.isCommunicationThread
+        ? 'conversation'
+        : undefined;
 
       try {
         if (this.isCaptainEnabledForConversation) {
           await this.$store.dispatch('toggleStatus', {
-            conversationId: this.conversationId,
+            conversationId,
             status: wootConstants.STATUS_TYPE.OPEN,
+            ...(conversationType ? { conversationType } : {}),
           });
 
-          const assignee = this.currentConversation?.meta?.assignee;
+          const assignee = this.captainConversation?.meta?.assignee;
           const needsAssignmentToCurrentUser =
             !assignee || assignee.id !== currentUser?.id;
 
           if (needsAssignmentToCurrentUser && currentUser?.id) {
             const { avatar_url, ...rest } = currentUser || {};
             this.$store.dispatch('setCurrentChatAssignee', {
-              conversationId: this.conversationId,
+              conversationId,
               assignee: { ...rest, thumbnail: avatar_url },
             });
             await this.$store.dispatch('assignAgent', {
-              conversationId: this.conversationId,
+              conversationId,
               agentId: currentUser.id,
+              ...(conversationType ? { conversationType } : {}),
             });
           }
         } else {
           await this.$store.dispatch('toggleStatus', {
-            conversationId: this.conversationId,
+            conversationId,
             status: wootConstants.STATUS_TYPE.PENDING,
+            ...(conversationType ? { conversationType } : {}),
           });
         }
       } finally {

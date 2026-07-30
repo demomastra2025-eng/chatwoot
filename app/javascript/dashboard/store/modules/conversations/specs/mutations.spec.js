@@ -275,6 +275,60 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#CHANGE_CONVERSATION_STATUS', () => {
+    it('updates the source conversation and every linked communication-thread channel', () => {
+      const nativeConversation = {
+        id: 11,
+        status: 'open',
+        is_communication_thread: false,
+      };
+      const thread = {
+        id: 7,
+        status: 'open',
+        is_communication_thread: true,
+        channels: [
+          { conversation_id: 11, status: 'open' },
+          { conversation_id: 22, status: 'pending' },
+        ],
+      };
+      const state = { allConversations: [nativeConversation, thread] };
+
+      mutations[types.CHANGE_CONVERSATION_STATUS](state, {
+        conversationId: 11,
+        conversationType: 'conversation',
+        status: 'pending',
+        snoozedUntil: null,
+      });
+
+      expect(nativeConversation.status).toBe('pending');
+      expect(thread.status).toBe('open');
+      expect(thread.channels).toEqual([
+        { conversation_id: 11, status: 'pending' },
+        { conversation_id: 22, status: 'pending' },
+      ]);
+    });
+
+    it('does not rewrite child channel statuses when the aggregate thread changes', () => {
+      const thread = {
+        id: 7,
+        status: 'open',
+        is_communication_thread: true,
+        channels: [{ conversation_id: 11, status: 'open' }],
+      };
+      const state = { allConversations: [thread] };
+
+      mutations[types.CHANGE_CONVERSATION_STATUS](state, {
+        conversationId: 7,
+        conversationType: 'communication_thread',
+        status: 'pending',
+        snoozedUntil: null,
+      });
+
+      expect(thread.status).toBe('pending');
+      expect(thread.channels[0].status).toBe('open');
+    });
+  });
+
   describe('#UPDATE_CONVERSATION_CALL_STATUS', () => {
     it('does nothing if conversation is not found', () => {
       const state = { allConversations: [] };

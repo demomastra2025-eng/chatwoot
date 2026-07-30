@@ -95,17 +95,37 @@ const NextButtonStub = {
   `,
 };
 
-const createVuexStore = () =>
+const createVuexStore = ({
+  captainEnabled = false,
+  conversations = { 11: { meta: { sender: {} } } },
+  inboxes = {},
+  currentUser = null,
+  actions = {},
+} = {}) =>
   createStore({
     getters: {
       getCurrentAccountId: () => 1,
-      getConversationById: () => () => ({ meta: { sender: {} } }),
+      getConversationById: () => conversationId =>
+        conversations[conversationId] || null,
+      getCurrentUser: () => currentUser,
+    },
+    actions: {
+      toggleStatus: (_context, payload) => actions.toggleStatus?.(payload),
+      setCurrentChatAssignee: (_context, payload) =>
+        actions.setCurrentChatAssignee?.(payload),
+      assignAgent: (_context, payload) => actions.assignAgent?.(payload),
     },
     modules: {
       accounts: {
         namespaced: true,
         getters: {
-          isFeatureEnabledonAccount: () => () => false,
+          isFeatureEnabledonAccount: () => () => captainEnabled,
+        },
+      },
+      inboxes: {
+        namespaced: true,
+        getters: {
+          getInbox: () => inboxId => inboxes[inboxId] || null,
         },
       },
       integrations: {
@@ -117,7 +137,7 @@ const createVuexStore = () =>
     },
   });
 
-const mountComponent = props =>
+const mountComponent = (props, storeOptions) =>
   shallowMount(ReplyBottomPanel, {
     props: {
       conversationId: 11,
@@ -131,7 +151,7 @@ const mountComponent = props =>
       ...props,
     },
     global: {
-      plugins: [createVuexStore()],
+      plugins: [createVuexStore(storeOptions)],
       mocks: {
         $t: (key, params = {}) =>
           ({
@@ -158,6 +178,194 @@ const mountComponent = props =>
   });
 
 describe('ReplyBottomPanel', () => {
+  it('keeps the direct-channel Captain status contract unchanged', async () => {
+    const toggleStatus = vi.fn();
+    const wrapper = mountComponent(
+      {
+        conversationId: 11,
+        isCommunicationThread: false,
+        inbox: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+      },
+      {
+        captainEnabled: true,
+        conversations: {
+          11: { id: 11, status: 'open', meta: { assignee: null } },
+        },
+        actions: { toggleStatus },
+      }
+    );
+
+    const captainButton = wrapper.find('[data-icon="i-woot-captain"]');
+    expect(captainButton.exists()).toBe(true);
+    expect(captainButton.attributes('aria-pressed')).toBe('false');
+
+    await wrapper.vm.toggleCaptainForConversation();
+
+    expect(toggleStatus).toHaveBeenCalledWith({
+      conversationId: 11,
+      status: 'pending',
+    });
+  });
+
+  it('keeps direct-channel Captain disable and assignment unchanged', async () => {
+    const actions = {
+      toggleStatus: vi.fn(),
+      setCurrentChatAssignee: vi.fn(),
+      assignAgent: vi.fn(),
+    };
+    const wrapper = mountComponent(
+      {
+        conversationId: 11,
+        isCommunicationThread: false,
+        inbox: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+      },
+      {
+        captainEnabled: true,
+        currentUser: { id: 7, name: 'Agent', avatar_url: '/agent.png' },
+        conversations: {
+          11: { id: 11, status: 'pending', meta: { assignee: null } },
+        },
+        actions,
+      }
+    );
+
+    expect(
+      wrapper.find('[data-icon="i-woot-captain"]').attributes('aria-pressed')
+    ).toBe('true');
+
+    await wrapper.vm.toggleCaptainForConversation();
+
+    expect(actions.toggleStatus).toHaveBeenCalledWith({
+      conversationId: 11,
+      status: 'open',
+    });
+    expect(actions.setCurrentChatAssignee).toHaveBeenCalledWith({
+      conversationId: 11,
+      assignee: {
+        id: 7,
+        name: 'Agent',
+        thumbnail: '/agent.png',
+      },
+    });
+    expect(actions.assignAgent).toHaveBeenCalledWith({
+      conversationId: 11,
+      agentId: 7,
+    });
+  });
+
+  it('disables Captain for the selected communication-thread channel', async () => {
+    const actions = {
+      toggleStatus: vi.fn(),
+      setCurrentChatAssignee: vi.fn(),
+      assignAgent: vi.fn(),
+    };
+    const currentUser = {
+      id: 7,
+      name: 'Agent',
+      avatar_url: '/agent.png',
+    };
+    const selectedChannel = {
+      ...whatsappChannel,
+      status: 'pending',
+    };
+    const wrapper = mountComponent(
+      {
+        conversationId: 999,
+        isCommunicationThread: true,
+        activeReplyChannel: selectedChannel,
+      },
+      {
+        captainEnabled: true,
+        currentUser,
+        conversations: {
+          11: { id: 11, status: 'pending', meta: { assignee: null } },
+        },
+        inboxes: {
+          101: { id: 101, captain_assistant: { id: 5, name: 'Captain' } },
+        },
+        actions,
+      }
+    );
+
+    const captainButton = wrapper.find('[data-icon="i-woot-captain"]');
+    expect(captainButton.exists()).toBe(true);
+    expect(captainButton.attributes('aria-pressed')).toBe('true');
+
+    await wrapper.vm.toggleCaptainForConversation();
+
+    expect(actions.toggleStatus).toHaveBeenCalledWith({
+      conversationId: 11,
+      conversationType: 'conversation',
+      status: 'open',
+    });
+    expect(actions.setCurrentChatAssignee).toHaveBeenCalledWith({
+      conversationId: 11,
+      assignee: {
+        id: 7,
+        name: 'Agent',
+        thumbnail: '/agent.png',
+      },
+    });
+    expect(actions.assignAgent).toHaveBeenCalledWith({
+      conversationId: 11,
+      conversationType: 'conversation',
+      agentId: 7,
+    });
+  });
+
+  it('enables Captain for the selected open communication-thread channel', async () => {
+    const toggleStatus = vi.fn();
+    const selectedChannel = {
+      ...telegramChannel,
+      can_reply: true,
+      status: 'open',
+    };
+    const wrapper = mountComponent(
+      {
+        conversationId: 999,
+        isCommunicationThread: true,
+        activeReplyChannel: selectedChannel,
+      },
+      {
+        captainEnabled: true,
+        conversations: {},
+        inboxes: {
+          202: { id: 202, captain_assistant: { id: 6, name: 'Captain 2' } },
+        },
+        actions: { toggleStatus },
+      }
+    );
+
+    const captainButton = wrapper.find('[data-icon="i-woot-captain"]');
+    expect(captainButton.exists()).toBe(true);
+    expect(captainButton.attributes('aria-pressed')).toBe('false');
+
+    await wrapper.vm.toggleCaptainForConversation();
+
+    expect(toggleStatus).toHaveBeenCalledWith({
+      conversationId: 22,
+      conversationType: 'conversation',
+      status: 'pending',
+    });
+  });
+
+  it('hides Captain when the selected channel inbox has no assistant', () => {
+    const wrapper = mountComponent(
+      {
+        conversationId: 999,
+        isCommunicationThread: true,
+        activeReplyChannel: whatsappChannel,
+        inbox: { id: 999, captain_assistant: { id: 55 } },
+      },
+      {
+        captainEnabled: true,
+        inboxes: { 101: { id: 101 } },
+      }
+    );
+
+    expect(wrapper.find('[data-icon="i-woot-captain"]').exists()).toBe(false);
+  });
+
   it('passes selected conversation and inbox context to WhatsApp call initiation', () => {
     mountComponent({
       conversationId: 481,
