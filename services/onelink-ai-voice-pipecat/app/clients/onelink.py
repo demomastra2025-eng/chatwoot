@@ -43,6 +43,8 @@ class Correlation:
 class OnelinkClient:
     """Bounded async client for existing Rails AI Voice endpoints."""
 
+    VOICE_CAPABILITIES = "callback_handoff_v1"
+
     def __init__(
         self,
         *,
@@ -71,7 +73,12 @@ class OnelinkClient:
         await self._client.aclose()
 
     async def get_context(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return await self._request("/internal/voice/ai/context", body=payload, retryable=True)
+        return await self._request(
+            "/internal/voice/ai/context",
+            body=payload,
+            headers={"x-onelink-voice-capabilities": self.VOICE_CAPABILITIES},
+            retryable=True,
+        )
 
     async def send_transcript(
         self,

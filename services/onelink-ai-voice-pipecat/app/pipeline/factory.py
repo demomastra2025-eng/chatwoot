@@ -106,7 +106,7 @@ class PipelineAssembly:
     input_resampler: AudioResampleProcessor | None = None
     output_resampler: AudioResampleProcessor | None = None
 
-    async def speak_exact(self, message: str) -> None:
+    async def speak_exact(self, message: str) -> bool:
         instruction = (
             "Произнеси сейчас только следующую фразу естественно, без пояснений и "
             f"добавлений: {message}"
@@ -134,8 +134,12 @@ class PipelineAssembly:
             else:
                 await self.worker.queue_frame(InputTextRawFrame(text=instruction))
             started = await self.activity.wait_for_turn_started_after(started_sequence, 1.5)
-            if started:
-                await self.activity.wait_for_turn_completed_after(completed_sequence, 8.0)
+            if not started:
+                return False
+            completion_timeout = min(300.0, max(8.0, len(message) / 7.0 + 5.0))
+            return await self.activity.wait_for_turn_completed_after(
+                completed_sequence, completion_timeout
+            )
 
     async def run_instruction(self, instruction: str) -> None:
         if self.provider == "openai-realtime" and isinstance(self.llm, OpenAIRealtimeLLMService):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -120,14 +121,6 @@ class PipecatSessionRunner:
 
             rails_managed_end_call = _rails_manages_end_call(payload)
 
-            async def tool_action(result: dict[str, Any]) -> dict[str, Any] | None:
-                return await _execute_terminal_action(
-                    result,
-                    control_client=control_client,
-                    requested_action=requested_action,
-                    rails_managed_end_call=rails_managed_end_call,
-                )
-
             state = SessionState(
                 client=client,
                 correlation=Correlation(
@@ -139,7 +132,6 @@ class PipecatSessionRunner:
                     inbox_id=payload.get("inbox_id"),
                 ),
                 callback_outbox=self.callback_outbox,
-                tool_action_handler=tool_action,
             )
             try:
                 raw_context = payload.pop("_preflight_context", None)
@@ -178,6 +170,7 @@ class PipecatSessionRunner:
                     runtime_stream=runtime_stream,
                     requested_action=requested_action,
                     control_client=control_client,
+                    rails_managed_end_call=rails_managed_end_call,
                 )
             except asyncio.CancelledError:
                 if not state.finalized:
@@ -231,6 +224,7 @@ class PipecatSessionRunner:
         runtime_stream: RuntimeStream,
         requested_action: dict[str, str | None],
         control_client: RuntimeControlClient | None,
+        rails_managed_end_call: bool,
     ) -> None:
         terminal = TerminalDecision()
         assembly: PipelineAssembly | None = None
@@ -244,6 +238,29 @@ class PipecatSessionRunner:
                 runtime_stream=runtime_stream,
                 settings=self.settings,
             )
+
+            async def tool_action(result: dict[str, Any]) -> dict[str, Any] | None:
+                async def rails_end_call() -> dict[str, Any]:
+                    return await state.execute_tool(
+                        "end_call",
+                        {
+                            "reason": "manager_callback_completed",
+                            "ended_by": "system",
+                        },
+                        f"callback-end-call:{state.correlation.runtime_session_id}",
+                        timeout_ms=5_000,
+                    )
+
+                return await _execute_tool_action(
+                    result,
+                    speak_exact=assembly.speak_exact,
+                    control_client=control_client,
+                    requested_action=requested_action,
+                    rails_managed_end_call=rails_managed_end_call,
+                    rails_end_call=rails_end_call if rails_managed_end_call else None,
+                )
+
+            state.bind_tool_action_handler(tool_action)
             self._register_handlers(assembly, state, terminal)
             watchdog = asyncio.create_task(
                 self._watchdog(
@@ -329,6 +346,11 @@ class PipecatSessionRunner:
         started = time.monotonic()
         observed_user_turn = state.user_turn
         silence_stage = 0
+        silence_thresholds = (
+            context.ai.silence_prompt_after_ms,
+            context.ai.second_silence_prompt_after_ms,
+            context.ai.max_silence_ms,
+        )
         while not terminal.decided:
             await asyncio.sleep(0.1)
             action = requested_action.get("action")
@@ -352,19 +374,26 @@ class PipecatSessionRunner:
             idle_ms = (now - state.last_activity_monotonic) * 1_000
             if not context.ai.silence_prompt_enabled:
                 continue
-            if silence_stage == 0 and idle_ms >= context.ai.silence_prompt_after_ms:
+            if silence_stage >= len(silence_thresholds):
+                continue
+            silence_threshold = silence_thresholds[silence_stage]
+            if silence_threshold == 0:
+                silence_stage += 1
+                continue
+            if idle_ms < silence_threshold:
+                continue
+
+            if silence_stage == 0:
                 silence_stage = 1
                 await _queue_exact_message(assembly, context.ai.silence_prompt)
-            elif silence_stage == 1 and idle_ms >= context.ai.second_silence_prompt_after_ms:
+            elif silence_stage == 1:
                 silence_stage = 2
                 await _queue_exact_message(assembly, context.ai.second_silence_prompt)
-            elif (
-                silence_stage == 2
-                and idle_ms >= context.ai.max_silence_ms
-                and context.ai.end_call_on_silence_enabled
-            ):
+            else:
+                silence_stage = 3
+                if not context.ai.end_call_on_silence_enabled:
+                    continue
                 await _queue_exact_message(assembly, context.ai.final_silence_message)
-                await asyncio.sleep(2.0)
                 await terminal.set("completed", "max_silence")
                 await assembly.worker.cancel(reason="max_silence")
                 return
@@ -462,7 +491,12 @@ def _filter_tools_for_transport(
 ) -> None:
     if has_runtime_control:
         return
-    unavailable = {"request_transfer"}
+    unavailable = set()
+    rails_managed_callback = (
+        rails_managed_end_call and context.ai.manager_handoff_mode == "callback"
+    )
+    if not rails_managed_callback:
+        unavailable.add("request_transfer")
     if not rails_managed_end_call:
         unavailable.add("end_call")
     context.tools = [tool for tool in context.tools if tool.name not in unavailable]
@@ -476,24 +510,106 @@ async def _execute_terminal_action(
     rails_managed_end_call: bool,
 ) -> dict[str, Any] | None:
     action = str(result.get("action") or "").strip().lower()
-    if action not in {"transfer", "end_call"}:
+    if action not in {"transfer", "callback_handoff", "end_call"}:
         return None
+    runtime_action = "end_call" if action == "callback_handoff" else action
+    runtime_result = {**result, "action": runtime_action}
     if control_client is not None:
-        response = await control_client.execute(result)
-        requested_action["action"] = action
+        response = await control_client.execute(runtime_result)
+        requested_action["action"] = runtime_action
         return response
-    if action == "end_call" and rails_managed_end_call:
+    if runtime_action == "end_call" and rails_managed_end_call:
         if result.get("transport_terminate_requested") is not True:
             raise OnelinkApiError(
                 "WhatsApp transport termination was not accepted",
                 code="whatsapp_transport_termination_failed",
             )
-        requested_action["action"] = action
-        return {"status": "accepted", "action": action, "transport": "whatsapp_cloud"}
+        requested_action["action"] = runtime_action
+        return {"status": "accepted", "action": runtime_action, "transport": "whatsapp_cloud"}
     raise OnelinkApiError(
         "Runtime call control is unavailable",
         code="runtime_control_unavailable",
     )
+
+
+async def _execute_tool_action(
+    result: dict[str, Any],
+    *,
+    speak_exact: Any,
+    control_client: RuntimeControlClient | None,
+    requested_action: dict[str, str | None],
+    rails_managed_end_call: bool,
+    rails_end_call: Callable[[], Awaitable[dict[str, Any]]] | None = None,
+) -> dict[str, Any] | None:
+    action = str(result.get("action") or "").strip().lower()
+    if action not in {"transfer", "callback_handoff", "end_call"}:
+        return None
+
+    message = str(result.get("message") or "").strip()
+    if message:
+        announcement_completed = await speak_exact(message)
+        if announcement_completed is False:
+            raise OnelinkApiError(
+                "Terminal announcement did not complete",
+                code="terminal_announcement_incomplete",
+            )
+
+    if action == "callback_handoff" and control_client is None and rails_managed_end_call:
+        if rails_end_call is None:
+            raise OnelinkApiError(
+                "Rails end-call callback is unavailable",
+                code="rails_end_call_unavailable",
+            )
+        response = await rails_end_call()
+        if requested_action.get("action") != "end_call":
+            raise OnelinkApiError(
+                "Rails did not terminate the callback call",
+                code="rails_end_call_failed",
+            )
+        return response
+
+    try:
+        return await _execute_terminal_action(
+            result,
+            control_client=control_client,
+            requested_action=requested_action,
+            rails_managed_end_call=rails_managed_end_call,
+        )
+    except (OnelinkApiError, TimeoutError) as error:
+        if action != "transfer":
+            raise
+
+        fallback_action = str(result.get("fallback_action") or "continue").strip().lower()
+        error_code = getattr(error, "code", "transfer_failed")
+        if fallback_action == "continue":
+            return {
+                "status": "failed",
+                "action": "transfer",
+                "continue_call": True,
+                "error": {"code": error_code},
+            }
+
+        fallback_message = str(result.get("fallback_message") or "").strip()
+        if fallback_message:
+            fallback_announcement_completed = await speak_exact(fallback_message)
+            if fallback_announcement_completed is False:
+                raise OnelinkApiError(
+                    "Transfer fallback announcement did not complete",
+                    code="fallback_announcement_incomplete",
+                ) from error
+        response = await _execute_terminal_action(
+            {"action": "end_call"},
+            control_client=control_client,
+            requested_action=requested_action,
+            rails_managed_end_call=rails_managed_end_call,
+        )
+        return {
+            "status": "fallback_completed",
+            "action": "transfer",
+            "fallback_action": fallback_action,
+            "error": {"code": error_code},
+            "runtime_control": response,
+        }
 
 
 async def _queue_exact_message(assembly: PipelineAssembly, message: str) -> None:

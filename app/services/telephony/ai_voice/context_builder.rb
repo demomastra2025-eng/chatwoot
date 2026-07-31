@@ -30,9 +30,11 @@ class Telephony::AiVoice::ContextBuilder
   PROMPT
   VOICE_CHARACTER_PROMPT_LABEL = 'Voice character prompt'.freeze
   DEFAULT_MAX_DURATION_SEC = 900
+  CALLBACK_HANDOFF_CAPABILITY = 'callback_handoff_v1'.freeze
 
-  def initialize(params:)
+  def initialize(params:, runtime_capabilities: [])
     @params = params.deep_stringify_keys
+    @runtime_capabilities = runtime_capabilities.map { |capability| capability.to_s.strip }.compact_blank
   end
 
   def perform
@@ -58,13 +60,17 @@ class Telephony::AiVoice::ContextBuilder
       captain: captain_payload,
       transfer: transfer_payload,
       recording: recording_payload,
-      tools: Telephony::AiVoice::ToolDispatchService.catalog(policy: routing_policy, captain_assistant: captain_assistant)
+      tools: Telephony::AiVoice::ToolDispatchService.catalog(
+        policy: routing_policy,
+        captain_assistant: captain_assistant,
+        voice_settings: effective_ai_settings
+      )
     }.compact
   end
 
   private
 
-  attr_reader :params
+  attr_reader :params, :runtime_capabilities
 
   def ensure_call_ref!
     return if call_ref.present?
@@ -123,7 +129,7 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def ai_payload
-    payload = ai_settings.except('system_prompt', 'voice_character_prompt', 'recording_enabled').merge(
+    payload = effective_ai_settings.except('system_prompt', 'voice_character_prompt', 'recording_enabled').merge(
       deployment_mode: routing_policy&.ai_deployment_mode || Telephony::RoutingPolicy::AI_DEPLOYMENT_ONELINK_MANAGED,
       app_ref: routing_policy&.effective_ai_app_ref,
       system_prompt: system_prompt
@@ -160,11 +166,24 @@ class Telephony::AiVoice::ContextBuilder
 
   def transfer_payload
     operator_aor = routing_policy&.resolved_operator_agent_aor
+    handoff_mode = effective_ai_settings['manager_handoff_mode']
+    operator_aor = nil unless handoff_mode == 'live_transfer'
     {
-      enabled: operator_aor.present?,
+      enabled: handoff_mode == 'callback' || operator_aor.present?,
+      mode: handoff_mode,
       operator_agent_aor: operator_aor,
-      message: ai_settings['transfer_message'].presence || 'Сейчас соединю вас со специалистом.'
+      message: ai_settings['transfer_message'],
+      callback_message: ai_settings['callback_message'],
+      failure_mode: ai_settings['transfer_failure_mode'],
+      failure_message: ai_settings['transfer_failure_message']
     }.compact
+  end
+
+  def effective_ai_settings
+    return ai_settings unless ai_settings['manager_handoff_mode'] == 'callback'
+    return ai_settings if runtime_capabilities.include?(CALLBACK_HANDOFF_CAPABILITY)
+
+    ai_settings.merge('manager_handoff_mode' => 'disabled')
   end
 
   def recording_payload

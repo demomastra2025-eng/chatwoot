@@ -85,15 +85,38 @@ class Telephony::AiVoice::ToolDispatchService
 
   TOOL_CATALOG = VOICE_TOOL_CATALOG.freeze
 
-  def self.catalog(policy: nil, captain_assistant: nil)
-    _policy = policy # Reserved for future policy-aware filtering; keep keyword for interface compatibility.
+  def self.catalog(policy: nil, captain_assistant: nil, voice_settings: nil)
+    settings = normalized_voice_settings(policy, captain_assistant, voice_settings)
+    voice_tools = VOICE_TOOL_CATALOG.filter_map do |tool|
+      next if tool[:name] == 'request_transfer' && settings['manager_handoff_mode'] == 'disabled'
 
-    voice_tools = VOICE_TOOL_CATALOG.map do |tool|
-      tool.merge(enabled: true, source: 'voice', scope: 'default').deep_stringify_keys
+      contextualized_tool = tool.deep_dup
+      if contextualized_tool[:name] == 'request_transfer'
+        contextualized_tool[:description] = transfer_tool_description(settings['manager_handoff_mode'])
+      end
+      contextualized_tool.merge(enabled: true, source: 'voice', scope: 'default').deep_stringify_keys
     end
 
     (voice_tools + captain_tool_catalog(captain_assistant)).uniq { |tool| tool['name'] }
   end
+
+  def self.normalized_voice_settings(policy, captain_assistant, explicit_settings)
+    return Telephony::AiVoice::VoiceSettingsDefaults.normalize(explicit_settings) if explicit_settings.present?
+
+    policy_settings = (policy&.ai_voice_settings || {}).deep_stringify_keys
+    assistant_settings = (captain_assistant&.config&.dig('voice_settings') || {}).deep_stringify_keys
+    Telephony::AiVoice::VoiceSettingsDefaults.normalize(policy_settings.merge(assistant_settings))
+  end
+
+  def self.transfer_tool_description(mode)
+    if mode == 'callback'
+      'Hand the conversation to a manager for a callback. Use only after the caller agrees; OneLink will announce the callback and end this call.'
+    else
+      'Transfer the current call to a manager. Use only after the caller agrees; OneLink will announce and perform the live transfer.'
+    end
+  end
+
+  private_class_method :normalized_voice_settings, :transfer_tool_description
 
   def self.captain_tool_catalog(captain_assistant)
     return [] if captain_assistant.blank?
@@ -257,18 +280,81 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_request_transfer
-    operator_aor = routing_policy&.resolved_operator_agent_aor
-    if operator_aor.blank?
-      raise Telephony::Error.new(code: 'TRANSFER_TARGET_MISSING', message: 'operator transfer target is not configured',
-                                 status: :unprocessable_content)
+    reason = arguments['reason'].presence || 'voice_ai_requested_transfer'
+    mode = voice_settings['manager_handoff_mode']
+    if mode == 'disabled'
+      raise Telephony::Error.new(code: 'MANAGER_HANDOFF_DISABLED', message: 'manager handoff is disabled', status: :unprocessable_content)
     end
+    return perform_callback_handoff(reason) if mode == 'callback'
+
+    operator_aor = routing_policy&.resolved_operator_agent_aor
+    return transfer_target_missing_result(reason) if operator_aor.blank?
+
+    handoff_conversation(reason)
 
     {
       action: 'transfer',
+      status: 'accepted',
       operator_agent_aor: operator_aor,
-      reason: arguments['reason'].presence || 'voice_ai_requested_transfer',
-      message: routing_policy.ai_voice_settings&.dig('transfer_message').presence || 'Сейчас соединю вас со специалистом.'
+      reason: reason,
+      message: voice_settings['transfer_message'],
+      fallback_action: voice_settings['transfer_failure_mode'],
+      fallback_message: voice_settings['transfer_failure_message']
     }
+  end
+
+  def perform_callback_handoff(reason)
+    ensure_conversation!
+    handoff_conversation(reason)
+
+    {
+      action: 'callback_handoff',
+      status: 'accepted',
+      reason: reason,
+      message: voice_settings['callback_message']
+    }
+  end
+
+  def transfer_target_missing_result(reason)
+    fallback_mode = voice_settings['transfer_failure_mode']
+    if fallback_mode == 'callback'
+      return perform_callback_handoff(reason).merge(
+        fallback_from: 'transfer',
+        message: voice_settings['transfer_failure_message']
+      )
+    end
+    if fallback_mode == 'end_call'
+      return {
+        action: 'end_call',
+        status: 'accepted',
+        reason: reason,
+        fallback_from: 'transfer',
+        message: voice_settings['transfer_failure_message']
+      }
+    end
+
+    raise Telephony::Error.new(code: 'TRANSFER_TARGET_MISSING', message: 'operator transfer target is not configured',
+                               status: :unprocessable_content)
+  end
+
+  def handoff_conversation(reason)
+    return if conversation.blank?
+
+    conversation.with_lock do
+      next if conversation.status == 'open' && conversation.waiting_since.present?
+
+      if captain_assistant.present?
+        Captain::Tools::Operations::ConversationOperations.new(
+          assistant: captain_assistant,
+          conversation: conversation,
+          actor: captain_assistant
+        ).handoff(reason: reason)
+      else
+        conversation.with_captain_activity_context(reason: reason, reason_type: :tool) do
+          conversation.bot_handoff!(source: 'captain')
+        end
+      end
+    end
   end
 
   def perform_end_call
@@ -498,6 +584,14 @@ class Telephony::AiVoice::ToolDispatchService
 
   def routing_policy
     @routing_policy ||= call_session&.number_binding&.routing_policy || conversation&.inbox&.telephony_number_binding&.routing_policy
+  end
+
+  def voice_settings
+    @voice_settings ||= begin
+      policy_settings = (routing_policy&.ai_voice_settings || {}).deep_stringify_keys
+      assistant_settings = (captain_assistant&.config&.dig('voice_settings') || {}).deep_stringify_keys
+      Telephony::AiVoice::VoiceSettingsDefaults.normalize(policy_settings.merge(assistant_settings))
+    end
   end
 
   def call_session

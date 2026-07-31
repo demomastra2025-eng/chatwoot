@@ -1,3 +1,7 @@
+import asyncio
+import time
+from contextlib import suppress
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -8,9 +12,11 @@ from app.pipeline.context import ToolDefinition, VoiceContext
 from app.sessions import runner as runner_module
 from app.sessions.runner import (
     PipecatSessionRunner,
+    TerminalDecision,
     _close_recorder,
     _end_call_safely,
     _execute_terminal_action,
+    _execute_tool_action,
     _filter_tools_for_transport,
     _rails_manages_end_call,
 )
@@ -19,6 +25,20 @@ from app.sessions.runner import (
 class FailingRecorder:
     async def close(self):
         raise OSError("synthetic storage failure")
+
+
+class WatchdogAssembly:
+    def __init__(self):
+        self.messages = []
+        self.cancellations = []
+        self.worker = self
+
+    async def speak_exact(self, message):
+        self.messages.append(message)
+        return True
+
+    async def cancel(self, *, reason):
+        self.cancellations.append(reason)
 
 
 @pytest.mark.asyncio
@@ -61,6 +81,14 @@ class RecordingRuntimeControlClient:
         return {"status": "accepted"}
 
 
+class TransferFailingRuntimeControlClient(RecordingRuntimeControlClient):
+    async def execute(self, result):
+        self.actions.append(result)
+        if result["action"] == "transfer":
+            raise OnelinkApiError("operator did not answer", code="transfer_timeout")
+        return {"status": "accepted"}
+
+
 @pytest.mark.asyncio
 async def test_hard_timeout_transport_end_call_is_direct_and_bounded():
     control = RecordingRuntimeControlClient()
@@ -68,6 +96,225 @@ async def test_hard_timeout_transport_end_call_is_direct_and_bounded():
     await _end_call_safely(cast(Any, control))
 
     assert control.actions == [{"action": "end_call"}]
+
+
+@pytest.mark.asyncio
+async def test_all_zero_silence_thresholds_disable_every_watchdog_stage():
+    context = SimpleNamespace(
+        ai=SimpleNamespace(
+            max_duration_sec=900,
+            silence_prompt_enabled=True,
+            silence_prompt_after_ms=0,
+            second_silence_prompt_after_ms=0,
+            max_silence_ms=0,
+            end_call_on_silence_enabled=True,
+            silence_prompt="Вы меня слышите?",
+            second_silence_prompt="Остаётесь на линии?",
+            final_silence_message="Завершаю звонок.",
+        )
+    )
+    state = SimpleNamespace(
+        user_turn=0,
+        tool_in_progress=False,
+        last_activity_monotonic=time.monotonic() - 60,
+    )
+    assembly = WatchdogAssembly()
+    terminal = TerminalDecision()
+    task = asyncio.create_task(
+        PipecatSessionRunner._watchdog(
+            cast(Any, None),
+            cast(Any, context),
+            cast(Any, state),
+            cast(Any, assembly),
+            terminal,
+            {"action": None},
+            None,
+        )
+    )
+
+    await asyncio.sleep(0.4)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert assembly.messages == []
+    assert assembly.cancellations == []
+    assert terminal.decided is False
+
+
+@pytest.mark.asyncio
+async def test_callback_handoff_speaks_before_ending_the_call():
+    events = []
+    requested_action: dict[str, str | None] = {"action": None}
+
+    class OrderedRuntimeControlClient(RecordingRuntimeControlClient):
+        async def execute(self, result):
+            events.append(("control", result["action"]))
+            return await super().execute(result)
+
+    async def speak_exact(message):
+        events.append(("speech", message))
+
+    response = await _execute_tool_action(
+        {
+            "action": "callback_handoff",
+            "message": "Наш менеджер вам перезвонит.",
+        },
+        speak_exact=speak_exact,
+        control_client=cast(Any, OrderedRuntimeControlClient()),
+        rails_managed_end_call=False,
+        requested_action=requested_action,
+    )
+
+    assert events == [
+        ("speech", "Наш менеджер вам перезвонит."),
+        ("control", "end_call"),
+    ]
+    assert response == {"status": "accepted"}
+    assert requested_action == {"action": "end_call"}
+
+
+@pytest.mark.asyncio
+async def test_callback_handoff_uses_rails_end_call_without_runtime_control():
+    requested_action: dict[str, str | None] = {"action": None}
+    spoken = []
+
+    async def speak_exact(message):
+        spoken.append(message)
+        return True
+
+    async def rails_end_call():
+        requested_action["action"] = "end_call"
+        return {"action": "end_call", "status": "completed"}
+
+    response = await _execute_tool_action(
+        {
+            "action": "callback_handoff",
+            "message": "Наш менеджер вам перезвонит.",
+        },
+        speak_exact=speak_exact,
+        control_client=None,
+        rails_managed_end_call=True,
+        requested_action=requested_action,
+        rails_end_call=rails_end_call,
+    )
+
+    assert spoken == ["Наш менеджер вам перезвонит."]
+    assert response == {"action": "end_call", "status": "completed"}
+    assert requested_action == {"action": "end_call"}
+
+
+@pytest.mark.asyncio
+async def test_terminal_action_fails_closed_when_announcement_does_not_complete():
+    requested_action: dict[str, str | None] = {"action": None}
+    control = RecordingRuntimeControlClient()
+
+    async def speak_exact(_message):
+        return False
+
+    with pytest.raises(OnelinkApiError) as raised:
+        await _execute_tool_action(
+            {
+                "action": "transfer",
+                "message": "Сейчас соединю со специалистом.",
+            },
+            speak_exact=speak_exact,
+            control_client=cast(Any, control),
+            rails_managed_end_call=False,
+            requested_action=requested_action,
+        )
+
+    assert raised.value.code == "terminal_announcement_incomplete"
+    assert control.actions == []
+    assert requested_action == {"action": None}
+
+
+@pytest.mark.asyncio
+async def test_transfer_fallback_fails_closed_when_announcement_does_not_complete():
+    requested_action: dict[str, str | None] = {"action": None}
+    control = TransferFailingRuntimeControlClient()
+    announcements = iter([True, False])
+
+    async def speak_exact(_message):
+        return next(announcements)
+
+    with pytest.raises(OnelinkApiError) as raised:
+        await _execute_tool_action(
+            {
+                "action": "transfer",
+                "message": "Сейчас соединю со специалистом.",
+                "fallback_action": "callback",
+                "fallback_message": "Менеджер вам перезвонит.",
+            },
+            speak_exact=speak_exact,
+            control_client=cast(Any, control),
+            rails_managed_end_call=False,
+            requested_action=requested_action,
+        )
+
+    assert raised.value.code == "fallback_announcement_incomplete"
+    assert [item["action"] for item in control.actions] == ["transfer"]
+    assert requested_action == {"action": None}
+
+
+@pytest.mark.asyncio
+async def test_failed_transfer_uses_callback_fallback_after_both_messages():
+    spoken = []
+    requested_action: dict[str, str | None] = {"action": None}
+    control = TransferFailingRuntimeControlClient()
+
+    async def speak_exact(message):
+        spoken.append(message)
+
+    response = await _execute_tool_action(
+        {
+            "action": "transfer",
+            "destination": "sip:operator@example.test",
+            "message": "Сейчас соединю со специалистом.",
+            "fallback_action": "callback",
+            "fallback_message": "Соединить не удалось. Менеджер вам перезвонит.",
+        },
+        speak_exact=speak_exact,
+        control_client=cast(Any, control),
+        rails_managed_end_call=False,
+        requested_action=requested_action,
+    )
+
+    assert spoken == [
+        "Сейчас соединю со специалистом.",
+        "Соединить не удалось. Менеджер вам перезвонит.",
+    ]
+    assert [item["action"] for item in control.actions] == ["transfer", "end_call"]
+    assert response is not None
+    assert response["status"] == "fallback_completed"
+    assert response["fallback_action"] == "callback"
+    assert requested_action == {"action": "end_call"}
+
+
+@pytest.mark.asyncio
+async def test_failed_transfer_can_return_control_to_the_model():
+    requested_action: dict[str, str | None] = {"action": None}
+
+    async def speak_exact(_message):
+        return None
+
+    response = await _execute_tool_action(
+        {
+            "action": "transfer",
+            "destination": "sip:operator@example.test",
+            "message": "Сейчас соединю.",
+            "fallback_action": "continue",
+        },
+        speak_exact=speak_exact,
+        control_client=cast(Any, TransferFailingRuntimeControlClient()),
+        rails_managed_end_call=False,
+        requested_action=requested_action,
+    )
+
+    assert response is not None
+    assert response["status"] == "failed"
+    assert response["continue_call"] is True
+    assert requested_action == {"action": None}
 
 
 @pytest.mark.asyncio
@@ -141,6 +388,35 @@ def test_whatsapp_transport_keeps_end_call_without_runtime_control():
     )
 
     assert [tool.name for tool in context.tools] == ["end_call", "create_note"]
+
+
+def test_whatsapp_callback_keeps_request_transfer_without_runtime_control():
+    context = VoiceContext.model_validate(
+        {
+            "account_id": 42,
+            "call_ref": "whatsapp:wa-call-callback",
+            "runtime_session_id": "runtime-wa-callback",
+            "ai": {
+                "provider": "gemini-live",
+                "model": "gemini-live-test",
+                "voice": "test-voice",
+                "system_prompt": "Test prompt",
+                "manager_handoff_mode": "callback",
+            },
+            "tools": [
+                ToolDefinition(name="request_transfer", description="callback"),
+                ToolDefinition(name="end_call", description="hang up"),
+            ],
+        }
+    )
+
+    _filter_tools_for_transport(
+        context,
+        has_runtime_control=False,
+        rails_managed_end_call=True,
+    )
+
+    assert [tool.name for tool in context.tools] == ["request_transfer", "end_call"]
 
 
 def test_non_whatsapp_transport_removes_terminal_tools_without_runtime_control():

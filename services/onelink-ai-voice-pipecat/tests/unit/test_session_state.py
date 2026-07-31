@@ -1,5 +1,5 @@
 import asyncio
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -34,7 +34,7 @@ class FakeClient:
         await asyncio.sleep(0)
         return {"status": "ok"}
 
-    async def call_tool(self, correlation, name, arguments, **kwargs):
+    async def call_tool(self, correlation, name, arguments, **kwargs) -> dict[str, Any]:
         self.tools.append((correlation, name, arguments, kwargs))
         await asyncio.sleep(0)
         return {"message_id": 99}
@@ -77,6 +77,16 @@ class GatedToolClient(FakeClient):
         self.tool_called.set()
         await self.tool_gate.wait()
         return await super().call_tool(correlation, name, arguments, **kwargs)
+
+
+class TransferToolClient(FakeClient):
+    async def call_tool(self, correlation, name, arguments, **kwargs):
+        self.tools.append((correlation, name, arguments, kwargs))
+        return {
+            "action": "transfer",
+            "destination": "sip:operator@example.test",
+            "operator_agent_aor": "sip:operator@example.test",
+        }
 
 
 @pytest.fixture
@@ -144,6 +154,38 @@ async def test_duplicate_tool_call_is_fenced_in_process(state):
     await state.drain_background()
     actions = [item[1]["action"] for item in state.client.controls]
     assert actions == ["tool_started", "tool_completed"]
+
+
+@pytest.mark.asyncio
+async def test_failed_transfer_continue_fallback_is_returned_as_non_terminal_result():
+    client = TransferToolClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(call_ref="call-transfer", runtime_session_id="runtime-transfer"),
+    )
+
+    async def continue_after_failed_transfer(_result):
+        return {
+            "status": "failed",
+            "continue_call": True,
+            "error": {"code": "transfer_timeout"},
+        }
+
+    state.bind_tool_action_handler(continue_after_failed_transfer)
+
+    result = await state.execute_tool(
+        "request_transfer",
+        {"reason": "customer requested a manager"},
+        "tool-transfer",
+        timeout_ms=800,
+    )
+
+    assert result["action"] == "continue"
+    assert result["error"] == "transfer_failed"
+    assert "operator_agent_aor" not in result
+    assert "destination" not in result
+    assert result["runtime_control"]["continue_call"] is True
+    assert result["runtime_control"]["error"] == {"code": "transfer_timeout"}
 
 
 @pytest.mark.asyncio

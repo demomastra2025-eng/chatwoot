@@ -151,4 +151,140 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       expect(unrelated_whatsapp_call.reload.status).to eq('in_progress')
     end
   end
+
+  describe '#perform request_transfer' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:number_binding) { create(:telephony_number_binding, account: account, inbox: inbox) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox, status: 'pending') }
+    let(:call_session) do
+      create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        inbox: inbox,
+        number_binding: number_binding,
+        external_call_ref: 'manager-handoff-call',
+        status: 'in_progress'
+      )
+    end
+    let(:routing_policy) do
+      create(
+        :telephony_routing_policy,
+        account: account,
+        number_binding: number_binding,
+        operator_agent_aor: nil,
+        ai_voice_settings: voice_settings
+      )
+    end
+    let(:voice_settings) do
+      {
+        'manager_handoff_mode' => 'callback',
+        'callback_message' => 'Наш менеджер вам перезвонит.'
+      }
+    end
+
+    before do
+      routing_policy
+      create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    end
+
+    it 'uses the native Captain handoff and returns a callback terminal action without a SIP target' do
+      result = described_class.new(
+        tool_name: 'request_transfer',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { reason: 'Клиент попросил связаться с менеджером' }
+        }
+      ).perform
+
+      expect(result).to include(
+        action: 'callback_handoff',
+        status: 'accepted',
+        message: 'Наш менеджер вам перезвонит.'
+      )
+      expect(conversation.reload).to have_attributes(status: 'open')
+      expect(conversation.waiting_since).to be_present
+      expect(conversation.messages.last).to have_attributes(
+        private: true,
+        content: 'Клиент попросил связаться с менеджером'
+      )
+
+      expect do
+        described_class.new(
+          tool_name: 'request_transfer',
+          payload: {
+            account_id: account.id,
+            call_ref: call_session.external_call_ref,
+            arguments: { reason: 'Повторный вызов' }
+          }
+        ).perform
+      end.not_to(change { conversation.messages.count })
+    end
+
+    it 'excludes request_transfer from the catalog when manager handoff is disabled' do
+      catalog = described_class.catalog(voice_settings: { 'manager_handoff_mode' => 'disabled' })
+      tool_names = catalog.map { |tool| tool.fetch('name') }
+
+      expect(tool_names).not_to include('request_transfer')
+      expect(tool_names).to include('end_call')
+    end
+
+    context 'when live transfer has no configured target' do
+      let(:voice_settings) do
+        {
+          'manager_handoff_mode' => 'live_transfer',
+          'transfer_failure_mode' => 'callback',
+          'transfer_failure_message' => 'Соединить не удалось. Менеджер вам перезвонит.'
+        }
+      end
+
+      it 'falls back to the already-created native manager handoff' do
+        result = described_class.new(
+          tool_name: 'request_transfer',
+          payload: {
+            account_id: account.id,
+            call_ref: call_session.external_call_ref,
+            arguments: { reason: 'Нужен специалист' }
+          }
+        ).perform
+
+        expect(result).to include(
+          action: 'callback_handoff',
+          fallback_from: 'transfer',
+          message: 'Соединить не удалось. Менеджер вам перезвонит.'
+        )
+        expect(conversation.reload.status).to eq('open')
+      end
+    end
+
+    context 'when a missing live-transfer target must end the call' do
+      let(:voice_settings) do
+        {
+          'manager_handoff_mode' => 'live_transfer',
+          'transfer_failure_mode' => 'end_call',
+          'transfer_failure_message' => 'Соединить не удалось. Завершаю звонок.'
+        }
+      end
+
+      it 'returns an announced end-call action instead of raising a target error' do
+        result = described_class.new(
+          tool_name: 'request_transfer',
+          payload: {
+            account_id: account.id,
+            call_ref: call_session.external_call_ref,
+            arguments: { reason: 'Нужен специалист' }
+          }
+        ).perform
+
+        expect(result).to include(
+          action: 'end_call',
+          fallback_from: 'transfer',
+          message: 'Соединить не удалось. Завершаю звонок.'
+        )
+      end
+    end
+  end
 end

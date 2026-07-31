@@ -15,6 +15,70 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       )
     end
 
+    it 'normalizes manager handoff settings and keeps safe backward-compatible defaults' do
+      expect(described_class.normalize({})).to include(
+        'manager_handoff_mode' => 'live_transfer',
+        'transfer_failure_mode' => 'continue',
+        'silence_prompt_after_ms' => 5000,
+        'second_silence_prompt_after_ms' => 12_000,
+        'max_silence_ms' => 25_000
+      )
+
+      expect(
+        described_class.normalize(
+          manager_handoff_mode: 'unknown',
+          transfer_failure_mode: 'unknown',
+          callback_message: '',
+          silence_prompt_after_ms: 15_000,
+          second_silence_prompt_after_ms: 10_000,
+          max_silence_ms: 5_000
+        )
+      ).to include(
+        'manager_handoff_mode' => 'live_transfer',
+        'transfer_failure_mode' => 'continue',
+        'callback_message' => described_class::DEFAULTS.fetch('callback_message'),
+        'silence_prompt_after_ms' => 5000,
+        'second_silence_prompt_after_ms' => 12_000,
+        'max_silence_ms' => 25_000
+      )
+    end
+
+    it 'treats zero as a disabled silence stage and orders the remaining active stages' do
+      expect(
+        described_class.normalize(
+          silence_prompt_after_ms: 0,
+          second_silence_prompt_after_ms: 12_000,
+          max_silence_ms: 25_000
+        )
+      ).to include(
+        'silence_prompt_after_ms' => 0,
+        'second_silence_prompt_after_ms' => 12_000,
+        'max_silence_ms' => 25_000
+      )
+      expect(
+        described_class.normalize(
+          silence_prompt_after_ms: 15_000,
+          second_silence_prompt_after_ms: 10_000,
+          max_silence_ms: 0
+        )
+      ).to include(
+        'silence_prompt_after_ms' => 5000,
+        'second_silence_prompt_after_ms' => 12_000,
+        'max_silence_ms' => 25_000
+      )
+      expect(
+        described_class.normalize(
+          silence_prompt_after_ms: 0,
+          second_silence_prompt_after_ms: 0,
+          max_silence_ms: 0
+        )
+      ).to include(
+        'silence_prompt_after_ms' => 0,
+        'second_silence_prompt_after_ms' => 0,
+        'max_silence_ms' => 0
+      )
+    end
+
     it 'applies OpenAI Realtime defaults' do
       expect(described_class.normalize(provider: 'openai-realtime')).to include(
         'provider' => 'openai-realtime',

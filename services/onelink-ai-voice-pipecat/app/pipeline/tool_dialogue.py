@@ -12,7 +12,7 @@ from pipecat.services.llm_service import FunctionCallParams
 from app.pipeline.context import AiSettings, ToolDefinition
 from app.pipeline.processors import ConversationActivity
 
-SpeechCallback = Callable[[str], Awaitable[None]]
+SpeechCallback = Callable[[str], Awaitable[bool | None]]
 
 
 class ToolRuntimeState(Protocol):
@@ -186,7 +186,12 @@ def _is_terminal_tool(name: str) -> bool:
 def _is_terminal_result(result: object) -> bool:
     if not isinstance(result, dict):
         return False
-    return str(result.get("action") or "").strip().lower() in {"transfer", "end_call", "hangup"}
+    return str(result.get("action") or "").strip().lower() in {
+        "transfer",
+        "callback_handoff",
+        "end_call",
+        "hangup",
+    }
 
 
 def _is_error_result(result: object) -> bool:

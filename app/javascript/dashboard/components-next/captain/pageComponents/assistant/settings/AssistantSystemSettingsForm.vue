@@ -52,7 +52,19 @@ const DEFAULT_VOICE_SETTINGS = {
   systemPrompt: '',
   voiceCharacterPrompt: '',
   firstMessage: '',
+  managerHandoffMode: 'live_transfer',
+  callbackMessage: '',
   transferMessage: '',
+  transferFailureMode: 'continue',
+  transferFailureMessage: '',
+  silencePromptEnabled: true,
+  silencePromptAfterSeconds: 5,
+  silencePrompt: '',
+  secondSilencePromptAfterSeconds: 12,
+  secondSilencePrompt: '',
+  maxSilenceSeconds: 25,
+  finalSilenceMessage: '',
+  endCallOnSilenceEnabled: true,
   maxDurationSec: 0,
   interruptionsEnabled: true,
   proactiveAudioEnabled: false,
@@ -295,6 +307,49 @@ const voiceThinkingLevelOptions = computed(() => [
   },
 ]);
 
+const managerHandoffOptions = computed(() => [
+  {
+    value: 'live_transfer',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.HANDOFF_LIVE_TRANSFER'),
+  },
+  {
+    value: 'callback',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.HANDOFF_CALLBACK'),
+  },
+  {
+    value: 'disabled',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.HANDOFF_DISABLED'),
+  },
+]);
+
+const transferFailureOptions = computed(() => [
+  {
+    value: 'callback',
+    label: t(
+      'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_FAILURE_CALLBACK'
+    ),
+  },
+  {
+    value: 'continue',
+    label: t(
+      'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_FAILURE_CONTINUE'
+    ),
+  },
+  {
+    value: 'end_call',
+    label: t(
+      'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_FAILURE_END_CALL'
+    ),
+  },
+]);
+
+const isLiveTransferMode = computed(
+  () => state.voiceSettings.managerHandoffMode === 'live_transfer'
+);
+const isCallbackMode = computed(
+  () => state.voiceSettings.managerHandoffMode === 'callback'
+);
+
 const voiceSettingsSummary = computed(
   () =>
     `${optionLabel(voiceModelOptions.value, state.voiceSettings.model)} / ${optionLabel(
@@ -337,6 +392,14 @@ const temperatureOrDefault = value => {
   return value;
 };
 
+const millisecondsToSeconds = (value, fallback) => {
+  if (value === null || value === undefined || value === '') return fallback;
+  const milliseconds = Number(value);
+  return Number.isFinite(milliseconds) && milliseconds >= 0
+    ? milliseconds / 1000
+    : fallback;
+};
+
 const updateStateFromAssistant = assistant => {
   const { config = {} } = assistant;
   state.handoffMessageEnabled = Boolean(config.handoff_message);
@@ -376,8 +439,45 @@ const updateStateFromAssistant = assistant => {
       DEFAULT_VOICE_SETTINGS.voiceCharacterPrompt,
     firstMessage:
       voiceSettings.first_message ?? DEFAULT_VOICE_SETTINGS.firstMessage,
+    managerHandoffMode:
+      voiceSettings.manager_handoff_mode ??
+      DEFAULT_VOICE_SETTINGS.managerHandoffMode,
+    callbackMessage:
+      voiceSettings.callback_message ?? DEFAULT_VOICE_SETTINGS.callbackMessage,
     transferMessage:
       voiceSettings.transfer_message ?? DEFAULT_VOICE_SETTINGS.transferMessage,
+    transferFailureMode:
+      voiceSettings.transfer_failure_mode ??
+      DEFAULT_VOICE_SETTINGS.transferFailureMode,
+    transferFailureMessage:
+      voiceSettings.transfer_failure_message ??
+      DEFAULT_VOICE_SETTINGS.transferFailureMessage,
+    silencePromptEnabled:
+      voiceSettings.silence_prompt_enabled ??
+      DEFAULT_VOICE_SETTINGS.silencePromptEnabled,
+    silencePromptAfterSeconds: millisecondsToSeconds(
+      voiceSettings.silence_prompt_after_ms,
+      DEFAULT_VOICE_SETTINGS.silencePromptAfterSeconds
+    ),
+    silencePrompt:
+      voiceSettings.silence_prompt ?? DEFAULT_VOICE_SETTINGS.silencePrompt,
+    secondSilencePromptAfterSeconds: millisecondsToSeconds(
+      voiceSettings.second_silence_prompt_after_ms,
+      DEFAULT_VOICE_SETTINGS.secondSilencePromptAfterSeconds
+    ),
+    secondSilencePrompt:
+      voiceSettings.second_silence_prompt ??
+      DEFAULT_VOICE_SETTINGS.secondSilencePrompt,
+    maxSilenceSeconds: millisecondsToSeconds(
+      voiceSettings.max_silence_ms,
+      DEFAULT_VOICE_SETTINGS.maxSilenceSeconds
+    ),
+    finalSilenceMessage:
+      voiceSettings.final_silence_message ??
+      DEFAULT_VOICE_SETTINGS.finalSilenceMessage,
+    endCallOnSilenceEnabled:
+      voiceSettings.end_call_on_silence_enabled ??
+      DEFAULT_VOICE_SETTINGS.endCallOnSilenceEnabled,
     maxDurationSec: Number(
       voiceSettings.max_duration_sec || DEFAULT_VOICE_SETTINGS.maxDurationSec
     ),
@@ -402,6 +502,13 @@ const normalizeNonNegativeInteger = value => {
   }
 
   return Math.floor(normalizedValue);
+};
+
+const secondsToMilliseconds = (value, fallback) => {
+  const seconds = Number(value);
+  const normalizedSeconds =
+    Number.isFinite(seconds) && seconds >= 0 ? seconds : fallback;
+  return Math.round(normalizedSeconds * 1000);
 };
 
 const buildPayload = async () => {
@@ -452,7 +559,37 @@ const buildPayload = async () => {
           voice_character_prompt:
             state.voiceSettings.voiceCharacterPrompt || '',
           first_message: state.voiceSettings.firstMessage || '',
+          manager_handoff_mode:
+            state.voiceSettings.managerHandoffMode ||
+            DEFAULT_VOICE_SETTINGS.managerHandoffMode,
+          callback_message: state.voiceSettings.callbackMessage || '',
           transfer_message: state.voiceSettings.transferMessage || '',
+          transfer_failure_mode:
+            state.voiceSettings.transferFailureMode ||
+            DEFAULT_VOICE_SETTINGS.transferFailureMode,
+          transfer_failure_message:
+            state.voiceSettings.transferFailureMessage || '',
+          silence_prompt_enabled: Boolean(
+            state.voiceSettings.silencePromptEnabled
+          ),
+          silence_prompt_after_ms: secondsToMilliseconds(
+            state.voiceSettings.silencePromptAfterSeconds,
+            DEFAULT_VOICE_SETTINGS.silencePromptAfterSeconds
+          ),
+          silence_prompt: state.voiceSettings.silencePrompt || '',
+          second_silence_prompt_after_ms: secondsToMilliseconds(
+            state.voiceSettings.secondSilencePromptAfterSeconds,
+            DEFAULT_VOICE_SETTINGS.secondSilencePromptAfterSeconds
+          ),
+          second_silence_prompt: state.voiceSettings.secondSilencePrompt || '',
+          max_silence_ms: secondsToMilliseconds(
+            state.voiceSettings.maxSilenceSeconds,
+            DEFAULT_VOICE_SETTINGS.maxSilenceSeconds
+          ),
+          final_silence_message: state.voiceSettings.finalSilenceMessage || '',
+          end_call_on_silence_enabled: Boolean(
+            state.voiceSettings.endCallOnSilenceEnabled
+          ),
           max_duration_sec: normalizeNonNegativeInteger(
             state.voiceSettings.maxDurationSec
           ),
@@ -904,15 +1041,81 @@ defineExpose({
             )
           "
         />
-        <Input
-          v-model="state.voiceSettings.transferMessage"
-          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_MESSAGE')"
-          :placeholder="
-            t(
-              'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_MESSAGE_PLACEHOLDER'
-            )
-          "
-        />
+        <div
+          data-test-id="assistant-voice-manager-handoff"
+          class="md:col-span-2 flex flex-col gap-3 rounded-lg border border-n-weak p-3"
+        >
+          <div class="flex flex-col gap-1.5">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.HANDOFF_MODE') }}
+            </label>
+            <Select
+              v-model="state.voiceSettings.managerHandoffMode"
+              :options="managerHandoffOptions"
+              class="w-full"
+            />
+            <p class="text-sm text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.HANDOFF_MODE_DESCRIPTION'
+                )
+              }}
+            </p>
+          </div>
+          <Input
+            v-if="isCallbackMode"
+            v-model="state.voiceSettings.callbackMessage"
+            :label="
+              t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.CALLBACK_MESSAGE')
+            "
+            :placeholder="
+              t(
+                'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.CALLBACK_MESSAGE_PLACEHOLDER'
+              )
+            "
+          />
+          <template v-if="isLiveTransferMode">
+            <Input
+              v-model="state.voiceSettings.transferMessage"
+              :label="
+                t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_MESSAGE')
+              "
+              :placeholder="
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_MESSAGE_PLACEHOLDER'
+                )
+              "
+            />
+            <div class="flex flex-col gap-1.5">
+              <label class="text-sm font-medium text-n-slate-12">
+                {{
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_FAILURE_MODE'
+                  )
+                }}
+              </label>
+              <Select
+                v-model="state.voiceSettings.transferFailureMode"
+                :options="transferFailureOptions"
+                class="w-full"
+              />
+            </div>
+            <Input
+              v-if="state.voiceSettings.transferFailureMode !== 'continue'"
+              v-model="state.voiceSettings.transferFailureMessage"
+              :label="
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_FAILURE_MESSAGE'
+                )
+              "
+              :placeholder="
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.TRANSFER_FAILURE_MESSAGE_PLACEHOLDER'
+                )
+              "
+            />
+          </template>
+        </div>
         <Input
           v-model="state.voiceSettings.maxDurationSec"
           type="number"
@@ -940,6 +1143,106 @@ defineExpose({
             class="data-[state=checked]:!bg-n-violet-9"
           />
         </div>
+        <details
+          data-test-id="assistant-voice-silence-settings"
+          class="md:col-span-2 rounded-lg border border-n-weak p-3"
+        >
+          <summary class="cursor-pointer text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_TITLE') }}
+          </summary>
+          <p class="mt-2 text-sm text-n-slate-11">
+            {{
+              t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_DESCRIPTION')
+            }}
+          </p>
+          <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div
+              class="md:col-span-2 rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+            >
+              <span class="text-sm font-medium text-n-slate-12">
+                {{
+                  t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_ENABLED')
+                }}
+              </span>
+              <Switch
+                v-model="state.voiceSettings.silencePromptEnabled"
+                class="data-[state=checked]:!bg-n-violet-9"
+              />
+            </div>
+            <template v-if="state.voiceSettings.silencePromptEnabled">
+              <Input
+                v-model="state.voiceSettings.silencePromptAfterSeconds"
+                type="number"
+                min="0"
+                step="0.1"
+                :label="
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_FIRST_DELAY'
+                  )
+                "
+              />
+              <Input
+                v-model="state.voiceSettings.silencePrompt"
+                :label="
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_FIRST_MESSAGE'
+                  )
+                "
+              />
+              <Input
+                v-model="state.voiceSettings.secondSilencePromptAfterSeconds"
+                type="number"
+                min="0"
+                step="0.1"
+                :label="
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_SECOND_DELAY'
+                  )
+                "
+              />
+              <Input
+                v-model="state.voiceSettings.secondSilencePrompt"
+                :label="
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_SECOND_MESSAGE'
+                  )
+                "
+              />
+              <Input
+                v-model="state.voiceSettings.maxSilenceSeconds"
+                type="number"
+                min="0"
+                step="0.1"
+                :label="
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_FINAL_DELAY'
+                  )
+                "
+              />
+              <Input
+                v-model="state.voiceSettings.finalSilenceMessage"
+                :label="
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_FINAL_MESSAGE'
+                  )
+                "
+              />
+              <div
+                class="md:col-span-2 rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
+              >
+                <span class="text-sm font-medium text-n-slate-12">
+                  {{
+                    t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.SILENCE_END_CALL')
+                  }}
+                </span>
+                <Switch
+                  v-model="state.voiceSettings.endCallOnSilenceEnabled"
+                  class="data-[state=checked]:!bg-n-violet-9"
+                />
+              </div>
+            </template>
+          </div>
+        </details>
         <div
           v-if="isGeminiLive"
           data-test-id="assistant-gemini-context-compression"

@@ -26,6 +26,25 @@ class AiSettings(ContextModel):
     system_prompt: str = Field(min_length=1, max_length=100_000)
     first_message: str | None = Field(default=None, max_length=2_000)
     closing_message: str | None = Field(default=None, max_length=2_000)
+    manager_handoff_mode: Literal["live_transfer", "callback", "disabled"] = (
+        "live_transfer"
+    )
+    callback_message: str = Field(
+        default="Спасибо, я передам информацию. Наш менеджер вам перезвонит.",
+        min_length=1,
+        max_length=2_000,
+    )
+    transfer_message: str = Field(
+        default="Сейчас соединю вас со специалистом.",
+        min_length=1,
+        max_length=2_000,
+    )
+    transfer_failure_mode: Literal["callback", "continue", "end_call"] = "continue"
+    transfer_failure_message: str = Field(
+        default="Не удалось соединить со специалистом. Наш менеджер вам перезвонит.",
+        min_length=1,
+        max_length=2_000,
+    )
     max_duration_sec: int = Field(default=900, ge=1, le=14_400)
     temperature: float = Field(default=0.3, ge=0, le=2)
     max_output_tokens: int = Field(default=1_024, ge=1, le=65_536)
@@ -40,9 +59,9 @@ class AiSettings(ContextModel):
     prefix_padding_ms: int = Field(default=120, ge=0, le=5_000)
     silence_duration_ms: int = Field(default=300, ge=0, le=10_000)
     silence_prompt_enabled: bool = True
-    silence_prompt_after_ms: int = Field(default=2_500, ge=100, le=3_600_000)
-    second_silence_prompt_after_ms: int = Field(default=6_500, ge=100, le=3_600_000)
-    max_silence_ms: int = Field(default=18_000, ge=100, le=3_600_000)
+    silence_prompt_after_ms: int = Field(default=5_000, ge=0, le=3_600_000)
+    second_silence_prompt_after_ms: int = Field(default=12_000, ge=0, le=3_600_000)
+    max_silence_ms: int = Field(default=25_000, ge=0, le=3_600_000)
     end_call_on_silence_enabled: bool = True
     silence_prompt: str = "Вы ещё на линии?"
     second_silence_prompt: str = "Подскажите, вы ещё на линии?"

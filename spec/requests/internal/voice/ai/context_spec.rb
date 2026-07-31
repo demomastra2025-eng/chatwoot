@@ -46,6 +46,13 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
         voice: 'Puck',
         language: 'ru-KZ',
         first_message: 'Здравствуйте! Чем могу помочь?',
+        manager_handoff_mode: 'callback',
+        callback_message: 'Спасибо. Наш менеджер вам перезвонит.',
+        transfer_failure_mode: 'end_call',
+        transfer_failure_message: 'Соединить не удалось. Завершаю звонок.',
+        silence_prompt_after_ms: 6000,
+        second_silence_prompt_after_ms: 14_000,
+        max_silence_ms: 30_000,
         max_duration_sec: 600,
         interruptions_enabled: true
       }
@@ -76,7 +83,10 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       get '/internal/voice/ai/context',
           params: { call_ref: call_session.external_call_ref, account_id: account.id },
-          headers: { 'Authorization' => 'Bearer voice-secret' },
+          headers: {
+            'Authorization' => 'Bearer voice-secret',
+            'X-OneLink-Voice-Capabilities' => 'callback_handoff_v1'
+          },
           as: :json
     end
 
@@ -102,6 +112,13 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'proactive_audio_enabled' => false,
       'api_version' => 'v1beta',
       'first_message' => 'Здравствуйте! Чем могу помочь?',
+      'manager_handoff_mode' => 'callback',
+      'callback_message' => 'Спасибо. Наш менеджер вам перезвонит.',
+      'transfer_failure_mode' => 'end_call',
+      'transfer_failure_message' => 'Соединить не удалось. Завершаю звонок.',
+      'silence_prompt_after_ms' => 6000,
+      'second_silence_prompt_after_ms' => 14_000,
+      'max_silence_ms' => 30_000,
       'interruptions_enabled' => true,
       'interruption_mode' => 'transcript_confirmed',
       'clear_audio_on_interrupt' => true,
@@ -137,15 +154,81 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(system_prompt).not_to include('artifact_ids')
     expect(body.dig('captain', 'assistant_id')).to eq(assistant.id)
     expect(body.dig('captain', 'system_prompt')).to include('Answer callers using OneLink account context.')
-    expect(body.dig('transfer', 'operator_agent_aor')).to eq('sip:1001@example.test')
+    expect(body['transfer']).to include(
+      'enabled' => true,
+      'mode' => 'callback',
+      'callback_message' => 'Спасибо. Наш менеджер вам перезвонит.',
+      'failure_mode' => 'end_call',
+      'failure_message' => 'Соединить не удалось. Завершаю звонок.'
+    )
+    expect(body['transfer']).not_to have_key('operator_agent_aor')
     expect(body['recording']).to include(
       'enabled' => true,
       'source' => 'onelink_runtime',
       'storage_provider' => 'onelink_storage'
     )
     expect(body['tools'].pluck('name')).to include('find_contact', 'create_note', 'request_transfer', 'end_call')
+    transfer_tool = body['tools'].find { |tool| tool['name'] == 'request_transfer' }
+    expect(transfer_tool['description']).to include('manager for a callback')
     end_call_tool = body['tools'].find { |tool| tool['name'] == 'end_call' }
     expect(end_call_tool['timeout_ms']).to be >= 5000
+  end
+
+  it 'fails closed for callback handoff when the runtime lacks callback capability' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body
+    expect(body.dig('ai', 'manager_handoff_mode')).to eq('disabled')
+    expect(body['transfer']).to include('enabled' => false, 'mode' => 'disabled')
+    expect(body['transfer']).not_to have_key('operator_agent_aor')
+    expect(body['tools'].pluck('name')).not_to include('request_transfer')
+  end
+
+  it 'removes manager transfer capability when voice handoff is disabled' do
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        manager_handoff_mode: 'disabled'
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('transfer', 'enabled')).to be(false)
+    expect(response.parsed_body['tools'].pluck('name')).not_to include('request_transfer')
+  end
+
+  it 'keeps the SIP target only for live transfer mode' do
+    number_binding.routing_policy.update!(
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        manager_handoff_mode: 'live_transfer'
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['transfer']).to include(
+      'enabled' => true,
+      'mode' => 'live_transfer',
+      'operator_agent_aor' => 'sip:1001@example.test'
+    )
   end
 
   it 'adds language-following instructions only for native Gemini auto language' do

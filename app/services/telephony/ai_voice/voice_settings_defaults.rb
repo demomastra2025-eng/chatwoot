@@ -16,7 +16,6 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'max_duration_sec' => 900,
     'first_message' => 'Здравствуйте! Чем могу помочь?',
     'closing_message' => 'Спасибо за звонок. Хорошего дня!',
-    'transfer_message' => 'Сейчас соединю вас со специалистом.',
     'interruptions_enabled' => true,
     'interruption_mode' => 'transcript_confirmed',
     'clear_audio_on_interrupt' => true,
@@ -35,9 +34,6 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'post_interrupt_resume_delay_ms' => 250,
     'min_interrupt_words' => 1,
     'silence_prompt_enabled' => true,
-    'silence_prompt_after_ms' => 2500,
-    'second_silence_prompt_after_ms' => 6500,
-    'max_silence_ms' => 18_000,
     'end_call_on_silence_enabled' => true,
     'silence_prompt' => 'Вы ещё на линии? Могу подсказать варианты.',
     'second_silence_prompt' => 'Если удобно, скажите коротко: запись, статус заявки или оператор.',
@@ -69,7 +65,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'ambient_noise_volume_dbfs' => -42,
     'ambient_noise_duck_on_caller_speech' => true,
     'ambient_noise_outbound_only' => true
-  }.freeze
+  }.merge(Telephony::AiVoice::VoiceLifecycleSettings::DEFAULTS).freeze
 
   PROVIDER_DEFAULTS = {
     'gemini-live' => {
@@ -140,6 +136,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
     def normalize_provider_specific_values!(normalized, provider, defaults)
       normalized['thinking_level'] = defaults['thinking_level'] unless THINKING_LEVELS.include?(normalized['thinking_level'])
+      Telephony::AiVoice::VoiceLifecycleSettings.normalize!(normalized, defaults)
       normalize_auto_language!(normalized, provider)
       normalize_proactive_audio!(normalized, provider)
     end

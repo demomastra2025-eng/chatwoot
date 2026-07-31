@@ -43,6 +43,7 @@ async def test_context_uses_bearer_and_retries_transient_status():
     assert result["call_ref"] == "call-1"
     assert len(requests) == 2
     assert requests[0].headers["authorization"] == "Bearer callback-secret"
+    assert requests[0].headers["x-onelink-voice-capabilities"] == "callback_handoff_v1"
 
 
 @pytest.mark.asyncio

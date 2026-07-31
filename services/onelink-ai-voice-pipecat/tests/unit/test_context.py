@@ -20,6 +20,13 @@ def payload():
             "language": "ru-KZ",
             "system_prompt": "Коротко отвечай.",
             "first_message": "Здравствуйте!",
+            "manager_handoff_mode": "callback",
+            "callback_message": "Наш менеджер вам перезвонит.",
+            "transfer_failure_mode": "end_call",
+            "transfer_failure_message": "Соединить не удалось.",
+            "silence_prompt_after_ms": 6000,
+            "second_silence_prompt_after_ms": 14000,
+            "max_silence_ms": 30000,
             "max_duration_sec": 600,
             "max_silence_sec": 30,
         },
@@ -52,6 +59,12 @@ def test_normalizes_context_without_calling_pipecat_a_provider():
     assert context.ai.proactive_audio_enabled is False
     assert context.ai.thinking_level == "minimal"
     assert context.ai.context_window_compression_enabled is True
+    assert context.ai.manager_handoff_mode == "callback"
+    assert context.ai.callback_message == "Наш менеджер вам перезвонит."
+    assert context.ai.transfer_failure_mode == "end_call"
+    assert context.ai.silence_prompt_after_ms == 6000
+    assert context.ai.second_silence_prompt_after_ms == 14000
+    assert context.ai.max_silence_ms == 30000
     assert context.tools[0].name == "create_note"
     assert context.correlation.runtime_session_id
 
@@ -121,6 +134,21 @@ def test_context_accepts_zero_foreground_wait_from_rails_contract():
     context = VoiceContext.model_validate(raw)
 
     assert context.ai.tool_foreground_wait_ms == 0
+
+
+def test_context_accepts_explicit_zero_silence_thresholds_from_rails_contract():
+    raw = payload()
+    raw["ai"].update(
+        silence_prompt_after_ms=0,
+        second_silence_prompt_after_ms=0,
+        max_silence_ms=0,
+    )
+
+    context = VoiceContext.model_validate(raw)
+
+    assert context.ai.silence_prompt_after_ms == 0
+    assert context.ai.second_silence_prompt_after_ms == 0
+    assert context.ai.max_silence_ms == 0
 
 
 def test_context_rejects_disabled_tool_and_invalid_duration():

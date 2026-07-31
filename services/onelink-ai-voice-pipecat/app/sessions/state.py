@@ -64,6 +64,14 @@ class SessionState:
         self.user_turn += 1
         self.touch()
 
+    def bind_tool_action_handler(
+        self,
+        handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any] | None]],
+    ) -> None:
+        if self._active_tool_calls:
+            raise RuntimeError("Cannot bind terminal action handler during tool execution")
+        self._tool_action_handler = handler
+
     def spawn(self, work: Coroutine[Any, Any, Any]) -> None:
         task = asyncio.create_task(work)
         self._background_tasks.add(task)
@@ -219,6 +227,13 @@ class SessionState:
                     transport_result = await self._tool_action_handler(result)
                     if transport_result:
                         result = {**result, "runtime_control": transport_result}
+                        if transport_result.get("continue_call") is True:
+                            result = {
+                                "status": "failed",
+                                "action": "continue",
+                                "error": "transfer_failed",
+                                "runtime_control": transport_result,
+                            }
                 self.spawn(
                     self.safe_control(
                         "tool_completed",
