@@ -2301,9 +2301,15 @@
         },
         "REQUEST_TEMPLATE": {
           "LABEL": "Request Body Template (Optional)",
-          "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
-          "HELP_TEXT": "Request templates support the same Liquid variables as the endpoint URL. Only fields allowed in the assistant's Context access settings are exposed to custom tools.",
-          "FORM_URLENCODED_HELP_TEXT": "Provide a JSON object with form fields. After Liquid values are rendered, OneLink safely converts it into an application/x-www-form-urlencoded body."
+          "PLACEHOLDER": "{'{'}\n  \"order_id\": {'{{'} order_id | json_value {'}}'}\n{'}'}",
+          "HELP_TEXT": "Click a parameter to add it safely to the JSON body. The json_value filter correctly serializes strings, numbers, booleans, arrays, and objects. Only fields allowed for the assistant are available.",
+          "FORM_URLENCODED_HELP_TEXT": "Provide a JSON object with form fields. After values are rendered safely, OneLink converts it into an application/x-www-form-urlencoded body.",
+          "PARAMETERS": "Available parameters",
+          "GENERATE": "Generate JSON",
+          "ADD_MISSING": "Add missing",
+          "PARAM_USED": "Parameter {name} is already used in the template",
+          "PARAM_UNUSED": "Add parameter {name} to the template",
+          "INSERT_ERROR": "Parameters can only be added automatically to a JSON object. Fix the template or add the variable manually."
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Response Template (Optional)",

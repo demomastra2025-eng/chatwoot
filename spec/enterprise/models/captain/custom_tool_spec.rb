@@ -708,6 +708,52 @@ RSpec.describe Captain::CustomTool, type: :model do
         expect(result).to eq('{ "order_id": "12345", "source": "chatwoot" }')
       end
 
+      it 'safely serializes typed values with the json_value filter' do
+        tool = create(
+          :captain_custom_tool,
+          account: account,
+          request_template: <<~LIQUID.squish
+            {
+              "name": {{ name | json_value }},
+              "count": {{ count | json_value }},
+              "active": {{ active | json_value }},
+              "tags": {{ tags | json_value }},
+              "metadata": {{ metadata | json_value }}
+            }
+          LIQUID
+        )
+
+        result = tool.build_request_body(
+          {
+            name: "O\"Connor\nАлматы",
+            count: 2.5,
+            active: false,
+            tags: %w[priority new],
+            metadata: { source: 'captain' }
+          }
+        )
+
+        expect(JSON.parse(result)).to eq(
+          'name' => "O\"Connor\nАлматы",
+          'count' => 2.5,
+          'active' => false,
+          'tags' => %w[priority new],
+          'metadata' => { 'source' => 'captain' }
+        )
+      end
+
+      it 'rejects a rendered JSON body that is invalid' do
+        tool = create(
+          :captain_custom_tool,
+          account: account,
+          request_template: '{"name":"{{ name }}"}'
+        )
+
+        expect do
+          tool.build_request_body({ name: 'O"Connor' })
+        end.to raise_error(ArgumentError, 'JSON request body template rendered invalid JSON')
+      end
+
       it 'renders request body with captain context variables' do
         tool = create(:captain_custom_tool, account: account,
                                             request_template: '{ "phone": "{{ contact.phone_number }}", "order_id": "{{ conversation.custom_attributes.order_id }}" }')
@@ -748,6 +794,31 @@ RSpec.describe Captain::CustomTool, type: :model do
           'note' => "first\nsecond",
           'city' => 'Алматы',
           'count' => '2'
+        )
+      end
+
+      it 'supports json_value expressions in a form request body' do
+        tool = create(
+          :captain_custom_tool,
+          account: account,
+          http_method: 'POST',
+          request_body_type: 'form_urlencoded',
+          request_template: '{"name":{{ name | json_value }},"tags":{{ tags | json_value }}}'
+        )
+
+        result = tool.build_request_body(
+          {
+            name: "O\"Connor\nАлматы",
+            tags: %w[priority new]
+          }
+        )
+
+        expect(URI.decode_www_form(result)).to eq(
+          [
+            ['name', "O\"Connor\nАлматы"],
+            %w[tags priority],
+            %w[tags new]
+          ]
         )
       end
     end

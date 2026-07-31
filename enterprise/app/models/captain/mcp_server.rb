@@ -98,7 +98,7 @@ class Captain::McpServer < ApplicationRecord
     "captain_#{account_id}_#{slug}"
   end
 
-  def client_options
+  def client_options(request_timeout_seconds: request_timeout)
     config = server_config.deep_symbolize_keys
     config[:oauth] = oauth_client_config(config[:oauth]) if http_transport? && oauth_configured?
 
@@ -106,7 +106,7 @@ class Captain::McpServer < ApplicationRecord
       name: client_name,
       transport_type: transport_type.to_sym,
       start: false,
-      request_timeout: request_timeout,
+      request_timeout: request_timeout_seconds.to_i * 1000,
       config: config
     }
   end

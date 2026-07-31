@@ -45,6 +45,21 @@ const ToolTestPanelStub = defineComponent({
   },
 });
 
+const TextAreaStub = defineComponent({
+  name: 'TextArea',
+  props: {
+    modelValue: { type: String, default: '' },
+    label: { type: String, default: '' },
+  },
+  setup(props, { slots }) {
+    return () =>
+      h('div', { 'data-label': props.label }, [
+        slots.default?.(),
+        h('textarea', { value: props.modelValue }),
+      ]);
+  },
+});
+
 const buildWrapper = (props = {}) =>
   shallowMount(CustomToolForm, {
     props: {
@@ -54,6 +69,7 @@ const buildWrapper = (props = {}) =>
     global: {
       stubs: {
         ToolTestPanel: ToolTestPanelStub,
+        TextArea: TextAreaStub,
       },
     },
   });
@@ -136,5 +152,52 @@ describe('CustomToolForm create flow', () => {
       request_body_type: 'form_urlencoded',
       request_template: '{"phone":"{{ phone }}"}',
     });
+  });
+
+  it('inserts template parameters as safely serialized JSON values', async () => {
+    const wrapper = buildWrapper({
+      mode: 'edit',
+      tool: {
+        id: 42,
+        title: 'Create lead',
+        endpoint_url: 'https://api.example.com/leads',
+        http_method: 'POST',
+        request_body_type: 'json',
+        request_template: '',
+        auth_type: 'none',
+        auth_config: {},
+        param_schema: [
+          {
+            name: 'customer_name',
+            type: 'string',
+            description: 'Customer name',
+            source: 'agent',
+            request_location: 'template',
+          },
+          {
+            name: 'tenant_id',
+            type: 'string',
+            source: 'fixed',
+            fixed_value: 'tenant-42',
+            request_location: 'header',
+            request_key: 'X-Tenant-ID',
+          },
+        ],
+      },
+    });
+
+    await wrapper
+      .find(
+        'button[title="CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.PARAM_UNUSED"]'
+      )
+      .trigger('click');
+
+    const requestTemplate = wrapper.find(
+      '[data-label="CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.LABEL"] textarea'
+    );
+    expect(requestTemplate.element.value).toBe(`{
+  "customer_name": {{ customer_name | json_value }}
+}`);
+    expect(requestTemplate.element.value).not.toContain('tenant_id');
   });
 });

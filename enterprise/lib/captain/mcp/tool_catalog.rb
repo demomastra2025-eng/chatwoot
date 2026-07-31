@@ -1,5 +1,13 @@
+require 'socket'
+require 'timeout'
+
 class Captain::Mcp::ToolCatalog
   CACHE_TTL = 5.minutes
+  FAILURE_CACHE_TTL = 30.seconds
+  DISCOVERY_TIMEOUT_SECONDS = 5
+  DISCOVERY_MAX_ATTEMPTS = 2
+  DISCOVERY_RETRY_DELAY_SECONDS = 0.1
+  RETRYABLE_HTTP_STATUSES = [408, 425, 429, 500, 502, 503, 504].freeze
 
   class << self
     def available_tools_for(assistant, scope_name)
@@ -26,9 +34,17 @@ class Captain::Mcp::ToolCatalog
     end
 
     def tools(refresh: false)
-      return fetch_tools if refresh
+      if refresh
+        tools = fetch_tools_with_retry
+        Rails.cache.delete(failure_cache_key)
+        return tools
+      end
+      return [] if Rails.cache.exist?(failure_cache_key)
 
-      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { fetch_tools }
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { fetch_tools_with_retry }
+    rescue StandardError
+      Rails.cache.write(failure_cache_key, true, expires_in: FAILURE_CACHE_TTL)
+      raise
     end
 
     private
@@ -37,8 +53,29 @@ class Captain::Mcp::ToolCatalog
       ['captain', 'mcp_server_tools', @mcp_server.id, @mcp_server.updated_at.to_i].join(':')
     end
 
+    def failure_cache_key
+      [cache_key, 'failure'].join(':')
+    end
+
+    def fetch_tools_with_retry
+      attempts = 0
+
+      begin
+        attempts += 1
+        fetch_tools
+      rescue StandardError => e
+        raise unless retryable_discovery_error?(e) && attempts < DISCOVERY_MAX_ATTEMPTS
+
+        sleep(DISCOVERY_RETRY_DELAY_SECONDS)
+        retry
+      end
+    end
+
     def fetch_tools
-      ClientBuilder.with_client(@mcp_server) do |client|
+      Captain::Mcp::ClientBuilder.with_client(
+        @mcp_server,
+        timeout_seconds: DISCOVERY_TIMEOUT_SECONDS
+      ) do |client|
         client.tools(refresh: true).map do |tool|
           {
             id: tool_id_for(tool.name),
@@ -51,6 +88,26 @@ class Captain::Mcp::ToolCatalog
           }
         end
       end
+    end
+
+    def retryable_discovery_error?(error)
+      return true if transient_system_error?(error)
+      return false unless defined?(RubyLLM::MCP::Errors)
+      return true if error.is_a?(RubyLLM::MCP::Errors::TimeoutError)
+      return false unless error.is_a?(RubyLLM::MCP::Errors::TransportError)
+
+      RETRYABLE_HTTP_STATUSES.include?(error.code.to_i) || error.message.start_with?('HTTPX Error')
+    end
+
+    def transient_system_error?(error)
+      [
+        Timeout::Error,
+        EOFError,
+        SocketError,
+        Errno::ECONNREFUSED,
+        Errno::ECONNRESET,
+        Errno::ETIMEDOUT
+      ].any? { |error_class| error.is_a?(error_class) }
     end
 
     def tool_id_for(tool_name)
