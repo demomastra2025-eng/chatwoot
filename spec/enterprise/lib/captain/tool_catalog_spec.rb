@@ -173,6 +173,18 @@ RSpec.describe Captain::ToolCatalog do
       expect(tool_ids).to include('mcp__github_mcp__list_issues')
     end
 
+    it 'keeps built-in tools available when MCP discovery fails' do
+      create(:captain_mcp_server, account: account)
+      allow(Captain::Mcp::ToolCatalog::DiscoveryService).to receive(:new).and_raise(
+        NameError,
+        'broken MCP discovery'
+      )
+
+      tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+
+      expect(tool_ids).to include('faq_lookup', 'handoff', 'create_deal')
+    end
+
     it 'normalizes first-class source types across system, custom, MCP, and skill tools' do
       custom_tool = create(:captain_custom_tool, account: account)
       allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)

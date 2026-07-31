@@ -1506,9 +1506,15 @@
         },
         "REQUEST_TEMPLATE": {
           "LABEL": "Сұрау денесінің шаблоны (міндетті емес)",
-          "PLACEHOLDER": "{'{'}\n  \"order_id\": \"{'{{'} order_id {'}}'}\"\n{'}'}",
-          "HELP_TEXT": "Request template endpoint URL сияқты Liquid айнымалыларын қолдайды. Custom tools ішінде ассистенттің Context access баптауларында рұқсат етілген өрістер ғана қолжетімді.",
-          "FORM_URLENCODED_HELP_TEXT": "Форма өрістерін JSON объектісімен беріңіз. Liquid мәндері қойылғаннан кейін OneLink оны қауіпсіз application/x-www-form-urlencoded body пішіміне түрлендіреді."
+          "PLACEHOLDER": "{'{'}\n  \"order_id\": {'{{'} order_id | json_value {'}}'}\n{'}'}",
+          "HELP_TEXT": "Параметрді JSON денесіне қауіпсіз қосу үшін оны басыңыз. json_value сүзгісі жолдарды, сандарды, boolean мәндерін, массивтер мен объектілерді дұрыс сериализациялайды. Ассистентке рұқсат етілген өрістер ғана қолжетімді.",
+          "FORM_URLENCODED_HELP_TEXT": "Форма өрістерін JSON объектісімен беріңіз. Мәндер қауіпсіз қойылғаннан кейін OneLink оны application/x-www-form-urlencoded body пішіміне түрлендіреді.",
+          "PARAMETERS": "Қолжетімді параметрлер",
+          "GENERATE": "JSON құру",
+          "ADD_MISSING": "Жетіспейтіндерді қосу",
+          "PARAM_USED": "{name} параметрі шаблонда қолданылған",
+          "PARAM_UNUSED": "{name} параметрін шаблонға қосу",
+          "INSERT_ERROR": "Параметрлерді автоматты түрде тек JSON объектісіне қосуға болады. Шаблонды түзетіңіз немесе айнымалыны қолмен қосыңыз."
         },
         "RESPONSE_TEMPLATE": {
           "LABEL": "Жауап шаблоны (міндетті емес)",

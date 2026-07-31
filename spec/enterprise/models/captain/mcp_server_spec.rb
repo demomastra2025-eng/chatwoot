@@ -55,9 +55,15 @@ RSpec.describe Captain::McpServer, type: :model do
         name: 'captain_12_github_mcp',
         transport_type: :streamable,
         start: false,
-        request_timeout: 30
+        request_timeout: 30_000
       )
       expect(server.client_options[:config]).to eq(url: 'https://example.com/mcp')
+    end
+
+    it 'converts an explicit timeout override from seconds to MCP milliseconds' do
+      server = build(:captain_mcp_server, request_timeout: 30)
+
+      expect(server.client_options(request_timeout_seconds: 5)[:request_timeout]).to eq(5000)
     end
 
     it 'injects persisted OAuth storage for HTTP transports when OAuth is configured' do

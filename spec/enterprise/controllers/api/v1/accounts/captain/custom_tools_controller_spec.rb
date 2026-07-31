@@ -562,7 +562,12 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
           description: 'Sends lead updates to an external system',
           endpoint_url: 'https://api.example.com/hooks/{{ manager_name }}/{{ pipeline }}?contact_id={{ customer_id }}',
           http_method: 'POST',
-          request_template: '{"manager":"{{ manager_name }}","pipeline":"{{ pipeline }}","contact_id":{{ customer_id }},"phone":"{{ customer_phone }}"}',
+          request_template: [
+            '{"manager":{{ manager_name | json_value }},',
+            '"pipeline":{{ pipeline | json_value }},',
+            '"contact_id":{{ customer_id | json_value }},',
+            '"phone":{{ customer_phone | json_value }}}'
+          ].join,
           response_template: '{{ response.status }}',
           auth_type: 'none',
           auth_config: {},
@@ -646,6 +651,27 @@ RSpec.describe 'Api::V1::Accounts::Captain::CustomTools', type: :request do
                                                 url: 'https://api.example.com/hooks/alice/sales?contact_id=42',
                                                 body: '{"manager":"alice","pipeline":"sales","contact_id":42,"phone":"+1234567890"}'
                                               })
+        expect(WebMock).not_to have_requested(:post, /api\.example\.com/)
+      end
+
+      it 'rejects invalid rendered JSON before executing the outbound request' do
+        post "/api/v1/accounts/#{account.id}/captain/custom_tools/test",
+             params: test_attributes.deep_merge(
+               preview_only: false,
+               custom_tool: {
+                 request_template: '{"phone":"{{ customer_phone }}"}'
+               },
+               test_payload: {
+                 context_values: {
+                   'contact.phone_number': 'O"Connor'
+                 }
+               }
+             ),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include('JSON request body template rendered invalid JSON')
         expect(WebMock).not_to have_requested(:post, /api\.example\.com/)
       end
 

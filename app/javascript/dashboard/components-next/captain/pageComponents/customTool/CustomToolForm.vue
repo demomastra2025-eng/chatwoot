@@ -23,6 +23,12 @@ import ParamRow from './ParamRow.vue';
 import AuthConfig from './AuthConfig.vue';
 import HttpOptions from './HttpOptions.vue';
 import ToolTestPanel from './ToolTestPanel.vue';
+import {
+  insertMissingRequestTemplateParams,
+  insertRequestTemplateParam,
+  requestTemplateUsesParam,
+  templateBodyParams,
+} from './requestTemplate';
 
 const props = defineProps({
   mode: {
@@ -351,6 +357,63 @@ const requestBodyHelpText = computed(() => {
 
   return t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.HELP_TEXT');
 });
+
+const requestTemplateParams = computed(() =>
+  templateBodyParams(state.param_schema)
+);
+
+const isRequestTemplateParamUsed = param =>
+  requestTemplateUsesParam(state.request_template, param.name);
+
+const unusedRequestTemplateParams = computed(() =>
+  requestTemplateParams.value.filter(
+    param => !isRequestTemplateParamUsed(param)
+  )
+);
+
+const requestTemplateParamTitle = param => {
+  if (isRequestTemplateParamUsed(param)) {
+    return t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.PARAM_USED', {
+      name: param.name,
+    });
+  }
+
+  return t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.PARAM_UNUSED', {
+    name: param.name,
+  });
+};
+
+const requestTemplateActionLabel = computed(() =>
+  state.request_template?.trim()
+    ? t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.ADD_MISSING')
+    : t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.GENERATE')
+);
+
+const showRequestTemplateInsertError = () =>
+  useAlert(t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.INSERT_ERROR'));
+
+const insertRequestTemplateParamField = param => {
+  const result = insertRequestTemplateParam(state.request_template, param);
+  if (result.reason === 'invalid_object') {
+    showRequestTemplateInsertError();
+    return;
+  }
+
+  state.request_template = result.template;
+};
+
+const insertMissingRequestTemplateParamFields = () => {
+  const result = insertMissingRequestTemplateParams(
+    state.request_template,
+    state.param_schema
+  );
+  if (result.reason === 'invalid_object') {
+    showRequestTemplateInsertError();
+    return;
+  }
+
+  state.request_template = result.template;
+};
 
 const responseTemplatePlaceholder = computed(() => '{{ response.some_field }}');
 
@@ -733,7 +796,55 @@ const handleSubmit = async () => {
       :placeholder="t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.PLACEHOLDER')"
       :rows="4"
       class="[&_textarea]:font-mono"
-    />
+    >
+      <div
+        v-if="requestTemplateParams.length"
+        class="flex flex-col gap-2 pb-2 border-b border-n-weak"
+      >
+        <div class="flex gap-2 justify-between items-center">
+          <span class="text-xs font-medium text-n-slate-11">
+            {{ t('CAPTAIN.CUSTOM_TOOLS.FORM.REQUEST_TEMPLATE.PARAMETERS') }}
+          </span>
+          <Button
+            type="button"
+            xs
+            ghost
+            slate
+            icon="i-lucide-braces"
+            :label="requestTemplateActionLabel"
+            :disabled="unusedRequestTemplateParams.length === 0"
+            @click="insertMissingRequestTemplateParamFields"
+          />
+        </div>
+        <div class="flex flex-wrap gap-1.5">
+          <button
+            v-for="param in requestTemplateParams"
+            :key="param[PARAM_UI_KEY]"
+            type="button"
+            class="inline-flex gap-1.5 items-center px-2 py-1 font-mono text-xs rounded-md border transition-colors"
+            :class="
+              isRequestTemplateParamUsed(param)
+                ? 'text-n-teal-11 bg-n-teal-9/10 border-n-teal-8'
+                : 'text-n-slate-11 bg-n-alpha-2 border-n-weak hover:border-n-brand hover:text-n-brand'
+            "
+            :title="requestTemplateParamTitle(param)"
+            :aria-label="requestTemplateParamTitle(param)"
+            :aria-pressed="isRequestTemplateParamUsed(param)"
+            @click="insertRequestTemplateParamField(param)"
+          >
+            <span
+              class="size-1.5 rounded-full"
+              :class="
+                isRequestTemplateParamUsed(param)
+                  ? 'bg-n-teal-9'
+                  : 'bg-n-slate-8'
+              "
+            />
+            {{ param.name }}
+          </button>
+        </div>
+      </div>
+    </TextArea>
     <p v-if="showRequestTemplate" class="text-xs text-n-slate-11 -mt-2">
       {{ requestBodyHelpText }}
     </p>

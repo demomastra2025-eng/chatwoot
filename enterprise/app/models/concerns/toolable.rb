@@ -2,8 +2,12 @@ module Concerns::Toolable
   extend ActiveSupport::Concern
 
   module JsonRequestFilters
+    def json_value(input)
+      JSON.generate(Captain::EncodingNormalizer.utf8(input))
+    end
+
     def json_request_value(input)
-      encoded_value = JSON.generate(Captain::EncodingNormalizer.utf8(input))
+      encoded_value = json_value(input)
       input.is_a?(String) ? encoded_value[1...-1] : encoded_value
     end
   end
@@ -64,7 +68,7 @@ module Concerns::Toolable
   def build_request_body(params, template_context: params)
     return nil if request_template.blank?
 
-    return render_template(request_template, template_context) unless request_body_form_urlencoded?
+    return render_json_request_template(request_template, template_context) unless request_body_form_urlencoded?
 
     encode_form_request_body(render_form_request_template(request_template, template_context))
   end
@@ -135,9 +139,7 @@ module Concerns::Toolable
 
   def add_communication_thread_headers(headers, communication_thread)
     headers['X-Chatwoot-Communication-Thread-Id'] = communication_thread[:id].to_s if communication_thread[:id]
-    if communication_thread[:display_id]
-      headers['X-Chatwoot-Communication-Thread-Display-Id'] = communication_thread[:display_id].to_s
-    end
+    headers['X-Chatwoot-Communication-Thread-Display-Id'] = communication_thread[:display_id].to_s if communication_thread[:display_id]
 
     conversation_ids = Array(communication_thread[:conversation_ids]).compact
     headers['X-Chatwoot-Communication-Thread-Conversation-Ids'] = conversation_ids.join(',') if conversation_ids.present?
@@ -184,9 +186,26 @@ module Concerns::Toolable
 
   private
 
+  def render_json_request_template(template, context)
+    rendered_body = Captain::PromptRegistry.render_inline!(
+      template,
+      variables: context,
+      filters: [JsonRequestFilters]
+    )
+    JSON.parse(rendered_body)
+    rendered_body
+  rescue JSON::ParserError
+    raise ArgumentError, 'JSON request body template rendered invalid JSON'
+  end
+
   def render_form_request_template(template, context)
     escaped_template = template.gsub(/\{\{(.*?)\}\}/m) do
-      "{{#{Regexp.last_match(1)} | json_request_value }}"
+      expression = Regexp.last_match(1)
+      if expression.match?(/\|\s*json_value\b/)
+        "{{#{expression}}}"
+      else
+        "{{#{expression} | json_request_value }}"
+      end
     end
 
     Captain::PromptRegistry.render_inline!(
