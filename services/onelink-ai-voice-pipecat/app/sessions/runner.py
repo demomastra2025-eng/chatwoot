@@ -468,6 +468,13 @@ def _assert_tenant_scope(payload: dict[str, Any], context: VoiceContext) -> None
     requested_account = payload.get("account_id")
     if requested_account is not None and str(requested_account) != str(context.account_id):
         raise OnelinkApiError("OneLink context account mismatch", code="account_scope_mismatch")
+    requested_inbox = payload.get("inbox_id")
+    if (
+        requested_inbox is not None
+        and context.inbox_id is not None
+        and str(requested_inbox) != str(context.inbox_id)
+    ):
+        raise OnelinkApiError("OneLink context inbox mismatch", code="inbox_scope_mismatch")
     requested_call_ref = str(payload.get("call_ref") or "")
     if requested_call_ref != context.call_ref:
         raise OnelinkApiError("OneLink context call mismatch", code="call_scope_mismatch")

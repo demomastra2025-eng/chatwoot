@@ -87,6 +87,7 @@ describe('AssistantSystemSettingsForm', () => {
         end_call_on_silence_enabled: true,
         max_duration_sec: 0,
         interruptions_enabled: true,
+        voice_activity_profile: 'balanced',
         affective_dialog_enabled: false,
       },
     });
@@ -121,6 +122,7 @@ describe('AssistantSystemSettingsForm', () => {
             end_call_on_silence_enabled: false,
             max_duration_sec: 450,
             interruptions_enabled: false,
+            voice_activity_profile: 'noisy',
             proactive_audio_enabled: true,
             affective_dialog_enabled: true,
           },
@@ -149,6 +151,12 @@ describe('AssistantSystemSettingsForm', () => {
     expect(
       wrapper.find('[data-test-id="assistant-gemini-proactive-audio"]').exists()
     ).toBe(true);
+    expect(
+      wrapper.find('[data-test-id="assistant-voice-activity-profile"]').exists()
+    ).toBe(true);
+    expect(wrapper.text()).not.toContain(
+      'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.ACTIVE_RUNTIME'
+    );
     expect(
       wrapper
         .find('[data-test-id="assistant-gemini-affective-dialog"]')
@@ -190,8 +198,38 @@ describe('AssistantSystemSettingsForm', () => {
       end_call_on_silence_enabled: false,
       max_duration_sec: 450,
       interruptions_enabled: false,
+      voice_activity_profile: 'noisy',
       affective_dialog_enabled: true,
     });
+
+    wrapper.vm.state.voiceSettings.provider = 'openai-realtime';
+    await wrapper.vm.$nextTick();
+    expect(
+      wrapper.find('[data-test-id="assistant-voice-activity-profile"]').exists()
+    ).toBe(true);
+  });
+
+  it('normalizes unsupported voice activity profiles before display and save', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        config: {
+          voice_settings: {
+            voice_activity_profile: 'unsupported',
+          },
+        },
+      },
+    });
+
+    expect(wrapper.vm.state.voiceSettings.voiceActivityProfile).toBe(
+      'balanced'
+    );
+
+    wrapper.vm.state.voiceSettings.voiceActivityProfile = 'unsupported';
+    const payload = await wrapper.vm.buildPayload();
+    expect(payload.assistant.config.voice_settings.voice_activity_profile).toBe(
+      'balanced'
+    );
   });
 
   it('round-trips explicit zero silence thresholds', async () => {

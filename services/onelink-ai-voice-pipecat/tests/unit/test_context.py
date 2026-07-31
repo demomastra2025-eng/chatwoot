@@ -59,6 +59,11 @@ def test_normalizes_context_without_calling_pipecat_a_provider():
     assert context.ai.proactive_audio_enabled is False
     assert context.ai.thinking_level == "minimal"
     assert context.ai.context_window_compression_enabled is True
+    assert context.ai.voice_activity_profile == "balanced"
+    assert context.ai.speech_start_sensitivity == "START_SENSITIVITY_LOW"
+    assert context.ai.speech_end_sensitivity == "END_SENSITIVITY_HIGH"
+    assert context.ai.vad_confidence == 0.75
+    assert context.ai.vad_min_volume == 0.6
     assert context.ai.manager_handoff_mode == "callback"
     assert context.ai.callback_message == "Наш менеджер вам перезвонит."
     assert context.ai.transfer_failure_mode == "end_call"

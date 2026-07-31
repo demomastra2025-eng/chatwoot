@@ -13,6 +13,7 @@ from app.sessions import runner as runner_module
 from app.sessions.runner import (
     PipecatSessionRunner,
     TerminalDecision,
+    _assert_tenant_scope,
     _close_recorder,
     _end_call_safely,
     _execute_terminal_action,
@@ -25,6 +26,31 @@ from app.sessions.runner import (
 class FailingRecorder:
     async def close(self):
         raise OSError("synthetic storage failure")
+
+
+def test_tenant_scope_rejects_inbox_mismatch():
+    context = SimpleNamespace(account_id=42, inbox_id=9, call_ref="call-1")
+
+    with pytest.raises(OnelinkApiError) as raised:
+        _assert_tenant_scope(
+            {"account_id": 42, "inbox_id": 10, "call_ref": "call-1"},
+            cast(Any, context),
+        )
+
+    assert raised.value.code == "inbox_scope_mismatch"
+
+
+def test_tenant_scope_allows_missing_inbox_on_either_side():
+    context = SimpleNamespace(account_id=42, inbox_id=None, call_ref="call-1")
+
+    _assert_tenant_scope(
+        {"account_id": 42, "inbox_id": 10, "call_ref": "call-1"},
+        cast(Any, context),
+    )
+    _assert_tenant_scope(
+        {"account_id": 42, "call_ref": "call-1"},
+        cast(Any, SimpleNamespace(account_id=42, inbox_id=9, call_ref="call-1")),
+    )
 
 
 class WatchdogAssembly:

@@ -142,6 +142,35 @@ def test_builds_supported_provider_pipeline(
         assert llm._client._api_client._http_options.api_version == "v1beta"
 
 
+def test_core_pipeline_settings_are_transport_neutral_between_janus_and_preview():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.vad_confidence = 0.82
+    context.ai.vad_min_volume = 0.68
+    settings = _settings()
+
+    janus = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=settings,
+    )
+    preview = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=None,
+        settings=settings,
+        transport_override=janus.transport,
+    )
+
+    assert preview.transport is janus.transport
+    assert preview.provider == janus.provider == "gemini-live"
+    assert type(preview.llm) is type(janus.llm)
+    assert preview.start_on_connect is janus.start_on_connect
+    assert preview.vad.params == janus.vad.params
+
+
 @pytest.mark.parametrize("enabled", [True, False])
 def test_user_turn_strategies_honor_interruption_setting(enabled):
     strategies = _user_turn_strategies(enabled)
@@ -156,6 +185,8 @@ def test_gemini_uses_native_vad_with_assistant_turn_settings():
     context.ai.speech_end_sensitivity = "END_SENSITIVITY_LOW"
     context.ai.prefix_padding_ms = 240
     context.ai.silence_duration_ms = 650
+    context.ai.vad_confidence = 0.85
+    context.ai.vad_min_volume = 0.7
 
     assembly = build_pipeline(
         context=context,
@@ -172,6 +203,10 @@ def test_gemini_uses_native_vad_with_assistant_turn_settings():
     assert vad.end_sensitivity.value == "END_SENSITIVITY_LOW"
     assert vad.prefix_padding_ms == 240
     assert vad.silence_duration_ms == 650
+    assert assembly.vad.params.confidence == 0.85
+    assert assembly.vad.params.start_secs == 0.24
+    assert assembly.vad.params.stop_secs == 0.65
+    assert assembly.vad.params.min_volume == 0.7
 
 
 def test_gemini_disables_native_vad_when_interruptions_are_disabled():
@@ -346,7 +381,7 @@ def test_gemini_falls_back_from_unknown_vad_sensitivity_values():
 
     llm = cast(GeminiLiveLLMService, assembly.llm)
     vad = llm._settings.vad
-    assert vad.start_sensitivity.value == "START_SENSITIVITY_HIGH"
+    assert vad.start_sensitivity.value == "START_SENSITIVITY_LOW"
     assert vad.end_sensitivity.value == "END_SENSITIVITY_HIGH"
 
 

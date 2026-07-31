@@ -481,6 +481,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'humanlike_defaults_profile' => 'standard_v1',
           'provider' => 'gemini-live',
           'model' => 'gemini-3.1-flash-live-preview',
+          'voice_activity_profile' => 'balanced',
           'interruptions_enabled' => true,
           'interruption_mode' => 'transcript_confirmed',
           'clear_audio_on_interrupt' => true,
@@ -585,6 +586,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           first_message: 'Сәлеметсіз бе!',
           max_duration_sec: 450,
           interruptions_enabled: false,
+          voice_activity_profile: 'noisy',
           transfer_message: 'Қазір операторға қосамын.'
         }
 
@@ -605,6 +607,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'voice_character_prompt' => 'Тембр: тёплый эксперт-наставник, паузы короткие.',
           'first_message' => 'Сәлеметсіз бе!',
           'interruptions_enabled' => false,
+          'voice_activity_profile' => 'noisy',
+          'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
+          'speech_end_sensitivity' => 'END_SENSITIVITY_LOW',
+          'vad_confidence' => 0.85,
+          'vad_min_volume' => 0.7,
           'transfer_message' => 'Қазір операторға қосамын.'
         )
         expect(json_response.dig(:config, :voice_settings)).to include(
@@ -770,6 +777,28 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'transfer_message' => 'Қазір операторға қосамын.'
         )
         expect(json_response.dig(:config, :voice_settings, :voice)).to eq('sulafat')
+      end
+
+      it 'discards unsupported voice settings keys' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    voice_settings: {
+                      voice: 'sulafat',
+                      tool_start_phrases: ['Секунду, проверю.'],
+                      unsupported_runtime_option: 'unsafe'
+                    }
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['voice_settings']['voice']).to eq('sulafat')
+        expect(assistant.config['voice_settings']['tool_start_phrases']).to eq(['Секунду, проверю.'])
+        expect(assistant.config['voice_settings']).not_to have_key('unsupported_runtime_option')
       end
 
       it 'merges partial voice settings updates with existing settings and standard defaults' do

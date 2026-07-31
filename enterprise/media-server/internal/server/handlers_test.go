@@ -98,6 +98,29 @@ func TestBuildRuntimeAgentContractReturnsScopedOneTimeStreamShape(t *testing.T) 
 	}
 }
 
+func TestSessionCreationOptionsDefaultOnAndAllowPipecatOptOut(t *testing.T) {
+	defaults := sessionCreationOptions(CreateSessionRequest{})
+	if !defaults.RecordingEnabled || !defaults.RailsCallbacksEnabled {
+		t.Fatalf("expected backward-compatible recording and callbacks defaults, got %#v", defaults)
+	}
+
+	disabled := false
+	pipecat := sessionCreationOptions(CreateSessionRequest{
+		RecordingEnabled:      &disabled,
+		RailsCallbacksEnabled: &disabled,
+	})
+	if pipecat.RecordingEnabled || pipecat.RailsCallbacksEnabled {
+		t.Fatalf("expected Pipecat media bridge opt-outs, got %#v", pipecat)
+	}
+}
+
+func TestHealthCapabilitiesAdvertiseSessionOwnershipControls(t *testing.T) {
+	capabilities := healthCapabilities()
+	if !capabilities.SessionOwnershipControls {
+		t.Fatal("expected session ownership controls capability")
+	}
+}
+
 func TestRuntimeAgentRequestMatchesSessionScope(t *testing.T) {
 	info := session.Info{CallID: "wa-call-1", AccountID: "42"}
 	tests := []struct {

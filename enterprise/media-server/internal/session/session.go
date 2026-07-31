@@ -32,6 +32,19 @@ const (
 	peerCloseTimeout = 2 * time.Second
 )
 
+// CreationOptions controls media-server-owned side effects. The defaults
+// preserve browser/operator and WhatsApp behavior. Dedicated runtime agents
+// may opt out when their runtime owns recording and Rails lifecycle callbacks.
+type CreationOptions struct {
+	RecordingEnabled      bool
+	RailsCallbacksEnabled bool
+}
+
+// DefaultCreationOptions preserves the existing behavior for all callers.
+func DefaultCreationOptions() CreationOptions {
+	return CreationOptions{RecordingEnabled: true, RailsCallbacksEnabled: true}
+}
+
 // MediaLegClosedError is returned when a browser/agent operation arrives after
 // Meta's media leg has already closed. HTTP handlers translate it to a
 // controlled 409 instead of a generic 500.
@@ -133,7 +146,31 @@ func NewSession(
 	id, callID, accountID, direction, metaSDPOffer string,
 	iceServers []webrtc.ICEServer,
 ) (*Session, string, error) {
+	return NewSessionWithOptions(
+		cfg,
+		railsClient,
+		id,
+		callID,
+		accountID,
+		direction,
+		metaSDPOffer,
+		iceServers,
+		DefaultCreationOptions(),
+	)
+}
+
+// NewSessionWithOptions creates a session with explicit media-server side effects.
+func NewSessionWithOptions(
+	cfg *config.Config,
+	railsClient *callback.RailsClient,
+	id, callID, accountID, direction, metaSDPOffer string,
+	iceServers []webrtc.ICEServer,
+	options CreationOptions,
+) (*Session, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.MaxSessionDuration)
+	if !options.RailsCallbacksEnabled {
+		railsClient = nil
+	}
 
 	sess := &Session{
 		ID:                  id,
@@ -161,12 +198,14 @@ func NewSession(
 	}
 	sess.MetaPeer = metaPeer
 
-	// Create the recorder.
-	recorder, err := media.NewRecorder(id, cfg.RecordingsDir)
-	if err != nil {
-		metaPeer.Close()
-		cancel()
-		return nil, "", fmt.Errorf("create recorder: %w", err)
+	var recorder *media.Recorder
+	if options.RecordingEnabled {
+		recorder, err = media.NewRecorder(id, cfg.RecordingsDir)
+		if err != nil {
+			metaPeer.Close()
+			cancel()
+			return nil, "", fmt.Errorf("create recorder: %w", err)
+		}
 	}
 	sess.Recorder = recorder
 

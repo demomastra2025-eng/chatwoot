@@ -54,10 +54,13 @@ class AiSettings(ContextModel):
     thinking_level: Literal["minimal", "low", "medium", "high"] = "minimal"
     context_window_compression_enabled: bool = True
     clear_audio_on_interrupt: bool = True
-    speech_start_sensitivity: str = "START_SENSITIVITY_HIGH"
+    voice_activity_profile: Literal["sensitive", "balanced", "noisy"] = "balanced"
+    speech_start_sensitivity: str = "START_SENSITIVITY_LOW"
     speech_end_sensitivity: str = "END_SENSITIVITY_HIGH"
-    prefix_padding_ms: int = Field(default=120, ge=0, le=5_000)
-    silence_duration_ms: int = Field(default=300, ge=0, le=10_000)
+    prefix_padding_ms: int = Field(default=200, ge=0, le=5_000)
+    silence_duration_ms: int = Field(default=500, ge=0, le=10_000)
+    vad_confidence: float = Field(default=0.75, ge=0, le=1)
+    vad_min_volume: float = Field(default=0.6, ge=0, le=1)
     silence_prompt_enabled: bool = True
     silence_prompt_after_ms: int = Field(default=5_000, ge=0, le=3_600_000)
     second_silence_prompt_after_ms: int = Field(default=12_000, ge=0, le=3_600_000)

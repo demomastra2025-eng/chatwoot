@@ -11,7 +11,31 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'thinking_level' => 'minimal',
         'context_window_compression_enabled' => true,
         'proactive_audio_enabled' => false,
-        'api_version' => 'v1beta'
+        'api_version' => 'v1beta',
+        'voice_activity_profile' => 'balanced',
+        'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
+        'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
+        'prefix_padding_ms' => 200,
+        'silence_duration_ms' => 500,
+        'vad_confidence' => 0.75,
+        'vad_min_volume' => 0.6
+      )
+    end
+
+    it 'normalizes voice activity profiles as one atomic provider and local VAD contract' do
+      expect(described_class.normalize(voice_activity_profile: 'noisy')).to include(
+        'voice_activity_profile' => 'noisy',
+        'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
+        'speech_end_sensitivity' => 'END_SENSITIVITY_LOW',
+        'prefix_padding_ms' => 300,
+        'silence_duration_ms' => 800,
+        'vad_confidence' => 0.85,
+        'vad_min_volume' => 0.7
+      )
+      expect(described_class.normalize(voice_activity_profile: 'unsupported')).to include(
+        'voice_activity_profile' => 'balanced',
+        'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
+        'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH'
       )
     end
 
@@ -40,6 +64,18 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'silence_prompt_after_ms' => 5000,
         'second_silence_prompt_after_ms' => 12_000,
         'max_silence_ms' => 25_000
+      )
+    end
+
+    it 'normalizes a disabled call duration to the bounded runtime default' do
+      expect(described_class.normalize(max_duration_sec: 0)).to include(
+        'max_duration_sec' => described_class::DEFAULTS.fetch('max_duration_sec')
+      )
+      expect(described_class.normalize(max_duration_sec: -1)).to include(
+        'max_duration_sec' => described_class::DEFAULTS.fetch('max_duration_sec')
+      )
+      expect(described_class.normalize(max_duration_sec: 120)).to include(
+        'max_duration_sec' => 120
       )
     end
 

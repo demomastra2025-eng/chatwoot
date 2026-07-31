@@ -214,14 +214,56 @@ class JanusMediaServerClient {
     this.timeoutMs = timeoutMs;
   }
 
-  async createSession({ callId, accountId, sdpOffer, iceServers = [], direction = 'incoming' } = {}) {
-    return this.post('/sessions', {
+  async ensureSessionOwnershipControls() {
+    const payload = await this.get('/health');
+    if (payload?.capabilities?.session_ownership_controls === true) return true;
+
+    const error = new Error('media server does not advertise session ownership controls');
+    error.code = 'media_server_ownership_controls_unavailable';
+    error.statusCode = 503;
+    throw error;
+  }
+
+  async get(path) {
+    if (!this.baseUrl) throw new Error('janus media server URL is required');
+    if (typeof this.fetchImpl !== 'function') throw new Error('fetch implementation is required');
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), this.timeoutMs) : null;
+    try {
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
+        method: 'GET',
+        headers: { accept: 'application/json' },
+        signal: controller?.signal
+      });
+      const payload = await parseResponse(response);
+      if (!response.ok) {
+        throw new Error(payload?.error || `media server request failed: ${response.status}`);
+      }
+      return payload;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async createSession({
+    callId,
+    accountId,
+    sdpOffer,
+    iceServers = [],
+    direction = 'incoming',
+    recordingEnabled,
+    railsCallbacksEnabled
+  } = {}) {
+    return this.post('/sessions', compact({
       call_id: callId,
       account_id: String(accountId ?? ''),
       direction,
       meta_sdp_offer: sdpOffer,
-      ice_servers: iceServers
-    });
+      ice_servers: iceServers,
+      recording_enabled: typeof recordingEnabled === 'boolean' ? recordingEnabled : undefined,
+      rails_callbacks_enabled: typeof railsCallbacksEnabled === 'boolean' ? railsCallbacksEnabled : undefined
+    }));
   }
 
   async setMetaAnswer(sessionId, sdpAnswer) {
@@ -770,6 +812,9 @@ class JanusSipServerProfileSession {
     });
     let run;
     try {
+      const routeDecision = await this.resolveRouteDecision(facade);
+      if (facade.ended) return;
+      facade.request.routing = routeDecision;
       const runtimeEngine = this.runtimeSelector?.select?.(facade.request) || 'legacy';
       if (runtimeEngine === 'pipecat') {
         await this.startPipecatCall(facade);
@@ -790,6 +835,20 @@ class JanusSipServerProfileSession {
         this.log('janus_server_handle_call_failed', { error: error.message });
         await facade.hangup().catch(() => {});
       });
+  }
+
+  async resolveRouteDecision(facade) {
+    if (!this.app || typeof this.app.routeInboundSafely !== 'function') {
+      throw new Error('voice app route resolver is required');
+    }
+    const routeDecision = await this.app.routeInboundSafely(
+      facade.request,
+      facade.request.call_ref
+    );
+    if (!routeDecision || typeof routeDecision !== 'object') {
+      throw new Error('voice app returned an invalid route decision');
+    }
+    return routeDecision;
   }
 
   async startPipecatCall(facade) {
@@ -814,7 +873,17 @@ class JanusSipServerProfileSession {
       throw error;
     }
     await this.pipecatClient.preflightJanus(facade.request);
-    await facade.answer();
+    if (typeof facade.mediaServerClient?.ensureSessionOwnershipControls !== 'function') {
+      const error = new Error('media server ownership capability preflight is not configured');
+      error.code = 'media_server_ownership_controls_unavailable';
+      error.statusCode = 503;
+      throw error;
+    }
+    await facade.mediaServerClient.ensureSessionOwnershipControls();
+    await facade.answer({
+      recordingEnabled: false,
+      railsCallbacksEnabled: false
+    });
     assertPipecatRuntimeStream(facade.request);
     const capability = this.pipecatRuntimeControl?.register?.(facade);
     if (!capability) {
@@ -927,10 +996,10 @@ class JanusSipServerCallFacade extends EventEmitter {
     this.request = buildIncomingRequest({ profile, providerCallId, caller, janus });
   }
 
-  async answer() {
+  async answer(options = {}) {
     if (this.answered) return true;
     if (this.answerPromise) return this.answerPromise;
-    this.answerPromise = this.performAnswer();
+    this.answerPromise = this.performAnswer(options);
     try {
       return await this.answerPromise;
     } finally {
@@ -938,16 +1007,19 @@ class JanusSipServerCallFacade extends EventEmitter {
     }
   }
 
-  async performAnswer() {
+  async performAnswer({ recordingEnabled, railsCallbacksEnabled } = {}) {
     const offerless = !this.janus.jsep?.sdp;
     this.ensureAnswerActive('media session creation');
-    const session = await this.mediaServerClient.createSession({
+    const mediaSessionRequest = {
       callId: this.request.call_ref,
       accountId: this.request.account_id,
       sdpOffer: this.janus.jsep?.sdp || '',
       iceServers: this.profile.ice_servers || [],
       direction: offerless ? 'outgoing' : 'incoming'
-    });
+    };
+    if (typeof recordingEnabled === 'boolean') mediaSessionRequest.recordingEnabled = recordingEnabled;
+    if (typeof railsCallbacksEnabled === 'boolean') mediaSessionRequest.railsCallbacksEnabled = railsCallbacksEnabled;
+    const session = await this.mediaServerClient.createSession(mediaSessionRequest);
     if (!session?.session_id) {
       throw new Error('media server returned an invalid Janus session response');
     }
@@ -1181,10 +1253,6 @@ function buildIncomingRequest({ profile, providerCallId, caller, janus }) {
     app_ref: profile.app_ref,
     direction: 'inbound',
     transport: 'janus_sip',
-    routing: {
-      action: 'ai',
-      reason: 'server_janus_sip_ai_voice'
-    },
     caller_number: callerNumber,
     ingress_number: profile.ingress_number || profile.phone_number || profile.number_ref,
     sip_profile: profile.sip_profile,

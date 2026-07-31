@@ -8,6 +8,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :auto_reply_on_last_incoming,
     :message_collapse_window_seconds, :history_message_limit
   ].freeze
+  VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze
+  VOICE_SETTINGS_SCALAR_FIELDS = (Telephony::AiVoice::VoiceSettingsDefaults::DEFAULTS.keys - VOICE_SETTINGS_ARRAY_FIELDS.keys).freeze
 
   before_action :current_account
   before_action -> { check_authorization(Captain::Assistant) }
@@ -114,7 +116,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     merge_optional_array_param!(permitted, :guardrails)
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
-    merge_optional_config_param!(permitted, :voice_settings)
+    merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)
     merge_optional_config_param!(permitted, :rules)
 
     permitted
@@ -160,11 +162,14 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     end
   end
 
-  def merge_optional_config_param!(permitted, field_name)
+  def merge_optional_config_param!(permitted, field_name, voice_settings: false)
     assistant_config = params.dig(:assistant, :config)
     return unless assistant_config.respond_to?(:key?) && assistant_config.key?(field_name)
 
     raw_value = assistant_config[field_name]
+    if voice_settings && raw_value.is_a?(ActionController::Parameters)
+      raw_value = raw_value.permit(*VOICE_SETTINGS_SCALAR_FIELDS, VOICE_SETTINGS_ARRAY_FIELDS)
+    end
     permitted[:config] ||= {}
     permitted[:config][field_name] = normalize_optional_config_value(raw_value)
   end

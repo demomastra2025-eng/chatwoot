@@ -25,10 +25,6 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'interrupt_ack_enabled' => true,
     'interrupt_ack_phrases' => ['Ага.', 'Понял.', 'Мм.', 'Аха.', 'А-а, понял.'].freeze,
     'interrupt_ack_max_duration_ms' => 700,
-    'speech_start_sensitivity' => 'START_SENSITIVITY_HIGH',
-    'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
-    'prefix_padding_ms' => 120,
-    'silence_duration_ms' => 300,
     'turn_aggregation_delay_ms' => 400,
     'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY',
     'post_interrupt_resume_delay_ms' => 250,
@@ -65,7 +61,8 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'ambient_noise_volume_dbfs' => -42,
     'ambient_noise_duck_on_caller_speech' => true,
     'ambient_noise_outbound_only' => true
-  }.merge(Telephony::AiVoice::VoiceLifecycleSettings::DEFAULTS).freeze
+  }.merge(Telephony::AiVoice::VoiceLifecycleSettings::DEFAULTS)
+             .merge(Telephony::AiVoice::VoiceActivitySettings::DEFAULTS).freeze
 
   PROVIDER_DEFAULTS = {
     'gemini-live' => {
@@ -104,12 +101,13 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     tool_start_after_ms tool_foreground_wait_ms
   ].freeze
 
-  FLOAT_KEYS = %w[temperature ambient_noise_volume_dbfs].freeze
+  FLOAT_KEYS = %w[temperature ambient_noise_volume_dbfs vad_confidence vad_min_volume].freeze
   GEMINI_AUTO_LANGUAGE_MODELS = %w[
     gemini-3.1-flash-live-preview gemini-2.5-flash-native-audio-preview-12-2025
   ].freeze
   GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS
   THINKING_LEVELS = %w[minimal low medium high].freeze
+  MAX_DURATION_SEC_RANGE = (1..7200)
 
   ARRAY_KEYS = %w[
     interrupt_ack_phrases filler_phrases tool_start_phrases tool_delay_phrases tool_failure_phrases
@@ -118,7 +116,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
   class << self
     def normalize(raw_settings = {})
-      raw = raw_settings.respond_to?(:to_h) ? raw_settings.to_h.deep_stringify_keys : {}
+      raw = (raw_settings.respond_to?(:to_h) ? raw_settings.to_h.deep_stringify_keys : {}).slice(*DEFAULTS.keys)
       provider = raw['provider'].presence || DEFAULTS['provider']
       defaults = DEFAULTS.merge(PROVIDER_DEFAULTS.fetch(provider, {}))
       normalized = defaults.merge(raw).each_with_object({}) do |(key, value), result|
@@ -137,6 +135,9 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     def normalize_provider_specific_values!(normalized, provider, defaults)
       normalized['thinking_level'] = defaults['thinking_level'] unless THINKING_LEVELS.include?(normalized['thinking_level'])
       Telephony::AiVoice::VoiceLifecycleSettings.normalize!(normalized, defaults)
+      Telephony::AiVoice::VoiceActivitySettings.normalize!(normalized)
+      duration = normalized['max_duration_sec']
+      normalized['max_duration_sec'] = defaults['max_duration_sec'] unless duration.is_a?(Integer) && MAX_DURATION_SEC_RANGE.cover?(duration)
       normalize_auto_language!(normalized, provider)
       normalize_proactive_audio!(normalized, provider)
     end

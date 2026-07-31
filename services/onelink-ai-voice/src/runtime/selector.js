@@ -17,7 +17,9 @@ class RuntimeSelector {
 
   select(payload = {}) {
     if (!this.enabled) return 'legacy';
-    if (this.accountIds.length === 0 && this.channelIds.length === 0) return 'legacy';
+    if (this.providers.length === 0 || this.accountIds.length === 0 || this.channelIds.length === 0) return 'legacy';
+    if (!isExplicitAiRoute(payload)) return 'legacy';
+    if (isJanusSip(payload) && !isVoiceAgentProfile(payload.sip_profile || payload.sipProfile)) return 'legacy';
     if (!matches(this.providers, payload.provider)) return 'legacy';
     if (!matches(this.accountIds, payload.account_id || payload.accountId)) return 'legacy';
     if (!matches(this.channelIds, payload.inbox_id || payload.inboxId)) return 'legacy';
@@ -26,11 +28,26 @@ class RuntimeSelector {
   }
 }
 
-function assertAiRoute(payload = {}) {
+function isExplicitAiRoute(payload = {}) {
   const action = String(payload.routing?.action || payload.route_decision?.action || '')
     .trim()
     .toLowerCase();
-  if (action === 'ai' || action === 'ai_accept') return true;
+  return action === 'ai' || action === 'ai_accept';
+}
+
+function isJanusSip(payload = {}) {
+  return String(payload.transport || '').trim().toLowerCase() === 'janus_sip';
+}
+
+function isVoiceAgentProfile(profile = {}) {
+  return profile?.voice_agent === true &&
+    String(profile?.profile_kind || '').trim().toLowerCase() === 'voice_agent';
+}
+
+function assertAiRoute(payload = {}) {
+  if (isExplicitAiRoute(payload)) return true;
+
+  const action = String(payload.routing?.action || payload.route_decision?.action || '').trim();
 
   const error = new Error(action
     ? 'Only AI routes are accepted by the AI Voice runtime'

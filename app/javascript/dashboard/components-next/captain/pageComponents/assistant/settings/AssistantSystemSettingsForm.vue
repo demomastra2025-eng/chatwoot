@@ -67,6 +67,7 @@ const DEFAULT_VOICE_SETTINGS = {
   endCallOnSilenceEnabled: true,
   maxDurationSec: 0,
   interruptionsEnabled: true,
+  voiceActivityProfile: 'balanced',
   proactiveAudioEnabled: false,
   affectiveDialogEnabled: false,
 };
@@ -80,6 +81,10 @@ const GEMINI_AUTO_LANGUAGE_MODELS = new Set([
 ]);
 const GEMINI_THINKING_LEVEL_MODELS = new Set(['gemini-3.1-flash-live-preview']);
 const GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS;
+const VOICE_ACTIVITY_PROFILES = new Set(['sensitive', 'balanced', 'noisy']);
+
+const normalizeVoiceActivityProfile = value =>
+  VOICE_ACTIVITY_PROFILES.has(value) ? value : 'balanced';
 
 const VOICE_PROVIDER_OPTIONS = Object.freeze([
   { value: 'gemini-live', label: 'Gemini Live' },
@@ -307,6 +312,21 @@ const voiceThinkingLevelOptions = computed(() => [
   },
 ]);
 
+const voiceActivityProfileOptions = computed(() => [
+  {
+    value: 'sensitive',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_ACTIVITY_SENSITIVE'),
+  },
+  {
+    value: 'balanced',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_ACTIVITY_BALANCED'),
+  },
+  {
+    value: 'noisy',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_ACTIVITY_NOISY'),
+  },
+]);
+
 const managerHandoffOptions = computed(() => [
   {
     value: 'live_transfer',
@@ -484,6 +504,9 @@ const updateStateFromAssistant = assistant => {
     interruptionsEnabled:
       voiceSettings.interruptions_enabled ??
       DEFAULT_VOICE_SETTINGS.interruptionsEnabled,
+    voiceActivityProfile: normalizeVoiceActivityProfile(
+      voiceSettings.voice_activity_profile
+    ),
     proactiveAudioEnabled: Boolean(
       supportsGeminiProactiveAudio(provider, model) &&
         (voiceSettings.proactive_audio_enabled ??
@@ -595,6 +618,9 @@ const buildPayload = async () => {
           ),
           interruptions_enabled: Boolean(
             state.voiceSettings.interruptionsEnabled
+          ),
+          voice_activity_profile: normalizeVoiceActivityProfile(
+            state.voiceSettings.voiceActivityProfile
           ),
           proactive_audio_enabled: Boolean(
             isGeminiProactiveAudioSupported.value &&
@@ -868,39 +894,6 @@ defineExpose({
         </div>
       </summary>
 
-      <div class="mt-4 rounded-lg border border-n-weak bg-n-alpha-1 p-3">
-        <div class="flex items-center gap-2">
-          <i class="i-lucide-phone-call h-4 w-4 text-n-slate-10" />
-          <h5 class="text-sm font-medium text-n-slate-12">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.ACTIVE_RUNTIME') }}
-          </h5>
-        </div>
-        <div class="mt-3 flex flex-wrap gap-2">
-          <span
-            class="rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
-          >
-            {{
-              optionLabel(voiceProviderOptions, state.voiceSettings.provider)
-            }}
-          </span>
-          <span
-            class="rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
-          >
-            {{ optionLabel(voiceModelOptions, state.voiceSettings.model) }}
-          </span>
-          <span
-            class="rounded-full border border-n-weak bg-n-solid-1 px-2.5 py-1 text-xs text-n-slate-11"
-          >
-            {{
-              optionLabel(voiceLanguageOptions, state.voiceSettings.language)
-            }}
-          </span>
-        </div>
-        <p class="mt-3 text-sm text-n-slate-11">
-          {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.RUNTIME_NOTE') }}
-        </p>
-      </div>
-
       <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="flex flex-col gap-1.5">
           <label class="text-sm font-medium text-n-slate-12">
@@ -1123,6 +1116,28 @@ defineExpose({
           :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.MAX_DURATION_SEC')"
           placeholder="900"
         />
+        <div
+          data-test-id="assistant-voice-activity-profile"
+          class="flex flex-col gap-1.5"
+        >
+          <label class="text-sm font-medium text-n-slate-12">
+            {{
+              t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_ACTIVITY_PROFILE')
+            }}
+          </label>
+          <Select
+            v-model="state.voiceSettings.voiceActivityProfile"
+            :options="voiceActivityProfileOptions"
+            class="w-full"
+          />
+          <p class="text-sm text-n-slate-11">
+            {{
+              t(
+                'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE_ACTIVITY_PROFILE_DESCRIPTION'
+              )
+            }}
+          </p>
+        </div>
         <div
           class="rounded-lg border border-n-weak p-3 flex items-center justify-between gap-4"
         >

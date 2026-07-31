@@ -45,11 +45,13 @@ func NewHandlers(cfg *config.Config, mgr *session.Manager) *Handlers {
 
 // CreateSessionRequest is the JSON body for POST /sessions.
 type CreateSessionRequest struct {
-	CallID       string            `json:"call_id"`
-	AccountID    string            `json:"account_id"`
-	Direction    string            `json:"direction"`
-	MetaSDPOffer string            `json:"meta_sdp_offer"`
-	ICEServers   []ICEServerConfig `json:"ice_servers"`
+	CallID                string            `json:"call_id"`
+	AccountID             string            `json:"account_id"`
+	Direction             string            `json:"direction"`
+	MetaSDPOffer          string            `json:"meta_sdp_offer"`
+	ICEServers            []ICEServerConfig `json:"ice_servers"`
+	RecordingEnabled      *bool             `json:"recording_enabled,omitempty"`
+	RailsCallbacksEnabled *bool             `json:"rails_callbacks_enabled,omitempty"`
 }
 
 // ICEServerConfig mirrors webrtc.ICEServer for JSON deserialization.
@@ -178,9 +180,20 @@ type runtimeStreamGrant struct {
 
 // HealthResponse is the JSON response for GET /health.
 type HealthResponse struct {
-	Status         string `json:"status"`
-	ActiveSessions int    `json:"active_sessions"`
-	UptimeSeconds  int    `json:"uptime_seconds"`
+	Status         string             `json:"status"`
+	ActiveSessions int                `json:"active_sessions"`
+	UptimeSeconds  int                `json:"uptime_seconds"`
+	Capabilities   HealthCapabilities `json:"capabilities"`
+}
+
+// HealthCapabilities advertises wire-contract features required for safe
+// mixed-version rollouts.
+type HealthCapabilities struct {
+	SessionOwnershipControls bool `json:"session_ownership_controls"`
+}
+
+func healthCapabilities() HealthCapabilities {
+	return HealthCapabilities{SessionOwnershipControls: true}
 }
 
 // --- Handlers ---
@@ -193,6 +206,7 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 		Status:         "ok",
 		ActiveSessions: metrics.ActiveSessions,
 		UptimeSeconds:  int(time.Since(startTime).Seconds()),
+		Capabilities:   healthCapabilities(),
 	})
 }
 
@@ -222,7 +236,14 @@ func (h *Handlers) CreateSession(w http.ResponseWriter, r *http.Request) {
 
 	iceServers := toWebRTCICEServers(req.ICEServers, h.cfg)
 
-	sess, sdpResult, err := h.manager.CreateSession(req.CallID, req.AccountID, req.Direction, req.MetaSDPOffer, iceServers)
+	sess, sdpResult, err := h.manager.CreateSessionWithOptions(
+		req.CallID,
+		req.AccountID,
+		req.Direction,
+		req.MetaSDPOffer,
+		iceServers,
+		sessionCreationOptions(req),
+	)
 	if err != nil {
 		slog.Error("handler: failed to create session",
 			"call_id", req.CallID,
@@ -249,6 +270,17 @@ func (h *Handlers) CreateSession(w http.ResponseWriter, r *http.Request) {
 	)
 
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+func sessionCreationOptions(req CreateSessionRequest) session.CreationOptions {
+	options := session.DefaultCreationOptions()
+	if req.RecordingEnabled != nil {
+		options.RecordingEnabled = *req.RecordingEnabled
+	}
+	if req.RailsCallbacksEnabled != nil {
+		options.RailsCallbacksEnabled = *req.RailsCallbacksEnabled
+	}
+	return options
 }
 
 // GetSession handles GET /sessions/{id}. It returns the current status of

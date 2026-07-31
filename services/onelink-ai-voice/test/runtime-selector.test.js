@@ -29,16 +29,66 @@ test('runtime selector requires every configured allowlist to match', () => {
   assert.equal(selector.select({ ...payload, inbox_id: 10 }), 'legacy');
 });
 
-test('runtime selector requires at least one explicit tenant allowlist', () => {
-  const selector = new RuntimeSelector({ enabled: true, providers: ['sipuni'] });
+test('runtime selector requires explicit provider, account, and channel allowlists', () => {
+  const config = {
+    enabled: true,
+    providers: ['sipuni'],
+    accountIds: ['42'],
+    channelIds: ['9'],
+    percentage: 100
+  };
 
-  assert.equal(selector.select(payload), 'legacy');
+  for (const field of ['providers', 'accountIds', 'channelIds']) {
+    assert.equal(new RuntimeSelector({ ...config, [field]: [] }).select(payload), 'legacy');
+  }
+});
+
+test('runtime selector never sends non-AI routes to Pipecat', () => {
+  const selector = new RuntimeSelector({
+    enabled: true,
+    accountIds: ['42'],
+    channelIds: ['9'],
+    percentage: 100
+  });
+
+  for (const action of ['operator', 'human_operator', 'app', 'reject']) {
+    assert.equal(selector.select({ ...payload, routing: { action } }), 'legacy');
+  }
+  assert.equal(selector.select({ ...payload, routing: undefined }), 'legacy');
+});
+
+test('runtime selector requires a dedicated voice-agent profile for Janus SIP', () => {
+  const selector = new RuntimeSelector({
+    enabled: true,
+    providers: ['asterisk_analog'],
+    accountIds: ['42'],
+    channelIds: ['9'],
+    percentage: 100
+  });
+  const janusPayload = {
+    ...payload,
+    provider: 'asterisk_analog',
+    transport: 'janus_sip',
+    sip_profile: { profile_kind: 'voice_agent', voice_agent: true }
+  };
+
+  assert.equal(selector.select(janusPayload), 'pipecat');
+  assert.equal(
+    selector.select({
+      ...janusPayload,
+      sip_profile: { profile_kind: 'human_operator', voice_agent: false }
+    }),
+    'legacy'
+  );
+  assert.equal(selector.select({ ...janusPayload, sip_profile: undefined }), 'legacy');
 });
 
 test('runtime selector percentage is deterministic for a call', () => {
   const selector = new RuntimeSelector({
     enabled: true,
+    providers: ['sipuni'],
     accountIds: ['42'],
+    channelIds: ['9'],
     percentage: 50
   });
 

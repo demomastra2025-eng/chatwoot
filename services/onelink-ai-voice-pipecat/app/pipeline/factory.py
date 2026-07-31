@@ -100,6 +100,7 @@ class PipelineAssembly:
     llm: object
     provider: str
     activity: ConversationActivity
+    vad: SileroVADAnalyzer
     start_on_connect: bool = False
     stt: object | None = None
     tts: object | None = None
@@ -178,8 +179,10 @@ def build_pipeline(
     vad = SileroVADAnalyzer(
         sample_rate=16_000,
         params=VADParams(
+            confidence=context.ai.vad_confidence,
             start_secs=max(0.05, context.ai.prefix_padding_ms / 1_000),
             stop_secs=max(0.1, context.ai.silence_duration_ms / 1_000),
+            min_volume=context.ai.vad_min_volume,
         ),
     )
     if transport_override is not None:
@@ -389,6 +392,7 @@ def build_pipeline(
         llm=llm,
         provider=context.ai.provider,
         activity=activity,
+        vad=vad,
         start_on_connect=start_on_connect,
         stt=stt,
         tts=tts,
@@ -515,7 +519,7 @@ def _gemini_vad_params(context: VoiceContext) -> GeminiVADParams:
     start_sensitivity = context.ai.speech_start_sensitivity
     end_sensitivity = context.ai.speech_end_sensitivity
     if start_sensitivity not in GEMINI_START_SENSITIVITIES:
-        start_sensitivity = "START_SENSITIVITY_HIGH"
+        start_sensitivity = "START_SENSITIVITY_LOW"
     if end_sensitivity not in GEMINI_END_SENSITIVITIES:
         end_sensitivity = "END_SENSITIVITY_HIGH"
 

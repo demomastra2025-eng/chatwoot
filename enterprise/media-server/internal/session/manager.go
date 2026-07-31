@@ -67,6 +67,23 @@ func NewManager(cfg *config.Config, railsClient *callback.RailsClient) *Manager 
 // string is the SDP answer. For outgoing calls, metaSDPOffer is empty and
 // the returned string is the SDP offer to send to Meta.
 func (m *Manager) CreateSession(callID, accountID, direction, metaSDPOffer string, iceServers []webrtc.ICEServer) (*Session, string, error) {
+	return m.CreateSessionWithOptions(
+		callID,
+		accountID,
+		direction,
+		metaSDPOffer,
+		iceServers,
+		DefaultCreationOptions(),
+	)
+}
+
+// CreateSessionWithOptions preserves the same slot lifecycle while allowing
+// dedicated runtimes to own recording and callbacks.
+func (m *Manager) CreateSessionWithOptions(
+	callID, accountID, direction, metaSDPOffer string,
+	iceServers []webrtc.ICEServer,
+	options CreationOptions,
+) (*Session, string, error) {
 	if err := m.reserveSessionSlot(); err != nil {
 		return nil, "", err
 	}
@@ -82,7 +99,17 @@ func (m *Manager) CreateSession(callID, accountID, direction, metaSDPOffer strin
 	counter := m.sessionCounter.Add(1)
 	sessionID := fmt.Sprintf("sess_%s_%d", time.Now().Format("20060102150405"), counter)
 
-	sess, sdpResult, err := NewSession(m.config, m.railsClient, sessionID, callID, accountID, direction, metaSDPOffer, iceServers)
+	sess, sdpResult, err := NewSessionWithOptions(
+		m.config,
+		m.railsClient,
+		sessionID,
+		callID,
+		accountID,
+		direction,
+		metaSDPOffer,
+		iceServers,
+		options,
+	)
 	if err != nil {
 		return nil, "", fmt.Errorf("create session: %w", err)
 	}

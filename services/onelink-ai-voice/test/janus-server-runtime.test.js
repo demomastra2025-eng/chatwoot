@@ -86,6 +86,43 @@ test('Janus media-server client serializes account_id as string', async () => {
   assert.equal(requests[0].body.direction, 'incoming');
 });
 
+test('Janus media-server client fails closed when ownership controls are not advertised', async () => {
+  const requests = [];
+  const client = new JanusMediaServerClient({
+    baseUrl: 'http://media.test',
+    token: 'token',
+    fetchImpl: async (url, options) => {
+      requests.push({ url, method: options.method });
+      return {
+        ok: true,
+        text: async () => JSON.stringify({ status: 'ok' })
+      };
+    }
+  });
+
+  await assert.rejects(
+    () => client.ensureSessionOwnershipControls(),
+    error => error.code === 'media_server_ownership_controls_unavailable'
+  );
+  assert.deepEqual(requests, [{ url: 'http://media.test/health', method: 'GET' }]);
+});
+
+test('Janus media-server client accepts explicit ownership controls capability', async () => {
+  const client = new JanusMediaServerClient({
+    baseUrl: 'http://media.test',
+    token: 'token',
+    fetchImpl: async () => ({
+      ok: true,
+      text: async () => JSON.stringify({
+        status: 'ok',
+        capabilities: { session_ownership_controls: true }
+      })
+    })
+  });
+
+  await assert.doesNotReject(() => client.ensureSessionOwnershipControls());
+});
+
 test('Janus WebSocket client bounds connection setup time', async () => {
   class NeverOpeningSocket extends EventEmitter {
     static OPEN = 1;
@@ -417,12 +454,23 @@ test('Janus server profile hands a selected call to Pipecat with one prepared me
     sip_host: 'sip.example.test'
   });
   const session = new JanusSipServerProfileSession({
-    app: { async handleCall() { legacyCalls += 1; } },
+    app: {
+      async routeInboundSafely() {
+        order.push('route');
+        return { action: 'ai', reason: 'rails_ai_route' };
+      },
+      async handleCall() { legacyCalls += 1; }
+    },
     profile,
     janusUrl: 'ws://janus.test/ws',
     mediaServerClient: {
-      async createSession() {
+      async ensureSessionOwnershipControls() {
+        order.push('media_capabilities');
+      },
+      async createSession(payload) {
         order.push('create_media');
+        assert.equal(payload.recordingEnabled, false);
+        assert.equal(payload.railsCallbacksEnabled, false);
         return { session_id: 'media-pipecat-1', meta_sdp_answer: 'v=0\r\nanswer' };
       },
       async createRuntimeAgent() {
@@ -477,7 +525,7 @@ test('Janus server profile hands a selected call to Pipecat with one prepared me
   });
 
   assert.equal(legacyCalls, 0);
-  assert.deepEqual(order, ['ready', 'preflight', 'create_media', 'create_runtime', 'accept', 'attach']);
+  assert.deepEqual(order, ['route', 'ready', 'preflight', 'media_capabilities', 'create_media', 'create_runtime', 'accept', 'attach']);
   assert.equal(attached.length, 1);
   assert.equal(attached[0].runtime_stream.runtime_session_id, 'runtime-pipecat-1');
   assert.equal(attached[0].runtime_stream.output_sample_rate, 8000);
@@ -485,7 +533,7 @@ test('Janus server profile hands a selected call to Pipecat with one prepared me
   assert.equal(attached[0].runtime_control.control_url, 'http://voice-runtime:8081/internal/pipecat/runtime-control/control-1');
   assert.deepEqual(attached[0].routing, {
     action: 'ai',
-    reason: 'server_janus_sip_ai_voice'
+    reason: 'rails_ai_route'
   });
 });
 
@@ -528,7 +576,53 @@ test('Janus server Pipecat preflight failure happens before answering media', as
   assert.deepEqual(order, ['ready', 'preflight']);
 });
 
-test('Janus server profile routes offerless INVITEs through the native call facade', async () => {
+test('Janus server media ownership capability failure happens before answering media', async () => {
+  const order = [];
+  const session = new JanusSipServerProfileSession({
+    app: { async handleCall() {} },
+    profile: normalizeServerProfile({
+      id: 100,
+      account_id: 42,
+      inbox_id: 9,
+      provider: 'sipuni',
+      sip_username: 'ai-agent',
+      sip_password: 'secret',
+      sip_host: 'sip.example.test'
+    }),
+    janusUrl: 'ws://janus.test/ws',
+    mediaServerClient: {},
+    WebSocketImpl: class {},
+    runtimeMediaStreamFactory: async () => ({}),
+    runtimeSelector: { select: () => 'pipecat' },
+    pipecatClient: {
+      isAvailable: () => true,
+      async ensureAvailable() { order.push('ready'); },
+      async preflightJanus() { order.push('preflight'); },
+      async attachJanus() { order.push('attach'); }
+    },
+    logger: { log() {} }
+  });
+  const facade = {
+    request: { call_ref: 'sipuni:test', routing: { action: 'ai' } },
+    mediaServerClient: {
+      async ensureSessionOwnershipControls() {
+        order.push('media_capabilities');
+        const error = new Error('old media server');
+        error.code = 'media_server_ownership_controls_unavailable';
+        throw error;
+      }
+    },
+    async answer() { order.push('answer'); }
+  };
+
+  await assert.rejects(
+    () => session.startPipecatCall(facade),
+    error => error.code === 'media_server_ownership_controls_unavailable'
+  );
+  assert.deepEqual(order, ['ready', 'preflight', 'media_capabilities']);
+});
+
+test('Janus server keeps Rails operator decisions on the native call facade', async () => {
   const messages = [];
   let handledCall = null;
   const profile = normalizeServerProfile({
@@ -541,12 +635,30 @@ test('Janus server profile routes offerless INVITEs through the native call faca
     sip_host: 'asterisk.test'
   });
   const session = new JanusSipServerProfileSession({
-    app: { async handleCall(call) { handledCall = call; } },
+    app: {
+      async routeInboundSafely() {
+        return {
+          action: 'operator',
+          reason: 'routing_policy_operator',
+          operator: { agent_aor: 'sip:operator@example.test' }
+        };
+      },
+      async handleCall(call) { handledCall = call; }
+    },
     profile,
     janusUrl: 'ws://janus.test/ws',
     mediaServerClient: {},
     WebSocketImpl: class {},
     runtimeMediaStreamFactory: async () => ({}),
+    runtimeSelector: {
+      select(payload) {
+        assert.equal(payload.routing.action, 'operator');
+        return payload.routing.action === 'ai' ? 'pipecat' : 'legacy';
+      }
+    },
+    pipecatClient: {
+      async preflightJanus() { throw new Error('operator route reached Pipecat'); }
+    },
     maxCalls: 1,
     logger: { log() {} }
   });
@@ -565,6 +677,11 @@ test('Janus server profile routes offerless INVITEs through the native call faca
 
   assert.ok(handledCall);
   assert.equal(handledCall.request.call_ref, 'asterisk_analog:janus-server:16:offerless-1');
+  assert.deepEqual(handledCall.request.routing, {
+    action: 'operator',
+    reason: 'routing_policy_operator',
+    operator: { agent_aor: 'sip:operator@example.test' }
+  });
   assert.equal(handledCall.janus.jsep, undefined);
   assert.deepEqual(messages, []);
 });
