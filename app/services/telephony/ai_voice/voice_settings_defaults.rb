@@ -8,6 +8,8 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'api_version' => 'v1beta',
     'voice' => 'sulafat',
     'language' => 'ru-KZ',
+    'thinking_level' => 'minimal',
+    'context_window_compression_enabled' => true,
     'voice_character_prompt' => '',
     'temperature' => 0.3,
     'max_output_tokens' => 1024,
@@ -72,7 +74,8 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   PROVIDER_DEFAULTS = {
     'gemini-live' => {
       'model' => 'gemini-3.1-flash-live-preview',
-      'voice' => 'sulafat'
+      'voice' => 'sulafat',
+      'language' => 'auto'
     }.freeze,
     'openai-realtime' => {
       'model' => 'gpt-realtime-2',
@@ -91,6 +94,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   BOOLEAN_KEYS = %w[
     interruptions_enabled clear_audio_on_interrupt finish_current_word_on_interrupt interrupt_ack_enabled
     silence_prompt_enabled end_call_on_silence_enabled proactive_audio_enabled affective_dialog_enabled
+    context_window_compression_enabled
     natural_pause_enabled thinking_cue_enabled nonverbal_cues_enabled sigh_cues_enabled ambient_noise_enabled
     ambient_noise_duck_on_caller_speech ambient_noise_outbound_only recording_enabled
   ].freeze
@@ -105,6 +109,11 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   ].freeze
 
   FLOAT_KEYS = %w[temperature ambient_noise_volume_dbfs].freeze
+  GEMINI_AUTO_LANGUAGE_MODELS = %w[
+    gemini-3.1-flash-live-preview gemini-2.5-flash-native-audio-preview-12-2025
+  ].freeze
+  GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS
+  THINKING_LEVELS = %w[minimal low medium high].freeze
 
   ARRAY_KEYS = %w[
     interrupt_ack_phrases filler_phrases tool_start_phrases tool_delay_phrases tool_failure_phrases
@@ -116,9 +125,11 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       raw = raw_settings.respond_to?(:to_h) ? raw_settings.to_h.deep_stringify_keys : {}
       provider = raw['provider'].presence || DEFAULTS['provider']
       defaults = DEFAULTS.merge(PROVIDER_DEFAULTS.fetch(provider, {}))
-      defaults.merge(raw).each_with_object({}) do |(key, value), normalized|
-        normalized[key] = normalize_value(key, value_or_default(key, value, defaults))
+      normalized = defaults.merge(raw).each_with_object({}) do |(key, value), result|
+        result[key] = normalize_value(key, value_or_default(key, value, defaults))
       end
+      normalize_provider_specific_values!(normalized, provider, defaults)
+      normalized
     end
 
     def defaults
@@ -126,6 +137,31 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     end
 
     private
+
+    def normalize_provider_specific_values!(normalized, provider, defaults)
+      normalized['thinking_level'] = defaults['thinking_level'] unless THINKING_LEVELS.include?(normalized['thinking_level'])
+      normalize_auto_language!(normalized, provider)
+      normalize_proactive_audio!(normalized, provider)
+    end
+
+    def normalize_auto_language!(normalized, provider)
+      return unless normalized['language'] == 'auto'
+      return if gemini_model_supported?(provider, normalized['model'], GEMINI_AUTO_LANGUAGE_MODELS)
+
+      normalized['language'] = DEFAULTS['language']
+    end
+
+    def normalize_proactive_audio!(normalized, provider)
+      supported = gemini_model_supported?(provider, normalized['model'], GEMINI_PROACTIVE_AUDIO_MODELS)
+      normalized['proactive_audio_enabled'] = false unless supported
+      return unless provider == 'gemini-live'
+
+      normalized['api_version'] = normalized['proactive_audio_enabled'] ? 'v1alpha' : 'v1beta'
+    end
+
+    def gemini_model_supported?(provider, model, models)
+      provider == 'gemini-live' && models.include?(model)
+    end
 
     def normalize_value(key, value)
       return BOOLEAN.cast(value) if BOOLEAN_KEYS.include?(key)

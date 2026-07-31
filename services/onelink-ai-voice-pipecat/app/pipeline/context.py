@@ -22,6 +22,7 @@ class AiSettings(ContextModel):
     model: str = Field(min_length=1, max_length=200)
     voice: str = Field(min_length=1, max_length=100)
     language: str = Field(default="ru-KZ", min_length=2, max_length=20)
+    api_version: Literal["v1alpha", "v1beta"] = "v1beta"
     system_prompt: str = Field(min_length=1, max_length=100_000)
     first_message: str | None = Field(default=None, max_length=2_000)
     closing_message: str | None = Field(default=None, max_length=2_000)
@@ -29,6 +30,10 @@ class AiSettings(ContextModel):
     temperature: float = Field(default=0.3, ge=0, le=2)
     max_output_tokens: int = Field(default=1_024, ge=1, le=65_536)
     interruptions_enabled: bool = True
+    affective_dialog_enabled: bool = False
+    proactive_audio_enabled: bool = False
+    thinking_level: Literal["minimal", "low", "medium", "high"] = "minimal"
+    context_window_compression_enabled: bool = True
     clear_audio_on_interrupt: bool = True
     speech_start_sensitivity: str = "START_SENSITIVITY_HIGH"
     speech_end_sensitivity: str = "END_SENSITIVITY_HIGH"

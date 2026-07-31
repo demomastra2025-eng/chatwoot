@@ -568,6 +568,13 @@
           "MODEL": "Модель",
           "VOICE": "Дауыс",
           "LANGUAGE": "Тіл",
+          "LANGUAGE_AUTO": "Автоматты түрде (сөйлесушінің тіліне бейімделу)",
+          "THINKING_LEVEL": "Ойлау деңгейі",
+          "THINKING_LEVEL_DESCRIPTION": "Ең төмен деңгей телефондағы жауапты жылдам береді. Күрделі құрал тапсырмалары үшін ғана арттырыңыз.",
+          "THINKING_MINIMAL": "Ең төмен — ең жылдам",
+          "THINKING_LOW": "Төмен",
+          "THINKING_MEDIUM": "Орташа",
+          "THINKING_HIGH": "Жоғары",
           "SYSTEM_PROMPT": "Дауыстық нұсқаулар",
           "SYSTEM_PROMPT_PLACEHOLDER": "Мысалы: қысқа сөйле, markdown қолданба, бір уақытта бір сұрақ қой",
           "SYSTEM_PROMPT_DESCRIPTION": "Тек дауыстық AI-агентке арналған қосымша нұсқаулар. Олар агенттің негізгі нұсқауларын толықтырады.",
@@ -580,7 +587,13 @@
           "TRANSFER_MESSAGE_PLACEHOLDER": "Операторға қосар алдында айтылатын мәтін",
           "MAX_DURATION_SEC": "Максималды ұзақтығы (секунд)",
           "INTERRUPTIONS": "Клиенттің сөзін бөлуіне рұқсат ету",
-          "INTERRUPTIONS_DESCRIPTION": "Қосулы болса, клиент жауап кезінде агентті тоқтата алады."
+          "INTERRUPTIONS_DESCRIPTION": "Қосулы болса, клиент жауап кезінде агентті тоқтата алады.",
+          "CONTEXT_COMPRESSION": "Ұзақ қоңырау контекстін қысу",
+          "CONTEXT_COMPRESSION_DESCRIPTION": "Ұзақ Gemini қоңыраулары жалғасуы үшін ескі контексті қысады.",
+          "PROACTIVE_AUDIO": "Proactive Audio",
+          "PROACTIVE_AUDIO_DESCRIPTION": "Gemini-ге әңгімеге қатысы жоқ сөзге жауап бермеуге мүмкіндік береді. Қосылғанда preview v1alpha API пайдаланылады; әдепкіде өшірулі.",
+          "AFFECTIVE_DIALOG": "Gemini эмоциялық бейімделуі",
+          "AFFECTIVE_DIALOG_DESCRIPTION": "Сөйлесушінің үніне қарай интонацияны табиғи түрде бейімдейді. Тек Gemini 2.5 Native Audio моделінде қолжетімді және жауап кідірісін арттыруы мүмкін."
         },
         "VOICE_PREVIEW": {
           "TITLE": "Дауыстық AI-агентпен сөйлесу",

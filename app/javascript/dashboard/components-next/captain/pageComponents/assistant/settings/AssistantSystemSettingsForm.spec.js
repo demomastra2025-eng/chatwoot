@@ -65,13 +65,17 @@ describe('AssistantSystemSettingsForm', () => {
         provider: 'gemini-live',
         model: 'gemini-3.1-flash-live-preview',
         voice: 'sulafat',
-        language: 'ru-KZ',
+        language: 'auto',
+        thinking_level: 'minimal',
+        context_window_compression_enabled: true,
+        proactive_audio_enabled: false,
         system_prompt: '',
         voice_character_prompt: '',
         first_message: '',
         transfer_message: '',
         max_duration_sec: 0,
         interruptions_enabled: true,
+        affective_dialog_enabled: false,
       },
     });
   });
@@ -83,7 +87,7 @@ describe('AssistantSystemSettingsForm', () => {
         config: {
           voice_settings: {
             provider: 'gemini-live',
-            model: 'gemini-3.1-flash-live-preview',
+            model: 'gemini-2.5-flash-native-audio-preview-12-2025',
             voice: 'sulafat',
             language: 'ru-KZ',
             system_prompt: 'Говори коротко, без markdown и списков.',
@@ -93,6 +97,8 @@ describe('AssistantSystemSettingsForm', () => {
             transfer_message: 'Қазір операторға қосамын.',
             max_duration_sec: 450,
             interruptions_enabled: false,
+            proactive_audio_enabled: true,
+            affective_dialog_enabled: true,
           },
         },
       },
@@ -110,6 +116,14 @@ describe('AssistantSystemSettingsForm', () => {
     expect(
       wrapper.find('[data-test-id="assistant-voice-character-prompt"]').exists()
     ).toBe(true);
+    expect(
+      wrapper.find('[data-test-id="assistant-gemini-proactive-audio"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .find('[data-test-id="assistant-gemini-affective-dialog"]')
+        .exists()
+    ).toBe(true);
 
     wrapper.vm.state.voiceSettings.voice = 'leda';
     wrapper.vm.state.voiceSettings.systemPrompt =
@@ -121,9 +135,12 @@ describe('AssistantSystemSettingsForm', () => {
 
     expect(payload.assistant.config.voice_settings).toEqual({
       provider: 'gemini-live',
-      model: 'gemini-3.1-flash-live-preview',
+      model: 'gemini-2.5-flash-native-audio-preview-12-2025',
       voice: 'leda',
       language: 'ru-KZ',
+      thinking_level: 'minimal',
+      context_window_compression_enabled: true,
+      proactive_audio_enabled: true,
       system_prompt: 'Отвечай максимум двумя короткими предложениями.',
       voice_character_prompt:
         'Тембр: спокойный ночной рассказчик. Интонация мягкая.',
@@ -131,7 +148,77 @@ describe('AssistantSystemSettingsForm', () => {
       transfer_message: 'Қазір операторға қосамын.',
       max_duration_sec: 450,
       interruptions_enabled: false,
+      affective_dialog_enabled: true,
     });
+  });
+
+  it('drops affective dialog for an unsupported Gemini model', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        config: {
+          voice_settings: {
+            provider: 'gemini-live',
+            model: 'gemini-3.1-flash-live-preview',
+            affective_dialog_enabled: true,
+          },
+        },
+      },
+    });
+
+    expect(
+      wrapper
+        .find('[data-test-id="assistant-gemini-affective-dialog"]')
+        .exists()
+    ).toBe(false);
+    expect(
+      wrapper.find('[data-test-id="assistant-gemini-thinking-level"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper
+        .find('[data-test-id="assistant-gemini-context-compression"]')
+        .exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-test-id="assistant-gemini-proactive-audio"]').exists()
+    ).toBe(true);
+
+    wrapper.vm.state.voiceSettings.thinkingLevel = 'low';
+    wrapper.vm.state.voiceSettings.contextWindowCompressionEnabled = false;
+    wrapper.vm.state.voiceSettings.proactiveAudioEnabled = true;
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.voice_settings).toEqual(
+      expect.objectContaining({
+        provider: 'gemini-live',
+        model: 'gemini-3.1-flash-live-preview',
+        language: 'auto',
+        thinking_level: 'low',
+        context_window_compression_enabled: false,
+        proactive_audio_enabled: true,
+        affective_dialog_enabled: false,
+      })
+    );
+  });
+
+  it('drops auto language when switching to legacy Gemini 2.0', async () => {
+    const wrapper = buildWrapper({ assistant: { config: {} } });
+
+    wrapper.vm.state.voiceSettings.proactiveAudioEnabled = true;
+    wrapper.vm.state.voiceSettings.model = 'gemini-2.0-flash-live-001';
+    await flushPromises();
+
+    expect(wrapper.vm.state.voiceSettings.language).toBe('ru-KZ');
+    expect(wrapper.vm.state.voiceSettings.proactiveAudioEnabled).toBe(false);
+    expect(
+      wrapper.find('[data-test-id="assistant-gemini-proactive-audio"]').exists()
+    ).toBe(false);
+    const payload = await wrapper.vm.buildPayload();
+    expect(payload.assistant.config.voice_settings.language).toBe('ru-KZ');
+    expect(
+      payload.assistant.config.voice_settings.proactive_audio_enabled
+    ).toBe(false);
   });
 
   it.each([
@@ -143,12 +230,32 @@ describe('AssistantSystemSettingsForm', () => {
     async (provider, model, voice) => {
       const wrapper = buildWrapper({ assistant: { id: 58, config: {} } });
 
+      wrapper.vm.state.voiceSettings.affectiveDialogEnabled = true;
+      wrapper.vm.state.voiceSettings.proactiveAudioEnabled = true;
       wrapper.vm.updateVoiceProvider(provider);
+      await wrapper.vm.$nextTick();
       const payload = await wrapper.vm.buildPayload();
 
       expect(payload.assistant.config.voice_settings).toEqual(
-        expect.objectContaining({ provider, model, voice })
+        expect.objectContaining({
+          provider,
+          model,
+          voice,
+          language: 'ru-KZ',
+          proactive_audio_enabled: false,
+          affective_dialog_enabled: false,
+        })
       );
+      expect(
+        wrapper
+          .find('[data-test-id="assistant-gemini-proactive-audio"]')
+          .exists()
+      ).toBe(false);
+      expect(
+        wrapper
+          .find('[data-test-id="assistant-gemini-affective-dialog"]')
+          .exists()
+      ).toBe(false);
     }
   );
 

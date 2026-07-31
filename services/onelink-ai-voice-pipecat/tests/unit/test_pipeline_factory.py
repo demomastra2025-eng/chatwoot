@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -137,6 +137,9 @@ def test_builds_supported_provider_pipeline(
     else:
         assert assembly.input_resampler is None
         assert assembly.output_resampler is None
+    if provider == "gemini-live":
+        llm = cast(GeminiLiveLLMService, assembly.llm)
+        assert llm._client._api_client._http_options.api_version == "v1beta"
 
 
 @pytest.mark.parametrize("enabled", [True, False])
@@ -145,6 +148,206 @@ def test_user_turn_strategies_honor_interruption_setting(enabled):
 
     assert strategies.start
     assert all(strategy._enable_interruptions is enabled for strategy in strategies.start)
+
+
+def test_gemini_uses_native_vad_with_assistant_turn_settings():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.speech_start_sensitivity = "START_SENSITIVITY_LOW"
+    context.ai.speech_end_sensitivity = "END_SENSITIVITY_LOW"
+    context.ai.prefix_padding_ms = 240
+    context.ai.silence_duration_ms = 650
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    vad = llm._settings.vad
+    assert vad.disabled is False
+    assert vad.start_sensitivity.value == "START_SENSITIVITY_LOW"
+    assert vad.end_sensitivity.value == "END_SENSITIVITY_LOW"
+    assert vad.prefix_padding_ms == 240
+    assert vad.silence_duration_ms == 650
+
+
+def test_gemini_disables_native_vad_when_interruptions_are_disabled():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.interruptions_enabled = False
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    vad = llm._settings.vad
+    assert vad.disabled is True
+    assert vad.start_sensitivity is None
+    assert vad.end_sensitivity is None
+    assert vad.prefix_padding_ms is None
+    assert vad.silence_duration_ms is None
+
+
+@pytest.mark.parametrize(
+    ("model", "requested_enabled", "input_api_version", "expected_enabled", "expected_api_version"),
+    [
+        ("gemini-2.5-flash-native-audio-preview-12-2025", True, "v1beta", True, "v1beta"),
+        ("gemini-2.5-flash-native-audio-preview-12-2025", False, "v1alpha", False, "v1beta"),
+        ("gemini-3.1-flash-live-preview", True, "v1beta", False, "v1beta"),
+        ("gemini-3.1-flash-live-preview", True, "v1alpha", False, "v1beta"),
+    ],
+)
+def test_gemini_gates_native_affective_dialog_by_model(
+    model: str,
+    requested_enabled: bool,
+    input_api_version: Literal["v1alpha", "v1beta"],
+    expected_enabled: bool,
+    expected_api_version: str,
+):
+    context = _context("gemini-live", model=model, voice="sulafat")
+    context.ai.affective_dialog_enabled = requested_enabled
+    context.ai.api_version = input_api_version
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    assert llm._settings.enable_affective_dialog is expected_enabled
+    assert llm._client._api_client._http_options.api_version == expected_api_version
+
+
+def test_gemini_auto_language_omits_the_google_language_code():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.language = "auto"
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    assert llm._settings.language is None
+
+
+def test_gemini_auto_language_falls_back_for_legacy_model():
+    context = _context("gemini-live", model="gemini-2.0-flash-live-001", voice="puck")
+    context.ai.language = "auto"
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    assert llm._settings.language == "ru-KZ"
+
+
+@pytest.mark.parametrize(
+    ("model", "requested_enabled", "expected_enabled", "expected_api_version"),
+    [
+        ("gemini-3.1-flash-live-preview", True, True, "v1alpha"),
+        ("gemini-2.5-flash-native-audio-preview-12-2025", True, True, "v1alpha"),
+        ("gemini-2.0-flash-live-001", True, False, "v1beta"),
+        ("gemini-3.1-flash-live-preview", False, False, "v1beta"),
+    ],
+)
+def test_gemini_gates_proactive_audio_and_selects_required_api_version(
+    model: str,
+    requested_enabled: bool,
+    expected_enabled: bool,
+    expected_api_version: str,
+):
+    context = _context("gemini-live", model=model, voice="sulafat")
+    context.ai.proactive_audio_enabled = requested_enabled
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    assert bool(llm._settings.proactivity) is expected_enabled
+    if expected_enabled:
+        assert llm._settings.proactivity.proactive_audio is True
+    assert llm._client._api_client._http_options.api_version == expected_api_version
+
+
+def test_gemini_31_uses_thinking_and_context_compression_settings():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.thinking_level = "low"
+    context.ai.context_window_compression_enabled = False
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    assert llm._settings.thinking.thinking_level.value == "LOW"
+    assert llm._settings.context_window_compression.enabled is False
+
+
+def test_gemini_25_does_not_receive_unsupported_thinking_level():
+    context = _context(
+        "gemini-live",
+        model="gemini-2.5-flash-native-audio-preview-12-2025",
+        voice="sulafat",
+    )
+    context.ai.thinking_level = "high"
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    assert llm._settings.thinking is None
+
+
+def test_gemini_falls_back_from_unknown_vad_sensitivity_values():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.speech_start_sensitivity = "UNKNOWN_START"
+    context.ai.speech_end_sensitivity = "UNKNOWN_END"
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(GeminiLiveLLMService, assembly.llm)
+    vad = llm._settings.vad
+    assert vad.start_sensitivity.value == "START_SENSITIVITY_HIGH"
+    assert vad.end_sensitivity.value == "END_SENSITIVITY_HIGH"
 
 
 def test_gemini_with_tools_announces_before_formal_function_call():

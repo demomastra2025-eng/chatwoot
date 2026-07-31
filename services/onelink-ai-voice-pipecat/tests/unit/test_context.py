@@ -47,8 +47,41 @@ def test_normalizes_context_without_calling_pipecat_a_provider():
     assert context.runtime_engine == "pipecat"
     assert context.ai.model == "gemini-3.1-flash-live-preview"
     assert context.ai.language == "ru-KZ"
+    assert context.ai.api_version == "v1beta"
+    assert context.ai.affective_dialog_enabled is False
+    assert context.ai.proactive_audio_enabled is False
+    assert context.ai.thinking_level == "minimal"
+    assert context.ai.context_window_compression_enabled is True
     assert context.tools[0].name == "create_note"
     assert context.correlation.runtime_session_id
+
+
+def test_context_accepts_native_gemini_affective_dialog_setting():
+    raw = payload()
+    raw["ai"]["affective_dialog_enabled"] = True
+
+    context = VoiceContext.model_validate(raw)
+
+    assert context.ai.affective_dialog_enabled is True
+
+
+def test_context_accepts_native_gemini_proactive_audio_setting():
+    raw = payload()
+    raw["ai"]["proactive_audio_enabled"] = True
+
+    context = VoiceContext.model_validate(raw)
+
+    assert context.ai.proactive_audio_enabled is True
+
+
+def test_context_accepts_gemini_auto_language_and_thinking_level():
+    raw = payload()
+    raw["ai"].update(language="auto", thinking_level="high")
+
+    context = VoiceContext.model_validate(raw)
+
+    assert context.ai.language == "auto"
+    assert context.ai.thinking_level == "high"
 
 
 def test_context_preserves_unknown_forward_compatible_keys():
