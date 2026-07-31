@@ -5,7 +5,15 @@ class TriggerScheduledItemsJob < ApplicationJob
     # trigger the scheduled campaign jobs
     Campaign.where(campaign_type: :one_off,
                    campaign_status: :active).where(scheduled_at: 3.days.ago..Time.current).all.find_each(batch_size: 100) do |campaign|
-      Campaigns::TriggerOneoffCampaignJob.perform_later(campaign)
+      requested_at = Time.current
+      next unless campaign.request_one_off_launch!(requested_at: requested_at)
+
+      begin
+        Campaigns::TriggerOneoffCampaignJob.perform_later(campaign)
+      rescue StandardError
+        campaign.release_one_off_launch!(requested_at: requested_at)
+        raise
+      end
     end
 
     # Job to reopen snoozed conversations

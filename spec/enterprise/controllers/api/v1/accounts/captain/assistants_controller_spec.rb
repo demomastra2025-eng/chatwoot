@@ -1358,6 +1358,73 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           message_history: params_with_latest_message[:message_history]
         )
       end
+
+      it 'passes an authorized conversation to the external agent runtime' do
+        inbox = create(:inbox, account: account)
+        conversation = create(:conversation, account: account, inbox: inbox)
+
+        expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
+          assistant: assistant,
+          conversation: conversation,
+          source: 'playground'
+        ).and_return(agent_runner_service)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(conversation_id: conversation.display_id),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
+      it 'rejects a conversation outside of the current account before starting the runtime' do
+        other_account = create(:account)
+        foreign_conversation = create(:conversation, account: other_account)
+
+        expect(Captain::Assistant::AgentRunnerService).not_to receive(:new)
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: valid_params.merge(conversation_id: foreign_conversation.display_id),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+
+    context 'when the assistant is an internal assistant' do
+      let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'internal_assistant') }
+      let(:chat_service) { instance_double(Captain::Copilot::ChatService) }
+
+      it 'uses the employee copilot runtime with actor and non-duplicated history' do
+        params_with_latest_message = {
+          message_content: 'Hello assistant',
+          message_history: [
+            { role: 'assistant', content: 'Previous response', agent_name: 'billing_scenario' },
+            { role: 'user', content: 'Hello assistant' }
+          ]
+        }
+        allow(Captain::Copilot::ChatService).to receive(:new).with(
+          assistant,
+          {
+            user_id: agent.id,
+            previous_history: [{ role: 'assistant', content: 'Previous response' }],
+            source: 'playground'
+          }
+        ).and_return(chat_service)
+        allow(chat_service).to receive(:generate_response).with('Hello assistant').and_return(
+          'content' => 'Copilot response',
+          'reasoning' => 'Used account tools'
+        )
+
+        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
+             params: params_with_latest_message,
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response).to include(response: 'Copilot response', content: 'Copilot response')
+      end
     end
   end
 end

@@ -128,6 +128,17 @@ RSpec.describe Onelink::Mcp::OpenapiCatalog do
       expect(Rack::MiniProfiler.current).to equal(profiler_context)
     end
 
+    it 'preserves empty parsed JSON as structured content' do
+      allow(Rails.application).to receive(:call).and_return(
+        [200, { 'Content-Type' => 'application/json' }, ['{}']]
+      )
+
+      result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 12 })
+
+      expect(result[:isError]).to be(false)
+      expect(result[:structuredContent]).to eq({})
+    end
+
     it 'returns structured content for parsed non-2xx Rails API responses' do
       response_body = ['{"error":"Resource could not be found"}']
 
@@ -138,8 +149,50 @@ RSpec.describe Onelink::Mcp::OpenapiCatalog do
       result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 404 })
 
       expect(result[:isError]).to be(true)
-      expect(result[:structuredContent]).to eq('error' => 'Resource could not be found')
+      expect(result[:structuredContent]).to eq(
+        code: 'openapi_http_error',
+        message: 'Resource could not be found',
+        status: 404
+      )
+      expect(result[:structuredContent].keys).to contain_exactly(:code, :message, :status)
       expect(result.dig(:content, 0, :text)).to include('Resource could not be found')
+    end
+
+    it 'returns a typed safe error for non-JSON Rails API failures' do
+      response_body = ['upstream content is unavailable at https://internal.example.test/debug']
+
+      allow(Rails.application).to receive(:call).and_return(
+        [502, { 'Content-Type' => 'text/plain' }, response_body]
+      )
+
+      result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 12 })
+
+      expect(result[:isError]).to be(true)
+      expect(result[:structuredContent]).to eq(
+        code: 'openapi_http_error',
+        message: 'OpenAPI request failed',
+        status: 502
+      )
+      expect(result.dig(:content, 0, :text)).to include('OpenAPI request failed')
+      expect(result.dig(:content, 0, :text)).not_to include('[FILTERED]', 'internal.example.test')
+    end
+
+    it 'normalizes parsed non-success responses to the exact typed error shape' do
+      response_body = [{ error: { code: 'upstream_rejected', message: 'Rejected request', debug: 'secret' }, token: 'secret' }.to_json]
+      allow(Rails.application).to receive(:call).and_return(
+        [422, { 'Content-Type' => 'application/json' }, response_body]
+      )
+
+      result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 12 })
+
+      expect(result[:isError]).to be(true)
+      expect(result[:structuredContent]).to eq(
+        code: 'upstream_rejected',
+        message: 'Rejected request',
+        status: 422
+      )
+      expect(result[:structuredContent].keys).to contain_exactly(:code, :message, :status)
+      expect(result.dig(:content, 0, :text)).not_to include('debug', 'token', 'secret')
     end
 
     it 'normalizes raised ActiveRecord not found errors without leaking model internals' do
@@ -150,7 +203,7 @@ RSpec.describe Onelink::Mcp::OpenapiCatalog do
       result = catalog.call_tool(name: 'api__get_scheduling_resource', arguments: { id: 404 })
 
       expect(result[:isError]).to be(true)
-      expect(result[:structuredContent]).to include(code: 'not_found', message: 'Resource could not be found')
+      expect(result[:structuredContent]).to eq(code: 'not_found', message: 'Resource could not be found', status: nil)
       expect(result.dig(:content, 0, :text)).not_to include('ActiveRecord::RecordNotFound')
       expect(result.dig(:content, 0, :text)).not_to include('AutomationRule')
     end

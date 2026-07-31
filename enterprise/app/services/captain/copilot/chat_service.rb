@@ -13,10 +13,11 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
     @user = nil
     @copilot_thread = nil
     @previous_history = []
-    @conversation = @account.conversations.find_by(display_id: config[:conversation_id])
-    @conversation_id = @conversation&.display_id
+    @source = config[:source]
 
     setup_user(config)
+    setup_conversation(config)
+    setup_copilot_thread(config)
     setup_message_history(config)
     @tools = build_tools
     @messages = build_messages
@@ -43,8 +44,50 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
 
   private
 
+  def setup_conversation(config)
+    @conversation_id = config[:conversation_id]
+    return if @conversation_id.blank?
+
+    ensure_actor!
+
+    conversations = @account.conversations
+    conversations = Conversations::PermissionFilterService.new(conversations, @user, @account).perform
+    @conversation = conversations.find_by!(display_id: @conversation_id)
+  end
+
   def setup_user(config)
-    @user = @account.users.find_by(id: config[:user_id]) if config[:user_id].present?
+    return if config[:user_id].blank?
+
+    @user = @account.users.find(config[:user_id])
+  end
+
+  def setup_copilot_thread(config)
+    return if config[:copilot_thread_id].blank?
+
+    ensure_actor!
+    @copilot_thread = @account.copilot_threads.find_by!(
+      id: config[:copilot_thread_id],
+      user_id: @user.id,
+      assistant_id: @assistant.id
+    )
+  end
+
+  def ensure_actor!
+    return if @user.present?
+
+    raise ActiveRecord::RecordNotFound, 'Copilot actor is required'
+  end
+
+  def setup_message_history(config)
+    Rails.logger.info(
+      "#{self.class.name} Assistant: #{@assistant.id}, Previous History: #{config[:previous_history]&.length || 0}, Language: #{config[:language]}"
+    )
+
+    @previous_history = if @copilot_thread.present?
+                          @copilot_thread.previous_history
+                        else
+                          config[:previous_history].presence || []
+                        end
   end
 
   def build_messages
@@ -53,19 +96,6 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
     conversation_context = conversation_context_message
     messages << conversation_context if conversation_context.present?
     messages
-  end
-
-  def setup_message_history(config)
-    Rails.logger.info(
-      "#{self.class.name} Assistant: #{@assistant.id}, Previous History: #{config[:previous_history]&.length || 0}, Language: #{config[:language]}"
-    )
-
-    @copilot_thread = @account.copilot_threads.find_by(id: config[:copilot_thread_id]) if config[:copilot_thread_id].present?
-    @previous_history = if @copilot_thread.present?
-                          @copilot_thread.previous_history
-                        else
-                          config[:previous_history].presence || []
-                        end
   end
 
   def build_tools
@@ -186,6 +216,7 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
       runtime_mode: 'captain_chat',
       account_id: resolved_account_id,
       assistant_id: @assistant&.id,
+      user_id: @user&.id,
       conversation_id: @conversation&.id,
       conversation_display_id: @conversation&.display_id || @conversation_id,
       copilot_thread_id: @copilot_thread&.id,

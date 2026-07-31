@@ -72,6 +72,41 @@ RSpec.describe Campaign do
     end
   end
 
+  context 'when claiming a one-off launch' do
+    let(:account) { create(:account) }
+    let(:sms_channel) { create(:channel_sms, account: account) }
+    let(:sms_inbox) { create(:inbox, channel: sms_channel, account: account) }
+    let(:campaign) { create(:campaign, account: account, inbox: sms_inbox, campaign_status: :active) }
+
+    it 'deduplicates a fresh lease and reclaims it after expiry' do
+      initial_request = Time.current
+
+      expect(campaign.request_one_off_launch!(requested_at: initial_request)).to be(true)
+      expect(campaign.request_one_off_launch!(requested_at: initial_request + 1.minute)).to be(false)
+      expect(campaign.request_one_off_launch!(requested_at: initial_request + Campaign::LAUNCH_REQUEST_LEASE + 1.second)).to be(true)
+    end
+
+    it 'releases only the matching active lease' do
+      requested_at = Time.current
+      campaign.request_one_off_launch!(requested_at: requested_at)
+
+      expect(campaign.release_one_off_launch!(requested_at: requested_at - 1.second)).to be(false)
+      expect(campaign.release_one_off_launch!(requested_at: requested_at)).to be(true)
+      expect(campaign.reload.launch_requested_at).to be_nil
+    end
+
+    it 'clears the launch lease before executing the campaign runner' do
+      runner = instance_double(Campaigns::OneoffRunner, perform: true)
+      allow(Campaigns::OneoffRunner).to receive(:new).with(campaign: campaign).and_return(runner)
+      campaign.request_one_off_launch!
+
+      campaign.trigger!
+
+      expect(campaign.reload).to be_running
+      expect(campaign.launch_requested_at).to be_nil
+    end
+  end
+
   context 'when cancelling a one-off campaign' do
     let(:account) { create(:account) }
     let(:email_channel) { create(:channel_email, account: account) }

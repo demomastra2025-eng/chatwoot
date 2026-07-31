@@ -2,6 +2,8 @@
 
 class Captain::ToolResult
   NORMALIZED_KEYS = %i[success data message error retryable audit].freeze
+  MCP_ERROR_KEY = 'isError'
+  MCP_ERROR_MESSAGE = 'MCP tool returned an error'
   ERROR_PREFIX = 'ERROR:'
   DEFAULT_SUCCESS_MESSAGE = 'Done'
 
@@ -31,11 +33,7 @@ class Captain::ToolResult
     end
 
     def normalize(result, error: nil, retryable: nil, audit: nil)
-      payload = if normalized_hash?(result)
-                  normalize_hash(result)
-                else
-                  normalize_raw(result)
-                end
+      payload = normalized_payload(result)
 
       if error.present?
         payload[:error] = error_message(error)
@@ -86,6 +84,49 @@ class Captain::ToolResult
 
     private
 
+    def normalized_payload(result)
+      return normalize_mcp_hash(result) if mcp_result_hash?(result)
+      return normalize_hash(result) if normalized_hash?(result)
+
+      normalize_raw(result)
+    end
+
+    def mcp_result_hash?(result)
+      result.is_a?(Hash) && result.keys.map(&:to_s).include?(MCP_ERROR_KEY)
+    end
+
+    def normalize_mcp_hash(result)
+      normalized = Captain::EncodingNormalizer.utf8(result).deep_symbolize_keys
+      return { success: true, data: normalized } unless truthy_error?(normalized[:isError])
+
+      {
+        success: false,
+        error: mcp_error_message(normalized),
+        data: normalized[:structuredContent]
+      }
+    end
+
+    def mcp_error_message(result)
+      structured_content = result[:structuredContent]
+      structured_error = structured_content[:error] if structured_content.is_a?(Hash)
+      candidates = [
+        structured_error.is_a?(Hash) ? structured_error[:message] : nil,
+        structured_error.is_a?(String) ? structured_error : nil,
+        structured_content.is_a?(Hash) ? structured_content[:message] : nil,
+        mcp_content_text(result[:content])
+      ]
+      candidates.compact_blank.first || MCP_ERROR_MESSAGE
+    end
+
+    def mcp_content_text(content)
+      Array(content).filter_map do |item|
+        next item if item.is_a?(String)
+        next unless item.is_a?(Hash)
+
+        item[:text] || item['text']
+      end.join("\n").strip
+    end
+
     def normalized_hash?(result)
       return false unless result.is_a?(Hash)
 
@@ -122,14 +163,9 @@ class Captain::ToolResult
     end
 
     def truthy_error?(value)
-      case value
-      when String
-        value.present?
-      when TrueClass, FalseClass
-        value
-      else
-        value.present?
-      end
+      return value if value.in?([true, false])
+
+      value.present?
     end
 
     def error_message(error)

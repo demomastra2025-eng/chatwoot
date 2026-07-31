@@ -117,9 +117,44 @@ RSpec.describe 'Captain account admin people copilot tools' do
 
       expect(payload['action']).to eq('deactivate_user')
       expect(payload['deactivated_user']).to include('id' => operator.id)
+      expect(payload['lifecycle_snapshot_id']).to be_present
+      expect(payload['idempotent_replay']).to be(false)
       expect(AccountUser.exists?(account: account, user: operator)).to be(false)
       expect(team.reload.members).to be_empty
       expect(inbox.reload.members).to be_empty
+    end
+
+    it 'returns the active lifecycle snapshot when deactivation is repeated' do
+      operator = create(:user, account: account)
+
+      first_payload = JSON.parse(service.execute(user_id: operator.id))
+      replay_payload = JSON.parse(service.execute(user_id: operator.id))
+
+      expect(replay_payload).to include(
+        'action' => 'deactivate_user_already_inactive',
+        'idempotent_replay' => true,
+        'lifecycle_snapshot_id' => first_payload['lifecycle_snapshot_id']
+      )
+      expect(AccountUserLifecycleSnapshot.active.where(account: account, user: operator).count).to eq(1)
+    end
+
+    it 'refreshes the active snapshot when membership was manually recreated before another deactivation' do
+      operator = create(:user, account: account)
+      first_payload = JSON.parse(service.execute(user_id: operator.id))
+      new_team = create(:team, account: account)
+      AccountUser.create!(account: account, user: operator, role: 'agent', availability: 'busy')
+      create(:team_member, team: new_team, user: operator)
+
+      second_payload = JSON.parse(service.execute(user_id: operator.id))
+      snapshot = AccountUserLifecycleSnapshot.find(first_payload['lifecycle_snapshot_id'])
+
+      expect(second_payload).to include(
+        'action' => 'deactivate_user',
+        'lifecycle_snapshot_id' => first_payload['lifecycle_snapshot_id'],
+        'idempotent_replay' => false
+      )
+      expect(snapshot).to have_attributes(availability: 'busy', team_ids: [new_team.id])
+      expect(AccountUserLifecycleSnapshot.active.where(account: account, user: operator).count).to eq(1)
     end
 
     it 'rejects deactivating the current operator user' do
@@ -141,6 +176,85 @@ RSpec.describe 'Captain account admin people copilot tools' do
       expect(payload['action']).to eq('reactivate_user')
       expect(payload['user']).to include('id' => existing_user.id, 'email' => 'returning@example.com', 'role' => 'agent')
       expect(AccountUser.exists?(account: account, user: existing_user)).to be(true)
+    end
+
+    it 'restores the saved workspace and protects it from the stale destroy job' do
+      operator = create(:user, account: account, email: 'restorable@example.com')
+      account_user = AccountUser.find_by!(account: account, user: operator)
+      custom_role = create(:custom_role, account: account)
+      capacity_policy = create(:agent_capacity_policy, account: account)
+      account_user.update!(
+        role: 'administrator',
+        availability: 'busy',
+        auto_offline: false,
+        custom_role: custom_role,
+        agent_capacity_policy: capacity_policy
+      )
+      team = create(:team, account: account)
+      inbox = create(:inbox, account: account)
+      create(:team_member, team: team, user: operator)
+      create(:inbox_member, inbox: inbox, user: operator)
+
+      deactivate_payload = JSON.parse(
+        Captain::Tools::Copilot::DeactivateUserService.new(assistant, user: admin).execute(user_id: operator.id)
+      )
+      reactivate_payload = JSON.parse(service.execute(lifecycle_snapshot_id: deactivate_payload['lifecycle_snapshot_id']))
+      restored_account_user = AccountUser.find_by!(account: account, user: operator)
+
+      expect(reactivate_payload).to include(
+        'action' => 'reactivate_user',
+        'workspace_restored' => true,
+        'restored_team_ids' => [team.id],
+        'restored_inbox_ids' => [inbox.id],
+        'lifecycle_snapshot_id' => deactivate_payload['lifecycle_snapshot_id'],
+        'reactivation_source' => 'lifecycle_snapshot_id'
+      )
+      expect(restored_account_user).to have_attributes(
+        role: 'administrator',
+        availability: 'busy',
+        auto_offline: false,
+        custom_role_id: custom_role.id,
+        agent_capacity_policy_id: capacity_policy.id
+      )
+      expect(team.reload.members).to include(operator)
+      expect(inbox.reload.members).to include(operator)
+
+      Agents::DestroyJob.perform_now(account, operator)
+
+      expect(team.reload.members).to include(operator)
+      expect(inbox.reload.members).to include(operator)
+      expect(operator.notification_settings.exists?(account_id: account.id)).to be(true)
+
+      replay_payload = JSON.parse(service.execute(lifecycle_snapshot_id: deactivate_payload['lifecycle_snapshot_id']))
+      expect(replay_payload).to include('action' => 'reactivate_user_already_active', 'idempotent_replay' => true)
+      expect(AccountUserLifecycleSnapshot.find(deactivate_payload['lifecycle_snapshot_id']).reactivated_at).to be_present
+    end
+
+    it 'reactivates by stable user ID and rejects identities from another account' do
+      operator = create(:user, account: account, email: 'stable-id@example.com')
+      deactivate_payload = JSON.parse(
+        Captain::Tools::Copilot::DeactivateUserService.new(assistant, user: admin).execute(user_id: operator.id)
+      )
+
+      payload = JSON.parse(service.execute(user_id: deactivate_payload['user_id']))
+
+      expect(payload).to include(
+        'action' => 'reactivate_user',
+        'reactivation_source' => 'user_id',
+        'lifecycle_snapshot_id' => deactivate_payload['lifecycle_snapshot_id']
+      )
+
+      other_user = create(:user, account: create(:account))
+      expect(service.execute(user_id: other_user.id)).to start_with('ERROR: ActiveRecord::RecordNotFound')
+
+      other_snapshot = AccountUserLifecycleSnapshot.create!(
+        account: other_user.accounts.first,
+        user: other_user,
+        role: 'agent',
+        availability: 'offline',
+        deactivated_at: Time.current
+      )
+      expect(service.execute(lifecycle_snapshot_id: other_snapshot.id)).to start_with('ERROR: ActiveRecord::RecordNotFound')
     end
   end
 

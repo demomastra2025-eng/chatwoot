@@ -42,12 +42,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def playground
-    response = Captain::Assistant::AgentRunnerService.new(
-      assistant: @assistant,
-      source: 'playground'
-    ).generate_response(
-      message_history: playground_message_history
-    )
+    response = @assistant.internal_assistant? ? copilot_playground_response : agent_playground_response
 
     render json: response
   rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
@@ -192,7 +187,46 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def playground_params
-    params.require(:assistant).permit(:message_content, message_history: [:role, :content, :agent_name])
+    params.require(:assistant).permit(:message_content, :conversation_id, message_history: [:role, :content, :agent_name])
+  end
+
+  def agent_playground_response
+    options = { assistant: @assistant, source: 'playground' }
+    options[:conversation] = playground_conversation if playground_params[:conversation_id].present?
+
+    Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: playground_message_history)
+  end
+
+  def copilot_playground_response
+    response = Captain::Copilot::ChatService.new(
+      @assistant,
+      {
+        user_id: Current.user.id,
+        conversation_id: playground_conversation&.display_id,
+        previous_history: copilot_playground_history,
+        source: 'playground'
+      }.compact
+    ).generate_response(playground_params[:message_content])
+    payload = response.to_h.deep_stringify_keys
+
+    payload.merge('response' => payload['content'])
+  end
+
+  def copilot_playground_history
+    history = message_history.map { |message| message.slice(:role, :content) }
+    current_message = playground_params[:message_content]
+    history.pop if history.last&.slice(:role, :content) == { role: 'user', content: current_message }
+    history
+  end
+
+  def playground_conversation
+    return if playground_params[:conversation_id].blank?
+
+    @playground_conversation ||= Conversations::PermissionFilterService.new(
+      Current.account.conversations,
+      Current.user,
+      Current.account
+    ).perform.find_by!(display_id: playground_params[:conversation_id])
   end
 
   def message_history

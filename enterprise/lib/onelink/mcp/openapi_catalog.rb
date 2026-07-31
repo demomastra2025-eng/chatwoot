@@ -40,14 +40,21 @@ module Onelink
 
       def call_tool(name:, arguments:)
         operation = operations.find { |item| tool_name_for(item).to_s == name.to_s }
-        return error_tool_response("OpenAPI tool '#{name}' is not available") if operation.blank?
+        return error_tool_response("OpenAPI tool '#{name}' is not available", code: 'not_available') if operation.blank?
+
         unless auth_context.mcp_access_policy.allows_openapi_operation?(operation)
-          return error_tool_response("OpenAPI tool '#{name}' is disabled by this workspace MCP access policy")
+          return error_tool_response(
+            "OpenAPI tool '#{name}' is disabled by this workspace MCP access policy",
+            code: 'policy_denied'
+          )
         end
 
         execution_arguments = arguments.respond_to?(:to_h) ? arguments.to_h : {}
         if operation[:requires_confirmation] && !auth_context.mcp_access_policy.mutation_confirmed?(execution_arguments)
-          return error_tool_response("OpenAPI mutation tool '#{name}' requires #{CONFIRM_ARGUMENT}: true")
+          return error_tool_response(
+            "OpenAPI mutation tool '#{name}' requires #{CONFIRM_ARGUMENT}: true",
+            code: 'confirmation_required'
+          )
         end
 
         result = dispatch_request(operation, execution_arguments)
@@ -314,19 +321,7 @@ module Onelink
         raw_body = collect_body(body)
         parsed = parse_json(raw_body)
         redacted_parsed = redact_value(parsed)
-        success = status.to_i.between?(200, 299)
-
-        {
-          content: [
-            {
-              type: 'text',
-              text: response_text(raw_body: raw_body, parsed: redacted_parsed)
-            }
-          ],
-          isError: !success
-        }.tap do |payload|
-          payload[:structuredContent] = redacted_parsed if redacted_parsed.is_a?(Hash) || redacted_parsed.is_a?(Array)
-        end
+        openapi_response(status: status, raw_body: raw_body, parsed: redacted_parsed)
       ensure
         body&.close if body.respond_to?(:close)
       end
@@ -406,6 +401,37 @@ module Onelink
         buffer
       end
 
+      def structured_content_for(status:, success:, parsed:)
+        return openapi_error_content(status: status, parsed: parsed) unless success
+        return parsed if parsed.is_a?(Hash) || parsed.is_a?(Array)
+
+        nil
+      end
+
+      def openapi_error_content(status:, parsed:)
+        payload = parsed.is_a?(Hash) ? parsed.deep_symbolize_keys : {}
+        error = payload[:error].is_a?(Hash) ? payload[:error].deep_symbolize_keys : payload
+        error_message = error[:message].presence
+        error_message ||= payload[:error] if payload[:error].is_a?(String)
+
+        {
+          code: redact_value(error[:code].presence || 'openapi_http_error').to_s,
+          message: redact_value(error_message || 'OpenAPI request failed').to_s,
+          status: status.to_i
+        }
+      end
+
+      def openapi_response(status:, raw_body:, parsed:)
+        success = status.to_i.between?(200, 299)
+        structured_content = structured_content_for(status: status, success: success, parsed: parsed)
+        payload = {
+          content: [{ type: 'text', text: response_text(raw_body: raw_body, parsed: structured_content || parsed) }],
+          isError: !success
+        }
+        payload[:structuredContent] = structured_content unless structured_content.nil?
+        payload
+      end
+
       def response_text(raw_body:, parsed:)
         return JSON.pretty_generate(parsed) if parsed.present?
 
@@ -474,7 +500,7 @@ module Onelink
         end
       end
 
-      def error_tool_response(message, code: nil, **details)
+      def error_tool_response(message, code:, status: nil)
         payload = {
           content: [
             {
@@ -484,9 +510,7 @@ module Onelink
           ],
           isError: true
         }
-        return payload if code.blank?
-
-        structured_content = { code: code.to_s, message: message.to_s }.merge(details.compact)
+        structured_content = { code: code.to_s, message: message.to_s, status: status }
         payload[:structuredContent] = structured_content
         payload[:content].first[:text] = JSON.pretty_generate(redact_value(structured_content))
         payload

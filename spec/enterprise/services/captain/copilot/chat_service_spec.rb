@@ -4,10 +4,11 @@ RSpec.describe Captain::Copilot::ChatService do
   let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
   let(:user) { create(:user, account: account) }
   let(:inbox) { create(:inbox, account: account) }
+  let!(:inbox_member) { create(:inbox_member, inbox: inbox, user: user) }
   let(:assistant) { create(:captain_assistant, account: account) }
   let(:contact) { create(:contact, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
-  let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user) }
+  let(:copilot_thread) { create(:captain_copilot_thread, account: account, user: user, assistant: assistant) }
   let!(:copilot_message) do
     create(
       :captain_copilot_message, account: account, copilot_thread: copilot_thread
@@ -418,6 +419,50 @@ RSpec.describe Captain::Copilot::ChatService do
       expect(service.user).to eq(user)
     end
 
+    it 'includes the resolved actor and source in the runtime event context' do
+      service = described_class.new(assistant, { user_id: user.id, source: 'playground' })
+
+      expect(service.send(:request_event_context)).to include(user_id: user.id, source: 'playground')
+    end
+
+    it 'rejects a conversation that the resolved actor cannot access' do
+      AccountUser.find_by!(account: account, user: user).update!(role: :agent)
+      inaccessible_inbox = create(:inbox, account: account)
+      inaccessible_conversation = create(:conversation, account: account, inbox: inaccessible_inbox)
+
+      expect do
+        described_class.new(assistant, { user_id: user.id, conversation_id: inaccessible_conversation.display_id })
+      end.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    it 'fails closed when the queued actor no longer belongs to the account' do
+      stale_user = create(:user, account: account)
+      account.account_users.find_by!(user: stale_user).delete
+
+      expect do
+        described_class.new(assistant, { user_id: stale_user.id, conversation_id: conversation.display_id })
+      end.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    it 'requires an actor for conversation and thread context' do
+      expect do
+        described_class.new(assistant, { conversation_id: conversation.display_id })
+      end.to raise_error(ActiveRecord::RecordNotFound, 'Copilot actor is required')
+
+      expect do
+        described_class.new(assistant, { copilot_thread_id: copilot_thread.id })
+      end.to raise_error(ActiveRecord::RecordNotFound, 'Copilot actor is required')
+    end
+
+    it 'rejects a copilot thread owned by another account user' do
+      other_user = create(:user, account: account)
+      other_thread = create(:captain_copilot_thread, account: account, user: other_user, assistant: assistant)
+
+      expect do
+        described_class.new(assistant, { user_id: user.id, copilot_thread_id: other_thread.id })
+      end.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
     it 'does not set user when user_id is not present in config' do
       service = described_class.new(assistant, {})
       expect(service.user).to be_nil
@@ -427,7 +472,7 @@ RSpec.describe Captain::Copilot::ChatService do
   describe 'message history behavior' do
     context 'when copilot_thread_id is present' do
       it 'finds the copilot thread and sets previous history from it' do
-        service = described_class.new(assistant, { copilot_thread_id: copilot_thread.id })
+        service = described_class.new(assistant, { user_id: user.id, copilot_thread_id: copilot_thread.id })
 
         expect(service.copilot_thread).to eq(copilot_thread)
         expect(service.previous_history).to eq previous_history
@@ -472,7 +517,7 @@ RSpec.describe Captain::Copilot::ChatService do
     end
 
     it 'includes current viewing history when conversation_id is present' do
-      service = described_class.new(assistant, { conversation_id: conversation.display_id })
+      service = described_class.new(assistant, { user_id: user.id, conversation_id: conversation.display_id })
       messages = service.messages
 
       viewing_history = messages.find { |m| m[:content].include?('You are currently viewing the conversation') }
@@ -486,7 +531,7 @@ RSpec.describe Captain::Copilot::ChatService do
     context 'when copilot_thread is present' do
       it 'creates a copilot message with the response' do
         expect do
-          described_class.new(assistant, { copilot_thread_id: copilot_thread.id }).generate_response('Hello')
+          described_class.new(assistant, { user_id: user.id, copilot_thread_id: copilot_thread.id }).generate_response('Hello')
         end.to change(CopilotMessage, :count).by(1)
 
         last_message = CopilotMessage.last

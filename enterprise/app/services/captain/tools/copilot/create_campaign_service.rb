@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'digest'
+
 class Captain::Tools::Copilot::CreateCampaignService < Captain::Tools::Copilot::CampaignAdminTool
   def self.name
     'create_campaign'
@@ -19,16 +21,25 @@ class Captain::Tools::Copilot::CreateCampaignService < Captain::Tools::Copilot::
   param :template_params_json, type: :string, desc: 'Optional JSON object for approved template params', required: false
   param :trigger_rules_json, type: :string, desc: 'Optional JSON object for website trigger campaigns', required: false
   param :trigger_only_during_business_hours, type: :boolean, desc: 'Only trigger during inbox business hours', required: false
+  param :idempotency_key,
+        type: :string,
+        desc: 'Optional stable key for retrying the same exact create request. Copilot derives one from the current operator action when omitted.',
+        required: false
 
-  def execute(title:, inbox_id:, audience_json:, **kwargs)
+  def execute(title:, inbox_id:, audience_json:, idempotency_key: nil, **kwargs)
     ensure_account_administrator!
 
     inbox = inbox!(inbox_id)
     attrs = build_attrs(title: title, inbox: inbox, audience_json: audience_json, kwargs: kwargs)
-    campaign = save_campaign!(account.campaigns.new(attrs))
+    resolved_key = campaign_idempotency_key(attrs, supplied_key: idempotency_key)
+    fingerprint = campaign_request_fingerprint(attrs) if resolved_key.present?
+    campaign, idempotent_replay = save_idempotent_campaign(
+      attrs.merge(idempotency_key: resolved_key, idempotency_fingerprint: fingerprint).compact
+    )
 
     formatted_payload(
       action: 'create_campaign',
+      idempotent_replay: idempotent_replay,
       campaign: campaign_payload(campaign, include_config: true),
       preview: campaign_preview(campaign)
     )
@@ -37,6 +48,66 @@ class Captain::Tools::Copilot::CreateCampaignService < Captain::Tools::Copilot::
   end
 
   private
+
+  def save_idempotent_campaign(attrs)
+    key = attrs[:idempotency_key]
+    existing = account.campaigns.find_by(idempotency_key: key) if key.present?
+    return idempotent_replay(existing, attrs[:idempotency_fingerprint]) if existing.present?
+
+    [save_campaign!(account.campaigns.new(attrs)), false]
+  rescue ActiveRecord::RecordNotUnique
+    idempotent_replay(account.campaigns.find_by!(idempotency_key: key), attrs[:idempotency_fingerprint])
+  end
+
+  def idempotent_replay(campaign, fingerprint)
+    raise ArgumentError, 'idempotency_key was already used with different campaign attributes' if campaign.idempotency_fingerprint != fingerprint
+
+    [campaign, true]
+  end
+
+  def campaign_idempotency_key(attrs, supplied_key:)
+    source = supplied_key.to_s.strip.presence || copilot_action_idempotency_source(attrs)
+    return if source.blank?
+
+    Digest::SHA256.hexdigest("captain:create_campaign:v1:#{source}")
+  end
+
+  def copilot_action_idempotency_source(attrs)
+    return if @copilot_thread.blank?
+
+    latest_user_message_id = @copilot_thread.copilot_messages.user.order(id: :desc).limit(1).pick(:id)
+    return if latest_user_message_id.blank?
+
+    JSON.generate(
+      thread_id: @copilot_thread.id,
+      user_message_id: latest_user_message_id,
+      attributes: canonical_value(campaign_idempotency_attributes(attrs))
+    )
+  end
+
+  def campaign_request_fingerprint(attrs)
+    Digest::SHA256.hexdigest(JSON.generate(canonical_value(campaign_idempotency_attributes(attrs))))
+  end
+
+  def campaign_idempotency_attributes(attrs)
+    attrs.except(:inbox, :sender, :captain_assistant).merge(
+      inbox_id: attrs[:inbox]&.id,
+      sender_id: attrs[:sender]&.id,
+      captain_assistant_id: attrs[:captain_assistant]&.id,
+      scheduled_at: attrs[:scheduled_at]&.iso8601
+    )
+  end
+
+  def canonical_value(value)
+    case value
+    when Hash
+      value.to_h.stringify_keys.sort.to_h.transform_values { |nested| canonical_value(nested) }
+    when Array
+      value.map { |nested| canonical_value(nested) }
+    else
+      value.respond_to?(:as_json) ? value.as_json : value
+    end
+  end
 
   def build_attrs(title:, inbox:, audience_json:, kwargs:)
     text_mode = kwargs[:text_mode].presence || 'static'

@@ -93,6 +93,66 @@ RSpec.describe 'Captain campaign copilot tools' do
       expect(account.campaigns.find_by(title: 'VIP outbound')).to be_present
     end
 
+    it 'reuses the campaign for repeated explicit idempotency keys' do
+      service = described_class.new(assistant, user: admin)
+      arguments = {
+        title: 'Explicit retry',
+        inbox_id: sms_inbox.id,
+        audience_json: audience_json,
+        message: 'One campaign only',
+        idempotency_key: 'qa-run-create-campaign-1'
+      }
+
+      first_payload = JSON.parse(service.execute(**arguments))
+      replay_payload = JSON.parse(service.execute(**arguments))
+
+      expect(account.campaigns.where(title: 'Explicit retry').count).to eq(1)
+      expect(first_payload['idempotent_replay']).to be(false)
+      expect(replay_payload['idempotent_replay']).to be(true)
+      expect(replay_payload.dig('campaign', 'record_id')).to eq(first_payload.dig('campaign', 'record_id'))
+    end
+
+    it 'rejects a reused idempotency key when campaign attributes differ' do
+      service = described_class.new(assistant, user: admin)
+      arguments = {
+        title: 'Explicit conflict',
+        inbox_id: sms_inbox.id,
+        audience_json: audience_json,
+        message: 'Original body',
+        idempotency_key: 'qa-run-create-campaign-conflict'
+      }
+
+      service.execute(**arguments)
+      result = service.execute(**arguments, message: 'Different body')
+
+      expect(result).to include('idempotency_key was already used with different campaign attributes')
+      expect(account.campaigns.where(title: 'Explicit conflict').count).to eq(1)
+    end
+
+    it 'derives idempotency from the current copilot operator action' do
+      create(
+        :captain_copilot_message,
+        account: account,
+        copilot_thread: copilot_thread,
+        message_type: 'user',
+        message: { 'content' => 'Создай одну кампанию' }
+      )
+      service = described_class.new(assistant, user: admin, copilot_thread: copilot_thread)
+      arguments = {
+        title: 'Derived retry',
+        inbox_id: sms_inbox.id,
+        audience_json: audience_json,
+        message: 'One derived campaign only'
+      }
+
+      first_payload = JSON.parse(service.execute(**arguments))
+      replay_payload = JSON.parse(service.execute(**arguments))
+
+      expect(account.campaigns.where(title: 'Derived retry').count).to eq(1)
+      expect(first_payload['idempotent_replay']).to be(false)
+      expect(replay_payload['idempotent_replay']).to be(true)
+    end
+
     it 'does not create without backend confirmation' do
       allow(Captain::Copilot::ToolConfirmationGate).to receive(:new).and_call_original
       service = described_class.new(assistant, user: admin, copilot_thread: copilot_thread)
@@ -190,6 +250,36 @@ RSpec.describe 'Captain campaign copilot tools' do
       expect(payload['action']).to eq('launch_campaign')
       expect(payload['queued']).to be(true)
       expect(Campaigns::TriggerOneoffCampaignJob).to have_received(:perform_later).with(campaign)
+    end
+
+    it 'reuses an active launch lease instead of enqueuing twice' do
+      contact = create(:contact, account: account, phone_number: '+15550000104')
+      contact.label_list.add(label.title)
+      contact.save!
+      campaign = create(:campaign, account: account, inbox: sms_inbox, audience: audience, message: 'Launch once')
+      allow(Campaigns::TriggerOneoffCampaignJob).to receive(:perform_later)
+      service = described_class.new(assistant, user: admin)
+
+      first_payload = JSON.parse(service.execute(campaign_id: campaign.display_id))
+      replay_payload = JSON.parse(service.execute(campaign_id: campaign.display_id))
+
+      expect(Campaigns::TriggerOneoffCampaignJob).to have_received(:perform_later).with(campaign).once
+      expect(first_payload).to include('enqueue_created' => true, 'idempotent_replay' => false)
+      expect(replay_payload).to include('enqueue_created' => false, 'idempotent_replay' => true)
+      expect(campaign.reload.launch_requested_at).to be_present
+    end
+
+    it 'releases its launch lease when enqueue fails' do
+      contact = create(:contact, account: account, phone_number: '+15550000105')
+      contact.label_list.add(label.title)
+      contact.save!
+      campaign = create(:campaign, account: account, inbox: sms_inbox, audience: audience, message: 'Retry enqueue')
+      allow(Campaigns::TriggerOneoffCampaignJob).to receive(:perform_later).and_raise(StandardError, 'queue unavailable')
+
+      result = described_class.new(assistant, user: admin).execute(campaign_id: campaign.display_id)
+
+      expect(result).to include('queue unavailable')
+      expect(campaign.reload.launch_requested_at).to be_nil
     end
 
     it 'does not enqueue without backend confirmation' do

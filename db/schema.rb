@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_30_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_07_31_110000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -42,6 +42,28 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_30_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_account_saml_settings_on_account_id"
+  end
+
+  create_table "account_user_lifecycle_snapshots", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "deactivated_by_id"
+    t.string "role", null: false
+    t.string "availability", null: false
+    t.boolean "auto_offline", default: true, null: false
+    t.bigint "custom_role_id"
+    t.bigint "agent_capacity_policy_id"
+    t.jsonb "team_ids", default: [], null: false
+    t.jsonb "inbox_ids", default: [], null: false
+    t.datetime "deactivated_at", null: false
+    t.datetime "reactivated_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "user_id"], name: "index_account_user_lifecycle_snapshots_active", unique: true, where: "(reactivated_at IS NULL)"
+    t.index ["account_id"], name: "index_account_user_lifecycle_snapshots_on_account_id"
+    t.index ["deactivated_at"], name: "index_account_user_lifecycle_snapshots_on_deactivated_at"
+    t.index ["deactivated_by_id"], name: "index_account_user_lifecycle_snapshots_on_deactivated_by_id"
+    t.index ["user_id"], name: "index_account_user_lifecycle_snapshots_on_user_id"
   end
 
   create_table "account_users", force: :cascade do |t|
@@ -450,11 +472,16 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_30_120000) do
     t.integer "text_mode", default: 0, null: false
     t.text "instructions"
     t.bigint "captain_assistant_id"
+    t.string "idempotency_key"
+    t.datetime "launch_requested_at"
+    t.string "idempotency_fingerprint"
+    t.index ["account_id", "idempotency_key"], name: "index_campaigns_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id"], name: "index_campaigns_on_account_id"
     t.index ["campaign_status"], name: "index_campaigns_on_campaign_status"
     t.index ["campaign_type"], name: "index_campaigns_on_campaign_type"
     t.index ["captain_assistant_id"], name: "index_campaigns_on_captain_assistant_id"
     t.index ["inbox_id"], name: "index_campaigns_on_inbox_id"
+    t.index ["launch_requested_at"], name: "index_campaigns_on_launch_requested_at"
     t.index ["scheduled_at"], name: "index_campaigns_on_scheduled_at"
   end
 
@@ -3136,6 +3163,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_30_120000) do
     t.index ["inbox_id"], name: "index_working_hours_on_inbox_id"
   end
 
+  add_foreign_key "account_user_lifecycle_snapshots", "accounts", on_delete: :cascade
+  add_foreign_key "account_user_lifecycle_snapshots", "users", column: "deactivated_by_id", on_delete: :nullify
+  add_foreign_key "account_user_lifecycle_snapshots", "users", on_delete: :cascade
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "assignment_client_ownerships", "accounts", name: "fk_rails_assignment_client_ownerships_account"

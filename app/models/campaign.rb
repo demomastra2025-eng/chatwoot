@@ -8,7 +8,10 @@
 #  campaign_type                      :integer          default("ongoing"), not null
 #  description                        :text
 #  enabled                            :boolean          default(TRUE)
+#  idempotency_fingerprint            :string
+#  idempotency_key                    :string
 #  instructions                       :text
+#  launch_requested_at                :datetime
 #  message                            :text             not null
 #  scheduled_at                       :datetime
 #  template_params                    :jsonb
@@ -26,12 +29,14 @@
 #
 # Indexes
 #
-#  index_campaigns_on_account_id            (account_id)
-#  index_campaigns_on_campaign_status       (campaign_status)
-#  index_campaigns_on_campaign_type         (campaign_type)
-#  index_campaigns_on_captain_assistant_id  (captain_assistant_id)
-#  index_campaigns_on_inbox_id              (inbox_id)
-#  index_campaigns_on_scheduled_at          (scheduled_at)
+#  index_campaigns_on_account_id                      (account_id)
+#  index_campaigns_on_account_id_and_idempotency_key  (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
+#  index_campaigns_on_campaign_status                 (campaign_status)
+#  index_campaigns_on_campaign_type                   (campaign_type)
+#  index_campaigns_on_captain_assistant_id            (captain_assistant_id)
+#  index_campaigns_on_inbox_id                        (inbox_id)
+#  index_campaigns_on_launch_requested_at             (launch_requested_at)
+#  index_campaigns_on_scheduled_at                    (scheduled_at)
 #
 # Foreign Keys
 #
@@ -39,6 +44,7 @@
 #
 class Campaign < ApplicationRecord
   include UrlHelper
+  LAUNCH_REQUEST_LEASE = 10.minutes
   ONE_OFF_INBOX_TYPES = ['Twilio SMS', 'Sms', 'Whatsapp', 'Email', 'WhatsApp Web', 'Telegram', 'Telegram Personal', 'VK', 'LINE', 'Facebook',
                          'Instagram', 'Tiktok', 'Twitter'].freeze
   SUPPORTED_INBOX_TYPES = ['Website', *ONE_OFF_INBOX_TYPES].freeze
@@ -48,6 +54,8 @@ class Campaign < ApplicationRecord
   validates :title, presence: true
   validates :message, presence: true, unless: :agent?
   validates :instructions, presence: true, if: :agent?
+  validates :idempotency_fingerprint, length: { is: 64 }, allow_nil: true
+  validates :idempotency_key, length: { maximum: 128 }, uniqueness: { scope: :account_id }, allow_nil: true
   validate :validate_campaign_inbox
   validate :validate_url
   validate :prevent_terminal_campaign_from_update, on: :update
@@ -100,6 +108,28 @@ class Campaign < ApplicationRecord
     raise
   end
 
+  def request_one_off_launch!(requested_at: Time.current)
+    with_lock do
+      reload
+      next false unless one_off? && active?
+      next false if launch_requested_at.present? && launch_requested_at >= requested_at - LAUNCH_REQUEST_LEASE
+
+      update!(launch_requested_at: requested_at)
+      true
+    end
+  end
+
+  def release_one_off_launch!(requested_at:)
+    with_lock do
+      reload
+      matching_request = launch_requested_at.present? && (launch_requested_at.to_f - requested_at.to_f).abs < 0.001
+      next false unless active? && matching_request
+
+      update!(launch_requested_at: nil)
+      true
+    end
+  end
+
   def cancel_one_off!
     with_lock do
       reload
@@ -121,7 +151,7 @@ class Campaign < ApplicationRecord
       reload
 
       latest_run_id = campaign_runs.order(created_at: :desc).limit(1).pick(:id)
-      return unless latest_run_id == run.id
+      next unless latest_run_id == run.id
 
       next_status = case run.status
                     when 'running' then :running
@@ -130,7 +160,7 @@ class Campaign < ApplicationRecord
                     when 'completed' then :completed
                     end
 
-      return if next_status.blank? || campaign_status == next_status.to_s
+      next if next_status.blank? || campaign_status == next_status.to_s
 
       update_column(:campaign_status, self.class.campaign_statuses.fetch(next_status.to_s))
     end
@@ -152,7 +182,7 @@ class Campaign < ApplicationRecord
       reload
       next false unless active?
 
-      running!
+      update!(campaign_status: :running, launch_requested_at: nil)
       true
     end
   end

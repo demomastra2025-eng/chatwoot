@@ -22,6 +22,7 @@ RSpec.describe Agents::DestroyJob do
 
   describe '#perform' do
     it 'remove inboxes, teams, and conversations when removed from account' do
+      AccountUser.find_by!(account: account, user: user).delete
       described_class.perform_now(account, user)
 
       user.reload
@@ -29,6 +30,16 @@ RSpec.describe Agents::DestroyJob do
       expect(user.inboxes.length).to eq 0
       expect(user.notification_settings.length).to eq 0
       expect(user.assigned_conversations.where(account: account).length).to eq 0
+    end
+
+    it 'does not remove restored memberships when the account user is active again' do
+      described_class.perform_now(account, user)
+
+      user.reload
+      expect(user.teams).to include(team1)
+      expect(user.inboxes).to include(inbox)
+      expect(user.notification_settings.exists?(account_id: account.id)).to be(true)
+      expect(user.assigned_conversations.where(account: account).count).to eq(1)
     end
   end
 end

@@ -128,6 +128,37 @@ RSpec.describe Captain::ToolExecutionAuditService do
     expect(serialized_payload).not_to include('signed-artifact-id')
   end
 
+  it 'records MCP isError payloads as failed executions' do
+    described_class.record(
+      assistant: assistant,
+      scope_name: Captain::ToolAccess::SCOPE_ASSISTANT,
+      tool_definition: {
+        id: 'api__repair_whatsapp_web',
+        title: 'Repair WhatsApp Web',
+        risk_level: 'high',
+        requires_confirmation: true
+      },
+      arguments: { inbox_id: 12 },
+      result: {
+        content: [{ type: 'text', text: '{"error":{"message":"OpenAPI request failed"}}' }],
+        isError: true,
+        structuredContent: {
+          error: {
+            code: 'openapi_http_error',
+            message: 'OpenAPI request failed',
+            http_status: 502
+          }
+        }
+      },
+      user: user
+    )
+
+    audit_payload = Enterprise::AuditLog.where(action: 'captain_tool_execute').last.audited_changes
+
+    expect(audit_payload['result_success']).to be(false)
+    expect(audit_payload['result_error']).to eq('OpenAPI request failed')
+  end
+
   it 'does not audit public agent or read-only assistant tool calls unless audit logs or confirmation require it' do
     expect(account).not_to be_feature_enabled(:audit_logs)
 

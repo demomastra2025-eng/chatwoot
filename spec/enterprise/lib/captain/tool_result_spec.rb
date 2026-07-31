@@ -24,6 +24,34 @@ RSpec.describe Captain::ToolResult do
       expect(result).to include(success: false, data: { id: 1 }, error: 'Boom')
     end
 
+    it 'normalizes MCP error payloads as failures with structured data' do
+      result = described_class.normalize(
+        {
+          content: [{ type: 'text', text: '{"error":{"message":"OpenAPI request failed"}}' }],
+          isError: true,
+          structuredContent: {
+            error: {
+              code: 'openapi_http_error',
+              message: 'OpenAPI request failed',
+              http_status: 502
+            }
+          }
+        }
+      )
+
+      expect(result).to include(
+        success: false,
+        error: 'OpenAPI request failed',
+        data: {
+          error: {
+            code: 'openapi_http_error',
+            message: 'OpenAPI request failed',
+            http_status: 502
+          }
+        }
+      )
+    end
+
     it 'captures exceptions as error messages' do
       error = StandardError.new('Bad')
       result = described_class.normalize('ok', error: error)
@@ -45,6 +73,7 @@ RSpec.describe Captain::ToolResult do
       expect(described_class.error?('ERROR: blocked')).to be(true)
       expect(described_class.error?({ success: false })).to be(true)
       expect(described_class.error?({ error: 'nope' })).to be(true)
+      expect(described_class.error?({ isError: true, content: [] })).to be(true)
       expect(described_class.error?('ok')).to be(false)
     end
   end
