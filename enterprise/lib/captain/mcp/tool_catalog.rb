@@ -4,13 +4,35 @@ require 'timeout'
 class Captain::Mcp::ToolCatalog
   CACHE_TTL = 5.minutes
   FAILURE_CACHE_TTL = 30.seconds
+  RUNTIME_CACHE_KEY = :captain_mcp_tool_catalog_runtime_cache
   DISCOVERY_TIMEOUT_SECONDS = 5
   DISCOVERY_MAX_ATTEMPTS = 2
   DISCOVERY_RETRY_DELAY_SECONDS = 0.1
   RETRYABLE_HTTP_STATUSES = [408, 425, 429, 500, 502, 503, 504].freeze
 
   class << self
+    def with_runtime_cache
+      previous_cache = Thread.current[RUNTIME_CACHE_KEY]
+      Thread.current[RUNTIME_CACHE_KEY] = {}
+
+      yield
+    ensure
+      Thread.current[RUNTIME_CACHE_KEY] = previous_cache
+    end
+
     def available_tools_for(assistant, scope_name)
+      runtime_cache = Thread.current[RUNTIME_CACHE_KEY]
+      return discover_available_tools(assistant, scope_name) if runtime_cache.nil?
+
+      cache_key = [assistant.account_id, scope_name.to_s]
+      runtime_cache.fetch(cache_key) do
+        runtime_cache[cache_key] = discover_available_tools(assistant, scope_name)
+      end
+    end
+
+    private
+
+    def discover_available_tools(assistant, scope_name)
       assistant.account.captain_mcp_servers.enabled.filter_map do |mcp_server|
         next unless mcp_server.normalized_allowed_scopes.include?(scope_name.to_s)
 

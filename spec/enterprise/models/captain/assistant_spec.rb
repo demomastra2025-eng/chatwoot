@@ -144,6 +144,29 @@ RSpec.describe Captain::Assistant, type: :model do
     end
   end
 
+  describe '#resolve_runtime_prompt_context' do
+    let(:assistant) { create(:captain_assistant) }
+
+    it 'calculates allowed context fields once for the whole nested payload' do
+      allowed_fields = [{ id: 'contact.name' }]
+      prompt_state = { contact: { 'name' => 'Jane' } }
+      context = {
+        title: '[Name](field://contact.name)',
+        nested: ['plain text', { label: '[Name](field://contact.name)' }]
+      }
+
+      allow(assistant).to receive(:allowed_context_fields).with(['contact.name']).and_return(allowed_fields)
+
+      result = assistant.resolve_runtime_prompt_context(context, prompt_state, field_ids: ['contact.name'])
+
+      expect(result).to eq(
+        title: 'Name (contact.name: Jane)',
+        nested: ['plain text', { label: 'Name (contact.name: Jane)' }]
+      )
+      expect(assistant).to have_received(:allowed_context_fields).once
+    end
+  end
+
   describe 'tool access' do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }

@@ -78,6 +78,19 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       service.generate_response(message_history: message_history)
     end
 
+    it 'keeps the MCP catalog cache active for the runtime and clears it afterwards' do
+      runtime_cache = nil
+      allow(mock_runner).to receive(:run) do
+        runtime_cache = Thread.current[Captain::Mcp::ToolCatalog::RUNTIME_CACHE_KEY]
+        mock_result
+      end
+
+      service.generate_response(message_history: message_history)
+
+      expect(runtime_cache).to be_a(Hash)
+      expect(Thread.current[Captain::Mcp::ToolCatalog::RUNTIME_CACHE_KEY]).to be_nil
+    end
+
     it 'builds agents and wires them together' do
       expect(assistant).to receive(:agent).and_return(mock_agent)
       scenarios_relation = instance_double(Captain::Scenario)

@@ -43,9 +43,11 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def generate_response(message_history: [])
-    Llm::Config.with_runtime_cache do
-      with_llm_catalog_snapshots do
-        generate_response_with_runtime_cache(message_history)
+    Captain::Mcp::ToolCatalog.with_runtime_cache do
+      Llm::Config.with_runtime_cache do
+        with_llm_catalog_snapshots do
+          generate_response_with_runtime_cache(message_history)
+        end
       end
     end
   rescue StandardError => e

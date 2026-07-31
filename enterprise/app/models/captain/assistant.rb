@@ -814,8 +814,8 @@ class Captain::Assistant < ApplicationRecord
     config.delete('feature_contact_attributes')
   end
 
-  def resolve_runtime_value(value, prompt_state, field_ids: nil)
-    allowed_fields = allowed_context_fields(field_ids)
+  def resolve_runtime_value(value, prompt_state, field_ids: nil, allowed_fields: nil)
+    allowed_fields ||= allowed_context_fields(field_ids)
 
     case value
     when String
@@ -823,9 +823,9 @@ class Captain::Assistant < ApplicationRecord
       text_with_skills = render_skill_references(text_with_tools)
       Captain::ContextFields.render_references(text_with_skills, prompt_state: prompt_state, allowed_fields: allowed_fields)
     when Array
-      value.map { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids) }
+      value.map { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids, allowed_fields: allowed_fields) }
     when Hash
-      value.transform_values { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids) }
+      value.transform_values { |item| resolve_runtime_value(item, prompt_state, field_ids: field_ids, allowed_fields: allowed_fields) }
     else
       value
     end

@@ -38,6 +38,64 @@ RSpec.describe Captain::Mcp::ToolCatalog do
       expect(tool_ids).not_to include("mcp__#{own_server.slug}__lookup")
     end
 
+    it 'reuses a failed discovery result inside one runtime when the Rails cache is disabled' do
+      discovery = instance_double(described_class::DiscoveryService)
+      allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::NullStore.new)
+      allow(described_class::DiscoveryService).to receive(:new).and_return(discovery)
+      allow(discovery).to receive(:tools).and_raise(Timeout::Error, 'unavailable')
+
+      results = described_class.with_runtime_cache do
+        Array.new(3) { described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT) }
+      end
+
+      expect(results).to eq([[], [], []])
+      expect(described_class::DiscoveryService).to have_received(:new).once
+      expect(discovery).to have_received(:tools).once
+    end
+
+    it 'isolates cached results by account and scope' do
+      other_account = create(:account)
+      other_assistant = create(:captain_assistant, account: other_account)
+      create(:captain_mcp_server, account: other_account, slug: 'second_account_server')
+
+      described_class.with_runtime_cache do
+        described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)
+        described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)
+        described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
+        described_class.available_tools_for(other_assistant, Captain::ToolAccess::SCOPE_AGENT)
+      end
+
+      expect(described_class::DiscoveryService).to have_received(:new).exactly(3).times
+    end
+
+    it 'restores the outer runtime cache after a nested runtime raises' do
+      original_cache = Thread.current[described_class::RUNTIME_CACHE_KEY]
+      outer_cache = nil
+
+      described_class.with_runtime_cache do
+        outer_cache = Thread.current[described_class::RUNTIME_CACHE_KEY]
+
+        expect do
+          described_class.with_runtime_cache { raise 'runtime failure' }
+        end.to raise_error(RuntimeError, 'runtime failure')
+
+        expect(Thread.current[described_class::RUNTIME_CACHE_KEY]).to equal(outer_cache)
+      end
+
+      expect(Thread.current[described_class::RUNTIME_CACHE_KEY]).to equal(original_cache)
+    end
+
+    it 'isolates runtime caches between worker threads' do
+      threads = Array.new(2) do
+        Thread.new do
+          described_class.with_runtime_cache { Thread.current[described_class::RUNTIME_CACHE_KEY] }
+        end
+      end
+      thread_caches = threads.map(&:value)
+
+      expect(thread_caches.first).not_to equal(thread_caches.last)
+    end
+
     def tool_payload_for(server)
       {
         id: "mcp__#{server.slug}__lookup",
