@@ -3,7 +3,10 @@ class Telephony::BridgeRoutesController < Telephony::BridgeBaseController
     payload = request_payload
     log_telephony_debug(event: 'telephony_inbound_route_request', payload: payload)
 
-    decision = Telephony::InboundRoutingService.new(payload: payload).perform
+    decision = Telephony::InboundRoutingService.new(
+      payload: payload,
+      runtime_capabilities: request.headers['X-OneLink-Voice-Capabilities'].to_s.split(',')
+    ).perform
     log_telephony_debug(
       event: 'telephony_inbound_route_response',
       payload: payload,

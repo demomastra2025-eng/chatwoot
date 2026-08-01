@@ -1,4 +1,5 @@
-const { VoiceSession } = require('../sessions/voice-session');
+const { VoiceSession, RUNTIME_ENGINE, RUNTIME_CAPABILITIES } = require('../sessions/voice-session');
+const { randomUUID } = require('node:crypto');
 const { ScriptedFallbackResponder } = require('../realtime/scripted-fallback');
 const { RecordingWriter } = require('../recordings/recording-writer');
 const { DialogueDirector } = require('../dialogue/dialogue-director');
@@ -69,6 +70,7 @@ class VoiceApplication {
       accountId: requestPayload.account_id,
       bridgeCallRef: bridgeCallRefCandidate(requestPayload),
       direction: requestPayload.direction || 'inbound',
+      aiSessionId: runtimeSessionIdCandidate(requestPayload),
       toolTimeoutMs: this.toolTimeoutMs
     });
     this.registry?.create({
@@ -100,7 +102,7 @@ class VoiceApplication {
       };
     };
 
-    const routeDecision = await this.routeInboundSafely(requestPayload, callRef);
+    const routeDecision = await this.routeInboundSafely(requestPayload, callRef, session);
     activeRouteDecision = routeDecision;
     applyRouteScope(session, routeDecision);
     if (callerHangupTracker.emitted()) return callerHangupResult();
@@ -334,15 +336,15 @@ class VoiceApplication {
     return { session, context, realtime: bridge.realtime, mediaStream: bridge.mediaStream, mode: 'realtime', completion: bridge.completion };
   }
 
-  async routeInboundSafely(requestPayload, callRef) {
+  async routeInboundSafely(requestPayload, callRef, session) {
     try {
-      return await this.routeInbound(requestPayload, callRef);
+      return await this.routeInbound(requestPayload, callRef, session);
     } catch (error) {
       return routeLookupFailureDecision(error);
     }
   }
 
-  routeInbound(requestPayload, callRef) {
+  routeInbound(requestPayload, callRef, session) {
     const providedDecision = providedRouteDecision(requestPayload);
     if (providedDecision) return providedDecision;
 
@@ -350,7 +352,14 @@ class VoiceApplication {
       throw new Error('client.routeInbound is required');
     }
 
-    return this.client.routeInbound(routePayload(requestPayload, callRef));
+    const runtimeSessionId = session?.aiSessionId || requestPayload.runtime_session_id || requestPayload.runtimeSessionId || `ai_${randomUUID()}`;
+    requestPayload.runtime_engine = RUNTIME_ENGINE;
+    requestPayload.runtime_session_id = runtimeSessionId;
+
+    return this.client.routeInbound(
+      routePayload(requestPayload, callRef, session),
+      { capabilities: RUNTIME_CAPABILITIES }
+    );
   }
 
   async safeBridgeEvent(event, session, requestPayload, routeDecision = {}, metadata = {}) {
@@ -2811,9 +2820,11 @@ function compactPayload(payload = {}) {
   return Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== ''));
 }
 
-function routePayload(requestPayload = {}, callRef) {
+function routePayload(requestPayload = {}, callRef, session = {}) {
   return compactPayload({
     call_ref: callRef,
+    runtime_engine: RUNTIME_ENGINE,
+    runtime_session_id: session.aiSessionId || requestPayload.runtime_session_id || requestPayload.runtimeSessionId || callRef,
     bridge_call_ref: bridgeCallRefCandidate(requestPayload),
     ingress_number: requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to_number || requestPayload.to,
     caller_number: requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from_number || requestPayload.from,
@@ -3211,7 +3222,7 @@ function createRuntimeLifecycleGuard({
 
     try {
       const response = await app.client.sendHeartbeat(session.scopedPayload({
-        runtime_engine: 'onelink-ai-voice-node',
+        runtime_engine: RUNTIME_ENGINE,
         runtime_session_id: session.aiSessionId || session.callRef
       }));
       if (response?.terminal) {
@@ -3271,6 +3282,12 @@ function normalizeCallPayload(call, payload = {}) {
 function bridgeCallRefCandidate(payload = {}) {
   return payload.bridge_call_ref || payload.bridgeCallRef || payload.parent_call_ref || payload.parentCallRef ||
     payload.original_call_ref || payload.originalCallRef;
+}
+
+function runtimeSessionIdCandidate(payload = {}) {
+  const routing = payload.routing || payload.route_decision || payload.routeDecision || {};
+  const aiContext = payload.ai_context || payload.aiContext || routing.ai_context || routing.aiContext || {};
+  return payload.runtime_session_id || payload.runtimeSessionId || aiContext.runtime_session_id || aiContext.runtimeSessionId;
 }
 
 function answerCall(call, { timeoutMs = 0 } = {}) {

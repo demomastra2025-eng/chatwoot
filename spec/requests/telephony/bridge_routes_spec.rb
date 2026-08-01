@@ -1525,7 +1525,7 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       fallback_message: 'Rejected by bearer auth'
     )
 
-    with_modified_env(TELEPHONY_BRIDGE_ACCESS_TOKEN: 'bridge-access-token') do
+    with_modified_env(TELEPHONY_BRIDGE_ONELINK_ACCESS_TOKEN: 'bridge-access-token') do
       post path,
            params: {
              call_ref: 'inbound-route-bearer',
@@ -1544,6 +1544,32 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'reason' => 'reject_route',
       'message' => 'Rejected by bearer auth'
     )
+  end
+
+  it 'fails closed when bridge credentials are not configured' do
+    allow(Telephony::InboundRoutingService).to receive(:new)
+
+    with_modified_env(
+      TELEPHONY_BRIDGE_SHARED_SECRET: nil,
+      TELEPHONY_BRIDGE_ACCESS_TOKEN: nil,
+      TELEPHONY_BRIDGE_ONELINK_ACCESS_TOKEN: nil
+    ) do
+      post path,
+           params: {
+             call_ref: 'inbound-route-unconfigured-auth',
+             ingress_number: voice_channel.phone_number,
+             caller_number: '+15557656667',
+             runtime_engine: 'onelink-ai-voice-node',
+             runtime_session_id: 'untrusted-runtime-session'
+           },
+           headers: {
+             'X-Bridge-Secret' => 'attacker-controlled'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:service_unavailable)
+    expect(Telephony::InboundRoutingService).not_to have_received(:new)
   end
 
   it 'fails closed with an executable reject decision when routing raises after authentication' do
@@ -1670,7 +1696,8 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       ai_app_ref: 'ai-status-aware-app-ref',
       operator_agent_aor: 'sip:status-aware-operator@example.test',
       fallback_mode: 'operator',
-      captain_assistant: assistant
+      captain_assistant: assistant,
+      ai_voice_settings: { manager_handoff_mode: 'callback' }
     )
 
     with_modified_env(TELEPHONY_BRIDGE_SHARED_SECRET: 'bridge-secret') do
@@ -1678,10 +1705,13 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
            params: {
              call_ref: 'inbound-route-status-pending',
              ingress_number: voice_channel.phone_number,
-             caller_number: caller_number
+             caller_number: caller_number,
+             runtime_engine: 'onelink-ai-voice-node',
+             runtime_session_id: 'node-runtime-session-1'
            },
            headers: {
-             'X-Bridge-Secret' => 'bridge-secret'
+             'X-Bridge-Secret' => 'bridge-secret',
+             'X-OneLink-Voice-Capabilities' => 'callback_handoff_v1'
            },
            as: :json
     end
@@ -1699,6 +1729,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
       'number_ref' => number_binding.number_ref
     )
     expect(response.parsed_body.dig('ai_context', 'ai', 'provider')).to eq('gemini-live')
+    expect(response.parsed_body.dig('ai_context', 'ai', 'manager_handoff_mode')).to eq('callback')
+    expect(response.parsed_body.dig('ai_context', 'runtime_engine')).to eq('onelink-ai-voice-node')
+    expect(response.parsed_body.dig('ai_context', 'runtime_session_id')).to eq('node-runtime-session-1')
+    expect(response.parsed_body.dig('ai_context', 'tool_capability')).to be_present
     expect(response.parsed_body.dig('ai_context', 'tools').pluck('name')).to include('faq_lookup', 'request_transfer')
   end
 

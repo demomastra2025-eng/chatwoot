@@ -45,7 +45,10 @@ test('OnelinkClient authenticates and calls Rails context/transcript/control/too
 
   try {
     const client = new OnelinkClient({ baseUrl: seen.baseUrl, token: 'internal-token', timeoutMs: 1_000 });
-    const context = await client.getContext({ call_ref: 'call-1', ingress_number: '+7000' });
+    const context = await client.getContext(
+      { call_ref: 'call-1', ingress_number: '+7000' },
+      { capabilities: ['callback_handoff_v1', 'callback_handoff_v1'] }
+    );
     const transcript = await client.sendTranscript({ call_ref: 'call-1', items: [{ speaker: 'caller', text: 'hello', final: true }] });
     const control = await client.sendControl({ call_ref: 'call-1', action: 'ai_answered' });
     const event = await client.sendEvent({ call_ref: 'call-1', event_id: 'evt-1', event_type: 'stream_started' });
@@ -62,6 +65,7 @@ test('OnelinkClient authenticates and calls Rails context/transcript/control/too
     assert.equal(seen.requests[0].method, 'POST');
     assert.equal(seen.requests[0].url, '/internal/voice/ai/context');
     assert.equal(JSON.parse(seen.requests[0].body).call_ref, 'call-1');
+    assert.equal(seen.requests[0].headers['x-onelink-voice-capabilities'], 'callback_handoff_v1');
     assert.equal(seen.requests[3].headers['x-event-id'], 'evt-1');
     assert.equal(seen.requests[3].headers['x-idempotency-key'], 'evt-1');
     assert.equal(seen.requests[4].headers['x-idempotency-key'], 'evt-finalize-1');
@@ -168,13 +172,16 @@ test('OnelinkClient calls Rails inbound route and bridge lifecycle event APIs', 
 
   try {
     const client = new OnelinkClient({ baseUrl: seen.baseUrl, token: 'internal-token', timeoutMs: 1_000 });
-    const decision = await client.routeInbound({
-      call_ref: 'call-route-1',
-      ingress_number: '+15551234567',
-      caller_number: '+15557654321',
-      number_ref: 'number-1',
-      app_ref: 'runtime-app-1'
-    });
+    const decision = await client.routeInbound(
+      {
+        call_ref: 'call-route-1',
+        ingress_number: '+15551234567',
+        caller_number: '+15557654321',
+        number_ref: 'number-1',
+        app_ref: 'runtime-app-1'
+      },
+      { capabilities: ['callback_handoff_v1', 'callback_handoff_v1'] }
+    );
     const event = await client.sendBridgeEvent({
       event: 'session_started',
       call_ref: 'call-route-1',
@@ -188,6 +195,7 @@ test('OnelinkClient calls Rails inbound route and bridge lifecycle event APIs', 
     assert.equal(seen.requests[0].method, 'POST');
     assert.equal(seen.requests[0].url, '/internal/voice/inbound/route');
     assert.equal(JSON.parse(seen.requests[0].body).app_ref, 'runtime-app-1');
+    assert.equal(seen.requests[0].headers['x-onelink-voice-capabilities'], 'callback_handoff_v1');
     assert.equal(seen.requests[1].url, '/internal/voice/inbound/event');
     assert.ok(seen.requests.every((request) => request.headers.authorization === 'Bearer internal-token'));
   } finally {

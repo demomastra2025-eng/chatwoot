@@ -219,6 +219,39 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       expect(fonoster_session.reload).to have_attributes(status: 'completed', end_reason: 'caller requested hangup')
       expect(unrelated_whatsapp_call.reload.status).to eq('in_progress')
     end
+
+    it 'serializes stale end_call dispatches and preserves the first terminal outcome' do
+      first_dispatch = described_class.new(
+        tool_name: 'end_call',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { ended_by: 'ai_agent', reason: 'first terminal reason' }
+        }
+      )
+      stale_dispatch = described_class.new(
+        tool_name: 'end_call',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { ended_by: 'user', reason: 'stale overwrite' }
+        }
+      )
+      stale_dispatch.send(:call_session)
+
+      first_dispatch.perform
+
+      expect { stale_dispatch.perform }.to raise_error(Telephony::Error) do |error|
+        expect(error.code).to eq('CALL_SESSION_TERMINAL')
+      end
+      expect(provider).to have_received(:terminate_call).with(whatsapp_call.provider_call_id).once
+      expect(media_client).to have_received(:terminate_session).with(whatsapp_call.media_session_id).once
+      expect(call_session.reload).to have_attributes(
+        status: 'completed',
+        ended_by: 'ai_agent',
+        end_reason: 'first terminal reason'
+      )
+    end
   end
 
   describe '#perform request_transfer' do

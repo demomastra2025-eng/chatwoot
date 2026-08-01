@@ -5,16 +5,19 @@ const { VoiceSession } = require('../src/sessions/voice-session');
 test('VoiceSession bootstraps Rails context, records lifecycle and flushes transcripts', async () => {
   const calls = [];
   const client = {
-    getContext: async () => ({
-      call_ref: 'call-1',
-      account_id: 42,
-      assistant_id: 17,
-      number_ref: 'num-1',
-      tool_capability: 'signed-capability',
-      ai: { provider: 'gemini-live', model: 'gemini-2.0-flash-live-001', first_message: 'Здравствуйте' },
-      transfer: { enabled: true, operator_agent_aor: 'sip:1001@example.test' },
-      tools: [{ name: 'request_transfer', enabled: true }]
-    }),
+    getContext: async (payload, options) => {
+      calls.push(['context', payload, options]);
+      return {
+        call_ref: 'call-1',
+        account_id: 42,
+        assistant_id: 17,
+        number_ref: 'num-1',
+        tool_capability: 'signed-capability',
+        ai: { provider: 'gemini-live', model: 'gemini-2.0-flash-live-001', first_message: 'Здравствуйте' },
+        transfer: { enabled: true, operator_agent_aor: 'sip:1001@example.test' },
+        tools: [{ name: 'request_transfer', enabled: true }]
+      };
+    },
     sendControl: async (payload) => { calls.push(['control', payload]); return { status: 'ok' }; },
     sendTranscript: async (payload) => { calls.push(['transcript', payload]); return { status: 'ok' }; },
     callTool: async (name, payload) => { calls.push(['tool', name, payload]); return { action: name === 'request_transfer' ? 'transfer' : 'noop', operator_agent_aor: 'sip:1001@example.test' }; }
@@ -27,6 +30,10 @@ test('VoiceSession bootstraps Rails context, records lifecycle and flushes trans
   await session.close('session_completed');
 
   assert.equal(context.ai.provider, 'gemini-live');
+  const contextRequest = calls.find(([kind]) => kind === 'context');
+  assert.equal(contextRequest[1].runtime_engine, 'onelink-ai-voice-node');
+  assert.equal(contextRequest[1].runtime_session_id, session.aiSessionId);
+  assert.deepEqual(contextRequest[2].capabilities, ['callback_handoff_v1']);
   assert.equal(toolResult.result.action, 'transfer');
   assert.deepEqual(
     calls.filter(([kind]) => kind === 'control').map(([, payload]) => payload.action),

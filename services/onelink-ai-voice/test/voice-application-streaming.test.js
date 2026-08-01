@@ -2698,6 +2698,7 @@ test('VoiceApplication uses inline AI context from route decision without a seco
   const stream = new FakeVoiceStream();
   let realtimeCallbacks;
   const events = [];
+  const routeRequests = [];
   const client = {
     routeInbound: async () => ({
       action: 'ai',
@@ -2724,6 +2725,11 @@ test('VoiceApplication uses inline AI context from route decision without a seco
     sendControl: async () => ({ status: 'ok' }),
     sendTranscript: async () => ({ status: 'ok' })
   };
+  const routeInbound = client.routeInbound;
+  client.routeInbound = async (payload, options) => {
+    routeRequests.push({ payload, options });
+    return routeInbound(payload, options);
+  };
   const call = Object.assign(new EventEmitter(), {
     answerCount: 0,
     async answer() { this.answerCount += 1; },
@@ -2739,13 +2745,18 @@ test('VoiceApplication uses inline AI context from route decision without a seco
     })
   });
 
-  const result = await app.handleCall(call, {
+  const requestPayload = {
     call_ref: 'call-inline-ai-context',
-    from: '+155****1001',
-    to: '+155****7001',
+    from: '+15551001001',
+    to: '+15557007001',
     app_ref: 'ai-app-inline'
-  });
+  };
+  requestPayload.routing = await app.routeInboundSafely(requestPayload, requestPayload.call_ref);
+  const result = await app.handleCall(call, requestPayload);
 
+  assert.deepEqual(routeRequests[0].options.capabilities, ['callback_handoff_v1']);
+  assert.equal(routeRequests[0].payload.runtime_engine, 'onelink-ai-voice-node');
+  assert.equal(routeRequests[0].payload.runtime_session_id, result.session.aiSessionId);
   assert.equal(result.mode, 'realtime');
   assert.equal(call.answerCount, 1);
   assert.equal(result.context.ai.first_message, 'Я Айсулу, слушаю вас');
@@ -2797,6 +2808,9 @@ test('VoiceApplication uses top-level Janus attach AI context with pre-routed ro
       call_ref: 'call-janus-attach-context',
       account_id: 6,
       number_ref: 'number-janus',
+      runtime_engine: 'onelink-ai-voice-node',
+      runtime_session_id: 'janus-pre-routed-runtime-session',
+      tool_capability: 'signed-capability-placeholder',
       ai: {
         provider: 'gemini-live',
         model: 'gemini-live-test',
@@ -2807,6 +2821,7 @@ test('VoiceApplication uses top-level Janus attach AI context with pre-routed ro
     }
   });
 
+  assert.equal(result.session.aiSessionId, 'janus-pre-routed-runtime-session');
   assert.equal(result.mode, 'realtime');
   assert.equal(call.answerCount, 1);
   assert.equal(result.context.ai.first_message, 'Я Айсулу, слушаю вас');

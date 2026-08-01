@@ -55,8 +55,9 @@ class Telephony::InboundRoutingService
     end
   end
 
-  def initialize(payload:)
+  def initialize(payload:, runtime_capabilities: [])
     @payload = payload.deep_stringify_keys
+    @runtime_capabilities = Array(runtime_capabilities).map(&:to_s).map(&:strip).compact_blank.uniq
   end
 
   def perform
@@ -75,7 +76,7 @@ class Telephony::InboundRoutingService
 
   private
 
-  attr_reader :payload
+  attr_reader :payload, :runtime_capabilities
 
   def routed_decision
     recursive_runtime_decision = recursive_runtime_call_active_decision
@@ -860,8 +861,11 @@ class Telephony::InboundRoutingService
         conversation_id: decision[:conversation_id],
         provider: number_binding&.provider,
         direction: 'inbound',
-        transport: 'janus_sip'
-      }.compact
+        transport: 'janus_sip',
+        runtime_engine: payload['runtime_engine'].presence || payload['runtimeEngine'].presence,
+        runtime_session_id: payload['runtime_session_id'].presence || payload['runtimeSessionId'].presence
+      }.compact,
+      runtime_capabilities: runtime_capabilities
     ).perform
   end
 

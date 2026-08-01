@@ -41,8 +41,12 @@ class OnelinkClient {
     }
   }
 
-  getContext(params = {}) {
-    return this.request(this.paths.context, { method: 'POST', body: normalizeKeys(params) });
+  getContext(params = {}, { capabilities = [] } = {}) {
+    return this.request(this.paths.context, {
+      method: 'POST',
+      body: normalizeKeys(params),
+      headers: capabilityHeaders(capabilities)
+    });
   }
 
   sendTranscript(payload = {}) {
@@ -84,8 +88,13 @@ class OnelinkClient {
     return response.profiles;
   }
 
-  routeInbound(payload = {}) {
-    return this.request('/internal/voice/inbound/route', { method: 'POST', body: normalizeKeys(payload), token: this.bridgeToken });
+  routeInbound(payload = {}, { capabilities = [] } = {}) {
+    return this.request('/internal/voice/inbound/route', {
+      method: 'POST',
+      body: normalizeKeys(payload),
+      headers: capabilityHeaders(capabilities),
+      token: this.bridgeToken
+    });
   }
 
   async callTool(name, payload = {}, options = {}) {
@@ -182,6 +191,14 @@ function eventHeaders(payload = {}) {
     'x-idempotency-key': idempotencyKey,
     'x-event-attempt': attempt
   }).filter(([, value]) => value !== undefined && value !== null && value !== ''));
+}
+
+function capabilityHeaders(capabilities = []) {
+  const capabilityList = Array.isArray(capabilities) ? capabilities : [capabilities];
+  const capabilityHeader = Array.from(new Set(
+    capabilityList.map(capability => String(capability || '').trim()).filter(Boolean)
+  )).join(',');
+  return capabilityHeader ? { 'x-onelink-voice-capabilities': capabilityHeader } : {};
 }
 
 module.exports = { OnelinkClient, OnelinkApiError };

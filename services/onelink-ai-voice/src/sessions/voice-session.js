@@ -4,8 +4,11 @@ const { ToolExecutor } = require('../tools/tool-executor');
 const { safeReason, withTimeout } = require('../utils/timeout');
 const { randomUUID } = require('node:crypto');
 
+const RUNTIME_ENGINE = 'onelink-ai-voice-node';
+const RUNTIME_CAPABILITIES = Object.freeze(['callback_handoff_v1']);
+
 class VoiceSession {
-  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, bridgeCallRef = null, direction = null, toolTimeoutMs = 3_000 } = {}) {
+  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, bridgeCallRef = null, direction = null, aiSessionId = null, toolTimeoutMs = 3_000 } = {}) {
     if (!client) throw new Error('client is required');
     if (!callRef) throw new Error('callRef is required');
     this.client = client;
@@ -16,7 +19,7 @@ class VoiceSession {
     this.accountId = accountId;
     this.bridgeCallRef = bridgeCallRef;
     this.direction = direction;
-    this.aiSessionId = `ai_${randomUUID()}`;
+    this.aiSessionId = String(aiSessionId || '').trim() || `ai_${randomUUID()}`;
     this.startedAt = new Date();
     this.eventSeq = 0;
     this.closed = false;
@@ -43,15 +46,17 @@ class VoiceSession {
     const effectiveTimeoutMs = timeoutMs ?? this.client.timeoutMs;
     try {
       const inlineContext = normalizeInlineContext(context);
-      const contextRequest = inlineContext ? Promise.resolve(inlineContext) : Promise.resolve(this.client.getContext({
-        call_ref: this.callRef,
-        ingress_number: this.ingressNumber,
-        caller_number: this.callerNumber,
-        number_ref: this.numberRef,
-        account_id: this.accountId,
-        runtime_engine: 'node',
-        runtime_session_id: this.aiSessionId
-      }));
+      const contextRequest = inlineContext ? Promise.resolve(inlineContext) : Promise.resolve(
+        this.client.getContext({
+          call_ref: this.callRef,
+          ingress_number: this.ingressNumber,
+          caller_number: this.callerNumber,
+          number_ref: this.numberRef,
+          account_id: this.accountId,
+          runtime_engine: RUNTIME_ENGINE,
+          runtime_session_id: this.aiSessionId
+        }, { capabilities: RUNTIME_CAPABILITIES })
+      );
       void this.safeEvent('context_fetch_started', {
         timeout_ms: effectiveTimeoutMs,
         source: inlineContext ? source : 'onelink_context',
@@ -276,7 +281,7 @@ class VoiceSession {
       conversation_id: this.conversationId,
       inbox_id: this.inboxId,
       assistant_id: this.assistantId,
-      runtime_engine: 'node',
+      runtime_engine: RUNTIME_ENGINE,
       runtime_session_id: this.aiSessionId
     };
   }
@@ -358,4 +363,4 @@ function buildFallbackContext(options = {}, legacyReason = null) {
   };
 }
 
-module.exports = { VoiceSession, buildFallbackContext };
+module.exports = { VoiceSession, buildFallbackContext, RUNTIME_ENGINE, RUNTIME_CAPABILITIES };

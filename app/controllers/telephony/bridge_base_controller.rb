@@ -5,8 +5,10 @@ class Telephony::BridgeBaseController < ApplicationController
 
   def authenticate_bridge!
     expected_secret = ENV.fetch('TELEPHONY_BRIDGE_SHARED_SECRET', '').to_s
-    expected_token = ENV.fetch('TELEPHONY_BRIDGE_ACCESS_TOKEN', '').to_s.presence || expected_secret.presence
-    return if expected_secret.blank? && expected_token.blank?
+    expected_token = ENV.fetch('TELEPHONY_BRIDGE_ONELINK_ACCESS_TOKEN', '').to_s.presence ||
+                     ENV.fetch('TELEPHONY_BRIDGE_ACCESS_TOKEN', '').to_s.presence ||
+                     expected_secret.presence
+    return head :service_unavailable if expected_secret.blank? && expected_token.blank?
 
     provided_secret = request.headers['X-Bridge-Secret'].to_s.presence || request.headers['X-Telephony-Secret'].to_s.presence
     provided_token = bearer_token
