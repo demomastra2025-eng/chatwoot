@@ -17,6 +17,8 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
       status: 'in_progress'
     )
   end
+  let(:runtime_session_id) { 'request-spec-runtime-1' }
+  let(:runtime_engine) { 'pipecat' }
 
   before do
     account.enable_features!('channel_voice')
@@ -28,6 +30,43 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
       operator_agent_aor: 'sip:voice-operator@example.test'
     )
     call_session
+  end
+
+  def post(path, **options)
+    return super unless path.start_with?('/internal/voice/ai/tools/')
+
+    params = options.fetch(:params, {}).to_h.deep_symbolize_keys
+    headers = options.fetch(:headers, {}).to_h
+    return super(path, **options.merge(params: params, headers: headers)) if headers.delete('X-Test-Without-Tool-Capability')
+
+    tool_name = path.split('/').last
+    requested_account = Account.find_by(id: params[:account_id])
+    requested_session = requested_account&.telephony_call_sessions&.find_by(external_call_ref: params[:call_ref])
+    unless requested_session
+      params[:tool_call_id] ||= SecureRandom.uuid
+      return super(path, **options.merge(params: params, headers: headers))
+    end
+
+    assistant_id = Telephony::AiVoice::ToolDispatchService.new(tool_name: tool_name, payload: params).captain_assistant_id
+    capability = Telephony::AiVoice::ToolCapability.issue(
+      call_session: requested_session,
+      runtime_session_id: runtime_session_id,
+      runtime_engine: runtime_engine,
+      assistant_id: assistant_id,
+      tools: [{ name: tool_name }]
+    )
+    idempotency_present = params[:tool_call_id].present? || headers['X-Idempotency-Key'].present?
+    params.merge!(
+      call_session_id: requested_session.id,
+      conversation_id: requested_session.conversation_id,
+      inbox_id: requested_session.inbox_id,
+      assistant_id: assistant_id,
+      runtime_session_id: runtime_session_id,
+      runtime_engine: runtime_engine,
+      tool_call_id: idempotency_present ? params[:tool_call_id] : SecureRandom.uuid
+    )
+    headers['X-OneLink-Voice-Tool-Capability'] = capability
+    super(path, **options.merge(params: params, headers: headers))
   end
 
   it 'executes voice-safe find_contact with account scope' do
@@ -45,6 +84,25 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     expect(response.parsed_body.dig('result', 'contacts').pluck('id')).to eq([contact.id])
   end
 
+  it 'creates a contact in the resolved call account' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/create_contact',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             tool_call_id: 'create-contact-1',
+             arguments: { phone_number: '+15555552222', name: 'Voice Lead', email: 'voice@example.test' }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    contact = account.contacts.find_by!(phone_number: '+15555552222')
+    expect(contact).to have_attributes(name: 'Voice Lead', email: 'voice@example.test')
+    expect(response.parsed_body.dig('result', 'contact', 'id')).to eq(contact.id)
+  end
+
   it 'creates a private note without sending anything to the caller' do
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
       post '/internal/voice/ai/tools/create_note',
@@ -57,6 +115,54 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     note = conversation.messages.where(private: true).last
     expect(note.content).to eq('Caller asked for pricing.')
     expect(response.parsed_body.dig('result', 'message_id')).to eq(note.id)
+  end
+
+  it 'replays the same tool result without duplicating a mutation' do
+    request_params = {
+      call_ref: call_session.external_call_ref,
+      account_id: account.id,
+      arguments: { content: 'Idempotent caller note.' }
+    }
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      2.times do
+        post '/internal/voice/ai/tools/create_note',
+             params: request_params,
+             headers: {
+               'Authorization' => 'Bearer voice-secret',
+               'X-Idempotency-Key' => 'voice-note-idempotency-1'
+             },
+             as: :json
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    expect(conversation.messages.where(private: true, content: 'Idempotent caller note.').count).to eq(1)
+    expect(account.telephony_events.where(event_type: Telephony::AiVoice::ToolExecutionService::EVENT_TYPE).count).to eq(1)
+  end
+
+  it 'updates only the resolved conversation and preserves existing additional attributes' do
+    conversation.update!(additional_attributes: { 'existing_key' => 'keep' })
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/update_conversation',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             tool_call_id: 'update-conversation-1',
+             arguments: { status: 'pending', additional_attributes: { voice_intent: 'qualified' } }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(conversation.reload).to have_attributes(status: 'pending')
+    expect(conversation.additional_attributes).to include(
+      'existing_key' => 'keep',
+      'voice_intent' => 'qualified',
+      'ai_voice_last_tool_at' => be_present
+    )
   end
 
   it 'returns transfer instructions instead of doing a slow Rails-side call bridge operation' do
@@ -85,6 +191,32 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
 
     expect(response).to have_http_status(:not_found)
     expect(response.parsed_body['error']).to eq('tool_not_found')
+  end
+
+  it 'rejects the text Captain handoff tool even when it is selected for the voice assistant' do
+    assistant = create(
+      :captain_assistant,
+      account: account,
+      config: { tool_access: { agent: { enabled: true, tool_ids: ['handoff'] } } }
+    )
+    create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
+    original_status = conversation.status
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/handoff',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             tool_call_id: 'forged-handoff-1',
+             arguments: { reason: 'forged direct call' }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:not_found)
+    expect(response.parsed_body['error']).to eq('tool_not_found')
+    expect(conversation.reload.status).to eq(original_status)
   end
 
   it 'executes Captain custom tools exposed by the connected inbox assistant' do
@@ -341,6 +473,54 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     end
 
     expect(response).to have_http_status(:not_found)
-    expect(account.contacts.find_by(phone_number: '+155****2222')).to be_nil
+    expect(account.contacts.find_by(phone_number: '+15550002222')).to be_nil
+  end
+
+  it 'rejects a numeric call id without tenant scope before resolving the session' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/create_note',
+           params: {
+             call_id: call_session.id,
+             runtime_session_id: runtime_session_id,
+             runtime_engine: runtime_engine,
+             tool_call_id: 'forged-global-call-id',
+             arguments: { content: 'Cross-tenant note' }
+           },
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Test-Without-Tool-Capability' => 'true'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['error']).to eq('ACCOUNT_SCOPE_REQUIRED')
+    expect(conversation.messages.where(private: true, content: 'Cross-tenant note')).not_to exist
+  end
+
+  it 'rejects a tool callback without the per-call capability' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/create_note',
+           params: {
+             account_id: account.id,
+             call_session_id: call_session.id,
+             call_ref: call_session.external_call_ref,
+             conversation_id: conversation.id,
+             inbox_id: voice_inbox.id,
+             runtime_session_id: runtime_session_id,
+             runtime_engine: runtime_engine,
+             tool_call_id: 'missing-per-call-capability',
+             arguments: { content: 'Unsigned note' }
+           },
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Test-Without-Tool-Capability' => 'true'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:forbidden)
+    expect(response.parsed_body['error']).to eq('TOOL_CAPABILITY_INVALID')
+    expect(conversation.messages.where(private: true, content: 'Unsigned note')).not_to exist
   end
 end

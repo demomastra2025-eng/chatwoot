@@ -436,6 +436,94 @@ RSpec.describe Telephony::CallReconciliationService do
       )
     end
 
+    it 'closes only stale AI pre-answer janus-server calls after two minutes' do
+      conversation = create(
+        :conversation,
+        account: account,
+        additional_attributes: {
+          'call_status' => 'ringing',
+          'call_direction' => 'inbound',
+          'telephony_call_ref' => 'asterisk_analog:janus-server:53:ai-stale-1'
+        }
+      )
+      call_session = create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        contact: conversation.contact,
+        inbox: conversation.inbox,
+        provider: 'asterisk_analog',
+        external_call_ref: 'asterisk_analog:janus-server:53:ai-stale-1',
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: now - 3.minutes,
+        last_event_at: now - 3.minutes,
+        metadata: {
+          'metadata' => {
+            'source' => 'inbound_route_lifecycle',
+            'route_action' => 'ai',
+            'route_reason' => 'voice_agent_sip_profile_route'
+          },
+          'ai_voice' => { 'transport' => 'janus_sip', 'context_created' => true }
+        }
+      )
+      message = voice_call_message_for(call_session, conversation, message_type: :incoming)
+      operator_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'asterisk_analog',
+        external_call_ref: 'asterisk_analog:janus-server:54:operator-active-1',
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: now - 10.minutes,
+        last_event_at: now - 10.minutes,
+        metadata: { 'metadata' => { 'route_action' => 'operator' } }
+      )
+      fresh_ai_session = create(
+        :telephony_call_session,
+        account: account,
+        provider: 'asterisk_analog',
+        external_call_ref: 'asterisk_analog:janus-server:53:ai-fresh-1',
+        status: 'ringing',
+        direction: 'inbound',
+        started_at: now - 1.minute,
+        last_event_at: now - 1.minute,
+        metadata: { 'metadata' => { 'route_action' => 'ai' } }
+      )
+
+      expect(service.perform).to include(checked: 1, missing: 1, updated: 1, errors: 0)
+
+      event_key = "ai_pre_answer_reconciliation:#{account.id}:#{call_session.external_call_ref}:failed:#{now.to_i}"
+      event = account.telephony_events.find_by!(event_key: event_key)
+      aggregate_failures do
+        expect(call_session.reload).to have_attributes(
+          status: 'failed',
+          ended_at: now,
+          ended_by: 'ai_pre_answer_reconciliation',
+          end_reason: 'ai_runtime_terminal_missing',
+          duration_seconds: 0
+        )
+        expect(call_session.metadata['ai_pre_answer_reconciliation']).to include(
+          'source' => 'ai_pre_answer_reconciliation',
+          'target_status' => 'failed',
+          'previous_status' => 'ringing',
+          'stale_after_seconds' => 120,
+          'route_action' => 'ai'
+        )
+        expect(event.payload).to include(
+          'status' => 'failed',
+          'end_reason' => 'ai_runtime_terminal_missing',
+          'ended_by' => 'ai_pre_answer_reconciliation'
+        )
+        expect(message.reload.content_attributes.dig('data', 'status')).to eq('failed')
+        expect(conversation.reload.additional_attributes).to include('call_status' => 'failed')
+        expect(operator_session.reload).to have_attributes(status: 'ringing', ended_at: nil)
+        expect(fresh_ai_session.reload).to have_attributes(status: 'ringing', ended_at: nil)
+      end
+
+      expect(Telephony::EventsIngestionService::RECONCILIATION_EVENT_SOURCES).to include('ai_pre_answer_reconciliation')
+    end
+
     it 'closes stale generic pre-answer legacy Sipuni calls and syncs the voice bubble idempotently' do
       conversation = create(
         :conversation,
@@ -511,11 +599,11 @@ RSpec.describe Telephony::CallReconciliationService do
       expect(Telephony::EventsIngestionService::RECONCILIATION_EVENT_SOURCES).to include('generic_pre_answer_reconciliation')
     end
 
-    it 'uses outbound, operator inbound, and other inbound generic pre-answer semantics' do
+    it 'uses outbound, operator inbound, and app inbound generic pre-answer semantics' do
       sessions = [
         create_generic_pre_answer_session(direction: 'outbound', status: 'created', route_action: 'operator'),
         create_generic_pre_answer_session(direction: 'inbound', status: 'ringing', route_action: 'operator'),
-        create_generic_pre_answer_session(direction: 'inbound', status: 'connecting', route_action: 'ai')
+        create_generic_pre_answer_session(direction: 'inbound', status: 'connecting', route_action: 'app')
       ]
 
       expect(service.perform).to include(checked: 3, missing: 3, updated: 3, errors: 0)
@@ -566,7 +654,7 @@ RSpec.describe Telephony::CallReconciliationService do
       call_session = create_generic_pre_answer_session(
         direction: 'inbound',
         status: 'ringing',
-        route_action: 'ai',
+        route_action: 'app',
         started_at: now - 30.minutes,
         last_event_at: now - 30.minutes
       )
@@ -579,8 +667,8 @@ RSpec.describe Telephony::CallReconciliationService do
     end
 
     it 'limits generic reconciliation to the requested account' do
-      in_scope = create_generic_pre_answer_session(account: account, direction: 'inbound', route_action: 'ai')
-      out_of_scope = create_generic_pre_answer_session(account: create(:account), direction: 'inbound', route_action: 'ai')
+      in_scope = create_generic_pre_answer_session(account: account, direction: 'inbound', route_action: 'app')
+      out_of_scope = create_generic_pre_answer_session(account: create(:account), direction: 'inbound', route_action: 'app')
 
       expect(service.perform).to include(checked: 1, missing: 1, updated: 1, errors: 0)
       expect(in_scope.reload.status).to eq('missed')
@@ -588,7 +676,7 @@ RSpec.describe Telephony::CallReconciliationService do
     end
 
     it 'rechecks a generic candidate under lock before closing it' do
-      call_session = create_generic_pre_answer_session(direction: 'inbound', route_action: 'ai')
+      call_session = create_generic_pre_answer_session(direction: 'inbound', route_action: 'app')
       allow(service).to receive(:reconcile_stale_session).and_wrap_original do |original, candidate, **options, &block|
         candidate.update_columns(last_event_at: now - 5.minutes)
         original.call(candidate, **options, &block)

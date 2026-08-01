@@ -41,14 +41,17 @@ class Telephony::AiVoice::ContextBuilder
     ensure_call_ref!
     session = call_session || create_call_session!
     @call_session ||= session
+    tools = tool_catalog
 
     {
       call_ref: session.external_call_ref,
       account_id: account.id,
+      call_session_id: session.id,
       conversation_id: session.conversation_id,
       conversation_display_id: session.conversation&.display_id,
       contact_id: session.contact_id,
       inbox_id: session.inbox_id,
+      assistant_id: captain_assistant&.id,
       number_ref: number_binding&.number_ref,
       provider: session.provider,
       direction: session.direction,
@@ -60,17 +63,45 @@ class Telephony::AiVoice::ContextBuilder
       captain: captain_payload,
       transfer: transfer_payload,
       recording: recording_payload,
-      tools: Telephony::AiVoice::ToolDispatchService.catalog(
-        policy: routing_policy,
-        captain_assistant: captain_assistant,
-        voice_settings: effective_ai_settings
-      )
+      runtime_engine: runtime_engine,
+      runtime_session_id: runtime_session_id,
+      tool_capability: tool_capability(session, tools),
+      tools: tools
     }.compact
   end
 
   private
 
   attr_reader :params, :runtime_capabilities
+
+  def tool_catalog
+    @tool_catalog ||= Telephony::AiVoice::ToolDispatchService.catalog(
+      policy: routing_policy,
+      captain_assistant: captain_assistant,
+      voice_settings: effective_ai_settings
+    )
+  end
+
+  def tool_capability(session, tools)
+    return if runtime_session_id.blank? || runtime_engine.blank?
+
+    Telephony::AiVoice::ToolCapability.issue(
+      call_session: session,
+      runtime_session_id: runtime_session_id,
+      runtime_engine: runtime_engine,
+      assistant_id: captain_assistant&.id,
+      tools: tools,
+      expires_in: (effective_ai_settings['max_duration_sec'].to_i + 5.minutes.to_i).seconds
+    )
+  end
+
+  def runtime_session_id
+    params['runtime_session_id'].presence || params['runtimeSessionId'].presence
+  end
+
+  def runtime_engine
+    params['runtime_engine'].presence || params['runtimeEngine'].presence
+  end
 
   def ensure_call_ref!
     return if call_ref.present?
@@ -180,10 +211,29 @@ class Telephony::AiVoice::ContextBuilder
   end
 
   def effective_ai_settings
-    return ai_settings unless ai_settings['manager_handoff_mode'] == 'callback'
-    return ai_settings if runtime_capabilities.include?(CALLBACK_HANDOFF_CAPABILITY)
+    @effective_ai_settings ||= case ai_settings['manager_handoff_mode']
+                               when 'callback'
+                                 callback_handoff_supported? ? ai_settings : ai_settings.merge('manager_handoff_mode' => 'disabled')
+                               when 'live_transfer'
+                                 effective_live_transfer_settings
+                               else
+                                 ai_settings
+                               end
+  end
+
+  def effective_live_transfer_settings
+    return ai_settings if routing_policy&.resolved_operator_agent_aor.present?
+    return ai_settings.merge('manager_handoff_mode' => 'callback') if callback_transfer_fallback?
 
     ai_settings.merge('manager_handoff_mode' => 'disabled')
+  end
+
+  def callback_transfer_fallback?
+    ai_settings['transfer_failure_mode'] == 'callback' && callback_handoff_supported?
+  end
+
+  def callback_handoff_supported?
+    runtime_capabilities.include?(CALLBACK_HANDOFF_CAPABILITY)
   end
 
   def recording_payload

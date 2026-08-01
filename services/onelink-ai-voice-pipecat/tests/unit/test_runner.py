@@ -58,6 +58,7 @@ class WatchdogAssembly:
         self.messages = []
         self.cancellations = []
         self.worker = self
+        self.activity = SimpleNamespace(bot_speaking=False)
 
     async def speak_exact(self, message):
         self.messages.append(message)
@@ -169,6 +170,112 @@ async def test_all_zero_silence_thresholds_disable_every_watchdog_stage():
 
 
 @pytest.mark.asyncio
+async def test_silence_watchdog_waits_while_assistant_is_speaking():
+    context = SimpleNamespace(
+        ai=SimpleNamespace(
+            max_duration_sec=900,
+            silence_prompt_enabled=True,
+            silence_prompt_after_ms=1,
+            second_silence_prompt_after_ms=0,
+            max_silence_ms=0,
+            end_call_on_silence_enabled=True,
+            silence_prompt="Вы меня слышите?",
+            second_silence_prompt="Остаётесь на линии?",
+            final_silence_message="Завершаю звонок.",
+        )
+    )
+    state = SimpleNamespace(
+        user_turn=0,
+        tool_in_progress=False,
+        last_activity_monotonic=time.monotonic() - 60,
+    )
+    assembly = WatchdogAssembly()
+    assembly.activity.bot_speaking = True
+    terminal = TerminalDecision()
+    task = asyncio.create_task(
+        PipecatSessionRunner._watchdog(
+            cast(Any, None),
+            cast(Any, context),
+            cast(Any, state),
+            cast(Any, assembly),
+            terminal,
+            {"action": None},
+            None,
+        )
+    )
+
+    await asyncio.sleep(0.25)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert assembly.messages == []
+    assert assembly.cancellations == []
+    assert terminal.decided is False
+
+
+@pytest.mark.asyncio
+async def test_max_silence_speaks_then_ends_transport_before_pipeline_cancel():
+    events = []
+    context = SimpleNamespace(
+        ai=SimpleNamespace(
+            max_duration_sec=900,
+            silence_prompt_enabled=True,
+            silence_prompt_after_ms=0,
+            second_silence_prompt_after_ms=0,
+            max_silence_ms=1,
+            end_call_on_silence_enabled=True,
+            silence_prompt="Вы меня слышите?",
+            second_silence_prompt="Остаётесь на линии?",
+            final_silence_message="Завершаю звонок.",
+        )
+    )
+    state = SimpleNamespace(
+        user_turn=0,
+        tool_in_progress=False,
+        last_activity_monotonic=time.monotonic() - 60,
+    )
+
+    class OrderedAssembly:
+        def __init__(self):
+            self.worker = self
+            self.activity = SimpleNamespace(bot_speaking=False)
+
+        async def speak_exact(self, message):
+            events.append(("speech", message))
+            return True
+
+        async def cancel(self, *, reason):
+            events.append(("cancel", reason))
+
+    class OrderedControl(RecordingRuntimeControlClient):
+        async def execute(self, result):
+            events.append(("control", result["action"]))
+            return await super().execute(result)
+
+    terminal = TerminalDecision()
+    await asyncio.wait_for(
+        PipecatSessionRunner._watchdog(
+            cast(Any, None),
+            cast(Any, context),
+            cast(Any, state),
+            cast(Any, OrderedAssembly()),
+            terminal,
+            {"action": None},
+            cast(Any, OrderedControl()),
+        ),
+        timeout=1,
+    )
+
+    assert events == [
+        ("speech", "Завершаю звонок."),
+        ("control", "end_call"),
+        ("cancel", "max_silence"),
+    ]
+    assert terminal.reason == "max_silence"
+
+
+@pytest.mark.asyncio
 async def test_callback_handoff_speaks_before_ending_the_call():
     events = []
     requested_action: dict[str, str | None] = {"action": None}
@@ -198,6 +305,33 @@ async def test_callback_handoff_speaks_before_ending_the_call():
     ]
     assert response == {"status": "accepted"}
     assert requested_action == {"action": "end_call"}
+
+
+@pytest.mark.asyncio
+async def test_end_call_intent_is_visible_while_runtime_control_is_in_flight():
+    requested_action: dict[str, str | None] = {"action": None}
+    control_started = asyncio.Event()
+    release_control = asyncio.Event()
+
+    class SlowEndCallControlClient(RecordingRuntimeControlClient):
+        async def execute(self, result):
+            control_started.set()
+            await release_control.wait()
+            return await super().execute(result)
+
+    execution = asyncio.create_task(
+        _execute_terminal_action(
+            {"action": "end_call", "reason": "caller requested hangup"},
+            control_client=cast(Any, SlowEndCallControlClient()),
+            requested_action=requested_action,
+            rails_managed_end_call=False,
+        )
+    )
+
+    await asyncio.wait_for(control_started.wait(), timeout=0.1)
+    assert requested_action == {"action": "end_call"}
+    release_control.set()
+    assert await execution == {"status": "accepted"}
 
 
 @pytest.mark.asyncio
@@ -280,7 +414,7 @@ async def test_transfer_fallback_fails_closed_when_announcement_does_not_complet
 
     assert raised.value.code == "fallback_announcement_incomplete"
     assert [item["action"] for item in control.actions] == ["transfer"]
-    assert requested_action == {"action": None}
+    assert requested_action == {"action": "transfer"}
 
 
 @pytest.mark.asyncio
@@ -340,7 +474,30 @@ async def test_failed_transfer_can_return_control_to_the_model():
     assert response is not None
     assert response["status"] == "failed"
     assert response["continue_call"] is True
-    assert requested_action == {"action": None}
+    assert requested_action == {"action": "transfer"}
+
+
+@pytest.mark.asyncio
+async def test_terminal_control_timeout_is_bounded_and_preserves_ambiguous_transfer(monkeypatch):
+    requested_action: dict[str, str | None] = {"action": None}
+
+    class HangingRuntimeControlClient:
+        async def execute(self, _result):
+            await asyncio.Event().wait()
+
+    monkeypatch.setattr(runner_module, "RUNTIME_CONTROL_ACTION_TIMEOUT_SECONDS", 0.01)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            _execute_terminal_action(
+                {"action": "transfer", "destination": "sip:operator@example.test"},
+                control_client=cast(Any, HangingRuntimeControlClient()),
+                requested_action=requested_action,
+                rails_managed_end_call=False,
+            ),
+            timeout=0.1,
+        )
+
+    assert requested_action == {"action": "transfer"}
 
 
 @pytest.mark.asyncio
@@ -385,6 +542,24 @@ async def test_context_bootstrap_error_is_finalized_once(monkeypatch, tmp_path):
     assert kwargs["payload"]["reason"] == "runtime_bootstrap_failed"
     assert kwargs["payload"]["error"] == {"code": "OnelinkApiError"}
     assert control.actions == [{"action": "end_call"}]
+
+
+def test_runtime_control_bounds_end_call_callback_before_direct_fallback():
+    context = SimpleNamespace(
+        tools=[
+            ToolDefinition(name="end_call", description="hang up", timeout_ms=5_000),
+            ToolDefinition(name="create_note", description="note", timeout_ms=800),
+        ]
+    )
+
+    _filter_tools_for_transport(
+        cast(Any, context),
+        has_runtime_control=True,
+        rails_managed_end_call=False,
+    )
+
+    assert context.tools[0].timeout_ms == 1_000
+    assert context.tools[1].timeout_ms == 800
 
 
 def test_whatsapp_transport_keeps_end_call_without_runtime_control():

@@ -547,6 +547,27 @@ class Captain::Assistant < ApplicationRecord
     )
   end
 
+  def voice_runtime_agent_tools
+    raw_scope = config.is_a?(Hash) ? config.dig('tool_access', Captain::ToolAccess::SCOPE_AGENT) : nil
+    raw_scope = {} unless raw_scope.is_a?(Hash)
+    enabled = raw_scope.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) : true
+    return [] unless enabled
+
+    selected_ids = if raw_scope.key?('tool_ids')
+                     Array(raw_scope['tool_ids']).map(&:to_s)
+                   else
+                     Captain::ToolAccess::DEFAULT_AGENT_TOOL_IDS
+                   end
+    referenced_ids = prompt_referenced_tool_ids_for_template(:assistant) + prompt_referenced_skill_script_tool_ids_for_template(:assistant)
+    prompt_ids = companion_expanded_tool_ids(referenced_ids)
+    direct_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, selected_ids)
+    prompt_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, prompt_ids).select do |tool|
+      prompt_visible_tool?(tool, scope_name: Captain::ToolAccess::SCOPE_AGENT)
+    end
+
+    (direct_tools + prompt_tools).uniq { |tool| tool[:id].to_s }
+  end
+
   def tool_glossary_groups(tools = direct_agent_tools, tool_ids = nil)
     glossary_tools = glossary_tool_definitions(tools, tool_ids)
     return [] if glossary_tools.empty?

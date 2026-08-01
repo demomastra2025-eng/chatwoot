@@ -35,8 +35,9 @@ class Telephony::AiVoice::HeartbeatService
 
   def touch_runtime_lease!(session, now)
     metadata = session.metadata.to_h.deep_stringify_keys
-    validate_runtime_lease_identity!(metadata['runtime_lease'])
-    metadata['runtime_lease'] = runtime_lease_metadata(now)
+    current_lease = metadata['runtime_lease'].to_h.deep_stringify_keys
+    validate_runtime_lease_identity!(current_lease)
+    metadata['runtime_lease'] = current_lease.merge(runtime_lease_metadata(now))
 
     attributes = { metadata: metadata, updated_at: now }
     attributes[:last_event_at] = [session.last_event_at, now].compact.max if answered_session?(session)

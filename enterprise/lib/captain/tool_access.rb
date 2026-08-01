@@ -33,7 +33,7 @@ module Captain::ToolAccess
 
     available_tools_for(assistant).each_with_object({}) do |(scope_name, tools), result|
       raw_scope = raw_access[scope_name].is_a?(Hash) ? raw_access[scope_name] : {}
-      available_ids = tools.map { |tool| tool[:id] }
+      available_ids = tools.pluck(:id)
       default_ids = default_tool_ids_for(scope_name, tools)
       configured_tool_ids = Array(raw_scope['tool_ids']).map(&:to_s)
 
@@ -52,12 +52,18 @@ module Captain::ToolAccess
   end
 
   def allowed_tool_ids_for(assistant, scope_name, fallback_ids:)
-    return sanitize_tool_ids(fallback_ids, available_tool_ids_for(assistant, scope_name)) unless scope_configured?(assistant, scope_name)
+    tools = available_tools_for_scope(assistant, scope_name)
+    available_ids = tools.pluck(:id)
+    return sanitize_tool_ids(fallback_ids, available_ids) unless scope_configured?(assistant, scope_name)
 
-    normalized_scope = normalized_access_for(assistant)[scope_name] || {}
-    return [] unless normalized_scope['enabled']
+    raw_scope = assistant.config['tool_access'][scope_name]
+    raw_scope = {} unless raw_scope.is_a?(Hash)
+    default_ids = default_tool_ids_for(scope_name, tools)
+    enabled = raw_scope.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) : default_ids.any?
+    return [] unless enabled
 
-    sanitize_tool_ids(normalized_scope['tool_ids'], available_tool_ids_for(assistant, scope_name))
+    selected_ids = raw_scope.key?('tool_ids') ? Array(raw_scope['tool_ids']).map(&:to_s) : default_ids
+    sanitize_tool_ids(selected_ids, available_ids)
   end
 
   def available_tools_for(assistant)
@@ -73,7 +79,14 @@ module Captain::ToolAccess
   end
 
   def available_tool_ids_for(assistant, scope_name)
-    Array(available_tools_for(assistant)[scope_name]).map { |tool| tool[:id] }
+    available_tools_for_scope(assistant, scope_name).pluck(:id)
+  end
+
+  def available_tools_for_scope(assistant, scope_name)
+    normalized_scope = scope_name.to_s
+    return [] unless SCOPE_ORDER.include?(normalized_scope)
+
+    Array(assistant.public_send("available_#{normalized_scope}_tools"))
   end
 
   def default_tool_ids_for(scope_name, tools)

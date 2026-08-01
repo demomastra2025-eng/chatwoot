@@ -5,6 +5,7 @@ class Captain::Mcp::ToolCatalog
   CACHE_TTL = 5.minutes
   FAILURE_CACHE_TTL = 30.seconds
   RUNTIME_CACHE_KEY = :captain_mcp_tool_catalog_runtime_cache
+  DISCOVERY_DISABLED_KEY = :captain_mcp_tool_catalog_discovery_disabled
   DISCOVERY_TIMEOUT_SECONDS = 5
   DISCOVERY_MAX_ATTEMPTS = 2
   DISCOVERY_RETRY_DELAY_SECONDS = 0.1
@@ -20,7 +21,18 @@ class Captain::Mcp::ToolCatalog
       Thread.current[RUNTIME_CACHE_KEY] = previous_cache
     end
 
+    def without_discovery
+      previous_value = Thread.current[DISCOVERY_DISABLED_KEY]
+      Thread.current[DISCOVERY_DISABLED_KEY] = true
+
+      yield
+    ensure
+      Thread.current[DISCOVERY_DISABLED_KEY] = previous_value
+    end
+
     def available_tools_for(assistant, scope_name)
+      return [] if Thread.current[DISCOVERY_DISABLED_KEY]
+
       runtime_cache = Thread.current[RUNTIME_CACHE_KEY]
       return discover_available_tools(assistant, scope_name) if runtime_cache.nil?
 

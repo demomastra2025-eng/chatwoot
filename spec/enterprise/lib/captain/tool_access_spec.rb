@@ -55,4 +55,27 @@ RSpec.describe Captain::ToolAccess do
       expect(access.dig(Captain::ToolAccess::SCOPE_ASSISTANT, 'tool_ids')).to eq(['mcp__github__list_issues'])
     end
   end
+
+  describe '.allowed_tool_ids_for' do
+    it 'resolves only the requested scope' do
+      assistant.config = {
+        'tool_access' => {
+          Captain::ToolAccess::SCOPE_AGENT => {
+            'enabled' => true,
+            'tool_ids' => ['faq_lookup']
+          }
+        }
+      }
+      allow(assistant).to receive(:available_agent_tools).and_return([{ id: 'faq_lookup' }])
+      expect(assistant).not_to receive(:available_assistant_tools)
+
+      ids = described_class.allowed_tool_ids_for(
+        assistant,
+        Captain::ToolAccess::SCOPE_AGENT,
+        fallback_ids: ['faq_lookup']
+      )
+
+      expect(ids).to eq(['faq_lookup'])
+    end
+  end
 end

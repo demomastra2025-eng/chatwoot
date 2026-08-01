@@ -12,7 +12,7 @@ RSpec.describe Captain::Tools::AddContactNoteTool, type: :model do
 
   describe '#description' do
     it 'returns the correct description' do
-      expect(tool.description).to eq('Add a note to a contact profile')
+      expect(tool.description).to eq('Add a note to the current conversation contact')
     end
   end
 

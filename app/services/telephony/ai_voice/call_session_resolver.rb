@@ -13,10 +13,9 @@ class Telephony::AiVoice::CallSessionResolver
 
   def resolve_by_call_id
     return if call_id.blank?
+    return if scope_account.blank?
 
-    return scope_account.telephony_call_sessions.find_by(id: call_id) if scope_account.present?
-
-    Telephony::CallSession.find_by(id: call_id)
+    scope_account.telephony_call_sessions.find_by(id: call_id)
   end
 
   def resolve_by_call_ref
@@ -98,8 +97,8 @@ class Telephony::AiVoice::CallSessionResolver
   end
 
   def call_id
-    raw = payload['call_id'].presence || payload['callId'].presence
-    raw.to_s[/\d+/] if raw.present?
+    raw = payload['call_session_id'].presence || payload['callSessionId'].presence || payload['call_id'].presence || payload['callId'].presence
+    raw.to_s if raw.to_s.match?(/\A\d+\z/)
   end
 
   def conversation_id

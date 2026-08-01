@@ -31,6 +31,7 @@ class Telephony::EventsIngestionService
   ].freeze
   RECONCILIATION_EVENT_SOURCES = %w[
     bridge_reconciliation
+    ai_pre_answer_reconciliation
     max_call_duration_reconciliation
     native_sip_reconciliation
     generic_pre_answer_reconciliation
@@ -2896,7 +2897,8 @@ class Telephony::EventsIngestionService
   end
 
   def resolved_direction
-    value = payload_value('direction', 'call_direction', 'callDirection').to_s.strip.downcase
+    value = (payload_value('direction', 'call_direction', 'callDirection') ||
+             nested_payload_value('direction', 'call_direction', 'callDirection')).to_s.strip.downcase
     return 'inbound' if %w[inbound from_pstn].include?(value)
     return 'outbound' if %w[outbound to_pstn outbound_api outbound-dial outbound_api_call].include?(value)
 

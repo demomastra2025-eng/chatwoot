@@ -2,13 +2,47 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from pipecat.transports.websocket.client import (
+    WebsocketClientCallbacks,
     WebsocketClientParams,
+    WebsocketClientSession,
     WebsocketClientTransport,
 )
 
 from app.api.models import RuntimeStream
 from app.media.serializer import OneLinkMediaSerializer
+
+
+class _SingleConnectionWebsocketClientSession(WebsocketClientSession):
+    """Prevent Pipecat input/output startup from consuming two stream grants."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._connect_lock = asyncio.Lock()
+
+    async def connect(self) -> None:
+        async with self._connect_lock:
+            await super().connect()
+
+
+class OneLinkMediaTransport(WebsocketClientTransport):
+    """Use one duplex WebSocket for the runtime stream's one-time grant."""
+
+    def __init__(self, uri: str, params: WebsocketClientParams) -> None:
+        super().__init__(uri=uri, params=params)
+        callbacks = WebsocketClientCallbacks(
+            on_connected=self._on_connected,
+            on_disconnected=self._on_disconnected,
+            on_message=self._on_message,
+        )
+        self._session = _SingleConnectionWebsocketClientSession(
+            uri,
+            self._params,
+            callbacks,
+            self.name,
+        )
 
 
 def create_media_transport(runtime_stream: RuntimeStream) -> WebsocketClientTransport:
@@ -18,7 +52,7 @@ def create_media_transport(runtime_stream: RuntimeStream) -> WebsocketClientTran
         additional_headers = {
             "authorization": f"Bearer {runtime_stream.stream_token.get_secret_value()}"
         }
-    return WebsocketClientTransport(
+    return OneLinkMediaTransport(
         uri=str(runtime_stream.stream_url),
         params=WebsocketClientParams(
             audio_in_enabled=True,

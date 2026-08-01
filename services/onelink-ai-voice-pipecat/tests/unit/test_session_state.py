@@ -89,6 +89,18 @@ class TransferToolClient(FakeClient):
         }
 
 
+class FailingToolClient(FakeClient):
+    async def call_tool(self, correlation, name, arguments, **kwargs):
+        self.tools.append((correlation, name, arguments, kwargs))
+        raise OnelinkApiError("callback timed out", code="transport_error")
+
+
+class SlowFailingToolClient(SlowControlClient):
+    async def call_tool(self, correlation, name, arguments, **kwargs):
+        self.tools.append((correlation, name, arguments, kwargs))
+        raise OnelinkApiError("callback timed out", code="transport_error")
+
+
 @pytest.fixture
 def state():
     return SessionState(
@@ -157,6 +169,23 @@ async def test_duplicate_tool_call_is_fenced_in_process(state):
 
 
 @pytest.mark.asyncio
+async def test_duplicate_tool_call_rejects_different_arguments_in_process(state):
+    first = await state.execute_tool(
+        "create_note", {"content": "original"}, "tool-conflict", timeout_ms=800
+    )
+    conflict = await state.execute_tool(
+        "create_note", {"content": "forged"}, "tool-conflict", timeout_ms=800
+    )
+
+    assert first == {"message_id": 99}
+    assert conflict == {
+        "error": "tool_execution_failed",
+        "code": "TOOL_IDEMPOTENCY_CONFLICT",
+    }
+    assert len(state.client.tools) == 1
+
+
+@pytest.mark.asyncio
 async def test_failed_transfer_continue_fallback_is_returned_as_non_terminal_result():
     client = TransferToolClient()
     state = SessionState(
@@ -186,6 +215,126 @@ async def test_failed_transfer_continue_fallback_is_returned_as_non_terminal_res
     assert "destination" not in result
     assert result["runtime_control"]["continue_call"] is True
     assert result["runtime_control"]["error"] == {"code": "transfer_timeout"}
+
+
+@pytest.mark.asyncio
+async def test_end_call_uses_runtime_control_when_rails_tool_callback_fails():
+    client = FailingToolClient()
+    runtime_actions = []
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(call_ref="call-end", runtime_session_id="runtime-end"),
+    )
+
+    async def end_runtime_call(result):
+        runtime_actions.append(result)
+        return {"status": "accepted"}
+
+    state.bind_tool_action_handler(end_runtime_call)
+
+    result = await state.execute_tool(
+        "end_call",
+        {"reason": "caller requested hangup", "ended_by": "ai_agent"},
+        "tool-end",
+        timeout_ms=5_000,
+    )
+
+    assert result == {
+        "action": "end_call",
+        "status": "accepted",
+        "reason": "caller requested hangup",
+        "callback_error": "transport_error",
+        "runtime_control": {"status": "accepted"},
+    }
+    assert runtime_actions == [
+        {
+            "action": "end_call",
+            "status": "accepted",
+            "reason": "caller requested hangup",
+            "callback_error": "transport_error",
+        }
+    ]
+    await state.drain_background()
+    assert [item[1]["action"] for item in client.controls] == [
+        "tool_started",
+        "tool_completed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_terminal_runtime_control_and_telemetry_survive_provider_task_cancellation():
+    client = FailingToolClient()
+    runtime_started = asyncio.Event()
+    release_runtime = asyncio.Event()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(call_ref="call-cancel", runtime_session_id="runtime-cancel"),
+    )
+
+    async def end_runtime_call(_result):
+        runtime_started.set()
+        await release_runtime.wait()
+        return {"status": "accepted"}
+
+    state.bind_tool_action_handler(end_runtime_call)
+    execution = asyncio.create_task(
+        state.execute_tool(
+            "end_call",
+            {"reason": "caller requested hangup"},
+            "tool-cancel",
+            timeout_ms=5_000,
+        )
+    )
+
+    await asyncio.wait_for(runtime_started.wait(), timeout=0.1)
+    execution.cancel()
+    release_runtime.set()
+    with pytest.raises(asyncio.CancelledError):
+        await execution
+
+    await state.drain_background()
+    assert [item[1]["action"] for item in client.controls] == [
+        "tool_started",
+        "tool_completed",
+    ]
+    completed = client.controls[-1][1]["metadata"]
+    assert {"action", "runtime_control"}.issubset(completed["keys"])
+    assert len(completed["fingerprint"]) == 64
+    assert "result" not in completed
+
+
+@pytest.mark.asyncio
+async def test_slow_terminal_telemetry_does_not_delay_runtime_end_call():
+    client = SlowFailingToolClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(call_ref="call-fast-end", runtime_session_id="runtime-fast-end"),
+    )
+
+    async def end_runtime_call(_result):
+        return {"status": "accepted"}
+
+    state.bind_tool_action_handler(end_runtime_call)
+    result = await asyncio.wait_for(
+        state.execute_tool(
+            "end_call",
+            {"reason": "caller requested hangup"},
+            "tool-fast-end",
+            timeout_ms=5_000,
+        ),
+        timeout=0.1,
+    )
+
+    assert result["action"] == "end_call"
+    assert result["runtime_control"] == {"status": "accepted"}
+    assert client.controls == []
+
+    client.control_gate.set()
+    await state.drain_background()
+    assert [item[1]["action"] for item in client.controls] == [
+        "tool_started",
+        "tool_completed",
+    ]
 
 
 @pytest.mark.asyncio

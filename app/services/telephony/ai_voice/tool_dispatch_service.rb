@@ -1,9 +1,12 @@
+require 'timeout'
+
 class Telephony::AiVoice::ToolDispatchService
   class UnknownToolError < StandardError; end
 
   REALTIME_FAQ_LOOKUP_TIMEOUT_MS = 10_000
   REALTIME_CAPTAIN_TOOL_TIMEOUT_MS = 15_000
   REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 900
+  VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS = 0.5
 
   VOICE_TOOL_CATALOG = [
     {
@@ -97,7 +100,7 @@ class Telephony::AiVoice::ToolDispatchService
       contextualized_tool.merge(enabled: true, source: 'voice', scope: 'default').deep_stringify_keys
     end
 
-    (voice_tools + captain_tool_catalog(captain_assistant)).uniq { |tool| tool['name'] }
+    (voice_tools + bounded_captain_tool_catalog(captain_assistant)).uniq { |tool| tool['name'] }
   end
 
   def self.normalized_voice_settings(policy, captain_assistant, explicit_settings)
@@ -116,7 +119,20 @@ class Telephony::AiVoice::ToolDispatchService
     end
   end
 
-  private_class_method :normalized_voice_settings, :transfer_tool_description
+  def self.bounded_captain_tool_catalog(captain_assistant)
+    return [] if captain_assistant.blank?
+
+    Timeout.timeout(VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS) do
+      Captain::Mcp::ToolCatalog.with_runtime_cache do
+        captain_tool_catalog(captain_assistant)
+      end
+    end
+  rescue Timeout::Error
+    Rails.logger.warn("#{name}: Captain MCP catalog timed out for assistant_id=#{captain_assistant.id}; returning local Captain tools")
+    Captain::Mcp::ToolCatalog.without_discovery { captain_tool_catalog(captain_assistant) }
+  end
+
+  private_class_method :normalized_voice_settings, :transfer_tool_description, :bounded_captain_tool_catalog
 
   def self.captain_tool_catalog(captain_assistant)
     return [] if captain_assistant.blank?
@@ -145,11 +161,21 @@ class Telephony::AiVoice::ToolDispatchService
   def self.captain_tool_definitions(captain_assistant)
     return [] if captain_assistant.blank?
 
-    if captain_assistant.respond_to?(:allowed_agent_tools)
-      captain_assistant.allowed_agent_tools
-    else
-      captain_assistant.direct_agent_tools
-    end
+    definitions = if captain_assistant.respond_to?(:voice_runtime_agent_tools)
+                    captain_assistant.voice_runtime_agent_tools
+                  elsif captain_assistant.respond_to?(:prompt_runtime_agent_tools) && captain_assistant.respond_to?(:direct_agent_tools)
+                    (captain_assistant.direct_agent_tools + captain_assistant.prompt_runtime_agent_tools).uniq { |tool| tool[:id].to_s }
+                  elsif captain_assistant.respond_to?(:prompt_runtime_agent_tools)
+                    captain_assistant.prompt_runtime_agent_tools
+                  elsif captain_assistant.respond_to?(:direct_agent_tools)
+                    captain_assistant.direct_agent_tools
+                  elsif captain_assistant.respond_to?(:allowed_agent_tools)
+                    captain_assistant.allowed_agent_tools
+                  else
+                    []
+                  end
+
+    Array(definitions).reject { |tool| tool.with_indifferent_access[:id].to_s == 'handoff' }
   end
 
   def self.captain_tool_parameters(captain_assistant, tool)
@@ -209,6 +235,21 @@ class Telephony::AiVoice::ToolDispatchService
     return perform_captain_tool if captain_tool_definition.present?
 
     raise UnknownToolError, "Unknown voice AI tool: #{tool_name}"
+  end
+
+  def captain_assistant_id
+    ensure_call_session!
+    captain_assistant&.id
+  end
+
+  def with_captain_assistant_assignment_lock
+    ensure_call_session!
+
+    ActiveRecord::Base.transaction do
+      lock_assistant_assignment!
+      reset_assistant_assignment_cache!
+      yield(captain_assistant&.id)
+    end
   end
 
   private
@@ -542,8 +583,34 @@ class Telephony::AiVoice::ToolDispatchService
     end
   end
 
+  def lock_assistant_assignment!
+    assignment_inbox&.lock!
+    Telephony::AiVoice::AssistantAssignmentLock.acquire!(assignment_inbox.id) if assignment_inbox.present?
+    assignment_captain_inbox&.lock!
+    routing_policy&.lock!
+  end
+
+  def reset_assistant_assignment_cache!
+    inbox = assignment_inbox
+    inbox.association(:captain_inbox).reset if inbox.respond_to?(:captain_inbox)
+    inbox.association(:captain_assistant).reset if inbox.respond_to?(:captain_assistant)
+    remove_instance_variable(:@captain_assistant) if defined?(@captain_assistant)
+    remove_instance_variable(:@captain_tool_definition) if defined?(@captain_tool_definition)
+    remove_instance_variable(:@captain_runtime_state) if defined?(@captain_runtime_state)
+  end
+
+  def assignment_inbox
+    @assignment_inbox ||= call_session&.inbox || conversation&.inbox
+  end
+
+  def assignment_captain_inbox
+    return unless assignment_inbox.respond_to?(:captain_inbox)
+
+    assignment_inbox.captain_inbox
+  end
+
   def inbox_captain_assistant
-    inbox = call_session&.inbox || conversation&.inbox
+    inbox = assignment_inbox
     return unless inbox.respond_to?(:captain_assistant)
 
     inbox.captain_assistant

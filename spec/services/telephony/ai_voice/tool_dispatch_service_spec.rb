@@ -1,6 +1,62 @@
 require 'rails_helper'
 
 RSpec.describe Telephony::AiVoice::ToolDispatchService do
+  describe '.catalog' do
+    let(:account) { create(:account) }
+    let(:assistant) { create(:captain_assistant, account: account) }
+
+    it 'bounds Captain discovery and preserves native call controls when discovery stalls' do
+      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS", 0.001)
+      allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
+      allow(Captain::Mcp::ToolCatalog).to receive(:without_discovery).and_call_original
+      catalog_attempt = 0
+      allow(described_class).to receive(:captain_tool_catalog) do
+        catalog_attempt += 1
+        sleep 0.05 if catalog_attempt == 1
+        [{ 'name' => 'faq_lookup' }]
+      end
+
+      names = described_class.catalog(captain_assistant: assistant).pluck('name')
+
+      expect(names).to include('end_call', 'request_transfer', 'faq_lookup')
+      expect(Captain::Mcp::ToolCatalog).to have_received(:with_runtime_cache).once
+      expect(Captain::Mcp::ToolCatalog).to have_received(:without_discovery).once
+    end
+
+    it 'resolves only agent-scope Captain tools for the voice catalog' do
+      allow(assistant).to receive(:voice_runtime_agent_tools).and_return([{ id: 'faq_lookup' }, { id: 'handoff' }])
+      expect(assistant).not_to receive(:available_assistant_tools)
+
+      names = described_class.catalog(captain_assistant: assistant).pluck('name')
+      definition_ids = described_class.captain_tool_definitions(assistant).pluck(:id)
+
+      expect(names).to include('faq_lookup', 'end_call')
+      expect(names).not_to include('handoff')
+      expect(definition_ids).to contain_exactly('faq_lookup')
+    end
+  end
+
+  describe '#lock_assistant_assignment!' do
+    it 'locks the inbox before the shared advisory and assignment rows' do
+      service = described_class.allocate
+      inbox = double(id: 42, present?: true)
+      captain_inbox = double
+      routing_policy = double
+      allow(service).to receive_messages(
+        assignment_inbox: inbox,
+        assignment_captain_inbox: captain_inbox,
+        routing_policy: routing_policy
+      )
+
+      expect(inbox).to receive(:lock!).ordered
+      expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(42).ordered
+      expect(captain_inbox).to receive(:lock!).ordered
+      expect(routing_policy).to receive(:lock!).ordered
+
+      service.send(:lock_assistant_assignment!)
+    end
+  end
+
   describe '#captain_runtime_state' do
     let(:account) { create(:account, captain_runtime: { 'assistant_thinking_effort' => 'low' }) }
     let(:whatsapp_channel) do
@@ -28,6 +84,19 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
 
     before do
       create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+    end
+
+    it 'acquires the shared assignment lock before yielding the current assistant' do
+      service = described_class.new(
+        tool_name: 'faq_lookup',
+        payload: { account_id: account.id, call_ref: call_session.external_call_ref, arguments: {} }
+      )
+
+      expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).and_call_original
+
+      service.with_captain_assistant_assignment_lock do |assistant_id|
+        expect(assistant_id).to eq(assistant.id)
+      end
     end
 
     it 'uses lightweight runtime preferences instead of full captain preferences for Captain tools' do

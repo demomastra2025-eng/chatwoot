@@ -30,9 +30,12 @@ class FixedAudioReply(FrameProcessor):
 async def test_pipecat_transport_round_trips_existing_media_protocol(fixture_json):
     received: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
     authorization: asyncio.Future[str | None] = asyncio.get_running_loop().create_future()
+    connections = 0
     audio_in = fixture_json("runtime_audio_in.json")
 
     async def media_server(websocket):
+        nonlocal connections
+        connections += 1
         if not authorization.done():
             authorization.set_result(websocket.request.headers.get("authorization"))
         await websocket.send(json.dumps(audio_in))
@@ -75,3 +78,4 @@ async def test_pipecat_transport_round_trips_existing_media_protocol(fixture_jso
         "mime_type": "audio/pcm;rate=8000",
     }
     assert auth_header == "Bearer fake-token"
+    assert connections == 1

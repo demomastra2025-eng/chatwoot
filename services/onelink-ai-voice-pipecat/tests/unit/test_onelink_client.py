@@ -14,6 +14,8 @@ def correlation():
         account_id=7,
         conversation_id=11,
         call_session_id=13,
+        assistant_id=17,
+        tool_capability="signed-per-call-capability",
     )
 
 
@@ -77,6 +79,7 @@ async def test_event_is_scoped_and_sets_idempotency_headers(correlation):
         "account_id": 7,
         "conversation_id": 11,
         "call_session_id": 13,
+        "assistant_id": 17,
         "event_id": "event-1",
         "event_key": "event-1",
         "event_seq": 3,
@@ -88,10 +91,12 @@ async def test_event_is_scoped_and_sets_idempotency_headers(correlation):
 @pytest.mark.asyncio
 async def test_mutating_tool_is_not_retried(correlation):
     attempts = 0
+    bodies = []
 
-    def handler(_request):
+    def handler(request):
         nonlocal attempts
         attempts += 1
+        bodies.append(json.loads(request.content))
         return httpx.Response(503, json={"error": "busy"})
 
     async with make_client(handler, retries=4) as client:
@@ -105,6 +110,9 @@ async def test_mutating_tool_is_not_retried(correlation):
             )
 
     assert attempts == 1
+    assert bodies[0]["tool_capability"] == "signed-per-call-capability"
+    assert bodies[0]["assistant_id"] == 17
+    assert "tool_capability" not in correlation.payload()
 
 
 @pytest.mark.asyncio

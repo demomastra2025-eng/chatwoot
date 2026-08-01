@@ -1,8 +1,11 @@
 class Internal::Voice::Ai::ToolsController < Internal::Voice::Ai::BaseController
   def create
-    result = Telephony::AiVoice::ToolDispatchService.new(
+    payload = request_payload
+    payload['idempotency_key'] ||= request_event_headers[:idempotency_key]
+    payload['tool_capability'] ||= request.headers['X-OneLink-Voice-Tool-Capability'].to_s.presence
+    result = Telephony::AiVoice::ToolExecutionService.new(
       tool_name: params[:name],
-      payload: request_payload
+      payload: payload
     ).perform
 
     render json: { result: result }

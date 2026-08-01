@@ -22,6 +22,13 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       )
     end
 
+    it 'preserves the declared voice system prompt while rejecting unknown settings' do
+      normalized = described_class.normalize(system_prompt: 'Ты Айсулу', unsupported_runtime_option: 'unsafe')
+
+      expect(normalized['system_prompt']).to eq('Ты Айсулу')
+      expect(normalized).not_to have_key('unsupported_runtime_option')
+    end
+
     it 'normalizes voice activity profiles as one atomic provider and local VAD contract' do
       expect(described_class.normalize(voice_activity_profile: 'noisy')).to include(
         'voice_activity_profile' => 'noisy',

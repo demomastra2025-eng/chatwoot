@@ -1,5 +1,6 @@
 class Telephony::CallReconciliationService
   DEFAULT_GENERIC_PRE_ANSWER_STALE_AFTER = 1.hour
+  DEFAULT_AI_PRE_ANSWER_STALE_AFTER = 2.minutes
   DEFAULT_RUNTIME_LEASE_STALE_AFTER = 90.seconds
   DEFAULT_SIPUNI_LOCAL_OUTBOUND_MISSING_AFTER = 60.seconds
   DEFAULT_SIPUNI_PROVIDER_RINGING_STALE_AFTER = 5.minutes
@@ -14,6 +15,7 @@ class Telephony::CallReconciliationService
   SOURCE_SIPUNI_PROVIDER_RECONCILIATION = 'sipuni_provider_reconciliation'.freeze
   SOURCE_NATIVE_SIP_RECONCILIATION = 'native_sip_reconciliation'.freeze
   SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION = 'generic_pre_answer_reconciliation'.freeze
+  SOURCE_AI_PRE_ANSWER_RECONCILIATION = 'ai_pre_answer_reconciliation'.freeze
   SOURCE_MAX_CALL_DURATION_RECONCILIATION = 'max_call_duration_reconciliation'.freeze
   SOURCE_RUNTIME_LEASE_RECONCILIATION = 'runtime_lease_reconciliation'.freeze
   RETRYABLE_RECONCILIATION_SOURCES = [
@@ -21,11 +23,13 @@ class Telephony::CallReconciliationService
     SOURCE_SIPUNI_PROVIDER_RECONCILIATION,
     SOURCE_NATIVE_SIP_RECONCILIATION,
     SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION,
+    SOURCE_AI_PRE_ANSWER_RECONCILIATION,
     SOURCE_MAX_CALL_DURATION_RECONCILIATION,
     SOURCE_RUNTIME_LEASE_RECONCILIATION
   ].freeze
 
   GENERIC_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
+  AI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   SIPUNI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
@@ -55,6 +59,10 @@ class Telephony::CallReconciliationService
     @generic_pre_answer_stale_after = positive_env_duration(
       'TELEPHONY_GENERIC_PRE_ANSWER_STALE_AFTER_SECONDS',
       DEFAULT_GENERIC_PRE_ANSWER_STALE_AFTER
+    )
+    @ai_pre_answer_stale_after = positive_env_duration(
+      'TELEPHONY_AI_PRE_ANSWER_STALE_AFTER_SECONDS',
+      DEFAULT_AI_PRE_ANSWER_STALE_AFTER
     )
     @runtime_lease_stale_after = positive_env_duration(
       'TELEPHONY_RUNTIME_LEASE_STALE_AFTER_SECONDS',
@@ -97,6 +105,7 @@ class Telephony::CallReconciliationService
     reconcile_missing_sipuni_provider_sessions!(result)
     reconcile_missing_native_sip_local_outbound_sessions!(result)
     reconcile_missing_native_sip_sessions!(result)
+    reconcile_ai_pre_answer_sessions!(result)
     reconcile_generic_pre_answer_sessions!(result)
 
     result
@@ -117,16 +126,25 @@ class Telephony::CallReconciliationService
 
   JANUS_NATIVE_SIP_REF_SQL = NATIVE_SIP_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:janus:%'" }.join(' OR ').freeze
   NATIVE_SIP_LOCAL_REF_SQL = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:local:%'" }.join(' OR ').freeze
+  AI_ROUTE_SCOPE_SQL = <<~SQL.squish.freeze
+    COALESCE(
+      metadata ->> 'route_action',
+      metadata -> 'metadata' ->> 'route_action',
+      metadata -> 'last_payload' -> 'metadata' ->> 'route_action',
+      ''
+    ) = 'ai'
+  SQL
   SPECIFIC_RECONCILIATION_SCOPE_SQL = [
     "(provider = 'sipuni' AND direction = 'outbound' AND provider_call_sid IS NULL AND external_call_ref LIKE 'sipuni:local:%')",
     "(provider = 'sipuni' AND provider_call_sid IS NOT NULL)",
     "(#{JANUS_NATIVE_SIP_REF_SQL})",
+    "(#{AI_ROUTE_SCOPE_SQL})",
     "(provider IN ('asterisk_analog', 'binotel', 'beeline') AND direction = 'outbound' " \
     "AND provider_call_sid IS NULL AND (#{NATIVE_SIP_LOCAL_REF_SQL}))"
   ].join(' OR ').freeze
 
   attr_reader :account, :now,
-              :generic_pre_answer_stale_after,
+              :ai_pre_answer_stale_after, :generic_pre_answer_stale_after,
               :runtime_lease_stale_after,
               :native_sip_in_progress_stale_after, :native_sip_local_outbound_missing_after, :native_sip_pre_answer_stale_after,
               :sipuni_local_outbound_missing_after, :sipuni_provider_in_progress_stale_after, :sipuni_provider_ringing_stale_after
@@ -292,6 +310,18 @@ class Telephony::CallReconciliationService
     ).where.not(SPECIFIC_RECONCILIATION_SCOPE_SQL)
   end
 
+  def ai_pre_answer_missing_scope
+    scope = Telephony::CallSession.active
+                                  .where(status: AI_PRE_ANSWER_STATUSES)
+                                  .where(AI_ROUTE_SCOPE_SQL)
+    scope = scope.where(account_id: account.id) if account.present?
+
+    scope.where(
+      'COALESCE(last_event_at, started_at, updated_at, created_at) <= ?',
+      now - ai_pre_answer_stale_after
+    )
+  end
+
   def reconcile_missing_sipuni_local_outbound_sessions!(result)
     sipuni_local_outbound_missing_scope.find_each do |session|
       result[:checked] += 1
@@ -329,6 +359,14 @@ class Telephony::CallReconciliationService
       result[:checked] += 1
       result[:missing] += 1
       apply_reconciliation_outcome!(result, reconcile_generic_pre_answer_session(session))
+    end
+  end
+
+  def reconcile_ai_pre_answer_sessions!(result)
+    ai_pre_answer_missing_scope.find_each do |session|
+      result[:checked] += 1
+      result[:missing] += 1
+      apply_reconciliation_outcome!(result, reconcile_ai_pre_answer_session(session))
     end
   end
 
@@ -480,6 +518,33 @@ class Telephony::CallReconciliationService
     return false unless reconciled
 
     reconciliation_outcome(session, target_status, source: SOURCE_GENERIC_PRE_ANSWER_RECONCILIATION)
+  end
+
+  def reconcile_ai_pre_answer_session(session)
+    target_status = 'failed'
+    reconciled = reconcile_stale_session(
+      session,
+      stale_after: ai_pre_answer_stale_after,
+      statuses: AI_PRE_ANSWER_STATUSES,
+      guard: method(:ai_pre_answer_session?),
+      skip: method(:generic_answer_evidence?)
+    ) do |locked_session|
+      previous_status = locked_session.canonical_status
+      ended_at = now
+      locked_session.update!(
+        status: target_status,
+        ended_at: ended_at,
+        ended_by: SOURCE_AI_PRE_ANSWER_RECONCILIATION,
+        end_reason: 'ai_runtime_terminal_missing',
+        duration_seconds: missing_duration_seconds(locked_session, ended_at, target_status),
+        last_event_at: ended_at,
+        metadata: ai_pre_answer_metadata(locked_session, target_status, previous_status),
+        legs: append_ai_pre_answer_leg_snapshot(locked_session, target_status, previous_status)
+      )
+    end
+    return false unless reconciled
+
+    reconciliation_outcome(session, target_status, source: SOURCE_AI_PRE_ANSWER_RECONCILIATION)
   end
 
   def reconcile_stale_session(session, stale_after:, statuses:, guard: nil, skip: nil)
@@ -826,6 +891,23 @@ class Telephony::CallReconciliationService
     metadata
   end
 
+  def ai_pre_answer_metadata(session, target_status, previous_status)
+    metadata = session.metadata.to_h.deep_dup
+    metadata['ai_pre_answer_reconciliation'] = {
+      'source' => SOURCE_AI_PRE_ANSWER_RECONCILIATION,
+      'target_status' => target_status,
+      'previous_status' => previous_status,
+      'pre_answer_stale' => true,
+      'stale_after_seconds' => ai_pre_answer_stale_after.to_i,
+      'stale_reference_at' => reconciliation_reference_time(session)&.iso8601,
+      'provider' => session.provider,
+      'route_action' => route_action(session),
+      'route_reason' => route_reason(session),
+      'reconciled_at' => now.iso8601
+    }.compact
+    metadata
+  end
+
   def append_generic_pre_answer_leg_snapshot(session, status, previous_status)
     legs = Array(session.legs).map { |leg| leg.respond_to?(:to_h) ? leg.to_h : leg }
     legs << {
@@ -836,6 +918,21 @@ class Telephony::CallReconciliationService
       'pre_answer_stale' => true,
       'provider' => session.provider,
       'provider_call_sid' => session.provider_call_sid,
+      'stale_reference_at' => reconciliation_reference_time(session)&.iso8601,
+      'occurred_at' => now.iso8601
+    }.compact
+    legs.last(20)
+  end
+
+  def append_ai_pre_answer_leg_snapshot(session, status, previous_status)
+    legs = Array(session.legs).map { |leg| leg.respond_to?(:to_h) ? leg.to_h : leg }
+    legs << {
+      'source' => SOURCE_AI_PRE_ANSWER_RECONCILIATION,
+      'status' => status,
+      'previous_status' => previous_status,
+      'end_reason' => 'ai_runtime_terminal_missing',
+      'pre_answer_stale' => true,
+      'provider' => session.provider,
       'stale_reference_at' => reconciliation_reference_time(session)&.iso8601,
       'occurred_at' => now.iso8601
     }.compact
@@ -867,6 +964,10 @@ class Telephony::CallReconciliationService
 
   def generic_pre_answer_session?(session)
     !specific_reconciliation_session?(session)
+  end
+
+  def ai_pre_answer_session?(session)
+    route_action(session) == 'ai'
   end
 
   def specific_reconciliation_session?(session)

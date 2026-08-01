@@ -85,6 +85,20 @@ RSpec.describe Captain::Mcp::ToolCatalog do
       expect(Thread.current[described_class::RUNTIME_CACHE_KEY]).to equal(original_cache)
     end
 
+    it 'skips discovery inside a scoped fallback and restores thread state after errors' do
+      original_value = Thread.current[described_class::DISCOVERY_DISABLED_KEY]
+      expect(described_class::DiscoveryService).not_to receive(:new)
+
+      expect do
+        described_class.without_discovery do
+          expect(described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)).to eq([])
+          raise 'fallback failure'
+        end
+      end.to raise_error(RuntimeError, 'fallback failure')
+
+      expect(Thread.current[described_class::DISCOVERY_DISABLED_KEY]).to equal(original_value)
+    end
+
     it 'isolates runtime caches between worker threads' do
       threads = Array.new(2) do
         Thread.new do

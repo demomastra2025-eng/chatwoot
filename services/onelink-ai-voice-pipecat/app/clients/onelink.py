@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 
@@ -34,10 +34,14 @@ class Correlation:
     conversation_id: str | int | None = None
     call_session_id: str | int | None = None
     inbox_id: str | int | None = None
+    assistant_id: str | int | None = None
     runtime_engine: str = "pipecat"
+    tool_capability: str | None = field(default=None, repr=False)
 
     def payload(self) -> dict[str, Any]:
-        return {key: value for key, value in asdict(self).items() if value is not None}
+        payload = asdict(self)
+        payload.pop("tool_capability", None)
+        return {key: value for key, value in payload.items() if value is not None}
 
 
 class OnelinkClient:
@@ -162,6 +166,12 @@ class OnelinkClient:
         tool_call_id: str,
         timeout_seconds: float,
     ) -> Any:
+        if not correlation.tool_capability:
+            raise OnelinkApiError(
+                "Per-call tool capability is unavailable",
+                status=403,
+                code="tool_capability_missing",
+            )
         result = await self._request(
             f"/internal/voice/ai/tools/{quote(name.strip(), safe='')}",
             body={
@@ -170,6 +180,7 @@ class OnelinkClient:
                 "request_id": tool_call_id,
                 "tool_call_id": tool_call_id,
                 "idempotency_key": tool_call_id,
+                "tool_capability": correlation.tool_capability,
             },
             retryable=False,
             timeout_seconds=timeout_seconds,

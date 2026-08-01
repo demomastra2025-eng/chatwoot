@@ -5,6 +5,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
   let(:voice_channel) { create(:channel_voice, :sipuni, account: account, phone_number: '+15551230001') }
   let(:voice_inbox) { voice_channel.inbox }
   let(:number_binding) { voice_inbox.telephony_number_binding }
+  let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
   let(:assistant) do
     create(
       :captain_assistant,
@@ -19,6 +20,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     create(
       :telephony_call_session,
       account: account,
+      conversation: conversation,
       inbox: voice_inbox,
       number_binding: number_binding,
       external_call_ref: 'ai-context-call-1',
@@ -77,6 +79,44 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     end
 
     expect(response).to have_http_status(:ok)
+  end
+
+  it 'issues a per-call tool capability bound to the runtime and catalog' do
+    runtime_session_id = 'context-runtime-1'
+    runtime_engine = 'pipecat'
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: {
+            call_ref: call_session.external_call_ref,
+            account_id: account.id,
+            runtime_session_id: runtime_session_id,
+            runtime_engine: runtime_engine
+          },
+          headers: { 'Authorization' => 'Bearer voice-secret' },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body
+    expect(body).to include(
+      'call_session_id' => call_session.id,
+      'assistant_id' => assistant.id,
+      'runtime_session_id' => runtime_session_id,
+      'runtime_engine' => runtime_engine,
+      'tool_capability' => be_present
+    )
+    expect(body.fetch('tools').pluck('name')).to include('find_contact')
+    expect do
+      Telephony::AiVoice::ToolCapability.verify!(
+        token: body.fetch('tool_capability'),
+        call_session: call_session,
+        assistant_id: assistant.id,
+        tool_name: 'find_contact',
+        payload: body.slice(
+          'account_id', 'call_session_id', 'call_ref', 'conversation_id', 'inbox_id', 'assistant_id', 'runtime_session_id', 'runtime_engine'
+        )
+      )
+    end.not_to raise_error
   end
 
   it 'returns low-latency context for the OneLink managed voice service' do
@@ -238,6 +278,58 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
   end
 
+  it 'removes live transfer when no operator target or working fallback exists' do
+    number_binding.routing_policy.update!(
+      operator_agent_aor: nil,
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        manager_handoff_mode: 'live_transfer',
+        transfer_failure_mode: 'continue'
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: {
+            'Authorization' => 'Bearer voice-secret',
+            'X-OneLink-Voice-Capabilities' => 'callback_handoff_v1'
+          },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('ai', 'manager_handoff_mode')).to eq('disabled')
+    expect(response.parsed_body['transfer']).to include('enabled' => false, 'mode' => 'disabled')
+    expect(response.parsed_body['tools'].pluck('name')).not_to include('request_transfer')
+  end
+
+  it 'uses callback handoff when a missing live-transfer target has a supported callback fallback' do
+    number_binding.routing_policy.update!(
+      operator_agent_aor: nil,
+      ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
+        manager_handoff_mode: 'live_transfer',
+        transfer_failure_mode: 'callback'
+      )
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      get '/internal/voice/ai/context',
+          params: { call_ref: call_session.external_call_ref, account_id: account.id },
+          headers: {
+            'Authorization' => 'Bearer voice-secret',
+            'X-OneLink-Voice-Capabilities' => 'callback_handoff_v1'
+          },
+          as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('ai', 'manager_handoff_mode')).to eq('callback')
+    expect(response.parsed_body['transfer']).to include('enabled' => true, 'mode' => 'callback')
+    expect(response.parsed_body['transfer']).not_to have_key('operator_agent_aor')
+    transfer_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'request_transfer' }
+    expect(transfer_tool['description']).to include('manager for a callback')
+  end
+
   it 'adds language-following instructions only for native Gemini auto language' do
     number_binding.routing_policy.update!(
       ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
@@ -377,7 +469,9 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     number_binding.routing_policy.update!(
       ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
         system_prompt: 'Основной сценарий звонка: помогай с записью.',
-        voice_character_prompt: voice_character_prompt
+        voice_character_prompt: voice_character_prompt,
+        recording_enabled: false,
+        unsupported_runtime_option: 'unsafe'
       )
     )
 
@@ -393,6 +487,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     system_prompt = body.dig('ai', 'system_prompt')
 
     expect(body.dig('ai', 'voice_character_prompt')).to eq(voice_character_prompt)
+    expect(body.dig('recording', 'enabled')).to be(false)
+    expect(body['ai']).not_to have_key('unsupported_runtime_option')
     expect(system_prompt).to include("Voice character prompt:\n#{voice_character_prompt}")
     expect(system_prompt.index('Основной сценарий звонка')).to be < system_prompt.index('Voice character prompt')
     expect(system_prompt.index('Voice character prompt')).to be < system_prompt.index('Ты голосовой ассистент')
@@ -658,6 +754,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
   end
 
   it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do
+    account.enable_features!('crm_deals')
     crm_assistant = create(
       :captain_assistant,
       account: account,

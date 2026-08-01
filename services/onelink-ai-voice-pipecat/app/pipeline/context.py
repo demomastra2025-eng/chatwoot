@@ -6,7 +6,7 @@ from copy import deepcopy
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from app.clients.onelink import Correlation
 
@@ -104,6 +104,7 @@ class VoiceContext(ContextModel):
     call_session_id: str | int | None = None
     contact_id: str | int | None = None
     inbox_id: str | int | None = None
+    assistant_id: str | int | None = None
     provider: str | None = None
     direction: str | None = None
     ai: AiSettings
@@ -111,6 +112,7 @@ class VoiceContext(ContextModel):
     recording: RecordingSettings = Field(default_factory=RecordingSettings)
     runtime_engine: Literal["pipecat"] = "pipecat"
     runtime_session_id: str = Field(default_factory=lambda: str(uuid4()))
+    tool_capability: SecretStr | None = Field(default=None, repr=False)
     raw: dict[str, Any] = Field(default_factory=dict, exclude=True)
 
     @model_validator(mode="before")
@@ -131,4 +133,11 @@ class VoiceContext(ContextModel):
             conversation_id=self.conversation_id,
             call_session_id=self.call_session_id,
             inbox_id=self.inbox_id,
+            assistant_id=self.assistant_id,
+            runtime_engine=self.runtime_engine,
+            tool_capability=(
+                self.tool_capability.get_secret_value()
+                if self.tool_capability is not None
+                else None
+            ),
         )

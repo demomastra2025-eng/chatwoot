@@ -57,6 +57,22 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'uses nested runtime direction when the top-level event scope predates direction propagation' do
+      existing_call_session.update!(direction: 'outbound')
+      nested_direction_service = described_class.new(
+        payload: payload.except(:direction).merge(
+          event_key: 'evt-nested-inbound-direction-1',
+          event: 'call_started',
+          payload: { direction: 'inbound' }
+        )
+      )
+      allow(nested_direction_service).to receive(:run_side_effects!)
+
+      result = nested_direction_service.perform
+
+      expect(result.reload.direction).to eq('inbound')
+    end
+
     it 'does not replace a Janus dual-channel recording with a late browser fallback' do
       janus_storage_key = 'voice-recordings/janus/1/call/dual.wav'
       existing_call_session.update!(

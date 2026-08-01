@@ -35,9 +35,11 @@ class CaptainInbox < ApplicationRecord
 
   before_validation :set_default_auto_reply_mode
 
+  before_save :lock_voice_assistant_assignment!
+  before_destroy :lock_voice_assistant_assignment!
+  after_destroy :clear_voice_routing_policy
+  after_save :sync_voice_routing_policy!
   after_commit :invalidate_inbox_cache, on: %i[create update destroy]
-  after_commit :sync_voice_routing_policy!, on: %i[create update]
-  after_commit :clear_voice_routing_policy, on: :destroy
 
   def self.sync_voice_routing_policies!
     includes(inbox: :channel).find_each(&:sync_voice_routing_policy!)
@@ -67,6 +69,10 @@ class CaptainInbox < ApplicationRecord
   end
 
   private
+
+  def lock_voice_assistant_assignment!
+    Telephony::AiVoice::AssistantAssignmentLock.acquire!(inbox_id)
+  end
 
   def set_default_auto_reply_mode
     self.auto_reply_mode = DEFAULT_AUTO_REPLY_MODE if auto_reply_mode.blank?

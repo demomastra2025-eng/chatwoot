@@ -11,6 +11,7 @@ def payload():
         "conversation_id": 11,
         "contact_id": 12,
         "inbox_id": 13,
+        "assistant_id": 17,
         "provider": "janus_sip",
         "direction": "inbound",
         "ai": {
@@ -72,6 +73,7 @@ def test_normalizes_context_without_calling_pipecat_a_provider():
     assert context.ai.max_silence_ms == 30000
     assert context.tools[0].name == "create_note"
     assert context.correlation.runtime_session_id
+    assert context.correlation.payload()["assistant_id"] == 17
 
 
 def test_context_accepts_native_gemini_affective_dialog_setting():

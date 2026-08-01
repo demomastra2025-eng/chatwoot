@@ -25,6 +25,9 @@ from app.sessions.state import SessionState
 logger = logging.getLogger(__name__)
 OUTBOX_REPLAY_INTERVAL_SECONDS = 5.0
 RUNTIME_HEARTBEAT_INTERVAL_SECONDS = 15.0
+RUNTIME_END_CALL_CALLBACK_TIMEOUT_MS = 1_000
+RUNTIME_CONTROL_ACTION_TIMEOUT_SECONDS = 5.0
+RUNTIME_CONTROL_CLEANUP_TIMEOUT_SECONDS = 3.0
 
 
 class RecorderCloser(Protocol):
@@ -185,11 +188,8 @@ class PipecatSessionRunner:
                     )
                 raise
             finally:
-                if control_client is not None and requested_action["action"] != "transfer":
-                    try:
-                        await control_client.execute({"action": "end_call"})
-                    except (OnelinkApiError, TimeoutError):
-                        pass
+                if requested_action["action"] not in {"transfer", "end_call"}:
+                    await _end_call_safely(control_client)
 
     async def preflight(self, payload: dict[str, Any]) -> dict[str, Any]:
         call_ref = str(payload.get("call_ref") or "").strip()
@@ -369,7 +369,7 @@ class PipecatSessionRunner:
             if state.user_turn != observed_user_turn:
                 observed_user_turn = state.user_turn
                 silence_stage = 0
-            if state.tool_in_progress:
+            if state.tool_in_progress or assembly.activity.bot_speaking:
                 continue
             idle_ms = (now - state.last_activity_monotonic) * 1_000
             if not context.ai.silence_prompt_enabled:
@@ -394,6 +394,7 @@ class PipecatSessionRunner:
                 if not context.ai.end_call_on_silence_enabled:
                     continue
                 await _queue_exact_message(assembly, context.ai.final_silence_message)
+                await _end_call_safely(control_client)
                 await terminal.set("completed", "max_silence")
                 await assembly.worker.cancel(reason="max_silence")
                 return
@@ -418,7 +419,10 @@ async def _end_call_safely(control_client: RuntimeControlClient | None) -> None:
     if control_client is None:
         return
     try:
-        await control_client.execute({"action": "end_call"})
+        await asyncio.wait_for(
+            control_client.execute({"action": "end_call"}),
+            timeout=RUNTIME_CONTROL_CLEANUP_TIMEOUT_SECONDS,
+        )
     except (OnelinkApiError, TimeoutError):
         pass
 
@@ -497,6 +501,9 @@ def _filter_tools_for_transport(
     rails_managed_end_call: bool,
 ) -> None:
     if has_runtime_control:
+        for tool in context.tools:
+            if tool.name == "end_call":
+                tool.timeout_ms = min(tool.timeout_ms, RUNTIME_END_CALL_CALLBACK_TIMEOUT_MS)
         return
     unavailable = set()
     rails_managed_callback = (
@@ -522,8 +529,11 @@ async def _execute_terminal_action(
     runtime_action = "end_call" if action == "callback_handoff" else action
     runtime_result = {**result, "action": runtime_action}
     if control_client is not None:
-        response = await control_client.execute(runtime_result)
         requested_action["action"] = runtime_action
+        response = await asyncio.wait_for(
+            control_client.execute(runtime_result),
+            timeout=RUNTIME_CONTROL_ACTION_TIMEOUT_SECONDS,
+        )
         return response
     if runtime_action == "end_call" and rails_managed_end_call:
         if result.get("transport_terminate_requested") is not True:

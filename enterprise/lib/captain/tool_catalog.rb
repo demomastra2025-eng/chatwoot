@@ -25,6 +25,29 @@ class Captain::ToolCatalog
       available_tools_for(assistant, scope_name).pluck(:id)
     end
 
+    def available_tools_for_ids(assistant, scope_name, tool_ids)
+      requested_ids = Array(tool_ids).map(&:to_s).uniq
+      return [] if requested_ids.empty?
+
+      tools = built_in_tools_for_ids(assistant, scope_name, requested_ids)
+      resolved_ids = tools.pluck(:id).map(&:to_s)
+      unresolved_ids = requested_ids - resolved_ids
+
+      custom_tools = custom_tools_for_ids(assistant, scope_name, unresolved_ids)
+      tools.concat(custom_tools)
+      unresolved_ids -= custom_tools.pluck(:id).map(&:to_s)
+
+      mcp_ids, skill_or_stale_ids = unresolved_ids.partition { |tool_id| tool_id.start_with?('mcp__') }
+      tools.concat(mcp_tools_for(assistant, scope_name)) if mcp_ids.any?
+      tools.concat(skill_script_tools_for_ids(assistant, scope_name, skill_or_stale_ids)) if skill_or_stale_ids.any?
+
+      tools.filter_map do |tool_definition|
+        next unless requested_ids.include?(tool_definition[:id].to_s)
+
+        with_source_type(tool_definition).dup
+      end.uniq { |tool_definition| tool_definition[:id] }
+    end
+
     def allowed_tools_for(assistant, scope_name, fallback_ids: nil)
       selected_ids = allowed_tool_ids_for(
         assistant,
@@ -89,6 +112,19 @@ class Captain::ToolCatalog
 
     private
 
+    def built_in_tools_for_ids(assistant, scope_name, tool_ids)
+      tool_ids.filter_map do |tool_id|
+        definition = Captain::ToolRegistry.definition_for(tool_id)
+        next if definition.blank? || !definition.supports_scope?(scope_name)
+
+        tool_definition = definition.to_h
+        next unless required_integrations_available?(assistant, tool_definition)
+        next unless runtime_requirements_available?(assistant, tool_definition)
+
+        require_assistant_confirmation(tool_definition, scope_name)
+      end
+    end
+
     def built_in_tools_for(assistant, scope_name)
       Captain::ToolRegistry.tools_for_scope(scope_name)
                            .select { |tool_definition| required_integrations_available?(assistant, tool_definition) }
@@ -144,10 +180,16 @@ class Captain::ToolCatalog
     end
 
     def custom_tools_for(assistant, scope_name)
-      assistant.account.captain_custom_tools.enabled
-               .map(&:to_tool_metadata)
-               .select { |tool| Array(tool[:allowed_scopes]).map(&:to_s).include?(scope_name.to_s) }
-               .map { |tool| assistant_scope?(scope_name) ? tool.merge(requires_confirmation: true) : tool }
+      custom_tools_for_ids(assistant, scope_name)
+    end
+
+    def custom_tools_for_ids(assistant, scope_name, tool_ids = nil)
+      tools = assistant.account.captain_custom_tools.enabled
+      tools = tools.where(slug: tool_ids) if tool_ids.present?
+
+      tools.map(&:to_tool_metadata)
+           .select { |tool| Array(tool[:allowed_scopes]).map(&:to_s).include?(scope_name.to_s) }
+           .map { |tool| assistant_scope?(scope_name) ? tool.merge(requires_confirmation: true) : tool }
     end
 
     def mcp_tools_for(assistant, scope_name)
@@ -160,6 +202,11 @@ class Captain::ToolCatalog
       return [] unless scope_name.to_s == Captain::ToolAccess::SCOPE_AGENT
 
       Captain::SkillCatalog.script_tools_for(account: assistant.account)
+    end
+
+    def skill_script_tools_for_ids(assistant, scope_name, tool_ids)
+      requested_ids = Array(tool_ids).map(&:to_s)
+      skill_script_tools_for(assistant, scope_name).select { |tool| requested_ids.include?(tool[:id].to_s) }
     end
 
     def require_assistant_confirmation(tool, scope_name, include_missing_idempotency: false)

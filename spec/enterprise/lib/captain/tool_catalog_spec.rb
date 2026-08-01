@@ -252,6 +252,77 @@ RSpec.describe Captain::ToolCatalog do
     end
   end
 
+  describe '.available_tools_for_ids' do
+    it 'resolves a built-in tool without scanning the full registry or discovering MCP tools' do
+      expect(Captain::ToolRegistry).not_to receive(:tools_for_scope)
+      expect(Captain::Mcp::ToolCatalog).not_to receive(:available_tools_for)
+
+      tools = described_class.available_tools_for_ids(
+        assistant,
+        Captain::ToolAccess::SCOPE_AGENT,
+        ['faq_lookup']
+      )
+
+      expect(tools).to contain_exactly(include(id: 'faq_lookup', source_type: 'system'))
+    end
+
+    it 'resolves account-scoped custom tools without relying on a slug prefix' do
+      custom_tool = create(:captain_custom_tool, account: account, slug: 'workspace_status_lookup')
+
+      tools = described_class.available_tools_for_ids(
+        assistant,
+        Captain::ToolAccess::SCOPE_AGENT,
+        [custom_tool.slug]
+      )
+
+      expect(tools).to contain_exactly(include(id: custom_tool.slug, source_type: 'custom'))
+    end
+
+    it 'resolves skill tools without relying on a tool id prefix' do
+      allow(Captain::SkillCatalog).to receive(:script_tools_for).and_return(
+        [
+          {
+            id: 'workspace_status_script',
+            title: 'Workspace status',
+            description: 'Read workspace status',
+            provider: 'skill_script'
+          }
+        ]
+      )
+      expect(Captain::Mcp::ToolCatalog).not_to receive(:available_tools_for)
+
+      tools = described_class.available_tools_for_ids(
+        assistant,
+        Captain::ToolAccess::SCOPE_AGENT,
+        ['workspace_status_script']
+      )
+
+      expect(tools).to contain_exactly(include(id: 'workspace_status_script', source_type: 'skill'))
+    end
+
+    it 'discovers MCP only for unresolved MCP ids and ignores stale ids' do
+      allow(Captain::Mcp::ToolCatalog).to receive(:available_tools_for)
+        .with(assistant, Captain::ToolAccess::SCOPE_AGENT)
+        .and_return([
+                      {
+                        id: 'mcp__github_mcp__list_issues',
+                        title: 'List issues',
+                        description: 'List repository issues',
+                        provider: 'mcp'
+                      }
+                    ])
+
+      tools = described_class.available_tools_for_ids(
+        assistant,
+        Captain::ToolAccess::SCOPE_AGENT,
+        %w[mcp__github_mcp__list_issues stale_tool_id]
+      )
+
+      expect(tools).to contain_exactly(include(id: 'mcp__github_mcp__list_issues', source_type: 'mcp'))
+      expect(Captain::Mcp::ToolCatalog).to have_received(:available_tools_for).once
+    end
+  end
+
   describe '.build_tool' do
     it 'builds a built-in assistant tool using the registry resolver' do
       tool = described_class.build_tool(

@@ -8,7 +8,9 @@ test('VoiceSession bootstraps Rails context, records lifecycle and flushes trans
     getContext: async () => ({
       call_ref: 'call-1',
       account_id: 42,
+      assistant_id: 17,
       number_ref: 'num-1',
+      tool_capability: 'signed-capability',
       ai: { provider: 'gemini-live', model: 'gemini-2.0-flash-live-001', first_message: 'Здравствуйте' },
       transfer: { enabled: true, operator_agent_aor: 'sip:1001@example.test' },
       tools: [{ name: 'request_transfer', enabled: true }]
@@ -36,6 +38,8 @@ test('VoiceSession bootstraps Rails context, records lifecycle and flushes trans
   assert.equal(transcriptCall[1].items[0].text, 'Мне нужен оператор');
   const toolCall = calls.find(([kind]) => kind === 'tool');
   assert.equal(toolCall[2].account_id, 42);
+  assert.equal(toolCall[2].assistant_id, 17);
+  assert.equal(toolCall[2].tool_capability, 'signed-capability');
   assert.equal(toolCall[2].number_ref, 'num-1');
   assert.ok(calls.filter(([kind]) => kind === 'control').every(([, payload]) => payload.account_id === 42));
 });

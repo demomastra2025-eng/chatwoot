@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import time
 from collections.abc import Awaitable, Callable, Coroutine
 from datetime import UTC, datetime
@@ -39,6 +41,7 @@ class SessionState:
         self._finalize_lock = asyncio.Lock()
         self._tool_lock = asyncio.Lock()
         self._tool_results: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._tool_fingerprints: dict[str, str] = {}
         self._active_tool_calls = 0
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._tool_action_handler = tool_action_handler
@@ -72,10 +75,11 @@ class SessionState:
             raise RuntimeError("Cannot bind terminal action handler during tool execution")
         self._tool_action_handler = handler
 
-    def spawn(self, work: Coroutine[Any, Any, Any]) -> None:
+    def spawn(self, work: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(work)
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
+        return task
 
     async def drain_background(self, *, timeout_seconds: float = 2.0) -> None:
         deadline = time.monotonic() + timeout_seconds
@@ -190,13 +194,20 @@ class SessionState:
         *,
         timeout_ms: int,
     ) -> dict[str, Any]:
+        tool_call_id = tool_call_id.strip()
+        if not tool_call_id:
+            return {"error": "tool_execution_failed", "code": "TOOL_IDEMPOTENCY_KEY_REQUIRED"}
+        fingerprint = self._tool_fingerprint(name, arguments)
         creator = False
         async with self._tool_lock:
             future = self._tool_results.get(tool_call_id)
             if future is None:
                 future = asyncio.get_running_loop().create_future()
                 self._tool_results[tool_call_id] = future
+                self._tool_fingerprints[tool_call_id] = fingerprint
                 creator = True
+            elif self._tool_fingerprints.get(tool_call_id) != fingerprint:
+                return {"error": "tool_execution_failed", "code": "TOOL_IDEMPOTENCY_CONFLICT"}
         if not creator:
             return await asyncio.shield(future)
 
@@ -206,7 +217,7 @@ class SessionState:
             self.spawn(
                 self.safe_control(
                     "tool_started",
-                    {"arguments": arguments},
+                    self._tool_audit_metadata(arguments),
                     tool_call_id=tool_call_id,
                     tool_name=name,
                 )
@@ -219,42 +230,65 @@ class SessionState:
                     tool_call_id=tool_call_id,
                     timeout_seconds=timeout_ms / 1_000,
                 )
+                terminal_action = False
                 if (
                     isinstance(result, dict)
                     and result.get("action")
                     and self._tool_action_handler is not None
                 ):
-                    transport_result = await self._tool_action_handler(result)
-                    if transport_result:
-                        result = {**result, "runtime_control": transport_result}
-                        if transport_result.get("continue_call") is True:
-                            result = {
-                                "status": "failed",
-                                "action": "continue",
-                                "error": "transfer_failed",
-                                "runtime_control": transport_result,
-                            }
-                self.spawn(
-                    self.safe_control(
-                        "tool_completed",
-                        {"result": result},
-                        tool_call_id=tool_call_id,
-                        tool_name=name,
+                    terminal_action = self._terminal_action(result)
+                    if terminal_action:
+                        completion_task = self.spawn(
+                            self._complete_terminal_tool(
+                                name=name,
+                                result=result,
+                                tool_call_id=tool_call_id,
+                            )
+                        )
+                        result = await asyncio.shield(completion_task)
+                    else:
+                        result = await self._apply_tool_action(result)
+                if not terminal_action:
+                    self.spawn(
+                        self.safe_control(
+                            "tool_completed",
+                            self._tool_audit_metadata(result),
+                            tool_call_id=tool_call_id,
+                            tool_name=name,
+                        )
                     )
-                )
             except (OnelinkApiError, TimeoutError) as error:
                 result = {
                     "error": "tool_execution_failed",
                     "code": getattr(error, "code", "TOOL_TIMEOUT"),
                 }
-                self.spawn(
-                    self.safe_control(
-                        "tool_failed",
-                        result,
-                        tool_call_id=tool_call_id,
-                        tool_name=name,
+                terminal_fallback = {
+                    "action": "end_call",
+                    "status": "accepted",
+                    "reason": arguments.get("reason") or "ai_voice_end_call",
+                    "callback_error": result["code"],
+                }
+                if name.strip().lower() in {"end_call", "hangup"} and self._tool_action_handler:
+                    completion_task = self.spawn(
+                        self._complete_terminal_tool(
+                            name=name,
+                            result=terminal_fallback,
+                            tool_call_id=tool_call_id,
+                        )
                     )
-                )
+                    try:
+                        result = await asyncio.shield(completion_task)
+                    except (OnelinkApiError, TimeoutError):
+                        pass
+                if result.get("action") != "end_call":
+                    self.spawn(
+                        self.safe_control(
+                            "tool_failed",
+                            result,
+                            tool_call_id=tool_call_id,
+                            tool_name=name,
+                        )
+                    )
             future.set_result(result)
             return result
         except BaseException:
@@ -264,6 +298,64 @@ class SessionState:
         finally:
             self._active_tool_calls -= 1
             self.touch()
+
+    @staticmethod
+    def _terminal_action(result: dict[str, Any]) -> bool:
+        return str(result.get("action") or "").strip().lower() in {
+            "transfer",
+            "callback_handoff",
+            "end_call",
+            "hangup",
+        }
+
+    @staticmethod
+    def _tool_fingerprint(name: str, value: Any) -> str:
+        canonical = json.dumps(
+            {"tool_name": name.strip(), "value": value},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    @classmethod
+    def _tool_audit_metadata(cls, value: Any) -> dict[str, Any]:
+        keys = sorted(str(key) for key in value)[:50] if isinstance(value, dict) else []
+        return {"keys": keys, "fingerprint": cls._tool_fingerprint("audit", value)}
+
+    async def _apply_tool_action(self, result: dict[str, Any]) -> dict[str, Any]:
+        if self._tool_action_handler is None:
+            return result
+        transport_result = await self._tool_action_handler(result)
+        if not transport_result:
+            return result
+        if transport_result.get("continue_call") is True:
+            return {
+                "status": "failed",
+                "action": "continue",
+                "error": "transfer_failed",
+                "runtime_control": transport_result,
+            }
+        return {**result, "runtime_control": transport_result}
+
+    async def _complete_terminal_tool(
+        self,
+        *,
+        name: str,
+        result: dict[str, Any],
+        tool_call_id: str,
+    ) -> dict[str, Any]:
+        completed = await self._apply_tool_action(result)
+        self.spawn(
+            self.safe_control(
+                "tool_completed",
+                self._tool_audit_metadata(completed),
+                tool_call_id=tool_call_id,
+                tool_name=name,
+            )
+        )
+        return completed
 
     async def finalize(
         self,

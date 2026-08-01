@@ -179,10 +179,8 @@ def test_user_turn_strategies_honor_interruption_setting(enabled):
     assert all(strategy._enable_interruptions is enabled for strategy in strategies.start)
 
 
-def test_gemini_uses_native_vad_with_assistant_turn_settings():
+def test_gemini_uses_local_vad_as_single_turn_owner():
     context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
-    context.ai.speech_start_sensitivity = "START_SENSITIVITY_LOW"
-    context.ai.speech_end_sensitivity = "END_SENSITIVITY_LOW"
     context.ai.prefix_padding_ms = 240
     context.ai.silence_duration_ms = 650
     context.ai.vad_confidence = 0.85
@@ -198,11 +196,11 @@ def test_gemini_uses_native_vad_with_assistant_turn_settings():
 
     llm = cast(GeminiLiveLLMService, assembly.llm)
     vad = llm._settings.vad
-    assert vad.disabled is False
-    assert vad.start_sensitivity.value == "START_SENSITIVITY_LOW"
-    assert vad.end_sensitivity.value == "END_SENSITIVITY_LOW"
-    assert vad.prefix_padding_ms == 240
-    assert vad.silence_duration_ms == 650
+    assert vad.disabled is True
+    assert vad.start_sensitivity is None
+    assert vad.end_sensitivity is None
+    assert vad.prefix_padding_ms is None
+    assert vad.silence_duration_ms is None
     assert assembly.vad.params.confidence == 0.85
     assert assembly.vad.params.start_secs == 0.24
     assert assembly.vad.params.stop_secs == 0.65
@@ -366,7 +364,7 @@ def test_gemini_25_does_not_receive_unsupported_thinking_level():
     assert llm._settings.thinking is None
 
 
-def test_gemini_falls_back_from_unknown_vad_sensitivity_values():
+def test_gemini_sensitivity_values_do_not_enable_server_vad():
     context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
     context.ai.speech_start_sensitivity = "UNKNOWN_START"
     context.ai.speech_end_sensitivity = "UNKNOWN_END"
@@ -381,8 +379,9 @@ def test_gemini_falls_back_from_unknown_vad_sensitivity_values():
 
     llm = cast(GeminiLiveLLMService, assembly.llm)
     vad = llm._settings.vad
-    assert vad.start_sensitivity.value == "START_SENSITIVITY_LOW"
-    assert vad.end_sensitivity.value == "END_SENSITIVITY_HIGH"
+    assert vad.disabled is True
+    assert vad.start_sensitivity is None
+    assert vad.end_sensitivity is None
 
 
 def test_gemini_with_tools_announces_before_formal_function_call():

@@ -2599,8 +2599,9 @@ test('VoiceApplication treats recursive AI app route decisions as local realtime
 
   const result = await app.handleCall(call, {
     call_ref: 'call-recursive-ai-app',
-    from: '+155****1001',
-    to: '+155****7001',
+    caller_number: '+155****1001',
+    ingress_number: '+155****7001',
+    direction: 'inbound',
     app_ref: 'ai-app-1'
   });
 
@@ -2613,7 +2614,11 @@ test('VoiceApplication treats recursive AI app route decisions as local realtime
   assert.equal(bridgeEvents[0].app_ref, 'ai-app-1');
   assert.equal(bridgeEvents[0].metadata.route_app_ref, 'fallback-runtime-app-1');
   assert.equal(bridgeEvents[0].metadata.topology, 'direct_ai');
-  assert.equal(events.find(event => event.event_type === 'app_received_call').payload.app_ref, 'ai-app-1');
+  const appReceived = events.find(event => event.event_type === 'app_received_call');
+  assert.equal(appReceived.payload.app_ref, 'ai-app-1');
+  assert.equal(appReceived.direction, 'inbound');
+  assert.equal(appReceived.caller_number, '+155****1001');
+  assert.equal(appReceived.ingress_number, '+155****7001');
   assert.equal(events.find(event => event.event_type === 'call_started').payload.app_ref, 'ai-app-1');
   assert.equal(events.find(event => event.event_type === 'call_started').payload.route_app_ref, 'fallback-runtime-app-1');
   assert.equal(events.find(event => event.event_type === 'call_started').payload.topology, 'direct_ai');
@@ -2667,6 +2672,7 @@ test('VoiceApplication treats direct AI app route decisions as local realtime se
     call_ref: 'call-direct-ai-app',
     from: '+155****1001',
     to: '+155****7001',
+    direction: 'outbound',
     app_ref: 'ai-app-1'
   });
 
@@ -2677,6 +2683,10 @@ test('VoiceApplication treats direct AI app route decisions as local realtime se
   assert.equal(bridgeEvents[0].app_ref, 'ai-app-1');
   assert.equal(bridgeEvents[0].metadata.route_app_ref, 'ai-app-1');
   assert.equal(bridgeEvents[0].metadata.topology, 'direct_ai');
+  const appReceived = events.find(event => event.event_type === 'app_received_call');
+  assert.equal(appReceived.direction, 'outbound');
+  assert.equal(appReceived.caller_number, '+155****1001');
+  assert.equal(appReceived.ingress_number, '+155****7001');
   assert.equal(events.find(event => event.event_type === 'call_started').payload.route_app_ref, 'ai-app-1');
   assert.equal(events.find(event => event.event_type === 'call_started').payload.topology, 'direct_ai');
 
@@ -2930,4 +2940,75 @@ test('VoiceApplication falls back safely when realtime setup fails after context
   assert.equal(greetings.length, 1);
   assert.equal(controls.at(-1).action, 'session_failed');
   assert.equal(controls.at(-1).metadata.reason, 'Gemini Live setup timeout');
+});
+
+test('VoiceApplication persists Pipecat runtime start failures only for AI routes', async () => {
+  const bridgeEvents = [];
+  const app = new VoiceApplication({
+    client: {
+      sendBridgeEvent: async payload => {
+        bridgeEvents.push(payload);
+        return { status: 'ok' };
+      }
+    }
+  });
+  const error = new Error('old media server');
+  error.code = 'media_server_ownership_controls_unavailable';
+  const requestPayload = {
+    call_ref: 'asterisk_analog:janus-server:53:call-ai-failed',
+    bridge_call_ref: 'asterisk_analog:janus-server:53:call-ai-failed',
+    account_id: 530,
+    inbox_id: 4865,
+    number_ref: 'asterisk-analog-ai',
+    provider: 'asterisk_analog',
+    direction: 'inbound',
+    caller_number: '+770****0101',
+    ingress_number: '+771****5175'
+  };
+
+  const persisted = await app.handleAiRuntimeStartFailure({
+    requestPayload,
+    routeDecision: { action: 'ai', reason: 'voice_agent_sip_profile_route' },
+    error
+  });
+  const ignored = await app.handleAiRuntimeStartFailure({
+    requestPayload: { ...requestPayload, call_ref: 'operator-call' },
+    routeDecision: { action: 'operator', reason: 'routing_policy_operator' },
+    error
+  });
+
+  assert.equal(persisted, true);
+  assert.equal(ignored, false);
+  assert.equal(bridgeEvents.length, 1);
+  assert.deepEqual(bridgeEvents[0], {
+    event_key: 'runtime:asterisk_analog:janus-server:53:call-ai-failed:ai_runtime_start_failed',
+    event: 'session_failed',
+    call_ref: 'asterisk_analog:janus-server:53:call-ai-failed',
+    bridge_call_ref: 'asterisk_analog:janus-server:53:call-ai-failed',
+    runtime_call_ref: 'asterisk_analog:janus-server:53:call-ai-failed',
+    ai_runtime_call_ref: 'asterisk_analog:janus-server:53:call-ai-failed',
+    account_id: 530,
+    number_ref: 'asterisk-analog-ai',
+    ingress_number: '+771****5175',
+    caller_number: '+770****0101',
+    provider: 'asterisk_analog',
+    inbox_id: 4865,
+    direction: 'inbound',
+    status: 'failed',
+    ended_by: 'system',
+    end_reason: 'media_server_ownership_controls_unavailable',
+    occurred_at: bridgeEvents[0].occurred_at,
+    metadata: {
+      runtime_engine: 'pipecat',
+      failure_phase: 'runtime_start',
+      reason: 'media_server_ownership_controls_unavailable',
+      error_code: 'media_server_ownership_controls_unavailable',
+      route_app_ref: undefined,
+      selected_app_ref: undefined,
+      topology: undefined,
+      route_action: 'ai',
+      route_reason: 'voice_agent_sip_profile_route'
+    }
+  });
+  assert.doesNotThrow(() => new Date(bridgeEvents[0].occurred_at).toISOString());
 });

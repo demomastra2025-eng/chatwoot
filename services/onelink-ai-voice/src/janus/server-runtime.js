@@ -811,11 +811,13 @@ class JanusSipServerProfileSession {
       if (handle.activeCallId === providerCallId) handle.activeCallId = null;
     });
     let run;
+    let routeDecision;
+    let runtimeEngine;
     try {
-      const routeDecision = await this.resolveRouteDecision(facade);
+      routeDecision = await this.resolveRouteDecision(facade);
       if (facade.ended) return;
       facade.request.routing = routeDecision;
-      const runtimeEngine = this.runtimeSelector?.select?.(facade.request) || 'legacy';
+      runtimeEngine = this.runtimeSelector?.select?.(facade.request) || 'legacy';
       if (runtimeEngine === 'pipecat') {
         await this.startPipecatCall(facade);
         return;
@@ -823,6 +825,19 @@ class JanusSipServerProfileSession {
       run = this.app.handleCall(facade, facade.request);
     } catch (error) {
       this.log('janus_server_handle_call_failed', { error: error.message });
+      const routeAction = String(routeDecision?.action || routeDecision?.mode || '').trim().toLowerCase();
+      if (runtimeEngine === 'pipecat' && routeAction === 'ai') {
+        try {
+          await this.app.handleAiRuntimeStartFailure?.({
+            call: facade,
+            requestPayload: facade.request,
+            routeDecision,
+            error
+          });
+        } catch (persistenceError) {
+          this.log('janus_server_ai_start_failure_persistence_failed', { error: persistenceError.message });
+        }
+      }
       await facade.hangup().catch(() => {});
       return;
     }

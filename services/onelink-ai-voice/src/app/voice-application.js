@@ -68,6 +68,7 @@ class VoiceApplication {
       numberRef: requestPayload.number_ref,
       accountId: requestPayload.account_id,
       bridgeCallRef: bridgeCallRefCandidate(requestPayload),
+      direction: requestPayload.direction || 'inbound',
       toolTimeoutMs: this.toolTimeoutMs
     });
     this.registry?.create({
@@ -359,6 +360,49 @@ class VoiceApplication {
       await this.client.sendBridgeEvent(bridgeEventPayload(event, session, requestPayload, routeDecision, metadata));
     } catch (_error) {
       // Telephony execution must not be interrupted by transient lifecycle persistence errors.
+    }
+  }
+
+  async handleAiRuntimeStartFailure({ call, requestPayload = {}, routeDecision = {}, error } = {}) {
+    if (normalizeRouteAction(routeDecision) !== 'ai') return false;
+    if (!this.client || typeof this.client.sendBridgeEvent !== 'function') return false;
+
+    const callRef = requestPayload.call_ref || requestPayload.callRef || call?.request?.call_ref || call?.request?.callRef;
+    if (!callRef) return false;
+
+    const reason = sanitizeReason(error?.code || error?.reason || error?.message || 'ai_runtime_start_failed');
+    const session = {
+      callRef,
+      bridgeCallRef: bridgeCallRefCandidate(requestPayload) || bridgeCallRefCandidate(routeDecision),
+      accountId: requestPayload.account_id || requestPayload.accountId || routeDecision.account_id || routeDecision.accountId,
+      numberRef: requestPayload.number_ref || requestPayload.numberRef || routeDecision.number_ref || routeDecision.numberRef,
+      ingressNumber: requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to,
+      callerNumber: requestPayload.caller_number || requestPayload.callerNumber || requestPayload.from,
+      mediaSessionRef: requestPayload.media_session_ref || requestPayload.mediaSessionRef,
+      streamRef: requestPayload.stream_ref || requestPayload.streamRef
+    };
+    const payload = bridgeEventPayload('session_failed', session, requestPayload, routeDecision, {
+      runtime_engine: 'pipecat',
+      failure_phase: 'runtime_start',
+      reason,
+      error_code: error?.code
+    });
+
+    try {
+      await this.client.sendBridgeEvent({
+        ...payload,
+        event_key: `runtime:${callRef}:ai_runtime_start_failed`,
+        provider: requestPayload.provider,
+        inbox_id: requestPayload.inbox_id || requestPayload.inboxId || routeDecision.inbox_id || routeDecision.inboxId,
+        direction: requestPayload.direction || 'inbound',
+        status: 'failed',
+        ended_by: 'system',
+        end_reason: reason,
+        occurred_at: new Date().toISOString()
+      });
+      return true;
+    } catch (_error) {
+      return false;
     }
   }
 

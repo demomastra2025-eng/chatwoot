@@ -5,7 +5,7 @@ const { safeReason, withTimeout } = require('../utils/timeout');
 const { randomUUID } = require('node:crypto');
 
 class VoiceSession {
-  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, bridgeCallRef = null, toolTimeoutMs = 3_000 } = {}) {
+  constructor({ client, callRef, ingressNumber = null, callerNumber = null, numberRef = null, accountId = null, bridgeCallRef = null, direction = null, toolTimeoutMs = 3_000 } = {}) {
     if (!client) throw new Error('client is required');
     if (!callRef) throw new Error('callRef is required');
     this.client = client;
@@ -15,6 +15,7 @@ class VoiceSession {
     this.numberRef = numberRef;
     this.accountId = accountId;
     this.bridgeCallRef = bridgeCallRef;
+    this.direction = direction;
     this.aiSessionId = `ai_${randomUUID()}`;
     this.startedAt = new Date();
     this.eventSeq = 0;
@@ -32,7 +33,7 @@ class VoiceSession {
       callRef,
       timeoutMs: toolTimeoutMs,
       timeoutProvider: toolName => this.toolTimeoutFor(toolName),
-      scopeProvider: () => this.scopePayload(),
+      scopeProvider: () => this.toolScopePayload(),
       eventSender: (action, metadata) => this.safeEvent(action, metadata)
     });
   }
@@ -47,7 +48,9 @@ class VoiceSession {
         ingress_number: this.ingressNumber,
         caller_number: this.callerNumber,
         number_ref: this.numberRef,
-        account_id: this.accountId
+        account_id: this.accountId,
+        runtime_engine: 'node',
+        runtime_session_id: this.aiSessionId
       }));
       void this.safeEvent('context_fetch_started', {
         timeout_ms: effectiveTimeoutMs,
@@ -57,6 +60,11 @@ class VoiceSession {
       this.context = await withTimeout(contextRequest, effectiveTimeoutMs, 'voice context bootstrap');
       this.accountId = this.context.account_id || this.context.accountId || this.accountId;
       this.numberRef = this.context.number_ref || this.context.numberRef || this.numberRef;
+      this.callSessionId = this.context.call_session_id || this.context.callSessionId || null;
+      this.conversationId = this.context.conversation_id || this.context.conversationId || null;
+      this.inboxId = this.context.inbox_id || this.context.inboxId || null;
+      this.assistantId = this.context.assistant_id || this.context.assistantId || null;
+      this.toolCapability = this.context.tool_capability || this.context.toolCapability || null;
       this.state = 'active';
       void this.safeEvent('context_fetch_ready', {
         duration_ms: Date.now() - startedAt,
@@ -262,7 +270,21 @@ class VoiceSession {
       stream_ref: this.streamRef,
       number_ref: this.numberRef,
       ingress_number: this.ingressNumber,
-      caller_number: this.callerNumber
+      caller_number: this.callerNumber,
+      direction: this.direction,
+      call_session_id: this.callSessionId,
+      conversation_id: this.conversationId,
+      inbox_id: this.inboxId,
+      assistant_id: this.assistantId,
+      runtime_engine: 'node',
+      runtime_session_id: this.aiSessionId
+    };
+  }
+
+  toolScopePayload() {
+    return {
+      ...this.scopePayload(),
+      tool_capability: this.toolCapability
     };
   }
 }
