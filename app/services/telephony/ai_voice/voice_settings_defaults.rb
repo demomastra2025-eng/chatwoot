@@ -4,6 +4,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   DEFAULTS = {
     'humanlike_defaults_profile' => 'standard_v1',
     'provider' => 'gemini-live',
+    'stt_provider' => 'elevenlabs',
     'model' => 'gemini-3.1-flash-live-preview',
     'api_version' => 'v1beta',
     'voice' => 'sulafat',
@@ -66,21 +67,16 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
   PROVIDER_DEFAULTS = {
     'gemini-live' => {
-      'model' => 'gemini-3.1-flash-live-preview',
-      'voice' => 'sulafat',
-      'language' => 'auto'
+      'model' => 'gemini-3.1-flash-live-preview', 'voice' => 'sulafat', 'language' => 'auto'
     }.freeze,
-    'openai-realtime' => {
-      'model' => 'gpt-realtime-2',
-      'voice' => 'alloy'
-    }.freeze,
-    'elevenlabs' => {
-      'model' => 'openai/gpt-5.4-mini',
-      'voice' => 'Xb7hH8MSUJpSbSDYk0k2'
-    }.freeze,
+    'openai-realtime' => { 'model' => 'gpt-realtime-2', 'voice' => 'alloy' }.freeze,
+    'elevenlabs' => { 'model' => 'openai/gpt-5.4-mini', 'voice' => 'Xb7hH8MSUJpSbSDYk0k2' }.freeze,
     'cartesia' => {
-      'model' => 'openai/gpt-5.4-mini',
-      'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
+      'model' => 'openai/gpt-5.4-mini', 'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
+    }.freeze,
+    'fish' => {
+      'stt_provider' => 'elevenlabs', 'model' => 'openai/gpt-5.4-mini',
+      'voice' => '', 'language' => 'auto'
     }.freeze
   }.freeze
 
@@ -107,6 +103,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   ].freeze
   GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS
   THINKING_LEVELS = %w[minimal low medium high].freeze
+  FISH_STT_PROVIDERS = %w[elevenlabs fish].freeze
   MAX_DURATION_SEC_RANGE = (1..7200)
 
   ARRAY_KEYS = %w[
@@ -134,6 +131,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
     def normalize_provider_specific_values!(normalized, provider, defaults)
       normalized['thinking_level'] = defaults['thinking_level'] unless THINKING_LEVELS.include?(normalized['thinking_level'])
+      normalized['stt_provider'] = defaults['stt_provider'] unless provider == 'fish' && FISH_STT_PROVIDERS.include?(normalized['stt_provider'])
       Telephony::AiVoice::VoiceLifecycleSettings.normalize!(normalized, defaults)
       Telephony::AiVoice::VoiceActivitySettings.normalize!(normalized)
       duration = normalized['max_duration_sec']
@@ -144,6 +142,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
     def normalize_auto_language!(normalized, provider)
       return unless normalized['language'] == 'auto'
+      return if provider == 'fish'
       return if gemini_model_supported?(provider, normalized['model'], GEMINI_AUTO_LANGUAGE_MODELS)
 
       normalized['language'] = DEFAULTS['language']

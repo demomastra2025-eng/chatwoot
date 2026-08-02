@@ -150,7 +150,9 @@ class PipecatSessionRunner:
                 }
                 context = VoiceContext.model_validate(raw_context)
                 _assert_tenant_scope(payload, context)
-                self.settings.provider_credentials(context.ai.provider)
+                self.settings.provider_credentials(
+                    context.ai.provider, stt_provider=context.ai.stt_provider
+                )
                 state.correlation = context.correlation
                 _filter_tools_for_transport(
                     context,
@@ -212,7 +214,9 @@ class PipecatSessionRunner:
             )
         context = VoiceContext.model_validate(raw_context)
         _assert_tenant_scope(payload, context)
-        self.settings.provider_credentials(context.ai.provider)
+        self.settings.provider_credentials(
+            context.ai.provider, stt_provider=context.ai.stt_provider
+        )
         return raw_context
 
     async def _run_worker(

@@ -47,6 +47,7 @@ from pipecat.services.openai.realtime.events import (
 )
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
+from pipecat.services.tts_service import TextAggregationMode
 from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import BaseTransport
 from pipecat.turns.user_start.transcription_user_turn_start_strategy import (
@@ -68,6 +69,8 @@ from app.pipeline.processors import (
 )
 from app.pipeline.tool_dialogue import ToolDialogueCoordinator
 from app.recordings.writer import DualChannelRecorder
+from app.services.fish_asr import FishAudioASRService
+from app.services.fish_tts import OneLinkFishAudioTTSService
 from app.services.gemini_live import OneLinkGeminiLiveLLMService
 from app.sessions.state import SessionState
 
@@ -109,8 +112,9 @@ class PipelineAssembly:
         async with self.activity.speech_lock:
             started_sequence = self.activity.turns_started
             completed_sequence = self.activity.turns_completed
-            if self.provider in {"elevenlabs", "cartesia"} and isinstance(
-                self.tts, (ElevenLabsTTSService, CartesiaTTSService)
+            if self.provider in {"elevenlabs", "cartesia", "fish"} and isinstance(
+                self.tts,
+                (ElevenLabsTTSService, CartesiaTTSService, OneLinkFishAudioTTSService),
             ):
                 await self.tts.queue_frame(TTSSpeakFrame(message, append_to_context=False))
             elif self.provider == "openai-realtime" and isinstance(
@@ -185,7 +189,9 @@ def build_pipeline(
         if runtime_stream is None:
             raise ValueError("runtime_stream or transport_override is required")
         transport = create_media_transport(runtime_stream)
-    credentials = settings.provider_credentials(context.ai.provider)
+    credentials = settings.provider_credentials(
+        context.ai.provider, stt_provider=context.ai.stt_provider
+    )
     stt = None
     tts = None
     input_resampler = None
@@ -314,11 +320,26 @@ def build_pipeline(
                     language=language,
                 ),
             )
+        elif context.ai.provider == "fish" and context.ai.stt_provider == "fish":
+            stt = FishAudioASRService(
+                api_key=credentials["fish_api_key"],
+                sample_rate=16_000,
+                request_timeout_seconds=settings.fish_asr_timeout_seconds,
+                max_segment_seconds=settings.fish_asr_max_segment_seconds,
+                settings=FishAudioASRService.Settings(
+                    language=language,
+                    ignore_timestamps=True,
+                ),
+            )
         else:
             stt = ElevenLabsRealtimeSTTService(
                 api_key=credentials["elevenlabs_api_key"],
                 sample_rate=16_000,
-                commit_strategy=CommitStrategy.VAD,
+                commit_strategy=(
+                    CommitStrategy.MANUAL
+                    if context.ai.provider == "fish"
+                    else CommitStrategy.VAD
+                ),
                 settings=ElevenLabsRealtimeSTTService.Settings(
                     model=settings.elevenlabs_stt_model,
                     language=language,
@@ -341,6 +362,18 @@ def build_pipeline(
                     model=settings.cartesia_tts_model,
                     voice=context.ai.voice,
                     language=language,
+                ),
+            )
+        elif context.ai.provider == "fish":
+            tts = OneLinkFishAudioTTSService(
+                api_key=credentials["fish_api_key"],
+                sample_rate=8_000,
+                text_aggregation_mode=TextAggregationMode.SENTENCE,
+                settings=OneLinkFishAudioTTSService.Settings(
+                    model=settings.fish_tts_model,
+                    voice=context.ai.voice,
+                    language=language,
+                    latency=settings.fish_tts_latency,
                 ),
             )
         else:

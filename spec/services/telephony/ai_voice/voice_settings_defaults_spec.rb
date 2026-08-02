@@ -178,5 +178,24 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
       )
     end
+
+    it 'applies the Fish cascade defaults without inventing a voice reference' do
+      expect(described_class.normalize(provider: 'fish')).to include(
+        'provider' => 'fish',
+        'stt_provider' => 'elevenlabs',
+        'model' => 'openai/gpt-5.4-mini',
+        'voice' => '',
+        'language' => 'auto'
+      )
+    end
+
+    it 'preserves Fish ASR selection and rejects unknown Fish STT providers' do
+      expect(described_class.normalize(provider: 'fish', stt_provider: 'fish')).to include(
+        'stt_provider' => 'fish'
+      )
+      expect(described_class.normalize(provider: 'fish', stt_provider: 'unknown')).to include(
+        'stt_provider' => 'elevenlabs'
+      )
+    end
   end
 end

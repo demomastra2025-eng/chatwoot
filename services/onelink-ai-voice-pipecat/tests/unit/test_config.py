@@ -13,6 +13,7 @@ def valid_settings(**overrides):
         "elevenlabs_api_key": "elevenlabs-secret",
         "cartesia_api_key": "cartesia-secret",
         "openrouter_api_key": "openrouter-secret",
+        "fish_api_key": "fish-secret",
         "callback_base_url": "http://rails.internal",
     }
     values.update(overrides)
@@ -60,6 +61,7 @@ def test_settings_repr_does_not_expose_secrets():
     assert "elevenlabs-secret" not in serialized
     assert "cartesia-secret" not in serialized
     assert "openrouter-secret" not in serialized
+    assert "fish-secret" not in serialized
 
 
 def test_from_env_prefers_pipecat_provider_key_aliases(monkeypatch):
@@ -69,6 +71,7 @@ def test_from_env_prefers_pipecat_provider_key_aliases(monkeypatch):
         "ONELINK_AI_VOICE_PIPECAT_ELEVENLABS_API_KEY": "prefixed-elevenlabs",
         "ONELINK_AI_VOICE_PIPECAT_CARTESIA_API_KEY": "prefixed-cartesia",
         "ONELINK_AI_VOICE_PIPECAT_OPENROUTER_API_KEY": "prefixed-openrouter",
+        "ONELINK_AI_VOICE_PIPECAT_FISH_API_KEY": "prefixed-fish",
     }
     for name, value in aliases.items():
         monkeypatch.setenv(name, value)
@@ -80,6 +83,7 @@ def test_from_env_prefers_pipecat_provider_key_aliases(monkeypatch):
     assert settings.elevenlabs_api_key.get_secret_value() == "prefixed-elevenlabs"
     assert settings.cartesia_api_key.get_secret_value() == "prefixed-cartesia"
     assert settings.openrouter_api_key.get_secret_value() == "prefixed-openrouter"
+    assert settings.fish_api_key.get_secret_value() == "prefixed-fish"
 
 
 def test_cartesia_provider_does_not_require_elevenlabs_credentials():
@@ -89,3 +93,29 @@ def test_cartesia_provider_does_not_require_elevenlabs_credentials():
         "cartesia_api_key": "cartesia-secret",
         "openrouter_api_key": "openrouter-secret",
     }
+
+
+def test_fish_asr_provider_requires_only_fish_and_openrouter_credentials():
+    credentials = valid_settings(elevenlabs_api_key="").provider_credentials(
+        "fish", stt_provider="fish"
+    )
+
+    assert credentials == {
+        "fish_api_key": "fish-secret",
+        "openrouter_api_key": "openrouter-secret",
+    }
+
+
+def test_fish_elevenlabs_provider_requires_all_three_credentials():
+    credentials = valid_settings().provider_credentials("fish", stt_provider="elevenlabs")
+
+    assert credentials == {
+        "fish_api_key": "fish-secret",
+        "openrouter_api_key": "openrouter-secret",
+        "elevenlabs_api_key": "elevenlabs-secret",
+    }
+
+
+def test_fish_provider_rejects_unsupported_stt_provider():
+    with pytest.raises(ValueError, match="unsupported Fish STT provider"):
+        valid_settings().provider_credentials("fish", stt_provider="unknown")

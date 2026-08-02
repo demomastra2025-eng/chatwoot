@@ -37,6 +37,7 @@ def test_health_distinguishes_liveness_and_readiness():
             "openai-realtime",
             "elevenlabs",
             "cartesia",
+            "fish",
         ],
         "checks": ["internal_token_required"],
     }

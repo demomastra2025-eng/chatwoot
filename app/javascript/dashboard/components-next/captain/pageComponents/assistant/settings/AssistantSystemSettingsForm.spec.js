@@ -369,6 +369,35 @@ describe('AssistantSystemSettingsForm', () => {
     }
   );
 
+  it('requires a Fish voice id and persists either Fish STT variant', async () => {
+    const wrapper = buildWrapper({ assistant: { id: 58, config: {} } });
+
+    wrapper.vm.updateVoiceProvider('fish');
+    await wrapper.vm.$nextTick();
+
+    expect(
+      wrapper.find('[data-test-id="assistant-fish-stt-provider"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-test-id="assistant-fish-voice-id"]').exists()
+    ).toBe(true);
+    expect(await wrapper.vm.buildPayload()).toBeNull();
+
+    wrapper.vm.state.voiceSettings.voice = 'fish-voice-ref';
+    wrapper.vm.state.voiceSettings.sttProvider = 'fish';
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.voice_settings).toEqual(
+      expect.objectContaining({
+        provider: 'fish',
+        stt_provider: 'fish',
+        model: 'openai/gpt-5.4-mini',
+        voice: 'fish-voice-ref',
+        language: 'auto',
+      })
+    );
+  });
+
   it('loads provider-specific defaults from a partial saved voice config', async () => {
     const wrapper = buildWrapper({
       assistant: {

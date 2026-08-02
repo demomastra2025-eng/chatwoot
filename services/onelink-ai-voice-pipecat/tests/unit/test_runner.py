@@ -99,6 +99,20 @@ class FailingContextClient:
         return {"status": "ok"}
 
 
+class SuccessfulContextClient:
+    def __init__(self, context):
+        self.context = context
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def get_context(self, _payload):
+        return self.context
+
+
 class RecordingRuntimeControlClient:
     def __init__(self):
         self.actions = []
@@ -498,6 +512,48 @@ async def test_terminal_control_timeout_is_bounded_and_preserves_ambiguous_trans
         )
 
     assert requested_action == {"action": "transfer"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stt_provider", "elevenlabs_api_key"),
+    [("fish", ""), ("elevenlabs", "elevenlabs-secret")],
+)
+async def test_fish_preflight_accepts_both_stt_variants(
+    monkeypatch, tmp_path, stt_provider, elevenlabs_api_key
+):
+    raw_context = {
+        "call_ref": "sipuni:janus-ai:fish-preflight",
+        "account_id": 42,
+        "ai": {
+            "provider": "fish",
+            "stt_provider": stt_provider,
+            "model": "openai/gpt-5.4-mini",
+            "voice": "fish-voice-ref",
+            "system_prompt": "Test prompt",
+        },
+    }
+    client = SuccessfulContextClient(raw_context)
+    monkeypatch.setattr(runner_module, "OnelinkClient", lambda **_kwargs: client)
+    runner = PipecatSessionRunner(
+        Settings.model_validate(
+            {
+                "internal_token": "voice-secret",
+                "callback_base_url": "http://rails.internal",
+                "callback_token": "callback-secret",
+                "fish_api_key": "fish-secret",
+                "openrouter_api_key": "openrouter-secret",
+                "elevenlabs_api_key": elevenlabs_api_key,
+                "recording_root": tmp_path,
+            }
+        )
+    )
+
+    result = await runner.preflight(
+        {"call_ref": raw_context["call_ref"], "account_id": 42}
+    )
+
+    assert result["ai"]["stt_provider"] == stt_provider
 
 
 @pytest.mark.asyncio

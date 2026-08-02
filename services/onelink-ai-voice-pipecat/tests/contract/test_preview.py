@@ -21,17 +21,19 @@ def settings(**overrides) -> Settings:
         "elevenlabs_api_key": "elevenlabs-secret",
         "cartesia_api_key": "cartesia-secret",
         "openrouter_api_key": "openrouter-secret",
+        "fish_api_key": "fish-secret",
     }
     values.update(overrides)
     return Settings.model_validate(values)
 
 
-def preview_context(provider: str = "cartesia") -> dict:
+def preview_context(provider: str = "cartesia", *, stt_provider: str = "elevenlabs") -> dict:
     return {
         "call_ref": "ignored",
         "account_id": 42,
         "ai": {
             "provider": provider,
+            "stt_provider": stt_provider,
             "model": "openai/gpt-5.4-mini",
             "voice": "71a7ad14-091c-4e8e-a314-022ece01c121",
             "language": "ru-KZ",
@@ -171,6 +173,19 @@ def test_preview_reservation_rejects_provider_without_credentials():
 
     assert response.status_code == 503
     assert response.json()["error"] == "preview_provider_unavailable"
+
+
+@pytest.mark.parametrize("stt_provider", ["elevenlabs", "fish"])
+def test_preview_reservation_accepts_both_fish_stt_variants(stt_provider):
+    client = TestClient(create_app(settings=settings(), session_runner=None))
+
+    response = client.post(
+        "/internal/voice-previews",
+        headers={"Authorization": "Bearer internal-secret"},
+        json={"context": preview_context("fish", stt_provider=stt_provider)},
+    )
+
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
