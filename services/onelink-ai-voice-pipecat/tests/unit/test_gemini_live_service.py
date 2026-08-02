@@ -11,7 +11,12 @@ from google.genai.types import (
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
 
-from app.services.gemini_live import OneLinkGeminiLiveLLMService, OneLinkInternalTextFrame
+from app.services.gemini_live import (
+    OneLinkGeminiLiveLLMService,
+    OneLinkInternalTextFrame,
+    OneLinkToolResultGenerationEndFrame,
+    OneLinkToolResultGenerationStartFrame,
+)
 
 
 @pytest.mark.asyncio
@@ -96,3 +101,32 @@ async def test_internal_speech_text_is_sent_to_gemini_without_leaking_downstream
 
     service._send_user_text.assert_awaited_once_with(frame.text)
     service.push_frame.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_tool_result_generation_is_bounded_by_provider_turn_complete():
+    service = object.__new__(OneLinkGeminiLiveLLMService)
+    service._pending_tool_result_generations = 0
+    service.push_frame = AsyncMock()
+    message = LiveServerMessage(server_content=LiveServerContent(turn_complete=True))
+
+    with (
+        patch.object(GeminiLiveLLMService, "_tool_result", new_callable=AsyncMock) as tool_result,
+        patch.object(
+            GeminiLiveLLMService,
+            "_handle_msg_turn_complete",
+            new_callable=AsyncMock,
+        ) as turn_complete,
+    ):
+        await service._tool_result("call-1", "lookup", {"status": "pending"})
+        await service._handle_msg_turn_complete(message)
+
+    tool_result.assert_awaited_once_with("call-1", "lookup", {"status": "pending"})
+    turn_complete.assert_awaited_once_with(message)
+    assert isinstance(
+        service.push_frame.await_args_list[0].args[0], OneLinkToolResultGenerationStartFrame
+    )
+    assert isinstance(
+        service.push_frame.await_args_list[1].args[0], OneLinkToolResultGenerationEndFrame
+    )
+    assert service._pending_tool_result_generations == 0

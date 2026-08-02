@@ -13,11 +13,16 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'context_window_compression_enabled' => true,
         'proactive_audio_enabled' => false,
         'api_version' => 'v1beta',
+        'system_prompt' => described_class::DEFAULT_SYSTEM_PROMPT,
+        'first_message' => 'Здравствуйте! Я голосовой помощник OneLink. Чем могу помочь?',
         'voice_activity_profile' => 'balanced',
         'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
         'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
         'prefix_padding_ms' => 200,
-        'silence_duration_ms' => 500,
+        'silence_duration_ms' => 300,
+        'turn_aggregation_delay_ms' => 220,
+        'user_turn_stop_timeout_ms' => 30_000,
+        'interruption_confirmation_window_ms' => 800,
         'vad_confidence' => 0.75,
         'vad_min_volume' => 0.6
       )
@@ -48,7 +53,8 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
         'speech_end_sensitivity' => 'END_SENSITIVITY_LOW',
         'prefix_padding_ms' => 300,
-        'silence_duration_ms' => 800,
+        'silence_duration_ms' => 350,
+        'turn_aggregation_delay_ms' => 300,
         'vad_confidence' => 0.85,
         'vad_min_volume' => 0.7
       )
@@ -79,7 +85,8 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       ).to include(
         'voice_activity_profile' => 'sensitive',
         'prefix_padding_ms' => 120,
-        'silence_duration_ms' => 300,
+        'silence_duration_ms' => 250,
+        'turn_aggregation_delay_ms' => 180,
         'vad_confidence' => 0.6,
         'vad_min_volume' => 0.45
       )
@@ -89,9 +96,9 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       expect(described_class.normalize({})).to include(
         'manager_handoff_mode' => 'live_transfer',
         'transfer_failure_mode' => 'continue',
-        'silence_prompt_after_ms' => 5000,
-        'second_silence_prompt_after_ms' => 12_000,
-        'max_silence_ms' => 25_000
+        'silence_prompt_after_ms' => 15_000,
+        'second_silence_prompt_after_ms' => 30_000,
+        'max_silence_ms' => 45_000
       )
 
       expect(
@@ -107,9 +114,9 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'manager_handoff_mode' => 'live_transfer',
         'transfer_failure_mode' => 'continue',
         'callback_message' => described_class::DEFAULTS.fetch('callback_message'),
-        'silence_prompt_after_ms' => 5000,
-        'second_silence_prompt_after_ms' => 12_000,
-        'max_silence_ms' => 25_000
+        'silence_prompt_after_ms' => 15_000,
+        'second_silence_prompt_after_ms' => 30_000,
+        'max_silence_ms' => 45_000
       )
     end
 
@@ -144,9 +151,9 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
           max_silence_ms: 0
         )
       ).to include(
-        'silence_prompt_after_ms' => 5000,
-        'second_silence_prompt_after_ms' => 12_000,
-        'max_silence_ms' => 25_000
+        'silence_prompt_after_ms' => 15_000,
+        'second_silence_prompt_after_ms' => 30_000,
+        'max_silence_ms' => 45_000
       )
       expect(
         described_class.normalize(
@@ -190,6 +197,15 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
 
     it 'uses the preview API only when proactive audio is enabled for a supported Gemini model' do
       expect(described_class.normalize(proactive_audio_enabled: true)).to include(
+        'proactive_audio_enabled' => false,
+        'api_version' => 'v1beta'
+      )
+      expect(
+        described_class.normalize(
+          model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+          proactive_audio_enabled: true
+        )
+      ).to include(
         'proactive_audio_enabled' => true,
         'api_version' => 'v1alpha'
       )
@@ -222,7 +238,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       expect(described_class.normalize(provider: 'fish')).to include(
         'provider' => 'fish',
         'stt_provider' => 'elevenlabs',
-        'model' => 'openai/gpt-5.6-luna',
+        'model' => 'openai/gpt-5.4-mini',
         'voice' => '31f936a9333f4f5a99dcaaf6df091b84',
         'language' => 'auto'
       )

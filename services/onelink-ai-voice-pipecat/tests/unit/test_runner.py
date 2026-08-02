@@ -20,6 +20,7 @@ from app.sessions.runner import (
     _execute_tool_action,
     _filter_tools_for_transport,
     _rails_manages_end_call,
+    _runtime_observability,
     _runtime_session_id,
 )
 
@@ -60,6 +61,14 @@ def test_runtime_session_id_prefers_route_identity_over_media_stream_identity():
         == "runtime-media-stream-1"
     )
     assert _runtime_session_id({}, call_ref="call-1") == "preflight:call-1"
+
+
+def test_runtime_observability_identifies_provider_and_pipeline_version():
+    assert _runtime_observability("openrouter") == {
+        "runtime_engine": "pipecat",
+        "provider": "openrouter",
+        "pipeline_version": "0.1.0",
+    }
 
 
 def test_tenant_scope_allows_missing_inbox_on_either_side():

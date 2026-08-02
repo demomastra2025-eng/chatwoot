@@ -1,4 +1,5 @@
 import asyncio
+import json
 from collections.abc import Coroutine
 from types import SimpleNamespace
 from typing import Any
@@ -7,7 +8,7 @@ import pytest
 
 from app.pipeline.context import AiSettings, ToolDefinition
 from app.pipeline.processors import ConversationActivity
-from app.pipeline.tool_dialogue import ToolDialogueCoordinator
+from app.pipeline.tool_dialogue import ToolDialogueCoordinator, _voice_result_projection
 
 
 class FakeState:
@@ -88,6 +89,11 @@ async def execute_with_answer(
     )
     await coordinator.execute(tool_definition or definition(), params)
     return results
+
+
+async def complete_empty_generation(activity):
+    await activity.model_generation_started()
+    await activity.model_generation_completed()
 
 
 @pytest.mark.asyncio
@@ -313,7 +319,7 @@ async def test_slow_gemini_tool_returns_pending_then_injects_late_result_once():
     assert results == [
         {
             "status": "pending",
-            "message": "Создаю сделку, это займёт немного времени.",
+            "runtime_owned_progress": True,
             "background_activity": "создание сделки",
             "tool_call_id": "tool-1",
         }
@@ -335,6 +341,48 @@ async def test_slow_gemini_tool_returns_pending_then_injects_late_result_once():
         if control[0] == "tool_progress"
     } == {"создание сделки"}
     assert [control[0] for control in state.controls].count("tool_async_completed") == 1
+
+
+@pytest.mark.asyncio
+async def test_slow_gemini_tool_waits_for_pending_model_generation_before_late_result():
+    gate = asyncio.Event()
+    state = FakeState(gate=gate)
+    activity = ConversationActivity()
+    instructions = []
+
+    async def record_instruction(message):
+        instructions.append(message)
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(
+            provider="gemini-live",
+            tool_foreground_wait_ms=5,
+            tool_delay_after_ms=1_000,
+            post_tool_continuation_ms=100,
+        ),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=record_instruction, run_instruction=record_instruction)
+    results = await execute_with_answer(
+        coordinator,
+        activity,
+        tool_definition=definition("create_deal"),
+        on_result=lambda _result: asyncio.sleep(0),
+    )
+
+    assert results[0]["status"] == "pending"
+    await activity.model_generation_started()
+    gate.set()
+    await asyncio.sleep(0.03)
+    assert instructions == []
+
+    await activity.model_generation_completed()
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert len(instructions) == 1
+    assert "создание сделки" in instructions[0]
 
 
 @pytest.mark.asyncio
@@ -391,7 +439,7 @@ async def test_gemini_tool_without_explicit_foreground_policy_uses_runtime_windo
     assert results == [
         {
             "status": "pending",
-            "message": "Создаю сделку, это займёт немного времени.",
+            "runtime_owned_progress": True,
             "background_activity": "создание сделки",
             "tool_call_id": "tool-1",
         }
@@ -485,7 +533,7 @@ async def test_post_tool_stall_forces_one_continuation_instruction():
     results = await execute_with_answer(
         coordinator,
         activity,
-        on_result=lambda _result: asyncio.sleep(0),
+        on_result=lambda _result: complete_empty_generation(activity),
     )
     assert coordinator.awaiting_continuation is True
     await asyncio.gather(*state.tasks)
@@ -497,6 +545,43 @@ async def test_post_tool_stall_forces_one_continuation_instruction():
     assert '"answer": "готово"' in instructions[0]
     assert "не вызывай тот же инструмент повторно" in instructions[0].lower()
     assert any(control[0] == "post_tool_model_stall" for control in state.controls)
+
+
+@pytest.mark.asyncio
+async def test_post_tool_stall_does_not_overlap_active_original_generation():
+    state = FakeState()
+    activity = ConversationActivity()
+    instructions = []
+
+    async def record(message):
+        instructions.append(message)
+
+    async def start_original_generation(_result):
+        await activity.model_generation_started()
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(speak_exact=record, run_instruction=record)
+    await execute_with_answer(
+        coordinator,
+        activity,
+        on_result=start_original_generation,
+    )
+
+    await asyncio.sleep(0.15)
+    assert instructions == []
+    assert coordinator.awaiting_continuation is True
+
+    await activity.model_output_generated()
+    await activity.model_generation_completed()
+    await asyncio.gather(*state.tasks)
+
+    assert instructions == []
+    assert coordinator.awaiting_continuation is False
+    assert any(
+        control[1].get("recovery") == "skipped_original_output_generated"
+        for control in state.controls
+        if control[0] == "post_tool_model_stall"
+    )
 
 
 @pytest.mark.asyncio
@@ -513,8 +598,76 @@ async def test_failed_tool_stall_speaks_configured_failure_phrase():
     await execute_with_answer(
         coordinator,
         activity,
-        on_result=lambda _result: asyncio.sleep(0),
+        on_result=lambda _result: complete_empty_generation(activity),
     )
     await asyncio.gather(*state.tasks)
 
     assert spoken == ["Не получилось проверить автоматически. Могу соединить со специалистом."]
+
+
+def test_pipeline_result_projection_keeps_names_and_ids_without_nested_noise():
+    pipelines = [
+        {
+            "id": index,
+            "name": f"Воронка {index}",
+            "metadata": "x" * 2_000,
+            "stages": [
+                {"id": index * 10 + stage, "name": f"Этап {stage}", "raw": "x" * 1_000}
+                for stage in range(3)
+            ],
+        }
+        for index in range(4)
+    ]
+    result = {
+        "action": "list_deal_pipelines",
+        "result": json.dumps({"pipelines": pipelines}, ensure_ascii=False),
+    }
+
+    projected = _voice_result_projection("list_deal_pipelines", result)
+
+    assert projected["count"] == 4
+    assert [item["name"] for item in projected["pipelines"]] == [
+        "Воронка 0",
+        "Воронка 1",
+        "Воронка 2",
+        "Воронка 3",
+    ]
+    assert projected["pipelines"][0]["stages"][0] == {"id": 0, "name": "Этап 0"}
+    assert "metadata" not in projected["pipelines"][0]
+    assert len(json.dumps(projected, ensure_ascii=False)) <= 2_400
+
+
+def test_faq_result_projection_keeps_real_answers():
+    result = {
+        "result": {
+            "matches": [
+                {
+                    "id": 7,
+                    "question": "Что такое OneLink?",
+                    "answer": "OneLink объединяет каналы общения.",
+                    "embedding": [0.1] * 2_000,
+                },
+                {
+                    "id": 8,
+                    "question": "Есть CRM?",
+                    "answer": "Да, CRM встроена.",
+                },
+            ]
+        }
+    }
+
+    projected = _voice_result_projection("faq_lookup", result)
+
+    assert projected["count"] == 2
+    assert projected["matches"][0]["answer"] == "OneLink объединяет каналы общения."
+    assert projected["matches"][1]["answer"] == "Да, CRM встроена."
+    assert "embedding" not in projected["matches"][0]
+
+
+def test_generic_voice_result_projection_is_hard_bounded():
+    projected = _voice_result_projection(
+        "custom_tool",
+        {"status": "ok", "payload": [{"description": "x" * 5_000}] * 20},
+    )
+
+    assert len(json.dumps(projected, ensure_ascii=False)) <= 2_400

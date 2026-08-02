@@ -3003,6 +3003,126 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(account.telephony_events.find_by!(event_key: 'evt-stale-ringing-1')).to be_processed
     end
 
+    it 'converges a stale AI answer without regressing terminal state or event time' do
+      answered_at = Time.zone.parse(2.minutes.ago.iso8601)
+      ended_at = Time.zone.parse(1.minute.ago.iso8601)
+      last_event_at = Time.zone.parse(30.seconds.ago.iso8601)
+      existing_call_session.update!(
+        status: 'completed',
+        started_at: answered_at - 10.seconds,
+        answered_at: nil,
+        answered_by: nil,
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup',
+        duration_seconds: 60,
+        last_event_at: last_event_at,
+        metadata: { 'ai_voice' => { 'finalize' => { 'event_id' => 'evt-finalized-before-answer' } } }
+      )
+      finalized_metadata = existing_call_session.metadata.deep_dup
+
+      result = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-stale-ai-answered-1',
+          event: 'ai_answered',
+          occurred_at: answered_at.iso8601,
+          metadata: { provider: 'openrouter' }
+        )
+      ).perform
+
+      expect(result.reload).to have_attributes(
+        status: 'completed',
+        answered_at: answered_at,
+        answered_by: 'ai_agent',
+        ended_at: ended_at,
+        ended_by: 'caller',
+        end_reason: 'caller_hangup',
+        duration_seconds: 60,
+        last_event_at: last_event_at
+      )
+      expect(result.legs).to include(
+        hash_including(
+          'event_key' => 'evt-stale-ai-answered-1',
+          'event_type' => 'ai_answered',
+          'status' => 'in_progress',
+          'leg' => 'ai',
+          'answered_by' => 'ai_agent'
+        )
+      )
+      expect(result.metadata).to eq(finalized_metadata)
+    end
+
+    it 'fails closed for terminal AI answer events without proven stale ordering' do
+      last_event_at = Time.zone.parse(30.seconds.ago.iso8601)
+      existing_call_session.update!(
+        status: 'completed',
+        answered_at: nil,
+        answered_by: nil,
+        ended_at: last_event_at,
+        last_event_at: last_event_at,
+        metadata: { 'ai_voice' => { 'finalize' => { 'event_id' => 'evt-finalized' } } }
+      )
+
+      {
+        'equal' => last_event_at,
+        'future' => last_event_at + 1.second,
+        'missing' => nil
+      }.each do |suffix, occurred_at|
+        described_class.new(
+          payload: payload.merge(
+            event_key: "evt-terminal-ai-answer-#{suffix}",
+            event: 'ai_answered',
+            occurred_at: occurred_at&.iso8601
+          )
+        ).perform
+      end
+
+      result = existing_call_session.reload
+      expect(result).to have_attributes(status: 'completed', answered_at: nil, answered_by: nil)
+      expect(result.legs).not_to include(hash_including('event_type' => 'ai_answered'))
+      expect(result.metadata.dig('ai_voice', 'finalize')).to eq('event_id' => 'evt-finalized')
+    end
+
+    it 'does not let a repairable stale AI answer replace accepted runtime telemetry' do
+      accepted_at = Time.zone.parse(10.seconds.ago.iso8601)
+      accepted = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-runtime-accepted',
+          event: 'runtime_connected',
+          occurred_at: accepted_at.iso8601,
+          runtime_engine: 'pipecat',
+          runtime_session_id: 'runtime-current',
+          metadata: {
+            ai_voice_event: { payload: { provider: 'openrouter', pipeline_version: '2.0.0' } }
+          }
+        )
+      ).perform
+      expect(accepted.reload.metadata.fetch('ai_voice')).to include(
+        'runtime_session_id' => 'runtime-current',
+        'ai_provider' => 'openrouter',
+        'pipeline_version' => '2.0.0'
+      )
+
+      stale = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-ai-answer-stale',
+          event: 'ai_answered',
+          occurred_at: (accepted_at - 1.second).iso8601,
+          runtime_engine: 'pipecat',
+          runtime_session_id: 'runtime-stale',
+          metadata: {
+            ai_voice_event: { payload: { provider: 'gemini-live', pipeline_version: '1.0.0' } }
+          }
+        )
+      ).perform
+
+      expect(stale.reload.metadata.fetch('ai_voice')).to include(
+        'runtime_session_id' => 'runtime-current',
+        'ai_provider' => 'openrouter',
+        'pipeline_version' => '2.0.0'
+      )
+    end
+
     it 'maps AI voice lifecycle events to native call status, AI leg audit and voice bubble state' do
       occurred_at = Time.zone.parse(30.seconds.ago.iso8601)
       create(

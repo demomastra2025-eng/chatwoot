@@ -17,6 +17,9 @@ from pipecat.frames.frames import (
     Frame,
     InputAudioRawFrame,
     InterimTranscriptionFrame,
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    LLMTextFrame,
     TranscriptionFrame,
     TTSAudioRawFrame,
     UserStartedSpeakingFrame,
@@ -25,6 +28,10 @@ from pipecat.frames.frames import (
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
 from app.recordings.writer import DualChannelRecorder
+from app.services.gemini_live import (
+    OneLinkToolResultGenerationEndFrame,
+    OneLinkToolResultGenerationStartFrame,
+)
 from app.sessions.state import SessionState
 
 AudioFrameT = TypeVar("AudioFrameT", bound=AudioRawFrame)
@@ -188,7 +195,13 @@ class AssistantLifecycleProcessor(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
-        if isinstance(frame, BotStartedSpeakingFrame):
+        if isinstance(frame, (LLMFullResponseStartFrame, OneLinkToolResultGenerationStartFrame)):
+            await self._activity.model_generation_started()
+        elif isinstance(frame, LLMTextFrame):
+            await self._activity.model_output_generated()
+        elif isinstance(frame, (LLMFullResponseEndFrame, OneLinkToolResultGenerationEndFrame)):
+            await self._activity.model_generation_completed()
+        elif isinstance(frame, BotStartedSpeakingFrame):
             await self._activity.bot_started()
             self._state.touch()
             self._state.spawn(self._state.safe_control("ai_speaking", {"state": "started"}))
@@ -207,8 +220,15 @@ class ConversationActivity:
         self.user_speaking = False
         self.turns_started = 0
         self.turns_completed = 0
+        self.model_generations_started = 0
+        self.model_generations_completed = 0
+        self.model_outputs_generated = 0
         self.speech_lock = asyncio.Lock()
         self._changed = asyncio.Condition()
+
+    @property
+    def model_generation_active(self) -> bool:
+        return self.model_generations_started > self.model_generations_completed
 
     async def bot_started(self) -> None:
         async with self._changed:
@@ -232,11 +252,43 @@ class ConversationActivity:
             self.user_speaking = False
             self._changed.notify_all()
 
+    async def model_generation_started(self) -> None:
+        async with self._changed:
+            self.model_generations_started += 1
+            self._changed.notify_all()
+
+    async def model_generation_completed(self) -> None:
+        async with self._changed:
+            self.model_generations_completed += 1
+            self._changed.notify_all()
+
+    async def model_output_generated(self) -> None:
+        async with self._changed:
+            self.model_outputs_generated += 1
+            self._changed.notify_all()
+
     async def wait_for_turn_started_after(self, sequence: int, timeout: float) -> bool:
         return await self._wait_for(lambda: self.turns_started > sequence, timeout)
 
     async def wait_for_turn_completed_after(self, sequence: int, timeout: float) -> bool:
         return await self._wait_for(lambda: self.turns_completed > sequence, timeout)
+
+    async def wait_for_model_generation_started_after(
+        self, sequence: int, timeout: float
+    ) -> bool:
+        return await self._wait_for(lambda: self.model_generations_started > sequence, timeout)
+
+    async def wait_for_model_idle_after(self, sequence: int, timeout: float) -> bool:
+        return await self._wait_for(
+            lambda: (
+                self.model_generations_started > sequence
+                and self.model_generations_completed >= self.model_generations_started
+            ),
+            timeout,
+        )
+
+    async def wait_for_model_idle(self, timeout: float) -> bool:
+        return await self._wait_for(lambda: not self.model_generation_active, timeout)
 
     async def _wait_for(self, predicate, timeout: float) -> bool:
         try:

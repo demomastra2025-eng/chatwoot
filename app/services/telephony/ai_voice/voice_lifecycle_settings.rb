@@ -5,9 +5,9 @@ class Telephony::AiVoice::VoiceLifecycleSettings
     'transfer_message' => 'Сейчас соединю вас со специалистом.',
     'transfer_failure_mode' => 'continue',
     'transfer_failure_message' => 'Не удалось соединить со специалистом. Наш менеджер вам перезвонит.',
-    'silence_prompt_after_ms' => 5000,
-    'second_silence_prompt_after_ms' => 12_000,
-    'max_silence_ms' => 25_000
+    'silence_prompt_after_ms' => 15_000,
+    'second_silence_prompt_after_ms' => 30_000,
+    'max_silence_ms' => 45_000
   }.freeze
   MANAGER_HANDOFF_MODES = %w[live_transfer callback disabled].freeze
   TRANSFER_FAILURE_MODES = %w[callback continue end_call].freeze

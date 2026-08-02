@@ -61,12 +61,19 @@ class AiSettings(ContextModel):
     context_window_compression_enabled: bool = True
     clear_audio_on_interrupt: bool = True
     voice_activity_profile: Literal["sensitive", "balanced", "noisy"] = "balanced"
+    interruption_mode: Literal["vad_confirmed", "transcript_confirmed"] = (
+        "transcript_confirmed"
+    )
+    min_interrupt_words: int = Field(default=1, ge=1, le=10)
+    interruption_confirmation_window_ms: int = Field(default=800, ge=100, le=3_000)
     speech_start_sensitivity: str = "START_SENSITIVITY_LOW"
     speech_end_sensitivity: str = "END_SENSITIVITY_HIGH"
     prefix_padding_ms: int = Field(default=200, ge=0, le=5_000)
     silence_duration_ms: int = Field(default=500, ge=0, le=10_000)
     vad_confidence: float = Field(default=0.75, ge=0, le=1)
     vad_min_volume: float = Field(default=0.6, ge=0, le=1)
+    turn_aggregation_delay_ms: int = Field(default=200, ge=0, le=5_000)
+    user_turn_stop_timeout_ms: int = Field(default=30_000, ge=5_000, le=60_000)
     silence_prompt_enabled: bool = True
     silence_prompt_after_ms: int = Field(default=5_000, ge=0, le=3_600_000)
     second_silence_prompt_after_ms: int = Field(default=12_000, ge=0, le=3_600_000)

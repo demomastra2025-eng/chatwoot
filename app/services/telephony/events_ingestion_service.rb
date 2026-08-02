@@ -212,6 +212,13 @@ class Telephony::EventsIngestionService
       call_session.with_lock do
         call_session.reload
         validate_call_session_tenant_links!(call_session, account)
+        if terminal_ai_answer_convergence?(call_session)
+          converge_terminal_ai_answer!(call_session)
+          terminal_late_non_terminal_event = true
+          event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
+          next
+        end
+
         if immutable_ai_finalized_late_event?(call_session)
           immutable_ai_finalized_late_event = true
           event.update!(call_session: call_session, status: 'processed', processed_at: Time.current, error_message: nil)
@@ -258,6 +265,19 @@ class Telephony::EventsIngestionService
     return false if post_finalize_recording_event?
 
     call_session.metadata.to_h.dig('ai_voice', 'finalize').present?
+  end
+
+  def terminal_ai_answer_convergence?(call_session)
+    call_session.terminal? && repairable_stale_ai_answer_event?(call_session)
+  end
+
+  def converge_terminal_ai_answer!(call_session)
+    attributes = {
+      legs: next_legs(call_session, call_session.status)
+    }
+    attributes[:answered_at] = resolved_answered_at || event_time if call_session.answered_at.blank?
+    attributes[:answered_by] = resolved_answered_by.presence || 'ai_agent' if call_session.answered_by.blank?
+    call_session.update!(attributes)
   end
 
   def terminal_late_non_terminal_event?(call_session)
@@ -871,14 +891,14 @@ class Telephony::EventsIngestionService
   def next_answered_at(call_session, status)
     return call_session.answered_at if stale_event?(call_session)
 
-    resolved_answered_at || call_session.answered_at || (event_time if status == 'in_progress')
+    resolved_answered_at || call_session.answered_at || (event_time if status == 'in_progress' || ai_answer_event?)
   end
 
   def next_answered_by(call_session, status, answered_at)
     return call_session.answered_by if stale_event?(call_session)
     return nil if answered_at.blank? && status != 'in_progress'
 
-    resolved_answered_by || call_session.answered_by || resolved_agent_actor(status)
+    resolved_answered_by || call_session.answered_by || ('ai_agent' if ai_answer_event?) || resolved_agent_actor(status)
   end
 
   def next_ended_at(call_session, status)
@@ -1223,8 +1243,28 @@ class Telephony::EventsIngestionService
     occurred_at = resolved_occurred_at
     return false if webphone_terminal_completion_event?(call_session)
     return false if fresh_terminal_event?(call_session, occurred_at)
+    return false if repairable_stale_ai_answer_event?(call_session)
 
     occurred_at.present? && call_session.last_event_at.present? && occurred_at < call_session.last_event_at
+  end
+
+  def repairable_stale_ai_answer_event?(call_session)
+    return false unless ai_answer_event?
+    return false unless resolved_status == 'in_progress'
+    return false unless event_older_than_last_event?(call_session)
+
+    call_session.answered_at.blank? || call_session.answered_by.blank?
+  end
+
+  def event_older_than_last_event?(call_session)
+    occurred_at = resolved_occurred_at
+    return false if occurred_at.blank? || call_session.last_event_at.blank?
+
+    occurred_at < call_session.last_event_at
+  end
+
+  def ai_answer_event?
+    resolved_event_type.to_s == 'ai_answered'
   end
 
   def webphone_terminal_completion_event?(call_session)
@@ -2462,7 +2502,7 @@ class Telephony::EventsIngestionService
       raw_status: payload_value('raw_status', 'rawStatus'),
       callee_leg_answered: payload_value('calleeLegAnswered', 'callee_leg_answered'),
       target_leg_answered: payload_value('targetLegAnswered', 'target_leg_answered'),
-      answered_by: resolved_answered_by || resolved_agent_actor(status),
+      answered_by: resolved_answered_by || ('ai_agent' if ai_answer_event?) || resolved_agent_actor(status),
       ended_by: resolved_ended_by,
       end_reason: resolved_end_reason
     }.compact.deep_stringify_keys
@@ -2477,6 +2517,7 @@ class Telephony::EventsIngestionService
 
   def leg_status_for(status)
     return 'connecting' if resolved_event_type.to_s == 'transfer_started'
+    return resolved_status if ai_answer_event?
 
     status
   end
@@ -2508,7 +2549,32 @@ class Telephony::EventsIngestionService
       existing_recording_metadata = base['recording'].is_a?(Hash) ? base['recording'].deep_dup : {}
       base['recording'] = existing_recording_metadata.deep_merge(recording_event_metadata)
     end
-    base.compact
+    return base.compact if event_older_than_last_event?(call_session)
+
+    merge_ai_runtime_metadata(base).compact
+  end
+
+  def merge_ai_runtime_metadata(base)
+    runtime = incoming_ai_runtime_metadata
+    return base if runtime.blank?
+
+    ai_voice = base['ai_voice'].is_a?(Hash) ? base['ai_voice'].deep_dup : {}
+    base['ai_voice'] = ai_voice.deep_merge(runtime)
+    base
+  end
+
+  def incoming_ai_runtime_metadata
+    runtime_engine = payload_value('runtime_engine', 'runtimeEngine')
+    return {} if runtime_engine.blank?
+
+    event_payload = metadata.to_h.deep_stringify_keys.dig('ai_voice_event', 'payload').to_h
+    {
+      'runtime_engine' => runtime_engine,
+      'runtime_session_id' => payload_value('runtime_session_id', 'runtimeSessionId'),
+      'ai_provider' => event_payload['provider'].presence || metadata_value('ai_provider', 'aiProvider', 'provider'),
+      'pipeline_version' => event_payload['pipeline_version'].presence ||
+        metadata_value('pipeline_version', 'pipelineVersion')
+    }.compact
   end
 
   def next_recording_ref(call_session)

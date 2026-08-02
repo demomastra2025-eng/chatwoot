@@ -143,6 +143,18 @@ def test_builds_supported_provider_pipeline(
             assert stt._settings.model == "ink-whisper"
         assert stt._settings.language is Language.RU
         assert tts._settings.language == "ru"
+        llm = cast(OpenRouterLLMService, assembly.llm)
+        assert llm._settings.extra == {
+            "extra_body": {
+                "provider": {
+                    "sort": "latency",
+                    "allow_fallbacks": True,
+                    "require_parameters": True,
+                }
+            }
+        }
+        if model.startswith("openai/gpt-5"):
+            assert str(llm._settings.temperature) == "NOT_GIVEN"
     else:
         assert assembly.stt is None
         assert assembly.tts is None
@@ -216,10 +228,13 @@ def test_core_pipeline_settings_are_transport_neutral_between_janus_and_preview(
 
 @pytest.mark.parametrize("enabled", [True, False])
 def test_user_turn_strategies_honor_interruption_setting(enabled):
-    strategies = _user_turn_strategies(enabled)
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.interruptions_enabled = enabled
+    strategies = _user_turn_strategies(context.ai)
 
     assert strategies.start
     assert all(strategy._enable_interruptions is enabled for strategy in strategies.start)
+    assert len(strategies.stop) == 1
 
 
 def test_gemini_uses_local_vad_as_single_turn_owner():
@@ -339,7 +354,7 @@ def test_gemini_auto_language_falls_back_for_legacy_model():
 @pytest.mark.parametrize(
     ("model", "requested_enabled", "expected_enabled", "expected_api_version"),
     [
-        ("gemini-3.1-flash-live-preview", True, True, "v1alpha"),
+        ("gemini-3.1-flash-live-preview", True, False, "v1beta"),
         ("gemini-2.5-flash-native-audio-preview-12-2025", True, True, "v1alpha"),
         ("gemini-2.0-flash-live-001", True, False, "v1beta"),
         ("gemini-3.1-flash-live-preview", False, False, "v1beta"),

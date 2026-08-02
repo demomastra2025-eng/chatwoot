@@ -7,6 +7,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Protocol
 
 from pipecat.frames.frames import LLMRunFrame
@@ -29,6 +30,10 @@ RUNTIME_END_CALL_CALLBACK_TIMEOUT_MS = 1_000
 RUNTIME_CONTROL_ACTION_TIMEOUT_SECONDS = 5.0
 RUNTIME_CONTROL_CLEANUP_TIMEOUT_SECONDS = 3.0
 INITIAL_SILENCE_GRACE_MS = 12_000
+try:
+    PIPELINE_VERSION = version("onelink-ai-voice-pipecat")
+except PackageNotFoundError:
+    PIPELINE_VERSION = "unknown"
 
 
 class RecorderCloser(Protocol):
@@ -317,8 +322,9 @@ class PipecatSessionRunner:
         @assembly.transport.event_handler("on_connected")
         async def on_connected(_transport: object, _websocket: object) -> None:
             state.touch()
-            state.spawn(state.safe_control("ai_answered", {"runtime_engine": "pipecat"}))
-            state.spawn(state.safe_event("runtime_connected", {"provider": assembly.provider}))
+            runtime_observability = _runtime_observability(assembly.provider)
+            state.spawn(state.safe_control("ai_answered", runtime_observability))
+            state.spawn(state.safe_event("runtime_connected", runtime_observability))
             if assembly.start_on_connect:
                 await assembly.worker.queue_frame(LLMRunFrame())
 
@@ -465,6 +471,14 @@ async def _close_recorder(
     return recording, {
         "code": "recording_finalize_failed",
         "error_class": str(recording.get("error_class") or "RecordingError"),
+    }
+
+
+def _runtime_observability(provider: str) -> dict[str, str]:
+    return {
+        "runtime_engine": "pipecat",
+        "provider": provider,
+        "pipeline_version": PIPELINE_VERSION,
     }
 
 

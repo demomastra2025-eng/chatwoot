@@ -3,13 +3,24 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pipecat.frames.frames import (
+    LLMFullResponseEndFrame,
+    LLMFullResponseStartFrame,
+    LLMTextFrame,
     TranscriptionFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection
 
-from app.pipeline.processors import ConversationActivity, TurnLifecycleProcessor
+from app.pipeline.processors import (
+    AssistantLifecycleProcessor,
+    ConversationActivity,
+    TurnLifecycleProcessor,
+)
+from app.services.gemini_live import (
+    OneLinkToolResultGenerationEndFrame,
+    OneLinkToolResultGenerationStartFrame,
+)
 from app.sessions.state import SessionState
 
 
@@ -47,3 +58,42 @@ async def test_turn_lifecycle_refreshes_idle_clock_when_caller_finishes_speaking
     )
 
     assert state.touches == 3
+
+
+@pytest.mark.asyncio
+async def test_assistant_lifecycle_tracks_model_generation_and_output():
+    activity = ConversationActivity()
+    processor = AssistantLifecycleProcessor(
+        cast(SessionState, ActivityState()), activity, recorder=None
+    )
+    processor.push_frame = AsyncMock()
+
+    await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
+    assert activity.model_generation_active is True
+    assert activity.model_generations_started == 1
+
+    await processor.process_frame(LLMTextFrame("Готово"), FrameDirection.DOWNSTREAM)
+    assert activity.model_outputs_generated == 1
+
+    await processor.process_frame(LLMFullResponseEndFrame(), FrameDirection.DOWNSTREAM)
+    assert activity.model_generation_active is False
+    assert activity.model_generations_completed == 1
+
+
+@pytest.mark.asyncio
+async def test_assistant_lifecycle_tracks_silent_gemini_tool_result_generation():
+    activity = ConversationActivity()
+    processor = AssistantLifecycleProcessor(
+        cast(SessionState, ActivityState()), activity, recorder=None
+    )
+    processor.push_frame = AsyncMock()
+
+    await processor.process_frame(
+        OneLinkToolResultGenerationStartFrame(), FrameDirection.DOWNSTREAM
+    )
+    assert activity.model_generation_active is True
+
+    await processor.process_frame(
+        OneLinkToolResultGenerationEndFrame(), FrameDirection.DOWNSTREAM
+    )
+    assert activity.model_generation_active is False

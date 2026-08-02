@@ -115,6 +115,9 @@ class PreviewSessionState:
     async def flush_transcript(self, *_args: Any, **_kwargs: Any) -> bool:
         return False
 
+    async def safe_event(self, *_args: Any, **_kwargs: Any) -> bool:
+        return True
+
     async def close(self) -> None:
         if not self._tasks:
             return

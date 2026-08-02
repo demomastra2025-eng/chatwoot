@@ -51,16 +51,15 @@ from pipecat.services.openrouter.llm import OpenRouterLLMService
 from pipecat.services.tts_service import TextAggregationMode
 from pipecat.transcriptions.language import Language
 from pipecat.transports.base_transport import BaseTransport
-from pipecat.turns.user_start.transcription_user_turn_start_strategy import (
-    TranscriptionUserTurnStartStrategy,
+from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import (
+    SpeechTimeoutUserTurnStopStrategy,
 )
-from pipecat.turns.user_start.vad_user_turn_start_strategy import VADUserTurnStartStrategy
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
 from app.api.models import RuntimeStream
 from app.config import Settings
 from app.media.transport import create_media_transport
-from app.pipeline.context import ToolDefinition, VoiceContext
+from app.pipeline.context import AiSettings, ToolDefinition, VoiceContext
 from app.pipeline.processors import (
     AssistantLifecycleProcessor,
     AudioResampleProcessor,
@@ -70,6 +69,7 @@ from app.pipeline.processors import (
     TurnLifecycleProcessor,
 )
 from app.pipeline.tool_dialogue import ToolDialogueCoordinator
+from app.pipeline.turn_strategies import ConfirmedUserTurnStartStrategy
 from app.recordings.writer import DualChannelRecorder
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
@@ -80,9 +80,9 @@ logger = logging.getLogger(__name__)
 
 GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
     "Вызывай нужный инструмент сразу, без обещаний и задержки. Если результат инструмента "
-    "имеет status=pending, немедленно произнеси его поле message ровно один раз и не "
-    "вызывай инструмент повторно. Runtime отдельно пришлет фактический результат; после него "
-    "сразу дай клиенту короткий содержательный ответ или понятное сообщение об ошибке."
+    "имеет status=pending, ничего не произноси и не вызывай инструмент повторно: runtime сам "
+    "озвучит ход выполнения. После фактического результата сразу дай клиенту один короткий "
+    "содержательный ответ или понятное сообщение об ошибке."
 )
 CRM_MUTATION_TOOL_NAMES = frozenset(
     {"add_contact_note", "create_contact", "create_deal", "create_note", "update_deal"}
@@ -106,7 +106,9 @@ GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
     }
 )
 GEMINI_THINKING_LEVEL_MODELS = frozenset({"gemini-3.1-flash-live-preview"})
-GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS
+GEMINI_PROACTIVE_AUDIO_MODELS = frozenset(
+    {"gemini-2.5-flash-native-audio-preview-12-2025"}
+)
 @dataclass(slots=True)
 class PipelineAssembly:
     worker: PipelineWorker
@@ -235,8 +237,9 @@ def build_pipeline(
         aggregators = _aggregators(
             llm_context,
             state,
+            activity,
             vad,
-            interruptions_enabled=context.ai.interruptions_enabled,
+            ai=context.ai,
         )
         llm = OneLinkGeminiLiveLLMService(
             api_key=credentials["gemini_api_key"],
@@ -298,8 +301,9 @@ def build_pipeline(
         aggregators = _aggregators(
             llm_context,
             state,
+            activity,
             vad,
-            interruptions_enabled=context.ai.interruptions_enabled,
+            ai=context.ai,
         )
         llm = OpenAIRealtimeLLMService(
             api_key=credentials["openai_api_key"],
@@ -344,8 +348,9 @@ def build_pipeline(
         aggregators = _aggregators(
             llm_context,
             state,
+            activity,
             vad,
-            interruptions_enabled=context.ai.interruptions_enabled,
+            ai=context.ai,
             realtime_service_mode=False,
         )
         language = _provider_language(context.ai.language)
@@ -383,14 +388,25 @@ def build_pipeline(
                     language=language,
                 ),
             )
+        openrouter_settings = {
+            "model": context.ai.model,
+            "system_instruction": context.ai.system_prompt,
+            "max_tokens": context.ai.max_output_tokens,
+            "extra": {
+                "extra_body": {
+                    "provider": {
+                        "sort": "latency",
+                        "allow_fallbacks": True,
+                        "require_parameters": True,
+                    }
+                }
+            },
+        }
+        if not context.ai.model.startswith("openai/gpt-5"):
+            openrouter_settings["temperature"] = context.ai.temperature
         llm = OpenRouterLLMService(
             api_key=credentials["openrouter_api_key"],
-            settings=OpenRouterLLMService.Settings(
-                model=context.ai.model,
-                system_instruction=context.ai.system_prompt,
-                temperature=context.ai.temperature,
-                max_tokens=context.ai.max_output_tokens,
-            ),
+            settings=OpenRouterLLMService.Settings(**openrouter_settings),
         )
         if context.ai.provider == "cartesia":
             tts = CartesiaTTSService(
@@ -477,29 +493,40 @@ def build_pipeline(
 def _aggregators(
     llm_context: LLMContext,
     state: SessionState,
+    activity: ConversationActivity,
     vad: SileroVADAnalyzer,
     *,
-    interruptions_enabled: bool,
+    ai: AiSettings,
     realtime_service_mode: bool = True,
 ) -> LLMContextAggregatorPair:
     aggregators = LLMContextAggregatorPair(
         llm_context,
         user_params=LLMUserAggregatorParams(
             vad_analyzer=vad,
-            user_turn_strategies=_user_turn_strategies(interruptions_enabled),
+            user_turn_stop_timeout=ai.user_turn_stop_timeout_ms / 1_000,
+            user_turn_strategies=_user_turn_strategies(ai),
         ),
         realtime_service_mode=realtime_service_mode,
     )
-    _register_transcript_handlers(aggregators, state)
+    _register_transcript_handlers(aggregators, state, activity)
     return aggregators
 
 
-def _user_turn_strategies(interruptions_enabled: bool) -> UserTurnStrategies:
+def _user_turn_strategies(ai: AiSettings) -> UserTurnStrategies:
     return UserTurnStrategies(
         start=[
-            VADUserTurnStartStrategy(enable_interruptions=interruptions_enabled),
-            TranscriptionUserTurnStartStrategy(enable_interruptions=interruptions_enabled),
-        ]
+            ConfirmedUserTurnStartStrategy(
+                mode=ai.interruption_mode,
+                min_words=ai.min_interrupt_words,
+                confirmation_window_seconds=ai.interruption_confirmation_window_ms / 1_000,
+                enable_interruptions=ai.interruptions_enabled,
+            )
+        ],
+        stop=[
+            SpeechTimeoutUserTurnStopStrategy(
+                user_speech_timeout=ai.turn_aggregation_delay_ms / 1_000,
+            )
+        ],
     )
 
 
@@ -584,6 +611,7 @@ def _build_tools(
 def _register_transcript_handlers(
     aggregators: LLMContextAggregatorPair,
     state: SessionState,
+    activity: ConversationActivity,
 ) -> None:
     @aggregators.user().event_handler("on_user_turn_message_added")
     async def on_user_turn_message_added(
@@ -601,6 +629,17 @@ def _register_transcript_handlers(
         message: AssistantTurnStoppedMessage,
     ) -> None:
         text = _message_text(message.content)
+        if text and message.interrupted:
+            state.spawn(
+                state.safe_event(
+                    "assistant_transcript_suppressed",
+                    {
+                        "reason": "interrupted",
+                        "content_chars": len(text),
+                    },
+                )
+            )
+            return
         if text:
             await state.add_transcript("ai", text, final=True)
             state.spawn(state.flush_transcript())

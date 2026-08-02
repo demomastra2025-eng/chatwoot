@@ -70,6 +70,39 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
   end
 
+  it 'persists stable runtime provider and pipeline observability' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/event',
+           params: {
+             event_id: 'evt-runtime-connected-1',
+             event_seq: 1,
+             event_type: 'runtime_connected',
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             runtime_engine: 'pipecat',
+             runtime_session_id: 'runtime-observability-1',
+             payload: {
+               provider: 'openrouter',
+               pipeline_version: '0.1.0'
+             }
+           },
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Event-Id' => 'evt-runtime-connected-1',
+             'X-Idempotency-Key' => 'evt-runtime-connected-1'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(call_session.reload.metadata.fetch('ai_voice')).to include(
+      'runtime_engine' => 'pipecat',
+      'runtime_session_id' => 'runtime-observability-1',
+      'ai_provider' => 'openrouter',
+      'pipeline_version' => '0.1.0'
+    )
+  end
+
   it 'renews the runtime lease without creating a telephony event' do
     previous_event_count = account.telephony_events.count
 

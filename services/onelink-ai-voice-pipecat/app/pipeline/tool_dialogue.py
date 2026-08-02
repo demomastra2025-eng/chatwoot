@@ -8,6 +8,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 from typing import Any, Protocol
 
+from loguru import logger
 from pipecat.services.llm_service import FunctionCallParams
 
 from app.pipeline.context import AiSettings, ToolDefinition
@@ -17,6 +18,9 @@ SpeechCallback = Callable[[str], Awaitable[bool | None]]
 CLOSING_SPEECH_MAX_SECONDS = 4.0
 MAX_DELAY_PROGRESS_ANNOUNCEMENTS = 3
 MIN_REPEAT_PROGRESS_INTERVAL_MS = 5_000
+VOICE_RESULT_MAX_CHARS = 2_400
+VOICE_RESULT_MAX_STRING_CHARS = 500
+POST_TOOL_GENERATION_MAX_SECONDS = 30.0
 
 
 class ToolRuntimeState(Protocol):
@@ -167,22 +171,27 @@ class ToolDialogueCoordinator:
         params: FunctionCallParams,
         result: dict[str, Any],
     ) -> None:
+        voice_result = _voice_result_projection(definition.name, result)
         response_sequence = self._activity.turns_started
+        generation_sequence = self._activity.model_generations_started
+        output_sequence = self._activity.model_outputs_generated
         if _is_terminal_result(result):
-            await params.result_callback(result)
+            await params.result_callback(voice_result)
             return
 
         self._continuations_pending += 1
         try:
-            await params.result_callback(result)
+            await params.result_callback(voice_result)
         except Exception:
             self._continuations_pending -= 1
             raise
         self._state.spawn(
             self._ensure_continuation(
                 definition=definition,
-                result=result,
+                result=voice_result,
                 response_sequence=response_sequence,
+                generation_sequence=generation_sequence,
+                output_sequence=output_sequence,
                 tool_call_id=params.tool_call_id,
             )
         )
@@ -238,6 +247,8 @@ class ToolDialogueCoordinator:
                     params.tool_call_id,
                 )
             )
+            pending_delivered = asyncio.Event()
+            generation_sequence = self._activity.model_generations_started
             self._state.spawn(
                 self._complete_gemini_tool(
                     definition=definition,
@@ -245,16 +256,21 @@ class ToolDialogueCoordinator:
                     tool_call_id=params.tool_call_id,
                     stop_progress=stop_progress,
                     progress_task=progress_task,
+                    pending_delivered=pending_delivered,
+                    generation_sequence=generation_sequence,
                 )
             )
-            await params.result_callback(
-                {
-                    "status": "pending",
-                    "message": progress_phrase,
-                    "background_activity": _tool_activity_label(definition.name),
-                    "tool_call_id": params.tool_call_id,
-                }
-            )
+            try:
+                await params.result_callback(
+                    {
+                        "status": "pending",
+                        "runtime_owned_progress": True,
+                        "background_activity": _tool_activity_label(definition.name),
+                        "tool_call_id": params.tool_call_id,
+                    }
+                )
+            finally:
+                pending_delivered.set()
             return
 
         await self._deliver_result(definition, params, result)
@@ -267,6 +283,8 @@ class ToolDialogueCoordinator:
         tool_call_id: str,
         stop_progress: asyncio.Event,
         progress_task: asyncio.Task[None],
+        pending_delivered: asyncio.Event,
+        generation_sequence: int,
     ) -> None:
         try:
             result = await asyncio.shield(tool_task)
@@ -292,10 +310,15 @@ class ToolDialogueCoordinator:
         if _is_terminal_result(result) or self._run_instruction is None:
             return
 
+        await pending_delivered.wait()
         self._continuations_pending += 1
         try:
             await self._run_late_instruction(
-                _late_result_instruction(definition.name, result)
+                _late_result_instruction(
+                    definition.name,
+                    _voice_result_projection(definition.name, result),
+                ),
+                wait_for_generation_after=generation_sequence,
             )
         finally:
             self._continuations_pending -= 1
@@ -305,6 +328,7 @@ class ToolDialogueCoordinator:
         instruction: str,
         *,
         skip_if_turn_started_after: int | None = None,
+        wait_for_generation_after: int | None = None,
     ) -> None:
         if self._run_instruction is None:
             return
@@ -314,6 +338,22 @@ class ToolDialogueCoordinator:
                 and self._activity.turns_started > skip_if_turn_started_after
             ):
                 return
+            response_timeout = max(
+                0.1,
+                min(3.0, self._ai.post_tool_continuation_ms / 1_000),
+            )
+            if wait_for_generation_after is not None:
+                await self._activity.wait_for_model_generation_started_after(
+                    wait_for_generation_after,
+                    response_timeout,
+                )
+            if self._activity.model_generation_active:
+                idle = await self._activity.wait_for_model_idle(
+                    POST_TOOL_GENERATION_MAX_SECONDS
+                )
+                if not idle:
+                    logger.warning("Gemini post-tool continuation skipped: model remained active")
+                    return
             if self._activity.bot_speaking:
                 await self._activity.wait_for_turn_completed_after(
                     self._activity.turns_completed,
@@ -322,10 +362,6 @@ class ToolDialogueCoordinator:
             started_sequence = self._activity.turns_started
             completed_sequence = self._activity.turns_completed
             await self._run_instruction(instruction)
-            response_timeout = max(
-                0.1,
-                min(3.0, self._ai.post_tool_continuation_ms / 1_000),
-            )
             started = await self._activity.wait_for_turn_started_after(
                 started_sequence,
                 response_timeout,
@@ -431,6 +467,8 @@ class ToolDialogueCoordinator:
         definition: ToolDefinition,
         result: dict[str, Any],
         response_sequence: int,
+        generation_sequence: int,
+        output_sequence: int,
         tool_call_id: str,
     ) -> None:
         try:
@@ -440,13 +478,54 @@ class ToolDialogueCoordinator:
             )
             if started:
                 return
-            self._state.spawn(
-                self._state.safe_control(
-                    "post_tool_model_stall",
-                    {"result_status": "failed" if _is_error_result(result) else "completed"},
-                    tool_call_id=tool_call_id,
-                    tool_name=definition.name,
+
+            generation_started = await self._activity.wait_for_model_generation_started_after(
+                generation_sequence,
+                max(0.1, self._ai.post_tool_continuation_ms / 1_000),
+            )
+            if not generation_started:
+                self._record_post_tool_stall(
+                    definition,
+                    result,
+                    tool_call_id,
+                    recovery="skipped_generation_not_observed",
                 )
+                return
+
+            generation_completed = await self._activity.wait_for_model_idle_after(
+                generation_sequence,
+                POST_TOOL_GENERATION_MAX_SECONDS,
+            )
+            if not generation_completed:
+                self._record_post_tool_stall(
+                    definition,
+                    result,
+                    tool_call_id,
+                    recovery="skipped_generation_active",
+                )
+                return
+
+            if self._activity.model_outputs_generated > output_sequence:
+                self._record_post_tool_stall(
+                    definition,
+                    result,
+                    tool_call_id,
+                    recovery="skipped_original_output_generated",
+                )
+                return
+
+            started = await self._activity.wait_for_turn_started_after(
+                response_sequence,
+                max(0.1, self._ai.post_tool_continuation_ms / 1_000),
+            )
+            if started:
+                return
+
+            self._record_post_tool_stall(
+                definition,
+                result,
+                tool_call_id,
+                recovery="started_after_empty_generation",
             )
             if _is_error_result(result):
                 failure_phrase = _first_phrase(self._ai.tool_failure_phrases)
@@ -461,6 +540,26 @@ class ToolDialogueCoordinator:
                 )
         finally:
             self._continuations_pending -= 1
+
+    def _record_post_tool_stall(
+        self,
+        definition: ToolDefinition,
+        result: dict[str, Any],
+        tool_call_id: str,
+        *,
+        recovery: str,
+    ) -> None:
+        self._state.spawn(
+            self._state.safe_control(
+                "post_tool_model_stall",
+                {
+                    "result_status": "failed" if _is_error_result(result) else "completed",
+                    "recovery": recovery,
+                },
+                tool_call_id=tool_call_id,
+                tool_name=definition.name,
+            )
+        )
 
 
 def _is_terminal_tool(name: str) -> bool:
@@ -537,8 +636,8 @@ def _tool_progress_phrase(tool_name: str, stage: str, fallback: str) -> str:
 
 def _late_result_instruction(tool_name: str, result: dict[str, Any]) -> str:
     serialized = json.dumps(result, ensure_ascii=False, sort_keys=True, default=str)
-    if len(serialized) > 6_000:
-        serialized = f"{serialized[:6_000]}…"
+    if len(serialized) > VOICE_RESULT_MAX_CHARS:
+        serialized = f"{serialized[:VOICE_RESULT_MAX_CHARS]}…"
     return (
         f"Фоновая операция «{_tool_activity_label(tool_name)}» завершилась. "
         f"Её результат: {serialized}\n"
@@ -546,6 +645,151 @@ def _late_result_instruction(tool_name: str, result: dict[str, Any]) -> str:
         "коротко сообщи результат или понятную ошибку клиенту. Не молчи и не вызывай "
         "тот же инструмент повторно без нового запроса клиента."
     )
+
+
+def _voice_result_projection(tool_name: str, result: dict[str, Any]) -> dict[str, Any]:
+    normalized = _decode_nested_result(result)
+    normalized_name = tool_name.strip().lower()
+    if normalized_name == "list_deal_pipelines":
+        projected = _project_named_items(normalized, ("pipelines",), include_stages=True)
+    elif normalized_name in {"faq_lookup", "knowledge_lookup", "search_knowledge"}:
+        projected = _project_named_items(
+            normalized,
+            ("matches", "results", "answers", "items"),
+            include_stages=False,
+        )
+    else:
+        projected = _compact_voice_value(normalized)
+
+    if not isinstance(projected, dict):
+        projected = {"result": projected}
+    serialized = json.dumps(projected, ensure_ascii=False, sort_keys=True, default=str)
+    if len(serialized) <= VOICE_RESULT_MAX_CHARS:
+        return projected
+
+    return {
+        "status": projected.get("status", "ok"),
+        "action": projected.get("action"),
+        "error": projected.get("error"),
+        "summary": f"{serialized[: VOICE_RESULT_MAX_CHARS - 300]}…",
+        "truncated": True,
+    }
+
+
+def _decode_nested_result(value: Any) -> Any:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith(("{", "[")):
+            try:
+                return _decode_nested_result(json.loads(stripped))
+            except (TypeError, ValueError):
+                pass
+        return value
+    if isinstance(value, list):
+        return [_decode_nested_result(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+
+    decoded = {str(key): _decode_nested_result(item) for key, item in value.items()}
+    nested = decoded.get("result")
+    if isinstance(nested, dict):
+        envelope = {
+            key: item
+            for key, item in decoded.items()
+            if key in {"action", "status", "error", "code", "message"}
+        }
+        return {**envelope, **nested}
+    return decoded
+
+
+def _project_named_items(
+    result: dict[str, Any],
+    keys: tuple[str, ...],
+    *,
+    include_stages: bool,
+) -> dict[str, Any]:
+    items = _find_named_list(result, keys)
+    if items is None:
+        return _compact_voice_value(result)
+
+    projected_items = []
+    for item in items[:8]:
+        if not isinstance(item, dict):
+            projected_items.append(_compact_voice_value(item))
+            continue
+        fields = {}
+        for key in (
+            "id",
+            "name",
+            "title",
+            "key",
+            "code",
+            "question",
+            "answer",
+            "content",
+            "text",
+            "score",
+        ):
+            if key in item:
+                fields[key] = _compact_voice_value(item[key])
+        if include_stages:
+            stages = _find_named_list(item, ("stages",)) or []
+            fields["stages"] = [
+                {
+                    key: _compact_voice_value(stage[key])
+                    for key in ("id", "name", "title", "key", "code")
+                    if isinstance(stage, dict) and key in stage
+                }
+                for stage in stages[:8]
+            ]
+        projected_items.append(fields or _compact_voice_value(item))
+
+    projected = {
+        "status": result.get("status", "ok"),
+        "count": len(items),
+        keys[0]: projected_items,
+    }
+    if result.get("error"):
+        projected["error"] = _compact_voice_value(result["error"])
+    return projected
+
+
+def _find_named_list(value: Any, keys: tuple[str, ...]) -> list[Any] | None:
+    if isinstance(value, dict):
+        for key in keys:
+            if isinstance(value.get(key), list):
+                return value[key]
+        for nested in value.values():
+            found = _find_named_list(nested, keys)
+            if found is not None:
+                return found
+    elif isinstance(value, list):
+        for nested in value:
+            found = _find_named_list(nested, keys)
+            if found is not None:
+                return found
+    return None
+
+
+def _compact_voice_value(value: Any, *, depth: int = 0) -> Any:
+    if depth >= 4:
+        return "[details omitted]"
+    if isinstance(value, str):
+        return (
+            value
+            if len(value) <= VOICE_RESULT_MAX_STRING_CHARS
+            else f"{value[:VOICE_RESULT_MAX_STRING_CHARS]}…"
+        )
+    if isinstance(value, list):
+        return [_compact_voice_value(item, depth=depth + 1) for item in value[:8]]
+    if isinstance(value, dict):
+        return {
+            str(key): _compact_voice_value(item, depth=depth + 1)
+            for key, item in list(value.items())[:16]
+            if str(key).lower()
+            not in {"debug", "embedding", "embeddings", "raw", "schema", "trace"}
+        }
+    return value
 
 
 async def _wait_until_stopped(stopped: asyncio.Event, delay_ms: int) -> bool:

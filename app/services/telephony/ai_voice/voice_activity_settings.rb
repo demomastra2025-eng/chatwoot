@@ -5,7 +5,8 @@ class Telephony::AiVoice::VoiceActivitySettings
       'speech_start_sensitivity' => 'START_SENSITIVITY_HIGH',
       'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
       'prefix_padding_ms' => 120,
-      'silence_duration_ms' => 300,
+      'silence_duration_ms' => 250,
+      'turn_aggregation_delay_ms' => 180,
       'vad_confidence' => 0.6,
       'vad_min_volume' => 0.45
     }.freeze,
@@ -13,7 +14,8 @@ class Telephony::AiVoice::VoiceActivitySettings
       'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
       'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
       'prefix_padding_ms' => 200,
-      'silence_duration_ms' => 500,
+      'silence_duration_ms' => 300,
+      'turn_aggregation_delay_ms' => 220,
       'vad_confidence' => 0.75,
       'vad_min_volume' => 0.6
     }.freeze,
@@ -21,7 +23,8 @@ class Telephony::AiVoice::VoiceActivitySettings
       'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
       'speech_end_sensitivity' => 'END_SENSITIVITY_LOW',
       'prefix_padding_ms' => 300,
-      'silence_duration_ms' => 800,
+      'silence_duration_ms' => 350,
+      'turn_aggregation_delay_ms' => 300,
       'vad_confidence' => 0.85,
       'vad_min_volume' => 0.7
     }.freeze
