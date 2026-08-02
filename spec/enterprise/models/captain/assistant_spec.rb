@@ -66,6 +66,66 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.handoff_tool_name).to eq("handoff_to_assistant_#{assistant.id}")
       expect(assistant.agent.name).to eq("assistant_#{assistant.id}")
     end
+
+    describe 'Fish voice references' do
+      let(:account) { create(:account) }
+      let(:assistant) do
+        build(
+          :captain_assistant,
+          account: account,
+          config: { 'voice_settings' => { 'provider' => 'fish', 'voice' => provider_model_id } }
+        )
+      end
+      let(:provider_model_id) { Captain::Assistant::FISH_DEFAULT_VOICE_ID }
+
+      def create_fish_voice(account:, state: 'trained', visibility: 'private')
+        Telephony::AiVoice::FishVoice.create!(
+          account: account,
+          provider_model_id: SecureRandom.hex(16),
+          title: 'Managed voice',
+          state: state,
+          visibility: visibility
+        )
+      end
+
+      it 'accepts the provider default voice without a registry entry' do
+        expect(assistant).to be_valid
+      end
+
+      it 'accepts a trained private voice owned by the assistant account' do
+        voice = create_fish_voice(account: account)
+        assistant.config['voice_settings']['voice'] = voice.provider_model_id
+
+        expect(assistant).to be_valid
+      end
+
+      it 'rejects cross-account, non-trained, and non-private references', :aggregate_failures do
+        other_voice = create_fish_voice(account: create(:account))
+        pending_voice = create_fish_voice(account: account, state: 'training')
+        public_voice = create_fish_voice(account: account, visibility: 'public')
+
+        [other_voice, pending_voice, public_voice].each do |voice|
+          assistant.config['voice_settings']['voice'] = voice.provider_model_id
+          expect(assistant).not_to be_valid
+          expect(assistant.errors.of_kind?(:config, :fish_voice_invalid_reference)).to be true
+        end
+      end
+
+      it 'fails closed when an unchanged legacy reference is no longer selectable' do
+        voice = create_fish_voice(account: account)
+        persisted_assistant = create(
+          :captain_assistant,
+          account: account,
+          config: { 'voice_settings' => { 'provider' => 'fish', 'voice' => voice.provider_model_id } }
+        )
+        voice.update!(state: 'failed')
+
+        persisted_assistant.description = 'Unrelated change'
+
+        expect(persisted_assistant).not_to be_valid
+        expect(persisted_assistant.errors.of_kind?(:config, :fish_voice_invalid_reference)).to be true
+      end
+    end
   end
 
   describe 'shared knowledge ownership' do

@@ -287,6 +287,7 @@ class Captain::Assistant < ApplicationRecord
   DEFAULT_SYSTEM_RULES = (DEFAULT_SYSTEM_BEHAVIOR_RULES + DEFAULT_SYSTEM_TEMPLATE_RULES).freeze
   DEFAULT_SYSTEM_RULE_IDS = DEFAULT_SYSTEM_RULES.map { |rule| rule[:id] }.freeze
   GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG = 'CAPTAIN_SYSTEM_PROMPTS'
+  FISH_DEFAULT_VOICE_ID = Telephony::AiVoice::VoiceSettingsDefaults::PROVIDER_DEFAULTS.dig('fish', 'voice').freeze
 
   def self.installation_system_prompt_entries
     raw_entries = InstallationConfig.find_by(name: GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG)&.value
@@ -399,6 +400,7 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_guardrail_tools
   validate :validate_guardrail_fields
   validate :validate_guardrail_skills
+  validate :validate_fish_voice_reference
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -1174,6 +1176,27 @@ class Captain::Assistant < ApplicationRecord
     return if invalid_skill_ids.empty?
 
     errors.add(field, "contains invalid skills: #{invalid_skill_ids.join(', ')}")
+  end
+
+  def validate_fish_voice_reference
+    voice_settings = config.to_h['voice_settings']
+    return unless voice_settings.is_a?(Hash)
+    return unless voice_settings['provider'] == 'fish'
+
+    provider_model_id = voice_settings['voice'].to_s
+    return if provider_model_id == FISH_DEFAULT_VOICE_ID
+    return add_invalid_fish_voice_error unless account&.persisted?
+
+    account.lock!
+    selectable_voice = Telephony::AiVoice::FishVoice.selectable.exists?(
+      account_id: account_id,
+      provider_model_id: provider_model_id
+    )
+    add_invalid_fish_voice_error unless selectable_voice
+  end
+
+  def add_invalid_fish_voice_error
+    errors.add(:config, :fish_voice_invalid_reference, message: 'fish_voice_invalid_reference')
   end
 
   def runtime_tool_scope

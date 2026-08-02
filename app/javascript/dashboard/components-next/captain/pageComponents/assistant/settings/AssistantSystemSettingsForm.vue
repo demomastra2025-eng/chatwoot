@@ -9,6 +9,7 @@ import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import FishVoiceManager from './FishVoiceManager.vue';
 import SettingsInfoDialog from './SettingsInfoDialog.vue';
 
 const props = defineProps({
@@ -1056,25 +1057,17 @@ defineExpose({
             class="w-full"
           />
         </div>
-        <div class="flex flex-col gap-1.5">
+        <FishVoiceManager
+          v-if="isFishProvider"
+          v-model="state.voiceSettings.voice"
+          data-test-id="assistant-fish-voice-id"
+          :error="formErrors.voice"
+        />
+        <div v-else class="flex flex-col gap-1.5">
           <label class="text-sm font-medium text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE') }}
           </label>
-          <Input
-            v-if="isFishProvider"
-            v-model="state.voiceSettings.voice"
-            data-test-id="assistant-fish-voice-id"
-            :placeholder="
-              t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FISH_VOICE_PLACEHOLDER')
-            "
-            :message="
-              formErrors.voice ||
-              t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FISH_VOICE_DESCRIPTION')
-            "
-            :message-type="formErrors.voice ? 'error' : 'info'"
-          />
           <Select
-            v-else
             v-model="state.voiceSettings.voice"
             :options="voiceVoiceOptions"
             class="w-full"

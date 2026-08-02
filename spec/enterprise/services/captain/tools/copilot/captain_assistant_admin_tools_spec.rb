@@ -158,6 +158,25 @@ RSpec.describe 'Captain assistant admin copilot tools' do
       expect(result).to include('config_json must be valid JSON')
       expect(assistant.reload.config['temperature']).to eq(0.4)
     end
+
+    it 'rejects a Fish voice owned by another account without mutation' do
+      other_account = create(:account)
+      voice = Telephony::AiVoice::FishVoice.create!(
+        account: other_account,
+        provider_model_id: SecureRandom.hex(16),
+        title: 'Other account voice',
+        state: 'trained',
+        visibility: 'private'
+      )
+
+      result = service.execute(
+        assistant_id: assistant.id,
+        config_json: { voice_settings: { provider: 'fish', voice: voice.provider_model_id } }.to_json
+      )
+
+      expect(result).to start_with('ERROR: ActiveRecord::RecordInvalid')
+      expect(assistant.reload.config.dig('voice_settings', 'voice')).not_to eq(voice.provider_model_id)
+    end
   end
 
   describe 'registry exposure' do

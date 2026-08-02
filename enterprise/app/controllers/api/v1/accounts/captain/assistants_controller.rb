@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::BaseController
   ASSISTANT_CONFIG_FIELDS = [
     :feature_faq, :feature_memory, :feature_citation, :feature_web,
@@ -23,11 +24,21 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   def show; end
 
   def create
-    @assistant = account_assistants.create!(assistant_create_params)
+    attributes = assistant_create_params
+    Current.account.with_lock do
+      @assistant = account_assistants.create!(attributes)
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    render_fish_voice_reference_error_or_raise(e)
   end
 
   def update
-    @assistant.update!(assistant_update_params)
+    attributes = assistant_update_params
+    Current.account.with_lock do
+      @assistant.update!(attributes)
+    end
+  rescue ActiveRecord::RecordInvalid => e
+    render_fish_voice_reference_error_or_raise(e)
   end
 
   def avatar
@@ -150,6 +161,12 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     Telephony::AiVoice::VoiceSettingsDefaults.normalize(merged)
   end
 
+  def render_fish_voice_reference_error_or_raise(error)
+    raise error unless error.record.errors.of_kind?(:config, :fish_voice_invalid_reference)
+
+    render json: { error: 'fish_voice_invalid_reference' }, status: :unprocessable_content
+  end
+
   def merge_optional_array_param!(permitted, field_name)
     return unless params[:assistant].key?(field_name)
 
@@ -255,3 +272,4 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     history + [current_user_message]
   end
 end
+# rubocop:enable Metrics/ClassLength

@@ -68,6 +68,7 @@ Rails.application.routes.draw do
             post :bulk_create, on: :collection
           end
           namespace :captain do
+            resources :fish_voices, only: [:index, :show, :create, :destroy]
             resource :observability, only: [:show], controller: 'observability' do
               get :metrics
               get :release_check

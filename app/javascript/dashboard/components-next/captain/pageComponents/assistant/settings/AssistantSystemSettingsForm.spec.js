@@ -16,6 +16,7 @@ const buildWrapper = props =>
       stubs: {
         Button: true,
         Editor: true,
+        FishVoiceManager: true,
         Input: true,
         SettingsInfoDialog: true,
         Switch: true,

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_31_110000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_02_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2727,6 +2727,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_31_110000) do
     t.index ["account_id"], name: "index_telephony_agent_bindings_on_account_id"
   end
 
+  create_table "telephony_ai_voice_fish_voices", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "created_by_id"
+    t.string "provider_model_id", null: false
+    t.string "title", null: false
+    t.string "state", default: "created", null: false
+    t.string "visibility", default: "private", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_fish_voices_on_account_and_created_at"
+    t.index ["account_id"], name: "index_telephony_ai_voice_fish_voices_on_account_id"
+    t.index ["created_by_id"], name: "index_telephony_ai_voice_fish_voices_on_created_by_id"
+    t.index ["provider_model_id"], name: "index_fish_voices_on_provider_model_id", unique: true
+  end
+
   create_table "telephony_call_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "conversation_id"
@@ -3329,6 +3344,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_31_110000) do
   add_foreign_key "telegram_notification_bindings", "users"
   add_foreign_key "telephony_agent_bindings", "accounts"
   add_foreign_key "telephony_agent_bindings", "users"
+  add_foreign_key "telephony_ai_voice_fish_voices", "accounts", on_delete: :cascade
+  add_foreign_key "telephony_ai_voice_fish_voices", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "telephony_call_sessions", "accounts"
   add_foreign_key "telephony_call_sessions", "contacts"
   add_foreign_key "telephony_call_sessions", "conversations", on_delete: :nullify
