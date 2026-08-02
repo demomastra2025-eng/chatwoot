@@ -381,6 +381,10 @@ describe('AssistantSystemSettingsForm', () => {
     expect(
       wrapper.find('[data-test-id="assistant-fish-voice-id"]').exists()
     ).toBe(true);
+    expect(wrapper.vm.state.voiceSettings.voice).toBe(
+      '31f936a9333f4f5a99dcaaf6df091b84'
+    );
+    wrapper.vm.state.voiceSettings.voice = '';
     expect(await wrapper.vm.buildPayload()).toBeNull();
 
     wrapper.vm.state.voiceSettings.voice = 'fish-voice-ref';
@@ -391,7 +395,7 @@ describe('AssistantSystemSettingsForm', () => {
       expect.objectContaining({
         provider: 'fish',
         stt_provider: 'fish',
-        model: 'openai/gpt-5.4-mini',
+        model: 'openai/gpt-5.6-luna',
         voice: 'fish-voice-ref',
         language: 'auto',
       })

@@ -106,6 +106,10 @@ def test_fish_asr_provider_requires_only_fish_and_openrouter_credentials():
     }
 
 
+def test_fish_tts_uses_the_qualified_free_model_by_default():
+    assert valid_settings().fish_tts_model == "s2.1-pro-free"
+
+
 def test_fish_elevenlabs_provider_requires_all_three_credentials():
     credentials = valid_settings().provider_credentials("fish", stt_provider="elevenlabs")
 

@@ -163,10 +163,11 @@ const VOICE_PROVIDER_PRESETS = Object.freeze({
   },
   fish: {
     sttProvider: 'elevenlabs',
-    model: 'openai/gpt-5.4-mini',
-    voice: '',
+    model: 'openai/gpt-5.6-luna',
+    voice: '31f936a9333f4f5a99dcaaf6df091b84',
     language: 'auto',
     models: [
+      { value: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna (OpenRouter)' },
       { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenRouter)' },
       { value: 'openai/gpt-5.4', label: 'GPT-5.4 (OpenRouter)' },
     ],

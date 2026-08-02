@@ -75,8 +75,8 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       'model' => 'openai/gpt-5.4-mini', 'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
     }.freeze,
     'fish' => {
-      'stt_provider' => 'elevenlabs', 'model' => 'openai/gpt-5.4-mini',
-      'voice' => '', 'language' => 'auto'
+      'stt_provider' => 'elevenlabs', 'model' => 'openai/gpt-5.6-luna',
+      'voice' => '31f936a9333f4f5a99dcaaf6df091b84', 'language' => 'auto'
     }.freeze
   }.freeze
 

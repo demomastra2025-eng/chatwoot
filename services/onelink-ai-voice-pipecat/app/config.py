@@ -30,7 +30,7 @@ class Settings(BaseModel):
     elevenlabs_tts_model: str = "eleven_flash_v2_5"
     cartesia_stt_model: str = "ink-whisper"
     cartesia_tts_model: str = "sonic-3.5"
-    fish_tts_model: str = "s2-pro"
+    fish_tts_model: str = "s2.1-pro-free"
     fish_tts_latency: Literal["normal", "balanced"] = "balanced"
     fish_asr_timeout_seconds: float = Field(default=15.0, ge=1.0, le=60.0)
     fish_asr_max_segment_seconds: float = Field(default=60.0, ge=1.0, le=3_600.0)
@@ -99,7 +99,7 @@ class Settings(BaseModel):
             cartesia_stt_model=os.getenv(
                 "ONELINK_AI_VOICE_PIPECAT_CARTESIA_STT_MODEL", "ink-whisper"
             ),
-            fish_tts_model=os.getenv("ONELINK_AI_VOICE_PIPECAT_FISH_TTS_MODEL", "s2-pro"),
+            fish_tts_model=os.getenv("ONELINK_AI_VOICE_PIPECAT_FISH_TTS_MODEL", "s2.1-pro-free"),
             fish_tts_latency=cast(
                 Literal["normal", "balanced"],
                 os.getenv("ONELINK_AI_VOICE_PIPECAT_FISH_TTS_LATENCY", "balanced"),

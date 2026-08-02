@@ -179,12 +179,12 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       )
     end
 
-    it 'applies the Fish cascade defaults without inventing a voice reference' do
+    it 'applies the qualified Fish cascade defaults' do
       expect(described_class.normalize(provider: 'fish')).to include(
         'provider' => 'fish',
         'stt_provider' => 'elevenlabs',
-        'model' => 'openai/gpt-5.4-mini',
-        'voice' => '',
+        'model' => 'openai/gpt-5.6-luna',
+        'voice' => '31f936a9333f4f5a99dcaaf6df091b84',
         'language' => 'auto'
       )
     end

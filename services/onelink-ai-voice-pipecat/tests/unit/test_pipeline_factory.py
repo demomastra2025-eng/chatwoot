@@ -178,7 +178,7 @@ def test_builds_fish_batch_asr_pipeline():
     assert assembly.stt._init_sample_rate == 16_000
     assert isinstance(assembly.llm, OpenRouterLLMService)
     assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
-    assert assembly.tts._settings.model == "s2-pro"
+    assert assembly.tts._settings.model == "s2.1-pro-free"
     assert assembly.tts._settings.voice == "fish-voice-ref"
 
 
