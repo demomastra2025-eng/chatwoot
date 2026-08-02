@@ -16,9 +16,14 @@ class RuntimeSelector {
   }
 
   select(payload = {}) {
+    if (!isExplicitAiRoute(payload)) return 'legacy';
+
+    return this.selectCandidate(payload);
+  }
+
+  selectCandidate(payload = {}) {
     if (!this.enabled) return 'legacy';
     if (this.providers.length === 0 || this.accountIds.length === 0 || this.channelIds.length === 0) return 'legacy';
-    if (!isExplicitAiRoute(payload)) return 'legacy';
     if (isJanusSip(payload) && !isVoiceAgentProfile(payload.sip_profile || payload.sipProfile)) return 'legacy';
     if (!matches(this.providers, payload.provider)) return 'legacy';
     if (!matches(this.accountIds, payload.account_id || payload.accountId)) return 'legacy';

@@ -180,4 +180,79 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
     expect(response).to have_http_status(:not_found)
     expect(call_session.reload.metadata.dig('ai_voice', 'control_events')).to be_blank
   end
+
+  it 'replays a lifecycle control retry without duplicating durable events' do
+    params = {
+      call_ref: call_session.external_call_ref,
+      account_id: account.id,
+      action: 'tool_completed',
+      event_key: 'pipecat-control:runtime-1:7:tool_completed',
+      metadata: { tool_call_id: 'tool-1', tool_name: 'faq_lookup' }
+    }
+
+    perform_enqueued_jobs do
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        2.times do
+          post '/internal/voice/ai/control',
+               params: params,
+               headers: { 'Authorization' => 'Bearer voice-secret' },
+               as: :json
+          expect(response).to have_http_status(:ok)
+        end
+      end
+    end
+
+    control_events = call_session.reload.metadata.dig('ai_voice', 'control_events')
+    expect(control_events.count { |event| event['event_key'] == params[:event_key] }).to eq(1)
+    expect(account.telephony_events.where(event_key: params[:event_key]).count).to eq(1)
+    expect(response.parsed_body).to include('idempotent' => true)
+  end
+
+  it 'replays idempotent downstream delivery after a partial timeline failure' do
+    params = {
+      call_ref: call_session.external_call_ref,
+      account_id: account.id,
+      action: 'ai_answered',
+      event_key: 'pipecat-control:runtime-1:8:ai_answered'
+    }
+    attempts = 0
+    allow_any_instance_of(Telephony::AiVoice::ConversationTimelineService)
+      .to receive(:record_control_event!).and_wrap_original do |method, *args, **kwargs|
+      attempts += 1
+      raise ActiveRecord::ConnectionTimeoutError, 'temporary timeline failure' if attempts == 1
+
+      method.call(*args, **kwargs)
+    end
+
+    expect { Telephony::AiVoice::ControlService.new(payload: params).perform }
+      .to raise_error(ActiveRecord::ConnectionTimeoutError)
+
+    result = Telephony::AiVoice::ControlService.new(payload: params).perform
+
+    expect(result).to include(status: 'ok', idempotent: true)
+    expect(attempts).to eq(2)
+    expect(call_session.reload.metadata.dig('ai_voice', 'control_events').count { |event| event['event_key'] == params[:event_key] }).to eq(1)
+    expect(account.telephony_events.where(event_key: params[:event_key]).count).to eq(1)
+  end
+
+  it 'falls back to synchronous lifecycle ingestion when enqueue fails' do
+    allow(Telephony::InboundRouteLifecycleJob).to receive(:perform_later)
+      .and_raise(ActiveJob::EnqueueError, 'redis down')
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/control',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             action: 'tool_completed',
+             event_key: 'pipecat-control:runtime-1:9:tool_completed',
+             metadata: { tool_call_id: 'tool-2', tool_name: 'faq_lookup' }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(account.telephony_events.find_by!(event_key: 'pipecat-control:runtime-1:9:tool_completed')).to be_processed
+  end
 end

@@ -67,6 +67,12 @@ class SlowControlClient(FakeClient):
         return await super().call_tool(correlation, name, arguments, **kwargs)
 
 
+class FailingControlClient(FakeClient):
+    async def send_control(self, correlation, **kwargs):
+        self.controls.append((correlation, kwargs))
+        raise OnelinkApiError("response lost", code="transport_error")
+
+
 class GatedToolClient(FakeClient):
     def __init__(self):
         super().__init__()
@@ -112,6 +118,27 @@ def state():
             conversation_id=11,
         ),
     )
+
+
+@pytest.mark.asyncio
+async def test_control_fallback_reuses_the_control_idempotency_key():
+    client = FailingControlClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(call_ref="call-control", runtime_session_id="runtime-control"),
+    )
+
+    assert await state.safe_control(
+        "tool_completed",
+        {"result": "ok"},
+        tool_call_id="tool-1",
+        tool_name="faq_lookup",
+    ) is False
+
+    control_metadata = client.controls[0][1]
+    fallback_event = client.events[0][1]
+    assert control_metadata["event_key"] == fallback_event["event_id"]
+    assert fallback_event["payload"]["tool_call_id"] == "tool-1"
 
 
 @pytest.mark.asyncio

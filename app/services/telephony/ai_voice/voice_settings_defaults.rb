@@ -4,10 +4,12 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   DEFAULTS = {
     'humanlike_defaults_profile' => 'standard_v1',
     'provider' => 'gemini-live',
+    'stt_provider' => 'elevenlabs',
     'model' => 'gemini-3.1-flash-live-preview',
     'api_version' => 'v1beta',
     'voice' => 'sulafat',
     'language' => 'ru-KZ',
+    'input_language_priorities' => Telephony::AiVoice::VoiceLanguageSettings::DEFAULT_PRIORITIES,
     'thinking_level' => 'minimal',
     'context_window_compression_enabled' => true,
     'system_prompt' => '', 'voice_character_prompt' => '',
@@ -66,22 +68,15 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
   PROVIDER_DEFAULTS = {
     'gemini-live' => {
-      'model' => 'gemini-3.1-flash-live-preview',
-      'voice' => 'sulafat',
-      'language' => 'auto'
+      'model' => 'gemini-3.1-flash-live-preview', 'voice' => 'sulafat', 'language' => 'auto'
     }.freeze,
-    'openai-realtime' => {
-      'model' => 'gpt-realtime-2',
-      'voice' => 'alloy'
-    }.freeze,
-    'elevenlabs' => {
-      'model' => 'openai/gpt-5.4-mini',
-      'voice' => 'Xb7hH8MSUJpSbSDYk0k2'
-    }.freeze,
+    'openai-realtime' => { 'model' => 'gpt-realtime-2', 'voice' => 'alloy' }.freeze,
+    'elevenlabs' => { 'model' => 'openai/gpt-5.4-mini', 'voice' => 'Xb7hH8MSUJpSbSDYk0k2' }.freeze,
     'cartesia' => {
-      'model' => 'openai/gpt-5.4-mini',
-      'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
-    }.freeze
+      'model' => 'openai/gpt-5.4-mini', 'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
+    }.freeze,
+    'fish' => { 'stt_provider' => 'elevenlabs', 'model' => 'openai/gpt-5.6-luna',
+                'voice' => '31f936a9333f4f5a99dcaaf6df091b84', 'language' => 'auto' }.freeze
   }.freeze
 
   BOOLEAN_KEYS = %w[
@@ -107,11 +102,12 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   ].freeze
   GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS
   THINKING_LEVELS = %w[minimal low medium high].freeze
+  FISH_STT_PROVIDERS = %w[elevenlabs fish].freeze
   MAX_DURATION_SEC_RANGE = (1..7200)
 
   ARRAY_KEYS = %w[
     interrupt_ack_phrases filler_phrases tool_start_phrases tool_delay_phrases tool_failure_phrases
-    natural_pause_ms thinking_cue_phrases nonverbal_cue_phrases
+    natural_pause_ms thinking_cue_phrases nonverbal_cue_phrases input_language_priorities
   ].freeze
 
   class << self
@@ -122,7 +118,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       normalized = defaults.merge(raw).each_with_object({}) do |(key, value), result|
         result[key] = normalize_value(key, value_or_default(key, value, defaults))
       end
-      normalize_provider_specific_values!(normalized, provider, defaults)
+      normalize_provider_specific_values!(normalized, provider, defaults, explicit_keys: raw.keys)
       normalized
     end
 
@@ -132,18 +128,21 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
     private
 
-    def normalize_provider_specific_values!(normalized, provider, defaults)
+    def normalize_provider_specific_values!(normalized, provider, defaults, explicit_keys:)
       normalized['thinking_level'] = defaults['thinking_level'] unless THINKING_LEVELS.include?(normalized['thinking_level'])
+      normalized['stt_provider'] = defaults['stt_provider'] unless provider == 'fish' && FISH_STT_PROVIDERS.include?(normalized['stt_provider'])
       Telephony::AiVoice::VoiceLifecycleSettings.normalize!(normalized, defaults)
-      Telephony::AiVoice::VoiceActivitySettings.normalize!(normalized)
+      Telephony::AiVoice::VoiceActivitySettings.normalize!(normalized, explicit_keys: explicit_keys)
       duration = normalized['max_duration_sec']
       normalized['max_duration_sec'] = defaults['max_duration_sec'] unless duration.is_a?(Integer) && MAX_DURATION_SEC_RANGE.cover?(duration)
       normalize_auto_language!(normalized, provider)
+      Telephony::AiVoice::VoiceLanguageSettings.normalize!(normalized, defaults)
       normalize_proactive_audio!(normalized, provider)
     end
 
     def normalize_auto_language!(normalized, provider)
       return unless normalized['language'] == 'auto'
+      return if provider == 'fish'
       return if gemini_model_supported?(provider, normalized['model'], GEMINI_AUTO_LANGUAGE_MODELS)
 
       normalized['language'] = DEFAULTS['language']

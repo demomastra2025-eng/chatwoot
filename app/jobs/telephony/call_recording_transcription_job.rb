@@ -1,5 +1,5 @@
 class Telephony::CallRecordingTranscriptionJob < ApplicationJob
-  queue_as :audio_transcription
+  queue_as :voice_recording_transcription
 
   retry_on Telephony::CallRecordingTranscriptionService::RecordingNotFound, wait: 10.seconds, attempts: 3
 

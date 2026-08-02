@@ -15,12 +15,16 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def perform
     return { error: 'Transcription not available' } unless can_transcribe?
-    return { success: true, transcript: cached_transcript } if cached_transcript.present?
+
+    if cached_transcript.present?
+      persist_cached_transcript!
+      return { success: true, transcript: cached_transcript }
+    end
 
     transcript = transcribe_recording.to_s.strip
     return { error: 'Empty transcript' } if transcript.blank?
 
-    update_call_and_message!(transcript)
+    update_call_and_message!(transcript, source: 'audio_transcription')
     account.increment_response_usage
 
     { success: true, transcript: transcript }
@@ -42,7 +46,47 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
 
   def cached_transcript
     call_session.metadata&.dig('recording', 'transcription', 'text').presence ||
+      ai_voice_runtime_transcript.presence ||
       voice_message&.content_attributes&.dig('data', 'transcript').presence
+  end
+
+  def persist_cached_transcript!
+    return if recording_metadata.dig('transcription', 'status') == 'completed'
+
+    update_call_and_message!(cached_transcript, source: cached_transcript_source)
+  end
+
+  def cached_transcript_source
+    if recording_metadata.dig('transcription', 'text').present?
+      return recording_metadata.dig('transcription', 'source').presence || 'audio_transcription'
+    end
+    return 'ai_voice_runtime' if ai_voice_runtime_transcript.present?
+
+    'voice_message'
+  end
+
+  def ai_voice_runtime_transcript
+    @ai_voice_runtime_transcript ||= begin
+      raw_transcript = call_session.metadata&.dig('ai_voice', 'transcript', 'final_items').presence ||
+                       call_session.metadata&.dig('ai_voice', 'final_transcript')
+      format_runtime_transcript(raw_transcript)
+    end
+  end
+
+  def format_runtime_transcript(raw_transcript)
+    return raw_transcript if raw_transcript.is_a?(String)
+
+    Array(raw_transcript).filter_map do |raw_item|
+      item = raw_item.to_h.with_indifferent_access
+      text = item[:text].to_s.strip
+      next if text.blank?
+
+      "#{transcript_speaker_label(item[:speaker])}: #{text}"
+    end.join("\n")
+  end
+
+  def transcript_speaker_label(speaker)
+    speaker.to_s.in?(%w[caller customer contact user]) ? 'Клиент' : 'Оператор'
   end
 
   def transcribe_recording
@@ -136,7 +180,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
     recording.is_a?(Hash) ? recording.deep_stringify_keys : {}
   end
 
-  def update_call_and_message!(transcript)
+  def update_call_and_message!(transcript, source:)
     transcript_ref = "call_recording_transcript:#{call_session.external_call_ref}"
 
     call_session.with_lock do
@@ -144,7 +188,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
       recording = metadata['recording'] ||= {}
       recording['transcription'] = {
         'status' => 'completed',
-        'source' => 'audio_transcription',
+        'source' => source,
         'text' => transcript,
         'completed_at' => Time.current.iso8601
       }

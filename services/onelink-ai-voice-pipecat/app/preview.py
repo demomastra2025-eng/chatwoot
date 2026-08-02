@@ -142,7 +142,9 @@ async def create_preview_reservation(
     context = VoiceContext.model_validate(raw)
     context.ai.max_duration_sec = min(context.ai.max_duration_sec, PREVIEW_SESSION_MAX_SECONDS)
     try:
-        request.app.state.settings.provider_credentials(context.ai.provider)
+        request.app.state.settings.provider_credentials(
+            context.ai.provider, stt_provider=context.ai.stt_provider
+        )
     except ValueError as error:
         return JSONResponse(
             status_code=503,

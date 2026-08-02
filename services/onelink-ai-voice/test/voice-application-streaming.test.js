@@ -2694,6 +2694,32 @@ test('VoiceApplication treats direct AI app route decisions as local realtime se
   await result.completion;
 });
 
+test('VoiceApplication preserves a Pipecat candidate on the Rails route identity', async () => {
+  const routeRequests = [];
+  const app = new VoiceApplication({
+    client: {
+      async routeInbound(payload, options) {
+        routeRequests.push({ payload, options });
+        return { action: 'ai', reason: 'voice_agent_sip_profile_route' };
+      }
+    }
+  });
+  const requestPayload = {
+    call_ref: 'call-pipecat-route-identity',
+    runtime_engine: 'pipecat',
+    account_id: 530,
+    inbox_id: 4865
+  };
+
+  await app.routeInboundSafely(requestPayload, requestPayload.call_ref);
+
+  assert.equal(requestPayload.runtime_engine, 'pipecat');
+  assert.match(requestPayload.runtime_session_id, /^ai_/);
+  assert.equal(routeRequests[0].payload.runtime_engine, 'pipecat');
+  assert.equal(routeRequests[0].payload.runtime_session_id, requestPayload.runtime_session_id);
+  assert.deepEqual(routeRequests[0].options.capabilities, ['callback_handoff_v1']);
+});
+
 test('VoiceApplication uses inline AI context from route decision without a second context request', async () => {
   const stream = new FakeVoiceStream();
   let realtimeCallbacks;

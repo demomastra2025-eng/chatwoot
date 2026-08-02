@@ -26,18 +26,21 @@ class Telephony::AiVoice::VoiceActivitySettings
       'vad_min_volume' => 0.7
     }.freeze
   }.freeze
+  PROFILE_SETTING_KEYS = PROFILES.values.flat_map(&:keys).uniq.freeze
   DEFAULTS = {
     'voice_activity_profile' => DEFAULT_PROFILE,
     **PROFILES.fetch(DEFAULT_PROFILE)
   }.freeze
 
   class << self
-    def normalize!(normalized)
+    def normalize!(normalized, explicit_keys: [])
+      explicit_profile_settings = normalized.slice(*(PROFILE_SETTING_KEYS & explicit_keys))
       profile = normalized['voice_activity_profile']
       profile = DEFAULT_PROFILE unless PROFILES.key?(profile)
 
       normalized['voice_activity_profile'] = profile
       normalized.merge!(PROFILES.fetch(profile))
+      normalized.merge!(explicit_profile_settings) unless explicit_keys.include?('voice_activity_profile')
     end
   end
 end

@@ -8,6 +8,25 @@ class Telephony::AiVoice::ToolDispatchService
   REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 900
   VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS = 0.5
 
+  VOICE_CRM_MUTATION_GUIDANCE = {
+    'add_contact_note' => [
+      'For voice calls, write customer-provided phone data only after the caller finishes,',
+      'the full country-code number is repeated back, and the caller explicitly confirms it.'
+    ].join(' '),
+    'create_deal' => [
+      'For voice calls, use the actual call channel as the CRM source;',
+      'never infer Telegram, WhatsApp, or another messaging source from a template.'
+    ].join(' ')
+  }.freeze
+  CRM_CHANNEL_SOURCE_PATTERNS = {
+    telegram: /(?:(?:лид|заявк[а-я]*|обращени[а-я]*|lead)\s+(?:из|с|from)\s+|(?:источник|source)\s*[:=-]?\s*)(?:telegram|телеграм)/i,
+    whatsapp: /(?:(?:лид|заявк[а-я]*|обращени[а-я]*|lead)\s+(?:из|с|from)\s+|(?:источник|source)\s*[:=-]?\s*)(?:whatsapp|ватсап|вотсап)/i,
+    instagram: /(?:(?:лид|заявк[а-я]*|обращени[а-я]*|lead)\s+(?:из|с|from)\s+|(?:источник|source)\s*[:=-]?\s*)(?:instagram|инстаграм)/i,
+    facebook: /(?:(?:лид|заявк[а-я]*|обращени[а-я]*|lead)\s+(?:из|с|from)\s+|(?:источник|source)\s*[:=-]?\s*)(?:facebook|фейсбук)/i
+  }.freeze
+  VOICE_PHONE_CONTEXT_PATTERN = /(?:телефон|phone|мобильн|whatsapp|ватсап)/i
+  VOICE_PHONE_CANDIDATE_PATTERN = /\+?[\d\s().-]{5,}/
+
   VOICE_TOOL_CATALOG = [
     {
       name: 'find_contact',
@@ -33,7 +52,11 @@ class Telephony::AiVoice::ToolDispatchService
         properties: {
           phone_number: { type: 'string', description: 'Customer phone number' },
           name: { type: 'string', description: 'Customer name' },
-          email: { type: 'string', description: 'Customer email' }
+          email: { type: 'string', description: 'Customer email' },
+          voice_caller_confirmed: {
+            type: 'boolean',
+            description: 'True only after the caller explicitly confirms a dictated phone number'
+          }
         }
       }
     },
@@ -73,7 +96,8 @@ class Telephony::AiVoice::ToolDispatchService
     },
     {
       name: 'end_call',
-      description: 'End the current voice call when the conversation is complete.',
+      description: 'End the current voice call when the caller asks to hang up or the conversation is complete. ' \
+                   'Never ask for confirmation and do not announce the hangup: runtime speaks the configured closing message before disconnecting.',
       timeout_ms: 5_000,
       realtime_safe: true,
       parameters: {
@@ -188,22 +212,42 @@ class Telephony::AiVoice::ToolDispatchService
       name = definition['name'].to_s
       next if name.blank?
 
+      type = json_schema_type(definition['type'])
       properties[name] = {
-        type: json_schema_type(definition['type']),
+        type: type,
         description: definition['description'].to_s
       }.compact
+      properties[name][:items] = { type: 'string' } if type == 'array'
       required << name if ActiveModel::Type::Boolean.new.cast(definition['required'])
+    end
+
+    if tool.with_indifferent_access[:id].to_s == 'add_contact_note'
+      properties['voice_caller_confirmed'] = {
+        type: 'boolean',
+        description: 'Set true only after the caller explicitly confirms the complete phone number repeated back by the assistant.'
+      }
     end
 
     { type: 'object', properties: properties, required: required.presence }.compact
   end
 
   def self.captain_parameter_definitions(captain_assistant, tool)
-    if ActiveModel::Type::Boolean.new.cast(tool[:custom])
-      custom_tool = captain_assistant.account.captain_custom_tools.enabled.find_by(slug: tool[:id].to_s)
-      return custom_tool.runtime_parameter_definitions(Captain::ToolAccess::SCOPE_AGENT) if custom_tool
-    end
+    runtime_tool = Captain::ToolCatalog.build_tool(
+      tool,
+      assistant: captain_assistant,
+      scope_name: Captain::ToolAccess::SCOPE_AGENT
+    )
+    return [] unless runtime_tool.respond_to?(:parameters)
 
+    runtime_tool.parameters.values.map do |parameter|
+      {
+        'name' => parameter.name.to_s,
+        'type' => parameter.type.to_s,
+        'description' => parameter.description.to_s,
+        'required' => parameter.required
+      }
+    end
+  rescue ArgumentError, KeyError, NameError
     []
   end
 
@@ -212,7 +256,7 @@ class Telephony::AiVoice::ToolDispatchService
       return 'Search approved FAQ and knowledge base before answering factual company, service, tariff, document, or slogan questions.'
     end
 
-    description.to_s
+    [description.to_s, VOICE_CRM_MUTATION_GUIDANCE[tool_id]].compact.join(' ')
   end
 
   def self.json_schema_type(type)
@@ -274,10 +318,17 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_create_contact
-    phone_number = arguments['phone_number'].presence || call_session&.from_number
+    explicit_phone_number = arguments['phone_number'].presence
+    phone_number = explicit_phone_number || call_session&.from_number
     if phone_number.blank?
       raise Telephony::Error.new(code: 'PHONE_NUMBER_REQUIRED', message: 'phone_number is required',
                                  status: :unprocessable_content)
+    end
+    if explicit_phone_number.present?
+      ensure_confirmed_voice_phone!(
+        [explicit_phone_number],
+        caller_confirmed: arguments['voice_caller_confirmed']
+      )
     end
 
     contact = account.contacts.find_or_initialize_by(phone_number: phone_number)
@@ -425,6 +476,7 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_captain_tool
+    ensure_voice_crm_source!
     tool = Captain::ToolCatalog.build_tool(
       captain_tool_definition,
       assistant: captain_assistant,
@@ -444,6 +496,25 @@ class Telephony::AiVoice::ToolDispatchService
       tool_name: tool_name,
       result: Captain::ToolResult.failure_output(error: e)
     }
+  end
+
+  def ensure_voice_crm_source!
+    return unless tool_name == 'create_deal'
+
+    declared_source = CRM_CHANNEL_SOURCE_PATTERNS.find do |_source, pattern|
+      arguments['title'].to_s.match?(pattern)
+    end&.first
+    return if declared_source.blank? || declared_source == voice_crm_source
+
+    raise Telephony::Error.new(
+      code: 'VOICE_CRM_SOURCE_MISMATCH',
+      message: 'CRM deal source does not match the current voice call channel',
+      status: :unprocessable_content
+    )
+  end
+
+  def voice_crm_source
+    whatsapp_cloud_runtime? ? :whatsapp : :phone
   end
 
   def allowed_tool?
@@ -534,7 +605,45 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def captain_tool_arguments
-    arguments.to_h.transform_keys(&:to_sym)
+    tool_arguments = arguments.to_h.deep_dup
+    return tool_arguments.transform_keys(&:to_sym) unless tool_name == 'add_contact_note'
+
+    caller_confirmed = tool_arguments.delete('voice_caller_confirmed')
+    phone_candidates = voice_phone_candidates(tool_arguments)
+    return tool_arguments.transform_keys(&:to_sym) if phone_candidates.blank?
+
+    ensure_confirmed_voice_phone!(phone_candidates, caller_confirmed: caller_confirmed)
+    tool_arguments.transform_keys(&:to_sym)
+  end
+
+  def ensure_confirmed_voice_phone!(phone_candidates, caller_confirmed:)
+    full_phone_present = phone_candidates.any? do |candidate|
+      candidate.strip.start_with?('+') && candidate.gsub(/\D/, '').length.between?(10, 15)
+    end
+    unless full_phone_present
+      raise Telephony::Error.new(
+        code: 'VOICE_CRM_PHONE_INCOMPLETE',
+        message: 'Confirmed phone number must include a full country code',
+        status: :unprocessable_content
+      )
+    end
+    return if ActiveModel::Type::Boolean.new.cast(caller_confirmed)
+
+    raise Telephony::Error.new(
+      code: 'VOICE_CRM_PHONE_CONFIRMATION_REQUIRED',
+      message: 'Caller confirmation is required before storing phone data',
+      status: :unprocessable_content
+    )
+  end
+
+  def voice_phone_candidates(tool_arguments)
+    content = tool_arguments.values_at('content', 'note', 'body').compact.join(' ')
+    candidates = content.scan(VOICE_PHONE_CANDIDATE_PATTERN)
+    phone_context = content.match?(VOICE_PHONE_CONTEXT_PATTERN)
+    explicit_international_number = candidates.any? { |candidate| candidate.strip.start_with?('+') }
+    return [] unless phone_context || explicit_international_number
+
+    candidates
   end
 
   def captain_tool_execution_arguments

@@ -20,6 +20,7 @@ from app.sessions.runner import (
     _execute_tool_action,
     _filter_tools_for_transport,
     _rails_manages_end_call,
+    _runtime_session_id,
 )
 
 
@@ -40,6 +41,27 @@ def test_tenant_scope_rejects_inbox_mismatch():
     assert raised.value.code == "inbox_scope_mismatch"
 
 
+def test_runtime_session_id_prefers_route_identity_over_media_stream_identity():
+    assert (
+        _runtime_session_id(
+            {
+                "runtime_session_id": "runtime-route-pipecat-1",
+                "runtime_stream": {"runtime_session_id": "runtime-media-stream-1"},
+            },
+            call_ref="call-1",
+        )
+        == "runtime-route-pipecat-1"
+    )
+    assert (
+        _runtime_session_id(
+            {"runtime_stream": {"runtime_session_id": "runtime-media-stream-1"}},
+            call_ref="call-1",
+        )
+        == "runtime-media-stream-1"
+    )
+    assert _runtime_session_id({}, call_ref="call-1") == "preflight:call-1"
+
+
 def test_tenant_scope_allows_missing_inbox_on_either_side():
     context = SimpleNamespace(account_id=42, inbox_id=None, call_ref="call-1")
 
@@ -58,7 +80,8 @@ class WatchdogAssembly:
         self.messages = []
         self.cancellations = []
         self.worker = self
-        self.activity = SimpleNamespace(bot_speaking=False)
+        self.activity = SimpleNamespace(bot_speaking=False, user_speaking=False)
+        self.tool_dialogue = SimpleNamespace(awaiting_continuation=False)
 
     async def speak_exact(self, message):
         self.messages.append(message)
@@ -97,6 +120,20 @@ class FailingContextClient:
     async def finalize_call(self, correlation, **kwargs):
         self.finalizations.append((correlation, kwargs))
         return {"status": "ok"}
+
+
+class SuccessfulContextClient:
+    def __init__(self, context):
+        self.context = context
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def get_context(self, _payload):
+        return self.context
 
 
 class RecordingRuntimeControlClient:
@@ -215,6 +252,140 @@ async def test_silence_watchdog_waits_while_assistant_is_speaking():
 
 
 @pytest.mark.asyncio
+async def test_silence_watchdog_waits_while_caller_is_speaking():
+    context = SimpleNamespace(
+        ai=SimpleNamespace(
+            max_duration_sec=900,
+            silence_prompt_enabled=True,
+            silence_prompt_after_ms=1,
+            second_silence_prompt_after_ms=0,
+            max_silence_ms=0,
+            end_call_on_silence_enabled=True,
+            silence_prompt="Вы меня слышите?",
+            second_silence_prompt="Остаётесь на линии?",
+            final_silence_message="Завершаю звонок.",
+        )
+    )
+    state = SimpleNamespace(
+        user_turn=1,
+        tool_in_progress=False,
+        last_activity_monotonic=time.monotonic() - 60,
+    )
+    assembly = WatchdogAssembly()
+    assembly.activity.user_speaking = True
+    terminal = TerminalDecision()
+    task = asyncio.create_task(
+        PipecatSessionRunner._watchdog(
+            cast(Any, None),
+            cast(Any, context),
+            cast(Any, state),
+            cast(Any, assembly),
+            terminal,
+            {"action": None},
+            None,
+        )
+    )
+
+    await asyncio.sleep(0.25)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert assembly.messages == []
+    assert assembly.cancellations == []
+    assert terminal.decided is False
+
+
+@pytest.mark.asyncio
+async def test_silence_watchdog_stays_quiet_after_end_call_is_requested():
+    context = SimpleNamespace(
+        ai=SimpleNamespace(
+            max_duration_sec=900,
+            silence_prompt_enabled=True,
+            silence_prompt_after_ms=1,
+            second_silence_prompt_after_ms=0,
+            max_silence_ms=0,
+            end_call_on_silence_enabled=True,
+            silence_prompt="Вы меня слышите?",
+            second_silence_prompt="Остаётесь на линии?",
+            final_silence_message="Завершаю звонок.",
+        )
+    )
+    state = SimpleNamespace(
+        user_turn=0,
+        tool_in_progress=False,
+        termination_requested=True,
+        last_activity_monotonic=time.monotonic() - 60,
+    )
+    assembly = WatchdogAssembly()
+    terminal = TerminalDecision()
+    task = asyncio.create_task(
+        PipecatSessionRunner._watchdog(
+            cast(Any, None),
+            cast(Any, context),
+            cast(Any, state),
+            cast(Any, assembly),
+            terminal,
+            {"action": None},
+            None,
+        )
+    )
+
+    await asyncio.sleep(0.25)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert assembly.messages == []
+    assert assembly.cancellations == []
+    assert terminal.decided is False
+
+
+@pytest.mark.asyncio
+async def test_silence_watchdog_waits_for_post_tool_model_continuation():
+    context = SimpleNamespace(
+        ai=SimpleNamespace(
+            max_duration_sec=900,
+            silence_prompt_enabled=True,
+            silence_prompt_after_ms=1,
+            second_silence_prompt_after_ms=0,
+            max_silence_ms=0,
+            end_call_on_silence_enabled=True,
+            silence_prompt="Вы меня слышите?",
+            second_silence_prompt="Остаётесь на линии?",
+            final_silence_message="Завершаю звонок.",
+        )
+    )
+    state = SimpleNamespace(
+        user_turn=0,
+        tool_in_progress=False,
+        last_activity_monotonic=time.monotonic() - 60,
+    )
+    assembly = WatchdogAssembly()
+    assembly.tool_dialogue.awaiting_continuation = True
+    terminal = TerminalDecision()
+    task = asyncio.create_task(
+        PipecatSessionRunner._watchdog(
+            cast(Any, None),
+            cast(Any, context),
+            cast(Any, state),
+            cast(Any, assembly),
+            terminal,
+            {"action": None},
+            None,
+        )
+    )
+
+    await asyncio.sleep(0.25)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert assembly.messages == []
+    assert terminal.decided is False
+
+
+@pytest.mark.asyncio
 async def test_max_silence_speaks_then_ends_transport_before_pipeline_cancel():
     events = []
     context = SimpleNamespace(
@@ -239,7 +410,8 @@ async def test_max_silence_speaks_then_ends_transport_before_pipeline_cancel():
     class OrderedAssembly:
         def __init__(self):
             self.worker = self
-            self.activity = SimpleNamespace(bot_speaking=False)
+            self.activity = SimpleNamespace(bot_speaking=False, user_speaking=False)
+            self.tool_dialogue = SimpleNamespace(awaiting_continuation=False)
 
         async def speak_exact(self, message):
             events.append(("speech", message))
@@ -498,6 +670,48 @@ async def test_terminal_control_timeout_is_bounded_and_preserves_ambiguous_trans
         )
 
     assert requested_action == {"action": "transfer"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stt_provider", "elevenlabs_api_key"),
+    [("fish", ""), ("elevenlabs", "elevenlabs-secret")],
+)
+async def test_fish_preflight_accepts_both_stt_variants(
+    monkeypatch, tmp_path, stt_provider, elevenlabs_api_key
+):
+    raw_context = {
+        "call_ref": "sipuni:janus-ai:fish-preflight",
+        "account_id": 42,
+        "ai": {
+            "provider": "fish",
+            "stt_provider": stt_provider,
+            "model": "openai/gpt-5.4-mini",
+            "voice": "fish-voice-ref",
+            "system_prompt": "Test prompt",
+        },
+    }
+    client = SuccessfulContextClient(raw_context)
+    monkeypatch.setattr(runner_module, "OnelinkClient", lambda **_kwargs: client)
+    runner = PipecatSessionRunner(
+        Settings.model_validate(
+            {
+                "internal_token": "voice-secret",
+                "callback_base_url": "http://rails.internal",
+                "callback_token": "callback-secret",
+                "fish_api_key": "fish-secret",
+                "openrouter_api_key": "openrouter-secret",
+                "elevenlabs_api_key": elevenlabs_api_key,
+                "recording_root": tmp_path,
+            }
+        )
+    )
+
+    result = await runner.preflight(
+        {"call_ref": raw_context["call_ref"], "account_id": 42}
+    )
+
+    assert result["ai"]["stt_provider"] == stt_provider
 
 
 @pytest.mark.asyncio

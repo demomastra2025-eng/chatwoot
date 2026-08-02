@@ -91,16 +91,56 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
              call_ref: call_session.external_call_ref,
              account_id: account.id,
              tool_call_id: 'create-contact-1',
-             arguments: { phone_number: '+15555552222', name: 'Voice Lead', email: 'voice@example.test' }
+             arguments: {
+               phone_number: '+15551232222',
+               name: 'Voice Lead',
+               email: 'voice@example.test',
+               voice_caller_confirmed: true
+             }
            },
            headers: { 'Authorization' => 'Bearer voice-secret' },
            as: :json
     end
 
     expect(response).to have_http_status(:ok)
-    contact = account.contacts.find_by!(phone_number: '+15555552222')
+    contact = account.contacts.find_by!(phone_number: '+15551232222')
     expect(contact).to have_attributes(name: 'Voice Lead', email: 'voice@example.test')
     expect(response.parsed_body.dig('result', 'contact', 'id')).to eq(contact.id)
+  end
+
+  it 'rejects a dictated contact phone until the caller confirms it' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/create_contact',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             tool_call_id: 'create-contact-unconfirmed',
+             arguments: { phone_number: '+15551232223', name: 'Unconfirmed Lead' }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['error']).to eq('VOICE_CRM_PHONE_CONFIRMATION_REQUIRED')
+    expect(account.contacts.find_by(phone_number: '+15551232223')).to be_nil
+  end
+
+  it 'uses the provider caller id without requiring dictated-number confirmation' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/tools/create_contact',
+           params: {
+             call_ref: call_session.external_call_ref,
+             account_id: account.id,
+             tool_call_id: 'create-contact-caller-id',
+             arguments: { name: 'Caller ID Lead' }
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(account.contacts.find_by!(phone_number: call_session.from_number).name).to eq('Caller ID Lead')
   end
 
   it 'creates a private note without sending anything to the caller' do

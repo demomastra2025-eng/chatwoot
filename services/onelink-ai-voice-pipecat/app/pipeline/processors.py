@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import re
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from pipecat.audio.utils import create_stream_resampler
 from pipecat.frames.frames import (
@@ -17,6 +20,7 @@ from pipecat.frames.frames import (
     TranscriptionFrame,
     TTSAudioRawFrame,
     UserStartedSpeakingFrame,
+    UserStoppedSpeakingFrame,
 )
 from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 
@@ -80,6 +84,7 @@ class TurnLifecycleProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, UserStartedSpeakingFrame):
             self._state.touch_user()
+            await self._activity.user_started()
             if self._activity.bot_speaking:
                 self._state.spawn(
                     self._state.safe_control(
@@ -87,8 +92,14 @@ class TurnLifecycleProcessor(FrameProcessor):
                         {"runtime_engine": "pipecat"},
                     )
                 )
+        elif isinstance(frame, UserStoppedSpeakingFrame):
+            self._state.touch()
+            await self._activity.user_stopped()
         elif isinstance(frame, InterimTranscriptionFrame):
+            self._state.touch()
             await self._record_caller(frame, final=False)
+        elif isinstance(frame, TranscriptionFrame):
+            self._state.touch()
         await self.push_frame(frame, direction)
 
     async def _record_caller(self, frame: TranscriptionFrame, *, final: bool) -> None:
@@ -100,6 +111,67 @@ class TurnLifecycleProcessor(FrameProcessor):
         )
         if final:
             self._state.spawn(self._state.flush_transcript())
+
+
+class CallerCommandProcessor(FrameProcessor):
+    """Execute terminal caller commands without relying on an LLM tool decision."""
+
+    def __init__(self, state: SessionState, *, end_call_timeout_ms: int):
+        super().__init__()
+        self._state = state
+        self._end_call_timeout_ms = end_call_timeout_ms
+        self._end_call_requested = False
+        self._end_call_executor: Callable[
+            [dict[str, str], str, int], Awaitable[dict[str, Any]]
+        ] | None = None
+        runtime_id = state.correlation.runtime_session_id
+        digest = hashlib.sha256(runtime_id.encode()).hexdigest()[:24]
+        self._tool_call_id = f"caller-intent-end-call:{digest}"
+
+    def bind_end_call(
+        self,
+        executor: Callable[
+            [dict[str, str], str, int], Awaitable[dict[str, Any]]
+        ],
+    ) -> None:
+        self._end_call_executor = executor
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if (
+            direction == FrameDirection.UPSTREAM
+            and isinstance(frame, TranscriptionFrame)
+            and not isinstance(frame, InterimTranscriptionFrame)
+            and not self._end_call_requested
+            and caller_requested_end_call(frame.text)
+        ):
+            self._end_call_requested = True
+            self._state.spawn(self._execute_end_call())
+        await self.push_frame(frame, direction)
+
+    async def _execute_end_call(self) -> None:
+        self._state.spawn(
+            self._state.safe_control(
+                "tool_requested_end_call",
+                {"source": "caller_transcript"},
+                tool_call_id=self._tool_call_id,
+                tool_name="end_call",
+            )
+        )
+        arguments = {"reason": "caller_requested_end_call", "ended_by": "caller"}
+        if self._end_call_executor is not None:
+            await self._end_call_executor(
+                arguments,
+                self._tool_call_id,
+                self._end_call_timeout_ms,
+            )
+        else:
+            await self._state.execute_tool(
+                "end_call",
+                arguments,
+                self._tool_call_id,
+                timeout_ms=self._end_call_timeout_ms,
+            )
 
 
 class AssistantLifecycleProcessor(FrameProcessor):
@@ -132,6 +204,7 @@ class AssistantLifecycleProcessor(FrameProcessor):
 class ConversationActivity:
     def __init__(self) -> None:
         self.bot_speaking = False
+        self.user_speaking = False
         self.turns_started = 0
         self.turns_completed = 0
         self.speech_lock = asyncio.Lock()
@@ -149,6 +222,16 @@ class ConversationActivity:
             self.turns_completed += 1
             self._changed.notify_all()
 
+    async def user_started(self) -> None:
+        async with self._changed:
+            self.user_speaking = True
+            self._changed.notify_all()
+
+    async def user_stopped(self) -> None:
+        async with self._changed:
+            self.user_speaking = False
+            self._changed.notify_all()
+
     async def wait_for_turn_started_after(self, sequence: int, timeout: float) -> bool:
         return await self._wait_for(lambda: self.turns_started > sequence, timeout)
 
@@ -163,3 +246,32 @@ class ConversationActivity:
             return True
         except TimeoutError:
             return False
+
+
+_END_CALL_NEGATION = re.compile(
+    r"\bне\s+(?:(?:надо|нужно)\s+)?(?:сбрасывай|сбрасывать|сбросить|клади|положить|"
+    r"завершай|завершить|заканчивай|закончить|отключайся|отключаться)\b"
+)
+_NON_TERMINAL_RESET = re.compile(r"\bсброс\w*\s+(?:настрой\w*|парол\w*|данн\w*)\b")
+_END_CALL_PATTERNS = (
+    re.compile(r"\b(?:сбрось|сбросите|сбросить)\s+(?:трубку|звонок|вызов)\b"),
+    re.compile(r"\b(?:положи|положите|клади)\s+трубку\b"),
+    re.compile(
+        r"\b(?:заверши|завершите|завершить|закончим|закончить|прекрати|прекратите)\s+"
+        r"(?:этот\s+)?(?:звонок|разговор|вызов)\b"
+    ),
+    re.compile(r"\b(?:отключись|отключитесь)\b"),
+    re.compile(r"\b(?:hang\s*up|end\s+the\s+call)\b"),
+    re.compile(r"\b(?:қоңырауды\s+аяқта|тұтқаны\s+қой)\b"),
+)
+
+
+def caller_requested_end_call(text: str) -> bool:
+    normalized = " ".join(text.lower().replace("ё", "е").split())
+    if (
+        not normalized
+        or _END_CALL_NEGATION.search(normalized)
+        or _NON_TERMINAL_RESET.search(normalized)
+    ):
+        return False
+    return any(pattern.search(normalized) for pattern in _END_CALL_PATTERNS)

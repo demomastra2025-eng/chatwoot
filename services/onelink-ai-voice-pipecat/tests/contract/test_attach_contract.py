@@ -84,6 +84,7 @@ def test_janus_preflight_validates_provider_before_answer(fixture_json):
     payload = fixture_json("janus_attach.json")
     payload.pop("runtime_stream")
     payload.pop("runtime_control", None)
+    payload["runtime_session_id"] = "runtime-route-pipecat-1"
     with TestClient(app) as client:
         response = client.post(
             "/internal/janus-sip/preflight",
@@ -94,6 +95,7 @@ def test_janus_preflight_validates_provider_before_answer(fixture_json):
     assert response.status_code == 200
     assert response.json() == {"status": "ready", "runtime_engine": "pipecat"}
     assert observed[0]["call_ref"] == "sipuni:janus-ai:call-1"
+    assert observed[0]["runtime_session_id"] == "runtime-route-pipecat-1"
 
 
 def test_janus_attach_rejects_failed_provider_preflight_before_202(fixture_json):

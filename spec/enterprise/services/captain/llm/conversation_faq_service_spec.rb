@@ -22,6 +22,7 @@ RSpec.describe Captain::Llm::ConversationFaqService do
     allow(RubyLLM).to receive(:chat).and_return(mock_chat)
     allow(mock_chat).to receive(:with_temperature).and_return(mock_chat)
     allow(mock_chat).to receive(:with_params).and_return(mock_chat)
+    allow(mock_chat).to receive(:with_headers).and_return(mock_chat)
     allow(mock_chat).to receive(:with_instructions).and_return(mock_chat)
     allow(mock_chat).to receive(:with_schema).and_return(mock_chat)
     allow(mock_chat).to receive(:model).and_return(instance_double('RubyLLM::Model::Info', id: 'gpt-5.4-mini'))
@@ -32,7 +33,7 @@ RSpec.describe Captain::Llm::ConversationFaqService do
     context 'when successful' do
       before do
         allow(embedding_service).to receive(:get_embedding).and_return([0.1, 0.2, 0.3])
-        allow(captain_assistant.responses).to receive(:nearest_neighbors).and_return([])
+        allow(service).to receive(:find_similar_faqs).and_return([])
       end
 
       it 'creates new FAQs for valid conversation content' do
@@ -67,7 +68,7 @@ RSpec.describe Captain::Llm::ConversationFaqService do
       context 'when the conversation has a finalized voice transcript only in call-session metadata' do
         before do
           allow(embedding_service).to receive(:get_embedding).and_return([0.1, 0.2, 0.3])
-          allow(captain_assistant.responses).to receive(:nearest_neighbors).and_return([])
+          allow(service).to receive(:find_similar_faqs).and_return([])
           create(
             :telephony_call_session,
             account: conversation.account,
@@ -95,6 +96,50 @@ RSpec.describe Captain::Llm::ConversationFaqService do
       end
     end
 
+    context 'with explicit current-call content' do
+      let(:conversation) { create(:conversation) }
+      let(:current_call_content) { "Caller: Можно оплатить картой?\nAssistant: Да, можно." }
+      let(:service) { described_class.new(captain_assistant, conversation, content: current_call_content) }
+
+      before do
+        allow(embedding_service).to receive(:get_embedding).and_return([0.1, 0.2, 0.3])
+        allow(service).to receive(:find_similar_faqs).and_return([])
+      end
+
+      it 'uses only the supplied call transcript and treats the caller label as human interaction' do
+        expect(mock_chat).to receive(:ask).with(current_call_content).and_return(mock_response)
+
+        service.generate_and_deduplicate
+      end
+    end
+
+    context 'when finding lexical duplicates' do
+      let(:conversation) { create(:conversation, account: captain_assistant.account, first_reply_created_at: Time.zone.now) }
+      let(:sample_faqs) do
+        [{ 'question' => 'Как звучит слоган компании?', 'answer' => 'Акуна Матата!' }]
+      end
+
+      before do
+        create(
+          :captain_assistant_response,
+          account: captain_assistant.account,
+          assistant: nil,
+          visibility: :general,
+          question: 'Назовите слоган компании',
+          answer: 'акуна матата',
+          status: 'approved'
+        )
+      end
+
+      it 'does not invoke embeddings or create pending FAQ for the same normalized answer' do
+        expect(embedding_service).not_to receive(:get_embedding)
+
+        expect do
+          service.generate_and_deduplicate
+        end.not_to change(captain_assistant.responses, :count)
+      end
+    end
+
     context 'when finding duplicates' do
       let(:existing_response) do
         create(:captain_assistant_response, assistant: captain_assistant, question: 'Similar question', answer: 'Similar answer')
@@ -110,7 +155,7 @@ RSpec.describe Captain::Llm::ConversationFaqService do
 
       before do
         allow(embedding_service).to receive(:get_embedding).and_return([0.1, 0.2, 0.3])
-        allow(captain_assistant.responses).to receive(:nearest_neighbors).and_return([similar_neighbor])
+        allow(service).to receive(:find_similar_faqs).and_return([similar_neighbor])
       end
 
       it 'filters out duplicate FAQs based on embedding similarity' do
@@ -172,7 +217,7 @@ RSpec.describe Captain::Llm::ConversationFaqService do
 
       before do
         allow(embedding_service).to receive(:get_embedding).and_return([0.1, 0.2, 0.3])
-        allow(captain_assistant.responses).to receive(:nearest_neighbors).and_return([])
+        allow(service).to receive(:find_similar_faqs).and_return([])
       end
 
       it 'uses account language for system prompt' do

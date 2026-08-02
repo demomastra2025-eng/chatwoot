@@ -16,12 +16,18 @@ class ContextModel(BaseModel):
 
 
 class AiSettings(ContextModel):
-    provider: Literal["gemini-live", "openai-realtime", "elevenlabs", "cartesia"] = (
+    provider: Literal["gemini-live", "openai-realtime", "elevenlabs", "cartesia", "fish"] = (
         "gemini-live"
     )
+    stt_provider: Literal["elevenlabs", "fish"] = "elevenlabs"
     model: str = Field(min_length=1, max_length=200)
     voice: str = Field(min_length=1, max_length=100)
     language: str = Field(default="ru-KZ", min_length=2, max_length=20)
+    input_language_priorities: list[str] = Field(
+        default_factory=lambda: ["ru-KZ", "kk-KZ", "en-US"],
+        min_length=1,
+        max_length=4,
+    )
     api_version: Literal["v1alpha", "v1beta"] = "v1beta"
     system_prompt: str = Field(min_length=1, max_length=100_000)
     first_message: str | None = Field(default=None, max_length=2_000)

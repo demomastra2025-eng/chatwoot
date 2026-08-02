@@ -15,8 +15,10 @@ class FakeState:
         self.result = result or {"answer": "готово"}
         self.gate = gate
         self.controls = []
+        self.events = []
         self.tasks = []
         self.executions = 0
+        self.termination_requested = False
 
     async def execute_tool(self, *_args, **_kwargs):
         self.executions += 1
@@ -28,9 +30,17 @@ class FakeState:
         self.controls.append((action, payload or {}, metadata))
         return True
 
-    def spawn(self, work: Coroutine[Any, Any, Any]) -> None:
+    async def safe_event(self, event, payload=None):
+        self.events.append((event, payload or {}))
+        return True
+
+    def request_termination(self):
+        self.termination_requested = True
+
+    def spawn(self, work: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(work)
         self.tasks.append(task)
+        return task
 
 
 class Params(SimpleNamespace):
@@ -52,8 +62,10 @@ def ai_settings(**overrides):
     return AiSettings(**values)
 
 
-def definition(name="faq_lookup"):
-    return ToolDefinition(name=name, timeout_ms=5_000)
+def definition(name="faq_lookup", **overrides):
+    values = {"name": name, "timeout_ms": 5_000}
+    values.update(overrides)
+    return ToolDefinition(**values)
 
 
 async def execute_with_answer(
@@ -212,29 +224,155 @@ async def test_terminal_tool_never_speaks_progress_filler():
 
 
 @pytest.mark.asyncio
-async def test_gemini_tool_does_not_inject_progress_as_a_user_turn():
-    gate = asyncio.Event()
-    state = FakeState(gate=gate)
+async def test_end_call_speaks_closing_message_once_before_the_terminal_action():
+    state = FakeState(result={"action": "end_call"})
     activity = ConversationActivity()
     spoken = []
 
     async def speak(message):
         spoken.append(message)
+        return True
 
     coordinator = ToolDialogueCoordinator(
-        ai=ai_settings(provider="gemini-live", tool_start_after_ms=5),
+        ai=ai_settings(closing_message="Спасибо за звонок. До свидания!"),
         state=state,
         activity=activity,
     )
     coordinator.bind(speak_exact=speak, run_instruction=speak)
+
+    results = await execute_with_answer(coordinator, activity, definition("end_call"))
+    duplicate = await coordinator.execute_end_call({}, "duplicate-end-call", 5_000)
+
+    assert results == [{"action": "end_call"}]
+    assert duplicate == {"action": "end_call"}
+    assert spoken == ["Спасибо за звонок. До свидания!"]
+    assert state.executions == 1
+    assert state.termination_requested is True
+    assert state.events == [("closing_message_completed", {"spoken": True})]
+
+
+@pytest.mark.asyncio
+async def test_end_call_does_not_wait_indefinitely_for_closing_speech(monkeypatch):
+    monkeypatch.setattr("app.pipeline.tool_dialogue.CLOSING_SPEECH_MAX_SECONDS", 0.01)
+    state = FakeState(result={"action": "end_call"})
+    activity = ConversationActivity()
+
+    async def stalled_speech(_message):
+        await asyncio.Event().wait()
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(closing_message="Спасибо за звонок. До свидания!"),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=stalled_speech, run_instruction=stalled_speech)
+
+    result = await asyncio.wait_for(
+        coordinator.execute_end_call({}, "end-call-timeout", 5_000),
+        timeout=0.1,
+    )
+    await asyncio.gather(*state.tasks)
+
+    assert result == {"action": "end_call"}
+    assert state.executions == 1
+    assert state.events == [("closing_message_completed", {"spoken": False})]
+
+
+@pytest.mark.asyncio
+async def test_slow_gemini_tool_returns_pending_then_injects_late_result_once():
+    gate = asyncio.Event()
+    state = FakeState(gate=gate)
+    activity = ConversationActivity()
+    instructions = []
+
+    async def record_instruction(message):
+        instructions.append(message)
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=5),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=record_instruction, run_instruction=record_instruction)
+    results = await execute_with_answer(
+        coordinator,
+        activity,
+        tool_definition=definition(foreground_wait_ms=100),
+        on_result=lambda _result: asyncio.sleep(0),
+    )
+
+    assert results == [
+        {
+            "status": "pending",
+            "message": "Секунду, проверю.",
+            "tool_call_id": "tool-1",
+        }
+    ]
+    gate.set()
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert state.executions == 1
+    assert len(instructions) == 1
+    assert '"answer": "готово"' in instructions[0]
+    assert [control[0] for control in state.controls].count("tool_progress") == 1
+    assert [control[0] for control in state.controls].count("tool_async_completed") == 1
+
+
+@pytest.mark.asyncio
+async def test_fast_gemini_tool_returns_actual_result_without_pending():
+    state = FakeState()
+    activity = ConversationActivity()
+    instructions = []
+
+    async def record_instruction(message):
+        instructions.append(message)
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=50),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=record_instruction, run_instruction=record_instruction)
+
+    results = await execute_with_answer(
+        coordinator,
+        activity,
+        tool_definition=definition(foreground_wait_ms=100),
+    )
+    await asyncio.gather(*state.tasks)
+
+    assert results == [{"answer": "готово"}]
+    assert state.executions == 1
+    assert all(control[0] != "tool_progress" for control in state.controls)
+
+
+@pytest.mark.asyncio
+async def test_gemini_tool_without_explicit_foreground_policy_remains_synchronous():
+    gate = asyncio.Event()
+    state = FakeState(gate=gate)
+    activity = ConversationActivity()
+    spoken = []
+
+    async def record(message):
+        spoken.append(message)
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=5),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=record, run_instruction=record)
     execution = asyncio.create_task(execute_with_answer(coordinator, activity))
 
     await asyncio.sleep(0.02)
+    assert execution.done() is False
     gate.set()
-    await execution
+    results = await execution
     await asyncio.gather(*state.tasks)
 
-    assert spoken == []
+    assert results == [{"answer": "готово"}]
+    assert state.executions == 1
     assert all(control[0] != "tool_progress" for control in state.controls)
 
 
@@ -285,9 +423,11 @@ async def test_post_tool_stall_forces_one_continuation_instruction():
         activity,
         on_result=lambda _result: asyncio.sleep(0),
     )
+    assert coordinator.awaiting_continuation is True
     await asyncio.gather(*state.tasks)
 
     assert results == [{"answer": "готово"}]
+    assert coordinator.awaiting_continuation is False
     assert len(instructions) == 1
     assert "faq_lookup" in instructions[0]
     assert any(control[0] == "post_tool_model_stall" for control in state.controls)

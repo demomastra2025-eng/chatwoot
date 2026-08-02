@@ -70,6 +70,7 @@ def create_app(
                 "openai-realtime",
                 "elevenlabs",
                 "cartesia",
+                "fish",
             ],
             "checks": checks,
         }

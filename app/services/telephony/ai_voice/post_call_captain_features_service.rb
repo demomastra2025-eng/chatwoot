@@ -29,13 +29,21 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
 
   def run_memory_feature
     run_feature(FEATURE_MEMORY) do
-      Captain::Llm::ContactNotesService.new(captain_assistant, conversation).generate_and_update_notes
+      Captain::Llm::ContactNotesService.new(
+        captain_assistant,
+        conversation,
+        conversation_content: voice_transcript_content
+      ).generate_and_update_notes
     end
   end
 
   def run_faq_feature
     run_feature(FEATURE_FAQ) do
-      Captain::Llm::ConversationFaqService.new(captain_assistant, conversation).generate_and_deduplicate
+      Captain::Llm::ConversationFaqService.new(
+        captain_assistant,
+        conversation,
+        content: voice_transcript_content
+      ).generate_and_deduplicate
     end
   end
 
@@ -116,14 +124,28 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
   end
 
   def voice_transcript_present?
-    call_session.metadata&.dig('ai_voice', 'transcript', 'final_items').present? ||
-      call_session.metadata&.dig('ai_voice', 'final_transcript').present? ||
-      conversation.messages.voice_calls.any? { |message| voice_message_transcript_present?(message) }
+    voice_transcript_content.present?
   end
 
-  def voice_message_transcript_present?(message)
-    data = message.content_attributes.to_h['data'] || {}
-    data['transcript'].present? || Array(data['transcript_items']).any? { |item| item.to_h['text'].present? }
+  def voice_transcript_content
+    @voice_transcript_content ||= voice_transcript_items.filter_map do |raw_item|
+      item = raw_item.to_h.with_indifferent_access
+      text = item[:text].to_s.strip
+      next if text.blank?
+
+      "#{voice_speaker_label(item[:speaker])}: #{text}"
+    end.join("\n")
+  end
+
+  def voice_transcript_items
+    Array(
+      call_session.metadata&.dig('ai_voice', 'transcript', 'final_items').presence ||
+      call_session.metadata&.dig('ai_voice', 'final_transcript')
+    )
+  end
+
+  def voice_speaker_label(speaker)
+    speaker.to_s.in?(%w[caller customer contact user]) ? 'Caller' : 'Assistant'
   end
 
   def captain_assistant

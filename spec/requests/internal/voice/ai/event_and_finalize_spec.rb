@@ -330,11 +330,31 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       content: 'Voice Call',
       content_attributes: { data: { call_sid: call_session.external_call_ref, status: 'in_progress' } }
     )
+    create(
+      :message,
+      account: account,
+      conversation: conversation,
+      inbox: voice_inbox,
+      message_type: :incoming,
+      content: 'Старые данные из другого обращения'
+    )
     contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
     faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
 
-    allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
-    allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(faq_service)
+    allow(Captain::Llm::ContactNotesService).to receive(:new) do |received_assistant, received_conversation, conversation_content:|
+      expect(received_assistant).to eq(assistant)
+      expect(received_conversation).to eq(conversation)
+      expect(conversation_content).to include('Caller: Запомните, что я люблю доставку утром')
+      expect(conversation_content).not_to include('Старые данные из другого обращения')
+      contact_notes_service
+    end
+    allow(Captain::Llm::ConversationFaqService).to receive(:new) do |received_assistant, received_conversation, content:|
+      expect(received_assistant).to eq(assistant)
+      expect(received_conversation).to eq(conversation)
+      expect(content).to include('Caller: Запомните, что я люблю доставку утром')
+      expect(content).not_to include('Старые данные из другого обращения')
+      faq_service
+    end
 
     payload = {
       event_id: 'evt-finalize-captain-features-1',
@@ -365,9 +385,9 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       expect(response).to have_http_status(:ok)
     end
 
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
     expect(contact_notes_service).to have_received(:generate_and_update_notes).once
-    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once.with(assistant, conversation)
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once
     expect(faq_service).to have_received(:generate_and_deduplicate).once
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
       'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
@@ -386,7 +406,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
 
     post_finalize_twice(finalize_payload_for('evt-finalize-captain-memory-only-1'))
 
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
     expect(contact_notes_service).to have_received(:generate_and_update_notes).once
     expect(Captain::Llm::ConversationFaqService).not_to have_received(:new)
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
@@ -459,9 +479,9 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
 
     post_finalize_twice(finalize_payload_for('evt-finalize-captain-features-retry-1'))
 
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
     expect(contact_notes_service).to have_received(:generate_and_update_notes).once
-    expect(Captain::Llm::ConversationFaqService).to have_received(:new).twice.with(assistant, conversation)
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).twice
     expect(failed_faq_service).to have_received(:generate_and_deduplicate).once
     expect(successful_faq_service).to have_received(:generate_and_deduplicate).once
     expect(exception_tracker).to have_received(:capture_exception).once
@@ -497,7 +517,7 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
 
     post_finalize_twice(finalize_payload_for('evt-finalize-captain-features-stale-start-1'))
 
-    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once.with(assistant, conversation)
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once
     expect(faq_service).to have_received(:generate_and_deduplicate).once
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features', 'faq')).to include(
       'completed_at' => be_present,
@@ -537,9 +557,9 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     end
 
     expect(response).to have_http_status(:ok)
-    expect(Captain::Llm::ContactNotesService).to have_received(:new).once.with(assistant, conversation)
+    expect(Captain::Llm::ContactNotesService).to have_received(:new).once
     expect(contact_notes_service).to have_received(:generate_and_update_notes).once
-    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once.with(assistant, conversation)
+    expect(Captain::Llm::ConversationFaqService).to have_received(:new).once
     expect(faq_service).to have_received(:generate_and_deduplicate).once
     expect(call_session.reload.metadata.dig('ai_voice', 'post_call_captain_features')).to include(
       'memory' => include('completed_at' => be_present, 'assistant_id' => assistant.id),
@@ -586,23 +606,25 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
       'type' => 'captain_tool_event'
     )
 
-    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
-      post '/internal/voice/ai/control',
-           params: {
-             call_ref: call_session.external_call_ref,
-             account_id: account.id,
-             action: 'tool_async_completed',
-             metadata: {
-               tool_name: 'faq_lookup',
-               request_id: 'tool-call-1',
-               provider: 'gemini-live',
-               ok: true,
-               pending: true,
-               async: true
-             }
-           },
-           headers: { 'Authorization' => 'Bearer voice-secret' },
-           as: :json
+    perform_enqueued_jobs(only: Telephony::InboundRouteLifecycleJob) do
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        post '/internal/voice/ai/control',
+             params: {
+               call_ref: call_session.external_call_ref,
+               account_id: account.id,
+               action: 'tool_async_completed',
+               metadata: {
+                 tool_name: 'faq_lookup',
+                 request_id: 'tool-call-1',
+                 provider: 'gemini-live',
+                 ok: true,
+                 pending: true,
+                 async: true
+               }
+             },
+             headers: { 'Authorization' => 'Bearer voice-secret' },
+             as: :json
+      end
     end
 
     expect(response).to have_http_status(:ok)

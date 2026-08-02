@@ -6,10 +6,10 @@ RSpec.describe Telephony::CallRecordingTranscriptionJob do
   let(:call_session) { create(:telephony_call_session) }
   let(:transcription_service) { instance_double(Telephony::CallRecordingTranscriptionService, perform: true) }
 
-  it 'enqueues on the audio transcription queue' do
+  it 'enqueues on the isolated voice recording transcription queue' do
     expect { job }.to have_enqueued_job(described_class)
       .with(call_session.id)
-      .on_queue('audio_transcription')
+      .on_queue('voice_recording_transcription')
   end
 
   it 'transcribes the call session recording when performed' do

@@ -84,6 +84,31 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     expect(data['recording']).to include('storage_key' => 'voice-recordings/1/operator-call-1/recording.wav')
   end
 
+  it 'persists a completed transcription status from the canonical AI voice runtime transcript without another LLM call' do
+    call_session.update!(
+      metadata: call_session.metadata.deep_merge(
+        'recording' => { 'transcription' => { 'status' => 'queued' } },
+        'ai_voice' => {
+          'transcript' => {
+            'final_items' => [
+              { 'speaker' => 'caller', 'text' => 'Подскажите статус заказа' },
+              { 'speaker' => 'assistant', 'text' => 'Сейчас проверю' }
+            ]
+          }
+        }
+      )
+    )
+
+    result = described_class.new(call_session).perform
+
+    expect(result).to include(success: true, transcript: "Клиент: Подскажите статус заказа\nОператор: Сейчас проверю")
+    expect(Llm::Runtime).not_to have_received(:transcribe)
+    expect(call_session.reload.metadata.dig('recording', 'transcription')).to include(
+      'status' => 'completed',
+      'source' => 'ai_voice_runtime'
+    )
+  end
+
   it 'does not attach a recording transcript to a newer unsourced legacy voice_call when exact bubble exists' do
     legacy_voice_message = create(
       :message,

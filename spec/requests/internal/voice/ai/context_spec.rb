@@ -189,7 +189,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(system_prompt).not_to include('Отвечай на языке собеседника')
     expect(system_prompt).not_to include('Voice character prompt')
     expect(body['ai']).not_to have_key('voice_character_prompt')
-    expect(system_prompt).to include('Отвечай максимум 1-2 короткими предложениями')
+    expect(system_prompt).to include('По умолчанию отвечай не длиннее 2 предложений')
     expect(system_prompt).to include('Answer callers using OneLink account context.')
     expect(system_prompt).to include('Answer shortly')
     expect(system_prompt).to include('Do not reveal private data')
@@ -330,7 +330,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(transfer_tool['description']).to include('manager for a callback')
   end
 
-  it 'adds language-following instructions only for native Gemini auto language' do
+  it 'adds prioritized language instructions for native Gemini auto language' do
     number_binding.routing_policy.update!(
       ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
         model: 'gemini-3.1-flash-live-preview',
@@ -347,8 +347,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('ai', 'language')).to eq('auto')
-    expect(response.parsed_body.dig('ai', 'system_prompt')).to include('Отвечай на языке собеседника')
-    expect(response.parsed_body.dig('ai', 'system_prompt')).to include('между русским и казахским')
+    expect(response.parsed_body.dig('ai', 'system_prompt')).to include('Языки собеседника по приоритету: ru-KZ → kk-KZ → en-US')
+    expect(response.parsed_body.dig('ai', 'system_prompt')).to include('Переключай язык ответа только после явной просьбы')
   end
 
   it 'enables proactive audio with the required Gemini preview API' do

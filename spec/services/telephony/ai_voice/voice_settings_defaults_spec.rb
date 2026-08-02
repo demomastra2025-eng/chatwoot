@@ -8,6 +8,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'model' => 'gemini-3.1-flash-live-preview',
         'voice' => 'sulafat',
         'language' => 'auto',
+        'input_language_priorities' => %w[ru-KZ kk-KZ en-US],
         'thinking_level' => 'minimal',
         'context_window_compression_enabled' => true,
         'proactive_audio_enabled' => false,
@@ -19,6 +20,18 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'silence_duration_ms' => 500,
         'vad_confidence' => 0.75,
         'vad_min_volume' => 0.6
+      )
+    end
+
+    it 'keeps ordered unique valid input language hints and falls back when all are invalid' do
+      expect(
+        described_class.normalize(
+          input_language_priorities: ['kk-KZ', 'ru-KZ', 'kk-KZ', 'not a locale', 'en-US']
+        )
+      ).to include('input_language_priorities' => %w[kk-KZ ru-KZ en-US])
+
+      expect(described_class.normalize(input_language_priorities: ['', 'invalid locale'])).to include(
+        'input_language_priorities' => %w[ru-KZ kk-KZ en-US]
       )
     end
 
@@ -43,6 +56,32 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'voice_activity_profile' => 'balanced',
         'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
         'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH'
+      )
+    end
+
+    it 'preserves legacy explicit VAD timings when no atomic profile was saved' do
+      expect(described_class.normalize(prefix_padding_ms: 120, silence_duration_ms: 200)).to include(
+        'voice_activity_profile' => 'balanced',
+        'prefix_padding_ms' => 120,
+        'silence_duration_ms' => 200,
+        'vad_confidence' => 0.75,
+        'vad_min_volume' => 0.6
+      )
+    end
+
+    it 'keeps an explicitly selected voice activity profile atomic' do
+      expect(
+        described_class.normalize(
+          voice_activity_profile: 'sensitive',
+          prefix_padding_ms: 300,
+          silence_duration_ms: 800
+        )
+      ).to include(
+        'voice_activity_profile' => 'sensitive',
+        'prefix_padding_ms' => 120,
+        'silence_duration_ms' => 300,
+        'vad_confidence' => 0.6,
+        'vad_min_volume' => 0.45
       )
     end
 
@@ -176,6 +215,25 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'provider' => 'cartesia',
         'model' => 'openai/gpt-5.4-mini',
         'voice' => '71a7ad14-091c-4e8e-a314-022ece01c121'
+      )
+    end
+
+    it 'applies the qualified Fish cascade defaults' do
+      expect(described_class.normalize(provider: 'fish')).to include(
+        'provider' => 'fish',
+        'stt_provider' => 'elevenlabs',
+        'model' => 'openai/gpt-5.6-luna',
+        'voice' => '31f936a9333f4f5a99dcaaf6df091b84',
+        'language' => 'auto'
+      )
+    end
+
+    it 'preserves Fish ASR selection and rejects unknown Fish STT providers' do
+      expect(described_class.normalize(provider: 'fish', stt_provider: 'fish')).to include(
+        'stt_provider' => 'fish'
+      )
+      expect(described_class.normalize(provider: 'fish', stt_provider: 'unknown')).to include(
+        'stt_provider' => 'elevenlabs'
       )
     end
   end

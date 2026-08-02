@@ -7,7 +7,7 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
   "fastapi>=0.115.6,<1",
   "httpx>=0.28,<1",
-  "pipecat-ai[cartesia,elevenlabs,google,openai,websocket]==1.5.0",
+  "pipecat-ai[cartesia,elevenlabs,fish,google,openai,silero,websocket]==1.5.0",
   "uvicorn>=0.32,<1",
 ]
 

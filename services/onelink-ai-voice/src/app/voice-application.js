@@ -353,7 +353,7 @@ class VoiceApplication {
     }
 
     const runtimeSessionId = session?.aiSessionId || requestPayload.runtime_session_id || requestPayload.runtimeSessionId || `ai_${randomUUID()}`;
-    requestPayload.runtime_engine = RUNTIME_ENGINE;
+    requestPayload.runtime_engine = runtimeEngineCandidate(requestPayload);
     requestPayload.runtime_session_id = runtimeSessionId;
 
     return this.client.routeInbound(
@@ -2823,7 +2823,7 @@ function compactPayload(payload = {}) {
 function routePayload(requestPayload = {}, callRef, session = {}) {
   return compactPayload({
     call_ref: callRef,
-    runtime_engine: RUNTIME_ENGINE,
+    runtime_engine: runtimeEngineCandidate(requestPayload),
     runtime_session_id: session.aiSessionId || requestPayload.runtime_session_id || requestPayload.runtimeSessionId || callRef,
     bridge_call_ref: bridgeCallRefCandidate(requestPayload),
     ingress_number: requestPayload.ingress_number || requestPayload.ingressNumber || requestPayload.to_number || requestPayload.to,
@@ -3288,6 +3288,11 @@ function runtimeSessionIdCandidate(payload = {}) {
   const routing = payload.routing || payload.route_decision || payload.routeDecision || {};
   const aiContext = payload.ai_context || payload.aiContext || routing.ai_context || routing.aiContext || {};
   return payload.runtime_session_id || payload.runtimeSessionId || aiContext.runtime_session_id || aiContext.runtimeSessionId;
+}
+
+function runtimeEngineCandidate(payload = {}) {
+  const candidate = String(payload.runtime_engine || payload.runtimeEngine || '').trim().toLowerCase();
+  return candidate === 'pipecat' ? 'pipecat' : RUNTIME_ENGINE;
 }
 
 function answerCall(call, { timeoutMs = 0 } = {}) {

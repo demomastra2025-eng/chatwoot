@@ -7,6 +7,11 @@ class Telephony::AiVoice::ControlService
     tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
     ordinary_answer_model_stall incomplete_answer_model_stall
   ].freeze
+  DEFERRED_EVENT_ACTIONS = %w[
+    ai_speaking caller_interrupted tool_started tool_progress tool_completed tool_failed tool_suppressed
+    tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
+    ordinary_answer_model_stall incomplete_answer_model_stall
+  ].freeze
   BRIDGE_CALL_REF_KEYS = %w[bridge_call_ref bridgeCallRef parent_call_ref parentCallRef].freeze
   RUNTIME_CALL_REF_KEYS = %w[
     runtime_call_ref runtimeCallRef child_call_ref childCallRef ai_runtime_call_ref aiRuntimeCallRef
@@ -21,11 +26,14 @@ class Telephony::AiVoice::ControlService
   def perform
     ensure_call_session!
     ensure_allowed_action!
-    record_control_event!
+    recorded = record_control_event!
+
     sync_conversation_timeline_event!
     ingest_lifecycle_event! if lifecycle_action?
 
-    { status: 'ok', action: action }
+    result = { status: 'ok', action: action }
+    result[:idempotent] = true unless recorded
+    result
   end
 
   private
@@ -36,17 +44,25 @@ class Telephony::AiVoice::ControlService
     call_session.with_lock do
       metadata = (call_session.metadata || {}).deep_dup
       ai_voice = metadata['ai_voice'] ||= {}
+      existing_event = Array(ai_voice['control_events']).find { |event| event['event_key'] == lifecycle_event_key }
+      if existing_event
+        @control_event_sequence = existing_event['sequence']
+        next false
+      end
+
       ai_voice['control_event_sequence'] = ai_voice['control_event_sequence'].to_i + 1
       @control_event_sequence = ai_voice['control_event_sequence']
       ai_voice['control_events'] ||= []
       ai_voice['control_events'] << {
         'action' => action,
         'metadata' => control_metadata,
+        'event_key' => lifecycle_event_key,
         'sequence' => @control_event_sequence,
         'at' => Time.current.iso8601
       }
       ai_voice['control_events'] = ai_voice['control_events'].last(100)
       call_session.update!(metadata: metadata)
+      true
     end
   end
 
@@ -60,6 +76,10 @@ class Telephony::AiVoice::ControlService
   end
 
   def ingest_lifecycle_event!
+    return Telephony::EventsIngestionService.new(payload: lifecycle_event_payload).perform unless DEFERRED_EVENT_ACTIONS.include?(action)
+
+    Telephony::InboundRouteLifecycleJob.perform_later(lifecycle_event_payload)
+  rescue ActiveJob::EnqueueError, Redis::BaseError, RedisClient::Error
     Telephony::EventsIngestionService.new(payload: lifecycle_event_payload).perform
   end
 
@@ -79,7 +99,8 @@ class Telephony::AiVoice::ControlService
   end
 
   def lifecycle_event_key
-    payload['event_key'].presence || "ai-control:#{call_session.external_call_ref}:#{action}:#{SecureRandom.uuid}"
+    @lifecycle_event_key ||= payload['event_key'].presence ||
+                             "ai-control:#{call_session.external_call_ref}:#{action}:#{SecureRandom.uuid}"
   end
 
   def lifecycle_metadata

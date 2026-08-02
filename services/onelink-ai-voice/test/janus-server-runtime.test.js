@@ -455,8 +455,10 @@ test('Janus server profile hands a selected call to Pipecat with one prepared me
   });
   const session = new JanusSipServerProfileSession({
     app: {
-      async routeInboundSafely() {
+      async routeInboundSafely(request) {
         order.push('route');
+        assert.equal(request.runtime_engine, 'pipecat');
+        request.runtime_session_id = 'runtime-route-pipecat-1';
         return { action: 'ai', reason: 'rails_ai_route' };
       },
       async handleCall() { legacyCalls += 1; }
@@ -488,13 +490,20 @@ test('Janus server profile hands a selected call to Pipecat with one prepared me
     },
     WebSocketImpl: class {},
     runtimeMediaStreamFactory: async () => ({}),
-    runtimeSelector: { select: () => 'pipecat' },
+    runtimeSelector: {
+      selectCandidate: () => 'pipecat',
+      select: payload => {
+        assert.equal(payload.runtime_engine, 'pipecat');
+        return 'pipecat';
+      }
+    },
     pipecatClient: {
       isAvailable: () => true,
       async ensureAvailable() { order.push('ready'); },
       async preflightJanus(payload) {
         order.push('preflight');
         assert.equal(payload.call_ref, 'sipuni:janus-server:16:pipecat-1');
+        assert.equal(payload.runtime_session_id, 'runtime-route-pipecat-1');
       },
       async attachJanus(payload) {
         order.push('attach');
@@ -527,6 +536,7 @@ test('Janus server profile hands a selected call to Pipecat with one prepared me
   assert.equal(legacyCalls, 0);
   assert.deepEqual(order, ['route', 'ready', 'preflight', 'media_capabilities', 'create_media', 'create_runtime', 'accept', 'attach']);
   assert.equal(attached.length, 1);
+  assert.equal(attached[0].runtime_session_id, 'runtime-route-pipecat-1');
   assert.equal(attached[0].runtime_stream.runtime_session_id, 'runtime-pipecat-1');
   assert.equal(attached[0].runtime_stream.output_sample_rate, 8000);
   assert.equal(attached[0].runtime_stream.stream_token, 'runtime-stream-token-1234567890');
@@ -891,6 +901,31 @@ test('Janus server runtime syncs profiles from provider and unregisters removed 
   await manager.syncProfiles();
   assert.equal(manager.sessions.size, 0);
   assert.equal(sockets[2].closed, true);
+});
+
+test('Janus server profile sync backs off after failures and resets after success', async () => {
+  let shouldFail = true;
+  const manager = new JanusSipServerRuntimeManager({
+    app: { async handleCall() {} },
+    mediaServerClient: {},
+    syncIntervalMs: 1000,
+    profileProvider: async () => {
+      if (shouldFail) throw new Error('temporary profile endpoint timeout');
+      return [];
+    }
+  });
+
+  assert.equal(manager.profileSyncDelayMs(), 1000);
+  await assert.rejects(() => manager.syncProfiles(), /temporary profile endpoint timeout/);
+  assert.equal(manager.profileSyncDelayMs(), 2000);
+  await assert.rejects(() => manager.syncProfiles(), /temporary profile endpoint timeout/);
+  assert.equal(manager.profileSyncDelayMs(), 4000);
+  assert.equal(manager.diagnostics().consecutive_sync_failures, 2);
+
+  shouldFail = false;
+  await manager.syncProfiles();
+  assert.equal(manager.profileSyncDelayMs(), 1000);
+  assert.equal(manager.diagnostics().consecutive_sync_failures, 0);
 });
 
 test('Janus server runtime applies provider-specific Janus WebSocket URLs', () => {

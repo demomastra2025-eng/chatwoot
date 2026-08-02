@@ -1,12 +1,13 @@
 class Captain::Llm::ContactNotesService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
-  def initialize(assistant, conversation)
+  def initialize(assistant, conversation, conversation_content: nil)
     super()
     @assistant = assistant
     @conversation = conversation
     @contact = conversation.contact
-    @content = "#Contact\n\n#{@contact.to_llm_text} \n\n#Conversation\n\n#{@conversation.to_llm_text}"
+    conversation_content ||= @conversation.to_llm_text
+    @content = "#Contact\n\n#{@contact.to_llm_text} \n\n#Conversation\n\n#{conversation_content}"
   end
 
   def generate_and_update_notes

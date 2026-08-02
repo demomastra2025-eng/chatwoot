@@ -6,20 +6,19 @@ class Telephony::AiVoice::ContextBuilder
   DEFAULT_FIRST_MESSAGE = 'Здравствуйте! Чем могу помочь?'.freeze
   DEFAULT_SYSTEM_PROMPT = <<~PROMPT.squish.freeze
     Ты голосовой ассистент в телефонном звонке.
-    Говори коротко и естественно.
+    Говори естественно и соразмерно вопросу.
     Не используй markdown, списки, эмодзи или спецсимволы.
-    Отвечай максимум 1-2 короткими предложениями.
     Задавай только один вопрос за раз.
     Если пользователь перебивает, сразу остановись и слушай.
     Если не уверен, уточни коротким вопросом.
+    После ответа предлагай один конкретный следующий полезный шаг или задавай один уместный уточняющий вопрос.
+    Не повторяй общие фразы вроде «Чем могу помочь?», если контекст уже понятен.
+    Если инструмент вернул ошибку, кратко объясни, что именно не удалось проверить, и предложи один логичный способ продолжить.
     На вопросы о твоем имени, роли или кто ты отвечай из настроек ассистента и голосовых инструкций, без базы знаний.
     Для действий с заказами, клиентами, переводом звонка или завершением звонка используй инструменты.
     Для вопросов о компании, услугах, тарифах, документах, FAQ или слогане сначала используй доступный инструмент базы знаний, не отвечай из памяти.
   PROMPT
-  AUTO_LANGUAGE_PROMPT = <<~PROMPT.squish.freeze
-    Отвечай на языке собеседника. При переключении между русским и казахским
-    следуй за языком собеседника.
-  PROMPT
+
   VOICE_RESPONSE_CONTRACT = <<~PROMPT.squish.freeze
     # Voice Response Contract
     This is a realtime AUDIO phone session. Speak only the customer-facing answer as natural text.
@@ -261,7 +260,8 @@ class Telephony::AiVoice::ContextBuilder
       base << ai_settings['system_prompt'] if ai_settings['system_prompt'].present?
       base << voice_character_prompt_block if voice_character_prompt.present?
       base << DEFAULT_SYSTEM_PROMPT
-      base << AUTO_LANGUAGE_PROMPT if ai_settings['language'] == 'auto'
+      base << response_length_prompt
+      base << language_priority_prompt
       base.compact_blank.join("\n")
     end
   end
@@ -272,6 +272,28 @@ class Telephony::AiVoice::ContextBuilder
 
   def voice_character_prompt_block
     "#{VOICE_CHARACTER_PROMPT_LABEL}:\n#{voice_character_prompt}"
+  end
+
+  def response_length_prompt
+    max_sentences = ai_settings['max_sentences'].to_i.clamp(1, 8)
+    <<~PROMPT.squish
+      По умолчанию отвечай не длиннее #{max_sentences} предложений.
+      Если собеседник просит подробнее, спрашивает «и дальше» или явно хочет полный ответ,
+      продолжай содержательными завершёнными фрагментами и не обрывай мысль на полуслове.
+    PROMPT
+  end
+
+  def language_priority_prompt
+    priorities = Array(ai_settings['input_language_priorities']).map(&:to_s).compact_blank
+    return if priorities.blank?
+
+    primary = ai_settings['language'] == 'auto' ? priorities.first : ai_settings['language']
+    <<~PROMPT.squish
+      Языки собеседника по приоритету: #{priorities.join(' → ')}.
+      Понимай речь на любом из них. Для короткой или неоднозначной реплики предпочитай #{primary}.
+      Переключай язык ответа только после явной просьбы или уверенной содержательной реплики на другом языке;
+      не переключайся из-за одного неоднозначного слова. Не отвечай на языке вне этого списка.
+    PROMPT
   end
 
   def captain_agent_instructions

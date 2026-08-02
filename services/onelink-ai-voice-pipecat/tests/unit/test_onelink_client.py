@@ -89,6 +89,29 @@ async def test_event_is_scoped_and_sets_idempotency_headers(correlation):
 
 
 @pytest.mark.asyncio
+async def test_control_retry_reuses_the_same_idempotency_key(correlation):
+    captured = []
+
+    def handler(request):
+        captured.append(request)
+        if len(captured) == 1:
+            return httpx.Response(503, json={"error": "busy"})
+        return httpx.Response(200, json={"status": "ok"})
+
+    async with make_client(handler) as client:
+        await client.send_control(
+            correlation,
+            action="ai_speaking",
+            event_key="control-event-1",
+            metadata={"state": "started"},
+        )
+
+    assert len(captured) == 2
+    assert {item.headers["x-idempotency-key"] for item in captured} == {"control-event-1"}
+    assert json.loads(captured[-1].content)["event_key"] == "control-event-1"
+
+
+@pytest.mark.asyncio
 async def test_mutating_tool_is_not_retried(correlation):
     attempts = 0
     bodies = []

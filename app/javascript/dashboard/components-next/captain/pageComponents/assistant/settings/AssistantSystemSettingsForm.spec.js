@@ -66,12 +66,15 @@ describe('AssistantSystemSettingsForm', () => {
         model: 'gemini-3.1-flash-live-preview',
         voice: 'sulafat',
         language: 'auto',
+        input_language_priorities: ['ru-KZ', 'kk-KZ', 'en-US'],
+        max_sentences: 2,
         thinking_level: 'minimal',
         context_window_compression_enabled: true,
         proactive_audio_enabled: false,
         system_prompt: '',
         voice_character_prompt: '',
         first_message: '',
+        closing_message: 'Спасибо за звонок. Хорошего дня!',
         manager_handoff_mode: 'live_transfer',
         callback_message: '',
         transfer_message: '',
@@ -103,10 +106,13 @@ describe('AssistantSystemSettingsForm', () => {
             model: 'gemini-2.5-flash-native-audio-preview-12-2025',
             voice: 'sulafat',
             language: 'ru-KZ',
+            input_language_priorities: ['kk-KZ', 'ru-KZ', 'en-US'],
+            max_sentences: 4,
             system_prompt: 'Говори коротко, без markdown и списков.',
             voice_character_prompt:
               'Тембр: тёплый наставник. Паузы короткие, без смеха.',
             first_message: 'Сәлеметсіз бе!',
+            closing_message: 'Рақмет. Сау болыңыз!',
             manager_handoff_mode: 'callback',
             callback_message: 'Менеджер сізге қайта қоңырау шалады.',
             transfer_message: 'Қазір операторға қосамын.',
@@ -154,6 +160,11 @@ describe('AssistantSystemSettingsForm', () => {
     expect(
       wrapper.find('[data-test-id="assistant-voice-activity-profile"]').exists()
     ).toBe(true);
+    expect(
+      wrapper
+        .find('[data-test-id="assistant-input-language-priorities"]')
+        .exists()
+    ).toBe(true);
     expect(wrapper.text()).not.toContain(
       'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.ACTIVE_RUNTIME'
     );
@@ -176,6 +187,8 @@ describe('AssistantSystemSettingsForm', () => {
       model: 'gemini-2.5-flash-native-audio-preview-12-2025',
       voice: 'leda',
       language: 'ru-KZ',
+      input_language_priorities: ['ru-KZ', 'kk-KZ', 'en-US'],
+      max_sentences: 4,
       thinking_level: 'minimal',
       context_window_compression_enabled: true,
       proactive_audio_enabled: true,
@@ -183,6 +196,7 @@ describe('AssistantSystemSettingsForm', () => {
       voice_character_prompt:
         'Тембр: спокойный ночной рассказчик. Интонация мягкая.',
       first_message: 'Алло!',
+      closing_message: 'Рақмет. Сау болыңыз!',
       manager_handoff_mode: 'callback',
       callback_message: 'Менеджер сізге қайта қоңырау шалады.',
       transfer_message: 'Қазір операторға қосамын.',
@@ -368,6 +382,39 @@ describe('AssistantSystemSettingsForm', () => {
       ).toBe(false);
     }
   );
+
+  it('requires a Fish voice id and persists either Fish STT variant', async () => {
+    const wrapper = buildWrapper({ assistant: { id: 58, config: {} } });
+
+    wrapper.vm.updateVoiceProvider('fish');
+    await wrapper.vm.$nextTick();
+
+    expect(
+      wrapper.find('[data-test-id="assistant-fish-stt-provider"]').exists()
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-test-id="assistant-fish-voice-id"]').exists()
+    ).toBe(true);
+    expect(wrapper.vm.state.voiceSettings.voice).toBe(
+      '31f936a9333f4f5a99dcaaf6df091b84'
+    );
+    wrapper.vm.state.voiceSettings.voice = '';
+    expect(await wrapper.vm.buildPayload()).toBeNull();
+
+    wrapper.vm.state.voiceSettings.voice = 'fish-voice-ref';
+    wrapper.vm.state.voiceSettings.sttProvider = 'fish';
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.voice_settings).toEqual(
+      expect.objectContaining({
+        provider: 'fish',
+        stt_provider: 'fish',
+        model: 'openai/gpt-5.6-luna',
+        voice: 'fish-voice-ref',
+        language: 'auto',
+      })
+    );
+  });
 
   it('loads provider-specific defaults from a partial saved voice config', async () => {
     const wrapper = buildWrapper({

@@ -34,6 +34,127 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       expect(names).not_to include('handoff')
       expect(definition_ids).to contain_exactly('faq_lookup')
     end
+
+    it 'publishes native Captain parameter definitions to the realtime provider' do
+      allow(assistant).to receive(:voice_runtime_agent_tools).and_return([{ id: 'faq_lookup' }])
+
+      faq = described_class.catalog(captain_assistant: assistant).find { |tool| tool.fetch('name') == 'faq_lookup' }
+
+      expect(faq.dig('parameters', 'required')).to eq(['query'])
+      expect(faq.dig('parameters', 'properties', 'query')).to include(
+        'type' => 'string',
+        'description' => a_string_including('FAQ')
+      )
+    end
+
+    it 'adds voice data-integrity guidance to mutating Captain tools' do
+      allow(assistant).to receive(:voice_runtime_agent_tools).and_return(
+        [{ id: 'create_deal' }, { id: 'add_contact_note' }]
+      )
+
+      catalog = described_class.catalog(captain_assistant: assistant).index_by { |tool| tool.fetch('name') }
+
+      expect(catalog.dig('create_deal', 'description')).to include('actual call channel')
+      expect(catalog.dig('add_contact_note', 'description')).to include('explicitly confirms')
+      expect(catalog.dig('add_contact_note', 'parameters', 'properties', 'voice_caller_confirmed')).to include(
+        'type' => 'boolean',
+        'description' => a_string_including('complete phone number')
+      )
+    end
+
+    it 'publishes valid item schemas for native array parameters' do
+      allow(assistant).to receive(:voice_runtime_agent_tools).and_return([{ id: 'create_deal' }])
+
+      create_deal = described_class.catalog(captain_assistant: assistant).find { |tool| tool.fetch('name') == 'create_deal' }
+
+      expect(create_deal.dig('parameters', 'properties', 'closing_reasons', 'items')).to eq('type' => 'string')
+    end
+  end
+
+  describe '#ensure_voice_crm_source!' do
+    let(:account) { create(:account) }
+    let(:conversation) { create(:conversation, account: account) }
+    let(:provider) { 'asterisk_analog' }
+    let(:call_ref) { 'asterisk_analog:test-call' }
+    let!(:call_session) do
+      create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        provider: provider,
+        external_call_ref: call_ref
+      )
+    end
+
+    def source_guard_service(title)
+      described_class.new(
+        tool_name: 'create_deal',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: { title: title }
+        }
+      )
+    end
+
+    it 'rejects an unrelated messaging source on a phone call' do
+      expect { source_guard_service('Лид из Telegram: клиент').send(:ensure_voice_crm_source!) }
+        .to raise_error(Telephony::Error) { |error| expect(error.code).to eq('VOICE_CRM_SOURCE_MISMATCH') }
+    end
+
+    it 'allows a source-neutral deal title on a phone call' do
+      expect(source_guard_service('Входящий телефонный звонок').send(:ensure_voice_crm_source!)).to be_nil
+    end
+
+    context 'when the call uses WhatsApp voice' do
+      let(:provider) { 'whatsapp_cloud' }
+      let(:call_ref) { 'whatsapp:test-call' }
+
+      it 'allows the matching WhatsApp source' do
+        expect(source_guard_service('Лид из WhatsApp: клиент').send(:ensure_voice_crm_source!)).to be_nil
+      end
+    end
+  end
+
+  describe '#captain_tool_arguments' do
+    let(:account) { create(:account) }
+    let(:conversation) { create(:conversation, account: account) }
+    let!(:call_session) do
+      create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        provider: 'asterisk_analog',
+        external_call_ref: 'asterisk_analog:phone-guard'
+      )
+    end
+
+    def phone_guard_service(arguments)
+      described_class.new(
+        tool_name: 'add_contact_note',
+        payload: { account_id: account.id, call_ref: call_session.external_call_ref, arguments: arguments }
+      )
+    end
+
+    it 'rejects an incomplete phone number even when confirmation is asserted' do
+      service = phone_guard_service(content: 'Телефон клиента: +7 708 34', voice_caller_confirmed: true)
+
+      expect { service.send(:captain_tool_arguments) }
+        .to raise_error(Telephony::Error) { |error| expect(error.code).to eq('VOICE_CRM_PHONE_INCOMPLETE') }
+    end
+
+    it 'requires explicit caller confirmation for a complete phone number' do
+      service = phone_guard_service(content: 'Телефон клиента: +7 708 123 45 67')
+
+      expect { service.send(:captain_tool_arguments) }
+        .to raise_error(Telephony::Error) { |error| expect(error.code).to eq('VOICE_CRM_PHONE_CONFIRMATION_REQUIRED') }
+    end
+
+    it 'passes only native tool arguments after a complete confirmed number' do
+      service = phone_guard_service(content: 'Телефон клиента: +7 708 123 45 67', voice_caller_confirmed: true)
+
+      expect(service.send(:captain_tool_arguments)).to eq(content: 'Телефон клиента: +7 708 123 45 67')
+    end
   end
 
   describe '#lock_assistant_assignment!' do

@@ -29,6 +29,21 @@ test('runtime selector requires every configured allowlist to match', () => {
   assert.equal(selector.select({ ...payload, inbox_id: 10 }), 'legacy');
 });
 
+test('runtime selector exposes a candidate before Rails resolves the AI route', () => {
+  const selector = new RuntimeSelector({
+    enabled: true,
+    providers: ['sipuni'],
+    accountIds: ['42'],
+    channelIds: ['9'],
+    percentage: 100
+  });
+  const unresolved = { ...payload, routing: undefined };
+
+  assert.equal(selector.selectCandidate(unresolved), 'pipecat');
+  assert.equal(selector.select(unresolved), 'legacy');
+  assert.equal(selector.selectCandidate({ ...unresolved, inbox_id: 10 }), 'legacy');
+});
+
 test('runtime selector requires explicit provider, account, and channel allowlists', () => {
   const config = {
     enabled: true,

@@ -2,7 +2,7 @@
 import { reactive, computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useVuelidate } from '@vuelidate/core';
-import { minLength } from '@vuelidate/validators';
+import { minLength, required } from '@vuelidate/validators';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
@@ -44,14 +44,18 @@ const { t } = useI18n();
 
 const DEFAULT_VOICE_SETTINGS = {
   provider: 'gemini-live',
+  sttProvider: 'elevenlabs',
   model: 'gemini-3.1-flash-live-preview',
   voice: 'sulafat',
   language: 'auto',
+  inputLanguagePriorities: ['ru-KZ', 'kk-KZ', 'en-US'],
+  maxSentences: 2,
   thinkingLevel: 'minimal',
   contextWindowCompressionEnabled: true,
   systemPrompt: '',
   voiceCharacterPrompt: '',
   firstMessage: '',
+  closingMessage: 'Спасибо за звонок. Хорошего дня!',
   managerHandoffMode: 'live_transfer',
   callbackMessage: '',
   transferMessage: '',
@@ -91,6 +95,7 @@ const VOICE_PROVIDER_OPTIONS = Object.freeze([
   { value: 'openai-realtime', label: 'OpenAI Realtime' },
   { value: 'elevenlabs', label: 'ElevenLabs + OpenRouter' },
   { value: 'cartesia', label: 'Cartesia + OpenRouter' },
+  { value: 'fish', label: 'Fish Audio + OpenRouter' },
 ]);
 
 const VOICE_PROVIDER_PRESETS = Object.freeze({
@@ -159,6 +164,18 @@ const VOICE_PROVIDER_PRESETS = Object.freeze({
       },
     ],
   },
+  fish: {
+    sttProvider: 'elevenlabs',
+    model: 'openai/gpt-5.6-luna',
+    voice: '31f936a9333f4f5a99dcaaf6df091b84',
+    language: 'auto',
+    models: [
+      { value: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna (OpenRouter)' },
+      { value: 'openai/gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenRouter)' },
+      { value: 'openai/gpt-5.4', label: 'GPT-5.4 (OpenRouter)' },
+    ],
+    voices: [],
+  },
 });
 
 const VOICE_LANGUAGE_OPTIONS = Object.freeze([
@@ -185,18 +202,17 @@ const state = reactive({ ...initialState });
 const isGeminiLive = computed(
   () => state.voiceSettings.provider === 'gemini-live'
 );
+const isFishProvider = computed(() => state.voiceSettings.provider === 'fish');
 const isAffectiveDialogSupported = computed(
   () =>
     isGeminiLive.value &&
     GEMINI_AFFECTIVE_DIALOG_MODELS.has(state.voiceSettings.model)
 );
-const supportsGeminiAutoLanguage = (provider, model) =>
-  provider === 'gemini-live' && GEMINI_AUTO_LANGUAGE_MODELS.has(model);
-const isGeminiAutoLanguageSupported = computed(() =>
-  supportsGeminiAutoLanguage(
-    state.voiceSettings.provider,
-    state.voiceSettings.model
-  )
+const supportsAutoLanguage = (provider, model) =>
+  provider === 'fish' ||
+  (provider === 'gemini-live' && GEMINI_AUTO_LANGUAGE_MODELS.has(model));
+const isAutoLanguageSupported = computed(() =>
+  supportsAutoLanguage(state.voiceSettings.provider, state.voiceSettings.model)
 );
 const isGeminiThinkingSupported = computed(
   () =>
@@ -219,6 +235,9 @@ const validationRules = computed(() => ({
   resolutionMessage: state.resolutionMessageEnabled
     ? { minLength: minLength(1) }
     : {},
+  voiceSettings: {
+    voice: isFishProvider.value ? { required } : {},
+  },
 }));
 
 const v$ = useVuelidate(validationRules, state);
@@ -230,6 +249,9 @@ const getErrorMessage = field => {
 const formErrors = computed(() => ({
   handoffMessage: getErrorMessage('handoffMessage'),
   resolutionMessage: getErrorMessage('resolutionMessage'),
+  voice: v$.value.voiceSettings.voice.$error
+    ? v$.value.voiceSettings.voice.$errors[0].$message
+    : '',
 }));
 
 const temperaturePercent = computed(() => Number(state.temperature || 0) * 100);
@@ -264,6 +286,16 @@ const optionsWithCurrentValue = (options, value) => {
 const voiceProviderOptions = computed(() =>
   optionsWithCurrentValue(VOICE_PROVIDER_OPTIONS, state.voiceSettings.provider)
 );
+const voiceSttProviderOptions = computed(() => [
+  {
+    value: 'elevenlabs',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.STT_ELEVENLABS_REALTIME'),
+  },
+  {
+    value: 'fish',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.STT_FISH_BATCH'),
+  },
+]);
 const voiceProviderPreset = computed(
   () =>
     VOICE_PROVIDER_PRESETS[state.voiceSettings.provider] ||
@@ -282,7 +314,7 @@ const voiceVoiceOptions = computed(() =>
   )
 );
 const voiceLanguageOptions = computed(() => {
-  const options = isGeminiAutoLanguageSupported.value
+  const options = isAutoLanguageSupported.value
     ? [
         {
           value: 'auto',
@@ -293,6 +325,57 @@ const voiceLanguageOptions = computed(() => {
     : VOICE_LANGUAGE_OPTIONS;
   return optionsWithCurrentValue(options, state.voiceSettings.language);
 });
+
+const normalizeInputLanguagePriorities = (values, primaryLanguage = 'auto') => {
+  const saved = Array.isArray(values) ? values : [];
+  const candidates =
+    primaryLanguage && primaryLanguage !== 'auto'
+      ? [primaryLanguage, ...saved]
+      : saved;
+  const unique = candidates
+    .map(value => String(value || '').trim())
+    .filter((value, index, items) => value && items.indexOf(value) === index);
+  const fallback = DEFAULT_VOICE_SETTINGS.inputLanguagePriorities.filter(
+    value => !unique.includes(value)
+  );
+  return [...unique, ...fallback].slice(0, 3);
+};
+
+const inputLanguagePriorityOptions = index =>
+  optionsWithCurrentValue(
+    VOICE_LANGUAGE_OPTIONS,
+    state.voiceSettings.inputLanguagePriorities[index]
+  );
+
+const updateInputLanguagePriority = (index, value) => {
+  const priorities = normalizeInputLanguagePriorities(
+    state.voiceSettings.inputLanguagePriorities,
+    state.voiceSettings.language
+  );
+  if (state.voiceSettings.language !== 'auto' && index === 0) return;
+  const duplicateIndex = priorities.indexOf(value);
+  if (duplicateIndex >= 0 && duplicateIndex !== index) {
+    [priorities[index], priorities[duplicateIndex]] = [
+      priorities[duplicateIndex],
+      priorities[index],
+    ];
+  } else {
+    priorities[index] = value;
+  }
+  state.voiceSettings.inputLanguagePriorities =
+    normalizeInputLanguagePriorities(priorities, state.voiceSettings.language);
+};
+
+watch(
+  () => state.voiceSettings.language,
+  language => {
+    state.voiceSettings.inputLanguagePriorities =
+      normalizeInputLanguagePriorities(
+        state.voiceSettings.inputLanguagePriorities,
+        language
+      );
+  }
+);
 const voiceThinkingLevelOptions = computed(() => [
   {
     value: 'minimal',
@@ -383,6 +466,8 @@ const updateVoiceProvider = provider => {
   if (!preset) return;
 
   state.voiceSettings.provider = provider;
+  state.voiceSettings.sttProvider =
+    preset.sttProvider || DEFAULT_VOICE_SETTINGS.sttProvider;
   state.voiceSettings.model = preset.model;
   state.voiceSettings.voice = preset.voice;
   state.voiceSettings.language = preset.language;
@@ -393,7 +478,7 @@ watch(
   ([provider, model]) => {
     if (
       state.voiceSettings.language === 'auto' &&
-      !supportsGeminiAutoLanguage(provider, model)
+      !supportsAutoLanguage(provider, model)
     ) {
       state.voiceSettings.language = 'ru-KZ';
     }
@@ -439,14 +524,26 @@ const updateStateFromAssistant = assistant => {
     VOICE_PROVIDER_PRESETS[provider] || VOICE_PROVIDER_PRESETS['gemini-live'];
   const model = voiceSettings.model || providerPreset.model;
   const savedLanguage = voiceSettings.language || providerPreset.language;
+  const language =
+    savedLanguage === 'auto' && !supportsAutoLanguage(provider, model)
+      ? 'ru-KZ'
+      : savedLanguage;
   state.voiceSettings = {
     provider,
+    sttProvider:
+      voiceSettings.stt_provider ||
+      providerPreset.sttProvider ||
+      DEFAULT_VOICE_SETTINGS.sttProvider,
     model,
     voice: voiceSettings.voice || providerPreset.voice,
-    language:
-      savedLanguage === 'auto' && !supportsGeminiAutoLanguage(provider, model)
-        ? 'ru-KZ'
-        : savedLanguage,
+    language,
+    inputLanguagePriorities: normalizeInputLanguagePriorities(
+      voiceSettings.input_language_priorities,
+      language
+    ),
+    maxSentences: Number(
+      voiceSettings.max_sentences ?? DEFAULT_VOICE_SETTINGS.maxSentences
+    ),
     thinkingLevel:
       voiceSettings.thinking_level ?? DEFAULT_VOICE_SETTINGS.thinkingLevel,
     contextWindowCompressionEnabled:
@@ -459,6 +556,8 @@ const updateStateFromAssistant = assistant => {
       DEFAULT_VOICE_SETTINGS.voiceCharacterPrompt,
     firstMessage:
       voiceSettings.first_message ?? DEFAULT_VOICE_SETTINGS.firstMessage,
+    closingMessage:
+      voiceSettings.closing_message ?? DEFAULT_VOICE_SETTINGS.closingMessage,
     managerHandoffMode:
       voiceSettings.manager_handoff_mode ??
       DEFAULT_VOICE_SETTINGS.managerHandoffMode,
@@ -539,6 +638,9 @@ const buildPayload = async () => {
     v$.value.handoffMessage.$validate(),
     v$.value.resolutionMessage.$validate(),
   ];
+  if (isFishProvider.value) {
+    validations.push(v$.value.voiceSettings.voice.$validate());
+  }
 
   const result = await Promise.all(validations).then(results =>
     results.every(Boolean)
@@ -565,13 +667,34 @@ const buildPayload = async () => {
         voice_settings: {
           provider:
             state.voiceSettings.provider || DEFAULT_VOICE_SETTINGS.provider,
+          ...(isFishProvider.value
+            ? {
+                stt_provider:
+                  state.voiceSettings.sttProvider ||
+                  DEFAULT_VOICE_SETTINGS.sttProvider,
+              }
+            : {}),
           model: state.voiceSettings.model || DEFAULT_VOICE_SETTINGS.model,
-          voice: state.voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,
+          voice: isFishProvider.value
+            ? state.voiceSettings.voice.trim()
+            : state.voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,
           language:
             state.voiceSettings.language === 'auto' &&
-            !isGeminiAutoLanguageSupported.value
+            !isAutoLanguageSupported.value
               ? 'ru-KZ'
               : state.voiceSettings.language || DEFAULT_VOICE_SETTINGS.language,
+          input_language_priorities: normalizeInputLanguagePriorities(
+            state.voiceSettings.inputLanguagePriorities,
+            state.voiceSettings.language
+          ),
+          max_sentences: Math.min(
+            8,
+            Math.max(
+              1,
+              normalizeNonNegativeInteger(state.voiceSettings.maxSentences) ||
+                DEFAULT_VOICE_SETTINGS.maxSentences
+            )
+          ),
           thinking_level:
             state.voiceSettings.thinkingLevel ||
             DEFAULT_VOICE_SETTINGS.thinkingLevel,
@@ -582,6 +705,9 @@ const buildPayload = async () => {
           voice_character_prompt:
             state.voiceSettings.voiceCharacterPrompt || '',
           first_message: state.voiceSettings.firstMessage || '',
+          closing_message:
+            state.voiceSettings.closingMessage ||
+            DEFAULT_VOICE_SETTINGS.closingMessage,
           manager_handoff_mode:
             state.voiceSettings.managerHandoffMode ||
             DEFAULT_VOICE_SETTINGS.managerHandoffMode,
@@ -916,11 +1042,39 @@ defineExpose({
             class="w-full"
           />
         </div>
+        <div
+          v-if="isFishProvider"
+          data-test-id="assistant-fish-stt-provider"
+          class="flex flex-col gap-1.5"
+        >
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.STT_PROVIDER') }}
+          </label>
+          <Select
+            v-model="state.voiceSettings.sttProvider"
+            :options="voiceSttProviderOptions"
+            class="w-full"
+          />
+        </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-sm font-medium text-n-slate-12">
             {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.VOICE') }}
           </label>
+          <Input
+            v-if="isFishProvider"
+            v-model="state.voiceSettings.voice"
+            data-test-id="assistant-fish-voice-id"
+            :placeholder="
+              t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FISH_VOICE_PLACEHOLDER')
+            "
+            :message="
+              formErrors.voice ||
+              t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FISH_VOICE_DESCRIPTION')
+            "
+            :message-type="formErrors.voice ? 'error' : 'info'"
+          />
           <Select
+            v-else
             v-model="state.voiceSettings.voice"
             :options="voiceVoiceOptions"
             class="w-full"
@@ -928,7 +1082,7 @@ defineExpose({
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-sm font-medium text-n-slate-12">
-            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.LANGUAGE') }}
+            {{ t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.PRIMARY_LANGUAGE') }}
           </label>
           <Select
             v-model="state.voiceSettings.language"
@@ -936,6 +1090,63 @@ defineExpose({
             class="w-full"
           />
         </div>
+        <div
+          data-test-id="assistant-input-language-priorities"
+          class="md:col-span-2 flex flex-col gap-2 rounded-lg border border-n-weak p-3"
+        >
+          <div>
+            <label class="text-sm font-medium text-n-slate-12">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.INPUT_LANGUAGE_PRIORITIES'
+                )
+              }}
+            </label>
+            <p class="mt-1 text-sm text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.INPUT_LANGUAGE_PRIORITIES_DESCRIPTION'
+                )
+              }}
+            </p>
+          </div>
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+            <div
+              v-for="(_, index) in state.voiceSettings.inputLanguagePriorities"
+              :key="index"
+              class="flex flex-col gap-1.5"
+            >
+              <span class="text-xs font-medium text-n-slate-10">
+                {{
+                  t(
+                    'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.LANGUAGE_PRIORITY',
+                    { index: index + 1 }
+                  )
+                }}
+              </span>
+              <Select
+                :model-value="
+                  state.voiceSettings.inputLanguagePriorities[index]
+                "
+                :options="inputLanguagePriorityOptions(index)"
+                :disabled="
+                  state.voiceSettings.language !== 'auto' && index === 0
+                "
+                class="w-full"
+                @update:model-value="
+                  value => updateInputLanguagePriority(index, value)
+                "
+              />
+            </div>
+          </div>
+        </div>
+        <Input
+          v-model.number="state.voiceSettings.maxSentences"
+          type="number"
+          min="1"
+          max="8"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.MAX_SENTENCES')"
+        />
         <div
           v-if="isGeminiThinkingSupported"
           data-test-id="assistant-gemini-thinking-level"
@@ -1031,6 +1242,15 @@ defineExpose({
           :placeholder="
             t(
               'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.FIRST_MESSAGE_PLACEHOLDER'
+            )
+          "
+        />
+        <Input
+          v-model="state.voiceSettings.closingMessage"
+          :label="t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.CLOSING_MESSAGE')"
+          :placeholder="
+            t(
+              'CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.CLOSING_MESSAGE_PLACEHOLDER'
             )
           "
         />

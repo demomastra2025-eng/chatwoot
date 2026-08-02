@@ -1,6 +1,31 @@
 require 'rails_helper'
 
 RSpec.describe Telephony::AiVoice::ContextBuilder do
+  describe 'voice response policy' do
+    subject(:builder) { described_class.allocate }
+
+    before do
+      builder.instance_variable_set(
+        :@ai_settings,
+        'max_sentences' => 4,
+        'language' => 'ru-KZ',
+        'input_language_priorities' => %w[ru-KZ kk-KZ en-US]
+      )
+    end
+
+    it 'allows a longer complete answer when the caller explicitly asks for detail' do
+      expect(builder.send(:response_length_prompt)).to include('не длиннее 4 предложений', 'не обрывай')
+    end
+
+    it 'makes ordered input languages explicit for short ambiguous speech' do
+      expect(builder.send(:language_priority_prompt)).to include('ru-KZ → kk-KZ → en-US', 'короткой')
+    end
+
+    it 'requires a concrete next step instead of generic repeated prompts' do
+      expect(described_class::DEFAULT_SYSTEM_PROMPT).to include('следующий полезный шаг', 'Не повторяй общие фразы')
+    end
+  end
+
   describe '#captain_runtime_state_for_prompt' do
     let(:account) { create(:account, captain_runtime: { 'assistant_thinking_effort' => 'low' }) }
     let(:whatsapp_channel) do

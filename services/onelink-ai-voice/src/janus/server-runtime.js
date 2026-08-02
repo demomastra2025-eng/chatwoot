@@ -346,6 +346,7 @@ class JanusSipServerRuntimeManager {
     this.syncPromise = null;
     this.lastSyncAt = null;
     this.lastSyncError = null;
+    this.consecutiveSyncFailures = 0;
     this.closed = false;
     this.desiredProfileCount = 0;
     this.desiredHandleCount = 0;
@@ -379,7 +380,13 @@ class JanusSipServerRuntimeManager {
       } finally {
         this.scheduleProfileSync();
       }
-    }, this.syncIntervalMs);
+    }, this.profileSyncDelayMs());
+  }
+
+  profileSyncDelayMs() {
+    const failureMultiplier = 2 ** Math.min(this.consecutiveSyncFailures, 6);
+    const maximumDelayMs = Math.max(this.syncIntervalMs, 120_000);
+    return Math.min(this.syncIntervalMs * failureMultiplier, maximumDelayMs);
   }
 
   async syncProfiles(profiles = null) {
@@ -390,9 +397,11 @@ class JanusSipServerRuntimeManager {
       const result = await this.syncPromise;
       this.lastSyncAt = new Date().toISOString();
       this.lastSyncError = null;
+      this.consecutiveSyncFailures = 0;
       return result;
     } catch (error) {
       this.lastSyncError = error.message;
+      this.consecutiveSyncFailures += 1;
       throw error;
     } finally {
       this.syncPromise = null;
@@ -490,7 +499,9 @@ class JanusSipServerRuntimeManager {
       desired_handles: this.desiredHandleCount,
       active_calls: sessions.reduce((total, session) => total + session.activeCalls.size, 0),
       last_sync_at: this.lastSyncAt,
-      last_sync_error: this.lastSyncError
+      last_sync_error: this.lastSyncError,
+      consecutive_sync_failures: this.consecutiveSyncFailures,
+      next_sync_delay_ms: this.profileSyncDelayMs()
     };
   }
 
@@ -814,6 +825,8 @@ class JanusSipServerProfileSession {
     let routeDecision;
     let runtimeEngine;
     try {
+      const runtimeCandidate = this.runtimeSelector?.selectCandidate?.(facade.request) || 'legacy';
+      if (runtimeCandidate === 'pipecat') facade.request.runtime_engine = 'pipecat';
       routeDecision = await this.resolveRouteDecision(facade);
       if (facade.ended) return;
       facade.request.routing = routeDecision;

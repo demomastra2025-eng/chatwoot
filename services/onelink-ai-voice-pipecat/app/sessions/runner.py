@@ -107,6 +107,7 @@ class PipecatSessionRunner:
         call_ref = str(payload.get("call_ref") or "").strip()
         if not call_ref:
             raise ValueError("call_ref is required for Pipecat runtime")
+        runtime_session_id = _runtime_session_id(payload, call_ref=call_ref)
 
         callback_url = self.settings.callback_base_url
         assert callback_url is not None
@@ -128,7 +129,7 @@ class PipecatSessionRunner:
                 client=client,
                 correlation=Correlation(
                     call_ref=call_ref,
-                    runtime_session_id=runtime_stream.runtime_session_id,
+                    runtime_session_id=runtime_session_id,
                     account_id=payload.get("account_id"),
                     conversation_id=payload.get("conversation_id"),
                     call_session_id=payload.get("call_session_id"),
@@ -139,18 +140,18 @@ class PipecatSessionRunner:
             try:
                 raw_context = payload.pop("_preflight_context", None)
                 if raw_context is None:
-                    context_payload = _context_payload(
-                        payload, runtime_stream.runtime_session_id
-                    )
+                    context_payload = _context_payload(payload, runtime_session_id)
                     raw_context = await client.get_context(context_payload)
                 raw_context = {
                     **raw_context,
                     "runtime_engine": "pipecat",
-                    "runtime_session_id": runtime_stream.runtime_session_id,
+                    "runtime_session_id": runtime_session_id,
                 }
                 context = VoiceContext.model_validate(raw_context)
                 _assert_tenant_scope(payload, context)
-                self.settings.provider_credentials(context.ai.provider)
+                self.settings.provider_credentials(
+                    context.ai.provider, stt_provider=context.ai.stt_provider
+                )
                 state.correlation = context.correlation
                 _filter_tools_for_transport(
                     context,
@@ -195,10 +196,7 @@ class PipecatSessionRunner:
         call_ref = str(payload.get("call_ref") or "").strip()
         if not call_ref:
             raise ValueError("call_ref is required for Pipecat preflight")
-        runtime_stream = payload.get("runtime_stream") or {}
-        runtime_session_id = str(
-            runtime_stream.get("runtime_session_id") or f"preflight:{call_ref}"
-        )
+        runtime_session_id = _runtime_session_id(payload, call_ref=call_ref)
         callback_url = self.settings.callback_base_url
         assert callback_url is not None
         async with OnelinkClient(
@@ -212,7 +210,9 @@ class PipecatSessionRunner:
             )
         context = VoiceContext.model_validate(raw_context)
         _assert_tenant_scope(payload, context)
-        self.settings.provider_credentials(context.ai.provider)
+        self.settings.provider_credentials(
+            context.ai.provider, stt_provider=context.ai.stt_provider
+        )
         return raw_context
 
     async def _run_worker(
@@ -369,7 +369,13 @@ class PipecatSessionRunner:
             if state.user_turn != observed_user_turn:
                 observed_user_turn = state.user_turn
                 silence_stage = 0
-            if state.tool_in_progress or assembly.activity.bot_speaking:
+            if (
+                getattr(state, "termination_requested", False)
+                or state.tool_in_progress
+                or assembly.tool_dialogue.awaiting_continuation
+                or assembly.activity.bot_speaking
+                or assembly.activity.user_speaking
+            ):
                 continue
             idle_ms = (now - state.last_activity_monotonic) * 1_000
             if not context.ai.silence_prompt_enabled:
@@ -448,6 +454,16 @@ async def _close_recorder(
         "code": "recording_finalize_failed",
         "error_class": str(recording.get("error_class") or "RecordingError"),
     }
+
+
+def _runtime_session_id(payload: dict[str, Any], *, call_ref: str) -> str:
+    runtime_stream = payload.get("runtime_stream") or {}
+    return str(
+        payload.get("runtime_session_id")
+        or payload.get("runtimeSessionId")
+        or runtime_stream.get("runtime_session_id")
+        or f"preflight:{call_ref}"
+    ).strip()
 
 
 def _context_payload(payload: dict[str, Any], runtime_session_id: str) -> dict[str, Any]:

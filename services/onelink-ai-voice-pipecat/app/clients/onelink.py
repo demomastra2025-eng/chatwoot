@@ -102,12 +102,20 @@ class OnelinkClient:
         correlation: Correlation,
         *,
         action: str,
+        event_key: str,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "/internal/voice/ai/control",
-            body={**correlation.payload(), "action": action, "metadata": metadata or {}},
-            retryable=False,
+            body={
+                **correlation.payload(),
+                "action": action,
+                "event_id": event_key,
+                "event_key": event_key,
+                "metadata": metadata or {},
+            },
+            headers=_event_headers(event_key, 1),
+            retryable=True,
         )
 
     async def send_heartbeat(self, correlation: Correlation) -> dict[str, Any]:

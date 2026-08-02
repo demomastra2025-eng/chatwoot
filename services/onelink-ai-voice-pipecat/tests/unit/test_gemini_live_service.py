@@ -1,10 +1,38 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from google.genai.types import Content, LiveServerContent, LiveServerMessage, Part
+from google.genai.types import (
+    Content,
+    LiveConnectConfig,
+    LiveServerContent,
+    LiveServerMessage,
+    Part,
+)
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
 
-from app.services.gemini_live import OneLinkGeminiLiveLLMService
+from app.services.gemini_live import OneLinkGeminiLiveLLMService, OneLinkInternalTextFrame
+
+
+@pytest.mark.asyncio
+async def test_applies_ordered_input_language_hints_to_the_native_connect_config():
+    service = object.__new__(OneLinkGeminiLiveLLMService)
+    service.__dict__["_input_language_priorities"] = ("ru-KZ", "kk-KZ", "en-US")
+    config = LiveConnectConfig()
+
+    with patch.object(
+        GeminiLiveLLMService,
+        "_connection_task_handler",
+        new_callable=AsyncMock,
+    ) as upstream_handler:
+        await service._connection_task_handler(config)
+
+    upstream_handler.assert_awaited_once_with(config)
+    assert config.input_audio_transcription.language_hints.language_codes == [
+        "ru-KZ",
+        "kk-KZ",
+        "en-US",
+    ]
 
 
 def _model_turn_message(*texts: str) -> LiveServerMessage:
@@ -55,3 +83,16 @@ async def test_preserves_upstream_path_for_a_single_model_turn_part():
         await service._handle_msg_model_turn(message)
 
     upstream_handler.assert_awaited_once_with(message)
+
+
+@pytest.mark.asyncio
+async def test_internal_speech_text_is_sent_to_gemini_without_leaking_downstream():
+    service = object.__new__(OneLinkGeminiLiveLLMService)
+    service._send_user_text = AsyncMock()
+    service.push_frame = AsyncMock()
+    frame = OneLinkInternalTextFrame(text="Скажите короткую служебную фразу.")
+
+    await service.process_frame(frame, FrameDirection.DOWNSTREAM)
+
+    service._send_user_text.assert_awaited_once_with(frame.text)
+    service.push_frame.assert_not_awaited()

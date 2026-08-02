@@ -37,6 +37,7 @@ class SessionState:
         self._pending_transcript: list[dict[str, Any]] = []
         self._sequence = 0
         self._event_sequence = 0
+        self._control_sequence = 0
         self._transcript_lock = asyncio.Lock()
         self._finalize_lock = asyncio.Lock()
         self._tool_lock = asyncio.Lock()
@@ -45,6 +46,7 @@ class SessionState:
         self._active_tool_calls = 0
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._tool_action_handler = tool_action_handler
+        self._termination_requested = False
         self._finalized = False
         self._finalize_payload: dict[str, Any] | None = None
 
@@ -59,6 +61,14 @@ class SessionState:
     @property
     def tool_in_progress(self) -> bool:
         return self._active_tool_calls > 0
+
+    @property
+    def termination_requested(self) -> bool:
+        return self._termination_requested
+
+    def request_termination(self) -> None:
+        self._termination_requested = True
+        self.touch()
 
     def touch(self) -> None:
         self.last_activity_monotonic = time.monotonic()
@@ -139,9 +149,17 @@ class SessionState:
             del self._pending_transcript[: len(items)]
             return True
 
-    async def safe_event(self, event: str, payload: dict[str, Any] | None = None) -> bool:
+    async def safe_event(
+        self,
+        event: str,
+        payload: dict[str, Any] | None = None,
+        *,
+        event_id: str | None = None,
+    ) -> bool:
         self._event_sequence += 1
-        event_id = f"pipecat:{self.correlation.runtime_session_id}:{self._event_sequence}:{event}"
+        event_id = event_id or (
+            f"pipecat:{self.correlation.runtime_session_id}:{self._event_sequence}:{event}"
+        )
         try:
             await self.client.send_event(
                 self.correlation,
@@ -168,22 +186,28 @@ class SessionState:
         tool_call_id: str | None = None,
         tool_name: str | None = None,
     ) -> bool:
+        self._control_sequence += 1
+        event_id = (
+            f"pipecat-control:{self.correlation.runtime_session_id}:"
+            f"{self._control_sequence}:{action}"
+        )
+        control_payload = {
+            **(payload or {}),
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+        }
         try:
-            control_payload = {
-                **(payload or {}),
-                "tool_call_id": tool_call_id,
-                "tool_name": tool_name,
-            }
             await self.client.send_control(
                 self.correlation,
                 action=action,
+                event_key=event_id,
                 metadata={
                     key: value for key, value in control_payload.items() if value is not None
                 },
             )
             return True
         except (OnelinkApiError, TimeoutError):
-            await self.safe_event(action, payload or {})
+            await self.safe_event(action, control_payload, event_id=event_id)
             return False
 
     async def execute_tool(

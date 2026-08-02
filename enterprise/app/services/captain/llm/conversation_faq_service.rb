@@ -3,11 +3,12 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
 
   DISTANCE_THRESHOLD = 0.3
 
-  def initialize(assistant, conversation)
+  def initialize(assistant, conversation, content: nil)
     super()
     @assistant = assistant
     @conversation = conversation
-    @content = conversation.to_llm_text
+    @content_overridden = !content.nil?
+    @content = content || conversation.to_llm_text
   end
 
   # Generates and deduplicates FAQs from conversation content
@@ -28,6 +29,8 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
   attr_reader :content, :conversation, :assistant
 
   def no_human_interaction?
+    return !transcript_text_has_caller_label?(content) if @content_overridden
+
     conversation.first_reply_created_at.nil? && !voice_transcript_interaction?
   end
 
@@ -69,12 +72,8 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
     unique_faqs = []
 
     faqs.each do |faq|
-      combined_text = "#{faq['question']}: #{faq['answer']}"
-      embedding = Captain::Llm::EmbeddingService.new(account_id: @conversation.account_id).get_embedding(
-        combined_text,
-        input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
-      )
-      similar_faqs = find_similar_faqs(embedding)
+      lexical_duplicates = find_lexical_duplicates(faq)
+      similar_faqs = lexical_duplicates.presence || find_embedding_duplicates(faq)
 
       if similar_faqs.any?
         duplicate_faqs << { faq: faq, similar_faqs: similar_faqs }
@@ -86,12 +85,45 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
     [duplicate_faqs, unique_faqs]
   end
 
+  def find_embedding_duplicates(faq)
+    combined_text = "#{faq['question']}: #{faq['answer']}"
+    embedding = Captain::Llm::EmbeddingService.new(account_id: @conversation.account_id).get_embedding(
+      combined_text,
+      input_type: Captain::Llm::EmbeddingService::SEARCH_QUERY_INPUT_TYPE
+    )
+    find_similar_faqs(embedding)
+  end
+
   def find_similar_faqs(embedding)
-    similar_faqs = assistant
-                   .responses
+    similar_faqs = deduplication_responses
+                   .where.not(embedding: nil)
                    .nearest_neighbors(:embedding, embedding, distance: 'cosine')
     Rails.logger.debug(similar_faqs.map { |faq| [faq.question, faq.neighbor_distance] })
     similar_faqs.select { |record| record.neighbor_distance < DISTANCE_THRESHOLD }
+  end
+
+  def find_lexical_duplicates(faq)
+    question = normalize_faq_text(faq['question'])
+    answer = normalize_faq_text(faq['answer'])
+    return [] if question.blank? && answer.blank?
+
+    deduplication_responses.order(id: :desc).limit(500).select do |record|
+      existing_question = normalize_faq_text(record.question)
+      existing_answer = normalize_faq_text(record.answer)
+      question_match = question.present? && question == existing_question
+      answer_match = answer.length >= 8 && answer == existing_answer
+      question_match || answer_match
+    end
+  end
+
+  def normalize_faq_text(value)
+    value.to_s.unicode_normalize(:nfkc).downcase.gsub(/[[:punct:]\s]+/, ' ').strip
+  end
+
+  def deduplication_responses
+    Captain::AssistantResponse
+      .where(account_id: conversation.account_id, status: %w[pending approved])
+      .visible_to_assistant(assistant.id)
   end
 
   def save_new_faqs(faqs)
