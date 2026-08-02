@@ -81,6 +81,7 @@ class WatchdogAssembly:
         self.cancellations = []
         self.worker = self
         self.activity = SimpleNamespace(bot_speaking=False, user_speaking=False)
+        self.activity.turns_completed = 1
         self.tool_dialogue = SimpleNamespace(awaiting_continuation=False)
 
     async def speak_exact(self, message):
@@ -160,6 +161,56 @@ async def test_hard_timeout_transport_end_call_is_direct_and_bounded():
     await _end_call_safely(cast(Any, control))
 
     assert control.actions == [{"action": "end_call"}]
+
+
+@pytest.mark.asyncio
+async def test_silence_watchdog_does_not_overtake_initial_assistant_turn(monkeypatch):
+    monkeypatch.setattr("app.sessions.runner.INITIAL_SILENCE_GRACE_MS", 200)
+    context = SimpleNamespace(
+        ai=SimpleNamespace(
+            max_duration_sec=900,
+            silence_prompt_enabled=True,
+            silence_prompt_after_ms=1,
+            second_silence_prompt_after_ms=0,
+            max_silence_ms=0,
+            end_call_on_silence_enabled=True,
+            silence_prompt="Вы меня слышите?",
+            second_silence_prompt="Остаётесь на линии?",
+            final_silence_message="Завершаю звонок.",
+        )
+    )
+    state = SimpleNamespace(
+        user_turn=0,
+        tool_in_progress=False,
+        last_activity_monotonic=time.monotonic() - 60,
+    )
+    state.last_activity_monotonic = time.monotonic()
+    assembly = WatchdogAssembly()
+    assembly.activity.turns_completed = 0
+    terminal = TerminalDecision()
+    task = asyncio.create_task(
+        PipecatSessionRunner._watchdog(
+            cast(Any, None),
+            cast(Any, context),
+            cast(Any, state),
+            cast(Any, assembly),
+            terminal,
+            {"action": None},
+            None,
+        )
+    )
+
+    await asyncio.sleep(0.3)
+    assert assembly.messages == []
+
+    assembly.activity.turns_completed = 1
+    state.last_activity_monotonic = time.monotonic() - 1
+    await asyncio.sleep(0.15)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert assembly.messages == ["Вы меня слышите?"]
 
 
 @pytest.mark.asyncio
@@ -410,7 +461,11 @@ async def test_max_silence_speaks_then_ends_transport_before_pipeline_cancel():
     class OrderedAssembly:
         def __init__(self):
             self.worker = self
-            self.activity = SimpleNamespace(bot_speaking=False, user_speaking=False)
+            self.activity = SimpleNamespace(
+                bot_speaking=False,
+                user_speaking=False,
+                turns_completed=1,
+            )
             self.tool_dialogue = SimpleNamespace(awaiting_continuation=False)
 
         async def speak_exact(self, message):

@@ -101,6 +101,16 @@ class FailingToolClient(FakeClient):
         raise OnelinkApiError("callback timed out", code="transport_error")
 
 
+class DefinitiveFailingToolClient(FakeClient):
+    async def call_tool(self, correlation, name, arguments, **kwargs):
+        self.tools.append((correlation, name, arguments, kwargs))
+        raise OnelinkApiError(
+            "invalid tool arguments",
+            status=422,
+            code="invalid_arguments",
+        )
+
+
 class SlowFailingToolClient(SlowControlClient):
     async def call_tool(self, correlation, name, arguments, **kwargs):
         self.tools.append((correlation, name, arguments, kwargs))
@@ -193,6 +203,113 @@ async def test_duplicate_tool_call_is_fenced_in_process(state):
     await state.drain_background()
     actions = [item[1]["action"] for item in state.client.controls]
     assert actions == ["tool_started", "tool_completed"]
+
+
+@pytest.mark.asyncio
+async def test_create_deal_is_semantically_fenced_per_caller_turn(state):
+    first = await state.execute_tool(
+        "create_deal",
+        {"title": "Новая сделка"},
+        "tool-deal-1",
+        timeout_ms=800,
+    )
+    duplicate = await state.execute_tool(
+        "create_deal",
+        {"title": "Новая сделка", "pipeline_id": 2, "stage_id": 3},
+        "tool-deal-2",
+        timeout_ms=800,
+    )
+
+    assert first == duplicate == {"message_id": 99}
+    assert len(state.client.tools) == 1
+
+    state.touch_user()
+    next_turn = await state.execute_tool(
+        "create_deal",
+        {"title": "Другая сделка"},
+        "tool-deal-3",
+        timeout_ms=800,
+    )
+    await state.drain_background()
+
+    assert next_turn == {"message_id": 99}
+    assert len(state.client.tools) == 2
+    duplicate_controls = [
+        item[1]
+        for item in state.client.controls
+        if item[1]["action"] == "tool_suppressed"
+    ]
+    assert len(duplicate_controls) == 1
+    assert duplicate_controls[0]["metadata"]["dedupe_scope"] == "caller_turn"
+
+
+@pytest.mark.asyncio
+async def test_failed_create_deal_can_retry_in_same_caller_turn():
+    client = DefinitiveFailingToolClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(
+            call_ref="call-deal-retry",
+            runtime_session_id="runtime-deal-retry",
+        ),
+    )
+
+    first = await state.execute_tool(
+        "create_deal",
+        {"title": "Сделка"},
+        "tool-deal-failed-1",
+        timeout_ms=800,
+    )
+    retry = await state.execute_tool(
+        "create_deal",
+        {"title": "Сделка", "pipeline_id": 2},
+        "tool-deal-failed-2",
+        timeout_ms=800,
+    )
+
+    assert first["error"] == retry["error"] == "tool_execution_failed"
+    assert len(client.tools) == 2
+
+
+@pytest.mark.asyncio
+async def test_unknown_create_deal_outcome_is_fenced_for_the_whole_call():
+    client = FailingToolClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(
+            call_ref="call-deal-unknown",
+            runtime_session_id="runtime-deal-unknown",
+        ),
+    )
+
+    first = await state.execute_tool(
+        "create_deal",
+        {"title": "Сделка"},
+        "tool-deal-unknown-1",
+        timeout_ms=800,
+    )
+    state.touch_user()
+    suppressed = await state.execute_tool(
+        "create_deal",
+        {"title": "Сделка", "pipeline_id": 2},
+        "tool-deal-unknown-2",
+        timeout_ms=800,
+    )
+    await state.drain_background()
+
+    assert first == suppressed
+    assert first == {
+        "error": "tool_execution_outcome_unknown",
+        "code": "transport_error",
+        "status": "outcome_unknown",
+        "retryable": False,
+    }
+    assert len(client.tools) == 1
+    suppressed_controls = [
+        item[1] for item in client.controls if item[1]["action"] == "tool_suppressed"
+    ]
+    assert len(suppressed_controls) == 1
+    assert suppressed_controls[0]["metadata"]["dedupe_scope"] == "call"
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,8 @@ from typing import Any
 from app.callbacks.outbox import CallbackOutbox
 from app.clients.onelink import Correlation, OnelinkApiError, OnelinkClient
 
+SEMANTIC_MUTATION_FENCE_TOOLS = frozenset({"create_deal"})
+
 
 class SessionState:
     """Own transcript sequence, tool fences and terminal callback for one call."""
@@ -43,6 +45,9 @@ class SessionState:
         self._tool_lock = asyncio.Lock()
         self._tool_results: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._tool_fingerprints: dict[str, str] = {}
+        self._semantic_tool_results: dict[
+            tuple[str, int], asyncio.Future[dict[str, Any]]
+        ] = {}
         self._active_tool_calls = 0
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._tool_action_handler = tool_action_handler
@@ -222,17 +227,58 @@ class SessionState:
         if not tool_call_id:
             return {"error": "tool_execution_failed", "code": "TOOL_IDEMPOTENCY_KEY_REQUIRED"}
         fingerprint = self._tool_fingerprint(name, arguments)
+        semantic_key = self._semantic_tool_key(name)
         creator = False
+        semantic_reused = False
+        semantic_reuse_key: tuple[str, int] | None = None
         async with self._tool_lock:
             future = self._tool_results.get(tool_call_id)
             if future is None:
-                future = asyncio.get_running_loop().create_future()
+                semantic_lookup_key = semantic_key
+                if semantic_key is not None:
+                    call_scope_key = (semantic_key[0], -1)
+                    if call_scope_key in self._semantic_tool_results:
+                        semantic_lookup_key = call_scope_key
+                semantic_future = (
+                    self._semantic_tool_results.get(semantic_lookup_key)
+                    if semantic_lookup_key is not None
+                    else None
+                )
+                if (
+                    semantic_lookup_key is not None
+                    and semantic_future is not None
+                    and not self._semantic_result_reusable(semantic_future)
+                ):
+                    self._semantic_tool_results.pop(semantic_lookup_key, None)
+                    semantic_future = None
+                future = semantic_future or asyncio.get_running_loop().create_future()
                 self._tool_results[tool_call_id] = future
                 self._tool_fingerprints[tool_call_id] = fingerprint
-                creator = True
+                if semantic_future is None:
+                    if semantic_key:
+                        self._semantic_tool_results[semantic_key] = future
+                    creator = True
+                else:
+                    semantic_reused = True
+                    semantic_reuse_key = semantic_lookup_key
             elif self._tool_fingerprints.get(tool_call_id) != fingerprint:
                 return {"error": "tool_execution_failed", "code": "TOOL_IDEMPOTENCY_CONFLICT"}
         if not creator:
+            if semantic_reused and semantic_reuse_key:
+                self.spawn(
+                    self.safe_control(
+                        "tool_suppressed",
+                        {
+                            "dedupe_scope": (
+                                "call" if semantic_reuse_key[1] < 0 else "caller_turn"
+                            ),
+                            "duplicate": True,
+                            "user_turn": self.user_turn,
+                        },
+                        tool_call_id=tool_call_id,
+                        tool_name=name,
+                    )
+                )
             return await asyncio.shield(future)
 
         self._active_tool_calls += 1
@@ -282,10 +328,19 @@ class SessionState:
                         )
                     )
             except (OnelinkApiError, TimeoutError) as error:
+                outcome_unknown = semantic_key is not None and self._tool_outcome_unknown(
+                    error
+                )
                 result = {
-                    "error": "tool_execution_failed",
+                    "error": (
+                        "tool_execution_outcome_unknown"
+                        if outcome_unknown
+                        else "tool_execution_failed"
+                    ),
                     "code": getattr(error, "code", "TOOL_TIMEOUT"),
                 }
+                if outcome_unknown:
+                    result.update({"status": "outcome_unknown", "retryable": False})
                 terminal_fallback = {
                     "action": "end_call",
                     "status": "accepted",
@@ -314,10 +369,19 @@ class SessionState:
                         )
                     )
             future.set_result(result)
+            if semantic_key and result.get("status") == "outcome_unknown":
+                async with self._tool_lock:
+                    self._semantic_tool_results[(semantic_key[0], -1)] = future
+            elif semantic_key and self._tool_result_failed(result):
+                async with self._tool_lock:
+                    self._remove_semantic_future_locked(future)
             return result
         except BaseException:
             if not future.done():
                 future.cancel()
+            if semantic_key:
+                async with self._tool_lock:
+                    self._remove_semantic_future_locked(future)
             raise
         finally:
             self._active_tool_calls -= 1
@@ -342,6 +406,47 @@ class SessionState:
             default=str,
         )
         return hashlib.sha256(canonical.encode()).hexdigest()
+
+    def _semantic_tool_key(self, name: str) -> tuple[str, int] | None:
+        normalized = name.strip().lower()
+        if normalized not in SEMANTIC_MUTATION_FENCE_TOOLS:
+            return None
+        return normalized, self.user_turn
+
+    def _remove_semantic_future_locked(
+        self, future: asyncio.Future[dict[str, Any]]
+    ) -> None:
+        for key, candidate in list(self._semantic_tool_results.items()):
+            if candidate is future:
+                self._semantic_tool_results.pop(key, None)
+
+    @staticmethod
+    def _tool_outcome_unknown(error: OnelinkApiError | TimeoutError) -> bool:
+        if isinstance(error, TimeoutError):
+            return True
+        if error.code in {"transport_error", "invalid_json", "invalid_contract"}:
+            return True
+        return error.status == 0 or error.status in {408, 429} or error.status >= 500
+
+    @classmethod
+    def _semantic_result_reusable(
+        cls, future: asyncio.Future[dict[str, Any]]
+    ) -> bool:
+        if future.cancelled():
+            return False
+        if not future.done():
+            return True
+        try:
+            return not cls._tool_result_failed(future.result())
+        except BaseException:
+            return False
+
+    @staticmethod
+    def _tool_result_failed(result: dict[str, Any]) -> bool:
+        status = str(result.get("status") or "").lower()
+        if status == "outcome_unknown":
+            return False
+        return bool(result.get("error")) or status in {"error", "failed"}
 
     @classmethod
     def _tool_audit_metadata(cls, value: Any) -> dict[str, Any]:

@@ -121,7 +121,7 @@ async def test_long_read_tool_speaks_progress_then_returns_result_once():
     execution = asyncio.create_task(execute_with_answer(coordinator, activity))
 
     await asyncio.sleep(0.03)
-    assert spoken == ["Секунду, проверю."]
+    assert spoken == ["Проверяю информацию, это займёт немного времени."]
     gate.set()
     results = await execution
     await asyncio.gather(*state.tasks)
@@ -147,14 +147,19 @@ async def test_very_long_read_tool_speaks_start_and_delay_progress():
         activity=activity,
     )
     coordinator.bind(speak_exact=speak, run_instruction=speak)
-    execution = asyncio.create_task(execute_with_answer(coordinator, activity))
+    execution = asyncio.create_task(
+        execute_with_answer(coordinator, activity, definition("create_deal"))
+    )
 
     await asyncio.sleep(0.03)
     gate.set()
     await execution
     await asyncio.gather(*state.tasks)
 
-    assert spoken == ["Секунду, проверю.", "Ещё смотрю, почти готово."]
+    assert spoken == [
+        "Создаю сделку, это займёт немного времени.",
+        "Ещё создаю сделку, почти готово.",
+    ]
 
 
 @pytest.mark.asyncio
@@ -289,7 +294,11 @@ async def test_slow_gemini_tool_returns_pending_then_injects_late_result_once():
         instructions.append(message)
 
     coordinator = ToolDialogueCoordinator(
-        ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=5),
+        ai=ai_settings(
+            provider="gemini-live",
+            tool_foreground_wait_ms=5,
+            tool_delay_after_ms=5,
+        ),
         state=state,
         activity=activity,
     )
@@ -297,25 +306,34 @@ async def test_slow_gemini_tool_returns_pending_then_injects_late_result_once():
     results = await execute_with_answer(
         coordinator,
         activity,
-        tool_definition=definition(foreground_wait_ms=100),
+        tool_definition=definition("create_deal", foreground_wait_ms=100),
         on_result=lambda _result: asyncio.sleep(0),
     )
 
     assert results == [
         {
             "status": "pending",
-            "message": "Секунду, проверю.",
+            "message": "Создаю сделку, это займёт немного времени.",
+            "background_activity": "создание сделки",
             "tool_call_id": "tool-1",
         }
     ]
+    await asyncio.sleep(0.02)
+    assert instructions == ["Ещё создаю сделку, почти готово."]
     gate.set()
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 
     assert state.executions == 1
-    assert len(instructions) == 1
-    assert '"answer": "готово"' in instructions[0]
-    assert [control[0] for control in state.controls].count("tool_progress") == 1
+    assert len(instructions) == 2
+    assert "создание сделки" in instructions[1]
+    assert '"answer": "готово"' in instructions[1]
+    assert [control[0] for control in state.controls].count("tool_progress") == 2
+    assert {
+        control[1]["activity"]
+        for control in state.controls
+        if control[0] == "tool_progress"
+    } == {"создание сделки"}
     assert [control[0] for control in state.controls].count("tool_async_completed") == 1
 
 
@@ -348,7 +366,7 @@ async def test_fast_gemini_tool_returns_actual_result_without_pending():
 
 
 @pytest.mark.asyncio
-async def test_gemini_tool_without_explicit_foreground_policy_remains_synchronous():
+async def test_gemini_tool_without_explicit_foreground_policy_uses_runtime_window():
     gate = asyncio.Event()
     state = FakeState(gate=gate)
     activity = ConversationActivity()
@@ -363,17 +381,63 @@ async def test_gemini_tool_without_explicit_foreground_policy_remains_synchronou
         activity=activity,
     )
     coordinator.bind(speak_exact=record, run_instruction=record)
-    execution = asyncio.create_task(execute_with_answer(coordinator, activity))
+    results = await execute_with_answer(
+        coordinator,
+        activity,
+        tool_definition=definition("create_deal"),
+        on_result=lambda _result: asyncio.sleep(0),
+    )
 
-    await asyncio.sleep(0.02)
-    assert execution.done() is False
+    assert results == [
+        {
+            "status": "pending",
+            "message": "Создаю сделку, это займёт немного времени.",
+            "background_activity": "создание сделки",
+            "tool_call_id": "tool-1",
+        }
+    ]
     gate.set()
-    results = await execution
-    await asyncio.gather(*state.tasks)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
 
-    assert results == [{"answer": "готово"}]
     assert state.executions == 1
-    assert all(control[0] != "tool_progress" for control in state.controls)
+    assert any(control[0] == "tool_progress" for control in state.controls)
+    assert len(spoken) == 1
+    assert "создание сделки" in spoken[0]
+
+
+@pytest.mark.asyncio
+async def test_late_result_instructions_are_serialized():
+    state = FakeState()
+    activity = ConversationActivity()
+    instructions = []
+    in_flight = 0
+    max_in_flight = 0
+
+    async def run_instruction(message):
+        nonlocal in_flight, max_in_flight
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        instructions.append(message)
+        await asyncio.sleep(0.02)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        in_flight -= 1
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", post_tool_continuation_ms=100),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=run_instruction, run_instruction=run_instruction)
+
+    await asyncio.gather(
+        coordinator._run_late_instruction("result A"),
+        coordinator._run_late_instruction("result B"),
+    )
+
+    assert instructions == ["result A", "result B"]
+    assert max_in_flight == 1
 
 
 @pytest.mark.asyncio
@@ -403,7 +467,7 @@ async def test_mutating_tool_speaks_progress_without_duplicate_execution():
     await execution
     await asyncio.gather(*state.tasks)
 
-    assert spoken == ["Секунду, проверю."]
+    assert spoken == ["Создаю данные, это займёт немного времени."]
     assert state.executions == 1
 
 
@@ -429,7 +493,9 @@ async def test_post_tool_stall_forces_one_continuation_instruction():
     assert results == [{"answer": "готово"}]
     assert coordinator.awaiting_continuation is False
     assert len(instructions) == 1
-    assert "faq_lookup" in instructions[0]
+    assert "проверка информации" in instructions[0]
+    assert '"answer": "готово"' in instructions[0]
+    assert "не вызывай тот же инструмент повторно" in instructions[0].lower()
     assert any(control[0] == "post_tool_model_stall" for control in state.controls)
 
 

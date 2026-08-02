@@ -28,6 +28,7 @@ RUNTIME_HEARTBEAT_INTERVAL_SECONDS = 15.0
 RUNTIME_END_CALL_CALLBACK_TIMEOUT_MS = 1_000
 RUNTIME_CONTROL_ACTION_TIMEOUT_SECONDS = 5.0
 RUNTIME_CONTROL_CLEANUP_TIMEOUT_SECONDS = 3.0
+INITIAL_SILENCE_GRACE_MS = 12_000
 
 
 class RecorderCloser(Protocol):
@@ -378,6 +379,17 @@ class PipecatSessionRunner:
             ):
                 continue
             idle_ms = (now - state.last_activity_monotonic) * 1_000
+            conversation_started = (
+                assembly.activity.turns_completed > 0 or state.user_turn > 0
+            )
+            if not conversation_started:
+                if getattr(assembly, "start_on_connect", True):
+                    continue
+                if idle_ms < max(
+                    context.ai.silence_prompt_after_ms,
+                    INITIAL_SILENCE_GRACE_MS,
+                ):
+                    continue
             if not context.ai.silence_prompt_enabled:
                 continue
             if silence_stage >= len(silence_thresholds):
