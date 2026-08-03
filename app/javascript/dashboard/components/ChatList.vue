@@ -957,6 +957,51 @@ function resetAndFetchData({ preserveAppliedFilters = false, status } = {}) {
   fetchConversations();
 }
 
+async function resetConversationFilters() {
+  const openStatus = wootConstants.STATUS_TYPE.OPEN;
+  filterApplicationGeneration += 1;
+  const resetGeneration = filterApplicationGeneration;
+  const isCurrentReset = () => resetGeneration === filterApplicationGeneration;
+  latestStatusRouteIntent = openStatus;
+  await store.dispatch('invalidateConversationListRequests');
+  if (!isCurrentReset()) return;
+
+  appliedFilter.value = [];
+  await store.dispatch('clearConversationFilters');
+  if (!isCurrentReset()) return;
+
+  if (route.query.status !== openStatus) {
+    statusRouteSyncGeneration += 1;
+    const syncGeneration = statusRouteSyncGeneration;
+    const targetQuery = conversationNavigationQuery({ status: openStatus });
+    expectedRouteTargetKey = routeTargetKey({ query: targetQuery });
+    pendingStatusRouteSyncs.set(syncGeneration, {
+      status: openStatus,
+      applicationGeneration: resetGeneration,
+      targetKey: expectedRouteTargetKey,
+    });
+    try {
+      await router.replace({
+        name: route.name,
+        params: route.params,
+        query: targetQuery,
+      });
+    } catch {
+      if (isCurrentReset()) {
+        clearLocalSearch();
+        resetAndFetchData();
+      }
+      return;
+    } finally {
+      pendingStatusRouteSyncs.delete(syncGeneration);
+    }
+    if (!isCurrentReset()) return;
+  }
+
+  if (!isCurrentReset()) return;
+  resetAndFetchData();
+}
+
 async function onApplyFilter(payload) {
   filterApplicationGeneration += 1;
   store.dispatch('invalidateConversationListRequests');
@@ -964,14 +1009,21 @@ async function onApplyFilter(payload) {
   payload = useSnakeCase(payload);
 
   const nextStatus = extractSingleStatusFilter(payload, sidebarStatuses);
-  latestStatusRouteIntent = nextStatus || routeConversationStatus.value;
-  if (nextStatus && nextStatus !== routeConversationStatus.value) {
+  const targetStatus = nextStatus || routeConversationStatus.value;
+  latestStatusRouteIntent = targetStatus;
+  const hasConflictingPendingStatusSync = [
+    ...pendingStatusRouteSyncs.values(),
+  ].some(sync => sync.status !== targetStatus);
+  if (
+    targetStatus !== routeConversationStatus.value ||
+    hasConflictingPendingStatusSync
+  ) {
     statusRouteSyncGeneration += 1;
     const syncGeneration = statusRouteSyncGeneration;
-    const targetQuery = conversationNavigationQuery({ status: nextStatus });
+    const targetQuery = conversationNavigationQuery({ status: targetStatus });
     expectedRouteTargetKey = routeTargetKey({ query: targetQuery });
     pendingStatusRouteSyncs.set(syncGeneration, {
-      status: nextStatus,
+      status: targetStatus,
       applicationGeneration,
       targetKey: expectedRouteTargetKey,
     });
@@ -1722,12 +1774,12 @@ watch(routeConversationStatus, (newStatus, oldStatus) => {
     return;
   }
 
-  const staleSync = [...pendingStatusRouteSyncs.values()].some(
+  const hasObsoleteStatusSync = [...pendingStatusRouteSyncs.values()].some(
     sync =>
       sync.status === newStatus &&
       sync.applicationGeneration < filterApplicationGeneration
   );
-  if (staleSync) {
+  if (hasObsoleteStatusSync && newStatus !== latestStatusRouteIntent) {
     return;
   }
 
@@ -1843,7 +1895,7 @@ watch(conversationFilters, (newVal, oldVal) => {
       @add-folders="onClickOpenAddFoldersModal"
       @delete-folders="onClickOpenDeleteFoldersModal"
       @filters-modal="onToggleAdvanceFiltersModal"
-      @reset-filters="resetAndFetchData"
+      @reset-filters="resetConversationFilters"
       @basic-filter-change="onBasicFilterChange"
       @channel-filter-select="onChannelFilterSelect"
       @unread-filter-toggle="onUnreadFilterToggle"

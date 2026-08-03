@@ -176,6 +176,341 @@ describe('MessagesView', () => {
     });
   });
 
+  describe('currentChat watcher', () => {
+    it('refreshes chat-scoped state when direct and thread ids collide', () => {
+      const context = {
+        fetchAllAttachmentsFromCurrentChat: vi.fn(),
+        fetchSuggestions: vi.fn(),
+        messageSentSinceOpened: true,
+        resetReplyEditorHeight: vi.fn(),
+        conversationHistoryGeneration: 0,
+      };
+
+      MessagesView.watch.currentChat.call(
+        context,
+        { id: 987, communication_thread_id: 321 },
+        { id: 987 }
+      );
+
+      expect(context.fetchAllAttachmentsFromCurrentChat).toHaveBeenCalled();
+      expect(context.fetchSuggestions).toHaveBeenCalled();
+      expect(context.messageSentSinceOpened).toBe(false);
+      expect(context.resetReplyEditorHeight).toHaveBeenCalled();
+      expect(context.conversationHistoryGeneration).toBe(1);
+    });
+  });
+
+  describe('#fetchPreviousMessages', () => {
+    it('loads the previous page and preserves the visible scroll anchor', async () => {
+      const conversationPanel = {
+        scrollHeight: 1000,
+        scrollTop: 40,
+      };
+      const dispatch = vi.fn(async () => {
+        conversationPanel.scrollHeight = 1450;
+      });
+      const context = {
+        conversationPanel,
+        currentChat: {
+          id: 987,
+          dataFetched: true,
+          messages: [{ id: 101 }, { id: 102 }],
+        },
+        listLoadingStatus: false,
+        isLoadingPrevious: false,
+        heightBeforeLoad: null,
+        scrollTopBeforeLoad: null,
+        $store: { dispatch },
+        $nextTick: vi.fn(callback => {
+          callback();
+          return Promise.resolve();
+        }),
+        setScrollParams() {
+          MessagesView.methods.setScrollParams.call(this);
+        },
+      };
+
+      await MessagesView.methods.fetchPreviousMessages.call(context, 40);
+
+      expect(dispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        conversationId: 987,
+        before: 101,
+      });
+      expect(context.$nextTick).toHaveBeenCalled();
+      expect(conversationPanel.scrollTop).toBe(490);
+      expect(context.isLoadingPrevious).toBe(false);
+    });
+
+    it('ignores duplicate observer callbacks while a history page is pending', async () => {
+      const conversationPanel = {
+        scrollHeight: 1000,
+        scrollTop: 40,
+      };
+      let resolveRequest;
+      const dispatch = vi.fn(
+        () =>
+          new Promise(resolve => {
+            resolveRequest = () => {
+              conversationPanel.scrollHeight = 1450;
+              resolve();
+            };
+          })
+      );
+      const context = {
+        conversationPanel,
+        currentChat: {
+          id: 987,
+          dataFetched: true,
+          messages: [{ id: 101 }],
+        },
+        listLoadingStatus: false,
+        isLoadingPrevious: false,
+        heightBeforeLoad: null,
+        scrollTopBeforeLoad: null,
+        $store: { dispatch },
+        $nextTick: vi.fn(callback => callback()),
+        setScrollParams() {
+          MessagesView.methods.setScrollParams.call(this);
+        },
+      };
+
+      const pendingRequest = MessagesView.methods.fetchPreviousMessages.call(
+        context,
+        40
+      );
+      conversationPanel.scrollHeight = 1100;
+      conversationPanel.scrollTop = 10;
+
+      await MessagesView.methods.fetchPreviousMessages.call(context, 10);
+
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(context.heightBeforeLoad).toBe(1000);
+      expect(context.scrollTopBeforeLoad).toBe(40);
+
+      resolveRequest();
+      await pendingRequest;
+
+      expect(conversationPanel.scrollTop).toBe(490);
+      expect(context.isLoadingPrevious).toBe(false);
+    });
+
+    it('does not adjust a thread with the same id after a direct history request resolves', async () => {
+      const conversationPanel = {
+        scrollHeight: 1000,
+        scrollTop: 40,
+      };
+      let context;
+      const dispatch = vi.fn(async () => {
+        context.currentChat = {
+          id: 987,
+          communication_thread_id: 321,
+          dataFetched: true,
+          messages: [{ id: 201 }],
+        };
+        conversationPanel.scrollHeight = 1450;
+      });
+      context = {
+        conversationPanel,
+        currentChat: {
+          id: 987,
+          dataFetched: true,
+          messages: [{ id: 101 }],
+        },
+        listLoadingStatus: false,
+        isLoadingPrevious: false,
+        heightBeforeLoad: null,
+        scrollTopBeforeLoad: null,
+        $store: { dispatch },
+        $nextTick: vi.fn(),
+        setScrollParams() {
+          MessagesView.methods.setScrollParams.call(this);
+        },
+      };
+
+      await MessagesView.methods.fetchPreviousMessages.call(context, 40);
+
+      expect(dispatch).toHaveBeenCalledWith('fetchPreviousMessages', {
+        conversationId: 987,
+        before: 101,
+      });
+      expect(context.$nextTick).not.toHaveBeenCalled();
+      expect(conversationPanel.scrollTop).toBe(40);
+      expect(context.isLoadingPrevious).toBe(false);
+    });
+
+    it('stops an in-flight history request after unmount invalidation', async () => {
+      const conversationPanel = {
+        scrollHeight: 1000,
+        scrollTop: 40,
+      };
+      let context;
+      const dispatch = vi.fn(async () => {
+        context.conversationHistoryGeneration += 1;
+        conversationPanel.scrollHeight = 1450;
+      });
+      context = {
+        conversationPanel,
+        currentChat: {
+          id: 987,
+          dataFetched: true,
+          messages: [{ id: 101 }],
+        },
+        listLoadingStatus: false,
+        isLoadingPrevious: false,
+        heightBeforeLoad: null,
+        scrollTopBeforeLoad: null,
+        conversationHistoryGeneration: 0,
+        $store: { dispatch },
+        $nextTick: vi.fn(),
+        setScrollParams() {
+          MessagesView.methods.setScrollParams.call(this);
+        },
+      };
+
+      await MessagesView.methods.fetchPreviousMessages.call(context, 40);
+
+      expect(context.$nextTick).not.toHaveBeenCalled();
+      expect(conversationPanel.scrollTop).toBe(40);
+      expect(context.isLoadingPrevious).toBe(false);
+    });
+
+    it('rechecks the active chat inside the next tick callback', async () => {
+      const conversationPanel = {
+        scrollHeight: 1000,
+        scrollTop: 40,
+      };
+      const dispatch = vi.fn(async () => {
+        conversationPanel.scrollHeight = 1450;
+      });
+      const context = {
+        conversationPanel,
+        currentChat: {
+          id: 987,
+          dataFetched: true,
+          messages: [{ id: 101 }],
+        },
+        listLoadingStatus: false,
+        isLoadingPrevious: false,
+        heightBeforeLoad: null,
+        scrollTopBeforeLoad: null,
+        $store: { dispatch },
+        $nextTick: vi.fn(callback => {
+          context.currentChat = {
+            id: 110,
+            dataFetched: true,
+            messages: [{ id: 201 }],
+          };
+          callback();
+        }),
+        setScrollParams() {
+          MessagesView.methods.setScrollParams.call(this);
+        },
+      };
+
+      await MessagesView.methods.fetchPreviousMessages.call(context, 40);
+
+      expect(context.$nextTick).toHaveBeenCalled();
+      expect(conversationPanel.scrollTop).toBe(40);
+      expect(context.isLoadingPrevious).toBe(false);
+    });
+
+    it('does not request history after all messages are loaded', async () => {
+      const dispatch = vi.fn();
+      const context = {
+        conversationPanel: { scrollHeight: 1000, scrollTop: 0 },
+        currentChat: {
+          id: 110,
+          dataFetched: true,
+          messages: [{ id: 201 }],
+        },
+        listLoadingStatus: true,
+        isLoadingPrevious: false,
+        $store: { dispatch },
+        setScrollParams: vi.fn(),
+      };
+
+      await MessagesView.methods.fetchPreviousMessages.call(context, 0);
+
+      expect(dispatch).not.toHaveBeenCalled();
+    });
+
+    it('keeps loading until the history fills the viewport', async () => {
+      const conversationPanel = {
+        scrollHeight: 400,
+        clientHeight: 500,
+        scrollTop: 0,
+      };
+      const currentChat = {
+        id: 987,
+        dataFetched: true,
+        messages: [{ id: 101 }],
+      };
+      const dispatch = vi.fn().mockImplementationOnce(async () => {
+        currentChat.messages.unshift({ id: 91 });
+        conversationPanel.scrollHeight = 450;
+      });
+      dispatch.mockImplementationOnce(async () => {
+        currentChat.messages.unshift({ id: 81 });
+        conversationPanel.scrollHeight = 650;
+      });
+      const context = {
+        conversationPanel,
+        currentChat,
+        listLoadingStatus: false,
+        isLoadingPrevious: false,
+        heightBeforeLoad: null,
+        scrollTopBeforeLoad: null,
+        $store: { dispatch },
+        $nextTick: vi.fn(callback => {
+          callback();
+          return Promise.resolve();
+        }),
+        setScrollParams() {
+          MessagesView.methods.setScrollParams.call(this);
+        },
+        fetchPreviousMessages(scrollTop) {
+          return MessagesView.methods.fetchPreviousMessages.call(
+            this,
+            scrollTop
+          );
+        },
+      };
+
+      await MessagesView.methods.fetchPreviousMessages.call(context, 0);
+
+      expect(dispatch).toHaveBeenNthCalledWith(1, 'fetchPreviousMessages', {
+        conversationId: 987,
+        before: 101,
+      });
+      expect(dispatch).toHaveBeenNthCalledWith(2, 'fetchPreviousMessages', {
+        conversationId: 987,
+        before: 91,
+      });
+    });
+  });
+
+  describe('#canObservePreviousMessages', () => {
+    it('observes the top sentinel while older messages can be loaded', () => {
+      expect(
+        MessagesView.computed.canObservePreviousMessages.call({
+          conversationPanel: {},
+          currentChat: { dataFetched: true, messages: [{ id: 1 }] },
+          listLoadingStatus: false,
+        })
+      ).toBe(true);
+    });
+
+    it('stops observing after reaching the beginning of history', () => {
+      expect(
+        MessagesView.computed.canObservePreviousMessages.call({
+          conversationPanel: {},
+          currentChat: { dataFetched: true, messages: [{ id: 1 }] },
+          listLoadingStatus: true,
+        })
+      ).toBe(false);
+    });
+  });
+
   describe('unReadMessages', () => {
     it('only treats public incoming direct-conversation messages as unread', () => {
       const context = {

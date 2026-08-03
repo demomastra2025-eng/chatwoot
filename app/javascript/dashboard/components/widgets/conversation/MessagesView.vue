@@ -14,6 +14,7 @@ import Banner from 'dashboard/components/ui/Banner.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import ResizableEditorWrapper from './ResizableEditorWrapper.vue';
+import IntersectionObserver from 'dashboard/components/IntersectionObserver.vue';
 
 // stores and apis
 import { mapGetters } from 'vuex';
@@ -58,6 +59,7 @@ export default {
     Spinner,
     Icon,
     ResizableEditorWrapper,
+    IntersectionObserver,
   },
   mixins: [inboxMixin],
   setup() {
@@ -98,6 +100,7 @@ export default {
       messageSentSinceOpened: false,
       labelSuggestions: [],
       isCancellingCaptainResponse: false,
+      conversationHistoryGeneration: 0,
     };
   },
 
@@ -189,6 +192,20 @@ export default {
         (this.currentChat && this.currentChat.dataFetched === undefined) ||
         (!this.listLoadingStatus && this.isLoadingPrevious)
       );
+    },
+    canObservePreviousMessages() {
+      return Boolean(
+        this.conversationPanel &&
+          this.currentChat?.dataFetched === true &&
+          this.currentChat?.messages?.length &&
+          !this.listLoadingStatus
+      );
+    },
+    previousMessagesObserverOptions() {
+      return {
+        root: this.conversationPanel,
+        rootMargin: '100px 0px 0px 0px',
+      };
     },
     // Check there is a instagram inbox exists with the same instagram_id
     hasDuplicateInstagramInbox() {
@@ -298,9 +315,13 @@ export default {
 
   watch: {
     currentChat(newChat, oldChat) {
-      if (newChat.id === oldChat.id) {
+      if (
+        newChat.id === oldChat.id &&
+        isCommunicationThread(newChat) === isCommunicationThread(oldChat)
+      ) {
         return;
       }
+      this.conversationHistoryGeneration += 1;
       this.fetchAllAttachmentsFromCurrentChat();
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
@@ -324,6 +345,7 @@ export default {
   },
 
   unmounted() {
+    this.conversationHistoryGeneration += 1;
     this.removeBusListeners();
     this.removeScrollListener();
   },
@@ -491,32 +513,66 @@ export default {
     },
 
     async fetchPreviousMessages(scrollTop = 0) {
-      this.setScrollParams();
+      const oldestMessage = this.currentChat.messages?.[0];
       const shouldLoadMoreMessages =
         this.currentChat.dataFetched === true &&
+        Boolean(oldestMessage) &&
         !this.listLoadingStatus &&
         !this.isLoadingPrevious;
 
-      if (
-        scrollTop < 100 &&
-        !this.isLoadingPrevious &&
-        shouldLoadMoreMessages
-      ) {
+      if (scrollTop >= 100 || !shouldLoadMoreMessages) return;
+
+      this.setScrollParams();
+      const conversationPanel = this.conversationPanel;
+      const conversationId = this.currentChat.id;
+      const historyGeneration = this.conversationHistoryGeneration;
+      const loadedConversationIsThread = isCommunicationThread(
+        this.currentChat
+      );
+      const isCurrentConversation = () =>
+        this.conversationHistoryGeneration === historyGeneration &&
+        this.conversationPanel === conversationPanel &&
+        String(this.currentChat?.id) === String(conversationId) &&
+        isCommunicationThread(this.currentChat) === loadedConversationIsThread;
+      let shouldLoadPreviousMessagesAgain = false;
+
+      if (scrollTop < 100) {
         this.isLoadingPrevious = true;
         try {
           await this.$store.dispatch('fetchPreviousMessages', {
-            conversationId: this.currentChat.id,
-            before: this.currentChat.messages[0].id,
+            conversationId,
+            before: oldestMessage.id,
           });
-          const heightDifference =
-            this.conversationPanel.scrollHeight - this.heightBeforeLoad;
-          this.conversationPanel.scrollTop =
-            this.scrollTopBeforeLoad + heightDifference;
-          this.setScrollParams();
+          if (!isCurrentConversation()) return;
+
+          await new Promise(resolve => {
+            this.$nextTick(() => {
+              if (!isCurrentConversation()) {
+                resolve();
+                return;
+              }
+
+              const heightDifference =
+                conversationPanel.scrollHeight - this.heightBeforeLoad;
+              conversationPanel.scrollTop =
+                this.scrollTopBeforeLoad + heightDifference;
+              this.setScrollParams();
+              shouldLoadPreviousMessagesAgain =
+                this.currentChat.messages?.[0]?.id !== oldestMessage.id &&
+                !this.listLoadingStatus &&
+                this.conversationPanel.scrollHeight <=
+                  this.conversationPanel.clientHeight;
+              resolve();
+            });
+          });
         } catch (error) {
           // Ignore Error
         } finally {
           this.isLoadingPrevious = false;
+        }
+
+        if (shouldLoadPreviousMessagesAgain && isCurrentConversation()) {
+          await this.fetchPreviousMessages(conversationPanel.scrollTop);
         }
       }
     },
@@ -610,6 +666,11 @@ export default {
           <li
             class="min-h-[4rem] flex flex-shrink-0 flex-grow-0 items-center flex-auto justify-center max-w-full mt-0 mr-0 mb-1 ml-0 relative first:mt-auto last:mb-0"
           >
+            <IntersectionObserver
+              v-if="canObservePreviousMessages"
+              :options="previousMessagesObserverOptions"
+              @observed="fetchPreviousMessages"
+            />
             <Spinner v-if="shouldShowSpinner" class="text-n-brand" />
           </li>
         </transition>
