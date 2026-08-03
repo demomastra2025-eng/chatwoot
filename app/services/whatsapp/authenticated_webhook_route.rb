@@ -12,26 +12,38 @@ class Whatsapp::AuthenticatedWebhookRoute
     }
   end
 
-  def initialize(channel:, payload:, verification_context:)
+  def initialize(channel:, payload:, verification_context:, live_priority_token:)
     @channel = channel
     @payload = payload.with_indifferent_access
     @verification_context = verification_context.with_indifferent_access
+    @live_priority_token = live_priority_token
   end
 
   def with_verified_route(&)
     return with_unsigned_route(&) unless @verification_context[:hmac_verified] == true
     return false if lock_waba_ids.empty?
 
+    return with_locked_route(&) if low_priority_sync_payload?
+
+    Whatsapp::WabaLivePriority.with_waiters(lock_waba_ids, waiter_id: @live_priority_token) { with_locked_route(&) }
+  end
+
+  private
+
+  def with_locked_route
     Whatsapp::WabaLock.with_locks(lock_waba_ids) do
       @channel&.reload
-      return false unless authenticated_route_matches?
+      next false unless authenticated_route_matches?
 
       yield
       true
     end
   end
 
-  private
+  def low_priority_sync_payload?
+    fields = Array(@payload[:entry]).flat_map { |entry| Array(entry[:changes]) }.filter_map { |change| change[:field].presence }
+    fields.present? && fields.all? { |field| %w[history smb_app_state_sync].include?(field) }
+  end
 
   def authenticated_route_matches?
     channel_id_matches? && channel_identity_matches? && explicit_route_waba_matches? && waba_ownership_matches?

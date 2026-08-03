@@ -212,6 +212,56 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     end.not_to change(Attachment, :count)
   end
 
+  it 'hydrates an outgoing media placeholder from a message echo idempotently' do
+    outgoing_history = {
+      metadata: value[:metadata],
+      history: [{ threads: [{
+        id: '77011112233',
+        messages: [{
+          id: 'wamid.outgoing-placeholder-1',
+          to: '77011112233',
+          timestamp: '1700000001',
+          type: 'media_placeholder',
+          history_context: { from_me: true }
+        }]
+      }] }]
+    }
+    described_class.new(channel: channel, value: outgoing_history).perform
+    stub_request(:get, channel.media_url('history-outgoing-media-1')).to_return(
+      status: 200,
+      body: { url: 'https://chatwoot-assets.local/history-outgoing-media.png', id: 'history-outgoing-media-1' }.to_json,
+      headers: { 'content-type' => 'application/json' }
+    )
+    stub_request(:get, 'https://chatwoot-assets.local/history-outgoing-media.png').to_return(
+      status: 200,
+      body: File.read('spec/assets/sample.png'),
+      headers: { 'content-type' => 'image/png' }
+    )
+    follow_up = {
+      metadata: value[:metadata],
+      message_echoes: [{
+        id: 'wamid.outgoing-placeholder-1',
+        to: '77011112233',
+        timestamp: '1700000001',
+        type: 'image',
+        image: { id: 'history-outgoing-media-1', caption: 'Исходящее фото', mime_type: 'image/png' }
+      }]
+    }
+
+    expect do
+      described_class.new(channel: channel, value: follow_up).perform
+    end.not_to change(Message, :count)
+
+    message = channel.inbox.messages.find_by!(source_id: 'wamid.outgoing-placeholder-1')
+    expect(message).to be_outgoing
+    expect(message.content).to eq('Исходящее фото')
+    expect(message.attachments.size).to eq(1)
+
+    expect do
+      described_class.new(channel: channel, value: follow_up).perform
+    end.not_to change(Attachment, :count)
+  end
+
   it 'records a retryable failure when media arrives before its placeholder' do
     follow_up = {
       metadata: value[:metadata],

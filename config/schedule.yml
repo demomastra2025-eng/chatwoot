@@ -108,6 +108,13 @@ whatsapp_token_health_check_job:
   class: 'Whatsapp::TokenHealthCheckJob'
   queue: scheduled_jobs
 
+# executed every 15 minutes
+# verifies and repairs the official Meta WABA app webhook subscription
+whatsapp_webhook_subscription_health_check_job:
+  cron: '*/15 * * * *'
+  class: 'Whatsapp::WebhookSubscriptionHealthCheckJob'
+  queue: scheduled_jobs
+
 # executed every 6 hours
 # proactively refreshes eligible Instagram tokens and verifies identity/subscription health
 instagram_credential_health_check_job:

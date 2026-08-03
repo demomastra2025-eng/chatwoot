@@ -22,6 +22,7 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
         }
       )
     )
+    allow(Whatsapp::WabaLivePriority).to receive(:waiting?).and_return(false)
   end
 
   def routing_context(metadata: {})
@@ -34,6 +35,28 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
 
   it 'uses the dedicated WhatsApp history queue' do
     expect(described_class.queue_name).to eq('whatsappweb_history')
+  end
+
+  it 'retries before taking the WABA lock while live traffic is waiting' do
+    job = described_class.new(channel.id, 'history', { history: [] }, routing_context)
+    allow(Whatsapp::WabaLivePriority).to receive(:waiting?).and_return(true)
+    expect(Whatsapp::WabaLock).not_to receive(:new)
+
+    expect do
+      job.perform_now
+    end.to have_enqueued_job(described_class).on_queue('whatsappweb_history')
+  end
+
+  it 'keeps retrying lock contention after the previous retry limit' do
+    job = described_class.new(channel.id, 'history', { history: [] }, routing_context)
+    job.executions = 7
+    lock = instance_double(Whatsapp::WabaLock)
+    allow(Whatsapp::WabaLock).to receive(:new).and_return(lock)
+    allow(lock).to receive(:with_lock).and_raise(Whatsapp::WabaLock::LockAcquisitionError)
+
+    expect do
+      job.perform_now
+    end.to have_enqueued_job(described_class).on_queue('whatsappweb_history')
   end
 
   it 'registers retries for media events that arrive before their history placeholder' do
@@ -89,6 +112,72 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
     described_class.perform_now(channel.id, 'history', { history: [] }, routing_context)
 
     expect(service).to have_received(:perform)
+  end
+
+  it 'releases and reacquires the WABA lock between bounded history batches' do
+    messages = Array.new(51) { |index| { id: "wamid.#{index}" } }
+    value = { history: [{ threads: [{ id: 'contact-1', messages: messages }] }] }
+    lock = instance_double(Whatsapp::WabaLock)
+    service = instance_double(Whatsapp::CoexistenceHistoryService, perform: true)
+    job = described_class.new
+    allow(Whatsapp::WabaLock).to receive(:new).and_return(lock)
+    allow(lock).to receive(:with_lock).and_yield
+    allow(job).to receive(:with_lock).and_yield
+    allow(Whatsapp::CoexistenceHistoryService).to receive(:new).and_return(service)
+
+    job.perform(channel.id, 'history', value, routing_context)
+
+    expect(lock).to have_received(:with_lock).exactly(3).times
+    expect(job).to have_received(:with_lock).exactly(3).times
+    expect(service).to have_received(:perform).exactly(3).times
+  end
+
+  it 'yields between batches when live traffic arrives during history import' do
+    messages = Array.new(26) { |index| { id: "wamid.#{index}" } }
+    value = { history: [{ threads: [{ id: 'contact-1', messages: messages }] }] }
+    lock = instance_double(Whatsapp::WabaLock)
+    service = instance_double(Whatsapp::CoexistenceHistoryService, perform: true)
+    job = described_class.new
+    allow(Whatsapp::WabaLivePriority).to receive(:waiting?).and_return(false, false, true)
+    allow(Whatsapp::WabaLock).to receive(:new).and_return(lock)
+    allow(lock).to receive(:with_lock).and_yield
+    allow(job).to receive(:with_lock).and_yield
+    allow(Whatsapp::CoexistenceHistoryService).to receive(:new).and_return(service)
+
+    expect do
+      job.perform(channel.id, 'history', value, routing_context)
+    end.to raise_error(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+
+    expect(lock).to have_received(:with_lock).once
+    expect(service).to have_received(:perform).once
+  end
+
+  it 'yields inside the WABA lock when live traffic arrives after the initial check' do
+    lock = instance_double(Whatsapp::WabaLock)
+    job = described_class.new
+    allow(Whatsapp::WabaLivePriority).to receive(:waiting?).and_return(false, true)
+    allow(Whatsapp::WabaLock).to receive(:new).and_return(lock)
+    allow(lock).to receive(:with_lock).and_yield
+    expect(job).not_to receive(:with_lock)
+    expect(Whatsapp::CoexistenceHistoryService).not_to receive(:new)
+
+    expect do
+      job.perform(channel.id, 'history', { history: [] }, routing_context)
+    end.to raise_error(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+  end
+
+  it 'acquires the WABA lock before the channel lock for every batch' do
+    lock = instance_double(Whatsapp::WabaLock)
+    service = instance_double(Whatsapp::CoexistenceHistoryService, perform: true)
+    job = described_class.new
+    allow(Whatsapp::WabaLock).to receive(:new).and_return(lock)
+    expect(lock).to receive(:with_lock).ordered.and_yield
+    expect(job).to receive(:with_lock).ordered.and_yield
+    allow(Whatsapp::CoexistenceHistoryService).to receive(:new).and_return(service)
+
+    job.perform(channel.id, 'history', { history: [] }, routing_context)
+
+    expect(service).to have_received(:perform).once
   end
 
   it 'does not import coexistence payloads for an inbox pending deletion' do

@@ -120,6 +120,11 @@ module Redis::Alfred
       $alfred.with { |conn| conn.zscore(key, value) }
     end
 
+    # remove a value from a sorted set
+    def zrem(key, value)
+      $alfred.with { |conn| conn.zrem(key, value) }
+    end
+
     # count members in a sorted set with scores within the given range
     def zcount(key, min_score, max_score)
       $alfred.with { |conn| conn.zcount(key, min_score, max_score) }

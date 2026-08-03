@@ -67,6 +67,16 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('whatsapp_token_health_check_job', 'queue')).to eq('scheduled_jobs')
   end
 
+  it 'checks and repairs WhatsApp webhook subscriptions every 15 minutes' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule['whatsapp_webhook_subscription_health_check_job']).to include(
+      'cron' => '*/15 * * * *',
+      'class' => 'Whatsapp::WebhookSubscriptionHealthCheckJob',
+      'queue' => 'scheduled_jobs'
+    )
+  end
+
   it 'checks Instagram and Facebook credential health on staggered schedules' do
     schedule = YAML.safe_load(file.read)
 
