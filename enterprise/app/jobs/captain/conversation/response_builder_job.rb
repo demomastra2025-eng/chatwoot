@@ -767,7 +767,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return if @response.blank?
 
     if @response['captain_trace'].present?
-      @response['captain_trace'] = trace_with_reasoning(@response['captain_trace'])
+      @response['captain_trace'] = Captain::ToolTraceBuilder.sanitize_payload(
+        trace_with_reasoning(@response['captain_trace'])
+      )
       return
     end
 

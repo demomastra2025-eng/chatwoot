@@ -70,6 +70,19 @@ RSpec.describe Captain::ToolTraceBuilder do
         'content' => 'Completed search_documentation'
       )
     end
+
+    it 'keeps byte-limited multibyte output valid for JSON serialization' do
+      output = described_class.step(
+        tool_name: 'list_deal_custom_fields',
+        event: 'finish',
+        sequence: 1,
+        output: "x#{'я' * 3000}"
+      ).fetch('output')
+
+      expect(output).to end_with('…')
+      expect(output).to be_valid_encoding
+      expect { JSON.generate(output) }.not_to raise_error
+    end
   end
 
   describe '.payload' do

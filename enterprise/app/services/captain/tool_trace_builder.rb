@@ -238,10 +238,18 @@ class Captain::ToolTraceBuilder
     when Array
       value.map { |item| truncate_payload(item) }
     when String
-      value.bytesize > PREVIEW_LIMIT ? "#{value.byteslice(0, PREVIEW_LIMIT)}…" : value
+      truncate_string(value)
     else
       value
     end
   end
   private_class_method :truncate_payload
+
+  def self.truncate_string(value)
+    return value if value.bytesize <= PREVIEW_LIMIT
+
+    preview = value.byteslice(0, PREVIEW_LIMIT).scrub('')
+    "#{preview}…"
+  end
+  private_class_method :truncate_string
 end

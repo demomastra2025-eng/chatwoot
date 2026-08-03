@@ -15,6 +15,7 @@ class Captain::Assistant::AgentRunnerService
   MAX_FINALIZATION_ONLY_RETRIES = 1
   MAX_TOOL_ARTIFACT_SCAN_BYTES = 100_000
   MAX_COMPLETED_TOOL_RESULT_RECORDS = 50
+  MCP_TOOL_ID_PREFIX = 'mcp__'.freeze
   TOOL_RESULT_FALLBACK_REASONING = [
     'Final assistant response failed after completed tool actions; ',
     'a deterministic tool-result fallback was used.'
@@ -44,9 +45,11 @@ class Captain::Assistant::AgentRunnerService
 
   def generate_response(message_history: [])
     Captain::Mcp::ToolCatalog.with_runtime_cache do
-      Llm::Config.with_runtime_cache do
-        with_llm_catalog_snapshots do
-          generate_response_with_runtime_cache(message_history)
+      with_mcp_discovery_policy do
+        Llm::Config.with_runtime_cache do
+          with_llm_catalog_snapshots do
+            generate_response_with_runtime_cache(message_history)
+          end
         end
       end
     end
@@ -60,6 +63,35 @@ class Captain::Assistant::AgentRunnerService
   end
 
   private
+
+  def with_mcp_discovery_policy(&)
+    return yield if mcp_discovery_required?
+
+    Captain::Mcp::ToolCatalog.without_discovery(&)
+  end
+
+  def mcp_discovery_required?
+    mcp_tool_reference?(
+      [
+        @assistant.config,
+        @assistant.description,
+        @assistant.response_guidelines,
+        @assistant.guardrails,
+        enabled_scenarios.map { |scenario| [scenario.tools, scenario.instruction] }
+      ]
+    )
+  end
+
+  def mcp_tool_reference?(value)
+    case value
+    when Hash
+      value.any? { |key, child_value| mcp_tool_reference?(key) || mcp_tool_reference?(child_value) }
+    when Array
+      value.any? { |child_value| mcp_tool_reference?(child_value) }
+    else
+      value.to_s.include?(MCP_TOOL_ID_PREFIX)
+    end
+  end
 
   def with_llm_catalog_snapshots(&)
     Llm::OpenRouterModelCatalog.with_model_configs_snapshot do
@@ -751,7 +783,7 @@ class Captain::Assistant::AgentRunnerService
 
   def build_and_wire_agents
     assistant_agent = @assistant.agent
-    scenario_agents = @assistant.scenarios.enabled.map(&:agent)
+    scenario_agents = enabled_scenarios.map(&:agent)
 
     assistant_agent.register_handoffs(*scenario_agents) if scenario_agents.any?
     scenario_agents.each do |scenario_agent|
@@ -760,6 +792,10 @@ class Captain::Assistant::AgentRunnerService
     end
 
     [assistant_agent] + scenario_agents
+  end
+
+  def enabled_scenarios
+    @enabled_scenarios ||= @assistant.scenarios.enabled.to_a
   end
 
   def install_instrumentation(runner)

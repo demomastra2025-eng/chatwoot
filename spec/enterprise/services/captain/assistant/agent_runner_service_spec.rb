@@ -91,6 +91,50 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(Thread.current[Captain::Mcp::ToolCatalog::RUNTIME_CACHE_KEY]).to be_nil
     end
 
+    it 'skips MCP discovery when the runtime only selects native tools' do
+      create(:captain_mcp_server, account: account, slug: 'unavailable_server')
+      expect(Captain::Mcp::ToolCatalog::DiscoveryService).not_to receive(:new)
+      allow(mock_runner).to receive(:run) do
+        expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be(true)
+        expect(Captain::Mcp::ToolCatalog.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)).to eq([])
+        mock_result
+      end
+
+      service.generate_response(message_history: message_history)
+
+      expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be_nil
+    end
+
+    it 'keeps MCP discovery enabled when an MCP tool is selected' do
+      mcp_server = create(:captain_mcp_server, account: account, slug: 'selected_server')
+      discovery = instance_double(Captain::Mcp::ToolCatalog::DiscoveryService, tools: [])
+      allow(Captain::Mcp::ToolCatalog::DiscoveryService).to receive(:new).with(mcp_server).and_return(discovery)
+      allow(assistant).to receive(:config).and_return(
+        'tool_access' => {
+          Captain::ToolAccess::SCOPE_AGENT => { 'tool_ids' => ['mcp__selected_server__lookup'] }
+        }
+      )
+      allow(mock_runner).to receive(:run) do
+        expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be_nil
+        Captain::Mcp::ToolCatalog.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT)
+        mock_result
+      end
+
+      service.generate_response(message_history: message_history)
+
+      expect(Captain::Mcp::ToolCatalog::DiscoveryService).to have_received(:new).once.with(mcp_server)
+    end
+
+    it 'keeps MCP discovery enabled for an MCP tool referenced by a scenario' do
+      allow(scenario).to receive(:tools).and_return(['mcp__scenario_server__lookup'])
+      allow(mock_runner).to receive(:run) do
+        expect(Thread.current[Captain::Mcp::ToolCatalog::DISCOVERY_DISABLED_KEY]).to be_nil
+        mock_result
+      end
+
+      service.generate_response(message_history: message_history)
+    end
+
     it 'builds agents and wires them together' do
       expect(assistant).to receive(:agent).and_return(mock_agent)
       scenarios_relation = instance_double(Captain::Scenario)

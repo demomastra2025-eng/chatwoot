@@ -413,6 +413,24 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.reload.messages.outgoing.last.additional_attributes['captain_trace']).to eq(trace_payload)
     end
 
+    it 'normalizes malformed UTF-8 in runtime traces before persisting the outgoing message' do
+      malformed_output = "custom field: \xD1".b.force_encoding(Encoding::UTF_8)
+      allow(agent_runner_service).to receive(:generate_response).and_return(
+        {
+          'response' => 'I found the custom fields.',
+          'captain_trace' => {
+            'tool_steps' => [{ 'tool_name' => 'list_deal_custom_fields', 'output' => malformed_output }]
+          }
+        }
+      )
+
+      expect { described_class.perform_now(conversation, assistant) }.not_to raise_error
+
+      trace = conversation.messages.outgoing.last.additional_attributes.fetch('captain_trace')
+      expect(trace.dig('tool_steps', 0, 'output')).to be_valid_encoding
+      expect { JSON.generate(trace) }.not_to raise_error
+    end
+
     it 'stores the scenario title in the existing agentName display field while preserving the runtime agent_name key' do
       scenario = create(
         :captain_scenario,
@@ -797,6 +815,24 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(private_note.content).not_to include('RubyLLM')
         expect(private_note.content).not_to include('Quota exceeded')
         expect(private_note.sender).to eq(assistant)
+      end
+
+      it 'normalizes malformed UTF-8 in the trace before creating the private note' do
+        malformed_output = "conversation payload: \xD1".b.force_encoding(Encoding::UTF_8)
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => Captain::Assistant::AgentRunnerService::PROVIDER_ERROR_RESPONSE,
+            'captain_trace' => {
+              'tool_steps' => [{ 'tool_name' => 'get_conversation', 'output' => malformed_output }]
+            }
+          }
+        )
+
+        expect { described_class.perform_now(conversation, assistant) }.not_to raise_error
+
+        trace = conversation.messages.where(private: true).last.additional_attributes.fetch('captain_trace')
+        expect(trace.dig('tool_steps', 0, 'output')).to be_valid_encoding
+        expect { JSON.generate(trace) }.not_to raise_error
       end
     end
 
