@@ -85,7 +85,7 @@ const GEMINI_AUTO_LANGUAGE_MODELS = new Set([
   'gemini-2.5-flash-native-audio-preview-12-2025',
 ]);
 const GEMINI_THINKING_LEVEL_MODELS = new Set(['gemini-3.1-flash-live-preview']);
-const GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AUTO_LANGUAGE_MODELS;
+const GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AFFECTIVE_DIALOG_MODELS;
 const VOICE_ACTIVITY_PROFILES = new Set(['sensitive', 'balanced', 'noisy']);
 
 const normalizeVoiceActivityProfile = value =>

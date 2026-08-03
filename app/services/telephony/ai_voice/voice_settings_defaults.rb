@@ -114,7 +114,8 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   GEMINI_AUTO_LANGUAGE_MODELS = %w[
     gemini-3.1-flash-live-preview gemini-2.5-flash-native-audio-preview-12-2025
   ].freeze
-  GEMINI_PROACTIVE_AUDIO_MODELS = %w[gemini-2.5-flash-native-audio-preview-12-2025].freeze
+  GEMINI_AFFECTIVE_DIALOG_MODELS = %w[gemini-2.5-flash-native-audio-preview-12-2025].freeze
+  GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AFFECTIVE_DIALOG_MODELS
   THINKING_LEVELS = %w[minimal low medium high].freeze
   FISH_STT_PROVIDERS = %w[elevenlabs fish].freeze
   MAX_DURATION_SEC_RANGE = (1..7200)
@@ -151,7 +152,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       normalized['max_duration_sec'] = defaults['max_duration_sec'] unless duration.is_a?(Integer) && MAX_DURATION_SEC_RANGE.cover?(duration)
       normalize_auto_language!(normalized, provider)
       Telephony::AiVoice::VoiceLanguageSettings.normalize!(normalized, defaults)
-      normalize_proactive_audio!(normalized, provider)
+      normalize_gemini_live_features!(normalized, provider)
     end
 
     def normalize_auto_language!(normalized, provider)
@@ -162,12 +163,14 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       normalized['language'] = DEFAULTS['language']
     end
 
-    def normalize_proactive_audio!(normalized, provider)
-      supported = gemini_model_supported?(provider, normalized['model'], GEMINI_PROACTIVE_AUDIO_MODELS)
-      normalized['proactive_audio_enabled'] = false unless supported
+    def normalize_gemini_live_features!(normalized, provider)
+      proactive_supported = gemini_model_supported?(provider, normalized['model'], GEMINI_PROACTIVE_AUDIO_MODELS)
+      affective_supported = gemini_model_supported?(provider, normalized['model'], GEMINI_AFFECTIVE_DIALOG_MODELS)
+      normalized['proactive_audio_enabled'] = false unless proactive_supported
+      normalized['affective_dialog_enabled'] = false unless affective_supported
       return unless provider == 'gemini-live'
 
-      normalized['api_version'] = normalized['proactive_audio_enabled'] ? 'v1alpha' : 'v1beta'
+      normalized['api_version'] = 'v1beta'
     end
 
     def gemini_model_supported?(provider, model, models)

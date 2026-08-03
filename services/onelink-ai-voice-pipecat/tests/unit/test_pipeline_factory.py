@@ -292,7 +292,7 @@ def test_gemini_disables_native_vad_when_interruptions_are_disabled():
 @pytest.mark.parametrize(
     ("model", "requested_enabled", "input_api_version", "expected_enabled", "expected_api_version"),
     [
-        ("gemini-2.5-flash-native-audio-preview-12-2025", True, "v1beta", True, "v1alpha"),
+        ("gemini-2.5-flash-native-audio-preview-12-2025", True, "v1beta", True, "v1beta"),
         ("gemini-2.5-flash-native-audio-preview-12-2025", False, "v1alpha", False, "v1beta"),
         ("gemini-3.1-flash-live-preview", True, "v1beta", False, "v1beta"),
         ("gemini-3.1-flash-live-preview", True, "v1alpha", False, "v1beta"),
@@ -358,7 +358,7 @@ def test_gemini_auto_language_falls_back_for_legacy_model():
     ("model", "requested_enabled", "expected_enabled", "expected_api_version"),
     [
         ("gemini-3.1-flash-live-preview", True, False, "v1beta"),
-        ("gemini-2.5-flash-native-audio-preview-12-2025", True, True, "v1alpha"),
+        ("gemini-2.5-flash-native-audio-preview-12-2025", True, True, "v1beta"),
         ("gemini-2.0-flash-live-001", True, False, "v1beta"),
         ("gemini-3.1-flash-live-preview", False, False, "v1beta"),
     ],

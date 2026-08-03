@@ -248,11 +248,7 @@ def build_pipeline(
             api_key=credentials["gemini_api_key"],
             tools=tools,
             input_language_priorities=context.ai.input_language_priorities,
-            http_options=HttpOptions(
-                api_version="v1alpha"
-                if proactive_audio_enabled or affective_dialog_enabled
-                else "v1beta"
-            ),
+            http_options=HttpOptions(api_version="v1beta"),
             settings=OneLinkGeminiLiveLLMService.Settings(
                 model=context.ai.model,
                 system_instruction=_provider_system_prompt(context),

@@ -195,26 +195,44 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       )
     end
 
-    it 'uses the preview API only when proactive audio is enabled for a supported Gemini model' do
-      expect(described_class.normalize(proactive_audio_enabled: true)).to include(
+    it 'gates Gemini native audio features by model and always uses the supported API version' do
+      expect(described_class.normalize(proactive_audio_enabled: true, affective_dialog_enabled: true)).to include(
         'proactive_audio_enabled' => false,
+        'affective_dialog_enabled' => false,
         'api_version' => 'v1beta'
       )
       expect(
         described_class.normalize(
           model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-          proactive_audio_enabled: true
+          proactive_audio_enabled: true,
+          affective_dialog_enabled: true,
+          api_version: 'v1alpha'
         )
       ).to include(
         'proactive_audio_enabled' => true,
-        'api_version' => 'v1alpha'
-      )
-      expect(described_class.normalize(model: 'gemini-2.0-flash-live-001', proactive_audio_enabled: true)).to include(
-        'proactive_audio_enabled' => false,
+        'affective_dialog_enabled' => true,
         'api_version' => 'v1beta'
       )
-      expect(described_class.normalize(provider: 'openai-realtime', proactive_audio_enabled: true)).to include(
-        'proactive_audio_enabled' => false
+      expect(
+        described_class.normalize(
+          model: 'gemini-2.0-flash-live-001',
+          proactive_audio_enabled: true,
+          affective_dialog_enabled: true
+        )
+      ).to include(
+        'proactive_audio_enabled' => false,
+        'affective_dialog_enabled' => false,
+        'api_version' => 'v1beta'
+      )
+      expect(
+        described_class.normalize(
+          provider: 'openai-realtime',
+          proactive_audio_enabled: true,
+          affective_dialog_enabled: true
+        )
+      ).to include(
+        'proactive_audio_enabled' => false,
+        'affective_dialog_enabled' => false
       )
     end
 

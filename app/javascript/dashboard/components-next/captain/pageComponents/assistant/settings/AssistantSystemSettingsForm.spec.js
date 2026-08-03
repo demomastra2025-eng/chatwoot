@@ -277,7 +277,7 @@ describe('AssistantSystemSettingsForm', () => {
     );
   });
 
-  it('drops affective dialog for an unsupported Gemini model', async () => {
+  it('drops native audio features for unsupported Gemini 3.1', async () => {
     const wrapper = buildWrapper({
       assistant: {
         id: 58,
@@ -285,6 +285,7 @@ describe('AssistantSystemSettingsForm', () => {
           voice_settings: {
             provider: 'gemini-live',
             model: 'gemini-3.1-flash-live-preview',
+            proactive_audio_enabled: true,
             affective_dialog_enabled: true,
           },
         },
@@ -306,11 +307,12 @@ describe('AssistantSystemSettingsForm', () => {
     ).toBe(true);
     expect(
       wrapper.find('[data-test-id="assistant-gemini-proactive-audio"]').exists()
-    ).toBe(true);
+    ).toBe(false);
 
     wrapper.vm.state.voiceSettings.thinkingLevel = 'low';
     wrapper.vm.state.voiceSettings.contextWindowCompressionEnabled = false;
     wrapper.vm.state.voiceSettings.proactiveAudioEnabled = true;
+    wrapper.vm.state.voiceSettings.affectiveDialogEnabled = true;
 
     const payload = await wrapper.vm.buildPayload();
 
@@ -321,7 +323,7 @@ describe('AssistantSystemSettingsForm', () => {
         language: 'auto',
         thinking_level: 'low',
         context_window_compression_enabled: false,
-        proactive_audio_enabled: true,
+        proactive_audio_enabled: false,
         affective_dialog_enabled: false,
       })
     );

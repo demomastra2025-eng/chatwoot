@@ -164,7 +164,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
       'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
       'prefix_padding_ms' => 200,
-      'silence_duration_ms' => 500,
+      'silence_duration_ms' => 300,
       'vad_confidence' => 0.75,
       'vad_min_volume' => 0.6,
       'interruption_mode' => 'transcript_confirmed',
@@ -176,8 +176,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'interrupt_ack_phrases' => ['Ага.', 'Понял.', 'Мм.', 'Аха.', 'А-а, понял.'],
       'silence_prompt_enabled' => true,
       'tool_start_phrases' => ['Секунду, проверю.'],
-      'tool_start_after_ms' => 1800,
-      'tool_foreground_wait_ms' => 900,
+      'tool_start_after_ms' => 1200,
+      'tool_foreground_wait_ms' => 1500,
       'emotional_style' => 'warm_professional',
       'nonverbal_cues_enabled' => true,
       'ambient_noise_enabled' => false,
@@ -186,7 +186,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     )
     system_prompt = body.dig('ai', 'system_prompt')
     expect(system_prompt).to include('Ты голосовой ассистент в телефонном звонке')
-    expect(system_prompt).not_to include('Отвечай на языке собеседника')
+    expect(system_prompt).to include('Отвечай на языке собеседника')
     expect(system_prompt).not_to include('Voice character prompt')
     expect(body['ai']).not_to have_key('voice_character_prompt')
     expect(system_prompt).to include('По умолчанию отвечай не длиннее 2 предложений')
@@ -351,11 +351,13 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     expect(response.parsed_body.dig('ai', 'system_prompt')).to include('Переключай язык ответа только после явной просьбы')
   end
 
-  it 'enables proactive audio with the required Gemini preview API' do
+  it 'rejects unsupported Gemini 3.1 native audio features' do
     number_binding.routing_policy.update!(
       ai_voice_settings: number_binding.routing_policy.ai_voice_settings.merge(
         model: 'gemini-3.1-flash-live-preview',
-        proactive_audio_enabled: true
+        proactive_audio_enabled: true,
+        affective_dialog_enabled: true,
+        api_version: 'v1alpha'
       )
     )
 
@@ -368,15 +370,21 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['ai']).to include(
-      'proactive_audio_enabled' => true,
-      'api_version' => 'v1alpha'
+      'proactive_audio_enabled' => false,
+      'affective_dialog_enabled' => false,
+      'api_version' => 'v1beta'
     )
   end
 
-  it 'passes the Captain Gemini affective dialog setting to the voice runtime' do
+  it 'passes supported Gemini 2.5 native audio features to the voice runtime' do
     assistant.update!(
       config: assistant.config.merge(
-        'voice_settings' => { 'affective_dialog_enabled' => true }
+        'voice_settings' => {
+          'model' => 'gemini-2.5-flash-native-audio-preview-12-2025',
+          'proactive_audio_enabled' => true,
+          'affective_dialog_enabled' => true,
+          'api_version' => 'v1alpha'
+        }
       )
     )
 
@@ -388,7 +396,12 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
     end
 
     expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('ai', 'affective_dialog_enabled')).to be(true)
+    expect(response.parsed_body['ai']).to include(
+      'model' => 'gemini-2.5-flash-native-audio-preview-12-2025',
+      'proactive_audio_enabled' => true,
+      'affective_dialog_enabled' => true,
+      'api_version' => 'v1beta'
+    )
   end
 
   [
@@ -640,7 +653,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'provider' => 'gemini-live',
       'model' => 'gemini-3.1-flash-live-preview',
       'voice' => 'sulafat',
-      'first_message' => 'Здравствуйте! Чем могу помочь?',
+      'first_message' => 'Здравствуйте! Я голосовой помощник OneLink. Чем могу помочь?',
       'max_duration_sec' => 900
     )
   end
