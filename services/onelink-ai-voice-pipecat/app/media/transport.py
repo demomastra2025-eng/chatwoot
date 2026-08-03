@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 
+from pipecat.frames.frames import Frame, InterruptionFrame
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.transports.websocket.client import (
     WebsocketClientCallbacks,
+    WebsocketClientOutputTransport,
     WebsocketClientParams,
     WebsocketClientSession,
     WebsocketClientTransport,
@@ -27,6 +30,17 @@ class _SingleConnectionWebsocketClientSession(WebsocketClientSession):
             await super().connect()
 
 
+class _OneLinkWebsocketClientOutputTransport(WebsocketClientOutputTransport):
+    """Send OneLink's interruption control frame after clearing local output buffers."""
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, InterruptionFrame):
+            await self._write_frame(frame)
+            self._next_send_time = 0
+
+
 class OneLinkMediaTransport(WebsocketClientTransport):
     """Use one duplex WebSocket for the runtime stream's one-time grant."""
 
@@ -44,8 +58,17 @@ class OneLinkMediaTransport(WebsocketClientTransport):
             self.name,
         )
 
+    def output(self) -> WebsocketClientOutputTransport:
+        if not self._output:
+            self._output = _OneLinkWebsocketClientOutputTransport(
+                self, self._session, self._params
+            )
+        return self._output
 
-def create_media_transport(runtime_stream: RuntimeStream) -> WebsocketClientTransport:
+
+def create_media_transport(
+    runtime_stream: RuntimeStream, *, clear_audio_on_interrupt: bool = True
+) -> WebsocketClientTransport:
     """Build a transport pinned to the existing OneLink PCM framing contract."""
     additional_headers = None
     if runtime_stream.stream_token is not None:
@@ -66,6 +89,8 @@ def create_media_transport(runtime_stream: RuntimeStream) -> WebsocketClientTran
             audio_out_auto_silence=False,
             add_wav_header=False,
             additional_headers=additional_headers,
-            serializer=OneLinkMediaSerializer(),
+            serializer=OneLinkMediaSerializer(
+                clear_audio_on_interrupt=clear_audio_on_interrupt
+            ),
         ),
     )

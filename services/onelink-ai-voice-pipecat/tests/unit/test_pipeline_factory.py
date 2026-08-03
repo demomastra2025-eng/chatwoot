@@ -150,9 +150,12 @@ def test_builds_supported_provider_pipeline(
                     "sort": "latency",
                     "allow_fallbacks": True,
                     "require_parameters": True,
+                    "data_collection": "deny",
                 }
             }
         }
+        request_params = llm.build_chat_completion_params({"messages": []})
+        assert request_params["extra_body"]["provider"]["data_collection"] == "deny"
         if model.startswith("openai/gpt-5"):
             assert str(llm._settings.temperature) == "NOT_GIVEN"
     else:

@@ -3,6 +3,7 @@ import json
 
 import pytest
 from pipecat.frames.frames import (
+    Frame,
     InputAudioRawFrame,
     InterruptionFrame,
     OutputAudioRawFrame,
@@ -10,6 +11,13 @@ from pipecat.frames.frames import (
 )
 
 from app.media.serializer import OneLinkMediaSerializer
+
+
+def test_serializer_initializes_pipecat_base_contract():
+    serializer = OneLinkMediaSerializer(name="OneLinkTestSerializer")
+
+    assert serializer.name == "OneLinkTestSerializer"
+    assert serializer.should_ignore_frame(Frame()) is False
 
 
 @pytest.mark.asyncio
@@ -50,6 +58,13 @@ async def test_serialize_interruption_clears_browser_audio():
     assert json.loads(await serializer.serialize(InterruptionFrame())) == {
         "type": "CLEAR_AUDIO"
     }
+
+
+@pytest.mark.asyncio
+async def test_serialize_interruption_preserves_browser_audio_when_clear_is_disabled():
+    serializer = OneLinkMediaSerializer(clear_audio_on_interrupt=False)
+
+    assert await serializer.serialize(InterruptionFrame()) is None
 
 
 @pytest.mark.asyncio

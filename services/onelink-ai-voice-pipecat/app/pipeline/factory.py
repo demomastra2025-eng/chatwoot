@@ -214,7 +214,10 @@ def build_pipeline(
     else:
         if runtime_stream is None:
             raise ValueError("runtime_stream or transport_override is required")
-        transport = create_media_transport(runtime_stream)
+        transport = create_media_transport(
+            runtime_stream,
+            clear_audio_on_interrupt=context.ai.clear_audio_on_interrupt,
+        )
     credentials = settings.provider_credentials(
         context.ai.provider, stt_provider=context.ai.stt_provider
     )
@@ -398,6 +401,7 @@ def build_pipeline(
                         "sort": "latency",
                         "allow_fallbacks": True,
                         "require_parameters": True,
+                        "data_collection": "deny",
                     }
                 }
             },

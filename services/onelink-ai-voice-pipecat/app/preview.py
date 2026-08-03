@@ -220,7 +220,9 @@ async def _run_preview(
             audio_out_end_silence_secs=0,
             audio_out_auto_silence=False,
             fixed_audio_packet_size=320,
-            serializer=OneLinkMediaSerializer(),
+            serializer=OneLinkMediaSerializer(
+                clear_audio_on_interrupt=context.ai.clear_audio_on_interrupt
+            ),
             session_timeout=PREVIEW_SESSION_MAX_SECONDS,
         ),
     )

@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+from typing import Any
 
 from pipecat.frames.frames import (
     Frame,
@@ -26,8 +27,20 @@ OUTPUT_MIME_TYPE = "audio/pcm;rate=8000"
 class OneLinkMediaSerializer(FrameSerializer):
     """Translate OneLink AUDIO_IN/AUDIO_OUT frames without owning the WebSocket loop."""
 
+    def __init__(
+        self,
+        params: FrameSerializer.InputParams | None = None,
+        *,
+        clear_audio_on_interrupt: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(params=params, **kwargs)
+        self._clear_audio_on_interrupt = clear_audio_on_interrupt
+
     async def serialize(self, frame: Frame) -> str | bytes | None:
         if isinstance(frame, InterruptionFrame):
+            if not self._clear_audio_on_interrupt:
+                return None
             return json.dumps({"type": "CLEAR_AUDIO"}, separators=(",", ":"))
         if not isinstance(frame, OutputAudioRawFrame):
             return None
