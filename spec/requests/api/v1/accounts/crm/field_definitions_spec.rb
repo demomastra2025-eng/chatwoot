@@ -102,6 +102,42 @@ RSpec.describe 'CRM Field Definitions API', type: :request do
     expect(response.parsed_body.dig('details', 'key')).to include('Key conflicts with a built-in field')
   end
 
+  it 'rejects appointment keys reserved for integration metadata' do
+    account.disable_features!('crm_deals')
+    account.enable_features!('scheduling')
+
+    post path,
+         params: {
+           entity_kind: 'appointment',
+           key: 'medelement_cabinet_code',
+           label: 'Cabinet code',
+           field_type: 'text'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.dig('details', 'key')).to include('Key is reserved for system use')
+  end
+
+  it 'rejects appointment keys reserved for derived service metadata' do
+    account.disable_features!('crm_deals')
+    account.enable_features!('scheduling')
+
+    post path,
+         params: {
+           entity_kind: 'appointment',
+           key: 'services',
+           label: 'Services',
+           field_type: 'text'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body.dig('details', 'key')).to include('Key is reserved for system use')
+  end
+
   it 'removes deleted appointment field values from existing appointments without touching unmanaged keys' do
     account.disable_features!('crm_deals')
     account.enable_features!('scheduling')

@@ -547,6 +547,116 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('details', 'custom_attributes.unknown_key')).to include('is not a known active field')
   end
 
+  it 'accepts the Medelement cabinet intake field when managed definitions exist' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'appointment',
+      key: 'visit_reason',
+      label: 'Visit reason',
+      field_type: 'text'
+    )
+
+    post path,
+         params: base_params.merge(
+           custom_attributes: {
+             visit_reason: 'Initial visit',
+             medelement_cabinet_code: 'cabinet-501'
+           }
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
+      'visit_reason' => 'Initial visit',
+      'medelement_cabinet_code' => 'cabinet-501'
+    )
+  end
+
+  it 'accepts the Medelement cabinet intake field without managed definitions' do
+    post path,
+         params: base_params.merge(custom_attributes: { medelement_cabinet_code: 'cabinet-501' }),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'custom_attributes', 'medelement_cabinet_code')).to eq('cabinet-501')
+  end
+
+  it 'does not allow arbitrary Medelement system fields through appointment intake' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'appointment',
+      key: 'visit_reason',
+      label: 'Visit reason',
+      field_type: 'text'
+    )
+
+    post path,
+         params: base_params.merge(custom_attributes: { medelement_provider_sync_status: 'succeeded' }),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body.dig('details', 'custom_attributes.medelement_provider_sync_status'))
+      .to include('is managed by the system')
+  end
+
+  it 'does not allow arbitrary Medelement system fields without managed definitions' do
+    post path,
+         params: base_params.merge(custom_attributes: { medelement_provider_sync_status: 'succeeded' }),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body.dig('details', 'custom_attributes.medelement_provider_sync_status'))
+      .to include('is managed by the system')
+  end
+
+  it 'rebuilds derived service metadata instead of accepting custom attribute values' do
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'appointment',
+      key: 'visit_reason',
+      label: 'Visit reason',
+      field_type: 'text'
+    )
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      service_amount: 20_000,
+      starts_at: booking_day,
+      ends_at: booking_day + 30.minutes,
+      custom_attributes: {
+        'service_ids' => [service.id],
+        'services' => [{ 'id' => service.id, 'name' => service.name }]
+      }
+    )
+
+    put "#{path}/#{appointment.id}",
+        params: {
+          service_ids: [service.id],
+          custom_attributes: {
+            visit_reason: 'Follow up',
+            service_ids: [999_999],
+            services: [{ id: 999_999, name: 'Spoofed' }]
+          }
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'custom_attributes')).to include('visit_reason' => 'Follow up')
+    expect(response_body.dig('payload', 'custom_attributes', 'service_ids')).to eq([service.id])
+    expect(response_body.dig('payload', 'custom_attributes', 'services').pluck('id')).to eq([service.id])
+  end
+
   it 'creates an appointment with prepayment and defaults the payment method' do
     post path,
          params: base_params.merge(prepaid_amount: 5_000),
@@ -641,7 +751,10 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     put "#{path}/#{appointment.id}",
         params: {
-          custom_attributes: { visit_reason: 'follow up' }
+          custom_attributes: {
+            medelement_reception_code: '42',
+            visit_reason: 'follow up'
+          }
         },
         headers: headers,
         as: :json

@@ -73,6 +73,12 @@ class Crm::FieldDefinition < ApplicationRecord
       payment_status
     ]
   }.freeze
+  RESERVED_CUSTOM_ATTRIBUTE_KEYS = {
+    'appointment' => %w[service_ids services source_mode]
+  }.freeze
+  RESERVED_CUSTOM_ATTRIBUTE_PREFIXES = {
+    'appointment' => %w[medelement_]
+  }.freeze
 
   belongs_to :account, class_name: '::Account'
 
@@ -90,6 +96,7 @@ class Crm::FieldDefinition < ApplicationRecord
   validates :label, presence: true
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :key_must_not_conflict_with_built_in_fields
+  validate :key_must_not_conflict_with_reserved_custom_attributes
   validate :select_fields_require_options
   validate :system_field_identity_must_not_change, on: :update
 
@@ -142,6 +149,16 @@ class Crm::FieldDefinition < ApplicationRecord
     return unless BUILT_IN_FIELDS.fetch(entity_kind, []).include?(key)
 
     errors.add(:key, 'conflicts with a built-in field')
+  end
+
+  def key_must_not_conflict_with_reserved_custom_attributes
+    return if key.blank? || entity_kind.blank?
+
+    reserved_keys = RESERVED_CUSTOM_ATTRIBUTE_KEYS.fetch(entity_kind, [])
+    reserved_prefixes = RESERVED_CUSTOM_ATTRIBUTE_PREFIXES.fetch(entity_kind, [])
+    return unless reserved_keys.include?(key) || reserved_prefixes.any? { |prefix| key.start_with?(prefix) }
+
+    errors.add(:key, 'is reserved for system use')
   end
 
   def normalize_key

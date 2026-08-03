@@ -20,6 +20,23 @@ const DEFAULT_PREPAID_PAYMENT_METHOD =
   PAYMENT_METHOD_VALUES.find(value => value === 'cash') ||
   PAYMENT_METHOD_VALUES[0] ||
   'cash';
+const BACKEND_MANAGED_CUSTOM_ATTRIBUTE_KEYS = new Set([
+  'service_ids',
+  'services',
+  'source_mode',
+]);
+const MEDELEMENT_CABINET_CODE_KEY = 'medelement_cabinet_code';
+
+const editableCustomAttributes = attributes =>
+  Object.fromEntries(
+    Object.entries(attributes || {}).filter(([key]) => {
+      if (BACKEND_MANAGED_CUSTOM_ATTRIBUTE_KEYS.has(key)) return false;
+
+      return (
+        !key.startsWith('medelement_') || key === MEDELEMENT_CABINET_CODE_KEY
+      );
+    })
+  );
 
 const resolveAmount = value => {
   if (value === '' || value === null || value === undefined) {
@@ -398,7 +415,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           ),
           conversation_id: toNumeric(normalizedForm.conversationId),
           custom_attributes: {
-            ...(normalizedForm.customAttributes || {}),
+            ...editableCustomAttributes(normalizedForm.customAttributes),
             ...(normalizedForm.medelementCabinetCode
               ? {
                   medelement_cabinet_code: normalizedForm.medelementCabinetCode,

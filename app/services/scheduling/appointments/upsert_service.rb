@@ -1,5 +1,7 @@
 class Scheduling::Appointments::UpsertService
   APPOINTMENT_BOOKING_INTAKE_CONTEXT = 'booking_intake'.freeze
+  DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[service_ids services].freeze
+  INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[medelement_cabinet_code].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES = %w[medelement_].freeze
 
@@ -201,32 +203,39 @@ class Scheduling::Appointments::UpsertService
   def resolve_custom_attributes(services:)
     incoming = params[:custom_attributes]
     catalog = appointment_field_catalog
+    resolved_attributes = if catalog.definitions.blank?
+                            resolve_unmanaged_custom_attributes(incoming)
+                          else
+                            resolve_managed_custom_attributes(incoming, catalog)
+                          end
 
-    if catalog.definitions.blank?
-      base_attributes =
-        if incoming.nil?
-          current_custom_attributes_without_service_metadata
-        else
-          CustomAttributes::MutationService.merge(
-            current_custom_attributes_without_service_metadata,
-            incoming
-          )
-        end
+    apply_intake_system_custom_attributes(resolved_attributes, incoming)
+      .merge(service_custom_attributes(services))
+  end
 
-      return base_attributes.to_h.deep_stringify_keys.merge(service_custom_attributes(services))
-    end
+  def resolve_unmanaged_custom_attributes(incoming)
+    current_attributes = current_custom_attributes_without_service_metadata
+    return current_attributes if incoming.nil?
 
+    attributes = incoming.to_h.deep_stringify_keys
+    validate_protected_system_custom_attributes!(attributes, current_attributes)
+    CustomAttributes::MutationService.merge(
+      current_attributes,
+      sanitized_system_custom_attributes(attributes, current_attributes)
+    )
+  end
+
+  def resolve_managed_custom_attributes(incoming, catalog)
     current_attributes = current_custom_attributes_without_service_metadata
     existing_unmanaged_attributes = current_attributes.except(*catalog.definitions.map(&:key))
-
     existing_unmanaged_attributes.merge(
       preserved_system_custom_attributes,
       catalog.resolve_custom_attributes(
         current_attributes: current_attributes,
-        incoming_attributes: incoming,
+        incoming_attributes: catalog_custom_attributes(incoming, current_attributes),
         apply_defaults: appointment.new_record?
       )
-    ).merge(service_custom_attributes(services))
+    )
   end
 
   def service_custom_attributes(services)
@@ -260,14 +269,69 @@ class Scheduling::Appointments::UpsertService
     nil
   end
 
+  def apply_intake_system_custom_attributes(resolved_attributes, incoming)
+    return resolved_attributes if incoming.nil?
+
+    attributes = incoming.to_h.deep_stringify_keys
+    INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS.each do |key|
+      next unless attributes.key?(key)
+
+      value = attributes[key].to_s.strip.presence
+      value.nil? ? resolved_attributes.delete(key) : resolved_attributes[key] = value
+    end
+    resolved_attributes
+  end
+
+  def catalog_custom_attributes(incoming, current_attributes)
+    return if incoming.nil?
+
+    attributes = incoming.to_h.deep_stringify_keys
+    validate_protected_system_custom_attributes!(attributes, current_attributes)
+    sanitized_system_custom_attributes(attributes, current_attributes)
+  end
+
+  def sanitized_system_custom_attributes(attributes, current_attributes)
+    attributes.except(
+      *DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS,
+      *INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS,
+      *unchanged_protected_system_custom_attribute_keys(attributes, current_attributes)
+    )
+  end
+
+  def unchanged_protected_system_custom_attribute_keys(attributes, current_attributes)
+    attributes.keys.select do |key|
+      protected_system_custom_attribute_key?(key) &&
+        current_attributes.key?(key) &&
+        current_attributes[key] == attributes[key]
+    end
+  end
+
+  def validate_protected_system_custom_attributes!(attributes, current_attributes)
+    changed_key = attributes.keys.find do |key|
+      protected_system_custom_attribute_key?(key) &&
+        INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS.exclude?(key) &&
+        current_attributes[key] != attributes[key]
+    end
+    return if changed_key.blank?
+
+    raise Crm::Error.new(
+      code: 'VALIDATION_ERROR',
+      message: "custom_attributes.#{changed_key} is managed by the system",
+      status: :unprocessable_content,
+      details: { "custom_attributes.#{changed_key}" => ['is managed by the system'] }
+    )
+  end
+
+  def protected_system_custom_attribute_key?(key)
+    PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS.include?(key) ||
+      PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES.any? { |prefix| key.start_with?(prefix) }
+  end
+
   def preserved_system_custom_attributes
     appointment.custom_attributes
                .to_h
                .deep_stringify_keys
-               .select do |key, _value|
-      PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS.include?(key) ||
-        PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES.any? { |prefix| key.start_with?(prefix) }
-    end
+               .select { |key, _value| protected_system_custom_attribute_key?(key) }
   end
 
   def current_custom_attributes_without_service_metadata

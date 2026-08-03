@@ -146,6 +146,31 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('does not echo backend-managed appointment metadata in mutation payloads', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      customAttributes: {
+        medelement_cabinet_code: '501',
+        medelement_reception_code: 'reception-1',
+        service_ids: [5],
+        services: [{ id: 5, name: 'Consultation' }],
+        source_mode: 'imported',
+        visit_reason: 'Initial visit',
+      },
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      serviceId: 5,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+
+    expect(store.buildPayload().custom_attributes).toEqual({
+      medelement_cabinet_code: '501',
+      visit_reason: 'Initial visit',
+    });
+  });
+
   it('hydrates the Medelement cabinet when editing an appointment', () => {
     const store = useSchedulingAppointmentFormStore();
 
