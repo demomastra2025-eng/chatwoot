@@ -7,7 +7,9 @@ module Whatsapp::FacebookApiClientWebhookSubscriptionHelpers
     state[:already_subscribed] = app_subscribed_to_waba?(waba_id)
     subscribe_app_unless_present(waba_id, state)
     state[:remote_mutation_attempted] = true
-    override_waba_callback(waba_id, callback_url, verify_token, subscribed_fields: subscribed_fields)
+    result = override_waba_callback(waba_id, callback_url, verify_token, subscribed_fields: subscribed_fields)
+    verify_app_subscription!(waba_id)
+    result
   rescue StandardError => e
     handle_subscription_error(state, e)
   end
@@ -70,6 +72,12 @@ module Whatsapp::FacebookApiClientWebhookSubscriptionHelpers
 
     state[:remote_mutation_attempted] = true
     subscribe_app_to_waba(waba_id)
+  end
+
+  def verify_app_subscription!(waba_id)
+    return if app_subscribed_to_waba?(waba_id)
+
+    raise 'Meta did not persist the WABA app subscription'
   end
 
   def handle_subscription_error(state, error)

@@ -10,7 +10,8 @@ class Whatsapp::WebhookSetupService
 
   # Positional arguments are retained for the existing setup callers.
   # rubocop:disable Metrics/ParameterLists
-  def initialize(channel, waba_id = nil, access_token = nil, strict: false, force_registration: false, recovery_generation: nil)
+  def initialize(channel, waba_id = nil, access_token = nil, strict: false, force_registration: false, recovery_generation: nil,
+                 expected_credential_fingerprint: nil)
     @channel = channel
     @waba_id = waba_id || channel.provider_config['business_account_id']
     @access_token = access_token || channel.provider_config['api_key']
@@ -18,6 +19,7 @@ class Whatsapp::WebhookSetupService
     @strict = strict
     @force_registration = force_registration
     @recovery_generation = recovery_generation
+    @expected_credential_fingerprint = expected_credential_fingerprint
   end
   # rubocop:enable Metrics/ParameterLists
 
@@ -33,6 +35,17 @@ class Whatsapp::WebhookSetupService
   def register_callback(schedule_recovery: true)
     validate_parameters!
     with_waba_lock { setup_webhook(schedule_recovery: schedule_recovery) }
+  end
+
+  def register_callback_if_missing
+    validate_parameters!
+    with_waba_lock do
+      validate_expected_credentials!
+      next :healthy if @api_client.app_subscribed_to_waba?(@waba_id)
+
+      setup_webhook
+      :repaired
+    end
   end
 
   def require_manual_callback_recovery!(error)
@@ -84,6 +97,7 @@ class Whatsapp::WebhookSetupService
   def setup_webhook(schedule_recovery: true)
     remote_callback_updated = false
     recovery_target = nil
+    validate_expected_credentials!
     validate_waba_ownership!
     validate_recovery_identity!
     callback_url, verify_token, recovery_target = callback_details
@@ -201,6 +215,25 @@ class Whatsapp::WebhookSetupService
               recovery['generation'].to_s == @recovery_generation.to_s
 
     raise StaleRecoveryIdentityError, 'Webhook callback recovery identity is stale'
+  end
+
+  def validate_expected_credentials!
+    return if @expected_credential_fingerprint.blank?
+
+    @channel.reload
+    return if active_callback_channel? && current_credential_fingerprint == @expected_credential_fingerprint
+
+    raise StaleRecoveryIdentityError, 'Webhook subscription health identity is stale'
+  end
+
+  def active_callback_channel?
+    @channel.provider == 'whatsapp_cloud' && @channel.account.active? &&
+      @channel.inbox.present? && @channel.inbox.deleting_at.nil?
+  end
+
+  def current_credential_fingerprint
+    config = @channel.provider_config.to_h
+    Digest::SHA256.hexdigest([config['business_account_id'], config['api_key']].map(&:to_s).join("\0"))
   end
 
   def channel_coexistence?

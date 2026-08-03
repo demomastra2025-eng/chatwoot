@@ -205,9 +205,8 @@ describe Whatsapp::FacebookApiClient do
     before do
       stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
         .to_return(
-          status: 200,
-          body: { data: [] }.to_json,
-          headers: { 'Content-Type' => 'application/json' }
+          { status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' } },
+          { status: 200, body: { data: [{ id: app_id }] }.to_json, headers: { 'Content-Type' => 'application/json' } }
         )
     end
 
@@ -254,6 +253,22 @@ describe Whatsapp::FacebookApiClient do
       it 'returns success response' do
         result = api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token)
         expect(result['success']).to be(true)
+        expect(a_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).to have_been_made.twice
+      end
+    end
+
+    context 'when Meta does not persist the subscription after successful writes' do
+      before do
+        stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
+        stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+          .to_return(status: 200, body: { success: true }.to_json, headers: { 'Content-Type' => 'application/json' })
+      end
+
+      it 'keeps a recovery anchor instead of reporting a false success' do
+        expect { api_client.subscribe_waba_webhook(waba_id, callback_url, verify_token) }
+          .to raise_error(Whatsapp::FacebookApiClient::WebhookCallbackOutcomeUnknownError)
+        expect(a_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")).to have_been_made.twice
       end
     end
 

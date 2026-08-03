@@ -3,8 +3,9 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
 
   queue_as :whatsappweb_history
 
-  retry_on LockAcquisitionError, wait: 1.second, attempts: 8
-  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 1.second, attempts: 8
+  retry_on Whatsapp::WabaLivePriority::LiveTrafficPendingError, wait: 5.seconds, attempts: :unlimited, jitter: 0.5
+  retry_on LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
+  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
   retry_on Whatsapp::CoexistenceHistoryService::MediaHydrationError, wait: :polynomially_longer, attempts: 8 do |job, error|
     channel = Channel::Whatsapp.find_by(id: job.arguments.first)
     context = job.arguments.fourth.to_h.with_indifferent_access
@@ -41,15 +42,36 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
     context = routing_context.with_indifferent_access
     return if context[:business_account_id].blank?
 
-    Whatsapp::WabaLock.new(context[:business_account_id]).with_lock do
-      with_lock("whatsapp-coexistence-webhook-sync-#{channel_id}", CHANNEL_LOCK_TIMEOUT) do
-        channel.reload
-        dispatch(channel, field, value.with_indifferent_access, context) if valid_routing_context?(channel, context)
-      end
+    batches = Whatsapp::CoexistenceWebhookBatcher.new(field, value).perform
+    batches.each_with_index.all? do |batch, index|
+      dispatch_if_current(channel, field, batch, context, reconcile: index == batches.length - 1)
     end
   end
 
   private
+
+  def dispatch_if_current(channel, field, value, context, reconcile: false)
+    defer_for_live_traffic!(context[:business_account_id])
+    dispatched = false
+    Whatsapp::WabaLock.new(context[:business_account_id]).with_lock do
+      defer_for_live_traffic!(context[:business_account_id])
+      with_lock("whatsapp-coexistence-webhook-sync-#{channel.id}", CHANNEL_LOCK_TIMEOUT) do
+        channel.reload
+        next unless valid_routing_context?(channel, context)
+
+        dispatch(channel, field, value.with_indifferent_access)
+        reconcile(channel, field, context) if reconcile
+        dispatched = true
+      end
+    end
+    dispatched
+  end
+
+  def defer_for_live_traffic!(waba_id)
+    return unless Whatsapp::WabaLivePriority.waiting?(waba_id)
+
+    raise Whatsapp::WabaLivePriority::LiveTrafficPendingError, 'Live WhatsApp traffic is waiting for the WABA lock'
+  end
 
   def valid_routing_context?(channel, context)
     valid_channel?(channel) && waba_matches?(channel, context) && generation_matches?(channel, context) &&
@@ -104,7 +126,7 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
     channel_ids.one? && channel_ids.first == channel.id
   end
 
-  def dispatch(channel, field, value, context)
+  def dispatch(channel, field, value)
     case field
     when 'history'
       Whatsapp::CoexistenceHistoryService.new(channel: channel, value: value).perform
@@ -113,7 +135,9 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
     else
       raise ArgumentError, "Unsupported coexistence webhook field: #{field}"
     end
+  end
 
+  def reconcile(channel, field, context)
     Whatsapp::CoexistenceSyncReconciliationService.new(channel)
                                                   .reconcile_webhook!(field, generation: context[:sync_generation])
   end

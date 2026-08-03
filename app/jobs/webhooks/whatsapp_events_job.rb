@@ -26,7 +26,8 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     route = Whatsapp::AuthenticatedWebhookRoute.new(
       channel: channel,
       payload: payload,
-      verification_context: verification_context
+      verification_context: verification_context,
+      live_priority_token: job_id
     )
     route.with_verified_route do
       dispatch_change(channel, payload, verification_context[:hmac_verified] == true)

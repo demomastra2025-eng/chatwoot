@@ -151,6 +151,27 @@ describe Whatsapp::WebhookSetupService do
     end
   end
 
+  describe '#register_callback_if_missing' do
+    it 'rechecks under the WABA lock and avoids a duplicate callback mutation' do
+      lock = instance_double(Whatsapp::WabaLock)
+      lock_held = false
+      allow(Whatsapp::WabaLock).to receive(:new).with(waba_id).and_return(lock)
+      allow(lock).to receive(:with_lock) do |&block|
+        lock_held = true
+        block.call
+      ensure
+        lock_held = false
+      end
+      expect(api_client).to receive(:app_subscribed_to_waba?).with(waba_id) do
+        expect(lock_held).to be(true)
+        true
+      end
+      expect(api_client).not_to receive(:subscribe_waba_webhook)
+
+      expect(service.register_callback_if_missing).to eq(:healthy)
+    end
+  end
+
   describe '#perform' do
     context 'when phone number is NOT verified (should register)' do
       before do

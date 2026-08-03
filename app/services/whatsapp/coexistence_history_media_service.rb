@@ -2,7 +2,7 @@ class Whatsapp::CoexistenceHistoryMediaService
   pattr_initialize [:channel!, :value!]
 
   def perform
-    Array(value[:messages]).filter_map do |raw_message|
+    follow_up_messages.filter_map do |raw_message|
       hydrate(raw_message.with_indifferent_access)
       nil
     rescue StandardError => e
@@ -31,6 +31,10 @@ class Whatsapp::CoexistenceHistoryMediaService
   end
 
   private
+
+  def follow_up_messages
+    Array(value[:messages]) + Array(value[:message_echoes])
+  end
 
   def reconcile_failures(failures)
     config = channel.reload.provider_config.deep_dup
@@ -86,13 +90,12 @@ class Whatsapp::CoexistenceHistoryMediaService
 
   def attempted_message_ids
     @attempted_message_ids ||= begin
-      top_level_messages = Array(value[:messages]) + Array(value[:message_echoes])
       history_messages = Array(value[:history]).flat_map do |history|
         Array(history.to_h.with_indifferent_access[:threads]).flat_map do |thread|
           Array(thread.to_h.with_indifferent_access[:messages])
         end
       end
-      failure_ids(top_level_messages + history_messages) | Array(@additional_attempted_message_ids)
+      failure_ids(follow_up_messages + history_messages) | Array(@additional_attempted_message_ids)
     end
   end
 
