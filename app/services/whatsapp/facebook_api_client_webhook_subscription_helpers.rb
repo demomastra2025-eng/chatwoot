@@ -22,8 +22,15 @@ module Whatsapp::FacebookApiClientWebhookSubscriptionHelpers
     )
     data = handle_response(response, 'WABA app subscriptions fetch failed')
     app_id = GlobalConfigService.load('WHATSAPP_APP_ID', '').to_s
+    return false if app_id.blank?
 
-    Array(data['data']).any? { |subscription| subscription.to_h['id'].to_s == app_id }
+    Array(data['data']).any? do |subscription|
+      next false unless subscription.is_a?(Hash)
+
+      nested_data = subscription['whatsapp_business_api_data']
+      subscription['id'].to_s == app_id ||
+        (nested_data.is_a?(Hash) && nested_data['id'].to_s == app_id)
+    end
   end
 
   def subscribe_app_to_waba(waba_id)

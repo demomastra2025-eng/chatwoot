@@ -196,6 +196,26 @@ describe Whatsapp::FacebookApiClient do
     end
   end
 
+  describe '#app_subscribed_to_waba?' do
+    let(:waba_id) { 'test_waba_id' }
+
+    it 'supports the legacy top-level app id response' do
+      stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+        .to_return(status: 200, body: { data: [{ id: app_id }] }.to_json,
+                   headers: { 'Content-Type' => 'application/json' })
+
+      expect(api_client.app_subscribed_to_waba?(waba_id)).to be(true)
+    end
+
+    it 'ignores malformed subscription rows' do
+      rows = ['bad', 7, { whatsapp_business_api_data: 'bad' }, { whatsapp_business_api_data: [] }]
+      stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
+        .to_return(status: 200, body: { data: rows }.to_json, headers: { 'Content-Type' => 'application/json' })
+
+      expect(api_client.app_subscribed_to_waba?(waba_id)).to be(false)
+    end
+  end
+
   describe '#subscribe_waba_webhook' do
     let(:waba_id) { 'test_waba_id' }
     let(:callback_url) { 'https://example.com/webhook' }
@@ -206,7 +226,8 @@ describe Whatsapp::FacebookApiClient do
       stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
         .to_return(
           { status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' } },
-          { status: 200, body: { data: [{ id: app_id }] }.to_json, headers: { 'Content-Type' => 'application/json' } }
+          { status: 200, body: { data: [{ whatsapp_business_api_data: { id: app_id } }] }.to_json,
+            headers: { 'Content-Type' => 'application/json' } }
         )
     end
 
@@ -371,7 +392,7 @@ describe Whatsapp::FacebookApiClient do
         stub_request(:get, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
           .to_return(
             status: 200,
-            body: { data: [{ id: app_id }] }.to_json,
+            body: { data: [{ whatsapp_business_api_data: { id: app_id } }] }.to_json,
             headers: { 'Content-Type' => 'application/json' }
           )
         stub_request(:post, "https://graph.facebook.com/#{api_version}/#{waba_id}/subscribed_apps")
