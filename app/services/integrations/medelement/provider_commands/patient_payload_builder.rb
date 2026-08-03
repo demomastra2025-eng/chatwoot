@@ -1,7 +1,8 @@
 class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
-  def initialize(contact:, patient_code: nil)
+  def initialize(contact:, patient_code: nil, phone_number: nil)
     @contact = contact
     @patient_code = patient_code
+    @phone_number = phone_number || contact.phone_number
   end
 
   def build
@@ -21,14 +22,14 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
 
   private
 
-  attr_reader :contact, :patient_code
+  attr_reader :contact, :patient_code, :phone_number
 
   def custom_attributes
     @custom_attributes ||= contact.custom_attributes.to_h
   end
 
   def phone_payload
-    components = Integrations::Medelement::PhoneNumber.new(contact.phone_number).components
+    components = Integrations::Medelement::PhoneNumber.new(phone_number).components
     {
       'patient_phone_2[0]' => components.fetch(0),
       'patient_phone_2[1]' => components.fetch(1),

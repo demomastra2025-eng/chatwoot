@@ -68,6 +68,23 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     )
   end
 
+  it 'uses the appointment phone for a reception when the contact phone is blank' do
+    contact.update!(phone_number: nil)
+    appointment.update!(client_phone: '+77001234567')
+
+    command = perform
+
+    expect(command.request_snapshot.fetch('patient')).to include(
+      'phone_number' => '+77001234567',
+      'payload' => include(
+        'patient_phone_2[0]' => '7',
+        'patient_phone_2[1]' => '700',
+        'patient_phone_2[2]' => '1234567'
+      )
+    )
+    expect(contact.reload.phone_number).to be_nil
+  end
+
   it 'persists the complete old-to-new move details in the confirmation audit body' do
     scheduling_service = create(:scheduling_service, account: account, name: 'Консультация')
     contact.update!(custom_attributes: contact.custom_attributes.merge('medelement_patient_code' => 'patient-1'))

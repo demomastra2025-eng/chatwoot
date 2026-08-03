@@ -33,6 +33,19 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     )
   end
 
+  it 'uses an explicit phone without changing the contact' do
+    contact.update!(phone_number: nil)
+
+    payload = described_class.new(contact: contact, phone_number: '+77001234567').build
+
+    expect(payload).to include(
+      'patient_phone_2[0]' => '7',
+      'patient_phone_2[1]' => '700',
+      'patient_phone_2[2]' => '1234567'
+    )
+    expect(contact.reload.phone_number).to be_nil
+  end
+
   it 'rejects a name without separate first and last names' do
     contact.update!(name: 'Ivan')
 

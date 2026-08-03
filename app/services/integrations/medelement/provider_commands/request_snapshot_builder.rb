@@ -66,13 +66,22 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   def patient_snapshot
     return unless patient_payload_required?
 
+    phone_number = patient_phone_number
+
     {
-      'phone_number' => contact.phone_number.to_s,
+      'phone_number' => phone_number.to_s,
       'payload' => Integrations::Medelement::ProviderCommands::PatientPayloadBuilder.new(
         contact: contact,
-        patient_code: operation == 'update_patient' ? patient_code : nil
+        patient_code: operation == 'update_patient' ? patient_code : nil,
+        phone_number: phone_number
       ).build
     }
+  end
+
+  def patient_phone_number
+    return contact.phone_number unless operation == 'create_reception'
+
+    appointment.client_phone.presence || contact.phone_number
   end
 
   def patient_payload_required?
