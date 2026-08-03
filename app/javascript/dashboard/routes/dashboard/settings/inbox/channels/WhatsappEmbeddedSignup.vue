@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useStore } from 'vuex';
 import { useRoute, useRouter } from 'vue-router';
 import { useI18n, I18nT } from 'vue-i18n';
@@ -33,6 +33,7 @@ const SIGNUP_TIMEOUT_MS = 10 * 60 * 1000;
 
 // State
 const fbSdkLoaded = ref(false);
+const isLoadingFacebook = ref(true);
 const isProcessing = ref(false);
 const processingMessage = ref('');
 const authCodeReceived = ref(false);
@@ -72,7 +73,9 @@ const benefits = computed(() => [
   },
 ]);
 
-const showLoader = computed(() => isAuthenticating.value || isProcessing.value);
+const showLoader = computed(
+  () => isLoadingFacebook.value || isAuthenticating.value || isProcessing.value
+);
 
 const getEmbeddedSignupConfigurationError = () => {
   const missingConfig = getWhatsAppEmbeddedSignupConfigErrors(
@@ -250,6 +253,13 @@ const launchEmbeddedSignup = async (flow = EMBEDDED_SIGNUP_FLOW.STANDARD) => {
     return;
   }
 
+  if (!fbSdkLoaded.value) {
+    handleSignupError({
+      error: t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.SDK_LOAD_ERROR'),
+    });
+    return;
+  }
+
   try {
     authCode.value = null;
     authCodeReceived.value = false;
@@ -261,12 +271,6 @@ const launchEmbeddedSignup = async (flow = EMBEDDED_SIGNUP_FLOW.STANDARD) => {
     processingMessage.value = t(
       'INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.AUTH_PROCESSING'
     );
-
-    await setupFacebookSdk(
-      window.chatwootConfig?.whatsappAppId,
-      window.chatwootConfig?.whatsappApiVersion
-    );
-    fbSdkLoaded.value = true;
 
     startSignupTimeout();
     const code = await initWhatsAppEmbeddedSignup(
@@ -296,6 +300,30 @@ const launchEmbeddedSignup = async (flow = EMBEDDED_SIGNUP_FLOW.STANDARD) => {
     }
   }
 };
+
+// Keep FB.login in the click task; browsers block popups after an SDK network wait.
+onMounted(async () => {
+  const configurationError = getEmbeddedSignupConfigurationError();
+  if (configurationError) {
+    handleSignupError({ error: configurationError });
+    isLoadingFacebook.value = false;
+    return;
+  }
+
+  try {
+    await setupFacebookSdk(
+      window.chatwootConfig?.whatsappAppId,
+      window.chatwootConfig?.whatsappApiVersion
+    );
+    fbSdkLoaded.value = true;
+  } catch {
+    handleSignupError({
+      error: t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.SDK_LOAD_ERROR'),
+    });
+  } finally {
+    isLoadingFacebook.value = false;
+  }
+});
 
 onBeforeUnmount(() => {
   clearSignupTimeout();
@@ -361,7 +389,7 @@ onBeforeUnmount(() => {
 
       <div class="flex flex-col gap-2 mt-4">
         <NextButton
-          :disabled="isAuthenticating"
+          :disabled="!fbSdkLoaded || isAuthenticating"
           :is-loading="isAuthenticating"
           faded
           slate
@@ -371,7 +399,7 @@ onBeforeUnmount(() => {
           {{ $t('INBOX_MGMT.ADD.WHATSAPP.EMBEDDED_SIGNUP.STANDARD_BUTTON') }}
         </NextButton>
         <NextButton
-          :disabled="isAuthenticating"
+          :disabled="!fbSdkLoaded || isAuthenticating"
           :is-loading="isAuthenticating"
           faded
           slate

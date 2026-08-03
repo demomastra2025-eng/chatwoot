@@ -6,12 +6,36 @@ import {
   getWhatsAppEmbeddedSignupConfigErrors,
   initWhatsAppEmbeddedSignup,
   initializeFacebook,
+  loadFacebookSdk,
   isEmbeddedSignupErrorEvent,
   isEmbeddedSignupFinishEvent,
   isValidBusinessData,
 } from './utils';
 
 describe('WhatsApp Embedded Signup utils', () => {
+  describe('loadFacebookSdk', () => {
+    afterEach(() => {
+      document
+        .querySelector(
+          'script[src="https://connect.facebook.net/en_US/sdk.js"]'
+        )
+        ?.remove();
+    });
+
+    it('uses the anonymous CORS mode required by the official Meta SDK snippet', async () => {
+      const loadPromise = loadFacebookSdk();
+      const script = document.querySelector(
+        'script[src="https://connect.facebook.net/en_US/sdk.js"]'
+      );
+
+      expect(script).not.toBeNull();
+      expect(script.crossOrigin).toBe('anonymous');
+
+      script.dispatchEvent(new Event('load'));
+      await expect(loadPromise).resolves.toBe(script);
+    });
+  });
+
   describe('initializeFacebook', () => {
     it('uses the current Graph API v25 default when no runtime version is configured', async () => {
       window.FB = { init: vi.fn() };
