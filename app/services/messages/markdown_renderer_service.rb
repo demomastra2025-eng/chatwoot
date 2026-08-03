@@ -3,7 +3,7 @@ class Messages::MarkdownRendererService
     'Channel::Email' => :render_html,
     'Channel::WebWidget' => :render_html,
     'Channel::Telegram' => :render_telegram_html,
-    'Channel::TelegramPersonal' => :render_telegram_html,
+    'Channel::TelegramPersonal' => :render_telegram_personal_html,
     'Channel::Whatsapp' => :render_whatsapp,
     'Channel::FacebookPage' => :render_instagram,
     'Channel::Instagram' => :render_instagram,
@@ -48,10 +48,18 @@ class Messages::MarkdownRendererService
   end
 
   def render_telegram_html
+    render_telegram_with(Messages::MarkdownRenderers::TelegramRenderer)
+  end
+
+  def render_telegram_personal_html
+    render_telegram_with(Messages::MarkdownRenderers::TelegramPersonalRenderer)
+  end
+
+  def render_telegram_with(renderer_class)
     # Strip whitespace from whitespace-only lines to normalize newlines
     normalized_content = @content.gsub(/^[ \t]+$/m, '')
     content_with_preserved_newlines = preserve_multiple_newlines(normalized_content)
-    renderer = Messages::MarkdownRenderers::TelegramRenderer.new
+    renderer = renderer_class.new
     doc = CommonMarker.render_doc(content_with_preserved_newlines, [:STRIKETHROUGH_DOUBLE_TILDE], [:strikethrough])
     result = renderer.render(doc).gsub(/\n+\z/, '')
     restore_multiple_newlines(result)

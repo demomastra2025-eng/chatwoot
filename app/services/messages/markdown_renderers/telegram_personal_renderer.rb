@@ -1,6 +1,7 @@
-require 'cgi'
-
-class Messages::MarkdownRenderers::TelegramRenderer < Messages::MarkdownRenderers::BaseMarkdownRenderer
+# Telegram Personal currently forwards rendered content to Telethon without an HTML
+# parse mode. Keep its existing renderer isolated until the gateway contract can be
+# migrated together with the production sidecar.
+class Messages::MarkdownRenderers::TelegramPersonalRenderer < Messages::MarkdownRenderers::BaseMarkdownRenderer
   def initialize
     super
     @list_item_number = 0
@@ -15,23 +16,11 @@ class Messages::MarkdownRenderers::TelegramRenderer < Messages::MarkdownRenderer
   end
 
   def code(node)
-    out('<code>', CGI.escapeHTML(node.string_content), '</code>')
+    out('<code>', node.string_content, '</code>')
   end
 
   def link(node)
-    out('<a href="', CGI.escapeHTML(node.url.to_s), '">', :children, '</a>')
-  end
-
-  def text(node)
-    out(CGI.escapeHTML(node.string_content))
-  end
-
-  def inline_html(node)
-    out(CGI.escapeHTML(node.string_content))
-  end
-
-  def html_block(node)
-    out(CGI.escapeHTML(node.string_content))
+    out('<a href="', node.url, '">', :children, '</a>')
   end
 
   def strikethrough(_node)
@@ -43,7 +32,7 @@ class Messages::MarkdownRenderers::TelegramRenderer < Messages::MarkdownRenderer
   end
 
   def code_block(node)
-    out('<pre>', CGI.escapeHTML(node.string_content), '</pre>')
+    out('<pre>', node.string_content, '</pre>')
   end
 
   def list(node)

@@ -293,6 +293,19 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         expect(result).to include('<a href="https://example.com">link text</a>')
       end
 
+      it 'escapes raw placeholders and HTML instead of emitting unsupported Telegram tags' do
+        content = '<FAILED_MESSAGE_ID> <script>alert("x")</script> `a < b`'
+
+        result = described_class.new(content, channel_type).render
+
+        expect(result).to include(
+          '&lt;FAILED_MESSAGE_ID&gt;',
+          '&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;',
+          '<code>a &lt; b</code>'
+        )
+        expect(result).not_to include('<FAILED_MESSAGE_ID>', '<script>')
+      end
+
       it 'preserves single newlines' do
         content = "line 1\nline 2"
         result = described_class.new(content, channel_type).render
@@ -337,6 +350,19 @@ RSpec.describe Messages::MarkdownRendererService, type: :service do
         result = described_class.new(content, channel_type).render
         expect(result).to include('<blockquote>')
         expect(result).to include('quoted text')
+      end
+    end
+
+    context 'when channel is Channel::TelegramPersonal' do
+      let(:channel_type) { 'Channel::TelegramPersonal' }
+
+      it 'preserves the existing personal gateway rendering contract' do
+        content = '**bold** <FAILED_MESSAGE_ID> `a < b`'
+
+        result = described_class.new(content, channel_type).render
+
+        expect(result).to include('<strong>bold</strong>', '<code>a < b</code>')
+        expect(result).not_to include('&lt;FAILED_MESSAGE_ID&gt;')
       end
     end
 
