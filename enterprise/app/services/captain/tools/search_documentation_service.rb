@@ -4,6 +4,7 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   SEMANTIC_RESULT_LIMIT = 5
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
   TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
+  SEMANTIC_DISTANCE_THRESHOLD = 0.3
 
   class TotalLookupTimeout < Timeout::Error; end
 
@@ -15,6 +16,21 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
   param :query, desc: 'Search Query', required: true
 
   def execute(query:)
+    query = query.to_s.squish
+    return tool_failure('query is required') if query.blank?
+
+    execute_lookup(query)
+  rescue StandardError => e
+    Rails.logger.error do
+      "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
+    end
+
+    tool_failure('Documentation search is temporarily unavailable. No documentation context could be retrieved for this request.')
+  end
+
+  private
+
+  def execute_lookup(query)
     Rails.logger.info { "#{self.class.name}: #{query}" }
     return 'No FAQs found for the given query' unless knowledge_available?
 
@@ -26,24 +42,20 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
       formatted_responses_or_empty(responses)
     end
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
-    log_semantic_unavailable(e)
+    semantic_fallback(query, translated_query, e)
+  end
+
+  def semantic_fallback(query, translated_query, error)
+    log_semantic_unavailable(error)
     translated_query ||= query
 
     structured_fallback_payload(
       query: query,
       translated_query: translated_query,
       responses: lexical_fallback_responses(query, translated_query),
-      fallback_reason: semantic_error_fallback_reason(e)
+      fallback_reason: semantic_error_fallback_reason(error)
     )
-  rescue StandardError => e
-    Rails.logger.error do
-      "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
-    end
-
-    tool_failure('Documentation search is temporarily unavailable. No documentation context could be retrieved for this request.')
   end
-
-  private
 
   def knowledge_available?
     assistant.account.captain_assistant_responses.approved.visible_to_assistant(assistant.id).exists? ||
@@ -166,12 +178,18 @@ class Captain::Tools::SearchDocumentationService < Captain::Tools::BaseTool
                                          .where(account_id: assistant.account_id)
                                          .limit(SEMANTIC_RESULT_LIMIT)
                                          .to_a
+      candidates.select! { |candidate| semantic_distance_acceptable?(candidate) }
       Captain::Documents::Reranker.new(account: assistant.account).call(
         query: query,
         documents: candidates,
         top_n: SEMANTIC_RESULT_LIMIT
       ).documents
     end
+  end
+
+  def semantic_distance_acceptable?(candidate)
+    distance = candidate.respond_to?(:neighbor_distance) ? candidate.neighbor_distance : nil
+    distance.present? && distance.to_f <= SEMANTIC_DISTANCE_THRESHOLD
   end
 
   def lexical_fallback_responses(*queries)

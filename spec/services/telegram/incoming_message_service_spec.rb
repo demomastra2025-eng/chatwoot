@@ -366,7 +366,7 @@ describe Telegram::IncomingMessageService do
     end
 
     context 'when valid callback_query params' do
-      it 'creates appropriate conversations, message and contacts' do
+      it 'creates the contact and conversation without persisting the callback as a message' do
         params = {
           'update_id' => 2_342_342_343_242,
           'callback_query' => {
@@ -386,11 +386,21 @@ describe Telegram::IncomingMessageService do
           }
         }.with_indifferent_access
 
+        resolver = instance_double(Confirmations::TelegramReplyResolver, perform: nil)
+        expect(Confirmations::TelegramReplyResolver).to receive(:new).with(
+          conversation: an_instance_of(Conversation),
+          actor: an_instance_of(Contact),
+          inbox: telegram_channel.inbox,
+          callback_value: 'Option 1',
+          callback_query_id: '2342342309929423'
+        ).and_return(resolver)
+        expect(telegram_channel).to receive(:answer_callback_query).with(callback_query_id: '2342342309929423').and_return(true)
+        message_count = telegram_channel.inbox.messages.count
         described_class.new(inbox: telegram_channel.inbox, params: params).perform
         expect(telegram_channel.inbox.conversations.count).not_to eq(0)
         expect(Contact.all.first.name).to eq('Sojan Jose')
         expect(Contact.all.first.additional_attributes['social_telegram_user_id']).to eq(5_171_248)
-        expect(telegram_channel.inbox.messages.first.content).to eq('Option 1')
+        expect(telegram_channel.inbox.messages.count).to eq(message_count)
       end
     end
 
@@ -432,7 +442,7 @@ describe Telegram::IncomingMessageService do
         # Send a new message
         new_params = {
           'update_id' => 2_342_342_343_243,
-          'message' => { 'text' => 'second message' }.merge(message_params)
+          'message' => message_params.merge('message_id' => 2, 'text' => 'second message')
         }.with_indifferent_access
 
         described_class.new(inbox: telegram_channel.inbox, params: new_params).perform
@@ -454,7 +464,7 @@ describe Telegram::IncomingMessageService do
         # Send a new message
         new_params = {
           'update_id' => 2_342_342_343_243,
-          'message' => { 'text' => 'second message' }.merge(message_params)
+          'message' => message_params.merge('message_id' => 2, 'text' => 'second message')
         }.with_indifferent_access
 
         described_class.new(inbox: telegram_channel.inbox, params: new_params).perform
@@ -487,7 +497,7 @@ describe Telegram::IncomingMessageService do
         # Send a new message
         new_params = {
           'update_id' => 2_342_342_343_243,
-          'message' => { 'text' => 'second message' }.merge(message_params)
+          'message' => message_params.merge('message_id' => 2, 'text' => 'second message')
         }.with_indifferent_access
 
         described_class.new(inbox: telegram_channel.inbox, params: new_params).perform

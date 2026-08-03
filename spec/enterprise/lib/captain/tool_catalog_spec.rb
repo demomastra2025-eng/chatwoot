@@ -71,6 +71,15 @@ RSpec.describe Captain::ToolCatalog do
       end
     end
 
+    it 'keeps employee-actor and private conversation tools out of the customer-agent scope' do
+      assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
+      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
+      restricted_tool_ids = %w[add_deal_comment add_task_comment get_conversation]
+
+      expect(assistant_tool_ids).to include(*restricted_tool_ids)
+      expect(agent_tool_ids).not_to include(*restricted_tool_ids)
+    end
+
     it 'keeps Kaspi Pay provider reads assistant-only and confirms invoice cancellation' do
       create(:integrations_hook, :kaspi_pay, account: account)
 

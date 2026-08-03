@@ -40,4 +40,27 @@ RSpec.describe Captain::Tools::Copilot::RequestConfirmationService do
     expect(payload.dig('delivery', 'message_id')).to eq(request.delivery_message_id)
     expect(request.subject).to eq(appointment)
   end
+
+  it 'returns an unknown delivery outcome with a recovery anchor when message creation raises' do
+    delivery = instance_double(Confirmations::DeliveryService)
+    allow(Confirmations::DeliveryService).to receive(:new).and_return(delivery)
+    allow(delivery).to receive(:perform).and_raise(Timeout::Error, 'provider timeout')
+
+    normalized = Captain::ToolResult.normalize(
+      service.execute(title: 'Подтвердить', body: 'Подтверждаете?', send_now: true)
+    )
+    request = ConfirmationRequest.last
+
+    expect(normalized).to include(success: false, retryable: false)
+    expect(normalized[:data]).to include(
+      status: 'partial',
+      confirmation_request: include(id: request.id),
+      delivery: include(status: 'unknown', delivery_outcome_known: false, error_code: 'Timeout::Error')
+    )
+    expect(normalized[:audit]).to include(
+      failure_reason: 'delivery_outcome_unknown',
+      confirmation_request_id: request.id,
+      automatic_retry_blocked: true
+    )
+  end
 end

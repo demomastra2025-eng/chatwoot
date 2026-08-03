@@ -93,7 +93,7 @@ module Captain::Tools::Instrumentation
   end
 
   def inactive_tool_result
-    message = account_administrator? ? 'Tool is not available for the current operator' : 'Account administrator permission is required'
+    message = account_administrator? ? inactive_tool_error_message : 'Account administrator permission is required'
     tool_failure(ArgumentError.new(message))
   end
 

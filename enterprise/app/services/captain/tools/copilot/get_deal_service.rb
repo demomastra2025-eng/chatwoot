@@ -9,7 +9,7 @@ class Captain::Tools::Copilot::GetDealService < Captain::Tools::Copilot::BaseAcc
   def execute(deal_id:)
     deal_id = required_positive_id(deal_id, field_name: 'deal_id')
     deal = account.crm_deals.includes(:pipeline, :stage, :owner, :team, :company, :contacts).find_by(id: deal_id)
-    return 'Deal not found' if deal.blank?
+    return tool_failure('Deal not found') if deal.blank?
 
     formatted_payload(deal: ::Crm::PayloadBuilder.ai_deal(deal))
   end

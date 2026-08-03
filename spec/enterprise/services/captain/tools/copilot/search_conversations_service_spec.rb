@@ -86,6 +86,11 @@ RSpec.describe Captain::Tools::Copilot::SearchConversationsService do
       expect(payload['conversations'].first['id']).to eq(open_conversation.id)
     end
 
+    it 'rejects invalid status and priority instead of silently broadening the search' do
+      expect(service.execute(status: 'all')).to eq('ERROR: Invalid conversation status: all')
+      expect(service.execute(priority: 'critical')).to eq('ERROR: Invalid conversation priority: critical')
+    end
+
     it 'returns an empty normalized payload when no conversations are found' do
       payload = JSON.parse(service.execute(status: 'snoozed'))
 

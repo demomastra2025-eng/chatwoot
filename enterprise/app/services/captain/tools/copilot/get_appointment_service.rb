@@ -7,6 +7,7 @@ class Captain::Tools::Copilot::GetAppointmentService < Captain::Tools::Copilot::
   param :appointment_id, type: :number, desc: 'The appointment ID', required: true
 
   def execute(appointment_id:)
+    appointment_id = required_positive_id(appointment_id, field_name: 'appointment_id')
     appointment = account.scheduling_appointments.includes(
       :resource,
       :service,
@@ -14,7 +15,7 @@ class Captain::Tools::Copilot::GetAppointmentService < Captain::Tools::Copilot::
       :contact,
       conversation: [:inbox, :communication_thread]
     ).find_by(id: appointment_id)
-    return 'Appointment not found' if appointment.blank?
+    return tool_failure('Appointment not found') if appointment.blank?
 
     formatted_payload(appointment: ::Scheduling::PayloadBuilder.appointment(appointment))
   end

@@ -9,7 +9,7 @@ class Captain::Tools::Copilot::GetDealTimelineService < Captain::Tools::Copilot:
 
   def execute(deal_id:, limit: nil)
     deal = account.crm_deals.find_by(id: deal_id)
-    return 'Deal not found' if deal.blank?
+    return tool_failure('Deal not found') if deal.blank?
 
     timeline = ::Crm::Timelines::DealService.new(
       account: account,

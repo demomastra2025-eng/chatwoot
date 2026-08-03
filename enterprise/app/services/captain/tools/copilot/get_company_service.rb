@@ -8,7 +8,7 @@ class Captain::Tools::Copilot::GetCompanyService < Captain::Tools::Copilot::Base
 
   def execute(company_id:)
     company = account.companies.find_by(id: company_id)
-    return 'Company not found' if company.blank?
+    return tool_failure('Company not found') if company.blank?
 
     formatted_payload(company: ::Crm::PayloadBuilder.company(company))
   end

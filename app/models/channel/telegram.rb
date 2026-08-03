@@ -117,6 +117,17 @@ class Channel::Telegram < ApplicationRecord
     true
   end
 
+  def answer_callback_query(callback_query_id:)
+    response = HTTParty.post(
+      "#{telegram_api_url}/answerCallbackQuery",
+      body: { callback_query_id: callback_query_id }
+    )
+
+    raise response.parsed_response['description'] unless response.success?
+
+    true
+  end
+
   def reply_to_message_id(message)
     message.content_attributes['in_reply_to_external_id']
   end

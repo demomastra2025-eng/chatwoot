@@ -263,7 +263,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false })
     end
 
-    it 'surfaces native OpenRouter reasoning from runtime history' do
+    it 'does not persist native provider reasoning from runtime history' do
       result = instance_double(
         Captain::Runtime::Result,
         output: { 'response' => 'Done', 'reasoning' => 'Structured summary' },
@@ -283,22 +283,20 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         error: nil
       )
       allow(mock_runner).to receive(:run).and_return(result)
+      allow(Rails.logger).to receive(:info)
 
       response = service.generate_response(message_history: message_history)
 
       expect(response).to include(
         'response' => 'Done',
-        'reasoning' => 'Native OpenRouter reasoning',
-        'native_reasoning' => {
-          'text' => 'Native OpenRouter reasoning',
-          'signature' => 'sig_123',
-          'details' => [{ 'type' => 'reasoning.text', 'text' => 'detail' }],
-          'source' => 'openrouter'
-        },
-        'structured_reasoning' => 'Structured summary',
+        'reasoning' => 'Structured summary',
         'agent_name' => 'assistant_agent',
         'handoff_tool_called' => false
       )
+      expect(response).not_to have_key('native_reasoning')
+      expect(response.to_json).not_to include('Native OpenRouter reasoning', 'sig_123', 'reasoning.text')
+      expect(Rails.logger).not_to have_received(:info).with(include('Native OpenRouter reasoning', 'sig_123', 'reasoning.text'))
+      expect(Rails.logger).to have_received(:info).with(include('[Captain V2] Agent result', 'assistant_id=', 'conversation_id='))
     end
 
     it 'surfaces the V2 handoff tool flag from the runner context' do

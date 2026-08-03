@@ -9,7 +9,7 @@ class Captain::Tools::Copilot::GetTaskTimelineService < Captain::Tools::Copilot:
 
   def execute(task_id:, limit: nil)
     task = account.crm_tasks.find_by(id: task_id)
-    return 'Task not found' if task.blank?
+    return tool_failure('Task not found') if task.blank?
 
     timeline = ::Crm::Timelines::TaskService.new(
       account: account,

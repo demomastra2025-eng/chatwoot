@@ -2,6 +2,7 @@ require 'timeout'
 
 class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
+  SEMANTIC_DISTANCE_THRESHOLD = 0.3
 
   prepend Captain::Tools::Instrumentation
   include Captain::ToolResultOutput
@@ -25,18 +26,10 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
   end
 
   def execute(query:)
-    Rails.logger.info { "#{self.class.name}: #{query}" }
+    query = query.to_s.squish
+    return tool_failure('query is required') if query.blank?
 
-    translated_query = Captain::Llm::TranslateQueryService
-                       .new(account: @account)
-                       .translate(query, target_language: @account.locale_english_name)
-
-    responses = search_responses(translated_query)
-    formatted_responses_or_empty(responses)
-  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
-    log_semantic_unavailable(e)
-    translated_query ||= query
-    formatted_responses_or_empty(lexical_fallback_responses(translated_query, query))
+    execute_lookup(query)
   rescue StandardError => e
     Rails.logger.error do
       "#{self.class.name} failed for assistant #{assistant&.id}: #{e.class} - #{e.message}"
@@ -49,9 +42,27 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
 
   attr_reader :assistant
 
+  def execute_lookup(query)
+    Rails.logger.info { "#{self.class.name}: #{query}" }
+
+    translated_query = Captain::Llm::TranslateQueryService
+                       .new(account: @account)
+                       .translate(query, target_language: @account.locale_english_name)
+
+    responses = search_responses(translated_query)
+    formatted_responses_or_empty(responses)
+  rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
+    log_semantic_unavailable(e)
+    translated_query ||= query
+    formatted_responses_or_empty(lexical_fallback_responses(translated_query, query))
+  end
+
   def search_responses(query)
     Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
-      scoped_responses.search(query, account_id: @account.id).to_a
+      scoped_responses.search(query, account_id: @account.id).to_a.select do |response|
+        distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
+        distance.present? && distance.to_f <= SEMANTIC_DISTANCE_THRESHOLD
+      end
     end
   end
 
@@ -110,6 +121,10 @@ class Captain::Tools::SearchReplyDocumentationService < RubyLLM::Tool
 
   def tool_safety_account
     @account
+  end
+
+  def tool_safety_arguments(arguments)
+    arguments
   end
 
   def tool_safety_feature

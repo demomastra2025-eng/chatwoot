@@ -26,8 +26,8 @@ class Captain::Tools::Operations::ConfirmationOperations < Captain::Tools::Opera
       idempotency_key: idempotency_key
     ).perform
 
-    delivery_message = Confirmations::DeliveryService.new(confirmation_request: request, sender: actor).perform if send_now
-    [request, delivery_message]
+    delivery_message, delivery_error = deliver_confirmation(request, send_now)
+    [request, delivery_message, delivery_error]
   end
   # rubocop:enable Metrics/ParameterLists
 
@@ -45,6 +45,23 @@ class Captain::Tools::Operations::ConfirmationOperations < Captain::Tools::Opera
   end
 
   private
+
+  def deliver_confirmation(request, send_now)
+    return [nil, nil] unless send_now
+
+    [Confirmations::DeliveryService.new(confirmation_request: request, sender: actor).perform, nil]
+  rescue StandardError => e
+    request.update!(
+      metadata: request.metadata.to_h.merge(
+        'delivery_status' => 'unknown',
+        'delivery_outcome_known' => false,
+        'delivery_error_code' => e.class.name,
+        'delivery_outcome_unknown_at' => Time.current.iso8601,
+        'delivery_recovery_confirmation_request_id' => request.id
+      )
+    )
+    [nil, e]
+  end
 
   def resolve_subject(subject_kind:, subject_type:, subject_id:)
     return resolve_subject_by_kind(subject_kind) if subject_kind.present?

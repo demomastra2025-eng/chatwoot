@@ -19,6 +19,10 @@ RSpec.describe Captain::Tools::Copilot::GetCompanyService do
     )
   end
 
+  it 'returns a structured failure when the company is missing' do
+    expect(service.execute(company_id: 999)).to eq('ERROR: Company not found')
+  end
+
   describe '#active?' do
     it 'requires contact management permission for custom-role users' do
       custom_role = create(:custom_role, account: account, permissions: [])

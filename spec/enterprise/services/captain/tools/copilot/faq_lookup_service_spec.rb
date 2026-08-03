@@ -19,7 +19,8 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     translate_service = instance_double(Captain::Llm::TranslateQueryService)
     allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translate_service)
     allow(translate_service).to receive(:translate).and_return('refund')
-    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.where(id: faq_response.id))
+    scored_response = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: faq_response.id)
+    allow(Captain::AssistantResponse).to receive(:search).and_return(scored_response)
   end
 
   it 'returns normalized faq matches payload' do
@@ -45,8 +46,34 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
     )
   end
 
+  it 'rejects a blank query before translation, cache, or semantic lookup' do
+    expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
+    expect(Captain::Knowledge::AnswerCache).not_to receive(:new)
+    expect(Captain::AssistantResponse).not_to receive(:search)
+
+    expect(service.execute(query: '   ')).to eq('ERROR: query is required')
+  end
+
+  it 'does not expose a semantic candidate outside the relevance threshold' do
+    translate_service = instance_double(Captain::Llm::TranslateQueryService, translate: 'irrelevantsemantic')
+    allow(Captain::Llm::TranslateQueryService).to receive(:new).with(account: account).and_return(translate_service)
+    faq_response.define_singleton_method(:neighbor_distance) { 0.9 }
+    allow(Captain::AssistantResponse).to receive(:search).and_return([faq_response])
+
+    payload = JSON.parse(service.execute(query: 'irrelevant'))
+
+    expect(payload).to include('total_count' => 0, 'lookup_strategy' => 'lexical')
+    expect(payload['matches']).to be_empty
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_no_matches',
+      'match_count' => 0
+    )
+  end
+
   it 'serves repeated translated semantic lookups from the answer cache' do
-    expect(Captain::AssistantResponse).to receive(:search).once.and_return(Captain::AssistantResponse.where(id: faq_response.id))
+    scored_response = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: faq_response.id)
+    expect(Captain::AssistantResponse).to receive(:search).once.and_return(scored_response)
 
     first_payload = JSON.parse(service.execute(query: 'возврат'))
     second_payload = JSON.parse(service.execute(query: 'вернуть деньги'))
@@ -250,7 +277,9 @@ RSpec.describe Captain::Tools::Copilot::FaqLookupService do
       account_id: account.id,
       assistant_id: assistant.id,
       limit: 5
-    ).and_return(Captain::AssistantResponse.where(id: general_response.id))
+    ).and_return(
+      Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: general_response.id)
+    )
 
     payload = JSON.parse(service.execute(query: 'workspace visibility'))
 

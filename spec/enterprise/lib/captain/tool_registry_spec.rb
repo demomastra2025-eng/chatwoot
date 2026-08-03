@@ -281,6 +281,9 @@ RSpec.describe Captain::ToolRegistry do
       execute_macro
       create_contact
       complete_task
+      get_conversation
+      add_deal_comment
+      add_task_comment
       get_workspace_profile
       update_workspace_profile
       get_mcp_access_policy

@@ -39,7 +39,7 @@ RSpec.describe Captain::Tools::Copilot::GetConversationService do
     let(:user) { create(:user, :administrator, account: account) }
 
     it 'returns not found message when conversation is missing' do
-      expect(service.execute(conversation_id: 999)).to eq('Conversation not found')
+      expect(service.execute(conversation_id: 999)).to eq('ERROR: Conversation not found')
     end
 
     it 'returns a normalized conversation payload including messages' do
@@ -70,8 +70,47 @@ RSpec.describe Captain::Tools::Copilot::GetConversationService do
         'contact_id' => conversation.contact_id,
         'contact_name' => conversation.contact.name
       )
-      expect(contents).to include('Regular message', 'Private note content')
-      expect(private_note).to include('content' => 'Private note content', 'private' => true)
+      expect(contents).to contain_exactly('Regular message')
+      expect(private_note).to be_nil
+      expect(conversation_payload['message_window']).to include(
+        'limit' => 20,
+        'returned_count' => 1,
+        'truncated' => false,
+        'private_messages_included' => false
+      )
+    end
+
+    it 'includes private notes only when an administrator explicitly requests them' do
+      conversation = create(:conversation, account: account)
+      create(:message, conversation: conversation, content: 'Private note content', private: true)
+
+      payload = JSON.parse(service.execute(conversation_id: conversation.display_id, include_private: true))
+
+      expect(payload.dig('conversation', 'messages').sole).to include('content' => 'Private note content', 'private' => true)
+      expect(payload.dig('conversation', 'message_window', 'private_messages_included')).to be true
+    end
+
+    it 'returns only the latest bounded message window' do
+      conversation = create(:conversation, account: account)
+      messages = Array.new(3) do |index|
+        create(:message, conversation: conversation, content: "Message #{index}")
+      end
+      messages.each_with_index { |message, index| message.update!(created_at: 3.minutes.ago + index.minutes) }
+
+      payload = JSON.parse(service.execute(conversation_id: conversation.display_id, message_limit: 2))
+
+      expect(payload.dig('conversation', 'messages').pluck('content')).to eq(['Message 1', 'Message 2'])
+      expect(payload.dig('conversation', 'message_window')).to include('limit' => 2, 'returned_count' => 2, 'truncated' => true)
+    end
+
+    context 'when a non-administrator requests private notes' do
+      let(:user) { create(:user, account: account) }
+
+      it 'fails closed before loading conversation messages' do
+        expect(service.execute(conversation_id: 1, include_private: true)).to eq(
+          'ERROR: Account administrator permission is required to include private notes'
+        )
+      end
     end
   end
 end

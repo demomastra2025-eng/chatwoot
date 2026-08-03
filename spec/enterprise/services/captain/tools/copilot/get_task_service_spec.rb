@@ -23,4 +23,8 @@ RSpec.describe Captain::Tools::Copilot::GetTaskService do
       'status_id' => status.id
     )
   end
+
+  it 'returns a structured failure when the task is missing' do
+    expect(service.execute(task_id: 999)).to eq('ERROR: Task not found')
+  end
 end

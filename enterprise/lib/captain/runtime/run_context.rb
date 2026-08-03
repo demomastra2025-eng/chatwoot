@@ -11,6 +11,10 @@ module Captain::Runtime
       @callback_manager = CallbackManager.new(@callbacks)
     end
 
+    def mutating_tool_guard
+      @mutating_tool_guard ||= Mutex.new
+    end
+
     class Usage
       attr_accessor :input_tokens, :output_tokens, :total_tokens, :thinking_tokens
 

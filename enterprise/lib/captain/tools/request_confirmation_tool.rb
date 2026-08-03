@@ -19,7 +19,7 @@ class Captain::Tools::RequestConfirmationTool < Captain::Tools::BasePublicTool
 
   # rubocop:disable Metrics/ParameterLists
   def perform(tool_context, title:, body:, subject_kind: nil, expires_at: nil, send_now: true, metadata: {}, idempotency_key: nil)
-    request, delivery_message = operations(tool_context.state).request_confirmation(
+    request, delivery_message, delivery_error = operations(tool_context.state).request_confirmation(
       title: title,
       body: body,
       subject: subject_from_state(tool_context.state, subject_kind),
@@ -29,11 +29,15 @@ class Captain::Tools::RequestConfirmationTool < Captain::Tools::BasePublicTool
       idempotency_key: idempotency_key
     )
 
-    JSON.pretty_generate(
+    payload = {
       action: 'request_confirmation',
       confirmation_request: Confirmations::PayloadBuilder.confirmation_request(request),
-      delivery: delivery_payload(delivery_message, request)
-    )
+      delivery: Confirmations::PayloadBuilder.delivery(request: request, message: delivery_message, error: delivery_error)
+    }
+    payload[:status] = delivery_status(payload[:delivery], delivery_error)
+    return partial_delivery_failure(payload) if delivery_error.present?
+
+    JSON.pretty_generate(payload)
   rescue StandardError => e
     tool_failure(e)
   end
@@ -65,13 +69,23 @@ class Captain::Tools::RequestConfirmationTool < Captain::Tools::BasePublicTool
     end || raise(ArgumentError, "Current #{subject_kind} is not available")
   end
 
-  def delivery_payload(delivery_message, request)
-    return nil if delivery_message.blank?
+  def delivery_status(delivery, delivery_error)
+    return 'partial' if delivery_error.present?
+    return 'pending' if delivery&.dig(:status) == 'pending'
 
-    {
-      message_id: delivery_message.id,
-      content_type: delivery_message.content_type,
-      delivery_strategy: request.delivery_strategy
-    }
+    'ok'
+  end
+
+  def partial_delivery_failure(payload)
+    Captain::ToolResult.failure(
+      error: 'Confirmation request was created, but the delivery outcome is unknown',
+      data: payload,
+      retryable: false,
+      audit: {
+        failure_reason: 'delivery_outcome_unknown',
+        confirmation_request_id: payload.dig(:confirmation_request, :id),
+        automatic_retry_blocked: true
+      }
+    )
   end
 end

@@ -18,8 +18,25 @@ RSpec.describe 'Captain touch management public tools', type: :model do
       body: 'Plan follow-up',
       attachments: [],
       template_params: {},
-      metadata: {}
+      metadata: {
+        nil_value: nil,
+        blank_value: '',
+        false_value: false,
+        zero_value: 0,
+        empty_list: []
+      }
     }
+  end
+
+  it 'publishes the nested touch-plan item schema to providers' do
+    schema = Captain::Tools::CreateTouchPlanTool.new(assistant).params_schema.deep_stringify_keys
+    touch_item_schema = schema.dig('properties', 'touches', 'items')
+
+    expect(touch_item_schema).to include('type' => 'object')
+    expect(touch_item_schema.dig('properties', 'action_type', 'enum')).to eq(['send_message'])
+    expect(touch_item_schema.dig('properties', 'timing_mode', 'enum')).to eq(%w[absolute relative])
+    expect(touch_item_schema.dig('properties', 'target_inbox_id')).to include('type' => 'integer', 'minimum' => 1)
+    expect(touch_item_schema.dig('properties', 'relative_time_of_day', 'pattern')).to eq('^(?:[01]\\d|2[0-3]):[0-5]\\d$')
   end
 
   it 'returns a normalized cancel_touch payload' do
@@ -144,6 +161,13 @@ RSpec.describe 'Captain touch management public tools', type: :model do
       'touch_count' => 1
     )
     expect(create_payload.dig('touch_plan', 'touches', 0, 'body')).to eq('Plan follow-up')
+    expect(create_payload.dig('touch_plan', 'touches', 0, 'metadata')).to include(
+      'nil_value' => nil,
+      'blank_value' => '',
+      'false_value' => false,
+      'zero_value' => 0,
+      'empty_list' => []
+    )
     expect(apply_payload).to include(
       'action' => 'apply_touch_plan',
       'touch_plan_id' => touch_plan_id,

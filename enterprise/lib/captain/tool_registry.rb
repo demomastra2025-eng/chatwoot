@@ -579,8 +579,7 @@ class Captain::ToolRegistry
           description: 'Get details of a conversation including messages and contact information',
           group_name: 'Conversations',
           icon: 'chat',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::GetConversationService,
           required_permissions: %w[
             conversation_manage
@@ -828,8 +827,7 @@ class Captain::ToolRegistry
           description: 'Add a comment to the CRM deal linked to the current conversation',
           group_name: 'CRM Deals',
           icon: 'comment',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::AddDealCommentService,
           required_features: %w[crm_deals],
           required_permissions: %w[crm_deal_manage],
@@ -1023,6 +1021,23 @@ class Captain::ToolRegistry
           idempotent: true
         ),
         definition(
+          id: 'get_confirmation_request',
+          title: 'Get Confirmation Request',
+          description: 'Read the latest or a specific confirmation request without exposing its callback token',
+          group_name: 'Confirmations',
+          icon: 'search',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::GetConfirmationRequestTool,
+          assistant_tool_class: Captain::Tools::Copilot::GetConfirmationRequestService,
+          required_permissions: %w[
+            conversation_manage
+            conversation_unassigned_manage
+            conversation_participating_manage
+          ],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
           id: 'resolve_confirmation',
           title: 'Resolve Confirmation',
           description: 'Resolve a confirmation request as confirmed, declined, or reschedule requested with source audit metadata',
@@ -1078,8 +1093,7 @@ class Captain::ToolRegistry
           description: 'Add a comment to the CRM task linked to the current conversation',
           group_name: 'CRM Tasks',
           icon: 'comment',
-          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
-          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
           assistant_tool_class: Captain::Tools::Copilot::AddTaskCommentService,
           required_features: %w[crm_tasks],
           required_permissions: %w[crm_task_manage],

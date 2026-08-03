@@ -8,7 +8,7 @@ class Captain::Tools::Copilot::GetArticleService < Captain::Tools::Copilot::Base
 
   def execute(article_id:)
     article = account.articles.includes(:portal, :author).find_by(id: article_id)
-    return 'Article not found' if article.nil?
+    return tool_failure('Article not found') if article.nil?
 
     formatted_payload(article: article_payload(article))
   end

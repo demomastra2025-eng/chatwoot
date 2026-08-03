@@ -3,9 +3,10 @@ class Captain::Tools::CreateTouchPlanTool < Captain::Tools::BasePublicTool
   param :name, type: 'string', desc: 'Follow-up scenario name', required: true
   param :description, type: 'string', desc: 'Optional follow-up scenario description', required: false
   param :entity_kinds, type: 'array', desc: 'Supported entity kinds: conversation, deal, task, appointment. Defaults to conversation', required: false
-  param :touches, type: 'array',
-                  desc: 'Array of touch definitions using touch fields such as body, content_kind, timing_mode, scheduled_at, relative_anchor, relative_offset_seconds, timezone, target_inbox_id, template_params, metadata',
+  param :touches, type: :array,
+                  desc: 'Typed touch definitions with content, timing, targeting, template parameters, and metadata',
                   required: true
+  params Captain::Tools::CreateTouchPlanParams
 
   def perform(tool_context, name:, touches:, description: nil, entity_kinds: nil)
     touch_plan = operations(tool_context.state).create_touch_plan(

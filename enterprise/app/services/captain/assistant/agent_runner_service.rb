@@ -176,7 +176,7 @@ class Captain::Assistant::AgentRunnerService
   end
 
   def process_agent_result(result)
-    Rails.logger.info "[Captain V2] Agent result: #{result.inspect}"
+    log_agent_result(result)
     handoff_tool_called = handoff_tool_called_from_context(result.context)
     if result.respond_to?(:error) && result.error.present?
       return final_error_response(result.error, result.context, handoff_tool_called: handoff_tool_called)
@@ -196,7 +196,6 @@ class Captain::Assistant::AgentRunnerService
     response = output.is_a?(Hash) ? output.with_indifferent_access : { 'response' => output.to_s, 'reasoning' => '' }
     response['agent_name'] = result.context&.dig(:current_agent)
     response['handoff_tool_called'] = handoff_tool_called
-    attach_native_reasoning!(response, result.context)
     sanitize_response_artifact_ids!(response, result.context)
     semantic_error = semantic_output_error(response)
     return semantic_output_error_response(semantic_error, response, result.context, handoff_tool_called: handoff_tool_called) if semantic_error
@@ -214,93 +213,12 @@ class Captain::Assistant::AgentRunnerService
     blocked_by_moderation_response('Agent output blocked because moderation policy is unavailable')
   end
 
-  def attach_native_reasoning!(response, context)
-    native_reasoning = latest_native_reasoning_payload(context)
-    return if native_reasoning.blank?
-
-    structured_reasoning = response['structured_reasoning'].presence || response['reasoning'].to_s.strip
-    native_reasoning_text = native_reasoning['text'].to_s.strip
-    response['native_reasoning'] = native_reasoning
-    response['structured_reasoning'] = structured_reasoning if structured_reasoning.present? && structured_reasoning != native_reasoning_text
-    response['reasoning'] = native_reasoning_text if native_reasoning_text.present?
-  end
-
-  def latest_native_reasoning_payload(context)
-    Array(context&.dig(:conversation_history)).reverse_each do |message|
-      next unless message_role(message) == 'assistant'
-
-      payload = native_reasoning_payload(message)
-      return payload if payload.present?
-    end
-
-    nil
-  end
-
-  def native_reasoning_payload(message)
-    normalized = message_value(message, :native_reasoning)
-    return normalize_native_reasoning_payload(normalized) if normalized.present?
-
-    text = native_reasoning_text(message)
-    details = message_value(message, :reasoning_details)
-    signature = message_value(message, :thinking_signature)
-    encrypted = native_reasoning_encrypted?(message, details)
-    return if text.blank? && details.blank? && signature.blank? && !encrypted
-
-    {
-      'text' => text.presence,
-      'details' => details.presence,
-      'signature' => signature.presence,
-      'encrypted' => (true if encrypted),
-      'source' => native_reasoning_source(message)
-    }.compact
-  end
-
-  def normalize_native_reasoning_payload(payload)
-    data = payload.respond_to?(:to_h) ? payload.to_h.with_indifferent_access : {}
-    text = data[:text].presence || data[:summary].presence || data[:reasoning].presence
-
-    {
-      'text' => text,
-      'summary' => data[:summary].presence || text,
-      'details' => data[:details].presence,
-      'signature' => data[:signature].presence,
-      'tokens' => data[:tokens].presence,
-      'encrypted' => (true if data[:encrypted]),
-      'source' => data[:source].presence || 'openrouter',
-      'visible_to_user' => data.key?(:visible_to_user) ? data[:visible_to_user] : false
-    }.compact
-  end
-
-  def native_reasoning_text(message)
-    [message_value(message, :reasoning), message_value(message, :thinking)].each do |candidate|
-      normalized = candidate.to_s.strip
-      return normalized if normalized.present?
-    end
-
-    nil
-  end
-
-  def native_reasoning_source(message)
-    return 'openrouter' if message_value(message, :reasoning).present? || message_value(message, :reasoning_details).present?
-
-    'rubyllm'
-  end
-
-  def native_reasoning_encrypted?(message, details)
-    return true if message_value(message, :reasoning_encrypted).present? || message_value(message, :encrypted_reasoning).present?
-
-    Array(details).any? do |detail|
-      next false unless detail.respond_to?(:[])
-
-      type = (detail[:type] || detail['type']).to_s
-      type.include?('encrypted') || type.include?('redacted')
-    end
-  end
-
-  def message_value(message, key)
-    return unless message.respond_to?(:[])
-
-    message[key] || message[key.to_s]
+  def log_agent_result(result)
+    error = result.respond_to?(:error) ? result.error : nil
+    Rails.logger.info(
+      "[Captain V2] Agent result assistant_id=#{@assistant.id} conversation_id=#{@conversation&.id} " \
+      "current_agent=#{result.context&.dig(:current_agent)} output_type=#{result.output.class.name} error_class=#{error&.class&.name}"
+    )
   end
 
   def message_role(message)

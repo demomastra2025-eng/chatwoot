@@ -8,7 +8,7 @@ class Captain::Tools::Copilot::SearchLinearIssuesService < Captain::Tools::Copil
   param :limit, type: :number, desc: 'Maximum number of issues to return', required: false
 
   def execute(term:, limit: nil)
-    return 'Linear integration is not enabled' unless active?
+    return tool_failure('Linear integration is not enabled') unless active?
 
     linear_service = Integrations::Linear::ProcessorService.new(account: account)
     result = linear_service.search_issue(term)
@@ -30,6 +30,10 @@ class Captain::Tools::Copilot::SearchLinearIssuesService < Captain::Tools::Copil
   end
 
   private
+
+  def inactive_tool_error_message
+    'Linear integration is not enabled'
+  end
 
   def issue_payload(issue)
     {

@@ -11,6 +11,21 @@ RSpec.describe Captain::Tools::SearchDocumentationService do
     allow(translate_service).to receive(:translate).and_return('visibilityscope')
   end
 
+  it 'rejects a blank query before translation or retrieval' do
+    expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
+    expect(Captain::DocumentChunk).not_to receive(:search)
+
+    expect(service.execute(query: '   ')).to eq('ERROR: query is required')
+  end
+
+  it 'rejects semantic candidates outside the relevance threshold' do
+    document = create(:captain_document, account: account, assistant: assistant)
+    candidate = document.document_chunks.create!(account: account, assistant: assistant, chunk_index: 0, content: 'Irrelevant result')
+    candidate.define_singleton_method(:neighbor_distance) { 0.9 }
+
+    expect(service.send(:semantic_distance_acceptable?, candidate)).to be false
+  end
+
   it 'shares general chunks but hides another assistant personal chunks' do
     other_assistant = create(:captain_assistant, account: account)
     general_document = create(:captain_document, account: account, assistant: other_assistant, visibility: :general)
@@ -27,7 +42,9 @@ RSpec.describe Captain::Tools::SearchDocumentationService do
       chunk_index: 0,
       content: 'Private documentation source'
     )
-    allow(Captain::DocumentChunk).to receive(:search).and_return(Captain::DocumentChunk.where(id: [general_chunk.id, personal_chunk.id]))
+    scored_chunks = Captain::DocumentChunk.select('captain_document_chunks.*, 0.1 AS neighbor_distance')
+                                          .where(id: [general_chunk.id, personal_chunk.id])
+    allow(Captain::DocumentChunk).to receive(:search).and_return(scored_chunks)
 
     result = service.execute(query: 'visibilityscope')
 

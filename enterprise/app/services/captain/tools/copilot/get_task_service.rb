@@ -8,7 +8,7 @@ class Captain::Tools::Copilot::GetTaskService < Captain::Tools::Copilot::BaseAcc
 
   def execute(task_id:)
     task = account.crm_tasks.includes(:status, :assignee, :team, :deal).find_by(id: task_id)
-    return 'Task not found' if task.blank?
+    return tool_failure('Task not found') if task.blank?
 
     formatted_payload(task: ::Crm::PayloadBuilder.task(task))
   end

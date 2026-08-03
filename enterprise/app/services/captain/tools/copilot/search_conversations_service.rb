@@ -11,6 +11,9 @@ class Captain::Tools::Copilot::SearchConversationsService < Captain::Tools::Copi
   param :limit, type: :number, desc: 'Maximum number of conversations to return', required: false
 
   def execute(status: nil, contact_id: nil, priority: nil, labels: nil, limit: nil)
+    filter_error = validate_filters(status: status, priority: priority)
+    return filter_error if filter_error
+
     conversations = filtered_conversations(status: status, contact_id: contact_id, priority: priority, labels: labels)
     total_count = conversations.count
     records = conversations.limit(parse_limit(limit)).map { |conversation| conversation_payload(conversation) }
@@ -34,6 +37,11 @@ class Captain::Tools::Copilot::SearchConversationsService < Captain::Tools::Copi
   end
 
   private
+
+  def validate_filters(status:, priority:)
+    return tool_failure("Invalid conversation status: #{status}") if status.present? && !valid_status?(status)
+    return tool_failure("Invalid conversation priority: #{priority}") if priority.present? && !valid_priority?(priority)
+  end
 
   def filtered_conversations(status:, contact_id:, priority:, labels:)
     conversations = permissible_conversations.includes(:contact, :assignee, :inbox).order(last_activity_at: :desc, id: :desc)

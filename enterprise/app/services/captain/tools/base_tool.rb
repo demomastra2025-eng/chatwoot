@@ -98,6 +98,10 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
     current_account_user&.administrator?
   end
 
+  def inactive_tool_error_message
+    'Tool is not active for the current account or operator'
+  end
+
   def ensure_account_administrator!
     raise ArgumentError, 'Account administrator permission is required' unless account_administrator?
   end

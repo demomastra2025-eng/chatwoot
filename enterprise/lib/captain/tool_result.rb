@@ -54,7 +54,7 @@ class Captain::ToolResult
 
     def render(result, fallback_message: DEFAULT_SUCCESS_MESSAGE)
       normalized = normalize(result)
-      return error_output(normalized[:error].presence || normalized[:message].presence || fallback_message) if error?(normalized)
+      return render_error(normalized, fallback_message) if error?(normalized)
       return normalized[:message].to_s if normalized[:message].present? && normalized[:data].blank?
       return serialize_payload(normalized[:data]) if normalized[:data].present? && normalized[:message].blank?
 
@@ -89,6 +89,21 @@ class Captain::ToolResult
       return normalize_hash(result) if normalized_hash?(result)
 
       normalize_raw(result)
+    end
+
+    def render_error(normalized, fallback_message)
+      message = normalized[:error].presence || normalized[:message].presence || fallback_message
+      return error_output(message) if normalized[:data].blank?
+
+      error_output(
+        serialize_payload(
+          {
+            error: message,
+            data: normalized[:data],
+            retryable: normalized[:retryable]
+          }.compact
+        )
+      )
     end
 
     def mcp_result_hash?(result)
@@ -130,7 +145,7 @@ class Captain::ToolResult
     def normalized_hash?(result)
       return false unless result.is_a?(Hash)
 
-      (result.keys.map(&:to_s) & NORMALIZED_KEYS.map(&:to_s)).any?
+      result.keys.map(&:to_s).intersect?(NORMALIZED_KEYS.map(&:to_s))
     end
 
     def normalize_hash(result)

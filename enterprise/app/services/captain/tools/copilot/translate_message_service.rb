@@ -14,6 +14,7 @@ class Captain::Tools::Copilot::TranslateMessageService < Captain::Tools::Copilot
                          else
                            translate_and_persist!(message, target_language)
                          end
+    return tool_failure('Translation returned empty content') if translated_content.blank?
 
     formatted_payload(
       action: 'translate_message',

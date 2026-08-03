@@ -93,7 +93,6 @@ class Confirmations::DeliveryPayloadBuilder
   def base_content_attributes
     {
       confirmation_request_id: confirmation_request.id,
-      confirmation_token: confirmation_request.token,
       confirmation_strategy: delivery_strategy
     }
   end
@@ -107,7 +106,13 @@ class Confirmations::DeliveryPayloadBuilder
   end
 
   def action_value(decision)
+    return Confirmations::TelegramCallback.encode(confirmation_request, decision) if telegram_channel?
+
     "confirmation:#{confirmation_request.token}:#{decision}"
+  end
+
+  def telegram_channel?
+    confirmation_request.inbox&.channel.is_a?(Channel::Telegram)
   end
 
   def action_urls

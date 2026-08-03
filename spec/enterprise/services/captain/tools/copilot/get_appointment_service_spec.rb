@@ -10,6 +10,14 @@ RSpec.describe Captain::Tools::Copilot::GetAppointmentService do
     account.enable_features!('scheduling')
   end
 
+  it 'returns a structured failure when the appointment is missing' do
+    expect(service.execute(appointment_id: 999)).to eq('ERROR: Appointment not found')
+  end
+
+  it 'rejects a non-positive appointment id before lookup' do
+    expect { service.execute(appointment_id: 0) }.to raise_error(ArgumentError, 'appointment_id is required')
+  end
+
   it 'returns a normalized appointment payload' do
     resource = create(:scheduling_resource, account: account, name: 'Dr. Aida')
     contact = create(:contact, account: account, name: 'Aruzhan')

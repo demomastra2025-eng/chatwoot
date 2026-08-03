@@ -9,6 +9,24 @@ RSpec.describe Captain::Tools::SearchReplyDocumentationService do
     service.send(:scoped_responses).pluck(:id)
   end
 
+  it 'rejects a blank query before translation or retrieval' do
+    service = described_class.new(account: account, assistant: assistant)
+    expect(Captain::Llm::TranslateQueryService).not_to receive(:new)
+
+    expect(service.execute(query: '   ')).to eq('ERROR: query is required')
+  end
+
+  it 'rejects semantic candidates outside the relevance threshold' do
+    service = described_class.new(account: account, assistant: assistant)
+    response = create(:captain_assistant_response, account: account, assistant: assistant, status: :approved)
+    response.define_singleton_method(:neighbor_distance) { 0.9 }
+    scoped_relation = service.send(:scoped_responses)
+    allow(service).to receive(:scoped_responses).and_return(scoped_relation)
+    allow(scoped_relation).to receive(:search).and_return([response])
+
+    expect(service.send(:search_responses, 'query')).to be_empty
+  end
+
   it 'shares general entries across assistants and hides other assistants personal entries' do
     own_personal = create(
       :captain_assistant_response,

@@ -31,4 +31,8 @@ RSpec.describe Captain::Tools::Copilot::GetDealService do
     expect { service.execute(deal_id: { name: 'get_deal', parameters: { wrong_id: 52 } }) }
       .to raise_error(ArgumentError, 'deal_id is required')
   end
+
+  it 'returns a structured failure when the deal is missing' do
+    expect(service.execute(deal_id: 999)).to eq('ERROR: Deal not found')
+  end
 end

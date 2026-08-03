@@ -37,4 +37,11 @@ RSpec.describe Captain::Tools::Copilot::SearchLinearIssuesService do
       'assignee_name' => 'John Doe'
     )
   end
+
+  it 'returns a controlled failure when the integration is not active' do
+    account.hooks.destroy_all
+
+    expect(service.execute(term: 'sync')).to eq('ERROR: ArgumentError: Linear integration is not enabled')
+    expect(linear_service).not_to have_received(:search_issue)
+  end
 end

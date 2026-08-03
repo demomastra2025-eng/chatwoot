@@ -38,4 +38,24 @@ RSpec.describe Captain::Tools::CreateTaskTool, type: :model do
       'title' => 'Call client'
     )
   end
+
+  it 'preserves explicit account-scoped deal and originating conversation links' do
+    current_conversation = create(:conversation, account: account)
+    linked_conversation = create(:conversation, account: account)
+    deal = create(:crm_deal, account: account)
+    tool_context = Struct.new(:state).new({ conversation: { id: current_conversation.id } })
+
+    payload = JSON.parse(
+      tool.perform(
+        tool_context,
+        title: 'Linked follow-up',
+        deal_id: deal.id,
+        originating_conversation_id: linked_conversation.display_id
+      )
+    )
+
+    task = account.crm_tasks.find(payload.dig('task', 'id'))
+    expect(task.deal_id).to eq(deal.id)
+    expect(task.originating_conversation_id).to eq(linked_conversation.id)
+  end
 end

@@ -8,7 +8,6 @@ class Confirmations::PayloadBuilder
         status: request.status,
         title: request.title,
         body: request.body,
-        token: request.token,
         subject: subject_payload(request.subject),
         account_id: request.account_id,
         conversation_id: request.conversation_id,
@@ -32,6 +31,22 @@ class Confirmations::PayloadBuilder
         resolved_by_id: request.resolved_by_id,
         resolved_message_id: request.resolved_message_id,
         metadata: request.resolution_metadata
+      }.compact
+    end
+
+    def delivery(request:, message:, error: nil)
+      return failed_delivery(error) if error.present?
+      return nil if message.blank?
+
+      {
+        status: message.source_id.present? ? 'delivered' : 'pending',
+        message_id: message.id,
+        message_status: message.status,
+        content_type: message.content_type,
+        delivery_strategy: request.delivery_strategy,
+        delivery_confirmed: message.source_id.present?,
+        provider_message_id: message.source_id,
+        note: ('Message was queued; provider delivery is not confirmed yet' if message.source_id.blank?)
       }.compact
     end
 
@@ -62,6 +77,17 @@ class Confirmations::PayloadBuilder
       return path if base_url.blank?
 
       "#{base_url.to_s.chomp('/')}#{path}"
+    end
+
+    private
+
+    def failed_delivery(error)
+      {
+        status: 'unknown',
+        delivery_outcome_known: false,
+        error_code: error.class.name,
+        note: 'Confirmation request was created, but the delivery outcome is unknown; do not resend automatically'
+      }
     end
   end
 end

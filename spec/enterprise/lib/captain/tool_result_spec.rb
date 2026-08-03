@@ -87,6 +87,19 @@ RSpec.describe Captain::ToolResult do
       expect(result).to eq('ERROR: Tool failed')
     end
 
+    it 'keeps structured partial data in rendered failures' do
+      result = described_class.render(
+        described_class.failure(error: 'Delivery failed', data: { status: 'partial', request_id: 7 }, retryable: false)
+      )
+
+      payload = JSON.parse(result.delete_prefix('ERROR: '))
+      expect(payload).to eq(
+        'error' => 'Delivery failed',
+        'data' => { 'status' => 'partial', 'request_id' => 7 },
+        'retryable' => false
+      )
+    end
+
     it 'renders success payloads with message and data as JSON' do
       result = described_class.render(
         described_class.success(message: 'Created', data: { id: 1 })

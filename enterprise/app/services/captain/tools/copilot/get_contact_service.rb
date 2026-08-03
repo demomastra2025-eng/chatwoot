@@ -8,7 +8,7 @@ class Captain::Tools::Copilot::GetContactService < Captain::Tools::Copilot::Base
 
   def execute(contact_id:)
     contact = account.contacts.includes(:company).find_by(id: contact_id)
-    return 'Contact not found' if contact.nil?
+    return tool_failure('Contact not found') if contact.nil?
 
     formatted_payload(contact: contact_payload(contact))
   end

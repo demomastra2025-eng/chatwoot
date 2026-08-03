@@ -1,18 +1,26 @@
 # frozen_string_literal: true
 
 require 'digest'
+require 'json_schemer'
 
 class Captain::Runtime::ToolWrapper
+  class InvalidToolArgumentsError < ArgumentError; end
+
   TOOL_NOT_BOUND_ERROR = 'Tool is not available for the current agent runtime'
   PARALLEL_MUTATING_TOOL_ERROR = 'Only one action tool can run per assistant tool-call batch'
+  DUPLICATE_FAILED_TOOL_ERROR = 'This exact tool call already failed. Change the arguments or stop retrying it.'
   TOOL_RESULT_CACHE_KEY = :captain_v2_tool_result_cache
+  TOOL_FAILURE_CACHE_KEY = :captain_v2_tool_failure_cache
+  TOOL_ATTEMPT_COUNTS_KEY = :captain_v2_tool_attempt_counts
+  MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
+  MAX_IDENTICAL_TOOL_EXECUTIONS = 3
+  MAX_TOOL_EXECUTIONS_PER_RUN = 12
 
   def initialize(tool, context_wrapper)
     @tool = tool
     @context_wrapper = context_wrapper
     @name = tool.name
     @description = tool.description
-    @params = tool.class.params if tool.class.respond_to?(:params)
   end
 
   def call(args)
@@ -21,22 +29,18 @@ class Captain::Runtime::ToolWrapper
 
     @context_wrapper.callback_manager.emit_tool_start(@tool.name, normalized_args, @context_wrapper)
 
-    pre_execution_error = pre_execution_error(normalized_args)
-    return complete_and_render(pre_execution_error) if pre_execution_error
+    early_result = early_tool_result(normalized_args)
+    return complete_and_render(early_result) if early_result
 
-    remember_mutating_tool_call(normalized_args)
-    cached_result = cached_mutating_tool_result(normalized_args)
-    return complete_and_render(cached_result) if cached_result
+    attempt_error = register_tool_execution_attempt(normalized_args)
+    return complete_and_render(attempt_error) if attempt_error
 
-    result = @tool.execute(tool_context, **normalized_args)
-    result_error = tool_safety_error_for(:tool_results, safety_checked_result(result))
-    final_result = result_error || result
-    cache_successful_mutating_tool_result(normalized_args, final_result)
-    @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
-    return final_result if halt_result?(final_result)
-
-    Captain::ToolResult.render(final_result)
+    track_mutating_tool_execution(normalized_args)
+    execute_tool(tool_context, normalized_args)
+  rescue InvalidToolArgumentsError => e
+    invalid_tool_arguments_result(e)
   rescue StandardError => e
+    record_mutating_tool_result(Captain::ToolResult.failure(error: e, retryable: false))
     @context_wrapper.callback_manager.emit_tool_complete(
       @tool.name,
       Captain::ToolResult.failure(error: e),
@@ -58,7 +62,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def params_schema
-    @tool.respond_to?(:params_schema) ? @tool.params_schema : nil
+    @params_schema ||= schema_with_positive_id_constraints(raw_params_schema)
   end
 
   def provider_params
@@ -81,20 +85,75 @@ class Captain::Runtime::ToolWrapper
 
   private
 
+  def early_tool_result(normalized_args)
+    pre_execution_error(normalized_args) ||
+      reserve_mutating_tool_call(normalized_args) ||
+      repeated_failed_tool_result(normalized_args) ||
+      cached_mutating_tool_result(normalized_args) ||
+      repeated_mutating_tool_result(normalized_args)
+  end
+
+  def reserve_mutating_tool_call(normalized_args)
+    return unless mutating_tool? && current_tool_batch_id.present?
+
+    @context_wrapper.mutating_tool_guard.synchronize do
+      error = parallel_mutating_tool_error
+      next error if error
+
+      remember_mutating_tool_call(normalized_args)
+      nil
+    end
+  end
+
+  def execute_tool(tool_context, normalized_args)
+    result = @tool.execute(tool_context, **normalized_args)
+    result_error = tool_safety_error_for(:tool_results, safety_checked_result(result))
+    final_result = result_error || result
+    cache_successful_mutating_tool_result(normalized_args, final_result)
+    cache_non_retryable_failure(normalized_args, final_result)
+    record_mutating_tool_result(final_result)
+    @context_wrapper.callback_manager.emit_tool_complete(@tool.name, final_result, @context_wrapper)
+    return final_result if halt_result?(final_result)
+
+    Captain::ToolResult.render(final_result)
+  end
+
+  def invalid_tool_arguments_result(error)
+    @context_wrapper.callback_manager.emit_tool_start(@tool.name, {}, @context_wrapper)
+    complete_and_render(
+      Captain::ToolResult.failure(
+        error: error.message,
+        retryable: false,
+        audit: { failure_stage: 'tool_arguments', failure_reason: 'invalid_tool_arguments' }
+      )
+    )
+  end
+
   def normalize_args(args)
     return {} if args.nil?
 
-    raw_args = args.respond_to?(:to_h) ? args.to_h : {}
-    normalized = raw_args.deep_symbolize_keys
-    normalized = normalized[:parameters].deep_symbolize_keys if tool_call_envelope?(normalized)
+    raise InvalidToolArgumentsError, 'Tool arguments must be an object' unless args.respond_to?(:to_h)
 
-    unwrap_nested_tool_call_envelopes(normalized)
-  rescue StandardError
-    {}
+    raw_args = args.to_h
+    raise InvalidToolArgumentsError, 'Tool arguments must be an object' unless raw_args.is_a?(Hash)
+
+    normalized = raw_args.deep_symbolize_keys
+    normalized = normalized_tool_call_envelope(normalized)
+
+    normalized = unwrap_nested_tool_call_envelopes(normalized)
+    validate_normalized_args!(normalized)
+    normalized
+  rescue InvalidToolArgumentsError
+    raise
+  rescue StandardError => e
+    raise InvalidToolArgumentsError, "Tool arguments are invalid: #{e.message}"
   end
 
-  def tool_call_envelope?(args)
-    args[:name].present? && args[:parameters].is_a?(Hash)
+  def normalized_tool_call_envelope(args)
+    return args unless args[:name].present? && args.key?(:parameters)
+    raise InvalidToolArgumentsError, 'Tool call parameters must be an object' unless args[:parameters].is_a?(Hash)
+
+    args[:parameters].deep_symbolize_keys
   end
 
   def unwrap_nested_tool_call_envelopes(args)
@@ -112,9 +171,43 @@ class Captain::Runtime::ToolWrapper
     parameters.with_indifferent_access.fetch(key, value)
   end
 
+  def raw_params_schema
+    @tool.respond_to?(:params_schema) ? @tool.params_schema : nil
+  end
+
+  def schema_with_positive_id_constraints(schema)
+    return schema unless schema.is_a?(Hash)
+
+    normalized = schema.deep_stringify_keys.deep_dup
+    normalized.fetch('properties', {}).each do |name, property_schema|
+      next unless positive_id_schema?(name, property_schema)
+
+      property_schema['minimum'] = [property_schema['minimum'].to_i, 1].max
+    end
+    normalized
+  end
+
+  def positive_id_schema?(name, property_schema)
+    return false unless name.to_s.end_with?('_id')
+    return false unless property_schema.is_a?(Hash)
+
+    Array(property_schema['type']).intersect?(%w[integer number])
+  end
+
+  def validate_normalized_args!(args)
+    schema = params_schema
+    return unless schema.is_a?(Hash)
+
+    error = JSONSchemer.schema(schema).validate(args.deep_stringify_keys).first
+    return if error.blank?
+
+    pointer = error['data_pointer'].presence || '/'
+    error_type = error['type'].presence || 'schema violation'
+    raise InvalidToolArgumentsError, "Invalid tool arguments at #{pointer}: #{error_type}"
+  end
+
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
-      parallel_mutating_tool_error ||
       tool_safety_error_for(:tool_arguments, normalized_args)
   end
 
@@ -198,8 +291,108 @@ class Captain::Runtime::ToolWrapper
     nil
   end
 
+  def repeated_failed_tool_result(normalized_args)
+    cached_entry = tool_failure_cache[tool_result_cache_digest(normalized_args)]
+    return if cached_entry.blank?
+
+    Captain::ToolResult.failure(
+      error: DUPLICATE_FAILED_TOOL_ERROR,
+      retryable: false,
+      audit: {
+        failure_stage: 'tool_execution',
+        failure_reason: 'duplicate_failed_tool_call',
+        original_error: cached_entry[:error] || cached_entry['error']
+      }.compact
+    )
+  end
+
+  def cache_non_retryable_failure(normalized_args, result)
+    normalized_result = Captain::ToolResult.normalize(result)
+    return unless Captain::ToolResult.error?(normalized_result)
+    return if normalized_result[:retryable]
+
+    tool_failure_cache[tool_result_cache_digest(normalized_args)] = {
+      error: normalized_result[:error],
+      stored_at: Time.current.iso8601
+    }
+  rescue StandardError
+    nil
+  end
+
   def tool_result_cache
     context_wrapper_context[TOOL_RESULT_CACHE_KEY] ||= {}
+  end
+
+  def tool_failure_cache
+    context_wrapper_context[TOOL_FAILURE_CACHE_KEY] ||= {}
+  end
+
+  def register_tool_execution_attempt(normalized_args)
+    counts = tool_attempt_counts.fetch(@tool.name.to_s) { { total: 0, by_signature: {} } }
+    signature = tool_result_cache_digest(normalized_args)
+    signature_count = counts[:by_signature].fetch(signature, 0)
+    return tool_attempt_limit_result(counts, signature_count) if counts[:total] >= MAX_TOOL_EXECUTIONS_PER_RUN ||
+                                                                 signature_count >= MAX_IDENTICAL_TOOL_EXECUTIONS
+
+    counts[:total] += 1
+    counts[:by_signature][signature] = signature_count + 1
+    tool_attempt_counts[@tool.name.to_s] = counts
+    nil
+  end
+
+  def tool_attempt_limit_result(counts, signature_count)
+    Captain::ToolResult.failure(
+      error: 'Tool execution attempt limit reached. Change the arguments or stop calling this tool.',
+      retryable: false,
+      audit: {
+        failure_stage: 'tool_execution',
+        failure_reason: 'tool_attempt_limit',
+        total_attempts: counts[:total],
+        identical_attempts: signature_count
+      }
+    )
+  end
+
+  def tool_attempt_counts
+    context_wrapper_context[TOOL_ATTEMPT_COUNTS_KEY] ||= {}
+  end
+
+  def repeated_mutating_tool_result(normalized_args)
+    entry = mutating_tool_executions[@tool.name.to_s]
+    return if entry.blank? || mutation_retry_allowed?(entry, normalized_args)
+
+    Captain::ToolResult.failure(
+      error: 'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.',
+      retryable: false,
+      audit: { failure_stage: 'tool_execution', failure_reason: 'mutation_retry_blocked' }
+    )
+  end
+
+  def mutation_retry_allowed?(entry, normalized_args)
+    idempotency_key = normalized_args[:idempotency_key].presence
+    entry[:retryable] == true && idempotency_key.present? && entry[:idempotency_key] == idempotency_key
+  end
+
+  def track_mutating_tool_execution(normalized_args)
+    return unless mutating_tool?
+
+    mutating_tool_executions[@tool.name.to_s] = {
+      idempotency_key: normalized_args[:idempotency_key].presence,
+      retryable: false
+    }
+  end
+
+  def record_mutating_tool_result(result)
+    entry = mutating_tool_executions[@tool.name.to_s]
+    return if entry.blank?
+
+    entry[:retryable] = Captain::ToolResult.normalize(result)[:retryable] == true
+  rescue StandardError
+    entry[:retryable] = false
+  end
+
+  def mutating_tool_executions
+    context_wrapper_context[MUTATING_TOOL_EXECUTIONS_KEY] ||= {}
   end
 
   def tool_result_cache_digest(normalized_args)
@@ -237,7 +430,7 @@ class Captain::Runtime::ToolWrapper
         failure_stage: 'tool_arguments',
         failure_reason: 'parallel_mutating_tool_call',
         batch_id: current_tool_batch_id,
-        existing_tool_calls: mutating_tool_calls_for_current_batch.map { |entry| entry[:tool_name] }
+        existing_tool_calls: mutating_tool_calls_for_current_batch.pluck(:tool_name)
       }
     )
   end

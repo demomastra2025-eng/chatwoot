@@ -37,7 +37,7 @@ RSpec.describe Captain::Tools::Copilot::GetArticleService do
 
   describe '#execute' do
     it 'returns not found message when article is missing' do
-      expect(service.execute(article_id: 999)).to eq('Article not found')
+      expect(service.execute(article_id: 999)).to eq('ERROR: Article not found')
     end
 
     it 'returns a normalized article payload' do

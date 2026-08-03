@@ -25,4 +25,8 @@ RSpec.describe Captain::Tools::Copilot::GetDealTimelineService do
       'payload' => include('id' => comment.id, 'body' => 'First note')
     )
   end
+
+  it 'returns a structured failure when the deal is missing' do
+    expect(service.execute(deal_id: 999)).to eq('ERROR: Deal not found')
+  end
 end

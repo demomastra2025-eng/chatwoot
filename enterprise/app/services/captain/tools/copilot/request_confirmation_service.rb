@@ -17,7 +17,7 @@ class Captain::Tools::Copilot::RequestConfirmationService < Captain::Tools::Copi
 
   # rubocop:disable Metrics/ParameterLists
   def execute(title:, body:, subject_type: nil, subject_id: nil, expires_at: nil, send_now: true, metadata: {}, idempotency_key: nil)
-    request, delivery_message = confirmation_operations.request_confirmation(
+    request, delivery_message, delivery_error = confirmation_operations.request_confirmation(
       title: title,
       body: body,
       subject_type: subject_type,
@@ -28,11 +28,10 @@ class Captain::Tools::Copilot::RequestConfirmationService < Captain::Tools::Copi
       idempotency_key: idempotency_key
     )
 
-    formatted_payload(
-      action: 'request_confirmation',
-      confirmation_request: Confirmations::PayloadBuilder.confirmation_request(request),
-      delivery: delivery_payload(delivery_message, request)
-    )
+    payload = confirmation_payload(request, delivery_message, delivery_error)
+    return partial_delivery_failure(payload) if delivery_error.present?
+
+    formatted_payload(payload)
   rescue StandardError => e
     tool_failure(e)
   end
@@ -48,13 +47,33 @@ class Captain::Tools::Copilot::RequestConfirmationService < Captain::Tools::Copi
     )
   end
 
-  def delivery_payload(delivery_message, request)
-    return nil if delivery_message.blank?
-
+  def confirmation_payload(request, delivery_message, delivery_error)
+    delivery = Confirmations::PayloadBuilder.delivery(request: request, message: delivery_message, error: delivery_error)
     {
-      message_id: delivery_message.id,
-      content_type: delivery_message.content_type,
-      delivery_strategy: request.delivery_strategy
+      action: 'request_confirmation',
+      status: delivery_status(delivery, delivery_error),
+      confirmation_request: Confirmations::PayloadBuilder.confirmation_request(request),
+      delivery: delivery
     }
+  end
+
+  def delivery_status(delivery, delivery_error)
+    return 'partial' if delivery_error.present?
+    return 'pending' if delivery&.dig(:status) == 'pending'
+
+    'ok'
+  end
+
+  def partial_delivery_failure(payload)
+    Captain::ToolResult.failure(
+      error: 'Confirmation request was created, but the delivery outcome is unknown',
+      data: payload,
+      retryable: false,
+      audit: {
+        failure_reason: 'delivery_outcome_unknown',
+        confirmation_request_id: payload.dig(:confirmation_request, :id),
+        automatic_retry_blocked: true
+      }
+    )
   end
 end

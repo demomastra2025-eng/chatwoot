@@ -5,6 +5,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   CACHE_FETCH_TIMEOUT_SECONDS = 3
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
   TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
+  SEMANTIC_DISTANCE_THRESHOLD = 0.3
 
   class TotalLookupTimeout < Timeout::Error; end
 
@@ -16,6 +17,21 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   param :query, type: :string, desc: 'The question or topic to search for in the FAQ database', required: true
 
   def execute(query:, semantic: true)
+    query = query.to_s.squish
+    return tool_failure('query is required') if query.blank?
+
+    execute_lookup(query, semantic: semantic)
+  rescue StandardError => e
+    Rails.logger.error do
+      "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
+    end
+
+    tool_failure('Documentation search is temporarily unavailable. No documentation context could be retrieved for this request.')
+  end
+
+  private
+
+  def execute_lookup(query, semantic:)
     translated_query = query
 
     Timeout.timeout(TOTAL_LOOKUP_TIMEOUT_SECONDS, TotalLookupTimeout) do
@@ -33,15 +49,7 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
   rescue Captain::Llm::EmbeddingService::EmbeddingsError, RubyLLM::Error, RubyLLM::ConfigurationError, Timeout::Error => e
     log_semantic_unavailable(e)
     formatted_payload(semantic_unavailable_payload(query: query, translated_query: translated_query || query, error: e))
-  rescue StandardError => e
-    Rails.logger.error do
-      "#{self.class.name} failed for assistant #{assistant.id}: #{e.class} - #{e.message}"
-    end
-
-    tool_failure('Documentation search is temporarily unavailable. No documentation context could be retrieved for this request.')
   end
-
-  private
 
   def exact_faq_payload(query)
     responses = Captain::AssistantResponse.exact_search(
@@ -207,8 +215,14 @@ class Captain::Tools::Copilot::FaqLookupService < Captain::Tools::Copilot::BaseA
         assistant_id: assistant.id,
         limit: SEMANTIC_RESULT_LIMIT
       ).to_a
+      responses.select! { |response| semantic_distance_acceptable?(response) }
       [responses, nil]
     end
+  end
+
+  def semantic_distance_acceptable?(response)
+    distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
+    distance.present? && distance.to_f <= SEMANTIC_DISTANCE_THRESHOLD
   end
 
   def bounded_cache_fetch(cache, query:, translated_query:)

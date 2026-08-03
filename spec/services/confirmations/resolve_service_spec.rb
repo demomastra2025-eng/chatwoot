@@ -68,6 +68,8 @@ RSpec.describe Confirmations::ResolveService do
   end
 
   it 'is idempotent when the same final decision is applied again' do
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later)
+    request.update!(metadata: request.metadata.to_h.merge('medelement_provider_command_id' => 123))
     first = described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
     resolved_at = first.resolved_at
 
@@ -76,6 +78,26 @@ RSpec.describe Confirmations::ResolveService do
     expect(second).to be_confirmed
     expect(second.resolved_at.to_i).to eq(resolved_at.to_i)
     expect(second.resolution_source).to eq('manual')
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id).twice
+  end
+
+  it 're-enqueues linked provider command resolution after an enqueue failure' do
+    attempts = 0
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later) do
+      attempts += 1
+      raise ActiveJob::EnqueueError, 'queue unavailable' if attempts == 1
+    end
+    request.update!(metadata: request.metadata.to_h.merge('medelement_provider_command_id' => 123))
+
+    expect do
+      described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
+    end.to raise_error(ActiveJob::EnqueueError, 'queue unavailable')
+
+    expect(request.reload).to be_confirmed
+    expect do
+      described_class.new(account: account, confirmation_request: request, decision: 'confirmed', source: 'manual', actor: user).perform
+    end.not_to raise_error
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_received(:perform_later).with(request.id).twice
   end
 
   it 'rejects conflicting decisions after a request is already resolved' do

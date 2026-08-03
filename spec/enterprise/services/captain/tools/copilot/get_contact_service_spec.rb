@@ -37,7 +37,7 @@ RSpec.describe Captain::Tools::Copilot::GetContactService do
 
   describe '#execute' do
     it 'returns not found message when contact is missing' do
-      expect(service.execute(contact_id: 999)).to eq('Contact not found')
+      expect(service.execute(contact_id: 999)).to eq('ERROR: Contact not found')
     end
 
     it 'returns a normalized contact payload' do

@@ -190,6 +190,16 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload['content']).to eq('Привет')
       expect(message.reload.translations['ru']).to eq('Привет')
     end
+
+    it 'returns a controlled failure when the provider returns no translated content' do
+      service = described_class.new(assistant, user: user, conversation: conversation)
+      message = create(:message, conversation: conversation, inbox: conversation.inbox, account: account)
+      translator = instance_double(Integrations::GoogleTranslate::ProcessorService, perform: nil)
+      allow(Integrations::GoogleTranslate::ProcessorService).to receive(:new).and_return(translator)
+
+      expect(service.execute(message_id: message.id, target_language: 'ru')).to eq('ERROR: Translation returned empty content')
+      expect(message.reload.translations).to be_blank
+    end
   end
 
   describe Captain::Tools::Copilot::SearchCannedResponsesService do

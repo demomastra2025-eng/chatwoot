@@ -99,11 +99,24 @@ class Confirmations::ResolveService
     {
       status: decision,
       resolved_at: Time.current,
-      resolved_by: actor,
+      resolved_by: user_actor,
       resolved_message: message,
       resolution_source: source,
       resolution_confidence: confidence,
-      resolution_metadata: scoped_request.resolution_metadata.to_h.merge(metadata.to_h.as_json)
+      resolution_metadata: scoped_request.resolution_metadata.to_h.merge(metadata.to_h.as_json).merge(actor_metadata)
+    }
+  end
+
+  def user_actor
+    actor if actor.is_a?(User)
+  end
+
+  def actor_metadata
+    return {} if actor.blank? || actor.is_a?(User)
+
+    {
+      'resolver_actor_type' => actor.class.base_class.name,
+      'resolver_actor_id' => actor.id
     }
   end
 
