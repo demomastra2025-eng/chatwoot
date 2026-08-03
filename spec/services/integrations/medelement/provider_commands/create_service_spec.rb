@@ -56,7 +56,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
       'пациент Ivanov Ivan',
       '(specialist-1)',
       'длительность 30 мин',
-      'кабинет cabinet-1'
+      'кабинет cabinet-1',
+      'если пациент не будет однозначно найден по данным записи, будет создан новый пациент Medelement',
+      'локальный контакт не создаётся'
     )
     expect(command).to have_attributes(
       account: account,
@@ -83,6 +85,37 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
       )
     )
     expect(contact.reload.phone_number).to be_nil
+  end
+
+  it 'uses the appointment identity without changing or duplicating the contact' do
+    contact.update!(
+      name: 'Unknown',
+      phone_number: nil,
+      custom_attributes: { 'medelement_patient_code' => 'patient-old' }
+    )
+    appointment.update!(
+      client_name: 'Gusman Assem',
+      client_phone: '+77001234567',
+      client_identifier: '940720300129',
+      client_birth_date: Date.new(1994, 7, 20),
+      client_gender: 'female'
+    )
+    contact_count = account.contacts.count
+
+    command = perform
+
+    expect(command.request_snapshot.dig('patient', 'payload')).to include(
+      'name' => 'Assem',
+      'lastname' => 'Gusman',
+      'iin' => '940720300129',
+      'birthday' => '20.07.1994',
+      'gender' => 1
+    )
+    expect(command.provider_patient_code).to be_nil
+    expect(command.request_snapshot).not_to have_key('provider_patient_code')
+    expect(contact.reload).to have_attributes(name: 'Unknown', phone_number: nil)
+    expect(contact.custom_attributes['medelement_patient_code']).to eq('patient-old')
+    expect(account.contacts.count).to eq(contact_count)
   end
 
   it 'persists the complete old-to-new move details in the confirmation audit body' do
@@ -180,6 +213,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
   end
 
   it 'rejects patient creation through an appointment while a contact command is unfinished' do
+    contact.update!(custom_attributes: { 'medelement_patient_code' => 'patient-old' })
     Integrations::Medelement::ProviderCommand.create!(
       account: account,
       hook: hook,

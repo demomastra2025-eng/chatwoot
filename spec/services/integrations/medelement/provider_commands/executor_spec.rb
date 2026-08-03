@@ -127,7 +127,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
 
   context 'when creating a patient' do
     it 'adopts one exact provider match without issuing a create write' do
-      allow(client).to receive(:search_patients_by_phone).and_return([{ 'PROFILE_CODE' => 'patient-1' }])
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+      )
       allow(client).to receive(:create_patient)
 
       perform
@@ -137,6 +139,98 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         'medelement_patient_code' => 'patient-1',
         'medelement_patient_match_status' => 'matched'
       )
+      expect(client).not_to have_received(:create_patient)
+    end
+
+    it 'adopts the only exact identity match among patients sharing a phone' do
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [
+          { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Other', 'LASTNAME' => 'Person' },
+          { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' },
+          { 'PROFILE_CODE' => 'patient-3', 'NAME' => 'Family', 'LASTNAME' => 'Member' }
+        ]
+      )
+      allow(client).to receive(:create_patient)
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-2')
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('patient-2')
+      expect(client).not_to have_received(:create_patient)
+    end
+
+    it 'does not match a patient with a different middlename' do
+      contact.update!(name: 'Ivanov Ivan Ivanovich')
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'MIDDLENAME' => 'Petrovich' }]
+      )
+      allow(client).to receive(:create_patient).and_return('PROFILE_CODE' => 'patient-new')
+
+      perform
+
+      expect(command.reload.provider_patient_code).to eq('patient-new')
+      expect(client).to have_received(:create_patient).once
+    end
+
+    it 'gives an exact IIN match precedence over different names and birthday' do
+      contact.update!(custom_attributes: { 'medelement_iin' => '940720300129' })
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Other', 'LASTNAME' => 'Person', 'IIN' => '940720300129',
+           'BIRTHDAY' => '01.01.2000' }]
+      )
+      allow(client).to receive(:create_patient)
+
+      perform
+
+      expect(command.reload.provider_patient_code).to eq('patient-1')
+      expect(client).not_to have_received(:create_patient)
+    end
+
+    it 'does not match the same name when the requested birthday differs' do
+      contact.update!(custom_attributes: { 'medelement_birth_date' => '1994-07-20' })
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'BIRTHDAY' => '21.07.1994' }]
+      )
+      allow(client).to receive(:create_patient).and_return('PROFILE_CODE' => 'patient-new')
+
+      perform
+
+      expect(command.reload.provider_patient_code).to eq('patient-new')
+      expect(client).to have_received(:create_patient).once
+    end
+
+    it 'creates a new remote patient on the same contact when phone candidates do not match the identity' do
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [
+          { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Other', 'LASTNAME' => 'Person' },
+          { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Family', 'LASTNAME' => 'Member' }
+        ]
+      )
+      allow(client).to receive(:create_patient).and_return('PROFILE_CODE' => 'patient-new')
+      contact
+      contact_count = account.contacts.count
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-new')
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('patient-new')
+      expect(account.contacts.count).to eq(contact_count)
+      expect(client).to have_received(:create_patient).once
+    end
+
+    it 'fails an ambiguous identity match before a write without reconciliation' do
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [
+          { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' },
+          { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }
+        ]
+      )
+      allow(client).to receive(:create_patient)
+
+      expect { perform }.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob)
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'patient_match_ambiguous')
+      expect(command.execution_state).not_to include('write_phase')
       expect(client).not_to have_received(:create_patient)
     end
 
@@ -237,6 +331,12 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       }
     end
 
+    before do
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+      )
+    end
+
     it 'preflights timetable and collisions, writes once, and applies the canonical external ref' do
       allow_available_destination
       allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
@@ -253,6 +353,22 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'reception-1')
       expect(appointment.reload).to have_attributes(source: 'medelement', external_ref: 'medelement:reception:reception-1')
       expect(appointment.custom_attributes).to include('medelement_reception_code' => 'reception-1')
+    end
+
+    it 'resolves Appointment identity without overwriting an existing Contact patient code' do
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+      )
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+
+      perform
+
+      expect(command.request_snapshot).not_to have_key('provider_patient_code')
+      expect(command.request_snapshot).to have_key('patient')
+      expect(client).to have_received(:create_reception).with(params: hash_including(patient_code: 'patient-2'))
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('patient-1')
+      expect(appointment.reload.custom_attributes['medelement_patient_code']).to eq('patient-2')
     end
 
     it 'uses the confirmed reception snapshot after local appointment and resource changes' do
@@ -358,7 +474,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       let(:contact_custom_attributes) { {} }
 
       it 'freezes the resolved patient code before an ambiguous reception write' do
-        allow(client).to receive(:search_patients_by_phone).and_return([{ 'PROFILE_CODE' => 'patient-1' }])
+        allow(client).to receive(:search_patients_by_phone).and_return(
+          [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+        )
         allow_available_destination
         allow(client).to receive(:create_reception).and_raise(
           Integrations::Medelement::Client::ApiError.new('ambiguous', status: 500, ambiguous: true)

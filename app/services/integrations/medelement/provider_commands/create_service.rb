@@ -169,8 +169,15 @@ class Integrations::Medelement::ProviderCommands::CreateService
   end
 
   def patient_code
-    contact&.custom_attributes&.dig('medelement_patient_code').presence
+    return appointment_patient_code if operation == 'create_reception'
+    return appointment_patient_code || contact_patient_code if appointment.present?
+
+    contact_patient_code
   end
+
+  def appointment_patient_code = appointment&.custom_attributes&.to_h&.dig('medelement_patient_code').presence
+
+  def contact_patient_code = contact&.custom_attributes&.to_h&.dig('medelement_patient_code').presence
 
   def reception_code
     return if appointment.blank?

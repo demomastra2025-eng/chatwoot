@@ -184,6 +184,7 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def fail_command!(code:, status: nil, reconciliation: false)
+    reconciliation &&= write_started?
     reconciliation_enqueued = false
     command.with_lock do
       next unless owns_claim?

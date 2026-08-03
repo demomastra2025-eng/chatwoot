@@ -89,7 +89,7 @@ class Integrations::Medelement::ProviderCommands::Validator
   def patient_identity_write?
     return false if contact.blank?
 
-    operation.in?(%w[create_patient update_patient]) || (operation == 'create_reception' && patient_code.blank?)
+    operation.in?(%w[create_patient update_patient]) || (operation == 'create_reception' && appointment_patient_code.blank?)
   end
 
   def validate_operation_prerequisites!
@@ -144,6 +144,10 @@ class Integrations::Medelement::ProviderCommands::Validator
   end
 
   def patient_code
-    contact.custom_attributes.to_h['medelement_patient_code'].to_s
+    appointment_patient_code || contact.custom_attributes.to_h['medelement_patient_code'].to_s
+  end
+
+  def appointment_patient_code
+    appointment&.custom_attributes&.to_h&.dig('medelement_patient_code').presence
   end
 end

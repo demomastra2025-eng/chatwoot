@@ -115,7 +115,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
 
   context 'when patient creation returned an ambiguous result' do
     it 'adopts one exact match without repeating the create write' do
-      allow(client).to receive(:search_patients_by_phone).and_return([{ 'PROFILE_CODE' => 'patient-1' }])
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+      )
       allow(client).to receive(:create_patient)
 
       perform
@@ -133,7 +135,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         expect do
           Integrations::Medelement::ProviderCommands::CancelService.new(command: command, actor: actor).perform
         end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_NOT_CANCELLABLE') }
-        [{ 'PROFILE_CODE' => 'patient-1' }]
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
       end
 
       perform
@@ -149,7 +151,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
           Integrations::Medelement::ProviderCommands::ReconciliationLifecycle::CLAIMED_AT_KEY
         )
         command.update!(status: 'reconciliation_required', execution_state: state)
-        [{ 'PROFILE_CODE' => 'patient-1' }]
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
       end
 
       perform
@@ -208,12 +210,16 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
     let(:command_attributes) { { company_cabinet_code: 'cabinet-1' } }
 
     it 'links the patient and requeues the already confirmed composite command' do
-      allow(client).to receive(:search_patients_by_phone).and_return([{ 'PROFILE_CODE' => 'patient-1' }])
+      contact.update!(custom_attributes: { 'medelement_patient_code' => 'patient-old' })
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+      )
       allow(Integrations::Medelement::ProviderCommandJob).to receive(:perform_later)
 
       perform
 
       expect(command.reload).to have_attributes(status: 'queued', provider_patient_code: 'patient-1')
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('patient-old')
       expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id)
     end
   end
@@ -268,6 +274,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         company_cabinet_code: 'cabinet-1',
         execution_state: {
           'write_phase' => 'reception_create',
+          'write_provider_patient_code' => 'patient-1',
           'preflight_reception_codes' => ['existing-1']
         }
       }

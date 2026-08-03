@@ -46,6 +46,38 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     expect(contact.reload.phone_number).to be_nil
   end
 
+  it 'uses appointment-scoped identity values without changing the contact' do
+    original_attributes = contact.attributes
+
+    payload = described_class.new(
+      contact: contact,
+      identity: {
+        full_name: 'Gusman Assem',
+        iin: '940720300129',
+        birth_date: Date.new(1994, 7, 20),
+        gender: 'female'
+      }
+    ).build
+
+    expect(payload).to include(
+      'name' => 'Assem',
+      'lastname' => 'Gusman',
+      'iin' => '940720300129',
+      'birthday' => '20.07.1994',
+      'gender' => 1
+    )
+    expect(contact.reload.attributes.except('created_at', 'updated_at')).to eq(
+      original_attributes.except('created_at', 'updated_at')
+    )
+  end
+
+  it 'does not leak contact identity fields into an appointment-scoped patient' do
+    payload = described_class.new(contact: contact, identity: { full_name: 'Gusman Assem' }).build
+
+    expect(payload).to include('name' => 'Assem', 'lastname' => 'Gusman')
+    expect(payload).not_to include('iin', 'birthday', 'gender')
+  end
+
   it 'rejects a name without separate first and last names' do
     contact.update!(name: 'Ivan')
 

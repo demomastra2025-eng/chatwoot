@@ -73,9 +73,26 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'payload' => Integrations::Medelement::ProviderCommands::PatientPayloadBuilder.new(
         contact: contact,
         patient_code: operation == 'update_patient' ? patient_code : nil,
-        phone_number: phone_number
+        phone_number: phone_number,
+        identity: patient_identity
       ).build
     }
+  end
+
+  def patient_identity
+    return unless operation == 'create_reception'
+
+    {
+      full_name: appointment.client_name,
+      iin: appointment_iin,
+      birth_date: appointment.client_birth_date,
+      gender: appointment.client_gender
+    }.compact
+  end
+
+  def appointment_iin
+    value = appointment.client_identifier
+    Scheduling::IinValidator.normalize(value) if Scheduling::IinValidator.valid?(value)
   end
 
   def patient_phone_number
@@ -136,7 +153,13 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
 
   def patient_code
-    contact&.custom_attributes&.dig('medelement_patient_code').presence
+    return appointment_patient_code if operation == 'create_reception'
+
+    appointment_patient_code || contact&.custom_attributes&.dig('medelement_patient_code').presence
+  end
+
+  def appointment_patient_code
+    appointment&.custom_attributes&.to_h&.dig('medelement_patient_code').presence
   end
 
   def reception_code

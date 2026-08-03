@@ -24,8 +24,15 @@ class Integrations::Medelement::ProviderCommands::ConfirmationBodyBuilder
       "цена #{details['price']}",
       "длительность #{details['duration_min']} мин",
       time_body,
-      "кабинет #{snapshot['company_cabinet_code']}"
-    ].join('; ')
+      "кабинет #{snapshot['company_cabinet_code']}",
+      patient_resolution_notice
+    ].compact.join('; ')
+  end
+
+  def patient_resolution_notice
+    return unless operation == 'create_reception' && snapshot['provider_patient_code'].blank?
+
+    'если пациент не будет однозначно найден по данным записи, будет создан новый пациент Medelement; локальный контакт не создаётся'
   end
 
   def time_body

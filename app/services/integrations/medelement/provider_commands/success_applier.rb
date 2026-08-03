@@ -13,7 +13,6 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def patient_resolved_for_reception!(patient_code:)
     with_owned_command do
-      link_contact_patient_ref!(patient_code)
       command.update!(
         status: 'queued',
         provider_patient_code: patient_code,
