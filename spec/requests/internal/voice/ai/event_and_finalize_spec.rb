@@ -308,6 +308,40 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     )
     expect(call_session.metadata.dig('ai_voice', 'final_transcript').pluck('speaker')).to include('caller', 'assistant')
     expect(account.telephony_events.where(event_key: 'evt-finalize-1').count).to eq(1)
+    expect(conversation.reload.additional_attributes['call_status']).to eq('completed')
+  end
+
+  it 'does not close a newer call when a reused conversation receives an older finalize' do
+    conversation.update!(
+      additional_attributes: {
+        'telephony_call_ref' => 'newer-provider-call',
+        'call_status' => 'in_progress'
+      }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/finalize',
+           params: {
+             event_id: 'evt-finalize-superseded-call-1',
+             event_type: 'finalize',
+             provider_call_id: call_session.external_call_ref,
+             account_id: account.id,
+             conversation_id: conversation.id,
+             status: 'completed',
+             reason: 'normal_clearing'
+           },
+           headers: {
+             'Authorization' => 'Bearer voice-secret',
+             'X-Idempotency-Key' => 'evt-finalize-superseded-call-1'
+           },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(conversation.reload.additional_attributes).to include(
+      'telephony_call_ref' => 'newer-provider-call',
+      'call_status' => 'in_progress'
+    )
   end
 
   it 'keeps conversation final status aligned with the stored finalize when a conflicting duplicate arrives' do

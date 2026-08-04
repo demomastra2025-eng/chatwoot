@@ -274,16 +274,17 @@ func TestRuntimeInputSDPSupportsSipG711Codecs(t *testing.T) {
 	}
 }
 
-func TestRuntimeInputCodecPrefersRemoteTrack(t *testing.T) {
+func TestRuntimeInputCodecPrefersNegotiatedSessionCodec(t *testing.T) {
 	tests := []struct {
 		name     string
 		remote   string
 		fallback string
 		want     string
 	}{
-		{name: "remote pcmu over local pcma", remote: "audio/PCMU", fallback: "audio/PCMA", want: "audio/pcmu"},
-		{name: "remote pcma over local pcmu", remote: "audio/PCMA", fallback: "audio/PCMU", want: "audio/pcma"},
-		{name: "fallback before remote track", remote: "", fallback: "audio/PCMA", want: "audio/pcma"},
+		{name: "session pcma over relabeled remote pcmu", remote: "audio/PCMU", fallback: "audio/PCMA", want: "audio/pcma"},
+		{name: "session pcmu over relabeled remote pcma", remote: "audio/PCMA", fallback: "audio/PCMU", want: "audio/pcmu"},
+		{name: "session codec before remote track", remote: "", fallback: "audio/PCMA", want: "audio/pcma"},
+		{name: "remote codec without session codec", remote: "audio/PCMU", fallback: "", want: "audio/pcmu"},
 	}
 
 	for _, test := range tests {

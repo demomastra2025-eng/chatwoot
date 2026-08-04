@@ -125,11 +125,17 @@ class Telephony::AiVoice::FinalizationService
 
     attrs = (conversation.additional_attributes || {}).deep_dup
     attrs['telephony_provider'] = call_session.provider
+    attrs['call_status'] = call_session.canonical_status if current_conversation_call?(attrs)
     attrs['recording_ref'] = call_session.recording_ref if call_session.recording_ref.present?
     attrs['transcript_ref'] = call_session.transcript_ref if call_session.transcript_ref.present?
     attrs['summary'] = call_session.summary if call_session.summary.present?
     attrs['ai_voice_final_status'] = conversation_final_status(already_finalized: already_finalized)
     conversation.update!(additional_attributes: attrs, last_activity_at: Time.current)
+  end
+
+  def current_conversation_call?(attrs)
+    current_call_ref = attrs['telephony_call_ref'].presence
+    current_call_ref.blank? || current_call_ref == call_session.external_call_ref
   end
 
   def sync_voice_message!

@@ -900,10 +900,14 @@ func runtimeCodecFromSession(sess *session.Session) string {
 }
 
 func runtimeInputCodec(remoteCodec, fallbackCodec string) string {
-	if strings.TrimSpace(remoteCodec) != "" {
-		return canonicalRuntimeCodec(remoteCodec)
+	// Janus SIP can expose the WebRTC track as PCMU while forwarding the
+	// provider-owned G.711 payload negotiated for the local/session codec
+	// (for example, PCMA bytes with the PCMU track label). The session codec is
+	// therefore authoritative; use the remote label only when it is unavailable.
+	if strings.TrimSpace(fallbackCodec) != "" {
+		return canonicalRuntimeCodec(fallbackCodec)
 	}
-	return canonicalRuntimeCodec(fallbackCodec)
+	return canonicalRuntimeCodec(remoteCodec)
 }
 
 func canonicalRuntimeCodec(codec string) string {
