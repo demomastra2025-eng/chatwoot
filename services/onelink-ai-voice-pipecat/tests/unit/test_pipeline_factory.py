@@ -148,6 +148,8 @@ def test_builds_supported_provider_pipeline(
         }[provider]
         assert isinstance(stt, expected_stt_class)
         assert isinstance(tts, expected_tts_class)
+        if provider == "fish":
+            assert tts._stop_frame_timeout_s == 1.5
         if provider in {"elevenlabs", "fish"}:
             expected_strategy = CommitStrategy.MANUAL if provider == "fish" else CommitStrategy.VAD
             assert stt._commit_strategy is expected_strategy

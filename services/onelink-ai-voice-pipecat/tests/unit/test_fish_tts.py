@@ -1,20 +1,17 @@
 import asyncio
-from collections import deque
 from unittest.mock import AsyncMock
 
 import ormsgpack
 import pytest
-from pipecat.frames.frames import (
-    InterruptionFrame,
-    TTSAudioRawFrame,
-)
+from pipecat.frames.frames import InterruptionFrame, TTSAudioRawFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.fish.tts import FishAudioTTSService
+from websockets.protocol import State
 
 from app.services.fish_tts import OneLinkFishAudioTTSService
 
 
-class FakeWebsocket:
+class FakeReceiveWebsocket:
     def __init__(self, messages):
         self._messages = iter(messages)
 
@@ -28,19 +25,14 @@ class FakeWebsocket:
             raise StopAsyncIteration from exc
 
 
-class SendWebsocket:
-    def __init__(self, *, on_flush=None, fail_once=False):
+class FakeSendWebsocket:
+    state = State.OPEN
+
+    def __init__(self):
         self.sent = []
-        self._on_flush = on_flush
-        self._fail_once = fail_once
 
     async def send(self, message):
-        if self._fail_once:
-            self._fail_once = False
-            raise ConnectionError("connection dropped")
         self.sent.append(ormsgpack.unpackb(message))
-        if self.sent[-1].get("event") == "flush" and self._on_flush is not None:
-            self._on_flush()
 
 
 def build_service():
@@ -48,43 +40,25 @@ def build_service():
         api_key="fish-secret",
         sample_rate=8_000,
         settings=OneLinkFishAudioTTSService.Settings(
-            model="s2-pro",
+            model="s2.1-pro-free",
             voice="voice-ref",
         ),
     )
-    service.start_ttfb_metrics = AsyncMock()
+    service.stop_ttfb_metrics = AsyncMock()
     service.start_tts_usage_metrics = AsyncMock()
     return service
-
-
-def signal_first_audio(service):
-    service._transactions[0].first_audio_event.set()
-
-
-def enqueue_transaction(service, context_id):
-    transaction = service._build_transaction("текст", context_id, service._interruption_epoch)
-    service._enqueue_transaction(transaction)
-    return transaction
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("size", [1, 1024, 1025])
 async def test_fish_tts_preserves_every_non_empty_audio_chunk(size):
-    service = OneLinkFishAudioTTSService(
-        api_key="fish-secret",
-        sample_rate=8_000,
-        settings=OneLinkFishAudioTTSService.Settings(
-            model="s2-pro",
-            voice="voice-ref",
-        ),
-    )
-    service._websocket = FakeWebsocket(
+    service = build_service()
+    service._websocket = FakeReceiveWebsocket(
         [ormsgpack.packb({"event": "audio", "audio": b"a" * size})]
     )
     service._sample_rate = service._init_sample_rate
-    enqueue_transaction(service, "ctx")
+    service._turn_context_id = "ctx"
     service.append_to_audio_context = AsyncMock()
-    service.stop_ttfb_metrics = AsyncMock()
 
     await service._receive_messages()
 
@@ -100,11 +74,8 @@ async def test_fish_tts_preserves_every_non_empty_audio_chunk(size):
 
 @pytest.mark.asyncio
 async def test_fish_tts_ignores_empty_audio_chunk():
-    service = OneLinkFishAudioTTSService(
-        api_key="fish-secret",
-        settings=OneLinkFishAudioTTSService.Settings(voice="voice-ref"),
-    )
-    service._websocket = FakeWebsocket(
+    service = build_service()
+    service._websocket = FakeReceiveWebsocket(
         [ormsgpack.packb({"event": "audio", "audio": b""})]
     )
     service.append_to_audio_context = AsyncMock()
@@ -115,84 +86,69 @@ async def test_fish_tts_ignores_empty_audio_chunk():
 
 
 @pytest.mark.asyncio
-async def test_fish_tts_sends_text_and_flush_as_one_synthesis_transaction():
+async def test_fish_tts_uses_native_non_blocking_flush_lifecycle():
     service = build_service()
-    websocket = SendWebsocket(on_flush=lambda: signal_first_audio(service))
+    websocket = FakeSendWebsocket()
     service._websocket = websocket
 
     frames = service.run_tts("Здравствуйте", "ctx")
     assert await anext(frames) is None
 
     assert websocket.sent == [
-        {"event": "text", "text": "Здравствуйте", "normalize": True},
+        {"event": "text", "text": "Здравствуйте"},
         {"event": "flush"},
     ]
     service.start_tts_usage_metrics.assert_awaited_once_with("Здравствуйте")
+    assert OneLinkFishAudioTTSService.run_tts is FishAudioTTSService.run_tts
 
 
 @pytest.mark.asyncio
-async def test_fish_tts_reconnects_and_replays_when_first_audio_times_out():
+async def test_next_utterance_does_not_wait_for_per_flush_finish_event():
     service = build_service()
-    service.FIRST_AUDIO_TIMEOUT_SECONDS = 0.01
-    first_websocket = SendWebsocket()
-    replay_websocket = SendWebsocket(on_flush=lambda: signal_first_audio(service))
-    service._websocket = first_websocket
+    websocket = FakeSendWebsocket()
+    service._websocket = websocket
 
-    async def reconnect(**_kwargs):
-        service._websocket = replay_websocket
-        return True
+    first = service.run_tts("Секунду, проверяю.", "ctx-1")
+    second = service.run_tts("Акына матата.", "ctx-2")
 
-    service._restart_connection = AsyncMock(side_effect=reconnect)
-
-    frames = service.run_tts("Повторите, пожалуйста", "ctx")
-    assert await anext(frames) is None
-
-    service._restart_connection.assert_awaited_once()
-    assert first_websocket.sent[-1] == {"event": "flush"}
-    assert replay_websocket.sent == first_websocket.sent
-
-
-@pytest.mark.asyncio
-async def test_fish_tts_replays_whole_transaction_after_send_failure():
-    service = build_service()
-    failed_websocket = SendWebsocket(fail_once=True)
-    replay_websocket = SendWebsocket(on_flush=lambda: signal_first_audio(service))
-    service._websocket = failed_websocket
-
-    async def reconnect(**_kwargs):
-        service._websocket = replay_websocket
-        return True
-
-    service._restart_connection = AsyncMock(side_effect=reconnect)
-
-    frames = service.run_tts("Секунду", "ctx")
-    assert await anext(frames) is None
-
-    assert replay_websocket.sent == [
-        {"event": "text", "text": "Секунду", "normalize": True},
+    assert await anext(first) is None
+    assert await anext(second) is None
+    assert websocket.sent == [
+        {"event": "text", "text": "Секунду, проверяю."},
+        {"event": "flush"},
+        {"event": "text", "text": "Акына матата."},
         {"event": "flush"},
     ]
 
 
 @pytest.mark.asyncio
-async def test_fish_tts_never_replays_text_cancelled_by_real_interruption(monkeypatch):
+async def test_pending_synthesis_reconnects_on_interruption(monkeypatch):
     service = build_service()
-    websocket = SendWebsocket()
-    service._websocket = websocket
+    service._audio_contexts = {"ctx": asyncio.Queue()}
+    service._bot_speaking = False
     base_interruption = AsyncMock()
     monkeypatch.setattr(FishAudioTTSService, "_handle_interruption", base_interruption)
     service._restart_connection = AsyncMock(return_value=True)
 
-    frames = service.run_tts("Эта реплика отменена", "ctx")
-    pending_frame = asyncio.create_task(anext(frames))
-    await asyncio.sleep(0)
     await service._handle_interruption(InterruptionFrame(), FrameDirection.DOWNSTREAM)
-    with pytest.raises(StopAsyncIteration):
-        await pending_frame
 
     base_interruption.assert_awaited_once()
     service._restart_connection.assert_awaited_once()
-    assert len(websocket.sent) == 2
+
+
+@pytest.mark.asyncio
+async def test_playing_synthesis_uses_native_interruption_reconnect(monkeypatch):
+    service = build_service()
+    service._audio_contexts = {"ctx": asyncio.Queue()}
+    service._bot_speaking = True
+    base_interruption = AsyncMock()
+    monkeypatch.setattr(FishAudioTTSService, "_handle_interruption", base_interruption)
+    service._restart_connection = AsyncMock(return_value=True)
+
+    await service._handle_interruption(InterruptionFrame(), FrameDirection.DOWNSTREAM)
+
+    base_interruption.assert_awaited_once()
+    service._restart_connection.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -207,28 +163,7 @@ async def test_restart_connection_uses_full_service_lifecycle():
     service._connect.assert_awaited_once()
 
 
-@pytest.mark.asyncio
-async def test_receive_loop_binds_audio_to_each_transaction_until_finish():
+def test_fish_tts_uses_short_safe_audio_idle_timeout():
     service = build_service()
-    first = enqueue_transaction(service, "ctx-1")
-    second = enqueue_transaction(service, "ctx-2")
-    service._websocket = FakeWebsocket(
-        [
-            ormsgpack.packb({"event": "audio", "audio": b"first"}),
-            ormsgpack.packb({"event": "finish", "reason": "done"}),
-            ormsgpack.packb({"event": "audio", "audio": b"second"}),
-            ormsgpack.packb({"event": "finish", "reason": "done"}),
-        ]
-    )
-    service._sample_rate = service._init_sample_rate
-    service.append_to_audio_context = AsyncMock()
-    service.stop_ttfb_metrics = AsyncMock()
 
-    await service._receive_messages()
-
-    contexts = [call.args[0] for call in service.append_to_audio_context.await_args_list]
-    assert contexts == ["ctx-1", "ctx-2"]
-    assert first.first_audio_event.is_set()
-    assert second.ready_event.is_set()
-    assert second.first_audio_event.is_set()
-    assert service._transactions == deque()
+    assert service._stop_frame_timeout_s == 1.5
