@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Any, TypeVar
 
+from loguru import logger
 from pipecat.audio.utils import create_stream_resampler
 from pipecat.frames.frames import (
     AudioRawFrame,
@@ -129,18 +131,16 @@ class CallerCommandProcessor(FrameProcessor):
         self._state = state
         self._end_call_timeout_ms = end_call_timeout_ms
         self._end_call_requested = False
-        self._end_call_executor: Callable[
-            [dict[str, str], str, int], Awaitable[dict[str, Any]]
-        ] | None = None
+        self._end_call_executor: (
+            Callable[[dict[str, str], str, int], Awaitable[dict[str, Any]]] | None
+        ) = None
         runtime_id = state.correlation.runtime_session_id
         digest = hashlib.sha256(runtime_id.encode()).hexdigest()[:24]
         self._tool_call_id = f"caller-intent-end-call:{digest}"
 
     def bind_end_call(
         self,
-        executor: Callable[
-            [dict[str, str], str, int], Awaitable[dict[str, Any]]
-        ],
+        executor: Callable[[dict[str, str], str, int], Awaitable[dict[str, Any]]],
     ) -> None:
         self._end_call_executor = executor
 
@@ -206,6 +206,15 @@ class AssistantLifecycleProcessor(FrameProcessor):
             await self._activity.model_generation_interrupted()
         elif isinstance(frame, BotStartedSpeakingFrame):
             await self._activity.bot_started()
+            latency = self._activity.response_latency_ms()
+            if latency["turn_end_to_audio_ms"] is not None:
+                logger.info(
+                    "Voice response audio started turn_end_to_audio_ms={} "
+                    "llm_start_to_audio_ms={} llm_first_output_to_audio_ms={}",
+                    latency["turn_end_to_audio_ms"],
+                    latency["llm_start_to_audio_ms"],
+                    latency["llm_first_output_to_audio_ms"],
+                )
             self._state.touch()
             self._state.spawn(self._state.safe_control("ai_speaking", {"state": "started"}))
         elif isinstance(frame, BotStoppedSpeakingFrame):
@@ -228,6 +237,9 @@ class ConversationActivity:
         self.model_outputs_generated = 0
         self.speech_lock = asyncio.Lock()
         self._changed = asyncio.Condition()
+        self._last_user_stopped_at: float | None = None
+        self._last_model_generation_started_at: float | None = None
+        self._last_model_output_at: float | None = None
 
     @property
     def model_generation_active(self) -> bool:
@@ -253,11 +265,14 @@ class ConversationActivity:
     async def user_stopped(self) -> None:
         async with self._changed:
             self.user_speaking = False
+            self._last_user_stopped_at = time.monotonic()
             self._changed.notify_all()
 
     async def model_generation_started(self) -> None:
         async with self._changed:
             self.model_generations_started += 1
+            self._last_model_generation_started_at = time.monotonic()
+            self._last_model_output_at = None
             self._changed.notify_all()
 
     async def model_generation_completed(self) -> None:
@@ -271,7 +286,23 @@ class ConversationActivity:
     async def model_output_generated(self) -> None:
         async with self._changed:
             self.model_outputs_generated += 1
+            if self._last_model_output_at is None:
+                self._last_model_output_at = time.monotonic()
             self._changed.notify_all()
+
+    def response_latency_ms(self) -> dict[str, int | None]:
+        now = time.monotonic()
+
+        def elapsed(started_at: float | None) -> int | None:
+            if started_at is None:
+                return None
+            return max(0, round((now - started_at) * 1_000))
+
+        return {
+            "turn_end_to_audio_ms": elapsed(self._last_user_stopped_at),
+            "llm_start_to_audio_ms": elapsed(self._last_model_generation_started_at),
+            "llm_first_output_to_audio_ms": elapsed(self._last_model_output_at),
+        }
 
     async def model_generation_interrupted(self) -> None:
         async with self._changed:
@@ -284,9 +315,7 @@ class ConversationActivity:
     async def wait_for_turn_completed_after(self, sequence: int, timeout: float) -> bool:
         return await self._wait_for(lambda: self.turns_completed > sequence, timeout)
 
-    async def wait_for_model_generation_started_after(
-        self, sequence: int, timeout: float
-    ) -> bool:
+    async def wait_for_model_generation_started_after(self, sequence: int, timeout: float) -> bool:
         return await self._wait_for(lambda: self.model_generations_started > sequence, timeout)
 
     async def wait_for_model_idle_after(self, sequence: int, timeout: float) -> bool:

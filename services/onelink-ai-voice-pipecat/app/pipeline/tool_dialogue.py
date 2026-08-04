@@ -23,7 +23,7 @@ MIN_REPEAT_PROGRESS_INTERVAL_MS = 5_000
 VOICE_RESULT_MAX_CHARS = 2_400
 VOICE_RESULT_MAX_STRING_CHARS = 500
 POST_TOOL_GENERATION_MAX_SECONDS = 8.0
-DIRECT_RESULT_CONTEXT_BARRIER_TIMEOUT_SECONDS = 0.25
+DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS = 0.25
 
 
 class ToolRuntimeState(Protocol):
@@ -195,85 +195,44 @@ class ToolDialogueCoordinator:
     ) -> None:
         voice_result = _voice_result_projection(definition.name, result)
         if _uses_direct_voice_result(definition.name, self._ai.provider):
-            context_updated = asyncio.Event()
+            phrase = _direct_voice_result_phrase(definition.name, voice_result)
+            speech_scheduled = asyncio.Event()
 
-            async def mark_context_updated() -> None:
-                context_updated.set()
+            def schedule_speech() -> None:
+                if speech_scheduled.is_set():
+                    return
+                speech_scheduled.set()
+                if phrase and self._speak_result is not None:
+                    self._state.spawn(
+                        self._speak_direct_result(
+                            definition=definition,
+                            tool_call_id=params.tool_call_id,
+                            phrase=phrase,
+                        )
+                    )
+
+            async def schedule_after_context_update() -> None:
+                # Pipecat deliberately runs this callback as its own task after
+                # the uninterruptible FunctionCallResultFrame reaches context.
+                # Only schedule here; awaiting an entire TTS turn from a
+                # function-call worker blocks/cancels sibling parallel tools.
+                schedule_speech()
 
             await params.result_callback(
                 voice_result,
                 properties=FunctionCallResultProperties(
                     run_llm=False,
-                    on_context_updated=mark_context_updated,
+                    on_context_updated=schedule_after_context_update,
                 ),
             )
-
-            try:
-                await asyncio.wait_for(
-                    context_updated.wait(),
-                    timeout=DIRECT_RESULT_CONTEXT_BARRIER_TIMEOUT_SECONDS,
+            self._state.spawn(
+                self._recover_direct_result_speech(
+                    definition=definition,
+                    tool_call_id=params.tool_call_id,
+                    speech_scheduled=speech_scheduled,
+                    schedule_speech=schedule_speech,
                 )
-            except TimeoutError:
-                self._state.spawn(
-                    self._state.safe_control(
-                        "direct_tool_context_barrier_timeout",
-                        {"reason": "context_callback_timeout"},
-                        tool_call_id=params.tool_call_id,
-                        tool_name=definition.name,
-                    )
-                )
-                logger.warning(
-                    "Direct tool context barrier timed out tool={} tool_call_id={}",
-                    definition.name,
-                    params.tool_call_id,
-                )
-
-            phrase = _direct_voice_result_phrase(definition.name, voice_result)
-            if not phrase or self._speak_result is None:
-                return
-            if self._activity.user_speaking:
-                self._state.spawn(
-                    self._state.safe_control(
-                        "direct_tool_speech_deferred",
-                        {"reason": "caller_speaking"},
-                        tool_call_id=params.tool_call_id,
-                        tool_name=definition.name,
-                    )
-                )
-                return
-
-            speech_started_at = time.monotonic()
-            try:
-                async with self._dialogue_lock:
-                    if self._activity.bot_speaking:
-                        await self._activity.wait_for_turn_completed_after(
-                            self._activity.turns_completed,
-                            timeout=3.0,
-                        )
-                    spoken = await self._speak_result(phrase)
-            except Exception:
-                logger.exception(
-                    "Failed to speak direct tool result tool={}",
-                    definition.name,
-                )
-                return
-
-            logger.info(
-                "Direct tool speech finished tool={} tool_call_id={} spoken={} elapsed_ms={}",
-                definition.name,
-                params.tool_call_id,
-                spoken,
-                round((time.monotonic() - speech_started_at) * 1_000),
             )
-            if spoken is False:
-                self._state.spawn(
-                    self._state.safe_control(
-                        "direct_tool_speech_not_started",
-                        {"reason": "tts_turn_not_started"},
-                        tool_call_id=params.tool_call_id,
-                        tool_name=definition.name,
-                    )
-                )
             return
 
         response_sequence = self._activity.turns_started
@@ -299,6 +258,93 @@ class ToolDialogueCoordinator:
                 tool_call_id=params.tool_call_id,
             )
         )
+
+    async def _recover_direct_result_speech(
+        self,
+        *,
+        definition: ToolDefinition,
+        tool_call_id: str,
+        speech_scheduled: asyncio.Event,
+        schedule_speech: Callable[[], None],
+    ) -> None:
+        try:
+            await asyncio.wait_for(
+                speech_scheduled.wait(),
+                timeout=DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS,
+            )
+            return
+        except TimeoutError:
+            pass
+
+        self._state.spawn(
+            self._state.safe_control(
+                "direct_tool_context_barrier_timeout",
+                {"reason": "context_callback_timeout"},
+                tool_call_id=tool_call_id,
+                tool_name=definition.name,
+            )
+        )
+        logger.warning(
+            "Recovering direct tool speech after context callback timeout tool={} tool_call_id={}",
+            definition.name,
+            tool_call_id,
+        )
+        schedule_speech()
+
+    async def _speak_direct_result(
+        self,
+        *,
+        definition: ToolDefinition,
+        tool_call_id: str,
+        phrase: str,
+    ) -> None:
+        if self._speak_result is None:
+            return
+        if self._activity.user_speaking:
+            self._state.spawn(
+                self._state.safe_control(
+                    "direct_tool_speech_deferred",
+                    {"reason": "caller_speaking"},
+                    tool_call_id=tool_call_id,
+                    tool_name=definition.name,
+                )
+            )
+            return
+
+        speech_started_at = time.monotonic()
+        try:
+            async with self._dialogue_lock:
+                if self._activity.bot_speaking:
+                    await self._activity.wait_for_turn_completed_after(
+                        self._activity.turns_completed,
+                        timeout=3.0,
+                    )
+                if self._activity.user_speaking:
+                    return
+                spoken = await self._speak_result(phrase)
+        except Exception:
+            logger.exception(
+                "Failed to speak direct tool result tool={}",
+                definition.name,
+            )
+            return
+
+        logger.info(
+            "Direct tool speech finished tool={} tool_call_id={} spoken={} elapsed_ms={}",
+            definition.name,
+            tool_call_id,
+            spoken,
+            round((time.monotonic() - speech_started_at) * 1_000),
+        )
+        if spoken is False:
+            self._state.spawn(
+                self._state.safe_control(
+                    "direct_tool_speech_not_started",
+                    {"reason": "tts_turn_not_started"},
+                    tool_call_id=tool_call_id,
+                    tool_name=definition.name,
+                )
+            )
 
     def _uses_gemini_async_completion(self, definition: ToolDefinition) -> bool:
         return (
@@ -461,9 +507,7 @@ class ToolDialogueCoordinator:
                     response_timeout,
                 )
             if self._activity.model_generation_active:
-                idle = await self._activity.wait_for_model_idle(
-                    POST_TOOL_GENERATION_MAX_SECONDS
-                )
+                idle = await self._activity.wait_for_model_idle(POST_TOOL_GENERATION_MAX_SECONDS)
                 if not idle:
                     logger.warning("Gemini post-tool continuation skipped: model remained active")
                     return
@@ -582,11 +626,7 @@ class ToolDialogueCoordinator:
                 )
             )
             if self._speak_exact is not None:
-                if (
-                    stopped.is_set()
-                    or self._activity.user_speaking
-                    or self._activity.bot_speaking
-                ):
+                if stopped.is_set() or self._activity.user_speaking or self._activity.bot_speaking:
                     return
                 progress_speaking.set()
                 try:
@@ -837,8 +877,7 @@ def _direct_voice_result_phrase(tool_name: str, result: dict[str, Any]) -> str:
                 if answer:
                     return answer[:VOICE_RESULT_MAX_STRING_CHARS]
         return (
-            "В базе знаний пока нет точного ответа на этот вопрос. "
-            "Могу соединить со специалистом."
+            "В базе знаний пока нет точного ответа на этот вопрос. Могу соединить со специалистом."
         )
 
     for key in ("answer", "message", "summary", "content", "text"):
@@ -852,8 +891,7 @@ def _direct_voice_result_phrase(tool_name: str, result: dict[str, Any]) -> str:
     if normalized_name.startswith(("create_", "add_", "update_", "move_", "change_")):
         return "Готово, данные успешно обновлены."
     return (
-        "Проверка завершена, но подробный ответ сейчас недоступен. "
-        "Могу соединить со специалистом."
+        "Проверка завершена, но подробный ответ сейчас недоступен. Могу соединить со специалистом."
     )
 
 

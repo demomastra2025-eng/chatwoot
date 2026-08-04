@@ -100,9 +100,7 @@ CRM_DATA_INTEGRITY_INSTRUCTION = (
     "подставляй Telegram, WhatsApp или другой канал по шаблону. Не сообщай об успешной записи "
     "до успешного результата инструмента. Фактический источник: {source}."
 )
-GEMINI_AFFECTIVE_DIALOG_MODELS = frozenset(
-    {"gemini-2.5-flash-native-audio-preview-12-2025"}
-)
+GEMINI_AFFECTIVE_DIALOG_MODELS = frozenset({"gemini-2.5-flash-native-audio-preview-12-2025"})
 GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
     {
         "gemini-3.1-flash-live-preview",
@@ -110,9 +108,9 @@ GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
     }
 )
 GEMINI_THINKING_LEVEL_MODELS = frozenset({"gemini-3.1-flash-live-preview"})
-GEMINI_PROACTIVE_AUDIO_MODELS = frozenset(
-    {"gemini-2.5-flash-native-audio-preview-12-2025"}
-)
+GEMINI_PROACTIVE_AUDIO_MODELS = frozenset({"gemini-2.5-flash-native-audio-preview-12-2025"})
+
+
 @dataclass(slots=True)
 class PipelineAssembly:
     worker: PipelineWorker
@@ -262,8 +260,7 @@ def build_pipeline(
             and context.ai.model in GEMINI_AFFECTIVE_DIALOG_MODELS
         )
         proactive_audio_enabled = (
-            context.ai.proactive_audio_enabled
-            and context.ai.model in GEMINI_PROACTIVE_AUDIO_MODELS
+            context.ai.proactive_audio_enabled and context.ai.model in GEMINI_PROACTIVE_AUDIO_MODELS
         )
         llm_context = LLMContext(messages=initial_messages)
         aggregators = _aggregators(
@@ -296,9 +293,7 @@ def build_pipeline(
                 ),
                 enable_affective_dialog=affective_dialog_enabled,
                 proactivity=(
-                    ProactivityConfig(proactive_audio=True)
-                    if proactive_audio_enabled
-                    else None
+                    ProactivityConfig(proactive_audio=True) if proactive_audio_enabled else None
                 ),
             ),
             inference_on_context_initialization=True,
@@ -410,14 +405,24 @@ def build_pipeline(
                 api_key=credentials["elevenlabs_api_key"],
                 sample_rate=16_000,
                 secondary_languages=secondary_languages,
-                commit_strategy=(
-                    CommitStrategy.MANUAL
-                    if context.ai.provider == "fish"
-                    else CommitStrategy.VAD
-                ),
+                filter_background_audio=True,
+                # Provider VAD is the endpointing fallback for telephone audio.
+                # Local Silero still owns barge-in decisions, but it must not be
+                # the only component capable of committing an intelligible turn:
+                # a strict noisy-room profile can miss quiet caller speech and a
+                # manual ElevenLabs stream otherwise accumulates audio for tens
+                # of seconds before its safety auto-commit.
+                commit_strategy=CommitStrategy.VAD,
                 settings=OneLinkElevenLabsRealtimeSTTService.Settings(
                     model=settings.elevenlabs_stt_model,
                     language=stt_language,
+                    vad_silence_threshold_secs=max(
+                        0.3,
+                        min(1.0, context.ai.silence_duration_ms / 1_000),
+                    ),
+                    vad_threshold=0.4,
+                    min_speech_duration_ms=100,
+                    min_silence_duration_ms=100,
                 ),
             )
         openrouter_extra_body = {
@@ -426,7 +431,7 @@ def build_pipeline(
                 "allow_fallbacks": True,
                 "require_parameters": True,
                 "data_collection": "deny",
-                "preferred_max_latency": {"p90": 3.0, "p99": 6.0},
+                "preferred_max_latency": {"p90": 1.0, "p99": 2.5},
             },
         }
         # Keep parallel calls at Pipecat's native defaults. OpenRouter accepts
@@ -643,9 +648,7 @@ def _build_tools(
     for tool in context.tools:
         schema_error = _tool_schema_error(tool)
         if schema_error:
-            logger.error(
-                "realtime_tool_schema_dropped tool=%s reason=%s", tool.name, schema_error
-            )
+            logger.error("realtime_tool_schema_dropped tool=%s reason=%s", tool.name, schema_error)
             continue
         parameters = tool.parameters if isinstance(tool.parameters, dict) else {}
         properties = parameters.get("properties")

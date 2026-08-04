@@ -28,7 +28,13 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
     PROVIDER_MIN_CHUNK_DURATION_SECONDS = 0.1
     PROVIDER_MAX_CHUNK_DURATION_SECONDS = 1.0
 
-    def __init__(self, *, secondary_languages: list[str] | None = None, **kwargs):
+    def __init__(
+        self,
+        *,
+        secondary_languages: list[str] | None = None,
+        filter_background_audio: bool | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         primary_value = getattr(self._settings.language, "value", self._settings.language)
         primary = str(primary_value or "").strip().lower()
@@ -48,6 +54,7 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
         self._provider_audio_buffer = bytearray()
         self._provider_audio_send_lock = asyncio.Lock()
         self._last_manual_commit_at: float | None = None
+        self._filter_background_audio = filter_background_audio
 
     @property
     def _provider_sample_rate(self) -> int:
@@ -59,22 +66,14 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
     def _provider_min_chunk_bytes(self) -> int:
         return max(
             2,
-            round(
-                self._provider_sample_rate
-                * 2
-                * self.PROVIDER_MIN_CHUNK_DURATION_SECONDS
-            ),
+            round(self._provider_sample_rate * 2 * self.PROVIDER_MIN_CHUNK_DURATION_SECONDS),
         )
 
     @property
     def _provider_max_chunk_bytes(self) -> int:
         return max(
             self._provider_min_chunk_bytes,
-            round(
-                self._provider_sample_rate
-                * 2
-                * self.PROVIDER_MAX_CHUNK_DURATION_SECONDS
-            ),
+            round(self._provider_sample_rate * 2 * self.PROVIDER_MAX_CHUNK_DURATION_SECONDS),
         )
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
@@ -101,7 +100,10 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
             yield None
 
     async def process_frame(self, frame: Frame, direction: FrameDirection):
-        if isinstance(frame, VADUserStoppedSpeakingFrame):
+        if (
+            isinstance(frame, VADUserStoppedSpeakingFrame)
+            and self._commit_strategy == CommitStrategy.MANUAL
+        ):
             # Never let a partial tail overtake the manual commit. Padding the
             # final provider chunk with silence keeps it within ElevenLabs' 100
             # ms minimum with at most one bounded provider pacing interval.
@@ -134,9 +136,7 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
                 if frame is not None:
                     await self.push_frame(frame)
 
-    async def _send_provider_audio(
-        self, audio: bytes
-    ) -> AsyncGenerator[Frame | None, None]:
+    async def _send_provider_audio(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
         async with self._provider_audio_send_lock:
             async for frame in super().run_stt(audio):
                 yield frame
@@ -151,9 +151,7 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
     async def _on_committed_transcript(self, data: dict):
         commit_latency_ms = None
         if self._last_manual_commit_at is not None:
-            commit_latency_ms = round(
-                (time.monotonic() - self._last_manual_commit_at) * 1_000
-            )
+            commit_latency_ms = round((time.monotonic() - self._last_manual_commit_at) * 1_000)
             self._last_manual_commit_at = None
         logger.info(
             "ElevenLabs committed transcript chars={} commit_latency_ms={}",
@@ -167,10 +165,7 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
 
         if self._settings.language:
             params.append(("language_code", self._settings.language))
-        params.extend(
-            ("secondary_languages", language)
-            for language in self._secondary_languages
-        )
+        params.extend(("secondary_languages", language) for language in self._secondary_languages)
         params.extend(
             (
                 ("audio_format", self._audio_format),
@@ -189,12 +184,12 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
         if self._include_language_detection:
             params.append(("include_language_detection", "true"))
 
-        filter_background_audio = getattr(
-            self._settings, "filter_background_audio", None
-        )
-        if filter_background_audio is not None and is_given(filter_background_audio):
+        if self._filter_background_audio is not None:
             params.append(
-                ("filter_background_audio", str(filter_background_audio).lower())
+                (
+                    "filter_background_audio",
+                    str(self._filter_background_audio).lower(),
+                )
             )
 
         if self._commit_strategy == CommitStrategy.VAD:
@@ -205,9 +200,7 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
                 "min_silence_duration_ms": self._settings.min_silence_duration_ms,
             }
             params.extend(
-                (name, value)
-                for name, value in optional_vad_params.items()
-                if value is not None
+                (name, value) for name, value in optional_vad_params.items() if value is not None
             )
 
         return params

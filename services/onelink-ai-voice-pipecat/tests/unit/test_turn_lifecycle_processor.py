@@ -13,6 +13,7 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 
+import app.pipeline.processors as processors_module
 from app.pipeline.processors import (
     AssistantLifecycleProcessor,
     ConversationActivity,
@@ -34,6 +35,20 @@ class ActivityState:
 
     def touch_user(self) -> None:
         self.touches += 1
+
+
+def test_activity_reports_each_voice_latency_stage(monkeypatch):
+    activity = ConversationActivity()
+    activity._last_user_stopped_at = 10.0
+    activity._last_model_generation_started_at = 10.2
+    activity._last_model_output_at = 10.5
+    monkeypatch.setattr(processors_module.time, "monotonic", lambda: 10.8)
+
+    assert activity.response_latency_ms() == {
+        "turn_end_to_audio_ms": 800,
+        "llm_start_to_audio_ms": 600,
+        "llm_first_output_to_audio_ms": 300,
+    }
 
 
 @pytest.mark.asyncio
@@ -115,7 +130,5 @@ async def test_assistant_lifecycle_tracks_silent_gemini_tool_result_generation()
     )
     assert activity.model_generation_active is True
 
-    await processor.process_frame(
-        OneLinkToolResultGenerationEndFrame(), FrameDirection.DOWNSTREAM
-    )
+    await processor.process_frame(OneLinkToolResultGenerationEndFrame(), FrameDirection.DOWNSTREAM)
     assert activity.model_generation_active is False

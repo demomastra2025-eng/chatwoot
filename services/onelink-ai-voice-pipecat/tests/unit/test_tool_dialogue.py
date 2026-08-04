@@ -185,9 +185,7 @@ async def test_ready_tool_result_finishes_started_progress_without_global_interr
         run_instruction=speak,
         interrupt_generation=interrupt,
     )
-    execution = asyncio.create_task(
-        execute_with_answer(coordinator, activity, on_result=on_result)
-    )
+    execution = asyncio.create_task(execute_with_answer(coordinator, activity, on_result=on_result))
 
     await asyncio.wait_for(speech_started.wait(), timeout=0.1)
     tool_gate.set()
@@ -404,9 +402,7 @@ async def test_slow_gemini_tool_returns_pending_then_injects_late_result_once():
     assert '"answer": "готово"' in instructions[1]
     assert [control[0] for control in state.controls].count("tool_progress") == 2
     assert {
-        control[1]["activity"]
-        for control in state.controls
-        if control[0] == "tool_progress"
+        control[1]["activity"] for control in state.controls if control[0] == "tool_progress"
     } == {"создание сделки"}
     assert [control[0] for control in state.controls].count("tool_async_completed") == 1
 
@@ -733,7 +729,7 @@ async def test_faq_result_is_spoken_directly_without_second_llm_generation():
 async def test_faq_result_speaks_after_bounded_context_barrier_timeout(monkeypatch):
     monkeypatch.setattr(
         tool_dialogue_module,
-        "DIRECT_RESULT_CONTEXT_BARRIER_TIMEOUT_SECONDS",
+        "DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS",
         0.01,
     )
     answer = "OneLink автоматизирует продажи и общение с клиентами."
@@ -766,14 +762,72 @@ async def test_faq_result_speaks_after_bounded_context_barrier_timeout(monkeypat
         await asyncio.gather(*pending)
 
     assert spoken == [answer]
-    assert any(
-        control[0] == "direct_tool_context_barrier_timeout"
-        for control in state.controls
-    )
+    assert any(control[0] == "direct_tool_context_barrier_timeout" for control in state.controls)
 
     # A late native callback is only a context barrier and cannot repeat speech.
     await callback_properties[0].on_context_updated()
     assert spoken == [answer]
+
+
+@pytest.mark.asyncio
+async def test_direct_faq_speech_does_not_block_parallel_tool_completion():
+    answer = "OneLink автоматизирует продажи и общение с клиентами."
+    speech_started = asyncio.Event()
+    release_speech = asyncio.Event()
+    callbacks = []
+
+    class ParallelState(FakeState):
+        async def execute_tool(self, name, _arguments, _tool_call_id, *, timeout_ms):
+            assert timeout_ms > 0
+            self.executions += 1
+            if name == "faq_lookup":
+                return {"matches": [{"answer": answer}]}
+            return {"action": "transfer", "status": "completed"}
+
+    state = ParallelState()
+    activity = ConversationActivity()
+
+    async def speak_result(_message):
+        speech_started.set()
+        await release_speech.wait()
+        return True
+
+    async def result_callback(result, *, properties=None):
+        callbacks.append(result)
+        if properties and properties.on_context_updated:
+            await properties.on_context_updated()
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=speak_result,
+        speak_result=speak_result,
+        run_instruction=speak_result,
+    )
+    faq_params = Params(
+        arguments={"query": "Какие услуги у вас?"},
+        tool_call_id="faq-parallel",
+        result_callback=result_callback,
+    )
+    docs_params = Params(
+        arguments={"query": "Документация"},
+        tool_call_id="docs-parallel",
+        result_callback=result_callback,
+    )
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            coordinator.execute(definition("faq_lookup"), faq_params),
+            coordinator.execute(definition("search_documentation"), docs_params),
+        ),
+        timeout=0.2,
+    )
+
+    assert len(callbacks) == 2
+    assert state.executions == 2
+    await asyncio.wait_for(speech_started.wait(), timeout=0.2)
+    release_speech.set()
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
 
 
 @pytest.mark.asyncio

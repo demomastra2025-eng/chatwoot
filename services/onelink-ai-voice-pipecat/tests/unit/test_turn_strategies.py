@@ -3,6 +3,7 @@ import time
 import pytest
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
+    BotStoppedSpeakingFrame,
     InterimTranscriptionFrame,
     VADUserStartedSpeakingFrame,
     VADUserStoppedSpeakingFrame,
@@ -45,8 +46,7 @@ async def test_bot_interruption_requires_vad_and_transcript_confirmation():
 
     await strategy.process_frame(BotStartedSpeakingFrame())
     assert (
-        await strategy.process_frame(VADUserStartedSpeakingFrame())
-        is ProcessFrameResult.CONTINUE
+        await strategy.process_frame(VADUserStartedSpeakingFrame()) is ProcessFrameResult.CONTINUE
     )
     assert await strategy.process_frame(transcription("да")) is ProcessFrameResult.CONTINUE
     assert await strategy.process_frame(transcription()) is ProcessFrameResult.STOP
@@ -89,11 +89,38 @@ async def test_idle_bot_starts_user_turn_immediately_on_vad():
     strategy = ConfirmedUserTurnStartStrategy(mode="transcript_confirmed")
     starts = capture_starts(strategy)
 
+    assert await strategy.process_frame(VADUserStartedSpeakingFrame()) is ProcessFrameResult.STOP
+    assert len(starts) == 1
+
+
+@pytest.mark.asyncio
+async def test_idle_bot_starts_user_turn_when_stt_hears_speech_missed_by_vad():
+    strategy = ConfirmedUserTurnStartStrategy(mode="transcript_confirmed", min_words=2)
+    starts = capture_starts(strategy)
+
+    assert await strategy.process_frame(transcription("алло")) is ProcessFrameResult.STOP
+    assert len(starts) == 1
+    assert starts[0].enable_interruptions is True
+
+
+@pytest.mark.asyncio
+async def test_committed_transcripts_around_assistant_speech_start_separate_turns():
+    strategy = ConfirmedUserTurnStartStrategy(mode="transcript_confirmed")
+    starts = capture_starts(strategy)
+
     assert (
-        await strategy.process_frame(VADUserStartedSpeakingFrame())
+        await strategy.process_frame(transcription("Какие услуги предоставляете?"))
         is ProcessFrameResult.STOP
     )
-    assert len(starts) == 1
+    await strategy.reset()
+    await strategy.process_frame(BotStartedSpeakingFrame())
+    await strategy.process_frame(BotStoppedSpeakingFrame())
+
+    assert (
+        await strategy.process_frame(transcription("Расскажите о своих услугах"))
+        is ProcessFrameResult.STOP
+    )
+    assert len(starts) == 2
 
 
 @pytest.mark.asyncio
@@ -103,8 +130,5 @@ async def test_vad_confirmed_mode_interrupts_without_waiting_for_stt():
 
     await strategy.process_frame(BotStartedSpeakingFrame())
 
-    assert (
-        await strategy.process_frame(VADUserStartedSpeakingFrame())
-        is ProcessFrameResult.STOP
-    )
+    assert await strategy.process_frame(VADUserStartedSpeakingFrame()) is ProcessFrameResult.STOP
     assert len(starts) == 1

@@ -56,6 +56,33 @@ def test_connection_query_repeats_secondary_language_hints():
     assert query["commit_strategy"] == ["manual"]
 
 
+def test_vad_connection_query_includes_fast_telephone_endpointing_settings():
+    instance = OneLinkElevenLabsRealtimeSTTService(
+        api_key="test-key",
+        sample_rate=16_000,
+        commit_strategy=CommitStrategy.VAD,
+        filter_background_audio=True,
+        settings=OneLinkElevenLabsRealtimeSTTService.Settings(
+            model="scribe_v2_realtime",
+            language=Language.RU,
+            vad_silence_threshold_secs=0.35,
+            vad_threshold=0.4,
+            min_speech_duration_ms=100,
+            min_silence_duration_ms=100,
+        ),
+    )
+    instance._audio_format = "pcm_16000"
+
+    query = parse_qs(urlencode(instance._connection_query_params()))
+
+    assert query["commit_strategy"] == ["vad"]
+    assert query["vad_silence_threshold_secs"] == ["0.35"]
+    assert query["vad_threshold"] == ["0.4"]
+    assert query["min_speech_duration_ms"] == ["100"]
+    assert query["min_silence_duration_ms"] == ["100"]
+    assert query["filter_background_audio"] == ["true"]
+
+
 @pytest.mark.asyncio
 async def test_provider_boundary_coalesces_five_20ms_frames_into_one_100ms_chunk():
     instance = service()
@@ -97,8 +124,7 @@ async def test_provider_boundary_splits_only_above_the_one_second_provider_limit
     _ = [frame async for frame in instance.run_stt(bytes(38_400))]
 
     audio_sizes = [
-        len(base64.b64decode(message["audio_base_64"]))
-        for message in websocket.messages
+        len(base64.b64decode(message["audio_base_64"])) for message in websocket.messages
     ]
     assert audio_sizes == [32_000, 6_400]
 

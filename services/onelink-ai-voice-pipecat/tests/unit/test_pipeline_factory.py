@@ -129,17 +129,13 @@ def test_builds_supported_provider_pipeline(
     assert assembly.provider == provider
     assert isinstance(assembly.llm, service_class)
     assert assembly.start_on_connect is start_on_connect
-    expected_greeting = (
-        "Здравствуйте!" if provider in {"elevenlabs", "cartesia", "fish"} else None
-    )
+    expected_greeting = "Здравствуйте!" if provider in {"elevenlabs", "cartesia", "fish"} else None
     assert assembly.initial_greeting == expected_greeting
     if provider in {"elevenlabs", "cartesia", "fish"}:
         stt = assembly.stt
         tts = assembly.tts
         expected_stt_class = (
-            CartesiaSTTService
-            if provider == "cartesia"
-            else OneLinkElevenLabsRealtimeSTTService
+            CartesiaSTTService if provider == "cartesia" else OneLinkElevenLabsRealtimeSTTService
         )
         expected_tts_class = {
             "cartesia": CartesiaTTSService,
@@ -151,8 +147,12 @@ def test_builds_supported_provider_pipeline(
         if provider == "fish":
             assert tts._stop_frame_timeout_s == 1.5
         if provider in {"elevenlabs", "fish"}:
-            expected_strategy = CommitStrategy.MANUAL if provider == "fish" else CommitStrategy.VAD
-            assert stt._commit_strategy is expected_strategy
+            assert stt._commit_strategy is CommitStrategy.VAD
+            assert stt._settings.vad_silence_threshold_secs == 0.5
+            assert stt._settings.vad_threshold == 0.4
+            assert stt._settings.min_speech_duration_ms == 100
+            assert stt._settings.min_silence_duration_ms == 100
+            assert stt._filter_background_audio is True
         else:
             assert stt._settings.model == "ink-whisper"
         assert stt._settings.language is Language.RU
@@ -166,11 +166,12 @@ def test_builds_supported_provider_pipeline(
                     "allow_fallbacks": True,
                     "require_parameters": True,
                     "data_collection": "deny",
-                    "preferred_max_latency": {"p90": 3.0, "p99": 6.0},
-                }
+                    "preferred_max_latency": {"p90": 1.0, "p99": 2.5},
+                },
             }
         }
         request_params = llm.build_chat_completion_params({"messages": []})
+        assert llm._run_in_parallel is True
         assert request_params["extra_body"]["provider"]["data_collection"] == "deny"
         assert request_params["extra_body"]["reasoning"] == {
             "effort": "none",

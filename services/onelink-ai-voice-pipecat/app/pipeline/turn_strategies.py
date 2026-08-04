@@ -21,12 +21,14 @@ from pipecat.turns.user_start.base_user_turn_start_strategy import (
 
 
 class ConfirmedUserTurnStartStrategy(BaseUserTurnStartStrategy):
-    """Require local speech evidence before a transcript can interrupt output.
+    """Use transcripts as an idle fallback without weakening barge-in safety.
 
-    Local VAD remains the owner of user turns. While the assistant is already
-    speaking, ``transcript_confirmed`` mode waits for both VAD and STT evidence
-    before broadcasting an interruption. A delayed final STT frame therefore
-    cannot cancel a new LLM/TTS response after the caller is silent.
+    While the assistant is idle, either local VAD or an STT transcript can start
+    a turn. This matters on telephone audio where a strict local VAD can miss a
+    quiet but intelligible phrase. While the assistant is speaking,
+    ``transcript_confirmed`` mode still requires both local VAD and STT evidence
+    before broadcasting an interruption. A delayed or echoed transcript
+    therefore cannot cancel a new LLM/TTS response by itself.
     """
 
     def __init__(
@@ -64,11 +66,16 @@ class ConfirmedUserTurnStartStrategy(BaseUserTurnStartStrategy):
             self._vad_active = False
             self._last_vad_stop = time.monotonic()
         elif isinstance(frame, (InterimTranscriptionFrame, TranscriptionFrame)):
-            if self._transcript_confirms_active_speech(frame.text):
+            if self._idle_transcript_starts_turn(
+                frame.text
+            ) or self._transcript_confirms_active_speech(frame.text):
                 await self.trigger_user_turn_started()
                 return ProcessFrameResult.STOP
 
         return ProcessFrameResult.CONTINUE
+
+    def _idle_transcript_starts_turn(self, text: str) -> bool:
+        return not self._bot_speaking and bool(text.strip())
 
     def _transcript_confirms_active_speech(self, text: str) -> bool:
         if self._mode != "transcript_confirmed" or not self._bot_speaking:
