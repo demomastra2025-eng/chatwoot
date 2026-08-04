@@ -68,6 +68,7 @@ from app.pipeline.processors import (
     AudioResampleProcessor,
     CallerCommandProcessor,
     ConversationActivity,
+    DomainTranscriptNormalizationProcessor,
     InputRecordingProcessor,
     ModelLifecycleProcessor,
     TurnLifecycleProcessor,
@@ -82,6 +83,8 @@ from app.services.gemini_live import OneLinkGeminiLiveLLMService, OneLinkInterna
 from app.sessions.state import SessionState
 
 logger = logging.getLogger(__name__)
+
+ELEVENLABS_STT_KEYTERMS = ("OneLink", "слоган", "CRM", "FAQ")
 
 GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
     "Если вопрос требует доступного инструмента, вызови его в этом же ходе сразу: не обещай "
@@ -330,6 +333,7 @@ def build_pipeline(
         if end_call_definition is not None
         else None
     )
+    transcript_normalizer = DomainTranscriptNormalizationProcessor()
 
     if context.ai.provider == "gemini-live":
         affective_dialog_enabled = (
@@ -385,6 +389,7 @@ def build_pipeline(
             processors.append(caller_command)
         processors.extend(
             [
+                transcript_normalizer,
                 llm,
                 ModelLifecycleProcessor(activity),
                 AssistantLifecycleProcessor(state, activity, recorder),
@@ -437,6 +442,7 @@ def build_pipeline(
             processors.append(caller_command)
         processors.extend(
             [
+                transcript_normalizer,
                 input_resampler,
                 llm,
                 ModelLifecycleProcessor(activity),
@@ -497,6 +503,7 @@ def build_pipeline(
                 settings=OneLinkElevenLabsRealtimeSTTService.Settings(
                     model=settings.elevenlabs_stt_model,
                     language=stt_language,
+                    keyterms=list(ELEVENLABS_STT_KEYTERMS),
                     vad_silence_threshold_secs=max(
                         0.3,
                         min(1.0, context.ai.silence_duration_ms / 1_000),
@@ -574,6 +581,7 @@ def build_pipeline(
             transport.input(),
             InputRecordingProcessor(recorder),
             stt,
+            transcript_normalizer,
         ]
         # The universal user aggregator intentionally consumes final
         # TranscriptionFrames. Terminal caller intent must therefore be

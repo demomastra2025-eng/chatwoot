@@ -86,34 +86,62 @@ class CallbackOutbox:
         async with asyncio.timeout(timeout_seconds):
             await work
 
-    async def replay(self, client: CallbackClient) -> int:
+    async def replay(
+        self,
+        client: CallbackClient,
+        *,
+        delivery_timeout_seconds: float | None = None,
+        concurrency: int = 4,
+    ) -> int:
         await self.prepare()
-        delivered = 0
+        entries: list[tuple[Path, dict[str, Any]]] = []
         for path in await asyncio.to_thread(self._entry_paths):
             try:
                 entry = await asyncio.to_thread(self._read_entry, path)
-                correlation = Correlation(**entry["correlation"])
-                if entry["kind"] == "finalize":
-                    await client.finalize_call(
-                        correlation,
-                        payload=entry["payload"],
-                        event_id=entry["event_id"],
-                    )
-                else:
-                    await client.recording_stored(
-                        correlation,
-                        payload=entry["payload"],
-                        event_id=entry["event_id"],
-                    )
-                await self._ack(path)
-                delivered += 1
             except Exception as error:  # Keep the durable entry for the next bounded pass.
                 logger.warning(
                     "Pipecat callback replay deferred file=%s error_class=%s",
                     path.name,
                     type(error).__name__,
                 )
-        return delivered
+                continue
+            entries.append((path, entry))
+
+        # Closing the call in the product is user-visible and must not sit
+        # behind a slow recording callback. Stable sorting preserves FIFO
+        # within each callback kind, while bounded concurrency prevents one
+        # unhealthy endpoint from head-of-line blocking every durable entry.
+        entries.sort(key=lambda item: item[1]["kind"] != "finalize")
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async def deliver(path: Path, entry: dict[str, Any]) -> int:
+            async with semaphore:
+                try:
+                    correlation = Correlation(**entry["correlation"])
+                    if entry["kind"] == "finalize":
+                        work = client.finalize_call(
+                            correlation,
+                            payload=entry["payload"],
+                            event_id=entry["event_id"],
+                        )
+                    else:
+                        work = client.recording_stored(
+                            correlation,
+                            payload=entry["payload"],
+                            event_id=entry["event_id"],
+                        )
+                    await self._deliver(work, delivery_timeout_seconds)
+                    await self._ack(path)
+                    return 1
+                except Exception as error:  # Keep the durable entry for the next pass.
+                    logger.warning(
+                        "Pipecat callback replay deferred file=%s error_class=%s",
+                        path.name,
+                        type(error).__name__,
+                    )
+                    return 0
+
+        return sum(await asyncio.gather(*(deliver(path, entry) for path, entry in entries)))
 
     async def _persist(
         self,

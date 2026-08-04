@@ -97,7 +97,10 @@ class PipecatSessionRunner:
                     timeout_seconds=self.settings.callback_timeout_seconds,
                     max_retries=self.settings.callback_max_retries,
                 ) as client:
-                    await self.callback_outbox.replay(client)
+                    await self.callback_outbox.replay(
+                        client,
+                        delivery_timeout_seconds=self.settings.callback_timeout_seconds,
+                    )
             except asyncio.CancelledError:
                 raise
             except Exception as error:

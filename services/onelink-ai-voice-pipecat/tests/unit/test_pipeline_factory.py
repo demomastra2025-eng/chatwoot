@@ -24,6 +24,7 @@ from app.config import Settings
 from app.pipeline.context import ToolDefinition, VoiceContext
 from app.pipeline.factory import (
     CRM_DATA_INTEGRITY_INSTRUCTION,
+    ELEVENLABS_STT_KEYTERMS,
     GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION,
     VOICE_LANGUAGE_INSTRUCTION,
     VOICE_LIST_RESULT_INSTRUCTION,
@@ -32,7 +33,7 @@ from app.pipeline.factory import (
     _user_turn_strategies,
     build_pipeline,
 )
-from app.pipeline.processors import ModelLifecycleProcessor
+from app.pipeline.processors import DomainTranscriptNormalizationProcessor, ModelLifecycleProcessor
 from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
@@ -441,6 +442,7 @@ def test_cascade_auto_language_uses_configured_primary_and_secondary_hints(provi
     stt = cast(OneLinkElevenLabsRealtimeSTTService, assembly.stt)
     assert stt._settings.language is Language.RU
     assert stt._secondary_languages == ["kk", "en"]
+    assert stt._settings.keyterms == list(ELEVENLABS_STT_KEYTERMS)
 
 
 @pytest.mark.parametrize(
@@ -626,8 +628,43 @@ def test_cascaded_caller_command_observes_transcript_before_user_aggregator():
         for index, processor in enumerate(processors)
         if type(processor).__name__ == "LLMUserAggregator"
     )
+    normalizer_index = next(
+        index
+        for index, processor in enumerate(processors)
+        if isinstance(processor, DomainTranscriptNormalizationProcessor)
+    )
 
-    assert processors.index(assembly.stt) < caller_index < user_aggregator_index
+    assert processors.index(assembly.stt) < normalizer_index < caller_index < user_aggregator_index
+
+
+def test_gemini_normalizes_transcripts_before_upstream_user_aggregation():
+    assembly = build_pipeline(
+        context=_context(
+            "gemini-live",
+            model="gemini-3.1-flash-live-preview",
+            voice="sulafat",
+        ),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    processors = assembly.worker._pipeline._processors[1]._processors
+    normalizer_index = next(
+        index
+        for index, processor in enumerate(processors)
+        if isinstance(processor, DomainTranscriptNormalizationProcessor)
+    )
+    user_aggregator_index = next(
+        index
+        for index, processor in enumerate(processors)
+        if type(processor).__name__ == "LLMUserAggregator"
+    )
+
+    # Gemini emits transcription frames upstream, so the higher-indexed
+    # normalizer receives them before the user aggregator.
+    assert user_aggregator_index < normalizer_index < processors.index(assembly.llm)
 
 
 def test_cascaded_model_lifecycle_is_between_llm_and_tts():

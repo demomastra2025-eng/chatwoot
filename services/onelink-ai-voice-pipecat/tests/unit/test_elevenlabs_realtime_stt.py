@@ -44,6 +44,7 @@ def test_connection_query_repeats_secondary_language_hints():
         settings=OneLinkElevenLabsRealtimeSTTService.Settings(
             model="scribe_v2_realtime",
             language=Language.RU,
+            keyterms=["OneLink", "слоган"],
         ),
     )
     service._audio_format = "pcm_16000"
@@ -52,6 +53,7 @@ def test_connection_query_repeats_secondary_language_hints():
 
     assert query["language_code"] == ["ru"]
     assert query["secondary_languages"] == ["kk", "en"]
+    assert query["keyterms"] == ["OneLink", "слоган"]
     assert query["audio_format"] == ["pcm_16000"]
     assert query["commit_strategy"] == ["manual"]
 

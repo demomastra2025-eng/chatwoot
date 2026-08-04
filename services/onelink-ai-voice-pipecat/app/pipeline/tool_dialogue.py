@@ -721,6 +721,8 @@ class ToolDialogueCoordinator:
         tool_call_id: str,
     ) -> None:
         try:
+            if stopped.is_set():
+                return
             self._state.spawn(
                 self._state.safe_control(
                     "tool_progress",

@@ -16,6 +16,7 @@ from pipecat.processors.frame_processor import FrameDirection
 import app.pipeline.processors as processors_module
 from app.pipeline.processors import (
     ConversationActivity,
+    DomainTranscriptNormalizationProcessor,
     ModelLifecycleProcessor,
     TurnLifecycleProcessor,
 )
@@ -35,6 +36,45 @@ class ActivityState:
 
     def touch_user(self) -> None:
         self.touches += 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "source",
+    ["Какое у вас слово?", "Какой у вас слово", "Скобин какой у вас?", "Слободан какой у вас?"],
+)
+async def test_domain_transcript_normalizer_corrects_observed_slogan_confusions(source):
+    processor = DomainTranscriptNormalizationProcessor()
+    processor.push_frame = AsyncMock()
+    frame = TranscriptionFrame(
+        text=source,
+        user_id="caller",
+        timestamp="2026-08-04T00:00:00Z",
+        finalized=True,
+    )
+
+    await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
+
+    normalized = processor.push_frame.await_args.args[0]
+    assert normalized.text == "Какой у вас слоган?"
+    assert normalized.user_id == frame.user_id
+    assert normalized.timestamp == frame.timestamp
+
+
+@pytest.mark.asyncio
+async def test_domain_transcript_normalizer_preserves_unrelated_speech():
+    processor = DomainTranscriptNormalizationProcessor()
+    processor.push_frame = AsyncMock()
+    frame = TranscriptionFrame(
+        text="Какое кодовое слово вы используете?",
+        user_id="caller",
+        timestamp="2026-08-04T00:00:00Z",
+        finalized=True,
+    )
+
+    await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
+
+    assert processor.push_frame.await_args.args[0] is frame
 
 
 def test_activity_reports_each_voice_latency_stage(monkeypatch):

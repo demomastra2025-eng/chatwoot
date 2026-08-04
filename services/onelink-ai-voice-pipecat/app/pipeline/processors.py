@@ -38,6 +38,12 @@ from app.services.gemini_live import (
 from app.sessions.state import SessionState
 
 AudioFrameT = TypeVar("AudioFrameT", bound=AudioRawFrame)
+_DOMAIN_TRANSCRIPT_REPLACEMENTS = {
+    "какое у вас слово": "Какой у вас слоган?",
+    "какой у вас слово": "Какой у вас слоган?",
+    "скобин какой у вас": "Какой у вас слоган?",
+    "слободан какой у вас": "Какой у вас слоган?",
+}
 
 
 class AudioResampleProcessor(FrameProcessor):
@@ -82,6 +88,23 @@ class InputRecordingProcessor(FrameProcessor):
         ):
             await self._recorder.write_inbound(frame.audio, sample_rate=frame.sample_rate)
         await self.push_frame(frame, direction)
+
+
+class DomainTranscriptNormalizationProcessor(FrameProcessor):
+    """Correct a tiny allowlist of observed telephony STT domain confusions."""
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if isinstance(frame, (TranscriptionFrame, InterimTranscriptionFrame)):
+            normalized = normalize_domain_transcript(frame.text)
+            if normalized != frame.text:
+                frame = replace(frame, text=normalized)
+        await self.push_frame(frame, direction)
+
+
+def normalize_domain_transcript(text: str) -> str:
+    lookup_key = re.sub(r"[^\w]+", " ", text.casefold(), flags=re.UNICODE).strip()
+    return _DOMAIN_TRANSCRIPT_REPLACEMENTS.get(lookup_key, text)
 
 
 class TurnLifecycleProcessor(FrameProcessor):

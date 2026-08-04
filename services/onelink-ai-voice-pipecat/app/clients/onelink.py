@@ -229,11 +229,14 @@ class OnelinkClient:
                 initial_attempt = int(attempt_headers["x-event-attempt"])
                 attempt_headers["x-event-attempt"] = str(initial_attempt + attempt - 1)
             try:
+                request_options: dict[str, Any] = {}
+                if timeout_seconds is not None:
+                    request_options["timeout"] = timeout_seconds
                 response = await self._client.post(
                     path,
                     json=body,
                     headers=attempt_headers,
-                    timeout=timeout_seconds,
+                    **request_options,
                 )
             except (httpx.TimeoutException, httpx.TransportError) as error:
                 if attempt < attempts:

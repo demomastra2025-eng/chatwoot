@@ -648,32 +648,11 @@ class SessionState:
             except (OnelinkApiError, TimeoutError):
                 pass
 
-            recording_ref = None
-            if recording and recording.get("duration_sec"):
-                recording_ref = recording.get("storage_key")
-                try:
-                    recording_event_id = (
-                        f"recording_stored:{self.correlation.account_id}:"
-                        f"{self.correlation.call_ref}:{recording.get('sha256')}"
-                    )
-                    if self.callback_outbox is not None:
-                        await self.callback_outbox.deliver_recording(
-                            self.client,
-                            self.correlation,
-                            payload=recording,
-                            event_id=recording_event_id,
-                            foreground_timeout_seconds=(
-                                RECORDING_CALLBACK_FOREGROUND_TIMEOUT_SECONDS
-                            ),
-                        )
-                    else:
-                        await self.client.recording_stored(
-                            self.correlation,
-                            payload=recording,
-                            event_id=recording_event_id,
-                        )
-                except (OnelinkApiError, TimeoutError):
-                    pass
+            recording_ref = (
+                recording.get("storage_key")
+                if recording and recording.get("duration_sec")
+                else None
+            )
 
             final_transcript = [item for item in self._transcript if item["final"]]
             partial_transcript = [item for item in self._transcript if not item["final"]]
@@ -724,4 +703,34 @@ class SessionState:
                     event_id=event_id,
                 )
             self._finalized = True
+
+            # Recording delivery is durable but secondary to the terminal
+            # state visible in the call UI. Persist and send it only after
+            # finalize, so a slow recording endpoint cannot keep the modal
+            # open after the media session has ended.
+            if recording and recording.get("duration_sec"):
+                try:
+                    recording_event_id = (
+                        f"recording_stored:{self.correlation.account_id}:"
+                        f"{self.correlation.call_ref}:{recording.get('sha256')}"
+                    )
+                    if self.callback_outbox is not None:
+                        await self.callback_outbox.deliver_recording(
+                            self.client,
+                            self.correlation,
+                            payload=recording,
+                            event_id=recording_event_id,
+                            foreground_timeout_seconds=(
+                                RECORDING_CALLBACK_FOREGROUND_TIMEOUT_SECONDS
+                            ),
+                        )
+                    else:
+                        async with asyncio.timeout(RECORDING_CALLBACK_FOREGROUND_TIMEOUT_SECONDS):
+                            await self.client.recording_stored(
+                                self.correlation,
+                                payload=recording,
+                                event_id=recording_event_id,
+                            )
+                except (OnelinkApiError, TimeoutError):
+                    pass
             return True

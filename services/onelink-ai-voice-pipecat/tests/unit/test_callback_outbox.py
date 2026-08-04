@@ -31,6 +31,12 @@ class SlowClient(FlakyClient):
         await asyncio.Event().wait()
 
 
+class SlowRecordingClient(FlakyClient):
+    async def recording_stored(self, correlation, **kwargs):
+        self.recordings.append((correlation, kwargs))
+        await asyncio.Event().wait()
+
+
 @pytest.fixture
 def correlation():
     return Correlation(
@@ -95,3 +101,38 @@ async def test_finalize_timeout_keeps_durable_entry_for_replay(tmp_path, correla
         )
 
     assert len(list(root.glob("*.json"))) == 1
+
+
+@pytest.mark.asyncio
+async def test_replay_prioritizes_finalize_and_bounds_a_slow_recording(tmp_path, correlation):
+    root = tmp_path / "outbox"
+    outbox = CallbackOutbox(root)
+    failing = FlakyClient(fail=True)
+
+    with pytest.raises(OnelinkApiError):
+        await outbox.deliver_recording(
+            failing,
+            correlation,
+            payload={"storage_key": "voice-recordings/7/call-1/recording.wav"},
+            event_id="recording_stored:7:call-1:digest",
+        )
+    with pytest.raises(OnelinkApiError):
+        await outbox.deliver_finalize(
+            failing,
+            correlation,
+            payload={"status": "completed", "reason": "caller_hangup"},
+            event_id="finalize:runtime-1:call-1",
+        )
+
+    replay = SlowRecordingClient(fail=False)
+    delivered = await outbox.replay(
+        replay,
+        delivery_timeout_seconds=0.01,
+        concurrency=1,
+    )
+
+    assert delivered == 1
+    assert len(replay.finalizations) == 1
+    assert len(replay.recordings) == 1
+    remaining = [outbox._read_entry(path)["kind"] for path in root.glob("*.json")]
+    assert remaining == ["recording_stored"]

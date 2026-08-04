@@ -12,6 +12,10 @@ class Telephony::AiVoice::ControlService
     tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
     ordinary_answer_model_stall incomplete_answer_model_stall
   ].freeze
+  NON_TERMINAL_TOOL_ACTIONS = %w[tool_started tool_progress].freeze
+  TERMINAL_TOOL_ACTIONS = %w[
+    tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed
+  ].freeze
   BRIDGE_CALL_REF_KEYS = %w[bridge_call_ref bridgeCallRef parent_call_ref parentCallRef].freeze
   RUNTIME_CALL_REF_KEYS = %w[
     runtime_call_ref runtimeCallRef child_call_ref childCallRef ai_runtime_call_ref aiRuntimeCallRef
@@ -27,6 +31,7 @@ class Telephony::AiVoice::ControlService
     ensure_call_session!
     ensure_allowed_action!
     recorded = record_control_event!
+    return { status: 'ok', action: action, stale: true } if @stale_tool_event
 
     sync_conversation_timeline_event!
     ingest_lifecycle_event! if lifecycle_action?
@@ -44,26 +49,36 @@ class Telephony::AiVoice::ControlService
     call_session.with_lock do
       metadata = (call_session.metadata || {}).deep_dup
       ai_voice = metadata['ai_voice'] ||= {}
-      existing_event = Array(ai_voice['control_events']).find { |event| event['event_key'] == lifecycle_event_key }
-      if existing_event
-        @control_event_sequence = existing_event['sequence']
-        next false
-      end
+      events = Array(ai_voice['control_events'])
+      existing_event = events.find { |event| event['event_key'] == lifecycle_event_key }
+      next reuse_control_event(existing_event) if existing_event
 
-      ai_voice['control_event_sequence'] = ai_voice['control_event_sequence'].to_i + 1
-      @control_event_sequence = ai_voice['control_event_sequence']
-      ai_voice['control_events'] ||= []
-      ai_voice['control_events'] << {
-        'action' => action,
-        'metadata' => control_metadata,
-        'event_key' => lifecycle_event_key,
-        'sequence' => @control_event_sequence,
-        'at' => Time.current.iso8601
-      }
-      ai_voice['control_events'] = ai_voice['control_events'].last(100)
-      call_session.update!(metadata: metadata)
+      terminal_event = stale_tool_event(events)
+      next reuse_control_event(terminal_event, stale: true) if terminal_event
+
+      persist_control_event!(metadata, ai_voice, events)
       true
     end
+  end
+
+  def persist_control_event!(metadata, ai_voice, events)
+    ai_voice['control_event_sequence'] = ai_voice['control_event_sequence'].to_i + 1
+    @control_event_sequence = ai_voice['control_event_sequence']
+    events << {
+      'action' => action,
+      'metadata' => control_metadata,
+      'event_key' => lifecycle_event_key,
+      'sequence' => @control_event_sequence,
+      'at' => Time.current.iso8601
+    }
+    ai_voice['control_events'] = events.last(100)
+    call_session.update!(metadata: metadata)
+  end
+
+  def reuse_control_event(event, stale: false)
+    @control_event_sequence = event['sequence']
+    @stale_tool_event = true if stale
+    false
   end
 
   def sync_conversation_timeline_event!
@@ -112,6 +127,25 @@ class Telephony::AiVoice::ControlService
       metadata = payload['metadata'].is_a?(Hash) ? payload['metadata'] : {}
       Captain::ToolTraceBuilder.sanitize_payload(metadata).presence || {}
     end
+  end
+
+  def stale_tool_event(events)
+    return unless NON_TERMINAL_TOOL_ACTIONS.include?(action)
+
+    tool_call_id = tool_event_identity(control_metadata)
+    return if tool_call_id.blank?
+
+    events.reverse.find do |event|
+      terminal = TERMINAL_TOOL_ACTIONS.include?(event['action'].to_s)
+      same_tool_call = tool_event_identity(event['metadata']) == tool_call_id
+      terminal && same_tool_call
+    end
+  end
+
+  def tool_event_identity(metadata)
+    return unless metadata.is_a?(Hash)
+
+    metadata.values_at('tool_call_id', 'request_id', 'requestId').find(&:present?)&.to_s
   end
 
   def bridge_call_ref

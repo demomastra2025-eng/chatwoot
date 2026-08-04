@@ -16,6 +16,7 @@ class FakeClient:
         self.finalizations = []
         self.tools = []
         self.recordings = []
+        self.callback_order = []
 
     async def send_event(self, correlation, **kwargs):
         self.events.append((correlation, kwargs))
@@ -30,6 +31,7 @@ class FakeClient:
         return {"status": "ok"}
 
     async def finalize_call(self, correlation, **kwargs):
+        self.callback_order.append("finalize")
         self.finalizations.append((correlation, kwargs))
         await asyncio.sleep(0)
         return {"status": "ok"}
@@ -40,12 +42,14 @@ class FakeClient:
         return {"message_id": 99}
 
     async def recording_stored(self, correlation, **kwargs):
+        self.callback_order.append("recording")
         self.recordings.append((correlation, kwargs))
         return {"status": "ok"}
 
 
 class FailFinalizeOnceClient(FakeClient):
     async def finalize_call(self, correlation, **kwargs):
+        self.callback_order.append("finalize")
         self.finalizations.append((correlation, kwargs))
         if len(self.finalizations) == 1:
             raise OnelinkApiError("temporary finalize failure")
@@ -721,7 +725,7 @@ async def test_tool_progress_fence_covers_duplicate_waiters_until_result():
 
 
 @pytest.mark.asyncio
-async def test_recording_callback_precedes_finalize(state):
+async def test_finalize_callback_precedes_recording_callback(state):
     recording = {
         "storage_key": "voice-recordings/7/call-1/recording.wav",
         "sha256": "a" * 64,
@@ -734,6 +738,7 @@ async def test_recording_callback_precedes_finalize(state):
 
     assert await state.finalize(status="failed", reason="provider_error", recording=recording)
 
+    assert state.client.callback_order == ["finalize", "recording"]
     assert len(state.client.recordings) == 1
     assert state.client.finalizations[0][1]["payload"]["recording_ref"] == recording["storage_key"]
 

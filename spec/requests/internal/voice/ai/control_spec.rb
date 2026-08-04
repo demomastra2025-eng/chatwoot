@@ -232,6 +232,45 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
     expect(response.parsed_body).to include('idempotent' => true)
   end
 
+  it 'discards a tool progress callback that arrives after the same tool completed' do
+    completed_params = {
+      call_ref: call_session.external_call_ref,
+      account_id: account.id,
+      action: 'tool_completed',
+      event_key: 'pipecat-control:runtime-1:10:tool_completed',
+      metadata: { tool_call_id: 'tool-stale-progress', tool_name: 'faq_lookup' }
+    }
+    progress_params = {
+      call_ref: call_session.external_call_ref,
+      account_id: account.id,
+      action: 'tool_progress',
+      event_key: 'pipecat-control:runtime-1:11:tool_progress',
+      metadata: { tool_call_id: 'tool-stale-progress', tool_name: 'faq_lookup', stage: 'delayed' }
+    }
+
+    perform_enqueued_jobs do
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        post '/internal/voice/ai/control',
+             params: completed_params,
+             headers: { 'Authorization' => 'Bearer voice-secret' },
+             as: :json
+        expect(response).to have_http_status(:ok)
+
+        post '/internal/voice/ai/control',
+             params: progress_params,
+             headers: { 'Authorization' => 'Bearer voice-secret' },
+             as: :json
+      end
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include('stale' => true)
+    tool_events = call_session.reload.metadata.dig('ai_voice', 'control_events')
+    expect(tool_events.pluck('action')).to include('tool_completed')
+    expect(tool_events.pluck('action')).not_to include('tool_progress')
+    expect(account.telephony_events.find_by(event_key: progress_params[:event_key])).to be_nil
+  end
+
   it 'replays idempotent downstream delivery after a partial timeline failure' do
     params = {
       call_ref: call_session.external_call_ref,

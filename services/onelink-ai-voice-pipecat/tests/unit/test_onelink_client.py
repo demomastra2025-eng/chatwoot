@@ -154,6 +154,28 @@ async def test_heartbeat_uses_the_dedicated_lease_endpoint(correlation):
     assert json.loads(captured[0].content) == correlation.payload()
 
 
+@pytest.mark.asyncio
+async def test_default_client_timeout_is_not_disabled_by_normal_callbacks(correlation):
+    captured = []
+
+    def handler(request):
+        captured.append(request)
+        return httpx.Response(200, json={"status": "ok"})
+
+    async with make_client(handler) as client:
+        await client.send_heartbeat(correlation)
+        await client.call_tool(
+            correlation,
+            "faq_lookup",
+            {"query": "слоган"},
+            tool_call_id="tool-timeout",
+            timeout_seconds=0.025,
+        )
+
+    assert set(captured[0].extensions["timeout"].values()) == {0.1}
+    assert set(captured[1].extensions["timeout"].values()) == {0.025}
+
+
 def test_redaction_removes_tokens_capability_queries_and_secret_fields():
     value = {
         "authorization": "Bearer secret-token",
