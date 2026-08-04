@@ -66,7 +66,7 @@ def test_runtime_session_id_prefers_route_identity_over_media_stream_identity():
 def test_runtime_observability_identifies_provider_and_pipeline_version():
     assert _runtime_observability("openrouter") == {
         "runtime_engine": "pipecat",
-        "provider": "openrouter",
+        "ai_provider": "openrouter",
         "pipeline_version": "0.1.0",
     }
 

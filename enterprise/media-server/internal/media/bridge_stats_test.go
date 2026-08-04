@@ -8,7 +8,7 @@ import (
 
 type testAudioConsumer struct{}
 
-func (*testAudioConsumer) OnAudioFrame(string, string, *rtp.Packet) {}
+func (*testAudioConsumer) OnAudioFrame(string, string, string, *rtp.Packet) {}
 
 func TestBridgeSnapshotTracksBidirectionalRTP(t *testing.T) {
 	bridge := NewBridge("sess-test", nil, nil)

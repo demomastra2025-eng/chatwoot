@@ -17,7 +17,7 @@ import (
 type AudioConsumer interface {
 	// OnAudioFrame is called for each RTP packet passing through the bridge.
 	// source is either "customer" or "agent".
-	OnAudioFrame(sessionID, source string, packet *rtp.Packet)
+	OnAudioFrame(sessionID, source, codec string, packet *rtp.Packet)
 }
 
 // Bridge connects two WebRTC peers (Meta-side and Agent-side) by forwarding
@@ -307,7 +307,7 @@ func (b *Bridge) readAndForwardMetaTrack(ctx context.Context, track *webrtc.Trac
 		// Notify consumers.
 		b.mu.RLock()
 		for _, c := range b.consumers {
-			c.OnAudioFrame(b.sessionID, "customer", pkt)
+			c.OnAudioFrame(b.sessionID, "customer", track.Codec().MimeType, pkt)
 		}
 		b.mu.RUnlock()
 
@@ -438,7 +438,7 @@ func (b *Bridge) readAndForwardAgentTrack(ctx context.Context, ap *peer.AgentPee
 		// Notify consumers.
 		b.mu.RLock()
 		for _, c := range b.consumers {
-			c.OnAudioFrame(b.sessionID, "agent", pkt)
+			c.OnAudioFrame(b.sessionID, "agent", track.Codec().MimeType, pkt)
 		}
 		b.mu.RUnlock()
 

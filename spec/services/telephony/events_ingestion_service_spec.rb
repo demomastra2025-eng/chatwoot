@@ -3093,7 +3093,7 @@ RSpec.describe Telephony::EventsIngestionService do
           runtime_engine: 'pipecat',
           runtime_session_id: 'runtime-current',
           metadata: {
-            ai_voice_event: { payload: { provider: 'openrouter', pipeline_version: '2.0.0' } }
+            ai_voice_event: { payload: { ai_provider: 'openrouter', pipeline_version: '2.0.0' } }
           }
         )
       ).perform
@@ -3125,6 +3125,7 @@ RSpec.describe Telephony::EventsIngestionService do
 
     it 'maps AI voice lifecycle events to native call status, AI leg audit and voice bubble state' do
       occurred_at = Time.zone.parse(30.seconds.ago.iso8601)
+      existing_call_session.update!(provider: 'asterisk_analog')
       create(
         :message,
         account: account,
@@ -3139,11 +3140,13 @@ RSpec.describe Telephony::EventsIngestionService do
           event_key: 'evt-ai-answered-1',
           event: 'ai_answered',
           occurred_at: occurred_at.iso8601,
-          metadata: { provider: 'gemini-live' }
+          runtime_engine: 'pipecat',
+          metadata: { ai_provider: 'fish', provider: 'fish' }
         )
       ).perform
 
       expect(result.reload).to have_attributes(
+        provider: 'asterisk_analog',
         status: 'in_progress',
         answered_at: occurred_at,
         answered_by: 'ai_agent'
@@ -3163,6 +3166,7 @@ RSpec.describe Telephony::EventsIngestionService do
         'state' => 'answered',
         'latest_event' => 'ai_answered'
       )
+      expect(result.metadata.dig('ai_voice', 'ai_provider')).to eq('fish')
     end
 
     it 'keeps caller interruptions and tool events non-terminal while preserving audit legs and voice bubble tools' do

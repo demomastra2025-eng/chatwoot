@@ -274,20 +274,42 @@ func TestRuntimeInputSDPSupportsSipG711Codecs(t *testing.T) {
 	}
 }
 
+func TestRuntimeInputCodecPrefersRemoteTrack(t *testing.T) {
+	tests := []struct {
+		name     string
+		remote   string
+		fallback string
+		want     string
+	}{
+		{name: "remote pcmu over local pcma", remote: "audio/PCMU", fallback: "audio/PCMA", want: "audio/pcmu"},
+		{name: "remote pcma over local pcmu", remote: "audio/PCMA", fallback: "audio/PCMU", want: "audio/pcma"},
+		{name: "fallback before remote track", remote: "", fallback: "audio/PCMA", want: "audio/pcma"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := runtimeInputCodec(test.remote, test.fallback); got != test.want {
+				t.Fatalf("runtime input codec = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestRuntimeInputProducerQueuesOnlyCustomerAudio(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	producer := newRuntimeAudioInputProducer(ctx, nil, runtimeStreamGrant{SessionID: "s1", RuntimeSessionID: "r1"}, nil)
 	producer.ctx, producer.cancel = ctx, cancel
+	producer.decoderStarting = true
 
-	producer.OnAudioFrame("s1", "agent", &rtp.Packet{Header: rtp.Header{PayloadType: 111}, Payload: []byte{1, 2, 3}})
+	producer.OnAudioFrame("s1", "agent", "audio/opus", &rtp.Packet{Header: rtp.Header{PayloadType: 111}, Payload: []byte{1, 2, 3}})
 	select {
 	case <-producer.input:
 		t.Fatalf("agent audio must not be sent to AI runtime input")
 	default:
 	}
 
-	producer.OnAudioFrame("s1", "customer", &rtp.Packet{Header: rtp.Header{PayloadType: 109, SequenceNumber: 7, Timestamp: 960}, Payload: []byte{1, 2, 3}})
+	producer.OnAudioFrame("s1", "customer", "audio/opus", &rtp.Packet{Header: rtp.Header{PayloadType: 109, SequenceNumber: 7, Timestamp: 960}, Payload: []byte{1, 2, 3}})
 	select {
 	case raw := <-producer.input:
 		if len(raw) == 0 {
@@ -302,6 +324,30 @@ func TestRuntimeInputProducerQueuesOnlyCustomerAudio(t *testing.T) {
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatalf("customer RTP packet was not queued")
+	}
+}
+
+func TestRuntimeInputProducerUsesRemoteG711Codec(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	producer := newRuntimeAudioInputProducer(ctx, nil, runtimeStreamGrant{SessionID: "s1", RuntimeSessionID: "r1"}, nil)
+	producer.ctx, producer.cancel = ctx, cancel
+	producer.codec = "audio/pcmu"
+	producer.decoderStarting = true
+
+	producer.OnAudioFrame("s1", "customer", "audio/PCMU", &rtp.Packet{Header: rtp.Header{PayloadType: 109}, Payload: []byte{1, 2, 3}})
+
+	select {
+	case raw := <-producer.input:
+		var queued rtp.Packet
+		if err := queued.Unmarshal(raw); err != nil {
+			t.Fatalf("queued RTP packet must be valid: %v", err)
+		}
+		if queued.PayloadType != 0 {
+			t.Fatalf("PCMU decoder payload type = %d, want 0", queued.PayloadType)
+		}
+	case <-time.After(100 * time.Millisecond):
+		t.Fatalf("customer PCMU RTP packet was not queued")
 	}
 }
 

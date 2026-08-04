@@ -2,7 +2,7 @@ from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pipecat.frames.frames import InputTextRawFrame, TTSSpeakFrame
+from pipecat.frames.frames import InputTextRawFrame, LLMRunFrame, TTSSpeakFrame
 from pipecat.services.cartesia.stt import CartesiaSTTService
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.elevenlabs.stt import CommitStrategy, ElevenLabsRealtimeSTTService
@@ -123,6 +123,10 @@ def test_builds_supported_provider_pipeline(
     assert assembly.provider == provider
     assert isinstance(assembly.llm, service_class)
     assert assembly.start_on_connect is start_on_connect
+    expected_greeting = (
+        "Здравствуйте!" if provider in {"elevenlabs", "cartesia", "fish"} else None
+    )
+    assert assembly.initial_greeting == expected_greeting
     if provider in {"elevenlabs", "cartesia", "fish"}:
         stt = assembly.stt
         tts = assembly.tts
@@ -575,17 +579,64 @@ async def test_elevenlabs_exact_speech_queues_tts_without_context_append():
         runtime_stream=_runtime_stream(),
         settings=_settings(),
     )
-    tts = assembly.tts
-    assert isinstance(tts, ElevenLabsTTSService)
-    tts.queue_frame = AsyncMock()
+    assert isinstance(assembly.tts, ElevenLabsTTSService)
+    assembly.worker.queue_frame = AsyncMock()
     assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=False)
 
     await assembly.speak_exact("Ещё смотрю.")
 
-    frame = tts.queue_frame.await_args.args[0]
+    frame = assembly.worker.queue_frame.await_args.args[0]
     assert isinstance(frame, TTSSpeakFrame)
     assert frame.text == "Ещё смотрю."
     assert frame.append_to_context is False
+
+
+@pytest.mark.asyncio
+async def test_cascaded_provider_starts_with_exact_tts_greeting_without_llm():
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.4-mini",
+            voice="fish-voice-ref",
+        ),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+    assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
+    assembly.worker.queue_frame = AsyncMock()
+
+    await assembly.start_conversation()
+
+    frame = assembly.worker.queue_frame.await_args.args[0]
+    assert isinstance(frame, TTSSpeakFrame)
+    assert frame.text == "Здравствуйте!"
+    assert frame.append_to_context is False
+    assembly.worker.queue_frame.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cascaded_provider_without_greeting_starts_llm_normally():
+    context = _context(
+        "fish",
+        model="openai/gpt-5.4-mini",
+        voice="fish-voice-ref",
+    )
+    context.ai.first_message = ""
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+    assembly.worker.queue_frame = AsyncMock()
+
+    await assembly.start_conversation()
+
+    frame = assembly.worker.queue_frame.await_args.args[0]
+    assert isinstance(frame, LLMRunFrame)
 
 
 @pytest.mark.asyncio

@@ -315,23 +315,25 @@ func (w *runtimeAudioWriter) Close() {
 }
 
 type runtimeAudioInputProducer struct {
-	parentCtx context.Context
-	ctx       context.Context
-	cancel    context.CancelFunc
-	sess      *session.Session
-	grant     runtimeStreamGrant
-	ws        *websocket.Conn
-	wsMu      sync.Mutex
-	mu        sync.Mutex
-	input     chan []byte
-	udp       net.Conn
-	cmd       *exec.Cmd
-	sdpPath   string
-	codec     string
-	frames    uint64
-	pkts      uint64
-	dropped   uint64
-	closed    bool
+	parentCtx       context.Context
+	ctx             context.Context
+	cancel          context.CancelFunc
+	sess            *session.Session
+	grant           runtimeStreamGrant
+	ws              *websocket.Conn
+	wsMu            sync.Mutex
+	mu              sync.Mutex
+	input           chan []byte
+	udp             net.Conn
+	cmd             *exec.Cmd
+	sdpPath         string
+	codec           string
+	decoderStarting bool
+	decoderFailed   bool
+	frames          uint64
+	pkts            uint64
+	dropped         uint64
+	closed          bool
 }
 
 func newRuntimeAudioInputProducer(parentCtx context.Context, sess *session.Session, grant runtimeStreamGrant, ws *websocket.Conn) *runtimeAudioInputProducer {
@@ -349,43 +351,100 @@ func (p *runtimeAudioInputProducer) Start() error {
 	if p.sess == nil || p.sess.Bridge == nil {
 		return errors.New("runtime audio input bridge unavailable")
 	}
+	if _, err := exec.LookPath("ffmpeg"); err != nil {
+		return fmt.Errorf("runtime audio input ffmpeg unavailable: %w", err)
+	}
 
+	p.ctx, p.cancel = context.WithCancel(p.parentCtx)
+	if p.sess.MetaPeer != nil {
+		if track := p.sess.MetaPeer.AudioTrack(); track != nil {
+			return p.ensureDecoder(track.Codec().MimeType, false)
+		}
+	}
+
+	slog.Info("handler: runtime audio input waiting for remote codec",
+		"session_id", p.grant.SessionID,
+		"runtime_session_id", p.grant.RuntimeSessionID,
+	)
+	return nil
+}
+
+func (p *runtimeAudioInputProducer) ensureDecoder(codec string, async bool) error {
+	p.mu.Lock()
+	if p.decoderFailed {
+		p.mu.Unlock()
+		return errors.New("runtime audio input decoder unavailable")
+	}
+	if p.closed || p.cmd != nil || p.decoderStarting {
+		p.mu.Unlock()
+		return nil
+	}
+	p.decoderStarting = true
+	selectedCodec := runtimeInputCodec(codec, p.codec)
+	p.codec = selectedCodec
+	p.mu.Unlock()
+
+	if async {
+		go func() {
+			if err := p.startDecoder(selectedCodec); err != nil {
+				slog.Warn("handler: runtime audio input decoder failed",
+					"session_id", p.grant.SessionID,
+					"runtime_session_id", p.grant.RuntimeSessionID,
+					"codec", selectedCodec,
+					"error", err,
+				)
+				p.closeRuntimeStream("runtime audio input decoder failed")
+			}
+		}()
+		return nil
+	}
+
+	return p.startDecoder(selectedCodec)
+}
+
+func (p *runtimeAudioInputProducer) startDecoder(codec string) error {
 	listener, err := net.ListenPacket("udp4", "127.0.0.1:0")
 	if err != nil {
+		p.markDecoderStartFailed()
 		return fmt.Errorf("allocate runtime audio input udp: %w", err)
 	}
 	udpAddr, ok := listener.LocalAddr().(*net.UDPAddr)
 	_ = listener.Close()
 	if !ok {
+		p.markDecoderStartFailed()
 		return errors.New("runtime audio input udp address unavailable")
 	}
 
 	sdpFile, err := os.CreateTemp("", "chatwoot-runtime-input-*.sdp")
 	if err != nil {
+		p.markDecoderStartFailed()
 		return fmt.Errorf("create runtime input sdp: %w", err)
 	}
 	p.sdpPath = sdpFile.Name()
-	if _, err := sdpFile.WriteString(runtimeInputSDPForCodec(udpAddr.Port, p.codec)); err != nil {
+	if _, err := sdpFile.WriteString(runtimeInputSDPForCodec(udpAddr.Port, codec)); err != nil {
 		_ = sdpFile.Close()
 		_ = os.Remove(p.sdpPath)
+		p.markDecoderStartFailed()
 		return fmt.Errorf("write runtime input sdp: %w", err)
 	}
 	if err := sdpFile.Close(); err != nil {
 		_ = os.Remove(p.sdpPath)
+		p.markDecoderStartFailed()
 		return fmt.Errorf("close runtime input sdp: %w", err)
 	}
 
-	p.ctx, p.cancel = context.WithCancel(p.parentCtx)
 	cmd := exec.CommandContext(p.ctx, "ffmpeg", runtimeDecodeFFmpegArgs(p.sdpPath)...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		p.cleanupStartFailure()
+		p.markDecoderStartFailed()
 		return fmt.Errorf("open ffmpeg decoder stdout: %w", err)
 	}
 	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		p.cleanupStartFailure()
-		return fmt.Errorf("start ffmpeg opus decoder: %w", err)
+		p.markDecoderStartFailed()
+		return fmt.Errorf("start ffmpeg audio decoder: %w", err)
 	}
 
 	udpConn, err := net.Dial("udp4", fmt.Sprintf("127.0.0.1:%d", udpAddr.Port))
@@ -393,12 +452,14 @@ func (p *runtimeAudioInputProducer) Start() error {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		p.cleanupStartFailure()
+		p.markDecoderStartFailed()
 		return fmt.Errorf("dial runtime audio input udp: %w", err)
 	}
 
 	p.mu.Lock()
 	p.cmd = cmd
 	p.udp = udpConn
+	p.decoderStarting = false
 	p.mu.Unlock()
 
 	go p.forwardRTPToDecoder()
@@ -407,10 +468,31 @@ func (p *runtimeAudioInputProducer) Start() error {
 	slog.Info("handler: runtime audio input decoder started",
 		"session_id", p.grant.SessionID,
 		"runtime_session_id", p.grant.RuntimeSessionID,
-		"codec", p.codec,
+		"codec", codec,
 		"output_rate", runtimeInputRate,
 	)
 	return nil
+}
+
+func (p *runtimeAudioInputProducer) markDecoderStartFailed() {
+	p.mu.Lock()
+	p.decoderStarting = false
+	p.decoderFailed = true
+	p.mu.Unlock()
+}
+
+func (p *runtimeAudioInputProducer) closeRuntimeStream(reason string) {
+	if p.ws == nil {
+		return
+	}
+	p.wsMu.Lock()
+	deadline := time.Now().Add(200 * time.Millisecond)
+	_ = p.ws.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(websocket.CloseInternalServerErr, reason),
+		deadline,
+	)
+	p.wsMu.Unlock()
 }
 
 func (p *runtimeAudioInputProducer) cleanupStartFailure() {
@@ -422,18 +504,22 @@ func (p *runtimeAudioInputProducer) cleanupStartFailure() {
 	}
 }
 
-func (p *runtimeAudioInputProducer) OnAudioFrame(_ string, source string, packet *rtp.Packet) {
+func (p *runtimeAudioInputProducer) OnAudioFrame(_ string, source, codec string, packet *rtp.Packet) {
 	if source != "customer" || packet == nil {
+		return
+	}
+	if err := p.ensureDecoder(codec, true); err != nil {
 		return
 	}
 	p.mu.Lock()
 	closed := p.closed
+	decoderCodec := p.codec
 	p.mu.Unlock()
 	if closed {
 		return
 	}
 	decoderPacket := *packet
-	decoderPacket.PayloadType = runtimePayloadTypeForCodec(p.codec)
+	decoderPacket.PayloadType = runtimePayloadTypeForCodec(decoderCodec)
 	raw, err := decoderPacket.Marshal()
 	if err != nil {
 		slog.Debug("handler: runtime audio input RTP marshal failed",
@@ -811,6 +897,13 @@ func runtimeCodecFromSession(sess *session.Session) string {
 		return track.Codec().MimeType
 	}
 	return "audio/opus"
+}
+
+func runtimeInputCodec(remoteCodec, fallbackCodec string) string {
+	if strings.TrimSpace(remoteCodec) != "" {
+		return canonicalRuntimeCodec(remoteCodec)
+	}
+	return canonicalRuntimeCodec(fallbackCodec)
 }
 
 func canonicalRuntimeCodec(codec string) string {

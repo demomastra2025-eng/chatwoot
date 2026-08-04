@@ -10,7 +10,6 @@ from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Protocol
 
-from pipecat.frames.frames import LLMRunFrame
 from pipecat.workers.runner import WorkerRunner
 
 from app.api.models import RuntimeControl, RuntimeStream
@@ -326,7 +325,7 @@ class PipecatSessionRunner:
             state.spawn(state.safe_control("ai_answered", runtime_observability))
             state.spawn(state.safe_event("runtime_connected", runtime_observability))
             if assembly.start_on_connect:
-                await assembly.worker.queue_frame(LLMRunFrame())
+                await assembly.start_conversation()
 
         @assembly.transport.event_handler("on_disconnected")
         async def on_disconnected(_transport: object, _websocket: object) -> None:
@@ -477,7 +476,7 @@ async def _close_recorder(
 def _runtime_observability(provider: str) -> dict[str, str]:
     return {
         "runtime_engine": "pipecat",
-        "provider": provider,
+        "ai_provider": provider,
         "pipeline_version": PIPELINE_VERSION,
     }
 

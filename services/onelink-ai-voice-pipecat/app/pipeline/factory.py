@@ -14,6 +14,7 @@ from pipecat.frames.frames import (
     InputAudioRawFrame,
     InputTextRawFrame,
     LLMMessagesAppendFrame,
+    LLMRunFrame,
     TTSAudioRawFrame,
     TTSSpeakFrame,
 )
@@ -119,10 +120,21 @@ class PipelineAssembly:
     vad: SileroVADAnalyzer
     tool_dialogue: ToolDialogueCoordinator
     start_on_connect: bool = False
+    initial_greeting: str | None = None
     stt: object | None = None
     tts: object | None = None
     input_resampler: AudioResampleProcessor | None = None
     output_resampler: AudioResampleProcessor | None = None
+
+    async def start_conversation(self) -> None:
+        """Start with exact TTS when a cascaded provider has a configured greeting."""
+        if self.initial_greeting and self.tts is not None:
+            await self.worker.queue_frame(
+                TTSSpeakFrame(self.initial_greeting, append_to_context=False)
+            )
+            return
+
+        await self.worker.queue_frame(LLMRunFrame())
 
     async def speak_exact(self, message: str) -> bool:
         instruction = (
@@ -136,7 +148,9 @@ class PipelineAssembly:
                 self.tts,
                 (ElevenLabsTTSService, CartesiaTTSService, OneLinkFishAudioTTSService),
             ):
-                await self.tts.queue_frame(TTSSpeakFrame(message, append_to_context=False))
+                await self.worker.queue_frame(
+                    TTSSpeakFrame(message, append_to_context=False)
+                )
             elif self.provider == "openai-realtime" and isinstance(
                 self.llm, OpenAIRealtimeLLMService
             ):
@@ -343,7 +357,9 @@ def build_pipeline(
         ]
         start_on_connect = True
     else:
-        llm_context = LLMContext(messages=initial_messages, tools=tools)
+        direct_initial_greeting = (context.ai.first_message or "").strip() or None
+        cascaded_initial_messages = [] if direct_initial_greeting else initial_messages
+        llm_context = LLMContext(messages=cascaded_initial_messages, tools=tools)
         aggregators = _aggregators(
             llm_context,
             state,
@@ -476,6 +492,11 @@ def build_pipeline(
         vad=vad,
         tool_dialogue=tool_dialogue,
         start_on_connect=start_on_connect,
+        initial_greeting=(
+            direct_initial_greeting
+            if context.ai.provider in {"elevenlabs", "cartesia", "fish"}
+            else None
+        ),
         stt=stt,
         tts=tts,
         input_resampler=input_resampler,

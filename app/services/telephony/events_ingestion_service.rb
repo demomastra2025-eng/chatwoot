@@ -716,13 +716,13 @@ class Telephony::EventsIngestionService
   def resolved_provider(account = nil, call_session = nil, inbox: nil, number_binding: nil)
     first_present(
       payload_value('provider', 'provider_kind', 'providerKind'),
-      metadata_value('provider', 'provider_kind', 'providerKind'),
       call_session&.provider,
       number_binding&.provider,
       inbox&.telephony_number_binding&.provider,
       inbox&.channel&.try(:provider),
       provider_from_resolved_number_binding(account, call_session),
-      provider_from_resolved_inbox(account, call_session)
+      provider_from_resolved_inbox(account, call_session),
+      metadata_value('provider', 'provider_kind', 'providerKind')
     )
   end
 
@@ -2571,7 +2571,8 @@ class Telephony::EventsIngestionService
     {
       'runtime_engine' => runtime_engine,
       'runtime_session_id' => payload_value('runtime_session_id', 'runtimeSessionId'),
-      'ai_provider' => event_payload['provider'].presence || metadata_value('ai_provider', 'aiProvider', 'provider'),
+      'ai_provider' => event_payload['ai_provider'].presence || event_payload['aiProvider'].presence ||
+        event_payload['provider'].presence || metadata_value('ai_provider', 'aiProvider', 'provider'),
       'pipeline_version' => event_payload['pipeline_version'].presence ||
         metadata_value('pipeline_version', 'pipelineVersion')
     }.compact
