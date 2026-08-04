@@ -164,7 +164,8 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
       'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
       'prefix_padding_ms' => 200,
-      'silence_duration_ms' => 300,
+      'silence_duration_ms' => 250,
+      'turn_aggregation_delay_ms' => 180,
       'vad_confidence' => 0.75,
       'vad_min_volume' => 0.6,
       'interruption_mode' => 'transcript_confirmed',
@@ -176,7 +177,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'interrupt_ack_phrases' => ['Ага.', 'Понял.', 'Мм.', 'Аха.', 'А-а, понял.'],
       'silence_prompt_enabled' => true,
       'tool_start_phrases' => ['Секунду, проверю.'],
-      'tool_start_after_ms' => 1200,
+      'tool_start_after_ms' => 600,
       'tool_foreground_wait_ms' => 1500,
       'emotional_style' => 'warm_professional',
       'nonverbal_cues_enabled' => true,
@@ -763,7 +764,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     faq_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'faq_lookup' }
-    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 10_000, 'foreground_wait_ms' => 1_200)
+    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 10_000, 'foreground_wait_ms' => 2_800)
   end
 
   it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do

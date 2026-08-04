@@ -2241,11 +2241,24 @@ class Telephony::EventsIngestionService
 
   def voice_ai_state(call_session, latest_ai_event)
     return 'completed' if call_session.terminal?
-    return 'speaking' if latest_ai_event&.event_type.in?(%w[ai_speaking realtime_audio_out])
+    return 'speaking' if latest_ai_event&.event_type == 'realtime_audio_out'
+
+    if latest_ai_event&.event_type == 'ai_speaking'
+      return 'answered' if ai_speaking_event_state(latest_ai_event) == 'stopped'
+
+      return 'speaking'
+    end
     return 'using_tool' if latest_ai_event&.event_type.in?(%w[tool_started])
     return 'answered' if call_session.status == 'in_progress'
 
     call_session.status
+  end
+
+  def ai_speaking_event_state(event)
+    event_payload = event.payload.to_h.deep_stringify_keys
+    metadata = event_payload['metadata'].is_a?(Hash) ? event_payload['metadata'] : {}
+    payload_data = event_payload['payload'].is_a?(Hash) ? event_payload['payload'] : {}
+    (metadata['state'].presence || payload_data['state'].presence).to_s
   end
 
   def voice_ai_tool_events(call_session)

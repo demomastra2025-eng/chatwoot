@@ -23,6 +23,9 @@ from app.sessions.state import SessionState
         "До свидания",
         "Нет, не надо. До свидания.",
         "Спасибо, всего доброго!",
+        "Всё, спасибо.",
+        "Ну всё, спасибо!",
+        "Спасибо, всё",
     ],
 )
 def test_caller_end_call_intent_matches_explicit_commands(text):
@@ -40,6 +43,8 @@ def test_caller_end_call_intent_matches_explicit_commands(text):
         "Как правильно сказать до свидания?",
         "Не говори до свидания",
         "Продолжайте",
+        "Спасибо, а ещё расскажите о тарифах",
+        "Всё понятно, а как создать сделку?",
     ],
 )
 def test_caller_end_call_intent_rejects_negation_and_unrelated_speech(text):

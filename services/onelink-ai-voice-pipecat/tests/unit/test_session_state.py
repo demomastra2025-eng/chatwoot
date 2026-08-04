@@ -164,6 +164,56 @@ async def test_control_fallback_reuses_the_control_idempotency_key():
 
 
 @pytest.mark.asyncio
+async def test_speaking_callbacks_coalesce_to_the_latest_state_while_rails_is_slow():
+    client = SlowControlClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(call_ref="call-speaking", runtime_session_id="runtime-speaking"),
+    )
+
+    state.publish_ai_speaking("started")
+    await asyncio.sleep(0)
+    state.publish_ai_speaking("stopped")
+    state.publish_ai_speaking("started")
+    client.control_gate.set()
+    assert state._ai_speaking_task is not None
+    await state._ai_speaking_task
+
+    assert [item[1]["metadata"]["state"] for item in client.controls] == ["started"]
+    assert client.events == []
+
+    state.publish_ai_speaking("stopped")
+    assert state._ai_speaking_task is not None
+    await state._ai_speaking_task
+    assert [item[1]["metadata"]["state"] for item in client.controls] == [
+        "started",
+        "stopped",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_pending_speaking_observability_does_not_delay_finalize():
+    client = SlowControlClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(
+            call_ref="call-speaking-finalize",
+            runtime_session_id="runtime-speaking-finalize",
+        ),
+    )
+
+    state.publish_ai_speaking("started")
+    await asyncio.sleep(0)
+
+    assert await asyncio.wait_for(
+        state.finalize(status="completed", reason="caller_hangup"),
+        timeout=0.1,
+    )
+    assert state.finalized is True
+    assert client.controls == []
+
+
+@pytest.mark.asyncio
 async def test_transcript_batch_and_exactly_once_finalize(state):
     await state.add_transcript("caller", "Здрав", final=False)
     await state.add_transcript("caller", "Здравствуйте", final=True)
@@ -698,11 +748,15 @@ async def test_durable_finalize_retry_reuses_the_first_terminal_payload(tmp_path
         callback_outbox=outbox,
     )
 
-    with pytest.raises(OnelinkApiError):
-        await state.finalize(status="completed", reason="runtime_closed")
+    assert await state.finalize(status="completed", reason="runtime_closed")
     first_payload = fake_client.finalizations[0][1]["payload"]
 
-    assert await state.finalize(status="failed", reason="retry_should_not_replace_terminal_state")
+    assert await state.finalize(
+        status="failed", reason="retry_should_not_replace_terminal_state"
+    ) is False
+    assert len(list((tmp_path / "outbox").glob("*.json"))) == 1
+
+    assert await outbox.replay(fake_client) == 1
     assert fake_client.finalizations[1][1]["payload"] == first_payload
     assert fake_client.finalizations[1][1]["payload"]["status"] == "completed"
     assert list((tmp_path / "outbox").glob("*.json")) == []

@@ -56,6 +56,8 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       catalog = described_class.catalog(captain_assistant: assistant).index_by { |tool| tool.fetch('name') }
 
       expect(catalog.dig('create_deal', 'description')).to include('actual call channel')
+      expect(catalog.dig('create_deal', 'description')).to include('same turn')
+      expect(catalog.dig('create_deal', 'description')).to include('choose a short neutral title')
       expect(catalog.dig('add_contact_note', 'description')).to include('explicitly confirms')
       expect(catalog.dig('add_contact_note', 'parameters', 'properties', 'voice_caller_confirmed')).to include(
         'type' => 'boolean',

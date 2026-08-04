@@ -61,7 +61,7 @@ class AiSettings(ContextModel):
     context_window_compression_enabled: bool = True
     clear_audio_on_interrupt: bool = True
     finish_current_word_on_interrupt: bool = True
-    interrupt_word_boundary_grace_ms: int = Field(default=120, ge=0, le=500)
+    interrupt_word_boundary_grace_ms: int = Field(default=240, ge=0, le=500)
     voice_activity_profile: Literal["sensitive", "balanced", "noisy"] = "balanced"
     interruption_mode: Literal["vad_confirmed", "transcript_confirmed"] = (
         "transcript_confirmed"
@@ -71,10 +71,10 @@ class AiSettings(ContextModel):
     speech_start_sensitivity: str = "START_SENSITIVITY_LOW"
     speech_end_sensitivity: str = "END_SENSITIVITY_HIGH"
     prefix_padding_ms: int = Field(default=200, ge=0, le=5_000)
-    silence_duration_ms: int = Field(default=500, ge=0, le=10_000)
+    silence_duration_ms: int = Field(default=250, ge=0, le=10_000)
     vad_confidence: float = Field(default=0.75, ge=0, le=1)
     vad_min_volume: float = Field(default=0.6, ge=0, le=1)
-    turn_aggregation_delay_ms: int = Field(default=200, ge=0, le=5_000)
+    turn_aggregation_delay_ms: int = Field(default=180, ge=0, le=5_000)
     user_turn_stop_timeout_ms: int = Field(default=30_000, ge=5_000, le=60_000)
     silence_prompt_enabled: bool = True
     silence_prompt_after_ms: int = Field(default=5_000, ge=0, le=3_600_000)
@@ -86,7 +86,7 @@ class AiSettings(ContextModel):
     final_silence_message: str = "Похоже, сейчас неудобно говорить. Я завершу звонок."
     tool_foreground_wait_ms: int = Field(default=900, ge=0, le=120_000)
     tool_start_phrases: list[str] = Field(default_factory=lambda: ["Секунду, проверю."])
-    tool_start_after_ms: int = Field(default=1_800, ge=0, le=120_000)
+    tool_start_after_ms: int = Field(default=600, ge=0, le=120_000)
     tool_delay_phrases: list[str] = Field(default_factory=lambda: ["Ещё смотрю, почти готово."])
     tool_delay_after_ms: int = Field(default=1_800, ge=0, le=120_000)
     tool_failure_phrases: list[str] = Field(

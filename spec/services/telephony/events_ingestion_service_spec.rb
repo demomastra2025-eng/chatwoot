@@ -3169,6 +3169,38 @@ RSpec.describe Telephony::EventsIngestionService do
       expect(result.metadata.dig('ai_voice', 'ai_provider')).to eq('fish')
     end
 
+    it 'returns the AI voice bubble to answered after speaking stops' do
+      create(
+        :message,
+        account: account,
+        conversation: existing_call_session.conversation,
+        inbox: existing_call_session.inbox,
+        content_type: 'voice_call',
+        content_attributes: { 'data' => { 'status' => 'in_progress' } }
+      )
+      existing_call_session.update!(status: 'in_progress', answered_by: 'ai_agent')
+
+      started = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-ai-speaking-started',
+          event: 'ai_speaking',
+          occurred_at: 1.second.ago.iso8601,
+          metadata: { state: 'started' }
+        )
+      ).perform
+      expect(started.latest_voice_message.reload.content_attributes.dig('data', 'ai_voice', 'state')).to eq('speaking')
+
+      stopped = described_class.new(
+        payload: payload.merge(
+          event_key: 'evt-ai-speaking-stopped',
+          event: 'ai_speaking',
+          occurred_at: Time.current.iso8601,
+          metadata: { state: 'stopped' }
+        )
+      ).perform
+      expect(stopped.latest_voice_message.reload.content_attributes.dig('data', 'ai_voice', 'state')).to eq('answered')
+    end
+
     it 'keeps caller interruptions and tool events non-terminal while preserving audit legs and voice bubble tools' do
       create(
         :message,

@@ -26,6 +26,7 @@ from app.pipeline.factory import (
     CRM_DATA_INTEGRITY_INSTRUCTION,
     GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION,
     VOICE_LANGUAGE_INSTRUCTION,
+    VOICE_LIST_RESULT_INSTRUCTION,
     _build_tools,
     _provider_system_prompt,
     _user_turn_strategies,
@@ -151,7 +152,7 @@ def test_builds_supported_provider_pipeline(
             assert tts._stop_frame_timeout_s == 1.5
         if provider in {"elevenlabs", "fish"}:
             assert stt._commit_strategy is CommitStrategy.VAD
-            assert stt._settings.vad_silence_threshold_secs == 0.5
+            assert stt._settings.vad_silence_threshold_secs == 0.3
             assert stt._settings.vad_threshold == 0.4
             assert stt._settings.min_speech_duration_ms == 100
             assert stt._settings.min_silence_duration_ms == 100
@@ -547,7 +548,8 @@ def test_gemini_with_tools_announces_before_formal_function_call():
 
     llm = cast(GeminiLiveLLMService, assembly.llm)
     assert llm._settings.system_instruction == (
-        f"Говори коротко.\n\n{VOICE_LANGUAGE_INSTRUCTION}\n\n{GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION}"
+        f"Говори коротко.\n\n{VOICE_LANGUAGE_INSTRUCTION}\n\n"
+        f"{GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION}\n\n{VOICE_LIST_RESULT_INSTRUCTION}"
     )
 
 
@@ -563,8 +565,11 @@ def test_voice_crm_mutations_require_confirmed_phone_and_actual_call_source():
 
     assert CRM_DATA_INTEGRITY_INSTRUCTION.format(source="телефонный звонок") in prompt
     assert "повтори весь номер клиенту" in prompt
+    assert "вызови инструмент в этом же ходе" in prompt
+    assert "выбор необязательного названия" in prompt
     assert "Фактический источник: телефонный звонок" in prompt
     assert GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION in prompt
+    assert VOICE_LIST_RESULT_INSTRUCTION in prompt
 
 
 def test_voice_crm_source_preserves_whatsapp_call_context():
@@ -771,7 +776,7 @@ async def test_openai_exact_speech_uses_one_shot_audio_response_without_tools():
     llm = assembly.llm
     assert isinstance(llm, OpenAIRealtimeLLMService)
     llm.send_client_event = AsyncMock()
-    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=False)
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=False)
 
     await assembly.speak_exact("Секунду, проверю.")
 
@@ -798,7 +803,7 @@ async def test_elevenlabs_exact_speech_queues_tts_without_context_append():
     )
     assert isinstance(assembly.tts, ElevenLabsTTSService)
     assembly.worker.queue_frame = AsyncMock()
-    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=False)
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=False)
 
     await assembly.speak_exact("Ещё смотрю.")
 
@@ -833,8 +838,15 @@ async def test_completed_cascaded_direct_speech_is_persisted_without_blocking_tt
         settings=_settings(),
     )
     assembly.worker.queue_frame = AsyncMock()
-    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=True)
-    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=True)
+
+    async def complete_direct_turn(*_args, **_kwargs):
+        assembly.activity.turns_started += 1
+        assembly.activity.turns_completed += 1
+        return True
+
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(
+        side_effect=complete_direct_turn
+    )
 
     assert await assembly.speak_result("Акуна матата") is True
     await asyncio.gather(*background_tasks)
@@ -864,9 +876,10 @@ async def test_interrupted_cascaded_direct_speech_is_not_persisted():
         settings=_settings(),
     )
     assembly.worker.queue_frame = AsyncMock()
-    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=True)
 
     async def complete_after_interruption(*_args, **_kwargs):
+        assembly.activity.turns_started += 1
+        assembly.activity.turns_completed += 1
         assembly.activity.interruptions += 1
         return True
 
@@ -925,8 +938,15 @@ async def test_cascaded_provider_starts_with_exact_tts_greeting_without_llm():
     )
     assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
     assembly.worker.queue_frame = AsyncMock()
-    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=True)
-    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=True)
+
+    async def complete_greeting_turn(*_args, **_kwargs):
+        assembly.activity.turns_started += 1
+        assembly.activity.turns_completed += 1
+        return True
+
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(
+        side_effect=complete_greeting_turn
+    )
 
     await assembly.start_conversation()
     while any(not task.done() for task in background_tasks):
@@ -983,7 +1003,7 @@ async def test_gemini_exact_speech_uses_supported_realtime_text_input():
         settings=_settings(),
     )
     assembly.worker.queue_frame = AsyncMock()
-    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=False)
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=False)
 
     await assembly.speak_exact("Вы ещё на линии?")
 

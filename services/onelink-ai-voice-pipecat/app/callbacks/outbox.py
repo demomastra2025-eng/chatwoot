@@ -53,9 +53,13 @@ class CallbackOutbox:
         *,
         payload: dict[str, Any],
         event_id: str,
+        foreground_timeout_seconds: float | None = None,
     ) -> None:
         path = await self._persist("finalize", correlation, payload, event_id)
-        await client.finalize_call(correlation, payload=payload, event_id=event_id)
+        await self._deliver(
+            client.finalize_call(correlation, payload=payload, event_id=event_id),
+            foreground_timeout_seconds,
+        )
         await self._ack(path)
 
     async def deliver_recording(
@@ -65,10 +69,22 @@ class CallbackOutbox:
         *,
         payload: dict[str, Any],
         event_id: str,
+        foreground_timeout_seconds: float | None = None,
     ) -> None:
         path = await self._persist("recording_stored", correlation, payload, event_id)
-        await client.recording_stored(correlation, payload=payload, event_id=event_id)
+        await self._deliver(
+            client.recording_stored(correlation, payload=payload, event_id=event_id),
+            foreground_timeout_seconds,
+        )
         await self._ack(path)
+
+    @staticmethod
+    async def _deliver(work: Any, timeout_seconds: float | None) -> None:
+        if timeout_seconds is None:
+            await work
+            return
+        async with asyncio.timeout(timeout_seconds):
+            await work
 
     async def replay(self, client: CallbackClient) -> int:
         await self.prepare()

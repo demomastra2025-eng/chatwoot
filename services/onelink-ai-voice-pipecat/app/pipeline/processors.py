@@ -218,11 +218,11 @@ class AssistantLifecycleProcessor(FrameProcessor):
                     latency["llm_first_output_to_audio_ms"],
                 )
             self._state.touch()
-            self._state.spawn(self._state.safe_control("ai_speaking", {"state": "started"}))
+            self._state.publish_ai_speaking("started")
         elif isinstance(frame, BotStoppedSpeakingFrame):
             await self._activity.bot_stopped()
             self._state.touch()
-            self._state.spawn(self._state.safe_control("ai_speaking", {"state": "stopped"}))
+            self._state.publish_ai_speaking("stopped")
         elif self._recorder is not None and isinstance(frame, TTSAudioRawFrame):
             await self._recorder.write_outbound(frame.audio, sample_rate=frame.sample_rate)
         await self.push_frame(frame, direction)
@@ -396,6 +396,12 @@ _END_CALL_PATTERNS = (
     re.compile(r"\b(?:отключись|отключитесь)\b"),
     re.compile(r"\b(?:hang\s*up|end\s+the\s+call)\b"),
     re.compile(r"\b(?:қоңырауды\s+аяқта|тұтқаны\s+қой)\b"),
+    # In a phone call this exact pair is a natural terminal intent. Do not
+    # match a standalone "спасибо": it can precede another request.
+    re.compile(
+        r"^(?:(?:ну|ладно|хорошо)[,\s]+)?"
+        r"(?:все[,\s]+спасибо|спасибо[,\s]+все)[.!?]*$"
+    ),
     # A standalone farewell at the end of an utterance is an explicit call
     # ending in natural phone speech. Requiring a clause boundary avoids
     # matching questions such as "как сказать до свидания?".

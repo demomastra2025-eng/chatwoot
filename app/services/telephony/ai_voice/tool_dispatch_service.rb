@@ -18,7 +18,9 @@ class Telephony::AiVoice::ToolDispatchService
     ].join(' '),
     'create_deal' => [
       'For voice calls, use the actual call channel as the CRM source;',
-      'never infer Telegram, WhatsApp, or another messaging source from a template.'
+      'never infer Telegram, WhatsApp, or another messaging source from a template.',
+      'When all required values are known, call create_deal in the same turn without first promising to do it.',
+      'If the caller delegates an optional title, choose a short neutral title and call the tool immediately; do not ask for that title again.'
     ].join(' ')
   }.freeze
   CRM_CHANNEL_SOURCE_PATTERNS = {

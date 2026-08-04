@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
 from datetime import UTC, datetime
@@ -12,6 +13,13 @@ from typing import Any
 
 from app.callbacks.outbox import CallbackOutbox
 from app.clients.onelink import Correlation, OnelinkApiError, OnelinkClient
+
+logger = logging.getLogger(__name__)
+
+BACKGROUND_DRAIN_TIMEOUT_SECONDS = 0.5
+FINAL_TRANSCRIPT_FLUSH_TIMEOUT_SECONDS = 1.0
+RECORDING_CALLBACK_FOREGROUND_TIMEOUT_SECONDS = 1.0
+FINALIZE_CALLBACK_FOREGROUND_TIMEOUT_SECONDS = 2.0
 
 SEMANTIC_MUTATION_FENCE_TOOLS = frozenset({"create_deal"})
 READ_ONLY_INFLIGHT_FENCE_TOOLS = frozenset(
@@ -66,6 +74,10 @@ class SessionState:
         ] = {}
         self._active_tool_calls = 0
         self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._observability_tasks: set[asyncio.Task[Any]] = set()
+        self._desired_ai_speaking_state: str | None = None
+        self._reported_ai_speaking_state: str | None = None
+        self._ai_speaking_task: asyncio.Task[Any] | None = None
         self._tool_action_handler = tool_action_handler
         self._termination_requested = False
         self._finalized = False
@@ -107,12 +119,40 @@ class SessionState:
         self._tool_action_handler = handler
 
     def spawn(self, work: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
+        return self._spawn_tracked(work, self._background_tasks)
+
+    def spawn_observability(self, work: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
+        return self._spawn_tracked(work, self._observability_tasks)
+
+    def _spawn_tracked(
+        self,
+        work: Coroutine[Any, Any, Any],
+        collection: set[asyncio.Task[Any]],
+    ) -> asyncio.Task[Any]:
         task = asyncio.create_task(work)
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+        collection.add(task)
+
+        def completed(done: asyncio.Task[Any]) -> None:
+            collection.discard(done)
+            if done.cancelled():
+                return
+            try:
+                error = done.exception()
+            except asyncio.CancelledError:
+                return
+            if error is not None:
+                logger.warning(
+                    "AI Voice background task failed task=%s error_class=%s",
+                    done.get_name(),
+                    type(error).__name__,
+                )
+
+        task.add_done_callback(completed)
         return task
 
-    async def drain_background(self, *, timeout_seconds: float = 2.0) -> None:
+    async def drain_background(
+        self, *, timeout_seconds: float = BACKGROUND_DRAIN_TIMEOUT_SECONDS
+    ) -> None:
         deadline = time.monotonic() + timeout_seconds
         while self._background_tasks:
             tasks = list(self._background_tasks)
@@ -131,6 +171,39 @@ class SessionState:
                     task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
                 return
+            await asyncio.sleep(0)
+
+    async def cancel_observability(self) -> None:
+        tasks = list(self._observability_tasks)
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    def publish_ai_speaking(self, state: str) -> None:
+        """Coalesce slow speaking callbacks without delaying the media path."""
+        normalized = state.strip().lower()
+        if normalized not in {"started", "stopped"}:
+            raise ValueError("AI speaking state must be started or stopped")
+        self._desired_ai_speaking_state = normalized
+        if self._ai_speaking_task is None or self._ai_speaking_task.done():
+            self._ai_speaking_task = self.spawn_observability(
+                self._publish_latest_ai_speaking_state()
+            )
+
+    async def _publish_latest_ai_speaking_state(self) -> None:
+        while not self._finalized:
+            desired = self._desired_ai_speaking_state
+            if desired is None or desired == self._reported_ai_speaking_state:
+                return
+            delivered = await self.safe_control(
+                "ai_speaking",
+                {"state": desired},
+                fallback_event=False,
+            )
+            if not delivered:
+                return
+            self._reported_ai_speaking_state = desired
             await asyncio.sleep(0)
 
     async def add_transcript(
@@ -235,6 +308,7 @@ class SessionState:
         *,
         tool_call_id: str | None = None,
         tool_name: str | None = None,
+        fallback_event: bool = True,
     ) -> bool:
         self._control_sequence += 1
         event_id = (
@@ -257,7 +331,8 @@ class SessionState:
             )
             return True
         except (OnelinkApiError, TimeoutError):
-            await self.safe_event(action, control_payload, event_id=event_id)
+            if fallback_event:
+                await self.safe_event(action, control_payload, event_id=event_id)
             return False
 
     async def execute_tool(
@@ -563,9 +638,13 @@ class SessionState:
         async with self._finalize_lock:
             if self._finalized:
                 return False
+            # Speaking state is transient observability. It must never keep a
+            # closed media session alive or race a terminal callback.
+            await self.cancel_observability()
             await self.drain_background()
             try:
-                await self.flush_transcript(final=True)
+                async with asyncio.timeout(FINAL_TRANSCRIPT_FLUSH_TIMEOUT_SECONDS):
+                    await self.flush_transcript(final=True)
             except (OnelinkApiError, TimeoutError):
                 pass
 
@@ -583,6 +662,9 @@ class SessionState:
                             self.correlation,
                             payload=recording,
                             event_id=recording_event_id,
+                            foreground_timeout_seconds=(
+                                RECORDING_CALLBACK_FOREGROUND_TIMEOUT_SECONDS
+                            ),
                         )
                     else:
                         await self.client.recording_stored(
@@ -623,12 +705,18 @@ class SessionState:
             payload = self._finalize_payload
             event_id = f"finalize:{self.correlation.runtime_session_id}:{self.correlation.call_ref}"
             if self.callback_outbox is not None:
-                await self.callback_outbox.deliver_finalize(
-                    self.client,
-                    self.correlation,
-                    payload=payload,
-                    event_id=event_id,
-                )
+                try:
+                    await self.callback_outbox.deliver_finalize(
+                        self.client,
+                        self.correlation,
+                        payload=payload,
+                        event_id=event_id,
+                        foreground_timeout_seconds=FINALIZE_CALLBACK_FOREGROUND_TIMEOUT_SECONDS,
+                    )
+                except (OnelinkApiError, TimeoutError):
+                    # The callback was persisted before delivery. The runner's
+                    # replay loop will retry the exact idempotent payload.
+                    pass
             else:
                 await self.client.finalize_call(
                     self.correlation,

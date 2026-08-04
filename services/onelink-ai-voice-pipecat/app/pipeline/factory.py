@@ -91,6 +91,12 @@ GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
     "озвучит ход выполнения. После фактического результата сразу дай клиенту один короткий "
     "содержательный ответ или понятное сообщение об ошибке."
 )
+VOICE_LIST_RESULT_INSTRUCTION = (
+    "Для длинных списков из инструмента сначала сообщи общее количество, затем "
+    "назови не больше трёх различающихся примеров. Если имена повторяются, скажи, что "
+    "есть несколько записей с этим именем, а не зачитывай дубли. Явно скажи, если "
+    "показана только часть результатов."
+)
 VOICE_LANGUAGE_INSTRUCTION = (
     "Отвечай только на настроенном языке разговора. Не вставляй слова и символы из других "
     "языков или письменностей, даже как связки между предложениями."
@@ -104,8 +110,11 @@ CRM_DATA_INTEGRITY_INSTRUCTION = (
     "Телефон считай полным только с кодом страны; повтори весь номер клиенту и дождись "
     "явного подтверждения. Не угадывай цифры и не смешивай продиктованный номер с caller ID. "
     "В title, description и заметках указывай фактический источник, приведённый ниже; не "
-    "подставляй Telegram, WhatsApp или другой канал по шаблону. Не сообщай об успешной записи "
-    "до успешного результата инструмента. Фактический источник: {source}."
+    "подставляй Telegram, WhatsApp или другой канал по шаблону. Если для изменения уже есть "
+    "все обязательные данные, вызови инструмент в этом же ходе без предварительного "
+    "обещания. Если клиент доверил тебе выбор необязательного названия, выбери короткое "
+    "нейтральное название и сразу вызови инструмент; не задавай тот же вопрос снова. Не сообщай "
+    "об успешной записи до успешного результата инструмента. Фактический источник: {source}."
 )
 GEMINI_AFFECTIVE_DIALOG_MODELS = frozenset({"gemini-2.5-flash-native-audio-preview-12-2025"})
 GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
@@ -214,14 +223,22 @@ class PipelineAssembly:
         completed_sequence: int,
         interruption_sequence: int,
     ) -> bool:
-        started = await self.activity.wait_for_turn_started_after(started_sequence, 1.5)
-        if not started:
-            return False
         completion_timeout = min(300.0, max(8.0, len(message) / 7.0 + 5.0))
         completed = await self.activity.wait_for_turn_completed_after(
             completed_sequence, completion_timeout
         )
-        if not completed or self.activity.interruptions > interruption_sequence:
+        # Completion is the reliable lifecycle barrier here. On a cold Fish or
+        # ElevenLabs connection the first audio can begin after 1.5 seconds;
+        # waiting for a separate short start deadline used to drop an otherwise
+        # successful greeting from the transcript. A completed turn necessarily
+        # crossed BotStartedSpeakingFrame, and the counter check protects against
+        # an unrelated/stale completion.
+        started = self.activity.turns_started > started_sequence
+        if (
+            not completed
+            or not started
+            or self.activity.interruptions > interruption_sequence
+        ):
             return False
 
         # Realtime providers produce their own assistant aggregation event. A
@@ -849,6 +866,7 @@ def _provider_system_prompt(context: VoiceContext) -> str:
         )
     if context.tools:
         instructions.append(GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION)
+        instructions.append(VOICE_LIST_RESULT_INSTRUCTION)
     return "\n\n".join(instructions)
 
 
