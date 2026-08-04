@@ -43,4 +43,28 @@ RSpec.describe Captain::Tools::Copilot::SearchArticlesService do
 
     expect(result).to include('ERROR: ArgumentError: Unknown category_id 1 for the current account')
   end
+
+  describe '#normalize_runtime_arguments' do
+    it 'removes a category ID that the model added to a general article search' do
+      arguments = { query: 'Новая статья', category_id: 1, status: '', limit: 5 }
+
+      normalized = service.normalize_runtime_arguments(
+        arguments,
+        context: { captain_v2_current_input: 'Найди статью Новая статья' }
+      )
+
+      expect(normalized).to eq(query: 'Новая статья', status: 'published', limit: 5)
+    end
+
+    it 'preserves a category ID explicitly provided by the user' do
+      arguments = { query: 'Новая статья', category_id: 7, status: 'published', limit: 5 }
+
+      normalized = service.normalize_runtime_arguments(
+        arguments,
+        context: { captain_v2_current_input: 'Найди статью в категории ID 7' }
+      )
+
+      expect(normalized).to eq(arguments)
+    end
+  end
 end

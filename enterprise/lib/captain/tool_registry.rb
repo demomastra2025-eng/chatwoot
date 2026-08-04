@@ -1261,7 +1261,9 @@ class Captain::ToolRegistry
         definition(
           id: 'search_articles',
           title: 'Search Articles',
-          description: 'Search knowledge base articles by query, category, or status',
+          description: 'Search knowledge base articles by query, category, or status. ' \
+                       'Default to published for a general search. ' \
+                       'Never guess category_id; omit it unless the user explicitly provided a category ID.',
           group_name: 'Help center',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

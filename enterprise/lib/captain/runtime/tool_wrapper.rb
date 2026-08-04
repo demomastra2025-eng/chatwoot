@@ -163,6 +163,7 @@ class Captain::Runtime::ToolWrapper
 
     normalized = unwrap_nested_tool_call_envelopes(normalized)
     normalized = omit_null_sentinel_arguments(normalized)
+    normalized = normalize_tool_specific_arguments(normalized)
     validate_normalized_args!(normalized)
     normalized
   rescue InvalidToolArgumentsError
@@ -196,6 +197,12 @@ class Captain::Runtime::ToolWrapper
   def omit_null_sentinel_arguments(args)
     keys = NULL_SENTINEL_ARGUMENT_KEYS.fetch(@tool.name.to_s, [])
     args.except(*keys.select { |key| null_sentinel?(args[key]) })
+  end
+
+  def normalize_tool_specific_arguments(args)
+    return args unless @tool.respond_to?(:normalize_runtime_arguments)
+
+    @tool.normalize_runtime_arguments(args, context: context_wrapper_context)
   end
 
   def null_sentinel?(value)

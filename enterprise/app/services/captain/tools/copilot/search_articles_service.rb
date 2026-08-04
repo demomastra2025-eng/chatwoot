@@ -1,4 +1,10 @@
 class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::Copilot::BaseAccountTool
+  CATEGORY_REFERENCE_PATTERNS = [
+    /\bcategory_id\s*[:=#]?\s*%<id>d\b/i,
+    /(?:категор\w*|categor\w*)[^\d\n]{0,16}(?:id|ид|№|#)?[^\d\n]{0,6}%<id>d\b/i,
+    /(?:id|ид)\s*(?:категор\w*|categor\w*)[^\d\n]{0,6}%<id>d\b/i
+  ].freeze
+
   def self.name
     'search_articles'
   end
@@ -9,8 +15,19 @@ class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::Copilot::
   param :category_id, type: :number,
                       desc: 'Optional verified category ID. Never guess or default it; omit it for general title/content search.',
                       required: false
-  param :status, type: :string, desc: 'Filter articles by status: draft, published, archived', required: false
+  param :status, type: :string,
+                 desc: 'Filter articles by status: draft, published, archived. Defaults to published for a general search.',
+                 required: false
   param :limit, type: :number, desc: 'Maximum number of articles to return', required: false
+
+  def normalize_runtime_arguments(arguments, context:)
+    normalized = arguments.to_h.deep_symbolize_keys
+    normalized[:status] = 'published' if normalized[:status].to_s.strip.blank?
+    category_id = optional_positive_id(normalized[:category_id])
+    return normalized if category_id.blank? || explicit_category_reference?(context, category_id)
+
+    normalized.except(:category_id)
+  end
 
   def execute(query: nil, category_id: nil, status: nil, limit: nil)
     category_id = optional_positive_id(category_id)
@@ -37,6 +54,14 @@ class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::Copilot::
   end
 
   private
+
+  def explicit_category_reference?(context, category_id)
+    input = context[:captain_v2_current_input] || context['captain_v2_current_input']
+    text = input.is_a?(String) ? input : input.to_s
+    return false if text.blank?
+
+    CATEGORY_REFERENCE_PATTERNS.any? { |pattern| text.match?(format(pattern.source, id: category_id)) }
+  end
 
   def validate_category!(category_id)
     return if category_id.blank?

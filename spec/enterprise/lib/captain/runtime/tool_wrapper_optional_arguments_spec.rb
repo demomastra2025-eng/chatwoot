@@ -71,6 +71,34 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(task_schema.fetch('properties')).to include('deal_id', 'originating_conversation_id')
   end
 
+  it 'removes a model-guessed article category before tracing and returns the unclassified article' do
+    portal = create(:portal, account: assistant.account)
+    article = create(
+      :article,
+      account: assistant.account,
+      portal: portal,
+      title: 'Новая статья',
+      content: 'Содержание',
+      status: 'published'
+    )
+    tool_starts = []
+    context = Captain::Runtime::RunContext.new(
+      {
+        state: {},
+        captain_v2_current_input: 'Найди статью Новая статья'
+      },
+      callbacks: {
+        tool_start: [->(_tool_name, arguments, _context) { tool_starts << arguments }]
+      }
+    )
+    wrapper = described_class.new(build_tool(Captain::Tools::Agent::AccountToolAdapter, 'search_articles'), context)
+
+    result = JSON.parse(wrapper.call(query: 'Новая статья', category_id: 2_147_483_647, status: '', limit: 5))
+
+    expect(tool_starts).to contain_exactly(query: 'Новая статья', status: 'published', limit: 5)
+    expect(result.dig('articles', 0, 'id')).to eq(article.id)
+  end
+
   def run_context
     Captain::Runtime::RunContext.new({ state: {} }, callbacks: {})
   end

@@ -31,6 +31,12 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
     true
   end
 
+  def normalize_runtime_arguments(arguments, context:)
+    return arguments unless schema_delegate.respond_to?(:normalize_runtime_arguments)
+
+    schema_delegate.normalize_runtime_arguments(arguments, context: context)
+  end
+
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
     result = invoke_delegate(tool_context, params)

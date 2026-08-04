@@ -979,6 +979,7 @@ class Captain::Assistant::AgentRunnerService
   def run_payload(message_history)
     message_to_process = extract_last_user_message(message_history)
     context = build_context(message_history_without_last_user_message(message_history))
+    context[:captain_v2_current_input] = message_to_process
     enrich_context_with_trace_payload!(context, message_history, message_to_process)
     [message_to_process, context]
   end
