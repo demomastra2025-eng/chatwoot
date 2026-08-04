@@ -33,7 +33,21 @@ class _SingleConnectionWebsocketClientSession(WebsocketClientSession):
 class _OneLinkWebsocketClientOutputTransport(WebsocketClientOutputTransport):
     """Send OneLink's interruption control frame after clearing local output buffers."""
 
+    def __init__(self, *args, interrupt_tail_seconds: float = 0.0, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._interrupt_tail_seconds = interrupt_tail_seconds
+
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        if (
+            isinstance(frame, InterruptionFrame)
+            and self._interrupt_tail_seconds > 0
+            and any(sender._bot_speaking for sender in self._media_senders.values())
+        ):
+            # Inbound capture and the upstream LLM/TTS cancellation have
+            # already happened before the frame reaches the output transport.
+            # Let only a bounded piece of the current outbound word drain,
+            # then discard every remaining queued audio frame.
+            await asyncio.sleep(self._interrupt_tail_seconds)
         await super().process_frame(frame, direction)
 
         if isinstance(frame, InterruptionFrame):
@@ -44,8 +58,15 @@ class _OneLinkWebsocketClientOutputTransport(WebsocketClientOutputTransport):
 class OneLinkMediaTransport(WebsocketClientTransport):
     """Use one duplex WebSocket for the runtime stream's one-time grant."""
 
-    def __init__(self, uri: str, params: WebsocketClientParams) -> None:
+    def __init__(
+        self,
+        uri: str,
+        params: WebsocketClientParams,
+        *,
+        interrupt_tail_seconds: float = 0.0,
+    ) -> None:
         super().__init__(uri=uri, params=params)
+        self._interrupt_tail_seconds = interrupt_tail_seconds
         callbacks = WebsocketClientCallbacks(
             on_connected=self._on_connected,
             on_disconnected=self._on_disconnected,
@@ -61,13 +82,20 @@ class OneLinkMediaTransport(WebsocketClientTransport):
     def output(self) -> WebsocketClientOutputTransport:
         if not self._output:
             self._output = _OneLinkWebsocketClientOutputTransport(
-                self, self._session, self._params
+                self,
+                self._session,
+                self._params,
+                interrupt_tail_seconds=self._interrupt_tail_seconds,
             )
         return self._output
 
 
 def create_media_transport(
-    runtime_stream: RuntimeStream, *, clear_audio_on_interrupt: bool = True
+    runtime_stream: RuntimeStream,
+    *,
+    clear_audio_on_interrupt: bool = True,
+    finish_current_word_on_interrupt: bool = True,
+    interrupt_word_boundary_grace_ms: int = 120,
 ) -> WebsocketClientTransport:
     """Build a transport pinned to the existing OneLink PCM framing contract."""
     additional_headers = None
@@ -77,6 +105,11 @@ def create_media_transport(
         }
     return OneLinkMediaTransport(
         uri=str(runtime_stream.stream_url),
+        interrupt_tail_seconds=(
+            interrupt_word_boundary_grace_ms / 1_000
+            if finish_current_word_on_interrupt
+            else 0.0
+        ),
         params=WebsocketClientParams(
             audio_in_enabled=True,
             audio_in_sample_rate=runtime_stream.input_sample_rate,

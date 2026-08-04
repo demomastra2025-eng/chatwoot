@@ -149,6 +149,70 @@ async def test_long_read_tool_speaks_progress_then_returns_result_once():
 
 
 @pytest.mark.asyncio
+async def test_identical_inflight_read_calls_share_execution_progress_and_continuation():
+    gate = asyncio.Event()
+    state = FakeState(result={"deals": [{"id": 386}]}, gate=gate)
+    activity = ConversationActivity()
+    spoken = []
+    first_results = []
+    duplicate_results = []
+    duplicate_properties = []
+
+    async def speak(message):
+        spoken.append(message)
+
+    async def first_callback(result, *, properties=None):
+        first_results.append(result)
+        await activity.bot_started()
+
+    async def duplicate_callback(result, *, properties=None):
+        duplicate_results.append(result)
+        duplicate_properties.append(properties)
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(tool_start_after_ms=5, tool_delay_after_ms=5_000),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=speak, run_instruction=speak)
+    tool = definition("search_deals")
+    first = asyncio.create_task(
+        coordinator.execute(
+            tool,
+            Params(
+                arguments={"contact_id": "2179", "limit": 10},
+                tool_call_id="search-1",
+                result_callback=first_callback,
+            ),
+        )
+    )
+    duplicate = asyncio.create_task(
+        coordinator.execute(
+            tool,
+            Params(
+                arguments={"contact_id": "2179", "limit": 10},
+                tool_call_id="search-2",
+                result_callback=duplicate_callback,
+            ),
+        )
+    )
+
+    await asyncio.sleep(0.03)
+    assert state.executions == 1
+    assert len(spoken) == 1
+    gate.set()
+    await asyncio.gather(first, duplicate)
+    await asyncio.gather(*state.tasks)
+
+    expected = {"deals": [{"id": 386}]}
+    assert first_results == duplicate_results == [expected]
+    assert duplicate_properties[0].run_llm is False
+    assert state.executions == 1
+    assert [control[0] for control in state.controls].count("tool_progress") == 1
+    assert [control[0] for control in state.controls].count("tool_suppressed") == 1
+
+
+@pytest.mark.asyncio
 async def test_ready_tool_result_finishes_started_progress_without_global_interruption():
     tool_gate = asyncio.Event()
     speech_started = asyncio.Event()

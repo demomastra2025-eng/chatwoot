@@ -14,6 +14,20 @@ from app.callbacks.outbox import CallbackOutbox
 from app.clients.onelink import Correlation, OnelinkApiError, OnelinkClient
 
 SEMANTIC_MUTATION_FENCE_TOOLS = frozenset({"create_deal"})
+READ_ONLY_INFLIGHT_FENCE_TOOLS = frozenset(
+    {
+        "faq_lookup",
+        "find_contact",
+        "find_deal",
+        "get_contact",
+        "get_deal",
+        "knowledge_lookup",
+        "list_deals",
+        "search_deals",
+        "search_documentation",
+        "search_knowledge",
+    }
+)
 
 
 class SessionState:
@@ -227,7 +241,7 @@ class SessionState:
         if not tool_call_id:
             return {"error": "tool_execution_failed", "code": "TOOL_IDEMPOTENCY_KEY_REQUIRED"}
         fingerprint = self._tool_fingerprint(name, arguments)
-        semantic_key = self._semantic_tool_key(name)
+        semantic_key = self._semantic_tool_key(name, fingerprint)
         creator = False
         semantic_reused = False
         semantic_reuse_key: tuple[str, int] | None = None
@@ -269,9 +283,7 @@ class SessionState:
                     self.safe_control(
                         "tool_suppressed",
                         {
-                            "dedupe_scope": (
-                                "call" if semantic_reuse_key[1] < 0 else "caller_turn"
-                            ),
+                            "dedupe_scope": self._semantic_dedupe_scope(semantic_reuse_key),
                             "duplicate": True,
                             "user_turn": self.user_turn,
                         },
@@ -328,7 +340,7 @@ class SessionState:
                         )
                     )
             except (OnelinkApiError, TimeoutError) as error:
-                outcome_unknown = semantic_key is not None and self._tool_outcome_unknown(
+                outcome_unknown = self._is_semantic_mutation(name) and self._tool_outcome_unknown(
                     error
                 )
                 result = {
@@ -369,10 +381,16 @@ class SessionState:
                         )
                     )
             future.set_result(result)
-            if semantic_key and result.get("status") == "outcome_unknown":
+            if (
+                semantic_key
+                and self._is_semantic_mutation(name)
+                and result.get("status") == "outcome_unknown"
+            ):
                 async with self._tool_lock:
                     self._semantic_tool_results[(semantic_key[0], -1)] = future
-            elif semantic_key and self._tool_result_failed(result):
+            elif semantic_key and (
+                self._is_read_only_inflight_tool(name) or self._tool_result_failed(result)
+            ):
                 async with self._tool_lock:
                     self._remove_semantic_future_locked(future)
             return result
@@ -407,11 +425,27 @@ class SessionState:
         )
         return hashlib.sha256(canonical.encode()).hexdigest()
 
-    def _semantic_tool_key(self, name: str) -> tuple[str, int] | None:
+    def _semantic_tool_key(self, name: str, fingerprint: str) -> tuple[str, int] | None:
         normalized = name.strip().lower()
-        if normalized not in SEMANTIC_MUTATION_FENCE_TOOLS:
-            return None
-        return normalized, self.user_turn
+        if normalized in SEMANTIC_MUTATION_FENCE_TOOLS:
+            return normalized, self.user_turn
+        if normalized in READ_ONLY_INFLIGHT_FENCE_TOOLS:
+            return f"read:{fingerprint}", -1
+        return None
+
+    @staticmethod
+    def _is_semantic_mutation(name: str) -> bool:
+        return name.strip().lower() in SEMANTIC_MUTATION_FENCE_TOOLS
+
+    @staticmethod
+    def _is_read_only_inflight_tool(name: str) -> bool:
+        return name.strip().lower() in READ_ONLY_INFLIGHT_FENCE_TOOLS
+
+    @staticmethod
+    def _semantic_dedupe_scope(key: tuple[str, int]) -> str:
+        if key[0].startswith("read:"):
+            return "in_flight"
+        return "call" if key[1] < 0 else "caller_turn"
 
     def _remove_semantic_future_locked(
         self, future: asyncio.Future[dict[str, Any]]

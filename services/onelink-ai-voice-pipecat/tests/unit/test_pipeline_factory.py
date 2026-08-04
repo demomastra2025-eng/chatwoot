@@ -30,6 +30,7 @@ from app.pipeline.factory import (
     _user_turn_strategies,
     build_pipeline,
 )
+from app.pipeline.processors import ModelLifecycleProcessor
 from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
@@ -600,6 +601,52 @@ def test_caller_end_call_command_is_wired_for_every_pipeline(provider, model, vo
     assert assembly.caller_command is not None
 
 
+def test_cascaded_caller_command_observes_transcript_before_user_aggregator():
+    context = _context("fish", model="openai/gpt-5.4-mini", voice="fish-voice-ref")
+    context.tools.append(ToolDefinition(name="end_call", timeout_ms=1_000))
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    processors = assembly.worker._pipeline._processors[1]._processors
+    caller_index = processors.index(assembly.caller_command)
+    user_aggregator_index = next(
+        index
+        for index, processor in enumerate(processors)
+        if type(processor).__name__ == "LLMUserAggregator"
+    )
+
+    assert processors.index(assembly.stt) < caller_index < user_aggregator_index
+
+
+def test_cascaded_model_lifecycle_is_between_llm_and_tts():
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.4-mini",
+            voice="fish-voice-ref",
+        ),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    processors = assembly.worker._pipeline._processors[1]._processors
+    lifecycle_index = next(
+        index
+        for index, processor in enumerate(processors)
+        if isinstance(processor, ModelLifecycleProcessor)
+    )
+
+    assert processors.index(assembly.llm) < lifecycle_index < processors.index(assembly.tts)
+
+
 def test_openrouter_receives_native_same_turn_tool_instruction():
     context = _context("fish", model="openai/gpt-5.4-mini", voice="fish-voice-ref")
     context.tools.append(ToolDefinition(name="faq_lookup"))
@@ -646,6 +693,16 @@ def test_cascaded_tool_survives_interruption_and_has_bounded_runtime():
     assert tool.handler is not None
     assert tool.handler._pipecat_cancel_on_interruption is False
     assert tool.handler._pipecat_timeout_secs == 6.0
+
+
+def test_terminal_tool_timeout_covers_farewell_and_backend_callback():
+    context = _context("fish", model="openai/gpt-5.4-mini", voice="voice-ref")
+    context.tools.append(ToolDefinition(name="end_call", timeout_ms=1_000))
+
+    tool = _build_tools(context, MagicMock()).standard_tools[0]
+
+    assert tool.handler is not None
+    assert tool.handler._pipecat_timeout_secs == 7.0
 
 
 def test_gemini_3_tool_keeps_supported_blocking_contract():

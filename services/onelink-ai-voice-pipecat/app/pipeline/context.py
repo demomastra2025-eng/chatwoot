@@ -60,6 +60,8 @@ class AiSettings(ContextModel):
     thinking_level: Literal["minimal", "low", "medium", "high"] = "minimal"
     context_window_compression_enabled: bool = True
     clear_audio_on_interrupt: bool = True
+    finish_current_word_on_interrupt: bool = True
+    interrupt_word_boundary_grace_ms: int = Field(default=120, ge=0, le=500)
     voice_activity_profile: Literal["sensitive", "balanced", "noisy"] = "balanced"
     interruption_mode: Literal["vad_confirmed", "transcript_confirmed"] = (
         "transcript_confirmed"

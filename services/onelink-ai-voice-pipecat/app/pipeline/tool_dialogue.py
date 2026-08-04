@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
 from collections.abc import Awaitable, Callable, Coroutine
@@ -14,6 +15,7 @@ from pipecat.services.llm_service import FunctionCallParams, FunctionCallResultP
 
 from app.pipeline.context import AiSettings, ToolDefinition
 from app.pipeline.processors import ConversationActivity
+from app.sessions.state import READ_ONLY_INFLIGHT_FENCE_TOOLS
 
 SpeechCallback = Callable[[str], Awaitable[bool | None]]
 InterruptCallback = Callable[[], Awaitable[None]]
@@ -74,6 +76,8 @@ class ToolDialogueCoordinator:
         self._dialogue_lock = asyncio.Lock()
         self._continuations_pending = 0
         self._end_call_task: asyncio.Task[dict[str, Any]] | None = None
+        self._read_only_execution_lock = asyncio.Lock()
+        self._read_only_executions: dict[str, asyncio.Task[dict[str, Any]]] = {}
 
     @property
     def awaiting_continuation(self) -> bool:
@@ -109,6 +113,12 @@ class ToolDialogueCoordinator:
             await self._execute_gemini_tool(definition, params)
             return
 
+        shared_task, duplicate = await self._claim_read_only_execution(definition, params)
+        if duplicate:
+            result = await asyncio.shield(shared_task)
+            await self._deliver_duplicate_result(definition, params, result)
+            return
+
         stop_progress = asyncio.Event()
         progress_speaking = asyncio.Event()
         progress_task: asyncio.Task[None] | None = None
@@ -124,12 +134,15 @@ class ToolDialogueCoordinator:
             )
 
         try:
-            result = await self._state.execute_tool(
-                definition.name,
-                dict(params.arguments),
-                params.tool_call_id,
-                timeout_ms=definition.timeout_ms,
-            )
+            if shared_task is not None:
+                result = await asyncio.shield(shared_task)
+            else:
+                result = await self._state.execute_tool(
+                    definition.name,
+                    dict(params.arguments),
+                    params.tool_call_id,
+                    timeout_ms=definition.timeout_ms,
+                )
         finally:
             stop_progress.set()
             if progress_task is not None:
@@ -144,6 +157,64 @@ class ToolDialogueCoordinator:
                     await progress_task
 
         await self._deliver_result(definition, params, result)
+
+    async def _claim_read_only_execution(
+        self,
+        definition: ToolDefinition,
+        params: FunctionCallParams,
+    ) -> tuple[asyncio.Task[dict[str, Any]] | None, bool]:
+        if definition.name.strip().lower() not in READ_ONLY_INFLIGHT_FENCE_TOOLS:
+            return None, False
+
+        key = _read_only_execution_key(definition.name, dict(params.arguments))
+        async with self._read_only_execution_lock:
+            existing = self._read_only_executions.get(key)
+            if existing is not None:
+                return existing, True
+            task = self._state.spawn(
+                self._state.execute_tool(
+                    definition.name,
+                    dict(params.arguments),
+                    params.tool_call_id,
+                    timeout_ms=definition.timeout_ms,
+                )
+            )
+            self._read_only_executions[key] = task
+            self._state.spawn(self._release_read_only_execution(key, task))
+            return task, False
+
+    async def _release_read_only_execution(
+        self,
+        key: str,
+        task: asyncio.Task[dict[str, Any]],
+    ) -> None:
+        try:
+            await asyncio.shield(task)
+        except BaseException:
+            pass
+        finally:
+            async with self._read_only_execution_lock:
+                if self._read_only_executions.get(key) is task:
+                    self._read_only_executions.pop(key, None)
+
+    async def _deliver_duplicate_result(
+        self,
+        definition: ToolDefinition,
+        params: FunctionCallParams,
+        result: dict[str, Any],
+    ) -> None:
+        self._state.spawn(
+            self._state.safe_control(
+                "tool_suppressed",
+                {"dedupe_scope": "in_flight", "duplicate": True},
+                tool_call_id=params.tool_call_id,
+                tool_name=definition.name,
+            )
+        )
+        await params.result_callback(
+            _voice_result_projection(definition.name, result),
+            properties=FunctionCallResultProperties(run_llm=False),
+        )
 
     async def execute_end_call(
         self,
@@ -801,6 +872,17 @@ class ToolDialogueCoordinator:
 def _is_terminal_tool(name: str) -> bool:
     normalized = name.strip().lower()
     return normalized in {"request_transfer", "transfer", "handoff", "end_call", "hangup"}
+
+
+def _read_only_execution_key(name: str, arguments: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        {"tool_name": name.strip().lower(), "arguments": arguments},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def _uses_direct_voice_result(name: str, provider: str) -> bool:

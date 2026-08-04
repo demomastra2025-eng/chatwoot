@@ -146,14 +146,25 @@ class CallerCommandProcessor(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
-        if (
+        terminal_transcript = (
             isinstance(frame, TranscriptionFrame)
             and not isinstance(frame, InterimTranscriptionFrame)
-            and not self._end_call_requested
             and caller_requested_end_call(frame.text)
-        ):
-            self._end_call_requested = True
-            self._state.spawn(self._execute_end_call())
+        )
+        if terminal_transcript:
+            if not self._end_call_requested:
+                self._end_call_requested = True
+                await self._state.add_transcript(
+                    "caller",
+                    frame.text,
+                    final=True,
+                    timestamp=frame.timestamp,
+                )
+                self._state.spawn(self._state.flush_transcript())
+                self._state.spawn(self._execute_end_call())
+            # Do not let the same farewell start one last LLM generation. The
+            # runtime-owned closing message and hangup are deterministic.
+            return
         await self.push_frame(frame, direction)
 
     async def _execute_end_call(self) -> None:
@@ -195,15 +206,7 @@ class AssistantLifecycleProcessor(FrameProcessor):
 
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
-        if isinstance(frame, (LLMFullResponseStartFrame, OneLinkToolResultGenerationStartFrame)):
-            await self._activity.model_generation_started()
-        elif isinstance(frame, LLMTextFrame):
-            await self._activity.model_output_generated()
-        elif isinstance(frame, (LLMFullResponseEndFrame, OneLinkToolResultGenerationEndFrame)):
-            await self._activity.model_generation_completed()
-        elif isinstance(frame, InterruptionFrame):
-            await self._activity.model_generation_interrupted()
-        elif isinstance(frame, BotStartedSpeakingFrame):
+        if isinstance(frame, BotStartedSpeakingFrame):
             await self._activity.bot_started()
             latency = self._activity.response_latency_ms()
             if latency["turn_end_to_audio_ms"] is not None:
@@ -222,6 +225,39 @@ class AssistantLifecycleProcessor(FrameProcessor):
             self._state.spawn(self._state.safe_control("ai_speaking", {"state": "stopped"}))
         elif self._recorder is not None and isinstance(frame, TTSAudioRawFrame):
             await self._recorder.write_outbound(frame.audio, sample_rate=frame.sample_rate)
+        await self.push_frame(frame, direction)
+
+
+class ModelLifecycleProcessor(FrameProcessor):
+    """Observe model frames before a downstream TTS service consumes them.
+
+    Cascaded TTS services consume ``LLMTextFrame`` and delay the response-end
+    frame until synthesized audio drains. Tracking the model after TTS made a
+    normal spoken response look like an eight-second silent generation and
+    incorrectly activated post-tool recovery.
+    """
+
+    def __init__(self, activity: ConversationActivity):
+        super().__init__()
+        self._activity = activity
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if direction == FrameDirection.DOWNSTREAM:
+            if isinstance(
+                frame,
+                (LLMFullResponseStartFrame, OneLinkToolResultGenerationStartFrame),
+            ):
+                await self._activity.model_generation_started()
+            elif isinstance(frame, LLMTextFrame):
+                await self._activity.model_output_generated()
+            elif isinstance(
+                frame,
+                (LLMFullResponseEndFrame, OneLinkToolResultGenerationEndFrame),
+            ):
+                await self._activity.model_generation_completed()
+            elif isinstance(frame, InterruptionFrame):
+                await self._activity.model_generation_interrupted()
         await self.push_frame(frame, direction)
 
 

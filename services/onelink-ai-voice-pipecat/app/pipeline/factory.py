@@ -69,9 +69,10 @@ from app.pipeline.processors import (
     CallerCommandProcessor,
     ConversationActivity,
     InputRecordingProcessor,
+    ModelLifecycleProcessor,
     TurnLifecycleProcessor,
 )
-from app.pipeline.tool_dialogue import ToolDialogueCoordinator
+from app.pipeline.tool_dialogue import CLOSING_SPEECH_MAX_SECONDS, ToolDialogueCoordinator
 from app.pipeline.turn_strategies import ConfirmedUserTurnStartStrategy
 from app.recordings.writer import DualChannelRecorder
 from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
@@ -251,6 +252,8 @@ def build_pipeline(
         transport = create_media_transport(
             runtime_stream,
             clear_audio_on_interrupt=context.ai.clear_audio_on_interrupt,
+            finish_current_word_on_interrupt=context.ai.finish_current_word_on_interrupt,
+            interrupt_word_boundary_grace_ms=context.ai.interrupt_word_boundary_grace_ms,
         )
     credentials = settings.provider_credentials(
         context.ai.provider, stt_provider=context.ai.stt_provider
@@ -323,6 +326,7 @@ def build_pipeline(
         processors.extend(
             [
                 llm,
+                ModelLifecycleProcessor(activity),
                 AssistantLifecycleProcessor(state, activity, recorder),
                 transport.output(),
                 aggregators.assistant(),
@@ -375,6 +379,7 @@ def build_pipeline(
             [
                 input_resampler,
                 llm,
+                ModelLifecycleProcessor(activity),
                 output_resampler,
                 AssistantLifecycleProcessor(state, activity, recorder),
                 transport.output(),
@@ -509,14 +514,22 @@ def build_pipeline(
             transport.input(),
             InputRecordingProcessor(recorder),
             stt,
-            aggregators.user(),
-            TurnLifecycleProcessor(state, activity),
         ]
+        # The universal user aggregator intentionally consumes final
+        # TranscriptionFrames. Terminal caller intent must therefore be
+        # observed directly after cascaded STT, before context aggregation.
         if caller_command is not None:
             processors.append(caller_command)
         processors.extend(
             [
+                aggregators.user(),
+                TurnLifecycleProcessor(state, activity),
+            ]
+        )
+        processors.extend(
+            [
                 llm,
+                ModelLifecycleProcessor(activity),
                 tts,
                 AssistantLifecycleProcessor(state, activity, recorder),
                 transport.output(),
@@ -739,19 +752,34 @@ def _tool_handler(
     # state in context and injects the eventual result as a developer message;
     # if the caller is currently speaking, the result is naturally folded into
     # that next turn instead of being lost with the interrupted generation.
+    timeout_secs = max(1.0, definition.timeout_ms / 1_000 + 1.0)
+    if _uses_runtime_closing_speech(definition.name):
+        # A terminal handler first plays the configured farewell and only then
+        # invokes the hangup callback. Pipecat's timeout must cover both stages;
+        # otherwise it injects a synthetic null result while the real hangup is
+        # still running.
+        timeout_secs = max(
+            timeout_secs,
+            CLOSING_SPEECH_MAX_SECONDS + definition.timeout_ms / 1_000 + 2.0,
+        )
+
     @tool_options(
         # Gemini 3 Live does not yet implement NON_BLOCKING function calls;
         # keep its supported blocking contract instead of causing a provider
         # ErrorFrame. Cascaded/OpenRouter and compatible realtime models use
         # Pipecat's native async-tool path.
         cancel_on_interruption=not survive_interruption,
-        timeout_secs=max(1.0, definition.timeout_ms / 1_000 + 1.0),
+        timeout_secs=timeout_secs,
     )
     async def handler(params: FunctionCallParams) -> None:
         await tool_dialogue.execute(definition, params)
 
     handler.__name__ = f"onelink_tool_{definition.name}"
     return handler
+
+
+def _uses_runtime_closing_speech(name: str) -> bool:
+    return name.strip().lower() in {"end_call", "hangup"}
 
 
 def _initial_turn(context: VoiceContext) -> str:

@@ -52,6 +52,8 @@ class FakeState:
         self.tasks: list[asyncio.Task[Any]] = []
         self.controls = []
         self.tools = []
+        self.transcripts = []
+        self.flushes = 0
 
     def spawn(self, work: Coroutine[Any, Any, Any]) -> asyncio.Task[Any]:
         task = asyncio.create_task(work)
@@ -61,6 +63,12 @@ class FakeState:
     async def safe_control(self, action, payload=None, **metadata):
         self.controls.append((action, payload or {}, metadata))
         return True
+
+    async def add_transcript(self, speaker, text, **metadata):
+        self.transcripts.append((speaker, text, metadata))
+
+    async def flush_transcript(self):
+        self.flushes += 1
 
     async def execute_tool(self, name, arguments, tool_call_id, *, timeout_ms):
         self.tools.append((name, arguments, tool_call_id, timeout_ms))
@@ -102,4 +110,12 @@ async def test_caller_command_processor_executes_end_call_once_for_repeated_tran
     assert tool_call_id.startswith("caller-intent-end-call:")
     assert timeout_ms == 1_200
     assert [control[0] for control in state.controls] == ["tool_requested_end_call"]
-    assert len(processor.frames) == 2
+    assert state.transcripts == [
+        (
+            "caller",
+            "Сбрось трубку",
+            {"final": True, "timestamp": "2026-08-01T00:00:00Z"},
+        )
+    ]
+    assert state.flushes == 1
+    assert processor.frames == []

@@ -15,8 +15,8 @@ from pipecat.processors.frame_processor import FrameDirection
 
 import app.pipeline.processors as processors_module
 from app.pipeline.processors import (
-    AssistantLifecycleProcessor,
     ConversationActivity,
+    ModelLifecycleProcessor,
     TurnLifecycleProcessor,
 )
 from app.services.gemini_live import (
@@ -77,11 +77,9 @@ async def test_turn_lifecycle_refreshes_idle_clock_when_caller_finishes_speaking
 
 
 @pytest.mark.asyncio
-async def test_assistant_lifecycle_tracks_model_generation_and_output():
+async def test_model_lifecycle_tracks_generation_and_output_before_tts():
     activity = ConversationActivity()
-    processor = AssistantLifecycleProcessor(
-        cast(SessionState, ActivityState()), activity, recorder=None
-    )
+    processor = ModelLifecycleProcessor(activity)
     processor.push_frame = AsyncMock()
 
     await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
@@ -97,11 +95,9 @@ async def test_assistant_lifecycle_tracks_model_generation_and_output():
 
 
 @pytest.mark.asyncio
-async def test_assistant_lifecycle_marks_interrupted_generation_idle():
+async def test_model_lifecycle_marks_interrupted_generation_idle():
     activity = ConversationActivity()
-    processor = AssistantLifecycleProcessor(
-        cast(SessionState, ActivityState()), activity, recorder=None
-    )
+    processor = ModelLifecycleProcessor(activity)
     processor.push_frame = AsyncMock()
 
     await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
@@ -118,11 +114,9 @@ async def test_assistant_lifecycle_marks_interrupted_generation_idle():
 
 
 @pytest.mark.asyncio
-async def test_assistant_lifecycle_tracks_silent_gemini_tool_result_generation():
+async def test_model_lifecycle_tracks_silent_gemini_tool_result_generation():
     activity = ConversationActivity()
-    processor = AssistantLifecycleProcessor(
-        cast(SessionState, ActivityState()), activity, recorder=None
-    )
+    processor = ModelLifecycleProcessor(activity)
     processor.push_frame = AsyncMock()
 
     await processor.process_frame(
@@ -132,3 +126,16 @@ async def test_assistant_lifecycle_tracks_silent_gemini_tool_result_generation()
 
     await processor.process_frame(OneLinkToolResultGenerationEndFrame(), FrameDirection.DOWNSTREAM)
     assert activity.model_generation_active is False
+
+
+@pytest.mark.asyncio
+async def test_model_lifecycle_ignores_upstream_mirror_frames():
+    activity = ConversationActivity()
+    processor = ModelLifecycleProcessor(activity)
+    processor.push_frame = AsyncMock()
+
+    await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.UPSTREAM)
+    await processor.process_frame(LLMTextFrame("Не модельный поток"), FrameDirection.UPSTREAM)
+
+    assert activity.model_generations_started == 0
+    assert activity.model_outputs_generated == 0

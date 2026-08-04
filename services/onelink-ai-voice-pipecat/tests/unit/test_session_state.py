@@ -206,6 +206,68 @@ async def test_duplicate_tool_call_is_fenced_in_process(state):
 
 
 @pytest.mark.asyncio
+async def test_identical_read_only_tool_is_coalesced_while_first_call_is_in_flight():
+    client = GatedToolClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(
+            call_ref="call-read-only-coalesce",
+            runtime_session_id="runtime-read-only-coalesce",
+        ),
+    )
+    arguments = {"contact_id": "2179", "limit": 10}
+
+    first_task = asyncio.create_task(
+        state.execute_tool("search_deals", arguments, "search-1", timeout_ms=15_000)
+    )
+    await client.tool_called.wait()
+    state.touch_user()
+    duplicate_task = asyncio.create_task(
+        state.execute_tool("search_deals", arguments, "search-2", timeout_ms=15_000)
+    )
+    await asyncio.sleep(0)
+
+    assert len(client.tools) == 0
+    client.tool_gate.set()
+    first, duplicate = await asyncio.gather(first_task, duplicate_task)
+    await state.drain_background()
+
+    assert first == duplicate == {"message_id": 99}
+    assert len(client.tools) == 1
+    suppressed = [item[1] for item in client.controls if item[1]["action"] == "tool_suppressed"]
+    assert len(suppressed) == 1
+    assert suppressed[0]["metadata"]["dedupe_scope"] == "in_flight"
+
+    await state.execute_tool("search_deals", arguments, "search-3", timeout_ms=15_000)
+    assert len(client.tools) == 2
+
+
+@pytest.mark.asyncio
+async def test_different_read_only_arguments_are_not_coalesced():
+    client = GatedToolClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(
+            call_ref="call-read-only-distinct",
+            runtime_session_id="runtime-read-only-distinct",
+        ),
+    )
+
+    first_task = asyncio.create_task(
+        state.execute_tool("search_deals", {"contact_id": "2179"}, "search-a", timeout_ms=15_000)
+    )
+    await client.tool_called.wait()
+    second_task = asyncio.create_task(
+        state.execute_tool("search_deals", {"contact_id": "2180"}, "search-b", timeout_ms=15_000)
+    )
+    await asyncio.sleep(0)
+    client.tool_gate.set()
+    await asyncio.gather(first_task, second_task)
+
+    assert len(client.tools) == 2
+
+
+@pytest.mark.asyncio
 async def test_create_deal_is_semantically_fenced_per_caller_turn(state):
     first = await state.execute_tool(
         "create_deal",
