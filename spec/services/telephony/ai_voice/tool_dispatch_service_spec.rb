@@ -45,6 +45,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
         'type' => 'string',
         'description' => a_string_including('FAQ')
       )
+      expect(faq['foreground_wait_ms']).to eq(1_200)
     end
 
     it 'adds voice data-integrity guidance to mutating Captain tools' do

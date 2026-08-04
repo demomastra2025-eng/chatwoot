@@ -22,6 +22,7 @@ MIN_REPEAT_PROGRESS_INTERVAL_MS = 5_000
 VOICE_RESULT_MAX_CHARS = 2_400
 VOICE_RESULT_MAX_STRING_CHARS = 500
 POST_TOOL_GENERATION_MAX_SECONDS = 8.0
+DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS = 0.75
 
 
 class ToolRuntimeState(Protocol):
@@ -129,7 +130,13 @@ class ToolDialogueCoordinator:
         finally:
             stop_progress.set()
             if progress_task is not None:
-                await self._stop_active_progress_speech(progress_speaking)
+                # A progress phrase and the tool result share the same cascaded
+                # TTS pipeline. Sending a global interruption here can overtake
+                # the uninterruptible FunctionCallResultFrame and suppress its
+                # on_context_updated speech callback. Let an already-started,
+                # short acknowledgement finish, then deliver the result in
+                # strict dialogue order. The stopped event prevents any later
+                # progress phrases from starting.
                 with suppress(asyncio.CancelledError):
                     await progress_task
 
@@ -187,7 +194,16 @@ class ToolDialogueCoordinator:
     ) -> None:
         voice_result = _voice_result_projection(definition.name, result)
         if _uses_direct_voice_result(definition.name, self._ai.provider):
+            direct_speech_claimed = asyncio.Event()
+
             async def speak_after_context_update() -> None:
+                # Pipecat normally invokes this after the uninterruptible tool
+                # result reaches the assistant context. Keep it idempotent so a
+                # bounded recovery callback can safely cover a lost framework
+                # callback without ever speaking the result twice.
+                if direct_speech_claimed.is_set():
+                    return
+                direct_speech_claimed.set()
                 phrase = _direct_voice_result_phrase(definition.name, voice_result)
                 if not phrase or self._speak_result is None:
                     return
@@ -221,6 +237,14 @@ class ToolDialogueCoordinator:
                     run_llm=False,
                     on_context_updated=speak_after_context_update,
                 ),
+            )
+            self._state.spawn(
+                self._recover_direct_result_speech(
+                    definition=definition,
+                    tool_call_id=params.tool_call_id,
+                    direct_speech_claimed=direct_speech_claimed,
+                    speak_after_context_update=speak_after_context_update,
+                )
             )
             return
 
@@ -557,6 +581,38 @@ class ToolDialogueCoordinator:
             await self._interrupt_generation()
         except Exception:
             logger.exception("Failed to stop obsolete tool progress speech")
+
+    async def _recover_direct_result_speech(
+        self,
+        *,
+        definition: ToolDefinition,
+        tool_call_id: str,
+        direct_speech_claimed: asyncio.Event,
+        speak_after_context_update: Callable[[], Awaitable[None]],
+    ) -> None:
+        try:
+            await asyncio.wait_for(
+                direct_speech_claimed.wait(),
+                timeout=DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS,
+            )
+            return
+        except TimeoutError:
+            pass
+
+        self._state.spawn(
+            self._state.safe_control(
+                "direct_tool_speech_recovered",
+                {"reason": "context_callback_timeout"},
+                tool_call_id=tool_call_id,
+                tool_name=definition.name,
+            )
+        )
+        logger.warning(
+            "Recovering direct tool speech after context callback timeout tool={} tool_call_id={}",
+            definition.name,
+            tool_call_id,
+        )
+        await speak_after_context_update()
 
     async def _ensure_continuation(
         self,

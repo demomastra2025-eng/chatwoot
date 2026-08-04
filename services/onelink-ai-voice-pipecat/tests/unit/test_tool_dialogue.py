@@ -149,10 +149,11 @@ async def test_long_read_tool_speaks_progress_then_returns_result_once():
 
 
 @pytest.mark.asyncio
-async def test_ready_tool_result_interrupts_obsolete_progress_speech():
+async def test_ready_tool_result_finishes_started_progress_without_global_interruption():
     tool_gate = asyncio.Event()
     speech_started = asyncio.Event()
-    speech_interrupted = asyncio.Event()
+    speech_finished = asyncio.Event()
+    result_delivered = asyncio.Event()
     state = FakeState(gate=tool_gate)
     activity = ConversationActivity()
     spoken = []
@@ -162,13 +163,16 @@ async def test_ready_tool_result_interrupts_obsolete_progress_speech():
         spoken.append(message)
         await activity.bot_started()
         speech_started.set()
-        await speech_interrupted.wait()
+        await speech_finished.wait()
         await activity.bot_stopped()
         return True
 
     async def interrupt():
         interruptions.append(True)
-        speech_interrupted.set()
+
+    async def on_result(_result):
+        result_delivered.set()
+        await activity.bot_started()
 
     coordinator = ToolDialogueCoordinator(
         ai=ai_settings(tool_start_after_ms=5, tool_delay_after_ms=5_000),
@@ -181,15 +185,24 @@ async def test_ready_tool_result_interrupts_obsolete_progress_speech():
         run_instruction=speak,
         interrupt_generation=interrupt,
     )
-    execution = asyncio.create_task(execute_with_answer(coordinator, activity))
+    execution = asyncio.create_task(
+        execute_with_answer(coordinator, activity, on_result=on_result)
+    )
 
     await asyncio.wait_for(speech_started.wait(), timeout=0.1)
     tool_gate.set()
+    await asyncio.sleep(0)
+
+    assert result_delivered.is_set() is False
+    assert interruptions == []
+
+    speech_finished.set()
     results = await asyncio.wait_for(execution, timeout=0.2)
+    await asyncio.gather(*state.tasks)
 
     assert results == [{"answer": "готово"}]
     assert spoken == ["Секунду, проверяю."]
-    assert interruptions == [True]
+    assert interruptions == []
 
 
 @pytest.mark.asyncio
@@ -713,8 +726,54 @@ async def test_faq_result_is_spoken_directly_without_second_llm_generation():
     assert len(callback_properties) == 1
     assert callback_properties[0].run_llm is False
     await callback_properties[0].on_context_updated()
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
     assert spoken == [answer]
     assert coordinator.awaiting_continuation is False
+
+
+@pytest.mark.asyncio
+async def test_faq_result_recovers_when_context_callback_is_not_invoked(monkeypatch):
+    monkeypatch.setattr(
+        tool_dialogue_module,
+        "DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS",
+        0.01,
+    )
+    answer = "OneLink автоматизирует продажи и общение с клиентами."
+    state = FakeState(result={"matches": [{"id": 107, "answer": answer}]})
+    activity = ConversationActivity()
+    spoken = []
+    callback_properties = []
+
+    async def speak_result(message):
+        spoken.append(message)
+        return True
+
+    async def result_callback(_result, *, properties=None):
+        callback_properties.append(properties)
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=speak_result,
+        speak_result=speak_result,
+        run_instruction=speak_result,
+    )
+    params = Params(
+        arguments={"query": "Какой у вас слоган?"},
+        tool_call_id="faq-recovery",
+        result_callback=result_callback,
+    )
+
+    await coordinator.execute(definition("faq_lookup"), params)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert spoken == [answer]
+    assert any(control[0] == "direct_tool_speech_recovered" for control in state.controls)
+
+    # A late native callback must not repeat the recovered answer.
+    await callback_properties[0].on_context_updated()
+    assert spoken == [answer]
 
 
 @pytest.mark.asyncio
@@ -746,7 +805,8 @@ async def test_faq_result_defers_direct_speech_during_caller_barge_in():
 
     await coordinator.execute(definition("faq_lookup"), params)
     await callback_properties[0].on_context_updated()
-    await asyncio.gather(*state.tasks)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
 
     assert spoken == []
     assert any(control[0] == "direct_tool_speech_deferred" for control in state.controls)

@@ -763,7 +763,7 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
 
     expect(response).to have_http_status(:ok)
     faq_tool = response.parsed_body['tools'].find { |tool| tool['name'] == 'faq_lookup' }
-    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 10_000, 'foreground_wait_ms' => 250)
+    expect(faq_tool).to include('source' => 'captain', 'timeout_ms' => 10_000, 'foreground_wait_ms' => 1_200)
   end
 
   it 'returns prompt-referenced Captain CRM tools for the voice runtime catalog' do
