@@ -13,6 +13,8 @@ class Captain::Tools::Copilot::ListChannelTemplatesService < Captain::Tools::Cop
   param :limit, type: :number, desc: 'Maximum templates to return, capped at 50', required: false
 
   def execute(conversation_id: nil, inbox_id: nil, name: nil, language: nil, status: 'approved', limit: nil)
+    raise ArgumentError, 'Provide either conversation_id or inbox_id, not both' if conversation_id.present? && inbox_id.present?
+
     inbox = resolve_inbox!(conversation_id: conversation_id, inbox_id: inbox_id)
     payload = Outbound::ChannelTemplateCatalog.for(
       inbox: inbox,

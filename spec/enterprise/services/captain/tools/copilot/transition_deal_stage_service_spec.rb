@@ -42,6 +42,25 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
     expect(payload['deal']['stage_id']).not_to eq(other_stage.id)
   end
 
+  it 'prefers semantic pipeline and stage selectors over conflicting ids' do
+    requested_pipeline = create(:crm_pipeline, account: account, code: 'sales')
+    conflicting_pipeline = create(:crm_pipeline, account: account, code: 'other')
+    current_stage = create(:crm_stage, account: account, pipeline: requested_pipeline, name: 'New', code: 'new', position: 1)
+    requested_stage = create(:crm_stage, account: account, pipeline: requested_pipeline, name: 'Qualified', code: 'qualified', position: 2)
+    conflicting_stage = create(:crm_stage, account: account, pipeline: conflicting_pipeline, name: 'Other', code: 'other', position: 1)
+    deal = create(:crm_deal, account: account, pipeline: requested_pipeline, stage: current_stage, originating_conversation_id: conversation.id)
+
+    payload = JSON.parse(execute_confirmed(
+                           pipeline_code: requested_pipeline.code,
+                           pipeline_id: conflicting_pipeline.id,
+                           stage_name: requested_stage.name,
+                           stage_id: conflicting_stage.id
+                         ))
+
+    expect(payload['deal']).to include('id' => deal.id, 'pipeline_id' => requested_pipeline.id, 'stage_id' => requested_stage.id)
+    expect(deal.reload.stage_id).to eq(requested_stage.id)
+  end
+
   it 'moves the current deal to the next stage by position in the same pipeline' do
     pipeline = create(:crm_pipeline, account: account)
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Новый', code: 'new', position: 1, color: '#111111')

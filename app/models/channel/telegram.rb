@@ -76,7 +76,7 @@ class Channel::Telegram < ApplicationRecord
     message.conversation[:additional_attributes]['business_connection_id']
   end
 
-  def update_message(message:, content:)
+  def update_message(message:, content:, reply_markup: nil)
     method_name, text_key =
       if message.attachments.any?
         ['editMessageCaption', :caption]
@@ -84,14 +84,17 @@ class Channel::Telegram < ApplicationRecord
         ['editMessageText', :text]
       end
 
+    body = {
+      :chat_id => chat_id(message),
+      :message_id => message.source_id,
+      :parse_mode => 'HTML',
+      text_key => convert_markdown_to_telegram_html(content.to_s)
+    }.merge(business_body(message))
+    body[:reply_markup] = reply_markup unless reply_markup.nil?
+
     response = HTTParty.post(
       "#{telegram_api_url}/#{method_name}",
-      body: {
-        :chat_id => chat_id(message),
-        :message_id => message.source_id,
-        :parse_mode => 'HTML',
-        text_key => convert_markdown_to_telegram_html(content.to_s)
-      }.merge(business_body(message))
+      body: body
     )
 
     raise response.parsed_response['description'] unless response.success?

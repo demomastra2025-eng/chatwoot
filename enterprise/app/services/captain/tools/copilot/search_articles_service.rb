@@ -3,13 +3,18 @@ class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::Copilot::
     'search_articles'
   end
 
-  description 'Search knowledge base articles by query, category, or status'
+  description 'Search knowledge base articles by query, category, or status. ' \
+              'Never guess category_id; omit it unless the user provided a verified category ID.'
   param :query, type: :string, desc: 'Search articles by title or content (partial match)', required: false
-  param :category_id, type: :number, desc: 'Filter articles by category ID', required: false
+  param :category_id, type: :number,
+                      desc: 'Optional verified category ID. Never guess or default it; omit it for general title/content search.',
+                      required: false
   param :status, type: :string, desc: 'Filter articles by status: draft, published, archived', required: false
   param :limit, type: :number, desc: 'Maximum number of articles to return', required: false
 
   def execute(query: nil, category_id: nil, status: nil, limit: nil)
+    category_id = optional_positive_id(category_id)
+    validate_category!(category_id)
     articles = fetch_articles(query: query, category_id: category_id, status: status)
     total_count = articles.count
     records = articles.limit(parse_limit(limit)).map { |article| article_payload(article) }
@@ -23,6 +28,8 @@ class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::Copilot::
       total_count: total_count,
       articles: records
     )
+  rescue StandardError => e
+    tool_failure(e)
   end
 
   def active?
@@ -30,6 +37,14 @@ class Captain::Tools::Copilot::SearchArticlesService < Captain::Tools::Copilot::
   end
 
   private
+
+  def validate_category!(category_id)
+    return if category_id.blank?
+    return if Category.where(account_id: account.id).exists?(id: category_id)
+
+    raise ArgumentError,
+          "Unknown category_id #{category_id} for the current account. Omit category_id unless the user provided a verified category ID."
+  end
 
   def fetch_articles(query:, category_id:, status:)
     scope = account.articles.includes(:portal, :author).order(updated_at: :desc, id: :desc)

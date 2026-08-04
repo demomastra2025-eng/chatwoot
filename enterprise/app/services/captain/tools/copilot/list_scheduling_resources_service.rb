@@ -9,7 +9,7 @@ class Captain::Tools::Copilot::ListSchedulingResourcesService < Captain::Tools::
   param :limit, type: :number, desc: 'Maximum number of specialists to return', required: false
 
   def execute(service_id: nil, include_inactive: false, limit: nil)
-    service_id = optional_positive_id(service_id)
+    service_id = verified_optional_record_id(service_id, scope: account.scheduling_services, field_name: 'service_id')
     result = Scheduling::ResourceSearchService.new(
       account: account,
       service_id: service_id,
@@ -23,6 +23,8 @@ class Captain::Tools::Copilot::ListSchedulingResourcesService < Captain::Tools::
       total_count: result[:total_count],
       resources: result[:resources]
     )
+  rescue StandardError => e
+    tool_failure(e)
   end
 
   def active?

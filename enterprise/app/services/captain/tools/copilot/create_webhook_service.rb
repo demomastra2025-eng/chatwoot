@@ -11,6 +11,7 @@ class Captain::Tools::Copilot::CreateWebhookService < Captain::Tools::Copilot::B
 
   def execute(url:, subscriptions:, name: nil, inbox_id: nil)
     ensure_account_administrator!
+    inbox_id = verified_optional_record_id(inbox_id, scope: account.inboxes, field_name: 'inbox_id')
 
     webhook = account.webhooks.create!(
       url: url.to_s.strip,

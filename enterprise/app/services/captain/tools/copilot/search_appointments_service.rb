@@ -14,6 +14,9 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
   param :limit, type: :number, desc: 'Maximum number of appointments to return', required: false
 
   def execute(client_name: nil, status: nil, payment_status: nil, contact_id: nil, resource_id: nil, from: nil, to: nil, limit: nil)
+    contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+    resource_id = verified_optional_record_id(resource_id, scope: account.scheduling_resources, field_name: 'resource_id')
+
     appointments = account.scheduling_appointments.includes(
       :resource,
       :service,
@@ -48,6 +51,8 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
       total_count: total_count,
       appointments: records
     )
+  rescue StandardError => e
+    tool_failure(e)
   end
 
   def active?

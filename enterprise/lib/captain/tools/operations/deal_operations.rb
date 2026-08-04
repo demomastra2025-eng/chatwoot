@@ -154,8 +154,8 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
   def resolve_pipeline(pipeline_id: nil, pipeline_code: nil, fallback_pipeline: nil)
     pipeline_id = optional_positive_id(pipeline_id)
 
-    return account.crm_pipelines.active.find(pipeline_id) if pipeline_id.present?
     return account.crm_pipelines.active.find_by!(code: normalized_code(pipeline_code)) if pipeline_code.present?
+    return account.crm_pipelines.active.find(pipeline_id) if pipeline_id.present?
 
     fallback_pipeline
   end
@@ -167,9 +167,9 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     requested_pipeline = resolve_pipeline(pipeline_id: pipeline_id, pipeline_code: pipeline_code)
     target_pipeline = requested_pipeline || fallback_pipeline
 
-    return resolve_stage_by_id(stage_id, target_pipeline: requested_pipeline) if stage_id.present?
-    return resolve_stage_by_code(stage_code, target_pipeline: target_pipeline) if stage_code.present?
     return resolve_stage_by_name(stage_name, target_pipeline: target_pipeline) if stage_name.present?
+    return resolve_stage_by_code(stage_code, target_pipeline: target_pipeline) if stage_code.present?
+    return resolve_stage_by_id(stage_id, target_pipeline: requested_pipeline) if stage_id.present?
     return first_active_stage_for_pipeline(requested_pipeline) if allow_pipeline_default && requested_pipeline.present?
 
     raise ArgumentError, 'One of stage_id, stage_name, stage_code, pipeline_id, pipeline_code, or stage_action is required'

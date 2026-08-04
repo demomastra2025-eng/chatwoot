@@ -26,6 +26,22 @@ RSpec.describe Captain::Tools::Copilot::ChangeTaskStatusService do
     )
   end
 
+  it 'prefers a status name over conflicting status code and id selectors' do
+    old_status = create(:crm_task_status, account: account, name: 'Todo', code: 'todo')
+    requested_status = create(:crm_task_status, account: account, name: 'Done', code: 'done')
+    conflicting_status = create(:crm_task_status, account: account, name: 'Blocked', code: 'blocked')
+    task = create(:crm_task, account: account, status: old_status, originating_conversation_id: conversation.id)
+
+    payload = JSON.parse(execute_confirmed(
+                           status_name: requested_status.name,
+                           status_code: conflicting_status.code,
+                           status_id: conflicting_status.id
+                         ))
+
+    expect(payload).to include('task_id' => task.id, 'status_id' => requested_status.id)
+    expect(task.reload.status_id).to eq(requested_status.id)
+  end
+
   def execute_confirmed(**arguments)
     first_result = service.execute(**arguments)
     first_payload = JSON.parse(first_result)

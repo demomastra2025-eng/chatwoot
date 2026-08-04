@@ -35,6 +35,12 @@ RSpec.describe 'Captain campaign copilot tools' do
       result = described_class.new(assistant, user: agent).execute
       expect(result).to include('Account administrator permission is required')
     end
+
+    it 'rejects an unknown inbox id instead of returning a false empty success' do
+      result = described_class.new(assistant, user: admin).execute(inbox_id: 2_147_483_647)
+
+      expect(result).to include('Unknown inbox_id 2147483647 for this account')
+    end
   end
 
   describe Captain::Tools::Copilot::GetCampaignService do

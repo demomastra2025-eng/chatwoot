@@ -40,5 +40,10 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
         'status' => 'scheduled'
       )
     end
+
+    it 'rejects unknown contact and specialist ids instead of returning a false empty success' do
+      expect(service.execute(contact_id: 2_147_483_647)).to include('Unknown contact_id 2147483647 for this account')
+      expect(service.execute(resource_id: 2_147_483_647)).to include('Unknown resource_id 2147483647 for this account')
+    end
   end
 end

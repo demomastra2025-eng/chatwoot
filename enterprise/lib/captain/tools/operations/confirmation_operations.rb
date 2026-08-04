@@ -81,7 +81,7 @@ class Captain::Tools::Operations::ConfirmationOperations < Captain::Tools::Opera
   end
 
   def resolve_subject_by_kind(subject_kind)
-    normalized_kind = subject_kind.to_s
+    normalized_kind = subject_kind.to_s.demodulize.underscore
     raise ArgumentError, "subject_kind must be one of: #{SUBJECT_TYPES_BY_KIND.keys.join(', ')}" unless SUBJECT_TYPES_BY_KIND.key?(normalized_kind)
 
     case normalized_kind

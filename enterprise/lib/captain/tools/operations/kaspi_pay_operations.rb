@@ -126,6 +126,7 @@ class Captain::Tools::Operations::KaspiPayOperations
 
   def search_payments(status: nil, source_type: nil, conversation_id: nil, appointment_id: nil, from: nil, to: nil, limit: nil)
     ensure_account_admin!
+    raise ArgumentError, 'Provide either conversation_id or appointment_id, not both' if conversation_id.present? && appointment_id.present?
 
     scope = account.kaspi_pay_payments.includes(:source).order(created_at: :desc)
     scope = scope.where(status: status) if status.present?
@@ -298,6 +299,7 @@ class Captain::Tools::Operations::KaspiPayOperations
   end
 
   def source_for(conversation_id:, appointment_id:)
+    raise ArgumentError, 'Provide either conversation_id or appointment_id, not both' if conversation_id.present? && appointment_id.present?
     return account.scheduling_appointments.find(appointment_id) if appointment_id.present?
 
     if conversation_id.present?

@@ -157,10 +157,11 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     target_conversation = find_permissible_conversation!(conversation_id)
 
     if assignee_id.present? || assignee_type.present?
+      resolved_assignee_type = validated_assignee_type!(assignee_id: assignee_id, assignee_type: assignee_type)
       ::Conversations::AssignmentService.new(
         conversation: target_conversation,
         assignee_id: assignee_id,
-        assignee_type: assignee_type
+        assignee_type: resolved_assignee_type
       ).perform
     end
 
@@ -225,6 +226,22 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
   end
 
   private
+
+  def validated_assignee_type!(assignee_id:, assignee_type:)
+    raise ArgumentError, 'assignee_id is required when assignee_type is provided' if assignee_id.blank?
+
+    resolved_type = assignee_type.to_s.presence || 'User'
+    case resolved_type
+    when 'User'
+      account.users.find(assignee_id)
+    when 'AgentBot'
+      account.agent_bots.find(assignee_id)
+    else
+      raise ArgumentError, 'assignee_type must be User or AgentBot'
+    end
+
+    resolved_type
+  end
 
   def permissible_conversations
     ::Conversations::PermissionFilterService.new(account.conversations, actor, account).perform

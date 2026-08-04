@@ -80,6 +80,10 @@ RSpec.describe Captain::Tools::Copilot::SearchSchedulingResourcesService do
       end
     end
 
+    it 'rejects an unknown service id instead of returning a false empty success' do
+      expect(service.execute(service_id: 2_147_483_647)).to include('Unknown service_id 2147483647 for this account')
+    end
+
     it 'can include inactive specialists when requested' do
       payload = JSON.parse(service.execute(include_inactive: true, query: 'old'))
 

@@ -34,4 +34,13 @@ RSpec.describe Captain::Tools::Copilot::SearchArticlesService do
     expect(payload['total_count']).to eq(2)
     expect(payload['articles'].length).to eq(1)
   end
+
+  it 'rejects an unknown category ID instead of silently returning zero results' do
+    portal = create(:portal, account: account)
+    create(:article, account: account, portal: portal, author: user, title: 'Новая статья', content: 'Содержание', status: 'published')
+
+    result = service.execute(query: 'Новая статья', category_id: 1, status: 'published', limit: 10)
+
+    expect(result).to include('ERROR: ArgumentError: Unknown category_id 1 for the current account')
+  end
 end

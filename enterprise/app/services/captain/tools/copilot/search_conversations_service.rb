@@ -14,6 +14,8 @@ class Captain::Tools::Copilot::SearchConversationsService < Captain::Tools::Copi
     filter_error = validate_filters(status: status, priority: priority)
     return filter_error if filter_error
 
+    contact_id = verified_optional_record_id(contact_id, scope: account.contacts, field_name: 'contact_id')
+
     conversations = filtered_conversations(status: status, contact_id: contact_id, priority: priority, labels: labels)
     total_count = conversations.count
     records = conversations.limit(parse_limit(limit)).map { |conversation| conversation_payload(conversation) }
@@ -28,6 +30,8 @@ class Captain::Tools::Copilot::SearchConversationsService < Captain::Tools::Copi
       total_count: total_count,
       conversations: records
     )
+  rescue StandardError => e
+    tool_failure(e)
   end
 
   def active?

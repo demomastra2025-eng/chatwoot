@@ -51,6 +51,44 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
     expect(payload['stages'].map { |stage| stage['id'] }).to eq([stage_b.id])
   end
 
+  it 'resolves a user-provided pipeline name without requiring a numeric ID' do
+    pipeline = create(:crm_pipeline, account: account, name: 'Продажи', code: 'sales')
+    stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Новый', code: 'new', position: 1, color: '#111111')
+
+    payload = JSON.parse(service.execute(pipeline_name: 'продажи'))
+
+    expect(payload['pipeline']).to include('id' => pipeline.id, 'name' => 'Продажи')
+    expect(payload['stages'].map { |item| item['id'] }).to eq([stage.id])
+  end
+
+  it 'prioritizes an explicit pipeline selector over an unrelated guessed deal ID' do
+    pipeline = create(:crm_pipeline, account: account, name: 'Продажи', code: 'sales')
+    stage = create(:crm_stage, account: account, pipeline: pipeline, name: 'Новый', code: 'new', position: 1, color: '#111111')
+
+    payload = JSON.parse(service.execute(pipeline_name: 'Продажи', deal_id: 1))
+
+    expect(payload['pipeline']).to include('id' => pipeline.id)
+    expect(payload['stages'].map { |item| item['id'] }).to eq([stage.id])
+    expect(payload['filters']).not_to have_key('deal_id')
+    expect(payload['ignored_filters']).to eq('deal_id' => 1)
+  end
+
+  it 'prioritizes a user-provided pipeline name over conflicting code and numeric ID selectors' do
+    requested_pipeline = create(:crm_pipeline, account: account, name: 'Продажи', code: 'sales')
+    requested_stage = create(:crm_stage, account: account, pipeline: requested_pipeline, code: 'new', position: 1, color: '#111111')
+    conflicting_pipeline = create(:crm_pipeline, account: account, name: 'Другая', code: 'other')
+
+    payload = JSON.parse(
+      service.execute(pipeline_name: 'Продажи', pipeline_code: conflicting_pipeline.code, pipeline_id: conflicting_pipeline.id)
+    )
+
+    expect(payload['pipeline']).to include('id' => requested_pipeline.id)
+    expect(payload['stages'].map { |item| item['id'] }).to eq([requested_stage.id])
+    expect(payload['filters']).to include('pipeline_name' => 'Продажи')
+    expect(payload['filters']).not_to include('pipeline_code', 'pipeline_id')
+    expect(payload['ignored_filters']).to include('pipeline_code' => 'other', 'pipeline_id' => conflicting_pipeline.id)
+  end
+
   it 'exposes configured transition and closing reasons for stage selection' do
     pipeline = create(:crm_pipeline, account: account, code: 'reasons')
     open_stage = create(

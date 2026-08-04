@@ -192,5 +192,9 @@ RSpec.describe 'Captain assistant account observability tools' do
                                                          'status' => 'degraded')
       expect(payload.fetch('channels').first.fetch('recent_failures').first.fetch('external_error')).to eq('[REDACTED]')
     end
+
+    it 'rejects an unknown inbox id instead of returning a false empty success' do
+      expect(service.execute(inbox_id: 2_147_483_647)).to include('Unknown inbox_id 2147483647 for this account')
+    end
   end
 end

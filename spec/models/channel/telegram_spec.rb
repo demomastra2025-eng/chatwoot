@@ -55,6 +55,42 @@ RSpec.describe Channel::Telegram do
     end
   end
 
+  describe '#update_message' do
+    it 'can clear inline buttons while editing confirmation text' do
+      message = create(
+        :message,
+        message_type: :outgoing,
+        content: 'old text',
+        source_id: 'telegram-42',
+        conversation: create(:conversation, inbox: telegram_channel.inbox, additional_attributes: { 'chat_id' => '123' })
+      )
+
+      stub_request(:post, "https://api.telegram.org/bot#{telegram_channel.bot_token}/editMessageText")
+        .with(
+          body: {
+            chat_id: '123',
+            message_id: 'telegram-42',
+            parse_mode: 'HTML',
+            text: 'new text',
+            reply_markup: { inline_keyboard: [] }.to_json
+          }
+        )
+        .to_return(
+          status: 200,
+          body: { ok: true, result: { message_id: 'telegram-42' } }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      result = telegram_channel.update_message(
+        message: message,
+        content: 'new text',
+        reply_markup: { inline_keyboard: [] }.to_json
+      )
+
+      expect(result).to include('ok' => true)
+    end
+  end
+
   context 'when a valid message and empty attachments' do
     it 'send message' do
       message = create(:message, message_type: :outgoing, content: 'test',

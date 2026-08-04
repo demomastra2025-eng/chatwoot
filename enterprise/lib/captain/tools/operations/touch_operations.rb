@@ -325,10 +325,9 @@ class Captain::Tools::Operations::TouchOperations < Captain::Tools::Operations::
   end
 
   def find_touch_plan_in_scope(scope, touch_plan_id:, touch_plan_name:)
-    return scope.find_by(id: touch_plan_id) if touch_plan_id.present?
-    return if touch_plan_name.blank?
+    return scope.where('LOWER(name) = ?', touch_plan_name.to_s.strip.downcase).order(:id).first if touch_plan_name.present?
 
-    scope.where('LOWER(name) = ?', touch_plan_name.to_s.strip.downcase).order(:id).first
+    scope.find_by(id: touch_plan_id) if touch_plan_id.present?
   end
 
   def ensure_touch_plan_supports!(touch_plan, entity_kind)

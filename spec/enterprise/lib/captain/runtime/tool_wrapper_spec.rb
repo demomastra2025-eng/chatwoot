@@ -9,6 +9,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     param :offset, type: :integer, required: false
     param :enabled, type: :boolean, required: false
     param :items, type: :array, required: false
+    param :priority, type: :string, required: false
 
     params(
       type: 'object',
@@ -17,7 +18,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         category_id: { type: 'integer' },
         offset: { type: 'integer' },
         enabled: { type: 'boolean' },
-        items: { type: 'array' }
+        items: { type: 'array' },
+        priority: { type: 'string' }
       },
       required: [],
       additionalProperties: false
@@ -52,22 +54,24 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
   class ToolWrapperSpecReadOnlyTool < Captain::Runtime::Tool
     param :result, required: false
+    param :limit, type: :integer, required: false
     params(
       type: 'object',
-      properties: { result: {} },
+      properties: { result: {}, limit: { type: 'integer' } },
       required: [],
       additionalProperties: false
     )
 
     attr_reader :calls
 
-    def initialize
-      super
+    def initialize(tool_name: 'tool_wrapper_read_only_spec')
+      super()
       @calls = 0
+      @tool_name = tool_name
     end
 
     def name
-      'tool_wrapper_read_only_spec'
+      @tool_name
     end
 
     def description
@@ -165,9 +169,52 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(events.first).to eq([:start, 'tool_wrapper_spec', { result: 'normalized', offset: 0, enabled: false, items: [] }])
   end
 
+  it 'drops provider null sentinels from optional conversation enum filters before tracing' do
+    allow(tool).to receive(:name).and_return('search_conversations')
+
+    result = wrapper.call(result: 'normalized', priority: 'nil')
+
+    expect(result).to eq('normalized')
+    expect(events.first).to eq([:start, 'search_conversations', { result: 'normalized' }])
+  end
+
+  it 'preserves the same string for unrelated free-text tool arguments' do
+    result = wrapper.call(result: 'nil')
+
+    expect(result).to eq('nil')
+    expect(events.first).to eq([:start, 'tool_wrapper_spec', { result: 'nil' }])
+  end
+
   it 'adds a positive lower bound to numeric id schemas exposed to the provider' do
     expect(wrapper.params_schema.dig('properties', 'category_id')).to include('type' => 'integer', 'minimum' => 1)
+    expect(wrapper.params_schema.dig('properties', 'category_id', 'description')).to include('Never guess an ID')
     expect(wrapper.params_schema.dig('properties', 'offset')).not_to have_key('minimum')
+  end
+
+  it 'adds positive item bounds and verified-id guidance to numeric id arrays' do
+    allow(tool).to receive(:params_schema).and_return(
+      type: 'object',
+      properties: {
+        resource_ids: { type: 'array', items: { type: 'integer' } },
+        values: { type: 'array', items: { type: 'integer' } }
+      }
+    )
+
+    expect(wrapper.params_schema.dig('properties', 'resource_ids')).to include('description' => include('Never guess an ID'))
+    expect(wrapper.params_schema.dig('properties', 'resource_ids', 'items')).to include('minimum' => 1)
+    expect(wrapper.params_schema.dig('properties', 'values', 'items')).not_to have_key('minimum')
+  end
+
+  it 'adds verified-id guidance without numeric bounds to string id arrays' do
+    allow(tool).to receive(:params_schema).and_return(
+      type: 'object',
+      properties: {
+        resource_ids: { type: 'array', items: { type: 'string' } }
+      }
+    )
+
+    expect(wrapper.params_schema.dig('properties', 'resource_ids')).to include('description' => include('Never guess an ID'))
+    expect(wrapper.params_schema.dig('properties', 'resource_ids', 'items')).not_to have_key('minimum')
   end
 
   it 'rejects an explicit zero id instead of treating it as an omitted value' do
@@ -332,6 +379,30 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       retryable: false,
       audit: include(failure_reason: 'duplicate_failed_tool_call', original_error: 'Invalid stage filters')
     )
+  end
+
+  it 'blocks non-retryable audited lookup failures when only pagination changes' do
+    described_class::NON_SEMANTIC_FAILURE_ARGUMENT_KEYS.each_key do |tool_name|
+      read_only_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: tool_name)
+      read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
+      failure = Captain::ToolResult.failure(error: 'Unknown verified entity id', retryable: false)
+
+      expect(read_only_wrapper.call(result: failure, limit: 10)).to eq('ERROR: Unknown verified entity id')
+      expect(read_only_wrapper.call(result: failure, limit: 50)).to eq(
+        'ERROR: This exact tool call already failed. Change the arguments or stop retrying it.'
+      )
+      expect(read_only_tool.calls).to eq(1)
+    end
+  end
+
+  it 'does not suppress a changed limit for unrelated read-only tools' do
+    read_only_tool = ToolWrapperSpecReadOnlyTool.new
+    read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
+    failure = Captain::ToolResult.failure(error: 'Page-specific failure', retryable: false)
+
+    expect(read_only_wrapper.call(result: failure, limit: 10)).to eq('ERROR: Page-specific failure')
+    expect(read_only_wrapper.call(result: failure, limit: 50)).to eq('ERROR: Page-specific failure')
+    expect(read_only_tool.calls).to eq(2)
   end
 
   it 'allows an identical retryable failed call to execute again' do

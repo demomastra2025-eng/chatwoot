@@ -112,6 +112,33 @@ RSpec.describe 'Captain touch management copilot services' do
     expect(archive_payload.dig('touch_plan', 'archived_at')).to be_present
   end
 
+  it 'prefers a touch plan name over a conflicting id' do
+    create_service = copilot_service(Captain::Tools::Copilot::CreateTouchPlanService)
+    requested_plan = JSON.parse(execute_confirmed(
+                                  create_service,
+                                  name: 'Requested plan',
+                                  entity_kinds: ['conversation'],
+                                  touches: [touch_definition]
+                                ))
+    conflicting_plan = JSON.parse(execute_confirmed(
+                                    create_service,
+                                    name: 'Conflicting plan',
+                                    entity_kinds: ['conversation'],
+                                    touches: [touch_definition.merge(body: 'Wrong plan')]
+                                  ))
+
+    payload = JSON.parse(execute_confirmed(
+                           copilot_service(Captain::Tools::Copilot::ApplyTouchPlanService),
+                           touch_plan_id: conflicting_plan.dig('touch_plan', 'id'),
+                           touch_plan_name: 'Requested plan'
+                         ))
+
+    expect(payload).to include(
+      'touch_plan_id' => requested_plan.dig('touch_plan', 'id'),
+      'touch_plan_name' => 'Requested plan'
+    )
+  end
+
   def execute_confirmed(service, **arguments)
     first_result = service.execute(**arguments)
     first_payload = JSON.parse(first_result)

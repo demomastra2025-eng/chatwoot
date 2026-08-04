@@ -187,6 +187,15 @@ RSpec.describe 'Captain Kaspi Pay tools' do
       expect { service.execute(conversation_id: conversation.display_id, amount: 20_000) }
         .to raise_error(ArgumentError, /administrator/)
     end
+
+    it 'rejects conflicting conversation and appointment source selectors' do
+      appointment = create(:scheduling_appointment, account: account)
+      service = described_class.new(assistant, user: admin, conversation: conversation)
+
+      expect do
+        service.execute(conversation_id: conversation.display_id, appointment_id: appointment.id, amount: 20_000)
+      end.to raise_error(ArgumentError, /either conversation_id or appointment_id/)
+    end
   end
 
   describe Captain::Tools::Copilot::SearchKaspiPayPaymentsService do
@@ -203,6 +212,15 @@ RSpec.describe 'Captain Kaspi Pay tools' do
       expect(payload.dig('payments', 0, 'amount')).to eq(15_000)
       expect(payload.to_json).not_to include('vtoken_secret')
       expect(payload.to_json).not_to include('encrypted-secret')
+    end
+
+    it 'rejects conflicting conversation and appointment filters instead of returning a false empty success' do
+      appointment = create(:scheduling_appointment, account: account)
+      service = described_class.new(assistant, user: admin, conversation: conversation)
+
+      expect do
+        service.execute(conversation_id: conversation.display_id, appointment_id: appointment.id)
+      end.to raise_error(ArgumentError, /either conversation_id or appointment_id/)
     end
   end
 

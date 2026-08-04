@@ -55,7 +55,9 @@ class Captain::Tools::RequestConfirmationTool < Captain::Tools::BasePublicTool
   def subject_from_state(state, subject_kind)
     return nil if subject_kind.blank?
 
-    case subject_kind.to_s
+    normalized_kind = subject_kind.to_s.demodulize.underscore
+
+    case normalized_kind
     when 'conversation'
       current_conversation(state)
     when 'appointment'
@@ -66,7 +68,7 @@ class Captain::Tools::RequestConfirmationTool < Captain::Tools::BasePublicTool
       current_task(state)
     else
       raise ArgumentError, 'subject_kind must be one of: conversation, appointment, deal, task'
-    end || raise(ArgumentError, "Current #{subject_kind} is not available")
+    end || raise(ArgumentError, "Current #{normalized_kind} is not available")
   end
 
   def delivery_status(delivery, delivery_error)

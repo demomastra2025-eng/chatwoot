@@ -99,5 +99,9 @@ RSpec.describe Captain::Tools::Copilot::SearchConversationsService do
         'conversations' => []
       )
     end
+
+    it 'rejects an unknown contact id instead of returning a false empty success' do
+      expect(service.execute(contact_id: 2_147_483_647)).to include('Unknown contact_id 2147483647 for this account')
+    end
   end
 end

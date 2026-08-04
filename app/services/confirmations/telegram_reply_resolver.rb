@@ -11,6 +11,17 @@ class Confirmations::TelegramReplyResolver
     )
     return if resolution.blank?
 
+    resolved_request = resolve_request(resolution)
+    Confirmations::TelegramTerminalFeedbackService.new(confirmation_request: resolved_request).perform
+    resolved_request
+  rescue Confirmations::ExpiredRequestError, ArgumentError => e
+    Rails.logger.info("Telegram confirmation callback rejected for conversation #{conversation.id}: #{e.message}")
+    nil
+  end
+
+  private
+
+  def resolve_request(resolution)
     Confirmations::ResolveService.new(
       account: conversation.account,
       confirmation_request: resolution.fetch(:confirmation_request),
@@ -20,12 +31,7 @@ class Confirmations::TelegramReplyResolver
       confidence: 1.0,
       metadata: resolution_metadata
     ).perform
-  rescue Confirmations::ExpiredRequestError, ArgumentError => e
-    Rails.logger.info("Telegram confirmation callback rejected for conversation #{conversation.id}: #{e.message}")
-    nil
   end
-
-  private
 
   def resolution_metadata
     {

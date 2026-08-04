@@ -14,12 +14,7 @@ class Captain::Tools::Copilot::UpdateWebhookService < Captain::Tools::Copilot::B
     ensure_account_administrator!
 
     webhook = account.webhooks.find(webhook_id)
-    attrs = {}
-    attrs[:url] = url.to_s.strip unless url.nil?
-    attrs[:name] = name.to_s.strip.presence unless name.nil?
-    attrs[:inbox_id] = inbox_id unless inbox_id.nil?
-    attrs[:subscriptions] = normalized_subscriptions(subscriptions) unless subscriptions.nil?
-    webhook.update!(attrs)
+    webhook.update!(webhook_attributes(url: url, subscriptions: subscriptions, name: name, inbox_id: inbox_id))
 
     formatted_payload(action: 'update_webhook', webhook: webhook_payload(webhook.reload))
   rescue StandardError => e
@@ -31,6 +26,16 @@ class Captain::Tools::Copilot::UpdateWebhookService < Captain::Tools::Copilot::B
   end
 
   private
+
+  def webhook_attributes(url:, subscriptions:, name:, inbox_id:)
+    attrs = {}
+    attrs[:url] = url.to_s.strip unless url.nil?
+    attrs[:name] = name.to_s.strip.presence unless name.nil?
+    verified_inbox_id = verified_optional_record_id(inbox_id, scope: account.inboxes, field_name: 'inbox_id')
+    attrs[:inbox_id] = verified_inbox_id if verified_inbox_id.present?
+    attrs[:subscriptions] = normalized_subscriptions(subscriptions) unless subscriptions.nil?
+    attrs
+  end
 
   def normalized_subscriptions(subscriptions)
     Array(subscriptions).flatten.filter_map { |item| item.to_s.strip.presence }.uniq

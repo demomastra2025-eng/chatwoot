@@ -17,6 +17,10 @@ RSpec.describe Confirmations::TelegramReplyResolver do
 
   it 'resolves a signed Telegram callback with the contact actor and Telegram source' do
     callback_value = Confirmations::TelegramCallback.encode(confirmation_request, 'confirmed')
+    terminal_feedback = instance_double(Confirmations::TelegramTerminalFeedbackService, perform: true)
+    expect(Confirmations::TelegramTerminalFeedbackService).to receive(:new)
+      .with(confirmation_request: confirmation_request)
+      .and_return(terminal_feedback)
 
     result = described_class.new(
       conversation: conversation,

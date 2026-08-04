@@ -122,6 +122,14 @@ RSpec.describe 'Captain native ops tools' do
       )
       expect(payload['notes'].first).to include('does not require channel templates')
     end
+
+    it 'rejects conflicting conversation and inbox selectors' do
+      service = described_class.new(assistant, user: user, conversation: conversation)
+
+      result = service.execute(conversation_id: conversation.display_id, inbox_id: inbox.id)
+
+      expect(result).to include('Provide either conversation_id or inbox_id, not both')
+    end
   end
 
   describe Captain::Tools::Copilot::AssignConversationService do
@@ -140,6 +148,17 @@ RSpec.describe 'Captain native ops tools' do
       expect(payload.dig('conversation', 'team_id')).to eq(team.id)
       expect(conversation.reload.assignee_id).to eq(assignee.id)
       expect(conversation.reload.team_id).to eq(team.id)
+    end
+
+    it 'rejects an unknown assignee without clearing the current assignment' do
+      current_assignee = create(:user, account: account)
+      conversation.update!(assignee: current_assignee)
+      service = described_class.new(assistant, user: user, conversation: conversation)
+
+      result = service.execute(conversation_id: conversation.display_id, assignee_id: 2_147_483_647)
+
+      expect(result).to include('ActiveRecord::RecordNotFound')
+      expect(conversation.reload.assignee).to eq(current_assignee)
     end
   end
 
@@ -560,6 +579,16 @@ RSpec.describe 'Captain native ops tools' do
       expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
       expect(account.webhooks.find_by(url: 'https://example.com/hook')).to be_blank
     end
+
+    it 'rejects an inbox from another account' do
+      other_inbox = create(:inbox, account: create(:account))
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
+
+      result = service.execute(url: 'https://example.com/cross-account', subscriptions: ['message_created'], inbox_id: other_inbox.id)
+
+      expect(result).to include("Unknown inbox_id #{other_inbox.id} for this account")
+      expect(account.webhooks.find_by(url: 'https://example.com/cross-account')).to be_nil
+    end
   end
 
   describe Captain::Tools::Copilot::UpdateWebhookService do
@@ -592,6 +621,27 @@ RSpec.describe 'Captain native ops tools' do
 
       expect(result).to start_with('ERROR: ArgumentError: Account administrator permission is required')
       expect(webhook.reload.url).to eq('https://old.example.com')
+    end
+
+    it 'rejects an inbox from another account without changing the webhook' do
+      webhook = create(:webhook, account: account, inbox: nil, url: 'https://old.example.com')
+      other_inbox = create(:inbox, account: create(:account))
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
+
+      result = service.execute(webhook_id: webhook.id, inbox_id: other_inbox.id)
+
+      expect(result).to include("Unknown inbox_id #{other_inbox.id} for this account")
+      expect(webhook.reload.inbox_id).to be_nil
+    end
+
+    it 'treats a non-positive inbox id as omitted without clearing the webhook inbox' do
+      webhook = create(:webhook, account: account, inbox: inbox, url: 'https://old.example.com')
+      service = described_class.new(assistant, user: user, conversation: conversation, copilot_thread: copilot_thread)
+
+      execute_confirmed(service, webhook_id: webhook.id, inbox_id: 0, name: 'Renamed')
+
+      expect(webhook.reload.inbox_id).to eq(inbox.id)
+      expect(webhook.name).to eq('Renamed')
     end
   end
 

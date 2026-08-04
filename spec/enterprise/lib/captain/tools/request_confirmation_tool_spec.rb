@@ -37,6 +37,26 @@ RSpec.describe Captain::Tools::RequestConfirmationTool do
     expect(payload.dig('confirmation_request', 'subject')).to include('type' => 'Scheduling::Appointment', 'id' => appointment.id)
   end
 
+  it 'normalizes a class-style subject kind emitted by the model' do
+    conversation = create(:conversation, account: account)
+    tool_context.state[:conversation] = { id: conversation.id }
+
+    payload = JSON.parse(
+      tool.perform(
+        tool_context,
+        title: 'Confirm conversation',
+        body: 'Please confirm',
+        subject_kind: 'Conversation',
+        send_now: false
+      )
+    )
+
+    expect(payload.dig('confirmation_request', 'subject')).to include(
+      'type' => 'Conversation',
+      'id' => conversation.id
+    )
+  end
+
   it 'returns a partial failure with the persisted request when delivery fails' do
     delivery = instance_double(Confirmations::DeliveryService)
     allow(Confirmations::DeliveryService).to receive(:new).and_return(delivery)

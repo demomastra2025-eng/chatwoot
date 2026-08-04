@@ -28,7 +28,8 @@ class Captain::Tools::Copilot::GetChannelHealthService < Captain::Tools::Copilot
 
   def scoped_inboxes(inbox_id)
     scope = account.inboxes.active.order(:id)
-    inbox_id.present? ? scope.where(id: inbox_id) : scope
+    verified_inbox_id = verified_optional_record_id(inbox_id, scope: scope, field_name: 'inbox_id')
+    verified_inbox_id.present? ? scope.where(id: verified_inbox_id) : scope
   end
 
   def channel_payload(inbox, range, failure_limit)

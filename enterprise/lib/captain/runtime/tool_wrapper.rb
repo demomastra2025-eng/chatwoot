@@ -13,6 +13,27 @@ class Captain::Runtime::ToolWrapper
   TOOL_FAILURE_CACHE_KEY = :captain_v2_tool_failure_cache
   TOOL_ATTEMPT_COUNTS_KEY = :captain_v2_tool_attempt_counts
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
+  VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
+  NULL_SENTINEL_ARGUMENT_KEYS = {
+    'search_conversations' => %i[status priority].freeze
+  }.freeze
+  NON_SEMANTIC_FAILURE_ARGUMENT_KEYS = {
+    'get_channel_health' => %i[limit].freeze,
+    'list_campaigns' => %i[limit].freeze,
+    'list_captain_knowledge_documents' => %i[limit].freeze,
+    'list_captain_knowledge_entries' => %i[limit].freeze,
+    'list_captain_scenarios' => %i[limit].freeze,
+    'list_channel_templates' => %i[limit].freeze,
+    'list_scheduling_resources' => %i[limit].freeze,
+    'search_appointments' => %i[limit].freeze,
+    'search_articles' => %i[limit].freeze,
+    'search_available_slots' => %i[limit].freeze,
+    'search_conversations' => %i[limit].freeze,
+    'search_deals' => %i[limit].freeze,
+    'search_kaspi_pay_payments' => %i[limit].freeze,
+    'search_scheduling_resources' => %i[limit].freeze,
+    'search_tasks' => %i[limit].freeze
+  }.freeze
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3
   MAX_TOOL_EXECUTIONS_PER_RUN = 12
 
@@ -141,6 +162,7 @@ class Captain::Runtime::ToolWrapper
     normalized = normalized_tool_call_envelope(normalized)
 
     normalized = unwrap_nested_tool_call_envelopes(normalized)
+    normalized = omit_null_sentinel_arguments(normalized)
     validate_normalized_args!(normalized)
     normalized
   rescue InvalidToolArgumentsError
@@ -171,6 +193,15 @@ class Captain::Runtime::ToolWrapper
     parameters.with_indifferent_access.fetch(key, value)
   end
 
+  def omit_null_sentinel_arguments(args)
+    keys = NULL_SENTINEL_ARGUMENT_KEYS.fetch(@tool.name.to_s, [])
+    args.except(*keys.select { |key| null_sentinel?(args[key]) })
+  end
+
+  def null_sentinel?(value)
+    value.is_a?(String) && %w[nil null undefined].include?(value.strip.downcase)
+  end
+
   def raw_params_schema
     @tool.respond_to?(:params_schema) ? @tool.params_schema : nil
   end
@@ -180,9 +211,14 @@ class Captain::Runtime::ToolWrapper
 
     normalized = schema.deep_stringify_keys.deep_dup
     normalized.fetch('properties', {}).each do |name, property_schema|
-      next unless positive_id_schema?(name, property_schema)
-
-      property_schema['minimum'] = [property_schema['minimum'].to_i, 1].max
+      if positive_id_schema?(name, property_schema)
+        property_schema['minimum'] = [property_schema['minimum'].to_i, 1].max
+        append_verified_id_description!(property_schema)
+      elsif id_array_schema?(name, property_schema)
+        item_schema = property_schema['items']
+        item_schema['minimum'] = [item_schema['minimum'].to_i, 1].max if Array(item_schema['type']).intersect?(%w[integer number])
+        append_verified_id_description!(property_schema)
+      end
     end
     normalized
   end
@@ -192,6 +228,20 @@ class Captain::Runtime::ToolWrapper
     return false unless property_schema.is_a?(Hash)
 
     Array(property_schema['type']).intersect?(%w[integer number])
+  end
+
+  def id_array_schema?(name, property_schema)
+    return false unless name.to_s.end_with?('_ids')
+    return false unless property_schema.is_a?(Hash) && property_schema['items'].is_a?(Hash)
+
+    Array(property_schema['type']).include?('array')
+  end
+
+  def append_verified_id_description!(property_schema)
+    existing_description = property_schema['description'].to_s.strip
+    return if existing_description.include?(VERIFIED_ID_DESCRIPTION)
+
+    property_schema['description'] = [existing_description.presence, VERIFIED_ID_DESCRIPTION].compact.join(' ')
   end
 
   def validate_normalized_args!(args)
@@ -292,7 +342,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def repeated_failed_tool_result(normalized_args)
-    cached_entry = tool_failure_cache[tool_result_cache_digest(normalized_args)]
+    cached_entry = tool_failure_cache[semantic_tool_call_digest(normalized_args)]
     return if cached_entry.blank?
 
     Captain::ToolResult.failure(
@@ -311,7 +361,7 @@ class Captain::Runtime::ToolWrapper
     return unless Captain::ToolResult.error?(normalized_result)
     return if normalized_result[:retryable]
 
-    tool_failure_cache[tool_result_cache_digest(normalized_args)] = {
+    tool_failure_cache[semantic_tool_call_digest(normalized_args)] = {
       error: normalized_result[:error],
       stored_at: Time.current.iso8601
     }
@@ -397,6 +447,12 @@ class Captain::Runtime::ToolWrapper
 
   def tool_result_cache_digest(normalized_args)
     Digest::SHA256.hexdigest(JSON.generate(canonical_json_value({ tool_name: @tool.name.to_s, arguments: normalized_args })))
+  end
+
+  def semantic_tool_call_digest(normalized_args)
+    ignored_keys = mutating_tool? ? [] : NON_SEMANTIC_FAILURE_ARGUMENT_KEYS.fetch(@tool.name.to_s, [])
+    semantic_args = normalized_args.except(*ignored_keys)
+    tool_result_cache_digest(semantic_args)
   end
 
   def canonical_json_value(value)

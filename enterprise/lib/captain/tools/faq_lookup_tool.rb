@@ -5,6 +5,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   CACHE_FETCH_TIMEOUT_SECONDS = 3
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
   TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
+  SEMANTIC_DISTANCE_THRESHOLD = 0.3
 
   class TotalLookupTimeout < Timeout::Error; end
 
@@ -114,8 +115,14 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
         assistant_id: assistant.id,
         limit: SEMANTIC_RESULT_LIMIT
       ).to_a
+      responses.select! { |response| semantic_distance_acceptable?(response) }
       [responses, nil]
     end
+  end
+
+  def semantic_distance_acceptable?(response)
+    distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
+    distance.present? && distance.to_f <= SEMANTIC_DISTANCE_THRESHOLD
   end
 
   def bounded_cache_fetch(cache, query:)

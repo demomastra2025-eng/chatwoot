@@ -119,6 +119,16 @@ class Captain::Tools::Copilot::BaseAccountTool < Captain::Tools::BaseTool
     Captain::Tools::InputNormalizer.optional_positive_id(value)
   end
 
+  def verified_optional_record_id(value, scope:, field_name:)
+    record_id = optional_positive_id(value)
+    return if record_id.blank?
+
+    scope.find(record_id).id
+  rescue ActiveRecord::RecordNotFound
+    raise ArgumentError,
+          "Unknown #{field_name} #{record_id} for this account. Use a verified ID returned by a prior tool or omit #{field_name}."
+  end
+
   def required_positive_id(value, field_name:)
     Captain::Tools::InputNormalizer.required_positive_id(value, field_name: field_name)
   end

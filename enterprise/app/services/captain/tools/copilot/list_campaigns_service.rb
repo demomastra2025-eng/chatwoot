@@ -13,6 +13,7 @@ class Captain::Tools::Copilot::ListCampaignsService < Captain::Tools::Copilot::C
 
   def execute(campaign_status: nil, campaign_type: nil, inbox_id: nil, limit: nil)
     ensure_account_administrator!
+    inbox_id = verified_optional_record_id(inbox_id, scope: account.inboxes, field_name: 'inbox_id')
 
     campaigns = filtered_campaigns(campaign_status: campaign_status, campaign_type: campaign_type, inbox_id: inbox_id)
 

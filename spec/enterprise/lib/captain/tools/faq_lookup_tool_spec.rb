@@ -16,7 +16,8 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
 
   before do
     faq_response
-    allow(Captain::AssistantResponse).to receive(:search).and_return(Captain::AssistantResponse.where(id: faq_response.id))
+    scored_response = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: faq_response.id)
+    allow(Captain::AssistantResponse).to receive(:search).and_return(scored_response)
   end
 
   it 'returns normalized faq payload' do
@@ -38,7 +39,8 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
   end
 
   it 'serves repeated semantic lookups from the answer cache' do
-    expect(Captain::AssistantResponse).to receive(:search).once.and_return(Captain::AssistantResponse.where(id: faq_response.id))
+    scored_response = Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: faq_response.id)
+    expect(Captain::AssistantResponse).to receive(:search).once.and_return(scored_response)
 
     first_payload = JSON.parse(tool.perform(tool_context, query: 'password reset'))
     second_payload = JSON.parse(tool.perform(tool_context, query: ' password   reset '))
@@ -52,6 +54,21 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
     )
     expect(second_payload['query']).to eq(' password   reset ')
     expect(second_payload['matches'].first).to include('document_chunk_id' => document_chunk.id)
+  end
+
+  it 'does not expose a semantic candidate outside the relevance threshold' do
+    faq_response.define_singleton_method(:neighbor_distance) { 0.9 }
+    allow(Captain::AssistantResponse).to receive(:search).and_return([faq_response])
+
+    payload = JSON.parse(tool.perform(tool_context, query: 'unrelated phrase'))
+
+    expect(payload).to include('total_count' => 0, 'lookup_strategy' => 'lexical')
+    expect(payload['matches']).to be_empty
+    expect(payload['retrieval_trace']).to include(
+      'degraded' => true,
+      'fallback_reason' => 'semantic_no_matches',
+      'match_count' => 0
+    )
   end
 
   it 'falls back to exact/keyword FAQ lookup when semantic lookup is unavailable' do

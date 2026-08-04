@@ -51,8 +51,29 @@ RSpec.describe Captain::Tools::Copilot::SearchDealsService do
       expect(by_pipeline['deals'].map { |deal| deal['id'] }).to include(deal1.id, deal2.id)
       expect(by_pipeline['deals'].map { |deal| deal['id'] }).not_to include(other_deal.id)
 
-      expect(by_stage['filters']).to include('pipeline_code' => pipeline.code.titleize, 'stage_code' => stage.code.titleize)
+      expect(by_stage['filters']).to include('pipeline_code' => pipeline.code, 'stage_code' => stage.code)
       expect(by_stage['deals'].map { |deal| deal['id'] }).to contain_exactly(deal1.id, deal2.id)
+    end
+
+    it 'prefers verified semantic pipeline and stage selectors over conflicting ids' do
+      other_pipeline = create(:crm_pipeline, account: account, code: 'other')
+      other_stage = create(:crm_stage, account: account, pipeline: other_pipeline, name: 'Other', code: 'other')
+
+      payload = JSON.parse(service.execute(
+                             pipeline_id: other_pipeline.id,
+                             pipeline_code: pipeline.code,
+                             stage_id: other_stage.id,
+                             stage_name: stage.name
+                           ))
+
+      expect(payload['filters']).to include('pipeline_id' => pipeline.id, 'stage_id' => stage.id)
+      expect(payload['deals'].map { |deal| deal['id'] }).to contain_exactly(deal1.id, deal2.id)
+    end
+
+    it 'rejects every unknown entity id filter instead of returning a false empty success' do
+      %i[contact_id pipeline_id stage_id owner_id company_id].each do |field_name|
+        expect(service.execute(field_name => 2_147_483_647)).to include("Unknown #{field_name} 2147483647 for this account")
+      end
     end
 
     it 'defaults blank conversation searches to current contact deals and hides internal amount_minor' do

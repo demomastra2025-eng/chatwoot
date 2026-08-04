@@ -133,9 +133,9 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
   def resolve_status(status_id:, status_name:, status_code:)
     status_id = optional_positive_id(status_id)
 
-    return account.crm_task_statuses.find(status_id) if status_id.present?
-    return account.crm_task_statuses.find_by!(code: status_code.to_s.strip) if status_code.present?
     return account.crm_task_statuses.find_by!(name: status_name.to_s.strip) if status_name.present?
+    return account.crm_task_statuses.find_by!(code: status_code.to_s.strip) if status_code.present?
+    return account.crm_task_statuses.find(status_id) if status_id.present?
 
     raise ArgumentError, 'One of status_id, status_name, or status_code is required'
   end
