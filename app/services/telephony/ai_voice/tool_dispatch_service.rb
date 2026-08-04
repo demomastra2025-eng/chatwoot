@@ -5,7 +5,10 @@ class Telephony::AiVoice::ToolDispatchService
 
   REALTIME_FAQ_LOOKUP_TIMEOUT_MS = 10_000
   REALTIME_CAPTAIN_TOOL_TIMEOUT_MS = 15_000
-  REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 900
+  # Knowledge lookups usually take long enough to create an awkward silent
+  # gap. Start a short acknowledgement almost immediately, while still letting
+  # cache-fast responses complete without unnecessary filler audio.
+  REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 250
   VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS = 0.5
 
   VOICE_CRM_MUTATION_GUIDANCE = {

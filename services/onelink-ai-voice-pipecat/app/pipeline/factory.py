@@ -421,10 +421,6 @@ def build_pipeline(
                 ),
             )
         openrouter_extra_body = {
-            # One voice turn should choose one action at a time. Pipecat still
-            # groups provider results, while this prevents a model from issuing
-            # duplicate parallel CRM/knowledge operations.
-            "parallel_tool_calls": False,
             "provider": {
                 "sort": "latency",
                 "allow_fallbacks": True,
@@ -433,6 +429,13 @@ def build_pipeline(
                 "preferred_max_latency": {"p90": 3.0, "p99": 6.0},
             },
         }
+        # Keep parallel calls at Pipecat's native defaults. OpenRouter accepts
+        # `parallel_tool_calls`, but some model endpoints (including Luna) do
+        # not advertise it as a supported provider parameter. Combining it
+        # with `require_parameters=true` leaves the request with zero eligible
+        # endpoints and makes the voice agent completely silent. Pipecat groups
+        # a batch into one follow-up response, while SessionState preserves
+        # tool-call idempotency and fences repeated mutating actions.
         if context.ai.model.startswith("openai/gpt-5"):
             # GPT-5 voice turns are latency-sensitive. OpenRouter's normalized
             # contract supports disabling reasoning for this model family.

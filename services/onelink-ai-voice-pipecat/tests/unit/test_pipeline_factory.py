@@ -159,7 +159,6 @@ def test_builds_supported_provider_pipeline(
         assert llm._settings.extra == {
             "extra_body": {
                 "reasoning": {"effort": "none", "exclude": True},
-                "parallel_tool_calls": False,
                 "provider": {
                     "sort": "latency",
                     "allow_fallbacks": True,
@@ -175,7 +174,7 @@ def test_builds_supported_provider_pipeline(
             "effort": "none",
             "exclude": True,
         }
-        assert request_params["extra_body"]["parallel_tool_calls"] is False
+        assert "parallel_tool_calls" not in request_params["extra_body"]
         if model.startswith("openai/gpt-5"):
             assert str(llm._settings.temperature) == "NOT_GIVEN"
     else:
@@ -239,7 +238,29 @@ def test_non_gpt_openrouter_model_does_not_receive_gpt_reasoning_contract():
     llm = cast(OpenRouterLLMService, assembly.llm)
     assert "reasoning" not in llm._settings.extra["extra_body"]
     assert llm._settings.temperature == 0.3
-    assert llm._settings.extra["extra_body"]["parallel_tool_calls"] is False
+    assert "parallel_tool_calls" not in llm._settings.extra["extra_body"]
+
+
+def test_luna_openrouter_request_keeps_strict_routing_without_parallel_filter():
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.6-luna",
+            voice="fish-voice-ref",
+        ),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(OpenRouterLLMService, assembly.llm)
+    request_params = llm.build_chat_completion_params({"messages": []})
+    extra_body = request_params["extra_body"]
+
+    assert extra_body["provider"]["require_parameters"] is True
+    assert extra_body["reasoning"] == {"effort": "none", "exclude": True}
+    assert "parallel_tool_calls" not in extra_body
 
 
 def test_core_pipeline_settings_are_transport_neutral_between_janus_and_preview():

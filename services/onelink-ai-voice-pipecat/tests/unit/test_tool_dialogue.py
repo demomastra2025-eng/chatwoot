@@ -138,7 +138,7 @@ async def test_long_read_tool_speaks_progress_then_returns_result_once():
     execution = asyncio.create_task(execute_with_answer(coordinator, activity))
 
     await asyncio.sleep(0.03)
-    assert spoken == ["Секунду, проверяю информацию."]
+    assert spoken == ["Секунду, проверяю."]
     gate.set()
     results = await execution
     await asyncio.gather(*state.tasks)
@@ -188,7 +188,7 @@ async def test_ready_tool_result_interrupts_obsolete_progress_speech():
     results = await asyncio.wait_for(execution, timeout=0.2)
 
     assert results == [{"answer": "готово"}]
-    assert spoken == ["Секунду, проверяю информацию."]
+    assert spoken == ["Секунду, проверяю."]
     assert interruptions == [True]
 
 
