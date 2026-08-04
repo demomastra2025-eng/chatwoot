@@ -1,3 +1,4 @@
+import asyncio
 from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -808,6 +809,76 @@ async def test_elevenlabs_exact_speech_queues_tts_without_context_append():
 
 
 @pytest.mark.asyncio
+async def test_completed_cascaded_direct_speech_is_persisted_without_blocking_tts():
+    state = MagicMock()
+    state.add_transcript = AsyncMock()
+    state.flush_transcript = AsyncMock(return_value=True)
+    background_tasks = []
+
+    def spawn(work):
+        task = asyncio.create_task(work)
+        background_tasks.append(task)
+        return task
+
+    state.spawn.side_effect = spawn
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.4-mini",
+            voice="fish-voice-ref",
+        ),
+        state=state,
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+    assembly.worker.queue_frame = AsyncMock()
+    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=True)
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=True)
+
+    assert await assembly.speak_result("Акуна матата") is True
+    await asyncio.gather(*background_tasks)
+
+    state.add_transcript.assert_awaited_once_with(
+        "ai",
+        "Акуна матата",
+        final=True,
+        deduplicate_recent=True,
+    )
+    state.flush_transcript.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_interrupted_cascaded_direct_speech_is_not_persisted():
+    state = MagicMock()
+    state.add_transcript = AsyncMock()
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.4-mini",
+            voice="fish-voice-ref",
+        ),
+        state=state,
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+    assembly.worker.queue_frame = AsyncMock()
+    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=True)
+
+    async def complete_after_interruption(*_args, **_kwargs):
+        assembly.activity.interruptions += 1
+        return True
+
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(
+        side_effect=complete_after_interruption
+    )
+
+    assert await assembly.speak_exact("Секунду, проверю") is False
+    state.add_transcript.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_external_interruption_uses_worker_broadcast_frame():
     assembly = build_pipeline(
         context=_context(
@@ -830,27 +901,49 @@ async def test_external_interruption_uses_worker_broadcast_frame():
 
 @pytest.mark.asyncio
 async def test_cascaded_provider_starts_with_exact_tts_greeting_without_llm():
+    state = MagicMock()
+    state.add_transcript = AsyncMock()
+    state.flush_transcript = AsyncMock(return_value=True)
+    background_tasks = []
+
+    def spawn(work):
+        task = asyncio.create_task(work)
+        background_tasks.append(task)
+        return task
+
+    state.spawn.side_effect = spawn
     assembly = build_pipeline(
         context=_context(
             "fish",
             model="openai/gpt-5.4-mini",
             voice="fish-voice-ref",
         ),
-        state=MagicMock(),
+        state=state,
         recorder=None,
         runtime_stream=_runtime_stream(),
         settings=_settings(),
     )
     assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
     assembly.worker.queue_frame = AsyncMock()
+    assembly.activity.wait_for_turn_started_after = AsyncMock(return_value=True)
+    assembly.activity.wait_for_turn_completed_after = AsyncMock(return_value=True)
 
     await assembly.start_conversation()
+    while any(not task.done() for task in background_tasks):
+        await asyncio.gather(*list(background_tasks))
 
     frame = assembly.worker.queue_frame.await_args.args[0]
     assert isinstance(frame, TTSSpeakFrame)
     assert frame.text == "Здравствуйте!"
     assert frame.append_to_context is False
     assembly.worker.queue_frame.assert_awaited_once()
+    state.add_transcript.assert_awaited_once_with(
+        "ai",
+        "Здравствуйте!",
+        final=True,
+        deduplicate_recent=True,
+    )
+    state.flush_transcript.assert_awaited_once()
 
 
 @pytest.mark.asyncio

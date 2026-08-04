@@ -124,6 +124,7 @@ class PipelineAssembly:
     transport: BaseTransport
     llm: object
     provider: str
+    state: SessionState
     activity: ConversationActivity
     vad: SileroVADAnalyzer
     tool_dialogue: ToolDialogueCoordinator
@@ -138,8 +139,19 @@ class PipelineAssembly:
     async def start_conversation(self) -> None:
         """Start with exact TTS when a cascaded provider has a configured greeting."""
         if self.initial_greeting and self.tts is not None:
+            started_sequence = self.activity.turns_started
+            completed_sequence = self.activity.turns_completed
+            interruption_sequence = self.activity.interruptions
             await self.worker.queue_frame(
                 TTSSpeakFrame(self.initial_greeting, append_to_context=False)
+            )
+            self.state.spawn(
+                self._await_and_record_direct_speech(
+                    self.initial_greeting,
+                    started_sequence=started_sequence,
+                    completed_sequence=completed_sequence,
+                    interruption_sequence=interruption_sequence,
+                )
             )
             return
 
@@ -159,6 +171,7 @@ class PipelineAssembly:
         async with self.activity.speech_lock:
             started_sequence = self.activity.turns_started
             completed_sequence = self.activity.turns_completed
+            interruption_sequence = self.activity.interruptions
             if self.provider in {"elevenlabs", "cartesia", "fish"} and isinstance(
                 self.tts,
                 (ElevenLabsTTSService, CartesiaTTSService, OneLinkFishAudioTTSService),
@@ -186,13 +199,43 @@ class PipelineAssembly:
                     else InputTextRawFrame
                 )
                 await self.worker.queue_frame(frame_type(text=instruction))
-            started = await self.activity.wait_for_turn_started_after(started_sequence, 1.5)
-            if not started:
-                return False
-            completion_timeout = min(300.0, max(8.0, len(message) / 7.0 + 5.0))
-            return await self.activity.wait_for_turn_completed_after(
-                completed_sequence, completion_timeout
+            return await self._await_and_record_direct_speech(
+                message,
+                started_sequence=started_sequence,
+                completed_sequence=completed_sequence,
+                interruption_sequence=interruption_sequence,
             )
+
+    async def _await_and_record_direct_speech(
+        self,
+        message: str,
+        *,
+        started_sequence: int,
+        completed_sequence: int,
+        interruption_sequence: int,
+    ) -> bool:
+        started = await self.activity.wait_for_turn_started_after(started_sequence, 1.5)
+        if not started:
+            return False
+        completion_timeout = min(300.0, max(8.0, len(message) / 7.0 + 5.0))
+        completed = await self.activity.wait_for_turn_completed_after(
+            completed_sequence, completion_timeout
+        )
+        if not completed or self.activity.interruptions > interruption_sequence:
+            return False
+
+        # Realtime providers produce their own assistant aggregation event. A
+        # cascaded TTSSpeakFrame can run inside an active tool response and then
+        # intentionally bypass that event, so persist the phrase explicitly.
+        if self.provider in {"elevenlabs", "cartesia", "fish"}:
+            await self.state.add_transcript(
+                "ai",
+                message,
+                final=True,
+                deduplicate_recent=True,
+            )
+            self.state.spawn(self.state.flush_transcript())
+        return True
 
     async def interrupt_generation(self) -> None:
         # WorkerFrame is Pipecat's public API for an external interruption. The
@@ -556,6 +599,7 @@ def build_pipeline(
         transport=transport,
         llm=llm,
         provider=context.ai.provider,
+        state=state,
         activity=activity,
         vad=vad,
         tool_dialogue=tool_dialogue,
@@ -738,7 +782,12 @@ def _register_transcript_handlers(
             )
             return
         if text:
-            await state.add_transcript("ai", text, final=True)
+            await state.add_transcript(
+                "ai",
+                text,
+                final=True,
+                deduplicate_recent=True,
+            )
             state.spawn(state.flush_transcript())
 
 

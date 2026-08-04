@@ -4,6 +4,17 @@ class Telephony::AiVoice::ConversationTimelineService
   TRANSCRIPT_TYPE = 'ai_voice_transcript_turn'.freeze
   EVENT_TYPE = 'ai_voice_event'.freeze
   TOOL_ACTIONS = %w[tool_started tool_progress tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed].freeze
+  INTERNAL_OBSERVABILITY_ACTIONS = %w[
+    ai_speaking
+    business_faq_gate_fired
+    business_faq_gate_result_injected
+    direct_tool_context_barrier_timeout
+    direct_tool_speech_deferred
+    direct_tool_speech_not_started
+    incomplete_answer_model_stall
+    ordinary_answer_model_stall
+    post_tool_model_stall
+  ].freeze
   TOOL_EVENTS = {
     'tool_started' => 'start',
     'tool_progress' => 'progress',
@@ -72,6 +83,8 @@ class Telephony::AiVoice::ConversationTimelineService
     return if conversation.blank?
 
     normalized_action = action.to_s
+    return if INTERNAL_OBSERVABILITY_ACTIONS.include?(normalized_action)
+
     if TOOL_ACTIONS.include?(normalized_action)
       attach_tool_trace_to_latest_ai_message!
       return

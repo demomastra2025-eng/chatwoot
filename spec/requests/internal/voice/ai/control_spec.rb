@@ -74,6 +74,30 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
     expect(event_messages.pluck(:content)).to eq(['AI-агент принимает звонок', 'AI-агент ответил на звонок'])
   end
 
+  it 'keeps high-frequency voice observability out of the conversation timeline' do
+    actions = %w[
+      ai_speaking
+      post_tool_model_stall
+      business_faq_gate_fired
+      business_faq_gate_result_injected
+      ordinary_answer_model_stall
+    ]
+
+    actions.each do |action|
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        post '/internal/voice/ai/control',
+             params: { call_ref: call_session.external_call_ref, account_id: account.id, action: action },
+             headers: { 'Authorization' => 'Bearer voice-secret' },
+             as: :json
+      end
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    expect(call_session.reload.metadata.dig('ai_voice', 'control_events').last(actions.size).pluck('action')).to eq(actions)
+    expect(conversation.messages.activity.where('source_id LIKE ?', "ai_voice_event:#{call_session.external_call_ref}:%")).not_to exist
+  end
+
   it 'attaches voice tool input and output details to the AI transcript trace' do
     create(
       :message,

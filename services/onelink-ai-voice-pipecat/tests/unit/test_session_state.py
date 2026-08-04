@@ -67,6 +67,18 @@ class SlowControlClient(FakeClient):
         return await super().call_tool(correlation, name, arguments, **kwargs)
 
 
+class SlowTranscriptClient(FakeClient):
+    def __init__(self):
+        super().__init__()
+        self.transcript_called = asyncio.Event()
+        self.transcript_gate = asyncio.Event()
+
+    async def send_transcript(self, correlation, **kwargs):
+        self.transcript_called.set()
+        await self.transcript_gate.wait()
+        return await super().send_transcript(correlation, **kwargs)
+
+
 class FailingControlClient(FakeClient):
     async def send_control(self, correlation, **kwargs):
         self.controls.append((correlation, kwargs))
@@ -189,6 +201,72 @@ async def test_finalize_drains_background_transcript_before_final_flush(state):
 
     payload = state.client.finalizations[0][1]["payload"]
     assert [item["text"] for item in payload["final_transcript"]] == ["До свидания"]
+
+
+@pytest.mark.asyncio
+async def test_slow_transcript_http_does_not_block_realtime_transcript_updates():
+    client = SlowTranscriptClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(
+            call_ref="call-slow-transcript",
+            runtime_session_id="runtime-slow-transcript",
+        ),
+    )
+    await state.add_transcript("caller", "Первый вопрос", final=True)
+    flush_task = asyncio.create_task(state.flush_transcript())
+    await client.transcript_called.wait()
+
+    await asyncio.wait_for(
+        state.add_transcript("ai", "Быстрый ответ", final=True),
+        timeout=0.1,
+    )
+
+    client.transcript_gate.set()
+    assert await flush_task is True
+    assert await state.flush_transcript() is True
+    assert [[item["text"] for item in batch[1]["items"]] for batch in client.transcripts] == [
+        ["Первый вопрос"],
+        ["Быстрый ответ"],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cancelled_transcript_flush_restores_claimed_items(state):
+    client = SlowTranscriptClient()
+    state.client = cast(OnelinkClient, client)
+    await state.add_transcript("ai", "Не потерять", final=True)
+    flush_task = asyncio.create_task(state.flush_transcript())
+    await client.transcript_called.wait()
+
+    flush_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await flush_task
+
+    client.transcript_gate.set()
+    assert await state.flush_transcript() is True
+    assert [item["text"] for item in client.transcripts[0][1]["items"]] == ["Не потерять"]
+
+
+@pytest.mark.asyncio
+async def test_direct_and_aggregated_assistant_transcript_are_deduplicated(state):
+    await state.add_transcript(
+        "ai",
+        "Акуна матата",
+        final=True,
+        deduplicate_recent=True,
+    )
+    await state.add_transcript(
+        "ai",
+        "Акуна матата",
+        final=True,
+        deduplicate_recent=True,
+    )
+
+    await state.flush_transcript()
+
+    items = state.client.transcripts[0][1]["items"]
+    assert [(item["speaker"], item["text"]) for item in items] == [("ai", "Акуна матата")]
 
 
 @pytest.mark.asyncio

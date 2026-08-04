@@ -55,6 +55,8 @@ class SessionState:
         self._event_sequence = 0
         self._control_sequence = 0
         self._transcript_lock = asyncio.Lock()
+        self._transcript_flush_lock = asyncio.Lock()
+        self._recent_deduplicated_transcripts: dict[tuple[str, str], float] = {}
         self._finalize_lock = asyncio.Lock()
         self._tool_lock = asyncio.Lock()
         self._tool_results: dict[str, asyncio.Future[dict[str, Any]]] = {}
@@ -138,12 +140,23 @@ class SessionState:
         *,
         final: bool,
         timestamp: str | None = None,
+        deduplicate_recent: bool = False,
     ) -> None:
         normalized = text.strip()
         if not normalized:
             return
         self.touch()
         async with self._transcript_lock:
+            dedupe_key = (speaker, normalized)
+            recorded_at = time.monotonic()
+            previous_recorded_at = self._recent_deduplicated_transcripts.get(dedupe_key)
+            if (
+                final
+                and deduplicate_recent
+                and previous_recorded_at is not None
+                and recorded_at - previous_recorded_at < 2.0
+            ):
+                return
             self._sequence += 1
             item = {
                 "speaker": speaker,
@@ -154,19 +167,37 @@ class SessionState:
             }
             self._transcript.append(item)
             self._pending_transcript.append(item)
+            if final and deduplicate_recent:
+                self._recent_deduplicated_transcripts[dedupe_key] = recorded_at
 
     async def flush_transcript(self, *, final: bool = False) -> bool:
-        async with self._transcript_lock:
-            if not self._pending_transcript:
-                return False
-            items = list(self._pending_transcript)
-            await self.client.send_transcript(
-                self.correlation,
-                items=items,
-                final=final,
-            )
-            del self._pending_transcript[: len(items)]
+        # Serialize HTTP flushes, but never hold the transcript state lock while
+        # waiting for Rails. STT and assistant callbacks must remain realtime
+        # even when the DEV API or database is temporarily slow.
+        async with self._transcript_flush_lock:
+            async with self._transcript_lock:
+                if not self._pending_transcript:
+                    return False
+                items = list(self._pending_transcript)
+                del self._pending_transcript[: len(items)]
+
+            try:
+                await self.client.send_transcript(
+                    self.correlation,
+                    items=items,
+                    final=final,
+                )
+            except asyncio.CancelledError:
+                await self._restore_pending_transcript(items)
+                raise
+            except Exception:
+                await self._restore_pending_transcript(items)
+                raise
             return True
+
+    async def _restore_pending_transcript(self, items: list[dict[str, Any]]) -> None:
+        async with self._transcript_lock:
+            self._pending_transcript = items + self._pending_transcript
 
     async def safe_event(
         self,

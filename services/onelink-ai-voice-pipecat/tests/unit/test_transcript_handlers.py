@@ -39,7 +39,7 @@ class TranscriptState:
         self.events = []
         self.tasks = []
 
-    async def add_transcript(self, speaker, text, *, final):
+    async def add_transcript(self, speaker, text, *, final, deduplicate_recent=False):
         self.transcripts.append((speaker, text, final))
 
     async def flush_transcript(self):

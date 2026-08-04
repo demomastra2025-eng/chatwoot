@@ -270,6 +270,7 @@ class ConversationActivity:
         self.model_generations_started = 0
         self.model_generations_completed = 0
         self.model_outputs_generated = 0
+        self.interruptions = 0
         self.speech_lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._last_user_stopped_at: float | None = None
@@ -341,6 +342,7 @@ class ConversationActivity:
 
     async def model_generation_interrupted(self) -> None:
         async with self._changed:
+            self.interruptions += 1
             self.model_generations_completed = self.model_generations_started
             self._changed.notify_all()
 
