@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from pipecat.frames.frames import ErrorFrame
 
 from app.clients.onelink import OnelinkApiError
 from app.config import Settings
@@ -99,6 +100,73 @@ class WatchdogAssembly:
 
     async def cancel(self, *, reason):
         self.cancellations.append(reason)
+
+
+class ProviderEventState:
+    def __init__(self):
+        self.events = []
+        self.tasks = []
+
+    async def safe_event(self, event, payload):
+        self.events.append((event, payload))
+
+    def spawn(self, work):
+        task = asyncio.create_task(work)
+        self.tasks.append(task)
+        return task
+
+
+@pytest.mark.asyncio
+async def test_recoverable_pipeline_error_keeps_runtime_session_alive():
+    state = ProviderEventState()
+    terminal = TerminalDecision()
+
+    await PipecatSessionRunner._handle_pipeline_error(
+        cast(Any, None),
+        ErrorFrame(
+            "provider reconnecting",
+            fatal=False,
+            exception=ConnectionError("temporary websocket close"),
+        ),
+        cast(Any, state),
+        terminal,
+    )
+    await asyncio.gather(*state.tasks)
+
+    assert terminal.decided is False
+    assert state.events == [
+        (
+            "runtime_provider_warning",
+            {
+                "code": "ConnectionError",
+                "processor": None,
+                "recoverable": True,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fatal_pipeline_error_stops_runtime_session():
+    state = ProviderEventState()
+    terminal = TerminalDecision()
+
+    await PipecatSessionRunner._handle_pipeline_error(
+        cast(Any, None),
+        ErrorFrame(
+            "provider cannot recover",
+            fatal=True,
+            exception=ConnectionError("permanent websocket close"),
+        ),
+        cast(Any, state),
+        terminal,
+    )
+
+    assert terminal.decided is True
+    assert terminal.status == "failed"
+    assert terminal.reason == "provider_error"
+    assert terminal.error == {"code": "ConnectionError"}
+    assert state.events == []
 
 
 @pytest.mark.asyncio

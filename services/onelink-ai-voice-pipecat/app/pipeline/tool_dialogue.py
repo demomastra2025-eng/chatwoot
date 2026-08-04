@@ -106,10 +106,16 @@ class ToolDialogueCoordinator:
             return
 
         stop_progress = asyncio.Event()
+        progress_speaking = asyncio.Event()
         progress_task: asyncio.Task[None] | None = None
         if self._ai.provider != "gemini-live" and not _is_terminal_tool(definition.name):
             progress_task = asyncio.create_task(
-                self._announce_progress(definition, stop_progress, params.tool_call_id),
+                self._announce_progress(
+                    definition,
+                    stop_progress,
+                    progress_speaking,
+                    params.tool_call_id,
+                ),
                 name=f"pipecat-tool-progress:{params.tool_call_id}",
             )
 
@@ -123,6 +129,7 @@ class ToolDialogueCoordinator:
         finally:
             stop_progress.set()
             if progress_task is not None:
+                await self._stop_active_progress_speech(progress_speaking)
                 with suppress(asyncio.CancelledError):
                     await progress_task
 
@@ -180,13 +187,41 @@ class ToolDialogueCoordinator:
     ) -> None:
         voice_result = _voice_result_projection(definition.name, result)
         if _uses_direct_voice_result(definition.name, self._ai.provider):
+            async def speak_after_context_update() -> None:
+                phrase = _direct_voice_result_phrase(definition.name, voice_result)
+                if not phrase or self._speak_result is None:
+                    return
+                if self._activity.user_speaking:
+                    self._state.spawn(
+                        self._state.safe_control(
+                            "direct_tool_speech_deferred",
+                            {"reason": "caller_speaking"},
+                            tool_call_id=params.tool_call_id,
+                            tool_name=definition.name,
+                        )
+                    )
+                    return
+                try:
+                    async with self._dialogue_lock:
+                        if self._activity.bot_speaking:
+                            await self._activity.wait_for_turn_completed_after(
+                                self._activity.turns_completed,
+                                timeout=3.0,
+                            )
+                        await self._speak_result(phrase)
+                except Exception:
+                    logger.exception(
+                        "Failed to speak direct tool result tool={}",
+                        definition.name,
+                    )
+
             await params.result_callback(
                 voice_result,
-                properties=FunctionCallResultProperties(run_llm=False),
+                properties=FunctionCallResultProperties(
+                    run_llm=False,
+                    on_context_updated=speak_after_context_update,
+                ),
             )
-            phrase = _direct_voice_result_phrase(definition.name, voice_result)
-            if phrase and self._speak_result is not None:
-                await self._speak_result(phrase)
             return
 
         response_sequence = self._activity.turns_started
@@ -216,6 +251,10 @@ class ToolDialogueCoordinator:
     def _uses_gemini_async_completion(self, definition: ToolDefinition) -> bool:
         return (
             self._ai.provider == "gemini-live"
+            # Gemini 3 does not support NON_BLOCKING tool declarations yet, so
+            # retain the runtime-owned foreground/background bridge only for
+            # that model family. Gemini 2.5 uses Pipecat's native async tools.
+            and "gemini-3" in self._ai.model.lower()
             and not _is_terminal_tool(definition.name)
             and self._foreground_wait_ms(definition) > 0
         )
@@ -257,10 +296,12 @@ class ToolDialogueCoordinator:
                 )
             )
             stop_progress = asyncio.Event()
+            progress_speaking = asyncio.Event()
             progress_task = self._state.spawn(
                 self._announce_delayed_progress(
                     definition,
                     stop_progress,
+                    progress_speaking,
                     params.tool_call_id,
                 )
             )
@@ -272,6 +313,7 @@ class ToolDialogueCoordinator:
                     tool_task=tool_task,
                     tool_call_id=params.tool_call_id,
                     stop_progress=stop_progress,
+                    progress_speaking=progress_speaking,
                     progress_task=progress_task,
                     pending_delivered=pending_delivered,
                     generation_sequence=generation_sequence,
@@ -299,6 +341,7 @@ class ToolDialogueCoordinator:
         tool_task: asyncio.Task[dict[str, Any]],
         tool_call_id: str,
         stop_progress: asyncio.Event,
+        progress_speaking: asyncio.Event,
         progress_task: asyncio.Task[None],
         pending_delivered: asyncio.Event,
         generation_sequence: int,
@@ -312,6 +355,7 @@ class ToolDialogueCoordinator:
             }
         finally:
             stop_progress.set()
+            await self._stop_active_progress_speech(progress_speaking)
             with suppress(asyncio.CancelledError):
                 await progress_task
 
@@ -398,6 +442,7 @@ class ToolDialogueCoordinator:
         self,
         definition: ToolDefinition,
         stopped: asyncio.Event,
+        progress_speaking: asyncio.Event,
         tool_call_id: str,
     ) -> None:
         foreground_wait_ms = self._foreground_wait_ms(definition)
@@ -419,14 +464,22 @@ class ToolDialogueCoordinator:
                     definition,
                     "started",
                     start_phrase,
+                    stopped,
+                    progress_speaking,
                     tool_call_id,
                 )
-        await self._announce_delayed_progress(definition, stopped, tool_call_id)
+        await self._announce_delayed_progress(
+            definition,
+            stopped,
+            progress_speaking,
+            tool_call_id,
+        )
 
     async def _announce_delayed_progress(
         self,
         definition: ToolDefinition,
         stopped: asyncio.Event,
+        progress_speaking: asyncio.Event,
         tool_call_id: str,
     ) -> None:
         delay_phrase = _tool_progress_phrase(
@@ -449,6 +502,8 @@ class ToolDialogueCoordinator:
                     definition,
                     "delayed",
                     delay_phrase,
+                    stopped,
+                    progress_speaking,
                     tool_call_id,
                 )
 
@@ -457,6 +512,8 @@ class ToolDialogueCoordinator:
         definition: ToolDefinition,
         stage: str,
         phrase: str,
+        stopped: asyncio.Event,
+        progress_speaking: asyncio.Event,
         tool_call_id: str,
     ) -> None:
         try:
@@ -473,10 +530,33 @@ class ToolDialogueCoordinator:
                 )
             )
             if self._speak_exact is not None:
-                await self._speak_exact(phrase)
+                if (
+                    stopped.is_set()
+                    or self._activity.user_speaking
+                    or self._activity.bot_speaking
+                ):
+                    return
+                progress_speaking.set()
+                try:
+                    if stopped.is_set():
+                        return
+                    await self._speak_exact(phrase)
+                finally:
+                    progress_speaking.clear()
         except Exception:
             # Progress speech is best effort and must never fail the actual tool.
             return
+
+    async def _stop_active_progress_speech(
+        self,
+        progress_speaking: asyncio.Event,
+    ) -> None:
+        if not progress_speaking.is_set() or self._interrupt_generation is None:
+            return
+        try:
+            await self._interrupt_generation()
+        except Exception:
+            logger.exception("Failed to stop obsolete tool progress speech")
 
     async def _ensure_continuation(
         self,

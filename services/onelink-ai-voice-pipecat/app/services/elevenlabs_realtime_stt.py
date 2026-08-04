@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from collections.abc import AsyncGenerator
 from urllib.parse import urlencode
 
 from loguru import logger
+from pipecat.frames.frames import Frame, VADUserStoppedSpeakingFrame
+from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.elevenlabs.stt import CommitStrategy, ElevenLabsRealtimeSTTService
 from pipecat.services.settings import is_given
 from websockets.asyncio.client import connect as websocket_connect
@@ -20,6 +25,8 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
     transcription.
     """
 
+    PROVIDER_CHUNK_DURATION_SECONDS = 0.1
+
     def __init__(self, *, secondary_languages: list[str] | None = None, **kwargs):
         super().__init__(**kwargs)
         primary_value = getattr(self._settings.language, "value", self._settings.language)
@@ -31,6 +38,98 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
                 if language.strip() and language.strip().lower() != primary
             )
         )
+        # The media bridge emits low-latency 20 ms PCM frames, while ElevenLabs
+        # recommends 100 ms to 1 s chunks for realtime STT. ffmpeg can also
+        # release several 20 ms frames in one stdout read, which previously
+        # made those frames hit the provider as a burst and terminate the
+        # session with "audio data is being sent too frequently". Keep the
+        # transport contract unchanged and smooth only the provider boundary.
+        self._provider_audio_buffer = bytearray()
+        self._provider_audio_send_lock = asyncio.Lock()
+        self._next_provider_audio_send_at = 0.0
+
+    @property
+    def _provider_sample_rate(self) -> int:
+        # StartFrame sets sample_rate before media arrives. Keep the configured
+        # constructor value as a defensive fallback for startup ordering.
+        return max(1, self.sample_rate or self._init_sample_rate)
+
+    @property
+    def _provider_chunk_bytes(self) -> int:
+        return max(
+            2,
+            round(self._provider_sample_rate * 2 * self.PROVIDER_CHUNK_DURATION_SECONDS),
+        )
+
+    async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
+        """Coalesce telephony frames and pace provider writes in realtime."""
+        self._provider_audio_buffer.extend(audio)
+        sent = False
+        chunk_bytes = self._provider_chunk_bytes
+        while len(self._provider_audio_buffer) >= chunk_bytes:
+            chunk = bytes(self._provider_audio_buffer[:chunk_bytes])
+            del self._provider_audio_buffer[:chunk_bytes]
+            async for frame in self._send_provider_audio(chunk):
+                sent = True
+                yield frame
+        if not sent:
+            yield None
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection):
+        if isinstance(frame, VADUserStoppedSpeakingFrame):
+            # Never let a partial tail overtake the manual commit. Padding the
+            # final provider chunk with silence keeps it within ElevenLabs' 100
+            # ms minimum with at most one bounded provider pacing interval.
+            await self._flush_provider_audio_buffer()
+            async with self._provider_audio_send_lock:
+                await super().process_frame(frame, direction)
+            return
+        await super().process_frame(frame, direction)
+
+    async def _flush_provider_audio_buffer(self) -> None:
+        if not self._provider_audio_buffer:
+            return
+        chunk_bytes = self._provider_chunk_bytes
+        chunk = bytes(self._provider_audio_buffer)
+        self._provider_audio_buffer.clear()
+        if len(chunk) < chunk_bytes:
+            chunk += bytes(chunk_bytes - len(chunk))
+        async for frame in self._send_provider_audio(chunk):
+            if frame is not None:
+                await self.push_frame(frame)
+
+    async def _send_provider_audio(
+        self, audio: bytes
+    ) -> AsyncGenerator[Frame | None, None]:
+        async with self._provider_audio_send_lock:
+            now = time.monotonic()
+            target = max(now, self._next_provider_audio_send_at)
+            if target > now:
+                await asyncio.sleep(target - now)
+
+            sent_at = time.monotonic()
+            async for frame in super().run_stt(audio):
+                yield frame
+
+            audio_seconds = len(audio) / (self._provider_sample_rate * 2)
+            # Pace from send start, not completion. Network scheduling time must
+            # not accumulate as permanent input latency on every chunk.
+            self._next_provider_audio_send_at = sent_at + audio_seconds
+
+    async def _send_keepalive(self, silence: bytes):
+        # Keepalive is already a 100 ms provider-native chunk. Serialize it
+        # with normal audio so a timer cannot create a second simultaneous
+        # websocket write.
+        async with self._provider_audio_send_lock:
+            now = time.monotonic()
+            target = max(now, self._next_provider_audio_send_at)
+            if target > now:
+                await asyncio.sleep(target - now)
+            sent_at = time.monotonic()
+            await super()._send_keepalive(silence)
+            self._next_provider_audio_send_at = (
+                sent_at + len(silence) / (self._provider_sample_rate * 2)
+            )
 
     def _connection_query_params(self) -> list[tuple[str, object]]:
         params: list[tuple[str, object]] = [("model_id", self._settings.model)]

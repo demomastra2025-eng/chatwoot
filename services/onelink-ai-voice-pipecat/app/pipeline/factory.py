@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass
 
 from google.genai.types import ProactivityConfig, ThinkingConfig
+from pipecat.adapters.schemas.direct_function import tool_options
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.audio.vad.silero import SileroVADAnalyzer
@@ -13,7 +14,7 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     InputAudioRawFrame,
     InputTextRawFrame,
-    InterruptionFrame,
+    InterruptionWorkerFrame,
     LLMMessagesAppendFrame,
     LLMRunFrame,
     TTSAudioRawFrame,
@@ -188,7 +189,10 @@ class PipelineAssembly:
             )
 
     async def interrupt_generation(self) -> None:
-        await self.worker.queue_frame(InterruptionFrame())
+        # WorkerFrame is Pipecat's public API for an external interruption. The
+        # worker converts it to InterruptionFrame and broadcasts it through the
+        # complete pipeline in both directions.
+        await self.worker.queue_frame(InterruptionWorkerFrame())
 
     async def run_instruction(self, instruction: str) -> None:
         if self.provider == "openai-realtime" and isinstance(self.llm, OpenAIRealtimeLLMService):
@@ -416,21 +420,28 @@ def build_pipeline(
                     language=stt_language,
                 ),
             )
+        openrouter_extra_body = {
+            # One voice turn should choose one action at a time. Pipecat still
+            # groups provider results, while this prevents a model from issuing
+            # duplicate parallel CRM/knowledge operations.
+            "parallel_tool_calls": False,
+            "provider": {
+                "sort": "latency",
+                "allow_fallbacks": True,
+                "require_parameters": True,
+                "data_collection": "deny",
+                "preferred_max_latency": {"p90": 3.0, "p99": 6.0},
+            },
+        }
+        if context.ai.model.startswith("openai/gpt-5"):
+            # GPT-5 voice turns are latency-sensitive. OpenRouter's normalized
+            # contract supports disabling reasoning for this model family.
+            openrouter_extra_body["reasoning"] = {"effort": "none", "exclude": True}
         openrouter_settings = {
             "model": context.ai.model,
             "system_instruction": context.ai.system_prompt,
             "max_tokens": context.ai.max_output_tokens,
-            "extra": {
-                "extra_body": {
-                    "provider": {
-                        "sort": "latency",
-                        "allow_fallbacks": True,
-                        "require_parameters": True,
-                        "data_collection": "deny",
-                        "preferred_max_latency": {"p90": 3.0, "p99": 6.0},
-                    }
-                }
-            },
+            "extra": {"extra_body": openrouter_extra_body},
         }
         if not context.ai.model.startswith("openai/gpt-5"):
             openrouter_settings["temperature"] = context.ai.temperature
@@ -623,6 +634,9 @@ def _build_tools(
     tool_dialogue: ToolDialogueCoordinator,
 ) -> ToolsSchema:
     schemas: list[FunctionSchema] = []
+    async_tools_supported = not (
+        context.ai.provider == "gemini-live" and "gemini-3" in context.ai.model.lower()
+    )
     for tool in context.tools:
         schema_error = _tool_schema_error(tool)
         if schema_error:
@@ -639,7 +653,11 @@ def _build_tools(
                 description=tool.description,
                 properties=properties if isinstance(properties, dict) else {},
                 required=[str(name) for name in required] if isinstance(required, list) else [],
-                handler=_tool_handler(tool_dialogue, tool),
+                handler=_tool_handler(
+                    tool_dialogue,
+                    tool,
+                    survive_interruption=async_tools_supported,
+                ),
             )
         )
     return ToolsSchema(standard_tools=schemas)
@@ -682,7 +700,24 @@ def _register_transcript_handlers(
             state.spawn(state.flush_transcript())
 
 
-def _tool_handler(tool_dialogue: ToolDialogueCoordinator, definition: ToolDefinition):
+def _tool_handler(
+    tool_dialogue: ToolDialogueCoordinator,
+    definition: ToolDefinition,
+    *,
+    survive_interruption: bool,
+):
+    # Tool HTTP requests must survive barge-in. Pipecat then keeps the started
+    # state in context and injects the eventual result as a developer message;
+    # if the caller is currently speaking, the result is naturally folded into
+    # that next turn instead of being lost with the interrupted generation.
+    @tool_options(
+        # Gemini 3 Live does not yet implement NON_BLOCKING function calls;
+        # keep its supported blocking contract instead of causing a provider
+        # ErrorFrame. Cascaded/OpenRouter and compatible realtime models use
+        # Pipecat's native async-tool path.
+        cancel_on_interruption=not survive_interruption,
+        timeout_secs=max(1.0, definition.timeout_ms / 1_000 + 1.0),
+    )
     async def handler(params: FunctionCallParams) -> None:
         await tool_dialogue.execute(definition, params)
 

@@ -2,7 +2,12 @@ from typing import Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pipecat.frames.frames import InputTextRawFrame, LLMRunFrame, TTSSpeakFrame
+from pipecat.frames.frames import (
+    InputTextRawFrame,
+    InterruptionWorkerFrame,
+    LLMRunFrame,
+    TTSSpeakFrame,
+)
 from pipecat.services.cartesia.stt import CartesiaSTTService
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.elevenlabs.stt import CommitStrategy
@@ -153,6 +158,8 @@ def test_builds_supported_provider_pipeline(
         llm = cast(OpenRouterLLMService, assembly.llm)
         assert llm._settings.extra == {
             "extra_body": {
+                "reasoning": {"effort": "none", "exclude": True},
+                "parallel_tool_calls": False,
                 "provider": {
                     "sort": "latency",
                     "allow_fallbacks": True,
@@ -164,6 +171,11 @@ def test_builds_supported_provider_pipeline(
         }
         request_params = llm.build_chat_completion_params({"messages": []})
         assert request_params["extra_body"]["provider"]["data_collection"] == "deny"
+        assert request_params["extra_body"]["reasoning"] == {
+            "effort": "none",
+            "exclude": True,
+        }
+        assert request_params["extra_body"]["parallel_tool_calls"] is False
         if model.startswith("openai/gpt-5"):
             assert str(llm._settings.temperature) == "NOT_GIVEN"
     else:
@@ -206,6 +218,28 @@ def test_builds_fish_batch_asr_pipeline():
     assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
     assert assembly.tts._settings.model == "s2.1-pro-free"
     assert assembly.tts._settings.voice == "fish-voice-ref"
+
+
+def test_non_gpt_openrouter_model_does_not_receive_gpt_reasoning_contract():
+    context = _context(
+        "fish",
+        model="anthropic/claude-sonnet-4.5",
+        voice="fish-voice-ref",
+    )
+    context.ai.temperature = 0.3
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(OpenRouterLLMService, assembly.llm)
+    assert "reasoning" not in llm._settings.extra["extra_body"]
+    assert llm._settings.temperature == 0.3
+    assert llm._settings.extra["extra_body"]["parallel_tool_calls"] is False
 
 
 def test_core_pipeline_settings_are_transport_neutral_between_janus_and_preview():
@@ -538,6 +572,43 @@ def test_invalid_tool_schema_is_dropped_before_provider_setup():
     assert [tool.name for tool in tools.standard_tools] == ["faq_lookup"]
 
 
+def test_cascaded_tool_survives_interruption_and_has_bounded_runtime():
+    context = _context("fish", model="openai/gpt-5.4-mini", voice="voice-ref")
+    context.tools.append(ToolDefinition(name="faq_lookup", timeout_ms=5_000))
+
+    tool = _build_tools(context, MagicMock()).standard_tools[0]
+
+    assert tool.handler is not None
+    assert tool.handler._pipecat_cancel_on_interruption is False
+    assert tool.handler._pipecat_timeout_secs == 6.0
+
+
+def test_gemini_3_tool_keeps_supported_blocking_contract():
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.tools.append(ToolDefinition(name="faq_lookup", timeout_ms=5_000))
+
+    tool = _build_tools(context, MagicMock()).standard_tools[0]
+
+    assert tool.handler is not None
+    assert tool.handler._pipecat_cancel_on_interruption is True
+    assert tool.handler._pipecat_timeout_secs == 6.0
+
+
+def test_gemini_25_tool_uses_native_non_blocking_contract():
+    context = _context(
+        "gemini-live",
+        model="gemini-2.5-flash-native-audio-preview-12-2025",
+        voice="sulafat",
+    )
+    context.tools.append(ToolDefinition(name="faq_lookup", timeout_ms=5_000))
+
+    tool = _build_tools(context, MagicMock()).standard_tools[0]
+
+    assert tool.handler is not None
+    assert tool.handler._pipecat_cancel_on_interruption is False
+    assert tool.handler._pipecat_timeout_secs == 6.0
+
+
 @pytest.mark.parametrize(
     ("provider", "overrides", "missing_name"),
     [
@@ -612,6 +683,27 @@ async def test_elevenlabs_exact_speech_queues_tts_without_context_append():
     assert isinstance(frame, TTSSpeakFrame)
     assert frame.text == "Ещё смотрю."
     assert frame.append_to_context is False
+
+
+@pytest.mark.asyncio
+async def test_external_interruption_uses_worker_broadcast_frame():
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.4-mini",
+            voice="fish-voice-ref",
+        ),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+    assembly.worker.queue_frame = AsyncMock()
+
+    await assembly.interrupt_generation()
+
+    frame = assembly.worker.queue_frame.await_args.args[0]
+    assert isinstance(frame, InterruptionWorkerFrame)
 
 
 @pytest.mark.asyncio

@@ -22,7 +22,15 @@ class FakeState:
         self.executions = 0
         self.termination_requested = False
 
-    async def execute_tool(self, *_args, **_kwargs):
+    async def execute_tool(
+        self,
+        _name,
+        _arguments,
+        _tool_call_id,
+        *,
+        timeout_ms,
+    ):
+        assert timeout_ms > 0
         self.executions += 1
         if self.gate is not None:
             await self.gate.wait()
@@ -61,6 +69,8 @@ def ai_settings(**overrides):
         "post_tool_continuation_ms": 100,
     }
     values.update(overrides)
+    if values["provider"] == "gemini-live" and "model" not in overrides:
+        values["model"] = "gemini-3.1-flash-live-preview"
     return AiSettings(**values)
 
 
@@ -136,6 +146,50 @@ async def test_long_read_tool_speaks_progress_then_returns_result_once():
     assert results == [{"answer": "готово"}]
     assert state.executions == 1
     assert [control[0] for control in state.controls].count("tool_progress") == 1
+
+
+@pytest.mark.asyncio
+async def test_ready_tool_result_interrupts_obsolete_progress_speech():
+    tool_gate = asyncio.Event()
+    speech_started = asyncio.Event()
+    speech_interrupted = asyncio.Event()
+    state = FakeState(gate=tool_gate)
+    activity = ConversationActivity()
+    spoken = []
+    interruptions = []
+
+    async def speak(message):
+        spoken.append(message)
+        await activity.bot_started()
+        speech_started.set()
+        await speech_interrupted.wait()
+        await activity.bot_stopped()
+        return True
+
+    async def interrupt():
+        interruptions.append(True)
+        speech_interrupted.set()
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(tool_start_after_ms=5, tool_delay_after_ms=5_000),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(
+        speak_exact=speak,
+        speak_result=speak,
+        run_instruction=speak,
+        interrupt_generation=interrupt,
+    )
+    execution = asyncio.create_task(execute_with_answer(coordinator, activity))
+
+    await asyncio.wait_for(speech_started.wait(), timeout=0.1)
+    tool_gate.set()
+    results = await asyncio.wait_for(execution, timeout=0.2)
+
+    assert results == [{"answer": "готово"}]
+    assert spoken == ["Секунду, проверяю информацию."]
+    assert interruptions == [True]
 
 
 @pytest.mark.asyncio
@@ -653,10 +707,49 @@ async def test_faq_result_is_spoken_directly_without_second_llm_generation():
 
     await coordinator.execute(definition("faq_lookup"), params)
 
-    assert spoken == [answer]
+    # Direct speech is deliberately delayed until Pipecat confirms that the
+    # uninterruptible tool result has entered the conversation context.
+    assert spoken == []
     assert len(callback_properties) == 1
     assert callback_properties[0].run_llm is False
+    await callback_properties[0].on_context_updated()
+    assert spoken == [answer]
     assert coordinator.awaiting_continuation is False
+
+
+@pytest.mark.asyncio
+async def test_faq_result_defers_direct_speech_during_caller_barge_in():
+    answer = "OneLink автоматизирует продажи и общение с клиентами."
+    state = FakeState(result={"matches": [{"id": 107, "answer": answer}]})
+    activity = ConversationActivity()
+    activity.user_speaking = True
+    spoken = []
+    callback_properties = []
+
+    async def result_callback(_result, *, properties=None):
+        callback_properties.append(properties)
+
+    async def speak_result(message):
+        spoken.append(message)
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=speak_result,
+        speak_result=speak_result,
+        run_instruction=speak_result,
+    )
+    params = Params(
+        arguments={"query": "Какие услуги у вас?"},
+        tool_call_id="faq-2",
+        result_callback=result_callback,
+    )
+
+    await coordinator.execute(definition("faq_lookup"), params)
+    await callback_properties[0].on_context_updated()
+    await asyncio.gather(*state.tasks)
+
+    assert spoken == []
+    assert any(control[0] == "direct_tool_speech_deferred" for control in state.controls)
 
 
 @pytest.mark.asyncio

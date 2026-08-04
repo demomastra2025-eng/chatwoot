@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Protocol
 
+from pipecat.frames.frames import ErrorFrame
 from pipecat.workers.runner import WorkerRunner
 
 from app.api.models import RuntimeControl, RuntimeStream
@@ -334,11 +335,41 @@ class PipecatSessionRunner:
 
         @assembly.worker.event_handler("on_pipeline_error")
         async def on_pipeline_error(_worker: object, frame: object) -> None:
-            await terminal.set(
-                "failed",
-                "provider_error",
-                {"code": type(frame).__name__},
+            await self._handle_pipeline_error(frame, state, terminal)
+
+    async def _handle_pipeline_error(
+        self,
+        frame: object,
+        state: SessionState,
+        terminal: TerminalDecision,
+    ) -> None:
+        """Fail a call only for fatal Pipecat errors.
+
+        Pipecat deliberately reports recoverable websocket/provider failures as
+        ``ErrorFrame(fatal=False)`` and reconnects in place. Treating those as
+        terminal stopped the runtime heartbeat while media kept flowing, which
+        later made otherwise valid tools fail with an expired runtime lease.
+        """
+        # Unknown callback payloads cannot establish recoverability, so only an
+        # explicit non-fatal ErrorFrame is allowed to keep the session alive.
+        fatal = not isinstance(frame, ErrorFrame) or frame.fatal
+        error = getattr(frame, "exception", None)
+        processor = getattr(frame, "processor", None)
+        code = type(error).__name__ if error is not None else type(frame).__name__
+        if fatal:
+            await terminal.set("failed", "provider_error", {"code": code})
+            return
+
+        state.spawn(
+            state.safe_event(
+                "runtime_provider_warning",
+                {
+                    "code": code,
+                    "processor": type(processor).__name__ if processor is not None else None,
+                    "recoverable": True,
+                },
             )
+        )
 
     async def _watchdog(
         self,
