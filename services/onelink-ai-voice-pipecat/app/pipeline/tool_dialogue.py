@@ -102,6 +102,7 @@ class ToolDialogueCoordinator:
         definition: ToolDefinition,
         params: FunctionCallParams,
     ) -> None:
+        await self._activity.tool_started()
         if definition.name.strip().lower() in {"end_call", "hangup"}:
             result = await self.execute_end_call(
                 dict(params.arguments),

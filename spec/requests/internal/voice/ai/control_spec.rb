@@ -75,13 +75,7 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
   end
 
   it 'keeps high-frequency voice observability out of the conversation timeline' do
-    actions = %w[
-      ai_speaking
-      post_tool_model_stall
-      business_faq_gate_fired
-      business_faq_gate_result_injected
-      ordinary_answer_model_stall
-    ]
+    actions = Telephony::AiVoice::ConversationTimelineService::INTERNAL_OBSERVABILITY_ACTIONS
 
     actions.each do |action|
       with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do

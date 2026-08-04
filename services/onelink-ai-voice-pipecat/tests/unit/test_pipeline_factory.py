@@ -735,7 +735,7 @@ def test_cascaded_tool_survives_interruption_and_has_bounded_runtime():
 
     assert tool.handler is not None
     assert tool.handler._pipecat_cancel_on_interruption is False
-    assert tool.handler._pipecat_timeout_secs == 6.0
+    assert tool.handler._pipecat_timeout_secs == 13.0
 
 
 def test_terminal_tool_timeout_covers_farewell_and_backend_callback():
@@ -756,7 +756,7 @@ def test_gemini_3_tool_keeps_supported_blocking_contract():
 
     assert tool.handler is not None
     assert tool.handler._pipecat_cancel_on_interruption is True
-    assert tool.handler._pipecat_timeout_secs == 6.0
+    assert tool.handler._pipecat_timeout_secs == 13.0
 
 
 def test_gemini_25_tool_uses_native_non_blocking_contract():
@@ -771,7 +771,7 @@ def test_gemini_25_tool_uses_native_non_blocking_contract():
 
     assert tool.handler is not None
     assert tool.handler._pipecat_cancel_on_interruption is False
-    assert tool.handler._pipecat_timeout_secs == 6.0
+    assert tool.handler._pipecat_timeout_secs == 13.0
 
 
 @pytest.mark.parametrize(

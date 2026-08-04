@@ -57,6 +57,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'tool_failure_phrases' => ['Не получилось проверить автоматически. Могу соединить со специалистом.'].freeze,
     'tool_delay_after_ms' => 3500,
     'post_tool_continuation_ms' => 2000,
+    'ordinary_answer_continuation_ms' => 2500,
     'proactive_audio_enabled' => false,
     'affective_dialog_enabled' => false,
     'max_sentences' => 2,
@@ -105,7 +106,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     interrupt_ack_max_duration_ms prefix_padding_ms silence_duration_ms turn_aggregation_delay_ms
     user_turn_stop_timeout_ms interruption_confirmation_window_ms post_interrupt_resume_delay_ms
     min_interrupt_words silence_prompt_after_ms second_silence_prompt_after_ms
-    max_silence_ms tool_delay_after_ms post_tool_continuation_ms max_sentences nonverbal_cue_max_per_minute
+    max_silence_ms tool_delay_after_ms post_tool_continuation_ms ordinary_answer_continuation_ms max_sentences nonverbal_cue_max_per_minute
     sigh_cue_max_per_call
     tool_start_after_ms tool_foreground_wait_ms
   ].freeze
@@ -119,6 +120,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   THINKING_LEVELS = %w[minimal low medium high].freeze
   FISH_STT_PROVIDERS = %w[elevenlabs fish].freeze
   MAX_DURATION_SEC_RANGE = (1..7200)
+  ORDINARY_ANSWER_CONTINUATION_MS_RANGE = (500..120_000)
 
   ARRAY_KEYS = %w[
     interrupt_ack_phrases filler_phrases tool_start_phrases tool_delay_phrases tool_failure_phrases
@@ -150,6 +152,10 @@ class Telephony::AiVoice::VoiceSettingsDefaults
       Telephony::AiVoice::VoiceActivitySettings.normalize!(normalized, explicit_keys: explicit_keys)
       duration = normalized['max_duration_sec']
       normalized['max_duration_sec'] = defaults['max_duration_sec'] unless duration.is_a?(Integer) && MAX_DURATION_SEC_RANGE.cover?(duration)
+      ordinary_timeout = normalized['ordinary_answer_continuation_ms']
+      unless ordinary_timeout.is_a?(Integer) && ORDINARY_ANSWER_CONTINUATION_MS_RANGE.cover?(ordinary_timeout)
+        normalized['ordinary_answer_continuation_ms'] = defaults['ordinary_answer_continuation_ms']
+      end
       normalize_auto_language!(normalized, provider)
       Telephony::AiVoice::VoiceLanguageSettings.normalize!(normalized, defaults)
       normalize_gemini_live_features!(normalized, provider)

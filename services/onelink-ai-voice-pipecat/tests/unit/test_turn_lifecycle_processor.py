@@ -92,6 +92,46 @@ def test_activity_reports_each_voice_latency_stage(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_activity_detects_one_silent_ordinary_answer_after_deadline(monkeypatch):
+    activity = ConversationActivity()
+    now = 10.0
+    monkeypatch.setattr(processors_module.time, "monotonic", lambda: now)
+    await activity.user_message_added("Расскажите о своих услугах")
+
+    now = 12.4
+    assert activity.ordinary_answer_stall(timeout_ms=2_500, recovered_sequence=0) is None
+
+    now = 12.6
+    stalled = activity.ordinary_answer_stall(timeout_ms=2_500, recovered_sequence=0)
+    assert stalled == {
+        "sequence": 1,
+        "caller_transcript": "Расскажите о своих услугах",
+        "elapsed_ms": 2_600,
+    }
+    assert activity.ordinary_answer_stall(timeout_ms=2_500, recovered_sequence=1) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("completed_by", ["model_output", "assistant_turn", "tool"])
+async def test_activity_does_not_recover_a_turn_already_owned_by_pipeline(
+    monkeypatch, completed_by
+):
+    activity = ConversationActivity()
+    now = 20.0
+    monkeypatch.setattr(processors_module.time, "monotonic", lambda: now)
+    await activity.user_message_added("Какие услуги у вас есть?")
+    if completed_by == "model_output":
+        await activity.model_output_generated()
+    elif completed_by == "assistant_turn":
+        await activity.bot_started()
+    else:
+        await activity.tool_started()
+
+    now = 30.0
+    assert activity.ordinary_answer_stall(timeout_ms=2_500, recovered_sequence=0) is None
+
+
+@pytest.mark.asyncio
 async def test_turn_lifecycle_refreshes_idle_clock_when_caller_finishes_speaking():
     state = ActivityState()
     activity = ConversationActivity()

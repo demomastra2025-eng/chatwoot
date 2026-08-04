@@ -95,6 +95,7 @@ class AiSettings(ContextModel):
         ]
     )
     post_tool_continuation_ms: int = Field(default=4_000, ge=100, le=120_000)
+    ordinary_answer_continuation_ms: int = Field(default=2_500, ge=500, le=120_000)
 
 
 class ToolDefinition(ContextModel):

@@ -22,6 +22,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'silence_duration_ms' => 250,
         'turn_aggregation_delay_ms' => 180,
         'user_turn_stop_timeout_ms' => 30_000,
+        'ordinary_answer_continuation_ms' => 2_500,
         'interruption_confirmation_window_ms' => 800,
         'vad_confidence' => 0.75,
         'vad_min_volume' => 0.6
@@ -129,6 +130,15 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       )
       expect(described_class.normalize(max_duration_sec: 120)).to include(
         'max_duration_sec' => 120
+      )
+    end
+
+    it 'keeps ordinary-answer recovery inside the Pipecat runtime contract' do
+      expect(described_class.normalize(ordinary_answer_continuation_ms: 0)).to include(
+        'ordinary_answer_continuation_ms' => 2_500
+      )
+      expect(described_class.normalize(ordinary_answer_continuation_ms: 1_500)).to include(
+        'ordinary_answer_continuation_ms' => 1_500
       )
     end
 

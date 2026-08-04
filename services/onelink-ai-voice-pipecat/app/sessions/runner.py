@@ -385,6 +385,7 @@ class PipecatSessionRunner:
     ) -> None:
         started = time.monotonic()
         observed_user_turn = state.user_turn
+        recovered_ordinary_sequence = 0
         silence_stage = 0
         silence_thresholds = (
             context.ai.silence_prompt_after_ms,
@@ -409,6 +410,12 @@ class PipecatSessionRunner:
             if state.user_turn != observed_user_turn:
                 observed_user_turn = state.user_turn
                 silence_stage = 0
+            recovered_ordinary_sequence = await _recover_ordinary_answer_if_stalled(
+                context=context,
+                state=state,
+                assembly=assembly,
+                recovered_sequence=recovered_ordinary_sequence,
+            )
             if (
                 getattr(state, "termination_requested", False)
                 or state.tool_in_progress
@@ -706,3 +713,53 @@ async def _execute_tool_action(
 
 async def _queue_exact_message(assembly: PipelineAssembly, message: str) -> None:
     await assembly.speak_exact(message)
+
+
+async def _recover_ordinary_answer_if_stalled(
+    *,
+    context: VoiceContext,
+    state: SessionState,
+    assembly: PipelineAssembly,
+    recovered_sequence: int,
+) -> int:
+    """Cancel one silent model turn and retry it through Pipecat's frame graph."""
+    timeout_ms = int(getattr(context.ai, "ordinary_answer_continuation_ms", 0) or 0)
+    stall_detector = getattr(assembly.activity, "ordinary_answer_stall", None)
+    if timeout_ms <= 0 or not callable(stall_detector):
+        return recovered_sequence
+    if (
+        getattr(state, "termination_requested", False)
+        or getattr(state, "tool_in_progress", False)
+        or assembly.tool_dialogue.awaiting_continuation
+        or assembly.activity.bot_speaking
+        or assembly.activity.user_speaking
+    ):
+        return recovered_sequence
+
+    stalled = stall_detector(
+        timeout_ms=timeout_ms,
+        recovered_sequence=recovered_sequence,
+    )
+    if not stalled:
+        return recovered_sequence
+
+    sequence = int(stalled["sequence"])
+    state.touch()
+    state.spawn(
+        state.safe_control(
+            "ordinary_answer_model_stall",
+            {
+                "provider": context.ai.provider,
+                "timeout_ms": timeout_ms,
+                "elapsed_ms": stalled["elapsed_ms"],
+                "caller_transcript": stalled["caller_transcript"],
+                "recovery": "interrupt_and_retry",
+            },
+        )
+    )
+    await assembly.interrupt_generation()
+    await assembly.run_instruction(
+        "Ответь клиенту сейчас коротко и естественно. Не молчи, не упоминай технический "
+        f"сбой и не обрывай фразу. Последняя реплика клиента: {stalled['caller_transcript']}"
+    )
+    return sequence

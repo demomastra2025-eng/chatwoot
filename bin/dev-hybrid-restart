@@ -3,7 +3,7 @@
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PORTS=(3002 3037 4077 8097)
+PORTS=(3002 3003 3037 4077 8097)
 STARTUP_WAIT_SECONDS="${DEV_HYBRID_RESTART_STARTUP_WAIT_SECONDS:-15}"
 TERMINATE_TIMEOUT_SECONDS="${DEV_HYBRID_RESTART_TERMINATE_TIMEOUT_SECONDS:-10}"
 SELF_PID="$$"
@@ -142,7 +142,7 @@ wait_for_ports() {
     sleep 1
   done
 
-  log "Warning: not all ports became available within ${timeout_seconds}s: 3002 -> $(read_listening_pids 3002 || true), 3037 -> $(read_listening_pids 3037 || true), 4077 -> $(read_listening_pids 4077 || true), 8097 -> $(read_listening_pids 8097 || true)"
+  log "Warning: not all ports became available within ${timeout_seconds}s: 3002 -> $(read_listening_pids 3002 || true), 3003 -> $(read_listening_pids 3003 || true), 3037 -> $(read_listening_pids 3037 || true), 4077 -> $(read_listening_pids 4077 || true), 8097 -> $(read_listening_pids 8097 || true)"
   return 1
 }
 

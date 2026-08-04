@@ -293,12 +293,19 @@ class ConversationActivity:
         self.model_generations_started = 0
         self.model_generations_completed = 0
         self.model_outputs_generated = 0
+        self.user_messages_added = 0
+        self.tool_executions_started = 0
         self.interruptions = 0
         self.speech_lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._last_user_stopped_at: float | None = None
         self._last_model_generation_started_at: float | None = None
         self._last_model_output_at: float | None = None
+        self._last_user_message: str | None = None
+        self._last_user_message_at: float | None = None
+        self._user_message_turns_started = 0
+        self._user_message_model_outputs = 0
+        self._user_message_tool_executions = 0
 
     @property
     def model_generation_active(self) -> bool:
@@ -348,6 +355,54 @@ class ConversationActivity:
             if self._last_model_output_at is None:
                 self._last_model_output_at = time.monotonic()
             self._changed.notify_all()
+
+    async def user_message_added(self, text: str) -> None:
+        """Anchor ordinary-answer recovery to a committed caller turn."""
+        normalized = text.strip()
+        if not normalized:
+            return
+        async with self._changed:
+            self.user_messages_added += 1
+            self._last_user_message = normalized
+            self._last_user_message_at = time.monotonic()
+            self._user_message_turns_started = self.turns_started
+            self._user_message_model_outputs = self.model_outputs_generated
+            self._user_message_tool_executions = self.tool_executions_started
+            self._changed.notify_all()
+
+    async def tool_started(self) -> None:
+        async with self._changed:
+            self.tool_executions_started += 1
+            self._changed.notify_all()
+
+    def ordinary_answer_stall(
+        self,
+        *,
+        timeout_ms: int,
+        recovered_sequence: int,
+    ) -> dict[str, int | str] | None:
+        """Return one recoverable silent caller turn after its bounded deadline."""
+        if (
+            timeout_ms <= 0
+            or self.user_messages_added <= recovered_sequence
+            or self._last_user_message_at is None
+            or self._last_user_message is None
+        ):
+            return None
+        elapsed_ms = max(0, round((time.monotonic() - self._last_user_message_at) * 1_000))
+        if elapsed_ms < timeout_ms:
+            return None
+        if self.turns_started > self._user_message_turns_started:
+            return None
+        if self.model_outputs_generated > self._user_message_model_outputs:
+            return None
+        if self.tool_executions_started > self._user_message_tool_executions:
+            return None
+        return {
+            "sequence": self.user_messages_added,
+            "caller_transcript": self._last_user_message[:180],
+            "elapsed_ms": elapsed_ms,
+        }
 
     def response_latency_ms(self) -> dict[str, int | None]:
         now = time.monotonic()

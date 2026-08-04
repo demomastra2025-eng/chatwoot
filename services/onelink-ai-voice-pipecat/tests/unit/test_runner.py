@@ -10,6 +10,7 @@ from pipecat.frames.frames import ErrorFrame
 from app.clients.onelink import OnelinkApiError
 from app.config import Settings
 from app.pipeline.context import ToolDefinition, VoiceContext
+from app.pipeline.processors import ConversationActivity
 from app.sessions import runner as runner_module
 from app.sessions.runner import (
     PipecatSessionRunner,
@@ -21,6 +22,7 @@ from app.sessions.runner import (
     _execute_tool_action,
     _filter_tools_for_transport,
     _rails_manages_end_call,
+    _recover_ordinary_answer_if_stalled,
     _runtime_observability,
     _runtime_session_id,
 )
@@ -114,6 +116,80 @@ class ProviderEventState:
         task = asyncio.create_task(work)
         self.tasks.append(task)
         return task
+
+
+class OrdinaryRecoveryState:
+    def __init__(self):
+        self.termination_requested = False
+        self.tool_in_progress = False
+        self.controls = []
+        self.tasks = []
+        self.touches = 0
+
+    def touch(self):
+        self.touches += 1
+
+    async def safe_control(self, action, payload):
+        self.controls.append((action, payload))
+        return True
+
+    def spawn(self, work):
+        task = asyncio.create_task(work)
+        self.tasks.append(task)
+        return task
+
+
+class OrdinaryRecoveryAssembly:
+    def __init__(self, activity):
+        self.activity = activity
+        self.tool_dialogue = SimpleNamespace(awaiting_continuation=False)
+        self.interruptions = 0
+        self.instructions = []
+
+    async def interrupt_generation(self):
+        self.interruptions += 1
+
+    async def run_instruction(self, instruction):
+        self.instructions.append(instruction)
+
+
+@pytest.mark.asyncio
+async def test_ordinary_answer_recovery_interrupts_and_retries_once(monkeypatch):
+    activity = ConversationActivity()
+    now = 10.0
+    monkeypatch.setattr("app.pipeline.processors.time.monotonic", lambda: now)
+    await activity.user_message_added("Я не хочу")
+    now = 13.0
+    state = OrdinaryRecoveryState()
+    assembly = OrdinaryRecoveryAssembly(activity)
+    context = SimpleNamespace(
+        ai=SimpleNamespace(provider="fish", ordinary_answer_continuation_ms=2_500)
+    )
+
+    recovered = await _recover_ordinary_answer_if_stalled(
+        context=cast(Any, context),
+        state=cast(Any, state),
+        assembly=cast(Any, assembly),
+        recovered_sequence=0,
+    )
+    await asyncio.gather(*state.tasks)
+
+    assert recovered == 1
+    assert assembly.interruptions == 1
+    assert assembly.instructions == [
+        "Ответь клиенту сейчас коротко и естественно. Не молчи, не упоминай технический "
+        "сбой и не обрывай фразу. Последняя реплика клиента: Я не хочу"
+    ]
+    assert state.controls[0][0] == "ordinary_answer_model_stall"
+    assert state.controls[0][1]["recovery"] == "interrupt_and_retry"
+
+    assert await _recover_ordinary_answer_if_stalled(
+        context=cast(Any, context),
+        state=cast(Any, state),
+        assembly=cast(Any, assembly),
+        recovered_sequence=recovered,
+    ) == recovered
+    assert assembly.interruptions == 1
 
 
 @pytest.mark.asyncio

@@ -85,6 +85,7 @@ from app.sessions.state import SessionState
 logger = logging.getLogger(__name__)
 
 ELEVENLABS_STT_KEYTERMS = ("OneLink", "слоган", "CRM", "FAQ")
+TOOL_HANDLER_DELIVERY_GRACE_SECONDS = 8.0
 
 GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
     "Если вопрос требует доступного инструмента, вызови его в этом же ходе сразу: не обещай "
@@ -786,6 +787,7 @@ def _register_transcript_handlers(
     ) -> None:
         text = _message_text(message.content)
         if text:
+            await activity.user_message_added(text)
             await state.add_transcript("caller", text, final=True)
             state.spawn(state.flush_transcript())
 
@@ -826,7 +828,8 @@ def _tool_handler(
     # state in context and injects the eventual result as a developer message;
     # if the caller is currently speaking, the result is naturally folded into
     # that next turn instead of being lost with the interrupted generation.
-    timeout_secs = max(1.0, definition.timeout_ms / 1_000 + 1.0)
+    backend_timeout_secs = definition.timeout_ms / 1_000
+    timeout_secs = max(1.0, backend_timeout_secs + 1.0)
     if _uses_runtime_closing_speech(definition.name):
         # A terminal handler first plays the configured farewell and only then
         # invokes the hangup callback. Pipecat's timeout must cover both stages;
@@ -834,7 +837,16 @@ def _tool_handler(
         # still running.
         timeout_secs = max(
             timeout_secs,
-            CLOSING_SPEECH_MAX_SECONDS + definition.timeout_ms / 1_000 + 2.0,
+            CLOSING_SPEECH_MAX_SECONDS + backend_timeout_secs + 2.0,
+        )
+    else:
+        # The handler also owns ordered progress speech and result injection.
+        # A backend result that arrives just before its HTTP deadline must not
+        # be replaced by Pipecat's synthetic timeout while a short, already
+        # queued progress phrase is finishing.
+        timeout_secs = max(
+            timeout_secs,
+            backend_timeout_secs + TOOL_HANDLER_DELIVERY_GRACE_SECONDS,
         )
 
     @tool_options(

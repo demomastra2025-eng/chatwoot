@@ -1,17 +1,15 @@
 class Telephony::AiVoice::ControlService
-  ALLOWED_ACTIONS = %w[
-    ai_ringing ai_answered ai_speaking caller_interrupted tool_started tool_progress tool_completed tool_failed tool_suppressed
+  INTERNAL_OBSERVABILITY_ACTIONS = Telephony::AiVoice::ConversationTimelineService::INTERNAL_OBSERVABILITY_ACTIONS
+  ALLOWED_ACTIONS = (%w[
+    ai_ringing ai_answered caller_interrupted tool_started tool_progress tool_completed tool_failed tool_suppressed
     transfer_started transfer_answered transfer_completed transfer_failed session_completed session_failed
     caller_hangup media_stream_closed media_stream_not_established provider_stream_closed provider_error provider_call_closed runtime_closed
     tool_requested_end_call handoff_requested close
-    tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
-    ordinary_answer_model_stall incomplete_answer_model_stall
-  ].freeze
-  DEFERRED_EVENT_ACTIONS = %w[
-    ai_speaking caller_interrupted tool_started tool_progress tool_completed tool_failed tool_suppressed
-    tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
-    ordinary_answer_model_stall incomplete_answer_model_stall
-  ].freeze
+    tool_async_completed tool_async_failed
+  ] + INTERNAL_OBSERVABILITY_ACTIONS).uniq.freeze
+  DEFERRED_EVENT_ACTIONS = (%w[
+    caller_interrupted tool_started tool_progress tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed
+  ] + INTERNAL_OBSERVABILITY_ACTIONS).uniq.freeze
   NON_TERMINAL_TOOL_ACTIONS = %w[tool_started tool_progress].freeze
   TERMINAL_TOOL_ACTIONS = %w[
     tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed
