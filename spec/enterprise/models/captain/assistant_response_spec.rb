@@ -79,6 +79,33 @@ RSpec.describe Captain::AssistantResponse, type: :model do
 
       expect(results.first).to eq(relevant)
     end
+
+    it 'prefers a focused FAQ question over a repeated generic brand match' do
+      focused = create(
+        :captain_assistant_response,
+        account: account,
+        assistant: nil,
+        question: 'слоган',
+        answer: 'акуна матата',
+        created_at: 1.day.ago
+      )
+      create(
+        :captain_assistant_response,
+        account: account,
+        assistant: nil,
+        question: 'Какие задачи может автоматизировать OneLink для бизнеса?',
+        answer: 'OneLink помогает автоматизировать продажи и общение с клиентами.',
+        created_at: Time.current
+      )
+
+      results = described_class.lexical_search(
+        'слоган OneLink',
+        account_id: account.id,
+        assistant_id: assistant.id
+      )
+
+      expect(results.first).to eq(focused)
+    end
   end
 
   describe 'edited tracking' do

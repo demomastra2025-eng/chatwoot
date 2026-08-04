@@ -2,13 +2,15 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
   DISTANCE_THRESHOLD = 0.3
+  MAX_OUTPUT_TOKENS = 4096
 
-  def initialize(assistant, conversation, content: nil)
+  def initialize(assistant, conversation, content: nil, raise_on_error: false)
     super()
     @assistant = assistant
     @conversation = conversation
     @content_overridden = !content.nil?
     @content = content || conversation.to_llm_text
+    @raise_on_error = raise_on_error
   end
 
   # Generates and deduplicates FAQs from conversation content
@@ -155,12 +157,14 @@ class Captain::Llm::ConversationFaqService < Llm::BaseAiService
       llm_chat = apply_chat_features(
         chat,
         schema: Captain::Llm::Schemas::FaqCollection
-      ).with_instructions(system_prompt)
+      ).with_instructions(system_prompt).with_params(max_tokens: MAX_OUTPUT_TOKENS)
 
       ask_chat(llm_chat, @content)
     end
     parse_response(response.content)
   rescue RubyLLM::Error, Llm::StructuredOutputPolicy::StructuredOutputError => e
+    raise if @raise_on_error
+
     Rails.logger.error "LLM API Error: #{e.message}"
     []
   end

@@ -408,18 +408,20 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     contact_notes_service = instance_double(Captain::Llm::ContactNotesService, generate_and_update_notes: nil)
     faq_service = instance_double(Captain::Llm::ConversationFaqService, generate_and_deduplicate: [])
 
-    allow(Captain::Llm::ContactNotesService).to receive(:new) do |received_assistant, received_conversation, conversation_content:|
+    allow(Captain::Llm::ContactNotesService).to receive(:new) do |received_assistant, received_conversation, conversation_content:, raise_on_error:|
       expect(received_assistant).to eq(assistant)
       expect(received_conversation).to eq(conversation)
       expect(conversation_content).to include('Caller: Запомните, что я люблю доставку утром')
       expect(conversation_content).not_to include('Старые данные из другого обращения')
+      expect(raise_on_error).to be(true)
       contact_notes_service
     end
-    allow(Captain::Llm::ConversationFaqService).to receive(:new) do |received_assistant, received_conversation, content:|
+    allow(Captain::Llm::ConversationFaqService).to receive(:new) do |received_assistant, received_conversation, content:, raise_on_error:|
       expect(received_assistant).to eq(assistant)
       expect(received_conversation).to eq(conversation)
       expect(content).to include('Caller: Запомните, что я люблю доставку утром')
       expect(content).not_to include('Старые данные из другого обращения')
+      expect(raise_on_error).to be(true)
       faq_service
     end
 

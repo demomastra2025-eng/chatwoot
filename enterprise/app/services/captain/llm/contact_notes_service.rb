@@ -1,11 +1,14 @@
 class Captain::Llm::ContactNotesService < Llm::BaseAiService
   include Integrations::LlmInstrumentation
 
-  def initialize(assistant, conversation, conversation_content: nil)
+  MAX_OUTPUT_TOKENS = 2048
+
+  def initialize(assistant, conversation, conversation_content: nil, raise_on_error: false)
     super()
     @assistant = assistant
     @conversation = conversation
     @contact = conversation.contact
+    @raise_on_error = raise_on_error
     conversation_content ||= @conversation.to_llm_text
     @content = "#Contact\n\n#{@contact.to_llm_text} \n\n#Conversation\n\n#{conversation_content}"
   end
@@ -25,12 +28,14 @@ class Captain::Llm::ContactNotesService < Llm::BaseAiService
       llm_chat = apply_chat_features(
         chat,
         schema: Captain::Llm::Schemas::NoteCollection
-      ).with_instructions(system_prompt)
+      ).with_instructions(system_prompt).with_params(max_tokens: MAX_OUTPUT_TOKENS)
 
       ask_chat(llm_chat, @content)
     end
     parse_response(response.content)
   rescue RubyLLM::Error, Llm::StructuredOutputPolicy::StructuredOutputError => e
+    raise if @raise_on_error
+
     ChatwootExceptionTracker.new(e, account: @conversation.account).capture_exception
     []
   end

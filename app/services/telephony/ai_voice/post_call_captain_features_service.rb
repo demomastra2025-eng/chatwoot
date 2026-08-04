@@ -32,7 +32,8 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
       Captain::Llm::ContactNotesService.new(
         captain_assistant,
         conversation,
-        conversation_content: voice_transcript_content
+        conversation_content: voice_transcript_content,
+        raise_on_error: true
       ).generate_and_update_notes
     end
   end
@@ -42,7 +43,8 @@ class Telephony::AiVoice::PostCallCaptainFeaturesService
       Captain::Llm::ConversationFaqService.new(
         captain_assistant,
         conversation,
-        content: voice_transcript_content
+        content: voice_transcript_content,
+        raise_on_error: true
       ).generate_and_deduplicate
     end
   end

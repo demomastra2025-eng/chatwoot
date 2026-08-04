@@ -28,6 +28,7 @@ POST_TOOL_GENERATION_MAX_SECONDS = 8.0
 DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS = 0.25
 DIRECT_RESULT_CALLER_WAIT_SECONDS = 30.0
 DIRECT_RESULT_SETTLE_SECONDS = 0.15
+PROGRESS_COMMIT_GRACE_MAX_MS = 200
 
 
 class ToolRuntimeState(Protocol):
@@ -647,6 +648,13 @@ class ToolDialogueCoordinator:
             start_after_ms = min(start_after_ms, foreground_wait_ms)
         if await _wait_until_stopped(stopped, start_after_ms):
             return
+        # A fast backend can finish at the same instant the progress timer
+        # expires. Give its completion event one final, bounded chance to win
+        # before committing a filler phrase to TTS; once queued, that phrase
+        # must finish before the actual result can be delivered safely.
+        commit_grace_ms = min(PROGRESS_COMMIT_GRACE_MAX_MS, start_after_ms // 5)
+        if commit_grace_ms and await _wait_until_stopped(stopped, commit_grace_ms):
+            return
         async with self._dialogue_lock:
             if stopped.is_set() or self._speak_exact is None:
                 return
@@ -1011,6 +1019,8 @@ def _voice_result_projection(tool_name: str, result: dict[str, Any]) -> dict[str
     normalized_name = tool_name.strip().lower()
     if normalized_name == "list_deal_pipelines":
         projected = _project_named_items(normalized, ("pipelines",), include_stages=True)
+    elif normalized_name in {"find_deal", "get_deal", "search_deals", "list_deals"}:
+        projected = _project_deals(normalized)
     elif normalized_name in {"faq_lookup", "knowledge_lookup", "search_knowledge"}:
         projected = _project_named_items(
             normalized,
@@ -1033,6 +1043,60 @@ def _voice_result_projection(tool_name: str, result: dict[str, Any]) -> dict[str
         "summary": f"{serialized[: VOICE_RESULT_MAX_CHARS - 300]}…",
         "truncated": True,
     }
+
+
+def _project_deals(result: dict[str, Any]) -> dict[str, Any]:
+    deals = _find_named_list(result, ("deals", "items")) or []
+    projected_deals = []
+    for deal in deals[:8]:
+        if not isinstance(deal, dict):
+            continue
+        projected = {
+            key: _compact_voice_value(deal[key])
+            for key in (
+                "id",
+                "title",
+                "name",
+                "amount",
+                "currency",
+                "pipeline_id",
+                "pipeline_name",
+                "stage_id",
+                "stage_name",
+                "status",
+                "expected_close_on",
+            )
+            if key in deal and deal[key] not in (None, "")
+        }
+        description = str(deal.get("description") or "").strip()
+        if description:
+            projected["description"] = description[:80]
+        if projected:
+            projected_deals.append(projected)
+
+    projected = {
+        "status": result.get("status", "ok"),
+        "total_count": result.get("total_count", len(deals)),
+        "returned_count": len(projected_deals),
+        "deals": projected_deals,
+    }
+    if result.get("error"):
+        projected["error"] = _compact_voice_value(result["error"])
+
+    # Preserve structured deal identities instead of falling back to a raw
+    # JSON prefix. Drop optional descriptions, then oldest tail items only if
+    # unusually long customer data still exceeds the voice context budget.
+    if len(json.dumps(projected, ensure_ascii=False, default=str)) > VOICE_RESULT_MAX_CHARS:
+        for deal in projected_deals:
+            deal.pop("description", None)
+    while (
+        projected_deals
+        and len(json.dumps(projected, ensure_ascii=False, default=str))
+        > VOICE_RESULT_MAX_CHARS
+    ):
+        projected_deals.pop()
+        projected["returned_count"] = len(projected_deals)
+    return projected
 
 
 def _decode_nested_result(value: Any) -> Any:

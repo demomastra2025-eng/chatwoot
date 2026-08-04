@@ -175,6 +175,14 @@ RSpec.describe Captain::Llm::ConversationFaqService do
         expect(Rails.logger).to receive(:error).with('LLM API Error: API Error')
         expect(service.generate_and_deduplicate).to eq([])
       end
+
+      context 'when configured to expose the error to its caller' do
+        let(:service) { described_class.new(captain_assistant, conversation, raise_on_error: true) }
+
+        it 'raises the provider error for retry-aware orchestration' do
+          expect { service.generate_and_deduplicate }.to raise_error(RubyLLM::Error, 'API Error')
+        end
+      end
     end
 
     context 'when JSON parsing fails' do

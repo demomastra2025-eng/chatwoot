@@ -30,7 +30,7 @@ RSpec.describe 'Captain LLM account routing' do
     allow(chat).to receive(:with_instructions).and_return(chat)
   end
 
-  shared_examples 'an account-routed Captain LLM generation service' do |response_content, invocation|
+  shared_examples 'an account-routed Captain LLM generation service' do |response_content, invocation, max_output_tokens = nil|
     it 'builds chat with the conversation account and resolved assistant model' do
       response = instance_double(RubyLLM::Message, content: response_content)
 
@@ -40,11 +40,12 @@ RSpec.describe 'Captain LLM account routing' do
           model: 'gpt-5.2'
         )
       ).and_return(chat)
-      allow(Llm::ChatClient).to receive(:ask).with(
+      allow(Llm::Runtime).to receive(:ask).with(
         chat,
         kind_of(String),
         hash_including(account: account, model: 'gpt-5.2')
       ).and_return(response)
+      expect(chat).to receive(:with_params).with(max_tokens: max_output_tokens).and_return(chat) if max_output_tokens
 
       instance_exec(&invocation)
     end
@@ -54,7 +55,8 @@ RSpec.describe 'Captain LLM account routing' do
     it_behaves_like(
       'an account-routed Captain LLM generation service',
       { notes: [] },
-      -> { described_class.new(assistant, conversation).generate_and_update_notes }
+      -> { described_class.new(assistant, conversation).generate_and_update_notes },
+      Captain::Llm::ContactNotesService::MAX_OUTPUT_TOKENS
     )
   end
 
@@ -70,7 +72,8 @@ RSpec.describe 'Captain LLM account routing' do
     it_behaves_like(
       'an account-routed Captain LLM generation service',
       { faqs: [] },
-      -> { described_class.new(assistant, conversation).generate_and_deduplicate }
+      -> { described_class.new(assistant, conversation).generate_and_deduplicate },
+      Captain::Llm::ConversationFaqService::MAX_OUTPUT_TOKENS
     )
   end
 end

@@ -204,7 +204,12 @@ async def test_identical_inflight_read_calls_share_execution_progress_and_contin
     await asyncio.gather(first, duplicate)
     await asyncio.gather(*state.tasks)
 
-    expected = {"deals": [{"id": 386}]}
+    expected = {
+        "status": "ok",
+        "total_count": 1,
+        "returned_count": 1,
+        "deals": [{"id": 386}],
+    }
     assert first_results == duplicate_results == [expected]
     assert duplicate_properties[0].run_llm is False
     assert state.executions == 1
@@ -1052,6 +1057,39 @@ def test_faq_result_projection_keeps_real_answers():
     assert projected["matches"][0]["answer"] == "OneLink объединяет каналы общения."
     assert projected["matches"][1]["answer"] == "Да, CRM встроена."
     assert "embedding" not in projected["matches"][0]
+
+
+def test_search_deals_projection_keeps_titles_instead_of_raw_json_prefix():
+    deals = [
+        {
+            "id": index,
+            "title": f"Сделка {index}",
+            "description": "Описание " + ("x" * 1_000),
+            "pipeline_id": 2,
+            "stage_id": 3,
+            "primary_contact": {"phone_number": "+77000000000"},
+            "custom_attributes": {"raw": "x" * 2_000},
+        }
+        for index in range(8)
+    ]
+    result = {
+        "action": "captain_tool",
+        "result": json.dumps(
+            {"total_count": 8, "deals": deals},
+            ensure_ascii=False,
+        ),
+    }
+
+    projected = _voice_result_projection("search_deals", result)
+
+    assert projected["total_count"] == 8
+    assert projected["returned_count"] == 8
+    assert [deal["title"] for deal in projected["deals"]] == [
+        f"Сделка {index}" for index in range(8)
+    ]
+    assert "primary_contact" not in projected["deals"][0]
+    assert "custom_attributes" not in projected["deals"][0]
+    assert len(json.dumps(projected, ensure_ascii=False)) <= 2_400
 
 
 def test_generic_voice_result_projection_is_hard_bounded():

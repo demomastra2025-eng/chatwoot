@@ -133,18 +133,30 @@ class Captain::AssistantResponse < ApplicationRecord
   end
 
   def self.lexical_ranking(query, tokens, bind_values)
-    relevance = tokens.each_index.map do |index|
-      "CASE WHEN LOWER(question) LIKE :term_#{index} THEN 2 ELSE 0 END + " \
-        "CASE WHEN LOWER(answer) LIKE :term_#{index} THEN 1 ELSE 0 END"
-    end.join(' + ')
+    question_relevance = lexical_relevance(tokens) { |index| "LOWER(question) LIKE :term_#{index}" }
+    distinct_relevance = lexical_relevance(tokens) do |index|
+      "LOWER(question) LIKE :term_#{index} OR LOWER(answer) LIKE :term_#{index}"
+    end
+    answer_relevance = lexical_relevance(tokens) { |index| "LOWER(answer) LIKE :term_#{index}" }
     sanitize_sql_array(
       [
-        "CASE WHEN LOWER(BTRIM(question)) = :exact_query THEN 0 ELSE 1 END, (#{relevance}) DESC, created_at DESC",
+        <<~SQL.squish,
+          CASE WHEN LOWER(BTRIM(question)) = :exact_query THEN 0 ELSE 1 END,
+          (#{question_relevance}) DESC,
+          (#{distinct_relevance}) DESC,
+          LENGTH(BTRIM(question)) ASC,
+          (#{answer_relevance}) DESC,
+          created_at DESC
+        SQL
         bind_values.merge(exact_query: query.to_s.squish.downcase)
       ]
     )
   end
-  private_class_method :lexical_tokens, :lexical_bind_values, :lexical_conditions, :lexical_ranking
+
+  def self.lexical_relevance(tokens)
+    tokens.each_index.map { |index| "CASE WHEN #{yield(index)} THEN 1 ELSE 0 END" }.join(' + ')
+  end
+  private_class_method :lexical_tokens, :lexical_bind_values, :lexical_conditions, :lexical_ranking, :lexical_relevance
 
   private
 
