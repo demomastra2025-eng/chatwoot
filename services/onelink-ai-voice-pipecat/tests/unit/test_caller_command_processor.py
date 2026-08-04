@@ -20,6 +20,9 @@ from app.sessions.state import SessionState
         "Отключись",
         "Hang up",
         "Қоңырауды аяқта",
+        "До свидания",
+        "Нет, не надо. До свидания.",
+        "Спасибо, всего доброго!",
     ],
 )
 def test_caller_end_call_intent_matches_explicit_commands(text):
@@ -34,7 +37,8 @@ def test_caller_end_call_intent_matches_explicit_commands(text):
         "Не надо заканчивать разговор",
         "Как сбросить настройки телефона?",
         "Сбрось",
-        "До свидания",
+        "Как правильно сказать до свидания?",
+        "Не говори до свидания",
         "Продолжайте",
     ],
 )
@@ -86,7 +90,7 @@ async def test_caller_command_processor_executes_end_call_once_for_repeated_tran
         finalized=True,
     )
 
-    await processor.process_frame(frame, FrameDirection.UPSTREAM)
+    await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
     await processor.process_frame(frame, FrameDirection.UPSTREAM)
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)

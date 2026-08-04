@@ -24,6 +24,7 @@ from app.pipeline.context import ToolDefinition, VoiceContext
 from app.pipeline.factory import (
     CRM_DATA_INTEGRITY_INSTRUCTION,
     GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION,
+    VOICE_LANGUAGE_INSTRUCTION,
     _build_tools,
     _provider_system_prompt,
     _user_turn_strategies,
@@ -544,7 +545,7 @@ def test_gemini_with_tools_announces_before_formal_function_call():
 
     llm = cast(GeminiLiveLLMService, assembly.llm)
     assert llm._settings.system_instruction == (
-        f"Говори коротко.\n\n{GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION}"
+        f"Говори коротко.\n\n{VOICE_LANGUAGE_INSTRUCTION}\n\n{GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION}"
     )
 
 
@@ -573,7 +574,47 @@ def test_voice_crm_source_preserves_whatsapp_call_context():
     prompt = _provider_system_prompt(context)
 
     assert "Фактический источник: голосовой звонок WhatsApp" in prompt
-    assert GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION not in prompt
+    assert GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION in prompt
+
+
+@pytest.mark.parametrize(
+    ("provider", "model", "voice"),
+    [
+        ("gemini-live", "gemini-3.1-flash-live-preview", "sulafat"),
+        ("openai-realtime", "gpt-realtime-2", "alloy"),
+        ("fish", "openai/gpt-5.4-mini", "fish-voice-ref"),
+    ],
+)
+def test_caller_end_call_command_is_wired_for_every_pipeline(provider, model, voice):
+    context = _context(provider, model=model, voice=voice)
+    context.tools.append(ToolDefinition(name="end_call", timeout_ms=1_000))
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    assert assembly.caller_command is not None
+
+
+def test_openrouter_receives_native_same_turn_tool_instruction():
+    context = _context("fish", model="openai/gpt-5.4-mini", voice="fish-voice-ref")
+    context.tools.append(ToolDefinition(name="faq_lookup"))
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    llm = cast(OpenRouterLLMService, assembly.llm)
+    assert GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION in llm._settings.system_instruction
+    assert VOICE_LANGUAGE_INSTRUCTION in llm._settings.system_instruction
 
 
 def test_invalid_tool_schema_is_dropped_before_provider_setup():

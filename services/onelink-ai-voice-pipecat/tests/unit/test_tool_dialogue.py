@@ -859,11 +859,55 @@ async def test_faq_result_defers_direct_speech_during_caller_barge_in():
     )
 
     await coordinator.execute(definition("faq_lookup"), params)
+    for _ in range(20):
+        if any(control[0] == "direct_tool_speech_deferred" for control in state.controls):
+            break
+        await asyncio.sleep(0.01)
+
+    assert spoken == []
+    await activity.user_stopped()
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 
-    assert spoken == []
+    assert spoken == [answer]
     assert any(control[0] == "direct_tool_speech_deferred" for control in state.controls)
+
+
+@pytest.mark.asyncio
+async def test_fast_faq_result_suppresses_obsolete_progress_phrase():
+    state = FakeState(result={"matches": [{"answer": "Готовый ответ"}]})
+    activity = ConversationActivity()
+    progress = []
+
+    async def speak_exact(message):
+        progress.append(message)
+        return True
+
+    async def result_callback(_result, *, properties=None):
+        await properties.on_context_updated()
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(tool_start_after_ms=5),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(
+        speak_exact=speak_exact,
+        speak_result=speak_exact,
+        run_instruction=speak_exact,
+    )
+    params = Params(
+        arguments={"query": "слоган"},
+        tool_call_id="faq-fast",
+        result_callback=result_callback,
+    )
+
+    await coordinator.execute(definition("faq_lookup", foreground_wait_ms=100), params)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert progress == ["Готовый ответ"]
+    assert not any(control[0] == "tool_progress" for control in state.controls)
 
 
 @pytest.mark.asyncio

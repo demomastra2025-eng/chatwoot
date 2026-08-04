@@ -8,7 +8,7 @@ class Telephony::AiVoice::ToolDispatchService
   # Keep sub-second knowledge lookups on the direct response path. Fish needs
   # roughly one second to make a queued acknowledgement audible, so starting a
   # filler earlier only adds latency and races the already-ready FAQ result.
-  REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 1_200
+  REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 2_800
   VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS = 0.5
 
   VOICE_CRM_MUTATION_GUIDANCE = {
@@ -548,26 +548,54 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def captain_runtime_state
-    @captain_runtime_state ||= begin
-      state = Captain::ContextFields.runtime_state_for(
-        account: account,
-        conversation: conversation,
-        channel_type: conversation&.inbox&.channel_type
-      )
-      state.merge!(
-        account_id: account.id,
-        assistant_id: captain_assistant.id,
-        assistant_config: captain_assistant.config,
-        captain_runtime: account.captain_runtime_preferences,
-        runtime_clock: runtime_clock_state,
-        source: 'voice_ai',
-        call_session: { id: call_session.id, external_call_ref: call_session.external_call_ref }
-      )
-      state[:reply_window] ||= reply_window_state if conversation.present?
-      state.compact!
-      state[:prompt_context] = captain_assistant.prompt_context_state(state)
-      state
-    end
+    @captain_runtime_state ||= tool_name == 'faq_lookup' ? realtime_faq_runtime_state : full_captain_runtime_state
+  end
+
+  def full_captain_runtime_state
+    state = Captain::ContextFields.runtime_state_for(**captain_runtime_context)
+    state.merge!(captain_runtime_metadata)
+    state[:reply_window] ||= reply_window_state if conversation.present?
+    state.compact!
+    state[:prompt_context] = captain_assistant.prompt_context_state(state)
+    state
+  end
+
+  def captain_runtime_context
+    {
+      account: account,
+      conversation: conversation,
+      channel_type: conversation&.inbox&.channel_type
+    }
+  end
+
+  def captain_runtime_metadata
+    {
+      account_id: account.id,
+      assistant_id: captain_assistant.id,
+      assistant_config: captain_assistant.config,
+      captain_runtime: account.captain_runtime_preferences,
+      runtime_clock: runtime_clock_state,
+      source: 'voice_ai',
+      call_session: { id: call_session.id, external_call_ref: call_session.external_call_ref }
+    }
+  end
+
+  def realtime_faq_runtime_state
+    {
+      account_id: account.id,
+      assistant_id: captain_assistant.id,
+      assistant_config: captain_assistant.config,
+      captain_runtime: account.captain_runtime_preferences,
+      source: 'voice_ai',
+      conversation: {
+        id: conversation&.id,
+        display_id: conversation&.display_id
+      }.compact,
+      call_session: {
+        id: call_session.id,
+        external_call_ref: call_session.external_call_ref
+      }
+    }.compact
   end
 
   def runtime_clock_state

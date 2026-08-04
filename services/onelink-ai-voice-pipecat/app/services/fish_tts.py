@@ -17,8 +17,22 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.fish.tts import FishAudioTTSService
+from pipecat.utils.text.simple_text_aggregator import SimpleTextAggregator
 from pipecat.utils.tracing.service_decorators import traced_tts
 from websockets.protocol import State
+
+
+class FishTurnTextAggregator(SimpleTextAggregator):
+    """Keep one short LLM turn in one Fish synthesis request.
+
+    Pipecat's sentence aggregator normally emits every completed sentence.
+    Fish flushes each emitted item as a separate synthesis unit, which creates
+    an audible seam between sentences. We retain Pipecat's native end-of-turn
+    flush but suppress intermediate sentence boundaries.
+    """
+
+    async def _check_sentence_with_lookahead(self, char: str):
+        return None
 
 
 class OneLinkFishAudioTTSService(FishAudioTTSService):
@@ -41,6 +55,7 @@ class OneLinkFishAudioTTSService(FishAudioTTSService):
         # margin while removing an avoidable tail from every spoken turn.
         kwargs.setdefault("stop_frame_timeout_s", self.AUDIO_CONTEXT_IDLE_TIMEOUT_SECONDS)
         super().__init__(*args, **kwargs)
+        self._text_aggregator = FishTurnTextAggregator(aggregation_type=self._text_aggregation_mode)
         self._synthesis_lock = asyncio.Lock()
         self._interruption_epoch = 0
         self._pending_context_id: str | None = None

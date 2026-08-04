@@ -134,7 +134,7 @@ class CallerCommandProcessor(FrameProcessor):
         self._end_call_executor: (
             Callable[[dict[str, str], str, int], Awaitable[dict[str, Any]]] | None
         ) = None
-        runtime_id = state.correlation.runtime_session_id
+        runtime_id = str(state.correlation.runtime_session_id)
         digest = hashlib.sha256(runtime_id.encode()).hexdigest()[:24]
         self._tool_call_id = f"caller-intent-end-call:{digest}"
 
@@ -147,8 +147,7 @@ class CallerCommandProcessor(FrameProcessor):
     async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
         await super().process_frame(frame, direction)
         if (
-            direction == FrameDirection.UPSTREAM
-            and isinstance(frame, TranscriptionFrame)
+            isinstance(frame, TranscriptionFrame)
             and not isinstance(frame, InterimTranscriptionFrame)
             and not self._end_call_requested
             and caller_requested_end_call(frame.text)
@@ -330,6 +329,10 @@ class ConversationActivity:
     async def wait_for_model_idle(self, timeout: float) -> bool:
         return await self._wait_for(lambda: not self.model_generation_active, timeout)
 
+    async def wait_for_user_idle(self, timeout: float) -> bool:
+        """Wait until the caller finishes the current utterance."""
+        return await self._wait_for(lambda: not self.user_speaking, timeout)
+
     async def _wait_for(self, predicate, timeout: float) -> bool:
         try:
             async with asyncio.timeout(timeout):
@@ -355,6 +358,14 @@ _END_CALL_PATTERNS = (
     re.compile(r"\b(?:отключись|отключитесь)\b"),
     re.compile(r"\b(?:hang\s*up|end\s+the\s+call)\b"),
     re.compile(r"\b(?:қоңырауды\s+аяқта|тұтқаны\s+қой)\b"),
+    # A standalone farewell at the end of an utterance is an explicit call
+    # ending in natural phone speech. Requiring a clause boundary avoids
+    # matching questions such as "как сказать до свидания?".
+    re.compile(
+        r"(?:^|[.!?]\s*)(?:(?:ну|ладно|хорошо|спасибо|все|нет\s+не\s+надо)[,\s]+)?"
+        r"(?:до\s+свидания|всего\s+доброго|до\s+встречи|сау\s+болыңыз|қош\s+болыңыз|"
+        r"goodbye|bye)(?:[.!?]+|$)"
+    ),
 )
 
 

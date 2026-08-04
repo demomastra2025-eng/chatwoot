@@ -88,9 +88,7 @@ async def test_fish_tts_preserves_every_non_empty_audio_chunk(size):
 @pytest.mark.asyncio
 async def test_fish_tts_ignores_empty_audio_chunk():
     service = build_service()
-    service._websocket = FakeReceiveWebsocket(
-        [ormsgpack.packb({"event": "audio", "audio": b""})]
-    )
+    service._websocket = FakeReceiveWebsocket([ormsgpack.packb({"event": "audio", "audio": b""})])
     service.append_to_audio_context = AsyncMock()
 
     await service._receive_messages()
@@ -232,3 +230,18 @@ def test_fish_tts_uses_short_safe_audio_idle_timeout():
     service = build_service()
 
     assert service._stop_frame_timeout_s == 1.5
+
+
+@pytest.mark.asyncio
+async def test_fish_tts_aggregates_one_llm_turn_into_one_synthesis_unit():
+    service = build_service()
+    aggregator = service._text_aggregator
+
+    first = [item async for item in aggregator.aggregate("Первое предложение. ")]
+    second = [item async for item in aggregator.aggregate("Второе предложение.")]
+    completed = await aggregator.flush()
+
+    assert first == []
+    assert second == []
+    assert completed is not None
+    assert completed.text == "Первое предложение. Второе предложение."

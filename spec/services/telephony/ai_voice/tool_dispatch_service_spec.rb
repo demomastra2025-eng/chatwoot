@@ -45,7 +45,7 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
         'type' => 'string',
         'description' => a_string_including('FAQ')
       )
-      expect(faq['foreground_wait_ms']).to eq(1_200)
+      expect(faq['foreground_wait_ms']).to eq(2_800)
     end
 
     it 'adds voice data-integrity guidance to mutating Captain tools' do
@@ -238,6 +238,26 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       state = service.send(:captain_runtime_state)
 
       expect(state[:captain_runtime]['assistant_thinking_effort']).to eq('low')
+    end
+
+    it 'does not build unrelated conversation prompt context for realtime FAQ lookup' do
+      service = described_class.new(
+        tool_name: 'faq_lookup',
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: {}
+        }
+      )
+
+      expect(Captain::ContextFields).not_to receive(:runtime_state_for)
+      expect(assistant).not_to receive(:prompt_context_state)
+
+      state = service.send(:captain_runtime_state)
+
+      expect(state).to include(account_id: account.id, assistant_id: assistant.id, source: 'voice_ai')
+      expect(state[:conversation]).to include(id: conversation.id, display_id: conversation.display_id)
+      expect(state).not_to have_key(:prompt_context)
     end
   end
 

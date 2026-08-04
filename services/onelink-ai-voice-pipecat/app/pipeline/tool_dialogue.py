@@ -24,6 +24,8 @@ VOICE_RESULT_MAX_CHARS = 2_400
 VOICE_RESULT_MAX_STRING_CHARS = 500
 POST_TOOL_GENERATION_MAX_SECONDS = 8.0
 DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS = 0.25
+DIRECT_RESULT_CALLER_WAIT_SECONDS = 30.0
+DIRECT_RESULT_SETTLE_SECONDS = 0.15
 
 
 class ToolRuntimeState(Protocol):
@@ -300,6 +302,12 @@ class ToolDialogueCoordinator:
     ) -> None:
         if self._speak_result is None:
             return
+
+        # Give a just-started barge-in enough time to reach the local VAD
+        # before committing the result to TTS. Once a knowledge result exists,
+        # never discard it merely because the caller is still finishing a
+        # sentence: keep it pending and speak it as soon as that turn ends.
+        await asyncio.sleep(DIRECT_RESULT_SETTLE_SECONDS)
         if self._activity.user_speaking:
             self._state.spawn(
                 self._state.safe_control(
@@ -309,7 +317,19 @@ class ToolDialogueCoordinator:
                     tool_name=definition.name,
                 )
             )
-            return
+            caller_finished = await self._activity.wait_for_user_idle(
+                DIRECT_RESULT_CALLER_WAIT_SECONDS
+            )
+            if not caller_finished:
+                self._state.spawn(
+                    self._state.safe_control(
+                        "direct_tool_speech_not_started",
+                        {"reason": "caller_remained_active"},
+                        tool_call_id=tool_call_id,
+                        tool_name=definition.name,
+                    )
+                )
+                return
 
         speech_started_at = time.monotonic()
         try:
@@ -320,7 +340,11 @@ class ToolDialogueCoordinator:
                         timeout=3.0,
                     )
                 if self._activity.user_speaking:
-                    return
+                    caller_finished = await self._activity.wait_for_user_idle(
+                        DIRECT_RESULT_CALLER_WAIT_SECONDS
+                    )
+                    if not caller_finished:
+                        return
                 spoken = await self._speak_result(phrase)
         except Exception:
             logger.exception(
@@ -543,7 +567,12 @@ class ToolDialogueCoordinator:
     ) -> None:
         foreground_wait_ms = self._foreground_wait_ms(definition)
         start_after_ms = self._ai.tool_start_after_ms
-        if foreground_wait_ms > 0:
+        if _uses_direct_voice_result(definition.name, self._ai.provider):
+            # Direct FAQ results do not need a second LLM pass. Give the fast
+            # path its complete foreground budget so a filler never delays an
+            # already-ready answer. Slow lookups still get progress speech.
+            start_after_ms = max(start_after_ms, foreground_wait_ms)
+        elif foreground_wait_ms > 0:
             start_after_ms = min(start_after_ms, foreground_wait_ms)
         if await _wait_until_stopped(stopped, start_after_ms):
             return

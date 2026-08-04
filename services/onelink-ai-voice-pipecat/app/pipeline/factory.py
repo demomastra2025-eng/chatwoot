@@ -83,10 +83,16 @@ from app.sessions.state import SessionState
 logger = logging.getLogger(__name__)
 
 GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION = (
-    "Вызывай нужный инструмент сразу, без обещаний и задержки. Если результат инструмента "
+    "Если вопрос требует доступного инструмента, вызови его в этом же ходе сразу: не обещай "
+    "проверить, не жди следующей реплики и не произноси текст перед function call. Если "
+    "результат инструмента "
     "имеет status=pending, ничего не произноси и не вызывай инструмент повторно: runtime сам "
     "озвучит ход выполнения. После фактического результата сразу дай клиенту один короткий "
     "содержательный ответ или понятное сообщение об ошибке."
+)
+VOICE_LANGUAGE_INSTRUCTION = (
+    "Отвечай только на настроенном языке разговора. Не вставляй слова и символы из других "
+    "языков или письменностей, даже как связки между предложениями."
 )
 CRM_MUTATION_TOOL_NAMES = frozenset(
     {"add_contact_note", "create_contact", "create_deal", "create_note", "update_deal"}
@@ -120,6 +126,7 @@ class PipelineAssembly:
     activity: ConversationActivity
     vad: SileroVADAnalyzer
     tool_dialogue: ToolDialogueCoordinator
+    caller_command: CallerCommandProcessor | None = None
     start_on_connect: bool = False
     initial_greeting: str | None = None
     stt: object | None = None
@@ -252,7 +259,14 @@ def build_pipeline(
     tts = None
     input_resampler = None
     output_resampler = None
-    caller_command: CallerCommandProcessor | None = None
+    caller_command = (
+        CallerCommandProcessor(
+            state,
+            end_call_timeout_ms=end_call_definition.timeout_ms,
+        )
+        if end_call_definition is not None
+        else None
+    )
 
     if context.ai.provider == "gemini-live":
         affective_dialog_enabled = (
@@ -304,11 +318,7 @@ def build_pipeline(
             aggregators.user(),
             TurnLifecycleProcessor(state, activity),
         ]
-        if end_call_definition is not None:
-            caller_command = CallerCommandProcessor(
-                state,
-                end_call_timeout_ms=end_call_definition.timeout_ms,
-            )
+        if caller_command is not None:
             processors.append(caller_command)
         processors.extend(
             [
@@ -332,7 +342,7 @@ def build_pipeline(
             api_key=credentials["openai_api_key"],
             settings=OpenAIRealtimeLLMService.Settings(
                 model=context.ai.model,
-                system_instruction=context.ai.system_prompt,
+                system_instruction=_provider_system_prompt(context),
                 temperature=context.ai.temperature,
                 max_tokens=context.ai.max_output_tokens,
                 session_properties=SessionProperties(
@@ -358,13 +368,19 @@ def build_pipeline(
             InputRecordingProcessor(recorder),
             aggregators.user(),
             TurnLifecycleProcessor(state, activity),
-            input_resampler,
-            llm,
-            output_resampler,
-            AssistantLifecycleProcessor(state, activity, recorder),
-            transport.output(),
-            aggregators.assistant(),
         ]
+        if caller_command is not None:
+            processors.append(caller_command)
+        processors.extend(
+            [
+                input_resampler,
+                llm,
+                output_resampler,
+                AssistantLifecycleProcessor(state, activity, recorder),
+                transport.output(),
+                aggregators.assistant(),
+            ]
+        )
         start_on_connect = True
     else:
         direct_initial_greeting = (context.ai.first_message or "").strip() or None
@@ -447,7 +463,7 @@ def build_pipeline(
             openrouter_extra_body["reasoning"] = {"effort": "none", "exclude": True}
         openrouter_settings = {
             "model": context.ai.model,
-            "system_instruction": context.ai.system_prompt,
+            "system_instruction": _provider_system_prompt(context),
             "max_tokens": context.ai.max_output_tokens,
             "extra": {"extra_body": openrouter_extra_body},
         }
@@ -495,12 +511,18 @@ def build_pipeline(
             stt,
             aggregators.user(),
             TurnLifecycleProcessor(state, activity),
-            llm,
-            tts,
-            AssistantLifecycleProcessor(state, activity, recorder),
-            transport.output(),
-            aggregators.assistant(),
         ]
+        if caller_command is not None:
+            processors.append(caller_command)
+        processors.extend(
+            [
+                llm,
+                tts,
+                AssistantLifecycleProcessor(state, activity, recorder),
+                transport.output(),
+                aggregators.assistant(),
+            ]
+        )
         start_on_connect = True
 
     pipeline = Pipeline(processors)
@@ -524,6 +546,7 @@ def build_pipeline(
         activity=activity,
         vad=vad,
         tool_dialogue=tool_dialogue,
+        caller_command=caller_command,
         start_on_connect=start_on_connect,
         initial_greeting=(
             direct_initial_greeting
@@ -741,13 +764,13 @@ def _initial_turn(context: VoiceContext) -> str:
 
 
 def _provider_system_prompt(context: VoiceContext) -> str:
-    instructions = [context.ai.system_prompt]
+    instructions = [context.ai.system_prompt, VOICE_LANGUAGE_INSTRUCTION]
     tool_names = {tool.name.strip().lower() for tool in context.tools}
     if tool_names & CRM_MUTATION_TOOL_NAMES:
         instructions.append(
             CRM_DATA_INTEGRITY_INSTRUCTION.format(source=_voice_crm_source(context))
         )
-    if context.ai.provider == "gemini-live" and context.tools:
+    if context.tools:
         instructions.append(GEMINI_TOOL_ANNOUNCEMENT_INSTRUCTION)
     return "\n\n".join(instructions)
 
