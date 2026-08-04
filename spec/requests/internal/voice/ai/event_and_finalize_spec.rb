@@ -440,14 +440,16 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     voice_token = 'test'
 
     2.times do
-      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: voice_token) do
-        post '/internal/voice/ai/finalize',
-             params: payload,
-             headers: {
-               'Authorization' => "Bearer #{voice_token}",
-               'X-Idempotency-Key' => 'evt-finalize-captain-features-1'
-             },
-             as: :json
+      perform_enqueued_jobs(only: Telephony::AiVoice::PostCallCaptainFeaturesJob) do
+        with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: voice_token) do
+          post '/internal/voice/ai/finalize',
+               params: payload,
+               headers: {
+                 'Authorization' => "Bearer #{voice_token}",
+                 'X-Idempotency-Key' => 'evt-finalize-captain-features-1'
+               },
+               as: :json
+        end
       end
       expect(response).to have_http_status(:ok)
     end
@@ -602,25 +604,27 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     allow(Captain::Llm::ContactNotesService).to receive(:new).and_return(contact_notes_service)
     allow(Captain::Llm::ConversationFaqService).to receive(:new).and_return(faq_service)
 
-    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
-      post '/internal/voice/ai/finalize',
-           params: {
-             event_id: 'evt-finalize-routing-policy-captain-features-1',
-             event_type: 'finalize',
-             provider_call_id: call_session.external_call_ref,
-             account_id: account.id,
-             conversation_id: conversation.id,
-             status: 'completed',
-             final_transcript: [
-               { speaker: 'caller', text: 'Запомните, что мне нужна утренняя доставка', at: Time.current.iso8601 },
-               { speaker: 'assistant', text: 'Хорошо, учту это.', at: Time.current.iso8601 }
-             ]
-           },
-           headers: {
-             'Authorization' => 'Bearer voice-secret',
-             'X-Idempotency-Key' => 'evt-finalize-routing-policy-captain-features-1'
-           },
-           as: :json
+    perform_enqueued_jobs(only: Telephony::AiVoice::PostCallCaptainFeaturesJob) do
+      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+        post '/internal/voice/ai/finalize',
+             params: {
+               event_id: 'evt-finalize-routing-policy-captain-features-1',
+               event_type: 'finalize',
+               provider_call_id: call_session.external_call_ref,
+               account_id: account.id,
+               conversation_id: conversation.id,
+               status: 'completed',
+               final_transcript: [
+                 { speaker: 'caller', text: 'Запомните, что мне нужна утренняя доставка', at: Time.current.iso8601 },
+                 { speaker: 'assistant', text: 'Хорошо, учту это.', at: Time.current.iso8601 }
+               ]
+             },
+             headers: {
+               'Authorization' => 'Bearer voice-secret',
+               'X-Idempotency-Key' => 'evt-finalize-routing-policy-captain-features-1'
+             },
+             as: :json
+      end
     end
 
     expect(response).to have_http_status(:ok)
@@ -975,14 +979,16 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
 
   def post_finalize_twice(payload)
     2.times do
-      with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
-        post '/internal/voice/ai/finalize',
-             params: payload,
-             headers: {
-               'Authorization' => 'Bearer voice-secret',
-               'X-Idempotency-Key' => payload[:event_id]
-             },
-             as: :json
+      perform_enqueued_jobs(only: Telephony::AiVoice::PostCallCaptainFeaturesJob) do
+        with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+          post '/internal/voice/ai/finalize',
+               params: payload,
+               headers: {
+                 'Authorization' => 'Bearer voice-secret',
+                 'X-Idempotency-Key' => payload[:event_id]
+               },
+               as: :json
+        end
       end
       expect(response).to have_http_status(:ok)
     end

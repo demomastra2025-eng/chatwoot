@@ -5,7 +5,7 @@ import pytest
 from pipecat.frames.frames import InputTextRawFrame, LLMRunFrame, TTSSpeakFrame
 from pipecat.services.cartesia.stt import CartesiaSTTService
 from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.elevenlabs.stt import CommitStrategy, ElevenLabsRealtimeSTTService
+from pipecat.services.elevenlabs.stt import CommitStrategy
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
 from pipecat.services.openai.realtime.events import ResponseCreateEvent
@@ -24,6 +24,7 @@ from app.pipeline.factory import (
     _user_turn_strategies,
     build_pipeline,
 )
+from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
 
@@ -131,7 +132,9 @@ def test_builds_supported_provider_pipeline(
         stt = assembly.stt
         tts = assembly.tts
         expected_stt_class = (
-            CartesiaSTTService if provider == "cartesia" else ElevenLabsRealtimeSTTService
+            CartesiaSTTService
+            if provider == "cartesia"
+            else OneLinkElevenLabsRealtimeSTTService
         )
         expected_tts_class = {
             "cartesia": CartesiaTTSService,
@@ -356,6 +359,25 @@ def test_gemini_auto_language_falls_back_for_legacy_model():
 
     llm = cast(GeminiLiveLLMService, assembly.llm)
     assert llm._settings.language == "ru-KZ"
+
+
+@pytest.mark.parametrize("provider", ["elevenlabs", "fish"])
+def test_cascade_auto_language_uses_configured_primary_and_secondary_hints(provider):
+    context = _context(provider, model="openai/gpt-5.4-mini", voice="voice-ref")
+    context.ai.language = "auto"
+    context.ai.input_language_priorities = ["ru-KZ", "kk-KZ", "en-US"]
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    stt = cast(OneLinkElevenLabsRealtimeSTTService, assembly.stt)
+    assert stt._settings.language is Language.RU
+    assert stt._secondary_languages == ["kk", "en"]
 
 
 @pytest.mark.parametrize(

@@ -33,9 +33,9 @@ class Telephony::AiVoice::FinalizationService
 
     persist_finalize_event!
     ingest_final_transcript! unless already_finalized
-    run_post_call_captain_features!
     sync_conversation!(already_finalized: already_finalized)
     sync_voice_message! unless already_finalized
+    enqueue_post_call_captain_features!
     response_payload(already_finalized: already_finalized, conflict: already_finalized && finalize_conflict?)
   end
 
@@ -116,8 +116,8 @@ class Telephony::AiVoice::FinalizationService
     ).perform
   end
 
-  def run_post_call_captain_features!
-    Telephony::AiVoice::PostCallCaptainFeaturesService.new(call_session: call_session).perform
+  def enqueue_post_call_captain_features!
+    Telephony::AiVoice::PostCallCaptainFeaturesJob.perform_later(call_session.id)
   end
 
   def sync_conversation!(already_finalized: false)

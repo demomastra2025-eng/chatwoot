@@ -29,7 +29,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
 )
 from pipecat.services.cartesia.stt import CartesiaSTTService
 from pipecat.services.cartesia.tts import CartesiaTTSService
-from pipecat.services.elevenlabs.stt import CommitStrategy, ElevenLabsRealtimeSTTService
+from pipecat.services.elevenlabs.stt import CommitStrategy
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.google.gemini_live.llm import (
     ContextWindowCompressionParams,
@@ -72,6 +72,7 @@ from app.pipeline.processors import (
 from app.pipeline.tool_dialogue import ToolDialogueCoordinator
 from app.pipeline.turn_strategies import ConfirmedUserTurnStartStrategy
 from app.recordings.writer import DualChannelRecorder
+from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
 from app.services.gemini_live import OneLinkGeminiLiveLLMService, OneLinkInternalTextFrame
@@ -369,6 +370,7 @@ def build_pipeline(
             realtime_service_mode=False,
         )
         language = _provider_language(context.ai.language)
+        stt_language, secondary_languages = _cascade_stt_languages(context.ai)
         if context.ai.provider == "cartesia":
             stt = CartesiaSTTService(
                 api_key=credentials["cartesia_api_key"],
@@ -390,17 +392,18 @@ def build_pipeline(
                 ),
             )
         else:
-            stt = ElevenLabsRealtimeSTTService(
+            stt = OneLinkElevenLabsRealtimeSTTService(
                 api_key=credentials["elevenlabs_api_key"],
                 sample_rate=16_000,
+                secondary_languages=secondary_languages,
                 commit_strategy=(
                     CommitStrategy.MANUAL
                     if context.ai.provider == "fish"
                     else CommitStrategy.VAD
                 ),
-                settings=ElevenLabsRealtimeSTTService.Settings(
+                settings=OneLinkElevenLabsRealtimeSTTService.Settings(
                     model=settings.elevenlabs_stt_model,
-                    language=language,
+                    language=stt_language,
                 ),
             )
         openrouter_settings = {
@@ -725,6 +728,27 @@ def _provider_language(value: str) -> Language | None:
         return Language(value.split("-", 1)[0].lower())
     except ValueError:
         return None
+
+
+def _cascade_stt_languages(ai: AiSettings) -> tuple[Language | None, list[str]]:
+    explicit_language = _provider_language(ai.language)
+    if explicit_language is not None or ai.language != "auto":
+        return explicit_language, []
+
+    prioritized = list(
+        dict.fromkeys(
+            value.split("-", 1)[0].strip().lower()
+            for value in ai.input_language_priorities
+            if value.strip()
+        )
+    )
+    if not prioritized:
+        return None, []
+
+    primary = _provider_language(prioritized[0])
+    if primary is None:
+        return None, prioritized[1:]
+    return primary, prioritized[1:]
 
 
 def _message_text(content: object) -> str:
