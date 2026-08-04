@@ -108,6 +108,16 @@ class Captain::Runtime::TracingCallbacks
     set_trace_event_context!(context_wrapper, tracing[:current_tool_metadata])
   end
 
+  def on_tool_requested(tool_name, _args, context_wrapper)
+    tracing = tracing_state(context_wrapper)
+    return unless tracing
+
+    tracing[:root_span]&.add_event(
+      "#{@trace_name}.tool.requested",
+      attributes: { 'tool.name' => tool_name.to_s }
+    )
+  end
+
   def on_tool_complete(_tool_name, result, context_wrapper)
     tracing = tracing_state(context_wrapper)
     return unless tracing
@@ -135,7 +145,7 @@ class Captain::Runtime::TracingCallbacks
         'handoff.from' => from_agent,
         'handoff.to' => to_agent,
         'handoff.reason' => reason.to_s
-        }
+      }
     )
     set_trace_event_context!(
       context_wrapper,

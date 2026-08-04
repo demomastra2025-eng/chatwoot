@@ -4,6 +4,7 @@ class Captain::Runtime::Runner
   DEFAULT_MAX_TURNS = 10
 
   class MaxTurnsExceeded < StandardError; end
+  class ToolLoopStopped < StandardError; end
   class AgentNotFoundError < StandardError; end
   class SelfHandoffError < StandardError; end
 
@@ -103,6 +104,7 @@ class Captain::Runtime::Runner
   end
 
   def resolve_response(session, response)
+    return terminal_tool_stop_result(session) if terminal_tool_stop?(session, response)
     return handle_handoff(session) if handoff_requested?(session, response)
     return finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: response.content) if halt_response?(response)
     return if response.tool_call?
@@ -113,6 +115,23 @@ class Captain::Runtime::Runner
       session[:current_agent],
       output: response.content
     )
+  end
+
+  def terminal_tool_stop?(session, response)
+    halt_response?(response) && terminal_tool_stop_state(session).present?
+  end
+
+  def terminal_tool_stop_result(session)
+    terminal_state = terminal_tool_stop_state(session).to_h.with_indifferent_access
+    message = terminal_state.dig(:result, :error).presence || 'Captain stopped a repeated tool-call loop'
+    error = ToolLoopStopped.new(message)
+    finalize_run(session[:chat], session[:context_wrapper], session[:current_agent], output: nil, error: error)
+  end
+
+  def terminal_tool_stop_state(session)
+    context = session[:context_wrapper].context
+    key = Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY
+    context[key] || context[key.to_s]
   end
 
   def handoff_requested?(session, response)

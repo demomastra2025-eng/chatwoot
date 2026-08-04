@@ -49,6 +49,16 @@ class Captain::Runtime::EventBusCallbacks
     )
   end
 
+  def on_tool_requested(tool_name, args, context_wrapper)
+    publish(
+      'tool.requested',
+      context_wrapper,
+      tool_name: tool_name,
+      arguments_keys: args.respond_to?(:keys) ? args.keys.map(&:to_s) : [],
+      arguments_size: payload_size(args)
+    )
+  end
+
   def on_tool_progress(tool_name, details, context_wrapper)
     publish(
       'tool.progress',

@@ -498,6 +498,69 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       ActiveSupport::Notifications.unsubscribe(zero_completion_subscriber) if zero_completion_subscriber
     end
 
+    it 'finalizes without tools after the runtime stops a repeated tool-call loop', :aggregate_failures do
+      terminal_result = Captain::ToolResult.failure(
+        error: 'Tool request limit reached',
+        retryable: false,
+        audit: { failure_reason: 'tool_request_limit' }
+      )
+      tool_history = [
+        { role: :user, content: 'Find the deal' },
+        {
+          role: :assistant,
+          content: '',
+          agent_name: 'scenario_agent',
+          tool_calls: [{ id: 'call_1', name: 'search_deals', arguments: { query: 'Deal' } }]
+        },
+        { role: :tool, content: Captain::ToolResult.render(terminal_result), tool_call_id: 'call_1' }
+      ]
+      failed_context = {
+        current_agent: 'scenario_agent',
+        conversation_history: tool_history,
+        captain_v2_completed_tool_names: ['search_deals'],
+        captain_v2_completed_tool_results: [{ tool_name: 'search_deals', success: false, retryable: false }]
+      }.merge(
+        Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY => {
+          tool_name: 'search_deals',
+          result: terminal_result
+        }
+      )
+      stopped_result = agent_result(
+        output: nil,
+        context: failed_context,
+        error: Captain::Runtime::Runner::ToolLoopStopped.new('Tool request limit reached')
+      )
+      recovered_result = agent_result(
+        output: { 'response' => 'Сделку найти не удалось. Уточните название.', 'reasoning' => 'Used available tool results.' },
+        context: failed_context
+      )
+      run_calls = []
+      allow(mock_runner).to receive(:run) do |input, context:, max_turns:, runtime_options:|
+        run_calls << { input: input, context: context, max_turns: max_turns, runtime_options: runtime_options }
+        run_calls.one? ? stopped_result : recovered_result
+      end
+
+      result = service.generate_response(message_history: message_history)
+
+      expect(mock_runner).to have_received(:run).twice
+      expect(run_calls.second[:input]).to be_nil
+      expect_finalization_runtime_options(run_calls.second[:runtime_options])
+      expected_terminal_context = {
+        current_agent: 'scenario_agent',
+        conversation_history: tool_history
+      }.merge(
+        Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY => hash_including(tool_name: 'search_deals')
+      )
+      expect(run_calls.second[:context]).to include(expected_terminal_context)
+      expect(result).to include(
+        'response' => 'Сделку найти не удалось. Уточните название.',
+        'agent_name' => 'scenario_agent',
+        'finalization_only_retry' => true,
+        'zero_completion_recovered' => true,
+        'zero_completion_recovery_kind' => described_class::ZERO_COMPLETION_FINALIZATION_RETRY
+      )
+    end
+
     it 'does not expose unknown raw tool identifiers in deterministic public fallback text' do
       allow(mock_runner).to receive(:run).and_return(
         instance_double(

@@ -348,9 +348,13 @@ class Captain::Assistant::AgentRunnerService
   def finalization_only_retry_eligible?(context)
     return false if context.blank?
     return false if finalization_only_retry_attempted?(context)
-    return false if successful_non_handoff_tool_records(context).blank?
+    return false if successful_non_handoff_tool_records(context).blank? && !terminal_tool_stop?(context)
 
     conversation_history_has_tool_results?(context)
+  end
+
+  def terminal_tool_stop?(context)
+    context_value(context, Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY).present?
   end
 
   def finalization_only_retry_attempted?(context)

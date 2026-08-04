@@ -5,6 +5,7 @@ class Captain::Runtime::CallbackManager
     run_start
     run_complete
     agent_complete
+    tool_requested
     tool_start
     tool_progress
     tool_complete

@@ -79,12 +79,15 @@ RSpec.describe Captain::ToolResult do
   end
 
   describe '.render' do
-    it 'renders normalized failures as ERROR-prefixed strings' do
+    it 'renders normalized failures with retry guidance for the model' do
       result = described_class.render(
         described_class.failure(error: 'Tool failed', retryable: true)
       )
 
-      expect(result).to eq('ERROR: Tool failed')
+      expect(JSON.parse(result.delete_prefix('ERROR: '))).to eq(
+        'error' => 'Tool failed',
+        'retryable' => true
+      )
     end
 
     it 'keeps structured partial data in rendered failures' do

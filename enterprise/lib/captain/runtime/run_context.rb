@@ -15,6 +15,10 @@ module Captain::Runtime
       @mutating_tool_guard ||= Mutex.new
     end
 
+    def tool_loop_guard_mutex
+      @tool_loop_guard_mutex ||= Mutex.new
+    end
+
     class Usage
       attr_accessor :input_tokens, :output_tokens, :total_tokens, :thinking_tokens
 

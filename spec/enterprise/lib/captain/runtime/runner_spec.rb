@@ -336,6 +336,37 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.context[:current_agent]).to eq('assistant_agent')
     end
 
+    it 'returns a typed runtime error when a tool loop is stopped' do
+      agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
+      terminal_result = Captain::ToolResult.failure(
+        error: 'Tool request limit reached',
+        retryable: false,
+        audit: { failure_reason: 'tool_request_limit' }
+      )
+      chat = RuntimeRunnerSpecChat.new(ask_response: RubyLLM::Tool::Halt.new(Captain::ToolResult.render(terminal_result)))
+
+      expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
+
+      result = runner.run(
+        agent,
+        'Keep searching',
+        context: {
+          Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY => {
+            tool_name: 'search_deals',
+            result: terminal_result
+          }
+        },
+        registry: { agent.name => agent },
+        llm_context: llm_context,
+        account: account
+      )
+
+      expect(result.output).to be_nil
+      expect(result.error).to be_a(described_class::ToolLoopStopped)
+      expect(result.error.message).to eq('Tool request limit reached')
+      expect(result.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to be_present
+    end
+
     it 'continues from restored history without exposing tools during finalization-only retries' do
       tool = RuntimeRunnerSpecTool.new('create_deal', 'Create deal')
       agent = Captain::Runtime::Agent.new(

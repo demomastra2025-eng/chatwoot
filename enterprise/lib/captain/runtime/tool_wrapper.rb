@@ -12,6 +12,8 @@ class Captain::Runtime::ToolWrapper
   TOOL_RESULT_CACHE_KEY = :captain_v2_tool_result_cache
   TOOL_FAILURE_CACHE_KEY = :captain_v2_tool_failure_cache
   TOOL_ATTEMPT_COUNTS_KEY = :captain_v2_tool_attempt_counts
+  TOOL_REQUEST_COUNTS_KEY = Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY
+  TERMINAL_TOOL_STOP_KEY = Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
   VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
   NULL_SENTINEL_ARGUMENT_KEYS = {
@@ -34,8 +36,11 @@ class Captain::Runtime::ToolWrapper
     'search_scheduling_resources' => %i[limit].freeze,
     'search_tasks' => %i[limit].freeze
   }.freeze
+  TERMINAL_FAILURE_REASONS = %w[duplicate_failed_tool_call mutation_retry_blocked].freeze
   MAX_IDENTICAL_TOOL_EXECUTIONS = 3
-  MAX_TOOL_EXECUTIONS_PER_RUN = 12
+  MAX_TOOL_EXECUTIONS_PER_TOOL = 12
+  MAX_TOOL_REQUESTS_PER_TOOL = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_PER_TOOL
+  MAX_TOOL_REQUESTS_PER_RUN = Captain::Runtime::ToolLoopGuard::MAX_REQUESTS_PER_RUN
 
   def initialize(tool, context_wrapper)
     @tool = tool
@@ -45,29 +50,23 @@ class Captain::Runtime::ToolWrapper
   end
 
   def call(args)
-    tool_context = Captain::Runtime::ToolContext.new(run_context: @context_wrapper)
     normalized_args = normalize_args(args)
 
-    @context_wrapper.callback_manager.emit_tool_start(@tool.name, normalized_args, @context_wrapper)
+    request_stop = requested_tool_stop_result(normalized_args)
+    return complete_and_halt(request_stop) if request_stop
 
     early_result = early_tool_result(normalized_args)
+    return complete_and_halt(early_result) if terminal_early_result?(early_result)
     return complete_and_render(early_result) if early_result
 
     attempt_error = register_tool_execution_attempt(normalized_args)
-    return complete_and_render(attempt_error) if attempt_error
+    return complete_and_halt(attempt_error) if attempt_error
 
-    track_mutating_tool_execution(normalized_args)
-    execute_tool(tool_context, normalized_args)
+    execute_registered_tool(normalized_args)
   rescue InvalidToolArgumentsError => e
     invalid_tool_arguments_result(e)
   rescue StandardError => e
-    record_mutating_tool_result(Captain::ToolResult.failure(error: e, retryable: false))
-    @context_wrapper.callback_manager.emit_tool_complete(
-      @tool.name,
-      Captain::ToolResult.failure(error: e),
-      @context_wrapper
-    )
-    raise
+    handle_execution_error(e)
   end
 
   def name
@@ -106,6 +105,23 @@ class Captain::Runtime::ToolWrapper
 
   private
 
+  def execute_registered_tool(normalized_args)
+    tool_context = Captain::Runtime::ToolContext.new(run_context: @context_wrapper)
+    @context_wrapper.callback_manager.emit_tool_start(@tool.name, normalized_args, @context_wrapper)
+    track_mutating_tool_execution(normalized_args)
+    execute_tool(tool_context, normalized_args)
+  end
+
+  def handle_execution_error(error)
+    record_mutating_tool_result(Captain::ToolResult.failure(error: error, retryable: false))
+    @context_wrapper.callback_manager.emit_tool_complete(
+      @tool.name,
+      Captain::ToolResult.failure(error: error),
+      @context_wrapper
+    )
+    raise error
+  end
+
   def early_tool_result(normalized_args)
     pre_execution_error(normalized_args) ||
       reserve_mutating_tool_call(normalized_args) ||
@@ -140,7 +156,10 @@ class Captain::Runtime::ToolWrapper
   end
 
   def invalid_tool_arguments_result(error)
-    @context_wrapper.callback_manager.emit_tool_start(@tool.name, {}, @context_wrapper)
+    normalized_args = {}
+    request_stop = requested_tool_stop_result(normalized_args)
+    return complete_and_halt(request_stop) if request_stop
+
     complete_and_render(
       Captain::ToolResult.failure(
         error: error.message,
@@ -273,6 +292,43 @@ class Captain::Runtime::ToolWrapper
     Captain::ToolResult.render(result)
   end
 
+  def complete_and_halt(result)
+    normalized_result = Captain::ToolResult.normalize(result, retryable: false)
+    @context_wrapper.callback_manager.emit_tool_complete(@tool.name, normalized_result, @context_wrapper)
+    remember_terminal_tool_stop(normalized_result)
+    RubyLLM::Tool::Halt.new(Captain::ToolResult.render(normalized_result))
+  end
+
+  def emit_tool_requested(normalized_args)
+    @context_wrapper.callback_manager.emit_tool_requested(@tool.name, normalized_args, @context_wrapper)
+  end
+
+  def requested_tool_stop_result(normalized_args)
+    emit_tool_requested(normalized_args)
+    request_error = register_tool_request(normalized_args)
+
+    existing_terminal_tool_stop_result || request_error
+  end
+
+  def terminal_early_result?(result)
+    return false if result.blank?
+
+    failure_reason = Captain::ToolResult.normalize(result).dig(:audit, :failure_reason).to_s
+    failure_reason.in?(TERMINAL_FAILURE_REASONS)
+  end
+
+  def terminal_tool_stop?
+    existing_terminal_tool_stop_result.present?
+  end
+
+  def existing_terminal_tool_stop_result
+    tool_loop_guard.terminal_result
+  end
+
+  def remember_terminal_tool_stop(result)
+    tool_loop_guard.stop!(result)
+  end
+
   def bound_tool_error_for_current_agent
     return nil unless enforce_bound_tools?
 
@@ -388,7 +444,7 @@ class Captain::Runtime::ToolWrapper
     counts = tool_attempt_counts.fetch(@tool.name.to_s) { { total: 0, by_signature: {} } }
     signature = tool_result_cache_digest(normalized_args)
     signature_count = counts[:by_signature].fetch(signature, 0)
-    return tool_attempt_limit_result(counts, signature_count) if counts[:total] >= MAX_TOOL_EXECUTIONS_PER_RUN ||
+    return tool_attempt_limit_result(counts, signature_count) if counts[:total] >= MAX_TOOL_EXECUTIONS_PER_TOOL ||
                                                                  signature_count >= MAX_IDENTICAL_TOOL_EXECUTIONS
 
     counts[:total] += 1
@@ -412,6 +468,14 @@ class Captain::Runtime::ToolWrapper
 
   def tool_attempt_counts
     context_wrapper_context[TOOL_ATTEMPT_COUNTS_KEY] ||= {}
+  end
+
+  def register_tool_request(normalized_args)
+    tool_loop_guard.register_request(signature: tool_result_cache_digest(normalized_args))
+  end
+
+  def tool_loop_guard
+    @tool_loop_guard ||= Captain::Runtime::ToolLoopGuard.new(@context_wrapper, @tool.name)
   end
 
   def repeated_mutating_tool_result(normalized_args)

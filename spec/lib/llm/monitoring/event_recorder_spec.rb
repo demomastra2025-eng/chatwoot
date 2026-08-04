@@ -293,6 +293,34 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.payload['payload_bytes']).to be_positive
     end
 
+    it 'persists lightweight tool requests separately from tool executions' do
+      described_class.record_notification(
+        event_name: 'llm.tool.requested',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'assistant',
+          'runtime_mode' => 'captain_runtime',
+          'tool_name' => 'search_articles',
+          'arguments_keys' => %w[query category_id],
+          'arguments_size' => 48
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.tool.requested',
+        tool_name: 'search_articles',
+        tool_calls_count: nil,
+        tool_failure: false
+      )
+      expect(event.payload).to include(
+        'arguments_keys' => %w[query category_id],
+        'arguments_size' => 48
+      )
+    end
+
     it 'bounds large sanitized payloads while preserving RCA columns and essential summary fields' do
       described_class.record_notification(
         event_name: 'llm.chat.complete',

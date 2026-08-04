@@ -118,6 +118,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   end
 
   let(:events) { [] }
+  let(:requested_calls) { [] }
   let(:context_wrapper) do
     Captain::Runtime::RunContext.new(
       {
@@ -126,6 +127,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         }
       },
       callbacks: {
+        tool_requested: [->(tool_name, args, _context) { requested_calls << [tool_name, args] }],
         tool_start: [->(tool_name, args, _context) { events << [:start, tool_name, args] }],
         tool_complete: [->(tool_name, result, _context) { events << [:complete, tool_name, result] }]
       }
@@ -220,7 +222,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'rejects an explicit zero id instead of treating it as an omitted value' do
     result = wrapper.call(result: 'not executed', category_id: 0)
 
-    expect(result).to eq('ERROR: Invalid tool arguments at /category_id: minimum')
+    expect_tool_error(result, 'Invalid tool arguments at /category_id: minimum', retryable: false)
     expect(events.last[2]).to include(
       success: false,
       retryable: false,
@@ -231,7 +233,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'rejects an explicit null when the schema does not allow null' do
     result = wrapper.call(result: 'not executed', category_id: nil)
 
-    expect(result).to eq('ERROR: Invalid tool arguments at /category_id: integer')
+    expect_tool_error(result, 'Invalid tool arguments at /category_id: integer', retryable: false)
   end
 
   it 'preserves an explicit blank string when the schema allows it' do
@@ -243,7 +245,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'returns a controlled non-retryable error for a malformed provider envelope' do
     result = wrapper.call('name' => 'tool_wrapper_spec', 'parameters' => 'not-an-object')
 
-    expect(result).to eq('ERROR: Tool call parameters must be an object')
+    expect_tool_error(result, 'Tool call parameters must be an object', retryable: false)
     expect(events.last[2]).to include(
       success: false,
       error: 'Tool call parameters must be an object',
@@ -261,8 +263,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     result = wrapper.call({})
 
-    expect(result).to eq('ERROR: Tool is not available for the current agent runtime')
-    expect(events).to include([:start, 'tool_wrapper_spec', {}])
+    expect_tool_error(result, 'Tool is not available for the current agent runtime', retryable: false)
+    expect(events).not_to include([:start, 'tool_wrapper_spec', {}])
     expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_spec'])
     expect(events.last[2]).to include(
       success: false,
@@ -277,7 +279,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     result = wrapper.call({})
 
-    expect(result).to eq('ERROR: Tool is not available for the current agent runtime')
+    expect_tool_error(result, 'Tool is not available for the current agent runtime', retryable: false)
     expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_spec'])
     expect(events.last[2]).to include(
       success: false,
@@ -296,7 +298,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     result = wrapper.call({})
 
-    expect(result).to eq('ERROR: Tool is not available for the current agent runtime')
+    expect_tool_error(result, 'Tool is not available for the current agent runtime', retryable: false)
   end
 
   it 'returns a controlled tool error when arguments are blocked by safety policy' do
@@ -311,8 +313,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     result = wrapper.call(result: 'forbidden')
 
-    expect(result).to eq('ERROR: Tool arguments blocked by safety policy')
-    expect(events).to include([:start, 'tool_wrapper_spec', { result: 'forbidden' }])
+    expect_tool_error(result, 'Tool arguments blocked by safety policy', retryable: false)
+    expect(events).not_to include([:start, 'tool_wrapper_spec', { result: 'forbidden' }])
 
     completion_event = events.last
     expect(completion_event[0..1]).to eq([:complete, 'tool_wrapper_spec'])
@@ -342,7 +344,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     result = wrapper.call(result: 'classified payload')
 
     expect(call_count).to eq(2)
-    expect(result).to eq('ERROR: Tool result blocked by safety policy')
+    expect_tool_error(result, 'Tool result blocked by safety policy', retryable: false)
     expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_spec'])
     expect(events.last[2]).to include(
       success: false,
@@ -354,7 +356,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'renders normalized tool failures while preserving structured callback payloads' do
     result = wrapper.call(result: Captain::ToolResult.failure(error: 'Provider timeout', retryable: true))
 
-    expect(result).to eq('ERROR: Provider timeout')
+    expect_tool_error(result, 'Provider timeout', retryable: true)
     expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_spec'])
     expect(events.last[2]).to include(
       success: false,
@@ -363,15 +365,27 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
+  it 'reports model requests separately from accepted backend executions' do
+    context_wrapper.context[:current_agent] = 'scenario_agent'
+    context_wrapper.context[:captain_v2_bound_tool_gate] = true
+    context_wrapper.context[:captain_v2_bound_tool_ids_by_agent] = { 'scenario_agent' => [] }
+
+    result = wrapper.call(result: 'not executed')
+
+    expect_tool_error(result, described_class::TOOL_NOT_BOUND_ERROR, retryable: false)
+    expect(requested_calls).to contain_exactly(['tool_wrapper_spec', { result: 'not executed' }])
+    expect(events.none? { |event| event.first == :start }).to be(true)
+  end
+
   it 'blocks an identical non-retryable failed call instead of executing it repeatedly' do
     read_only_tool = ToolWrapperSpecReadOnlyTool.new
     read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
     failure = Captain::ToolResult.failure(error: 'Invalid stage filters', retryable: false)
 
-    expect(read_only_wrapper.call(result: failure)).to eq('ERROR: Invalid stage filters')
-    expect(read_only_wrapper.call(result: failure)).to eq(
-      'ERROR: This exact tool call already failed. Change the arguments or stop retrying it.'
-    )
+    expect_tool_error(read_only_wrapper.call(result: failure), 'Invalid stage filters', retryable: false)
+    terminal_result = read_only_wrapper.call(result: failure)
+    expect(terminal_result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(terminal_result, described_class::DUPLICATE_FAILED_TOOL_ERROR, retryable: false)
     expect(read_only_tool.calls).to eq(1)
     expect(events.last[2]).to include(
       success: false,
@@ -384,13 +398,14 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   it 'blocks non-retryable audited lookup failures when only pagination changes' do
     described_class::NON_SEMANTIC_FAILURE_ARGUMENT_KEYS.each_key do |tool_name|
       read_only_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: tool_name)
-      read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
+      isolated_context = Captain::Runtime::RunContext.new({ state: { captain_runtime: runtime_preferences } }, callbacks: {})
+      read_only_wrapper = described_class.new(read_only_tool, isolated_context)
       failure = Captain::ToolResult.failure(error: 'Unknown verified entity id', retryable: false)
 
-      expect(read_only_wrapper.call(result: failure, limit: 10)).to eq('ERROR: Unknown verified entity id')
-      expect(read_only_wrapper.call(result: failure, limit: 50)).to eq(
-        'ERROR: This exact tool call already failed. Change the arguments or stop retrying it.'
-      )
+      expect_tool_error(read_only_wrapper.call(result: failure, limit: 10), 'Unknown verified entity id', retryable: false)
+      terminal_result = read_only_wrapper.call(result: failure, limit: 50)
+      expect(terminal_result).to be_a(RubyLLM::Tool::Halt)
+      expect_tool_error(terminal_result, described_class::DUPLICATE_FAILED_TOOL_ERROR, retryable: false)
       expect(read_only_tool.calls).to eq(1)
     end
   end
@@ -400,8 +415,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
     failure = Captain::ToolResult.failure(error: 'Page-specific failure', retryable: false)
 
-    expect(read_only_wrapper.call(result: failure, limit: 10)).to eq('ERROR: Page-specific failure')
-    expect(read_only_wrapper.call(result: failure, limit: 50)).to eq('ERROR: Page-specific failure')
+    expect_tool_error(read_only_wrapper.call(result: failure, limit: 10), 'Page-specific failure', retryable: false)
+    expect_tool_error(read_only_wrapper.call(result: failure, limit: 50), 'Page-specific failure', retryable: false)
     expect(read_only_tool.calls).to eq(2)
   end
 
@@ -423,13 +438,70 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     described_class::MAX_IDENTICAL_TOOL_EXECUTIONS.times { read_only_wrapper.call(result: failure) }
     result = read_only_wrapper.call(result: failure)
 
-    expect(result).to eq('ERROR: Tool execution attempt limit reached. Change the arguments or stop calling this tool.')
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(result, 'Tool execution attempt limit reached. Change the arguments or stop calling this tool.', retryable: false)
     expect(read_only_tool.calls).to eq(described_class::MAX_IDENTICAL_TOOL_EXECUTIONS)
     expect(events.last[2]).to include(
       success: false,
       retryable: false,
       audit: include(failure_reason: 'tool_attempt_limit', identical_attempts: described_class::MAX_IDENTICAL_TOOL_EXECUTIONS)
     )
+  end
+
+  it 'halts changing arguments after the per-tool request budget' do
+    read_only_tool = ToolWrapperSpecReadOnlyTool.new
+    read_only_wrapper = described_class.new(read_only_tool, context_wrapper)
+
+    described_class::MAX_TOOL_REQUESTS_PER_TOOL.times do |index|
+      expect(read_only_wrapper.call(result: "lookup #{index}")).to eq("lookup #{index}")
+    end
+    result = read_only_wrapper.call(result: 'one request too many')
+
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(result, 'Tool request limit reached. Stop calling tools and answer using the available results.', retryable: false)
+    expect(read_only_tool.calls).to eq(described_class::MAX_TOOL_REQUESTS_PER_TOOL)
+    expect(context_wrapper.context[:captain_v2_tool_request_counts]).to include(
+      total: described_class::MAX_TOOL_REQUESTS_PER_TOOL + 1,
+      by_tool: include('tool_wrapper_read_only_spec' => described_class::MAX_TOOL_REQUESTS_PER_TOOL + 1)
+    )
+    expect(context_wrapper.context[:captain_v2_terminal_tool_stop]).to include(
+      tool_name: 'tool_wrapper_read_only_spec',
+      result: include(retryable: false, audit: include(failure_reason: 'tool_request_limit'))
+    )
+  end
+
+  it 'halts the whole run after the global request budget across different tools' do
+    wrappers = Array.new(3) do |index|
+      described_class.new(ToolWrapperSpecReadOnlyTool.new(tool_name: "read_tool_#{index}"), context_wrapper)
+    end
+
+    described_class::MAX_TOOL_REQUESTS_PER_RUN.times do |index|
+      wrapper_index = index % wrappers.size
+      wrappers.fetch(wrapper_index).call(result: "lookup #{index}")
+    end
+    result = described_class.new(ToolWrapperSpecReadOnlyTool.new(tool_name: 'final_tool'), context_wrapper).call(result: 'blocked')
+
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(result, 'Tool request limit reached. Stop calling tools and answer using the available results.', retryable: false)
+    expect(context_wrapper.context.dig(:captain_v2_tool_request_counts, :total)).to eq(
+      described_class::MAX_TOOL_REQUESTS_PER_RUN + 1
+    )
+  end
+
+  it 'keeps later calls in the same provider batch halted after a terminal stop' do
+    first_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'first_tool')
+    later_tool = ToolWrapperSpecReadOnlyTool.new(tool_name: 'later_tool')
+    first_wrapper = described_class.new(first_tool, context_wrapper)
+    later_wrapper = described_class.new(later_tool, context_wrapper)
+    failure = Captain::ToolResult.failure(error: 'Permanent lookup failure', retryable: false)
+
+    first_wrapper.call(result: failure)
+    expect(first_wrapper.call(result: failure)).to be_a(RubyLLM::Tool::Halt)
+    result = later_wrapper.call(result: 'must not execute')
+
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect(later_tool.calls).to eq(0)
+    expect(events).to be_none([:start, 'later_tool', { result: 'must not execute' }])
   end
 
   it 'returns halting tool results without coercing them into plain strings' do
@@ -471,7 +543,12 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     context_wrapper.context[:captain_v2_current_tool_batch_id] = 'next-batch'
     result = mutating_wrapper.call(title: 'Alternate guessed assignee')
 
-    expect(result).to eq('ERROR: This action tool already ran in the current assistant run. Do not retry it with alternate arguments.')
+    expect(result).to be_a(RubyLLM::Tool::Halt)
+    expect_tool_error(
+      result,
+      'This action tool already ran in the current assistant run. Do not retry it with alternate arguments.',
+      retryable: false
+    )
     expect(mutating_tool.calls).to eq(1)
     expect(events.last[2]).to include(
       success: false,
@@ -489,7 +566,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       Captain::ToolResult.success(message: 'created Retry-safe action')
     )
 
-    expect(mutating_wrapper.call(**arguments)).to eq('ERROR: Temporary provider timeout')
+    expect_tool_error(mutating_wrapper.call(**arguments), 'Temporary provider timeout', retryable: true)
     expect(mutating_wrapper.call(**arguments)).to eq('created Retry-safe action')
     expect(mutating_tool).to have_received(:perform).twice
   end
@@ -504,7 +581,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     second_result = mutating_wrapper.call(title: 'Enterprise lead')
 
     expect(JSON.parse(first_result)).to include('message' => 'created Premium lead')
-    expect(second_result).to eq('ERROR: Only one action tool can run per assistant tool-call batch')
+    expect_tool_error(second_result, 'Only one action tool can run per assistant tool-call batch', retryable: false)
     expect(mutating_tool.calls).to eq(1)
     expect(events.last[0..1]).to eq([:complete, 'tool_wrapper_mutating_spec'])
     expect(events.last[2]).to include(
@@ -534,7 +611,9 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     results = threads.map(&:value)
 
     expect(mutating_tool.calls).to eq(1)
-    expect(results.count { |result| result == 'ERROR: Only one action tool can run per assistant tool-call batch' }).to eq(1)
+    blocked_results = results.select { |result| result.to_s.start_with?('ERROR:') }
+    expect(blocked_results.size).to eq(1)
+    expect_tool_error(blocked_results.first, 'Only one action tool can run per assistant tool-call batch', retryable: false)
     expect(results.count { |result| result.start_with?('{') }).to eq(1)
   end
 
@@ -559,5 +638,12 @@ RSpec.describe Captain::Runtime::ToolWrapper do
 
     expect(read_only_tool.calls).to eq(2)
     expect(context_wrapper.context[:captain_v2_tool_result_cache]).to be_blank
+  end
+
+  def expect_tool_error(result, message, retryable:)
+    rendered = result.is_a?(RubyLLM::Tool::Halt) ? result.content : result
+    payload = JSON.parse(rendered.delete_prefix('ERROR: '))
+
+    expect(payload).to include('error' => message, 'retryable' => retryable)
   end
 end
