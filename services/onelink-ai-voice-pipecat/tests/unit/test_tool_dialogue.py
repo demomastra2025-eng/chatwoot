@@ -705,6 +705,7 @@ async def test_faq_result_is_spoken_directly_without_second_llm_generation():
 
     async def result_callback(_result, *, properties=None):
         callback_properties.append(properties)
+        await properties.on_context_updated()
 
     coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
     coordinator.bind(
@@ -720,12 +721,8 @@ async def test_faq_result_is_spoken_directly_without_second_llm_generation():
 
     await coordinator.execute(definition("faq_lookup"), params)
 
-    # Direct speech is deliberately delayed until Pipecat confirms that the
-    # uninterruptible tool result has entered the conversation context.
-    assert spoken == []
     assert len(callback_properties) == 1
     assert callback_properties[0].run_llm is False
-    await callback_properties[0].on_context_updated()
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
     assert spoken == [answer]
@@ -733,10 +730,10 @@ async def test_faq_result_is_spoken_directly_without_second_llm_generation():
 
 
 @pytest.mark.asyncio
-async def test_faq_result_recovers_when_context_callback_is_not_invoked(monkeypatch):
+async def test_faq_result_speaks_after_bounded_context_barrier_timeout(monkeypatch):
     monkeypatch.setattr(
         tool_dialogue_module,
-        "DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS",
+        "DIRECT_RESULT_CONTEXT_BARRIER_TIMEOUT_SECONDS",
         0.01,
     )
     answer = "OneLink автоматизирует продажи и общение с клиентами."
@@ -769,9 +766,12 @@ async def test_faq_result_recovers_when_context_callback_is_not_invoked(monkeypa
         await asyncio.gather(*pending)
 
     assert spoken == [answer]
-    assert any(control[0] == "direct_tool_speech_recovered" for control in state.controls)
+    assert any(
+        control[0] == "direct_tool_context_barrier_timeout"
+        for control in state.controls
+    )
 
-    # A late native callback must not repeat the recovered answer.
+    # A late native callback is only a context barrier and cannot repeat speech.
     await callback_properties[0].on_context_updated()
     assert spoken == [answer]
 
@@ -787,6 +787,7 @@ async def test_faq_result_defers_direct_speech_during_caller_barge_in():
 
     async def result_callback(_result, *, properties=None):
         callback_properties.append(properties)
+        await properties.on_context_updated()
 
     async def speak_result(message):
         spoken.append(message)
@@ -804,7 +805,6 @@ async def test_faq_result_defers_direct_speech_during_caller_barge_in():
     )
 
     await coordinator.execute(definition("faq_lookup"), params)
-    await callback_properties[0].on_context_updated()
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 

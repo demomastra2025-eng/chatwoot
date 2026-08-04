@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 import ormsgpack
 import pytest
-from pipecat.frames.frames import InterruptionFrame, TTSAudioRawFrame
+from pipecat.frames.frames import ErrorFrame, InterruptionFrame, TTSAudioRawFrame, TTSStoppedFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.services.fish.tts import FishAudioTTSService
 from websockets.protocol import State
@@ -49,6 +49,19 @@ def build_service():
     return service
 
 
+async def complete_with_first_audio(service, generator):
+    pending = asyncio.create_task(anext(generator))
+    for _ in range(20):
+        if service._pending_first_audio is not None:
+            service._pending_first_audio.set()
+            result = await pending
+            await generator.aclose()
+            return result
+        await asyncio.sleep(0)
+    pending.cancel()
+    raise AssertionError("Fish synthesis did not start")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("size", [1, 1024, 1025])
 async def test_fish_tts_preserves_every_non_empty_audio_chunk(size):
@@ -86,20 +99,20 @@ async def test_fish_tts_ignores_empty_audio_chunk():
 
 
 @pytest.mark.asyncio
-async def test_fish_tts_uses_native_non_blocking_flush_lifecycle():
+async def test_fish_tts_sends_text_and_flush_then_waits_for_first_audio_only():
     service = build_service()
     websocket = FakeSendWebsocket()
     service._websocket = websocket
 
     frames = service.run_tts("Здравствуйте", "ctx")
-    assert await anext(frames) is None
+    assert await complete_with_first_audio(service, frames) is None
 
     assert websocket.sent == [
         {"event": "text", "text": "Здравствуйте"},
         {"event": "flush"},
     ]
     service.start_tts_usage_metrics.assert_awaited_once_with("Здравствуйте")
-    assert OneLinkFishAudioTTSService.run_tts is FishAudioTTSService.run_tts
+    assert OneLinkFishAudioTTSService.run_tts is not FishAudioTTSService.run_tts
 
 
 @pytest.mark.asyncio
@@ -111,14 +124,66 @@ async def test_next_utterance_does_not_wait_for_per_flush_finish_event():
     first = service.run_tts("Секунду, проверяю.", "ctx-1")
     second = service.run_tts("Акына матата.", "ctx-2")
 
-    assert await anext(first) is None
-    assert await anext(second) is None
+    assert await complete_with_first_audio(service, first) is None
+    assert await complete_with_first_audio(service, second) is None
     assert websocket.sent == [
         {"event": "text", "text": "Секунду, проверяю."},
         {"event": "flush"},
         {"event": "text", "text": "Акына матата."},
         {"event": "flush"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_missing_first_audio_reconnects_and_replays_once():
+    service = build_service()
+    service.FIRST_AUDIO_TIMEOUT_SECONDS = 0.01
+    websocket = FakeSendWebsocket()
+    service._websocket = websocket
+    service._restart_connection = AsyncMock(return_value=True)
+    service._audio_contexts = {"ctx": asyncio.Queue()}
+
+    frames = service.run_tts("Секунду, проверяю.", "ctx")
+    pending = asyncio.create_task(anext(frames))
+    first_event = None
+    for _ in range(100):
+        current_event = service._pending_first_audio
+        if first_event is None and current_event is not None:
+            first_event = current_event
+        if (
+            service._restart_connection.await_count == 1
+            and current_event is not None
+            and current_event is not first_event
+        ):
+            current_event.set()
+            break
+        await asyncio.sleep(0.002)
+
+    assert await pending is None
+    await frames.aclose()
+    service._restart_connection.assert_awaited_once()
+    assert websocket.sent == [
+        {"event": "text", "text": "Секунду, проверяю."},
+        {"event": "flush"},
+        {"event": "text", "text": "Секунду, проверяю."},
+        {"event": "flush"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_missing_audio_after_replay_emits_bounded_nonfatal_error():
+    service = build_service()
+    service.FIRST_AUDIO_TIMEOUT_SECONDS = 0.005
+    service._websocket = FakeSendWebsocket()
+    service._restart_connection = AsyncMock(return_value=True)
+    service._audio_contexts = {"ctx": asyncio.Queue()}
+
+    frames = [frame async for frame in service.run_tts("Проверка", "ctx")]
+
+    assert len(frames) == 2
+    assert isinstance(frames[0], ErrorFrame)
+    assert frames[0].fatal is False
+    assert isinstance(frames[1], TTSStoppedFrame)
 
 
 @pytest.mark.asyncio

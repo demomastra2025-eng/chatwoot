@@ -74,6 +74,36 @@ async def test_provider_boundary_coalesces_five_20ms_frames_into_one_100ms_chunk
 
 
 @pytest.mark.asyncio
+async def test_provider_boundary_sends_a_queued_300ms_burst_as_one_chunk_without_pacing():
+    instance = service()
+    websocket = OpenWebSocket()
+    instance._websocket = websocket
+    instance._connected_event.set()
+
+    _ = [frame async for frame in instance.run_stt(bytes(9_600))]
+
+    assert len(websocket.messages) == 1
+    audio = base64.b64decode(websocket.messages[0]["audio_base_64"])
+    assert len(audio) == 9_600
+
+
+@pytest.mark.asyncio
+async def test_provider_boundary_splits_only_above_the_one_second_provider_limit():
+    instance = service()
+    websocket = OpenWebSocket()
+    instance._websocket = websocket
+    instance._connected_event.set()
+
+    _ = [frame async for frame in instance.run_stt(bytes(38_400))]
+
+    audio_sizes = [
+        len(base64.b64decode(message["audio_base_64"]))
+        for message in websocket.messages
+    ]
+    assert audio_sizes == [32_000, 6_400]
+
+
+@pytest.mark.asyncio
 async def test_partial_provider_tail_is_silence_padded_to_supported_chunk_size():
     instance = service()
     websocket = OpenWebSocket()

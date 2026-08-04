@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
 from typing import Any, Protocol
@@ -22,7 +23,7 @@ MIN_REPEAT_PROGRESS_INTERVAL_MS = 5_000
 VOICE_RESULT_MAX_CHARS = 2_400
 VOICE_RESULT_MAX_STRING_CHARS = 500
 POST_TOOL_GENERATION_MAX_SECONDS = 8.0
-DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS = 0.75
+DIRECT_RESULT_CONTEXT_BARRIER_TIMEOUT_SECONDS = 0.25
 
 
 class ToolRuntimeState(Protocol):
@@ -194,58 +195,85 @@ class ToolDialogueCoordinator:
     ) -> None:
         voice_result = _voice_result_projection(definition.name, result)
         if _uses_direct_voice_result(definition.name, self._ai.provider):
-            direct_speech_claimed = asyncio.Event()
+            context_updated = asyncio.Event()
 
-            async def speak_after_context_update() -> None:
-                # Pipecat normally invokes this after the uninterruptible tool
-                # result reaches the assistant context. Keep it idempotent so a
-                # bounded recovery callback can safely cover a lost framework
-                # callback without ever speaking the result twice.
-                if direct_speech_claimed.is_set():
-                    return
-                direct_speech_claimed.set()
-                phrase = _direct_voice_result_phrase(definition.name, voice_result)
-                if not phrase or self._speak_result is None:
-                    return
-                if self._activity.user_speaking:
-                    self._state.spawn(
-                        self._state.safe_control(
-                            "direct_tool_speech_deferred",
-                            {"reason": "caller_speaking"},
-                            tool_call_id=params.tool_call_id,
-                            tool_name=definition.name,
-                        )
-                    )
-                    return
-                try:
-                    async with self._dialogue_lock:
-                        if self._activity.bot_speaking:
-                            await self._activity.wait_for_turn_completed_after(
-                                self._activity.turns_completed,
-                                timeout=3.0,
-                            )
-                        await self._speak_result(phrase)
-                except Exception:
-                    logger.exception(
-                        "Failed to speak direct tool result tool={}",
-                        definition.name,
-                    )
+            async def mark_context_updated() -> None:
+                context_updated.set()
 
             await params.result_callback(
                 voice_result,
                 properties=FunctionCallResultProperties(
                     run_llm=False,
-                    on_context_updated=speak_after_context_update,
+                    on_context_updated=mark_context_updated,
                 ),
             )
-            self._state.spawn(
-                self._recover_direct_result_speech(
-                    definition=definition,
-                    tool_call_id=params.tool_call_id,
-                    direct_speech_claimed=direct_speech_claimed,
-                    speak_after_context_update=speak_after_context_update,
+
+            try:
+                await asyncio.wait_for(
+                    context_updated.wait(),
+                    timeout=DIRECT_RESULT_CONTEXT_BARRIER_TIMEOUT_SECONDS,
                 )
+            except TimeoutError:
+                self._state.spawn(
+                    self._state.safe_control(
+                        "direct_tool_context_barrier_timeout",
+                        {"reason": "context_callback_timeout"},
+                        tool_call_id=params.tool_call_id,
+                        tool_name=definition.name,
+                    )
+                )
+                logger.warning(
+                    "Direct tool context barrier timed out tool={} tool_call_id={}",
+                    definition.name,
+                    params.tool_call_id,
+                )
+
+            phrase = _direct_voice_result_phrase(definition.name, voice_result)
+            if not phrase or self._speak_result is None:
+                return
+            if self._activity.user_speaking:
+                self._state.spawn(
+                    self._state.safe_control(
+                        "direct_tool_speech_deferred",
+                        {"reason": "caller_speaking"},
+                        tool_call_id=params.tool_call_id,
+                        tool_name=definition.name,
+                    )
+                )
+                return
+
+            speech_started_at = time.monotonic()
+            try:
+                async with self._dialogue_lock:
+                    if self._activity.bot_speaking:
+                        await self._activity.wait_for_turn_completed_after(
+                            self._activity.turns_completed,
+                            timeout=3.0,
+                        )
+                    spoken = await self._speak_result(phrase)
+            except Exception:
+                logger.exception(
+                    "Failed to speak direct tool result tool={}",
+                    definition.name,
+                )
+                return
+
+            logger.info(
+                "Direct tool speech finished tool={} tool_call_id={} spoken={} elapsed_ms={}",
+                definition.name,
+                params.tool_call_id,
+                spoken,
+                round((time.monotonic() - speech_started_at) * 1_000),
             )
+            if spoken is False:
+                self._state.spawn(
+                    self._state.safe_control(
+                        "direct_tool_speech_not_started",
+                        {"reason": "tts_turn_not_started"},
+                        tool_call_id=params.tool_call_id,
+                        tool_name=definition.name,
+                    )
+                )
             return
 
         response_sequence = self._activity.turns_started
@@ -581,38 +609,6 @@ class ToolDialogueCoordinator:
             await self._interrupt_generation()
         except Exception:
             logger.exception("Failed to stop obsolete tool progress speech")
-
-    async def _recover_direct_result_speech(
-        self,
-        *,
-        definition: ToolDefinition,
-        tool_call_id: str,
-        direct_speech_claimed: asyncio.Event,
-        speak_after_context_update: Callable[[], Awaitable[None]],
-    ) -> None:
-        try:
-            await asyncio.wait_for(
-                direct_speech_claimed.wait(),
-                timeout=DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS,
-            )
-            return
-        except TimeoutError:
-            pass
-
-        self._state.spawn(
-            self._state.safe_control(
-                "direct_tool_speech_recovered",
-                {"reason": "context_callback_timeout"},
-                tool_call_id=tool_call_id,
-                tool_name=definition.name,
-            )
-        )
-        logger.warning(
-            "Recovering direct tool speech after context callback timeout tool={} tool_call_id={}",
-            definition.name,
-            tool_call_id,
-        )
-        await speak_after_context_update()
 
     async def _ensure_continuation(
         self,

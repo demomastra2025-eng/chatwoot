@@ -25,7 +25,8 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
     transcription.
     """
 
-    PROVIDER_CHUNK_DURATION_SECONDS = 0.1
+    PROVIDER_MIN_CHUNK_DURATION_SECONDS = 0.1
+    PROVIDER_MAX_CHUNK_DURATION_SECONDS = 1.0
 
     def __init__(self, *, secondary_languages: list[str] | None = None, **kwargs):
         super().__init__(**kwargs)
@@ -46,7 +47,7 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
         # transport contract unchanged and smooth only the provider boundary.
         self._provider_audio_buffer = bytearray()
         self._provider_audio_send_lock = asyncio.Lock()
-        self._next_provider_audio_send_at = 0.0
+        self._last_manual_commit_at: float | None = None
 
     @property
     def _provider_sample_rate(self) -> int:
@@ -55,18 +56,42 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
         return max(1, self.sample_rate or self._init_sample_rate)
 
     @property
-    def _provider_chunk_bytes(self) -> int:
+    def _provider_min_chunk_bytes(self) -> int:
         return max(
             2,
-            round(self._provider_sample_rate * 2 * self.PROVIDER_CHUNK_DURATION_SECONDS),
+            round(
+                self._provider_sample_rate
+                * 2
+                * self.PROVIDER_MIN_CHUNK_DURATION_SECONDS
+            ),
+        )
+
+    @property
+    def _provider_max_chunk_bytes(self) -> int:
+        return max(
+            self._provider_min_chunk_bytes,
+            round(
+                self._provider_sample_rate
+                * 2
+                * self.PROVIDER_MAX_CHUNK_DURATION_SECONDS
+            ),
         )
 
     async def run_stt(self, audio: bytes) -> AsyncGenerator[Frame | None, None]:
-        """Coalesce telephony frames and pace provider writes in realtime."""
+        """Coalesce small frames while allowing the stream to catch up after jitter.
+
+        The provider accepts 100ms-1s chunks. Explicitly sleeping for each 100ms
+        chunk limits throughput to exactly realtime, so any scheduler/network
+        pause becomes permanent recognition lag. Sending one bounded aggregate
+        immediately preserves the provider contract and lets queued audio catch
+        up after transient DEV load.
+        """
         self._provider_audio_buffer.extend(audio)
         sent = False
-        chunk_bytes = self._provider_chunk_bytes
-        while len(self._provider_audio_buffer) >= chunk_bytes:
+        min_chunk_bytes = self._provider_min_chunk_bytes
+        max_chunk_bytes = self._provider_max_chunk_bytes
+        while len(self._provider_audio_buffer) >= min_chunk_bytes:
+            chunk_bytes = min(len(self._provider_audio_buffer), max_chunk_bytes)
             chunk = bytes(self._provider_audio_buffer[:chunk_bytes])
             del self._provider_audio_buffer[:chunk_bytes]
             async for frame in self._send_provider_audio(chunk):
@@ -80,56 +105,62 @@ class OneLinkElevenLabsRealtimeSTTService(ElevenLabsRealtimeSTTService):
             # Never let a partial tail overtake the manual commit. Padding the
             # final provider chunk with silence keeps it within ElevenLabs' 100
             # ms minimum with at most one bounded provider pacing interval.
+            tail_bytes = len(self._provider_audio_buffer)
+            flush_started_at = time.monotonic()
             await self._flush_provider_audio_buffer()
             async with self._provider_audio_send_lock:
+                self._last_manual_commit_at = time.monotonic()
                 await super().process_frame(frame, direction)
+            logger.info(
+                "ElevenLabs manual commit sent tail_bytes={} flush_ms={}",
+                tail_bytes,
+                round((time.monotonic() - flush_started_at) * 1_000),
+            )
             return
         await super().process_frame(frame, direction)
 
     async def _flush_provider_audio_buffer(self) -> None:
         if not self._provider_audio_buffer:
             return
-        chunk_bytes = self._provider_chunk_bytes
-        chunk = bytes(self._provider_audio_buffer)
-        self._provider_audio_buffer.clear()
-        if len(chunk) < chunk_bytes:
-            chunk += bytes(chunk_bytes - len(chunk))
-        async for frame in self._send_provider_audio(chunk):
-            if frame is not None:
-                await self.push_frame(frame)
+        min_chunk_bytes = self._provider_min_chunk_bytes
+        max_chunk_bytes = self._provider_max_chunk_bytes
+        while self._provider_audio_buffer:
+            chunk_bytes = min(len(self._provider_audio_buffer), max_chunk_bytes)
+            chunk = bytes(self._provider_audio_buffer[:chunk_bytes])
+            del self._provider_audio_buffer[:chunk_bytes]
+            if len(chunk) < min_chunk_bytes:
+                chunk += bytes(min_chunk_bytes - len(chunk))
+            async for frame in self._send_provider_audio(chunk):
+                if frame is not None:
+                    await self.push_frame(frame)
 
     async def _send_provider_audio(
         self, audio: bytes
     ) -> AsyncGenerator[Frame | None, None]:
         async with self._provider_audio_send_lock:
-            now = time.monotonic()
-            target = max(now, self._next_provider_audio_send_at)
-            if target > now:
-                await asyncio.sleep(target - now)
-
-            sent_at = time.monotonic()
             async for frame in super().run_stt(audio):
                 yield frame
-
-            audio_seconds = len(audio) / (self._provider_sample_rate * 2)
-            # Pace from send start, not completion. Network scheduling time must
-            # not accumulate as permanent input latency on every chunk.
-            self._next_provider_audio_send_at = sent_at + audio_seconds
 
     async def _send_keepalive(self, silence: bytes):
         # Keepalive is already a 100 ms provider-native chunk. Serialize it
         # with normal audio so a timer cannot create a second simultaneous
         # websocket write.
         async with self._provider_audio_send_lock:
-            now = time.monotonic()
-            target = max(now, self._next_provider_audio_send_at)
-            if target > now:
-                await asyncio.sleep(target - now)
-            sent_at = time.monotonic()
             await super()._send_keepalive(silence)
-            self._next_provider_audio_send_at = (
-                sent_at + len(silence) / (self._provider_sample_rate * 2)
+
+    async def _on_committed_transcript(self, data: dict):
+        commit_latency_ms = None
+        if self._last_manual_commit_at is not None:
+            commit_latency_ms = round(
+                (time.monotonic() - self._last_manual_commit_at) * 1_000
             )
+            self._last_manual_commit_at = None
+        logger.info(
+            "ElevenLabs committed transcript chars={} commit_latency_ms={}",
+            len(str(data.get("text") or "").strip()),
+            commit_latency_ms,
+        )
+        await super()._on_committed_transcript(data)
 
     def _connection_query_params(self) -> list[tuple[str, object]]:
         params: list[tuple[str, object]] = [("model_id", self._settings.model)]
