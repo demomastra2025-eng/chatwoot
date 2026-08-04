@@ -13,6 +13,7 @@ from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import (
     InputAudioRawFrame,
     InputTextRawFrame,
+    InterruptionFrame,
     LLMMessagesAppendFrame,
     LLMRunFrame,
     TTSAudioRawFrame,
@@ -138,6 +139,12 @@ class PipelineAssembly:
         await self.worker.queue_frame(LLMRunFrame())
 
     async def speak_exact(self, message: str) -> bool:
+        return await self._speak(message, append_to_context=False)
+
+    async def speak_result(self, message: str) -> bool:
+        return await self._speak(message, append_to_context=True)
+
+    async def _speak(self, message: str, *, append_to_context: bool) -> bool:
         instruction = (
             "Произнеси сейчас только следующую фразу естественно, без пояснений и "
             f"добавлений: {message}"
@@ -150,7 +157,7 @@ class PipelineAssembly:
                 (ElevenLabsTTSService, CartesiaTTSService, OneLinkFishAudioTTSService),
             ):
                 await self.worker.queue_frame(
-                    TTSSpeakFrame(message, append_to_context=False)
+                    TTSSpeakFrame(message, append_to_context=append_to_context)
                 )
             elif self.provider == "openai-realtime" and isinstance(
                 self.llm, OpenAIRealtimeLLMService
@@ -179,6 +186,9 @@ class PipelineAssembly:
             return await self.activity.wait_for_turn_completed_after(
                 completed_sequence, completion_timeout
             )
+
+    async def interrupt_generation(self) -> None:
+        await self.worker.queue_frame(InterruptionFrame())
 
     async def run_instruction(self, instruction: str) -> None:
         if self.provider == "openai-realtime" and isinstance(self.llm, OpenAIRealtimeLLMService):
@@ -417,6 +427,7 @@ def build_pipeline(
                         "allow_fallbacks": True,
                         "require_parameters": True,
                         "data_collection": "deny",
+                        "preferred_max_latency": {"p90": 3.0, "p99": 6.0},
                     }
                 }
             },
@@ -507,7 +518,9 @@ def build_pipeline(
     )
     tool_dialogue.bind(
         speak_exact=assembly.speak_exact,
+        speak_result=assembly.speak_result,
         run_instruction=assembly.run_instruction,
+        interrupt_generation=assembly.interrupt_generation,
     )
     if caller_command is not None:
         caller_command.bind_end_call(tool_dialogue.execute_end_call)

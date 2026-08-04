@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+import app.pipeline.tool_dialogue as tool_dialogue_module
 from app.pipeline.context import AiSettings, ToolDefinition
 from app.pipeline.processors import ConversationActivity
 from app.pipeline.tool_dialogue import ToolDialogueCoordinator, _voice_result_projection
@@ -63,7 +64,7 @@ def ai_settings(**overrides):
     return AiSettings(**values)
 
 
-def definition(name="faq_lookup", **overrides):
+def definition(name="account_check", **overrides):
     values = {"name": name, "timeout_ms": 5_000}
     values.update(overrides)
     return ToolDefinition(**values)
@@ -77,7 +78,7 @@ async def execute_with_answer(
 ):
     results = []
 
-    async def result_callback(result):
+    async def result_callback(result, *, properties=None):
         results.append(result)
         if on_result is not None:
             await on_result(result)
@@ -127,7 +128,7 @@ async def test_long_read_tool_speaks_progress_then_returns_result_once():
     execution = asyncio.create_task(execute_with_answer(coordinator, activity))
 
     await asyncio.sleep(0.03)
-    assert spoken == ["Проверяю информацию, это займёт немного времени."]
+    assert spoken == ["Секунду, проверяю информацию."]
     gate.set()
     results = await execution
     await asyncio.gather(*state.tasks)
@@ -582,6 +583,80 @@ async def test_post_tool_stall_does_not_overlap_active_original_generation():
         for control in state.controls
         if control[0] == "post_tool_model_stall"
     )
+
+
+@pytest.mark.asyncio
+async def test_active_post_tool_generation_is_interrupted_and_result_is_spoken(monkeypatch):
+    monkeypatch.setattr(tool_dialogue_module, "POST_TOOL_GENERATION_MAX_SECONDS", 0.02)
+    state = FakeState(result={"message": "Контакт создан"})
+    activity = ConversationActivity()
+    spoken = []
+    interruptions = []
+
+    async def record(message):
+        spoken.append(message)
+
+    async def interrupt():
+        interruptions.append(True)
+        await activity.model_generation_interrupted()
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=record,
+        speak_result=record,
+        run_instruction=record,
+        interrupt_generation=interrupt,
+    )
+    await execute_with_answer(
+        coordinator,
+        activity,
+        tool_definition=definition("create_contact"),
+        on_result=lambda _result: activity.model_generation_started(),
+    )
+    await asyncio.gather(*state.tasks)
+
+    assert interruptions == [True]
+    assert spoken == ["Контакт создан"]
+    assert any(
+        control[1].get("recovery") == "interrupting_generation_timeout"
+        for control in state.controls
+        if control[0] == "post_tool_model_stall"
+    )
+
+
+@pytest.mark.asyncio
+async def test_faq_result_is_spoken_directly_without_second_llm_generation():
+    answer = "OneLink автоматизирует продажи и общение с клиентами."
+    state = FakeState(result={"matches": [{"id": 107, "answer": answer}]})
+    activity = ConversationActivity()
+    spoken = []
+    callback_properties = []
+
+    async def speak_result(message):
+        spoken.append(message)
+        return True
+
+    async def result_callback(_result, *, properties=None):
+        callback_properties.append(properties)
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=speak_result,
+        speak_result=speak_result,
+        run_instruction=speak_result,
+    )
+    params = Params(
+        arguments={"query": "Какие услуги у вас?"},
+        tool_call_id="faq-1",
+        result_callback=result_callback,
+    )
+
+    await coordinator.execute(definition("faq_lookup"), params)
+
+    assert spoken == [answer]
+    assert len(callback_properties) == 1
+    assert callback_properties[0].run_llm is False
+    assert coordinator.awaiting_continuation is False
 
 
 @pytest.mark.asyncio

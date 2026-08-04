@@ -158,6 +158,7 @@ def test_builds_supported_provider_pipeline(
                     "allow_fallbacks": True,
                     "require_parameters": True,
                     "data_collection": "deny",
+                    "preferred_max_latency": {"p90": 3.0, "p99": 6.0},
                 }
             }
         }

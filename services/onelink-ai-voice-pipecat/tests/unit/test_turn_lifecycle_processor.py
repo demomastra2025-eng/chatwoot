@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pipecat.frames.frames import (
+    InterruptionFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
@@ -78,6 +79,27 @@ async def test_assistant_lifecycle_tracks_model_generation_and_output():
     await processor.process_frame(LLMFullResponseEndFrame(), FrameDirection.DOWNSTREAM)
     assert activity.model_generation_active is False
     assert activity.model_generations_completed == 1
+
+
+@pytest.mark.asyncio
+async def test_assistant_lifecycle_marks_interrupted_generation_idle():
+    activity = ConversationActivity()
+    processor = AssistantLifecycleProcessor(
+        cast(SessionState, ActivityState()), activity, recorder=None
+    )
+    processor.push_frame = AsyncMock()
+
+    await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
+    await processor.process_frame(InterruptionFrame(), FrameDirection.DOWNSTREAM)
+
+    assert activity.model_generation_active is False
+    assert activity.model_generations_completed == activity.model_generations_started
+
+    # A late end frame from the cancelled stream must not make completed exceed started.
+    await processor.process_frame(LLMFullResponseEndFrame(), FrameDirection.DOWNSTREAM)
+    await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
+
+    assert activity.model_generation_active is True
 
 
 @pytest.mark.asyncio

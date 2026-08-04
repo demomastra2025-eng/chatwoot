@@ -17,6 +17,7 @@ from pipecat.frames.frames import (
     Frame,
     InputAudioRawFrame,
     InterimTranscriptionFrame,
+    InterruptionFrame,
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
@@ -201,6 +202,8 @@ class AssistantLifecycleProcessor(FrameProcessor):
             await self._activity.model_output_generated()
         elif isinstance(frame, (LLMFullResponseEndFrame, OneLinkToolResultGenerationEndFrame)):
             await self._activity.model_generation_completed()
+        elif isinstance(frame, InterruptionFrame):
+            await self._activity.model_generation_interrupted()
         elif isinstance(frame, BotStartedSpeakingFrame):
             await self._activity.bot_started()
             self._state.touch()
@@ -259,12 +262,20 @@ class ConversationActivity:
 
     async def model_generation_completed(self) -> None:
         async with self._changed:
-            self.model_generations_completed += 1
+            self.model_generations_completed = min(
+                self.model_generations_started,
+                self.model_generations_completed + 1,
+            )
             self._changed.notify_all()
 
     async def model_output_generated(self) -> None:
         async with self._changed:
             self.model_outputs_generated += 1
+            self._changed.notify_all()
+
+    async def model_generation_interrupted(self) -> None:
+        async with self._changed:
+            self.model_generations_completed = self.model_generations_started
             self._changed.notify_all()
 
     async def wait_for_turn_started_after(self, sequence: int, timeout: float) -> bool:
