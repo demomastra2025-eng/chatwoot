@@ -3,7 +3,11 @@ class Captain::Tools::Copilot::UpdateTaskService < Captain::Tools::Copilot::Base
     'update_task'
   end
 
-  description 'Update the CRM task linked to the current conversation'
+  description 'Update a CRM task by task_id or the task linked to the current conversation'
+  param :task_id,
+        type: :integer,
+        desc: 'Optional positive account CRM task ID. Use an ID returned by get_task/search_tasks; omit for the current conversation task.',
+        required: false
   param :title, type: :string, desc: 'Updated task title', required: false
   param :description, type: :string, desc: 'Updated task description', required: false
   param :activity_type, type: :string, desc: 'Updated task type: task, call, meeting, message, or touch', required: false
@@ -19,6 +23,7 @@ class Captain::Tools::Copilot::UpdateTaskService < Captain::Tools::Copilot::Base
         required: false
 
   def execute(
+    task_id: Captain::Tools::Operations::TaskOperations::TASK_ID_UNSET,
     title: nil,
     description: nil,
     activity_type: nil,
@@ -30,6 +35,7 @@ class Captain::Tools::Copilot::UpdateTaskService < Captain::Tools::Copilot::Base
     custom_attributes: nil
   )
     task = task_operations.update_current_task(
+      task_id: task_id,
       title: title,
       description: description,
       activity_type: activity_type,
@@ -46,7 +52,7 @@ class Captain::Tools::Copilot::UpdateTaskService < Captain::Tools::Copilot::Base
   end
 
   def active?
-    current_task.present? && feature_enabled?('crm_tasks') && user_has_permission('crm_task_manage')
+    feature_enabled?('crm_tasks') && user_has_permission('crm_task_manage')
   end
 
   private

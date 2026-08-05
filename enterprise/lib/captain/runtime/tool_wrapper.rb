@@ -16,6 +16,8 @@ class Captain::Runtime::ToolWrapper
   TERMINAL_TOOL_STOP_KEY = Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
   VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
+  OPTIONAL_ARGUMENT_DESCRIPTION =
+    'If this value was not explicitly provided or resolved, omit the key entirely; never invent a placeholder value.'
   NULL_SENTINEL_ARGUMENT_KEYS = {
     'search_conversations' => %i[status priority].freeze
   }.freeze
@@ -86,7 +88,11 @@ class Captain::Runtime::ToolWrapper
   end
 
   def provider_params
-    @tool.respond_to?(:provider_params) ? @tool.provider_params : {}
+    params = @tool.respond_to?(:provider_params) ? @tool.provider_params.to_h.deep_symbolize_keys : {}
+    strict_mode = provider_strict_mode
+    return params if strict_mode.nil?
+
+    params.deep_merge(function: { strict: strict_mode })
   end
 
   def metadata
@@ -236,17 +242,55 @@ class Captain::Runtime::ToolWrapper
     return schema unless schema.is_a?(Hash)
 
     normalized = schema.deep_stringify_keys.deep_dup
+    normalized.delete('strict')
+    required_names = Array(normalized['required']).map(&:to_s)
     normalized.fetch('properties', {}).each do |name, property_schema|
-      if positive_id_schema?(name, property_schema)
-        property_schema['minimum'] = [property_schema['minimum'].to_i, 1].max
-        append_verified_id_description!(property_schema)
-      elsif id_array_schema?(name, property_schema)
-        item_schema = property_schema['items']
-        item_schema['minimum'] = [item_schema['minimum'].to_i, 1].max if Array(item_schema['type']).intersect?(%w[integer number])
-        append_verified_id_description!(property_schema)
-      end
+      normalize_property_schema!(name, property_schema, required_names)
     end
     normalized
+  end
+
+  def normalize_property_schema!(name, property_schema, required_names)
+    unless required_names.include?(name.to_s)
+      allow_explicit_null!(property_schema)
+      append_optional_argument_description!(property_schema)
+    end
+    if positive_id_schema?(name, property_schema)
+      property_schema['minimum'] = [property_schema['minimum'].to_i, 1].max
+      append_verified_id_description!(property_schema)
+    elsif id_array_schema?(name, property_schema)
+      item_schema = property_schema['items']
+      item_schema['minimum'] = [item_schema['minimum'].to_i, 1].max if Array(item_schema['type']).intersect?(%w[integer number])
+      append_verified_id_description!(property_schema)
+    end
+  end
+
+  def allow_explicit_null!(property_schema)
+    property_types = Array(property_schema['type']).map(&:to_s)
+    return if property_types.empty?
+
+    property_schema['type'] = (property_types | ['null'])
+  end
+
+  def provider_strict_mode
+    schema = raw_params_schema
+    return unless schema.is_a?(Hash)
+
+    normalized = schema.deep_stringify_keys
+    return unless normalized.key?('strict')
+
+    required_names = Array(normalized['required']).map(&:to_s)
+    optional_names = normalized.fetch('properties', {}).keys.map(&:to_s) - required_names
+    return false if optional_names.any?
+
+    ActiveModel::Type::Boolean.new.cast(normalized['strict'])
+  end
+
+  def append_optional_argument_description!(property_schema)
+    existing_description = property_schema['description'].to_s.strip
+    return if existing_description.include?(OPTIONAL_ARGUMENT_DESCRIPTION)
+
+    property_schema['description'] = [existing_description.presence, OPTIONAL_ARGUMENT_DESCRIPTION].compact.join(' ')
   end
 
   def positive_id_schema?(name, property_schema)

@@ -1,4 +1,9 @@
 class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::BaseOperation
+  TASK_ID_UNSET = Object.new.freeze
+  UPDATE_FIELDS = %i[
+    title description activity_type outcome outcome_note priority start_at due_at custom_attributes
+  ].freeze
+
   def add_current_task_comment(body:)
     raise ArgumentError, 'A task comment is required' if body.blank?
     raise ArgumentError, 'Current task is not available' if current_task.blank?
@@ -74,38 +79,16 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     end
   end
 
-  def update_current_task(
-    title: nil,
-    description: nil,
-    activity_type: nil,
-    outcome: nil,
-    outcome_note: nil,
-    priority: nil,
-    start_at: nil,
-    due_at: nil,
-    custom_attributes: nil
-  )
+  def update_current_task(task_id: TASK_ID_UNSET, **attributes)
     ensure_feature_enabled!('crm_tasks', 'CRM tasks are not enabled for this account')
-    raise ArgumentError, 'Current task is not available' if current_task.blank?
-
-    params = {
-      lock_version: current_task.lock_version
-    }
-    params[:title] = title if title.present?
-    params[:description] = description unless description.nil?
-    params[:activity_type] = activity_type unless activity_type.nil?
-    params[:outcome] = outcome unless outcome.nil?
-    params[:outcome_note] = outcome_note unless outcome_note.nil?
-    params[:priority] = priority unless priority.nil?
-    params[:start_at] = start_at unless start_at.nil?
-    params[:due_at] = due_at unless due_at.nil?
-
-    params[:custom_attributes] = parsed_hash(custom_attributes, field_name: 'custom_attributes') if custom_attributes.present?
+    attributes.assert_valid_keys(*UPDATE_FIELDS)
+    task = task_for_update(task_id)
+    raise ArgumentError, 'Current task is not available' if task.blank?
 
     ::Crm::Tasks::UpsertService.new(
       account: account,
-      params: params,
-      task: current_task,
+      params: task_update_params(task, attributes),
+      task: task,
       actor: actor
     ).perform
   end
@@ -129,6 +112,25 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
   end
 
   private
+
+  def task_update_params(task, attributes)
+    params = { lock_version: task.lock_version }
+    params.merge!(attributes.except(:title, :custom_attributes).compact)
+    params[:title] = attributes[:title] if attributes[:title].present?
+    if attributes[:custom_attributes].present?
+      params[:custom_attributes] = parsed_hash(attributes[:custom_attributes], field_name: 'custom_attributes')
+    end
+    params
+  end
+
+  def task_for_update(task_id)
+    return current_task if task_id.equal?(TASK_ID_UNSET)
+
+    normalized_task_id = optional_positive_id(task_id)
+    raise ArgumentError, 'task_id must be a positive integer' if normalized_task_id.blank?
+
+    account.crm_tasks.find(normalized_task_id)
+  end
 
   def resolve_status(status_id:, status_name:, status_code:)
     status_id = optional_positive_id(status_id)

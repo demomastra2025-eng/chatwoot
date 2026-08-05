@@ -22,7 +22,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
         priority: { type: 'string' }
       },
       required: [],
-      additionalProperties: false
+      additionalProperties: false,
+      strict: true
     )
 
     def name
@@ -159,16 +160,30 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     expect(events).to include([:start, 'tool_wrapper_spec', { result: 'ok from top-level envelope' }])
   end
 
-  it 'keeps omitted optional keys absent while preserving explicit valid false, zero, and empty collections' do
+  it 'keeps omitted optional keys absent while preserving explicit null, false, zero, and empty collections' do
     result = wrapper.call(
       result: 'normalized',
+      priority: nil,
       offset: 0,
       enabled: false,
       items: []
     )
 
     expect(result).to eq('normalized')
-    expect(events.first).to eq([:start, 'tool_wrapper_spec', { result: 'normalized', offset: 0, enabled: false, items: [] }])
+    expect(events.first).to eq(
+      [:start, 'tool_wrapper_spec', { result: 'normalized', priority: nil, offset: 0, enabled: false, items: [] }]
+    )
+  end
+
+  it 'exposes optional tool arguments as non-strict provider fields without nested schema strictness' do
+    provider_tool = RubyLLM::Providers::OpenAI::Tools.tool_for(wrapper)
+
+    expect(wrapper.params_schema).not_to have_key('strict')
+    expect(wrapper.params_schema.dig('properties', 'enabled', 'description')).to include('omit the key entirely')
+    expect(wrapper.params_schema.dig('properties', 'enabled', 'type')).to contain_exactly('boolean', 'null')
+    expect(provider_tool.dig(:function, :strict)).to be(false)
+    expect(provider_tool.dig(:function, :parameters)).not_to have_key('strict')
+    expect(provider_tool.dig(:function, :parameters, 'required')).to be_empty
   end
 
   it 'drops provider null sentinels from optional conversation enum filters before tracing' do
@@ -188,7 +203,8 @@ RSpec.describe Captain::Runtime::ToolWrapper do
   end
 
   it 'adds a positive lower bound to numeric id schemas exposed to the provider' do
-    expect(wrapper.params_schema.dig('properties', 'category_id')).to include('type' => 'integer', 'minimum' => 1)
+    expect(wrapper.params_schema.dig('properties', 'category_id')).to include('minimum' => 1)
+    expect(wrapper.params_schema.dig('properties', 'category_id', 'type')).to contain_exactly('integer', 'null')
     expect(wrapper.params_schema.dig('properties', 'category_id', 'description')).to include('Never guess an ID')
     expect(wrapper.params_schema.dig('properties', 'offset')).not_to have_key('minimum')
   end
@@ -230,10 +246,11 @@ RSpec.describe Captain::Runtime::ToolWrapper do
     )
   end
 
-  it 'rejects an explicit null when the schema does not allow null' do
+  it 'preserves an explicit null when the optional schema allows it' do
     result = wrapper.call(result: 'not executed', category_id: nil)
 
-    expect_tool_error(result, 'Invalid tool arguments at /category_id: integer', retryable: false)
+    expect(result).to eq('not executed')
+    expect(events.first).to eq([:start, 'tool_wrapper_spec', { result: 'not executed', category_id: nil }])
   end
 
   it 'preserves an explicit blank string when the schema allows it' do

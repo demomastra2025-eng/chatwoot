@@ -1052,7 +1052,7 @@ class Captain::ToolRegistry
         definition(
           id: 'update_task',
           title: 'Update Task',
-          description: 'Update the CRM task linked to the current conversation',
+          description: 'Update a CRM task by task_id or the task linked to the current conversation',
           group_name: 'CRM Tasks',
           icon: 'checklist-edit',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

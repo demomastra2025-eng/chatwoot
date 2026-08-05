@@ -1,5 +1,9 @@
 class Captain::Tools::UpdateTaskTool < Captain::Tools::BasePublicTool
-  description 'Update the CRM task linked to the current conversation'
+  description 'Update a CRM task by task_id or the task linked to the current conversation'
+  param :task_id,
+        type: 'integer',
+        desc: 'Optional positive account CRM task ID. Use an ID returned by get_task/search_tasks; omit for the current conversation task.',
+        required: false
   param :title, type: 'string', desc: 'Updated task title', required: false
   param :description, type: 'string', desc: 'Updated task description', required: false
   param :activity_type, type: 'string', desc: 'Updated task type: task, call, meeting, message, or touch', required: false
@@ -16,6 +20,7 @@ class Captain::Tools::UpdateTaskTool < Captain::Tools::BasePublicTool
 
   def perform(
     tool_context,
+    task_id: Captain::Tools::Operations::TaskOperations::TASK_ID_UNSET,
     title: nil,
     description: nil,
     activity_type: nil,
@@ -27,6 +32,7 @@ class Captain::Tools::UpdateTaskTool < Captain::Tools::BasePublicTool
     custom_attributes: nil
   )
     task = operations(tool_context.state).update_current_task(
+      task_id: task_id,
       title: title,
       description: description,
       activity_type: activity_type,

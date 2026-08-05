@@ -20,7 +20,7 @@ RSpec.describe Captain::Runtime::ToolWrapper do
       'update_deal' => %w[pipeline_id stage_id win_probability closing_reasons],
       'transition_deal_stage' => %w[pipeline_id closing_reasons],
       'search_tasks' => %w[deal_id assignee_id archived],
-      'update_task' => %w[title activity_type outcome outcome_note start_at due_at custom_attributes],
+      'update_task' => %w[task_id title activity_type outcome outcome_note start_at due_at custom_attributes],
       'change_task_status' => %w[status_id],
       'create_touch' => %w[scheduled_at repeat_mode],
       'apply_touch_plan' => %w[touch_plan_id],
