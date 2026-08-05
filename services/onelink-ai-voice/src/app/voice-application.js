@@ -415,6 +415,50 @@ class VoiceApplication {
     }
   }
 
+  async prepareAiRuntimeFallback({ requestPayload = {}, routeDecision = {}, error } = {}) {
+    if (normalizeRouteAction(routeDecision) !== 'ai') return null;
+    if (!this.client || typeof this.client.handoffRuntime !== 'function') {
+      throw new Error('client.handoffRuntime is required for AI runtime fallback');
+    }
+
+    const callRef = requestPayload.call_ref || requestPayload.callRef;
+    const runtimeSessionId = runtimeSessionIdCandidate(requestPayload);
+    if (!callRef || !runtimeSessionId) {
+      throw new Error('AI runtime fallback requires call_ref and runtime_session_id');
+    }
+
+    const aiContext = aiContextCandidate(requestPayload, routeDecision);
+    const sourceRuntimeGeneration = aiContext.runtime_generation || aiContext.runtimeGeneration;
+    if (!sourceRuntimeGeneration) {
+      throw new Error('AI runtime fallback requires source_runtime_generation');
+    }
+    const fallbackDecision = routeDecisionWithoutAiContext(routeDecision);
+    const reason = sanitizeReason(error?.code || error?.reason || error?.message || 'pipecat_runtime_start_failed');
+    await this.client.handoffRuntime({
+      account_id: requestPayload.account_id || requestPayload.accountId || routeDecision.account_id || routeDecision.accountId,
+      call_session_id: aiContextCandidate(requestPayload, routeDecision).call_session_id ||
+        aiContextCandidate(requestPayload, routeDecision).callSessionId ||
+        requestPayload.call_session_id || requestPayload.callSessionId,
+      call_ref: callRef,
+      source_runtime_engine: 'pipecat',
+      source_runtime_session_id: runtimeSessionId,
+      source_runtime_generation: sourceRuntimeGeneration,
+      target_runtime_engine: RUNTIME_ENGINE,
+      runtime_session_id: runtimeSessionId,
+      reason
+    });
+
+    requestPayload.runtime_engine = RUNTIME_ENGINE;
+    requestPayload.runtime_session_id = runtimeSessionId;
+    delete requestPayload.runtimeEngine;
+    delete requestPayload.ai_context;
+    delete requestPayload.aiContext;
+    requestPayload.routing = fallbackDecision;
+    if (requestPayload.route_decision) requestPayload.route_decision = fallbackDecision;
+    if (requestPayload.routeDecision) requestPayload.routeDecision = fallbackDecision;
+    return fallbackDecision;
+  }
+
   async handleOperatorFailure(call, session, requestPayload, routeDecision = {}, reason = 'operator_dial_failed', event = 'operator_failed') {
     await this.safeBridgeEvent(event, session, requestPayload, routeDecision, { reason });
 
@@ -3288,6 +3332,17 @@ function runtimeSessionIdCandidate(payload = {}) {
   const routing = payload.routing || payload.route_decision || payload.routeDecision || {};
   const aiContext = payload.ai_context || payload.aiContext || routing.ai_context || routing.aiContext || {};
   return payload.runtime_session_id || payload.runtimeSessionId || aiContext.runtime_session_id || aiContext.runtimeSessionId;
+}
+
+function aiContextCandidate(requestPayload = {}, routeDecision = {}) {
+  return requestPayload.ai_context || requestPayload.aiContext || routeDecision.ai_context || routeDecision.aiContext || {};
+}
+
+function routeDecisionWithoutAiContext(routeDecision = {}) {
+  const fallbackDecision = { ...routeDecision };
+  delete fallbackDecision.ai_context;
+  delete fallbackDecision.aiContext;
+  return fallbackDecision;
 }
 
 function runtimeEngineCandidate(payload = {}) {

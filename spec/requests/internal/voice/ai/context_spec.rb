@@ -103,8 +103,10 @@ RSpec.describe 'Internal Voice AI Context API', type: :request do
       'assistant_id' => assistant.id,
       'runtime_session_id' => runtime_session_id,
       'runtime_engine' => runtime_engine,
+      'runtime_generation' => be_present,
       'tool_capability' => be_present
     )
+    expect(body['runtime_generation']).to eq(call_session.reload.metadata.dig('runtime_lease', 'generation'))
     expect(body.fetch('tools').pluck('name')).to include('find_contact')
     expect do
       Telephony::AiVoice::ToolCapability.verify!(

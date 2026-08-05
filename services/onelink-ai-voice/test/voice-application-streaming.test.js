@@ -3053,3 +3053,62 @@ test('VoiceApplication persists Pipecat runtime start failures only for AI route
   });
   assert.doesNotThrow(() => new Date(bridgeEvents[0].occurred_at).toISOString());
 });
+
+test('VoiceApplication prepares only an AI Pipecat-to-Node runtime fallback', async () => {
+  const handoffs = [];
+  const app = new VoiceApplication({
+    client: {
+      handoffRuntime: async payload => {
+        handoffs.push(payload);
+        return { status: 'handed_off' };
+      }
+    }
+  });
+  const requestPayload = {
+    call_ref: 'voice-agent-call-1',
+    account_id: 53,
+    runtime_engine: 'pipecat',
+    runtime_session_id: 'runtime-fallback-1',
+    ai_context: {
+      call_session_id: 4865,
+      runtime_session_id: 'runtime-fallback-1',
+      runtime_generation: 'pipecat-generation-1'
+    }
+  };
+  const routeDecision = {
+    action: 'ai',
+    reason: 'voice_agent_sip_profile_route',
+    ai_context: {
+      call_session_id: 4865,
+      runtime_session_id: 'runtime-fallback-1',
+      runtime_generation: 'pipecat-generation-1'
+    }
+  };
+  const error = new Error('provider unavailable');
+  error.code = 'pipecat_provider_unavailable';
+
+  const fallbackDecision = await app.prepareAiRuntimeFallback({ requestPayload, routeDecision, error });
+  const operatorDecision = await app.prepareAiRuntimeFallback({
+    requestPayload: { call_ref: 'operator-call-1' },
+    routeDecision: { action: 'operator' },
+    error
+  });
+
+  assert.equal(operatorDecision, null);
+  assert.equal(handoffs.length, 1);
+  assert.deepEqual(handoffs[0], {
+    account_id: 53,
+    call_session_id: 4865,
+    call_ref: 'voice-agent-call-1',
+    source_runtime_engine: 'pipecat',
+    source_runtime_session_id: 'runtime-fallback-1',
+    source_runtime_generation: 'pipecat-generation-1',
+    target_runtime_engine: 'onelink-ai-voice-node',
+    runtime_session_id: 'runtime-fallback-1',
+    reason: 'pipecat_provider_unavailable'
+  });
+  assert.equal(requestPayload.runtime_engine, 'onelink-ai-voice-node');
+  assert.equal(requestPayload.routing.action, 'ai');
+  assert.equal(requestPayload.ai_context, undefined);
+  assert.equal(requestPayload.routing.ai_context, undefined);
+});

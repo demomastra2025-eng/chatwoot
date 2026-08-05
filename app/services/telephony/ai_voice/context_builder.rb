@@ -41,6 +41,7 @@ class Telephony::AiVoice::ContextBuilder
     session = call_session || create_call_session!
     @call_session ||= session
     tools = tool_catalog
+    capability = tool_capability(session, tools)
 
     {
       call_ref: session.external_call_ref,
@@ -64,7 +65,8 @@ class Telephony::AiVoice::ContextBuilder
       recording: recording_payload,
       runtime_engine: runtime_engine,
       runtime_session_id: runtime_session_id,
-      tool_capability: tool_capability(session, tools),
+      runtime_generation: runtime_generation(session, capability),
+      tool_capability: capability,
       tools: tools
     }.compact
   end
@@ -92,6 +94,12 @@ class Telephony::AiVoice::ContextBuilder
       tools: tools,
       expires_in: (effective_ai_settings['max_duration_sec'].to_i + 5.minutes.to_i).seconds
     )
+  end
+
+  def runtime_generation(session, capability)
+    return if capability.blank?
+
+    session.reload.metadata.to_h.dig('runtime_lease', 'generation')
   end
 
   def runtime_session_id

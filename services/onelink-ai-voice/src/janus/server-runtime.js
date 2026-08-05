@@ -839,7 +839,46 @@ class JanusSipServerProfileSession {
     } catch (error) {
       this.log('janus_server_handle_call_failed', { error: error.message });
       const routeAction = String(routeDecision?.action || routeDecision?.mode || '').trim().toLowerCase();
-      if (runtimeEngine === 'pipecat' && routeAction === 'ai') {
+      const canFallbackToLegacyAi = runtimeEngine === 'pipecat' &&
+        routeAction === 'ai' &&
+        this.profile.sip_profile?.profile_kind === 'voice_agent' &&
+        this.profile.sip_profile?.voice_agent === true &&
+        !facade.acceptAttempted &&
+        !facade.acceptRequested &&
+        !facade.answered &&
+        !facade.ended;
+      if (canFallbackToLegacyAi) {
+        try {
+          routeDecision = await this.app.prepareAiRuntimeFallback?.({
+            call: facade,
+            requestPayload: facade.request,
+            routeDecision,
+            error
+          });
+          if (!routeDecision) throw new Error('AI runtime fallback was not prepared');
+          runtimeEngine = 'legacy';
+          run = this.app.handleCall(facade, facade.request);
+          this.log('janus_server_pipecat_fallback_started', {
+            profile_id: this.profile.id,
+            call_ref: facade.request.call_ref,
+            reason: error.code || error.message
+          });
+        } catch (fallbackError) {
+          this.log('janus_server_pipecat_fallback_failed', { error: fallbackError.message });
+          try {
+            await this.app.handleAiRuntimeStartFailure?.({
+              call: facade,
+              requestPayload: facade.request,
+              routeDecision,
+              error: fallbackError
+            });
+          } catch (persistenceError) {
+            this.log('janus_server_ai_start_failure_persistence_failed', { error: persistenceError.message });
+          }
+          await facade.hangup().catch(() => {});
+          return;
+        }
+      } else if (runtimeEngine === 'pipecat' && routeAction === 'ai') {
         try {
           await this.app.handleAiRuntimeStartFailure?.({
             call: facade,
@@ -850,9 +889,12 @@ class JanusSipServerProfileSession {
         } catch (persistenceError) {
           this.log('janus_server_ai_start_failure_persistence_failed', { error: persistenceError.message });
         }
+        await facade.hangup().catch(() => {});
+        return;
+      } else {
+        await facade.hangup().catch(() => {});
+        return;
       }
-      await facade.hangup().catch(() => {});
-      return;
     }
     Promise.resolve(run)
       .then(result => result?.completion?.catch?.(async error => {
@@ -1017,6 +1059,7 @@ class JanusSipServerCallFacade extends EventEmitter {
     this.answerPromise = null;
     this.terminationPromise = null;
     this.remoteAnswerWaiter = null;
+    this.acceptAttempted = false;
     this.acceptRequested = false;
     this.answered = false;
     this.ended = false;
@@ -1083,6 +1126,7 @@ class JanusSipServerCallFacade extends EventEmitter {
       this.request.janus.media_session_id = this.mediaSessionId;
 
       const remoteAnswer = offerless ? this.waitForRemoteAnswer() : null;
+      this.acceptAttempted = true;
       await this.janus.client.pluginMessage({
         sessionId: this.janus.sessionId,
         handleId: this.janus.handleId,
@@ -1183,7 +1227,7 @@ class JanusSipServerCallFacade extends EventEmitter {
   async hangup() {
     if (this.ended) return true;
     try {
-      const body = this.answered || this.acceptRequested
+      const body = this.answered || this.acceptAttempted || this.acceptRequested
         ? { request: 'hangup' }
         : { request: 'decline', code: 480 };
       await this.janus.client.pluginMessage({

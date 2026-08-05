@@ -179,6 +179,60 @@ test('Pipecat runtime control ends a call idempotently', async () => {
   assert.equal(call.hangups, 1);
 });
 
+test('Pipecat runtime control rejects end_call while SIP transfer is in flight', async () => {
+  const registry = new PipecatRuntimeControlRegistry({ baseUrl: 'http://voice:8081' });
+  const call = controlledCall();
+  const capability = registry.register(call);
+
+  const transfer = post(registry, capability, {
+    action: 'transfer',
+    operator_agent_aor: 'sip:1001@example.test'
+  });
+  const endCall = await post(registry, capability, { action: 'end_call', reason: 'concurrent' });
+
+  assert.equal(endCall.statusCode, 409);
+  assert.equal(endCall.body.error, 'runtime_terminal_action_conflict');
+  assert.equal((await transfer).statusCode, 200);
+  assert.equal(call.transfers.length, 1);
+  assert.equal(call.hangups, 0);
+});
+
+test('Pipecat runtime control allows end_call after a failed SIP transfer', async () => {
+  const registry = new PipecatRuntimeControlRegistry({ baseUrl: 'http://voice:8081' });
+  const call = controlledCall({ transferEvent: 'busy' });
+  const capability = registry.register(call);
+
+  const transfer = await post(registry, capability, {
+    action: 'transfer',
+    operator_agent_aor: 'sip:1001@example.test'
+  });
+  const endCall = await post(registry, capability, { action: 'end_call', reason: 'transfer_failed' });
+
+  assert.equal(transfer.statusCode, 409);
+  assert.equal(transfer.body.error, 'runtime_transfer_busy');
+  assert.equal(endCall.statusCode, 200);
+  assert.equal(call.transfers.length, 1);
+  assert.equal(call.hangups, 1);
+});
+
+test('Pipecat runtime control keeps a successful transfer authoritative', async () => {
+  const registry = new PipecatRuntimeControlRegistry({ baseUrl: 'http://voice:8081' });
+  const call = controlledCall();
+  const capability = registry.register(call);
+
+  const transfer = await post(registry, capability, {
+    action: 'transfer',
+    operator_agent_aor: 'sip:1001@example.test'
+  });
+  const endCall = await post(registry, capability, { action: 'end_call', reason: 'late' });
+
+  assert.equal(transfer.statusCode, 200);
+  assert.equal(endCall.statusCode, 409);
+  assert.equal(endCall.body.error, 'runtime_terminal_action_conflict');
+  assert.equal(call.transfers.length, 1);
+  assert.equal(call.hangups, 0);
+});
+
 test('Pipecat runtime control releases the capability when the call ends', async () => {
   const registry = new PipecatRuntimeControlRegistry({ baseUrl: 'http://voice:8081' });
   const call = controlledCall();

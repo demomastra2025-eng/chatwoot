@@ -132,6 +132,200 @@ RSpec.describe 'Internal Voice AI Event and Finalize API', type: :request do
     expect(account.telephony_events.count).to eq(previous_event_count)
   end
 
+  it 'hands an active AI runtime lease from Pipecat to the Node fallback idempotently' do
+    call_session.update!(
+      metadata: {
+        'runtime_lease' => {
+          'owner' => 'pipecat',
+          'runtime_session_id' => 'runtime-fallback-1',
+          'generation' => 'old-generation',
+          'heartbeat_at' => 5.seconds.ago.iso8601(3)
+        }
+      }
+    )
+    params = {
+      account_id: account.id,
+      call_session_id: call_session.id,
+      call_ref: call_session.external_call_ref,
+      source_runtime_engine: 'pipecat',
+      source_runtime_session_id: 'runtime-fallback-1',
+      source_runtime_generation: 'old-generation',
+      target_runtime_engine: 'onelink-ai-voice-node',
+      runtime_session_id: 'runtime-fallback-1',
+      reason: 'pipecat_preflight_unavailable'
+    }
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      2.times do
+        post '/internal/voice/ai/runtime-handoff',
+             params: params,
+             headers: { 'Authorization' => 'Bearer voice-secret' },
+             as: :json
+        expect(response).to have_http_status(:ok)
+      end
+    end
+
+    metadata = call_session.reload.metadata
+    expect(metadata['runtime_lease']).to include(
+      'owner' => 'onelink-ai-voice-node',
+      'runtime_session_id' => 'runtime-fallback-1',
+      'source_runtime_generation' => 'old-generation'
+    )
+    expect(metadata.dig('runtime_lease', 'generation')).not_to eq('old-generation')
+    expect(metadata['runtime_handoffs'].size).to eq(1)
+    expect(response.parsed_body['status']).to eq('already_handed_off')
+  end
+
+  it 'rejects an AI runtime handoff owned by another runtime session' do
+    call_session.update!(
+      metadata: {
+        'runtime_lease' => {
+          'owner' => 'pipecat',
+          'runtime_session_id' => 'runtime-owner-1',
+          'generation' => 'active-generation',
+          'heartbeat_at' => 5.seconds.ago.iso8601(3)
+        }
+      }
+    )
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/runtime-handoff',
+           params: {
+             account_id: account.id,
+             call_session_id: call_session.id,
+             source_runtime_engine: 'pipecat',
+             source_runtime_session_id: 'runtime-owner-2',
+             source_runtime_generation: 'active-generation',
+             target_runtime_engine: 'onelink-ai-voice-node',
+             runtime_session_id: 'runtime-owner-2'
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:conflict)
+    expect(call_session.reload.metadata['runtime_lease']).to include(
+      'owner' => 'pipecat',
+      'runtime_session_id' => 'runtime-owner-1',
+      'generation' => 'active-generation'
+    )
+  end
+
+  it 'does not allow runtime handoff into the operator plane' do
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/runtime-handoff',
+           params: {
+             account_id: account.id,
+             call_session_id: call_session.id,
+             source_runtime_engine: 'pipecat',
+             source_runtime_session_id: 'runtime-fallback-operator',
+             source_runtime_generation: 'operator-generation',
+             target_runtime_engine: 'operator',
+             runtime_session_id: 'runtime-fallback-operator'
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['error']).to eq('INVALID_RUNTIME_HANDOFF')
+  end
+
+  it 'does not let the AI fallback claim an unleased call session' do
+    call_session.update!(metadata: {})
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/runtime-handoff',
+           params: {
+             account_id: account.id,
+             call_session_id: call_session.id,
+             source_runtime_engine: 'pipecat',
+             source_runtime_session_id: 'runtime-unleased-1',
+             source_runtime_generation: 'unleased-generation',
+             target_runtime_engine: 'onelink-ai-voice-node',
+             runtime_session_id: 'runtime-unleased-1'
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:conflict)
+    expect(call_session.reload.metadata['runtime_lease']).to be_blank
+  end
+
+  it 'rejects stale and mismatched Pipecat runtime generations' do
+    request_params = {
+      account_id: account.id,
+      call_session_id: call_session.id,
+      call_ref: call_session.external_call_ref,
+      source_runtime_engine: 'pipecat',
+      source_runtime_session_id: 'runtime-fenced-1',
+      source_runtime_generation: 'expected-generation',
+      target_runtime_engine: 'onelink-ai-voice-node',
+      runtime_session_id: 'runtime-fenced-1'
+    }
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      call_session.update!(metadata: {
+                             'runtime_lease' => {
+                               'owner' => 'pipecat',
+                               'runtime_session_id' => 'runtime-fenced-1',
+                               'generation' => 'another-generation',
+                               'heartbeat_at' => 5.seconds.ago.iso8601(3)
+                             }
+                           })
+      post '/internal/voice/ai/runtime-handoff', params: request_params,
+                                                 headers: { 'Authorization' => 'Bearer voice-secret' }, as: :json
+      expect(response).to have_http_status(:conflict)
+
+      call_session.update!(metadata: {
+                             'runtime_lease' => {
+                               'owner' => 'pipecat',
+                               'runtime_session_id' => 'runtime-fenced-1',
+                               'generation' => 'expected-generation',
+                               'heartbeat_at' => 2.minutes.ago.iso8601(3)
+                             }
+                           })
+      post '/internal/voice/ai/runtime-handoff', params: request_params,
+                                                 headers: { 'Authorization' => 'Bearer voice-secret' }, as: :json
+      expect(response).to have_http_status(:conflict)
+      expect(response.parsed_body['error']).to eq('RUNTIME_LEASE_EXPIRED')
+    end
+
+    expect(call_session.reload.metadata.dig('runtime_lease', 'owner')).to eq('pipecat')
+  end
+
+  it 'rejects mixed call_session_id and call_ref bindings' do
+    call_session.update!(metadata: {
+                           'runtime_lease' => {
+                             'owner' => 'pipecat',
+                             'runtime_session_id' => 'runtime-call-binding-1',
+                             'generation' => 'binding-generation',
+                             'heartbeat_at' => 5.seconds.ago.iso8601(3)
+                           }
+                         })
+
+    with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
+      post '/internal/voice/ai/runtime-handoff',
+           params: {
+             account_id: account.id,
+             call_session_id: call_session.id,
+             call_ref: 'another-call-in-the-same-account',
+             source_runtime_engine: 'pipecat',
+             source_runtime_session_id: 'runtime-call-binding-1',
+             source_runtime_generation: 'binding-generation',
+             target_runtime_engine: 'onelink-ai-voice-node',
+             runtime_session_id: 'runtime-call-binding-1'
+           },
+           headers: { 'Authorization' => 'Bearer voice-secret' },
+           as: :json
+    end
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['error']).to eq('CALL_SESSION_REFERENCE_MISMATCH')
+    expect(call_session.reload.metadata.dig('runtime_lease', 'owner')).to eq('pipecat')
+  end
+
   it 'rejects a heartbeat that tries to replace another runtime lease owner' do
     call_session.update!(
       metadata: {

@@ -33,6 +33,8 @@ test('OnelinkClient authenticates and calls Rails context/transcript/control/too
       res.end(JSON.stringify({ status: 'ok', action: JSON.parse(body).action }));
     } else if (req.url === '/internal/voice/ai/event') {
       res.end(JSON.stringify({ status: 'ok', event_id: JSON.parse(body).event_id }));
+    } else if (req.url === '/internal/voice/ai/runtime-handoff') {
+      res.end(JSON.stringify({ status: 'handed_off', runtime_engine: 'onelink-ai-voice-node' }));
     } else if (req.url === '/internal/voice/ai/finalize') {
       res.end(JSON.stringify({ status: 'ok', event_id: JSON.parse(body).event_id, already_finalized: false }));
     } else if (req.url === '/internal/voice/ai/tools/find_contact') {
@@ -52,6 +54,7 @@ test('OnelinkClient authenticates and calls Rails context/transcript/control/too
     const transcript = await client.sendTranscript({ call_ref: 'call-1', items: [{ speaker: 'caller', text: 'hello', final: true }] });
     const control = await client.sendControl({ call_ref: 'call-1', action: 'ai_answered' });
     const event = await client.sendEvent({ call_ref: 'call-1', event_id: 'evt-1', event_type: 'stream_started' });
+    const handoff = await client.handoffRuntime({ call_ref: 'call-1', source_runtime_engine: 'pipecat' });
     const finalize = await client.finalizeCall({ call_ref: 'call-1', event_id: 'evt-finalize-1', status: 'completed' });
     const tool = await client.callTool('find_contact', { call_ref: 'call-1', arguments: { phone_number: '+7000' } });
 
@@ -59,16 +62,18 @@ test('OnelinkClient authenticates and calls Rails context/transcript/control/too
     assert.equal(transcript.accepted, 1);
     assert.equal(control.action, 'ai_answered');
     assert.equal(event.event_id, 'evt-1');
+    assert.equal(handoff.runtime_engine, 'onelink-ai-voice-node');
     assert.equal(finalize.event_id, 'evt-finalize-1');
     assert.deepEqual(tool, { contacts: [{ id: 1 }] });
-    assert.equal(seen.requests.length, 6);
+    assert.equal(seen.requests.length, 7);
     assert.equal(seen.requests[0].method, 'POST');
     assert.equal(seen.requests[0].url, '/internal/voice/ai/context');
     assert.equal(JSON.parse(seen.requests[0].body).call_ref, 'call-1');
     assert.equal(seen.requests[0].headers['x-onelink-voice-capabilities'], 'callback_handoff_v1');
     assert.equal(seen.requests[3].headers['x-event-id'], 'evt-1');
     assert.equal(seen.requests[3].headers['x-idempotency-key'], 'evt-1');
-    assert.equal(seen.requests[4].headers['x-idempotency-key'], 'evt-finalize-1');
+    assert.equal(seen.requests[4].url, '/internal/voice/ai/runtime-handoff');
+    assert.equal(seen.requests[5].headers['x-idempotency-key'], 'evt-finalize-1');
     assert.ok(seen.requests.every((request) => request.headers.authorization === 'Bearer internal-token'));
   } finally {
     await seen.close();

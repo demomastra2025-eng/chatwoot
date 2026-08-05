@@ -12,6 +12,7 @@ class OnelinkClient {
     controlPath = '/internal/voice/ai/control',
     eventPath = '/internal/voice/ai/event',
     heartbeatPath = '/internal/voice/ai/heartbeat',
+    runtimeHandoffPath = '/internal/voice/ai/runtime-handoff',
     finalizePath = '/internal/voice/ai/finalize'
   } = {}) {
     this.baseUrl = normalizeBaseUrl(
@@ -33,6 +34,7 @@ class OnelinkClient {
       control: controlPath,
       event: eventPath,
       heartbeat: heartbeatPath,
+      runtimeHandoff: runtimeHandoffPath,
       finalize: finalizePath
     };
 
@@ -67,6 +69,10 @@ class OnelinkClient {
 
   sendHeartbeat(payload = {}) {
     return this.request(this.paths.heartbeat, { method: 'POST', body: normalizeKeys(payload) });
+  }
+
+  handoffRuntime(payload = {}) {
+    return this.request(this.paths.runtimeHandoff, { method: 'POST', body: normalizeKeys(payload) });
   }
 
   finalizeCall(payload = {}) {

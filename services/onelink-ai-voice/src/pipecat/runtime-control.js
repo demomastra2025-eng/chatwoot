@@ -31,6 +31,7 @@ class PipecatRuntimeControlRegistry {
       token,
       expiresAt: Date.now() + this.ttlMs,
       ended: false,
+      terminalAction: null,
       commands: new Map()
     };
     call.once?.('end', () => setImmediate(() => this.release(id)));
@@ -89,6 +90,9 @@ class PipecatRuntimeControlRegistry {
       }
       return existing.execution;
     }
+    if (entry.terminalAction) {
+      throw controlError('another terminal runtime action is already active', 'runtime_terminal_action_conflict', 409);
+    }
     if (entry.ended && action !== 'end_call') {
       throw controlError('call already ended', 'runtime_call_ended', 409);
     }
@@ -104,12 +108,15 @@ class PipecatRuntimeControlRegistry {
       await entry.call.hangup();
       return { status: 'accepted', action: 'end_call' };
     })();
+    entry.terminalAction = { action, fingerprint, execution };
     entry.commands.set(action, { fingerprint, execution });
     try {
       const result = await execution;
+      if (action === 'end_call') entry.ended = true;
       entry.expiresAt = Date.now() + this.ttlMs;
       return result;
     } catch (error) {
+      if (entry.terminalAction?.execution === execution) entry.terminalAction = null;
       entry.expiresAt = Date.now() + this.ttlMs;
       throw error;
     }
