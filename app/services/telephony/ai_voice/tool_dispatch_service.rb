@@ -10,6 +10,10 @@ class Telephony::AiVoice::ToolDispatchService
   # filler earlier only adds latency and races the already-ready FAQ result.
   REALTIME_FAQ_LOOKUP_FOREGROUND_WAIT_MS = 2_800
   VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS = 0.5
+  VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS = 5.0
+  VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_MAX_ENTRIES = 128
+  @captain_catalog_cache = {}
+  @captain_catalog_cache_mutex = Mutex.new
 
   VOICE_CRM_MUTATION_GUIDANCE = {
     'add_contact_note' => [
@@ -151,17 +155,114 @@ class Telephony::AiVoice::ToolDispatchService
   def self.bounded_captain_tool_catalog(captain_assistant)
     return [] if captain_assistant.blank?
 
-    Timeout.timeout(VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS) do
-      Captain::Mcp::ToolCatalog.with_runtime_cache do
-        captain_tool_catalog(captain_assistant)
-      end
+    cache_entry = captain_catalog_cache_entry(captain_assistant)
+    cache_entry[:mutex].synchronize do
+      now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      cache_version = captain_assistant.cache_key_with_version
+      return cache_entry[:value].deep_dup if cache_entry[:version] == cache_version && cache_entry[:expires_at].to_f > now
+
+      catalog = build_bounded_captain_tool_catalog(captain_assistant, cache_entry: cache_entry, cache_version: cache_version)
+      cache_entry[:version] = cache_version
+      cache_entry[:value] = catalog
+      cache_entry[:expires_at] = Process.clock_gettime(Process::CLOCK_MONOTONIC) +
+                                 VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS
+      catalog.deep_dup
     end
-  rescue Timeout::Error
-    Rails.logger.warn("#{name}: Captain MCP catalog timed out for assistant_id=#{captain_assistant.id}; returning local Captain tools")
-    Captain::Mcp::ToolCatalog.without_discovery { captain_tool_catalog(captain_assistant) }
   end
 
-  private_class_method :normalized_voice_settings, :transfer_tool_description, :bounded_captain_tool_catalog
+  def self.build_bounded_captain_tool_catalog(captain_assistant, cache_entry:, cache_version:)
+    local_catalog = Captain::Mcp::ToolCatalog.without_discovery do
+      captain_tool_catalog(captain_assistant)
+    end
+    return local_catalog unless captain_assistant.account.captain_mcp_servers.enabled.exists?
+
+    bounded_captain_discovery(captain_assistant, cache_entry: cache_entry, cache_version: cache_version) || local_catalog
+  rescue StandardError => e
+    raise if local_catalog.nil?
+
+    Rails.logger.warn(
+      "#{name}: Captain MCP catalog failed for assistant_id=#{captain_assistant.id}; " \
+      "returning local Captain tools (#{e.class})"
+    )
+    local_catalog
+  end
+
+  def self.bounded_captain_discovery(captain_assistant, cache_entry:, cache_version:)
+    state = reusable_captain_discovery(cache_entry, cache_version)
+    state ||= start_captain_discovery(captain_assistant, cache_entry, cache_version)
+
+    return captain_discovery_timeout(captain_assistant) unless state[:thread].join(VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS)
+    return if state[:version] != cache_version
+
+    raise state[:error] if state[:error]
+
+    state[:catalog]
+  end
+
+  def self.start_captain_discovery(captain_assistant, cache_entry, cache_version)
+    state = { version: cache_version }
+    state[:thread] = Thread.new do
+      Thread.current.report_on_exception = false
+      Rails.application.executor.wrap do
+        state[:catalog] = Captain::Mcp::ToolCatalog.with_runtime_cache do
+          captain_tool_catalog(captain_assistant)
+        end
+      end
+    rescue StandardError => e
+      state[:error] = e
+    ensure
+      state[:completed_at] = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+    cache_entry[:discovery] = state
+  end
+
+  def self.reusable_captain_discovery(cache_entry, cache_version)
+    state = cache_entry[:discovery]
+    return if state.nil?
+    return state if state[:thread].alive?
+    return if state[:version] != cache_version
+
+    completed_at = state[:completed_at].to_f
+    state if completed_at + VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS > Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  end
+
+  def self.captain_discovery_timeout(captain_assistant)
+    Rails.logger.warn("#{name}: Captain MCP catalog timed out for assistant_id=#{captain_assistant.id}; returning local Captain tools")
+    nil
+  end
+
+  def self.captain_catalog_cache_entry(captain_assistant)
+    cache_key = captain_assistant.id || captain_assistant.object_id
+    @captain_catalog_cache_mutex.synchronize do
+      prune_captain_catalog_cache(cache_key)
+      @captain_catalog_cache[cache_key] ||= { mutex: Mutex.new }
+    end
+  end
+
+  def self.prune_captain_catalog_cache(cache_key)
+    return if @captain_catalog_cache.size < VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_MAX_ENTRIES
+    return if @captain_catalog_cache.key?(cache_key)
+
+    now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    @captain_catalog_cache.delete_if { |_key, entry| captain_catalog_cache_entry_expired?(entry, now) }
+  end
+
+  def self.captain_catalog_cache_entry_expired?(entry, now)
+    discovery_running = entry.dig(:discovery, :thread)&.alive?
+    entry[:expires_at].to_f <= now && !entry[:mutex].locked? && !discovery_running
+  end
+
+  private_class_method :normalized_voice_settings,
+                       :transfer_tool_description,
+                       :bounded_captain_tool_catalog,
+                       :build_bounded_captain_tool_catalog,
+                       :bounded_captain_discovery,
+                       :start_captain_discovery,
+                       :reusable_captain_discovery,
+                       :captain_discovery_timeout,
+                       :captain_catalog_cache_entry,
+                       :prune_captain_catalog_cache,
+                       :captain_catalog_cache_entry_expired?
 
   def self.captain_tool_catalog(captain_assistant)
     return [] if captain_assistant.blank?

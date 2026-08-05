@@ -5,22 +5,116 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     let(:account) { create(:account) }
     let(:assistant) { create(:captain_assistant, account: account) }
 
-    it 'bounds Captain discovery and preserves native call controls when discovery stalls' do
+    it 'bounds Captain discovery without interrupting local tool loading' do
       stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS", 0.001)
       allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
       allow(Captain::Mcp::ToolCatalog).to receive(:without_discovery).and_call_original
-      catalog_attempt = 0
+      enabled_servers = instance_double(ActiveRecord::Relation, exists?: true)
+      allow(assistant.account.captain_mcp_servers).to receive(:enabled).and_return(enabled_servers)
+      release_discovery = Queue.new
       allow(described_class).to receive(:captain_tool_catalog) do
-        catalog_attempt += 1
-        sleep 0.05 if catalog_attempt == 1
+        release_discovery.pop unless Thread.current == Thread.main
         [{ 'name' => 'faq_lookup' }]
       end
 
       names = described_class.catalog(captain_assistant: assistant).pluck('name')
+      release_discovery << true
+      described_class.send(:captain_catalog_cache_entry, assistant).dig(:discovery, :thread).join
 
       expect(names).to include('end_call', 'request_transfer', 'faq_lookup')
       expect(Captain::Mcp::ToolCatalog).to have_received(:with_runtime_cache).once
       expect(Captain::Mcp::ToolCatalog).to have_received(:without_discovery).once
+    ensure
+      release_discovery << true
+    end
+
+    it 'returns local tools without starting discovery when no MCP server is enabled' do
+      allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
+      allow(Captain::Mcp::ToolCatalog).to receive(:without_discovery).and_call_original
+      allow(described_class).to receive(:captain_tool_catalog).and_return([{ 'name' => 'faq_lookup' }])
+
+      names = described_class.catalog(captain_assistant: assistant).pluck('name')
+
+      expect(names).to include('end_call', 'request_transfer', 'faq_lookup')
+      expect(Captain::Mcp::ToolCatalog).not_to have_received(:with_runtime_cache)
+      expect(Captain::Mcp::ToolCatalog).to have_received(:without_discovery).once
+    end
+
+    it 'coalesces concurrent catalog builds for the same assistant' do
+      allow(described_class).to receive(:captain_tool_catalog) do
+        sleep 0.05
+        [{ 'name' => 'faq_lookup' }]
+      end
+
+      results = Array.new(4) do
+        Thread.new { described_class.catalog(captain_assistant: assistant).pluck('name') }
+      end.map(&:value)
+
+      expect(results).to all(include('end_call', 'request_transfer', 'faq_lookup'))
+      expect(described_class).to have_received(:captain_tool_catalog).once
+    end
+
+    it 'reuses an in-flight discovery after the local catalog cache expires' do
+      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS", 0.001)
+      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS", 0.0)
+      allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
+      enabled_servers = instance_double(ActiveRecord::Relation, exists?: true)
+      allow(assistant.account.captain_mcp_servers).to receive(:enabled).and_return(enabled_servers)
+      discovery_started = Queue.new
+      release_discovery = Queue.new
+      allow(described_class).to receive(:captain_tool_catalog) do
+        if Thread.current == Thread.main
+          [{ 'name' => 'faq_lookup' }]
+        else
+          discovery_started << true
+          release_discovery.pop
+          [{ 'name' => 'mcp__calendar__availability' }]
+        end
+      end
+
+      first_names = described_class.catalog(captain_assistant: assistant).pluck('name')
+      discovery_started.pop
+      second_names = described_class.catalog(captain_assistant: assistant).pluck('name')
+
+      expect(first_names).to include('faq_lookup')
+      expect(second_names).to include('faq_lookup')
+      expect(Captain::Mcp::ToolCatalog).to have_received(:with_runtime_cache).once
+      release_discovery << true
+      described_class.send(:captain_catalog_cache_entry, assistant).dig(:discovery, :thread).join
+    ensure
+      release_discovery << true
+    end
+
+    it 'does not start another discovery when the assistant version changes while discovery is running' do
+      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS", 0.001)
+      stub_const("#{described_class}::VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS", 0.0)
+      allow(assistant).to receive(:cache_key_with_version).and_return('captain/assistants/1-v1', 'captain/assistants/1-v2')
+      allow(Captain::Mcp::ToolCatalog).to receive(:with_runtime_cache).and_call_original
+      enabled_servers = instance_double(ActiveRecord::Relation, exists?: true)
+      allow(assistant.account.captain_mcp_servers).to receive(:enabled).and_return(enabled_servers)
+      discovery_started = Queue.new
+      release_discovery = Queue.new
+      allow(described_class).to receive(:captain_tool_catalog) do
+        if Thread.current == Thread.main
+          [{ 'name' => 'faq_lookup' }]
+        else
+          discovery_started << true
+          release_discovery.pop
+          [{ 'name' => 'mcp__calendar__availability' }]
+        end
+      end
+
+      first_names = described_class.catalog(captain_assistant: assistant).pluck('name')
+      discovery_started.pop
+      second_names = described_class.catalog(captain_assistant: assistant).pluck('name')
+
+      expect(first_names).to include('faq_lookup')
+      expect(second_names).to include('faq_lookup')
+      expect(Captain::Mcp::ToolCatalog).to have_received(:with_runtime_cache).once
+      release_discovery << true
+      described_class.send(:captain_catalog_cache_entry, assistant).dig(:discovery, :thread).join
+    ensure
+      release_discovery << true
     end
 
     it 'resolves only agent-scope Captain tools for the voice catalog' do
