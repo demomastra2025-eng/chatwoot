@@ -3,6 +3,7 @@ import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { workspaceSettingsTabs } from '../workspaceSettingsTabs';
 const Index = () => import('./Index.vue');
 const Scheduling = () => import('./Scheduling.vue');
+const LeadForms = () => import('../leadForms/Index.vue');
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const AttributesHome = () => import('../attributes/Index.vue');
@@ -40,7 +41,19 @@ export default {
             permissions: ['administrator'],
           },
         },
+        {
+          path: 'lead-forms',
+          name: 'lead_forms_index',
+          component: LeadForms,
+          meta: {
+            permissions: ['administrator'],
+          },
+        },
       ],
+    },
+    {
+      path: frontendURL('accounts/:accountId/settings/lead-forms'),
+      redirect: to => ({ name: 'lead_forms_index', params: to.params }),
     },
     {
       path: frontendURL('accounts/:accountId/settings/scheduling'),

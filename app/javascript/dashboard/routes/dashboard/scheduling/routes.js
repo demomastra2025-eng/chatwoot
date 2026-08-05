@@ -6,7 +6,6 @@ const SchedulingCalendarPage = () =>
   import('./pages/SchedulingCalendarPage.vue');
 const SchedulingExceptionsPage = () =>
   import('./pages/SchedulingExceptionsPage.vue');
-const SchedulingKassaPage = () => import('./pages/SchedulingKassaPage.vue');
 const SchedulingResourcesPage = () =>
   import('./pages/SchedulingResourcesPage.vue');
 const SchedulingServicesPage = () =>
@@ -18,11 +17,6 @@ const schedulingMeta = {
 
 const schedulingAdminMeta = {
   featureFlag: FEATURE_FLAGS.SCHEDULING,
-  permissions: ['administrator'],
-};
-
-const schedulingFinanceMeta = {
-  featureFlag: FEATURE_FLAGS.SCHEDULING_FINANCE,
   permissions: ['administrator'],
 };
 
@@ -58,11 +52,5 @@ export const routes = [
     name: 'scheduling_exceptions',
     component: SchedulingExceptionsPage,
     meta: schedulingAdminMeta,
-  },
-  {
-    path: frontendURL('accounts/:accountId/scheduling/kassa'),
-    name: 'scheduling_kassa',
-    component: SchedulingKassaPage,
-    meta: schedulingFinanceMeta,
   },
 ];

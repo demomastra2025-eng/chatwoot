@@ -133,13 +133,6 @@ const hasSchedulingSettings = computed(() => {
   );
 });
 
-const hasSmm = computed(() => {
-  return (
-    checkPermissions(['administrator']) &&
-    isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.SMM)
-  );
-});
-
 const hasInboxManagement = computed(() => {
   return isFeatureEnabledonAccount.value(
     accountId.value,
@@ -1257,6 +1250,14 @@ const buildMyCompanySettingsMenuItems = () => [
     activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
     to: accountScopedRoute('general_settings_index'),
   },
+  {
+    name: 'Lead Forms',
+    visibilityKey: 'MyCompany:LeadForms',
+    label: t('SIDEBAR.LEAD_FORMS'),
+    icon: 'i-lucide-inbox',
+    activeOn: ['lead_forms_index'],
+    to: accountScopedRoute('lead_forms_index'),
+  },
   ...(hasInboxManagement.value
     ? [
         {
@@ -1804,70 +1805,10 @@ const menuItems = computed(() => {
                   label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
                   to: accountScopedRoute('scheduling_exceptions'),
                 },
-                {
-                  name: 'Scheduling Kassa',
-                  visibilityKey: 'Scheduling:Kassa',
-                  label: t('SIDEBAR.SCHEDULING_KASSA'),
-                  to: accountScopedRoute('scheduling_kassa'),
-                },
               ]
             : []),
         ],
       },
-      ...(hasSmm.value
-        ? [
-            {
-              name: 'SMM',
-              label: t('SIDEBAR.SMM'),
-              icon: 'i-lucide-megaphone',
-              defaultChildName: 'SMM Calendar',
-              children: [
-                {
-                  name: 'SMM Calendar',
-                  visibilityKey: 'SMM:Calendar',
-                  label: t('SIDEBAR.SMM_CALENDAR'),
-                  to: accountScopedRoute('smm_calendar'),
-                },
-                {
-                  name: 'SMM Posts',
-                  visibilityKey: 'SMM:Posts',
-                  label: t('SIDEBAR.SMM_POSTS'),
-                  to: accountScopedRoute('smm_posts'),
-                },
-                {
-                  name: 'SMM Channels',
-                  visibilityKey: 'SMM:Channels',
-                  label: t('SIDEBAR.SMM_CHANNELS'),
-                  to: accountScopedRoute('smm_channels'),
-                },
-                {
-                  name: 'SMM Lead Forms',
-                  visibilityKey: 'SMM:LeadForms',
-                  label: t('SIDEBAR.LEAD_FORMS'),
-                  to: accountScopedRoute('lead_forms_index'),
-                },
-                {
-                  name: 'SMM Media',
-                  visibilityKey: 'SMM:Media',
-                  label: t('SIDEBAR.SMM_MEDIA'),
-                  to: accountScopedRoute('smm_media'),
-                },
-                {
-                  name: 'SMM Analytics',
-                  visibilityKey: 'SMM:Analytics',
-                  label: t('SIDEBAR.SMM_ANALYTICS'),
-                  to: accountScopedRoute('smm_analytics'),
-                },
-                {
-                  name: 'SMM Settings',
-                  visibilityKey: 'SMM:Settings',
-                  label: t('SIDEBAR.SMM_SETTINGS'),
-                  to: accountScopedRoute('smm_settings'),
-                },
-              ],
-            },
-          ]
-        : []),
       {
         name: 'Reports',
         label: t('SIDEBAR.REPORTS'),

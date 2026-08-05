@@ -77,26 +77,6 @@ openrouter:
       'additionalProperties': false,
     }
   visible_properties: []
-postiz:
-  id: postiz
-  logo: webhook.png
-  i18n_key: postiz
-  hook_type: account
-  hidden_in_ui: true
-  allow_multiple_hooks: false
-  access_token_required: true
-  feature_flag: content
-  settings_json_schema:
-    {
-      'type': 'object',
-      'properties':
-        {
-          'organization_id': { 'type': ['string', 'null'] },
-          'default_timezone': { 'type': ['string', 'null'] },
-        },
-      'additionalProperties': false,
-    }
-  visible_properties: ['organization_id', 'default_timezone']
 linear:
   id: linear
   logo: linear.png

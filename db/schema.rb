@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_02_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1653,6 +1653,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_02_120000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.jsonb "settings", default: {}
+    t.check_constraint "app_id::text <> 'postiz'::text", name: "integrations_hooks_app_id_not_postiz"
   end
 
   create_table "kaspi_pay_payments", force: :cascade do |t|

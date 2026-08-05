@@ -76,7 +76,7 @@ tags:
   - name: Reports
     description: Analytics and reporting APIs
   - name: Scheduling
-    description: Scheduling, appointment, and kassa APIs
+    description: Scheduling, appointment, and finance APIs
   - name: Teams
     description: Team management APIs
   - name: Webhooks

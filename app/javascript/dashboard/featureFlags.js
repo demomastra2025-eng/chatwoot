@@ -49,7 +49,6 @@ export const FEATURE_FLAGS = {
   CONVERSATION_REQUIRED_ATTRIBUTES: 'conversation_required_attributes',
   SCHEDULING: 'scheduling',
   SCHEDULING_FINANCE: 'scheduling_finance',
-  SMM: 'content',
   WHATSAPP_CALL: 'whatsapp_call',
   COMMUNICATION_THREADS: 'communication_threads',
 };

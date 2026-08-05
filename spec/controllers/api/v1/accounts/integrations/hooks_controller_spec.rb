@@ -84,6 +84,16 @@ RSpec.describe 'Integration Hooks API', type: :request do
         expect(data['resource_id']).to eq params[:app_id]
       end
 
+      it 'rejects hooks for removed or unregistered integrations' do
+        post api_v1_account_integrations_hooks_url(account_id: account.id),
+             params: { app_id: 'postiz' },
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(Integrations::Hook.exists?(account: account, app_id: 'postiz')).to be(false)
+      end
+
       it 'creates a macrocrm hook with an encrypted access token' do
         post api_v1_account_integrations_hooks_url(account_id: account.id),
              params: macrocrm_params,

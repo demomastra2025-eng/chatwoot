@@ -6,7 +6,7 @@ export const SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_by_account';
 export const SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version_by_account';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 15;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 16;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -15,6 +15,7 @@ const LEGACY_EMPLOYEES_VISIBILITY_KEY = 'Employees';
 const MY_COMPANY_VISIBILITY_KEY = 'MyCompany';
 const MY_COMPANY_VISIBILITY_ITEM_KEYS = Object.freeze([
   'MyCompany:Workspace',
+  'MyCompany:LeadForms',
   'MyCompany:Channels',
   'MyCompany:Tags',
   'MyCompany:Employees',
@@ -47,7 +48,8 @@ const LEGACY_REPORTS_FUNNELS_VISIBILITY_KEY = 'Reports:Funnels';
 // Saved profile UI settings may still contain this pre-touch sidebar key.
 const LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY =
   'Campaigns:PersonalBroadcasts';
-const SMM_LEAD_FORMS_VISIBILITY_KEY = 'SMM:LeadForms';
+const MY_COMPANY_LEAD_FORMS_VISIBILITY_KEY = 'MyCompany:LeadForms';
+const LEGACY_SMM_LEAD_FORMS_VISIBILITY_KEY = 'SMM:LeadForms';
 const LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY = 'Settings:LeadForms';
 
 const item = (key, labelKey, children = []) => ({
@@ -58,6 +60,7 @@ const item = (key, labelKey, children = []) => ({
 
 const MY_COMPANY_VISIBILITY_ITEMS = Object.freeze([
   item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
+  item(MY_COMPANY_LEAD_FORMS_VISIBILITY_KEY, 'SIDEBAR.LEAD_FORMS'),
   item('MyCompany:Channels', 'SIDEBAR.CHANNELS'),
   item('MyCompany:Tags', 'SIDEBAR.LABELS'),
   item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
@@ -145,16 +148,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Scheduling:Resources', 'SIDEBAR.SCHEDULING_RESOURCES'),
     item('Scheduling:Services', 'SIDEBAR.SCHEDULING_SERVICES'),
     item('Scheduling:Exceptions', 'SIDEBAR.SCHEDULING_EXCEPTIONS'),
-    item('Scheduling:Kassa', 'SIDEBAR.SCHEDULING_KASSA'),
-  ]),
-  item('SMM', 'SIDEBAR.SMM', [
-    item('SMM:Calendar', 'SIDEBAR.SMM_CALENDAR'),
-    item('SMM:Posts', 'SIDEBAR.SMM_POSTS'),
-    item('SMM:Channels', 'SIDEBAR.SMM_CHANNELS'),
-    item(SMM_LEAD_FORMS_VISIBILITY_KEY, 'SIDEBAR.LEAD_FORMS'),
-    item('SMM:Media', 'SIDEBAR.SMM_MEDIA'),
-    item('SMM:Analytics', 'SIDEBAR.SMM_ANALYTICS'),
-    item('SMM:Settings', 'SIDEBAR.SMM_SETTINGS'),
   ]),
   item('Reports', 'SIDEBAR.REPORTS', [
     item('Reports:Overview', 'SIDEBAR.REPORTS_OVERVIEW'),
@@ -371,19 +364,20 @@ const normalizeLegacyReportsDealsVisibility = (hiddenItems, version) => {
 
 const normalizeLegacyLeadFormsVisibility = (hiddenItems, version) => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
-  const shouldMigrateLegacyVisibility = Number(version || 0) < 15;
+  const shouldMigrateLegacyVisibility = Number(version || 0) < 16;
 
   if (!shouldMigrateLegacyVisibility) {
     return hiddenItemsSet;
   }
 
-  const legacyLeadFormsWasHidden = hiddenItemsSet.has(
-    LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY
-  );
+  const legacyLeadFormsWasHidden =
+    hiddenItemsSet.has(LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY) ||
+    hiddenItemsSet.has(LEGACY_SMM_LEAD_FORMS_VISIBILITY_KEY);
   hiddenItemsSet.delete(LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY);
+  hiddenItemsSet.delete(LEGACY_SMM_LEAD_FORMS_VISIBILITY_KEY);
 
   if (legacyLeadFormsWasHidden) {
-    hiddenItemsSet.add(SMM_LEAD_FORMS_VISIBILITY_KEY);
+    hiddenItemsSet.add(MY_COMPANY_LEAD_FORMS_VISIBILITY_KEY);
   }
 
   return hiddenItemsSet;

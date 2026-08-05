@@ -205,25 +205,6 @@ Rails.application.routes.draw do
             post :resume, on: :member
           end
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
-          namespace :content do
-            resource :connection, only: [:show, :update, :destroy], controller: 'connections' do
-              post :test
-            end
-            resources :channels, only: [:index, :destroy] do
-              get :oauth_url, on: :collection
-              get :find_slot, on: :member
-            end
-            resources :posts, only: [:index, :create, :destroy] do
-              member do
-                patch :status
-                get :missing
-              end
-            end
-            resources :media, only: [:create] do
-              post :upload_from_url, on: :collection
-            end
-            resources :analytics, only: [:index]
-          end
 
           namespace :scheduling do
             resource :calendar, only: [:show], controller: 'calendar'

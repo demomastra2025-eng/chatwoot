@@ -51,13 +51,14 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Conversation:AllChannels']).toBeUndefined();
     expect(visibilityState.MyCompany).toBeUndefined();
     expect(visibilityState['MyCompany:Workspace']).toBe(true);
+    expect(visibilityState['MyCompany:LeadForms']).toBe(true);
     expect(visibilityState['MyCompany:Tags']).toBe(true);
     expect(visibilityState['MyCompany:Employees']).toBe(true);
     expect(visibilityState.Employees).toBeUndefined();
     expect(visibilityState.Settings).toBe(true);
     expect(visibilityState['Settings:Automation']).toBe(true);
-    expect(visibilityState.SMM).toBe(true);
-    expect(visibilityState['SMM:LeadForms']).toBe(true);
+    expect(visibilityState.SMM).toBeUndefined();
+    expect(visibilityState['SMM:LeadForms']).toBeUndefined();
     expect(visibilityState['Reports:Overview']).toBe(true);
   });
 
@@ -102,6 +103,7 @@ describe('sidebarVisibility', () => {
     ).toEqual([
       'Conversation:Statuses',
       'MyCompany:Workspace',
+      'MyCompany:LeadForms',
       'MyCompany:Channels',
       'MyCompany:Tags',
       'MyCompany:Employees',
@@ -120,8 +122,9 @@ describe('sidebarVisibility', () => {
     const settingsChildKeys = settingsItem.children.map(item => item.key);
 
     expect(itemKeys).not.toContain('MyCompany');
-    expect(settingsChildKeys.slice(0, 8)).toEqual([
+    expect(settingsChildKeys.slice(0, 9)).toEqual([
       'MyCompany:Workspace',
+      'MyCompany:LeadForms',
       'MyCompany:Channels',
       'MyCompany:Tags',
       'MyCompany:Employees',
@@ -130,12 +133,9 @@ describe('sidebarVisibility', () => {
       'MyCompany:Policies',
       'MyCompany:AuditLogs',
     ]);
-    expect(settingsChildKeys[8]).toBe('Settings:Automation');
+    expect(settingsChildKeys[9]).toBe('Settings:Automation');
     expect(settingsChildKeys).not.toContain('Settings:LeadForms');
-
-    const smmItem = SIDEBAR_VISIBILITY_ITEMS.find(item => item.key === 'SMM');
-    const smmChildKeys = smmItem.children.map(item => item.key);
-    expect(smmChildKeys).toContain('SMM:LeadForms');
+    expect(itemKeys).not.toContain('SMM');
   });
 
   it('excludes account-controlled deal and appointment dialog visibility from personal settings menu', () => {
@@ -201,12 +201,19 @@ describe('sidebarVisibility', () => {
     ).toEqual(['Conversation:Statuses', 'Campaigns:Touches']);
   });
 
-  it('migrates the legacy settings lead forms visibility key to SMM', () => {
+  it('migrates legacy lead forms visibility keys to company settings', () => {
     expect(
       getSidebarHiddenItems({
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:LeadForms'],
       })
-    ).toEqual(['Conversation:Statuses', 'SMM:LeadForms']);
+    ).toEqual(['Conversation:Statuses', 'MyCompany:LeadForms']);
+
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['SMM:LeadForms'],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]: 15,
+      })
+    ).toEqual(['MyCompany:LeadForms']);
   });
 
   it('respects explicitly saved conversation status visibility in the current schema', () => {

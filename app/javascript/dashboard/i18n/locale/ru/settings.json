@@ -402,7 +402,6 @@
     "SCHEDULING_RESOURCES": "Специалисты",
     "SCHEDULING_SERVICES": "Услуги",
     "SCHEDULING_EXCEPTIONS": "Перерывы",
-    "SCHEDULING_KASSA": "Касса",
     "CAPTAIN": "AI-сотрудники",
     "CAPTAIN_ASSISTANTS": "AI-сотрудники",
     "CAPTAIN_DOCUMENTS": "Документы",
@@ -509,14 +508,7 @@
     "DOCS": "Открыть документацию",
     "SECURITY": "Безопасность",
     "CAPTAIN_AI": "AI-сотрудники",
-    "CONVERSATION_WORKFLOW": "Настройки диалога",
-    "SMM": "SMM",
-    "SMM_CALENDAR": "Календарь",
-    "SMM_POSTS": "Посты",
-    "SMM_CHANNELS": "Соц.сети",
-    "SMM_MEDIA": "Медиа",
-    "SMM_ANALYTICS": "Аналитика",
-    "SMM_SETTINGS": "Настройки"
+    "CONVERSATION_WORKFLOW": "Настройки диалога"
   },
   "LEAD_FORMS": {
     "KICKER": "Прием заявок",
@@ -1643,85 +1635,6 @@
         "ERROR": "Не удалось обновить причины статусов",
         "REQUIRED_ERROR": "Для обязательных причин добавьте хотя бы один вариант."
       }
-    }
-  },
-  "SMM": {
-    "CONNECT_POSTIZ": "Подключить Postiz",
-    "REFRESH": "Обновить",
-    "OPEN_SETTINGS": "Открыть настройки",
-    "YES": "Да",
-    "NO": "Нет",
-    "EMPTY_CONNECTION_TITLE": "Подключите Postiz для начала работы",
-    "EMPTY_CONNECTION_DESCRIPTION": "SMM-модуль использует серверный Postiz API key. Ключ хранится на backend и не попадает в браузер.",
-    "TABS": {
-      "CALENDAR": "Календарь",
-      "POSTS": "Посты",
-      "CHANNELS": "Соц.сети",
-      "MEDIA": "Медиа",
-      "ANALYTICS": "Аналитика",
-      "SETTINGS": "Настройки"
-    },
-    "CALENDAR": {
-      "TITLE": "Контент-календарь",
-      "DESCRIPTION": "Расписание запланированных и опубликованных постов в структуре Postiz.",
-      "EMPTY": "В текущем месяце постов нет."
-    },
-    "POSTS": {
-      "TITLE": "Посты",
-      "DESCRIPTION": "Посты и статусы из подключенного Postiz workspace.",
-      "EMPTY": "Посты не найдены.",
-      "STATUS_UNKNOWN": "Неизвестно"
-    },
-    "CHANNELS": {
-      "TITLE": "Соц.сети",
-      "DESCRIPTION": "Подключение и управление соцсетями через Postiz OAuth.",
-      "EMPTY": "Соцсети ещё не подключены.",
-      "OAUTH_FAILED": "Не удалось открыть OAuth URL Postiz."
-    },
-    "COMPOSER": {
-      "TITLE": "Композер",
-      "DESCRIPTION": "Создание простого Postiz payload из OneLink.",
-      "SELECT_CHANNEL": "Выберите соцсеть",
-      "TYPE_SCHEDULE": "Запланировать",
-      "TYPE_DRAFT": "Черновик",
-      "TYPE_NOW": "Опубликовать сейчас",
-      "DATE": "Дата публикации",
-      "TEXT_PLACEHOLDER": "Текст поста",
-      "CREATE": "Создать пост",
-      "REQUIRED": "Выберите соцсеть и введите текст поста.",
-      "CREATED": "Пост создан",
-      "CREATE_FAILED": "Не удалось создать пост"
-    },
-    "MEDIA": {
-      "TITLE": "Медиа",
-      "DESCRIPTION": "Загрузка медиа в Postiz по URL. Загрузка файла доступна через backend API.",
-      "URL_PLACEHOLDER": "https://example.com/image.jpg",
-      "UPLOAD_URL": "Загрузить URL",
-      "UPLOADED": "Медиа загружено",
-      "UPLOAD_FAILED": "Не удалось загрузить медиа"
-    },
-    "ANALYTICS": {
-      "TITLE": "Аналитика",
-      "DESCRIPTION": "Загрузка аналитики Postiz по подключенной соцсети.",
-      "SELECT_CHANNEL": "Выберите соцсеть",
-      "LOAD": "Загрузить аналитику",
-      "LOAD_FAILED": "Не удалось загрузить аналитику"
-    },
-    "SETTINGS": {
-      "TITLE": "Подключение Postiz",
-      "DESCRIPTION": "Сохраняем Postiz Public API key только на backend. Уже сохранённый ключ не отображается.",
-      "API_KEY_PLACEHOLDER": "Postiz API key",
-      "ORG_PLACEHOLDER": "Organization ID (опционально)",
-      "TIMEZONE_PLACEHOLDER": "Таймзона по умолчанию (опционально)",
-      "SAVE": "Сохранить подключение",
-      "TEST": "Проверить подключение",
-      "SAVED": "Подключение Postiz сохранено",
-      "SAVE_FAILED": "Не удалось сохранить подключение Postiz",
-      "TEST_OK": "Postiz подключен корректно",
-      "TEST_FAILED": "Проверка Postiz не прошла",
-      "STATUS": "Статус подключения",
-      "CONNECTED": "Подключено",
-      "TOKEN_CONFIGURED": "API key настроен"
     }
   }
 }

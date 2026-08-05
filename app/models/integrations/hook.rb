@@ -32,6 +32,7 @@ class Integrations::Hook < ApplicationRecord
   validates :account_id, presence: true
   validates :app_id, presence: true
   validates :inbox_id, presence: true, if: -> { hook_type == 'inbox' }
+  validate :ensure_registered_app, on: :create
   validate :validate_settings_json_schema
   validate :ensure_feature_enabled
   validate :ensure_required_access_token
@@ -122,6 +123,10 @@ class Integrations::Hook < ApplicationRecord
   end
 
   private
+
+  def ensure_registered_app
+    errors.add(:app_id, 'is not registered') if app.blank?
+  end
 
   def ensure_feature_enabled
     errors.add(:feature_flag, 'Feature not enabled') unless feature_allowed?
