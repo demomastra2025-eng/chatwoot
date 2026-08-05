@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
 class Reminders::AutoCancelOnIncomingService
-  CANCELLED_AFTER_INCOMING_REPLY = 'отменен после входящего ответа клиента'
+  CANCELLED_AFTER_INCOMING_REPLY = Reminders::IncomingReplyCancellationService::CANCEL_REASON
 
-  attr_reader :message
+  attr_reader :event_timestamp, :message
 
-  def initialize(message:)
+  def initialize(message:, event_timestamp: nil)
     @message = message
+    @event_timestamp = event_timestamp || message&.created_at || Time.current
   end
 
   def perform
-    return 0 unless customer_incoming_message?
+    return 0 unless Reminders::IncomingReplyCancellationService.customer_incoming_message?(message)
 
     cancel_materialized_reminders! + cancel_deferred_steps!
   end
@@ -20,26 +21,11 @@ class Reminders::AutoCancelOnIncomingService
   def cancel_materialized_reminders!
     cancelled_count = 0
     cancellable_scope.find_each do |reminder|
-      reminder.with_lock do
-        reminder.reload
-        next unless Reminder::OPEN_STATUSES.include?(reminder.status)
-        next if reminder.delivery_materialized?
-        next unless explicitly_auto_cancelled?(reminder)
+      next unless reminder_precedes_message?(reminder)
 
-        reminder.update!(
-          status: :cancelled,
-          cancelled_at: Time.current,
-          last_error: CANCELLED_AFTER_INCOMING_REPLY,
-          processing_started_at: nil
-        )
-        cancelled_count += 1
-      end
+      cancelled_count += 1 if cancel_reminder!(reminder)
     end
     cancelled_count
-  end
-
-  def customer_incoming_message?
-    message.present? && message.incoming? && !message.private? && !message.activity? && message.sender_type == 'Contact'
   end
 
   def cancellable_scope
@@ -103,18 +89,7 @@ class Reminders::AutoCancelOnIncomingService
   end
 
   def cancel_reminder!(reminder)
-    reminder.with_lock do
-      reminder.reload
-      next false unless cancellable_reminder?(reminder)
-
-      reminder.update!(
-        status: :cancelled,
-        cancelled_at: Time.current,
-        last_error: CANCELLED_AFTER_INCOMING_REPLY,
-        processing_started_at: nil
-      )
-      true
-    end
+    Reminders::IncomingReplyCancellationService.new(reminder: reminder, message: message).perform
   end
 
   def create_skipped_claim!(enrollment, step)
@@ -138,6 +113,7 @@ class Reminders::AutoCancelOnIncomingService
 
     message.account.touch_plan_enrollments
            .where(status: %w[active paused completed])
+           .where('touch_plan_enrollments.created_at < ?', event_timestamp)
            .where(
              <<~SQL.squish,
                (remindable_type = :appointment_type AND remindable_id IN (:appointment_ids)) OR
@@ -152,5 +128,18 @@ class Reminders::AutoCancelOnIncomingService
 
   def explicitly_auto_cancelled?(reminder)
     Reminders::BooleanParam.truthy?(reminder.metadata.to_h['auto_cancel_on_incoming_explicit'])
+  end
+
+  def reminder_precedes_message?(reminder)
+    trigger_message_id = automation_trigger_message_id(reminder)
+    return trigger_message_id < message.id if trigger_message_id.present?
+
+    reminder.created_at < event_timestamp
+  end
+
+  def automation_trigger_message_id(reminder)
+    Integer(reminder.metadata.to_h[Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY])
+  rescue ArgumentError, TypeError
+    nil
   end
 end

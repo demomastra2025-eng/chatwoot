@@ -37,6 +37,93 @@ RSpec.describe Reminders::AutoCancelOnIncomingService do
 
     expect(touch.reload).to be_cancelled
     expect(touch.last_error).to eq(Reminders::AutoCancelOnIncomingService::CANCELLED_AFTER_INCOMING_REPLY)
+    expect(touch.metadata).to include(
+      Reminders::IncomingReplyCancellationService::CANCELLED_VIA_KEY => 'incoming_reply',
+      Reminders::IncomingReplyCancellationService::CANCELLED_BY_MESSAGE_ID_KEY => conversation.messages.incoming.last.id
+    )
+  end
+
+  it 'preserves an automation touch caused by the current incoming message' do
+    message = incoming_message
+    rule = create(:automation_rule, account: account)
+    touch = create(
+      :reminder,
+      account: account,
+      conversation: conversation,
+      remindable: conversation,
+      status: :pending,
+      auto_cancel_on_incoming: true,
+      metadata: { 'auto_cancel_on_incoming_explicit' => true }
+    )
+    touch.mark_automation_provenance!(rule, trigger_message: message, action_key: 'legacy-index:0')
+
+    cancelled_count = described_class.new(message: message, event_timestamp: message.created_at).perform
+
+    expect(cancelled_count).to eq(0)
+    expect(touch.reload).to be_pending
+  end
+
+  it 'cancels a touch caused by an earlier incoming message' do
+    trigger_message = incoming_message
+    rule = create(:automation_rule, account: account)
+    touch = create(
+      :reminder,
+      account: account,
+      conversation: conversation,
+      remindable: conversation,
+      status: :pending,
+      auto_cancel_on_incoming: true,
+      metadata: { 'auto_cancel_on_incoming_explicit' => true }
+    )
+    touch.mark_automation_provenance!(rule, trigger_message: trigger_message, action_key: 'legacy-index:0')
+    newer_message = incoming_message
+
+    cancelled_count = described_class.new(message: newer_message, event_timestamp: newer_message.created_at).perform
+
+    expect(cancelled_count).to eq(1)
+    expect(touch.reload).to be_cancelled
+    expect(touch.metadata).to include(
+      Reminders::IncomingReplyCancellationService::CANCELLED_BY_MESSAGE_ID_KEY => newer_message.id
+    )
+  end
+
+  it 'does not cancel a touch caused by a newer message when jobs run out of order' do
+    older_message = incoming_message
+    newer_message = incoming_message
+    rule = create(:automation_rule, account: account)
+    touch = create(
+      :reminder,
+      account: account,
+      conversation: conversation,
+      remindable: conversation,
+      status: :pending,
+      auto_cancel_on_incoming: true,
+      metadata: { 'auto_cancel_on_incoming_explicit' => true }
+    )
+    touch.mark_automation_provenance!(rule, trigger_message: newer_message, action_key: 'legacy-index:0')
+
+    cancelled_count = described_class.new(message: older_message, event_timestamp: older_message.created_at).perform
+
+    expect(cancelled_count).to eq(0)
+    expect(touch.reload).to be_pending
+  end
+
+  it 'preserves an untagged touch created after the event timestamp' do
+    message = incoming_message
+    touch = create(
+      :reminder,
+      account: account,
+      conversation: conversation,
+      remindable: conversation,
+      status: :pending,
+      auto_cancel_on_incoming: true,
+      metadata: { 'auto_cancel_on_incoming_explicit' => true }
+    )
+
+    cancelled_count = described_class.new(message: message, event_timestamp: message.created_at).perform
+
+    expect(cancelled_count).to eq(0)
+    expect(touch.reload).to be_pending
   end
 
   it 'clears processing_started_at when cancelling a touch that was being processed' do

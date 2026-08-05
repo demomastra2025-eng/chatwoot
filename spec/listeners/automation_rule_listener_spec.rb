@@ -240,7 +240,12 @@ describe AutomationRuleListener do
       it 'calls AutomationRules::ActionService if conditions match' do
         allow(condition_match).to receive(:present?).and_return(true)
         listener.message_created(event)
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(
+          automation_rule,
+          account,
+          conversation,
+          trigger_message: message
+        )
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match' do
@@ -305,7 +310,12 @@ describe AutomationRuleListener do
 
         listener.message_created(event)
 
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(
+          automation_rule,
+          account,
+          conversation,
+          trigger_message: message
+        )
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match based on content' do

@@ -1,22 +1,25 @@
 class AutomationRules::ActionService < ActionService
-  def initialize(rule, account, conversation)
+  def initialize(rule, account, conversation, trigger_message: nil)
     super(conversation)
     @rule = rule
     @account = account
+    @trigger_message = trigger_message
     Current.executed_by = rule
   end
 
   def perform
-    @rule.actions.each do |action|
+    @rule.actions.each_with_index do |action, index|
       @conversation.reload
       action = action.with_indifferent_access
       begin
         @current_action_id = action[:action_id]
+        @current_action_key = @current_action_id.presence || "legacy-index:#{index}"
         send(action[:action_name], action[:action_params])
       rescue StandardError => e
         ChatwootExceptionTracker.new(e, account: @account).capture_exception
       ensure
         @current_action_id = nil
+        @current_action_key = nil
       end
     end
   ensure
@@ -55,7 +58,11 @@ class AutomationRules::ActionService < ActionService
   end
 
   def create_touch(action_params)
-    touch_action_service.create_touch(action_params, action_id: @current_action_id)
+    touch_action_service.create_touch(
+      action_params,
+      action_id: @current_action_id,
+      action_key: @current_action_key
+    )
   end
 
   def cancel_touches(action_params)
@@ -85,7 +92,8 @@ class AutomationRules::ActionService < ActionService
       rule: @rule,
       account: @account,
       record: @conversation,
-      entity_kind: 'conversation'
+      entity_kind: 'conversation',
+      trigger_message: @trigger_message
     )
   end
 end

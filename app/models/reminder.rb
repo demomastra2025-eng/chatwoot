@@ -89,6 +89,8 @@ class Reminder < ApplicationRecord
   POST_DELIVERY_ACTIONS = [POST_DELIVERY_ACTION_RESOLVE_CONVERSATION].freeze
   POST_DELIVERY_AUDIT_SOURCE_KEY = 'post_delivery_audit_source'.freeze
   POST_DELIVERY_AUTOMATION_RULE_ID_KEY = 'post_delivery_automation_rule_id'.freeze
+  AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
+  AUTOMATION_ACTION_KEY = 'automation_action_key'.freeze
   TRANSIENT_METADATA_KEYS = [
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
@@ -97,7 +99,12 @@ class Reminder < ApplicationRecord
     POST_DELIVERY_ACTION_EXECUTED_AT_KEY
   ].freeze
   INTERNAL_METADATA_KEYS = (
-    TRANSIENT_METADATA_KEYS + [POST_DELIVERY_AUDIT_SOURCE_KEY, POST_DELIVERY_AUTOMATION_RULE_ID_KEY]
+    TRANSIENT_METADATA_KEYS + [
+      POST_DELIVERY_AUDIT_SOURCE_KEY,
+      POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
+      AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
+      AUTOMATION_ACTION_KEY
+    ]
   ).freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
   RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY = 'fixed_time_of_day'.freeze
@@ -283,18 +290,16 @@ class Reminder < ApplicationRecord
     remindable
   end
 
-  def mark_automation_provenance!(automation_rule)
+  def mark_automation_provenance!(automation_rule, trigger_message: nil, action_key: nil)
     unless automation_rule.is_a?(AutomationRule) && automation_rule.account_id == account_id
       raise ArgumentError, 'Automation rule must belong to the reminder account'
     end
 
+    validate_automation_trigger_message!(trigger_message)
+    provenance = automation_provenance(automation_rule, trigger_message, action_key)
+
     with_internal_metadata_write do
-      update!(
-        metadata: metadata.to_h.merge(
-          POST_DELIVERY_AUTOMATION_RULE_ID_KEY => automation_rule.id,
-          POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation'
-        )
-      )
+      update!(metadata: metadata.to_h.merge(provenance))
     end
   end
 
@@ -642,6 +647,26 @@ class Reminder < ApplicationRecord
 
   def anchor_conversation
     target_conversation || conversation || (remindable if remindable.is_a?(Conversation))
+  end
+
+  def automation_conversation_id
+    target_conversation_id || conversation_id || (remindable_id if remindable_type == 'Conversation')
+  end
+
+  def automation_provenance(automation_rule, trigger_message, action_key)
+    {
+      POST_DELIVERY_AUTOMATION_RULE_ID_KEY => automation_rule.id,
+      POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
+      AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message&.id,
+      AUTOMATION_ACTION_KEY => action_key.presence&.to_s
+    }.compact
+  end
+
+  def validate_automation_trigger_message!(trigger_message)
+    return if trigger_message.blank?
+    return if trigger_message.account_id == account_id && trigger_message.conversation_id == automation_conversation_id
+
+    raise ArgumentError, 'Automation trigger message must belong to the reminder conversation'
   end
 
   def last_conversation_message_at(message_type)

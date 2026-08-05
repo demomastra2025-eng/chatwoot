@@ -173,6 +173,98 @@ RSpec.describe AutomationRules::ActionService do
       end
     end
 
+    describe '#perform with a legacy message-triggered create_touch action' do
+      let(:trigger_message) do
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: conversation.contact,
+          message_type: :incoming,
+          private: false
+        )
+      end
+      let(:legacy_action) do
+        {
+          'action_name' => 'create_touch',
+          'action_params' => [{
+            'body' => 'Close after inactivity',
+            'delay_minutes' => 1380,
+            'auto_cancel_on_incoming' => true,
+            'post_delivery_action' => 'resolve_conversation'
+          }]
+        }
+      end
+
+      before do
+        # Reproduce an action persisted before action IDs were normalized.
+        # rubocop:disable Rails/SkipsModelValidations
+        rule.update_column(:actions, [legacy_action])
+        # rubocop:enable Rails/SkipsModelValidations
+      end
+
+      it 'is idempotent, preserves the current touch, and cancels it on the next incoming message' do
+        service = described_class.new(rule.reload, account, conversation, trigger_message: trigger_message)
+
+        expect do
+          service.perform
+          described_class.new(rule.reload, account, conversation, trigger_message: trigger_message).perform
+        end.to change { account.reminders.where(remindable: conversation).count }.by(1)
+
+        touch = account.reminders.find_by!(remindable: conversation)
+        expect(touch.metadata).to include(
+          Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message.id,
+          Reminder::AUTOMATION_ACTION_KEY => 'legacy-index:0'
+        )
+
+        current_count = Reminders::AutoCancelOnIncomingService.new(
+          message: trigger_message,
+          event_timestamp: trigger_message.created_at
+        ).perform
+        expect(current_count).to eq(0)
+        expect(touch.reload).to be_pending
+
+        next_message = create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: conversation.contact,
+          message_type: :incoming,
+          private: false
+        )
+        next_count = Reminders::AutoCancelOnIncomingService.new(
+          message: next_message,
+          event_timestamp: next_message.created_at
+        ).perform
+
+        expect(next_count).to eq(1)
+        expect(touch.reload).to be_cancelled
+      end
+
+      it 'cancels a stale touch when a newer incoming message already exists' do
+        trigger_message
+        newer_message = create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          sender: conversation.contact,
+          message_type: :incoming,
+          private: false
+        )
+
+        described_class.new(rule.reload, account, conversation, trigger_message: trigger_message).perform
+
+        touch = account.reminders.find_by!(remindable: conversation)
+        expect(touch).to be_cancelled
+        expect(touch.metadata).to include(
+          Reminders::IncomingReplyCancellationService::CANCELLED_BY_MESSAGE_ID_KEY => newer_message.id
+        )
+      end
+    end
+
     describe '#perform with send_email_to_team action' do
       let!(:team) { create(:team, account: account) }
 

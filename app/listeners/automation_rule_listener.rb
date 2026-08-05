@@ -38,7 +38,9 @@ class AutomationRuleListener < BaseListener
     rules.each do |rule|
       conditions_match = ::AutomationRules::ConditionsFilterService.new(rule, message.conversation,
                                                                         { message: message, changed_attributes: changed_attributes }).perform
-      ::AutomationRules::ActionService.new(rule, account, message.conversation).perform if conditions_match.present?
+      next if conditions_match.blank?
+
+      ::AutomationRules::ActionService.new(rule, account, message.conversation, trigger_message: message).perform
     end
   end
 
