@@ -700,7 +700,10 @@ RSpec.describe Reminders::ExecuteService do
               'language' => 'ru',
               'status' => 'APPROVED',
               'parameter_format' => 'POSITIONAL',
-              'components' => [{ 'type' => 'BODY', 'text' => 'Запись {{1}} в {{2}}, результат до {{3}}' }]
+              'components' => [
+                { 'type' => 'BODY', 'text' => 'Запись {{1}} в {{2}}, результат до {{3}}' },
+                { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'QUICK_REPLY', 'text' => 'Подтвердить' }] }
+              ]
             }
           ]
         )
@@ -722,6 +725,45 @@ RSpec.describe Reminders::ExecuteService do
           message: message
         ).call
         expect(meta_components.dig(0, :parameters).pluck(:text)).to eq(['13.07.2026', '09:05', '14:00'])
+      end
+
+      it 'materializes an exact confirmation token and confirms the linked appointment idempotently' do
+        travel_to(Time.utc(2026, 7, 12, 10, 0)) do
+          appointment_reminder.update!(response_action: 'confirm_appointment', response_button_index: 0)
+
+          described_class.new(reminder: appointment_reminder).perform
+
+          message = conversation.messages.outgoing.last
+          request = appointment_reminder.reload.confirmation_request
+          template_params = message.additional_attributes['template_params']
+          _, _, _, meta_components = Whatsapp::TemplateProcessorService.new(
+            channel: whatsapp_channel,
+            template_params: template_params,
+            message: message
+          ).call
+          button_component = meta_components.find { |component| component[:type] == 'button' }
+
+          expect(request).to be_present
+          expect(request.delivery_message).to eq(message)
+          expect(message.content_attributes).to include('confirmation_request_id' => request.id)
+          expect(button_component.dig(:parameters, 0)).to eq(
+            type: 'payload',
+            payload: "confirmation:#{request.token}:confirmed"
+          )
+
+          2.times do
+            Confirmations::ResolveService.new(
+              account: account,
+              confirmation_request: request,
+              decision: 'confirmed',
+              source: 'button'
+            ).perform
+          end
+
+          expect(appointment.reload.status).to eq('confirmed')
+          expect(request.reload).to be_confirmed
+          expect(request.resolution_metadata).to include('response_action_outcome' => 'appointment_confirmed')
+        end
       end
 
       context 'when a rendered required param is blank' do

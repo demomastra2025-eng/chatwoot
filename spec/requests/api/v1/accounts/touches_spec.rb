@@ -80,6 +80,105 @@ RSpec.describe 'Touches API', type: :request do
     expect(account.reminders.count).to eq(1)
   end
 
+  describe 'appointment confirmation template validation' do
+    let(:confirmation_channel) do
+      create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        sync_templates: false,
+        validate_provider_config: false
+      )
+    end
+    let(:confirmation_conversation) do
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: confirmation_channel.inbox)
+      create(
+        :conversation,
+        account: account,
+        inbox: confirmation_channel.inbox,
+        contact: contact,
+        contact_inbox: contact_inbox
+      )
+    end
+    let(:appointment) do
+      create(
+        :scheduling_appointment,
+        account: account,
+        contact: confirmation_conversation.contact,
+        conversation: confirmation_conversation,
+        starts_at: 2.hours.from_now,
+        ends_at: 3.hours.from_now
+      )
+    end
+    let(:valid_template) do
+      {
+        'name' => 'appointment_confirmation',
+        'language' => 'ru',
+        'status' => 'APPROVED',
+        'components' => [
+          { 'type' => 'BODY', 'text' => 'Подтвердите запись' },
+          { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'QUICK_REPLY', 'text' => 'Подтвердить' }] }
+        ]
+      }
+    end
+    let(:invalid_template) do
+      valid_template.deep_dup.tap do |template|
+        template['name'] = 'appointment_confirmation_multiple'
+        template['components'].last['buttons'] << { 'type' => 'QUICK_REPLY', 'text' => 'Перенести' }
+      end
+    end
+
+    before do
+      confirmation_channel.update!(message_templates: [valid_template, invalid_template])
+    end
+
+    it 'rejects direct API creation when the template has multiple buttons' do
+      post path,
+           params: confirmation_touch_params(invalid_template['name']),
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(account.reminders).to be_empty
+    end
+
+    it 'rejects direct API updates to a template with multiple buttons' do
+      post path,
+           params: confirmation_touch_params(valid_template['name']),
+           headers: headers,
+           as: :json
+      touch = account.reminders.sole
+
+      patch "#{path}/#{touch.id}",
+            params: { template_params: { name: invalid_template['name'], language: 'ru' } },
+            headers: headers,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(touch.reload.template_params).to include('name' => valid_template['name'])
+    end
+
+    def confirmation_touch_params(template_name)
+      {
+        remindable_type: 'Scheduling::Appointment',
+        remindable_id: appointment.id,
+        conversation_id: confirmation_conversation.display_id,
+        target_conversation_id: confirmation_conversation.display_id,
+        target_inbox_id: confirmation_channel.inbox.id,
+        target_contact_id: confirmation_conversation.contact_id,
+        target_contact_inbox_id: confirmation_conversation.contact_inbox_id,
+        content_kind: 'channel_template',
+        template_params: { name: template_name, language: 'ru' },
+        response_action: 'confirm_appointment',
+        response_button_index: 0,
+        repeat_mode: 'once',
+        scheduled_at: 1.hour.from_now.iso8601,
+        timezone: 'UTC'
+      }
+    end
+  end
+
   it 'round-trips a conversation post-delivery action' do
     forged_rule = create(:automation_rule, account: account)
 

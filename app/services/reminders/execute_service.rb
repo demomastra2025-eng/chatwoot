@@ -59,13 +59,15 @@ class Reminders::ExecuteService
   def send_message_payload(conversation)
     generated_payload = reminder.agent? ? generate_captain_message(conversation, mode: :touch) : {}
     sender = generated_payload[:assistant].presence || reminder.message_sender
-    template_params = rendered_template_params(conversation, sender)
+    confirmation_request = Reminders::ConfirmationRequestService.new(reminder: reminder, conversation: conversation).perform
+    template_params = rendered_template_params(conversation, sender, confirmation_request)
 
     {
       sender: sender,
       content: generated_payload[:content].presence || reminder.renderable_body(conversation: conversation, sender: sender),
       captain_trace: generated_payload[:captain_trace],
-      template_params: template_params
+      template_params: template_params,
+      confirmation_request: confirmation_request
     }
   end
 
@@ -73,7 +75,8 @@ class Reminders::ExecuteService
     with_execution_lock do
       message = Reminders::MessageMaterializer.new(
         reminder: reminder,
-        template_params: payload[:template_params]
+        template_params: payload[:template_params],
+        confirmation_request: payload[:confirmation_request]
       ).perform(
         conversation: conversation,
         sender: payload[:sender],
@@ -193,10 +196,16 @@ class Reminders::ExecuteService
     ).perform
   end
 
-  def rendered_template_params(conversation, sender)
+  def rendered_template_params(conversation, sender, confirmation_request)
     return reminder.template_params unless reminder.channel_template?
 
     params = reminder.renderable_template_params(conversation: conversation, sender: sender)
+    if confirmation_request.present?
+      params = Reminders::ConfirmationTemplateParamsService.new(
+        reminder: reminder,
+        confirmation_request: confirmation_request
+      ).perform(params)
+    end
     Campaigns::TemplateParamsValidator.validate!(inbox: conversation.inbox, template_params: params)
     params
   end

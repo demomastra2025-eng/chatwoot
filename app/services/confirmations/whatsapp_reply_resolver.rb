@@ -36,7 +36,7 @@ class Confirmations::WhatsappReplyResolver
 
   def perform
     return text_result unless button_reply?
-    return result(false, reason: 'no_pending_request') if confirmation_request.blank?
+    return result(false, reason: request_missing_reason) if confirmation_request.blank?
     return result(false, reason: 'ambiguous') if decision.blank?
 
     Confirmations::ResolveService.new(
@@ -67,7 +67,13 @@ class Confirmations::WhatsappReplyResolver
   def confirmation_request
     return @confirmation_request if defined?(@confirmation_request)
 
-    @confirmation_request = payload_match.present? ? request_from_payload : latest_pending_request
+    @confirmation_request = if payload_match.present?
+                              request_from_payload
+                            elsif button_only_reply_context?
+                              nil
+                            else
+                              request_from_reply_context || sole_pending_request
+                            end
   end
 
   def request_from_payload
@@ -75,16 +81,64 @@ class Confirmations::WhatsappReplyResolver
 
     ConfirmationRequest
       .where(account_id: account.id, token: payload_match[:token])
+      .where(conversation_id: conversation.id, inbox_id: conversation.inbox_id)
       .active_pending
       .first
   end
 
-  def latest_pending_request
+  def request_from_reply_context
+    return if reply_context_delivery.blank?
+
+    pending_scope.find_by(delivery_message_id: reply_context_delivery.id)
+  end
+
+  def reply_context_delivery
+    return @reply_context_delivery if defined?(@reply_context_delivery)
+    return @reply_context_delivery = nil if in_reply_to_external_id.blank?
+
+    @reply_context_delivery = Message.find_by(
+      account_id: account.id,
+      inbox_id: conversation.inbox_id,
+      conversation_id: conversation.id,
+      source_id: in_reply_to_external_id
+    )
+  end
+
+  def sole_pending_request
+    requests = pending_scope.latest_first.limit(2).to_a
+    @ambiguous_pending_requests = requests.many?
+    requests.one? ? requests.first : nil
+  end
+
+  def pending_scope
     ConfirmationRequest
-      .where(account_id: account.id, conversation_id: conversation.id)
+      .where(account_id: account.id, conversation_id: conversation.id, inbox_id: conversation.inbox_id)
       .active_pending
-      .latest_first
-      .first
+      .text_resolvable
+  end
+
+  def request_missing_reason
+    return 'button_payload_required' if button_only_request_exists?
+
+    @ambiguous_pending_requests ? 'ambiguous' : 'no_pending_request'
+  end
+
+  def button_only_request_exists?
+    button_only_pending_scope.exists?
+  end
+
+  def button_only_reply_context?
+    reply_context_delivery.present? && button_only_request_scope.exists?(delivery_message_id: reply_context_delivery.id)
+  end
+
+  def button_only_pending_scope
+    button_only_request_scope.active_pending
+  end
+
+  def button_only_request_scope
+    ConfirmationRequest
+      .where(account_id: account.id, conversation_id: conversation.id, inbox_id: conversation.inbox_id)
+      .button_only_response
   end
 
   def decision
@@ -129,6 +183,10 @@ class Confirmations::WhatsappReplyResolver
 
   def button_text
     content_attributes['button_text']
+  end
+
+  def in_reply_to_external_id
+    content_attributes['in_reply_to_external_id']
   end
 
   def content_attributes

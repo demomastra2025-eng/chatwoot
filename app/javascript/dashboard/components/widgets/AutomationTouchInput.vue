@@ -61,6 +61,8 @@ const DEFAULT_TOUCH_PARAMS = {
   timezone: BROWSER_TIMEZONE,
   auto_cancel_on_incoming: false,
   post_delivery_action: '',
+  response_action: '',
+  response_button_index: '',
 };
 
 const normalizeLegacyParams = raw => {
@@ -381,7 +383,13 @@ export default {
       set(value) {
         this.emitValue({
           repeat_mode: value,
-          ...(value === 'once' ? {} : { post_delivery_action: '' }),
+          ...(value === 'once'
+            ? {}
+            : {
+                post_delivery_action: '',
+                response_action: '',
+                response_button_index: '',
+              }),
         });
       },
     },
@@ -414,6 +422,18 @@ export default {
         });
       },
     },
+    confirmAppointmentOnReply: {
+      get() {
+        return this.normalizedValue.response_action === 'confirm_appointment';
+      },
+      set(value) {
+        this.emitValue({
+          response_action: value ? 'confirm_appointment' : '',
+          response_button_index: value ? 0 : '',
+          ...(value ? { repeat_mode: 'once', repeat_until_at: '' } : {}),
+        });
+      },
+    },
     targetInboxId: {
       get() {
         return this.normalizedValue.target_inbox_id || '';
@@ -425,6 +445,8 @@ export default {
         if (this.isChannelTemplate) {
           payload.template_params = {};
           payload.body = '';
+          payload.response_action = '';
+          payload.response_button_index = '';
         }
 
         this.emitValue(payload);
@@ -464,6 +486,13 @@ export default {
         (this.allInboxes || []).find(
           inbox => Number(inbox.id) === Number(this.targetInboxId)
         ) || null
+      );
+    },
+    isOfficialWhatsAppCloudTarget() {
+      return (
+        (this.selectedTargetInbox?.channelType ||
+          this.selectedTargetInbox?.channel_type) === 'Channel::Whatsapp' &&
+        this.selectedTargetInbox?.provider === 'whatsapp_cloud'
       );
     },
     targetInboxSupportsTemplates() {
@@ -515,6 +544,23 @@ export default {
         this.selectedTemplateGroup.variants.find(
           template => template.language === this.templateLanguage
         ) || null
+      );
+    },
+    selectedTemplateButtons() {
+      const buttonComponent = (this.selectedTemplate?.components || []).find(
+        component => component?.type?.toUpperCase() === 'BUTTONS'
+      );
+
+      return buttonComponent?.buttons || [];
+    },
+    canConfigureAppointmentConfirmation() {
+      const [onlyButton] = this.selectedTemplateButtons;
+      return (
+        this.entityKey === 'appointment' &&
+        this.isChannelTemplate &&
+        this.isOfficialWhatsAppCloudTarget &&
+        this.selectedTemplateButtons.length === 1 &&
+        onlyButton?.type?.toUpperCase() === 'QUICK_REPLY'
       );
     },
     hasTemplateCatalog() {
@@ -779,6 +825,22 @@ export default {
         delete cleaned.post_delivery_action;
       }
 
+      const responseButtonIndex = Number(cleaned.response_button_index);
+      const validAppointmentResponse =
+        this.entityKey === 'appointment' &&
+        this.canConfigureAppointmentConfirmation &&
+        cleaned.content_kind === 'channel_template' &&
+        cleaned.repeat_mode === 'once' &&
+        cleaned.response_action === 'confirm_appointment' &&
+        responseButtonIndex === 0;
+
+      if (validAppointmentResponse) {
+        cleaned.response_button_index = responseButtonIndex;
+      } else {
+        delete cleaned.response_action;
+        delete cleaned.response_button_index;
+      }
+
       return cleaned;
     },
     emitValue(partial) {
@@ -833,6 +895,8 @@ export default {
         {
           body: template ? getTemplateBodyPreview(template) : '',
           target_inbox_id: this.targetInboxId,
+          response_action: '',
+          response_button_index: '',
         }
       );
     },
@@ -845,6 +909,8 @@ export default {
       this.emitTemplateParams(this.templateParamsFor(template, {}), {
         body: template ? getTemplateBodyPreview(template) : '',
         target_inbox_id: this.targetInboxId,
+        response_action: '',
+        response_button_index: '',
       });
     },
     handleTemplateStateChange(payload) {
@@ -1041,6 +1107,37 @@ export default {
             />
           </template>
         </TouchMessageComposer>
+
+        <div
+          v-if="canConfigureAppointmentConfirmation"
+          class="grid gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3"
+        >
+          <label
+            class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 text-sm"
+          >
+            <Checkbox
+              class="mt-0.5 shrink-0"
+              :model-value="confirmAppointmentOnReply"
+              @update:model-value="confirmAppointmentOnReply = $event"
+            />
+            <span class="min-w-0">
+              <span class="block font-medium text-n-slate-12">
+                {{
+                  $t(
+                    'AUTOMATION.ACTION.TOUCH_EDITOR.APPOINTMENT_CONFIRMATION_LABEL'
+                  )
+                }}
+              </span>
+              <span class="mt-1 block text-xs leading-5 text-n-slate-10">
+                {{
+                  $t(
+                    'AUTOMATION.ACTION.TOUCH_EDITOR.APPOINTMENT_CONFIRMATION_DESCRIPTION'
+                  )
+                }}
+              </span>
+            </span>
+          </label>
+        </div>
       </div>
     </SchedulingFormFieldGroup>
 

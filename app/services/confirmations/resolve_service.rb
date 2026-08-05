@@ -27,21 +27,7 @@ class Confirmations::ResolveService
   def perform
     validate_input!
 
-    expired = false
-    resolved_request = scoped_request.with_lock do
-      if idempotent_resolution?
-        scoped_request
-      elsif !scoped_request.pending?
-        raise ArgumentError, "confirmation request already #{scoped_request.status}"
-      elsif scoped_request.past_due?
-        expire_request!
-        expired = true
-        scoped_request
-      else
-        scoped_request.update!(resolution_attributes)
-        scoped_request
-      end
-    end
+    resolved_request, expired = scoped_request.with_lock { resolve_locked_request }
 
     raise Confirmations::ExpiredRequestError, 'confirmation request expired' if expired
 
@@ -52,6 +38,19 @@ class Confirmations::ResolveService
   private
 
   attr_reader :account, :confirmation_request, :decision, :source, :actor, :message, :confidence, :metadata
+
+  def resolve_locked_request
+    return [scoped_request, false] if idempotent_resolution?
+
+    raise ArgumentError, "confirmation request already #{scoped_request.status}" unless scoped_request.pending?
+    return [expire_request!('expired'), true] if scoped_request.past_due?
+
+    response_action_outcome = apply_response_action!
+    return [expire_request!('subject_not_confirmable'), true] if response_action_outcome == 'subject_not_confirmable'
+
+    scoped_request.update!(resolution_attributes(response_action_outcome))
+    [scoped_request, false]
+  end
 
   def enqueue_provider_command_resolution(resolved_request)
     return if resolved_request.metadata.to_h['medelement_provider_command_id'].blank?
@@ -86,16 +85,16 @@ class Confirmations::ResolveService
     !scoped_request.pending? && scoped_request.status == decision
   end
 
-  def expire_request!
+  def expire_request!(reason)
     scoped_request.update!(
       status: 'expired',
       resolved_at: Time.current,
       resolution_source: 'system',
-      resolution_metadata: scoped_request.resolution_metadata.to_h.merge('reason' => 'expired')
+      resolution_metadata: scoped_request.resolution_metadata.to_h.merge('reason' => reason)
     )
   end
 
-  def resolution_attributes
+  def resolution_attributes(response_action_outcome)
     {
       status: decision,
       resolved_at: Time.current,
@@ -103,8 +102,18 @@ class Confirmations::ResolveService
       resolved_message: message,
       resolution_source: source,
       resolution_confidence: confidence,
-      resolution_metadata: scoped_request.resolution_metadata.to_h.merge(metadata.to_h.as_json).merge(actor_metadata)
+      resolution_metadata: scoped_request.resolution_metadata.to_h
+                                         .merge(metadata.to_h.as_json)
+                                         .merge(actor_metadata)
+                                         .merge('response_action_outcome' => response_action_outcome)
     }
+  end
+
+  def apply_response_action!
+    Confirmations::ResponseActionService.new(
+      confirmation_request: scoped_request,
+      decision: decision
+    ).perform
   end
 
   def user_actor

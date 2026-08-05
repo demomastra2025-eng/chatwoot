@@ -15,6 +15,7 @@ class Reminders::DeferredAutomationActionPolicy
       supported_timing? &&
       (definition[:repeat_mode].presence || 'once') == 'once' &&
       definition[:post_delivery_action].blank? &&
+      definition[:response_action].blank? &&
       !Reminders::BooleanParam.truthy?(definition[:manual_schedule_override])
   end
 

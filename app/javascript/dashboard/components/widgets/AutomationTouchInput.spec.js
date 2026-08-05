@@ -10,7 +10,13 @@ const whatsappTemplates = [
     language: 'en',
     category: 'UTILITY',
     status: 'APPROVED',
-    components: [{ type: 'BODY', text: 'Hello {{1}}' }],
+    components: [
+      { type: 'BODY', text: 'Hello {{1}}' },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'QUICK_REPLY', text: 'Confirm' }],
+      },
+    ],
   },
   {
     name: 'welcome_message',
@@ -18,13 +24,24 @@ const whatsappTemplates = [
     language: 'ru',
     category: 'MARKETING',
     status: 'APPROVED',
-    components: [{ type: 'BODY', text: 'Здравствуйте {{1}}' }],
+    components: [
+      { type: 'BODY', text: 'Здравствуйте {{1}}' },
+      {
+        type: 'BUTTONS',
+        buttons: [{ type: 'QUICK_REPLY', text: 'Подтвердить' }],
+      },
+    ],
   },
 ];
 
 const defaultStoreGetters = {
   'inboxes/getAllInboxes': [
-    { id: 7, name: 'Official WhatsApp', channelType: 'Channel::Whatsapp' },
+    {
+      id: 7,
+      name: 'Official WhatsApp',
+      channelType: 'Channel::Whatsapp',
+      provider: 'whatsapp_cloud',
+    },
     {
       id: 8,
       name: 'Twilio WhatsApp',
@@ -344,6 +361,78 @@ describe('AutomationTouchInput', () => {
         processed_params: {},
       },
     });
+  });
+
+  it('enables appointment confirmation for a template with exactly one quick-reply button', () => {
+    const wrapper = mountComponent({
+      eventName: 'appointment_created',
+      modelValue: {
+        content_kind: 'channel_template',
+        target_inbox_id: 7,
+        template_params: {
+          name: 'welcome_message',
+          language: 'en',
+        },
+      },
+    });
+
+    expect(wrapper.vm.canConfigureAppointmentConfirmation).toBe(true);
+    expect(wrapper.vm.selectedTemplateButtons).toEqual([
+      { type: 'QUICK_REPLY', text: 'Confirm' },
+    ]);
+
+    wrapper.vm.confirmAppointmentOnReply = true;
+    const payload = wrapper.emitted('update:modelValue').at(-1)[0];
+
+    expect(payload).toMatchObject({
+      response_action: 'confirm_appointment',
+      response_button_index: 0,
+      repeat_mode: 'once',
+    });
+  });
+
+  it.each([
+    ['without buttons', []],
+    [
+      'with multiple buttons',
+      [
+        { type: 'QUICK_REPLY', text: 'Confirm' },
+        { type: 'QUICK_REPLY', text: 'Reschedule' },
+      ],
+    ],
+  ])('hides appointment confirmation for a template %s', (_label, buttons) => {
+    const restrictedTemplate = {
+      name: 'restricted_template',
+      namespace: 'ns_restricted',
+      language: 'en',
+      category: 'UTILITY',
+      status: 'APPROVED',
+      components: [
+        { type: 'BODY', text: 'Appointment reminder' },
+        { type: 'BUTTONS', buttons },
+      ],
+    };
+    const wrapper = mountComponent({
+      eventName: 'appointment_created',
+      modelValue: {
+        content_kind: 'channel_template',
+        target_inbox_id: 7,
+        template_params: {
+          name: restrictedTemplate.name,
+          language: restrictedTemplate.language,
+        },
+      },
+      storeGetters: {
+        'inboxes/getFilteredWhatsAppTemplates': () => [restrictedTemplate],
+      },
+    });
+
+    expect(wrapper.vm.canConfigureAppointmentConfirmation).toBe(false);
+
+    wrapper.vm.confirmAppointmentOnReply = true;
+    const payload = wrapper.emitted('update:modelValue').at(-1)[0];
+    expect(payload).not.toHaveProperty('response_action');
+    expect(payload).not.toHaveProperty('response_button_index');
   });
 
   it('limits variables, field scopes, and relative anchors to the automation entity context', () => {

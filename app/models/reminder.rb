@@ -26,6 +26,8 @@
 #  remindable_type             :string
 #  repeat_mode                 :integer          default("once"), not null
 #  repeat_until_at             :datetime
+#  response_action             :string
+#  response_button_index       :integer
 #  schedule_revision           :integer          default(0), not null
 #  scheduled_at                :datetime
 #  status                      :integer          default("draft"), not null
@@ -87,6 +89,8 @@ class Reminder < ApplicationRecord
   POST_DELIVERY_ACTION_EXECUTED_AT_KEY = 'post_delivery_action_executed_at'.freeze
   POST_DELIVERY_ACTION_RESOLVE_CONVERSATION = 'resolve_conversation'.freeze
   POST_DELIVERY_ACTIONS = [POST_DELIVERY_ACTION_RESOLVE_CONVERSATION].freeze
+  RESPONSE_ACTION_CONFIRM_APPOINTMENT = 'confirm_appointment'.freeze
+  RESPONSE_ACTIONS = [RESPONSE_ACTION_CONFIRM_APPOINTMENT].freeze
   POST_DELIVERY_AUDIT_SOURCE_KEY = 'post_delivery_audit_source'.freeze
   POST_DELIVERY_AUTOMATION_RULE_ID_KEY = 'post_delivery_automation_rule_id'.freeze
   AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
@@ -145,6 +149,8 @@ class Reminder < ApplicationRecord
   belongs_to :reminder_group, optional: true
   belongs_to :remindable, polymorphic: true, optional: true
 
+  has_one :confirmation_request, dependent: :nullify
+
   has_many_attached :files
   account_storage_attachments :files
 
@@ -185,6 +191,7 @@ class Reminder < ApplicationRecord
   validates :relative_time_mode, inclusion: { in: RELATIVE_TIME_MODES }
   validates :relative_anchor, inclusion: { in: RELATIVE_ANCHORS }, allow_blank: true
   validates :post_delivery_action, inclusion: { in: POST_DELIVERY_ACTIONS }, allow_blank: true
+  validates :response_action, inclusion: { in: RESPONSE_ACTIONS }, allow_blank: true
   validate :validate_account_matches
   validate :validate_target_associations
   validate :validate_json_field_shapes
@@ -192,6 +199,7 @@ class Reminder < ApplicationRecord
   validate :validate_delivery_policy
   validate :validate_repeat_requirements
   validate :validate_post_delivery_action
+  validate :validate_response_action
   validate :validate_relative_time_of_day
   validate :validate_open_duplicate_absence
 
@@ -400,6 +408,10 @@ class Reminder < ApplicationRecord
     !once?
   end
 
+  def confirm_appointment_on_reply?
+    response_action == RESPONSE_ACTION_CONFIRM_APPOINTMENT
+  end
+
   def fixed_relative_time_of_day?
     relative_time_mode == RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY
   end
@@ -605,6 +617,7 @@ class Reminder < ApplicationRecord
       content_kind,
       text_mode,
       post_delivery_action,
+      response_fingerprint,
       body.to_s.strip,
       instructions.to_s.strip,
       template_params.to_json,
@@ -867,6 +880,44 @@ class Reminder < ApplicationRecord
     errors.add(:post_delivery_action, 'is only supported for one-time touches') unless once?
     errors.add(:post_delivery_action, 'is only supported for conversation touches') unless remindable.is_a?(Conversation)
     errors.add(:post_delivery_action, 'requires matching conversation references') if post_delivery_conversation.blank?
+  end
+
+  def validate_response_action
+    return if response_action.blank? && response_button_index.blank?
+
+    validate_response_action_shape
+    validate_response_action_context
+  end
+
+  def validate_response_action_shape
+    errors.add(:response_action, 'is only supported for appointment confirmations') unless confirm_appointment_on_reply?
+    errors.add(:response_action, 'is only supported for message touches') unless send_message?
+    errors.add(:response_action, 'is only supported for channel templates') unless channel_template?
+    errors.add(:response_action, 'is only supported for one-time touches') unless once?
+  end
+
+  def validate_response_action_context
+    errors.add(:response_action, 'is only supported for appointment touches') unless remindable.is_a?(Scheduling::Appointment)
+    errors.add(:response_button_index, 'must be 0') unless response_button_index.to_s == '0'
+    errors.add(:target_inbox, 'must be an official WhatsApp Cloud inbox') unless whatsapp_cloud_target?
+    errors.add(:template_params, 'must select an approved template with exactly one quick-reply button') unless valid_confirmation_template?
+  end
+
+  def valid_confirmation_template?
+    Reminders::ConfirmationTemplateValidator.new(
+      account: account,
+      inbox: target_inbox,
+      template_params: template_params,
+      button_index: response_button_index
+    ).valid?
+  end
+
+  def response_fingerprint
+    [response_action, response_button_index].join(':')
+  end
+
+  def whatsapp_cloud_target?
+    target_inbox&.channel.is_a?(Channel::Whatsapp) && target_inbox.channel.provider == 'whatsapp_cloud'
   end
 
   def validate_relative_time_of_day

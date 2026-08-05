@@ -1073,6 +1073,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
     t.string "idempotency_key"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "reminder_id"
     t.index ["account_id", "idempotency_key"], name: "index_confirmation_requests_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "status", "conversation_id"], name: "idx_on_account_id_status_conversation_id_2babc633ce"
     t.index ["account_id", "subject_type", "subject_id"], name: "idx_confirmation_requests_on_account_subject"
@@ -1081,6 +1082,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
     t.index ["conversation_id"], name: "index_confirmation_requests_on_conversation_id"
     t.index ["delivery_message_id"], name: "index_confirmation_requests_on_delivery_message_id"
     t.index ["inbox_id"], name: "index_confirmation_requests_on_inbox_id"
+    t.index ["reminder_id"], name: "index_confirmation_requests_on_reminder_id", unique: true
     t.index ["requested_by_id"], name: "index_confirmation_requests_on_requested_by_id"
     t.index ["resolved_by_id"], name: "index_confirmation_requests_on_resolved_by_id"
     t.index ["resolved_message_id"], name: "index_confirmation_requests_on_resolved_message_id"
@@ -2341,6 +2343,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
     t.integer "schedule_revision", default: 0, null: false
     t.datetime "last_materialized_anchor_at"
     t.string "post_delivery_action"
+    t.string "response_action"
+    t.integer "response_button_index"
     t.index ["account_id", "fingerprint"], name: "idx_reminders_on_account_fingerprint"
     t.index ["account_id", "owner_id", "scheduled_at"], name: "idx_reminders_on_account_owner_scheduled"
     t.index ["account_id", "repeat_mode", "scheduled_at"], name: "idx_reminders_on_account_repeat_scheduled"
@@ -2356,6 +2360,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
     t.index ["target_conversation_id"], name: "index_reminders_on_target_conversation_id"
     t.index ["target_inbox_id"], name: "index_reminders_on_target_inbox_id"
     t.check_constraint "post_delivery_action IS NULL OR post_delivery_action::text = 'resolve_conversation'::text AND action_type = 0 AND repeat_mode = 0 AND remindable_type::text = 'Conversation'::text AND remindable_id IS NOT NULL AND conversation_id = remindable_id AND target_conversation_id = remindable_id", name: "reminders_post_delivery_action_supported"
+    t.check_constraint "response_action IS NULL AND response_button_index IS NULL OR response_action::text = 'confirm_appointment'::text AND response_button_index = 0 AND action_type = 0 AND content_kind = 1 AND repeat_mode = 0 AND remindable_type::text = 'Scheduling::Appointment'::text AND remindable_id IS NOT NULL", name: "reminders_response_action_supported"
   end
 
   create_table "reporting_events", force: :cascade do |t|
@@ -3232,6 +3237,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
   add_foreign_key "confirmation_requests", "inboxes"
   add_foreign_key "confirmation_requests", "messages", column: "delivery_message_id"
   add_foreign_key "confirmation_requests", "messages", column: "resolved_message_id"
+  add_foreign_key "confirmation_requests", "reminders"
   add_foreign_key "confirmation_requests", "users", column: "requested_by_id"
   add_foreign_key "confirmation_requests", "users", column: "resolved_by_id"
   add_foreign_key "contact_channel_profiles", "accounts"

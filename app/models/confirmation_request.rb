@@ -25,6 +25,7 @@
 #  conversation_id       :bigint
 #  delivery_message_id   :bigint
 #  inbox_id              :bigint
+#  reminder_id           :bigint
 #  requested_by_id       :bigint
 #  resolved_by_id        :bigint
 #  resolved_message_id   :bigint
@@ -40,6 +41,7 @@
 #  index_confirmation_requests_on_conversation_id                 (conversation_id)
 #  index_confirmation_requests_on_delivery_message_id             (delivery_message_id)
 #  index_confirmation_requests_on_inbox_id                        (inbox_id)
+#  index_confirmation_requests_on_reminder_id                     (reminder_id) UNIQUE
 #  index_confirmation_requests_on_requested_by_id                 (requested_by_id)
 #  index_confirmation_requests_on_resolved_by_id                  (resolved_by_id)
 #  index_confirmation_requests_on_resolved_message_id             (resolved_message_id)
@@ -52,6 +54,7 @@
 #  fk_rails_...  (conversation_id => conversations.id)
 #  fk_rails_...  (delivery_message_id => messages.id)
 #  fk_rails_...  (inbox_id => inboxes.id)
+#  fk_rails_...  (reminder_id => reminders.id)
 #  fk_rails_...  (requested_by_id => users.id)
 #  fk_rails_...  (resolved_by_id => users.id)
 #  fk_rails_...  (resolved_message_id => messages.id)
@@ -70,6 +73,7 @@ class ConfirmationRequest < ApplicationRecord
   belongs_to :resolved_message, class_name: 'Message', optional: true
   belongs_to :delivery_message, class_name: 'Message', optional: true
   belongs_to :subject, polymorphic: true, optional: true
+  belongs_to :reminder, optional: true
 
   enum :status, STATUSES.index_with(&:itself)
 
@@ -87,6 +91,19 @@ class ConfirmationRequest < ApplicationRecord
 
   scope :latest_first, -> { order(created_at: :desc, id: :desc) }
   scope :active_pending, -> { pending.where('expires_at IS NULL OR expires_at > ?', Time.current) }
+  scope :button_only_response, lambda {
+    where(
+      reminder_id: Reminder
+        .where(response_action: Reminder::RESPONSE_ACTION_CONFIRM_APPOINTMENT)
+        .select(:id)
+    )
+  }
+  scope :text_resolvable, lambda {
+    button_only_reminder_ids = Reminder
+                               .where(response_action: Reminder::RESPONSE_ACTION_CONFIRM_APPOINTMENT)
+                               .select(:id)
+    where(reminder_id: nil).or(where.not(reminder_id: button_only_reminder_ids))
+  }
 
   def past_due?
     pending? && expires_at.present? && expires_at <= Time.current
@@ -119,7 +136,8 @@ class ConfirmationRequest < ApplicationRecord
       resolved_by: resolved_by,
       resolved_message: resolved_message,
       delivery_message: delivery_message,
-      subject: subject
+      subject: subject,
+      reminder: reminder
     }.each do |name, record|
       next if record.blank?
       next if record_belongs_to_account?(record)

@@ -7,6 +7,7 @@ class AutomationRules::TouchActionService
     action_type attachments auto_cancel_on_incoming body content_kind conversation_id
     instructions manual_schedule_override metadata owner_id relative_anchor relative_offset_seconds
     post_delivery_action relative_time_mode relative_time_of_day reminder_group_id repeat_mode repeat_until_at scheduled_at
+    response_action response_button_index
     target_contact_id target_contact_inbox_id target_conversation_id target_inbox_id template_params text_mode timing_mode timezone
   ].freeze
 
@@ -273,6 +274,7 @@ class AutomationRules::TouchActionService
     raise ArgumentError, 'create_touch timing is invalid' unless touch_timing_supported?(params)
 
     validate_post_delivery_action!(params)
+    validate_response_action!(params)
 
     params
   end
@@ -291,6 +293,37 @@ class AutomationRules::TouchActionService
     entity_kind == 'conversation' &&
       action.in?(Reminder::POST_DELIVERY_ACTIONS) &&
       (params[:action_type].presence || 'send_message').to_s == 'send_message'
+  end
+
+  def validate_response_action!(params)
+    action = params[:response_action].to_s.presence
+    button_index = params[:response_button_index]
+    return if action.blank? && button_index.blank?
+
+    return if valid_response_action?(params, action, button_index)
+
+    raise ArgumentError, 'create_touch response_action is invalid'
+  end
+
+  def valid_response_action?(params, action, button_index)
+    entity_kind == 'appointment' &&
+      action == Reminder::RESPONSE_ACTION_CONFIRM_APPOINTMENT &&
+      button_index.to_s == '0' &&
+      (params[:action_type].presence || 'send_message').to_s == 'send_message' &&
+      params[:content_kind].to_s == 'channel_template' &&
+      (params[:repeat_mode].presence || 'once').to_s == 'once' &&
+      valid_confirmation_template_button?(params, button_index.to_i)
+  end
+
+  def valid_confirmation_template_button?(params, button_index)
+    inbox = account.inboxes.find_by(id: params[:target_inbox_id].presence || record.try(:conversation)&.inbox_id)
+
+    Reminders::ConfirmationTemplateValidator.new(
+      account: account,
+      inbox: inbox,
+      template_params: params[:template_params],
+      button_index: button_index
+    ).valid?
   end
 
   def first_action_param(action_params)

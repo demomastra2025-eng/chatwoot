@@ -118,4 +118,130 @@ RSpec.describe Confirmations::ResolveService do
     expect(request.reload).to be_expired
     expect(request.resolution_source).to eq('system')
   end
+
+  it 'treats confirmation buttons from multiple messages for the same appointment as one idempotent outcome' do
+    cloud_account = create(:account, limits: { non_web_inboxes: 10 })
+    channel = create(
+      :channel_whatsapp,
+      account: cloud_account,
+      provider: 'whatsapp_cloud',
+      sync_templates: false,
+      validate_provider_config: false
+    )
+    channel.update!(
+      message_templates: [
+        {
+          'name' => 'appointment_confirmation',
+          'language' => 'ru',
+          'status' => 'APPROVED',
+          'components' => [
+            { 'type' => 'BODY', 'text' => 'Подтвердите запись' },
+            { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'QUICK_REPLY', 'text' => 'Подтвердить' }] }
+          ]
+        }
+      ]
+    )
+    contact = create(:contact, account: cloud_account)
+    contact_inbox = create(:contact_inbox, contact: contact, inbox: channel.inbox)
+    cloud_conversation = create(
+      :conversation,
+      account: cloud_account,
+      inbox: channel.inbox,
+      contact: contact,
+      contact_inbox: contact_inbox
+    )
+    appointment = create(
+      :scheduling_appointment,
+      account: cloud_account,
+      contact: contact,
+      conversation: cloud_conversation,
+      starts_at: 1.day.from_now,
+      ends_at: 1.day.from_now + 30.minutes
+    )
+    touch_attributes = {
+      account: cloud_account,
+      conversation: cloud_conversation,
+      target_conversation: cloud_conversation,
+      target_inbox: channel.inbox,
+      target_contact: contact,
+      target_contact_inbox: contact_inbox,
+      remindable: appointment,
+      content_kind: :channel_template,
+      body: nil,
+      template_params: { name: 'appointment_confirmation', language: 'ru' },
+      response_action: 'confirm_appointment',
+      response_button_index: 0
+    }
+    first_touch = create(:reminder, **touch_attributes, scheduled_at: 1.hour.from_now)
+    second_touch = create(:reminder, **touch_attributes, scheduled_at: 2.hours.from_now)
+    third_touch = create(:reminder, **touch_attributes, scheduled_at: 3.hours.from_now)
+    fourth_touch = create(:reminder, **touch_attributes, scheduled_at: 4.hours.from_now)
+    first_request = create(
+      :confirmation_request,
+      account: cloud_account,
+      conversation: cloud_conversation,
+      contact: contact,
+      inbox: channel.inbox,
+      subject: appointment,
+      reminder: first_touch,
+      expires_at: appointment.ends_at
+    )
+    second_request = create(
+      :confirmation_request,
+      account: cloud_account,
+      conversation: cloud_conversation,
+      contact: contact,
+      inbox: channel.inbox,
+      subject: appointment,
+      reminder: second_touch,
+      expires_at: appointment.ends_at
+    )
+    third_request = create(
+      :confirmation_request,
+      account: cloud_account,
+      conversation: cloud_conversation,
+      contact: contact,
+      inbox: channel.inbox,
+      subject: appointment,
+      reminder: third_touch,
+      expires_at: appointment.ends_at
+    )
+    fourth_request = create(
+      :confirmation_request,
+      account: cloud_account,
+      conversation: cloud_conversation,
+      contact: contact,
+      inbox: channel.inbox,
+      subject: appointment,
+      reminder: fourth_touch,
+      expires_at: appointment.ends_at
+    )
+
+    described_class.new(account: cloud_account, confirmation_request: first_request, decision: 'confirmed', source: 'button').perform
+    expect(first_request.reload).to be_confirmed
+    expect(appointment.reload.status).to eq('confirmed')
+
+    appointment.update!(status: 'scheduled')
+    expect(appointment.reload.status).to eq('scheduled')
+
+    described_class.new(account: cloud_account, confirmation_request: first_request.reload, decision: 'confirmed', source: 'button').perform
+
+    expect(appointment.reload.status).to eq('scheduled')
+
+    described_class.new(account: cloud_account, confirmation_request: second_request, decision: 'confirmed', source: 'button').perform
+    described_class.new(account: cloud_account, confirmation_request: third_request, decision: 'confirmed', source: 'button').perform
+
+    expect(appointment.reload.status).to eq('confirmed')
+    expect(first_request.reload.resolution_metadata).to include('response_action_outcome' => 'appointment_confirmed')
+    expect(second_request.reload.resolution_metadata).to include('response_action_outcome' => 'appointment_confirmed')
+    expect(third_request.reload.resolution_metadata).to include('response_action_outcome' => 'already_confirmed')
+
+    appointment.update!(status: 'cancelled')
+    expect do
+      described_class.new(account: cloud_account, confirmation_request: fourth_request, decision: 'confirmed', source: 'button').perform
+    end.to raise_error(Confirmations::ExpiredRequestError)
+    expect(appointment.reload.status).to eq('cancelled')
+    expect(fourth_request.reload).to be_expired
+    expect(fourth_request.resolution_metadata).to include('reason' => 'subject_not_confirmable')
+  end
 end

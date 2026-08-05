@@ -4,7 +4,7 @@ class Confirmations::CreateService
   # rubocop:disable Metrics/ParameterLists
   def initialize(
     account:, title:, body:, conversation: nil, contact: nil, inbox: nil,
-    subject: nil, expires_at: nil, requester: nil, metadata: {}, idempotency_key: nil
+    subject: nil, reminder: nil, expires_at: nil, requester: nil, metadata: {}, idempotency_key: nil
   )
     @account = account
     @title = title
@@ -13,6 +13,7 @@ class Confirmations::CreateService
     @contact = contact
     @inbox = inbox
     @subject = subject
+    @reminder = reminder
     @expires_at = expires_at
     @requester = requester
     @metadata = metadata || {}
@@ -30,7 +31,7 @@ class Confirmations::CreateService
   private
 
   attr_reader :account, :title, :body, :conversation, :contact, :inbox, :subject,
-              :expires_at, :requester, :metadata, :idempotency_key
+              :reminder, :expires_at, :requester, :metadata, :idempotency_key
 
   def existing_request
     return nil if idempotency_key.blank?
@@ -44,7 +45,8 @@ class Confirmations::CreateService
       contact: contact,
       inbox: inbox,
       requester: requester,
-      subject: subject
+      subject: subject,
+      reminder: reminder
     }.each do |name, record|
       validate_account_record!(record, name)
     end
@@ -57,6 +59,7 @@ class Confirmations::CreateService
       contact: contact || conversation&.contact,
       inbox: inbox || conversation&.inbox,
       subject: subject,
+      reminder: reminder,
       title: title,
       body: body,
       expires_at: expires_at,

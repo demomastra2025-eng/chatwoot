@@ -27,6 +27,8 @@ module Outbound::PayloadBuilder
       body: reminder.body,
       instructions: reminder.instructions,
       post_delivery_action: reminder.post_delivery_action,
+      response_action: reminder.response_action,
+      response_button_index: reminder.response_button_index,
       attachments: reminder.attachments,
       template_params: reminder.template_params,
       metadata: reminder.metadata.except(*Reminder::INTERNAL_METADATA_KEYS),

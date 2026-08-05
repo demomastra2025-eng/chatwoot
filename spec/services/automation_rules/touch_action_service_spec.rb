@@ -105,6 +105,84 @@ RSpec.describe AutomationRules::TouchActionService do
       end.to raise_error(ArgumentError, 'create_touch post_delivery_action is invalid')
     end
 
+    it 'persists an exact quick-reply confirmation action for an appointment touch' do
+      allow(Outbound::DeliveryPolicy).to receive(:ensure!).and_return(nil)
+      channel = create(
+        :channel_whatsapp,
+        account: account,
+        provider: 'whatsapp_cloud',
+        sync_templates: false,
+        validate_provider_config: false
+      )
+      channel.update!(
+        message_templates: [
+          {
+            'name' => 'appointment_confirmation',
+            'language' => 'ru',
+            'status' => 'APPROVED',
+            'components' => [
+              { 'type' => 'BODY', 'text' => 'Подтвердите запись' },
+              { 'type' => 'BUTTONS', 'buttons' => [{ 'type' => 'QUICK_REPLY', 'text' => 'Подтвердить' }] }
+            ]
+          }
+        ]
+      )
+      cloud_contact_inbox = create(:contact_inbox, contact: contact, inbox: channel.inbox)
+      cloud_conversation = create(
+        :conversation,
+        account: account,
+        inbox: channel.inbox,
+        contact: contact,
+        contact_inbox: cloud_contact_inbox
+      )
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        conversation: cloud_conversation,
+        starts_at: 2.hours.from_now,
+        ends_at: 3.hours.from_now
+      )
+      appointment_service = described_class.new(
+        rule: rule,
+        account: account,
+        record: appointment,
+        entity_kind: 'appointment'
+      )
+
+      touch = appointment_service.create_touch(
+        content_kind: 'channel_template',
+        target_inbox_id: channel.inbox.id,
+        template_params: { name: 'appointment_confirmation', language: 'ru' },
+        delay_minutes: 5,
+        response_action: 'confirm_appointment',
+        response_button_index: 0
+      )
+
+      expect(touch.response_action).to eq('confirm_appointment')
+      expect(touch.response_button_index).to eq(0)
+      expect(touch).to be_once
+      expect(touch.remindable).to eq(appointment)
+
+      template_with_two_buttons = channel.message_templates.first.deep_dup
+      template_with_two_buttons['components'].last['buttons'] << {
+        'type' => 'QUICK_REPLY',
+        'text' => 'Перенести'
+      }
+      channel.update!(message_templates: [template_with_two_buttons])
+
+      expect do
+        appointment_service.create_touch(
+          content_kind: 'channel_template',
+          target_inbox_id: channel.inbox.id,
+          template_params: { name: 'appointment_confirmation', language: 'ru' },
+          delay_minutes: 10,
+          response_action: 'confirm_appointment',
+          response_button_index: 0
+        )
+      end.to raise_error(ArgumentError, 'create_touch response_action is invalid')
+    end
+
     it 'creates a relative AI-authored touch with full touch timing params' do
       create(:message, account: account, conversation: conversation, message_type: :incoming)
 

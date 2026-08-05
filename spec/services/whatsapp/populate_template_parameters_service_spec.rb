@@ -67,4 +67,15 @@ describe Whatsapp::PopulateTemplateParametersService do
       end
     end
   end
+
+  describe '#build_button_parameter' do
+    it 'keeps a WhatsApp quick-reply callback as a payload parameter' do
+      result = service.build_button_parameter(
+        'type' => 'quick_reply',
+        'parameter' => 'confirmation:secure-token:confirmed'
+      )
+
+      expect(result).to eq(type: 'payload', payload: 'confirmation:secure-token:confirmed')
+    end
+  end
 end

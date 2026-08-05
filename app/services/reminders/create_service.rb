@@ -61,6 +61,8 @@ class Reminders::CreateService
       body: attributes[:body],
       instructions: attributes[:instructions],
       post_delivery_action: attributes[:post_delivery_action],
+      response_action: attributes[:response_action],
+      response_button_index: attributes[:response_button_index],
       attachments: Array(attributes[:attachments]),
       template_params: (attributes[:template_params] || {}).to_h,
       metadata: normalized_metadata,
