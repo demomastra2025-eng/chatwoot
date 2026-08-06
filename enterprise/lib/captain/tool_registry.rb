@@ -715,7 +715,8 @@ class Captain::ToolRegistry
         definition(
           id: 'search_deals',
           title: 'Search Deals',
-          description: 'Search CRM deals by title, pipeline, stage, owner, or company',
+          description: 'Search existing CRM deals by title, pipeline, stage, owner, company, or current contact. ' \
+                       'Use this when the user asks which or what deals exist; never substitute the pipeline catalog.',
           group_name: 'CRM Deals',
           icon: 'search',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -728,7 +729,9 @@ class Captain::ToolRegistry
         definition(
           id: 'list_deal_pipelines',
           title: 'List Deal Pipelines',
-          description: 'List active CRM deal pipelines with ordered stages and stage IDs. Use before creating or moving deals.',
+          description: 'List the CRM pipeline and stage catalog only. Use when the user explicitly asks about pipelines, ' \
+                       'funnels, or stages, or before creating/moving a deal. Never use this to answer which deals exist; ' \
+                       'use search_deals instead.',
           group_name: 'CRM Deals',
           icon: 'table',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

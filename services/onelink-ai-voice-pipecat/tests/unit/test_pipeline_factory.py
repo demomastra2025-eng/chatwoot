@@ -313,7 +313,9 @@ def test_user_turn_strategies_honor_interruption_setting(enabled):
 
 def test_gemini_uses_local_vad_as_single_turn_owner():
     context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.voice_activity_profile = "noisy"
     context.ai.prefix_padding_ms = 240
+    context.ai.vad_start_confirmation_ms = 150
     context.ai.silence_duration_ms = 650
     context.ai.vad_confidence = 0.85
     context.ai.vad_min_volume = 0.7
@@ -334,9 +336,31 @@ def test_gemini_uses_local_vad_as_single_turn_owner():
     assert vad.prefix_padding_ms is None
     assert vad.silence_duration_ms is None
     assert assembly.vad.params.confidence == 0.85
-    assert assembly.vad.params.start_secs == 0.24
+    assert assembly.vad.params.start_secs == 0.15
     assert assembly.vad.params.stop_secs == 0.65
     assert assembly.vad.params.min_volume == 0.7
+
+
+@pytest.mark.parametrize(
+    ("confirmation_ms", "expected_start_secs"),
+    [(50, 0.05), (100, 0.1), (150, 0.15)],
+)
+def test_local_vad_start_confirmation_is_independent_from_provider_prefix_padding(
+    confirmation_ms: int, expected_start_secs: float
+):
+    context = _context("gemini-live", model="gemini-3.1-flash-live-preview", voice="sulafat")
+    context.ai.prefix_padding_ms = 5_000
+    context.ai.vad_start_confirmation_ms = confirmation_ms
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    assert assembly.vad.params.start_secs == expected_start_secs
 
 
 def test_gemini_disables_native_vad_when_interruptions_are_disabled():

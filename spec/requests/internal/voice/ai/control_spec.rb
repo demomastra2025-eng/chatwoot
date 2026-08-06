@@ -76,6 +76,7 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
 
   it 'keeps high-frequency voice observability out of the conversation timeline' do
     actions = Telephony::AiVoice::ConversationTimelineService::INTERNAL_OBSERVABILITY_ACTIONS
+    allow(Telephony::AiVoice::ConversationTimelineService).to receive(:new).and_call_original
 
     actions.each do |action|
       with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
@@ -90,6 +91,7 @@ RSpec.describe 'Internal Voice AI Control API', type: :request do
 
     expect(call_session.reload.metadata.dig('ai_voice', 'control_events').last(actions.size).pluck('action')).to eq(actions)
     expect(conversation.messages.activity.where('source_id LIKE ?', "ai_voice_event:#{call_session.external_call_ref}:%")).not_to exist
+    expect(Telephony::AiVoice::ConversationTimelineService).not_to have_received(:new)
   end
 
   it 'attaches voice tool input and output details to the AI transcript trace' do

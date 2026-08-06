@@ -80,6 +80,11 @@ class Telephony::AiVoice::ControlService
   end
 
   def sync_conversation_timeline_event!
+    # These events are persisted in call metadata for diagnostics but are
+    # intentionally excluded from the customer conversation timeline. Avoid a
+    # redundant reload and timeline service call on this high-frequency path.
+    return if INTERNAL_OBSERVABILITY_ACTIONS.include?(action)
+
     call_session.reload
     Telephony::AiVoice::ConversationTimelineService.new(call_session: call_session).record_control_event!(
       action: action,

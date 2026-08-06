@@ -355,7 +355,11 @@ def build_pipeline(
         sample_rate=16_000,
         params=VADParams(
             confidence=context.ai.vad_confidence,
-            start_secs=max(0.05, context.ai.prefix_padding_ms / 1_000),
+            # Provider prefix padding preserves audio before a detected turn; it
+            # is not the duration required to confirm speech. Conflating the two
+            # made the noisy profile require 300 ms of uninterrupted Silero
+            # confidence and miss short, valid barge-ins during bot speech.
+            start_secs=context.ai.vad_start_confirmation_ms / 1_000,
             stop_secs=max(0.1, context.ai.silence_duration_ms / 1_000),
             min_volume=context.ai.vad_min_volume,
         ),

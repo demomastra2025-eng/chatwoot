@@ -65,6 +65,7 @@ def test_normalizes_context_without_calling_pipecat_a_provider():
     assert context.ai.speech_end_sensitivity == "END_SENSITIVITY_HIGH"
     assert context.ai.vad_confidence == 0.75
     assert context.ai.vad_min_volume == 0.6
+    assert context.ai.vad_start_confirmation_ms == 100
     assert context.ai.manager_handoff_mode == "callback"
     assert context.ai.callback_message == "Наш менеджер вам перезвонит."
     assert context.ai.transfer_failure_mode == "end_call"

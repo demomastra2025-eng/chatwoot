@@ -71,6 +71,7 @@ class AiSettings(ContextModel):
     speech_start_sensitivity: str = "START_SENSITIVITY_LOW"
     speech_end_sensitivity: str = "END_SENSITIVITY_HIGH"
     prefix_padding_ms: int = Field(default=200, ge=0, le=5_000)
+    vad_start_confirmation_ms: int = Field(default=100, ge=50, le=1_000)
     silence_duration_ms: int = Field(default=250, ge=0, le=10_000)
     vad_confidence: float = Field(default=0.75, ge=0, le=1)
     vad_min_volume: float = Field(default=0.6, ge=0, le=1)

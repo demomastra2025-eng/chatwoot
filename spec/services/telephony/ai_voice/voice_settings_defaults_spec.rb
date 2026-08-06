@@ -19,6 +19,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
         'speech_end_sensitivity' => 'END_SENSITIVITY_HIGH',
         'prefix_padding_ms' => 200,
+        'vad_start_confirmation_ms' => 100,
         'silence_duration_ms' => 250,
         'turn_aggregation_delay_ms' => 180,
         'user_turn_stop_timeout_ms' => 30_000,
@@ -54,6 +55,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
         'speech_start_sensitivity' => 'START_SENSITIVITY_LOW',
         'speech_end_sensitivity' => 'END_SENSITIVITY_LOW',
         'prefix_padding_ms' => 300,
+        'vad_start_confirmation_ms' => 150,
         'silence_duration_ms' => 300,
         'turn_aggregation_delay_ms' => 180,
         'vad_confidence' => 0.85,
@@ -70,6 +72,7 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       expect(described_class.normalize(prefix_padding_ms: 120, silence_duration_ms: 200)).to include(
         'voice_activity_profile' => 'balanced',
         'prefix_padding_ms' => 120,
+        'vad_start_confirmation_ms' => 100,
         'silence_duration_ms' => 200,
         'vad_confidence' => 0.75,
         'vad_min_volume' => 0.6

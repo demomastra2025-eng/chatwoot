@@ -175,6 +175,20 @@ RSpec.describe Captain::ToolRegistry do
       )
     end
 
+    it 'keeps deal search and pipeline catalog intent mutually explicit' do
+      definitions = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).index_by { |tool| tool[:id] }
+
+      expect(definitions.fetch('search_deals')[:description]).to include(
+        'which or what deals exist',
+        'never substitute the pipeline catalog'
+      )
+      expect(definitions.fetch('list_deal_pipelines')[:description]).to include(
+        'pipeline and stage catalog only',
+        'Never use this to answer which deals exist',
+        'use search_deals instead'
+      )
+    end
+
     it 'marks capability tools that are controlled through assistant settings checkboxes' do
       handoff = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'handoff' }
       cancel_response = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find { |tool| tool[:id] == 'cancel_response' }

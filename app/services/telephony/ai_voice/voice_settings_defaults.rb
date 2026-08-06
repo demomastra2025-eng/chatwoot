@@ -103,7 +103,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
 
   INTEGER_KEYS = %w[
     max_output_tokens max_duration_sec interrupt_word_boundary_grace_ms post_interrupt_micro_pause_ms
-    interrupt_ack_max_duration_ms prefix_padding_ms silence_duration_ms turn_aggregation_delay_ms
+    interrupt_ack_max_duration_ms prefix_padding_ms vad_start_confirmation_ms silence_duration_ms turn_aggregation_delay_ms
     user_turn_stop_timeout_ms interruption_confirmation_window_ms post_interrupt_resume_delay_ms
     min_interrupt_words silence_prompt_after_ms second_silence_prompt_after_ms
     max_silence_ms tool_delay_after_ms post_tool_continuation_ms ordinary_answer_continuation_ms max_sentences nonverbal_cue_max_per_minute
