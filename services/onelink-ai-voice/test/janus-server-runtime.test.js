@@ -221,6 +221,7 @@ test('Janus server call facade answers through media-server and exposes runtime 
   ]);
   assert.deepEqual(janusMessages[0].body, { request: 'accept', autoaccept_reinvites: true });
   assert.deepEqual(janusMessages[0].jsep, { type: 'answer', sdp: 'v=0\r\no=- pion-answer' });
+  facade.enableHangupConfirmation();
   const hangup = await facade.hangup();
   assert.deepEqual(janusMessages[1].body, { request: 'hangup' });
   assert.deepEqual(hangup, {
@@ -395,6 +396,7 @@ test('Janus server call facade tears down media when runtime-agent setup fails',
   });
 
   await assert.rejects(() => facade.answer(), /invalid runtime-agent response/);
+  facade.enableHangupConfirmation();
   const hangup = await facade.hangup();
   assert.deepEqual(janusMessages.map(message => message.body), [
     { request: 'decline', code: 480 },
@@ -690,6 +692,8 @@ test('Janus server keeps Rails operator decisions on the native call facade', as
     pipecatClient: {
       async preflightJanus() { throw new Error('operator route reached Pipecat'); }
     },
+    hangupConfirmationTimeoutMs: 1,
+    hangupReconciliationGraceMs: 1,
     maxCalls: 1,
     logger: { log() {} }
   });
@@ -715,6 +719,13 @@ test('Janus server keeps Rails operator decisions on the native call facade', as
   });
   assert.equal(handledCall.janus.jsep, undefined);
   assert.deepEqual(messages, []);
+  assert.equal(handledCall.hangupConfirmationRequired, false);
+  handledCall.answered = true;
+  assert.equal(await handledCall.hangup(), true);
+  assert.deepEqual(messages.map(message => message.body), [
+    { request: 'hangup' }
+  ]);
+  assert.equal(handledCall.ended, true);
 });
 
 test('Janus server profile close rejects pending SIP registration waiters', async () => {

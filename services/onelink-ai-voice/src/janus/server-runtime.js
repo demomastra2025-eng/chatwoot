@@ -959,6 +959,7 @@ class JanusSipServerProfileSession {
       throw error;
     }
     await facade.mediaServerClient.ensureSessionOwnershipControls();
+    facade.enableHangupConfirmation();
     await facade.answer({
       recordingEnabled: false,
       railsCallbacksEnabled: false
@@ -1076,6 +1077,7 @@ class JanusSipServerCallFacade extends EventEmitter {
     this.acceptRequested = false;
     this.answered = false;
     this.ended = false;
+    this.hangupConfirmationRequired = false;
     this.hangupConfirmationPending = false;
     this.hangupReconciliationTimer = null;
     this.transferLeg = null;
@@ -1240,6 +1242,7 @@ class JanusSipServerCallFacade extends EventEmitter {
   }
 
   async hangup() {
+    if (!this.hangupConfirmationRequired) return this.hangupImmediately();
     if (this.ended) return { accepted: true, confirmed: true, outcome: 'already_ended' };
     const confirmation = this.waitForEndConfirmation();
     let confirmed = false;
@@ -1287,6 +1290,28 @@ class JanusSipServerCallFacade extends EventEmitter {
       confirmed,
       outcome: confirmed ? 'janus_hangup_event' : 'command_retried_after_confirmation_timeout'
     };
+  }
+
+  enableHangupConfirmation() {
+    this.hangupConfirmationRequired = true;
+  }
+
+  async hangupImmediately() {
+    if (this.ended) return true;
+    try {
+      const body = this.answered || this.acceptAttempted || this.acceptRequested
+        ? { request: 'hangup' }
+        : { request: 'decline', code: 480 };
+      await this.janus.client.pluginMessage({
+        sessionId: this.janus.sessionId,
+        handleId: this.janus.handleId,
+        body
+      });
+    } finally {
+      await this.terminateMediaSession();
+      this.emitEnd();
+    }
+    return true;
   }
 
   waitForEndConfirmation() {

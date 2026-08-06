@@ -114,7 +114,10 @@ test('Janus server never changes runtime after SIP accept dispatch becomes ambig
     hangupReconciliationGraceMs: 1,
     logger: { log() {} }
   });
-  session.startPipecatCall = async facade => facade.answer();
+  session.startPipecatCall = async facade => {
+    facade.enableHangupConfirmation();
+    return facade.answer();
+  };
   session.sessionId = 100;
   const messages = [];
   session.client = {
