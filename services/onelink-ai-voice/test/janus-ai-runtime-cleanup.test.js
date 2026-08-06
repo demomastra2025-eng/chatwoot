@@ -110,6 +110,8 @@ test('Janus server never changes runtime after SIP accept dispatch becomes ambig
     runtimeMediaStreamFactory: async () => ({}),
     runtimeSelector: { select: () => 'pipecat' },
     pipecatClient: {},
+    hangupConfirmationTimeoutMs: 1,
+    hangupReconciliationGraceMs: 1,
     logger: { log() {} }
   });
   session.startPipecatCall = async facade => facade.answer();
@@ -128,10 +130,15 @@ test('Janus server never changes runtime after SIP accept dispatch becomes ambig
     result: { call_id: 'ai-post-answer-failed-1', username: 'sip:+770****0000@asterisk.test' },
     handle
   });
+  await new Promise(resolve => setTimeout(resolve, 5));
 
   assert.equal(fallbackAttempts, 0);
   assert.equal(legacyCalls, 0);
   assert.equal(failures.length, 1);
-  assert.deepEqual(messages.map(message => message.body.request), ['accept', 'hangup']);
+  assert.deepEqual(messages.map(message => message.body.request), [
+    'accept',
+    'hangup',
+    'hangup'
+  ]);
   assert.equal(handle.activeCallId, null);
 });

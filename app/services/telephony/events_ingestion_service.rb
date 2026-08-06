@@ -102,6 +102,10 @@ class Telephony::EventsIngestionService
     'tool_async_completed' => nil,
     'tool_async_failed' => nil,
     'post_tool_model_stall' => nil,
+    'tool_result_deferred' => nil,
+    'tool_result_delivery_completed' => nil,
+    'tool_result_delivery_failed' => nil,
+    'terminal_confirmation_missing' => nil,
     'business_faq_gate_fired' => nil,
     'business_faq_gate_result_injected' => nil,
     'direct_tool_context_barrier_timeout' => nil,
@@ -2333,7 +2337,8 @@ class Telephony::EventsIngestionService
       app_answered ai_ringing ai_answered media_stream_started realtime_audio_out first_audio_out_write ai_speaking caller_interrupted
       media_writer_started media_stream_framing_error tool_started tool_progress tool_completed tool_failed tool_suppressed
       tool_async_completed tool_async_failed post_tool_model_stall business_faq_gate_fired business_faq_gate_result_injected
-      ordinary_answer_model_stall incomplete_answer_model_stall
+      ordinary_answer_model_stall incomplete_answer_model_stall tool_result_deferred tool_result_delivery_completed
+      tool_result_delivery_failed terminal_confirmation_missing
     ]
   end
 

@@ -4,7 +4,7 @@ const { EventEmitter } = require('node:events');
 const { Readable } = require('node:stream');
 const { PipecatRuntimeControlRegistry } = require('../src/pipecat/runtime-control');
 
-function controlledCall({ transferEvent = 'answered' } = {}) {
+function controlledCall({ transferEvent = 'answered', hangupResult = true } = {}) {
   const call = new EventEmitter();
   call.transfers = [];
   call.hangups = 0;
@@ -17,7 +17,7 @@ function controlledCall({ transferEvent = 'answered' } = {}) {
   call.hangup = async () => {
     call.hangups += 1;
     call.emit('end');
-    return true;
+    return hangupResult;
   };
   return call;
 }
@@ -47,6 +47,32 @@ async function post(
   };
   assert.equal(registry.handleRequest(req, res), true);
   return response;
+}
+
+function deferredPost(registry, capability, token = capability.token) {
+  const req = new Readable({ read() {} });
+  req.method = 'POST';
+  req.url = new URL(capability.control_url).pathname;
+  req.headers = { authorization: `Bearer ${token}` };
+  let resolveResponse;
+  const response = new Promise(resolve => { resolveResponse = resolve; });
+  const res = {
+    statusCode: 0,
+    writableEnded: false,
+    setHeader() {},
+    end(value) {
+      this.writableEnded = true;
+      resolveResponse({ statusCode: this.statusCode, body: JSON.parse(value) });
+    }
+  };
+  assert.equal(registry.handleRequest(req, res), true);
+  return {
+    response,
+    send(payload) {
+      req.push(Buffer.from(JSON.stringify(payload)));
+      req.push(null);
+    }
+  };
 }
 
 test('Pipecat runtime control authorizes and de-duplicates SIP transfer', async () => {
@@ -177,6 +203,121 @@ test('Pipecat runtime control ends a call idempotently', async () => {
   assert.equal(first.statusCode, 200);
   assert.deepEqual(duplicate.body, first.body);
   assert.equal(call.hangups, 1);
+});
+
+test('Pipecat runtime control reports a confirmed Janus hangup outcome', async () => {
+  const registry = new PipecatRuntimeControlRegistry({ baseUrl: 'http://voice:8081' });
+  const call = controlledCall({
+    hangupResult: { accepted: true, confirmed: true, outcome: 'janus_hangup_event' }
+  });
+  const capability = registry.register(call);
+
+  const response = await post(registry, capability, { action: 'end_call' });
+
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, {
+    status: 'completed',
+    action: 'end_call',
+    confirmed: true,
+    outcome: 'janus_hangup_event'
+  });
+});
+
+test('Pipecat runtime control rejects a transport-level hangup rejection', async () => {
+  const registry = new PipecatRuntimeControlRegistry({ baseUrl: 'http://voice:8081' });
+  const call = controlledCall({ hangupResult: false });
+  const capability = registry.register(call);
+
+  const response = await post(registry, capability, { action: 'end_call' });
+
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.body.error, 'runtime_hangup_rejected');
+});
+
+test('Pipecat runtime control remains valid through the configured call duration', async () => {
+  let now = 1_000;
+  const registry = new PipecatRuntimeControlRegistry({
+    baseUrl: 'http://voice:8081',
+    ttlMs: 300_000,
+    now: () => now
+  });
+  const call = controlledCall();
+  call.request = { routing: { call_limits: { max_duration_sec: 900 } } };
+  const capability = registry.register(call);
+
+  now += 315_000;
+  const response = await post(registry, capability, { action: 'end_call', reason: 'tool' });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.action, 'end_call');
+  assert.equal(call.hangups, 1);
+});
+
+test('Pipecat runtime control expires after call duration plus cleanup grace', async () => {
+  let now = 1_000;
+  const registry = new PipecatRuntimeControlRegistry({
+    baseUrl: 'http://voice:8081',
+    ttlMs: 300_000,
+    now: () => now
+  });
+  const call = controlledCall();
+  call.request = { routing: { max_call_duration_seconds: 900 } };
+  const capability = registry.register(call);
+
+  now += 960_001;
+  const response = await post(registry, capability, { action: 'end_call' });
+
+  assert.equal(response.statusCode, 401);
+  assert.equal(call.hangups, 0);
+  assert.equal(registry.entries.size, 0);
+});
+
+test('Pipecat runtime control never slides its original capability deadline', async () => {
+  let now = 1_000;
+  const registry = new PipecatRuntimeControlRegistry({
+    baseUrl: 'http://voice:8081',
+    ttlMs: 300_000,
+    now: () => now
+  });
+  const call = controlledCall({ transferEvent: 'busy' });
+  const capability = registry.register(call);
+  const entry = [...registry.entries.values()][0];
+  const originalDeadline = entry.expiresAt;
+
+  now += 60_000;
+  const transfer = await post(registry, capability, {
+    action: 'transfer',
+    operator_agent_aor: 'sip:1001@example.test'
+  });
+
+  assert.equal(transfer.statusCode, 409);
+  assert.equal(entry.expiresAt, originalDeadline);
+  now = originalDeadline + 1;
+  const endCall = await post(registry, capability, { action: 'end_call' });
+  assert.equal(endCall.statusCode, 401);
+  assert.equal(call.hangups, 0);
+});
+
+test('Pipecat runtime control rechecks expiry after reading a slow request body', async () => {
+  let now = 1_000;
+  const registry = new PipecatRuntimeControlRegistry({
+    baseUrl: 'http://voice:8081',
+    ttlMs: 300_000,
+    now: () => now
+  });
+  const call = controlledCall();
+  const capability = registry.register(call);
+  const entry = [...registry.entries.values()][0];
+  now = entry.expiresAt - 1;
+  const request = deferredPost(registry, capability);
+
+  now = entry.expiresAt + 1;
+  request.send({ action: 'end_call' });
+  const response = await request.response;
+
+  assert.equal(response.statusCode, 401);
+  assert.equal(call.hangups, 0);
+  assert.equal(registry.entries.size, 0);
 });
 
 test('Pipecat runtime control rejects end_call while SIP transfer is in flight', async () => {

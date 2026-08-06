@@ -1,6 +1,10 @@
 const crypto = require('node:crypto');
 
 const DEFAULT_PATH = '/internal/pipecat/runtime-control';
+const DEFAULT_CALL_MAX_DURATION_MS = 30 * 60 * 1000;
+const MIN_CALL_MAX_DURATION_MS = 5 * 60 * 1000;
+const MAX_CALL_MAX_DURATION_MS = 4 * 60 * 60 * 1000;
+const CONTROL_LEASE_GRACE_MS = 60 * 1000;
 
 class PipecatRuntimeControlRegistry {
   constructor({
@@ -8,13 +12,15 @@ class PipecatRuntimeControlRegistry {
     path = DEFAULT_PATH,
     ttlMs = 300_000,
     transferTimeoutMs = 30_000,
-    maxBodyBytes = 16 * 1024
+    maxBodyBytes = 16 * 1024,
+    now = Date.now
   } = {}) {
     this.baseUrl = String(baseUrl || '').replace(/\/+$/, '');
     this.path = normalizedPath(path);
     this.ttlMs = positiveInteger(ttlMs, 300_000);
     this.transferTimeoutMs = positiveInteger(transferTimeoutMs, 30_000);
     this.maxBodyBytes = positiveInteger(maxBodyBytes, 16 * 1024);
+    this.now = typeof now === 'function' ? now : Date.now;
     this.entries = new Map();
   }
 
@@ -26,10 +32,12 @@ class PipecatRuntimeControlRegistry {
     this.prune();
     const id = crypto.randomBytes(18).toString('base64url');
     const token = crypto.randomBytes(32).toString('base64url');
+    const leaseMs = runtimeControlLeaseMs(call, this.ttlMs);
     const entry = {
       call,
       token,
-      expiresAt: Date.now() + this.ttlMs,
+      leaseMs,
+      expiresAt: this.now() + leaseMs,
       ended: false,
       terminalAction: null,
       commands: new Map()
@@ -71,6 +79,11 @@ class PipecatRuntimeControlRegistry {
         writeJson(res, 422, { error: 'unsupported_runtime_action' });
         return;
       }
+      if (entry.expiresAt <= this.now() || this.entries.get(id) !== entry) {
+        if (this.entries.get(id) === entry) this.entries.delete(id);
+        writeJson(res, 401, { error: 'unauthorized' });
+        return;
+      }
       const result = await this.execute(entry, action, payload);
       writeJson(res, 200, result);
     } catch (error) {
@@ -105,28 +118,54 @@ class PipecatRuntimeControlRegistry {
         const outcome = await waitForTransferOutcome(transferLeg, this.transferTimeoutMs);
         return { status: 'completed', action: 'transfer', outcome };
       }
-      await entry.call.hangup();
+      const hangup = await entry.call.hangup();
+      if (hangup === false) {
+        throw controlError('call hangup was rejected', 'runtime_hangup_rejected', 409);
+      }
+      if (hangup && typeof hangup === 'object') {
+        return {
+          status: hangup.confirmed ? 'completed' : 'accepted',
+          action: 'end_call',
+          confirmed: hangup.confirmed === true,
+          outcome: String(hangup.outcome || '').trim() || undefined
+        };
+      }
       return { status: 'accepted', action: 'end_call' };
     })();
     entry.terminalAction = { action, fingerprint, execution };
     entry.commands.set(action, { fingerprint, execution });
     try {
       const result = await execution;
-      if (action === 'end_call') entry.ended = true;
-      entry.expiresAt = Date.now() + this.ttlMs;
+      if (action === 'end_call' && result.confirmed !== false) entry.ended = true;
       return result;
     } catch (error) {
       if (entry.terminalAction?.execution === execution) entry.terminalAction = null;
-      entry.expiresAt = Date.now() + this.ttlMs;
       throw error;
     }
   }
 
-  prune(now = Date.now()) {
+  prune(now = this.now()) {
     for (const [id, entry] of this.entries.entries()) {
       if (entry.expiresAt <= now) this.entries.delete(id);
     }
   }
+}
+
+function runtimeControlLeaseMs(call, minimumTtlMs) {
+  const routing = call?.request?.routing || {};
+  const rawDurationSeconds = routing.max_call_duration_seconds ??
+    routing.maxCallDurationSeconds ??
+    routing.call_limits?.max_duration_sec ??
+    routing.callLimits?.maxDurationSec;
+  const parsedDurationSeconds = Number.parseInt(rawDurationSeconds, 10);
+  const configuredDurationMs = Number.isFinite(parsedDurationSeconds)
+    ? parsedDurationSeconds * 1000
+    : DEFAULT_CALL_MAX_DURATION_MS;
+  const boundedDurationMs = Math.min(
+    Math.max(configuredDurationMs, MIN_CALL_MAX_DURATION_MS),
+    MAX_CALL_MAX_DURATION_MS
+  );
+  return Math.max(minimumTtlMs, boundedDurationMs + CONTROL_LEASE_GRACE_MS);
 }
 
 function authorized(header, token) {

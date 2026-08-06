@@ -14,6 +14,10 @@ class Telephony::AiVoice::ConversationTimelineService
     incomplete_answer_model_stall
     ordinary_answer_model_stall
     post_tool_model_stall
+    tool_result_deferred
+    tool_result_delivery_completed
+    tool_result_delivery_failed
+    terminal_confirmation_missing
   ].freeze
   TOOL_EVENTS = {
     'tool_started' => 'start',

@@ -332,6 +332,9 @@ class ConversationActivity:
         self._last_model_output_at: float | None = None
         self._last_user_message: str | None = None
         self._last_user_message_at: float | None = None
+        self._last_user_message_caller_turn = 0
+        self._user_message_model_generations = 0
+        self._user_message_turns_completed = 0
         self._user_message_turns_started = 0
         self._user_message_model_outputs = 0
         self._user_message_tool_executions = 0
@@ -419,6 +422,9 @@ class ConversationActivity:
             self.user_messages_added += 1
             self._last_user_message = normalized
             self._last_user_message_at = time.monotonic()
+            self._last_user_message_caller_turn = self.user_turns_started
+            self._user_message_model_generations = self.model_generations_started
+            self._user_message_turns_completed = self.turns_completed
             self._user_message_turns_started = self.turns_started
             self._user_message_model_outputs = self.model_outputs_generated
             self._user_message_tool_executions = self.tool_executions_started
@@ -502,6 +508,20 @@ class ConversationActivity:
     async def wait_for_user_idle(self, timeout: float) -> bool:
         """Wait until the caller finishes the current utterance."""
         return await self._wait_for(lambda: not self.user_speaking, timeout)
+
+    async def wait_for_user_response_completed_at_or_after(
+        self, caller_turn: int, timeout: float
+    ) -> bool:
+        """Wait for audible model completion of the newest committed caller turn."""
+        return await self._wait_for(
+            lambda: (
+                not self.user_speaking
+                and self._last_user_message_caller_turn >= caller_turn
+                and self.model_generations_completed > self._user_message_model_generations
+                and self.turns_completed > self._user_message_turns_completed
+            ),
+            timeout,
+        )
 
     async def _wait_for(self, predicate, timeout: float) -> bool:
         try:

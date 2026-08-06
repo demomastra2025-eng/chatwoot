@@ -170,6 +170,9 @@ test('Janus server call facade answers through media-server and exposes runtime 
       client: {
         async pluginMessage(payload) {
           janusMessages.push(payload);
+          if (payload.body.request === 'hangup') {
+            setImmediate(() => facade.handleJanusEvent('hangup'));
+          }
           return { janus: 'ack' };
         }
       }
@@ -218,8 +221,13 @@ test('Janus server call facade answers through media-server and exposes runtime 
   ]);
   assert.deepEqual(janusMessages[0].body, { request: 'accept', autoaccept_reinvites: true });
   assert.deepEqual(janusMessages[0].jsep, { type: 'answer', sdp: 'v=0\r\no=- pion-answer' });
-  await facade.hangup();
+  const hangup = await facade.hangup();
   assert.deepEqual(janusMessages[1].body, { request: 'hangup' });
+  assert.deepEqual(hangup, {
+    accepted: true,
+    confirmed: true,
+    outcome: 'janus_hangup_event'
+  });
 });
 
 test('Janus server call facade negotiates native offerless SIP INVITEs', async () => {
@@ -381,12 +389,25 @@ test('Janus server call facade tears down media when runtime-agent setup fails',
         terminated.push([sessionId, reason]);
       }
     },
-    runtimeMediaStreamFactory: async () => ({})
+    runtimeMediaStreamFactory: async () => ({}),
+    hangupConfirmationTimeoutMs: 1,
+    hangupReconciliationGraceMs: 1
   });
 
   await assert.rejects(() => facade.answer(), /invalid runtime-agent response/);
-  await facade.hangup();
-  assert.deepEqual(janusMessages[0].body, { request: 'decline', code: 480 });
+  const hangup = await facade.hangup();
+  assert.deepEqual(janusMessages.map(message => message.body), [
+    { request: 'decline', code: 480 },
+    { request: 'decline', code: 480 }
+  ]);
+  assert.deepEqual(hangup, {
+    accepted: true,
+    confirmed: false,
+    outcome: 'command_retried_after_confirmation_timeout'
+  });
+  facade.handleJanusEvent('hangup');
+  assert.equal(facade.ended, true);
+  assert.equal(facade.hangupConfirmationPending, false);
   assert.deepEqual(terminated, [['media-failed', 'janus_answer_failed']]);
 });
 

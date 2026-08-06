@@ -107,6 +107,15 @@ async def complete_empty_generation(activity):
     await activity.model_generation_completed()
 
 
+async def complete_newer_caller_response(activity, text="Новый вопрос"):
+    await activity.user_message_added(text)
+    await activity.model_generation_started()
+    await activity.model_output_generated()
+    await activity.bot_started()
+    await activity.model_generation_completed()
+    await activity.bot_stopped()
+
+
 @pytest.mark.asyncio
 async def test_fast_tool_returns_without_progress_speech():
     state = FakeState()
@@ -433,6 +442,9 @@ async def test_slow_gemini_tool_returns_pending_then_injects_late_result_once():
 
     async def record_instruction(message):
         instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
 
     coordinator = ToolDialogueCoordinator(
         ai=ai_settings(
@@ -485,6 +497,9 @@ async def test_slow_gemini_tool_waits_for_pending_model_generation_before_late_r
 
     async def record_instruction(message):
         instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
 
     coordinator = ToolDialogueCoordinator(
         ai=ai_settings(
@@ -555,6 +570,9 @@ async def test_gemini_tool_without_explicit_foreground_policy_uses_runtime_windo
 
     async def record(message):
         spoken.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
 
     coordinator = ToolDialogueCoordinator(
         ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=5),
@@ -660,6 +678,9 @@ async def test_post_tool_stall_forces_one_continuation_instruction():
 
     async def record(message):
         instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
 
     coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
     coordinator.bind(speak_exact=record, run_instruction=record)
@@ -669,7 +690,8 @@ async def test_post_tool_stall_forces_one_continuation_instruction():
         on_result=lambda _result: complete_empty_generation(activity),
     )
     assert coordinator.awaiting_continuation is True
-    await asyncio.gather(*state.tasks)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
 
     assert results == [{"answer": "готово"}]
     assert coordinator.awaiting_continuation is False
@@ -943,11 +965,12 @@ async def test_faq_result_defers_direct_speech_during_caller_barge_in():
 
 
 @pytest.mark.asyncio
-async def test_direct_result_from_superseded_caller_turn_is_not_spoken():
+async def test_direct_result_from_superseded_turn_is_replayed_after_newer_turn():
     gate = asyncio.Event()
     state = FakeState(result={"matches": [{"answer": "Устаревший ответ"}]}, gate=gate)
     activity = ConversationActivity()
     spoken = []
+    instructions = []
 
     async def result_callback(_result, *, properties=None):
         await properties.on_context_updated()
@@ -955,11 +978,17 @@ async def test_direct_result_from_superseded_caller_turn_is_not_spoken():
     async def speak_result(message):
         spoken.append(message)
 
+    async def run_instruction(message):
+        instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
+
     coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
     coordinator.bind(
         speak_exact=speak_result,
         speak_result=speak_result,
-        run_instruction=speak_result,
+        run_instruction=run_instruction,
     )
     params = Params(
         arguments={"query": "Первый вопрос"},
@@ -971,17 +1000,21 @@ async def test_direct_result_from_superseded_caller_turn_is_not_spoken():
     await asyncio.sleep(0)
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     gate.set()
     await execution
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 
     assert spoken == []
+    assert len(instructions) == 1
+    assert "Устаревший ответ" in instructions[0]
     assert any(
-        control[0] == "tool_speech_suppressed"
+        control[0] == "tool_result_deferred"
         and control[1].get("reason") == "caller_turn_superseded"
         for control in state.controls
     )
+    assert any(control[0] == "tool_result_delivery_completed" for control in state.controls)
 
 
 @pytest.mark.asyncio
@@ -990,35 +1023,46 @@ async def test_progress_from_superseded_caller_turn_is_not_spoken():
     state = FakeState(gate=gate)
     activity = ConversationActivity()
     spoken = []
+    instructions = []
 
     async def speak(message):
         spoken.append(message)
+
+    async def run_instruction(message):
+        instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
 
     coordinator = ToolDialogueCoordinator(
         ai=ai_settings(tool_start_after_ms=20, tool_delay_after_ms=5_000),
         state=state,
         activity=activity,
     )
-    coordinator.bind(speak_exact=speak, run_instruction=speak)
+    coordinator.bind(speak_exact=speak, run_instruction=run_instruction)
     execution = asyncio.create_task(execute_with_answer(coordinator, activity))
 
     await asyncio.sleep(0)
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     await asyncio.sleep(0.03)
     gate.set()
     await execution
     await asyncio.gather(*state.tasks)
 
     assert spoken == []
+    assert len(instructions) == 1
+    assert "готово" in instructions[0]
 
 
 @pytest.mark.asyncio
-async def test_generic_result_from_superseded_turn_updates_context_without_running_llm():
+async def test_generic_result_from_superseded_turn_updates_context_then_replays():
     gate = asyncio.Event()
     state = FakeState(gate=gate)
     activity = ConversationActivity()
     callback_properties = []
+    instructions = []
 
     async def result_callback(_result, *, properties=None):
         callback_properties.append(properties)
@@ -1026,8 +1070,14 @@ async def test_generic_result_from_superseded_turn_updates_context_without_runni
     async def no_speech(_message):
         return None
 
+    async def run_instruction(message):
+        instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
+
     coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
-    coordinator.bind(speak_exact=no_speech, run_instruction=no_speech)
+    coordinator.bind(speak_exact=no_speech, run_instruction=run_instruction)
     params = Params(
         arguments={"query": "Первый вопрос"},
         tool_call_id="generic-stale",
@@ -1038,16 +1088,80 @@ async def test_generic_result_from_superseded_turn_updates_context_without_runni
     await asyncio.sleep(0)
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     gate.set()
     await execution
     await asyncio.gather(*state.tasks)
 
     assert len(callback_properties) == 1
     assert callback_properties[0].run_llm is False
+    assert len(instructions) == 1
+    assert "готово" in instructions[0]
 
 
 @pytest.mark.asyncio
-async def test_gemini_late_result_from_superseded_turn_is_not_spoken():
+async def test_deferred_result_waits_for_newer_model_response_and_audio():
+    gate = asyncio.Event()
+    state = FakeState(result={"deals": [{"id": 386, "title": "Новая сделка"}]}, gate=gate)
+    activity = ConversationActivity()
+    instructions = []
+    events = []
+
+    async def result_callback(_result, *, properties=None):
+        assert properties is not None
+        assert properties.run_llm is False
+
+    async def no_speech(_message):
+        return None
+
+    async def run_instruction(message):
+        instructions.append(message)
+        events.append("deferred_instruction")
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(speak_exact=no_speech, run_instruction=run_instruction)
+    execution = asyncio.create_task(
+        coordinator.execute(
+            definition("search_deals"),
+            Params(
+                arguments={"contact_id": "4513"},
+                tool_call_id="deferred-order",
+                result_callback=result_callback,
+            ),
+        )
+    )
+
+    await asyncio.sleep(0)
+    await activity.user_started()
+    await activity.user_stopped()
+    await activity.user_message_added("Новый вопрос")
+    gate.set()
+    await execution
+    await asyncio.sleep(1.05)
+    assert instructions == []
+
+    await activity.model_generation_started()
+    await activity.bot_started()
+    await activity.model_output_generated()
+    await activity.model_generation_completed()
+    await asyncio.sleep(0.02)
+    assert instructions == []
+
+    events.append("newer_response_completed")
+    await activity.bot_stopped()
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert events == ["newer_response_completed", "deferred_instruction"]
+    assert "Новая сделка" in instructions[0]
+    assert any(control[0] == "tool_result_delivery_completed" for control in state.controls)
+
+
+@pytest.mark.asyncio
+async def test_gemini_late_result_from_superseded_turn_is_replayed():
     gate = asyncio.Event()
     state = FakeState(gate=gate)
     activity = ConversationActivity()
@@ -1055,6 +1169,9 @@ async def test_gemini_late_result_from_superseded_turn_is_not_spoken():
 
     async def record(message):
         instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
 
     coordinator = ToolDialogueCoordinator(
         ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=5),
@@ -1072,12 +1189,14 @@ async def test_gemini_late_result_from_superseded_turn_is_not_spoken():
 
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     gate.set()
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 
-    assert instructions == []
-    assert any(control[0] == "tool_speech_suppressed" for control in state.controls)
+    assert len(instructions) == 1
+    assert "готово" in instructions[0]
+    assert any(control[0] == "tool_result_deferred" for control in state.controls)
 
 
 @pytest.mark.asyncio
@@ -1246,6 +1365,7 @@ async def test_causal_turn_is_captured_before_tool_started_can_yield():
     state = FakeState(result={"answer": "актуальный ответ"})
     activity = ConversationActivity()
     spoken = []
+    instructions = []
     results = []
     original_tool_started = activity.tool_started
 
@@ -1258,6 +1378,12 @@ async def test_causal_turn_is_captured_before_tool_started_can_yield():
         spoken.append(message)
         return True
 
+    async def run_instruction(message):
+        instructions.append(message)
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return True
+
     async def result_callback(result, *, properties=None):
         results.append(result)
         if properties is not None and properties.on_context_updated is not None:
@@ -1268,7 +1394,7 @@ async def test_causal_turn_is_captured_before_tool_started_can_yield():
     coordinator.bind(
         speak_exact=speak_result,
         speak_result=speak_result,
-        run_instruction=speak_result,
+        run_instruction=run_instruction,
     )
     execution = asyncio.create_task(
         coordinator.execute(
@@ -1284,13 +1410,16 @@ async def test_causal_turn_is_captured_before_tool_started_can_yield():
     await tool_started_entered.wait()
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     release_tool_started.set()
     await execution
     await asyncio.gather(*state.tasks)
 
     assert results == [{"answer": "актуальный ответ"}]
     assert spoken == []
-    assert any(control[0] == "tool_speech_suppressed" for control in state.controls)
+    assert len(instructions) == 1
+    assert "актуальный ответ" in instructions[0]
+    assert any(control[0] == "tool_result_deferred" for control in state.controls)
 
 
 @pytest.mark.asyncio
@@ -1313,7 +1442,11 @@ async def test_direct_speech_admission_rejects_turn_started_after_coordinator_ch
         async def enqueue():
             enqueued.append(message)
 
-        return await activity.admit_causal_side_effect(causal_user_turn, enqueue)
+        admitted = await activity.admit_causal_side_effect(causal_user_turn, enqueue)
+        if admitted:
+            await activity.bot_started()
+            await activity.bot_stopped()
+        return admitted
 
     async def result_callback(_result, *, properties=None):
         assert properties is not None
@@ -1342,10 +1475,13 @@ async def test_direct_speech_admission_rejects_turn_started_after_coordinator_ch
     await before_admission.wait()
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     release_admission.set()
-    await asyncio.gather(*state.tasks)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
 
-    assert enqueued == []
+    assert len(enqueued) == 1
+    assert "старый ответ" in enqueued[0]
 
 
 @pytest.mark.asyncio
@@ -1405,6 +1541,8 @@ async def test_generic_result_admission_falls_back_to_context_only_after_new_tur
         return await original_admission(causal_user_turn, side_effect)
 
     async def no_speech(_message):
+        await activity.bot_started()
+        await activity.bot_stopped()
         return True
 
     async def result_callback(_result, *, properties=None):
@@ -1427,9 +1565,11 @@ async def test_generic_result_admission_falls_back_to_context_only_after_new_tur
     await before_admission.wait()
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     release_admission.set()
     await execution
-    await asyncio.gather(*state.tasks)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
 
     assert len(callback_properties) == 1
     assert callback_properties[0] is not None
@@ -1483,6 +1623,8 @@ async def test_stale_gemini_pending_result_is_delivered_without_running_llm():
         return await original_admission(causal_user_turn, side_effect)
 
     async def no_speech(_message):
+        await activity.bot_started()
+        await activity.bot_stopped()
         return True
 
     async def result_callback(_result, *, properties=None):
@@ -1509,6 +1651,7 @@ async def test_stale_gemini_pending_result_is_delivered_without_running_llm():
     await before_admission.wait()
     await activity.user_started()
     await activity.user_stopped()
+    await complete_newer_caller_response(activity)
     release_admission.set()
     await execution
     tool_gate.set()

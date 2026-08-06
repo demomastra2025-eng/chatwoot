@@ -3213,7 +3213,8 @@ RSpec.describe Telephony::EventsIngestionService do
       existing_call_session.update!(status: 'in_progress')
 
       %w[caller_interrupted tool_started tool_completed tool_failed tool_suppressed tool_async_completed tool_async_failed post_tool_model_stall
-         direct_tool_context_barrier_timeout direct_tool_speech_deferred direct_tool_speech_not_started ai_speaking].each do |event_name|
+         tool_result_deferred tool_result_delivery_completed tool_result_delivery_failed terminal_confirmation_missing direct_tool_context_barrier_timeout
+         direct_tool_speech_deferred direct_tool_speech_not_started ai_speaking].each do |event_name|
         result = described_class.new(
           payload: payload.merge(
             event_key: "evt-#{event_name}",

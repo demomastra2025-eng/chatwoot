@@ -260,7 +260,7 @@ class PipecatSessionRunner:
                         timeout_ms=5_000,
                     )
 
-                return await _execute_tool_action(
+                transport_result = await _execute_tool_action(
                     result,
                     speak_exact=assembly.speak_exact,
                     control_client=control_client,
@@ -268,9 +268,21 @@ class PipecatSessionRunner:
                     rails_managed_end_call=rails_managed_end_call,
                     rails_end_call=rails_end_call if rails_managed_end_call else None,
                 )
+                if transport_result and transport_result.get("confirmed") is False:
+                    state.spawn(
+                        state.safe_control(
+                            "terminal_confirmation_missing",
+                            {
+                                "action": transport_result.get("action"),
+                                "outcome": transport_result.get("outcome"),
+                                "reconciliation_pending": True,
+                            },
+                        )
+                    )
+                return transport_result
 
             state.bind_tool_action_handler(tool_action)
-            self._register_handlers(assembly, state, terminal)
+            self._register_handlers(assembly, state, terminal, requested_action)
             watchdog = asyncio.create_task(
                 self._watchdog(
                     context,
@@ -294,7 +306,12 @@ class PipecatSessionRunner:
                 heartbeat.cancel()
                 await asyncio.gather(watchdog, heartbeat, return_exceptions=True)
             if not terminal.decided:
-                await terminal.set("completed", "runtime_closed")
+                reason = (
+                    "terminal_confirmation_missing"
+                    if requested_action.get("confirmation") == "missing"
+                    else "runtime_closed"
+                )
+                await terminal.set("completed", reason)
         except asyncio.CancelledError:
             await terminal.set("failed", "runtime_cancelled")
             raise
@@ -321,6 +338,7 @@ class PipecatSessionRunner:
         assembly: PipelineAssembly,
         state: SessionState,
         terminal: TerminalDecision,
+        requested_action: dict[str, str | None],
     ) -> None:
         @assembly.transport.event_handler("on_connected")
         async def on_connected(_transport: object, _websocket: object) -> None:
@@ -333,8 +351,13 @@ class PipecatSessionRunner:
 
         @assembly.transport.event_handler("on_disconnected")
         async def on_disconnected(_transport: object, _websocket: object) -> None:
-            await terminal.set("completed", "media_stream_closed")
-            await assembly.worker.cancel(reason="media_stream_closed")
+            reason = (
+                "terminal_confirmation_missing"
+                if requested_action.get("confirmation") == "missing"
+                else "media_stream_closed"
+            )
+            await terminal.set("completed", reason)
+            await assembly.worker.cancel(reason=reason)
 
         @assembly.worker.event_handler("on_pipeline_error")
         async def on_pipeline_error(_worker: object, frame: object) -> None:
@@ -611,11 +634,21 @@ async def _execute_terminal_action(
     runtime_action = "end_call" if action == "callback_handoff" else action
     runtime_result = {**result, "action": runtime_action}
     if control_client is not None:
-        requested_action["action"] = runtime_action
         response = await asyncio.wait_for(
             control_client.execute(runtime_result),
             timeout=RUNTIME_CONTROL_ACTION_TIMEOUT_SECONDS,
         )
+        if (
+            runtime_action == "end_call"
+            and response is not None
+            and response.get("confirmed") is False
+        ):
+            requested_action["confirmation"] = "missing"
+            return response
+        # This flag suppresses the runner's final best-effort hangup. It must
+        # therefore describe a transport action accepted by Janus, not merely
+        # local intent while the HTTP control request is still in flight.
+        requested_action["action"] = runtime_action
         return response
     if runtime_action == "end_call" and rails_managed_end_call:
         if result.get("transport_terminate_requested") is not True:

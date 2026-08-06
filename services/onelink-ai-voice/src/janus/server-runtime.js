@@ -7,6 +7,8 @@ const { createJanusRuntimeMediaStreamFactory } = require('./runtime-stream');
 
 const DEFAULT_PLUGIN = 'janus.plugin.sip';
 const DEFAULT_PROTOCOL = 'janus-protocol';
+const DEFAULT_HANGUP_CONFIRMATION_TIMEOUT_MS = 1500;
+const DEFAULT_HANGUP_RECONCILIATION_GRACE_MS = 1500;
 
 class JanusWebSocketClient extends EventEmitter {
   constructor({
@@ -522,6 +524,8 @@ class JanusSipServerProfileSession {
     runtimeSelector = null,
     pipecatClient = null,
     pipecatRuntimeControl = null,
+    hangupConfirmationTimeoutMs,
+    hangupReconciliationGraceMs,
     logger
   }) {
     this.app = app;
@@ -533,6 +537,8 @@ class JanusSipServerProfileSession {
     this.runtimeSelector = runtimeSelector;
     this.pipecatClient = pipecatClient;
     this.pipecatRuntimeControl = pipecatRuntimeControl;
+    this.hangupConfirmationTimeoutMs = hangupConfirmationTimeoutMs;
+    this.hangupReconciliationGraceMs = hangupReconciliationGraceMs;
     this.logger = logger;
     this.sessionId = null;
     this.handleId = null;
@@ -810,10 +816,13 @@ class JanusSipServerProfileSession {
         client: this.client,
         sessionId: this.sessionId,
         handleId: handle.id,
-        jsep
+        jsep,
+        log: (eventName, payload) => this.log(eventName, payload)
       },
       mediaServerClient: this.mediaServerClient,
-      runtimeMediaStreamFactory: this.runtimeMediaStreamFactory
+      runtimeMediaStreamFactory: this.runtimeMediaStreamFactory,
+      hangupConfirmationTimeoutMs: this.hangupConfirmationTimeoutMs,
+      hangupReconciliationGraceMs: this.hangupReconciliationGraceMs
     });
     this.activeCalls.set(providerCallId, facade);
     handle.activeCallId = providerCallId;
@@ -1047,7 +1056,9 @@ class JanusSipServerCallFacade extends EventEmitter {
     caller,
     janus,
     mediaServerClient,
-    runtimeMediaStreamFactory
+    runtimeMediaStreamFactory,
+    hangupConfirmationTimeoutMs = DEFAULT_HANGUP_CONFIRMATION_TIMEOUT_MS,
+    hangupReconciliationGraceMs = DEFAULT_HANGUP_RECONCILIATION_GRACE_MS
   }) {
     super();
     this.profile = profile;
@@ -1055,6 +1066,8 @@ class JanusSipServerCallFacade extends EventEmitter {
     this.janus = janus;
     this.mediaServerClient = mediaServerClient;
     this.runtimeMediaStreamFactory = runtimeMediaStreamFactory;
+    this.hangupConfirmationTimeoutMs = Math.max(0, Number(hangupConfirmationTimeoutMs) || 0);
+    this.hangupReconciliationGraceMs = Math.max(0, Number(hangupReconciliationGraceMs) || 0);
     this.mediaSessionId = null;
     this.answerPromise = null;
     this.terminationPromise = null;
@@ -1063,6 +1076,8 @@ class JanusSipServerCallFacade extends EventEmitter {
     this.acceptRequested = false;
     this.answered = false;
     this.ended = false;
+    this.hangupConfirmationPending = false;
+    this.hangupReconciliationTimer = null;
     this.transferLeg = null;
     this.request = buildIncomingRequest({ profile, providerCallId, caller, janus });
   }
@@ -1225,7 +1240,10 @@ class JanusSipServerCallFacade extends EventEmitter {
   }
 
   async hangup() {
-    if (this.ended) return true;
+    if (this.ended) return { accepted: true, confirmed: true, outcome: 'already_ended' };
+    const confirmation = this.waitForEndConfirmation();
+    let confirmed = false;
+    this.hangupConfirmationPending = true;
     try {
       const body = this.answered || this.acceptAttempted || this.acceptRequested
         ? { request: 'hangup' }
@@ -1235,15 +1253,82 @@ class JanusSipServerCallFacade extends EventEmitter {
         handleId: this.janus.handleId,
         body
       });
+      confirmed = await confirmation.promise;
+      if (!confirmed) {
+        this.janus.log?.('janus_server_hangup_confirmation_timeout', {
+          call_ref: this.request.call_ref,
+          provider_call_id: this.providerCallId,
+          timeout_ms: this.hangupConfirmationTimeoutMs
+        });
+        // Janus accepted the first command but emitted no terminal SIP event.
+        // Retry the idempotent command once before bounded local cleanup.
+        await this.janus.client.pluginMessage({
+          sessionId: this.janus.sessionId,
+          handleId: this.janus.handleId,
+          body
+        }).catch(error => {
+          this.janus.log?.('janus_server_hangup_fallback_failed', {
+            call_ref: this.request.call_ref,
+            provider_call_id: this.providerCallId,
+            error: error.message
+          });
+        });
+      } else {
+        this.hangupConfirmationPending = false;
+      }
     } finally {
+      confirmation.cancel();
       await this.terminateMediaSession();
-      this.emitEnd();
+      if (confirmed) this.emitEnd();
+      else this.scheduleHangupReconciliationCleanup();
     }
-    return true;
+    return {
+      accepted: true,
+      confirmed,
+      outcome: confirmed ? 'janus_hangup_event' : 'command_retried_after_confirmation_timeout'
+    };
+  }
+
+  waitForEndConfirmation() {
+    if (this.ended) {
+      return { promise: Promise.resolve(true), cancel() {} };
+    }
+    let settled = false;
+    let timer;
+    let resolvePromise;
+    const finish = value => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      this.removeListener('end', onEnd);
+      resolvePromise(value);
+    };
+    const onEnd = () => finish(true);
+    const promise = new Promise(resolve => { resolvePromise = resolve; });
+    this.once('end', onEnd);
+    timer = setTimeout(() => finish(false), this.hangupConfirmationTimeoutMs);
+    return { promise, cancel: () => finish(false) };
+  }
+
+  scheduleHangupReconciliationCleanup() {
+    if (this.ended || this.hangupReconciliationTimer) return;
+    this.hangupReconciliationTimer = setTimeout(() => {
+      this.hangupReconciliationTimer = null;
+      if (this.ended) return;
+      this.janus.log?.('janus_server_hangup_reconciliation_expired', {
+        call_ref: this.request.call_ref,
+        provider_call_id: this.providerCallId,
+        grace_ms: this.hangupReconciliationGraceMs
+      });
+      this.emitEnd();
+    }, this.hangupReconciliationGraceMs);
+    this.hangupReconciliationTimer.unref?.();
   }
 
   emitEnd() {
     if (this.ended) return;
+    clearTimeout(this.hangupReconciliationTimer);
+    this.hangupReconciliationTimer = null;
     this.ended = true;
     this.remoteAnswerWaiter?.reject(new Error('janus call ended before remote answer'));
     this.transferLeg = null;
@@ -1252,6 +1337,13 @@ class JanusSipServerCallFacade extends EventEmitter {
 
   handleJanusEvent(eventName, result = {}, event = {}) {
     if (eventName === 'hangup') {
+      if (this.hangupConfirmationPending) {
+        this.hangupConfirmationPending = false;
+        this.janus.log?.('janus_server_hangup_confirmed_late', {
+          call_ref: this.request.call_ref,
+          provider_call_id: this.providerCallId
+        });
+      }
       this.terminateMediaSession().catch(() => {});
       this.emitEnd();
       return;

@@ -688,7 +688,7 @@ async def test_callback_handoff_speaks_before_ending_the_call():
 
 
 @pytest.mark.asyncio
-async def test_end_call_intent_is_visible_while_runtime_control_is_in_flight():
+async def test_end_call_is_authoritative_only_after_runtime_control_accepts_it():
     requested_action: dict[str, str | None] = {"action": None}
     control_started = asyncio.Event()
     release_control = asyncio.Event()
@@ -709,9 +709,56 @@ async def test_end_call_intent_is_visible_while_runtime_control_is_in_flight():
     )
 
     await asyncio.wait_for(control_started.wait(), timeout=0.1)
-    assert requested_action == {"action": "end_call"}
+    assert requested_action == {"action": None}
     release_control.set()
     assert await execution == {"status": "accepted"}
+    assert requested_action == {"action": "end_call"}
+
+
+@pytest.mark.asyncio
+async def test_failed_end_call_control_keeps_final_hangup_fallback_eligible():
+    requested_action: dict[str, str | None] = {"action": None}
+
+    class FailingEndCallControlClient(RecordingRuntimeControlClient):
+        async def execute(self, result):
+            self.actions.append(result)
+            raise OnelinkApiError("runtime control failed", code="runtime_control_failed")
+
+    with pytest.raises(OnelinkApiError) as raised:
+        await _execute_terminal_action(
+            {"action": "end_call", "reason": "caller requested hangup"},
+            control_client=cast(Any, FailingEndCallControlClient()),
+            requested_action=requested_action,
+            rails_managed_end_call=False,
+        )
+
+    assert raised.value.code == "runtime_control_failed"
+    assert requested_action["action"] is None
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_runtime_hangup_keeps_terminal_action_pending():
+    class UnconfirmedEndCallControlClient(RecordingRuntimeControlClient):
+        async def execute(self, result):
+            self.actions.append(result)
+            return {
+                "status": "accepted",
+                "action": "end_call",
+                "confirmed": False,
+                "outcome": "command_retried_after_confirmation_timeout",
+            }
+
+    requested_action: dict[str, str | None] = {"action": None}
+    response = await _execute_terminal_action(
+        {"action": "end_call", "reason": "caller requested hangup"},
+        control_client=cast(Any, UnconfirmedEndCallControlClient()),
+        requested_action=requested_action,
+        rails_managed_end_call=False,
+    )
+
+    assert response is not None
+    assert response["confirmed"] is False
+    assert requested_action == {"action": None, "confirmation": "missing"}
 
 
 @pytest.mark.asyncio
@@ -794,7 +841,7 @@ async def test_transfer_fallback_fails_closed_when_announcement_does_not_complet
 
     assert raised.value.code == "fallback_announcement_incomplete"
     assert [item["action"] for item in control.actions] == ["transfer"]
-    assert requested_action == {"action": "transfer"}
+    assert requested_action == {"action": None}
 
 
 @pytest.mark.asyncio
@@ -854,11 +901,11 @@ async def test_failed_transfer_can_return_control_to_the_model():
     assert response is not None
     assert response["status"] == "failed"
     assert response["continue_call"] is True
-    assert requested_action == {"action": "transfer"}
+    assert requested_action == {"action": None}
 
 
 @pytest.mark.asyncio
-async def test_terminal_control_timeout_is_bounded_and_preserves_ambiguous_transfer(monkeypatch):
+async def test_terminal_control_timeout_is_bounded_and_keeps_cleanup_eligible(monkeypatch):
     requested_action: dict[str, str | None] = {"action": None}
 
     class HangingRuntimeControlClient:
@@ -877,7 +924,7 @@ async def test_terminal_control_timeout_is_bounded_and_preserves_ambiguous_trans
             timeout=0.1,
         )
 
-    assert requested_action == {"action": "transfer"}
+    assert requested_action == {"action": None}
 
 
 @pytest.mark.asyncio
