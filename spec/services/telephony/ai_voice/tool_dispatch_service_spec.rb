@@ -142,6 +142,17 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       expect(faq['foreground_wait_ms']).to eq(2_800)
     end
 
+    it 'publishes only the canonical knowledge tool when overlapping tools are selected' do
+      allow(assistant).to receive(:voice_runtime_agent_tools).and_return(
+        [{ id: 'faq_lookup' }, { id: 'search_documentation' }]
+      )
+
+      names = described_class.catalog(captain_assistant: assistant).pluck('name')
+
+      expect(names).to include('faq_lookup')
+      expect(names).not_to include('search_documentation')
+    end
+
     it 'adds voice data-integrity guidance to mutating Captain tools' do
       allow(assistant).to receive(:voice_runtime_agent_tools).and_return(
         [{ id: 'create_deal' }, { id: 'add_contact_note' }]
@@ -354,6 +365,40 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       expect(state).to include(account_id: account.id, assistant_id: assistant.id, source: 'voice_ai')
       expect(state[:conversation]).to include(id: conversation.id, display_id: conversation.display_id)
       expect(state).not_to have_key(:prompt_context)
+    end
+  end
+
+  describe '#with_captain_assistant_assignment_lock' do
+    let(:account) { create(:account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox) }
+    let(:call_session) do
+      create(
+        :telephony_call_session,
+        account: account,
+        conversation: conversation,
+        inbox: inbox,
+        number_binding: nil,
+        external_call_ref: 'asterisk_analog:assignment-snapshot'
+      )
+    end
+
+    it 'keeps a missing assignment stable after the lock is released' do
+      service = described_class.new(
+        tool_name: 'create_note',
+        payload: { account_id: account.id, call_ref: call_session.external_call_ref, arguments: {} }
+      )
+
+      service.with_captain_assistant_assignment_lock do |assistant_id|
+        expect(assistant_id).to be_nil
+      end
+      assistant = create(:captain_assistant, account: account)
+      create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
+      assignment_inbox = service.send(:assignment_inbox)
+      assignment_inbox.association(:captain_inbox).reset
+      assignment_inbox.association(:captain_assistant).reset
+
+      expect(service.captain_assistant_id).to be_nil
     end
   end
 

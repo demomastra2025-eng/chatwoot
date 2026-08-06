@@ -215,6 +215,20 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     expect(conversation.messages.where(private: true)).not_to exist
   end
 
+  it 'does not hold the assistant assignment transaction during the tool body' do
+    service = execution(arguments: { content: 'Outside assignment lock' })
+    dispatch_service = service.send(:dispatch_service)
+    baseline_transactions = ActiveRecord::Base.connection.open_transactions
+
+    allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
+      expect(ActiveRecord::Base.connection.open_transactions).to eq(baseline_transactions)
+      original.call
+    end
+
+    expect { service.perform }
+      .to change { conversation.messages.where(private: true).count }.by(1)
+  end
+
   it 'requires account scope, an idempotency key and a per-call capability' do
     base_payload = {
       account_id: account.id,

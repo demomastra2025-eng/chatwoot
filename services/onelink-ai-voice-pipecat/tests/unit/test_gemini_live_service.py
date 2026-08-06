@@ -106,7 +106,46 @@ async def test_internal_speech_text_is_sent_to_gemini_without_leaking_downstream
 @pytest.mark.asyncio
 async def test_tool_result_generation_is_bounded_by_provider_turn_complete():
     service = object.__new__(OneLinkGeminiLiveLLMService)
-    service._pending_tool_result_generations = 0
+    service._tool_result_generation_pending = False
+    service.push_frame = AsyncMock()
+    message = LiveServerMessage(server_content=LiveServerContent(turn_complete=True))
+
+    with (
+        patch.object(GeminiLiveLLMService, "_tool_result", new_callable=AsyncMock) as tool_result,
+        patch.object(
+            GeminiLiveLLMService,
+            "_handle_msg_turn_complete",
+            new_callable=AsyncMock,
+        ) as turn_complete,
+    ):
+        await service._tool_result("call-1", "lookup", {"status": "pending"})
+        await service._tool_result("call-2", "lookup", {"status": "pending"})
+        await service._handle_msg_turn_complete(message)
+
+    assert tool_result.await_args_list[0].args == (
+        "call-1",
+        "lookup",
+        {"status": "pending"},
+    )
+    assert tool_result.await_args_list[1].args == (
+        "call-2",
+        "lookup",
+        {"status": "pending"},
+    )
+    turn_complete.assert_awaited_once_with(message)
+    assert isinstance(
+        service.push_frame.await_args_list[0].args[0], OneLinkToolResultGenerationStartFrame
+    )
+    assert isinstance(
+        service.push_frame.await_args_list[1].args[0], OneLinkToolResultGenerationEndFrame
+    )
+    assert service._tool_result_generation_pending is False
+
+
+@pytest.mark.asyncio
+async def test_tool_result_generation_supports_sequential_intervals():
+    service = object.__new__(OneLinkGeminiLiveLLMService)
+    service._tool_result_generation_pending = False
     service.push_frame = AsyncMock()
     message = LiveServerMessage(server_content=LiveServerContent(turn_complete=True))
 
@@ -120,13 +159,37 @@ async def test_tool_result_generation_is_bounded_by_provider_turn_complete():
     ):
         await service._tool_result("call-1", "lookup", {"status": "pending"})
         await service._handle_msg_turn_complete(message)
+        await service._tool_result("call-2", "lookup", {"status": "pending"})
+        await service._handle_msg_turn_complete(message)
 
-    tool_result.assert_awaited_once_with("call-1", "lookup", {"status": "pending"})
-    turn_complete.assert_awaited_once_with(message)
-    assert isinstance(
-        service.push_frame.await_args_list[0].args[0], OneLinkToolResultGenerationStartFrame
-    )
-    assert isinstance(
-        service.push_frame.await_args_list[1].args[0], OneLinkToolResultGenerationEndFrame
-    )
-    assert service._pending_tool_result_generations == 0
+    assert tool_result.await_count == 2
+    assert turn_complete.await_count == 2
+    assert service._tool_result_generation_pending is False
+    assert [type(args.args[0]) for args in service.push_frame.await_args_list] == [
+        OneLinkToolResultGenerationStartFrame,
+        OneLinkToolResultGenerationEndFrame,
+        OneLinkToolResultGenerationStartFrame,
+        OneLinkToolResultGenerationEndFrame,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_grouped_tool_result_error_closes_active_generation_interval():
+    service = object.__new__(OneLinkGeminiLiveLLMService)
+    service._tool_result_generation_pending = False
+    service.push_frame = AsyncMock()
+
+    with patch.object(
+        GeminiLiveLLMService,
+        "_tool_result",
+        new=AsyncMock(side_effect=[None, RuntimeError("provider send failed")]),
+    ):
+        await service._tool_result("call-1", "lookup", {"status": "pending"})
+        with pytest.raises(RuntimeError, match="provider send failed"):
+            await service._tool_result("call-2", "lookup", {"status": "pending"})
+
+    assert service._tool_result_generation_pending is False
+    assert [type(args.args[0]) for args in service.push_frame.await_args_list] == [
+        OneLinkToolResultGenerationStartFrame,
+        OneLinkToolResultGenerationEndFrame,
+    ]

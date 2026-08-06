@@ -37,6 +37,8 @@ from app.services.gemini_live import (
 )
 from app.sessions.state import SessionState
 
+CAUSAL_SIDE_EFFECT_TIMEOUT_SECONDS = 1.0
+
 AudioFrameT = TypeVar("AudioFrameT", bound=AudioRawFrame)
 _DOMAIN_TRANSCRIPT_REPLACEMENTS = {
     "какое у вас слово": "Какой у вас слоган?",
@@ -105,6 +107,31 @@ class DomainTranscriptNormalizationProcessor(FrameProcessor):
 def normalize_domain_transcript(text: str) -> str:
     lookup_key = re.sub(r"[^\w]+", " ", text.casefold(), flags=re.UNICODE).strip()
     return _DOMAIN_TRANSCRIPT_REPLACEMENTS.get(lookup_key, text)
+
+
+class PreAggregatorSTTEvidenceProcessor(FrameProcessor):
+    """Log sanitized STT ordering before the user aggregator consumes final frames."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._sequence = 0
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if direction == FrameDirection.DOWNSTREAM and isinstance(
+            frame, (InterimTranscriptionFrame, TranscriptionFrame)
+        ):
+            self._sequence += 1
+            text = frame.text.strip()
+            logger.info(
+                "Voice STT evidence sequence={} kind={} words={} chars={} monotonic_ms={}",
+                self._sequence,
+                "interim" if isinstance(frame, InterimTranscriptionFrame) else "final",
+                len(text.split()),
+                len(text),
+                round(time.monotonic() * 1_000),
+            )
+        await self.push_frame(frame, direction)
 
 
 class TurnLifecycleProcessor(FrameProcessor):
@@ -288,6 +315,7 @@ class ConversationActivity:
     def __init__(self) -> None:
         self.bot_speaking = False
         self.user_speaking = False
+        self.user_turns_started = 0
         self.turns_started = 0
         self.turns_completed = 0
         self.model_generations_started = 0
@@ -297,6 +325,7 @@ class ConversationActivity:
         self.tool_executions_started = 0
         self.interruptions = 0
         self.speech_lock = asyncio.Lock()
+        self._causal_admission_lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._last_user_stopped_at: float | None = None
         self._last_model_generation_started_at: float | None = None
@@ -324,9 +353,34 @@ class ConversationActivity:
             self._changed.notify_all()
 
     async def user_started(self) -> None:
-        async with self._changed:
-            self.user_speaking = True
-            self._changed.notify_all()
+        # Serialize caller-turn invalidation with the short side-effect enqueue
+        # boundary. If enqueue wins, the immediately following interruption
+        # clears that already-admitted output; if invalidation wins, stale
+        # output is rejected before it reaches the provider or frame queue.
+        async with self._causal_admission_lock:
+            async with self._changed:
+                self.user_speaking = True
+                self.user_turns_started += 1
+                self._changed.notify_all()
+
+    async def admit_causal_side_effect(
+        self,
+        causal_user_turn: int,
+        side_effect: Callable[[], Awaitable[None]],
+    ) -> bool:
+        """Atomically admit one bounded enqueue against the caller-turn epoch."""
+        async with self._causal_admission_lock:
+            if self.user_turns_started != causal_user_turn:
+                return False
+            try:
+                await asyncio.wait_for(side_effect(), timeout=CAUSAL_SIDE_EFFECT_TIMEOUT_SECONDS)
+                return True
+            except TimeoutError:
+                logger.warning(
+                    "Causal side-effect enqueue timed out after {:.3f}s",
+                    CAUSAL_SIDE_EFFECT_TIMEOUT_SECONDS,
+                )
+                return False
 
     async def user_stopped(self) -> None:
         async with self._changed:

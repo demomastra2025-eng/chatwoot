@@ -943,6 +943,144 @@ async def test_faq_result_defers_direct_speech_during_caller_barge_in():
 
 
 @pytest.mark.asyncio
+async def test_direct_result_from_superseded_caller_turn_is_not_spoken():
+    gate = asyncio.Event()
+    state = FakeState(result={"matches": [{"answer": "Устаревший ответ"}]}, gate=gate)
+    activity = ConversationActivity()
+    spoken = []
+
+    async def result_callback(_result, *, properties=None):
+        await properties.on_context_updated()
+
+    async def speak_result(message):
+        spoken.append(message)
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=speak_result,
+        speak_result=speak_result,
+        run_instruction=speak_result,
+    )
+    params = Params(
+        arguments={"query": "Первый вопрос"},
+        tool_call_id="faq-stale",
+        result_callback=result_callback,
+    )
+    execution = asyncio.create_task(coordinator.execute(definition("faq_lookup"), params))
+
+    await asyncio.sleep(0)
+    await activity.user_started()
+    await activity.user_stopped()
+    gate.set()
+    await execution
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert spoken == []
+    assert any(
+        control[0] == "tool_speech_suppressed"
+        and control[1].get("reason") == "caller_turn_superseded"
+        for control in state.controls
+    )
+
+
+@pytest.mark.asyncio
+async def test_progress_from_superseded_caller_turn_is_not_spoken():
+    gate = asyncio.Event()
+    state = FakeState(gate=gate)
+    activity = ConversationActivity()
+    spoken = []
+
+    async def speak(message):
+        spoken.append(message)
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(tool_start_after_ms=20, tool_delay_after_ms=5_000),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=speak, run_instruction=speak)
+    execution = asyncio.create_task(execute_with_answer(coordinator, activity))
+
+    await asyncio.sleep(0)
+    await activity.user_started()
+    await activity.user_stopped()
+    await asyncio.sleep(0.03)
+    gate.set()
+    await execution
+    await asyncio.gather(*state.tasks)
+
+    assert spoken == []
+
+
+@pytest.mark.asyncio
+async def test_generic_result_from_superseded_turn_updates_context_without_running_llm():
+    gate = asyncio.Event()
+    state = FakeState(gate=gate)
+    activity = ConversationActivity()
+    callback_properties = []
+
+    async def result_callback(_result, *, properties=None):
+        callback_properties.append(properties)
+
+    async def no_speech(_message):
+        return None
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(speak_exact=no_speech, run_instruction=no_speech)
+    params = Params(
+        arguments={"query": "Первый вопрос"},
+        tool_call_id="generic-stale",
+        result_callback=result_callback,
+    )
+    execution = asyncio.create_task(coordinator.execute(definition("account_check"), params))
+
+    await asyncio.sleep(0)
+    await activity.user_started()
+    await activity.user_stopped()
+    gate.set()
+    await execution
+    await asyncio.gather(*state.tasks)
+
+    assert len(callback_properties) == 1
+    assert callback_properties[0].run_llm is False
+
+
+@pytest.mark.asyncio
+async def test_gemini_late_result_from_superseded_turn_is_not_spoken():
+    gate = asyncio.Event()
+    state = FakeState(gate=gate)
+    activity = ConversationActivity()
+    instructions = []
+
+    async def record(message):
+        instructions.append(message)
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=5),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=record, run_instruction=record)
+    results = await execute_with_answer(
+        coordinator,
+        activity,
+        tool_definition=definition("create_deal"),
+        on_result=lambda _result: asyncio.sleep(0),
+    )
+    assert results[0]["status"] == "pending"
+
+    await activity.user_started()
+    await activity.user_stopped()
+    gate.set()
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert instructions == []
+    assert any(control[0] == "tool_speech_suppressed" for control in state.controls)
+
+
+@pytest.mark.asyncio
 async def test_fast_faq_result_suppresses_obsolete_progress_phrase():
     state = FakeState(result={"matches": [{"answer": "Готовый ответ"}]})
     activity = ConversationActivity()
@@ -1099,3 +1237,285 @@ def test_generic_voice_result_projection_is_hard_bounded():
     )
 
     assert len(json.dumps(projected, ensure_ascii=False)) <= 2_400
+
+
+@pytest.mark.asyncio
+async def test_causal_turn_is_captured_before_tool_started_can_yield():
+    tool_started_entered = asyncio.Event()
+    release_tool_started = asyncio.Event()
+    state = FakeState(result={"answer": "актуальный ответ"})
+    activity = ConversationActivity()
+    spoken = []
+    results = []
+    original_tool_started = activity.tool_started
+
+    async def delayed_tool_started():
+        tool_started_entered.set()
+        await release_tool_started.wait()
+        await original_tool_started()
+
+    async def speak_result(message):
+        spoken.append(message)
+        return True
+
+    async def result_callback(result, *, properties=None):
+        results.append(result)
+        if properties is not None and properties.on_context_updated is not None:
+            await properties.on_context_updated()
+
+    activity.tool_started = delayed_tool_started
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=speak_result,
+        speak_result=speak_result,
+        run_instruction=speak_result,
+    )
+    execution = asyncio.create_task(
+        coordinator.execute(
+            definition("faq_lookup"),
+            Params(
+                arguments={"query": "тариф"},
+                tool_call_id="snapshot-1",
+                result_callback=result_callback,
+            ),
+        )
+    )
+
+    await tool_started_entered.wait()
+    await activity.user_started()
+    await activity.user_stopped()
+    release_tool_started.set()
+    await execution
+    await asyncio.gather(*state.tasks)
+
+    assert results == [{"answer": "актуальный ответ"}]
+    assert spoken == []
+    assert any(control[0] == "tool_speech_suppressed" for control in state.controls)
+
+
+@pytest.mark.asyncio
+async def test_direct_speech_admission_rejects_turn_started_after_coordinator_check(
+    monkeypatch,
+):
+    before_admission = asyncio.Event()
+    release_admission = asyncio.Event()
+    state = FakeState(result={"answer": "старый ответ"})
+    activity = ConversationActivity()
+    enqueued = []
+
+    async def legacy_speak(_message):
+        return True
+
+    async def causal_speak(message, causal_user_turn):
+        before_admission.set()
+        await release_admission.wait()
+
+        async def enqueue():
+            enqueued.append(message)
+
+        return await activity.admit_causal_side_effect(causal_user_turn, enqueue)
+
+    async def result_callback(_result, *, properties=None):
+        assert properties is not None
+        assert properties.on_context_updated is not None
+        await properties.on_context_updated()
+
+    monkeypatch.setattr(tool_dialogue_module, "DIRECT_RESULT_SETTLE_SECONDS", 0)
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=legacy_speak,
+        speak_result=legacy_speak,
+        run_instruction=legacy_speak,
+        speak_exact_for_turn=causal_speak,
+        speak_result_for_turn=causal_speak,
+        run_instruction_for_turn=causal_speak,
+    )
+
+    await coordinator.execute(
+        definition("faq_lookup"),
+        Params(
+            arguments={"query": "тариф"},
+            tool_call_id="admission-tts",
+            result_callback=result_callback,
+        ),
+    )
+    await before_admission.wait()
+    await activity.user_started()
+    await activity.user_stopped()
+    release_admission.set()
+    await asyncio.gather(*state.tasks)
+
+    assert enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_late_instruction_admission_rejects_turn_started_after_coordinator_check():
+    before_admission = asyncio.Event()
+    release_admission = asyncio.Event()
+    state = FakeState()
+    activity = ConversationActivity()
+    enqueued = []
+
+    async def legacy_speak(_message):
+        return True
+
+    async def causal_instruction(message, causal_user_turn):
+        before_admission.set()
+        await release_admission.wait()
+
+        async def enqueue():
+            enqueued.append(message)
+
+        return await activity.admit_causal_side_effect(causal_user_turn, enqueue)
+
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(
+        speak_exact=legacy_speak,
+        run_instruction=legacy_speak,
+        run_instruction_for_turn=causal_instruction,
+    )
+    instruction = asyncio.create_task(
+        coordinator._run_late_instruction(
+            "Озвучь старый результат.",
+            causal_user_turn=activity.user_turns_started,
+        )
+    )
+
+    await before_admission.wait()
+    await activity.user_started()
+    await activity.user_stopped()
+    release_admission.set()
+    await instruction
+
+    assert enqueued == []
+
+
+@pytest.mark.asyncio
+async def test_generic_result_admission_falls_back_to_context_only_after_new_turn():
+    before_admission = asyncio.Event()
+    release_admission = asyncio.Event()
+    state = FakeState(result={"status": "ok", "balance": 10})
+    activity = ConversationActivity()
+    callback_properties = []
+    original_admission = activity.admit_causal_side_effect
+
+    async def delayed_admission(causal_user_turn, side_effect):
+        before_admission.set()
+        await release_admission.wait()
+        return await original_admission(causal_user_turn, side_effect)
+
+    async def no_speech(_message):
+        return True
+
+    async def result_callback(_result, *, properties=None):
+        callback_properties.append(properties)
+
+    activity.admit_causal_side_effect = delayed_admission
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    coordinator.bind(speak_exact=no_speech, run_instruction=no_speech)
+    execution = asyncio.create_task(
+        coordinator.execute(
+            definition("account_check"),
+            Params(
+                arguments={},
+                tool_call_id="admission-generic",
+                result_callback=result_callback,
+            ),
+        )
+    )
+
+    await before_admission.wait()
+    await activity.user_started()
+    await activity.user_stopped()
+    release_admission.set()
+    await execution
+    await asyncio.gather(*state.tasks)
+
+    assert len(callback_properties) == 1
+    assert callback_properties[0] is not None
+    assert callback_properties[0].run_llm is False
+    assert coordinator.awaiting_continuation is False
+
+
+@pytest.mark.asyncio
+async def test_result_callback_timeout_falls_back_without_running_llm(monkeypatch):
+    state = FakeState()
+    activity = ConversationActivity()
+    coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
+    callback_properties = []
+    callback_calls = 0
+    stalled = asyncio.Event()
+
+    async def result_callback(_result, *, properties=None):
+        nonlocal callback_calls
+        callback_calls += 1
+        if callback_calls == 1:
+            await stalled.wait()
+        callback_properties.append(properties)
+
+    monkeypatch.setattr("app.pipeline.processors.CAUSAL_SIDE_EFFECT_TIMEOUT_SECONDS", 0.01)
+    admitted = await coordinator._deliver_result_callback_causally(
+        definition("account_check"),
+        Params(arguments={}, tool_call_id="callback-timeout", result_callback=result_callback),
+        {"status": "completed"},
+        activity.user_turns_started,
+    )
+
+    assert admitted is False
+    assert callback_calls == 2
+    assert callback_properties[0] is not None
+    assert callback_properties[0].run_llm is False
+
+
+@pytest.mark.asyncio
+async def test_stale_gemini_pending_result_is_delivered_without_running_llm():
+    before_admission = asyncio.Event()
+    release_admission = asyncio.Event()
+    tool_gate = asyncio.Event()
+    state = FakeState(gate=tool_gate)
+    activity = ConversationActivity()
+    callback_properties = []
+    original_admission = activity.admit_causal_side_effect
+
+    async def delayed_admission(causal_user_turn, side_effect):
+        before_admission.set()
+        await release_admission.wait()
+        return await original_admission(causal_user_turn, side_effect)
+
+    async def no_speech(_message):
+        return True
+
+    async def result_callback(_result, *, properties=None):
+        callback_properties.append(properties)
+
+    activity.admit_causal_side_effect = delayed_admission
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(provider="gemini-live", tool_foreground_wait_ms=5),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(speak_exact=no_speech, run_instruction=no_speech)
+    execution = asyncio.create_task(
+        coordinator.execute(
+            definition("create_deal"),
+            Params(
+                arguments={},
+                tool_call_id="stale-gemini-pending",
+                result_callback=result_callback,
+            ),
+        )
+    )
+
+    await before_admission.wait()
+    await activity.user_started()
+    await activity.user_stopped()
+    release_admission.set()
+    await execution
+    tool_gate.set()
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert len(callback_properties) == 1
+    assert callback_properties[0] is not None
+    assert callback_properties[0].run_llm is False
+    assert coordinator.awaiting_continuation is False

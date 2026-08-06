@@ -1,5 +1,7 @@
+import asyncio
+from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from pipecat.frames.frames import (
@@ -18,6 +20,7 @@ from app.pipeline.processors import (
     ConversationActivity,
     DomainTranscriptNormalizationProcessor,
     ModelLifecycleProcessor,
+    PreAggregatorSTTEvidenceProcessor,
     TurnLifecycleProcessor,
 )
 from app.services.gemini_live import (
@@ -75,6 +78,27 @@ async def test_domain_transcript_normalizer_preserves_unrelated_speech():
     await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
 
     assert processor.push_frame.await_args.args[0] is frame
+
+
+@pytest.mark.asyncio
+async def test_pre_aggregator_stt_evidence_is_sanitized(monkeypatch):
+    info = Mock()
+    monkeypatch.setattr(processors_module, "logger", SimpleNamespace(info=info))
+    monkeypatch.setattr(processors_module.time, "monotonic", lambda: 12.345)
+    processor = PreAggregatorSTTEvidenceProcessor()
+    processor.push_frame = AsyncMock()
+    frame = TranscriptionFrame(
+        text="секретный текст клиента",
+        user_id="caller",
+        timestamp="2026-08-05T00:00:00Z",
+        finalized=True,
+    )
+
+    await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
+
+    assert info.call_args.args[1:] == (1, "final", 3, 23, 12_345)
+    assert "секретный текст клиента" not in repr(info.call_args)
+    processor.push_frame.assert_awaited_once_with(frame, FrameDirection.DOWNSTREAM)
 
 
 def test_activity_reports_each_voice_latency_stage(monkeypatch):
@@ -179,6 +203,7 @@ async def test_model_lifecycle_marks_interrupted_generation_idle():
     activity = ConversationActivity()
     processor = ModelLifecycleProcessor(activity)
     processor.push_frame = AsyncMock()
+    processor._start_interruption = AsyncMock()
 
     await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
     await processor.process_frame(InterruptionFrame(), FrameDirection.DOWNSTREAM)
@@ -191,6 +216,7 @@ async def test_model_lifecycle_marks_interrupted_generation_idle():
     await processor.process_frame(LLMFullResponseStartFrame(), FrameDirection.DOWNSTREAM)
 
     assert activity.model_generation_active is True
+    processor._start_interruption.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -219,3 +245,59 @@ async def test_model_lifecycle_ignores_upstream_mirror_frames():
 
     assert activity.model_generations_started == 0
     assert activity.model_outputs_generated == 0
+
+
+@pytest.mark.asyncio
+async def test_causal_admission_linearizes_enqueue_before_user_turn_invalidation():
+    activity = ConversationActivity()
+    enqueue_started = asyncio.Event()
+    release_enqueue = asyncio.Event()
+    enqueued = []
+
+    async def enqueue():
+        enqueue_started.set()
+        await release_enqueue.wait()
+        enqueued.append("tool speech")
+
+    admission = asyncio.create_task(
+        activity.admit_causal_side_effect(activity.user_turns_started, enqueue)
+    )
+    await enqueue_started.wait()
+    user_started = asyncio.create_task(activity.user_started())
+    await asyncio.sleep(0)
+
+    assert not user_started.done()
+    release_enqueue.set()
+    assert await admission is True
+    await user_started
+    assert enqueued == ["tool speech"]
+    assert activity.user_turns_started == 1
+
+    stale_enqueue_called = False
+
+    async def stale_enqueue():
+        nonlocal stale_enqueue_called
+        stale_enqueue_called = True
+
+    assert await activity.admit_causal_side_effect(0, stale_enqueue) is False
+    assert stale_enqueue_called is False
+
+
+@pytest.mark.asyncio
+async def test_causal_admission_bounds_enqueue_before_user_turn_invalidation(monkeypatch):
+    monkeypatch.setattr("app.pipeline.processors.CAUSAL_SIDE_EFFECT_TIMEOUT_SECONDS", 0.01)
+    activity = ConversationActivity()
+
+    async def stalled_enqueue():
+        await asyncio.Event().wait()
+
+    admission = asyncio.create_task(
+        activity.admit_causal_side_effect(activity.user_turns_started, stalled_enqueue)
+    )
+    await asyncio.sleep(0)
+    user_started = asyncio.create_task(activity.user_started())
+
+    assert await admission is False
+    await asyncio.wait_for(user_started, timeout=0.05)
+
+    assert activity.user_turns_started == 1

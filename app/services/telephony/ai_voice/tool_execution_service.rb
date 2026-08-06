@@ -74,8 +74,11 @@ class Telephony::AiVoice::ToolExecutionService
   def dispatch_with_current_capability!
     dispatch_service.with_captain_assistant_assignment_lock do |assistant_id|
       verify_tool_capability!(assistant_id: assistant_id)
-      normalize_result(dispatch_service.perform)
     end
+    # The locked capability check is the authorization linearization point.
+    # Tool dispatch can perform remote I/O, so it must not retain Inbox,
+    # CaptainInbox, or RoutingPolicy row locks for the duration of the body.
+    normalize_result(dispatch_service.perform)
   end
 
   def tool_capability_token

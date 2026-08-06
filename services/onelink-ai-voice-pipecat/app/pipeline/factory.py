@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import cast
 
 from google.genai.types import ProactivityConfig, ThinkingConfig
 from pipecat.adapters.schemas.direct_function import tool_options
@@ -71,6 +72,7 @@ from app.pipeline.processors import (
     DomainTranscriptNormalizationProcessor,
     InputRecordingProcessor,
     ModelLifecycleProcessor,
+    PreAggregatorSTTEvidenceProcessor,
     TurnLifecycleProcessor,
 )
 from app.pipeline.tool_dialogue import CLOSING_SPEECH_MAX_SECONDS, ToolDialogueCoordinator
@@ -171,12 +173,32 @@ class PipelineAssembly:
         await self.worker.queue_frame(LLMRunFrame())
 
     async def speak_exact(self, message: str) -> bool:
-        return await self._speak(message, append_to_context=False)
+        return await self._speak(message, append_to_context=False, causal_user_turn=None)
 
     async def speak_result(self, message: str) -> bool:
-        return await self._speak(message, append_to_context=True)
+        return await self._speak(message, append_to_context=True, causal_user_turn=None)
 
-    async def _speak(self, message: str, *, append_to_context: bool) -> bool:
+    async def speak_exact_for_turn(self, message: str, causal_user_turn: int) -> bool:
+        return await self._speak(
+            message,
+            append_to_context=False,
+            causal_user_turn=causal_user_turn,
+        )
+
+    async def speak_result_for_turn(self, message: str, causal_user_turn: int) -> bool:
+        return await self._speak(
+            message,
+            append_to_context=True,
+            causal_user_turn=causal_user_turn,
+        )
+
+    async def _speak(
+        self,
+        message: str,
+        *,
+        append_to_context: bool,
+        causal_user_turn: int | None,
+    ) -> bool:
         instruction = (
             "Произнеси сейчас только следующую фразу естественно, без пояснений и "
             f"добавлений: {message}"
@@ -185,33 +207,46 @@ class PipelineAssembly:
             started_sequence = self.activity.turns_started
             completed_sequence = self.activity.turns_completed
             interruption_sequence = self.activity.interruptions
-            if self.provider in {"elevenlabs", "cartesia", "fish"} and isinstance(
-                self.tts,
-                (ElevenLabsTTSService, CartesiaTTSService, OneLinkFishAudioTTSService),
-            ):
-                await self.worker.queue_frame(
-                    TTSSpeakFrame(message, append_to_context=append_to_context)
-                )
-            elif self.provider == "openai-realtime" and isinstance(
-                self.llm, OpenAIRealtimeLLMService
-            ):
-                await self.llm.send_client_event(
-                    ResponseCreateEvent(
-                        response=ResponseProperties(
-                            output_modalities=["audio"],
-                            instructions=instruction,
-                            tools=[],
-                            tool_choice="none",
+
+            async def enqueue() -> None:
+                llm = self.llm
+                if self.provider in {"elevenlabs", "cartesia", "fish"} and isinstance(
+                    self.tts,
+                    (ElevenLabsTTSService, CartesiaTTSService, OneLinkFishAudioTTSService),
+                ):
+                    await self.worker.queue_frame(
+                        TTSSpeakFrame(message, append_to_context=append_to_context)
+                    )
+                elif self.provider == "openai-realtime" and isinstance(
+                    llm, OpenAIRealtimeLLMService
+                ):
+                    await cast(OpenAIRealtimeLLMService, llm).send_client_event(
+                        ResponseCreateEvent(
+                            response=ResponseProperties(
+                                output_modalities=["audio"],
+                                instructions=instruction,
+                                tools=[],
+                                tool_choice="none",
+                            )
                         )
                     )
-                )
+                else:
+                    frame_type = (
+                        OneLinkInternalTextFrame
+                        if self.provider == "gemini-live"
+                        else InputTextRawFrame
+                    )
+                    await self.worker.queue_frame(frame_type(text=instruction))
+
+            if causal_user_turn is None:
+                await enqueue()
             else:
-                frame_type = (
-                    OneLinkInternalTextFrame
-                    if self.provider == "gemini-live"
-                    else InputTextRawFrame
+                admitted = await self.activity.admit_causal_side_effect(
+                    causal_user_turn,
+                    enqueue,
                 )
-                await self.worker.queue_frame(frame_type(text=instruction))
+                if not admitted:
+                    return False
             return await self._await_and_record_direct_speech(
                 message,
                 started_sequence=started_sequence,
@@ -238,11 +273,7 @@ class PipelineAssembly:
         # crossed BotStartedSpeakingFrame, and the counter check protects against
         # an unrelated/stale completion.
         started = self.activity.turns_started > started_sequence
-        if (
-            not completed
-            or not started
-            or self.activity.interruptions > interruption_sequence
-        ):
+        if not completed or not started or self.activity.interruptions > interruption_sequence:
             return False
 
         # Realtime providers produce their own assistant aggregation event. A
@@ -264,25 +295,46 @@ class PipelineAssembly:
         # complete pipeline in both directions.
         await self.worker.queue_frame(InterruptionWorkerFrame())
 
-    async def run_instruction(self, instruction: str) -> None:
-        if self.provider == "openai-realtime" and isinstance(self.llm, OpenAIRealtimeLLMService):
-            await self.llm.send_client_event(
-                ResponseCreateEvent(
-                    response=ResponseProperties(
-                        output_modalities=["audio"],
-                        instructions=instruction,
+    async def run_instruction(self, instruction: str) -> bool:
+        return await self._run_instruction(instruction, causal_user_turn=None)
+
+    async def run_instruction_for_turn(self, instruction: str, causal_user_turn: int) -> bool:
+        return await self._run_instruction(
+            instruction,
+            causal_user_turn=causal_user_turn,
+        )
+
+    async def _run_instruction(
+        self,
+        instruction: str,
+        *,
+        causal_user_turn: int | None,
+    ) -> bool:
+        async def enqueue() -> None:
+            llm = self.llm
+            if self.provider == "openai-realtime" and isinstance(llm, OpenAIRealtimeLLMService):
+                await cast(OpenAIRealtimeLLMService, llm).send_client_event(
+                    ResponseCreateEvent(
+                        response=ResponseProperties(
+                            output_modalities=["audio"],
+                            instructions=instruction,
+                        )
                     )
                 )
-            )
-        elif self.provider == "gemini-live":
-            await self.worker.queue_frame(OneLinkInternalTextFrame(text=instruction))
-        else:
-            await self.worker.queue_frame(
-                LLMMessagesAppendFrame(
-                    messages=[{"role": "user", "content": instruction}],
-                    run_llm=True,
+            elif self.provider == "gemini-live":
+                await self.worker.queue_frame(OneLinkInternalTextFrame(text=instruction))
+            else:
+                await self.worker.queue_frame(
+                    LLMMessagesAppendFrame(
+                        messages=[{"role": "user", "content": instruction}],
+                        run_llm=True,
+                    )
                 )
-            )
+
+        if causal_user_turn is None:
+            await enqueue()
+            return True
+        return await self.activity.admit_causal_side_effect(causal_user_turn, enqueue)
 
 
 def build_pipeline(
@@ -583,6 +635,7 @@ def build_pipeline(
             InputRecordingProcessor(recorder),
             stt,
             transcript_normalizer,
+            PreAggregatorSTTEvidenceProcessor(),
         ]
         # The universal user aggregator intentionally consumes final
         # TranscriptionFrames. Terminal caller intent must therefore be
@@ -646,6 +699,9 @@ def build_pipeline(
         speak_result=assembly.speak_result,
         run_instruction=assembly.run_instruction,
         interrupt_generation=assembly.interrupt_generation,
+        speak_exact_for_turn=assembly.speak_exact_for_turn,
+        speak_result_for_turn=assembly.speak_result_for_turn,
+        run_instruction_for_turn=assembly.run_instruction_for_turn,
     )
     if caller_command is not None:
         caller_command.bind_end_call(tool_dialogue.execute_end_call)
@@ -858,7 +914,12 @@ def _tool_handler(
         timeout_secs=timeout_secs,
     )
     async def handler(params: FunctionCallParams) -> None:
-        await tool_dialogue.execute(definition, params)
+        causal_user_turn = tool_dialogue.capture_causal_user_turn()
+        await tool_dialogue.execute(
+            definition,
+            params,
+            causal_user_turn=causal_user_turn,
+        )
 
     handler.__name__ = f"onelink_tool_{definition.name}"
     return handler

@@ -18,6 +18,7 @@ from app.pipeline.processors import ConversationActivity
 from app.sessions.state import READ_ONLY_INFLIGHT_FENCE_TOOLS
 
 SpeechCallback = Callable[[str], Awaitable[bool | None]]
+CausalSpeechCallback = Callable[[str, int], Awaitable[bool | None]]
 InterruptCallback = Callable[[], Awaitable[None]]
 CLOSING_SPEECH_MAX_SECONDS = 4.0
 MAX_DELAY_PROGRESS_ANNOUNCEMENTS = 3
@@ -73,6 +74,9 @@ class ToolDialogueCoordinator:
         self._speak_exact: SpeechCallback | None = None
         self._speak_result: SpeechCallback | None = None
         self._run_instruction: SpeechCallback | None = None
+        self._speak_exact_for_turn: CausalSpeechCallback | None = None
+        self._speak_result_for_turn: CausalSpeechCallback | None = None
+        self._run_instruction_for_turn: CausalSpeechCallback | None = None
         self._interrupt_generation: InterruptCallback | None = None
         self._dialogue_lock = asyncio.Lock()
         self._continuations_pending = 0
@@ -84,6 +88,10 @@ class ToolDialogueCoordinator:
     def awaiting_continuation(self) -> bool:
         return self._continuations_pending > 0
 
+    def capture_causal_user_turn(self) -> int:
+        """Snapshot the caller-turn epoch synchronously at tool-call creation."""
+        return self._activity.user_turns_started
+
     def bind(
         self,
         *,
@@ -91,17 +99,29 @@ class ToolDialogueCoordinator:
         run_instruction: SpeechCallback,
         speak_result: SpeechCallback | None = None,
         interrupt_generation: InterruptCallback | None = None,
+        speak_exact_for_turn: CausalSpeechCallback | None = None,
+        speak_result_for_turn: CausalSpeechCallback | None = None,
+        run_instruction_for_turn: CausalSpeechCallback | None = None,
     ) -> None:
         self._speak_exact = speak_exact
         self._speak_result = speak_result or speak_exact
         self._run_instruction = run_instruction
         self._interrupt_generation = interrupt_generation
+        self._speak_exact_for_turn = speak_exact_for_turn
+        self._speak_result_for_turn = speak_result_for_turn or speak_exact_for_turn
+        self._run_instruction_for_turn = run_instruction_for_turn
 
     async def execute(
         self,
         definition: ToolDefinition,
         params: FunctionCallParams,
+        *,
+        causal_user_turn: int | None = None,
     ) -> None:
+        # Capture synchronously at the function-call boundary, before any await
+        # can allow a newer caller turn to supersede this tool invocation.
+        if causal_user_turn is None:
+            causal_user_turn = self.capture_causal_user_turn()
         await self._activity.tool_started()
         if definition.name.strip().lower() in {"end_call", "hangup"}:
             result = await self.execute_end_call(
@@ -112,7 +132,7 @@ class ToolDialogueCoordinator:
             await params.result_callback(result)
             return
         if self._uses_gemini_async_completion(definition):
-            await self._execute_gemini_tool(definition, params)
+            await self._execute_gemini_tool(definition, params, causal_user_turn)
             return
 
         shared_task, duplicate = await self._claim_read_only_execution(definition, params)
@@ -131,6 +151,7 @@ class ToolDialogueCoordinator:
                     stop_progress,
                     progress_speaking,
                     params.tool_call_id,
+                    causal_user_turn,
                 ),
                 name=f"pipecat-tool-progress:{params.tool_call_id}",
             )
@@ -158,7 +179,12 @@ class ToolDialogueCoordinator:
                 with suppress(asyncio.CancelledError):
                     await progress_task
 
-        await self._deliver_result(definition, params, result)
+        await self._deliver_result(
+            definition,
+            params,
+            result,
+            causal_user_turn=causal_user_turn,
+        )
 
     async def _claim_read_only_execution(
         self,
@@ -267,6 +293,8 @@ class ToolDialogueCoordinator:
         definition: ToolDefinition,
         params: FunctionCallParams,
         result: dict[str, Any],
+        *,
+        causal_user_turn: int,
     ) -> None:
         voice_result = _voice_result_projection(definition.name, result)
         if _uses_direct_voice_result(definition.name, self._ai.provider):
@@ -277,12 +305,20 @@ class ToolDialogueCoordinator:
                 if speech_scheduled.is_set():
                     return
                 speech_scheduled.set()
-                if phrase and self._speak_result is not None:
+                if not self._caller_turn_is_current(causal_user_turn):
+                    self._record_speech_suppressed(
+                        definition,
+                        params.tool_call_id,
+                        causal_user_turn,
+                    )
+                    return
+                if phrase and self._can_speak_result():
                     self._state.spawn(
                         self._speak_direct_result(
                             definition=definition,
                             tool_call_id=params.tool_call_id,
                             phrase=phrase,
+                            causal_user_turn=causal_user_turn,
                         )
                     )
 
@@ -314,15 +350,39 @@ class ToolDialogueCoordinator:
         generation_sequence = self._activity.model_generations_started
         output_sequence = self._activity.model_outputs_generated
         if _is_terminal_result(result):
-            await params.result_callback(voice_result)
+            await self._deliver_result_callback_causally(
+                definition,
+                params,
+                voice_result,
+                causal_user_turn,
+            )
+            return
+        if not self._caller_turn_is_current(causal_user_turn):
+            await params.result_callback(
+                voice_result,
+                properties=FunctionCallResultProperties(run_llm=False),
+            )
+            self._record_speech_suppressed(
+                definition,
+                params.tool_call_id,
+                causal_user_turn,
+            )
             return
 
         self._continuations_pending += 1
         try:
-            await params.result_callback(voice_result)
+            admitted = await self._deliver_result_callback_causally(
+                definition,
+                params,
+                voice_result,
+                causal_user_turn,
+            )
         except Exception:
             self._continuations_pending -= 1
             raise
+        if not admitted:
+            self._continuations_pending -= 1
+            return
         self._state.spawn(
             self._ensure_continuation(
                 definition=definition,
@@ -331,8 +391,42 @@ class ToolDialogueCoordinator:
                 generation_sequence=generation_sequence,
                 output_sequence=output_sequence,
                 tool_call_id=params.tool_call_id,
+                causal_user_turn=causal_user_turn,
             )
         )
+
+    async def _deliver_result_callback_causally(
+        self,
+        definition: ToolDefinition,
+        params: FunctionCallParams,
+        voice_result: dict[str, Any],
+        causal_user_turn: int,
+    ) -> bool:
+        async def enqueue_result() -> None:
+            # Pipecat 1.5's result callback only cancels its local tool timeout
+            # and broadcasts FunctionCallResultFrame. Holding the admission
+            # lock across this short enqueue makes the frame's run_llm decision
+            # linearizable with caller-turn invalidation; provider work happens
+            # later in the pipeline, outside this lock.
+            await params.result_callback(voice_result)
+
+        admitted = await self._activity.admit_causal_side_effect(
+            causal_user_turn,
+            enqueue_result,
+        )
+        if admitted:
+            return True
+
+        await params.result_callback(
+            voice_result,
+            properties=FunctionCallResultProperties(run_llm=False),
+        )
+        self._record_speech_suppressed(
+            definition,
+            params.tool_call_id,
+            causal_user_turn,
+        )
+        return False
 
     async def _recover_direct_result_speech(
         self,
@@ -372,8 +466,12 @@ class ToolDialogueCoordinator:
         definition: ToolDefinition,
         tool_call_id: str,
         phrase: str,
+        causal_user_turn: int,
     ) -> None:
-        if self._speak_result is None:
+        if not self._can_speak_result():
+            return
+        if not self._caller_turn_is_current(causal_user_turn):
+            self._record_speech_suppressed(definition, tool_call_id, causal_user_turn)
             return
 
         # Give a just-started barge-in enough time to reach the local VAD
@@ -381,6 +479,9 @@ class ToolDialogueCoordinator:
         # never discard it merely because the caller is still finishing a
         # sentence: keep it pending and speak it as soon as that turn ends.
         await asyncio.sleep(DIRECT_RESULT_SETTLE_SECONDS)
+        if not self._caller_turn_is_current(causal_user_turn):
+            self._record_speech_suppressed(definition, tool_call_id, causal_user_turn)
+            return
         if self._activity.user_speaking:
             self._state.spawn(
                 self._state.safe_control(
@@ -403,10 +504,20 @@ class ToolDialogueCoordinator:
                     )
                 )
                 return
+            if not self._caller_turn_is_current(causal_user_turn):
+                self._record_speech_suppressed(definition, tool_call_id, causal_user_turn)
+                return
 
         speech_started_at = time.monotonic()
         try:
             async with self._dialogue_lock:
+                if not self._caller_turn_is_current(causal_user_turn):
+                    self._record_speech_suppressed(
+                        definition,
+                        tool_call_id,
+                        causal_user_turn,
+                    )
+                    return
                 if self._activity.bot_speaking:
                     await self._activity.wait_for_turn_completed_after(
                         self._activity.turns_completed,
@@ -418,7 +529,14 @@ class ToolDialogueCoordinator:
                     )
                     if not caller_finished:
                         return
-                spoken = await self._speak_result(phrase)
+                    if not self._caller_turn_is_current(causal_user_turn):
+                        self._record_speech_suppressed(
+                            definition,
+                            tool_call_id,
+                            causal_user_turn,
+                        )
+                        return
+                spoken = await self._speak_result_causally(phrase, causal_user_turn)
         except Exception:
             logger.exception(
                 "Failed to speak direct tool result tool={}",
@@ -458,6 +576,7 @@ class ToolDialogueCoordinator:
         self,
         definition: ToolDefinition,
         params: FunctionCallParams,
+        causal_user_turn: int,
     ) -> None:
         tool_task = self._state.spawn(
             self._state.execute_tool(
@@ -498,6 +617,7 @@ class ToolDialogueCoordinator:
                     stop_progress,
                     progress_speaking,
                     params.tool_call_id,
+                    causal_user_turn,
                 )
             )
             pending_delivered = asyncio.Event()
@@ -512,22 +632,31 @@ class ToolDialogueCoordinator:
                     progress_task=progress_task,
                     pending_delivered=pending_delivered,
                     generation_sequence=generation_sequence,
+                    causal_user_turn=causal_user_turn,
                 )
             )
             try:
-                await params.result_callback(
+                await self._deliver_result_callback_causally(
+                    definition,
+                    params,
                     {
                         "status": "pending",
                         "runtime_owned_progress": True,
                         "background_activity": _tool_activity_label(definition.name),
                         "tool_call_id": params.tool_call_id,
-                    }
+                    },
+                    causal_user_turn,
                 )
             finally:
                 pending_delivered.set()
             return
 
-        await self._deliver_result(definition, params, result)
+        await self._deliver_result(
+            definition,
+            params,
+            result,
+            causal_user_turn=causal_user_turn,
+        )
 
     async def _complete_gemini_tool(
         self,
@@ -540,6 +669,7 @@ class ToolDialogueCoordinator:
         progress_task: asyncio.Task[None],
         pending_delivered: asyncio.Event,
         generation_sequence: int,
+        causal_user_turn: int,
     ) -> None:
         try:
             result = await asyncio.shield(tool_task)
@@ -563,10 +693,13 @@ class ToolDialogueCoordinator:
                 tool_name=definition.name,
             )
         )
-        if _is_terminal_result(result) or self._run_instruction is None:
+        if _is_terminal_result(result) or not self._can_run_instruction():
             return
 
         await pending_delivered.wait()
+        if not self._caller_turn_is_current(causal_user_turn):
+            self._record_speech_suppressed(definition, tool_call_id, causal_user_turn)
+            return
         self._continuations_pending += 1
         try:
             await self._run_late_instruction(
@@ -575,6 +708,7 @@ class ToolDialogueCoordinator:
                     _voice_result_projection(definition.name, result),
                 ),
                 wait_for_generation_after=generation_sequence,
+                causal_user_turn=causal_user_turn,
             )
         finally:
             self._continuations_pending -= 1
@@ -585,10 +719,13 @@ class ToolDialogueCoordinator:
         *,
         skip_if_turn_started_after: int | None = None,
         wait_for_generation_after: int | None = None,
+        causal_user_turn: int | None = None,
     ) -> None:
-        if self._run_instruction is None:
+        if not self._can_run_instruction():
             return
         async with self._dialogue_lock:
+            if causal_user_turn is not None and not self._caller_turn_is_current(causal_user_turn):
+                return
             if (
                 skip_if_turn_started_after is not None
                 and self._activity.turns_started > skip_if_turn_started_after
@@ -603,6 +740,10 @@ class ToolDialogueCoordinator:
                     wait_for_generation_after,
                     response_timeout,
                 )
+                if causal_user_turn is not None and not self._caller_turn_is_current(
+                    causal_user_turn
+                ):
+                    return
             if self._activity.model_generation_active:
                 idle = await self._activity.wait_for_model_idle(POST_TOOL_GENERATION_MAX_SECONDS)
                 if not idle:
@@ -613,9 +754,11 @@ class ToolDialogueCoordinator:
                     self._activity.turns_completed,
                     timeout=3.0,
                 )
+            if causal_user_turn is not None and not self._caller_turn_is_current(causal_user_turn):
+                return
             started_sequence = self._activity.turns_started
             completed_sequence = self._activity.turns_completed
-            await self._run_instruction(instruction)
+            await self._run_instruction_causally(instruction, causal_user_turn)
             started = await self._activity.wait_for_turn_started_after(
                 started_sequence,
                 response_timeout,
@@ -637,6 +780,7 @@ class ToolDialogueCoordinator:
         stopped: asyncio.Event,
         progress_speaking: asyncio.Event,
         tool_call_id: str,
+        causal_user_turn: int,
     ) -> None:
         foreground_wait_ms = self._foreground_wait_ms(definition)
         start_after_ms = self._ai.tool_start_after_ms
@@ -649,6 +793,8 @@ class ToolDialogueCoordinator:
             start_after_ms = min(start_after_ms, foreground_wait_ms)
         if await _wait_until_stopped(stopped, start_after_ms):
             return
+        if not self._caller_turn_is_current(causal_user_turn):
+            return
         # A fast backend can finish at the same instant the progress timer
         # expires. Give its completion event one final, bounded chance to win
         # before committing a filler phrase to TTS; once queued, that phrase
@@ -657,7 +803,11 @@ class ToolDialogueCoordinator:
         if commit_grace_ms and await _wait_until_stopped(stopped, commit_grace_ms):
             return
         async with self._dialogue_lock:
-            if stopped.is_set() or self._speak_exact is None:
+            if (
+                stopped.is_set()
+                or not self._can_speak_exact()
+                or not self._caller_turn_is_current(causal_user_turn)
+            ):
                 return
             start_phrase = _tool_progress_phrase(
                 definition.name,
@@ -672,12 +822,14 @@ class ToolDialogueCoordinator:
                     stopped,
                     progress_speaking,
                     tool_call_id,
+                    causal_user_turn,
                 )
         await self._announce_delayed_progress(
             definition,
             stopped,
             progress_speaking,
             tool_call_id,
+            causal_user_turn,
         )
 
     async def _announce_delayed_progress(
@@ -686,6 +838,7 @@ class ToolDialogueCoordinator:
         stopped: asyncio.Event,
         progress_speaking: asyncio.Event,
         tool_call_id: str,
+        causal_user_turn: int,
     ) -> None:
         delay_phrase = _tool_progress_phrase(
             definition.name,
@@ -701,7 +854,11 @@ class ToolDialogueCoordinator:
             if await _wait_until_stopped(stopped, delay_ms):
                 return
             async with self._dialogue_lock:
-                if stopped.is_set() or self._speak_exact is None:
+                if (
+                    stopped.is_set()
+                    or not self._can_speak_exact()
+                    or not self._caller_turn_is_current(causal_user_turn)
+                ):
                     return
                 await self._safe_progress_speech(
                     definition,
@@ -710,6 +867,7 @@ class ToolDialogueCoordinator:
                     stopped,
                     progress_speaking,
                     tool_call_id,
+                    causal_user_turn,
                 )
 
     async def _safe_progress_speech(
@@ -720,9 +878,10 @@ class ToolDialogueCoordinator:
         stopped: asyncio.Event,
         progress_speaking: asyncio.Event,
         tool_call_id: str,
+        causal_user_turn: int,
     ) -> None:
         try:
-            if stopped.is_set():
+            if stopped.is_set() or not self._caller_turn_is_current(causal_user_turn):
                 return
             self._state.spawn(
                 self._state.safe_control(
@@ -736,14 +895,14 @@ class ToolDialogueCoordinator:
                     tool_name=definition.name,
                 )
             )
-            if self._speak_exact is not None:
+            if self._can_speak_exact():
                 if stopped.is_set() or self._activity.user_speaking or self._activity.bot_speaking:
                     return
                 progress_speaking.set()
                 try:
-                    if stopped.is_set():
+                    if stopped.is_set() or not self._caller_turn_is_current(causal_user_turn):
                         return
-                    await self._speak_exact(phrase)
+                    await self._speak_exact_causally(phrase, causal_user_turn)
                 finally:
                     progress_speaking.clear()
         except Exception:
@@ -770,8 +929,12 @@ class ToolDialogueCoordinator:
         generation_sequence: int,
         output_sequence: int,
         tool_call_id: str,
+        causal_user_turn: int,
     ) -> None:
         try:
+            if not self._caller_turn_is_current(causal_user_turn):
+                self._record_speech_suppressed(definition, tool_call_id, causal_user_turn)
+                return
             started = await self._activity.wait_for_turn_started_after(
                 response_sequence,
                 self._ai.post_tool_continuation_ms / 1_000,
@@ -797,6 +960,13 @@ class ToolDialogueCoordinator:
                 POST_TOOL_GENERATION_MAX_SECONDS,
             )
             if not generation_completed:
+                if not self._caller_turn_is_current(causal_user_turn):
+                    self._record_speech_suppressed(
+                        definition,
+                        tool_call_id,
+                        causal_user_turn,
+                    )
+                    return
                 self._record_post_tool_stall(
                     definition,
                     result,
@@ -804,7 +974,12 @@ class ToolDialogueCoordinator:
                     recovery="interrupting_generation_timeout",
                 )
                 await self._interrupt_stalled_generation()
-                await self._speak_stalled_result(definition.name, result)
+                await self._speak_stalled_result(
+                    definition,
+                    result,
+                    tool_call_id,
+                    causal_user_turn,
+                )
                 return
 
             if self._activity.model_outputs_generated > output_sequence:
@@ -822,6 +997,9 @@ class ToolDialogueCoordinator:
             )
             if started:
                 return
+            if not self._caller_turn_is_current(causal_user_turn):
+                self._record_speech_suppressed(definition, tool_call_id, causal_user_turn)
+                return
 
             self._record_post_tool_stall(
                 definition,
@@ -831,14 +1009,25 @@ class ToolDialogueCoordinator:
             )
             if _is_error_result(result):
                 failure_phrase = _first_phrase(self._ai.tool_failure_phrases)
-                if failure_phrase and self._speak_exact is not None:
+                if failure_phrase and self._can_speak_exact():
                     async with self._dialogue_lock:
-                        await self._speak_exact(failure_phrase)
+                        if not self._caller_turn_is_current(causal_user_turn):
+                            self._record_speech_suppressed(
+                                definition,
+                                tool_call_id,
+                                causal_user_turn,
+                            )
+                            return
+                        await self._speak_exact_causally(
+                            failure_phrase,
+                            causal_user_turn,
+                        )
                 return
-            if self._run_instruction is not None:
+            if self._can_run_instruction():
                 await self._run_late_instruction(
                     _late_result_instruction(definition.name, result),
                     skip_if_turn_started_after=response_sequence,
+                    causal_user_turn=causal_user_turn,
                 )
         finally:
             self._continuations_pending -= 1
@@ -852,12 +1041,79 @@ class ToolDialogueCoordinator:
         except Exception:
             logger.exception("Failed to interrupt stalled post-tool model generation")
 
-    async def _speak_stalled_result(self, tool_name: str, result: dict[str, Any]) -> None:
-        phrase = _direct_voice_result_phrase(tool_name, result)
-        if not phrase or self._speak_result is None:
+    async def _speak_stalled_result(
+        self,
+        definition: ToolDefinition,
+        result: dict[str, Any],
+        tool_call_id: str,
+        causal_user_turn: int,
+    ) -> None:
+        phrase = _direct_voice_result_phrase(definition.name, result)
+        if not phrase or not self._can_speak_result():
             return
         async with self._dialogue_lock:
-            await self._speak_result(phrase)
+            if not self._caller_turn_is_current(causal_user_turn):
+                self._record_speech_suppressed(definition, tool_call_id, causal_user_turn)
+                return
+            await self._speak_result_causally(phrase, causal_user_turn)
+
+    def _can_speak_exact(self) -> bool:
+        return self._speak_exact_for_turn is not None or self._speak_exact is not None
+
+    def _can_speak_result(self) -> bool:
+        return self._speak_result_for_turn is not None or self._speak_result is not None
+
+    def _can_run_instruction(self) -> bool:
+        return self._run_instruction_for_turn is not None or self._run_instruction is not None
+
+    async def _speak_exact_causally(self, message: str, causal_user_turn: int) -> bool | None:
+        if self._speak_exact_for_turn is not None:
+            return await self._speak_exact_for_turn(message, causal_user_turn)
+        if self._speak_exact is None or not self._caller_turn_is_current(causal_user_turn):
+            return False
+        return await self._speak_exact(message)
+
+    async def _speak_result_causally(self, message: str, causal_user_turn: int) -> bool | None:
+        if self._speak_result_for_turn is not None:
+            return await self._speak_result_for_turn(message, causal_user_turn)
+        if self._speak_result is None or not self._caller_turn_is_current(causal_user_turn):
+            return False
+        return await self._speak_result(message)
+
+    async def _run_instruction_causally(
+        self,
+        instruction: str,
+        causal_user_turn: int | None,
+    ) -> bool | None:
+        if causal_user_turn is not None and self._run_instruction_for_turn is not None:
+            return await self._run_instruction_for_turn(instruction, causal_user_turn)
+        if self._run_instruction is None:
+            return False
+        if causal_user_turn is not None and not self._caller_turn_is_current(causal_user_turn):
+            return False
+        return await self._run_instruction(instruction)
+
+    def _caller_turn_is_current(self, causal_user_turn: int) -> bool:
+        return self._activity.user_turns_started == causal_user_turn
+
+    def _record_speech_suppressed(
+        self,
+        definition: ToolDefinition,
+        tool_call_id: str,
+        causal_user_turn: int,
+    ) -> None:
+        self._state.spawn(
+            self._state.safe_control(
+                "tool_speech_suppressed",
+                {
+                    "reason": "caller_turn_superseded",
+                    "causal_user_turn": causal_user_turn,
+                    "current_user_turn": self._activity.user_turns_started,
+                },
+                tool_call_id=tool_call_id,
+                tool_name=definition.name,
+            )
+        )
 
     def _record_post_tool_stall(
         self,
@@ -1094,8 +1350,7 @@ def _project_deals(result: dict[str, Any]) -> dict[str, Any]:
             deal.pop("description", None)
     while (
         projected_deals
-        and len(json.dumps(projected, ensure_ascii=False, default=str))
-        > VOICE_RESULT_MAX_CHARS
+        and len(json.dumps(projected, ensure_ascii=False, default=str)) > VOICE_RESULT_MAX_CHARS
     ):
         projected_deals.pop()
         projected["returned_count"] = len(projected_deals)

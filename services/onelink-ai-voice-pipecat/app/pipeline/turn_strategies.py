@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+from loguru import logger
 from pipecat.frames.frames import (
     BotStartedSpeakingFrame,
     BotStoppedSpeakingFrame,
@@ -46,25 +47,45 @@ class ConfirmedUserTurnStartStrategy(BaseUserTurnStartStrategy):
         self._bot_speaking = False
         self._vad_active = False
         self._last_vad_stop = 0.0
+        self._last_transcript = 0.0
 
     async def reset(self) -> None:
         self._vad_active = False
         self._last_vad_stop = 0.0
+        self._last_transcript = 0.0
 
     async def process_frame(self, frame: Frame) -> ProcessFrameResult:
         if isinstance(frame, BotStartedSpeakingFrame):
             self._bot_speaking = True
+            self._last_transcript = 0.0
         elif isinstance(frame, BotStoppedSpeakingFrame):
             self._bot_speaking = False
+            self._vad_active = False
+            self._last_vad_stop = 0.0
+            self._last_transcript = 0.0
         elif isinstance(frame, VADUserStartedSpeakingFrame):
             self._vad_active = True
             self._last_vad_stop = 0.0
-            if not self._bot_speaking or self._mode == "vad_confirmed":
+            transcript_recent = self._transcript_recent()
+            logger.info(
+                "Voice VAD evidence kind=started bot_speaking={} mode={} "
+                "transcript_recent={} monotonic_ms={}",
+                self._bot_speaking,
+                self._mode,
+                transcript_recent,
+                round(time.monotonic() * 1_000),
+            )
+            if not self._bot_speaking or self._mode == "vad_confirmed" or transcript_recent:
                 await self.trigger_user_turn_started()
                 return ProcessFrameResult.STOP
         elif isinstance(frame, VADUserStoppedSpeakingFrame):
             self._vad_active = False
             self._last_vad_stop = time.monotonic()
+            logger.info(
+                "Voice VAD evidence kind=stopped bot_speaking={} monotonic_ms={}",
+                self._bot_speaking,
+                round(self._last_vad_stop * 1_000),
+            )
         elif isinstance(frame, (InterimTranscriptionFrame, TranscriptionFrame)):
             if self._idle_transcript_starts_turn(
                 frame.text
@@ -82,14 +103,23 @@ class ConfirmedUserTurnStartStrategy(BaseUserTurnStartStrategy):
             return False
         if len(text.split()) < self._min_words:
             return False
+        now = time.monotonic()
+        self._last_transcript = now
         if self._vad_active:
             return True
         return (
             self._last_vad_stop > 0
-            and time.monotonic() - self._last_vad_stop <= self._confirmation_window_seconds
+            and now - self._last_vad_stop <= self._confirmation_window_seconds
+        )
+
+    def _transcript_recent(self) -> bool:
+        return (
+            self._last_transcript > 0
+            and time.monotonic() - self._last_transcript <= self._confirmation_window_seconds
         )
 
     async def trigger_user_turn_started(self) -> None:
+        self._last_transcript = 0.0
         await self._call_event_handler(
             "on_user_turn_started",
             UserTurnStartedParams(

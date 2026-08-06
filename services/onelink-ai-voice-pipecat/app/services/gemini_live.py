@@ -36,7 +36,7 @@ class OneLinkGeminiLiveLLMService(GeminiLiveLLMService):
 
     def __init__(self, *args, input_language_priorities: list[str] | None = None, **kwargs):
         self._input_language_priorities = list(dict.fromkeys(input_language_priorities or []))
-        self._pending_tool_result_generations = 0
+        self._tool_result_generation_pending = False
         super().__init__(*args, **kwargs)
 
     async def _connection_task_handler(self, config: LiveConnectConfig):
@@ -78,12 +78,20 @@ class OneLinkGeminiLiveLLMService(GeminiLiveLLMService):
         tool_name: str,
         tool_result_message: dict[str, Any],
     ) -> None:
-        self._pending_tool_result_generations += 1
-        await self.push_frame(OneLinkToolResultGenerationStartFrame())
-        await super()._tool_result(tool_call_id, tool_name, tool_result_message)
+        starts_generation = not self._tool_result_generation_pending
+        if starts_generation:
+            self._tool_result_generation_pending = True
+            await self.push_frame(OneLinkToolResultGenerationStartFrame())
+        try:
+            await super()._tool_result(tool_call_id, tool_name, tool_result_message)
+        except Exception:
+            if self._tool_result_generation_pending:
+                self._tool_result_generation_pending = False
+                await self.push_frame(OneLinkToolResultGenerationEndFrame())
+            raise
 
     async def _handle_msg_turn_complete(self, message: LiveServerMessage) -> None:
         await super()._handle_msg_turn_complete(message)
-        if self._pending_tool_result_generations > 0:
-            self._pending_tool_result_generations -= 1
+        if self._tool_result_generation_pending:
+            self._tool_result_generation_pending = False
             await self.push_frame(OneLinkToolResultGenerationEndFrame())

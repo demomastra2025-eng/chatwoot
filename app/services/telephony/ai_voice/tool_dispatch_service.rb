@@ -12,6 +12,8 @@ class Telephony::AiVoice::ToolDispatchService
   VOICE_CONTEXT_CAPTAIN_CATALOG_TIMEOUT_SECONDS = 0.5
   VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_TTL_SECONDS = 5.0
   VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_MAX_ENTRIES = 128
+  VOICE_CANONICAL_KNOWLEDGE_TOOL = 'faq_lookup'.freeze
+  VOICE_OVERLAPPING_KNOWLEDGE_TOOLS = %w[search_documentation].freeze
   @captain_catalog_cache = {}
   @captain_catalog_cache_mutex = Mutex.new
 
@@ -133,7 +135,14 @@ class Telephony::AiVoice::ToolDispatchService
       contextualized_tool.merge(enabled: true, source: 'voice', scope: 'default').deep_stringify_keys
     end
 
-    (voice_tools + bounded_captain_tool_catalog(captain_assistant)).uniq { |tool| tool['name'] }
+    tools = (voice_tools + bounded_captain_tool_catalog(captain_assistant)).uniq { |tool| tool['name'] }
+    canonicalize_voice_knowledge_tools(tools)
+  end
+
+  def self.canonicalize_voice_knowledge_tools(tools)
+    return tools unless tools.any? { |tool| tool['name'] == VOICE_CANONICAL_KNOWLEDGE_TOOL }
+
+    tools.reject { |tool| VOICE_OVERLAPPING_KNOWLEDGE_TOOLS.include?(tool['name']) }
   end
 
   def self.normalized_voice_settings(policy, captain_assistant, explicit_settings)
@@ -253,6 +262,7 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   private_class_method :normalized_voice_settings,
+                       :canonicalize_voice_knowledge_tools,
                        :transfer_tool_description,
                        :bounded_captain_tool_catalog,
                        :build_bounded_captain_tool_catalog,
@@ -833,10 +843,10 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def captain_assistant
-    @captain_assistant ||= begin
-      assistant = inbox_captain_assistant || routing_policy&.captain_assistant
-      assistant if assistant&.account_id == account.id
-    end
+    return @captain_assistant if instance_variable_defined?(:@captain_assistant)
+
+    assistant = inbox_captain_assistant || routing_policy&.captain_assistant
+    @captain_assistant = assistant&.account_id == account.id ? assistant : nil
   end
 
   def lock_assistant_assignment!

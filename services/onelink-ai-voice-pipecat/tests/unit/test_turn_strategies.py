@@ -85,6 +85,44 @@ async def test_stale_transcript_after_confirmation_window_is_ignored():
 
 
 @pytest.mark.asyncio
+async def test_recent_transcript_then_vad_confirms_bot_interruption(monkeypatch):
+    now = 10.0
+    monkeypatch.setattr("app.pipeline.turn_strategies.time.monotonic", lambda: now)
+    strategy = ConfirmedUserTurnStartStrategy(
+        mode="transcript_confirmed", min_words=2, confirmation_window_seconds=0.8
+    )
+    starts = capture_starts(strategy)
+
+    await strategy.process_frame(BotStartedSpeakingFrame())
+    assert await strategy.process_frame(transcription()) is ProcessFrameResult.CONTINUE
+    assert starts == []
+
+    now = 10.2
+    assert await strategy.process_frame(VADUserStartedSpeakingFrame()) is ProcessFrameResult.STOP
+    assert len(starts) == 1
+    assert starts[0].enable_interruptions is True
+
+
+@pytest.mark.asyncio
+async def test_transcript_before_vad_expires_after_confirmation_window(monkeypatch):
+    now = 10.0
+    monkeypatch.setattr("app.pipeline.turn_strategies.time.monotonic", lambda: now)
+    strategy = ConfirmedUserTurnStartStrategy(
+        mode="transcript_confirmed", min_words=2, confirmation_window_seconds=0.8
+    )
+    starts = capture_starts(strategy)
+
+    await strategy.process_frame(BotStartedSpeakingFrame())
+    assert await strategy.process_frame(transcription()) is ProcessFrameResult.CONTINUE
+
+    now = 11.0
+    assert (
+        await strategy.process_frame(VADUserStartedSpeakingFrame()) is ProcessFrameResult.CONTINUE
+    )
+    assert starts == []
+
+
+@pytest.mark.asyncio
 async def test_idle_bot_starts_user_turn_immediately_on_vad():
     strategy = ConfirmedUserTurnStartStrategy(mode="transcript_confirmed")
     starts = capture_starts(strategy)
