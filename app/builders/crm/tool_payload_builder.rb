@@ -16,6 +16,13 @@ module Crm::ToolPayloadBuilder
     }.compact
   end
 
+  def deal_transition_payload(action:, deal:, previous_stage:)
+    deal_payload(action: action, deal: deal).merge(
+      previous_stage: Crm::PayloadBuilder.stage(previous_stage),
+      current_stage: Crm::PayloadBuilder.stage(deal.stage)
+    ).compact
+  end
+
   def task_payload(action:, task:)
     task_data = Crm::PayloadBuilder.task(task)
 

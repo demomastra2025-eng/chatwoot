@@ -100,5 +100,30 @@ RSpec.describe Captain::Tools::Copilot::SearchDealsService do
       expect(payload['deals'].first).not_to have_key('amount_minor')
       expect(payload['deals'].find { |deal| deal['id'] == contact_deal.id }['amount']).to eq('25000')
     end
+
+    it 'searches the whole account by title when the current contact is unrelated' do
+      account_deal = create(:crm_deal, account: account, title: 'Account-wide renewal', pipeline: pipeline, stage: stage)
+      current_contact_deal = create(:crm_deal, account: account, title: 'Current contact only', pipeline: pipeline, stage: stage)
+      create(:crm_deal_contact, account: account, deal: current_contact_deal, contact: conversation.contact, primary: true)
+
+      payload = JSON.parse(conversation_service.execute(query: 'Account-wide renewal'))
+
+      expect(payload['filters']).to include('query' => 'Account-wide renewal')
+      expect(payload['filters']).not_to have_key('current_contact_id')
+      expect(payload['deals'].map { |deal| deal['id'] }).to contain_exactly(account_deal.id)
+    end
+
+    it 'keeps an explicit contact filter when searching by title' do
+      target_contact = create(:contact, account: account)
+      linked_deal = create(:crm_deal, account: account, title: 'Shared title', pipeline: pipeline, stage: stage)
+      unlinked_deal = create(:crm_deal, account: account, title: 'Shared title', pipeline: pipeline, stage: stage)
+      create(:crm_deal_contact, account: account, deal: linked_deal, contact: target_contact, primary: true)
+
+      payload = JSON.parse(conversation_service.execute(query: 'Shared title', contact_id: target_contact.id))
+
+      expect(payload['filters']).to include('query' => 'Shared title', 'contact_id' => target_contact.id)
+      expect(payload['deals'].map { |deal| deal['id'] }).to contain_exactly(linked_deal.id)
+      expect(payload['deals'].map { |deal| deal['id'] }).not_to include(unlinked_deal.id)
+    end
   end
 end

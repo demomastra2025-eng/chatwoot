@@ -36,7 +36,7 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
     appointments = appointments.where('starts_at < ?', range_to) if range_to.present?
 
     total_count = appointments.count
-    records = appointments.ordered.limit(parse_limit(limit)).map { |appointment| Scheduling::PayloadBuilder.appointment(appointment) }
+    records = appointment_records(appointments, limit: parse_limit(limit), include_client_name: client_name.present?)
 
     formatted_payload(
       filters: {
@@ -57,5 +57,24 @@ class Captain::Tools::Copilot::SearchAppointmentsService < Captain::Tools::Copil
 
   def active?
     @user.present? && assistant.account.feature_enabled?('scheduling')
+  end
+
+  private
+
+  def appointment_records(appointments, limit:, include_client_name:)
+    appointments.order(starts_at: :desc, id: :desc).limit(limit).map do |appointment|
+      appointment_payload(appointment, include_client_name: include_client_name)
+    end
+  end
+
+  def appointment_payload(appointment, include_client_name:)
+    payload = Scheduling::PayloadBuilder.appointment(appointment).except(
+      :client_phone,
+      :client_identifier,
+      :client_birth_date,
+      :client_gender,
+      :client_comment
+    )
+    include_client_name ? payload : payload.except(:client_name)
   end
 end

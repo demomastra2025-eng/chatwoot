@@ -25,23 +25,23 @@ class Captain::Tools::TransitionDealStageTool < Captain::Tools::BasePublicTool
 
   def perform(tool_context, stage_id: nil, stage_name: nil, stage_code: nil, pipeline_id: nil, pipeline_code: nil,
               stage_action: nil, closing_reasons: nil, transition_reason: nil)
-    deal = operations(tool_context.state).transition_current_deal_stage(
-      stage_id: stage_id,
-      stage_name: stage_name,
-      stage_code: stage_code,
-      pipeline_id: pipeline_id,
-      pipeline_code: pipeline_code,
-      stage_action: stage_action,
-      closing_reasons: closing_reasons,
-      transition_reason: transition_reason
-    )
-
-    JSON.pretty_generate(::Crm::ToolPayloadBuilder.deal_payload(action: 'transition_deal_stage', deal: deal))
+    JSON.pretty_generate(transition_deal_stage_payload(
+                           tool_context.state,
+                           stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline_id: pipeline_id,
+                           pipeline_code: pipeline_code, stage_action: stage_action, closing_reasons: closing_reasons,
+                           transition_reason: transition_reason
+                         ))
   rescue StandardError => e
     tool_failure(e)
   end
 
   private
+
+  def transition_deal_stage_payload(state, **attributes)
+    previous_stage = current_deal(state).stage
+    deal = operations(state).transition_current_deal_stage(**attributes)
+    ::Crm::ToolPayloadBuilder.deal_transition_payload(action: 'transition_deal_stage', deal: deal, previous_stage: previous_stage)
+  end
 
   def operations(state)
     Captain::Tools::Operations::DealOperations.new(

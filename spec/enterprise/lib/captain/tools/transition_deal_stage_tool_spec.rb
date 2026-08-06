@@ -21,6 +21,8 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
 
     expect(payload).to include('action' => 'transition_deal_stage', 'deal_id' => deal.id, 'pipeline_id' => pipeline.id, 'stage_id' => new_stage.id)
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => new_stage.id)
+    expect(payload['previous_stage']).to include('id' => old_stage.id)
+    expect(payload['current_stage']).to include('id' => new_stage.id)
   end
 
   it 'supports relative next stage transitions' do

@@ -1,3 +1,5 @@
+require 'digest'
+
 module Captain::ChatResponseHelper
   include Integrations::LlmInstrumentationConstants
 
@@ -11,6 +13,7 @@ module Captain::ChatResponseHelper
     parsed = moderate_response_payload(parsed) if respond_to?(:moderate_response_payload, true)
     parsed['usage'] = usage_payload(response)
     attach_tool_trace(parsed)
+    record_tool_omission(parsed)
 
     persist_message(persistable_response(parsed), 'assistant')
     parsed
@@ -130,6 +133,30 @@ module Captain::ChatResponseHelper
   def attach_tool_trace(parsed_response)
     payload = Captain::ToolTraceBuilder.payload(@tool_trace_steps)
     parsed_response['captain_trace'] = payload if payload.present?
+  end
+
+  def record_tool_omission(parsed_response)
+    return if Array(@tools).blank? || Array(@tool_trace_steps).present?
+
+    pending_tool_ids = pending_confirmation_tool_ids
+    reasoning = parsed_response['reasoning'].to_s.squish
+    Llm::EventBus.publish(
+      'tool.omitted',
+      reason: pending_tool_ids.any? ? 'pending_confirmation_not_replayed' : 'model_returned_final_response_without_tool_call',
+      available_tool_count: Array(@tools).size,
+      pending_confirmation_tool_ids: pending_tool_ids.presence,
+      model_reasoning_present: reasoning.present?,
+      model_reasoning_sha256: reasoning.present? ? Digest::SHA256.hexdigest(reasoning) : nil
+    )
+  end
+
+  def pending_confirmation_tool_ids
+    return [] if @copilot_thread.blank?
+
+    @copilot_thread.copilot_messages.assistant_thinking.order(id: :desc).limit(50).filter_map do |message|
+      gate = message.message['confirmation_gate']
+      gate['tool_id'] if gate.present? && gate['status'] == 'pending'
+    end.uniq
   end
 
   def append_tool_trace_step(tool_name, event, **options)

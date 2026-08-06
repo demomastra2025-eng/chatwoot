@@ -231,7 +231,9 @@ function formatReadableValue(value, level = 0) {
   const formatObjectValue = objectValue =>
     Object.entries(objectValue)
       .filter(([, childValue]) => childValue !== undefined && childValue !== '')
-      .filter(([key]) => !shouldSkipNestedSummaryKey(key, objectValue))
+      .filter(
+        ([key]) => level === 0 || !shouldSkipNestedSummaryKey(key, objectValue)
+      )
       .map(([key, childValue]) => {
         const label = humanizeKey(key);
         const formattedValue = formatReadableValue(childValue, level + 1);

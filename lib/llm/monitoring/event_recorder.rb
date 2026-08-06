@@ -25,6 +25,7 @@ class Llm::Monitoring::EventRecorder
       llm.schema.repair_requested
       llm.transcription.complete
       llm.tool.complete
+      llm.tool.omitted
       llm.tool.requested
       llm.zero_completion.detected
       llm.zero_completion.failed

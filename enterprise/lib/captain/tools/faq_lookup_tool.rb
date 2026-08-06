@@ -6,6 +6,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   SEMANTIC_LOOKUP_TIMEOUT_SECONDS = 8
   TOTAL_LOOKUP_TIMEOUT_SECONDS = 12
   SEMANTIC_DISTANCE_THRESHOLD = 0.3
+  SEMANTIC_SIMILARITY_THRESHOLD = 1.0 - SEMANTIC_DISTANCE_THRESHOLD
 
   class TotalLookupTimeout < Timeout::Error; end
 
@@ -47,7 +48,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       query: query,
       responses: responses,
       lookup_strategy: 'lexical_exact',
-      trace_context: trace_context(semantic_attempted: false)
+      trace_context: trace_context(semantic_attempted: false, relevance_check: exact_relevance_check(responses.size))
     )
   end
 
@@ -64,14 +65,19 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def semantic_payload(query:, semantic:)
-    responses, lookup_strategy, fallback_reason, rerank_trace = lookup_responses(query, semantic: semantic)
+    responses, lookup_strategy, lookup_failure_reason, relevance_check = lookup_responses(query, semantic: semantic)
     log_tool_usage('found_results', { query: query, count: responses.size, strategy: lookup_strategy })
 
     faq_payload(
       query: query,
       responses: responses,
       lookup_strategy: lookup_strategy,
-      trace_context: trace_context(semantic_attempted: semantic, fallback_reason: fallback_reason, rerank: rerank_trace)
+      trace_context: trace_context(
+        semantic_attempted: semantic,
+        fallback_reason: lookup_strategy == 'lexical' && semantic ? lookup_failure_reason : nil,
+        no_match_reason: lookup_strategy == 'semantic_faq' ? lookup_failure_reason : nil,
+        relevance_check: relevance_check
+      )
     )
   end
 
@@ -94,30 +100,47 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
   end
 
   def lookup_responses(query, semantic: true)
-    responses, rerank_trace = semantic ? semantic_responses(query) : [Captain::AssistantResponse.none, nil]
-    lookup_strategy = semantic ? 'semantic_faq' : 'lexical'
-    fallback_reason = nil
+    if semantic
+      responses, relevance_check = semantic_responses(query)
+      return [responses, 'semantic_faq', nil, relevance_check] if responses.any?
 
-    if responses.blank?
-      responses = lexical_fallback_responses(query)
-      fallback_reason = fallback_reason_for_empty_semantic if semantic
-      lookup_strategy = 'lexical'
+      if relevance_check[:candidate_count].zero?
+        responses = lexical_fallback_responses(query)
+        return [responses, 'lexical', 'semantic_no_matches', relevance_check]
+      end
+
+      return [Captain::AssistantResponse.none, 'semantic_faq', 'relevance_threshold_not_met', relevance_check]
     end
 
-    [responses, lookup_strategy, fallback_reason, rerank_trace]
+    [lexical_fallback_responses(query), 'lexical', nil, nil]
   end
 
   def semantic_responses(query)
     Timeout.timeout(SEMANTIC_LOOKUP_TIMEOUT_SECONDS) do
-      responses = Captain::AssistantResponse.search(
+      candidates = Captain::AssistantResponse.search(
         query,
         account_id: account.id,
         assistant_id: assistant.id,
         limit: SEMANTIC_RESULT_LIMIT
       ).to_a
-      responses.select! { |response| semantic_distance_acceptable?(response) }
-      [responses, nil]
+      responses = candidates.select { |response| semantic_distance_acceptable?(response) }
+      [responses, semantic_relevance_check(candidates, responses)]
     end
+  end
+
+  def semantic_relevance_check(candidates, responses)
+    scores = candidates.filter_map { |response| semantic_similarity_score(response) }
+    {
+      metric: 'cosine_similarity',
+      threshold: SEMANTIC_SIMILARITY_THRESHOLD,
+      best_score: scores.max,
+      candidate_count: candidates.size,
+      passed: responses.any?
+    }.compact
+  end
+
+  def exact_relevance_check(candidate_count)
+    { metric: 'exact_match', threshold: 1.0, best_score: 1.0, candidate_count: candidate_count, passed: true }
   end
 
   def semantic_distance_acceptable?(response)
@@ -129,12 +152,6 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     Timeout.timeout(CACHE_FETCH_TIMEOUT_SECONDS) do
       cache.fetch(overrides: { query: query })
     end
-  end
-
-  def fallback_reason_for_empty_semantic
-    return 'faq_embeddings_unindexed' if visible_faq_responses.exists?(embedding: nil)
-
-    'semantic_no_matches'
   end
 
   def lexical_fallback_responses(*queries)
@@ -186,7 +203,9 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     payload = {
       query: query,
       total_count: responses.size,
-      matches: responses.map { |response| response_payload(response) },
+      result: responses.any? ? 'found' : 'not_found',
+      message: responses.any? ? nil : 'No relevant FAQ result found',
+      matches: responses.map { |response| response_payload(response, lookup_strategy: lookup_strategy) },
       retrieval_trace: retrieval_trace(
         responses: responses,
         lookup_strategy: lookup_strategy,
@@ -198,11 +217,12 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     payload
   end
 
-  def trace_context(semantic_attempted:, fallback_reason: nil, rerank: nil)
+  def trace_context(semantic_attempted:, fallback_reason: nil, no_match_reason: nil, relevance_check: nil)
     {
       semantic_attempted: semantic_attempted,
       fallback_reason: fallback_reason,
-      rerank: rerank
+      no_match_reason: no_match_reason,
+      relevance_check: relevance_check
     }.compact
   end
 
@@ -212,13 +232,14 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       degraded: trace_context[:fallback_reason].present?,
       semantic_attempted: trace_context[:semantic_attempted],
       fallback_reason: trace_context[:fallback_reason],
+      no_match_reason: trace_context[:no_match_reason],
       match_count: responses.size,
       response_ids: response_ids_for(responses),
       document_ids: document_ids_for(responses),
       document_chunk_ids: document_chunk_ids_for(responses),
       embedding_status_counts: embedding_status_counts,
       faq_embedding_counts: faq_embedding_counts,
-      rerank: trace_context[:rerank],
+      relevance_check: trace_context[:relevance_check],
       sources: sources_for(responses)
     }.compact
   end
@@ -268,7 +289,7 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
     end.uniq
   end
 
-  def response_payload(response)
+  def response_payload(response, lookup_strategy:)
     return document_chunk_payload(response) if response.is_a?(Captain::DocumentChunk)
 
     {
@@ -280,7 +301,27 @@ class Captain::Tools::FaqLookupTool < Captain::Tools::BasePublicTool
       document_chunk_id: response.document_chunk_id,
       created_at: response.created_at&.iso8601,
       updated_at: response.updated_at&.iso8601
-    }.compact
+    }.merge(response_relevance_payload(response, lookup_strategy: lookup_strategy)).compact
+  end
+
+  def response_relevance_payload(response, lookup_strategy:)
+    return { score: 1.0, relevance_threshold: 1.0, relevance_threshold_passed: true } if lookup_strategy == 'lexical_exact'
+
+    score = semantic_similarity_score(response)
+    return {} if score.nil?
+
+    {
+      score: score,
+      relevance_threshold: SEMANTIC_SIMILARITY_THRESHOLD,
+      relevance_threshold_passed: score >= SEMANTIC_SIMILARITY_THRESHOLD
+    }
+  end
+
+  def semantic_similarity_score(response)
+    distance = response.respond_to?(:neighbor_distance) ? response.neighbor_distance : nil
+    return if distance.blank?
+
+    (1.0 - distance.to_f).round(6)
   end
 
   def document_chunk_payload(chunk)

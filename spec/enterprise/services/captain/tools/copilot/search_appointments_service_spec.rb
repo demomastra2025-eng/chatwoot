@@ -45,5 +45,25 @@ RSpec.describe Captain::Tools::Copilot::SearchAppointmentsService do
       expect(service.execute(contact_id: 2_147_483_647)).to include('Unknown contact_id 2147483647 for this account')
       expect(service.execute(resource_id: 2_147_483_647)).to include('Unknown resource_id 2147483647 for this account')
     end
+
+    it 'returns the newest appointments first and omits unrequested client identity fields' do
+      appointment1.update!(
+        starts_at: 2.days.ago,
+        ends_at: 2.days.ago + 30.minutes,
+        client_phone: '+77010000001',
+        client_identifier: 'client-old',
+        client_birth_date: Date.new(1990, 1, 1),
+        client_gender: 'female',
+        client_comment: 'Private note'
+      )
+      appointment2.update!(starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes, client_identifier: 'client-new')
+
+      payload = JSON.parse(service.execute(limit: 10))
+
+      expect(payload['appointments'].map { |appointment| appointment['id'] }).to eq([appointment2.id, appointment1.id])
+      expect(payload['appointments']).to all(satisfy do |appointment|
+        appointment.keys.grep(/^client_/).empty?
+      end)
+    end
   end
 end

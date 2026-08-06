@@ -92,6 +92,8 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
 
   def build_messages
     messages = [system_message, account_context_message]
+    pending_confirmation_context = pending_confirmation_context_message
+    messages << pending_confirmation_context if pending_confirmation_context.present?
     messages += @previous_history if @previous_history.present?
     conversation_context = conversation_context_message
     messages << conversation_context if conversation_context.present?
@@ -137,6 +139,47 @@ class Captain::Copilot::ChatService < Llm::BaseAiService
       role: 'system',
       content: Captain::Llm::SystemPromptsService.copilot_account_context(@account)
     }
+  end
+
+  def pending_confirmation_context_message
+    requests = pending_confirmation_requests
+    return if requests.blank?
+
+    request_lines = requests.map do |message|
+      gate = message.message['confirmation_gate']
+      "- tool=#{gate['tool_id']}; digest=#{gate['arguments_digest']}; arguments=#{gate['arguments_preview']}"
+    end
+
+    {
+      role: 'system',
+      content: <<~PROMPT.squish
+        [Pending operator confirmations]
+        #{request_lines.join("\n")}
+        If the latest user message explicitly confirms exactly one pending action, call that same tool again with the same arguments.
+        Do not ask for another confirmation and do not claim execution without a successful tool result.
+      PROMPT
+    }
+  end
+
+  def pending_confirmation_requests
+    return [] if @copilot_thread.blank?
+
+    @copilot_thread.copilot_messages.assistant_thinking.order(id: :desc).limit(50).select do |message|
+      gate = message.message['confirmation_gate']
+      gate.present? && gate['status'] == 'pending' && pending_confirmation_fresh?(gate) && pending_confirmation_for_actor?(gate)
+    end
+  end
+
+  def pending_confirmation_fresh?(gate)
+    requested_at = Time.zone.parse(gate['requested_at'].to_s)
+    requested_at.blank? || requested_at >= Captain::Copilot::ToolConfirmationGate::CONFIRMATION_TTL.ago
+  rescue ArgumentError, TypeError
+    false
+  end
+
+  def pending_confirmation_for_actor?(gate)
+    requested_user_id = gate['requested_by_user_id']
+    requested_user_id.blank? || (@user.present? && requested_user_id.to_i == @user.id)
   end
 
   def conversation_context_message

@@ -167,11 +167,29 @@ describe('buildCaptainToolTraceMessages', () => {
           content: 'Completed update_deal',
           toolName: 'update_deal',
           status: 'finish',
-          input: 'Access token: [REDACTED]',
+          input: 'Название: Хлопок\nAccess token: [REDACTED]',
           output: 'Amount: 180000',
         },
       },
     ]);
+  });
+
+  it('keeps root search name arguments visible in details', () => {
+    const [message] = buildCaptainToolTraceMessages({
+      captain_trace: {
+        tool_calls: [
+          {
+            tool_call_id: 'search-contact-1',
+            tool_name: 'search_contacts',
+            status: 'completed',
+            input: { name: 'Аружан' },
+            output: { returned_count: 1 },
+          },
+        ],
+      },
+    });
+
+    expect(message.message.input).toBe('Название: Аружан');
   });
 
   it('renders partial canonical tool calls as a running grouped tool message', () => {

@@ -48,6 +48,11 @@ RSpec.describe Captain::Copilot::ToolConfirmationGate do
     expect(confirmed_payload.dig('message', 'content')).to eq('Hello from confirmed captain')
     expect(conversation.reload.messages.outgoing.last.content).to eq('Hello from confirmed captain')
     expect(pending_gate.reload.message.dig('confirmation_gate', 'status')).to eq('confirmed')
+
+    replay_payload = JSON.parse(service.execute(**arguments))
+
+    expect(replay_payload.dig('data', 'confirmation_required')).to be(true)
+    expect(conversation.reload.messages.outgoing.where(content: 'Hello from confirmed captain').count).to eq(1)
   end
 
   it 'requires a scoped confirmation token instead of ambient approval words' do
@@ -75,6 +80,32 @@ RSpec.describe Captain::Copilot::ToolConfirmationGate do
     expect(second_payload.dig('data', 'confirmation_required')).to be(true)
     expect(pending_gate.reload.message.dig('confirmation_gate', 'status')).to eq('pending')
     expect(conversation.reload.messages.outgoing.where(content: 'Do not send on generic ok')).to be_empty
+  end
+
+  it 'accepts an explicit confirmation without a token when exactly one action is pending' do
+    service = Captain::Tools::Copilot::SendMessageToConversationService.new(
+      assistant,
+      user: user,
+      conversation: conversation,
+      copilot_thread: copilot_thread
+    )
+    arguments = { conversation_id: conversation.display_id, content: 'Send after unambiguous confirmation' }
+
+    JSON.parse(service.execute(**arguments))
+    pending_gate = copilot_thread.copilot_messages.assistant_thinking.last
+    create(
+      :captain_copilot_message,
+      account: account,
+      copilot_thread: copilot_thread,
+      message_type: 'user',
+      message: { 'content' => 'Подтверждаю, отправляй' }
+    )
+
+    confirmed_payload = JSON.parse(service.execute(**arguments))
+
+    expect(confirmed_payload['action']).to eq('send_message_to_conversation')
+    expect(pending_gate.reload.message.dig('confirmation_gate', 'status')).to eq('confirmed')
+    expect(conversation.reload.messages.outgoing.last.content).to eq('Send after unambiguous confirmation')
   end
 
   it 'redacts sensitive arguments from confirmation previews while keeping the digest stable' do

@@ -321,6 +321,39 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       )
     end
 
+    it 'persists tool omission reasons for skipped-call RCA' do
+      described_class.record_notification(
+        event_name: 'llm.tool.omitted',
+        started_at: Time.current,
+        finished_at: Time.current,
+        payload: {
+          'account_id' => account.id,
+          'feature' => 'copilot',
+          'runtime_mode' => 'captain_chat',
+          'reason' => 'pending_confirmation_not_replayed',
+          'available_tool_count' => 12,
+          'pending_confirmation_tool_ids' => ['create_touch_plan'],
+          'model_reasoning_present' => true,
+          'model_reasoning_sha256' => 'a' * 64
+        }
+      )
+
+      event = LlmEvent.order(:id).last
+      expect(event).to have_attributes(
+        event_name: 'llm.tool.omitted',
+        account_id: account.id,
+        feature: 'copilot',
+        runtime_mode: 'captain_chat',
+        reason: 'pending_confirmation_not_replayed'
+      )
+      expect(event.payload).to include(
+        'available_tool_count' => 12,
+        'pending_confirmation_tool_ids' => ['create_touch_plan'],
+        'model_reasoning_present' => true,
+        'model_reasoning_sha256' => 'a' * 64
+      )
+    end
+
     it 'bounds large sanitized payloads while preserving RCA columns and essential summary fields' do
       described_class.record_notification(
         event_name: 'llm.chat.complete',

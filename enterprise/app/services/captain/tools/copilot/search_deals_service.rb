@@ -3,11 +3,13 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     'search_deals'
   end
 
-  description 'Search CRM deals by current conversation contact, title, pipeline, stage, owner, company, or explicit contact. In a conversation, defaults to deals for the current contact.'
+  description 'Search CRM deals by title, pipeline, stage, owner, company, or contact. ' \
+              'In a conversation, only a blank search defaults to deals for the current contact; ' \
+              'a title query searches the whole account.'
   param :query, type: :string, desc: 'Deal title or external reference query', required: false
   param :contact_id,
         type: :integer,
-        desc: 'Positive contact ID. Omit when unknown; defaults to the current conversation contact when available.',
+        desc: 'Positive contact ID. Omit when unknown; a blank search defaults to the current conversation contact when available.',
         required: false
   param :pipeline_id, type: :integer, desc: 'Positive pipeline ID from list_deal_pipelines. Omit when unknown.', required: false
   param :pipeline_code, type: :string, desc: 'Pipeline code from list_deal_pipelines', required: false
@@ -27,7 +29,7 @@ class Captain::Tools::Copilot::SearchDealsService < Captain::Tools::Copilot::Bas
     stage = resolve_stage(stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline: pipeline)
     owner_id = verified_optional_record_id(owner_id, scope: account.users, field_name: 'owner_id')
     company_id = verified_optional_record_id(company_id, scope: account.companies, field_name: 'company_id')
-    scoped_contact_id = contact_id || current_contact&.id
+    scoped_contact_id = contact_id || (current_contact&.id if query.blank?)
 
     deals = account.crm_deals.includes(:pipeline, :stage, :owner, :team, :company, :deal_contacts)
     deals = cast_boolean(archived) ? deals.archived : deals.kept

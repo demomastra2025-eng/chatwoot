@@ -117,6 +117,37 @@ RSpec.describe Captain::Copilot::ChatService do
 
       expect(system_prompt).to include('- send_message_to_conversation:')
       expect(system_prompt).to include('risk: high, requires operator confirmation')
+      expect(system_prompt).to include('When the operator explicitly asks to perform an available action, call the matching tool')
+    end
+
+    it 'adds fresh pending confirmation context without exposing hidden tool history' do
+      create(
+        :captain_copilot_message,
+        account: account,
+        copilot_thread: copilot_thread,
+        message_type: 'assistant_thinking',
+        message: {
+          'content' => 'Confirmation required for create_touch_plan',
+          'confirmation_gate' => {
+            'status' => 'pending',
+            'tool_id' => 'create_touch_plan',
+            'arguments_digest' => 'digest-123',
+            'arguments_preview' => '{"name":"Follow-up"}',
+            'requested_at' => Time.current.iso8601
+          }
+        }
+      )
+
+      service = described_class.new(assistant, config)
+      confirmation_context = service.messages.find do |message|
+        message[:content].to_s.include?('[Pending operator confirmations]')
+      end
+
+      expect(confirmation_context[:content]).to include(
+        'tool=create_touch_plan',
+        'digest=digest-123',
+        'call that same tool again with the same arguments'
+      )
     end
 
     it 'instantiates selected custom assistant tools through the native copilot wrapper' do
@@ -272,6 +303,31 @@ RSpec.describe Captain::Copilot::ChatService do
           }
         }
       )
+    end
+
+    it 'records why a model returned a final response without using an available tool' do
+      assistant.update!(
+        config: {
+          'context_access' => {},
+          'tool_access' => {
+            'assistant' => {
+              'enabled' => true,
+              'tool_ids' => ['faq_lookup']
+            }
+          }
+        }
+      )
+      allow(Llm::EventBus).to receive(:publish).and_call_original
+      expect(Llm::EventBus).to receive(:publish).with(
+        'tool.omitted',
+        hash_including(
+          reason: 'model_returned_final_response_without_tool_call',
+          available_tool_count: 1,
+          model_reasoning_present: true
+        )
+      ).and_call_original
+
+      described_class.new(assistant, config).generate_response('Find the FAQ answer')
     end
 
     it 'returns a blocked payload when moderation rejects the input' do

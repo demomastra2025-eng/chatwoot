@@ -25,7 +25,13 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
 
     expect(payload['query']).to eq('password reset')
     expect(payload['total_count']).to eq(1)
-    expect(payload['matches'].first).to include('type' => 'faq_response', 'answer' => 'Click forgot password')
+    expect(payload['matches'].first).to include(
+      'type' => 'faq_response',
+      'answer' => 'Click forgot password',
+      'score' => 0.9,
+      'relevance_threshold' => 0.7,
+      'relevance_threshold_passed' => true
+    )
     expect(payload['matches'].first).to include('id' => faq_response.id, 'document_chunk_id' => document_chunk.id)
     expect(payload['retrieval_trace']).to include(
       'strategy' => 'semantic_faq',
@@ -62,12 +68,24 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
 
     payload = JSON.parse(tool.perform(tool_context, query: 'unrelated phrase'))
 
-    expect(payload).to include('total_count' => 0, 'lookup_strategy' => 'lexical')
+    expect(payload).to include(
+      'total_count' => 0,
+      'result' => 'not_found',
+      'message' => 'No relevant FAQ result found',
+      'lookup_strategy' => 'semantic_faq'
+    )
     expect(payload['matches']).to be_empty
     expect(payload['retrieval_trace']).to include(
-      'degraded' => true,
-      'fallback_reason' => 'semantic_no_matches',
+      'degraded' => false,
+      'no_match_reason' => 'relevance_threshold_not_met',
       'match_count' => 0
+    )
+    expect(payload.dig('retrieval_trace', 'relevance_check')).to include(
+      'metric' => 'cosine_similarity',
+      'threshold' => 0.7,
+      'best_score' => 0.1,
+      'candidate_count' => 1,
+      'passed' => false
     )
   end
 
@@ -245,7 +263,9 @@ RSpec.describe Captain::Tools::FaqLookupTool, type: :model do
       account_id: account.id,
       assistant_id: assistant.id,
       limit: 5
-    ).and_return(Captain::AssistantResponse.where(id: general_response.id))
+    ).and_return(
+      Captain::AssistantResponse.select('captain_assistant_responses.*, 0.1 AS neighbor_distance').where(id: general_response.id)
+    )
 
     payload = JSON.parse(tool.perform(tool_context, query: 'account recovery'))
 

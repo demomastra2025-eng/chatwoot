@@ -26,6 +26,8 @@ RSpec.describe Captain::Tools::Copilot::TransitionDealStageService do
       'stage_id' => new_stage.id,
       'pipeline_id' => pipeline.id
     )
+    expect(payload['previous_stage']).to include('id' => old_stage.id, 'name' => 'New')
+    expect(payload['current_stage']).to include('id' => new_stage.id, 'name' => 'Qualified')
   end
 
   it 'resolves duplicate stage names within the current deal pipeline' do

@@ -1,3 +1,4 @@
+require 'digest'
 require 'securerandom'
 
 class Captain::Assistant::AgentRunnerService
@@ -237,6 +238,7 @@ class Captain::Assistant::AgentRunnerService
       return final_error_response(error, result.context, handoff_tool_called: handoff_tool_called)
     end
 
+    publish_tool_omission_event(response, result.context)
     moderate_output!(response, result.context&.dig(:state, :captain_runtime))
     response
   rescue Llm::SafetyPolicy::UnsafeContentError
@@ -250,6 +252,24 @@ class Captain::Assistant::AgentRunnerService
     Rails.logger.info(
       "[Captain V2] Agent result assistant_id=#{@assistant.id} conversation_id=#{@conversation&.id} " \
       "current_agent=#{result.context&.dig(:current_agent)} output_type=#{result.output.class.name} error_class=#{error&.class&.name}"
+    )
+  end
+
+  def publish_tool_omission_event(response, context)
+    bound_tool_ids = Array(context&.dig(:captain_v2_bound_tool_ids)).map(&:to_s).reject(&:blank?).uniq
+    bound_tool_ids.reject! { |tool_id| tool_id.start_with?(Captain::HandoffNaming::TOOL_PREFIX) }
+    return if bound_tool_ids.blank? || completed_tool_names(context).any?
+
+    reasoning = response['reasoning'].to_s.squish
+    Llm::EventBus.publish(
+      'tool.omitted',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      current_agent: context&.dig(:current_agent),
+      reason: 'model_returned_final_response_without_tool_call',
+      available_tool_count: bound_tool_ids.size,
+      model_reasoning_present: reasoning.present?,
+      model_reasoning_sha256: reasoning.present? ? Digest::SHA256.hexdigest(reasoning) : nil
     )
   end
 

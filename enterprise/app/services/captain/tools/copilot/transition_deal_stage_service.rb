@@ -29,17 +29,11 @@ class Captain::Tools::Copilot::TransitionDealStageService < Captain::Tools::Copi
 
   def execute(stage_id: nil, stage_name: nil, stage_code: nil, pipeline_id: nil, pipeline_code: nil, stage_action: nil,
               closing_reasons: nil, transition_reason: nil)
-    deal = deal_operations.transition_current_deal_stage(
-      stage_id: stage_id,
-      stage_name: stage_name,
-      stage_code: stage_code,
-      pipeline_id: pipeline_id,
-      pipeline_code: pipeline_code,
-      stage_action: stage_action,
-      closing_reasons: closing_reasons,
-      transition_reason: transition_reason
-    )
-    formatted_payload(::Crm::ToolPayloadBuilder.deal_payload(action: 'transition_deal_stage', deal: deal))
+    formatted_payload(transition_deal_stage_payload(
+                        stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline_id: pipeline_id,
+                        pipeline_code: pipeline_code, stage_action: stage_action, closing_reasons: closing_reasons,
+                        transition_reason: transition_reason
+                      ))
   rescue StandardError => e
     tool_failure(e)
   end
@@ -49,6 +43,12 @@ class Captain::Tools::Copilot::TransitionDealStageService < Captain::Tools::Copi
   end
 
   private
+
+  def transition_deal_stage_payload(**attributes)
+    previous_stage = current_deal.stage
+    deal = deal_operations.transition_current_deal_stage(**attributes)
+    ::Crm::ToolPayloadBuilder.deal_transition_payload(action: 'transition_deal_stage', deal: deal, previous_stage: previous_stage)
+  end
 
   def deal_operations
     Captain::Tools::Operations::DealOperations.new(

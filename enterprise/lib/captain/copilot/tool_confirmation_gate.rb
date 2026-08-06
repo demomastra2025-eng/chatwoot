@@ -41,6 +41,14 @@ class Captain::Copilot::ToolConfirmationGate
   def call
     return unless requires_confirmation?
     return missing_thread_result if @copilot_thread.blank?
+
+    @copilot_thread.with_lock { evaluate_confirmation }
+  end
+
+  private
+
+  def evaluate_confirmation
+    @pending_request = nil
     return if confirmed_pending_request?
 
     request = pending_request || create_pending_request
@@ -60,8 +68,6 @@ class Captain::Copilot::ToolConfirmationGate
       }.compact
     )
   end
-
-  private
 
   def requires_confirmation?
     ActiveModel::Type::Boolean.new.cast(@tool_definition[:requires_confirmation])
@@ -102,7 +108,28 @@ class Captain::Copilot::ToolConfirmationGate
     return false if text.match?(NEGATIVE_CONFIRMATION_PATTERN)
     return false unless text.match?(CONFIRMATION_PATTERN)
 
-    text.include?(confirmation_token(request)) || text.include?(request.id.to_s) || text.include?(tool_id)
+    return true if text.include?(confirmation_token(request)) || text.include?(request.id.to_s) || text.include?(tool_id)
+
+    unambiguous_pending_confirmation?(request)
+  end
+
+  def unambiguous_pending_confirmation?(request)
+    active_pending_requests = @copilot_thread.copilot_messages.assistant_thinking.order(id: :desc).limit(50).select do |message|
+      gate = message.message['confirmation_gate']
+      gate.present? && gate['status'] == 'pending' && confirmation_request_active_for_user?(gate)
+    end
+
+    active_pending_requests.one? && active_pending_requests.first.id == request.id
+  end
+
+  def confirmation_request_active_for_user?(gate)
+    requested_at = Time.zone.parse(gate['requested_at'].to_s)
+    return false if requested_at.present? && requested_at < CONFIRMATION_TTL.ago
+
+    requested_user_id = gate['requested_by_user_id']
+    requested_user_id.blank? || (@user.present? && requested_user_id.to_i == @user.id)
+  rescue ArgumentError, TypeError
+    false
   end
 
   def pending_request

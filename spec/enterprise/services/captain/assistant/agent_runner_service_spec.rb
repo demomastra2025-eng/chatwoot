@@ -307,6 +307,31 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       expect(result).to eq({ 'response' => 'Test response', 'agent_name' => nil, 'handoff_tool_called' => false })
     end
 
+    it 'records a persisted omission reason when the model skips all bound tools' do
+      result = instance_double(
+        Captain::Runtime::Result,
+        output: { 'response' => 'I will explain instead.', 'reasoning' => 'No tool call selected' },
+        context: {
+          current_agent: 'assistant_agent',
+          captain_v2_bound_tool_ids: %w[list_deal_stages create_touch_plan],
+          captain_v2_completed_tool_names: []
+        },
+        error: nil
+      )
+      allow(mock_runner).to receive(:run).and_return(result)
+      allow(Llm::EventBus).to receive(:publish).and_call_original
+      expect(Llm::EventBus).to receive(:publish).with(
+        'tool.omitted',
+        hash_including(
+          reason: 'model_returned_final_response_without_tool_call',
+          available_tool_count: 2,
+          model_reasoning_present: true
+        )
+      ).and_call_original
+
+      service.generate_response(message_history: message_history)
+    end
+
     it 'does not persist native provider reasoning from runtime history' do
       result = instance_double(
         Captain::Runtime::Result,
