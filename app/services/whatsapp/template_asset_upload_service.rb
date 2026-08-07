@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Whatsapp::TemplateAssetUploadService
   MAX_DOWNLOAD_SIZE = 25.megabytes
   PRIVATE_IP_RANGES = [
@@ -38,6 +39,22 @@ class Whatsapp::TemplateAssetUploadService
     upload_file(upload_session_id, file)
   ensure
     close_download(file)
+  end
+
+  def upload_blob(blob_signed_id:, media_type:)
+    validate_app_configuration!
+    blob = ActiveStorage::Blob.find_signed(blob_signed_id)
+    raise ArgumentError, 'Uploaded media file is invalid or no longer available' if blob.blank?
+    raise ArgumentError, 'Uploaded media file does not belong to this account' unless blob_account_id(blob) == whatsapp_channel.account_id
+    raise ArgumentError, 'Uploaded media file is too large' if blob.byte_size > MAX_DOWNLOAD_SIZE
+
+    blob.open do |file|
+      file_name = blob.filename.to_s
+      content_type = Marcel::MimeType.for(file, name: file_name) || blob.content_type || 'application/octet-stream'
+      validate_media_type!(media_type.to_s.downcase, content_type)
+
+      upload_file_with_metadata(file, file_name: file_name, content_type: content_type)
+    end
   end
 
   private
@@ -101,6 +118,16 @@ class Whatsapp::TemplateAssetUploadService
 
     parsed_response = parse_response(response, 'Failed to create WhatsApp upload session')
     parsed_response.fetch('id')
+  end
+
+  def upload_file_with_metadata(file, file_name:, content_type:)
+    upload_session_id = create_upload_session(
+      file_name: file_name,
+      file_length: file.size,
+      content_type: content_type
+    )
+
+    upload_file(upload_session_id, file)
   end
 
   def upload_file(upload_session_id, file)
@@ -178,6 +205,10 @@ class Whatsapp::TemplateAssetUploadService
     whatsapp_channel.provider_config['api_key']
   end
 
+  def blob_account_id(blob)
+    blob.metadata.to_h['account_id'].to_i
+  end
+
   def graph_api_query
     Whatsapp::FacebookApiClient.appsecret_proof_query(access_token)
   end
@@ -194,3 +225,4 @@ class Whatsapp::TemplateAssetUploadService
     @app_id ||= GlobalConfigService.load('WHATSAPP_APP_ID', '')
   end
 end
+# rubocop:enable Metrics/ClassLength

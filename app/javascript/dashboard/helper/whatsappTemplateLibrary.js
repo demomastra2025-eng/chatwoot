@@ -42,9 +42,19 @@ export const createEmptyTemplateButton = () => ({
   phoneNumber: '',
 });
 
+let carouselCardSequence = 0;
+
+const createCarouselCardClientId = () => {
+  carouselCardSequence += 1;
+  return `carousel-card-${Date.now()}-${carouselCardSequence}`;
+};
+
 export const createEmptyCarouselCard = () => ({
+  clientId: createCarouselCardClientId(),
   headerType: 'image',
   sampleMediaUrl: '',
+  sampleMediaBlobId: '',
+  sampleMediaFileName: '',
   bodyText: '',
   bodyExamples: {},
   buttons: [],
@@ -59,6 +69,7 @@ export const createEmptyWhatsAppTemplateForm = () => ({
   bodyText: '',
   footerText: '',
   sampleMediaUrl: '',
+  sampleMediaBlobId: '',
   bodyExamples: {},
   headerExamples: {},
   buttons: [],
@@ -165,6 +176,7 @@ const normalizeTemplateButton = button => {
 const normalizeCarouselCard = card => ({
   header_type: card.headerType,
   sample_media_url: compactString(card.sampleMediaUrl),
+  sample_media_blob_id: compactString(card.sampleMediaBlobId),
   body_text: compactString(card.bodyText),
   body_examples: compactObject(card.bodyExamples),
   buttons: card.buttons.map(normalizeTemplateButton),
@@ -207,6 +219,7 @@ export const buildWhatsAppTemplatePayload = form => {
     body_text: compactString(form.bodyText),
     footer_text: compactString(form.footerText),
     sample_media_url: compactString(form.sampleMediaUrl),
+    sample_media_blob_id: compactString(form.sampleMediaBlobId),
     body_examples: compactObject(form.bodyExamples),
     header_examples: compactObject(form.headerExamples),
     buttons: form.buttons.map(normalizeTemplateButton),

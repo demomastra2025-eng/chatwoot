@@ -1,12 +1,13 @@
 class Api::V1::Accounts::InboxWhatsappTemplatesController < Api::V1::Accounts::BaseController
   TEMPLATE_FIELDS = %i[
     name language category add_security_recommendation code_expiration_minutes
-    header_type header_text body_text footer_text sample_media_url
+    header_type header_text body_text footer_text sample_media_url sample_media_blob_id
   ].freeze
   BUTTON_FIELDS = %i[type text url example phone_number].freeze
   CAROUSEL_CARD_FIELDS = [
     :header_type,
     :sample_media_url,
+    :sample_media_blob_id,
     :body_text,
     { body_examples: {} },
     { buttons: %i[type text url example phone_number] }

@@ -12,11 +12,14 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { useVuelidate } from '@vuelidate/core';
 import { requiredIf } from '@vuelidate/validators';
 import { useI18n } from 'vue-i18n';
+import { useAlert } from 'dashboard/composables';
 
+import Button from 'dashboard/components-next/button/Button.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TemplateParamInput from './TemplateParamInput.vue';
 import TemplatePreview from 'dashboard/components-next/template-preview/TemplatePreview.vue';
 import { PLATFORMS } from 'dashboard/services/TemplateConstants';
+import { uploadFile } from 'dashboard/helper/uploadHelper';
 import {
   buildTemplateParameters,
   allKeysRequired,
@@ -50,6 +53,9 @@ const emit = defineEmits(['sendMessage', 'resetTemplate', 'back']);
 const { t } = useI18n();
 
 const processedParams = ref({});
+const mediaFileInputRef = ref(null);
+const isUploadingMedia = ref(false);
+const selectedMediaFileName = ref('');
 
 const cloneProcessedParams = value => JSON.parse(JSON.stringify(value || {}));
 
@@ -123,6 +129,15 @@ const formatType = computed(() => {
 const isDocumentTemplate = computed(() => {
   return headerComponent.value?.format?.toLowerCase() === 'document';
 });
+
+const mediaFileAccept = computed(
+  () =>
+    ({
+      image: 'image/jpeg,image/png',
+      video: 'video/mp4',
+      document: 'application/pdf',
+    })[headerComponent.value?.format?.toLowerCase()] || ''
+);
 
 const hasVariables = computed(() => {
   return (
@@ -227,6 +242,7 @@ const v$ = useVuelidate(
 );
 
 const initializeTemplateParameters = () => {
+  selectedMediaFileName.value = '';
   const baseProcessedParams = buildTemplateParameters(
     props.template,
     hasMediaHeader.value
@@ -245,6 +261,33 @@ const updateMediaUrl = value => {
 const updateMediaName = value => {
   processedParams.value.header ??= {};
   processedParams.value.header.media_name = value;
+};
+
+const removeMediaFile = () => {
+  updateMediaUrl('');
+  selectedMediaFileName.value = '';
+};
+
+const handleMediaFileChange = async event => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+
+  try {
+    isUploadingMedia.value = true;
+    const { fileUrl } = await uploadFile(file);
+    updateMediaUrl(fileUrl);
+    updateMediaName(file.name);
+    selectedMediaFileName.value = file.name;
+  } catch (error) {
+    useAlert(
+      error?.response?.data?.error ||
+        error?.message ||
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.MEDIA_UPLOAD_FAILED')
+    );
+  } finally {
+    isUploadingMedia.value = false;
+  }
 };
 
 const sendMessage = () => {
@@ -358,11 +401,51 @@ defineExpose({
             }) || `${formatType} Header`
           }}
         </p>
+        <input
+          ref="mediaFileInputRef"
+          type="file"
+          class="hidden"
+          :accept="mediaFileAccept"
+          @change="handleMediaFileChange"
+        />
+        <div class="flex flex-wrap items-center gap-2 mb-2.5">
+          <Button
+            type="button"
+            variant="outline"
+            color="slate"
+            size="sm"
+            icon="i-lucide-upload"
+            :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_FILE')"
+            :is-loading="isUploadingMedia"
+            :disabled="isUploadingMedia"
+            @click="mediaFileInputRef?.click()"
+          />
+          <span
+            v-if="selectedMediaFileName"
+            class="min-w-0 truncate text-sm text-n-slate-11"
+          >
+            {{ selectedMediaFileName }}
+          </span>
+          <Button
+            v-if="selectedMediaFileName"
+            type="button"
+            variant="ghost"
+            color="ruby"
+            size="sm"
+            icon="i-lucide-x"
+            :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_REMOVE')"
+            @click="removeMediaFile"
+          />
+        </div>
+        <p class="mb-2.5 text-xs text-n-slate-10">
+          {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_SOURCE_HINT') }}
+        </p>
         <div class="flex items-center mb-2.5">
           <Input
             :model-value="processedParams.header?.media_url || ''"
             type="url"
             class="flex-1"
+            :disabled="Boolean(selectedMediaFileName)"
             :placeholder="
               t('WHATSAPP_TEMPLATES.PARSER.MEDIA_URL_LABEL', {
                 type: formatType,

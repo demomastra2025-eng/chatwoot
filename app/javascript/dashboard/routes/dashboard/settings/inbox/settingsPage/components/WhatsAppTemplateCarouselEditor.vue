@@ -1,11 +1,13 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { useAlert } from 'dashboard/composables';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import { uploadFile } from 'dashboard/helper/uploadHelper';
 import {
   createEmptyCarouselCard,
   createEmptyTemplateButton,
@@ -15,12 +17,16 @@ import {
   TEMPLATE_BUTTON_TYPE_OPTIONS,
 } from 'dashboard/helper/whatsappTemplateLibrary';
 
+const emit = defineEmits(['uploadingChange']);
 const cards = defineModel({
   type: Array,
   required: true,
 });
 
 const { t } = useI18n();
+const uploadingCardId = ref(null);
+let activeUploadToken = 0;
+const isUploading = computed(() => uploadingCardId.value !== null);
 
 const headerTypeOptions = computed(() => [
   {
@@ -64,6 +70,64 @@ const updateCardBody = (index, bodyText) => {
     variables.map(variable => [variable, card.bodyExamples?.[variable] || ''])
   );
   updateCard(index, { bodyText, bodyExamples });
+};
+
+const mediaFileAccept = headerType =>
+  ({
+    image: 'image/jpeg,image/png',
+    video: 'video/mp4',
+  })[headerType] || '';
+
+const handleCardMediaFileChange = async (cardIndex, event) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+
+  const cardId = cards.value[cardIndex]?.clientId;
+  if (!cardId) return;
+
+  activeUploadToken += 1;
+  const uploadToken = activeUploadToken;
+
+  try {
+    uploadingCardId.value = cardId;
+    emit('uploadingChange', true);
+    const { blobId, fileUrl } = await uploadFile(file);
+    if (uploadToken !== activeUploadToken) return;
+
+    const currentCardIndex = cards.value.findIndex(
+      card => card.clientId === cardId
+    );
+    if (currentCardIndex === -1) return;
+
+    updateCard(currentCardIndex, {
+      sampleMediaBlobId: blobId,
+      sampleMediaFileName: file.name,
+      // Keep the URL as a rolling-deploy fallback for old API instances.
+      sampleMediaUrl: fileUrl,
+    });
+  } catch (error) {
+    if (uploadToken !== activeUploadToken) return;
+
+    useAlert(
+      error?.response?.data?.error ||
+        error?.message ||
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.MEDIA_UPLOAD_FAILED')
+    );
+  } finally {
+    if (uploadToken === activeUploadToken) {
+      uploadingCardId.value = null;
+      emit('uploadingChange', false);
+    }
+  }
+};
+
+const removeCardMediaFile = cardIndex => {
+  updateCard(cardIndex, {
+    sampleMediaBlobId: '',
+    sampleMediaFileName: '',
+    sampleMediaUrl: '',
+  });
 };
 
 const addCard = () => {
@@ -111,6 +175,11 @@ const updateCardButtonType = (cardIndex, buttonIndex, type) => {
     phoneNumber: type === 'PHONE_NUMBER' ? currentButton.phoneNumber : '',
   });
 };
+
+onBeforeUnmount(() => {
+  activeUploadToken += 1;
+  if (isUploading.value) emit('uploadingChange', false);
+});
 </script>
 
 <template>
@@ -130,7 +199,7 @@ const updateCardButtonType = (cardIndex, buttonIndex, type) => {
         size="sm"
         icon="i-lucide-plus"
         :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.CAROUSEL.ADD_CARD')"
-        :disabled="cards.length >= MAX_CAROUSEL_CARDS"
+        :disabled="isUploading || cards.length >= MAX_CAROUSEL_CARDS"
         @click="addCard"
       />
     </div>
@@ -153,6 +222,7 @@ const updateCardButtonType = (cardIndex, buttonIndex, type) => {
           color="ruby"
           size="sm"
           icon="i-lucide-trash-2"
+          :disabled="isUploading"
           @click="removeCard(cardIndex)"
         />
       </div>
@@ -165,23 +235,49 @@ const updateCardButtonType = (cardIndex, buttonIndex, type) => {
           <ComboBox
             :model-value="card.headerType"
             :options="headerTypeOptions"
+            :disabled="isUploading"
             input-like
             @update:model-value="
               value => updateCard(cardIndex, { headerType: value })
             "
           />
         </div>
-        <Input
-          :model-value="card.sampleMediaUrl"
-          type="url"
-          :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL')"
-          :placeholder="
-            t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL_PLACEHOLDER')
-          "
-          @update:model-value="
-            value => updateCard(cardIndex, { sampleMediaUrl: value })
-          "
-        />
+        <div class="space-y-3">
+          <input
+            type="file"
+            :accept="mediaFileAccept(card.headerType)"
+            :disabled="isUploading"
+            class="block w-full rounded-lg border border-n-strong bg-n-solid-1 px-3 py-2 text-sm text-n-slate-11 file:mr-3 file:rounded-md file:border-0 file:bg-n-alpha-2 file:px-3 file:py-1.5 file:text-sm file:text-n-slate-12"
+            @change="event => handleCardMediaFileChange(cardIndex, event)"
+          />
+          <div v-if="card.sampleMediaFileName" class="flex items-center gap-2">
+            <span class="min-w-0 flex-1 truncate text-sm text-n-slate-11">
+              {{ card.sampleMediaFileName }}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              color="ruby"
+              size="sm"
+              icon="i-lucide-x"
+              :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_REMOVE')"
+              :disabled="isUploading"
+              @click="removeCardMediaFile(cardIndex)"
+            />
+          </div>
+          <Input
+            :model-value="card.sampleMediaUrl"
+            type="url"
+            :disabled="Boolean(card.sampleMediaBlobId)"
+            :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL')"
+            :placeholder="
+              t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL_PLACEHOLDER')
+            "
+            @update:model-value="
+              value => updateCard(cardIndex, { sampleMediaUrl: value })
+            "
+          />
+        </div>
       </div>
 
       <TextArea

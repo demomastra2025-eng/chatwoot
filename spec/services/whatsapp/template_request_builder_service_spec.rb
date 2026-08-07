@@ -101,6 +101,32 @@ RSpec.describe Whatsapp::TemplateRequestBuilderService do
                                         ])
     end
 
+    it 'builds media headers from an uploaded OneLink file' do
+      allow(asset_upload_service).to receive(:upload)
+      allow(asset_upload_service).to receive(:upload_blob)
+        .with(blob_signed_id: 'signed-media-blob', media_type: 'image')
+        .and_return('4:uploaded-file-handle')
+
+      result = described_class.new(
+        template_config: {
+          name: 'photo_ready',
+          language: 'en',
+          category: 'utility',
+          header_type: 'image',
+          sample_media_blob_id: 'signed-media-blob',
+          body_text: 'Your photo is ready.'
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(result[:components].second).to eq(
+        type: 'HEADER',
+        format: 'IMAGE',
+        example: { header_handle: ['4:uploaded-file-handle'] }
+      )
+      expect(asset_upload_service).not_to have_received(:upload)
+    end
+
     it 'raises when placeholders are not sequential' do
       template_config = {
         name: 'broken_template',
