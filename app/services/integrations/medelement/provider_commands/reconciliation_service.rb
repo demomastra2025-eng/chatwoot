@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::ReconciliationService
   PHASE_HANDLERS = {
     'patient_create' => :reconcile_patient_create,
@@ -66,6 +67,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   def reconcile_patient_create
     code = Integrations::Medelement::ProviderCommands::PatientResolver.new(command: command, client: client).resolve_existing
     return if code.blank?
+    return if conflicting_contact_patient_code?(code)
 
     if command.create_reception?
       applied = success_applier.patient_resolved_for_reception!(patient_code: code)
@@ -73,6 +75,11 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     else
       success_applier.patient!(patient_code: code)
     end
+  end
+
+  def conflicting_contact_patient_code?(patient_code)
+    current_code = command.contact&.custom_attributes&.dig('medelement_patient_code').presence
+    current_code.present? && current_code.to_s != patient_code.to_s
   end
 
   def reconcile_patient_update
@@ -121,16 +128,39 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def destination_receptions
+    range = destination_calendar_range
     client.get_receptions(
       company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
       specialist_code: specialist_code,
-      begin_datetime: provider_datetime(snapshot_time('destination_starts_at')),
-      end_datetime: provider_datetime(snapshot_time('destination_ends_at'))
+      begin_datetime: provider_datetime(range.begin),
+      end_datetime: provider_datetime(range.end)
+    )
+  end
+
+  def destination_calendar_range
+    zone = ActiveSupport::TimeZone[reception_snapshot.fetch('time_zone')]
+    starts_on = snapshot_time('destination_starts_at').in_time_zone(zone).to_date
+    ends_on = snapshot_time('destination_ends_at').in_time_zone(zone).to_date
+    exclusive_end = ends_on + 1.day
+
+    Range.new(
+      zone.local(starts_on.year, starts_on.month, starts_on.day),
+      zone.local(exclusive_end.year, exclusive_end.month, exclusive_end.day),
+      true
     )
   end
 
   def exact_destination_match?(reception)
-    active_reception?(reception) && reception_patient_matches?(reception) && reception_time_matches?(reception)
+    active_reception?(reception) && reception_patient_matches?(reception) && reception_time_matches?(reception) &&
+      reception_services_match?(reception)
+  end
+
+  def reception_services_match?(reception)
+    expected_codes = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.service_codes(command.request_snapshot)
+    actual_codes = Array(reception['SERVICES']).filter_map do |service|
+      service['NOMENCLATURE_CODE'].to_s.presence if service.is_a?(Hash)
+    end
+    (expected_codes - actual_codes).empty?
   end
 
   def active_reception?(reception)
@@ -156,7 +186,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     return false unless patient['REMOVED'].to_i.zero?
 
     desired = patient_snapshot.fetch('payload')
-    {
+    fields_match = {
       'name' => 'NAME',
       'lastname' => 'LASTNAME',
       'middlename' => 'MIDDLENAME',
@@ -167,6 +197,8 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     }.all? do |local_key, remote_key|
       desired[local_key].blank? || desired[local_key].to_s == patient[remote_key].to_s
     end
+
+    fields_match && Integrations::Medelement::PhoneNumber.new(patient_snapshot.fetch('phone_number')).matches_patient?(patient)
   end
 
   def specialist_code
@@ -214,3 +246,4 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     @client = Integrations::Medelement::Client.new(configuration: configuration)
   end
 end
+# rubocop:enable Metrics/ClassLength

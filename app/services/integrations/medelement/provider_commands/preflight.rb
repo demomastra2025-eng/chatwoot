@@ -48,6 +48,7 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def verify_remote_state!(remote)
+    return verify_remove_state!(remote) if command.remove_reception?
     return unless command.move_reception?
 
     raise StateChanged, 'Medelement reception has been removed' if remote['REMOVED'].to_i == 1
@@ -57,11 +58,38 @@ class Integrations::Medelement::ProviderCommands::Preflight
   def destination_receptions
     return [] unless command.create_reception? || command.move_reception?
 
+    range = destination_calendar_range
     client.get_receptions(
       company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
       specialist_code: specialist_code,
-      begin_datetime: provider_datetime(destination_start),
-      end_datetime: provider_datetime(destination_end)
+      begin_datetime: provider_datetime(range.begin),
+      end_datetime: provider_datetime(range.end)
+    )
+  end
+
+  def verify_remove_state!(remote)
+    return if remote['REMOVED'].to_i == 1
+
+    raise StateChanged, 'Medelement reception is not active' unless remote['ACTIVE'].to_i == 1
+
+    calendar_reception = source_receptions.find do |reception|
+      reception['RECEPTION_CODE'].to_s == provider_reception_code
+    end
+    raise StateChanged, 'Medelement reception payment state is unavailable' if calendar_reception.blank?
+
+    paid = calendar_reception['PAID'].to_s
+    return if paid.blank? || paid == 'not'
+
+    raise StateChanged, 'Paid Medelement reception cannot be removed'
+  end
+
+  def source_receptions
+    range = source_calendar_range
+    client.get_receptions(
+      company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
+      specialist_code: specialist_code,
+      begin_datetime: provider_datetime(range.begin),
+      end_datetime: provider_datetime(range.end)
     )
   end
 
@@ -150,6 +178,27 @@ class Integrations::Medelement::ProviderCommands::Preflight
 
   def destination_end
     snapshot_time('destination_ends_at')
+  end
+
+  def destination_calendar_range
+    calendar_range(destination_start, destination_end)
+  end
+
+  def source_calendar_range
+    calendar_range(snapshot_time('source_starts_at'), snapshot_time('source_ends_at'))
+  end
+
+  def calendar_range(starts_at, ends_at)
+    zone = ActiveSupport::TimeZone[reception_snapshot.fetch('time_zone')]
+    starts_on = starts_at.in_time_zone(zone).to_date
+    ends_on = ends_at.in_time_zone(zone).to_date
+    exclusive_end = ends_on + 1.day
+
+    Range.new(
+      zone.local(starts_on.year, starts_on.month, starts_on.day),
+      zone.local(exclusive_end.year, exclusive_end.month, exclusive_end.day),
+      true
+    )
   end
 
   def reception_snapshot

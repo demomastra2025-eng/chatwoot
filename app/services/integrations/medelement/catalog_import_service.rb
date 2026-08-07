@@ -3,9 +3,9 @@ class Integrations::Medelement::CatalogImportService
 
   class InvalidPayloadError < StandardError; end
 
-  def initialize(account:, configuration:, payload:, now: Time.current)
-    @account = account
-    @configuration = configuration
+  def initialize(hook:, payload:, now: Time.current)
+    @account_id = hook.account_id
+    @hook_id = hook.id
     @payload = payload.is_a?(Hash) ? payload.with_indifferent_access : {}.with_indifferent_access
     @now = now
   end
@@ -13,7 +13,9 @@ class Integrations::Medelement::CatalogImportService
   def perform
     validate_payload!
 
-    ApplicationRecord.transaction do
+    Integrations::Medelement::HookRuntimeLock.with_hook(account_id: account_id, hook_id: hook_id) do |hook|
+      @account = hook.account
+      @configuration = Integrations::Medelement::Configuration.new(hook: hook)
       result = import_catalog
       validate_result!(result)
       result
@@ -22,7 +24,7 @@ class Integrations::Medelement::CatalogImportService
 
   private
 
-  attr_reader :account, :configuration, :now, :payload
+  attr_reader :account, :account_id, :configuration, :hook_id, :now, :payload
 
   def import_catalog
     specialist_result = Integrations::Medelement::SpecialistsSyncService.new(

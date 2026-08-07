@@ -7,6 +7,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandConfirmationJob do
   let(:confirmation_request) do
     create(:confirmation_request, account: account, conversation: nil, contact: contact, status: confirmation_status, resolved_at: Time.current)
   end
+  let(:command_status) { 'awaiting_confirmation' }
   let!(:command) do
     request_snapshot = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.new(
       account: account,
@@ -21,7 +22,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandConfirmationJob do
       contact: contact,
       confirmation_request: confirmation_request,
       operation: 'create_patient',
-      status: 'awaiting_confirmation',
+      status: command_status,
       idempotency_key: SecureRandom.uuid,
       execution_state: {
         'request_snapshot' => request_snapshot,
@@ -54,6 +55,17 @@ RSpec.describe Integrations::Medelement::ProviderCommandConfirmationJob do
       expect(command.reload).to be_queued
       expect(command.confirmed_at).to eq(confirmation_request.resolved_at)
       expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id)
+    end
+
+    context 'with a versioned command' do
+      let(:command_status) { 'v2_awaiting_confirmation' }
+
+      it 'preserves the versioned status through confirmation' do
+        described_class.perform_now(confirmation_request.id)
+
+        expect(command.reload).to have_attributes(status: 'v2_queued', logical_status: 'queued')
+        expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id)
+      end
     end
 
     {

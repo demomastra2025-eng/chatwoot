@@ -6,16 +6,50 @@ class SchedulingProviderCommandsAPI extends ApiClient {
     super('scheduling/provider_commands', { accountScoped: true });
   }
 
-  get(id) {
-    return axios.get(`${this.url}/${id}`);
+  get(id, { provider } = {}) {
+    const url = `${this.url}/${id}`;
+    return provider ? axios.get(url, { params: { provider } }) : axios.get(url);
+  }
+
+  list({ provider, appointmentId, activeOnly = false } = {}) {
+    return axios.get(this.url, {
+      params: {
+        active_only: activeOnly,
+        appointment_id: appointmentId,
+        provider,
+      },
+    });
   }
 
   create(data) {
     return axios.post(this.url, data);
   }
 
-  confirm(id) {
-    return axios.post(`${this.url}/${id}/confirm`);
+  confirm(id, { provider } = {}) {
+    const url = `${this.url}/${id}/confirm`;
+    return provider ? axios.post(url, { provider }) : axios.post(url);
+  }
+
+  patientCandidates(id, { provider } = {}) {
+    const url = `${this.url}/${id}/patient_candidates`;
+    return provider ? axios.get(url, { params: { provider } }) : axios.get(url);
+  }
+
+  selectPatient(id, { provider, token }) {
+    return axios.post(`${this.url}/${id}/select_patient`, {
+      patient_token: token,
+      provider,
+    });
+  }
+
+  confirmPatientCreation(id, { provider }) {
+    return axios.post(`${this.url}/${id}/confirm_patient_creation`, {
+      provider,
+    });
+  }
+
+  cancel(id, { provider }) {
+    return axios.post(`${this.url}/${id}/cancel`, { provider });
   }
 }
 

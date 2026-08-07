@@ -1,38 +1,40 @@
 class Integrations::Medelement::SpecialistsSyncService
-  DEFAULT_WORK_RULES_SEEDED_AT_KEY = 'medelement_default_work_rules_seeded_at'.freeze
   LAST_SEEN_AT_KEY = 'medelement_last_seen_at'.freeze
   SPECIALIST_CODE_KEY = 'medelement_specialist_code'.freeze
   MISSING_GRACE_PERIOD = 7.days
-  LEGACY_DEFAULT_WORK_RULE_RANGE = (0..1440)
-  DEFAULT_DAY_START_MINUTE = 9 * 60
-  DEFAULT_WEEKDAY_END_MINUTE = 18 * 60
-  DEFAULT_WEEKEND_END_MINUTE = 15 * 60
 
-  def initialize(account:, client:, configuration:, source: nil, now: Time.current)
+  def initialize(account:, client:, configuration:, **options)
     @account = account
     @client = client
     @configuration = configuration
+    source = options[:source]
     @specialists = source&.fetch(:specialists, nil)
-    @cabinets_by_code = Array(source&.fetch(:cabinets, nil)).index_by do |cabinet|
-      normalized_payload(cabinet)['companyCabinetCode'].to_s
-    end
-    @now = now
+    @source_cabinets = Array(source&.fetch(:cabinets, nil))
+    @now = options.fetch(:now, Time.current)
+    @conflict_tracker = options[:conflict_tracker]
   end
 
   def perform
     rows = specialists || Integrations::Medelement::SpecialistsSnapshotService.new(client: client).perform
+    @cabinet_resolver = Integrations::Medelement::CabinetSnapshotResolver.new(
+      account: account,
+      source_cabinets: source_cabinets,
+      specialist_rows: rows,
+      conflict_tracker: conflict_tracker
+    )
     seen_codes = Array(rows).filter_map do |payload|
       sync_specialist!(normalized_payload(payload))
     end
     # Live provider responses have no total/completeness marker; only validated catalog imports pass client: nil.
     deactivate_stale_specialists!(seen_codes) if client.nil?
 
-    { imported_count: seen_codes.size }
+    { imported_count: seen_codes.size, skipped_count: Array(rows).size - seen_codes.size }
   end
 
   private
 
-  attr_reader :account, :cabinets_by_code, :client, :configuration, :now, :specialists
+  attr_reader :account, :cabinet_resolver, :client, :configuration, :conflict_tracker, :now, :source_cabinets,
+              :specialists
 
   def sync_specialist!(payload)
     specialist_code = payload['specialistCode'].to_s
@@ -43,7 +45,7 @@ class Integrations::Medelement::SpecialistsSyncService
     resource = find_resource(specialist_code) || account.scheduling_resources.new
     resource.assign_attributes(specialist_attributes(resource, payload, specialist_code, specialist_name))
     resource.save!
-    sync_default_work_rules!(resource)
+    work_rules_sync_service.perform(resource)
     specialist_code
   end
 
@@ -54,7 +56,7 @@ class Integrations::Medelement::SpecialistsSyncService
       timezone: payload['timezone'].presence || configuration.time_zone,
       slot_duration_min: slot_duration(payload, resource),
       active: resource.deleted_from_scheduling? ? false : specialist_active?(payload),
-      custom_attributes: resource.custom_attributes.merge(resource_custom_attributes(payload, specialist_code))
+      custom_attributes: resource.custom_attributes.merge(resource_custom_attributes(resource, payload, specialist_code))
     }
     attributes[:specialty] = payload['specialty'] if payload['specialty'].present?
     attributes
@@ -64,20 +66,14 @@ class Integrations::Medelement::SpecialistsSyncService
     account.scheduling_resources.find_by("custom_attributes ->> '#{SPECIALIST_CODE_KEY}' = ?", specialist_code.to_s)
   end
 
-  def resource_custom_attributes(payload, specialist_code)
+  def resource_custom_attributes(resource, payload, specialist_code)
     {
-      'medelement_cabinets' => cabinets_for(payload),
+      'medelement_cabinets' => cabinet_resolver.cabinets_for(resource, payload),
       LAST_SEEN_AT_KEY => now.iso8601,
       'medelement_reception_time' => payload['receptionTime'],
       'medelement_schedule_published' => schedule_published_value(payload),
       SPECIALIST_CODE_KEY => specialist_code
     }
-  end
-
-  def cabinets_for(payload)
-    return Array(payload['cabinets']).map { |cabinet| normalized_payload(cabinet) } if payload.key?('cabinets')
-
-    Array(payload['cabinetCodes']).filter_map { |code| cabinets_by_code[code.to_s] }
   end
 
   def deactivate_stale_specialists!(seen_codes)
@@ -90,9 +86,18 @@ class Integrations::Medelement::SpecialistsSyncService
   end
 
   def log_skipped_specialist(reason, specialist_code = nil)
+    entity_key = specialist_code.presence || "missing:#{reason}"
+    conflict_tracker&.record!(
+      phase: 'specialists',
+      entity_type: 'specialist',
+      conflict_type: 'invalid_specialist',
+      entity_key: entity_key,
+      severity: 'error',
+      details: { reason: reason }
+    )
     Rails.logger.warn(
       "[MEDELEMENT::SPECIALISTS_SYNC] Skipping specialist for account=#{account.id} " \
-      "specialist_code=#{specialist_code.presence || 'missing'} reason=#{reason}"
+      "entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)} reason=#{reason}"
     )
     nil
   end
@@ -130,85 +135,7 @@ class Integrations::Medelement::SpecialistsSyncService
     false
   end
 
-  def desired_default_work_rules
-    @desired_default_work_rules ||= [
-      { weekday: 0, start_minute: DEFAULT_DAY_START_MINUTE, end_minute: DEFAULT_WEEKEND_END_MINUTE, active: false },
-      { weekday: 1, start_minute: DEFAULT_DAY_START_MINUTE, end_minute: DEFAULT_WEEKDAY_END_MINUTE, active: true },
-      { weekday: 2, start_minute: DEFAULT_DAY_START_MINUTE, end_minute: DEFAULT_WEEKDAY_END_MINUTE, active: true },
-      { weekday: 3, start_minute: DEFAULT_DAY_START_MINUTE, end_minute: DEFAULT_WEEKDAY_END_MINUTE, active: true },
-      { weekday: 4, start_minute: DEFAULT_DAY_START_MINUTE, end_minute: DEFAULT_WEEKDAY_END_MINUTE, active: true },
-      { weekday: 5, start_minute: DEFAULT_DAY_START_MINUTE, end_minute: DEFAULT_WEEKDAY_END_MINUTE, active: true },
-      { weekday: 6, start_minute: DEFAULT_DAY_START_MINUTE, end_minute: DEFAULT_WEEKEND_END_MINUTE, active: true }
-    ].freeze
-  end
-
-  def legacy_default_work_rules?(rules)
-    normalized_rule_tuples(rules) == normalized_rule_tuples(
-      (0..6).map do |weekday|
-        {
-          weekday: weekday,
-          start_minute: LEGACY_DEFAULT_WORK_RULE_RANGE.begin,
-          end_minute: LEGACY_DEFAULT_WORK_RULE_RANGE.end,
-          active: true
-        }
-      end
-    )
-  end
-
-  def normalized_rule_tuples(rules)
-    rules.map do |rule|
-      [
-        extract_rule_attribute(rule, :weekday),
-        extract_rule_attribute(rule, :start_minute),
-        extract_rule_attribute(rule, :end_minute),
-        extract_rule_attribute(rule, :active)
-      ]
-    end.sort
-  end
-
-  def extract_rule_attribute(rule, attribute)
-    return rule.public_send(attribute) if rule.respond_to?(attribute)
-
-    rule.fetch(attribute)
-  end
-
-  def sync_default_work_rules!(resource)
-    if resource.work_rules.exists?
-      migrate_legacy_default_work_rules!(resource)
-      return
-    end
-
-    replace_default_work_rules!(resource)
-  end
-
-  def migrate_legacy_default_work_rules!(resource)
-    return if resource.custom_attributes[DEFAULT_WORK_RULES_SEEDED_AT_KEY].blank?
-    return unless legacy_default_work_rules?(resource.work_rules.to_a)
-
-    replace_default_work_rules!(resource)
-  end
-
-  def replace_default_work_rules!(resource)
-    existing_seeded_at = resource.custom_attributes[DEFAULT_WORK_RULES_SEEDED_AT_KEY]
-
-    Scheduling::WorkRule.transaction do
-      resource.work_rules.destroy_all
-
-      desired_default_work_rules.each do |rule|
-        resource.work_rules.create!(
-          account: account,
-          weekday: rule[:weekday],
-          start_minute: rule[:start_minute],
-          end_minute: rule[:end_minute],
-          active: rule[:active]
-        )
-      end
-
-      resource.update!(
-        custom_attributes: resource.custom_attributes.merge(
-          DEFAULT_WORK_RULES_SEEDED_AT_KEY => existing_seeded_at.presence || Time.current.iso8601
-        )
-      )
-    end
+  def work_rules_sync_service
+    @work_rules_sync_service ||= Integrations::Medelement::SpecialistWorkRulesSyncService.new(account: account)
   end
 end

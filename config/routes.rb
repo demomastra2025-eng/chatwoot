@@ -223,6 +223,9 @@ Rails.application.routes.draw do
             resources :provider_commands, only: [:index, :show, :create] do
               post :confirm, on: :member
               post :cancel, on: :member
+              get :patient_candidates, on: :member
+              post :select_patient, on: :member
+              post :confirm_patient_creation, on: :member
             end
             resources :payments, only: [:index]
             resources :expenses, only: [:index] do
@@ -592,6 +595,8 @@ Rails.application.routes.draw do
               member do
                 post :process_event
                 post :run_sync
+                get :sync_status
+                patch :sync_conflict
                 post :import_catalog
               end
             end

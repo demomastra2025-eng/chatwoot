@@ -14,7 +14,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationLifecycle
 
       token = SecureRandom.uuid
       command.update!(
-        status: 'processing',
+        status: command.status_for_transition('processing'),
         execution_state: claimed_state(token)
       )
       token
@@ -32,7 +32,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationLifecycle
       end
 
       command.update!(
-        status: 'reconciliation_required',
+        status: command.status_for_transition('reconciliation_required'),
         execution_state: released_state.merge('reconciliation_next_at' => (current_time + backoff).iso8601),
         last_error_code: error_code,
         last_error_status: status

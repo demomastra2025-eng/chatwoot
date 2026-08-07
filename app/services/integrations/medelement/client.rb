@@ -39,6 +39,15 @@ class Integrations::Medelement::Client
     Array(response).select { |patient| phone.matches_patient?(patient) }
   end
 
+  def search_patients_by_iin(iin:, skip: 0)
+    indexed_patient_search([['iin[]', iin.to_s], ['skip', skip]])
+  end
+
+  def search_patients_by_codes(patient_codes:, skip: 0)
+    pairs = Array(patient_codes).filter_map { |code| ['patient_code[]', code.to_s] if code.present? }
+    indexed_patient_search(pairs << ['skip', skip])
+  end
+
   def specialists
     response = request.call(:get, '/v1/timetable/get_specialists', operation: 'specialists')
     response.is_a?(Hash) ? response.values : Array(response)
@@ -82,25 +91,31 @@ class Integrations::Medelement::Client
       :post,
       '/v2/doctor/reception/search_with_service',
       operation: 'reception search',
-      body: params
+      body: form_body(params)
     )
     response.is_a?(Hash) ? Array(response['receptions']) : Array(response)
   end
 
   def create_patient(params:)
-    request.call(:post, '/doctor/v1/patient', operation: 'patient create', body: URI.encode_www_form(params), write: true)
+    request.call(:post, '/doctor/v1/patient', operation: 'patient create', body: form_body(params), write: true)
   end
 
   def update_patient(params:)
-    request.call(:put, '/doctor/v1/patient', operation: 'patient update', body: URI.encode_www_form(params), write: true)
+    request.call(:put, '/doctor/v1/patient', operation: 'patient update', body: form_body(params), write: true)
   end
 
   def create_reception(params:)
-    request.call(:post, '/v1/doctor/reception', operation: 'reception create', body: params, write: true)
+    request.call(:post, '/v1/doctor/reception', operation: 'reception create', body: form_body(params), write: true)
   end
 
   def move_reception(params:)
-    request.call(:post, '/v2/doctor/reception/change_reception_date', operation: 'reception move', body: params, write: true)
+    request.call(
+      :post,
+      '/v2/doctor/reception/change_reception_date',
+      operation: 'reception move',
+      body: form_body(params),
+      write: true
+    )
   end
 
   def remove_reception(reception_code:)
@@ -108,7 +123,7 @@ class Integrations::Medelement::Client
       :post,
       '/v2/doctor/reception/remove',
       operation: 'reception remove',
-      body: { reception_code: reception_code },
+      body: form_body(reception_code: reception_code),
       write: true
     )
   end
@@ -116,6 +131,26 @@ class Integrations::Medelement::Client
   private
 
   attr_reader :request
+
+  def indexed_patient_search(pairs)
+    request.indexed_get(
+      '/doctor/v1/patients',
+      operation: 'patient search',
+      query: URI.encode_www_form(pairs),
+      empty_not_found: true
+    )
+  end
+
+  def form_body(params)
+    pairs = params.to_h.flat_map do |key, value|
+      if value.is_a?(Array)
+        value.map { |item| ["#{key}[]", item] }
+      else
+        [[key, value]]
+      end
+    end
+    URI.encode_www_form(pairs)
+  end
 
   def provider_date(value)
     value.to_date.strftime('%d.%m.%Y')

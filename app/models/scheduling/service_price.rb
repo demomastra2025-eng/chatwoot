@@ -43,20 +43,12 @@ class Scheduling::ServicePrice < ApplicationRecord
   validates :compensation_percent, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validate :compensation_percent_within_range
   validate :combined_compensation_percent_within_range
-  validate :active_price_requires_positive_amount
   validate :resource_and_service_belong_to_same_account
 
   scope :ordered, -> { order(:resource_id, :id) }
   scope :active, -> { where(active: true) }
 
   private
-
-  def active_price_requires_positive_amount
-    return unless active?
-    return if price.to_i.positive?
-
-    errors.add(:price, 'must be greater than 0 when the price is active')
-  end
 
   def compensation_percent_within_range
     return unless compensation_type == 'percent'

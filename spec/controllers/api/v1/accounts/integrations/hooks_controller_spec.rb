@@ -263,7 +263,10 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
       expect(response).to have_http_status(:accepted)
       expect(response.parsed_body['message']).to eq('Medelement sync queued successfully')
-      expect(Integrations::Medelement::SyncJob).to have_received(:perform_later).with(hook.id)
+      run = Integrations::Medelement::SyncRun.last
+      expect(response.parsed_body.dig('sync_status', 'run', 'id')).to eq(run.id)
+      expect(run).to have_attributes(trigger: 'manual', requested_by: admin)
+      expect(Integrations::Medelement::SyncJob).to have_received(:perform_later).with(hook.id, run.id)
     end
 
     it 'returns unauthorized for an agent' do
@@ -283,6 +286,100 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.parsed_body['message']).to eq('Medelement hook must be enabled before running a sync')
+    end
+  end
+
+  describe 'GET /api/v1/accounts/{account.id}/integrations/hooks/{hook_id}/sync_status' do
+    let(:hook) { create(:integrations_hook, :medelement, account: account) }
+
+    before { account.enable_features!('scheduling') }
+
+    it 'returns the latest run and actionable conflicts for an admin' do
+      run = Integrations::Medelement::SyncRun.create!(
+        account: account,
+        hook: hook,
+        requested_by: admin,
+        trigger: 'manual',
+        status: 'partial'
+      )
+      Integrations::Medelement::ConflictTracker.new(sync_run: run).record!(
+        phase: 'services',
+        entity_type: 'service',
+        conflict_type: 'invalid_service',
+        entity_key: 'service-1',
+        details: { reason: 'missing name' }
+      )
+
+      get sync_status_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('run', 'id')).to eq(run.id)
+      expect(response.parsed_body.dig('conflict_counts', 'open')).to eq(1)
+      expect(response.parsed_body.dig('conflicts', 0, 'conflict_type')).to eq('invalid_service')
+    end
+
+    it 'returns unauthorized for an agent' do
+      get sync_status_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+          headers: agent.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
+
+  describe 'PATCH /api/v1/accounts/{account.id}/integrations/hooks/{hook_id}/sync_conflict' do
+    let(:hook) { create(:integrations_hook, :medelement, account: account) }
+    let(:run) do
+      Integrations::Medelement::SyncRun.create!(
+        account: account,
+        hook: hook,
+        trigger: 'manual',
+        status: 'partial'
+      )
+    end
+    let(:conflict) do
+      Integrations::Medelement::ConflictTracker.new(sync_run: run).record!(
+        phase: 'receptions',
+        entity_type: 'reception',
+        conflict_type: 'invalid_reception',
+        entity_key: 'reception-1'
+      )
+    end
+
+    before { account.enable_features!('scheduling') }
+
+    it 'allows an admin to ignore a conflict' do
+      patch sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+            params: { conflict_id: conflict.id, resolution: 'ignore' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(conflict.reload).to have_attributes(status: 'ignored', resolved_by: admin)
+    end
+
+    it 'allows an admin to reopen an ignored conflict' do
+      conflict.ignore!(user: admin)
+
+      patch sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+            params: { conflict_id: conflict.id, resolution: 'reopen' },
+            headers: admin.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(conflict.reload).to have_attributes(status: 'open', resolved_by: nil)
+    end
+
+    it 'does not allow an agent to mutate a conflict' do
+      patch sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+            params: { conflict_id: conflict.id, resolution: 'ignore' },
+            headers: agent.create_new_auth_token,
+            as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(conflict.reload).to be_open
     end
   end
 
@@ -332,7 +429,8 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.parsed_body['message']).to eq 'Medelement sync started'
-        expect(Integrations::Medelement::SyncJob).to have_received(:perform_later).with(medelement_hook.id)
+        run = Integrations::Medelement::SyncRun.last
+        expect(Integrations::Medelement::SyncJob).to have_received(:perform_later).with(medelement_hook.id, run.id)
       end
     end
   end

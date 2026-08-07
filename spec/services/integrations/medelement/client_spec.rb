@@ -136,6 +136,23 @@ RSpec.describe Integrations::Medelement::Client do
     end
   end
 
+  describe 'read-back endpoints' do
+    it 'routes patient and both reception versions to the documented paths' do
+      patient = stub_request(:get, "#{described_class::BASE_URL}/doctor/v1/patient/patient-1")
+                .to_return(status: 200, body: '{"PROFILE_CODE":"patient-1"}', headers: { 'Content-Type' => 'application/json' })
+      reception_v1 = stub_request(:get, "#{described_class::BASE_URL}/v1/doctor/reception/reception-1")
+                     .to_return(status: 200, body: '{"RECEPTION_CODE":"reception-1"}', headers: { 'Content-Type' => 'application/json' })
+      reception_v2 = stub_request(:get, "#{described_class::BASE_URL}/v2/doctor/reception/reception-1")
+                     .to_return(status: 200, body: '{"RECEPTION_CODE":"reception-1"}', headers: { 'Content-Type' => 'application/json' })
+
+      client.get_patient(patient_code: 'patient-1')
+      client.get_reception(reception_code: 'reception-1', version: :v1)
+      client.get_reception(reception_code: 'reception-1')
+
+      expect([patient, reception_v1, reception_v2]).to all(have_been_requested.once)
+    end
+  end
+
   describe 'write ambiguity' do
     it 'marks transport failures as ambiguous and retryable' do
       stub_request(:post, "#{described_class::BASE_URL}/v1/doctor/reception")

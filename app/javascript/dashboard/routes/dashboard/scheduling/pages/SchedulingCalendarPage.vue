@@ -77,7 +77,10 @@ import {
 } from 'dashboard/stores/crm/fieldContexts';
 import { useSchedulingAppointmentFormStore } from 'dashboard/stores/scheduling/appointmentForm';
 import { useSchedulingCalendarStore } from 'dashboard/stores/scheduling/calendar';
-import { useSchedulingProviderCommandsStore } from 'dashboard/stores/scheduling/providerCommands';
+import {
+  buildProviderCommandAction,
+  useSchedulingProviderCommandsStore,
+} from 'dashboard/stores/scheduling/providerCommands';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import {
   buildContactableInboxesList,
@@ -106,6 +109,8 @@ const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const appointmentDeleteDialogRef = ref(null);
 const providerCommandDialogRef = ref(null);
 const pendingProviderAction = ref(null);
+const patientCandidates = ref([]);
+const selectedPatientToken = ref('');
 const showAppointmentConversationPanel = ref(false);
 const appointmentConversationDraft = reactive({
   contactId: '',
@@ -269,7 +274,9 @@ const isSelectedFormResourceMedelement = computed(() =>
 );
 const medelementCabinetOptions = computed(() =>
   selectedFormMedelementCabinets.value.map(cabinet => ({
-    label: cabinet.name ? `${cabinet.name} · ${cabinet.code}` : cabinet.code,
+    label:
+      [cabinet.name, cabinet.number].filter(Boolean).join(' · ') ||
+      cabinet.code,
     value: cabinet.code,
   }))
 );
@@ -287,8 +294,24 @@ const canCreateMedelementReception = computed(
     !isSelectedAppointmentProviderOwned.value &&
     isSelectedFormResourceMedelement.value
 );
+const patientActionStatuses = new Set([
+  'awaiting_patient_creation',
+  'awaiting_patient_selection',
+  'awaiting_phone_refresh',
+]);
 
 const providerCommandTitle = computed(() => {
+  const status = pendingProviderAction.value?.command?.status;
+  if (status === 'awaiting_patient_selection') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_TITLE');
+  }
+  if (status === 'awaiting_patient_creation') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_TITLE');
+  }
+  if (status === 'awaiting_phone_refresh') {
+    return t('SCHEDULING.MEDELEMENT.PHONE_REFRESH_TITLE');
+  }
+
   const operation = pendingProviderAction.value?.params?.operation;
   if (operation === 'create_reception') {
     return t('SCHEDULING.MEDELEMENT.CREATE_CONFIRM_TITLE');
@@ -320,6 +343,25 @@ const formatProviderCommandRange = (startsAt, endsAt) => {
 };
 const providerCommandDescription = computed(() => {
   const action = pendingProviderAction.value || {};
+  const command = action.command;
+  if (command?.status === 'awaiting_patient_selection') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_SELECTION_DESCRIPTION', {
+      count:
+        command.patientAction?.candidateCount || patientCandidates.value.length,
+    });
+  }
+  if (command?.status === 'awaiting_patient_creation') {
+    const missing = command.patientAction?.missingFields || [];
+    return missing.length
+      ? t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_INCOMPLETE', {
+          fields: missing.join(', '),
+        })
+      : t('SCHEDULING.MEDELEMENT.PATIENT_CREATION_DESCRIPTION');
+  }
+  if (command?.status === 'awaiting_phone_refresh') {
+    return t('SCHEDULING.MEDELEMENT.PHONE_REFRESH_UNSUPPORTED');
+  }
+
   const details = buildMedelementProviderCommandDetails(action);
   const price =
     details.price === null
@@ -338,11 +380,15 @@ const providerCommandDescription = computed(() => {
         details.desiredEndsAt
       )}`
     : currentRange;
+  const cabinetLabel =
+    medelementCabinetOptions.value.find(
+      option => option.value === details.cabinetCode
+    )?.label || details.cabinetCode;
   const rows = [
     `${t('SCHEDULING.MEDELEMENT.DETAIL_PATIENT')}: ${details.patientName || '—'}`,
     `${t('SCHEDULING.MEDELEMENT.DETAIL_SPECIALIST')}: ${details.specialistName || '—'}`,
     `${t('SCHEDULING.MEDELEMENT.DETAIL_SERVICE')}: ${details.serviceName || '—'}`,
-    `${t('SCHEDULING.MEDELEMENT.DETAIL_CABINET')}: ${details.cabinetCode || '—'}`,
+    `${t('SCHEDULING.MEDELEMENT.DETAIL_CABINET')}: ${cabinetLabel || '—'}`,
     `${t('SCHEDULING.MEDELEMENT.DETAIL_PRICE')}: ${price}`,
     `${t('SCHEDULING.MEDELEMENT.DETAIL_DURATION')}: ${details.durationMin || '—'} ${t(
       'SCHEDULING.GENERAL.MINUTES'
@@ -350,9 +396,51 @@ const providerCommandDescription = computed(() => {
     `${t('SCHEDULING.MEDELEMENT.DETAIL_TIME')}: ${time}`,
   ];
 
-  return `${t('SCHEDULING.MEDELEMENT.CONFIRM_DESCRIPTION', {
+  const description = `${t('SCHEDULING.MEDELEMENT.CONFIRM_DESCRIPTION', {
     name: details.patientName || '—',
   })} ${rows.join(' · ')}`;
+  return action.intentMismatch
+    ? `${t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION')} ${description}`
+    : description;
+});
+
+const providerCommandConfirmLabel = computed(() => {
+  const status = pendingProviderAction.value?.command?.status;
+  if (status === 'awaiting_patient_selection') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_SELECT_ACTION');
+  }
+  if (status === 'awaiting_patient_creation') {
+    return t('SCHEDULING.MEDELEMENT.PATIENT_CREATE_ACTION');
+  }
+
+  return t('SCHEDULING.MEDELEMENT.CONFIRM_ACTION');
+});
+const showProviderCommandConfirm = computed(
+  () =>
+    pendingProviderAction.value?.command?.status !== 'awaiting_phone_refresh'
+);
+const disableProviderCommandConfirm = computed(() => {
+  if (providerCommandsStore.ui.isExecuting) return true;
+
+  if (pendingProviderAction.value?.intentMismatch) return true;
+
+  const command = pendingProviderAction.value?.command;
+  if (command?.status === 'awaiting_patient_selection') {
+    return !selectedPatientToken.value;
+  }
+  if (command?.status === 'awaiting_patient_creation') {
+    return command.patientAction?.canConfirm !== true;
+  }
+
+  return false;
+});
+const showProviderCommandCancel = computed(() => {
+  const action = pendingProviderAction.value;
+  return Boolean(
+    action?.command &&
+      (action.intentMismatch ||
+        patientActionStatuses.has(action.command.status))
+  );
 });
 
 const resourceOptions = computed(() =>
@@ -1253,9 +1341,42 @@ const resetAppointmentFilters = async () => {
   await fetchCalendar();
 };
 
-const stageProviderCommand = ({ appointment, params, closeDrawer = false }) => {
-  pendingProviderAction.value = { appointment, closeDrawer, params };
-  providerCommandDialogRef.value?.open();
+const prepareProviderCommandAction = async (action, command) => {
+  selectedPatientToken.value = '';
+  patientCandidates.value = [];
+  pendingProviderAction.value = { ...action, command };
+  if (command?.status === 'awaiting_patient_selection') {
+    const payload = await providerCommandsStore.loadPatientCandidates(command);
+    patientCandidates.value = payload?.candidates || [];
+  }
+};
+
+const stageProviderCommand = async ({
+  appointment,
+  params,
+  closeDrawer = false,
+}) => {
+  const action = { appointment, closeDrawer, params };
+  try {
+    const existing = await providerCommandsStore.findActive({
+      appointmentId: appointment.id,
+      provider: params.provider,
+    });
+    if (
+      existing &&
+      !patientActionStatuses.has(existing.status) &&
+      existing.status !== 'awaiting_confirmation'
+    ) {
+      useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
+      return;
+    }
+
+    const stagedAction = buildProviderCommandAction(action, existing);
+    await prepareProviderCommandAction(stagedAction, existing);
+    providerCommandDialogRef.value?.open();
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
 };
 
 const stageCreateMedelementReception = appointment => {
@@ -1282,9 +1403,38 @@ const stageCreateMedelementReception = appointment => {
 const handleProviderCommandConfirm = async () => {
   const action = pendingProviderAction.value;
   if (!action || providerCommandsStore.ui.isExecuting) return;
+  if (action.intentMismatch) {
+    useAlert(t('SCHEDULING.MEDELEMENT.STALE_COMMAND_DESCRIPTION'));
+    return;
+  }
 
   try {
-    const command = await providerCommandsStore.executeConfirmed(action.params);
+    let command;
+    if (action.command?.status === 'awaiting_patient_selection') {
+      command = await providerCommandsStore.selectPatient(
+        action.command,
+        selectedPatientToken.value,
+        action.requestedParams
+      );
+    } else if (action.command?.status === 'awaiting_patient_creation') {
+      command = await providerCommandsStore.confirmPatientCreation(
+        action.command,
+        action.requestedParams
+      );
+    } else if (action.command?.status === 'awaiting_confirmation') {
+      command = await providerCommandsStore.confirmExisting(
+        action.command,
+        action.requestedParams
+      );
+    } else {
+      command = await providerCommandsStore.executeConfirmed(action.params);
+    }
+
+    if (patientActionStatuses.has(command.status)) {
+      await prepareProviderCommandAction(action, command);
+      return;
+    }
+
     providerCommandDialogRef.value?.close();
 
     try {
@@ -1301,15 +1451,35 @@ const handleProviderCommandConfirm = async () => {
       useAlert(t('SCHEDULING.MEDELEMENT.RECONCILING'));
     } else if (['cancelled', 'declined', 'failed'].includes(command.status)) {
       useAlert(
-        t('SCHEDULING.MEDELEMENT.FAILED', {
-          code: command.lastErrorCode || command.status,
-        })
+        command.lastErrorCode === 'patient_identity_conflict'
+          ? t('SCHEDULING.MEDELEMENT.PATIENT_IDENTITY_CONFLICT')
+          : t('SCHEDULING.MEDELEMENT.FAILED', {
+              code: command.lastErrorCode || command.status,
+            })
       );
     } else {
       useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
     }
   } catch (error) {
     providerCommandDialogRef.value?.close();
+    useAlert(formatErrorMessage(error));
+  } finally {
+    if (
+      !patientActionStatuses.has(pendingProviderAction.value?.command?.status)
+    ) {
+      pendingProviderAction.value = null;
+    }
+  }
+};
+
+const handleProviderCommandCancel = async () => {
+  const command = pendingProviderAction.value?.command;
+  if (!command || providerCommandsStore.ui.isExecuting) return;
+
+  try {
+    await providerCommandsStore.cancel(command);
+    providerCommandDialogRef.value?.close();
+  } catch (error) {
     useAlert(formatErrorMessage(error));
   } finally {
     pendingProviderAction.value = null;
@@ -2247,12 +2417,56 @@ onMounted(async () => {
       type="alert"
       :title="providerCommandTitle"
       :description="providerCommandDescription"
-      :confirm-button-label="$t('SCHEDULING.MEDELEMENT.CONFIRM_ACTION')"
-      :disable-confirm-button="providerCommandsStore.ui.isExecuting"
+      :confirm-button-label="providerCommandConfirmLabel"
+      :disable-confirm-button="disableProviderCommandConfirm"
       :is-loading="providerCommandsStore.ui.isExecuting"
+      :show-confirm-button="showProviderCommandConfirm"
       @close="handleProviderCommandDialogClose"
       @confirm="handleProviderCommandConfirm"
-    />
+    >
+      <div
+        v-if="
+          pendingProviderAction?.command?.status ===
+          'awaiting_patient_selection'
+        "
+        class="flex flex-col gap-2"
+      >
+        <button
+          v-for="candidate in patientCandidates"
+          :key="candidate.token"
+          type="button"
+          class="flex flex-col items-start gap-1 p-3 text-start border rounded-lg"
+          :class="
+            selectedPatientToken === candidate.token
+              ? 'border-n-brand bg-n-brand/10'
+              : 'border-n-weak hover:border-n-strong'
+          "
+          @click="selectedPatientToken = candidate.token"
+        >
+          <span class="text-sm font-medium text-n-slate-12">
+            {{
+              [candidate.name, candidate.middlename].filter(Boolean).join(' ')
+            }}
+          </span>
+          <span class="text-xs text-n-slate-11">
+            {{
+              [candidate.birthday, candidate.iinMasked, candidate.phoneMasked]
+                .filter(Boolean)
+                .join(' · ')
+            }}
+          </span>
+        </button>
+      </div>
+      <Button
+        v-if="showProviderCommandCancel"
+        type="button"
+        color="slate"
+        variant="faded"
+        :disabled="providerCommandsStore.ui.isExecuting"
+        :label="$t('SCHEDULING.MEDELEMENT.CANCEL_COMMAND')"
+        @click="handleProviderCommandCancel"
+      />
+    </Dialog>
 
     <Dialog
       ref="appointmentDeleteDialogRef"

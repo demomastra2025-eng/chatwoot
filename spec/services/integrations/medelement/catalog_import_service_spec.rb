@@ -2,6 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::CatalogImportService do
   let(:account) { create(:account) }
+  let(:hook) { create(:integrations_hook, :medelement, account: account) }
   let(:configuration) { instance_double(Integrations::Medelement::Configuration, time_zone: 'Asia/Almaty') }
   let(:payload) do
     {
@@ -51,15 +52,20 @@ RSpec.describe Integrations::Medelement::CatalogImportService do
     }
   end
 
+  before do
+    account.enable_features!('scheduling')
+    allow(Integrations::Medelement::Configuration).to receive(:new).with(hook: hook).and_return(configuration)
+  end
+
   it 'imports all core package sections into the native scheduling contract and ignores sectors' do
-    result = described_class.new(account: account, configuration: configuration, payload: payload).perform
+    result = described_class.new(hook: hook, payload: payload).perform
 
     resource = account.scheduling_resources.find_by!("custom_attributes ->> 'medelement_specialist_code' = ?", 'ME-SPEC-001')
     service = account.scheduling_services.find_by!("custom_attributes ->> 'medelement_nomenclature_code' = ?", 'ME-SVC-001')
     service_price = service.prices.find_by!(resource: resource)
 
     expect(result).to eq(
-      specialists: { imported_count: 1 },
+      specialists: { imported_count: 1, skipped_count: 0 },
       services: { imported_count: 1, linked_count: 1, skipped_count: 0 }
     )
     expect(resource).to have_attributes(name: 'Synthetic specialist', specialty: 'Radiologist')
@@ -75,23 +81,34 @@ RSpec.describe Integrations::Medelement::CatalogImportService do
     invalid_payload['specialistServices'][0]['serviceCode'] = 'missing-service'
 
     expect do
-      described_class.new(account: account, configuration: configuration, payload: invalid_payload).perform
+      described_class.new(hook: hook, payload: invalid_payload).perform
     end.to raise_error(
       Integrations::Medelement::CatalogImportService::InvalidPayloadError,
       'specialistServices references an unknown specialist or service'
     )
 
     expect(account.scheduling_resources).to be_empty
-    expect(account.scheduling_services).to be_empty
+    expect(account.scheduling_services.count).to be_zero
   end
 
-  it 'rolls back the entire catalog when a link cannot be imported' do
+  it 'imports free services and specialist links with a zero price' do
+    free_payload = payload.deep_dup
+    free_payload['services'][0]['basePrice'] = 0
+    free_payload['specialistServices'][0]['price'] = 0
+
+    result = described_class.new(hook: hook, payload: free_payload).perform
+
+    expect(result.dig(:services, :skipped_count)).to be_zero
+    expect(account.scheduling_services.first).to have_attributes(base_price: 0)
+    expect(account.scheduling_services.first.prices.first).to have_attributes(price: 0, active: true)
+  end
+
+  it 'rolls back the entire catalog when a link has a negative price' do
     invalid_payload = payload.deep_dup
-    invalid_payload['services'][0]['basePrice'] = 0
-    invalid_payload['specialistServices'][0]['price'] = 0
+    invalid_payload['specialistServices'][0]['price'] = -1
 
     expect do
-      described_class.new(account: account, configuration: configuration, payload: invalid_payload).perform
+      described_class.new(hook: hook, payload: invalid_payload).perform
     end.to raise_error(
       Integrations::Medelement::CatalogImportService::InvalidPayloadError,
       'Not all catalog rows could be imported'

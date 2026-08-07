@@ -209,7 +209,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
     let(:operation) { 'create_reception' }
     let(:command_attributes) { { company_cabinet_code: 'cabinet-1' } }
 
-    it 'links the patient and requeues the already confirmed composite command' do
+    it 'requeues with the patient identity already linked to the Contact' do
       contact.update!(custom_attributes: { 'medelement_patient_code' => 'patient-old' })
       allow(client).to receive(:search_patients_by_phone).and_return(
         [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
@@ -218,8 +218,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
 
       perform
 
-      expect(command.reload).to have_attributes(status: 'queued', provider_patient_code: 'patient-1')
+      expect(command.reload).to have_attributes(status: 'queued', provider_patient_code: 'patient-old')
       expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('patient-old')
+      expect(client).not_to have_received(:search_patients_by_phone)
       expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(command.id)
     end
   end
@@ -242,6 +243,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
             'NAME' => 'Ivan',
             'LASTNAME' => 'Ivanov',
             'MIDDLENAME' => '',
+            'PATIENT_PHONE_2' => contact.phone_number,
             'REMOVED' => 0
           }
         ]
@@ -302,7 +304,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       perform
 
       expect(command.reload.provider_patient_code).to eq('patient-1')
-      expect(appointment.reload.custom_attributes).to include('medelement_patient_code' => 'patient-1')
+      expect(contact.reload.custom_attributes).to include('medelement_patient_code' => 'patient-1')
+      expect(appointment.reload.custom_attributes).not_to have_key('medelement_patient_code')
     end
 
     context 'when the patient was resolved only during execution' do
@@ -325,7 +328,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         perform
 
         expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-1')
-        expect(appointment.reload.custom_attributes).to include('medelement_patient_code' => 'patient-1')
+        expect(contact.reload.custom_attributes).to include('medelement_patient_code' => 'patient-1')
+        expect(appointment.reload.custom_attributes).not_to have_key('medelement_patient_code')
       end
     end
 
@@ -347,6 +351,24 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       allow(client).to receive(:get_receptions).and_return(
         [reception('created-1').merge('REMOVED' => 1)]
       )
+
+      perform
+
+      expect(command.reload).to be_reconciliation_required
+      expect(appointment.reload.external_ref).to be_blank
+    end
+
+    it 'keeps reconciliation pending when the provider reception omits a confirmed service' do
+      service = create(
+        :scheduling_service,
+        account: account,
+        custom_attributes: { 'medelement_nomenclature_code' => 'service-1' }
+      )
+      appointment.update!(
+        service: service,
+        custom_attributes: appointment.custom_attributes.merge('service_ids' => [service.id])
+      )
+      allow(client).to receive(:get_receptions).and_return([reception('created-1').merge('SERVICES' => [])])
 
       perform
 

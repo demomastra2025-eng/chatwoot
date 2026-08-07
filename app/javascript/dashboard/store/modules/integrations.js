@@ -155,16 +155,31 @@ export const actions = {
       throw normalizeApiError(error);
     }
   },
-  runHookSync: async ({ commit }, hookId) => {
+  runHookSync: async ({ commit }, payload) => {
     commit(types.default.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true });
     try {
-      const response = await IntegrationsAPI.runHookSync(hookId);
+      const hookId = typeof payload === 'object' ? payload.hookId : payload;
+      const phases = typeof payload === 'object' ? payload.phases : undefined;
+      const response = await IntegrationsAPI.runHookSync(hookId, {
+        ...(phases?.length ? { phases } : {}),
+      });
       return response.data;
     } finally {
       commit(types.default.SET_INTEGRATIONS_UI_FLAG, {
         isRunningHookSync: false,
       });
     }
+  },
+  getHookSyncStatus: async (_, hookId) => {
+    const response = await IntegrationsAPI.getHookSyncStatus(hookId);
+    return response.data;
+  },
+  updateHookSyncConflict: async (_, { hookId, conflictId, resolution }) => {
+    const response = await IntegrationsAPI.updateHookSyncConflict(hookId, {
+      conflict_id: conflictId,
+      resolution,
+    });
+    return response.data;
   },
   importHookCatalog: async ({ commit }, { hookId, file }) => {
     commit(types.default.SET_INTEGRATIONS_UI_FLAG, {

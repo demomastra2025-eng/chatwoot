@@ -2,10 +2,15 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   self.table_name = 'medelement_provider_commands'
 
   OPERATIONS = %w[create_patient update_patient create_reception move_reception remove_reception].freeze
-  STATUSES = %w[
-    awaiting_confirmation queued processing succeeded failed reconciliation_required declined cancelled
+  LOGICAL_UNFINISHED_STATUSES = %w[
+    awaiting_confirmation awaiting_patient_selection awaiting_patient_creation awaiting_phone_refresh
+    queued processing reconciliation_required
   ].freeze
   TERMINAL_STATUSES = %w[succeeded failed declined cancelled].freeze
+  EXECUTION_STATUS_PREFIX = 'v2_'.freeze
+  VERSIONED_UNFINISHED_STATUSES = LOGICAL_UNFINISHED_STATUSES.map { |status| "#{EXECUTION_STATUS_PREFIX}#{status}" }.freeze
+  STATUSES = (LOGICAL_UNFINISHED_STATUSES + VERSIONED_UNFINISHED_STATUSES + TERMINAL_STATUSES).freeze
+  UNFINISHED_STATUSES = (LOGICAL_UNFINISHED_STATUSES + VERSIONED_UNFINISHED_STATUSES).freeze
   RECONCILIATION_MAX_ATTEMPTS = 6
   RECONCILIATION_BACKOFFS = [1.minute, 5.minutes, 15.minutes, 1.hour, 4.hours].freeze
   PATIENT_IDENTITY_WRITE_PREDICATE = <<~SQL.squish.freeze
@@ -35,8 +40,8 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   validate :desired_range_for_move
   validate :company_cabinet_for_reception_write
 
-  scope :executable, -> { where(status: 'queued') }
-  scope :unfinished, -> { where.not(status: TERMINAL_STATUSES) }
+  scope :executable, -> { where(status: execution_statuses('queued')) }
+  scope :unfinished, -> { where(status: UNFINISHED_STATUSES) }
   scope :patient_identity_writes, -> { where(PATIENT_IDENTITY_WRITE_PREDICATE) }
 
   before_validation :normalize_execution_state
@@ -44,6 +49,36 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
 
   def terminal?
     status.in?(TERMINAL_STATUSES)
+  end
+
+  def self.execution_statuses(logical_status)
+    [logical_status.to_s, versioned_status(logical_status)]
+  end
+
+  def self.versioned_status(logical_status)
+    "#{EXECUTION_STATUS_PREFIX}#{logical_status}"
+  end
+
+  def logical_status
+    status.to_s.delete_prefix(EXECUTION_STATUS_PREFIX)
+  end
+
+  def versioned_execution?
+    status.to_s.start_with?(EXECUTION_STATUS_PREFIX)
+  end
+
+  def status_for_transition(next_logical_status)
+    normalized_status = next_logical_status.to_s
+    return normalized_status if normalized_status.in?(TERMINAL_STATUSES)
+    unless normalized_status.in?(LOGICAL_UNFINISHED_STATUSES)
+      raise ArgumentError, "Unsupported Medelement provider command status: #{normalized_status}"
+    end
+
+    versioned_execution? ? self.class.versioned_status(normalized_status) : normalized_status
+  end
+
+  LOGICAL_UNFINISHED_STATUSES.each do |logical_status_name|
+    define_method("#{logical_status_name}?") { logical_status == logical_status_name }
   end
 
   def reconciliation_attempts
@@ -66,7 +101,8 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
     computed_fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(request_snapshot)
     fingerprint_valid = request_snapshot.present? && fingerprints_match?(stored_fingerprint, computed_fingerprint)
 
-    fingerprint_valid && request_snapshot_target_matches?
+    fingerprint_valid && request_snapshot_target_matches? &&
+      Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.valid_schema?(request_snapshot)
   end
 
   def confirmation_matches_request_snapshot?(confirmation = confirmation_request)

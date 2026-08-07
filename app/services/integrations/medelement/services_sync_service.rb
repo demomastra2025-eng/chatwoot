@@ -5,12 +5,13 @@ class Integrations::Medelement::ServicesSyncService
 
   class IncompleteSnapshotError < StandardError; end
 
-  def initialize(account:, client:, service_payloads: nil, specialist_service_payloads: nil, now: Time.current)
+  def initialize(account:, client:, **options)
     @account = account
     @client = client
-    @service_payloads = service_payloads
-    @specialist_service_payloads = specialist_service_payloads
-    @now = now
+    @service_payloads = options[:service_payloads]
+    @specialist_service_payloads = options[:specialist_service_payloads]
+    @now = options.fetch(:now, Time.current)
+    @conflict_tracker = options[:conflict_tracker]
   end
 
   def perform
@@ -20,7 +21,7 @@ class Integrations::Medelement::ServicesSyncService
     Scheduling::Service.transaction do
       imported_services, skipped_count = import_services(rows)
       linked_count = sync_specialist_services(imported_services)
-      deactivate_stale_services!(imported_services.keys)
+      deactivate_stale_services!(imported_services.keys) if skipped_count.zero?
       result = sync_result(imported_services, linked_count, skipped_count)
     end
 
@@ -29,7 +30,7 @@ class Integrations::Medelement::ServicesSyncService
 
   private
 
-  attr_reader :account, :client, :now, :service_payloads, :specialist_service_payloads
+  attr_reader :account, :client, :conflict_tracker, :now, :service_payloads, :specialist_service_payloads
 
   def service_rows
     return Array(service_payloads) unless service_payloads.nil?
@@ -45,7 +46,12 @@ class Integrations::Medelement::ServicesSyncService
       payload = raw_payload.to_h.with_indifferent_access
       next if group_payload?(payload)
 
-      service = Integrations::Medelement::ServiceUpsertService.new(account: account, payload: payload, now: now).perform
+      service = Integrations::Medelement::ServiceUpsertService.new(
+        account: account,
+        payload: payload,
+        now: now,
+        conflict_tracker: conflict_tracker
+      ).perform
       skipped_count += 1 unless service
       services[service.custom_attributes[EXTERNAL_CODE_KEY]] = service if service
     end
@@ -62,7 +68,8 @@ class Integrations::Medelement::ServicesSyncService
       Integrations::Medelement::SpecialistServiceUpsertService.new(
         account: account,
         payload: payload,
-        services_by_code: services_by_code
+        services_by_code: services_by_code,
+        conflict_tracker: conflict_tracker
       ).perform
     end
   end

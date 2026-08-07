@@ -46,6 +46,15 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     expect(contact.reload.phone_number).to be_nil
   end
 
+  it 'uses structured Contact first and last name fields' do
+    contact.update!(name: 'Ivan', last_name: 'Ivanov', middle_name: '')
+
+    payload = described_class.new(contact: contact).build
+
+    expect(payload).to include('name' => 'Ivan', 'lastname' => 'Ivanov')
+    expect(payload).not_to include('middlename')
+  end
+
   it 'uses appointment-scoped identity values without changing the contact' do
     original_attributes = contact.attributes
 

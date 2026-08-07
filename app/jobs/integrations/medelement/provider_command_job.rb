@@ -1,5 +1,7 @@
 class Integrations::Medelement::ProviderCommandJob < MutexApplicationJob
-  queue_as :low
+  # New web processes enqueue v2 snapshots here. Legacy worker images do not poll this queue,
+  # so a worker rollback cannot consume a request shape it does not fully understand.
+  queue_as :medelement_provider_commands
 
   LOCK_TIMEOUT = 2.minutes
 

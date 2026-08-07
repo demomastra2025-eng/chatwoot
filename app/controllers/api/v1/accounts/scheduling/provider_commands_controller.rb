@@ -1,19 +1,21 @@
 class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accounts::Scheduling::BaseController
-  before_action :set_command, only: [:show, :confirm, :cancel]
+  before_action :set_provider_adapter
+  before_action :set_command, only: [:show, :confirm, :cancel, :patient_candidates, :select_patient, :confirm_patient_creation]
 
   def index
-    commands = command_scope.order(created_at: :desc).limit(index_limit)
-    render_payload(commands.map { |command| Integrations::Medelement::ProviderCommandPayloadBuilder.build(command) })
+    commands = provider_adapter.command_scope
+    commands = commands.where(appointment_id: command_params[:appointment_id]) if command_params[:appointment_id].present?
+    commands = commands.unfinished if ActiveModel::Type::Boolean.new.cast(command_params[:active_only])
+    commands = commands.order(created_at: :desc).limit(index_limit)
+    render_payload(commands.map { |command| provider_adapter.serialize(command) })
   end
 
   def show
-    render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(@command))
+    render_payload(provider_adapter.serialize(@command))
   end
 
   def create
-    command = Integrations::Medelement::ProviderCommands::CreateService.new(
-      account: Current.account,
-      hook: medelement_hook,
+    command = provider_adapter.create_command(
       appointment: appointment,
       contact: contact,
       operation: command_params[:operation],
@@ -22,16 +24,16 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
       actor: Current.user,
       desired_starts_at: desired_starts_at,
       desired_ends_at: desired_ends_at
-    ).perform
+    )
 
-    render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(command), status: :created)
+    render_payload(provider_adapter.serialize(command), status: :created)
   end
 
   def confirm
     confirmation_request = @command.confirmation_request
     if confirmation_request.blank?
       raise Scheduling::Error.new(
-        code: 'MEDELEMENT_CONFIRMATION_NOT_FOUND',
+        code: 'SCHEDULING_PROVIDER_CONFIRMATION_NOT_FOUND',
         message: 'Provider command confirmation request not found',
         status: :unprocessable_entity
       )
@@ -46,33 +48,52 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
       metadata: { surface: 'scheduling_dashboard' }
     ).perform
 
-    render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(@command.reload))
+    render_payload(provider_adapter.serialize(@command.reload))
   end
 
   def cancel
-    command = Integrations::Medelement::ProviderCommands::CancelService.new(
+    command = provider_adapter.cancel_command(
       command: @command,
       actor: Current.user
-    ).perform
+    )
 
-    render_payload(Integrations::Medelement::ProviderCommandPayloadBuilder.build(command))
+    render_payload(provider_adapter.serialize(command))
+  end
+
+  def patient_candidates
+    candidates = provider_adapter.patient_candidates(command: @command, actor: Current.user)
+    render_payload({ candidates: candidates, count: candidates.size })
+  end
+
+  def select_patient
+    command = provider_adapter.select_patient(
+      command: @command,
+      actor: Current.user,
+      token: command_params[:patient_token]
+    )
+    render_payload(provider_adapter.serialize(command))
+  end
+
+  def confirm_patient_creation
+    command = provider_adapter.confirm_patient_creation(command: @command, actor: Current.user)
+    render_payload(provider_adapter.serialize(command))
   end
 
   private
 
-  def command_scope
-    Integrations::Medelement::ProviderCommand.where(account: Current.account)
+  attr_reader :provider_adapter
+
+  def set_provider_adapter
+    @provider_adapter = Scheduling::ProviderCommands::Registry.resolve!(
+      account: Current.account,
+      provider: command_params[:provider],
+      hook_id: command_params[:hook_id],
+      require_hook: action_name == 'create'
+    )
   end
 
   def set_command
-    @command = command_scope.find(params[:id])
-  end
-
-  def medelement_hook
-    scope = Integrations::Hook.where(account: Current.account, app_id: 'medelement')
-    return scope.find(command_params[:hook_id]) if command_params[:hook_id].present?
-
-    scope.where(status: Integrations::Hook.statuses[:enabled]).order(:id).first!
+    @command = provider_adapter.command_scope.find(params[:id])
   end
 
   def appointment
@@ -93,7 +114,9 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
 
   def command_params
     params.permit(
-      :hook_id, :appointment_id, :contact_id, :operation, :idempotency_key, :company_cabinet_code,
+      :provider, :hook_id, :appointment_id, :contact_id, :operation, :idempotency_key, :company_cabinet_code,
+      :active_only,
+      :patient_token,
       :desired_starts_at, :desired_ends_at
     )
   end

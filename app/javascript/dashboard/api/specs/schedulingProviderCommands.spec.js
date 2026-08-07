@@ -44,4 +44,27 @@ describe('#SchedulingProviderCommandsAPI', () => {
       '/api/v1/accounts/1/scheduling/provider_commands/41'
     );
   });
+
+  it('scopes command actions when a provider is supplied', () => {
+    SchedulingProviderCommandsAPI.confirm(41, { provider: 'medelement' });
+    SchedulingProviderCommandsAPI.get(41, { provider: 'medelement' });
+    SchedulingProviderCommandsAPI.patientCandidates(41, {
+      provider: 'medelement',
+    });
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/1/scheduling/provider_commands/41/confirm',
+      { provider: 'medelement' }
+    );
+    expect(axiosMock.get).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/accounts/1/scheduling/provider_commands/41',
+      { params: { provider: 'medelement' } }
+    );
+    expect(axiosMock.get).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/accounts/1/scheduling/provider_commands/41/patient_candidates',
+      { params: { provider: 'medelement' } }
+    );
+  });
 });

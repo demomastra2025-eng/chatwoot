@@ -68,6 +68,44 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
     expect(stale.reload).to have_attributes(status: 'queued', last_error_code: 'executor_stale_before_write')
   end
 
+  it 'dispatches versioned commands that remain invisible to legacy exact-status queries', :aggregate_failures do
+    confirmed_request = create(
+      :confirmation_request,
+      account: account,
+      conversation: nil,
+      contact: contact,
+      status: 'confirmed',
+      resolved_at: Time.current
+    )
+    awaiting = create_command(status: 'v2_awaiting_confirmation', confirmation_request: confirmed_request)
+    queued = create_command(status: 'v2_queued')
+    reconciliation = create_command(status: 'v2_reconciliation_required')
+    stale_before_write = create_command(status: 'v2_processing')
+    stale_after_write = create_command(status: 'v2_processing', execution_state: { 'write_phase' => 'patient_create' })
+    [stale_before_write, stale_after_write].each { |command| command.update!(updated_at: 20.minutes.ago) }
+
+    expect(Integrations::Medelement::ProviderCommand.where(status: 'awaiting_confirmation')).not_to include(awaiting)
+    expect(Integrations::Medelement::ProviderCommand.where(status: 'queued')).not_to include(queued)
+    expect(Integrations::Medelement::ProviderCommand.where(status: 'reconciliation_required')).not_to include(reconciliation)
+
+    described_class.perform_now
+
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob)
+      .to have_received(:perform_later).with(awaiting.confirmation_request_id)
+    expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(queued.id)
+    expect(Integrations::Medelement::ProviderCommandJob).to have_received(:perform_later).with(stale_before_write.id)
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob).to have_received(:perform_later).with(reconciliation.id)
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob).to have_received(:perform_later).with(stale_after_write.id)
+    expect(stale_before_write.reload).to have_attributes(
+      status: 'v2_queued',
+      last_error_code: 'executor_stale_before_write'
+    )
+    expect(stale_after_write.reload).to have_attributes(
+      status: 'v2_reconciliation_required',
+      last_error_code: 'executor_stale'
+    )
+  end
+
   private
 
   def create_command(status:, confirmation_request: nil, execution_state: {})

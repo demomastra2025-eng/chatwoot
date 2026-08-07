@@ -184,7 +184,89 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     expect(other_command.reload).to be_reconciliation_required
   end
 
+  it 'returns opaque patient candidates and requeues the command after a valid selection', :aggregate_failures do
+    command = build_patient_action_command(
+      status: 'awaiting_patient_selection',
+      patient_action: { 'type' => 'patient_selection', 'candidate_count' => 2 }
+    )
+    client = instance_double(Integrations::Medelement::Client)
+    allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:search_patients_by_phone).and_return(
+      [
+        { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' },
+        { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }
+      ]
+    )
+
+    get "#{path}/#{command.id}/patient_candidates", headers: headers, as: :json
+
+    candidates = response.parsed_body.dig('payload', 'candidates')
+    expect(response).to have_http_status(:ok)
+    expect(candidates.size).to eq(2)
+    expect(candidates.first.fetch('token')).to match(/\A[0-9a-f]{64}\z/)
+    expect(candidates.to_json).not_to include('patient-1', 'patient-2', 'PROFILE_CODE')
+
+    expect do
+      post "#{path}/#{command.id}/select_patient",
+           params: { patient_token: candidates.first.fetch('token') },
+           headers: headers,
+           as: :json
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
+
+    expect(response).to have_http_status(:ok)
+    expect(command.reload).to be_queued
+    expect(command.execution_state).not_to have_key('patient_action')
+  end
+
+  it 'rejects a forged patient candidate token without requeueing the command' do
+    command = build_patient_action_command(
+      status: 'awaiting_patient_selection',
+      patient_action: { 'type' => 'patient_selection', 'candidate_count' => 1 }
+    )
+
+    expect do
+      post "#{path}/#{command.id}/select_patient",
+           params: { patient_token: 'forged' },
+           headers: headers,
+           as: :json
+    end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandJob)
+
+    expect(response).to have_http_status(:conflict)
+    expect(command.reload).to be_awaiting_patient_selection
+  end
+
+  it 'requeues an explicitly confirmed patient creation only when identity is complete' do
+    command = build_patient_action_command(
+      status: 'awaiting_patient_creation',
+      patient_action: { 'type' => 'patient_creation', 'can_confirm' => true, 'missing_fields' => [] }
+    )
+
+    expect do
+      post "#{path}/#{command.id}/confirm_patient_creation", headers: headers, as: :json
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
+
+    expect(response).to have_http_status(:ok)
+    expect(command.reload).to be_queued
+    expect(command.execution_state).to include('patient_creation_confirmed' => true)
+  end
+
   private
+
+  def build_patient_action_command(status:, patient_action:)
+    command = Integrations::Medelement::ProviderCommands::CreateService.new(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      idempotency_key: SecureRandom.uuid,
+      actor: agent
+    ).perform
+    command.update!(
+      status: status,
+      execution_state: command.execution_state.merge('patient_action' => patient_action)
+    )
+    command
+  end
 
   def create_command(account:, hook:, contact:, status: 'failed', execution_state: {})
     Integrations::Medelement::ProviderCommand.create!(

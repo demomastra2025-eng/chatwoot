@@ -1,14 +1,15 @@
 class Integrations::Medelement::SpecialistServiceUpsertService
-  def initialize(account:, payload:, services_by_code:)
+  def initialize(account:, payload:, services_by_code:, conflict_tracker: nil)
     @account = account
     @payload = payload.to_h.with_indifferent_access
     @services_by_code = services_by_code
+    @conflict_tracker = conflict_tracker
   end
 
   def perform
     return log_skipped('unknown_specialist') if resource.blank?
     return log_skipped('unknown_service') if service.blank?
-    return log_skipped('active_price_must_be_positive') if active? && price.to_i <= 0
+    return log_skipped('active_price_must_be_non_negative') if active? && price.to_i.negative?
 
     service_price = service.prices.find_or_initialize_by(resource: resource)
     service_price.assign_attributes(price_attributes(service_price))
@@ -20,7 +21,7 @@ class Integrations::Medelement::SpecialistServiceUpsertService
 
   private
 
-  attr_reader :account, :payload, :services_by_code
+  attr_reader :account, :conflict_tracker, :payload, :services_by_code
 
   def active?
     return true unless payload.key?('active')
@@ -88,10 +89,18 @@ class Integrations::Medelement::SpecialistServiceUpsertService
   end
 
   def log_skipped(reason)
+    entity_key = [specialist_code.presence || 'missing', service_code.presence || 'missing'].join(':')
+    conflict_tracker&.record!(
+      phase: 'services',
+      entity_type: 'specialist_service',
+      conflict_type: 'invalid_specialist_service',
+      entity_key: entity_key,
+      severity: 'error',
+      details: { reason: reason }
+    )
     Rails.logger.warn(
       "[MEDELEMENT::SERVICES_SYNC] Skipping specialist service for account=#{account.id} " \
-      "specialist_code=#{specialist_code.presence || 'missing'} " \
-      "service_code=#{service_code.presence || 'missing'} reason=#{reason}"
+      "entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)} reason=#{reason}"
     )
     false
   end

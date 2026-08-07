@@ -1,13 +1,18 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ReceptionsSyncService
   InvalidReceptionError = Class.new(StandardError)
   IncompleteSnapshotError = Class.new(StandardError)
   MAX_RECEPTIONS_PER_REQUEST = 1000
 
-  def initialize(account:, client:, configuration:)
+  def initialize(account:, client:, configuration:, conflict_tracker: nil)
     @account = account
     @client = client
     @configuration = configuration
-    @importer = Integrations::Medelement::AppointmentImporterService.new(account: account)
+    @conflict_tracker = conflict_tracker
+    @importer = Integrations::Medelement::AppointmentImporterService.new(
+      account: account,
+      conflict_tracker: conflict_tracker
+    )
   end
 
   def perform
@@ -17,11 +22,12 @@ class Integrations::Medelement::ReceptionsSyncService
     sync_result = sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
     cleanup_missing_appointments!(sync_result[:desired_external_refs])
     log_sync_summary(sync_result)
+    sync_result.except(:desired_external_refs)
   end
 
   private
 
-  attr_reader :account, :client, :configuration, :importer
+  attr_reader :account, :client, :configuration, :conflict_tracker, :importer
 
   def build_snapshot(resource_map)
     snapshot = resource_map.values.flat_map do |resource|
@@ -45,11 +51,7 @@ class Integrations::Medelement::ReceptionsSyncService
     throttle!
     return receptions if receptions.size < MAX_RECEPTIONS_PER_REQUEST
 
-    if (to - from) <= 1.day
-      raise IncompleteSnapshotError,
-            "Medelement reception snapshot is saturated for account=#{account.id} " \
-            "specialist_code=#{specialist_code} cabinet_code=#{company_cabinet_code}"
-    end
+    raise IncompleteSnapshotError, "Medelement reception snapshot is saturated for account=#{account.id}" if (to - from) <= 1.day
 
     split_fetch_receptions_for_pair(
       specialist_code: specialist_code,
@@ -72,11 +74,17 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def range_end
-    @range_end ||= configuration.receptions_days_forward.days.from_now.end_of_day
+    @range_end ||= begin
+      date = Time.current.in_time_zone(configuration.time_zone).to_date + configuration.receptions_days_forward + 1
+      ActiveSupport::TimeZone[configuration.time_zone].local(date.year, date.month, date.day)
+    end
   end
 
   def range_start
-    @range_start ||= configuration.receptions_days_back.days.ago.beginning_of_day
+    @range_start ||= begin
+      date = Time.current.in_time_zone(configuration.time_zone).to_date - configuration.receptions_days_back
+      ActiveSupport::TimeZone[configuration.time_zone].local(date.year, date.month, date.day)
+    end
   end
 
   def throttle!
@@ -182,10 +190,19 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def log_skipped_reception(reception, resource, error)
+    entity_key = reception['RECEPTION_CODE'].presence || [reception['specialistCode'], reception['STARTTIME']].join(':')
+    conflict_tracker&.record!(
+      phase: 'receptions',
+      entity_type: 'reception',
+      conflict_type: 'invalid_reception',
+      entity_key: entity_key,
+      severity: 'error',
+      details: { reason: error.message, resource_id: resource.id }
+    )
     Rails.logger.warn(
-      "[MEDELEMENT::RECEPTIONS_SYNC] Skipping reception #{reception['RECEPTION_CODE']} " \
-      "for account=#{account.id} resource_id=#{resource.id} specialist_code=#{reception['specialistCode']} " \
-      "reason=#{error.class}: #{error.message}"
+      "[MEDELEMENT::RECEPTIONS_SYNC] Skipping reception for account=#{account.id} " \
+      "resource_id=#{resource.id} entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)} " \
+      "reason=#{error.class}"
     )
   end
 
@@ -212,7 +229,12 @@ class Integrations::Medelement::ReceptionsSyncService
   def synced_contacts(snapshot)
     return {} unless configuration.sync_patients?
 
-    Integrations::Medelement::PatientsSyncService.new(account: account, client: client)
+    Integrations::Medelement::PatientsSyncService.new(
+      account: account,
+      client: client,
+      conflict_tracker: conflict_tracker
+    )
                                                  .sync_patient_codes(reception_patient_codes(snapshot))
   end
 end
+# rubocop:enable Metrics/ClassLength

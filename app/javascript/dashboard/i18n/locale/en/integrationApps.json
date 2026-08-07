@@ -71,7 +71,62 @@
       "RUN_SYNC": {
         "BUTTON": "Run sync now",
         "SUCCESS": "Medelement sync has been queued. Imported data may appear in a few minutes.",
-        "ERROR": "Could not start Medelement sync. Please try again later."
+        "ERROR": "Could not start Medelement sync. Please try again later.",
+        "TITLE": "Diagnostics and synchronization",
+        "STARTED_AT": "Started",
+        "STARTED_AT_VALUE": "Started: {date}",
+        "RETRY_QUEUED": "The affected phase has been queued for retry.",
+        "CONFLICT_ERROR": "Could not update the conflict state.",
+        "ERROR_LABEL": "Error",
+        "ERROR_WITH_MESSAGE": "Error: {message}",
+        "CONFLICTS": "Data conflicts",
+        "OPEN_CONFLICTS": "open",
+        "OCCURRENCES": "occurrences",
+        "CONFLICT_META": "{phase} · occurrences: {count}",
+        "RETRY_PHASE": "Retry phase",
+        "IGNORE": "Ignore",
+        "REOPEN": "Reopen"
+      },
+      "SYNC_STATUS": {
+        "QUEUED": "Queued",
+        "RUNNING": "Running",
+        "RETRYING": "Waiting to retry",
+        "SUCCEEDED": "Completed",
+        "PARTIAL": "Completed with conflicts",
+        "FAILED": "Failed",
+        "SKIPPED": "Disabled in settings",
+        "PENDING": "Pending"
+      },
+      "SYNC_PHASE": {
+        "SETUP": "Setup",
+        "SPECIALISTS": "Specialists",
+        "SERVICES": "Services",
+        "CONTACTS": "Linked contacts",
+        "RECEPTIONS": "Appointments"
+      },
+      "SYNC_COUNTER": {
+        "CONFIGURED_FIELDS": "Fields",
+        "IMPORTED_COUNT": "Imported",
+        "SYNCED_COUNT": "Updated",
+        "LINKED_COUNT": "Linked",
+        "SKIPPED_COUNT": "Skipped",
+        "CREATED_COUNT": "Created",
+        "UPDATED_COUNT": "Changed",
+        "DEACTIVATED_COUNT": "Disabled"
+      },
+      "CONFLICT_TYPE": {
+        "INVALID_SPECIALIST": "Invalid specialist data",
+        "CONFLICTING_CABINET_NAME": "Cabinet has conflicting names",
+        "INVALID_SERVICE": "Invalid service data",
+        "INVALID_SPECIALIST_SERVICE": "Invalid specialist-service link",
+        "PATIENT_NOT_FOUND": "Patient was not found in Medelement",
+        "PATIENT_UPDATE_REJECTED": "Patient data could not be applied",
+        "PHONE_OWNED_BY_ANOTHER_CONTACT": "Phone belongs to another contact",
+        "PHONE_MISMATCH": "Phone differs from contact data",
+        "INVALID_RECEPTION": "Appointment could not be imported",
+        "PATIENT_UNRESOLVED": "Patient is not linked to a contact",
+        "APPOINTMENT_AMOUNT_MISMATCH": "Appointment amount differs from MedElement",
+        "LOCAL_PAYMENT_PRESERVED": "Local payment was preserved"
       },
       "IMPORT": {
         "TITLE": "Catalog import",

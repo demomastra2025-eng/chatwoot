@@ -1,9 +1,23 @@
 class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
-  VERSION = 1
+  VERSION = 2
+  PATIENT_PHONE_OPERATIONS = %w[create_patient update_patient create_reception move_reception].freeze
+  SnapshotSchemaError = Integrations::Medelement::ProviderCommands::RequestSnapshotSchema::Error
 
   class << self
     def fingerprint(snapshot)
       Digest::SHA256.hexdigest(JSON.generate(canonicalize(snapshot)))
+    end
+
+    def valid_schema?(snapshot)
+      Integrations::Medelement::ProviderCommands::RequestSnapshotSchema.valid?(snapshot)
+    end
+
+    def validate_schema!(snapshot)
+      Integrations::Medelement::ProviderCommands::RequestSnapshotSchema.validate!(snapshot)
+    end
+
+    def service_codes(snapshot)
+      Integrations::Medelement::ProviderCommands::RequestSnapshotSchema.service_codes(snapshot)
     end
 
     private
@@ -32,7 +46,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     @contact = contact || appointment&.contact
     @actor = actor
     @operation = operation.to_s
-    @company_cabinet_code = company_cabinet_code.to_s.presence
+    @company_cabinet_code = company_cabinet_code.to_s.presence ||
+                            appointment&.custom_attributes&.to_h&.dig('medelement_cabinet_code').to_s.presence
     @desired_starts_at = desired_starts_at
     @desired_ends_at = desired_ends_at
   end
@@ -48,6 +63,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'requested_by_id' => actor&.id,
       'operation' => operation,
       'provider_patient_code' => patient_code,
+      'patient_phone_numbers' => patient_phone_numbers.presence,
       'provider_reception_code' => reception_code,
       'company_cabinet_code' => company_cabinet_code,
       'desired_starts_at' => timestamp(desired_starts_at),
@@ -67,38 +83,27 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     return unless patient_payload_required?
 
     phone_number = patient_phone_number
-
+    phone_numbers = Integrations::Medelement::PhoneNumber.contact_phones(contact)
+    payload = Integrations::Medelement::ProviderCommands::PatientPayloadBuilder.new(
+      contact: contact,
+      patient_code: operation == 'update_patient' ? patient_code : nil,
+      phone_number: phone_number
+    ).build
     {
       'phone_number' => phone_number.to_s,
-      'payload' => Integrations::Medelement::ProviderCommands::PatientPayloadBuilder.new(
-        contact: contact,
-        patient_code: operation == 'update_patient' ? patient_code : nil,
-        phone_number: phone_number,
-        identity: patient_identity
-      ).build
+      'phone_numbers' => phone_numbers,
+      'payload' => payload
     }
   end
 
-  def patient_identity
-    return unless operation == 'create_reception'
-
-    {
-      full_name: appointment.client_name,
-      iin: appointment_iin,
-      birth_date: appointment.client_birth_date,
-      gender: appointment.client_gender
-    }.compact
-  end
-
-  def appointment_iin
-    value = appointment.client_identifier
-    Scheduling::IinValidator.normalize(value) if Scheduling::IinValidator.valid?(value)
-  end
-
   def patient_phone_number
-    return contact.phone_number unless operation == 'create_reception'
+    contact&.phone_number
+  end
 
-    appointment.client_phone.presence || contact.phone_number
+  def patient_phone_numbers
+    return [] unless operation.in?(PATIENT_PHONE_OPERATIONS)
+
+    @patient_phone_numbers ||= Integrations::Medelement::PhoneNumber.contact_phones(contact)
   end
 
   def patient_payload_required?
@@ -108,6 +113,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   def reception_snapshot
     return if appointment.blank?
 
+    service_codes = nomenclature_codes
     {
       'time_zone' => configuration.time_zone,
       'specialist_code' => specialist_code,
@@ -116,7 +122,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'destination_starts_at' => timestamp(destination_starts_at),
       'destination_ends_at' => timestamp(destination_ends_at),
       'description' => appointment.client_comment.to_s.presence,
-      'nomenclature_code' => nomenclature_code
+      'nomenclature_code' => service_codes.first,
+      'nomenclature_codes' => service_codes
     }.compact
   end
 
@@ -144,8 +151,16 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     appointment.resource.custom_attributes.to_h['medelement_specialist_code'].to_s
   end
 
-  def nomenclature_code
-    appointment.service&.custom_attributes&.dig('medelement_nomenclature_code').presence
+  def nomenclature_codes
+    service_ids = Array(appointment.custom_attributes.to_h['service_ids']).filter_map do |value|
+      Integer(value, exception: false)
+    end
+    service_ids = [appointment.service_id].compact if service_ids.blank?
+    services_by_id = account.scheduling_services.where(id: service_ids).index_by(&:id)
+
+    service_ids.filter_map do |service_id|
+      services_by_id[service_id]&.custom_attributes&.dig('medelement_nomenclature_code').presence
+    end.uniq
   end
 
   def configuration
@@ -153,10 +168,10 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
 
   def patient_code
-    return appointment_patient_code if operation == 'create_reception'
-
-    appointment_patient_code || contact&.custom_attributes&.dig('medelement_patient_code').presence
+    contact_patient_code || appointment_patient_code
   end
+
+  def contact_patient_code = contact&.custom_attributes&.dig('medelement_patient_code').presence
 
   def appointment_patient_code
     appointment&.custom_attributes&.to_h&.dig('medelement_patient_code').presence

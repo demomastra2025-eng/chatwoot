@@ -233,4 +233,50 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     expect(stale_resource.reload).not_to be_active
     expect(recent_resource.reload).to be_active
   end
+
+  it 'records conflicting cabinet names and preserves the last accepted cabinet snapshot' do
+    resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'ME-SPEC-001',
+        'medelement_cabinets' => [
+          { 'companyCabinetCode' => 'ME-CAB-001', 'cabinetName' => 'Accepted room' }
+        ]
+      }
+    )
+    source = {
+      specialists: [
+        {
+          'specialistCode' => 'ME-SPEC-001',
+          'userName' => 'Imported specialist',
+          'cabinetCodes' => ['ME-CAB-001']
+        }
+      ],
+      cabinets: [
+        { 'companyCabinetCode' => 'ME-CAB-001', 'cabinetName' => 'Room A' },
+        { 'companyCabinetCode' => 'ME-CAB-001', 'cabinetName' => 'Room B' }
+      ]
+    }
+    conflict_tracker = instance_double(Integrations::Medelement::ConflictTracker, record!: true)
+
+    described_class.new(
+      account: account,
+      client: nil,
+      configuration: configuration,
+      source: source,
+      conflict_tracker: conflict_tracker
+    ).perform
+
+    expect(resource.reload.custom_attributes['medelement_cabinets']).to contain_exactly(
+      hash_including('companyCabinetCode' => 'ME-CAB-001', 'cabinetName' => 'Accepted room')
+    )
+    expect(conflict_tracker).to have_received(:record!).with(
+      hash_including(
+        phase: 'specialists',
+        conflict_type: 'conflicting_cabinet_name',
+        entity_key: 'ME-CAB-001'
+      )
+    )
+  end
 end

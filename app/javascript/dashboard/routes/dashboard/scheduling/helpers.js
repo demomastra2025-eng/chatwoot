@@ -60,10 +60,15 @@ export const medelementCabinetsForResource = resource => {
               ''
           ),
           name: String(
-            cabinet?.companyCabinetName ||
+            cabinet?.cabinetName ||
+              cabinet?.cabinet_name ||
+              cabinet?.companyCabinetName ||
               cabinet?.company_cabinet_name ||
               cabinet?.name ||
               ''
+          ),
+          number: String(
+            cabinet?.cabinetNumber || cabinet?.cabinet_number || ''
           ),
         }))
         .filter(cabinet => cabinet.code)
@@ -538,6 +543,7 @@ export const buildMedelementProviderCommandParams = ({
   const params = {
     appointment_id: appointment.id,
     operation,
+    provider: 'medelement',
   };
 
   if (operation === 'remove_reception') return params;

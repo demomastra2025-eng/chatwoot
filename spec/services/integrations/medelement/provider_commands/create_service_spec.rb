@@ -39,10 +39,13 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
   end
 
-  it 'persists an awaiting-confirmation command without executing the provider write' do
+  it 'persists an awaiting-confirmation command without executing the provider write', :aggregate_failures do
     command = perform
 
+    expect(command.status).to eq('v2_awaiting_confirmation')
     expect(command).to be_awaiting_confirmation
+    expect(Integrations::Medelement::ProviderCommand.where(status: 'awaiting_confirmation')).not_to exist(command.id)
+    expect(Integrations::Medelement::ProviderCommandPayloadBuilder.build(command)[:status]).to eq('awaiting_confirmation')
     expect(command.confirmation_request).to be_pending
     expect(command.confirmation_request.metadata).to include(
       'medelement_provider_command_id' => command.id,
@@ -57,7 +60,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
       '(specialist-1)',
       'длительность 30 мин',
       'кабинет cabinet-1',
-      'если пациент не будет однозначно найден по данным записи, будет создан новый пациент Medelement',
+      'команда остановится для выбора пациента или отдельного подтверждения создания',
       'локальный контакт не создаётся'
     )
     expect(command).to have_attributes(
@@ -70,24 +73,15 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     )
   end
 
-  it 'uses the appointment phone for a reception when the contact phone is blank' do
+  it 'does not fall back to the appointment phone when the contact phone is blank' do
     contact.update!(phone_number: nil)
     appointment.update!(client_phone: '+77001234567')
 
-    command = perform
-
-    expect(command.request_snapshot.fetch('patient')).to include(
-      'phone_number' => '+77001234567',
-      'payload' => include(
-        'patient_phone_2[0]' => '7',
-        'patient_phone_2[1]' => '700',
-        'patient_phone_2[2]' => '1234567'
-      )
-    )
+    expect { perform }.to raise_error(ArgumentError, 'phone_number must be a Kazakhstan E.164 number')
     expect(contact.reload.phone_number).to be_nil
   end
 
-  it 'uses the appointment identity without changing or duplicating the contact' do
+  it 'uses the linked Contact patient code and ignores appointment identity snapshots' do
     contact.update!(
       name: 'Unknown',
       phone_number: nil,
@@ -104,15 +98,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
 
     command = perform
 
-    expect(command.request_snapshot.dig('patient', 'payload')).to include(
-      'name' => 'Assem',
-      'lastname' => 'Gusman',
-      'iin' => '940720300129',
-      'birthday' => '20.07.1994',
-      'gender' => 1
-    )
-    expect(command.provider_patient_code).to be_nil
-    expect(command.request_snapshot).not_to have_key('provider_patient_code')
+    expect(command.request_snapshot).not_to have_key('patient')
+    expect(command).to have_attributes(provider_patient_code: 'patient-old')
+    expect(command.request_snapshot['provider_patient_code']).to eq('patient-old')
     expect(contact.reload).to have_attributes(name: 'Unknown', phone_number: nil)
     expect(contact.custom_attributes['medelement_patient_code']).to eq('patient-old')
     expect(account.contacts.count).to eq(contact_count)

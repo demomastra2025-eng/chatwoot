@@ -34,7 +34,7 @@ describe('scheduling helpers', () => {
 
     expect(isMedelementResource(resource)).toBe(true);
     expect(medelementCabinetsForResource(resource)).toEqual([
-      { code: '501', name: 'Main office' },
+      { code: '501', name: 'Main office', number: '' },
     ]);
   });
 
@@ -79,6 +79,7 @@ describe('scheduling helpers', () => {
       appointment_id: 17,
       company_cabinet_code: '501',
       operation: 'create_reception',
+      provider: 'medelement',
     });
     expect(
       buildMedelementProviderCommandParams({
@@ -96,13 +97,18 @@ describe('scheduling helpers', () => {
       desired_ends_at: '2026-03-09T11:30:00.000Z',
       desired_starts_at: '2026-03-09T11:00:00.000Z',
       operation: 'move_reception',
+      provider: 'medelement',
     });
     expect(
       buildMedelementProviderCommandParams({
         appointment,
         operation: 'remove_reception',
       })
-    ).toEqual({ appointment_id: 17, operation: 'remove_reception' });
+    ).toEqual({
+      appointment_id: 17,
+      operation: 'remove_reception',
+      provider: 'medelement',
+    });
   });
 
   it('builds complete Medelement confirmation details including move before and after values', () => {

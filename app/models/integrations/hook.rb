@@ -21,7 +21,7 @@ class Integrations::Hook < ApplicationRecord
   before_validation :ensure_hook_type
   before_validation :ensure_reference_id
   after_create :trigger_setup_if_crm
-  before_destroy :ensure_no_unfinished_medelement_provider_commands, if: :medelement?
+  before_destroy :ensure_no_active_medelement_operations, if: :medelement?
   after_commit :sync_medelement_schedule, on: [:create, :update], if: :medelement?
   after_destroy_commit :destroy_medelement_schedule, if: :medelement?
   after_destroy_commit :enqueue_medelement_cleanup, if: :medelement?
@@ -200,18 +200,28 @@ class Integrations::Hook < ApplicationRecord
     return { error: 'Medelement integration is disabled' } unless enabled?
     return { error: 'Scheduling feature is not enabled for this account' } unless feature_allowed?
 
-    Integrations::Medelement::SyncJob.perform_later(id)
-    { message: 'Medelement sync started' }
+    run, enqueued = Integrations::Medelement::SyncRunLauncher.new(hook: self).perform
+    {
+      message: enqueued ? 'Medelement sync started' : 'Medelement sync is already running',
+      sync_status: Integrations::Medelement::SyncStatusPresenter.new(hook: self).payload(run: run)
+    }
   end
 
   def enqueue_medelement_cleanup
     Integrations::Medelement::CleanupJob.perform_later(account_id)
   end
 
-  def ensure_no_unfinished_medelement_provider_commands
-    return unless Integrations::Medelement::ProviderCommand.where(hook_id: id).unfinished.exists?
+  def ensure_no_active_medelement_operations
+    Integrations::Medelement::HookRuntimeLock.acquire!(account_id: account_id, hook_id: id)
 
-    errors.add(:base, 'Cannot remove Medelement integration while provider commands are unfinished')
+    if Integrations::Medelement::ProviderCommand.where(account_id: account_id, hook_id: id).unfinished.exists?
+      errors.add(:base, 'Cannot remove Medelement integration while provider commands are unfinished')
+    end
+    if Integrations::Medelement::SyncRun.where(account_id: account_id, hook_id: id).active.exists?
+      errors.add(:base, 'Cannot remove Medelement integration while synchronization is active')
+    end
+    return if errors[:base].blank?
+
     throw(:abort)
   end
 

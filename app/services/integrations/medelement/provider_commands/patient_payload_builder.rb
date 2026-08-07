@@ -48,10 +48,11 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
   end
 
   def explicit_name_values
+    last_name = custom_attributes['medelement_last_name'].presence || contact.last_name.to_s.presence
     {
-      first_name: custom_attributes['medelement_first_name'].presence,
-      last_name: custom_attributes['medelement_last_name'].presence,
-      middle_name: custom_attributes['medelement_middle_name'].presence
+      first_name: custom_attributes['medelement_first_name'].presence || (contact.name.to_s.presence if last_name.present?),
+      last_name: last_name,
+      middle_name: custom_attributes['medelement_middle_name'].presence || contact.middle_name.to_s.presence
     }
   end
 
@@ -86,7 +87,9 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
   def iin
     return identity['iin'].presence if appointment_identity?
 
-    custom_attributes['medelement_iin'].presence || custom_attributes['iin'].presence
+    candidates = [custom_attributes['medelement_iin'], custom_attributes['iin'], contact.identifier]
+    value = candidates.find { |candidate| Scheduling::IinValidator.valid?(candidate) }
+    Scheduling::IinValidator.normalize(value) if value
   end
 
   def birthday
@@ -95,6 +98,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
             else
               custom_attributes['medelement_birth_date'].presence || custom_attributes['birth_date'].presence
             end
+    value ||= iin_birth_date
     return if value.blank?
 
     Date.parse(value.to_s).strftime('%d.%m.%Y')
@@ -109,6 +113,25 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
             else
               contact_gender.presence || custom_attributes['medelement_gender'].presence || custom_attributes['gender'].presence
             end
-    { 'female' => 1, 'male' => 2, '1' => 1, '2' => 2 }[value.to_s]
+    { 'female' => 1, 'male' => 2, '1' => 1, '2' => 2 }[value.to_s] || iin_gender_code
+  end
+
+  def iin_birth_date
+    value = iin
+    return if value.blank?
+
+    century = { '1' => 1800, '2' => 1800, '3' => 1900, '4' => 1900, '5' => 2000, '6' => 2000 }[value[6]]
+    return if century.blank?
+
+    Date.new(century + value[0, 2].to_i, value[2, 2].to_i, value[4, 2].to_i)
+  rescue Date::Error
+    nil
+  end
+
+  def iin_gender_code
+    value = iin
+    return if value.blank?
+
+    value[6].to_i.odd? ? 2 : 1
   end
 end

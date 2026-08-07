@@ -73,6 +73,68 @@ RSpec.describe Integrations::Medelement::ProviderCommand, type: :model do
     # rubocop:enable Rails/SkipsModelValidations
   end
 
+  it 'keeps patient-action waiting states inside the unfinished database barrier' do
+    command = described_class.create!(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      status: 'awaiting_patient_creation',
+      idempotency_key: 'awaiting-patient-action'
+    )
+    duplicate_attributes = command.attributes.except('id').merge(
+      'status' => 'queued',
+      'idempotency_key' => 'duplicate-during-patient-action',
+      'created_at' => Time.current,
+      'updated_at' => Time.current
+    )
+
+    # Bypassing validations is intentional: this verifies the database race barrier itself.
+    # rubocop:disable Rails/SkipsModelValidations
+    expect { described_class.insert_all!([duplicate_attributes]) }.to raise_error(ActiveRecord::RecordNotUnique)
+    # rubocop:enable Rails/SkipsModelValidations
+  end
+
+  it 'keeps versioned statuses logical to current code and invisible to legacy exact scopes' do
+    command = described_class.create!(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      status: 'v2_queued',
+      idempotency_key: 'versioned-command'
+    )
+
+    expect(command).to be_queued
+    expect(command).to be_versioned_execution
+    expect(command.logical_status).to eq('queued')
+    expect(command.status_for_transition('processing')).to eq('v2_processing')
+    expect(described_class.executable).to include(command)
+    expect(described_class.where(status: 'queued')).not_to include(command)
+  end
+
+  it 'keeps versioned patient-action states inside the unfinished database barrier' do
+    command = described_class.create!(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      status: 'v2_awaiting_patient_creation',
+      idempotency_key: 'versioned-patient-action'
+    )
+    duplicate_attributes = command.attributes.except('id').merge(
+      'status' => 'queued',
+      'idempotency_key' => 'duplicate-versioned-patient-action',
+      'created_at' => Time.current,
+      'updated_at' => Time.current
+    )
+
+    # Bypassing validations is intentional: this verifies the database race barrier itself.
+    # rubocop:disable Rails/SkipsModelValidations
+    expect { described_class.insert_all!([duplicate_attributes]) }.to raise_error(ActiveRecord::RecordNotUnique)
+    # rubocop:enable Rails/SkipsModelValidations
+  end
+
   it 'blocks hook deletion while a provider command is unfinished' do
     command = described_class.create!(
       account: account,

@@ -15,33 +15,28 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
   private
 
   def mark_stale_processing_commands!
-    stale_commands = Integrations::Medelement::ProviderCommand.processing.where(updated_at: ...STALE_PROCESSING_AGE.ago)
+    stale_commands = Integrations::Medelement::ProviderCommand.where(
+      status: Integrations::Medelement::ProviderCommand.execution_statuses('processing'),
+      updated_at: ...STALE_PROCESSING_AGE.ago
+    )
 
     # Each conditional update is atomic. Once one dispatcher changes the status, competing runs no longer match it.
     # A command that crashed before recording a write phase is safe to retry; a started write must be reconciled.
-    # rubocop:disable Rails/SkipsModelValidations
-    stale_commands
-      .where("NULLIF(execution_state ->> 'write_phase', '') IS NULL")
-      .update_all(
-        status: 'queued',
-        last_error_code: 'executor_stale_before_write',
-        last_error_status: nil,
-        updated_at: Time.current
-      )
-    stale_commands
-      .where("NULLIF(execution_state ->> 'write_phase', '') IS NOT NULL")
-      .update_all(
-        status: 'reconciliation_required',
-        last_error_code: 'executor_stale',
-        last_error_status: nil,
-        updated_at: Time.current
-      )
-    # rubocop:enable Rails/SkipsModelValidations
+    transition_stale_commands!(
+      stale_commands.where("NULLIF(execution_state ->> 'write_phase', '') IS NULL"),
+      to: 'queued',
+      error_code: 'executor_stale_before_write'
+    )
+    transition_stale_commands!(
+      stale_commands.where("NULLIF(execution_state ->> 'write_phase', '') IS NOT NULL"),
+      to: 'reconciliation_required',
+      error_code: 'executor_stale'
+    )
   end
 
   def dispatch_resolved_confirmations
     Integrations::Medelement::ProviderCommand
-      .awaiting_confirmation
+      .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('awaiting_confirmation'))
       .joins(:confirmation_request)
       .where(
         'confirmation_requests.status <> :pending OR confirmation_requests.expires_at <= :now',
@@ -55,7 +50,7 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
 
   def dispatch_queued_commands
     Integrations::Medelement::ProviderCommand
-      .queued
+      .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('queued'))
       .limit(BATCH_SIZE)
       .pluck(:id)
       .each { |id| Integrations::Medelement::ProviderCommandJob.perform_later(id) }
@@ -63,7 +58,7 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
 
   def dispatch_reconciliation_commands
     Integrations::Medelement::ProviderCommand
-      .reconciliation_required
+      .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('reconciliation_required'))
       .where(
         "COALESCE((execution_state ->> 'reconciliation_attempts')::integer, 0) < ?",
         Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
@@ -81,7 +76,7 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
   def mark_exhausted_reconciliation_commands!
     # rubocop:disable Rails/SkipsModelValidations
     Integrations::Medelement::ProviderCommand
-      .reconciliation_required
+      .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('reconciliation_required'))
       .where(
         "COALESCE((execution_state ->> 'reconciliation_attempts')::integer, 0) >= ?",
         Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
@@ -92,5 +87,20 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
         updated_at: Time.current
       )
     # rubocop:enable Rails/SkipsModelValidations
+  end
+
+  def transition_stale_commands!(commands, to:, error_code:)
+    source_statuses = Integrations::Medelement::ProviderCommand.execution_statuses('processing')
+    target_statuses = Integrations::Medelement::ProviderCommand.execution_statuses(to)
+    source_statuses.zip(target_statuses).each do |source_status, target_status|
+      # rubocop:disable Rails/SkipsModelValidations
+      commands.where(status: source_status).update_all(
+        status: target_status,
+        last_error_code: error_code,
+        last_error_status: nil,
+        updated_at: Time.current
+      )
+      # rubocop:enable Rails/SkipsModelValidations
+    end
   end
 end

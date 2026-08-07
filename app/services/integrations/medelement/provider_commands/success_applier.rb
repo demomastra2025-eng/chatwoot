@@ -14,7 +14,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   def patient_resolved_for_reception!(patient_code:)
     with_owned_command do
       command.update!(
-        status: 'queued',
+        status: command.status_for_transition('queued'),
         provider_patient_code: patient_code,
         last_error_code: nil,
         last_error_status: nil,
@@ -30,13 +30,13 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
         ends_at: snapshot_time('destination_ends_at'),
         source: 'medelement',
         external_ref: "medelement:reception:#{reception_code}",
-        custom_attributes: appointment.custom_attributes.to_h.merge(
+        custom_attributes: appointment.custom_attributes.to_h.except('medelement_patient_code').merge(
           'medelement_reception_code' => reception_code,
-          'medelement_patient_code' => patient_code,
           'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
           'medelement_provider_sync_status' => 'succeeded'
         )
       )
+      link_contact_patient_ref!(patient_code)
       complete_command!(provider_reception_code: reception_code, provider_patient_code: patient_code)
     end
   end

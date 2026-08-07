@@ -22,7 +22,7 @@ class Integrations::Medelement::ProviderCommands::CancelService
   attr_reader :actor, :command, :now
 
   def validate_cancellable!
-    return if command.reconciliation_required?
+    return if command.reconciliation_required? || command.logical_status.start_with?('awaiting_patient_') || command.awaiting_phone_refresh?
 
     raise Scheduling::Error.new(
       code: 'MEDELEMENT_COMMAND_NOT_CANCELLABLE',

@@ -32,7 +32,8 @@ class Integrations::Medelement::ProviderCommands::ConfirmationBodyBuilder
   def patient_resolution_notice
     return unless operation == 'create_reception' && snapshot['provider_patient_code'].blank?
 
-    'если пациент не будет однозначно найден по данным записи, будет создан новый пациент Medelement; локальный контакт не создаётся'
+    'если пациент не будет найден однозначно, команда остановится для выбора пациента ' \
+      'или отдельного подтверждения создания; локальный контакт не создаётся'
   end
 
   def time_body

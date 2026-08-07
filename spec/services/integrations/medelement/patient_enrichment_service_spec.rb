@@ -37,7 +37,8 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentService do
     resolved_contact = service.perform(contact)
 
     expect(resolved_contact.id).to eq(contact.id)
-    expect(resolved_contact.name).to eq('Иванова Анна Сергеевна')
+    expect(resolved_contact.name).to eq('Анна')
+    expect(resolved_contact.last_name).to eq('Иванова')
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(resolved_contact.custom_attributes['medelement_patient_match_status']).to eq('matched')
     expect(resolved_contact.custom_attributes['medelement_patient_phone_fingerprint']).not_to include('77011234567')

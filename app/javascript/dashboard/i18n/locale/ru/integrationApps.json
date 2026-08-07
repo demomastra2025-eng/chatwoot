@@ -71,7 +71,62 @@
       "RUN_SYNC": {
         "BUTTON": "Запустить сейчас",
         "SUCCESS": "Синхронизация Medelement поставлена в очередь. Импортированные данные могут появиться через несколько минут.",
-        "ERROR": "Не удалось запустить синхронизацию Medelement. Попробуйте еще раз позже."
+        "ERROR": "Не удалось запустить синхронизацию Medelement. Попробуйте еще раз позже.",
+        "TITLE": "Диагностика и синхронизация",
+        "STARTED_AT": "Запущено",
+        "STARTED_AT_VALUE": "Запущено: {date}",
+        "RETRY_QUEUED": "Проблемный этап поставлен на повтор.",
+        "CONFLICT_ERROR": "Не удалось изменить состояние конфликта.",
+        "ERROR_LABEL": "Ошибка",
+        "ERROR_WITH_MESSAGE": "Ошибка: {message}",
+        "CONFLICTS": "Конфликты данных",
+        "OPEN_CONFLICTS": "открытых",
+        "OCCURRENCES": "повторений",
+        "CONFLICT_META": "{phase} · повторений: {count}",
+        "RETRY_PHASE": "Повторить этап",
+        "IGNORE": "Игнорировать",
+        "REOPEN": "Вернуть в работу"
+      },
+      "SYNC_STATUS": {
+        "QUEUED": "В очереди",
+        "RUNNING": "Выполняется",
+        "RETRYING": "Ожидает повтора",
+        "SUCCEEDED": "Завершено",
+        "PARTIAL": "Завершено с конфликтами",
+        "FAILED": "Ошибка",
+        "SKIPPED": "Отключено настройками",
+        "PENDING": "Ожидает запуска"
+      },
+      "SYNC_PHASE": {
+        "SETUP": "Подготовка",
+        "SPECIALISTS": "Специалисты",
+        "SERVICES": "Услуги",
+        "CONTACTS": "Связанные контакты",
+        "RECEPTIONS": "Записи"
+      },
+      "SYNC_COUNTER": {
+        "CONFIGURED_FIELDS": "Поля",
+        "IMPORTED_COUNT": "Импортировано",
+        "SYNCED_COUNT": "Обновлено",
+        "LINKED_COUNT": "Связано",
+        "SKIPPED_COUNT": "Пропущено",
+        "CREATED_COUNT": "Создано",
+        "UPDATED_COUNT": "Изменено",
+        "DEACTIVATED_COUNT": "Отключено"
+      },
+      "CONFLICT_TYPE": {
+        "INVALID_SPECIALIST": "Некорректные данные специалиста",
+        "CONFLICTING_CABINET_NAME": "У кабинета несколько названий",
+        "INVALID_SERVICE": "Некорректные данные услуги",
+        "INVALID_SPECIALIST_SERVICE": "Некорректная связь специалиста и услуги",
+        "PATIENT_NOT_FOUND": "Пациент не найден в Medelement",
+        "PATIENT_UPDATE_REJECTED": "Данные пациента не удалось применить",
+        "PHONE_OWNED_BY_ANOTHER_CONTACT": "Телефон принадлежит другому контакту",
+        "PHONE_MISMATCH": "Телефон отличается от данных контакта",
+        "INVALID_RECEPTION": "Запись не удалось импортировать",
+        "PATIENT_UNRESOLVED": "Пациент не связан с контактом",
+        "APPOINTMENT_AMOUNT_MISMATCH": "Сумма записи расходится с MedElement",
+        "LOCAL_PAYMENT_PRESERVED": "Локальный платёж сохранён"
       },
       "IMPORT": {
         "TITLE": "Импорт каталога",

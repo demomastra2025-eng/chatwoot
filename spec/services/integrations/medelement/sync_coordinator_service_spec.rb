@@ -15,6 +15,7 @@ RSpec.describe Integrations::Medelement::SyncCoordinatorService do
       Integrations::Medelement::Configuration,
       sync_specialists?: false,
       sync_services?: true,
+      sync_patients?: false,
       sync_receptions?: false
     )
   end

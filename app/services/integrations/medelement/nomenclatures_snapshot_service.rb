@@ -1,17 +1,27 @@
 class Integrations::Medelement::NomenclaturesSnapshotService
   PAGE_SIZE = 20
   MAX_PAGES = 1000
+  PAGE_DELAY_SECONDS = 0.275
+  PAGE_RETRY_BACKOFFS = [1, 5, 15].freeze
   CONTINUE = :continue
 
-  def initialize(client:)
+  def initialize(
+    client:,
+    sleeper: ->(seconds) { Kernel.sleep(seconds) },
+    page_delay_seconds: PAGE_DELAY_SECONDS,
+    page_retry_backoffs: PAGE_RETRY_BACKOFFS
+  )
     @client = client
+    @sleeper = sleeper
+    @page_delay_seconds = page_delay_seconds
+    @page_retry_backoffs = page_retry_backoffs
   end
 
   def perform
     reset_state
 
     MAX_PAGES.times do
-      page = Array(client.nomenclatures(skip: skip))
+      page = fetch_page
       empty_result = empty_page_result(page)
       return empty_result unless empty_result == CONTINUE
 
@@ -27,7 +37,27 @@ class Integrations::Medelement::NomenclaturesSnapshotService
 
   private
 
-  attr_reader :client, :expected_total, :rows, :seen_pages, :skip
+  attr_reader :client, :expected_total, :page_delay_seconds, :page_retry_backoffs, :rows, :seen_pages, :skip, :sleeper
+
+  def fetch_page
+    page = with_page_retry { Array(client.nomenclatures(skip: skip)) }
+    sleeper.call(page_delay_seconds) if page_delay_seconds.positive?
+    page
+  end
+
+  def with_page_retry
+    attempt = 0
+
+    begin
+      yield
+    rescue Integrations::Medelement::Client::ApiError => e
+      raise unless e.retryable? && attempt < page_retry_backoffs.size
+
+      sleeper.call(page_retry_backoffs.fetch(attempt))
+      attempt += 1
+      retry
+    end
+  end
 
   def reset_state
     @expected_total = nil

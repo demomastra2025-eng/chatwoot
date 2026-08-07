@@ -1,5 +1,5 @@
 class Integrations::Medelement::ProviderCommandConfirmationJob < ApplicationJob
-  queue_as :low
+  queue_as :medelement_provider_commands
 
   def perform(confirmation_request_id)
     confirmation_request = ConfirmationRequest.find_by(id: confirmation_request_id)
@@ -39,7 +39,10 @@ class Integrations::Medelement::ProviderCommandConfirmationJob < ApplicationJob
     when 'confirmed'
       return fail_confirmation_binding!(command) unless command.confirmation_matches_request_snapshot?(confirmation_request)
 
-      command.update!(status: 'queued', confirmed_at: confirmation_request.resolved_at || Time.current)
+      command.update!(
+        status: command.status_for_transition('queued'),
+        confirmed_at: confirmation_request.resolved_at || Time.current
+      )
     when 'declined', 'reschedule_requested', 'expired'
       command.update!(status: 'declined', executed_at: Time.current)
     end

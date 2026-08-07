@@ -1,6 +1,9 @@
 class Integrations::Medelement::ContactCustomAttributesSetupService
   FIELDS = {
     'medelement_patient_code' => ['Medelement patient code', 'text'],
+    'medelement_first_name' => ['Medelement first name', 'text'],
+    'medelement_last_name' => ['Medelement last name', 'text'],
+    'medelement_middle_name' => ['Medelement middle name', 'text'],
     'iin' => %w[IIN text],
     'birth_date' => ['Birth date', 'date'],
     'gender' => %w[Gender text],

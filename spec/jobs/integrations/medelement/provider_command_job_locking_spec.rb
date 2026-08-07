@@ -20,6 +20,12 @@ RSpec.describe Integrations::Medelement::ProviderCommandJob do
     )
   end
 
+  it 'uses a queue that legacy worker images do not poll' do
+    expect(described_class.queue_name).to eq('medelement_provider_commands')
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob.queue_name).to eq('medelement_provider_commands')
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob.queue_name).to eq('medelement_provider_commands')
+  end
+
   it 'serializes patient identity across different appointment resources' do
     first_keys = described_class.new.lock_keys(first_command)
     second_keys = described_class.new.lock_keys(second_command)

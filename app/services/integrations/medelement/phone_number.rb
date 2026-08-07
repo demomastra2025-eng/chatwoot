@@ -1,5 +1,11 @@
 class Integrations::Medelement::PhoneNumber
-  PATIENT_PHONE_FIELDS = %w[PATIENT_PHONE_2 PHONES_STR].freeze
+  PATIENT_PHONE_FIELDS = %w[
+    PATIENT_PHONE_2_STR PATIENT_PHONE_2
+    PATIENT_PHONE_1_STR PATIENT_PHONE_1
+    PATIENT_PHONE_3_STR PATIENT_PHONE_3
+    PATIENT_PHONE_4_STR PATIENT_PHONE_4
+    PHONES_STR
+  ].freeze
 
   attr_reader :e164
 
@@ -25,9 +31,7 @@ class Integrations::Medelement::PhoneNumber
   end
 
   def matches_patient?(patient)
-    PATIENT_PHONE_FIELDS.any? do |field|
-      self.class.extract(patient[field]).include?(e164)
-    end
+    self.class.patient_phones(patient).include?(e164)
   end
 
   class << self
@@ -42,6 +46,17 @@ class Integrations::Medelement::PhoneNumber
       raw_value.to_s.scan(/(?:\+?7|8)[\d\s()xX\-]{9,}/).filter_map do |candidate|
         normalize(candidate)
       end
+    end
+
+    def patient_phones(patient)
+      PATIENT_PHONE_FIELDS.flat_map { |field| extract(patient[field]) }.uniq
+    end
+
+    def contact_phones(contact)
+      return [] if contact.blank?
+
+      values = [contact.phone_number, *Array(contact.custom_attributes.to_h['secondary_phones'])]
+      values.flat_map { |value| extract(value).presence || Array(normalize(value)) }.uniq
     end
   end
 end

@@ -4,7 +4,7 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
 
   before_action :fetch_hook, except: [:create]
   before_action :check_authorization
-  before_action :ensure_medelement_hook!, only: [:run_sync, :import_catalog]
+  before_action :ensure_medelement_hook!, only: [:run_sync, :sync_status, :sync_conflict, :import_catalog]
 
   def create
     @hook = Current.account.hooks.create!(normalized_params)
@@ -39,8 +39,44 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
       return
     end
 
-    Integrations::Medelement::SyncJob.perform_later(@hook.id)
-    render json: { message: 'Medelement sync queued successfully' }, status: :accepted
+    run, enqueued = Integrations::Medelement::SyncRunLauncher.new(
+      hook: @hook,
+      requested_by: Current.user,
+      phases: params[:phases]
+    ).perform
+    message = enqueued ? 'Medelement sync queued successfully' : 'Medelement sync is already running'
+    render json: {
+      message: message,
+      sync_status: medelement_sync_status(run: run)
+    }, status: :accepted
+  rescue ArgumentError => e
+    render json: { code: 'invalid_phases', message: e.message }, status: :unprocessable_content
+  end
+
+  def sync_status
+    render json: medelement_sync_status
+  end
+
+  def sync_conflict
+    conflict = Integrations::Medelement::SyncConflict.find_by!(
+      id: params[:conflict_id],
+      account_id: Current.account.id,
+      hook_id: @hook.id
+    )
+
+    case params[:resolution]
+    when 'ignore'
+      conflict.ignore!(user: Current.user)
+    when 'reopen'
+      conflict.reopen!
+    else
+      return render json: {
+        code: 'invalid_resolution',
+        message: 'Resolution must be ignore or reopen'
+      }, status: :unprocessable_content
+    end
+
+    render json: medelement_sync_status
   end
 
   def import_catalog
@@ -51,8 +87,7 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
     with_medelement_sync_lock do
       payload = JSON.parse(upload.read)
       result = Integrations::Medelement::CatalogImportService.new(
-        account: Current.account,
-        configuration: Integrations::Medelement::Configuration.new(hook: @hook),
+        hook: @hook,
         payload: payload
       ).perform
 
@@ -103,6 +138,11 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
 
   def ensure_medelement_hook!
     raise ActiveRecord::RecordNotFound unless @hook.medelement?
+  end
+
+  def medelement_sync_status(run: nil)
+    presenter = Integrations::Medelement::SyncStatusPresenter.new(hook: @hook)
+    run ? presenter.payload(run: run) : presenter.payload
   end
 
   def render_import_error(code, message, status: :unprocessable_content)

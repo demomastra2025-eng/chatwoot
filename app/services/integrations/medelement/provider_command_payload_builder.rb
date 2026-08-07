@@ -4,6 +4,7 @@ class Integrations::Medelement::ProviderCommandPayloadBuilder
       command_payload(command).merge(
         reconciliation_payload(command),
         lifecycle_payload(command),
+        patient_action: patient_action_payload(command),
         confirmation: confirmation_payload(command.confirmation_request)
       )
     end
@@ -14,7 +15,7 @@ class Integrations::Medelement::ProviderCommandPayloadBuilder
       {
         id: command.id,
         operation: command.operation,
-        status: command.status,
+        status: command.logical_status,
         appointment_id: command.appointment_id,
         contact_id: command.contact_id,
         provider_reception_code: command.provider_reception_code,
@@ -52,6 +53,12 @@ class Integrations::Medelement::ProviderCommandPayloadBuilder
         status: confirmation_request.status,
         expires_at: confirmation_request.expires_at&.iso8601
       }
+    end
+
+    def patient_action_payload(command)
+      return unless command.logical_status.in?(Integrations::Medelement::ProviderCommands::PatientActionRequired::STATUSES)
+
+      command.execution_state.to_h['patient_action'].to_h.merge('cancellable' => true)
     end
   end
 end

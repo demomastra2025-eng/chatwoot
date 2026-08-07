@@ -88,7 +88,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
           snapshot: snapshot,
           request_fingerprint: request_fingerprint,
           intent_fingerprint: intent_fingerprint
-        )
+        ).merge(status: Integrations::Medelement::ProviderCommand.versioned_status('awaiting_confirmation'))
       )
       confirmation_request = create_confirmation_request(command)
       confirmation_state = command.execution_state.merge('confirmation_request_id' => confirmation_request.id)
@@ -169,10 +169,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   end
 
   def patient_code
-    return appointment_patient_code if operation == 'create_reception'
-    return appointment_patient_code || contact_patient_code if appointment.present?
-
-    contact_patient_code
+    contact_patient_code || appointment_patient_code
   end
 
   def appointment_patient_code = appointment&.custom_attributes&.to_h&.dig('medelement_patient_code').presence

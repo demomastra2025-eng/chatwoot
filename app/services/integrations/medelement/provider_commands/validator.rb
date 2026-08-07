@@ -144,7 +144,7 @@ class Integrations::Medelement::ProviderCommands::Validator
   end
 
   def patient_code
-    appointment_patient_code || contact.custom_attributes.to_h['medelement_patient_code'].to_s
+    contact.custom_attributes.to_h['medelement_patient_code'].presence || appointment_patient_code
   end
 
   def appointment_patient_code

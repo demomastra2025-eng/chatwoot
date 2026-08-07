@@ -120,6 +120,46 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
     )
   end
 
+  it 'keeps a provider name that exceeds the native display-name limit' do
+    provider_name = 'Long provider service ' * 20
+
+    result = described_class.new(
+      account: account,
+      client: nil,
+      service_payloads: [
+        {
+          'NOMENCLATURE_CODE' => 'ME-SVC-LONG',
+          'NOMENCLATURE_NAME' => provider_name,
+          'PRICE' => 1000,
+          'IS_GROUP' => 0
+        }
+      ]
+    ).perform
+
+    service = account.scheduling_services.find_by!(
+      "custom_attributes ->> 'medelement_nomenclature_code' = ?", 'ME-SVC-LONG'
+    )
+    expect(result).to eq(imported_count: 1, linked_count: 0, skipped_count: 0)
+    expect(service.name.length).to eq(255)
+    expect(service.custom_attributes['medelement_full_name']).to eq(provider_name)
+
+    described_class.new(
+      account: account,
+      client: nil,
+      service_payloads: [
+        {
+          'NOMENCLATURE_CODE' => 'ME-SVC-LONG',
+          'NOMENCLATURE_NAME' => 'Short provider service',
+          'PRICE' => 1000,
+          'IS_GROUP' => 0
+        }
+      ]
+    ).perform
+
+    expect(service.reload.name).to eq('Short provider service')
+    expect(service.custom_attributes).not_to have_key('medelement_full_name')
+  end
+
   it 'deactivates a missing imported service and its prices only after the grace period' do
     now = Time.zone.parse('2026-07-28 10:00:00')
     service = create(

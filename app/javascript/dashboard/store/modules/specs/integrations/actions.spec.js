@@ -163,10 +163,28 @@ describe('#actions', () => {
       const data = { message: 'queued' };
       axios.post.mockResolvedValue({ data });
       await expect(actions.runHookSync({ commit }, 2)).resolves.toEqual(data);
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining('/2/run_sync'),
+        {}
+      );
       expect(commit.mock.calls).toEqual([
         [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true }],
         [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: false }],
       ]);
+    });
+
+    it('sends selected phases for a conflict retry', async () => {
+      axios.post.mockResolvedValue({ data: { message: 'queued' } });
+
+      await actions.runHookSync(
+        { commit },
+        { hookId: 2, phases: ['services'] }
+      );
+
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.stringContaining('/2/run_sync'),
+        { phases: ['services'] }
+      );
     });
 
     it('sends correct actions if API is error', async () => {
@@ -178,6 +196,36 @@ describe('#actions', () => {
         [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: true }],
         [types.SET_INTEGRATIONS_UI_FLAG, { isRunningHookSync: false }],
       ]);
+    });
+  });
+
+  describe('#getHookSyncStatus', () => {
+    it('returns the persisted run status', async () => {
+      const data = { run: { id: 1, status: 'running' }, conflicts: [] };
+      axios.get.mockResolvedValue({ data });
+
+      await expect(actions.getHookSyncStatus({}, 2)).resolves.toEqual(data);
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining('/2/sync_status')
+      );
+    });
+  });
+
+  describe('#updateHookSyncConflict', () => {
+    it('sends an administrator conflict decision', async () => {
+      const data = { conflicts: [] };
+      axios.patch.mockResolvedValue({ data });
+
+      await expect(
+        actions.updateHookSyncConflict(
+          {},
+          { hookId: 2, conflictId: 9, resolution: 'ignore' }
+        )
+      ).resolves.toEqual(data);
+      expect(axios.patch).toHaveBeenCalledWith(
+        expect.stringContaining('/2/sync_conflict'),
+        { conflict_id: 9, resolution: 'ignore' }
+      );
     });
   });
 

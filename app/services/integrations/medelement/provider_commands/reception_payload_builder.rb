@@ -14,14 +14,14 @@ class Integrations::Medelement::ProviderCommands::ReceptionPayloadBuilder
       description: reception_snapshot['description'],
       color_code: 0
     }.compact
-    service_code = reception_snapshot['nomenclature_code'].presence
-    payload[:nomenclature_code] = [service_code] if service_code.present?
+    service_codes = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.service_codes(command.request_snapshot)
+    payload[:nomenclature_code] = service_codes if service_codes.present?
     payload
   end
 
   def move_payload(patient_code:)
     {
-      paient_code: patient_code,
+      patient_code: patient_code,
       reception_code: command.request_snapshot.fetch('provider_reception_code'),
       doctor_code: specialist_code,
       start_time: provider_datetime(snapshot_time('destination_starts_at')),
