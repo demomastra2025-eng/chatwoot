@@ -19,6 +19,10 @@ import {
   messageDateKey,
 } from './messageDateDivider.js';
 import { isAutomationTouchMessage } from './helpers/messageProvenance';
+import {
+  deduplicateThreadActivityMessages,
+  isUsefulTimelineMessage,
+} from './timelineMessageVisibility';
 
 /**
  * Props definition for the component
@@ -66,11 +70,24 @@ const isHiddenDuplicateMessage = message => {
   return data.hidden === true && Boolean(data.duplicateOf);
 };
 
+const currentChat = useMapGetter('getSelectedChat');
+
+const isCommunicationThreadContext = computed(() =>
+  isCommunicationThread(currentChat.value)
+);
+
 const allMessages = computed(() => {
-  return useCamelCase(props.messages, {
+  const visibleMessages = useCamelCase(props.messages, {
     deep: true,
     stopPaths: ['content_attributes.translations'],
-  }).filter(message => !isHiddenDuplicateMessage(message));
+  }).filter(
+    message =>
+      !isHiddenDuplicateMessage(message) && isUsefulTimelineMessage(message)
+  );
+
+  return isCommunicationThreadContext.value
+    ? deduplicateThreadActivityMessages(visibleMessages)
+    : visibleMessages;
 });
 
 const shouldShowDateDivider = (message, index, messages) => {
@@ -93,14 +110,8 @@ const unreadMessageIdSet = computed(
   () => new Set(props.unreadMessageIds.map(id => String(id)))
 );
 
-const currentChat = useMapGetter('getSelectedChat');
-
 const communicationChannels = computed(() =>
   Array.isArray(currentChat.value?.channels) ? currentChat.value.channels : []
-);
-
-const isCommunicationThreadContext = computed(() =>
-  isCommunicationThread(currentChat.value)
 );
 
 const channelForMessage = message => {

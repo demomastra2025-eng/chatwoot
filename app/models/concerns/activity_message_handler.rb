@@ -88,7 +88,11 @@ module ActivityMessageHandler
   end
 
   def activity_message_params(content)
-    { account_id: account_id, inbox_id: inbox_id, message_type: :activity, content: content }
+    params = { account_id: account_id, inbox_id: inbox_id, message_type: :activity, content: content }
+    return params if communication_thread_event_id.blank?
+
+    params[:additional_attributes] = { communication_thread_event_id: communication_thread_event_id }
+    params
   end
 
   def create_muted_message

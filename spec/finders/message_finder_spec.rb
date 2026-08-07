@@ -27,6 +27,30 @@ describe MessageFinder do
         result = message_finder.perform
         expect(result.count).to be 6
       end
+
+      it 'keeps useful activity and hides noisy voice telemetry' do
+        useful_activity = create(
+          :message,
+          message_type: 'activity',
+          content: 'Conversation assigned to Alex',
+          account: account,
+          inbox: inbox,
+          conversation: conversation
+        )
+        noisy_activity = create(
+          :message,
+          message_type: 'activity',
+          source_id: 'ai_voice_event:call:ai_speaking:1',
+          account: account,
+          inbox: inbox,
+          conversation: conversation
+        )
+
+        result = message_finder.perform
+
+        expect(result).to include(useful_activity)
+        expect(result).not_to include(noisy_activity)
+      end
     end
 
     context 'with filter_internal_messages true' do
@@ -121,6 +145,26 @@ describe MessageFinder do
         expect(result.select(&:incoming?).map(&:id)).to eq(
           [middle_message.id, late_message.id]
         )
+      end
+
+      it 'uses the timeline position of a hidden telemetry cursor' do
+        hidden_cursor = create(
+          :message,
+          message_type: 'activity',
+          source_id: 'ai_voice_event:call:ai_speaking:cursor',
+          account: account,
+          inbox: inbox,
+          conversation: cursor_conversation,
+          created_at: Time.zone.local(2026, 1, 1, 10, 30, 0)
+        )
+
+        result = described_class.new(
+          cursor_conversation,
+          { after: hidden_cursor.id }
+        ).perform
+
+        expect(result.first(2).map(&:id)).to eq([middle_message.id, late_message.id])
+        expect(result).not_to include(hidden_cursor)
       end
 
       it 'loads messages before the cursor by created_at and id instead of id alone' do

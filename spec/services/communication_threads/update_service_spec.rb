@@ -59,5 +59,21 @@ RSpec.describe CommunicationThreads::UpdateService do
       expect(inaccessible_conversation.reload).to be_open
       expect(thread).to be_open
     end
+
+    it 'assigns one stable event id while syncing child conversations' do
+      conversation = create(:conversation, account: account)
+      service = described_class.new(
+        communication_thread: conversation.reload.communication_thread,
+        params: ActionController::Parameters.new.permit!,
+        accessible_links: CommunicationThreadConversation.none
+      )
+
+      service.send(:sync_conversation!, conversation)
+      first_event_id = conversation.communication_thread_event_id
+      service.send(:sync_conversation!, conversation)
+
+      expect(first_event_id).to be_present
+      expect(conversation.communication_thread_event_id).to eq(first_event_id)
+    end
   end
 end

@@ -132,6 +132,100 @@ describe('MessageList', () => {
     expect(wrapper.findAll('time')).toHaveLength(1);
   });
 
+  it('hides noisy activity messages in a channel timeline', () => {
+    const wrapper = createWrapper({
+      messages: [
+        message({
+          id: 1,
+          created_at: atLocalNoon(2026, 6, 24),
+          message_type: MESSAGE_TYPES.ACTIVITY,
+          source_id: 'ai_voice_event:call:ai_speaking:1',
+          content: 'AI agent is speaking',
+        }),
+        message({
+          id: 2,
+          created_at: atLocalNoon(2026, 6, 24) + 1,
+          message_type: MESSAGE_TYPES.ACTIVITY,
+          content: 'Conversation assigned to Alex',
+        }),
+      ],
+    });
+
+    const renderedMessages = wrapper.findAllComponents({ name: 'Message' });
+    expect(renderedMessages).toHaveLength(1);
+    expect(renderedMessages[0].attributes('id')).toBe('2');
+  });
+
+  it('deduplicates the same cross-channel activity in a communication thread', () => {
+    currentChat.value = { is_communication_thread: true, channels: [] };
+    const createdAt = atLocalNoon(2026, 6, 24);
+    const wrapper = createWrapper({
+      messages: [
+        message({
+          id: 1,
+          conversation_id: 20,
+          created_at: createdAt,
+          message_type: MESSAGE_TYPES.ACTIVITY,
+          content: 'Conversation resolved by Alex',
+          additional_attributes: {
+            communication_thread_event_id: 'thread-event-1',
+          },
+        }),
+        message({
+          id: 2,
+          conversation_id: 21,
+          created_at: createdAt + 1,
+          message_type: MESSAGE_TYPES.ACTIVITY,
+          content: 'Conversation resolved by Alex',
+          additional_attributes: {
+            communication_thread_event_id: 'thread-event-1',
+          },
+        }),
+        message({
+          id: 3,
+          conversation_id: 21,
+          created_at: createdAt + 10,
+          message_type: MESSAGE_TYPES.ACTIVITY,
+          content: 'Conversation resolved by Alex',
+          additional_attributes: {
+            communication_thread_event_id: 'thread-event-2',
+          },
+        }),
+      ],
+    });
+
+    const renderedMessages = wrapper.findAllComponents({ name: 'Message' });
+    expect(renderedMessages.map(item => item.attributes('id'))).toEqual([
+      '1',
+      '3',
+    ]);
+  });
+
+  it('preserves independent cross-channel activities with the same text', () => {
+    currentChat.value = { is_communication_thread: true, channels: [] };
+    const createdAt = atLocalNoon(2026, 6, 24);
+    const wrapper = createWrapper({
+      messages: [
+        message({
+          id: 1,
+          conversation_id: 20,
+          created_at: createdAt,
+          message_type: MESSAGE_TYPES.ACTIVITY,
+          content: 'Conversation resolved by Alex',
+        }),
+        message({
+          id: 2,
+          conversation_id: 21,
+          created_at: createdAt,
+          message_type: MESSAGE_TYPES.ACTIVITY,
+          content: 'Conversation resolved by Alex',
+        }),
+      ],
+    });
+
+    expect(wrapper.findAllComponents({ name: 'Message' })).toHaveLength(2);
+  });
+
   it.each([
     ['automation then employee', true],
     ['employee then automation', false],

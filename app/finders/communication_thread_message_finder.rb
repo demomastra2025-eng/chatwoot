@@ -26,9 +26,16 @@ class CommunicationThreadMessageFinder
   end
 
   def messages
-    Message.where.not(message_type: :activity)
-           .where(account_id: current_account.id, conversation_id: accessible_conversations.select(:id))
-           .includes(:attachments, :sender, sender: { avatar_attachment: [:blob] })
+    @messages ||= Messages::TimelineVisibility
+                  .apply(scoped_messages)
+                  .includes(:attachments, :sender, sender: { avatar_attachment: [:blob] })
+  end
+
+  def scoped_messages
+    Message.where(
+      account_id: current_account.id,
+      conversation_id: accessible_conversations.select(:id)
+    )
   end
 
   def messages_after(after_id)
@@ -67,7 +74,7 @@ class CommunicationThreadMessageFinder
   end
 
   def cursor_message(message_id)
-    messages.reorder(nil).find_by(id: message_id)
+    scoped_messages.reorder(nil).find_by(id: message_id)
   end
 
   def ordered_messages(direction)

@@ -30,6 +30,7 @@ class CommunicationThreads::UpdateService
 
   def sync_conversation!(conversation)
     conversation.skip_communication_thread_refresh = true
+    conversation.communication_thread_event_id = communication_thread_event_id
     assign_status!(conversation)
     assign_priority!(conversation)
     assign_agent!(conversation)
@@ -111,6 +112,10 @@ class CommunicationThreads::UpdateService
 
   def status_transition_params
     params.slice(:status, :status_reason, :snoozed_until)
+  end
+
+  def communication_thread_event_id
+    @communication_thread_event_id ||= SecureRandom.uuid
   end
 
   def refresh_communication_thread!
