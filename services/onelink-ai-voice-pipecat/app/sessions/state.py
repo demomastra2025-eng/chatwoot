@@ -21,7 +21,7 @@ FINAL_TRANSCRIPT_FLUSH_TIMEOUT_SECONDS = 1.0
 RECORDING_CALLBACK_FOREGROUND_TIMEOUT_SECONDS = 1.0
 FINALIZE_CALLBACK_FOREGROUND_TIMEOUT_SECONDS = 2.0
 
-SEMANTIC_MUTATION_FENCE_TOOLS = frozenset({"create_deal"})
+SEMANTIC_MUTATION_FENCE_TOOLS = frozenset({"create_deal", "update_deal"})
 READ_ONLY_INFLIGHT_FENCE_TOOLS = frozenset(
     {
         "faq_lookup",
@@ -69,9 +69,7 @@ class SessionState:
         self._tool_lock = asyncio.Lock()
         self._tool_results: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self._tool_fingerprints: dict[str, str] = {}
-        self._semantic_tool_results: dict[
-            tuple[str, int], asyncio.Future[dict[str, Any]]
-        ] = {}
+        self._semantic_tool_results: dict[tuple[str, int], asyncio.Future[dict[str, Any]]] = {}
         self._active_tool_calls = 0
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._observability_tasks: set[asyncio.Task[Any]] = set()
@@ -397,7 +395,10 @@ class SessionState:
                         tool_name=name,
                     )
                 )
-            return await asyncio.shield(future)
+            result = await asyncio.shield(future)
+            if semantic_reused and self._is_semantic_mutation(name):
+                return {**result, "_runtime_suppressed": True}
+            return result
 
         self._active_tool_calls += 1
         self.touch()
@@ -439,7 +440,7 @@ class SessionState:
                 if not terminal_action:
                     self.spawn(
                         self.safe_control(
-                            "tool_completed",
+                            "tool_failed" if self._tool_result_failed(result) else "tool_completed",
                             self._tool_audit_metadata(result),
                             tool_call_id=tool_call_id,
                             tool_name=name,
@@ -495,7 +496,8 @@ class SessionState:
                 async with self._tool_lock:
                     self._semantic_tool_results[(semantic_key[0], -1)] = future
             elif semantic_key and (
-                self._is_read_only_inflight_tool(name) or self._tool_result_failed(result)
+                self._is_read_only_inflight_tool(name)
+                or (self._tool_result_failed(result) and result.get("retryable") is not False)
             ):
                 async with self._tool_lock:
                     self._remove_semantic_future_locked(future)
@@ -534,7 +536,7 @@ class SessionState:
     def _semantic_tool_key(self, name: str, fingerprint: str) -> tuple[str, int] | None:
         normalized = name.strip().lower()
         if normalized in SEMANTIC_MUTATION_FENCE_TOOLS:
-            return normalized, self.user_turn
+            return f"{normalized}:{fingerprint}", self.user_turn
         if normalized in READ_ONLY_INFLIGHT_FENCE_TOOLS:
             return f"read:{fingerprint}", -1
         return None
@@ -553,9 +555,7 @@ class SessionState:
             return "in_flight"
         return "call" if key[1] < 0 else "caller_turn"
 
-    def _remove_semantic_future_locked(
-        self, future: asyncio.Future[dict[str, Any]]
-    ) -> None:
+    def _remove_semantic_future_locked(self, future: asyncio.Future[dict[str, Any]]) -> None:
         for key, candidate in list(self._semantic_tool_results.items()):
             if candidate is future:
                 self._semantic_tool_results.pop(key, None)
@@ -569,15 +569,14 @@ class SessionState:
         return error.status == 0 or error.status in {408, 429} or error.status >= 500
 
     @classmethod
-    def _semantic_result_reusable(
-        cls, future: asyncio.Future[dict[str, Any]]
-    ) -> bool:
+    def _semantic_result_reusable(cls, future: asyncio.Future[dict[str, Any]]) -> bool:
         if future.cancelled():
             return False
         if not future.done():
             return True
         try:
-            return not cls._tool_result_failed(future.result())
+            result = future.result()
+            return not cls._tool_result_failed(result) or result.get("retryable") is False
         except BaseException:
             return False
 

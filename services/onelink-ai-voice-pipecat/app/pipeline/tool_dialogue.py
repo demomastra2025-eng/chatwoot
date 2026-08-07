@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import secrets
 import time
 from collections.abc import Awaitable, Callable, Coroutine
 from contextlib import suppress
@@ -19,6 +20,7 @@ from app.sessions.state import READ_ONLY_INFLIGHT_FENCE_TOOLS
 
 SpeechCallback = Callable[[str], Awaitable[bool | None]]
 CausalSpeechCallback = Callable[[str, int], Awaitable[bool | None]]
+CausalInstructionCallback = Callable[[str, int, str], Awaitable[str | None]]
 InterruptCallback = Callable[[], Awaitable[None]]
 CLOSING_SPEECH_MAX_SECONDS = 4.0
 MAX_DELAY_PROGRESS_ANNOUNCEMENTS = 3
@@ -30,6 +32,7 @@ DIRECT_RESULT_CONTEXT_CALLBACK_TIMEOUT_SECONDS = 0.25
 DIRECT_RESULT_CALLER_WAIT_SECONDS = 30.0
 DIRECT_RESULT_SETTLE_SECONDS = 0.15
 DEFERRED_RESULT_MAX_ATTEMPTS = 3
+QUEUED_RESULT_RECONCILIATION_SECONDS = 1.0
 PROGRESS_COMMIT_GRACE_MAX_MS = 200
 
 
@@ -77,7 +80,7 @@ class ToolDialogueCoordinator:
         self._run_instruction: SpeechCallback | None = None
         self._speak_exact_for_turn: CausalSpeechCallback | None = None
         self._speak_result_for_turn: CausalSpeechCallback | None = None
-        self._run_instruction_for_turn: CausalSpeechCallback | None = None
+        self._run_instruction_for_turn: CausalInstructionCallback | None = None
         self._interrupt_generation: InterruptCallback | None = None
         self._dialogue_lock = asyncio.Lock()
         self._continuations_pending = 0
@@ -85,6 +88,8 @@ class ToolDialogueCoordinator:
         self._read_only_execution_lock = asyncio.Lock()
         self._read_only_executions: dict[str, asyncio.Task[dict[str, Any]]] = {}
         self._deferred_result_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._terminal_deferred_result_ids: set[str] = set()
+        self._delivered_failure_turns: set[str] = set()
 
     @property
     def awaiting_continuation(self) -> bool:
@@ -103,7 +108,7 @@ class ToolDialogueCoordinator:
         interrupt_generation: InterruptCallback | None = None,
         speak_exact_for_turn: CausalSpeechCallback | None = None,
         speak_result_for_turn: CausalSpeechCallback | None = None,
-        run_instruction_for_turn: CausalSpeechCallback | None = None,
+        run_instruction_for_turn: CausalInstructionCallback | None = None,
     ) -> None:
         self._speak_exact = speak_exact
         self._speak_result = speak_result or speak_exact
@@ -299,8 +304,29 @@ class ToolDialogueCoordinator:
         causal_user_turn: int,
     ) -> None:
         voice_result = _voice_result_projection(definition.name, result)
-        if _uses_direct_voice_result(definition.name, self._ai.provider):
+        if result.get("_runtime_suppressed") is True:
+            await params.result_callback(
+                voice_result,
+                properties=FunctionCallResultProperties(run_llm=False),
+            )
+            return
+        if _is_error_result(voice_result) or _uses_direct_voice_result(
+            definition.name, self._ai.provider
+        ):
+            if _is_error_result(voice_result) and not self._claim_failure_delivery(
+                params.tool_call_id
+            ):
+                await params.result_callback(
+                    voice_result,
+                    properties=FunctionCallResultProperties(run_llm=False),
+                )
+                return
             phrase = _direct_voice_result_phrase(definition.name, voice_result)
+            if (
+                _is_error_result(voice_result)
+                and voice_result.get("code") != "CAPTAIN_TOOL_BUSINESS_FAILED"
+            ):
+                phrase = _first_phrase(self._ai.tool_failure_phrases) or phrase
             generation_sequence = self._activity.model_generations_started
             speech_scheduled = asyncio.Event()
 
@@ -753,30 +779,58 @@ class ToolDialogueCoordinator:
             return
 
         await pending_delivered.wait()
+        if result.get("_runtime_suppressed") is True:
+            return
+        projected_result = _voice_result_projection(definition.name, result)
+        if failed:
+            if not self._claim_failure_delivery(tool_call_id):
+                return
+            phrase = _direct_voice_result_phrase(definition.name, projected_result)
+            if projected_result.get("code") != "CAPTAIN_TOOL_BUSINESS_FAILED":
+                phrase = _first_phrase(self._ai.tool_failure_phrases) or phrase
+            if phrase and self._can_speak_result():
+                await self._speak_direct_result(
+                    definition=definition,
+                    tool_call_id=tool_call_id,
+                    phrase=phrase,
+                    causal_user_turn=causal_user_turn,
+                    result=projected_result,
+                    generation_sequence=generation_sequence,
+                )
+            return
         if not self._caller_turn_is_current(causal_user_turn):
             self._schedule_deferred_result(
                 definition,
                 tool_call_id,
-                _voice_result_projection(definition.name, result),
+                projected_result,
                 generation_sequence=generation_sequence,
                 causal_user_turn=causal_user_turn,
             )
             return
         self._continuations_pending += 1
         try:
+            instruction = _late_result_instruction(definition.name, projected_result)
+            started_sequence = self._activity.turns_started
+            completed_sequence = self._activity.turns_completed
             delivered = await self._run_late_instruction(
-                _late_result_instruction(
-                    definition.name,
-                    _voice_result_projection(definition.name, result),
-                ),
+                instruction,
                 wait_for_generation_after=generation_sequence,
                 causal_user_turn=causal_user_turn,
             )
-            if not delivered:
+            if delivered is False:
+                self._schedule_queued_result_reconciliation(
+                    definition,
+                    tool_call_id,
+                    instruction,
+                    causal_user_turn=causal_user_turn,
+                    started_sequence=started_sequence,
+                    completed_sequence=completed_sequence,
+                )
+            elif delivered is None:
                 self._schedule_deferred_result(
                     definition,
                     tool_call_id,
-                    _voice_result_projection(definition.name, result),
+                    projected_result,
                     generation_sequence=generation_sequence,
                     causal_user_turn=causal_user_turn,
                 )
@@ -793,7 +847,34 @@ class ToolDialogueCoordinator:
         causal_user_turn: int,
     ) -> None:
         """Keep a completed tool result deliverable after a caller barge-in."""
-        if tool_call_id in self._deferred_result_tasks or not self._can_run_instruction():
+        if _is_error_result(result):
+            self._state.spawn(
+                self._emit_deferred_terminal_once(
+                    "tool_result_superseded",
+                    {
+                        "reason": "failed_result_superseded_by_caller",
+                        "reconciliation_pending": False,
+                    },
+                    tool_call_id=tool_call_id,
+                    tool_name=definition.name,
+                )
+            )
+            return
+        if tool_call_id in self._deferred_result_tasks:
+            return
+        if not self._can_run_instruction():
+            self._state.spawn(
+                self._emit_deferred_terminal_once(
+                    "tool_result_delivery_failed",
+                    {
+                        "attempts": 0,
+                        "reason": "instruction_unavailable",
+                        "reconciliation_pending": False,
+                    },
+                    tool_call_id=tool_call_id,
+                    tool_name=definition.name,
+                )
+            )
             return
         self._continuations_pending += 1
         task = self._state.spawn(
@@ -805,7 +886,167 @@ class ToolDialogueCoordinator:
                 causal_user_turn=causal_user_turn,
             )
         )
+        self._register_deferred_task(
+            task,
+            definition=definition,
+            tool_call_id=tool_call_id,
+            causal_user_turn=causal_user_turn,
+        )
+
+    def _register_deferred_task(
+        self,
+        task: asyncio.Task[Any],
+        *,
+        definition: ToolDefinition,
+        tool_call_id: str,
+        causal_user_turn: int,
+    ) -> None:
         self._deferred_result_tasks[tool_call_id] = task
+
+        def finalize_if_task_never_started(done: asyncio.Task[Any]) -> None:
+            if self._deferred_result_tasks.get(tool_call_id) is not done:
+                return
+            self._deferred_result_tasks.pop(tool_call_id, None)
+            self._continuations_pending = max(0, self._continuations_pending - 1)
+            action = (
+                "tool_result_delivery_failed"
+                if self._caller_turn_is_current(causal_user_turn)
+                else "tool_result_superseded"
+            )
+            self._state.spawn(
+                self._emit_deferred_terminal_once(
+                    action,
+                    {
+                        "reason": "deferred_task_cancelled_before_start",
+                        "reconciliation_pending": False,
+                    },
+                    tool_call_id=tool_call_id,
+                    tool_name=definition.name,
+                )
+            )
+
+        task.add_done_callback(finalize_if_task_never_started)
+
+    async def _emit_deferred_terminal_once(
+        self,
+        action: str,
+        payload: dict[str, Any],
+        *,
+        tool_call_id: str,
+        tool_name: str,
+    ) -> bool:
+        if tool_call_id in self._terminal_deferred_result_ids:
+            return False
+        self._terminal_deferred_result_ids.add(tool_call_id)
+        await self._state.safe_control(
+            action,
+            payload,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+        )
+        return True
+
+    def _schedule_queued_result_reconciliation(
+        self,
+        definition: ToolDefinition,
+        tool_call_id: str,
+        instruction: str,
+        *,
+        causal_user_turn: int,
+        started_sequence: int,
+        completed_sequence: int,
+    ) -> None:
+        if tool_call_id in self._deferred_result_tasks:
+            return
+        self._continuations_pending += 1
+
+        async def reconcile() -> None:
+            outcome = "failed"
+            try:
+                outcome = await self._reconcile_queued_instruction(
+                    instruction,
+                    causal_user_turn=causal_user_turn,
+                    started_sequence=started_sequence,
+                    completed_sequence=completed_sequence,
+                )
+            except asyncio.CancelledError:
+                outcome = (
+                    "failed" if self._caller_turn_is_current(causal_user_turn) else "superseded"
+                )
+                raise
+            except Exception:
+                logger.exception(
+                    "Queued tool-result reconciliation failed for tool_call_id={}",
+                    tool_call_id,
+                )
+                outcome = "failed"
+            finally:
+                action = {
+                    "delivered": "tool_result_delivery_completed",
+                    "superseded": "tool_result_superseded",
+                    "failed": "tool_result_delivery_failed",
+                }[outcome]
+                try:
+                    await asyncio.shield(
+                        self._emit_deferred_terminal_once(
+                            action,
+                            {
+                                "reason": f"queued_result_{outcome}",
+                                "reconciliation_pending": False,
+                            },
+                            tool_call_id=tool_call_id,
+                            tool_name=definition.name,
+                        )
+                    )
+                finally:
+                    self._continuations_pending = max(0, self._continuations_pending - 1)
+                    self._deferred_result_tasks.pop(tool_call_id, None)
+
+        self._state.spawn(
+            self._state.safe_control(
+                "tool_result_delivery_queued",
+                {
+                    "attempt": 1,
+                    "confirmation": "unconfirmed",
+                    "reconciliation_pending": True,
+                },
+                tool_call_id=tool_call_id,
+                tool_name=definition.name,
+            )
+        )
+        task = self._state.spawn(reconcile())
+        self._register_deferred_task(
+            task,
+            definition=definition,
+            tool_call_id=tool_call_id,
+            causal_user_turn=causal_user_turn,
+        )
+
+    async def _reconcile_queued_instruction(
+        self,
+        instruction: str,
+        *,
+        causal_user_turn: int,
+        started_sequence: int,
+        completed_sequence: int,
+    ) -> str:
+        del started_sequence, completed_sequence
+        if not self._caller_turn_is_current(causal_user_turn):
+            return "superseded"
+        await self._interrupt_stalled_generation()
+        if self._activity.model_generation_active and not await self._activity.wait_for_model_idle(
+            QUEUED_RESULT_RECONCILIATION_SECONDS
+        ):
+            return "failed"
+        retry = await self._run_late_instruction(
+            instruction,
+            causal_user_turn=causal_user_turn,
+        )
+        if retry is True:
+            return "delivered"
+        if not self._caller_turn_is_current(causal_user_turn):
+            return "superseded"
+        return "failed"
 
     async def _resume_deferred_result(
         self,
@@ -816,79 +1057,123 @@ class ToolDialogueCoordinator:
         generation_sequence: int,
         causal_user_turn: int,
     ) -> None:
+        del generation_sequence
+        outcome = "failed"
+        failure_reason = "delivery_not_started"
+        attempts = 0
         try:
-            self._state.spawn(
-                self._state.safe_control(
-                    "tool_result_deferred",
-                    {
-                        "reason": "caller_turn_superseded",
-                        "causal_user_turn": causal_user_turn,
-                        "current_user_turn": self._activity.user_turns_started,
-                    },
-                    tool_call_id=tool_call_id,
-                    tool_name=definition.name,
-                )
+            await self._state.safe_control(
+                "tool_result_deferred",
+                {
+                    "reason": "caller_turn_superseded",
+                    "causal_user_turn": causal_user_turn,
+                    "current_user_turn": self._activity.user_turns_started,
+                },
+                tool_call_id=tool_call_id,
+                tool_name=definition.name,
             )
-            delivered = False
-            failure_reason = "delivery_not_started"
+            if not self._caller_turn_is_current(causal_user_turn):
+                outcome = "superseded"
+                failure_reason = "caller_turn_superseded"
+                return
+
             for attempt in range(1, DEFERRED_RESULT_MAX_ATTEMPTS + 1):
-                target_user_turn = self._activity.user_turns_started
-                if target_user_turn > causal_user_turn:
-                    newer_response_completed = (
-                        await self._activity.wait_for_user_response_completed_at_or_after(
-                            target_user_turn,
-                            DIRECT_RESULT_CALLER_WAIT_SECONDS,
-                        )
-                    )
-                    if not newer_response_completed:
-                        failure_reason = "newer_turn_response_unconfirmed"
-                        break
-                    if self._activity.user_turns_started != target_user_turn:
-                        continue
-                elif self._activity.user_speaking and not await self._activity.wait_for_user_idle(
+                attempts = attempt
+                if not self._caller_turn_is_current(causal_user_turn):
+                    outcome = "superseded"
+                    failure_reason = "caller_turn_superseded"
+                    break
+                if self._activity.user_speaking and not await self._activity.wait_for_user_idle(
                     DIRECT_RESULT_CALLER_WAIT_SECONDS
                 ):
                     failure_reason = "caller_still_speaking"
                     break
 
-                if self._activity.model_generation_active and not await self._activity.wait_for_model_idle(
-                    POST_TOOL_GENERATION_MAX_SECONDS
+                if (
+                    self._activity.model_generation_active
+                    and not await self._activity.wait_for_model_idle(
+                        POST_TOOL_GENERATION_MAX_SECONDS
+                    )
                 ):
                     failure_reason = "model_generation_active"
-                    continue
-
-                delivered = await self._run_late_instruction(
-                    _deferred_result_instruction(definition.name, result),
-                    causal_user_turn=target_user_turn,
-                )
-                if delivered:
-                    self._state.spawn(
-                        self._state.safe_control(
-                            "tool_result_delivery_completed",
-                            {"attempt": attempt},
-                            tool_call_id=tool_call_id,
-                            tool_name=definition.name,
-                        )
-                    )
+                    await self._interrupt_stalled_generation()
+                    if self._activity.model_generation_active:
+                        break
+                if not self._caller_turn_is_current(causal_user_turn):
+                    outcome = "superseded"
+                    failure_reason = "caller_turn_superseded"
                     break
-            if not delivered:
-                self._state.spawn(
-                    self._state.safe_control(
-                        "tool_result_delivery_failed",
+
+                instruction = _deferred_result_instruction(definition.name, result)
+                delivery_status = await self._run_late_instruction(
+                    instruction,
+                    causal_user_turn=causal_user_turn,
+                )
+                if delivery_status is True:
+                    outcome = "delivered"
+                    failure_reason = "delivery_confirmed"
+                    break
+                if delivery_status is None:
+                    if not self._caller_turn_is_current(causal_user_turn):
+                        outcome = "superseded"
+                        failure_reason = "caller_turn_superseded"
+                    else:
+                        failure_reason = "delivery_not_admitted"
+                    break
+
+                await self._state.safe_control(
+                    "tool_result_delivery_queued",
+                    {
+                        "attempt": attempt,
+                        "confirmation": "unconfirmed",
+                        "reconciliation_pending": True,
+                    },
+                    tool_call_id=tool_call_id,
+                    tool_name=definition.name,
+                )
+                outcome = await self._reconcile_queued_instruction(
+                    instruction,
+                    causal_user_turn=causal_user_turn,
+                    started_sequence=self._activity.turns_started,
+                    completed_sequence=self._activity.turns_completed,
+                )
+                failure_reason = f"queued_result_{outcome}"
+                break
+        except asyncio.CancelledError:
+            outcome = "failed" if self._caller_turn_is_current(causal_user_turn) else "superseded"
+            failure_reason = "deferred_result_cancelled"
+            raise
+        except Exception:
+            logger.exception(
+                "Deferred tool-result delivery failed for tool_call_id={}",
+                tool_call_id,
+            )
+            outcome = "failed"
+            failure_reason = "deferred_result_exception"
+        finally:
+            action = {
+                "delivered": "tool_result_delivery_completed",
+                "superseded": "tool_result_superseded",
+                "failed": "tool_result_delivery_failed",
+            }[outcome]
+            try:
+                await asyncio.shield(
+                    self._emit_deferred_terminal_once(
+                        action,
                         {
-                            "attempts": DEFERRED_RESULT_MAX_ATTEMPTS,
+                            "attempts": attempts,
                             "reason": failure_reason,
-                            "reconciliation_pending": True,
+                            "reconciliation_pending": False,
                         },
                         tool_call_id=tool_call_id,
                         tool_name=definition.name,
                     )
                 )
-        finally:
-            current_task = asyncio.current_task()
-            if self._deferred_result_tasks.get(tool_call_id) is current_task:
-                self._deferred_result_tasks.pop(tool_call_id, None)
-            self._continuations_pending -= 1
+            finally:
+                current_task = asyncio.current_task()
+                if self._deferred_result_tasks.get(tool_call_id) is current_task:
+                    self._deferred_result_tasks.pop(tool_call_id, None)
+                self._continuations_pending = max(0, self._continuations_pending - 1)
 
     async def _run_late_instruction(
         self,
@@ -897,17 +1182,17 @@ class ToolDialogueCoordinator:
         skip_if_turn_started_after: int | None = None,
         wait_for_generation_after: int | None = None,
         causal_user_turn: int | None = None,
-    ) -> bool:
+    ) -> bool | None:
         if not self._can_run_instruction():
-            return False
+            return None
         async with self._dialogue_lock:
             if causal_user_turn is not None and not self._caller_turn_is_current(causal_user_turn):
-                return False
+                return None
             if (
                 skip_if_turn_started_after is not None
                 and self._activity.turns_started > skip_if_turn_started_after
             ):
-                return False
+                return None
             response_timeout = max(
                 0.1,
                 min(3.0, self._ai.post_tool_continuation_ms / 1_000),
@@ -920,47 +1205,43 @@ class ToolDialogueCoordinator:
                 if causal_user_turn is not None and not self._caller_turn_is_current(
                     causal_user_turn
                 ):
-                    return False
+                    return None
             if self._activity.model_generation_active:
                 idle = await self._activity.wait_for_model_idle(POST_TOOL_GENERATION_MAX_SECONDS)
                 if not idle:
                     logger.warning("Gemini post-tool continuation skipped: model remained active")
-                    return False
+                    return None
             if self._activity.bot_speaking:
                 await self._activity.wait_for_turn_completed_after(
                     self._activity.turns_completed,
                     timeout=3.0,
                 )
             if causal_user_turn is not None and not self._caller_turn_is_current(causal_user_turn):
-                return False
+                return None
             if self._activity.user_speaking:
                 caller_finished = await self._activity.wait_for_user_idle(
                     DIRECT_RESULT_CALLER_WAIT_SECONDS
                 )
                 if not caller_finished:
-                    return False
-            started_sequence = self._activity.turns_started
-            completed_sequence = self._activity.turns_completed
-            interruption_sequence = self._activity.interruptions
+                    return None
             delivery_user_turn = (
                 causal_user_turn
                 if causal_user_turn is not None
                 else self._activity.user_turns_started
             )
-            queued = await self._run_instruction_causally(instruction, delivery_user_turn)
-            if queued is False:
-                return False
-            started = await self._activity.wait_for_turn_started_after(
-                started_sequence,
-                response_timeout,
+            instruction_token = secrets.token_hex(16)
+            acknowledgment = await self._run_instruction_causally(
+                instruction,
+                delivery_user_turn,
+                instruction_token,
             )
-            if not started:
+            if acknowledgment is None:
+                return None
+            if acknowledgment != instruction_token:
                 return False
-            completed = await self._activity.wait_for_turn_completed_after(
-                completed_sequence,
-                timeout=max(1.0, min(8.0, response_timeout * 2)),
-            )
-            return completed and self._activity.interruptions == interruption_sequence
+            if causal_user_turn is not None and not self._caller_turn_is_current(causal_user_turn):
+                return None
+            return True
 
     def _foreground_wait_ms(self, definition: ToolDefinition) -> int:
         if definition.foreground_wait_ms is not None:
@@ -1246,7 +1527,7 @@ class ToolDialogueCoordinator:
                     skip_if_turn_started_after=response_sequence,
                     causal_user_turn=causal_user_turn,
                 )
-                if not delivered:
+                if delivered is None:
                     self._schedule_deferred_result(
                         definition,
                         tool_call_id,
@@ -1323,17 +1604,32 @@ class ToolDialogueCoordinator:
         self,
         instruction: str,
         causal_user_turn: int | None,
-    ) -> bool | None:
+        instruction_token: str,
+    ) -> str | None:
         if causal_user_turn is not None and self._run_instruction_for_turn is not None:
-            return await self._run_instruction_for_turn(instruction, causal_user_turn)
+            return await self._run_instruction_for_turn(
+                instruction,
+                causal_user_turn,
+                instruction_token,
+            )
         if self._run_instruction is None:
-            return False
+            return None
         if causal_user_turn is not None and not self._caller_turn_is_current(causal_user_turn):
-            return False
-        return await self._run_instruction(instruction)
+            return None
+        admitted = await self._run_instruction(instruction)
+        if admitted is True:
+            return instruction_token
+        return "" if admitted is False else None
 
     def _caller_turn_is_current(self, causal_user_turn: int) -> bool:
         return self._activity.user_turns_started == causal_user_turn
+
+    def _claim_failure_delivery(self, tool_call_id: str) -> bool:
+        key = tool_call_id.strip()
+        if key in self._delivered_failure_turns:
+            return False
+        self._delivered_failure_turns.add(key)
+        return True
 
     def _record_post_tool_stall(
         self,
@@ -1477,6 +1773,14 @@ def _deferred_result_instruction(tool_name: str, result: dict[str, Any]) -> str:
 
 def _direct_voice_result_phrase(tool_name: str, result: dict[str, Any]) -> str:
     if _is_error_result(result):
+        if (
+            tool_name.strip().lower() == "update_deal"
+            and result.get("code") == "CAPTAIN_TOOL_BUSINESS_FAILED"
+        ):
+            return (
+                "Не получилось однозначно определить сделку. "
+                "Назовите её текущий номер или название."
+            )
         return "Не получилось проверить информацию автоматически. Могу соединить со специалистом."
 
     normalized_name = tool_name.strip().lower()
@@ -1595,6 +1899,14 @@ def _project_deals(result: dict[str, Any]) -> dict[str, Any]:
 def _decode_nested_result(value: Any) -> Any:
     if isinstance(value, str):
         stripped = value.strip()
+        if stripped.startswith("ERROR:"):
+            return {
+                "status": "failed",
+                "error": "captain_tool_business_failed",
+                "code": "CAPTAIN_TOOL_BUSINESS_FAILED",
+                "retryable": False,
+                "message": stripped.removeprefix("ERROR:").strip()[:500],
+            }
         if stripped.startswith(("{", "[")):
             try:
                 return _decode_nested_result(json.loads(stripped))
@@ -1703,7 +2015,15 @@ def _compact_voice_value(value: Any, *, depth: int = 0) -> Any:
             str(key): _compact_voice_value(item, depth=depth + 1)
             for key, item in list(value.items())[:16]
             if str(key).lower()
-            not in {"debug", "embedding", "embeddings", "raw", "schema", "trace"}
+            not in {
+                "_runtime_suppressed",
+                "debug",
+                "embedding",
+                "embeddings",
+                "raw",
+                "schema",
+                "trace",
+            }
         }
     return value
 

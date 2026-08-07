@@ -965,7 +965,7 @@ async def test_faq_result_defers_direct_speech_during_caller_barge_in():
 
 
 @pytest.mark.asyncio
-async def test_direct_result_from_superseded_turn_is_replayed_after_newer_turn():
+async def test_direct_result_from_superseded_turn_is_not_replayed_into_newer_turn():
     gate = asyncio.Event()
     state = FakeState(result={"matches": [{"answer": "Устаревший ответ"}]}, gate=gate)
     activity = ConversationActivity()
@@ -1007,14 +1007,13 @@ async def test_direct_result_from_superseded_turn_is_replayed_after_newer_turn()
         await asyncio.gather(*pending)
 
     assert spoken == []
-    assert len(instructions) == 1
-    assert "Устаревший ответ" in instructions[0]
+    assert instructions == []
     assert any(
         control[0] == "tool_result_deferred"
         and control[1].get("reason") == "caller_turn_superseded"
         for control in state.controls
     )
-    assert any(control[0] == "tool_result_delivery_completed" for control in state.controls)
+    assert [control[0] for control in state.controls].count("tool_result_superseded") == 1
 
 
 @pytest.mark.asyncio
@@ -1052,12 +1051,12 @@ async def test_progress_from_superseded_caller_turn_is_not_spoken():
     await asyncio.gather(*state.tasks)
 
     assert spoken == []
-    assert len(instructions) == 1
-    assert "готово" in instructions[0]
+    assert instructions == []
+    assert [control[0] for control in state.controls].count("tool_result_superseded") == 1
 
 
 @pytest.mark.asyncio
-async def test_generic_result_from_superseded_turn_updates_context_then_replays():
+async def test_generic_result_from_superseded_turn_updates_context_without_replay():
     gate = asyncio.Event()
     state = FakeState(gate=gate)
     activity = ConversationActivity()
@@ -1095,12 +1094,12 @@ async def test_generic_result_from_superseded_turn_updates_context_then_replays(
 
     assert len(callback_properties) == 1
     assert callback_properties[0].run_llm is False
-    assert len(instructions) == 1
-    assert "готово" in instructions[0]
+    assert instructions == []
+    assert [control[0] for control in state.controls].count("tool_result_superseded") == 1
 
 
 @pytest.mark.asyncio
-async def test_deferred_result_waits_for_newer_model_response_and_audio():
+async def test_deferred_result_does_not_rebase_onto_newer_model_response():
     gate = asyncio.Event()
     state = FakeState(result={"deals": [{"id": 386, "title": "Новая сделка"}]}, gate=gate)
     activity = ConversationActivity()
@@ -1155,13 +1154,13 @@ async def test_deferred_result_waits_for_newer_model_response_and_audio():
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 
-    assert events == ["newer_response_completed", "deferred_instruction"]
-    assert "Новая сделка" in instructions[0]
-    assert any(control[0] == "tool_result_delivery_completed" for control in state.controls)
+    assert events == ["newer_response_completed"]
+    assert instructions == []
+    assert [control[0] for control in state.controls].count("tool_result_superseded") == 1
 
 
 @pytest.mark.asyncio
-async def test_gemini_late_result_from_superseded_turn_is_replayed():
+async def test_gemini_late_result_from_superseded_turn_is_not_replayed():
     gate = asyncio.Event()
     state = FakeState(gate=gate)
     activity = ConversationActivity()
@@ -1194,9 +1193,9 @@ async def test_gemini_late_result_from_superseded_turn_is_replayed():
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 
-    assert len(instructions) == 1
-    assert "готово" in instructions[0]
+    assert instructions == []
     assert any(control[0] == "tool_result_deferred" for control in state.controls)
+    assert [control[0] for control in state.controls].count("tool_result_superseded") == 1
 
 
 @pytest.mark.asyncio
@@ -1252,7 +1251,8 @@ async def test_failed_tool_stall_speaks_configured_failure_phrase():
         activity,
         on_result=lambda _result: complete_empty_generation(activity),
     )
-    await asyncio.gather(*state.tasks)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
 
     assert spoken == ["Не получилось проверить автоматически. Могу соединить со специалистом."]
 
@@ -1314,6 +1314,321 @@ def test_faq_result_projection_keeps_real_answers():
     assert projected["matches"][0]["answer"] == "OneLink объединяет каналы общения."
     assert projected["matches"][1]["answer"] == "Да, CRM встроена."
     assert "embedding" not in projected["matches"][0]
+
+
+def test_captain_error_string_is_projected_as_typed_non_retryable_failure():
+    projected = _voice_result_projection(
+        "update_deal",
+        {
+            "action": "captain_tool",
+            "tool_name": "update_deal",
+            "result": "ERROR: ArgumentError: selected deal is ambiguous",
+        },
+    )
+
+    assert projected["status"] == "failed"
+    assert projected["error"] == "captain_tool_business_failed"
+    assert projected["code"] == "CAPTAIN_TOOL_BUSINESS_FAILED"
+    assert projected["retryable"] is False
+
+
+def test_failure_delivery_deduplicates_only_the_same_tool_call():
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(),
+        state=FakeState(),  # type: ignore[arg-type]
+        activity=ConversationActivity(),
+    )
+
+    assert coordinator._claim_failure_delivery("tool-update-1") is True
+    assert coordinator._claim_failure_delivery("tool-update-1") is False
+    assert coordinator._claim_failure_delivery("tool-update-2") is True
+
+
+@pytest.mark.asyncio
+async def test_deferred_result_instruction_gets_one_bounded_reconciliation_when_unconfirmed(
+    monkeypatch,
+):
+    monkeypatch.setattr(tool_dialogue_module, "DEFERRED_RESULT_MAX_ATTEMPTS", 3)
+    state = FakeState()
+    activity = ConversationActivity()
+    instructions = []
+
+    async def queue_without_speech(message):
+        instructions.append(message)
+        return False
+
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(post_tool_continuation_ms=100),
+        state=state,
+        activity=activity,
+    )
+    coordinator.bind(
+        speak_exact=queue_without_speech,
+        run_instruction=queue_without_speech,
+    )
+    coordinator._schedule_deferred_result(
+        definition("update_deal"),
+        "tool-unconfirmed",
+        {"status": "ok", "deal_id": 42},
+        generation_sequence=0,
+        causal_user_turn=0,
+    )
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending)
+
+    assert len(instructions) == 2
+    assert [action for action, _payload, _metadata in state.controls].count(
+        "tool_result_delivery_failed"
+    ) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_mode", ["cancel", "raise"])
+async def test_queued_result_reconciliation_always_emits_a_terminal_control(
+    monkeypatch,
+    failure_mode,
+):
+    state = FakeState()
+    blocker = asyncio.Event()
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(),
+        state=state,  # type: ignore[arg-type]
+        activity=ConversationActivity(),
+    )
+
+    async def fail_reconciliation(*_args, **_kwargs):
+        if failure_mode == "raise":
+            raise RuntimeError("reconciliation failed")
+        await blocker.wait()
+        return "delivered"
+
+    monkeypatch.setattr(coordinator, "_reconcile_queued_instruction", fail_reconciliation)
+    coordinator._schedule_queued_result_reconciliation(
+        definition("update_deal"),
+        "tool-terminal-reconciliation",
+        "Announce the result",
+        causal_user_turn=0,
+        started_sequence=0,
+        completed_sequence=0,
+    )
+    task = coordinator._deferred_result_tasks["tool-terminal-reconciliation"]
+    await asyncio.sleep(0)
+    if failure_mode == "cancel":
+        task.cancel()
+    await asyncio.gather(*state.tasks, return_exceptions=True)
+
+    terminal_controls = [
+        action
+        for action, _payload, _metadata in state.controls
+        if action
+        in {
+            "tool_result_delivery_completed",
+            "tool_result_superseded",
+            "tool_result_delivery_failed",
+        }
+    ]
+    assert terminal_controls == ["tool_result_delivery_failed"]
+    assert "tool-terminal-reconciliation" not in coordinator._deferred_result_tasks
+    assert coordinator._continuations_pending == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("schedule_kind", ["deferred", "queued_reconciliation"])
+async def test_deferred_task_cancelled_before_first_run_still_emits_terminal(schedule_kind):
+    state = FakeState()
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(),
+        state=state,  # type: ignore[arg-type]
+        activity=ConversationActivity(),
+    )
+    coordinator.bind(
+        speak_exact=lambda _message: asyncio.sleep(0, result=True),
+        run_instruction=lambda _message: asyncio.sleep(0, result=True),
+    )
+
+    if schedule_kind == "deferred":
+        coordinator._schedule_deferred_result(
+            definition("update_deal"),
+            "tool-prestart-cancel",
+            {"status": "ok", "deal_id": 42},
+            generation_sequence=0,
+            causal_user_turn=0,
+        )
+    else:
+        coordinator._schedule_queued_result_reconciliation(
+            definition("update_deal"),
+            "tool-prestart-cancel",
+            "Announce the result",
+            causal_user_turn=0,
+            started_sequence=0,
+            completed_sequence=0,
+        )
+    task = coordinator._deferred_result_tasks["tool-prestart-cancel"]
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    await asyncio.sleep(0)
+    while pending := [task for task in state.tasks if not task.done()]:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    terminal_controls = [
+        action
+        for action, _payload, _metadata in state.controls
+        if action
+        in {
+            "tool_result_delivery_completed",
+            "tool_result_superseded",
+            "tool_result_delivery_failed",
+        }
+    ]
+    assert terminal_controls == ["tool_result_delivery_failed"]
+    assert "tool-prestart-cancel" not in coordinator._deferred_result_tasks
+    assert coordinator._continuations_pending == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_mode", ["cancel", "raise"])
+async def test_deferred_result_always_emits_exactly_one_terminal_control(
+    failure_mode,
+):
+    state = FakeState()
+    blocker = asyncio.Event()
+    activity = ConversationActivity()
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(),
+        state=state,  # type: ignore[arg-type]
+        activity=activity,
+    )
+
+    async def fail_instruction(_message):
+        if failure_mode == "raise":
+            raise RuntimeError("instruction failed")
+        await blocker.wait()
+        return True
+
+    coordinator.bind(speak_exact=fail_instruction, run_instruction=fail_instruction)
+    coordinator._schedule_deferred_result(
+        definition("update_deal"),
+        "tool-terminal-deferred",
+        {"status": "ok", "deal_id": 42},
+        generation_sequence=0,
+        causal_user_turn=0,
+    )
+    task = coordinator._deferred_result_tasks["tool-terminal-deferred"]
+    await asyncio.sleep(0)
+    if failure_mode == "cancel":
+        task.cancel()
+    await asyncio.gather(*state.tasks, return_exceptions=True)
+
+    terminal_controls = [
+        action
+        for action, _payload, _metadata in state.controls
+        if action
+        in {
+            "tool_result_delivery_completed",
+            "tool_result_superseded",
+            "tool_result_delivery_failed",
+        }
+    ]
+    assert terminal_controls == ["tool_result_delivery_failed"]
+    assert "tool-terminal-deferred" not in coordinator._deferred_result_tasks
+    assert coordinator._continuations_pending == 0
+
+
+@pytest.mark.asyncio
+async def test_deferred_result_without_instruction_emits_failed_terminal():
+    state = FakeState()
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(),
+        state=state,  # type: ignore[arg-type]
+        activity=ConversationActivity(),
+    )
+
+    coordinator._schedule_deferred_result(
+        definition("update_deal"),
+        "tool-no-instruction",
+        {"status": "ok", "deal_id": 42},
+        generation_sequence=0,
+        causal_user_turn=0,
+    )
+    coordinator._schedule_deferred_result(
+        definition("update_deal"),
+        "tool-no-instruction",
+        {"status": "ok", "deal_id": 42},
+        generation_sequence=0,
+        causal_user_turn=0,
+    )
+    await asyncio.gather(*state.tasks)
+
+    terminal_controls = [
+        action
+        for action, _payload, _metadata in state.controls
+        if action
+        in {
+            "tool_result_delivery_completed",
+            "tool_result_superseded",
+            "tool_result_delivery_failed",
+        }
+    ]
+    assert terminal_controls == ["tool_result_delivery_failed"]
+    assert coordinator._continuations_pending == 0
+
+
+@pytest.mark.asyncio
+async def test_unrelated_bot_turn_without_matching_ack_does_not_confirm_instruction():
+    activity = ConversationActivity()
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(),
+        state=FakeState(),  # type: ignore[arg-type]
+        activity=activity,
+    )
+
+    async def legacy_instruction(_message):
+        return True
+
+    async def unconfirmed_instruction(_message, _causal_user_turn, _instruction_token):
+        await activity.bot_started()
+        await activity.bot_stopped()
+        return "ack-for-an-unrelated-instruction"
+
+    coordinator.bind(
+        speak_exact=legacy_instruction,
+        run_instruction=legacy_instruction,
+        run_instruction_for_turn=unconfirmed_instruction,
+    )
+
+    assert (
+        await coordinator._run_late_instruction(
+            "Announce the result",
+            causal_user_turn=0,
+        )
+        is False
+    )
+
+
+@pytest.mark.asyncio
+async def test_queued_result_is_superseded_when_a_new_caller_turn_completes():
+    state = FakeState()
+    activity = ConversationActivity()
+    coordinator = ToolDialogueCoordinator(
+        ai=ai_settings(),
+        state=state,  # type: ignore[arg-type]
+        activity=activity,
+    )
+
+    await activity.user_started()
+    await activity.user_stopped()
+    await activity.bot_started()
+    await activity.bot_stopped()
+
+    assert (
+        await coordinator._reconcile_queued_instruction(
+            "Announce the result",
+            causal_user_turn=0,
+            started_sequence=0,
+            completed_sequence=0,
+        )
+        == "superseded"
+    )
 
 
 def test_search_deals_projection_keeps_titles_instead_of_raw_json_prefix():
@@ -1417,8 +1732,8 @@ async def test_causal_turn_is_captured_before_tool_started_can_yield():
 
     assert results == [{"answer": "актуальный ответ"}]
     assert spoken == []
-    assert len(instructions) == 1
-    assert "актуальный ответ" in instructions[0]
+    assert instructions == []
+    assert [control[0] for control in state.controls].count("tool_result_superseded") == 1
     assert any(control[0] == "tool_result_deferred" for control in state.controls)
 
 
@@ -1448,6 +1763,10 @@ async def test_direct_speech_admission_rejects_turn_started_after_coordinator_ch
             await activity.bot_stopped()
         return admitted
 
+    async def causal_instruction(message, causal_user_turn, instruction_token):
+        admitted = await causal_speak(message, causal_user_turn)
+        return instruction_token if admitted else None
+
     async def result_callback(_result, *, properties=None):
         assert properties is not None
         assert properties.on_context_updated is not None
@@ -1461,7 +1780,7 @@ async def test_direct_speech_admission_rejects_turn_started_after_coordinator_ch
         run_instruction=legacy_speak,
         speak_exact_for_turn=causal_speak,
         speak_result_for_turn=causal_speak,
-        run_instruction_for_turn=causal_speak,
+        run_instruction_for_turn=causal_instruction,
     )
 
     await coordinator.execute(
@@ -1480,8 +1799,8 @@ async def test_direct_speech_admission_rejects_turn_started_after_coordinator_ch
     while pending := [task for task in state.tasks if not task.done()]:
         await asyncio.gather(*pending)
 
-    assert len(enqueued) == 1
-    assert "старый ответ" in enqueued[0]
+    assert enqueued == []
+    assert [control[0] for control in state.controls].count("tool_result_superseded") == 1
 
 
 @pytest.mark.asyncio
@@ -1495,14 +1814,15 @@ async def test_late_instruction_admission_rejects_turn_started_after_coordinator
     async def legacy_speak(_message):
         return True
 
-    async def causal_instruction(message, causal_user_turn):
+    async def causal_instruction(message, causal_user_turn, instruction_token):
         before_admission.set()
         await release_admission.wait()
 
         async def enqueue():
             enqueued.append(message)
 
-        return await activity.admit_causal_side_effect(causal_user_turn, enqueue)
+        admitted = await activity.admit_causal_side_effect(causal_user_turn, enqueue)
+        return instruction_token if admitted else None
 
     coordinator = ToolDialogueCoordinator(ai=ai_settings(), state=state, activity=activity)
     coordinator.bind(

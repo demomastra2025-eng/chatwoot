@@ -224,6 +224,144 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     end
   end
 
+  describe '#captain_tool_result_envelope' do
+    subject(:service) { described_class.new(tool_name: 'update_deal', payload: {}) }
+
+    it 'keeps successful Captain output backward compatible' do
+      expect(service.send(:captain_tool_result_envelope, '{"action":"update_deal"}')).to eq(
+        action: 'captain_tool',
+        tool_name: 'update_deal',
+        result: '{"action":"update_deal"}'
+      )
+    end
+
+    it 'promotes Captain error strings to a typed non-retryable business failure' do
+      result = service.send(
+        :captain_tool_result_envelope,
+        Captain::ToolResult.failure_output(error: ArgumentError.new('target is ambiguous'), retryable: false)
+      )
+
+      expect(result).to include(
+        status: 'failed',
+        error: 'captain_tool_business_failed',
+        code: 'CAPTAIN_TOOL_BUSINESS_FAILED',
+        retryable: false,
+        message: a_string_including('target is ambiguous')
+      )
+    end
+  end
+
+  describe 'selected deal context' do
+    let(:account) { create(:account) }
+    let(:contact) { create(:contact, account: account) }
+    let(:conversation) { create(:conversation, account: account, contact: contact) }
+    let!(:call_session) do
+      create(
+        :telephony_call_session,
+        account: account,
+        contact: contact,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        external_call_ref: 'selected-deal-context'
+      )
+    end
+    let(:deal) { create(:crm_deal, account: account) }
+
+    def selected_deal_service(tool_name)
+      described_class.new(
+        tool_name: tool_name,
+        payload: {
+          account_id: account.id,
+          call_ref: call_session.external_call_ref,
+          arguments: {}
+        }
+      )
+    end
+
+    it 'persists one unambiguous search result with call and tenant scope' do
+      result = JSON.generate(total_count: 1, deals: [{ id: deal.id, title: deal.title }])
+
+      service = selected_deal_service('search_deals')
+      attempt = service.send(:begin_selected_deal_attempt!)
+      service.send(:finalize_selected_deal_attempt!, attempt, result)
+
+      expect(call_session.reload.metadata['captain_selected_deal']).to include(
+        'deal_id' => deal.id,
+        'account_id' => account.id,
+        'conversation_id' => conversation.id,
+        'contact_id' => contact.id,
+        'source_tool' => 'search_deals',
+        'selected_at' => be_present
+      )
+    end
+
+    it 'invalidates an older selection when a newer search is ambiguous' do
+      call_session.update!(metadata: { 'captain_selected_deal' => { 'deal_id' => deal.id } })
+      result = JSON.generate(total_count: 2, deals: [{ id: deal.id }, { id: deal.id + 1 }])
+
+      service = selected_deal_service('search_deals')
+      attempt = service.send(:begin_selected_deal_attempt!)
+      service.send(:finalize_selected_deal_attempt!, attempt, result)
+
+      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+    end
+
+    it 'invalidates an older selection when a newer selection attempt fails' do
+      call_session.update!(metadata: { 'captain_selected_deal' => { 'deal_id' => deal.id } })
+      service = selected_deal_service('search_deals')
+      attempt = service.send(:begin_selected_deal_attempt!)
+
+      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+      service.send(:finalize_selected_deal_attempt!, attempt, nil)
+      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+    end
+
+    it 'keeps selection invalidated when tool construction fails before execution' do
+      call_session.update!(metadata: { 'captain_selected_deal' => { 'deal_id' => deal.id } })
+      service = selected_deal_service('search_deals')
+      allow(service).to receive(:ensure_voice_crm_source!)
+      allow(service).to receive(:captain_tool_definition).and_return({})
+      allow(Captain::ToolCatalog).to receive(:build_tool).and_return(nil)
+
+      expect { service.send(:perform_captain_tool) }
+        .to raise_error(Telephony::AiVoice::ToolDispatchService::UnknownToolError)
+      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+    end
+
+    it 'does not let an older late result overwrite a newer ambiguous attempt' do
+      service = selected_deal_service('search_deals')
+      older_attempt = service.send(:begin_selected_deal_attempt!)
+      newer_attempt = service.send(:begin_selected_deal_attempt!)
+      successful_result = JSON.generate(total_count: 1, deals: [{ id: deal.id }])
+
+      service.send(:finalize_selected_deal_attempt!, newer_attempt, JSON.generate(total_count: 0, deals: []))
+      service.send(:finalize_selected_deal_attempt!, older_attempt, successful_result)
+
+      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+    end
+
+    it 'does not create a selection from a parseable failed payload' do
+      service = selected_deal_service('get_deal')
+      attempt = service.send(:begin_selected_deal_attempt!)
+      failed_result = JSON.generate(status: 'failed', error: 'not_found', deal: { id: deal.id })
+
+      service.send(:finalize_selected_deal_attempt!, attempt, failed_result)
+
+      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+    end
+
+    it 'atomically claims the one-use selection before an update' do
+      call_session.update!(metadata: { 'captain_selected_deal' => { 'deal_id' => deal.id } })
+
+      first_claim = selected_deal_service('update_deal').send(:claim_selected_deal_context!)
+      second_claim = selected_deal_service('update_deal').send(:claim_selected_deal_context!)
+
+      expect(first_claim).to eq('deal_id' => deal.id)
+      expect(second_claim).to be_nil
+      expect(call_session.reload.metadata).not_to have_key('captain_selected_deal')
+    end
+  end
+
   describe '#captain_tool_arguments' do
     let(:account) { create(:account) }
     let(:conversation) { create(:conversation, account: account) }

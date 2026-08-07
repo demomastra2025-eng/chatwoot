@@ -88,6 +88,126 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
     expect(current_deal.reload.title).to eq('Current linked deal')
   end
 
+  it 'keeps an explicitly selected deal across a short follow-up value turn' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#111111')
+    current_deal = create(
+      :crm_deal,
+      account: account,
+      title: 'Current linked deal',
+      pipeline: pipeline,
+      stage: stage,
+      originating_conversation_id: conversation.id
+    )
+    target_deal = create(:crm_deal, account: account, title: 'Номер клиента', pipeline: pipeline, stage: stage)
+    create(:crm_deal_contact, account: account, deal: target_deal, contact: contact, primary: true)
+    tool_context = Struct.new(:state).new(
+      {
+        conversation: { id: conversation.id },
+        deal: { id: current_deal.id },
+        contact: { id: contact.id },
+        selected_deal_context: {
+          deal_id: target_deal.id,
+          account_id: account.id,
+          conversation_id: conversation.id,
+          contact_id: contact.id,
+          selected_at: Time.current.iso8601
+        }
+      }
+    )
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Переименуй сделку Номер клиента')
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Назови её Новый проект')
+
+    payload = JSON.parse(tool.perform(tool_context, deal_id: target_deal.id, title: 'Новый проект'))
+
+    expect(payload).to include('action' => 'update_deal', 'deal_id' => target_deal.id)
+    expect(target_deal.reload.title).to eq('Новый проект')
+    expect(current_deal.reload.title).to eq('Current linked deal')
+  end
+
+  it 'rejects a prior-message deal reference without a server-selected deal context' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    target_deal = create(:crm_deal, account: account, title: 'Номер клиента')
+    create(:crm_deal_contact, account: account, deal: target_deal, contact: contact, primary: true)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Переименуй сделку Номер клиента')
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Назови её Новый проект')
+
+    result = tool.perform(tool_context, deal_id: target_deal.id, title: 'Новый проект')
+
+    expect(result).to include('ERROR:', Captain::Tools::Operations::DealUpdateGuard::ERROR_MESSAGE)
+    expect(target_deal.reload.title).to eq('Номер клиента')
+  end
+
+  it 'rejects an expired server-selected deal context' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    target_deal = create(:crm_deal, account: account, title: 'Номер клиента')
+    create(:crm_deal_contact, account: account, deal: target_deal, contact: contact, primary: true)
+    tool_context = Struct.new(:state).new(
+      {
+        conversation: { id: conversation.id },
+        contact: { id: contact.id },
+        selected_deal_context: {
+          deal_id: target_deal.id,
+          account_id: account.id,
+          conversation_id: conversation.id,
+          contact_id: contact.id,
+          selected_at: 3.minutes.ago.iso8601
+        }
+      }
+    )
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Назови её Новый проект')
+
+    result = tool.perform(tool_context, deal_id: target_deal.id, title: 'Новый проект')
+
+    expect(result).to include('ERROR:', Captain::Tools::Operations::DealUpdateGuard::ERROR_MESSAGE)
+    expect(target_deal.reload.title).to eq('Номер клиента')
+  end
+
+  it 'rejects a follow-up update when the latest deal reference selects another deal' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, color: '#111111')
+    current_deal = create(
+      :crm_deal,
+      account: account,
+      title: 'Current linked deal',
+      pipeline: pipeline,
+      stage: stage,
+      originating_conversation_id: conversation.id
+    )
+    target_deal = create(:crm_deal, account: account, title: 'Номер клиента', pipeline: pipeline, stage: stage)
+    other_deal = create(:crm_deal, account: account, title: 'Другая сделка', pipeline: pipeline, stage: stage)
+    create(:crm_deal_contact, account: account, deal: target_deal, contact: contact, primary: true)
+    create(:crm_deal_contact, account: account, deal: other_deal, contact: contact)
+    tool_context = Struct.new(:state).new(
+      {
+        conversation: { id: conversation.id },
+        deal: { id: current_deal.id },
+        contact: { id: contact.id },
+        selected_deal_context: {
+          deal_id: target_deal.id,
+          account_id: account.id,
+          conversation_id: conversation.id,
+          contact_id: contact.id,
+          selected_at: Time.current.iso8601
+        }
+      }
+    )
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Переименуй сделку Номер клиента')
+    create(:message, conversation: conversation, message_type: :incoming, content: 'Нет, сделку Другая сделка')
+
+    result = tool.perform(tool_context, deal_id: target_deal.id, title: 'Новый проект')
+
+    expect(result).to include('ERROR:', Captain::Tools::Operations::DealUpdateGuard::ERROR_MESSAGE)
+    expect(target_deal.reload.title).to eq('Номер клиента')
+  end
+
   it 'ignores zero pipeline and stage ID placeholders while preserving real numeric field updates' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)

@@ -14,6 +14,10 @@ class Telephony::AiVoice::ToolDispatchService
   VOICE_CONTEXT_CAPTAIN_CATALOG_CACHE_MAX_ENTRIES = 128
   VOICE_CANONICAL_KNOWLEDGE_TOOL = 'faq_lookup'.freeze
   VOICE_OVERLAPPING_KNOWLEDGE_TOOLS = %w[search_documentation].freeze
+  CAPTAIN_SELECTED_DEAL_METADATA_KEY = 'captain_selected_deal'.freeze
+  CAPTAIN_DEAL_SELECTION_SEQUENCE_METADATA_KEY = 'captain_deal_selection_sequence'.freeze
+  CAPTAIN_ACTIVE_DEAL_SELECTION_METADATA_KEY = 'captain_active_deal_selection'.freeze
+  CAPTAIN_DEAL_SELECTION_TOOLS = %w[get_deal search_deals].freeze
   @captain_catalog_cache = {}
   @captain_catalog_cache_mutex = Mutex.new
 
@@ -592,6 +596,8 @@ class Telephony::AiVoice::ToolDispatchService
   end
 
   def perform_captain_tool
+    selection_attempt = begin_selected_deal_attempt!
+    result = nil
     ensure_voice_crm_source!
     tool = Captain::ToolCatalog.build_tool(
       captain_tool_definition,
@@ -601,17 +607,100 @@ class Telephony::AiVoice::ToolDispatchService
     )
     raise UnknownToolError, "Unknown voice AI tool: #{tool_name}" unless tool
 
-    {
-      action: 'captain_tool',
-      tool_name: tool_name,
-      result: tool.execute(captain_tool_context, **captain_tool_execution_arguments)
-    }
+    @claimed_selected_deal_context = claim_selected_deal_context! if tool_name == 'update_deal'
+    result = tool.execute(captain_tool_context, **captain_tool_execution_arguments)
+    captain_tool_result_envelope(result)
   rescue ArgumentError => e
-    {
+    captain_tool_result_envelope(Captain::ToolResult.failure_output(error: e, retryable: false))
+  ensure
+    finalize_selected_deal_attempt!(selection_attempt, result) if selection_attempt
+  end
+
+  def captain_tool_result_envelope(result)
+    envelope = {
       action: 'captain_tool',
       tool_name: tool_name,
-      result: Captain::ToolResult.failure_output(error: e)
+      result: result
     }
+    normalized = Captain::ToolResult.normalize(result)
+    return envelope unless Captain::ToolResult.error?(normalized)
+
+    envelope.merge(
+      status: 'failed',
+      error: 'captain_tool_business_failed',
+      code: 'CAPTAIN_TOOL_BUSINESS_FAILED',
+      retryable: normalized[:retryable] == true,
+      message: normalized[:error].to_s.delete_prefix(Captain::ToolResult::ERROR_PREFIX).strip.first(500)
+    )
+  end
+
+  def begin_selected_deal_attempt!
+    return unless CAPTAIN_DEAL_SELECTION_TOOLS.include?(tool_name)
+
+    attempt = nil
+    update_call_session_metadata do |metadata|
+      attempt = metadata[CAPTAIN_DEAL_SELECTION_SEQUENCE_METADATA_KEY].to_i + 1
+      metadata.except(CAPTAIN_SELECTED_DEAL_METADATA_KEY).merge(
+        CAPTAIN_DEAL_SELECTION_SEQUENCE_METADATA_KEY => attempt,
+        CAPTAIN_ACTIVE_DEAL_SELECTION_METADATA_KEY => attempt
+      )
+    end
+    attempt
+  end
+
+  def finalize_selected_deal_attempt!(attempt, result)
+    deal = selected_deal_from_result(result)
+    update_call_session_metadata do |metadata|
+      next metadata unless metadata[CAPTAIN_ACTIVE_DEAL_SELECTION_METADATA_KEY].to_i == attempt
+
+      finalized = metadata.except(CAPTAIN_SELECTED_DEAL_METADATA_KEY, CAPTAIN_ACTIVE_DEAL_SELECTION_METADATA_KEY)
+      next finalized if deal.blank? || conversation.blank? || conversation.contact_id.blank?
+
+      finalized.merge(CAPTAIN_SELECTED_DEAL_METADATA_KEY => selected_deal_context_payload(deal).stringify_keys)
+    end
+  end
+
+  def selected_deal_context_payload(deal)
+    {
+      deal_id: deal.id,
+      account_id: account.id,
+      conversation_id: conversation.id,
+      contact_id: conversation.contact_id,
+      source_tool: tool_name,
+      selected_at: Time.current.iso8601
+    }
+  end
+
+  def selected_deal_from_result(result)
+    payload = JSON.parse(result.to_s)
+    return if payload['status'] == 'failed' || payload['success'] == false || payload['error'].present?
+
+    deal_payload = if tool_name == 'get_deal'
+                     payload['deal']
+                   elsif payload['total_count'].to_i == 1 && Array(payload['deals']).one?
+                     payload['deals'].first
+                   end
+    return unless deal_payload.is_a?(Hash)
+
+    account.crm_deals.find_by(id: deal_payload['id'])
+  rescue JSON::ParserError
+    nil
+  end
+
+  def claim_selected_deal_context!
+    claimed_context = nil
+    update_call_session_metadata do |metadata|
+      claimed_context = metadata[CAPTAIN_SELECTED_DEAL_METADATA_KEY]
+      metadata.except(CAPTAIN_SELECTED_DEAL_METADATA_KEY)
+    end
+    claimed_context
+  end
+
+  def update_call_session_metadata
+    call_session.with_lock do
+      call_session.reload
+      call_session.update!(metadata: yield(call_session.metadata.to_h))
+    end
   end
 
   def ensure_voice_crm_source!
@@ -689,8 +778,15 @@ class Telephony::AiVoice::ToolDispatchService
       captain_runtime: account.captain_runtime_preferences,
       runtime_clock: runtime_clock_state,
       source: 'voice_ai',
-      call_session: { id: call_session.id, external_call_ref: call_session.external_call_ref }
-    }
+      call_session: { id: call_session.id, external_call_ref: call_session.external_call_ref },
+      selected_deal_context: selected_deal_context_for_runtime
+    }.compact
+  end
+
+  def selected_deal_context_for_runtime
+    return @claimed_selected_deal_context if tool_name == 'update_deal'
+
+    call_session.metadata.to_h[CAPTAIN_SELECTED_DEAL_METADATA_KEY]
   end
 
   def realtime_faq_runtime_state

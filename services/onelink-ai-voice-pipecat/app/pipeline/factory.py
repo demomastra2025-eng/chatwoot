@@ -296,20 +296,29 @@ class PipelineAssembly:
         await self.worker.queue_frame(InterruptionWorkerFrame())
 
     async def run_instruction(self, instruction: str) -> bool:
-        return await self._run_instruction(instruction, causal_user_turn=None)
+        result = await self._run_instruction(instruction, causal_user_turn=None)
+        return result is True
 
-    async def run_instruction_for_turn(self, instruction: str, causal_user_turn: int) -> bool:
-        return await self._run_instruction(
+    async def run_instruction_for_turn(
+        self,
+        instruction: str,
+        causal_user_turn: int,
+        instruction_token: str,
+    ) -> str | None:
+        result = await self._run_instruction(
             instruction,
             causal_user_turn=causal_user_turn,
+            instruction_token=instruction_token,
         )
+        return result if isinstance(result, str) else None
 
     async def _run_instruction(
         self,
         instruction: str,
         *,
         causal_user_turn: int | None,
-    ) -> bool:
+        instruction_token: str | None = None,
+    ) -> bool | str | None:
         async def enqueue() -> None:
             llm = self.llm
             if self.provider == "openai-realtime" and isinstance(llm, OpenAIRealtimeLLMService):
@@ -334,7 +343,8 @@ class PipelineAssembly:
         if causal_user_turn is None:
             await enqueue()
             return True
-        return await self.activity.admit_causal_side_effect(causal_user_turn, enqueue)
+        admitted = await self.activity.admit_causal_side_effect(causal_user_turn, enqueue)
+        return instruction_token if admitted and instruction_token is not None else None
 
 
 def build_pipeline(

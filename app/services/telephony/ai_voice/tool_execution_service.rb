@@ -26,7 +26,11 @@ class Telephony::AiVoice::ToolExecutionService
     raise_call_session_terminal! if call_session.terminal?
     mark_execution_started!(event)
     result = dispatch_with_current_capability!
-    complete_event!(event, result)
+    if business_failure_result?(result)
+      complete_business_failure_event!(event, result)
+    else
+      complete_event!(event, result)
+    end
     result
   rescue StandardError => e
     fail_owned_event!(e)
@@ -155,6 +159,7 @@ class Telephony::AiVoice::ToolExecutionService
     validate_event_request!(event)
     stored_payload = event.payload.to_h.deep_stringify_keys
     return decrypt_result!(stored_payload) if event.processed?
+    return decrypt_result!(stored_payload) if stored_payload['phase'] == 'business_failed'
 
     if stored_payload['phase'] == 'outcome_unknown'
       raise Telephony::Error.new(
@@ -199,6 +204,18 @@ class Telephony::AiVoice::ToolExecutionService
     end
   end
 
+  def complete_business_failure_event!(event, result)
+    event.with_lock do
+      validate_event_ownership!(event)
+      event.update!(
+        status: 'failed',
+        processed_at: Time.current,
+        error_message: result['code'],
+        payload: completed_event_payload(result).merge('phase' => 'business_failed')
+      )
+    end
+  end
+
   def fail_owned_event!(error)
     return if @owned_event.blank? || !@owned_event.persisted?
 
@@ -228,6 +245,13 @@ class Telephony::AiVoice::ToolExecutionService
     return payload if serialized.bytesize > MAX_ENCRYPTED_RESULT_BYTES
 
     payload.merge('result_ciphertext' => result_encryptor.encrypt_and_sign(serialized, purpose: RESULT_PURPOSE, expires_in: RESULT_TTL))
+  end
+
+  def business_failure_result?(result)
+    return false unless result.is_a?(Hash)
+
+    normalized = result.with_indifferent_access
+    normalized[:status] == 'failed' && normalized[:error].present?
   end
 
   def decrypt_result!(stored_payload)

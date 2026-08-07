@@ -1,13 +1,14 @@
 class Captain::Tools::Operations::BaseOperation
-  def initialize(assistant:, conversation: nil, actor: nil)
+  def initialize(assistant:, conversation: nil, actor: nil, selection_context: nil)
     @assistant = assistant
     @conversation = conversation
     @actor = actor
+    @selection_context = selection_context
   end
 
   private
 
-  attr_reader :assistant, :conversation, :actor
+  attr_reader :assistant, :conversation, :actor, :selection_context
 
   def account
     assistant.account

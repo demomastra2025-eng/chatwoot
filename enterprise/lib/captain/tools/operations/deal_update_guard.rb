@@ -1,26 +1,29 @@
 class Captain::Tools::Operations::DealUpdateGuard
   ERROR_MESSAGE = 'update_deal target does not match the latest user message; ask a clarifying question before updating another deal'.freeze
+  SELECTION_CONTEXT_TTL = 2.minutes
   RUSSIAN_TOKEN_ENDINGS = %w[ами ями ого ему ием ыми ими ов ев ей ой ый ий ая ое ые ых им ом ем ам ям ах ях а я у ю е ы и о].freeze
 
-  def initialize(account:, conversation:, current_contact:, current_deal:)
+  def initialize(account:, conversation:, current_contact:, current_deal:, selection_context: nil)
     @account = account
     @conversation = conversation
     @current_contact = current_contact
     @current_deal = current_deal
+    @selection_context = selection_context.to_h.with_indifferent_access
   end
 
-  def ensure_allowed!(deal, explicit_deal_id:)
+  def ensure_allowed!(deal, explicit_deal_id:, requested_values: [])
     latest_text = normalized_text(latest_incoming_message_text)
     return if latest_text.blank? || broad_deal_mutation_request?(latest_text)
     return if referenced_deal?(deal, latest_text)
     return if current_deal_update_without_other_deal_reference?(deal, explicit_deal_id, latest_text)
+    return if explicit_deal_id && contextual_follow_up_for?(deal, latest_text, requested_values)
 
     raise ArgumentError, ERROR_MESSAGE
   end
 
   private
 
-  attr_reader :account, :conversation, :current_contact, :current_deal
+  attr_reader :account, :conversation, :current_contact, :current_deal, :selection_context
 
   def current_deal_update_without_other_deal_reference?(deal, explicit_deal_id, latest_text)
     return false if deal.id != current_deal&.id
@@ -31,6 +34,40 @@ class Captain::Tools::Operations::DealUpdateGuard
 
   def latest_incoming_message_text
     conversation&.messages&.incoming&.reorder(created_at: :desc, id: :desc)&.limit(1)&.pick(:content)
+  end
+
+  def contextual_follow_up_for?(deal, latest_text, requested_values)
+    return false unless requested_value_referenced?(latest_text, requested_values)
+    return false if text_references_contact_deal?(latest_text, excluding: deal)
+
+    selected_deal_context_matches?(deal)
+  end
+
+  def selected_deal_context_matches?(deal)
+    return false if selection_context.blank?
+    return false unless selected_deal_scope == expected_deal_scope(deal)
+
+    selected_at = Time.zone.parse(selection_context[:selected_at].to_s)
+    selected_at >= SELECTION_CONTEXT_TTL.ago
+  rescue ArgumentError, TypeError
+    false
+  end
+
+  def selected_deal_scope
+    %i[deal_id account_id conversation_id contact_id].map { |key| selection_context[key].to_i }
+  end
+
+  def expected_deal_scope(deal)
+    [deal.id, account.id, conversation&.id, current_contact&.id]
+  end
+
+  def requested_value_referenced?(text, values)
+    Array(values).flatten.compact_blank.any? do |value|
+      normalized_value = normalized_text(value)
+      next false if normalized_value.length < 2
+
+      text.match?(/(?:\A|\s)#{Regexp.escape(normalized_value)}(?:\z|\s)/)
+    end
   end
 
   def broad_deal_mutation_request?(text)

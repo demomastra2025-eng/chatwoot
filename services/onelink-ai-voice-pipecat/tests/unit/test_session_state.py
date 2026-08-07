@@ -127,6 +127,18 @@ class DefinitiveFailingToolClient(FakeClient):
         )
 
 
+class BusinessFailingToolClient(FakeClient):
+    async def call_tool(self, correlation, name, arguments, **kwargs):
+        self.tools.append((correlation, name, arguments, kwargs))
+        return {
+            "action": "captain_tool",
+            "status": "failed",
+            "error": "captain_tool_business_failed",
+            "code": "CAPTAIN_TOOL_BUSINESS_FAILED",
+            "retryable": False,
+        }
+
+
 class SlowFailingToolClient(SlowControlClient):
     async def call_tool(self, correlation, name, arguments, **kwargs):
         self.tools.append((correlation, name, arguments, kwargs))
@@ -154,12 +166,15 @@ async def test_control_fallback_reuses_the_control_idempotency_key():
         correlation=Correlation(call_ref="call-control", runtime_session_id="runtime-control"),
     )
 
-    assert await state.safe_control(
-        "tool_completed",
-        {"result": "ok"},
-        tool_call_id="tool-1",
-        tool_name="faq_lookup",
-    ) is False
+    assert (
+        await state.safe_control(
+            "tool_completed",
+            {"result": "ok"},
+            tool_call_id="tool-1",
+            tool_name="faq_lookup",
+        )
+        is False
+    )
 
     control_metadata = client.controls[0][1]
     fallback_event = client.events[0][1]
@@ -401,21 +416,30 @@ async def test_different_read_only_arguments_are_not_coalesced():
 
 @pytest.mark.asyncio
 async def test_create_deal_is_semantically_fenced_per_caller_turn(state):
+    arguments = {"title": "Новая сделка", "pipeline_id": 2, "stage_id": 3}
     first = await state.execute_tool(
         "create_deal",
-        {"title": "Новая сделка"},
+        arguments,
         "tool-deal-1",
         timeout_ms=800,
     )
     duplicate = await state.execute_tool(
         "create_deal",
-        {"title": "Новая сделка", "pipeline_id": 2, "stage_id": 3},
+        arguments,
         "tool-deal-2",
         timeout_ms=800,
     )
+    independent = await state.execute_tool(
+        "create_deal",
+        {"title": "Другая сделка"},
+        "tool-deal-independent",
+        timeout_ms=800,
+    )
 
-    assert first == duplicate == {"message_id": 99}
-    assert len(state.client.tools) == 1
+    assert first == {"message_id": 99}
+    assert duplicate == {"message_id": 99, "_runtime_suppressed": True}
+    assert independent == {"message_id": 99}
+    assert len(state.client.tools) == 2
 
     state.touch_user()
     next_turn = await state.execute_tool(
@@ -427,11 +451,9 @@ async def test_create_deal_is_semantically_fenced_per_caller_turn(state):
     await state.drain_background()
 
     assert next_turn == {"message_id": 99}
-    assert len(state.client.tools) == 2
+    assert len(state.client.tools) == 3
     duplicate_controls = [
-        item[1]
-        for item in state.client.controls
-        if item[1]["action"] == "tool_suppressed"
+        item[1] for item in state.client.controls if item[1]["action"] == "tool_suppressed"
     ]
     assert len(duplicate_controls) == 1
     assert duplicate_controls[0]["metadata"]["dedupe_scope"] == "caller_turn"
@@ -466,6 +488,64 @@ async def test_failed_create_deal_can_retry_in_same_caller_turn():
 
 
 @pytest.mark.asyncio
+async def test_non_retryable_business_failure_is_fenced_until_the_next_caller_turn():
+    client = BusinessFailingToolClient()
+    state = SessionState(
+        client=cast(OnelinkClient, client),
+        correlation=Correlation(
+            call_ref="call-deal-business-failure",
+            runtime_session_id="runtime-deal-business-failure",
+        ),
+    )
+
+    first = await state.execute_tool(
+        "update_deal",
+        {"deal_id": 42, "title": "Новый проект"},
+        "tool-deal-business-1",
+        timeout_ms=800,
+    )
+    duplicate = await state.execute_tool(
+        "update_deal",
+        {"deal_id": 42, "title": "Новый проект"},
+        "tool-deal-business-2",
+        timeout_ms=800,
+    )
+
+    assert duplicate == {**first, "_runtime_suppressed": True}
+    assert first["retryable"] is False
+    assert len(client.tools) == 1
+
+    state.touch_user()
+    await state.execute_tool(
+        "update_deal",
+        {"deal_id": 42, "title": "Уточнённый проект"},
+        "tool-deal-business-3",
+        timeout_ms=800,
+    )
+    assert len(client.tools) == 2
+
+
+@pytest.mark.asyncio
+async def test_update_deal_allows_distinct_changes_in_the_same_caller_turn(state):
+    first = await state.execute_tool(
+        "update_deal",
+        {"deal_id": 42, "title": "Новый проект"},
+        "tool-update-title",
+        timeout_ms=800,
+    )
+    second = await state.execute_tool(
+        "update_deal",
+        {"deal_id": 42, "stage_id": 7},
+        "tool-update-stage",
+        timeout_ms=800,
+    )
+
+    assert first == {"message_id": 99}
+    assert second == {"message_id": 99}
+    assert len(state.client.tools) == 2
+
+
+@pytest.mark.asyncio
 async def test_unknown_create_deal_outcome_is_fenced_for_the_whole_call():
     client = FailingToolClient()
     state = SessionState(
@@ -485,13 +565,13 @@ async def test_unknown_create_deal_outcome_is_fenced_for_the_whole_call():
     state.touch_user()
     suppressed = await state.execute_tool(
         "create_deal",
-        {"title": "Сделка", "pipeline_id": 2},
+        {"title": "Сделка"},
         "tool-deal-unknown-2",
         timeout_ms=800,
     )
     await state.drain_background()
 
-    assert first == suppressed
+    assert suppressed == {**first, "_runtime_suppressed": True}
     assert first == {
         "error": "tool_execution_outcome_unknown",
         "code": "transport_error",
@@ -756,9 +836,10 @@ async def test_durable_finalize_retry_reuses_the_first_terminal_payload(tmp_path
     assert await state.finalize(status="completed", reason="runtime_closed")
     first_payload = fake_client.finalizations[0][1]["payload"]
 
-    assert await state.finalize(
-        status="failed", reason="retry_should_not_replace_terminal_state"
-    ) is False
+    assert (
+        await state.finalize(status="failed", reason="retry_should_not_replace_terminal_state")
+        is False
+    )
     assert len(list((tmp_path / "outbox").glob("*.json"))) == 1
 
     assert await outbox.replay(fake_client) == 1

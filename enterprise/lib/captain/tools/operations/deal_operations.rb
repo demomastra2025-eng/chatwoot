@@ -94,7 +94,14 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     deal = deal_for_update(deal_id)
     raise ArgumentError, 'Current deal is not available' if deal.blank?
 
-    ensure_latest_message_allows_deal_update!(deal, explicit_deal_id: explicit_deal_id)
+    ensure_latest_message_allows_deal_update!(
+      deal,
+      explicit_deal_id: explicit_deal_id,
+      requested_values: [
+        title, description, amount, currency, expected_close_on, win_probability,
+        pipeline_code, stage_name, stage_code, closing_reasons, transition_reason
+      ]
+    )
 
     pipeline_id = optional_positive_id(pipeline_id)
     stage_id = optional_positive_id(stage_id)
@@ -230,13 +237,14 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     current_deal
   end
 
-  def ensure_latest_message_allows_deal_update!(deal, explicit_deal_id:)
+  def ensure_latest_message_allows_deal_update!(deal, explicit_deal_id:, requested_values:)
     Captain::Tools::Operations::DealUpdateGuard.new(
       account: account,
       conversation: conversation,
       current_contact: current_contact,
-      current_deal: current_deal
-    ).ensure_allowed!(deal, explicit_deal_id: explicit_deal_id)
+      current_deal: current_deal,
+      selection_context: selection_context
+    ).ensure_allowed!(deal, explicit_deal_id: explicit_deal_id, requested_values: requested_values)
   end
 
   def ensure_stage_pipeline_match!(stage, pipeline)

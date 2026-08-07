@@ -110,6 +110,36 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_PREVIOUSLY_FAILED') }
   end
 
+  it 'returns and replays typed non-retryable Captain business failures while marking the event failed' do
+    service = execution(arguments: { content: 'Ambiguous mutation' })
+    dispatch_service = service.send(:dispatch_service)
+    business_failure = {
+      action: 'captain_tool',
+      tool_name: 'create_note',
+      status: 'failed',
+      error: 'captain_tool_business_failed',
+      code: 'CAPTAIN_TOOL_BUSINESS_FAILED',
+      retryable: false,
+      message: 'Target is ambiguous'
+    }
+    allow(dispatch_service).to receive(:perform).and_return(business_failure)
+
+    first_result = service.perform
+    replayed_result = execution(arguments: { content: 'Ambiguous mutation' }).perform
+
+    expect(first_result).to eq(business_failure.deep_stringify_keys)
+    expect(replayed_result).to eq(first_result)
+    event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
+    expect(event).to have_attributes(status: 'failed', error_message: 'CAPTAIN_TOOL_BUSINESS_FAILED')
+    expect(event.payload).to include('phase' => 'business_failed', 'result_ciphertext' => be_present)
+  end
+
+  it 'recognizes symbol-keyed typed business failures before persistence' do
+    result = { status: 'failed', error: 'captain_tool_business_failed' }
+
+    expect(execution(arguments: {}).send(:business_failure_result?, result)).to be(true)
+  end
+
   it 'marks a stale executing owner as outcome unknown without retrying the mutation' do
     service = execution(arguments: { content: 'Ambiguous note' })
     stale_payload = service.send(:event_payload, phase: 'executing').merge('lease_expires_at' => 1.minute.ago.iso8601)
