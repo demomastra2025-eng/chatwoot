@@ -64,6 +64,23 @@ const ParserParent = defineComponent({
 
 const createWrapper = () => mount(ParserParent, mountOptions);
 
+const createDeferred = () => {
+  let resolve;
+  const promise = new Promise(resolvePromise => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
+const selectMediaFile = async (wrapper, file) => {
+  const fileInput = wrapper.find('input[type="file"]');
+  Object.defineProperty(fileInput.element, 'files', {
+    configurable: true,
+    value: [file],
+  });
+  await fileInput.trigger('change');
+};
+
 describe('WhatsAppTemplateParser', () => {
   it('exposes template validity to parent campaign forms', async () => {
     const wrapper = createWrapper();
@@ -81,15 +98,63 @@ describe('WhatsAppTemplateParser', () => {
       props: { template: mediaTemplate },
     });
     const file = new File(['image'], 'invoice.jpg', { type: 'image/jpeg' });
-    const fileInput = wrapper.find('input[type="file"]');
-    Object.defineProperty(fileInput.element, 'files', { value: [file] });
 
-    await fileInput.trigger('change');
+    await selectMediaFile(wrapper, file);
     await flushPromises();
 
     expect(uploadFile).toHaveBeenCalledWith(file);
     expect(wrapper.vm.processedParams.header.media_url).toBe(
       'https://app.one-link.kz/media/invoice.jpg'
+    );
+  });
+
+  it('blocks send while replacement media is still uploading', async () => {
+    const upload = createDeferred();
+    uploadFile.mockReturnValue(upload.promise);
+    const wrapper = mount(WhatsAppTemplateParser, {
+      ...mountOptions,
+      props: {
+        template: mediaTemplate,
+        initialProcessedParams: {
+          header: { media_url: 'https://app.one-link.kz/media/old.jpg' },
+        },
+      },
+    });
+    const file = new File(['new'], 'new.jpg', { type: 'image/jpeg' });
+
+    await selectMediaFile(wrapper, file);
+    wrapper.vm.sendMessage();
+
+    expect(wrapper.emitted('sendMessage')).toBeUndefined();
+
+    upload.resolve({ fileUrl: 'https://app.one-link.kz/media/new.jpg' });
+    await flushPromises();
+    wrapper.vm.sendMessage();
+
+    expect(wrapper.emitted('sendMessage')).toHaveLength(1);
+    expect(
+      wrapper.emitted('sendMessage')[0][0].templateParams.processed_params
+        .header.media_url
+    ).toBe('https://app.one-link.kz/media/new.jpg');
+  });
+
+  it('ignores a late media result after resetting the template', async () => {
+    const upload = createDeferred();
+    uploadFile.mockReturnValue(upload.promise);
+    const wrapper = mount(WhatsAppTemplateParser, {
+      ...mountOptions,
+      props: { template: mediaTemplate },
+    });
+    const file = new File(['image'], 'late.jpg', { type: 'image/jpeg' });
+
+    await selectMediaFile(wrapper, file);
+    wrapper.vm.resetTemplate();
+    upload.resolve({ fileUrl: 'https://app.one-link.kz/media/late.jpg' });
+    await flushPromises();
+
+    expect(wrapper.emitted('resetTemplate')).toHaveLength(1);
+    expect(wrapper.vm.processedParams.header.media_url).not.toBe(
+      'https://app.one-link.kz/media/late.jpg'
     );
   });
 });

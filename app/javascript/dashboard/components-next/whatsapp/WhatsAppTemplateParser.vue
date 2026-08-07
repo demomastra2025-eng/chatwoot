@@ -8,7 +8,7 @@
  * 4. Replaces placeholders with user-provided values.
  * 5. Emits events to send the processed message or reset the template.
  */
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useVuelidate } from '@vuelidate/core';
 import { requiredIf } from '@vuelidate/validators';
 import { useI18n } from 'vue-i18n';
@@ -263,7 +263,15 @@ const updateMediaName = value => {
   processedParams.value.header.media_name = value;
 };
 
+let mediaUploadGeneration = 0;
+
+const invalidateMediaUpload = () => {
+  mediaUploadGeneration += 1;
+  isUploadingMedia.value = false;
+};
+
 const removeMediaFile = () => {
+  invalidateMediaUpload();
   updateMediaUrl('');
   selectedMediaFileName.value = '';
 };
@@ -273,26 +281,36 @@ const handleMediaFileChange = async event => {
   event.target.value = '';
   if (!file) return;
 
+  mediaUploadGeneration += 1;
+  const uploadGeneration = mediaUploadGeneration;
   try {
     isUploadingMedia.value = true;
     const { fileUrl } = await uploadFile(file);
+    if (uploadGeneration !== mediaUploadGeneration) return;
+
     updateMediaUrl(fileUrl);
     updateMediaName(file.name);
     selectedMediaFileName.value = file.name;
   } catch (error) {
+    if (uploadGeneration !== mediaUploadGeneration) return;
+
     useAlert(
       error?.response?.data?.error ||
         error?.message ||
         t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.MEDIA_UPLOAD_FAILED')
     );
   } finally {
-    isUploadingMedia.value = false;
+    if (uploadGeneration === mediaUploadGeneration) {
+      isUploadingMedia.value = false;
+    }
   }
 };
 
 const sendMessage = () => {
   v$.value.$touch();
-  if (v$.value.$invalid || isFormInvalid.value) return;
+  if (v$.value.$invalid || isFormInvalid.value || isUploadingMedia.value) {
+    return;
+  }
 
   const { name, category, language, namespace } = props.template;
 
@@ -310,6 +328,7 @@ const sendMessage = () => {
 };
 
 const resetTemplate = () => {
+  invalidateMediaUpload();
   emit('resetTemplate');
 };
 
@@ -318,10 +337,12 @@ const goBack = () => {
 };
 
 onMounted(initializeTemplateParameters);
+onBeforeUnmount(invalidateMediaUpload);
 
 watch(
   () => props.template,
   () => {
+    invalidateMediaUpload();
     initializeTemplateParameters();
     v$.value.$reset();
   },
@@ -445,7 +466,7 @@ defineExpose({
             :model-value="processedParams.header?.media_url || ''"
             type="url"
             class="flex-1"
-            :disabled="Boolean(selectedMediaFileName)"
+            :disabled="Boolean(selectedMediaFileName) || isUploadingMedia"
             :placeholder="
               t('WHATSAPP_TEMPLATES.PARSER.MEDIA_URL_LABEL', {
                 type: formatType,
@@ -459,6 +480,7 @@ defineExpose({
             :model-value="processedParams.header?.media_name || ''"
             type="text"
             class="flex-1"
+            :disabled="isUploadingMedia"
             :placeholder="
               t('WHATSAPP_TEMPLATES.PARSER.DOCUMENT_NAME_PLACEHOLDER')
             "
@@ -583,8 +605,8 @@ defineExpose({
       :send-message="sendMessage"
       :reset-template="resetTemplate"
       :go-back="goBack"
-      :is-valid="!v$.$invalid"
-      :disabled="isFormInvalid"
+      :is-valid="!v$.$invalid && !isUploadingMedia"
+      :disabled="isFormInvalid || isUploadingMedia"
     />
   </div>
 </template>
