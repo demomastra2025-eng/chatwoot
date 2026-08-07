@@ -166,6 +166,25 @@ describe('filterHelpers', () => {
       expect(matchesFilters(conversation, filters)).toBe(true);
     });
 
+    it('matches numeric conversation IDs against string route filter values', () => {
+      const conversation = { status: 'pending', inbox_id: 4865 };
+      const filters = [
+        {
+          attribute_key: 'status',
+          filter_operator: 'equal_to',
+          values: ['pending'],
+          query_operator: 'and',
+        },
+        {
+          attribute_key: 'inbox_id',
+          filter_operator: 'equal_to',
+          values: ['4865'],
+        },
+      ];
+
+      expect(matchesFilters(conversation, filters)).toBe(true);
+    });
+
     it('should not match conversation with not_equal_to operator for assignee_id', () => {
       const conversation = { meta: { assignee: { id: 1 } } };
       const filters = [

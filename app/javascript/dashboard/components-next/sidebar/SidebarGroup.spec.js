@@ -136,6 +136,12 @@ const mountComponent = (props = {}) =>
         Policy: {
           template: '<li><slot /></li>',
         },
+        RouterLink: {
+          name: 'RouterLink',
+          props: ['to'],
+          template:
+            '<a data-test-id="router-link" :data-route-name="to?.name"><slot /></a>',
+        },
         Icon: {
           props: ['icon'],
           template: '<span data-test-id="icon" :data-icon="icon" />',
@@ -661,7 +667,7 @@ describe('SidebarGroup', () => {
     expect(activeNames).not.toContain('Assignee:me');
   });
 
-  it('opens the configured default child when clicking a collapsed group', async () => {
+  it('renders a collapsed group as a link to its configured default child', async () => {
     sidebarCollapsed.value = true;
     const touchesRoute = { name: 'outbound_touches_index' };
     const wrapper = mountComponent({
@@ -684,10 +690,32 @@ describe('SidebarGroup', () => {
       ],
     });
 
-    await wrapper.find('button[title="Outbound"]').trigger('click');
+    const link = wrapper.find('[title="Outbound"]');
+
+    expect(link.element.tagName).toBe('A');
+    expect(link.attributes('data-route-name')).toBe('outbound_touches_index');
+
+    await link.trigger('click');
 
     expect(setExpandedItem).toHaveBeenCalledWith('Campaigns');
-    expect(routerPush).toHaveBeenCalledWith(touchesRoute);
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  it('renders a collapsed group as a link to its own route', () => {
+    sidebarCollapsed.value = true;
+    const wrapper = mountComponent();
+
+    const link = wrapper.find('[title="Conversations"]');
+
+    expect(link.element.tagName).toBe('A');
+    expect(link.attributes('data-route-name')).toBe('home');
+  });
+
+  it('keeps a non-navigating collapsed group as a button', () => {
+    sidebarCollapsed.value = true;
+    const wrapper = mountComponent({ navigateOnCollapsedClick: false });
+
+    expect(wrapper.find('button[title="Conversations"]').exists()).toBe(true);
   });
 
   it('does not select an action-only collapsed group for a secondary column', async () => {

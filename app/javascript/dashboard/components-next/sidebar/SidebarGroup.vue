@@ -142,6 +142,12 @@ const defaultCollapsedRouteItem = computed(() => {
   return accessibleItems.value[0];
 });
 
+const collapsedNavigationTarget = computed(() => {
+  if (!props.navigateOnCollapsedClick) return null;
+
+  return props.to || defaultCollapsedRouteItem.value?.to || null;
+});
+
 const headerActionItem = computed(() => {
   if (props.actionTo && props.actionIcon) {
     return {
@@ -350,17 +356,6 @@ const handleCollapsedClick = () => {
     if (expandedItem.value !== props.name) {
       setExpandedItem(props.name);
     }
-
-    if (!props.navigateOnCollapsedClick) {
-      return;
-    }
-
-    if (props.to) {
-      router.push(props.to);
-      return;
-    }
-
-    router.push(defaultCollapsedRouteItem.value.to);
   }
 };
 
@@ -423,10 +418,10 @@ watch(
         @mouseleave="handleMouseLeave"
       >
         <component
-          :is="to && !hasChildren ? 'router-link' : 'button'"
+          :is="collapsedNavigationTarget ? 'router-link' : 'button'"
           ref="triggerRef"
-          :to="to && !hasChildren ? to : undefined"
-          type="button"
+          :to="collapsedNavigationTarget || undefined"
+          :type="collapsedNavigationTarget ? undefined : 'button'"
           class="flex items-center justify-center size-9 rounded-lg"
           :class="{
             'text-n-slate-12 bg-n-alpha-2':

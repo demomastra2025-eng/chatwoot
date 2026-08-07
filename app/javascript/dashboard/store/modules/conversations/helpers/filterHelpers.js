@@ -114,6 +114,25 @@ const resolveValue = candidate => {
   return candidate;
 };
 
+const IDENTIFIER_ATTRIBUTES = new Set([
+  'assignee_id',
+  'display_id',
+  'inbox_id',
+  'team_id',
+]);
+
+const normalizeComparableValue = (attributeKey, value) => {
+  if (
+    !IDENTIFIER_ATTRIBUTES.has(attributeKey) ||
+    value === null ||
+    value === undefined
+  ) {
+    return value;
+  }
+
+  return String(value);
+};
+
 /**
  * Checks if two values are equal in the context of filtering
  * @param {*} filterValue - The filterValue value
@@ -193,27 +212,37 @@ const compareDates = (conversationValue, filterValue, compareFn) => {
  * @returns {Boolean} - Returns true if the value matches the filter
  */
 const matchesCondition = (conversationValue, filter) => {
-  const { filter_operator: filterOperator, values } = filter;
+  const {
+    attribute_key: attributeKey,
+    filter_operator: filterOperator,
+    values,
+  } = filter;
 
   const isNullish =
     conversationValue === null || conversationValue === undefined;
 
   const filterValue = Array.isArray(values)
-    ? values.map(resolveValue)
-    : resolveValue(values);
+    ? values.map(value =>
+        normalizeComparableValue(attributeKey, resolveValue(value))
+      )
+    : normalizeComparableValue(attributeKey, resolveValue(values));
+  const normalizedConversationValue = normalizeComparableValue(
+    attributeKey,
+    conversationValue
+  );
 
   switch (filterOperator) {
     case 'equal_to':
-      return equalTo(filterValue, conversationValue);
+      return equalTo(filterValue, normalizedConversationValue);
 
     case 'not_equal_to':
-      return !equalTo(filterValue, conversationValue);
+      return !equalTo(filterValue, normalizedConversationValue);
 
     case 'contains':
-      return contains(filterValue, conversationValue);
+      return contains(filterValue, normalizedConversationValue);
 
     case 'does_not_contain':
-      return !contains(filterValue, conversationValue);
+      return !contains(filterValue, normalizedConversationValue);
 
     case 'is_present':
       return !isNullish;
@@ -222,10 +251,18 @@ const matchesCondition = (conversationValue, filter) => {
       return isNullish;
 
     case 'is_greater_than':
-      return compareDates(conversationValue, filterValue, (a, b) => a > b);
+      return compareDates(
+        normalizedConversationValue,
+        filterValue,
+        (a, b) => a > b
+      );
 
     case 'is_less_than':
-      return compareDates(conversationValue, filterValue, (a, b) => a < b);
+      return compareDates(
+        normalizedConversationValue,
+        filterValue,
+        (a, b) => a < b
+      );
 
     case 'days_before': {
       if (isNullish) {
@@ -235,7 +272,7 @@ const matchesCondition = (conversationValue, filter) => {
       const today = new Date();
       const daysInMilliseconds = filterValue * 24 * 60 * 60 * 1000;
       const targetDate = new Date(today.getTime() - daysInMilliseconds);
-      return conversationValue < targetDate.getTime();
+      return normalizedConversationValue < targetDate.getTime();
     }
 
     default:
