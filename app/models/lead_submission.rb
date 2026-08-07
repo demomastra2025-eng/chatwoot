@@ -18,18 +18,20 @@
 #  contact_id        :bigint
 #  contact_inbox_id  :bigint
 #  conversation_id   :bigint
+#  crm_deal_id       :bigint
 #  inbox_id          :bigint
 #  lead_form_id      :bigint           not null
 #
 # Indexes
 #
-#  idx_on_account_id_lead_form_id_external_ref_9960822a16       (account_id,lead_form_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
-#  idx_on_account_id_lead_form_id_idempotency_key_8efec97c53  (account_id,lead_form_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
-#  idx_on_account_id_source_kind_created_at_6919889fce         (account_id,source_kind,created_at)
-#  index_lead_submissions_on_account_id                       (account_id)
+#  idx_on_account_id_source_kind_created_at_6919889fce       (account_id,source_kind,created_at)
+#  index_lead_submissions_on_account_id                      (account_id)
+#  index_lead_submissions_on_account_id_and_external_ref     (account_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
+#  index_lead_submissions_on_account_id_and_idempotency_key  (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
 #  index_lead_submissions_on_contact_id                      (contact_id)
 #  index_lead_submissions_on_contact_inbox_id                (contact_inbox_id)
 #  index_lead_submissions_on_conversation_id                 (conversation_id)
+#  index_lead_submissions_on_crm_deal_id                     (crm_deal_id)
 #  index_lead_submissions_on_field_values                    (field_values) USING gin
 #  index_lead_submissions_on_inbox_id                        (inbox_id)
 #  index_lead_submissions_on_lead_form_id                    (lead_form_id)
@@ -41,6 +43,7 @@
 #  fk_rails_...  (contact_id => contacts.id)
 #  fk_rails_...  (contact_inbox_id => contact_inboxes.id)
 #  fk_rails_...  (conversation_id => conversations.id)
+#  fk_rails_...  (crm_deal_id => crm_deals.id)
 #  fk_rails_...  (inbox_id => inboxes.id)
 #  fk_rails_...  (lead_form_id => lead_forms.id)
 #

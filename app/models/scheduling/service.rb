@@ -18,8 +18,9 @@
 #
 # Indexes
 #
-#  idx_scheduling_services_on_account_active_name  (account_id,active,name)
-#  index_scheduling_services_on_account_id         (account_id)
+#  idx_scheduling_services_account_medelement_code_unique  (account_id, ((custom_attributes ->> 'medelement_nomenclature_code'::text))) UNIQUE WHERE ((custom_attributes ->> 'medelement_nomenclature_code'::text) IS NOT NULL)
+#  idx_scheduling_services_on_account_active_name          (account_id,active,name)
+#  index_scheduling_services_on_account_id                 (account_id)
 #
 # Foreign Keys
 #

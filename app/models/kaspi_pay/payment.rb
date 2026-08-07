@@ -12,6 +12,7 @@
 #  metadata            :jsonb            not null
 #  paid_at             :datetime
 #  payment_type        :string           not null
+#  qr_original_token   :string
 #  qr_token            :text
 #  receipt_url         :string
 #  source_type         :string

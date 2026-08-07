@@ -1,3 +1,42 @@
+# == Schema Information
+#
+# Table name: touch_plan_enrollments
+#
+#  id                 :bigint           not null, primary key
+#  activated_at       :datetime         not null
+#  idempotency_key    :string           not null
+#  metadata           :jsonb            not null
+#  next_due_at        :datetime
+#  plan_digest        :string           not null
+#  plan_snapshot      :jsonb            not null
+#  remindable_type    :string
+#  status             :string           default("active"), not null
+#  created_at         :datetime         not null
+#  updated_at         :datetime         not null
+#  account_id         :bigint           not null
+#  automation_rule_id :bigint
+#  remindable_id      :bigint
+#  reminder_group_id  :bigint
+#  source_action_id   :string
+#
+# Indexes
+#
+#  idx_touch_plan_enrollments_due                      (status,next_due_at)
+#  idx_touch_plan_enrollments_on_account_idempotency   (account_id,idempotency_key) UNIQUE
+#  idx_touch_plan_enrollments_on_remindable_status     (remindable_type,remindable_id,status)
+#  idx_touch_plan_enrollments_one_open_action          (account_id,automation_rule_id,source_action_id,remindable_type,remindable_id) UNIQUE WHERE (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))
+#  idx_touch_plan_enrollments_one_open_plan            (account_id,reminder_group_id,remindable_type,remindable_id) UNIQUE WHERE ((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))
+#  index_touch_plan_enrollments_on_account_id          (account_id)
+#  index_touch_plan_enrollments_on_automation_rule_id  (automation_rule_id)
+#  index_touch_plan_enrollments_on_remindable          (remindable_type,remindable_id)
+#  index_touch_plan_enrollments_on_reminder_group_id   (reminder_group_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (automation_rule_id => automation_rules.id)
+#  fk_rails_...  (reminder_group_id => reminder_groups.id)
+#
 class TouchPlanEnrollment < ApplicationRecord
   STATUSES = %w[active paused completed cancelled].freeze
   SUPPORTED_REMINDABLE_TYPES = %w[Scheduling::Appointment Crm::Deal].freeze

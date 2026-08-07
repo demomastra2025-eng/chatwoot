@@ -1,3 +1,37 @@
+# == Schema Information
+#
+# Table name: touch_occurrence_claims
+#
+#  id                       :bigint           not null, primary key
+#  claimed_at               :datetime         not null
+#  due_at                   :datetime         not null
+#  last_error               :text
+#  materialized_at          :datetime
+#  metadata                 :jsonb            not null
+#  occurrence_key           :string           not null
+#  status                   :string           default("claimed"), not null
+#  step_key                 :string           not null
+#  created_at               :datetime         not null
+#  updated_at               :datetime         not null
+#  account_id               :bigint           not null
+#  reminder_id              :bigint
+#  touch_plan_enrollment_id :bigint           not null
+#
+# Indexes
+#
+#  idx_touch_occurrence_claims_on_enrollment_occurrence       (touch_plan_enrollment_id,occurrence_key) UNIQUE
+#  idx_touch_occurrence_claims_on_unique_reminder             (reminder_id) UNIQUE WHERE (reminder_id IS NOT NULL)
+#  idx_touch_occurrence_claims_stale                          (status,claimed_at)
+#  index_touch_occurrence_claims_on_account_id                (account_id)
+#  index_touch_occurrence_claims_on_reminder_id               (reminder_id)
+#  index_touch_occurrence_claims_on_touch_plan_enrollment_id  (touch_plan_enrollment_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (reminder_id => reminders.id)
+#  fk_rails_...  (touch_plan_enrollment_id => touch_plan_enrollments.id)
+#
 class TouchOccurrenceClaim < ApplicationRecord
   STATUSES = %w[claimed materialized skipped failed].freeze
 

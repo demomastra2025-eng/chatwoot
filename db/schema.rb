@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_07_130000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2034,8 +2034,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
     t.datetime "executed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying])::text[])))"
-    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying])::text[])))"
+    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying])::text[])))"
+    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying])::text[])))"
     t.index ["account_id", "idempotency_key"], name: "idx_medelement_commands_account_idempotency", unique: true
     t.index ["account_id"], name: "index_medelement_provider_commands_on_account_id"
     t.index ["appointment_id", "status"], name: "idx_medelement_commands_appointment_status"
@@ -2045,6 +2045,61 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
     t.index ["hook_id", "status"], name: "idx_medelement_commands_hook_status"
     t.index ["hook_id"], name: "index_medelement_provider_commands_on_hook_id"
     t.index ["requested_by_id"], name: "index_medelement_provider_commands_on_requested_by_id"
+  end
+
+  create_table "medelement_sync_conflicts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "hook_id"
+    t.bigint "first_sync_run_id"
+    t.bigint "last_sync_run_id"
+    t.bigint "resolved_by_id"
+    t.string "phase", null: false
+    t.string "entity_type", null: false
+    t.string "conflict_type", null: false
+    t.string "fingerprint", null: false
+    t.string "entity_key_digest", null: false
+    t.string "severity", default: "warning", null: false
+    t.string "status", default: "open", null: false
+    t.jsonb "details", default: {}, null: false
+    t.integer "occurrences", default: 1, null: false
+    t.datetime "first_seen_at", null: false
+    t.datetime "last_seen_at", null: false
+    t.datetime "resolved_at"
+    t.text "resolution_note"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "fingerprint"], name: "idx_medelement_sync_conflicts_account_fingerprint", unique: true
+    t.index ["account_id", "status", "last_seen_at"], name: "idx_medelement_sync_conflicts_account_status"
+    t.index ["account_id"], name: "index_medelement_sync_conflicts_on_account_id"
+    t.index ["first_sync_run_id"], name: "index_medelement_sync_conflicts_on_first_sync_run_id"
+    t.index ["hook_id", "phase", "status"], name: "idx_medelement_sync_conflicts_hook_phase_status"
+    t.index ["hook_id"], name: "index_medelement_sync_conflicts_on_hook_id"
+    t.index ["last_sync_run_id"], name: "index_medelement_sync_conflicts_on_last_sync_run_id"
+    t.index ["resolved_by_id"], name: "index_medelement_sync_conflicts_on_resolved_by_id"
+  end
+
+  create_table "medelement_sync_runs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "hook_id"
+    t.bigint "requested_by_id"
+    t.string "trigger", default: "scheduled", null: false
+    t.string "status", default: "queued", null: false
+    t.string "current_phase"
+    t.jsonb "requested_phases", default: [], null: false
+    t.jsonb "phase_results", default: {}, null: false
+    t.jsonb "summary", default: {}, null: false
+    t.string "error_code"
+    t.text "error_message"
+    t.datetime "started_at"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status"], name: "idx_medelement_sync_runs_account_status"
+    t.index ["account_id"], name: "index_medelement_sync_runs_on_account_id"
+    t.index ["hook_id", "created_at"], name: "idx_medelement_sync_runs_hook_created"
+    t.index ["hook_id"], name: "idx_medelement_sync_runs_one_active_hook", unique: true, where: "((hook_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'retrying'::character varying])::text[])))"
+    t.index ["hook_id"], name: "index_medelement_sync_runs_on_hook_id"
+    t.index ["requested_by_id"], name: "index_medelement_sync_runs_on_requested_by_id"
   end
 
   create_table "mentions", force: :cascade do |t|
@@ -3036,9 +3091,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
     t.datetime "updated_at", null: false
     t.bigint "automation_rule_id"
     t.string "source_action_id"
-    t.index ["account_id", "automation_rule_id", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action", unique: true, where: "(((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))"
+    t.index ["account_id", "automation_rule_id", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action", unique: true, where: "(((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('completed'::character varying)::text])) AND (automation_rule_id IS NOT NULL))"
     t.index ["account_id", "idempotency_key"], name: "idx_touch_plan_enrollments_on_account_idempotency", unique: true
-    t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))"
+    t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text]))"
     t.index ["account_id"], name: "index_touch_plan_enrollments_on_account_id"
     t.index ["automation_rule_id"], name: "index_touch_plan_enrollments_on_automation_rule_id"
     t.index ["remindable_type", "remindable_id", "status"], name: "idx_touch_plan_enrollments_on_remindable_status"
@@ -3299,6 +3354,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_05_145118) do
   add_foreign_key "medelement_provider_commands", "integrations_hooks", column: "hook_id", on_delete: :nullify
   add_foreign_key "medelement_provider_commands", "scheduling_appointments", column: "appointment_id", on_delete: :nullify
   add_foreign_key "medelement_provider_commands", "users", column: "requested_by_id", on_delete: :nullify
+  add_foreign_key "medelement_sync_conflicts", "accounts", on_delete: :cascade
+  add_foreign_key "medelement_sync_conflicts", "integrations_hooks", column: "hook_id", on_delete: :nullify
+  add_foreign_key "medelement_sync_conflicts", "medelement_sync_runs", column: "first_sync_run_id", on_delete: :nullify
+  add_foreign_key "medelement_sync_conflicts", "medelement_sync_runs", column: "last_sync_run_id", on_delete: :nullify
+  add_foreign_key "medelement_sync_conflicts", "users", column: "resolved_by_id", on_delete: :nullify
+  add_foreign_key "medelement_sync_runs", "accounts", on_delete: :cascade
+  add_foreign_key "medelement_sync_runs", "integrations_hooks", column: "hook_id", on_delete: :nullify
+  add_foreign_key "medelement_sync_runs", "users", column: "requested_by_id", on_delete: :nullify
   add_foreign_key "meta_ad_referrals", "accounts", on_delete: :cascade
   add_foreign_key "meta_ad_referrals", "communication_threads", on_delete: :nullify
   add_foreign_key "meta_ad_referrals", "contacts", on_delete: :nullify
