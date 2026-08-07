@@ -7,7 +7,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
-import { uploadFile } from 'dashboard/helper/uploadHelper';
+import { uploadWhatsAppTemplateMedia } from 'dashboard/helper/uploadHelper';
 import {
   createEmptyCarouselCard,
   createEmptyTemplateButton,
@@ -92,7 +92,10 @@ const handleCardMediaFileChange = async (cardIndex, event) => {
   try {
     uploadingCardId.value = cardId;
     emit('uploadingChange', true);
-    const { blobId, fileUrl } = await uploadFile(file);
+    const { blobId, fileUrl } = await uploadWhatsAppTemplateMedia(
+      file,
+      cards.value[cardIndex].headerType
+    );
     if (uploadToken !== activeUploadToken) return;
 
     const currentCardIndex = cards.value.findIndex(

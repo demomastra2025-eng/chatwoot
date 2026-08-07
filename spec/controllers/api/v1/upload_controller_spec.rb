@@ -21,6 +21,51 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
         expect(blob['blob_id']).to be_present
       end
 
+      it 'validates WhatsApp template media before persisting the blob' do
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 attachment: file,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'image'
+               }
+        end.to change(ActiveStorage::Blob, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        blob = ActiveStorage::Blob.find_signed(response.parsed_body['blob_id'])
+        expect(blob.content_type).to eq('image/png')
+      end
+
+      it 'does not persist WhatsApp template media with a mismatched detected type' do
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 attachment: file,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'video'
+               }
+        end.not_to change(ActiveStorage::Blob, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Unsupported video file type: image/png')
+      end
+
+      it 'does not persist WhatsApp template media without a supported media type' do
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 attachment: file,
+                 upload_purpose: 'whatsapp_template_media'
+               }
+        end.not_to change(ActiveStorage::Blob, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Unsupported header media type: ')
+      end
+
       it 'does not upload when unauthorized' do
         post upload_url,
              headers: {},
@@ -153,7 +198,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
            params: {}
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body['error']).to eq(I18n.t('errors.upload.missing_input'))
+      expect(response.parsed_body['error']).to eq(I18n.t('errors.upload.missing_input', locale: :en))
     end
   end
 end

@@ -1,5 +1,9 @@
 import axios from 'axios';
-import { uploadExternalImage, uploadFile } from '../uploadHelper';
+import {
+  uploadExternalImage,
+  uploadFile,
+  uploadWhatsAppTemplateMedia,
+} from '../uploadHelper';
 
 global.axios = axios;
 vi.mock('axios');
@@ -48,6 +52,25 @@ describe('Upload Helpers', () => {
       axios.post.mockRejectedValueOnce(mockError);
 
       await expect(uploadFile(mockFile)).rejects.toThrow('Failed to upload');
+    });
+
+    it('adds WhatsApp template validation metadata', async () => {
+      const mockFile = new File(['image'], 'example.png', {
+        type: 'image/png',
+      });
+      axios.post.mockResolvedValueOnce({
+        data: {
+          file_url: 'https://example.com/fileUrl',
+          blob_id: 'blobId456',
+        },
+      });
+
+      await uploadWhatsAppTemplateMedia(mockFile, 'image', '1602');
+
+      const formData = axios.post.mock.calls[0][1];
+      expect(formData.get('attachment')).toBe(mockFile);
+      expect(formData.get('upload_purpose')).toBe('whatsapp_template_media');
+      expect(formData.get('media_type')).toBe('image');
     });
   });
 

@@ -9,6 +9,8 @@ class Api::V1::Accounts::UploadController < Api::V1::Accounts::BaseController
              end
 
     render_success(result) if result.is_a?(ActiveStorage::Blob)
+  rescue Whatsapp::TemplateMediaValidator::InvalidMediaError => e
+    render_error(e.message, :unprocessable_content)
   end
 
   private
@@ -20,7 +22,19 @@ class Api::V1::Accounts::UploadController < Api::V1::Accounts::BaseController
                           :payment_required)
     end
 
-    create_and_save_blob(attachment.tempfile, attachment.original_filename, attachment.content_type)
+    content_type = validate_whatsapp_template_media!(attachment) || attachment.content_type
+    create_and_save_blob(attachment.tempfile, attachment.original_filename, content_type)
+  end
+
+  def validate_whatsapp_template_media!(attachment)
+    return unless params[:upload_purpose] == 'whatsapp_template_media'
+
+    Whatsapp::TemplateMediaValidator.validate!(
+      io: attachment.tempfile,
+      file_name: attachment.original_filename,
+      media_type: params[:media_type],
+      byte_size: attachment.size
+    )
   end
 
   def create_from_url

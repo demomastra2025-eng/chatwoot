@@ -20,9 +20,10 @@ const HEADERS = {
  *
  * @param {File} file - The file to be uploaded. It should be a File object (typically coming from a file input element).
  * @param {string} accountId - The account ID.
+ * @param {object} uploadMetadata - Optional metadata used for purpose-specific server validation.
  * @returns {Promise} A promise that resolves with the server's response when the upload is successful, or rejects if there's an error.
  */
-export async function uploadFile(file, accountId) {
+export async function uploadFile(file, accountId, uploadMetadata = {}) {
   if (!accountId) {
     accountId = window.location.pathname.split('/')[3];
   }
@@ -30,6 +31,12 @@ export async function uploadFile(file, accountId) {
   // Append the file to the FormData instance under the key 'attachment'.
   let formData = new FormData();
   formData.append('attachment', file);
+  if (uploadMetadata.uploadPurpose) {
+    formData.append('upload_purpose', uploadMetadata.uploadPurpose);
+  }
+  if (uploadMetadata.mediaType) {
+    formData.append('media_type', uploadMetadata.mediaType);
+  }
 
   const { data } = await axios.post(
     `/api/${API_VERSION}/accounts/${accountId}/upload`,
@@ -42,6 +49,13 @@ export async function uploadFile(file, accountId) {
     blobKey: data.blob_key,
     blobId: data.blob_id,
   };
+}
+
+export function uploadWhatsAppTemplateMedia(file, mediaType, accountId) {
+  return uploadFile(file, accountId, {
+    uploadPurpose: 'whatsapp_template_media',
+    mediaType,
+  });
 }
 
 /**

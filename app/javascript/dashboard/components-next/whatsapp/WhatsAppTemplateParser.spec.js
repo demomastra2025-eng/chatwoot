@@ -2,14 +2,14 @@ import { computed, defineComponent, h, nextTick, ref } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 
 import WhatsAppTemplateParser from './WhatsAppTemplateParser.vue';
-import { uploadFile } from 'dashboard/helper/uploadHelper';
+import { uploadWhatsAppTemplateMedia } from 'dashboard/helper/uploadHelper';
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
 }));
 
 vi.mock('dashboard/helper/uploadHelper', () => ({
-  uploadFile: vi.fn(),
+  uploadWhatsAppTemplateMedia: vi.fn(),
 }));
 
 const template = {
@@ -90,7 +90,7 @@ describe('WhatsAppTemplateParser', () => {
   });
 
   it('accepts a OneLink file instead of a manually entered media URL', async () => {
-    uploadFile.mockResolvedValue({
+    uploadWhatsAppTemplateMedia.mockResolvedValue({
       fileUrl: 'https://app.one-link.kz/media/invoice.jpg',
     });
     const wrapper = mount(WhatsAppTemplateParser, {
@@ -102,7 +102,7 @@ describe('WhatsAppTemplateParser', () => {
     await selectMediaFile(wrapper, file);
     await flushPromises();
 
-    expect(uploadFile).toHaveBeenCalledWith(file);
+    expect(uploadWhatsAppTemplateMedia).toHaveBeenCalledWith(file, 'image');
     expect(wrapper.vm.processedParams.header.media_url).toBe(
       'https://app.one-link.kz/media/invoice.jpg'
     );
@@ -110,7 +110,7 @@ describe('WhatsAppTemplateParser', () => {
 
   it('blocks send while replacement media is still uploading', async () => {
     const upload = createDeferred();
-    uploadFile.mockReturnValue(upload.promise);
+    uploadWhatsAppTemplateMedia.mockReturnValue(upload.promise);
     const wrapper = mount(WhatsAppTemplateParser, {
       ...mountOptions,
       props: {
@@ -140,7 +140,7 @@ describe('WhatsAppTemplateParser', () => {
 
   it('ignores a late media result after resetting the template', async () => {
     const upload = createDeferred();
-    uploadFile.mockReturnValue(upload.promise);
+    uploadWhatsAppTemplateMedia.mockReturnValue(upload.promise);
     const wrapper = mount(WhatsAppTemplateParser, {
       ...mountOptions,
       props: { template: mediaTemplate },

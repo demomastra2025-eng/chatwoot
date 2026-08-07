@@ -1,6 +1,5 @@
-# rubocop:disable Metrics/ClassLength
 class Whatsapp::TemplateAssetUploadService
-  MAX_DOWNLOAD_SIZE = 25.megabytes
+  MAX_DOWNLOAD_SIZE = Whatsapp::TemplateMediaValidator::MAX_FILE_SIZE
   PRIVATE_IP_RANGES = [
     IPAddr.new('127.0.0.0/8'),
     IPAddr.new('10.0.0.0/8'),
@@ -12,12 +11,6 @@ class Whatsapp::TemplateAssetUploadService
     IPAddr.new('fe80::/10')
   ].freeze
   DISALLOWED_HOSTS = ['localhost', /\.local\z/i].freeze
-  SUPPORTED_MIME_TYPES = {
-    'image' => %w[image/jpeg image/png],
-    'video' => %w[video/mp4],
-    'document' => %w[application/pdf]
-  }.freeze
-
   pattr_initialize [:whatsapp_channel!]
 
   def upload(url:, media_type:)
@@ -26,9 +19,7 @@ class Whatsapp::TemplateAssetUploadService
 
     file = Down::NetHttp.download(validated_url, max_size: MAX_DOWNLOAD_SIZE, max_redirects: 0)
     file_name = resolve_file_name(file, validated_url, media_type)
-    content_type = Marcel::MimeType.for(file, name: file_name) || 'application/octet-stream'
-
-    validate_media_type!(media_type.to_s.downcase, content_type)
+    content_type = validate_media!(file, file_name: file_name, media_type: media_type)
 
     upload_session_id = create_upload_session(
       file_name: file_name,
@@ -46,12 +37,12 @@ class Whatsapp::TemplateAssetUploadService
     blob = ActiveStorage::Blob.find_signed(blob_signed_id)
     raise ArgumentError, 'Uploaded media file is invalid or no longer available' if blob.blank?
     raise ArgumentError, 'Uploaded media file does not belong to this account' unless blob_account_id(blob) == whatsapp_channel.account_id
-    raise ArgumentError, 'Uploaded media file is too large' if blob.byte_size > MAX_DOWNLOAD_SIZE
+
+    Whatsapp::TemplateMediaValidator.validate_size!(blob.byte_size)
 
     blob.open do |file|
       file_name = blob.filename.to_s
-      content_type = Marcel::MimeType.for(file, name: file_name) || blob.content_type || 'application/octet-stream'
-      validate_media_type!(media_type.to_s.downcase, content_type)
+      content_type = validate_media!(file, file_name: file_name, media_type: media_type, byte_size: blob.byte_size)
 
       upload_file_with_metadata(file, file_name: file_name, content_type: content_type)
     end
@@ -65,14 +56,13 @@ class Whatsapp::TemplateAssetUploadService
     raise ArgumentError, 'WHATSAPP_APP_ID is not configured'
   end
 
-  def validate_media_type!(media_type, content_type)
-    supported_types = SUPPORTED_MIME_TYPES.fetch(media_type) do
-      raise ArgumentError, "Unsupported header media type: #{media_type}"
-    end
-
-    return if supported_types.include?(content_type)
-
-    raise ArgumentError, "Unsupported #{media_type} file type: #{content_type}"
+  def validate_media!(file, file_name:, media_type:, byte_size: file.size)
+    Whatsapp::TemplateMediaValidator.validate!(
+      io: file,
+      file_name: file_name,
+      media_type: media_type,
+      byte_size: byte_size
+    )
   end
 
   def validate_download_url!(url)
@@ -225,4 +215,3 @@ class Whatsapp::TemplateAssetUploadService
     @app_id ||= GlobalConfigService.load('WHATSAPP_APP_ID', '')
   end
 end
-# rubocop:enable Metrics/ClassLength

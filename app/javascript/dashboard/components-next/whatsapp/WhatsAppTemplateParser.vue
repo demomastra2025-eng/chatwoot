@@ -19,7 +19,7 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TemplateParamInput from './TemplateParamInput.vue';
 import TemplatePreview from 'dashboard/components-next/template-preview/TemplatePreview.vue';
 import { PLATFORMS } from 'dashboard/services/TemplateConstants';
-import { uploadFile } from 'dashboard/helper/uploadHelper';
+import { uploadWhatsAppTemplateMedia } from 'dashboard/helper/uploadHelper';
 import {
   buildTemplateParameters,
   allKeysRequired,
@@ -285,7 +285,10 @@ const handleMediaFileChange = async event => {
   const uploadGeneration = mediaUploadGeneration;
   try {
     isUploadingMedia.value = true;
-    const { fileUrl } = await uploadFile(file);
+    const { fileUrl } = await uploadWhatsAppTemplateMedia(
+      file,
+      headerComponent.value?.format?.toLowerCase()
+    );
     if (uploadGeneration !== mediaUploadGeneration) return;
 
     updateMediaUrl(fileUrl);

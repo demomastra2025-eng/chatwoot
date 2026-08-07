@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils';
 
-import { uploadFile } from 'dashboard/helper/uploadHelper';
+import { uploadWhatsAppTemplateMedia } from 'dashboard/helper/uploadHelper';
 import { createEmptyCarouselCard } from 'dashboard/helper/whatsappTemplateLibrary';
 import WhatsAppTemplateCarouselEditor from './WhatsAppTemplateCarouselEditor.vue';
 
@@ -13,7 +13,7 @@ vi.mock('dashboard/composables', () => ({
 }));
 
 vi.mock('dashboard/helper/uploadHelper', () => ({
-  uploadFile: vi.fn(),
+  uploadWhatsAppTemplateMedia: vi.fn(),
 }));
 
 const createCards = () => [
@@ -53,7 +53,7 @@ describe('WhatsAppTemplateCarouselEditor', () => {
 
   it('locks structural controls and reports upload state until media is attached', async () => {
     let resolveUpload;
-    uploadFile.mockReturnValue(
+    uploadWhatsAppTemplateMedia.mockReturnValue(
       new Promise(resolve => {
         resolveUpload = resolve;
       })
@@ -63,6 +63,7 @@ describe('WhatsAppTemplateCarouselEditor', () => {
 
     await selectFile(wrapper, file);
 
+    expect(uploadWhatsAppTemplateMedia).toHaveBeenCalledWith(file, 'image');
     expect(wrapper.emitted('uploadingChange')).toEqual([[true]]);
     expect(
       wrapper
@@ -86,7 +87,7 @@ describe('WhatsAppTemplateCarouselEditor', () => {
 
   it('does not attach a late upload result to replacement cards', async () => {
     let resolveUpload;
-    uploadFile.mockReturnValue(
+    uploadWhatsAppTemplateMedia.mockReturnValue(
       new Promise(resolve => {
         resolveUpload = resolve;
       })

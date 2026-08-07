@@ -10,7 +10,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages.js';
-import { uploadFile } from 'dashboard/helper/uploadHelper';
+import { uploadWhatsAppTemplateMedia } from 'dashboard/helper/uploadHelper';
 import WhatsAppTemplateCarouselEditor from './WhatsAppTemplateCarouselEditor.vue';
 import {
   buildWhatsAppTemplatePayload,
@@ -593,7 +593,10 @@ const handleMediaFileChange = async event => {
 
   try {
     isUploadingMedia.value = true;
-    const { blobId, fileUrl } = await uploadFile(file);
+    const { blobId, fileUrl } = await uploadWhatsAppTemplateMedia(
+      file,
+      form.headerType
+    );
     if (uploadGeneration !== mediaUploadGeneration) return;
 
     form.sampleMediaBlobId = blobId;
