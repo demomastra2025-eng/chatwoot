@@ -1940,7 +1940,7 @@ onMounted(async () => {
                   <div class="appointment-contact-accordion">
                     <div class="appointment-contact-accordion-summary">
                       <div
-                        class="grid min-w-0 flex-1 gap-2 md:grid-cols-[2rem_minmax(0,1.25fr)_11.25rem]"
+                        class="grid min-w-0 flex-1 gap-2 md:grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]"
                       >
                         <div class="mb-1 flex items-center">
                           <SchedulingSelectField
@@ -1992,19 +1992,6 @@ onMounted(async () => {
                             formStore.updateField('clientFirstName', $event)
                           "
                         />
-                        <PhoneNumberInput
-                          v-model="formStore.form.clientPhone"
-                          class="appointment-drawer-phone-control"
-                          default-country="KZ"
-                          :show-country-flag="false"
-                          :max-digits="11"
-                          :label="
-                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
-                          "
-                          size="md"
-                        />
-                      </div>
-                      <div class="grid gap-2 md:grid-cols-2 md:pl-10">
                         <Input
                           :model-value="formStore.form.clientLastName"
                           :label="
@@ -2022,6 +2009,17 @@ onMounted(async () => {
                           @update:model-value="
                             formStore.updateField('clientMiddleName', $event)
                           "
+                        />
+                        <PhoneNumberInput
+                          v-model="formStore.form.clientPhone"
+                          class="appointment-drawer-phone-control md:col-span-3 md:col-start-2"
+                          default-country="KZ"
+                          :show-country-flag="false"
+                          :max-digits="11"
+                          :label="
+                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                          "
+                          size="md"
                         />
                       </div>
                     </div>
