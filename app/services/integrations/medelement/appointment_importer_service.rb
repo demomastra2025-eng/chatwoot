@@ -95,6 +95,9 @@ class Integrations::Medelement::AppointmentImporterService
 
   def client_attributes(contact)
     {
+      client_first_name: contact&.name.presence,
+      client_last_name: contact&.last_name.presence,
+      client_middle_name: contact&.middle_name.presence,
       client_name: client_name(contact),
       client_phone: contact_phone(contact),
       client_identifier: contact&.identifier.presence || contact&.custom_attributes&.dig('iin'),
@@ -112,7 +115,8 @@ class Integrations::Medelement::AppointmentImporterService
   end
 
   def client_name(contact)
-    contact&.name.presence || 'Unresolved MedElement patient'
+    [contact&.name, contact&.last_name, contact&.middle_name].compact_blank.join(' ').presence ||
+      'Unresolved MedElement patient'
   end
 
   def contact_phone(contact)

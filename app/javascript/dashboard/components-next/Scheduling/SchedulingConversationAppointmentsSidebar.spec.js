@@ -6,6 +6,7 @@ import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 
 const existingAppointment = {
   id: 501,
+  clientFirstName: 'Айша',
   clientName: 'Айша',
   contactId: 42,
   conversationId: 123,
@@ -161,7 +162,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       wrapper.find('#scheduling-conversation-appointment-status').exists()
     ).toBe(true);
     expect(
-      wrapper.find('#scheduling-conversation-appointment-client-name').exists()
+      wrapper
+        .find('#scheduling-conversation-appointment-client-first-name')
+        .exists()
     ).toBe(true);
     expect(wrapper.vm.createForm.status).toBe('scheduled');
     expect(
@@ -218,16 +221,46 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     expect(
       wrapper
-        .find('#scheduling-conversation-appointment-client-name-501')
+        .find('#scheduling-conversation-appointment-client-first-name-501')
         .exists()
     ).toBe(true);
     expect(wrapper.vm.openAppointmentKeys).toEqual(['appointment-501']);
     expect(wrapper.vm.appointmentForms['appointment-501']).toMatchObject({
-      clientName: 'Айша',
+      clientFirstName: 'Айша',
       resourceId: 7,
       serviceId: 9,
       status: 'confirmed',
     });
+  });
+
+  it('does not promote an unchanged legacy display name to structured identity', async () => {
+    const legacyAppointment = {
+      ...existingAppointment,
+      clientFirstName: null,
+      clientLastName: null,
+      clientMiddleName: null,
+      clientName: 'Касымова Айжан Ерлановна',
+    };
+    SchedulingAppointmentsAPI.get.mockResolvedValue({
+      data: { payload: [legacyAppointment] },
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(wrapper.vm.appointmentForms['appointment-501']).toMatchObject({
+      clientFirstName: 'Касымова Айжан Ерлановна',
+      clientLastName: '',
+      clientMiddleName: '',
+      clientNameStructured: false,
+    });
+
+    await wrapper.vm.saveAppointment(legacyAppointment);
+
+    const payload = SchedulingAppointmentsAPI.update.mock.calls.at(-1)[1];
+    expect(payload.client_name).toBe('Касымова Айжан Ерлановна');
+    expect(payload).not.toHaveProperty('client_first_name');
+    expect(payload).not.toHaveProperty('client_last_name');
+    expect(payload).not.toHaveProperty('client_middle_name');
   });
 
   it('updates an existing appointment from the inline edit form', async () => {
@@ -235,7 +268,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
 
     Object.assign(wrapper.vm.appointmentForms['appointment-501'], {
-      clientName: 'Айша updated',
+      clientFirstName: 'Айша updated',
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T11:00',
       resourceId: 7,
@@ -249,6 +282,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     expect(SchedulingAppointmentsAPI.update).toHaveBeenCalledWith(501, {
       appointment_type: 'primary',
+      client_first_name: 'Айша updated',
+      client_last_name: null,
+      client_middle_name: null,
       client_name: 'Айша updated',
       client_phone: 'test-phone-4567',
       contact_id: 42,
@@ -325,7 +361,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
 
     Object.assign(wrapper.vm.appointmentForms['appointment-501'], {
-      clientName: 'Айша updated',
+      clientFirstName: 'Айша updated',
       endsAt: '2026-06-27T11:00',
       resourceId: 7,
       serviceAmount: '7000',
@@ -348,7 +384,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
       .vm.$emit('click', 'new_appointment');
 
     Object.assign(wrapper.vm.createForm, {
-      clientName: 'Айша',
+      clientFirstName: 'Айша',
+      clientLastName: 'Касымова',
+      clientMiddleName: 'Ерлановна',
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
@@ -362,7 +400,10 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith({
       appointment_type: 'primary',
-      client_name: 'Айша',
+      client_first_name: 'Айша',
+      client_last_name: 'Касымова',
+      client_middle_name: 'Ерлановна',
+      client_name: 'Айша Касымова Ерлановна',
       client_phone: 'test-phone-4567',
       contact_id: 42,
       conversation_display_id: 123,
@@ -393,7 +434,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(wrapper.vm.hasServiceOptions).toBe(false);
 
     Object.assign(wrapper.vm.createForm, {
-      clientName: 'Айша',
+      clientFirstName: 'Айша',
       clientPhone: 'test-phone-4567',
       endsAt: '2026-06-27T10:30',
       resourceId: 7,
@@ -406,6 +447,9 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
 
     expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith({
       appointment_type: 'primary',
+      client_first_name: 'Айша',
+      client_last_name: null,
+      client_middle_name: null,
       client_name: 'Айша',
       client_phone: 'test-phone-4567',
       contact_id: 42,

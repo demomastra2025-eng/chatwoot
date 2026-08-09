@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_07_130000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_09_030000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2473,6 +2473,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_07_130000) do
     t.string "status", default: "scheduled", null: false
     t.string "appointment_type", default: "primary", null: false
     t.string "client_name", null: false
+    t.string "client_first_name"
+    t.string "client_last_name"
+    t.string "client_middle_name"
     t.string "client_phone"
     t.string "client_identifier"
     t.date "client_birth_date"

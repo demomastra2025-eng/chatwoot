@@ -57,7 +57,11 @@ const isCreating = ref(false);
 const isSavingCreate = ref(false);
 const savingAppointmentKey = ref('');
 const createForm = reactive({
+  clientFirstName: '',
+  clientLastName: '',
+  clientMiddleName: '',
   clientName: '',
+  clientNameStructured: true,
   clientPhone: '',
   endsAt: '',
   resourceId: '',
@@ -164,6 +168,40 @@ const contactPhone = computed(
     ''
 );
 
+const fullPatientName = form =>
+  [form?.clientFirstName, form?.clientLastName, form?.clientMiddleName]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ');
+
+const updatePatientNamePart = (form, field, value) => {
+  form[field] = value;
+  form.clientName = fullPatientName(form);
+  form.clientNameStructured = true;
+};
+
+const patientNameParts = source => {
+  if (
+    source?.clientFirstName ||
+    source?.clientLastName ||
+    source?.clientMiddleName
+  ) {
+    return {
+      clientFirstName: source.clientFirstName || '',
+      clientLastName: source.clientLastName || '',
+      clientMiddleName: source.clientMiddleName || '',
+      clientNameStructured: true,
+    };
+  }
+
+  return {
+    clientFirstName: String(source?.clientName || '').trim(),
+    clientLastName: '',
+    clientMiddleName: '',
+    clientNameStructured: false,
+  };
+};
+
 const buildDefaultAppointmentTimes = () => {
   const startsAt = new Date();
   startsAt.setMinutes(Math.ceil(startsAt.getMinutes() / 5) * 5, 0, 0);
@@ -186,7 +224,15 @@ const resetCreateForm = () => {
   const defaults = buildDefaultAppointmentTimes();
 
   Object.assign(createForm, {
+    clientFirstName:
+      contact.value?.first_name ||
+      contact.value?.firstName ||
+      contactName.value,
+    clientLastName: contact.value?.last_name || contact.value?.lastName || '',
+    clientMiddleName:
+      contact.value?.middle_name || contact.value?.middleName || '',
     clientName: contactName.value,
+    clientNameStructured: true,
     clientPhone: contactPhone.value,
     endsAt: defaults.endsAt,
     resourceId: primaryResource?.id || '',
@@ -273,28 +319,32 @@ const mergeUniqueAppointments = (...collections) => {
   return sortAppointmentsForDialog([...byId.values()]);
 };
 
-const formFromAppointment = appointment => ({
-  appointmentType: appointment.appointmentType || 'primary',
-  clientName: appointment.clientName || '',
-  clientPhone: appointment.clientPhone || '',
-  contactId: appointment.contactId || contactId.value || '',
-  conversationDisplayId:
-    appointment.conversationDisplayId ||
-    createConversationDisplayId.value ||
-    '',
-  conversationId: appointment.conversationId || '',
-  endsAt: toDateTimeInputValue(appointment.endsAt),
-  resourceId: appointment.resourceId || '',
-  serviceAmount:
-    appointment.serviceAmount === null ||
-    typeof appointment.serviceAmount === 'undefined'
-      ? ''
-      : String(appointment.serviceAmount),
-  serviceId: appointment.serviceId || '',
-  serviceNameSnapshot: appointment.serviceNameSnapshot || '',
-  startsAt: toDateTimeInputValue(appointment.startsAt),
-  status: appointment.status || 'scheduled',
-});
+const formFromAppointment = appointment => {
+  const nameParts = patientNameParts(appointment);
+  return {
+    appointmentType: appointment.appointmentType || 'primary',
+    ...nameParts,
+    clientName: appointment.clientName || '',
+    clientPhone: appointment.clientPhone || '',
+    contactId: appointment.contactId || contactId.value || '',
+    conversationDisplayId:
+      appointment.conversationDisplayId ||
+      createConversationDisplayId.value ||
+      '',
+    conversationId: appointment.conversationId || '',
+    endsAt: toDateTimeInputValue(appointment.endsAt),
+    resourceId: appointment.resourceId || '',
+    serviceAmount:
+      appointment.serviceAmount === null ||
+      typeof appointment.serviceAmount === 'undefined'
+        ? ''
+        : String(appointment.serviceAmount),
+    serviceId: appointment.serviceId || '',
+    serviceNameSnapshot: appointment.serviceNameSnapshot || '',
+    startsAt: toDateTimeInputValue(appointment.startsAt),
+    status: appointment.status || 'scheduled',
+  };
+};
 
 const setAppointmentForms = () => {
   Object.keys(appointmentForms).forEach(key => delete appointmentForms[key]);
@@ -368,6 +418,11 @@ const appendServicePayload = (payload, { serviceId, serviceNameSnapshot }) => {
   if (!selectedServiceId) {
     servicePayload.service_ids = [];
   }
+  if (Object.hasOwn(payload, 'client_first_name')) {
+    servicePayload.client_last_name = payload.client_last_name?.trim() || null;
+    servicePayload.client_middle_name =
+      payload.client_middle_name?.trim() || null;
+  }
 
   return servicePayload;
 };
@@ -380,7 +435,7 @@ const appointmentFormEndsAfterStart = form => {
 
 const isAppointmentFormInvalid = form =>
   !contactId.value ||
-  !form?.clientName?.trim() ||
+  !form?.clientFirstName?.trim() ||
   !form?.resourceId ||
   !form?.startsAt ||
   !form?.endsAt ||
@@ -390,7 +445,14 @@ const buildAppointmentPayload = form =>
   appendServicePayload(
     {
       appointment_type: form.appointmentType || 'primary',
-      client_name: form.clientName,
+      ...(form.clientNameStructured
+        ? {
+            client_first_name: form.clientFirstName,
+            client_last_name: form.clientLastName,
+            client_middle_name: form.clientMiddleName,
+          }
+        : {}),
+      client_name: fullPatientName(form),
       client_phone: form.clientPhone,
       contact_id: toNumeric(form.contactId || contactId.value),
       conversation_display_id: toNumeric(
@@ -417,7 +479,14 @@ const buildCreatePayload = () =>
   appendServicePayload(
     {
       appointment_type: 'primary',
-      client_name: createForm.clientName,
+      ...(createForm.clientNameStructured
+        ? {
+            client_first_name: createForm.clientFirstName,
+            client_last_name: createForm.clientLastName,
+            client_middle_name: createForm.clientMiddleName,
+          }
+        : {}),
+      client_name: fullPatientName(createForm),
       client_phone: createForm.clientPhone,
       contact_id: toNumeric(contactId.value),
       conversation_display_id: toNumeric(createConversationDisplayId.value),
@@ -572,7 +641,7 @@ const createFormEndsAfterStart = computed(() => {
 const isCreateFormInvalid = computed(
   () =>
     !contactId.value ||
-    !createForm.clientName?.trim() ||
+    !createForm.clientFirstName?.trim() ||
     !createForm.resourceId ||
     !createForm.startsAt ||
     !createForm.endsAt ||
@@ -811,20 +880,78 @@ watch(
                   <div class="scheduling-appointment-drawer-row">
                     <label
                       class="scheduling-appointment-drawer-label"
-                      for="scheduling-conversation-appointment-client-name"
+                      for="scheduling-conversation-appointment-client-first-name"
                     >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME') }}
+                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME') }}
                     </label>
                     <Input
-                      id="scheduling-conversation-appointment-client-name"
+                      id="scheduling-conversation-appointment-client-first-name"
                       class="scheduling-appointment-drawer-control"
                       custom-input-class="!rounded-md !bg-n-alpha-black2"
                       :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME')
+                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
                       "
-                      :model-value="createForm.clientName"
+                      :model-value="createForm.clientFirstName"
                       size="sm"
-                      @update:model-value="createForm.clientName = $event"
+                      @update:model-value="
+                        updatePatientNamePart(
+                          createForm,
+                          'clientFirstName',
+                          $event
+                        )
+                      "
+                    />
+                  </div>
+
+                  <div class="scheduling-appointment-drawer-row">
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      for="scheduling-conversation-appointment-client-last-name"
+                    >
+                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME') }}
+                    </label>
+                    <Input
+                      id="scheduling-conversation-appointment-client-last-name"
+                      class="scheduling-appointment-drawer-control"
+                      custom-input-class="!rounded-md !bg-n-alpha-black2"
+                      :aria-label="
+                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
+                      "
+                      :model-value="createForm.clientLastName"
+                      size="sm"
+                      @update:model-value="
+                        updatePatientNamePart(
+                          createForm,
+                          'clientLastName',
+                          $event
+                        )
+                      "
+                    />
+                  </div>
+
+                  <div class="scheduling-appointment-drawer-row">
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      for="scheduling-conversation-appointment-client-middle-name"
+                    >
+                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME') }}
+                    </label>
+                    <Input
+                      id="scheduling-conversation-appointment-client-middle-name"
+                      class="scheduling-appointment-drawer-control"
+                      custom-input-class="!rounded-md !bg-n-alpha-black2"
+                      :aria-label="
+                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                      "
+                      :model-value="createForm.clientMiddleName"
+                      size="sm"
+                      @update:model-value="
+                        updatePatientNamePart(
+                          createForm,
+                          'clientMiddleName',
+                          $event
+                        )
+                      "
                     />
                   </div>
 
@@ -1074,25 +1201,86 @@ watch(
                   <div class="scheduling-appointment-drawer-row">
                     <label
                       class="scheduling-appointment-drawer-label"
-                      :for="`scheduling-conversation-appointment-client-name-${appointment.id}`"
+                      :for="`scheduling-conversation-appointment-client-first-name-${appointment.id}`"
                     >
-                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME') }}
+                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME') }}
                     </label>
                     <Input
-                      :id="`scheduling-conversation-appointment-client-name-${appointment.id}`"
+                      :id="`scheduling-conversation-appointment-client-first-name-${appointment.id}`"
                       class="scheduling-appointment-drawer-control"
                       custom-input-class="!rounded-md !bg-n-alpha-black2"
                       :aria-label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME')
+                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
                       "
                       :model-value="
-                        appointmentForms[appointmentKey(appointment)].clientName
+                        appointmentForms[appointmentKey(appointment)]
+                          .clientFirstName
                       "
                       size="sm"
                       @update:model-value="
-                        appointmentForms[
-                          appointmentKey(appointment)
-                        ].clientName = $event
+                        updatePatientNamePart(
+                          appointmentForms[appointmentKey(appointment)],
+                          'clientFirstName',
+                          $event
+                        )
+                      "
+                    />
+                  </div>
+
+                  <div class="scheduling-appointment-drawer-row">
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      :for="`scheduling-conversation-appointment-client-last-name-${appointment.id}`"
+                    >
+                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME') }}
+                    </label>
+                    <Input
+                      :id="`scheduling-conversation-appointment-client-last-name-${appointment.id}`"
+                      class="scheduling-appointment-drawer-control"
+                      custom-input-class="!rounded-md !bg-n-alpha-black2"
+                      :aria-label="
+                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
+                      "
+                      :model-value="
+                        appointmentForms[appointmentKey(appointment)]
+                          .clientLastName
+                      "
+                      size="sm"
+                      @update:model-value="
+                        updatePatientNamePart(
+                          appointmentForms[appointmentKey(appointment)],
+                          'clientLastName',
+                          $event
+                        )
+                      "
+                    />
+                  </div>
+
+                  <div class="scheduling-appointment-drawer-row">
+                    <label
+                      class="scheduling-appointment-drawer-label"
+                      :for="`scheduling-conversation-appointment-client-middle-name-${appointment.id}`"
+                    >
+                      {{ $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME') }}
+                    </label>
+                    <Input
+                      :id="`scheduling-conversation-appointment-client-middle-name-${appointment.id}`"
+                      class="scheduling-appointment-drawer-control"
+                      custom-input-class="!rounded-md !bg-n-alpha-black2"
+                      :aria-label="
+                        $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                      "
+                      :model-value="
+                        appointmentForms[appointmentKey(appointment)]
+                          .clientMiddleName
+                      "
+                      size="sm"
+                      @update:model-value="
+                        updatePatientNamePart(
+                          appointmentForms[appointmentKey(appointment)],
+                          'clientMiddleName',
+                          $event
+                        )
                       "
                     />
                   </div>

@@ -1,6 +1,109 @@
 require 'rails_helper'
 
 RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder do
+  describe '#build' do
+    it 'uses structured appointment names in the MedElement patient payload' do
+      account = create(:account)
+      contact = create(
+        :contact,
+        account: account,
+        phone_number: '+77000000001',
+        custom_attributes: { 'medelement_iin' => '940720300129' }
+      )
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_middle_name: 'Ерлановна',
+        client_name: 'Айжан Касымова Ерлановна'
+      )
+      hook = build_stubbed(:integrations_hook, account: account, app_id: 'medelement', settings: {})
+
+      snapshot = described_class.new(
+        account: account,
+        hook: hook,
+        operation: 'create_patient',
+        appointment: appointment,
+        contact: contact
+      ).build
+
+      expect(snapshot.dig('patient', 'payload')).to include(
+        'name' => 'Айжан',
+        'lastname' => 'Касымова',
+        'middlename' => 'Ерлановна',
+        'iin' => '940720300129'
+      )
+    end
+
+    it 'validates contact IIN fallbacks for structured appointments' do
+      account = create(:account)
+      contact = create(
+        :contact,
+        account: account,
+        identifier: '940720300129',
+        phone_number: '+77000000001',
+        custom_attributes: { 'medelement_iin' => 'invalid-iin' }
+      )
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_name: 'Айжан Касымова'
+      )
+      hook = build_stubbed(:integrations_hook, account: account, app_id: 'medelement', settings: {})
+
+      snapshot = described_class.new(
+        account: account,
+        hook: hook,
+        operation: 'create_patient',
+        appointment: appointment,
+        contact: contact
+      ).build
+
+      expect(snapshot.dig('patient', 'payload', 'iin')).to eq('940720300129')
+    end
+
+    it 'keeps using contact identity for legacy appointments without structured names' do
+      account = create(:account)
+      contact = create(
+        :contact,
+        account: account,
+        name: 'Айжан',
+        last_name: 'Касымова',
+        middle_name: 'Ерлановна',
+        phone_number: '+77000000001'
+      )
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        client_first_name: nil,
+        client_last_name: nil,
+        client_middle_name: nil,
+        client_name: 'legacy display name'
+      )
+      hook = build_stubbed(:integrations_hook, account: account, app_id: 'medelement', settings: {})
+
+      snapshot = described_class.new(
+        account: account,
+        hook: hook,
+        operation: 'create_patient',
+        appointment: appointment,
+        contact: contact
+      ).build
+
+      expect(snapshot.dig('patient', 'payload')).to include(
+        'name' => 'Айжан',
+        'lastname' => 'Касымова',
+        'middlename' => 'Ерлановна'
+      )
+    end
+  end
+
   describe '.service_codes' do
     it 'reads the exact legacy v1 singular shape for old-web to new-worker rollout' do
       snapshot = {

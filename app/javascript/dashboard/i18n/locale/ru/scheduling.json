@@ -167,6 +167,9 @@
       "CLIENT_GENDER": "Пол",
       "CLIENT_IDENTIFIER": "Идентификатор",
       "CLIENT_NAME": "Имя клиента",
+      "CLIENT_FIRST_NAME": "Имя",
+      "CLIENT_LAST_NAME": "Фамилия",
+      "CLIENT_MIDDLE_NAME": "Отчество",
       "CLIENT_PHONE": "Телефон клиента",
       "COMMENT": "Комментарий",
       "COMMENT_PLACEHOLDER": "Внутренние заметки по записи",
@@ -203,7 +206,7 @@
       "SUCCESS_DELETE": "Запись удалена",
       "SUCCESS_SAVE": "Запись сохранена",
       "ERRORS": {
-        "CLIENT_NAME_REQUIRED": "Укажите имя клиента или выберите контакт",
+        "CLIENT_NAME_REQUIRED": "Укажите имя",
         "CONTACT_REQUIRED": "Выберите контакт",
         "END_BEFORE_START": "Время окончания должно быть позже времени начала",
         "PREPAID_EXCEEDS_SERVICE_AMOUNT": "Предоплата не может превышать стоимость услуги",

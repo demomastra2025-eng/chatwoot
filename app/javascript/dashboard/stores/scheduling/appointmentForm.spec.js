@@ -146,6 +146,49 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('builds structured patient names and only requires the first name', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate({}, { resourceId: 3 });
+    expect(store.validationErrors.clientName).toBeTruthy();
+
+    store.updateField('clientFirstName', 'Айжан');
+    store.updateField('clientLastName', 'Касымова');
+    store.updateField('clientMiddleName', 'Ерлановна');
+
+    expect(store.validationErrors.clientName).toBe('');
+    expect(store.buildPayload()).toMatchObject({
+      client_first_name: 'Айжан',
+      client_last_name: 'Касымова',
+      client_middle_name: 'Ерлановна',
+      client_name: 'Айжан Касымова Ерлановна',
+    });
+  });
+
+  it('preserves legacy client names without promoting them to structured provider identity', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      clientName: 'Касымова Айжан Ерлановна',
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+
+    expect(store.form).toMatchObject({
+      clientFirstName: 'Касымова Айжан Ерлановна',
+      clientLastName: '',
+      clientMiddleName: '',
+      clientNameStructured: false,
+    });
+    const payload = store.buildPayload();
+    expect(payload.client_name).toBe('Касымова Айжан Ерлановна');
+    expect(payload).not.toHaveProperty('client_first_name');
+    expect(payload).not.toHaveProperty('client_last_name');
+    expect(payload).not.toHaveProperty('client_middle_name');
+  });
+
   it('does not echo backend-managed appointment metadata in mutation payloads', () => {
     const store = useSchedulingAppointmentFormStore();
 

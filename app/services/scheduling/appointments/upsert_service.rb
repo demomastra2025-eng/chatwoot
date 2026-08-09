@@ -1,5 +1,6 @@
 class Scheduling::Appointments::UpsertService
   APPOINTMENT_BOOKING_INTAKE_CONTEXT = 'booking_intake'.freeze
+  CLIENT_NAME_PART_KEYS = %i[client_first_name client_last_name client_middle_name].freeze
   DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[service_ids services].freeze
   INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[medelement_cabinet_code].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode].freeze
@@ -63,6 +64,7 @@ class Scheduling::Appointments::UpsertService
     prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
     prepaid_payment_method = resolve_prepaid_payment_method(prepaid_amount)
     settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
+    client_identity = resolve_client_identity(contact)
 
     requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
     requested_payment_status = 'cancelled' if resolve_string(:status, current: appointment.status.presence || 'scheduled') == 'cancelled' &&
@@ -82,7 +84,10 @@ class Scheduling::Appointments::UpsertService
       duration_min: duration_min,
       status: resolve_string(:status, current: appointment.status.presence || 'scheduled'),
       appointment_type: resolve_string(:appointment_type, current: appointment.appointment_type.presence || 'primary'),
-      client_name: resolve_client_name(contact),
+      client_first_name: client_identity&.fetch(:first_name, nil),
+      client_last_name: client_identity&.fetch(:last_name, nil),
+      client_middle_name: client_identity&.fetch(:middle_name, nil),
+      client_name: client_identity ? client_identity.values.compact_blank.join(' ') : resolve_client_name(contact),
       client_phone: resolve_client_phone(contact),
       client_identifier: resolve_client_identifier(contact),
       client_birth_date: resolve_client_birth_date(contact),
@@ -180,6 +185,30 @@ class Scheduling::Appointments::UpsertService
     return resolved if resolved.present?
 
     raise ArgumentError, 'client_name is required'
+  end
+
+  def resolve_client_identity(contact)
+    structured_identity = CLIENT_NAME_PART_KEYS.any? { |key| params.key?(key) } ||
+                          CLIENT_NAME_PART_KEYS.any? { |key| appointment.public_send(key).present? }
+    return unless structured_identity
+
+    identity = {
+      first_name: resolve_optional_text(
+        :client_first_name,
+        current: appointment.client_first_name.presence || contact&.name
+      ),
+      last_name: resolve_optional_text(
+        :client_last_name,
+        current: appointment.client_last_name.presence || contact&.last_name
+      ),
+      middle_name: resolve_optional_text(
+        :client_middle_name,
+        current: appointment.client_middle_name.presence || contact&.middle_name
+      )
+    }
+    return identity if identity[:first_name].present?
+
+    raise ArgumentError, 'client_first_name is required'
   end
 
   def resolve_client_phone(contact)

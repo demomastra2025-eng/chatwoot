@@ -64,6 +64,16 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
   end
 
   def appointment_name_values
+    explicit = {
+      first_name: identity['first_name'].to_s.presence,
+      last_name: identity['last_name'].to_s.presence,
+      middle_name: identity['middle_name'].to_s.presence
+    }
+    if explicit[:first_name].present?
+      validate_name_values!(explicit)
+      return explicit
+    end
+
     parts = identity.fetch('full_name').to_s.split
     validate_name_parts!(parts)
 
@@ -80,14 +90,26 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     )
   end
 
+  def validate_name_values!(values)
+    return if values[:first_name].present? && values[:last_name].present?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
+      message: 'Patient first and last name are required for Medelement',
+      status: :unprocessable_content
+    )
+  end
+
   def appointment_identity?
-    identity['full_name'].present?
+    identity['first_name'].present? || identity['full_name'].present?
   end
 
   def iin
-    return identity['iin'].presence if appointment_identity?
-
-    candidates = [custom_attributes['medelement_iin'], custom_attributes['iin'], contact.identifier]
+    candidates = if appointment_identity?
+                   [identity['iin']]
+                 else
+                   [custom_attributes['medelement_iin'], custom_attributes['iin'], contact.identifier]
+                 end
     value = candidates.find { |candidate| Scheduling::IinValidator.valid?(candidate) }
     Scheduling::IinValidator.normalize(value) if value
   end

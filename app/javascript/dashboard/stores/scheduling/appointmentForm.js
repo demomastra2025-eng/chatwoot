@@ -26,6 +26,39 @@ const BACKEND_MANAGED_CUSTOM_ATTRIBUTE_KEYS = new Set([
   'source_mode',
 ]);
 const MEDELEMENT_CABINET_CODE_KEY = 'medelement_cabinet_code';
+const CLIENT_NAME_PART_FIELDS = new Set([
+  'clientFirstName',
+  'clientLastName',
+  'clientMiddleName',
+]);
+
+const fullPatientName = form =>
+  [form?.clientFirstName, form?.clientLastName, form?.clientMiddleName]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ');
+
+const patientNameParts = appointment => {
+  if (
+    appointment?.clientFirstName ||
+    appointment?.clientLastName ||
+    appointment?.clientMiddleName
+  ) {
+    return {
+      clientFirstName: appointment.clientFirstName || '',
+      clientLastName: appointment.clientLastName || '',
+      clientMiddleName: appointment.clientMiddleName || '',
+      clientNameStructured: true,
+    };
+  }
+
+  return {
+    clientFirstName: String(appointment?.clientName || '').trim(),
+    clientLastName: '',
+    clientMiddleName: '',
+    clientNameStructured: false,
+  };
+};
 
 const editableCustomAttributes = attributes =>
   Object.fromEntries(
@@ -81,9 +114,13 @@ const createDefaultForm = () => ({
   appointmentType: 'primary',
   clientBirthDate: '',
   clientComment: '',
+  clientFirstName: '',
   clientGender: '',
   clientIdentifier: '',
+  clientLastName: '',
+  clientMiddleName: '',
   clientName: '',
+  clientNameStructured: true,
   clientPhone: '',
   companyId: '',
   contactId: '',
@@ -141,10 +178,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
           resolveAmount(state.form.serviceAmount)
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.PREPAID_EXCEEDS_SERVICE_AMOUNT'
             : '',
-        clientName:
-          !state.form.clientName && !state.form.contactId
-            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
-            : '',
+        clientName: !state.form.clientFirstName?.trim()
+          ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
+          : '',
         contactId:
           state.requirements.contactRequired && !state.form.contactId
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
@@ -186,6 +222,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
 
       openEdit(appointment) {
         this.reset();
+        const nameParts = patientNameParts(appointment);
         this.mode = 'edit';
         this.recordId = appointment.id;
         this.selectedAppointment = {
@@ -200,9 +237,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
           appointmentType: appointment.appointmentType || 'primary',
           clientBirthDate: appointment.clientBirthDate || '',
           clientComment: appointment.clientComment || '',
+          clientFirstName: nameParts.clientFirstName,
           clientGender: appointment.clientGender || '',
           clientIdentifier: appointment.clientIdentifier || '',
+          clientLastName: nameParts.clientLastName,
+          clientMiddleName: nameParts.clientMiddleName,
           clientName: appointment.clientName || '',
+          clientNameStructured: nameParts.clientNameStructured,
           clientPhone: appointment.clientPhone || '',
           companyId: appointment.companyId || '',
           contactId: appointment.contactId || '',
@@ -249,7 +290,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
         const normalizedServiceIds =
           field === 'serviceIds' ? normalizeIdArray(value) : [];
 
-        this.form = normalizePrepaymentForm({
+        const updatedForm = {
           ...this.form,
           [field]: normalizedValue,
           ...(field === 'serviceIds'
@@ -260,7 +301,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
                   : {}),
               }
             : {}),
-        });
+        };
+        if (CLIENT_NAME_PART_FIELDS.has(field)) {
+          updatedForm.clientName = fullPatientName(updatedForm);
+          updatedForm.clientNameStructured = true;
+        }
+        this.form = normalizePrepaymentForm(updatedForm);
       },
 
       applyContact(contact) {
@@ -268,9 +314,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
         this.form = {
           ...this.form,
           clientBirthDate: contact.birthDate || '',
+          clientFirstName: contact.firstName || contact.fullName || '',
           clientGender: contact.gender || '',
           clientIdentifier: contact.identifier || '',
+          clientLastName: contact.lastName || '',
+          clientMiddleName: contact.middleName || '',
           clientName: contact.fullName || '',
+          clientNameStructured: true,
           clientPhone: contact.phone || '',
           companyId: contact.companyId || this.form.companyId || '',
           contactId: contact.id,
@@ -402,10 +452,16 @@ export const useSchedulingAppointmentFormStore = defineStore(
           appointment_type: normalizedForm.appointmentType,
           client_birth_date: normalizedForm.clientBirthDate || undefined,
           client_comment: normalizedForm.clientComment,
+          ...(normalizedForm.clientNameStructured
+            ? {
+                client_first_name: normalizedForm.clientFirstName,
+                client_last_name: normalizedForm.clientLastName,
+                client_middle_name: normalizedForm.clientMiddleName,
+              }
+            : {}),
           client_gender: normalizedForm.clientGender,
           client_identifier: normalizedForm.clientIdentifier,
-          client_name:
-            normalizedForm.clientName || this.selectedContact?.fullName,
+          client_name: fullPatientName(normalizedForm),
           client_phone: normalizedForm.clientPhone,
           contact_id: toNumeric(normalizedForm.contactId),
           conversation_display_id: toNumeric(
@@ -449,6 +505,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
 
         if (!hasSelectedService) {
           payload.service_ids = [];
+        }
+        if (normalizedForm.clientNameStructured) {
+          payload.client_last_name =
+            normalizedForm.clientLastName?.trim() || null;
+          payload.client_middle_name =
+            normalizedForm.clientMiddleName?.trim() || null;
         }
 
         const selectedAppointmentContactId = Number(

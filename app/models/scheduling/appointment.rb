@@ -6,8 +6,11 @@
 #  appointment_type              :string           default("primary"), not null
 #  client_birth_date             :date
 #  client_comment                :text
+#  client_first_name             :string
 #  client_gender                 :string
 #  client_identifier             :string
+#  client_last_name              :string
+#  client_middle_name            :string
 #  client_name                   :string           not null
 #  client_phone                  :string
 #  compensation_percent_snapshot :integer          default(0), not null

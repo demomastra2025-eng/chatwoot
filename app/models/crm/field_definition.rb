@@ -64,7 +64,8 @@ class Crm::FieldDefinition < ApplicationRecord
     ],
     'appointment' => %w[
       resource_id contact_id service_id company_id conversation_id created_by_id owner_id
-      starts_at ends_at duration_min status appointment_type client_name client_phone
+      starts_at ends_at duration_min status appointment_type client_name client_first_name
+      client_last_name client_middle_name client_phone
       client_identifier client_birth_date client_gender client_comment source
       external_ref idempotency_key service_name_snapshot service_type_snapshot
       service_duration_min_snapshot service_amount compensation_type_snapshot

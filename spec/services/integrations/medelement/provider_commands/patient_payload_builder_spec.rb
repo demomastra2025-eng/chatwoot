@@ -87,6 +87,23 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     expect(payload).not_to include('iin', 'birthday', 'gender')
   end
 
+  it 'maps structured appointment name fields without parsing their order' do
+    payload = described_class.new(
+      contact: contact,
+      identity: {
+        first_name: 'Айжан',
+        last_name: 'Касымова',
+        middle_name: 'Ерлановна'
+      }
+    ).build
+
+    expect(payload).to include(
+      'name' => 'Айжан',
+      'lastname' => 'Касымова',
+      'middlename' => 'Ерлановна'
+    )
+  end
+
   it 'rejects a name without separate first and last names' do
     contact.update!(name: 'Ivan')
 

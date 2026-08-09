@@ -87,7 +87,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     payload = Integrations::Medelement::ProviderCommands::PatientPayloadBuilder.new(
       contact: contact,
       patient_code: operation == 'update_patient' ? patient_code : nil,
-      phone_number: phone_number
+      phone_number: phone_number,
+      identity: appointment_identity
     ).build
     {
       'phone_number' => phone_number.to_s,
@@ -98,6 +99,42 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
 
   def patient_phone_number
     contact&.phone_number
+  end
+
+  def appointment_identity
+    return {} if appointment.blank? || appointment.client_first_name.blank?
+
+    {
+      first_name: appointment.client_first_name,
+      last_name: appointment.client_last_name,
+      middle_name: appointment.client_middle_name
+    }.merge(appointment_demographic_identity)
+  end
+
+  def appointment_demographic_identity
+    {
+      iin: appointment_iin,
+      birth_date: appointment_or_contact_identity(:client_birth_date, %w[medelement_birth_date birth_date]),
+      gender: appointment_or_contact_identity(:client_gender, %w[medelement_gender gender])
+    }
+  end
+
+  def appointment_iin
+    contact_attributes = contact&.custom_attributes.to_h
+    candidates = [
+      appointment.client_identifier,
+      contact_attributes['medelement_iin'],
+      contact_attributes['iin'],
+      contact&.identifier
+    ]
+    value = candidates.find { |candidate| Scheduling::IinValidator.valid?(candidate) }
+    Scheduling::IinValidator.normalize(value) if value
+  end
+
+  def appointment_or_contact_identity(appointment_attribute, contact_attribute_keys, fallback = nil)
+    appointment.public_send(appointment_attribute).presence ||
+      contact_attribute_keys.filter_map { |key| contact&.custom_attributes.to_h[key].presence }.first ||
+      fallback.presence
   end
 
   def patient_phone_numbers

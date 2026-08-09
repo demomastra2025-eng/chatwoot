@@ -201,6 +201,16 @@ const validationErrorMessage = key => {
   return labels[key] || '';
 };
 
+const appointmentClientName = () =>
+  [
+    formStore.form.clientFirstName,
+    formStore.form.clientLastName,
+    formStore.form.clientMiddleName,
+  ]
+    .map(value => String(value || '').trim())
+    .filter(Boolean)
+    .join(' ') || formStore.form.clientName;
+
 const calendarTypeViews = computed(() =>
   ['day', 'week', 'month'].map(value => ({
     label: viewLabels.value[value],
@@ -497,7 +507,7 @@ const contactOptions = computed(() => {
   }
 
   const fallbackLabel = [
-    formStore.selectedContact?.fullName || formStore.form.clientName,
+    formStore.selectedContact?.fullName || appointmentClientName(),
     formStore.selectedContact?.phone || formStore.form.clientPhone,
   ]
     .filter(Boolean)
@@ -660,7 +670,7 @@ const appointmentConversationContacts = computed(() => {
     {
       id: contactId,
       label: [
-        contact?.fullName || formStore.form.clientName,
+        contact?.fullName || appointmentClientName(),
         contact?.phone || formStore.form.clientPhone,
       ]
         .filter(Boolean)
@@ -1209,7 +1219,7 @@ const handleInlineContactSave = async () => {
 
   const contactPayload = {
     ...inlineContactForm,
-    fullName: formStore.form.clientName,
+    fullName: appointmentClientName(),
     phone: formStore.form.clientPhone,
   };
 
@@ -1848,11 +1858,13 @@ onMounted(async () => {
               <input
                 id="scheduling-appointment-drawer-title"
                 class="reset-base min-w-0 flex-1 border-none bg-transparent text-base font-semibold text-n-slate-12 outline-none placeholder:text-n-slate-10"
-                :aria-label="$t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME')"
+                :aria-label="
+                  $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
+                "
                 :placeholder="drawerTitle"
-                :value="formStore.form.clientName"
+                :value="formStore.form.clientFirstName"
                 @input="
-                  formStore.updateField('clientName', $event.target.value)
+                  formStore.updateField('clientFirstName', $event.target.value)
                 "
               />
 
@@ -1955,8 +1967,10 @@ onMounted(async () => {
                           />
                         </div>
                         <Input
-                          v-model="formStore.form.clientName"
-                          :label="$t('SCHEDULING.APPOINTMENT_FORM.CLIENT_NAME')"
+                          :model-value="formStore.form.clientFirstName"
+                          :label="
+                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
+                          "
                           :message="
                             formStore.validationErrors.clientName
                               ? validationErrorMessage(
@@ -1974,6 +1988,9 @@ onMounted(async () => {
                               ? 'error'
                               : 'info'
                           "
+                          @update:model-value="
+                            formStore.updateField('clientFirstName', $event)
+                          "
                         />
                         <PhoneNumberInput
                           v-model="formStore.form.clientPhone"
@@ -1985,6 +2002,26 @@ onMounted(async () => {
                             $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
                           "
                           size="md"
+                        />
+                      </div>
+                      <div class="grid gap-2 md:grid-cols-2 md:pl-10">
+                        <Input
+                          :model-value="formStore.form.clientLastName"
+                          :label="
+                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
+                          "
+                          @update:model-value="
+                            formStore.updateField('clientLastName', $event)
+                          "
+                        />
+                        <Input
+                          :model-value="formStore.form.clientMiddleName"
+                          :label="
+                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                          "
+                          @update:model-value="
+                            formStore.updateField('clientMiddleName', $event)
+                          "
                         />
                       </div>
                     </div>
@@ -2475,7 +2512,7 @@ onMounted(async () => {
       :title="$t('SCHEDULING.APPOINTMENT_FORM.DELETE_TITLE')"
       :description="
         $t('SCHEDULING.APPOINTMENT_FORM.DELETE_DESCRIPTION', {
-          name: formStore.form.clientName || '',
+          name: appointmentClientName() || '',
         })
       "
       :confirm-button-label="$t('SCHEDULING.APPOINTMENT_FORM.DELETE_CONFIRM')"

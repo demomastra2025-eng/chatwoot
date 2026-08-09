@@ -167,6 +167,9 @@
       "CLIENT_GENDER": "Gender",
       "CLIENT_IDENTIFIER": "Identifier",
       "CLIENT_NAME": "Client name",
+      "CLIENT_FIRST_NAME": "First name",
+      "CLIENT_LAST_NAME": "Last name",
+      "CLIENT_MIDDLE_NAME": "Middle name",
       "CLIENT_PHONE": "Client phone",
       "COMMENT": "Comment",
       "COMMENT_PLACEHOLDER": "Internal notes for the appointment",
@@ -203,7 +206,7 @@
       "SUCCESS_DELETE": "Appointment deleted",
       "SUCCESS_SAVE": "Appointment saved",
       "ERRORS": {
-        "CLIENT_NAME_REQUIRED": "Enter the client name or select a contact",
+        "CLIENT_NAME_REQUIRED": "Enter the first name",
         "CONTACT_REQUIRED": "Select a contact",
         "END_BEFORE_START": "End time must be later than the start time",
         "PREPAID_EXCEEDS_SERVICE_AMOUNT": "Prepayment cannot exceed the service amount",

@@ -13,6 +13,9 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     duration_min
     status
     appointment_type
+    client_first_name
+    client_last_name
+    client_middle_name
     client_name
     client_phone
     client_identifier

@@ -31,4 +31,30 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     end
     expect(appointment.reload.external_ref).to be_nil
   end
+
+  it 'stores structured patient names while requiring only the first name locally' do
+    perform(client_first_name: 'Айжан', client_last_name: '', client_middle_name: '')
+
+    expect(appointment.reload).to have_attributes(
+      client_first_name: 'Айжан',
+      client_last_name: nil,
+      client_middle_name: nil,
+      client_name: 'Айжан'
+    )
+  end
+
+  it 'composes the display name from all structured patient name fields' do
+    perform(
+      client_first_name: 'Айжан',
+      client_last_name: 'Касымова',
+      client_middle_name: 'Ерлановна'
+    )
+
+    expect(appointment.reload).to have_attributes(
+      client_first_name: 'Айжан',
+      client_last_name: 'Касымова',
+      client_middle_name: 'Ерлановна',
+      client_name: 'Айжан Касымова Ерлановна'
+    )
+  end
 end

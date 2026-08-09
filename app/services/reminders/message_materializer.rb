@@ -8,24 +8,27 @@ class Reminders::MessageMaterializer
   end
 
   def perform(conversation:, sender:, content:, captain_trace: nil, delivery_policy: nil)
-    message = Messages::MessageBuilder.new(
-      sender,
-      conversation,
-      ActionController::Parameters.new(message_params(content: content)),
-      skip_send_reply: true
-    ).perform
+    Message.transaction do
+      message = Messages::MessageBuilder.new(
+        sender,
+        conversation,
+        ActionController::Parameters.new(message_params(content: content)),
+        skip_send_reply: true
+      ).perform
+      verify_attachment_materialization!(message)
 
-    additional_attributes = (message.additional_attributes || {}).merge(
-      'touch_id' => reminder.id,
-      'touch_source' => 'touch'
-    ).merge(automation_provenance)
-    additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
-    additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
+      additional_attributes = (message.additional_attributes || {}).merge(
+        'touch_id' => reminder.id,
+        'touch_source' => 'touch'
+      ).merge(automation_provenance)
+      additional_attributes['captain_trace'] = captain_trace if captain_trace.present?
+      additional_attributes['delivery_policy'] = delivery_policy.as_json if delivery_policy.present?
 
-    message.update!(additional_attributes: additional_attributes)
-    confirmation_request&.update!(delivery_message: message)
-    reminder.mark_delivery_materialized!(message.id) if reminder.persisted?
-    message
+      message.update!(additional_attributes: additional_attributes)
+      confirmation_request&.update!(delivery_message: message)
+      reminder.mark_delivery_materialized!(message.id) if reminder.persisted?
+      message
+    end
   end
 
   private
@@ -34,12 +37,27 @@ class Reminders::MessageMaterializer
     {
       content: content,
       template_params: template_params,
-      attachments: reminder.attachments.presence,
+      attachments: materialized_attachments,
       content_attributes: {
         touch_id: reminder.id,
         touch_source: 'touch'
       }.merge(automation_content_attributes).merge(confirmation_content_attributes)
     }.compact
+  end
+
+  def materialized_attachments
+    retained_files = reminder.files.attachments.includes(:blob).to_a
+    return retained_files.map(&:blob) if retained_files.present?
+
+    reminder.attachments.presence
+  end
+
+  def verify_attachment_materialization!(message)
+    expected_count = reminder.files.count.presence || Array(reminder.attachments).size
+    return if expected_count.zero? || message.attachments.count == expected_count
+
+    message.errors.add(:attachments, 'could not be materialized for the conversation timeline')
+    raise ActiveRecord::RecordInvalid, message
   end
 
   def automation_provenance
