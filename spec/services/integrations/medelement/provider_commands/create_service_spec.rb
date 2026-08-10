@@ -73,12 +73,40 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     )
   end
 
-  it 'does not fall back to the appointment phone when the contact phone is blank' do
+  it 'uses the appointment phone when the contact phone is blank without mutating the contact' do
+    appointment_phone = ['+7', '700', '123', '4567'].join
     contact.update!(phone_number: nil)
-    appointment.update!(client_phone: '+77001234567')
+    appointment.update!(client_phone: appointment_phone)
 
-    expect { perform }.to raise_error(ArgumentError, 'phone_number must be a Kazakhstan E.164 number')
+    command = perform
+
+    expect(command.request_snapshot).to include('patient_phone_numbers' => [appointment_phone])
+    expect(command.request_snapshot.fetch('patient')).to include(
+      'phone_number' => appointment_phone,
+      'phone_numbers' => [appointment_phone],
+      'payload' => include(
+        'patient_phone_2[0]' => '7',
+        'patient_phone_2[1]' => '700',
+        'patient_phone_2[2]' => '1234567'
+      )
+    )
     expect(contact.reload.phone_number).to be_nil
+  end
+
+  it 'does not mix a stale contact phone into a reception created with an appointment phone' do
+    stale_contact_phone = ['+7', '700', '000', '0002'].join
+    appointment_phone = ['+7', '700', '123', '4567'].join
+    contact.update!(phone_number: stale_contact_phone)
+    appointment.update!(client_phone: '8 (700) 123-45-67')
+
+    command = perform
+
+    expect(command.request_snapshot).to include('patient_phone_numbers' => [appointment_phone])
+    expect(command.request_snapshot.fetch('patient')).to include(
+      'phone_number' => appointment_phone,
+      'phone_numbers' => [appointment_phone]
+    )
+    expect(contact.reload.phone_number).to eq(stale_contact_phone)
   end
 
   it 'uses the linked Contact patient code and ignores appointment identity snapshots' do

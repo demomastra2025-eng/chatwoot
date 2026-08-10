@@ -83,7 +83,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     return unless patient_payload_required?
 
     phone_number = patient_phone_number
-    phone_numbers = Integrations::Medelement::PhoneNumber.contact_phones(contact)
+    phone_numbers = patient_phone_numbers
     payload = Integrations::Medelement::ProviderCommands::PatientPayloadBuilder.new(
       contact: contact,
       patient_code: operation == 'update_patient' ? patient_code : nil,
@@ -98,7 +98,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
 
   def patient_phone_number
-    contact&.phone_number
+    raw_phone = operation == 'create_reception' ? appointment&.client_phone.presence : nil
+    Integrations::Medelement::PhoneNumber.new(raw_phone || contact&.phone_number).e164
   end
 
   def appointment_identity
@@ -140,7 +141,8 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   def patient_phone_numbers
     return [] unless operation.in?(PATIENT_PHONE_OPERATIONS)
 
-    @patient_phone_numbers ||= Integrations::Medelement::PhoneNumber.contact_phones(contact)
+    contact_phones = Integrations::Medelement::PhoneNumber.contact_phones(contact)
+    operation == 'create_reception' && appointment&.client_phone.present? ? [patient_phone_number] : contact_phones
   end
 
   def patient_payload_required?
