@@ -154,23 +154,25 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
   end
 
   def assign_conversation(conversation_id:, assignee_id: nil, assignee_type: nil, team_id: nil)
-    target_conversation = find_permissible_conversation!(conversation_id)
+    with_current_account_context do
+      target_conversation = find_permissible_conversation!(conversation_id)
 
-    if assignee_id.present? || assignee_type.present?
-      resolved_assignee_type = validated_assignee_type!(assignee_id: assignee_id, assignee_type: assignee_type)
-      ::Conversations::AssignmentService.new(
-        conversation: target_conversation,
-        assignee_id: assignee_id,
-        assignee_type: resolved_assignee_type
-      ).perform
+      if assignee_id.present? || assignee_type.present?
+        resolved_assignee_type = validated_assignee_type!(assignee_id: assignee_id, assignee_type: assignee_type)
+        ::Conversations::AssignmentService.new(
+          conversation: target_conversation,
+          assignee_id: assignee_id,
+          assignee_type: resolved_assignee_type
+        ).perform
+      end
+
+      unless team_id.nil?
+        team = team_id.present? ? account.teams.find(team_id) : nil
+        target_conversation.update!(team: team)
+      end
+
+      target_conversation.reload
     end
-
-    unless team_id.nil?
-      team = team_id.present? ? account.teams.find(team_id) : nil
-      target_conversation.update!(team: team)
-    end
-
-    target_conversation.reload
   end
 
   def handoff(reason: nil, status_reason: nil)

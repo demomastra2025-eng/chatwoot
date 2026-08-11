@@ -37,6 +37,14 @@ describe MessageFinder do
           inbox: inbox,
           conversation: conversation
         )
+        captain_tool_activity = create(
+          :message,
+          message_type: 'activity',
+          source_id: 'captain-tool:execution-1',
+          account: account,
+          inbox: inbox,
+          conversation: conversation
+        )
         noisy_activity = create(
           :message,
           message_type: 'activity',
@@ -48,7 +56,7 @@ describe MessageFinder do
 
         result = message_finder.perform
 
-        expect(result).to include(useful_activity)
+        expect(result).to include(useful_activity, captain_tool_activity)
         expect(result).not_to include(noisy_activity)
       end
     end

@@ -70,6 +70,7 @@ class Llm::Monitoring::EventRecorder
     event = LlmEvent.create!(event_attributes)
     record_usage(event)
     enqueue_openrouter_generation_metadata(event)
+    project_conversation_timeline(event)
     event
   rescue StandardError => e
     Rails.logger.warn("[Llm::Monitoring::EventRecorder] Failed to persist #{@event_name}: #{e.class}: #{e.message}")
@@ -143,6 +144,15 @@ class Llm::Monitoring::EventRecorder
     Rails.logger.warn(
       "[Llm::Monitoring::EventRecorder] Failed to enqueue OpenRouter generation metadata for event #{event.id}: " \
       "#{e.class}: #{e.message}"
+    )
+    nil
+  end
+
+  def project_conversation_timeline(event)
+    Llm::Monitoring::ConversationTimelineProjector.new(event).call
+  rescue StandardError => e
+    Rails.logger.warn(
+      "[Llm::Monitoring::EventRecorder] Failed to project timeline event #{event.id}: #{e.class}: #{e.message}"
     )
     nil
   end

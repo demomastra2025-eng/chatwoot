@@ -55,6 +55,14 @@ describe CommunicationThreadMessageFinder do
       account: account,
       inbox: first_conversation.inbox
     )
+    captain_tool_activity = create(
+      :message,
+      message_type: 'activity',
+      source_id: 'captain-tool:execution-1',
+      conversation: first_conversation,
+      account: account,
+      inbox: first_conversation.inbox
+    )
     noisy_activity = create(
       :message,
       message_type: 'activity',
@@ -66,7 +74,7 @@ describe CommunicationThreadMessageFinder do
 
     result = finder.perform
 
-    expect(result).to include(regular_message, useful_activity)
+    expect(result).to include(regular_message, useful_activity, captain_tool_activity)
     expect(result).not_to include(noisy_activity)
   end
 

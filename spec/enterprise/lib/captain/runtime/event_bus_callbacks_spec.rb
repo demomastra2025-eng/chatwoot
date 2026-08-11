@@ -126,8 +126,8 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
     expect(tool_event.payload).to include(
       'tool_name' => 'lookup_contact',
       'duration_ms' => a_kind_of(Integer),
-      'started_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T/),
-      'completed_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T/)
+      'started_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T.*\.\d{6}/),
+      'completed_at' => a_string_matching(/\d{4}-\d{2}-\d{2}T.*\.\d{6}/)
     )
   end
 

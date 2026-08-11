@@ -881,7 +881,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(body[:payload].pluck(:contact_inbox_id)).to contain_exactly(first_conversation.contact_inbox_id, second_contact_inbox.id)
     end
 
-    it 'keeps private notes in the timeline while excluding activity messages' do
+    it 'keeps private notes and useful activities while excluding noisy telemetry' do
       conversation = create(:conversation, account: account)
       create(:inbox_member, user: agent, inbox: conversation.inbox)
       private_note = create(
@@ -898,7 +898,16 @@ RSpec.describe 'Communication Threads API', type: :request do
         account: account,
         conversation: conversation,
         inbox: conversation.inbox,
-        message_type: :activity
+        message_type: :activity,
+        content: 'Conversation assigned to Alex'
+      )
+      noisy_activity = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :activity,
+        source_id: 'telephony-ai-voice:call-1:tool_started:123'
       )
       thread = conversation.reload.communication_thread
 
@@ -906,8 +915,8 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:success)
       message_ids = response.parsed_body['payload'].pluck('id')
-      expect(message_ids).to include(private_note.id)
-      expect(message_ids).not_to include(activity_message.id)
+      expect(message_ids).to include(private_note.id, activity_message.id)
+      expect(message_ids).not_to include(noisy_activity.id)
     end
 
     it 'uses timeline order for cursor pagination instead of raw message ids' do

@@ -162,11 +162,11 @@ class Captain::Runtime::EventBusCallbacks
   def pop_tool_timing(context_wrapper, tool_name)
     timing = event_bus_state(context_wrapper).dig(:tool_timings, tool_name.to_s)&.shift
     completed_at = Time.current
-    return { completed_at: completed_at.iso8601 } if timing.blank?
+    return { completed_at: completed_at.iso8601(6) } if timing.blank?
 
     {
-      started_at: timing[:started_at]&.iso8601,
-      completed_at: completed_at.iso8601,
+      started_at: timing[:started_at]&.iso8601(6),
+      completed_at: completed_at.iso8601(6),
       duration_ms: elapsed_ms(timing[:started_monotonic])
     }.compact
   rescue StandardError

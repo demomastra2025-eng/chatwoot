@@ -54,6 +54,34 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       expect(event.payload['payload_bytes']).to be_positive
     end
 
+    it 'projects Captain tool completions into the conversation timeline' do
+      conversation = create(:conversation, account: account)
+
+      expect do
+        described_class.record_notification(
+          event_name: 'llm.tool.complete',
+          started_at: Time.zone.parse('2026-08-01 12:35:27'),
+          finished_at: Time.zone.parse('2026-08-01 12:35:28'),
+          payload: {
+            'account_id' => account.id,
+            'conversation_id' => conversation.id,
+            'feature' => 'assistant',
+            'runtime_mode' => 'captain_runtime',
+            'tool_name' => 'search_deals',
+            'request_id' => 'request-123',
+            'started_at' => '2026-08-01T12:35:27.123456Z',
+            'completed_at' => '2026-08-01T12:35:28.123456Z',
+            'result_success' => true
+          }
+        )
+      end.to change { conversation.messages.activity.count }.by(1)
+
+      expect(conversation.messages.activity.last).to have_attributes(
+        content: 'AI Agent completed tool search_deals',
+        source_id: a_string_starting_with('captain-tool:')
+      )
+    end
+
     it 'persists moderation skip and blocking flags' do
       described_class.record_notification(
         event_name: 'llm.moderation.unavailable',

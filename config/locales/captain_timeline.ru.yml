@@ -1,0 +1,6 @@
+ru:
+  conversations:
+    activity:
+      captain:
+        tool_completed: 'ИИ Агент выполнил инструмент «%{tool_name}»'
+        tool_failed: 'Инструмент ИИ Агента «%{tool_name}» завершился с ошибкой'

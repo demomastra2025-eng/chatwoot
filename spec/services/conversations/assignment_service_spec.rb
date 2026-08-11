@@ -19,6 +19,21 @@ describe Conversations::AssignmentService do
         expect(conversation.assignee_id).to be_nil
         expect(conversation.assignee_agent_bot_id).to be_nil
       end
+
+      it 'persists an unassignment activity for the acting user' do
+        actor = create(:user, account: account)
+        Current.user = actor
+
+        perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+          described_class.new(conversation: conversation, assignee_id: nil).perform
+        end
+
+        expect(conversation.messages.activity.last.content).to eq(
+          I18n.t('conversations.activity.assignee.removed', user_name: actor.name, assignee_name: '')
+        )
+      ensure
+        Current.user = nil
+      end
     end
 
     context 'when assigning a user' do
@@ -33,6 +48,25 @@ describe Conversations::AssignmentService do
         expect(result).to eq(agent)
         expect(conversation.assignee_id).to eq(agent.id)
         expect(conversation.assignee_agent_bot_id).to be_nil
+      end
+
+      it 'persists an assignment activity for the acting user' do
+        actor = create(:user, account: account)
+        Current.user = actor
+
+        perform_enqueued_jobs(only: Conversations::ActivityMessageJob) do
+          described_class.new(conversation: conversation, assignee_id: agent.id).perform
+        end
+
+        expect(conversation.messages.activity.last.content).to eq(
+          I18n.t(
+            'conversations.activity.assignee.assigned',
+            assignee_name: agent.name,
+            user_name: actor.name
+          )
+        )
+      ensure
+        Current.user = nil
       end
     end
 

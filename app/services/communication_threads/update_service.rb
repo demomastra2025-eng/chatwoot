@@ -31,12 +31,15 @@ class CommunicationThreads::UpdateService
   def sync_conversation!(conversation)
     conversation.skip_communication_thread_refresh = true
     conversation.communication_thread_event_id = communication_thread_event_id
-    assign_status!(conversation)
     assign_priority!(conversation)
     assign_agent!(conversation)
     assign_team!(conversation)
     assign_custom_attributes!(conversation)
-    conversation.save! if conversation.changed?
+    if params.key?(:status)
+      assign_status!(conversation)
+    elsif conversation.changed?
+      conversation.save!
+    end
   end
 
   def assign_status!(conversation)
@@ -48,7 +51,6 @@ class CommunicationThreads::UpdateService
       actor: actor,
       source: source
     ).perform
-    conversation.reload
   end
 
   def assign_priority!(conversation)
@@ -61,12 +63,11 @@ class CommunicationThreads::UpdateService
     return unless params.key?(:assignee_id)
 
     if agent_bot_assignment?
-      Conversations::AssignmentService.new(
-        conversation: conversation,
-        assignee_id: params[:assignee_id],
-        assignee_type: params[:assignee_type]
-      ).perform
-      conversation.reload
+      agent_bot = AgentBot.accessible_to(current_account).find_by(id: params[:assignee_id])
+      return if agent_bot.blank?
+
+      conversation.assignee = nil
+      conversation.assignee_agent_bot = agent_bot
       return
     end
 
@@ -122,6 +123,9 @@ class CommunicationThreads::UpdateService
     seed_conversation = accessible_links.first&.conversation
     return unless seed_conversation
 
-    Conversations::CommunicationThreadResolver.new(conversation: seed_conversation).perform
+    # Resolver#lock! reloads its record. Use a separate instance so the saved
+    # conversations retain saved_changes for their after_commit activity callbacks.
+    resolver_conversation = current_account.conversations.find(seed_conversation.id)
+    Conversations::CommunicationThreadResolver.new(conversation: resolver_conversation).perform
   end
 end

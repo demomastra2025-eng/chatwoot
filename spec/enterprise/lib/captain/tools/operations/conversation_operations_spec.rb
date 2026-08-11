@@ -156,6 +156,41 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
     end
   end
 
+  describe '#assign_conversation' do
+    it 'records assignee and team activities with the Captain actor' do
+      assignee = create(:user, account: account)
+      team = create(:team, account: account)
+      create(:team_member, team: team, user: assignee)
+
+      operations.assign_conversation(
+        conversation_id: conversation.display_id,
+        assignee_id: assignee.id,
+        team_id: team.id
+      )
+
+      expect(Conversations::ActivityMessageJob).to have_been_enqueued.with(
+        conversation,
+        hash_including(
+          content: I18n.t(
+            'conversations.activity.assignee.assigned',
+            assignee_name: assignee.name,
+            user_name: actor.name
+          )
+        )
+      )
+      expect(Conversations::ActivityMessageJob).to have_been_enqueued.with(
+        conversation,
+        hash_including(
+          content: I18n.t(
+            'conversations.activity.team.assigned',
+            team_name: team.name,
+            user_name: actor.name
+          )
+        )
+      )
+    end
+  end
+
   describe '#resolve_conversation' do
     it 'maps a free-text Captain reason only when it matches configured status reasons' do
       account.update!(
