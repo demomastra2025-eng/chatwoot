@@ -50,6 +50,7 @@ const statusPayload = {
   payload: {
     ui_config: {
       inbox_id: 42,
+      configuration_version: 7,
       status: {
         ready: true,
         read_only: false,
@@ -190,6 +191,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
     expect(updateVirtualPbxChannelMock).toHaveBeenCalledWith(
       42,
       {
+        expected_configuration_version: 7,
         provider_kind: 'sipuni',
         channel_name: 'Virtual PBX',
         display_phone_number: virtualPbxDisplayNumber,
@@ -197,6 +199,7 @@ describe('ConfigurationPage Virtual PBX management', () => {
           mode: 'operator',
           fallback_mode: 'reject',
           operator_distribution_mode: 'broadcast',
+          max_call_duration_seconds: 1800,
         },
         connection: {
           host: 'ats01.kz.sipuni.com',

@@ -262,7 +262,9 @@ RSpec.describe Integrations::Macrocrm::ManagerChangedProcessorService do
       perform
 
       expect(conversation.reload.assignee).to eq(mapped_agent)
-      expect(newer_conversation.reload.assignee_id).to be_nil
+      expect(newer_conversation.reload.assignee).to eq(mapped_agent)
+      expect(conversation.custom_attributes['macrocrm_manager_changed_at']).to be_present
+      expect(newer_conversation.custom_attributes['macrocrm_manager_changed_at']).to be_nil
     end
   end
 

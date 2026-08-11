@@ -403,27 +403,6 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
     end
   end
 
-  describe '#lock_assistant_assignment!' do
-    it 'locks the inbox before the shared advisory and assignment rows' do
-      service = described_class.allocate
-      inbox = double(id: 42, present?: true)
-      captain_inbox = double
-      routing_policy = double
-      allow(service).to receive_messages(
-        assignment_inbox: inbox,
-        assignment_captain_inbox: captain_inbox,
-        routing_policy: routing_policy
-      )
-
-      expect(inbox).to receive(:lock!).ordered
-      expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(42).ordered
-      expect(captain_inbox).to receive(:lock!).ordered
-      expect(routing_policy).to receive(:lock!).ordered
-
-      service.send(:lock_assistant_assignment!)
-    end
-  end
-
   describe '#captain_runtime_state' do
     let(:account) { create(:account, captain_runtime: { 'assistant_thinking_effort' => 'low' }) }
     let(:whatsapp_channel) do
@@ -453,13 +432,13 @@ RSpec.describe Telephony::AiVoice::ToolDispatchService do
       create(:captain_inbox, inbox: inbox, captain_assistant: assistant)
     end
 
-    it 'acquires the shared assignment lock before yielding the current assistant' do
+    it 'holds the shared assignment fence while yielding the current assistant' do
       service = described_class.new(
         tool_name: 'faq_lookup',
         payload: { account_id: account.id, call_ref: call_session.external_call_ref, arguments: {} }
       )
 
-      expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(inbox.id).and_call_original
+      expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:with_lock!).with(inbox.id).and_call_original
 
       service.with_captain_assistant_assignment_lock do |assistant_id|
         expect(assistant_id).to eq(assistant.id)

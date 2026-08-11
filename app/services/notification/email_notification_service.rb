@@ -47,10 +47,11 @@ class Notification::EmailNotificationService
   def imported_history_conversation?(actor)
     return false unless actor.is_a?(Conversation)
 
-    actor.messages.reorder(created_at: :desc, id: :desc).limit(1).pick(Arel.sql("content_attributes ->> 'imported_history'")) == 'true'
+    message = actor.messages.where.not(message_type: :activity).reorder(created_at: :desc, id: :desc).first
+    imported_history_message?(message)
   end
 
   def imported_history_message?(actor)
-    actor.is_a?(Message) && actor.imported_history_message?
+    actor.is_a?(Message) && !!ActiveModel::Type::Boolean.new.cast(actor.content_attributes.to_h['imported_history'])
   end
 end

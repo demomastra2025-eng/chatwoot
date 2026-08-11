@@ -90,7 +90,8 @@ describe('#integrationAPI', () => {
     it('#runHookSync', () => {
       integrationAPI.runHookSync(2);
       expect(axiosMock.post).toHaveBeenCalledWith(
-        '/api/v1/integrations/hooks/2/run_sync'
+        '/api/v1/integrations/hooks/2/run_sync',
+        {}
       );
     });
 

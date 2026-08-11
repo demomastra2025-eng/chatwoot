@@ -24,18 +24,18 @@
 #
 # Indexes
 #
-#  idx_on_account_id_source_kind_created_at_6919889fce       (account_id,source_kind,created_at)
-#  index_lead_submissions_on_account_id                      (account_id)
-#  index_lead_submissions_on_account_id_and_external_ref     (account_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
-#  index_lead_submissions_on_account_id_and_idempotency_key  (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
-#  index_lead_submissions_on_contact_id                      (contact_id)
-#  index_lead_submissions_on_contact_inbox_id                (contact_inbox_id)
-#  index_lead_submissions_on_conversation_id                 (conversation_id)
-#  index_lead_submissions_on_crm_deal_id                     (crm_deal_id)
-#  index_lead_submissions_on_field_values                    (field_values) USING gin
-#  index_lead_submissions_on_inbox_id                        (inbox_id)
-#  index_lead_submissions_on_lead_form_id                    (lead_form_id)
-#  index_lead_submissions_on_payload                         (payload) USING gin
+#  idx_lead_submissions_form_external_ref               (account_id,lead_form_id,external_ref) UNIQUE WHERE (external_ref IS NOT NULL)
+#  idx_lead_submissions_form_idempotency_key            (account_id,lead_form_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
+#  idx_on_account_id_source_kind_created_at_6919889fce  (account_id,source_kind,created_at)
+#  index_lead_submissions_on_account_id                 (account_id)
+#  index_lead_submissions_on_contact_id                 (contact_id)
+#  index_lead_submissions_on_contact_inbox_id           (contact_inbox_id)
+#  index_lead_submissions_on_conversation_id            (conversation_id)
+#  index_lead_submissions_on_crm_deal_id                (crm_deal_id)
+#  index_lead_submissions_on_field_values               (field_values) USING gin
+#  index_lead_submissions_on_inbox_id                   (inbox_id)
+#  index_lead_submissions_on_lead_form_id               (lead_form_id)
+#  index_lead_submissions_on_payload                    (payload) USING gin
 #
 # Foreign Keys
 #

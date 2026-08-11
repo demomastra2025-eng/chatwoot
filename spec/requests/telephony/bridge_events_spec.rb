@@ -432,21 +432,23 @@ RSpec.describe 'Internal voice inbound events', type: :request do
     expect(response).to have_http_status(:accepted)
 
     written_events = File.readlines(debug_log_file.path).map { |line| JSON.parse(line) }
+    call_ref_digest = "sha256:#{Digest::SHA256.hexdigest('call-in-log-1').first(16)}"
     expect(written_events).to include(
       include(
         'event' => 'telephony_inbound_event_request',
         'path' => path,
-        'call_ref' => 'call-in-log-1',
+        'call_ref' => call_ref_digest,
         'account_id' => account.id.to_s,
         'event_type' => 'session_started'
       ),
       include(
         'event' => 'telephony_inbound_event_response',
         'path' => path,
-        'call_ref' => 'call-in-log-1',
-        'response_payload' => include('status' => 'accepted', 'mode' => 'async', 'call_ref' => 'call-in-log-1')
+        'call_ref' => call_ref_digest,
+        'response_payload' => include('status' => 'accepted', 'mode' => 'async', 'call_ref' => call_ref_digest)
       )
     )
+    expect(written_events.to_json).not_to include('call-in-log-1')
   ensure
     debug_log_file&.close!
   end

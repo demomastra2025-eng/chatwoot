@@ -676,7 +676,12 @@ describe('#actions', () => {
         ['CLEAR_LIST_LOADING_STATUS'],
         [
           'CHANGE_CONVERSATION_STATUS',
-          { conversationId: 1, status: 'snoozed', snoozedUntil: null },
+          {
+            conversationId: 1,
+            conversationType: 'conversation',
+            status: 'snoozed',
+            snoozedUntil: null,
+          },
         ],
       ]);
     });
@@ -724,7 +729,12 @@ describe('#actions', () => {
         ],
         [
           types.CHANGE_CONVERSATION_STATUS,
-          { conversationId: 1, status: 'resolved', snoozedUntil: null },
+          {
+            conversationId: 1,
+            conversationType: 'conversation',
+            status: 'resolved',
+            snoozedUntil: null,
+          },
         ],
       ]);
     });
@@ -922,7 +932,12 @@ describe('#actions', () => {
       ['CLEAR_LIST_LOADING_STATUS'],
       [
         'CHANGE_CONVERSATION_STATUS',
-        { conversationId: 1, status: 'resolved', snoozedUntil: null },
+        {
+          conversationId: 1,
+          conversationType: 'conversation',
+          status: 'resolved',
+          snoozedUntil: null,
+        },
       ],
     ]);
   });

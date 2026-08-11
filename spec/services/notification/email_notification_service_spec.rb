@@ -149,5 +149,27 @@ describe Notification::EmailNotificationService do
 
       it { is_expected.to be(false) }
     end
+
+    context 'when imported history is stored as a legacy string value' do
+      let(:message) do
+        create(
+          :message,
+          account: account,
+          content_attributes: { imported_history: 'true' }
+        )
+      end
+      let(:notification) do
+        create(
+          :notification,
+          account: account,
+          user: agent,
+          notification_type: 'assigned_conversation_new_message',
+          primary_actor: message.conversation,
+          secondary_actor: message
+        )
+      end
+
+      it { is_expected.to be(true) }
+    end
   end
 end

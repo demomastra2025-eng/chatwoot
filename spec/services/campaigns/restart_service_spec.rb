@@ -9,7 +9,7 @@ RSpec.describe Campaigns::RestartService do
 
   it 'restarts a failed campaign with terminal retry enabled' do
     source_run = create(:campaign_run, campaign: campaign, account: account, inbox: campaign.inbox, status: :failed)
-    restarted_run = create(:campaign_run, campaign: campaign, account: account, inbox: campaign.inbox, status: :queued)
+    restarted_run = build_stubbed(:campaign_run, campaign: campaign, account: account, inbox: campaign.inbox, status: :queued)
 
     expect(Campaigns::OneoffRunner).to receive(:new).with(
       campaign: campaign,

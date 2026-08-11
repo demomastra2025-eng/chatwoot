@@ -49,11 +49,20 @@ RSpec.describe Confirmations::DeliveryPayloadBuilder do
     expect(payload[:delivery_strategy]).to eq('native_buttons')
     expect(payload[:content_type]).to eq('input_select')
     expect(payload.dig(:content_attributes, :confirmation_request_id)).to eq(request.id)
-    expect(payload.dig(:content_attributes, :items)).to contain_exactly(
-      include(title: 'Подтвердить', value: "confirmation:#{request.token}:confirmed"),
-      include(title: 'Отменить', value: "confirmation:#{request.token}:declined"),
-      include(title: 'Перенести', value: "confirmation:#{request.token}:reschedule_requested")
+    resolved_decisions = payload.dig(:content_attributes, :items).to_h do |item|
+      resolved = Confirmations::TelegramCallback.resolve(
+        value: item.fetch(:value),
+        account: request.account,
+        conversation: request.conversation
+      )
+      [item.fetch(:title), resolved&.fetch(:decision)]
+    end
+    expect(resolved_decisions).to eq(
+      'Подтвердить' => 'confirmed',
+      'Отменить' => 'declined',
+      'Перенести' => 'reschedule_requested'
     )
+    expect(payload.dig(:content_attributes, :items)).to all(satisfy { |item| item.fetch(:value).bytesize <= 64 })
   end
 
   it 'uses native buttons for LINE and Facebook quick-reply capable channels' do

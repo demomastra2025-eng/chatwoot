@@ -95,19 +95,19 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     expect(conversation.messages.where(private: true)).not_to exist
   end
 
-  it 'records failures and does not automatically replay a possibly partial mutation' do
+  it 'records dispatch exceptions as outcome unknown and does not replay a possibly partial mutation' do
     expect do
       execution(arguments: { content: '' }).perform
     end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('NOTE_CONTENT_REQUIRED') }
 
     event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
     expect(event).to have_attributes(status: 'failed', call_session_id: call_session.id)
-    expect(event.error_message).to eq('NOTE_CONTENT_REQUIRED')
+    expect(event.error_message).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN')
     expect(event.payload.to_json).not_to include('note content is required')
 
     expect do
       execution(arguments: { content: '' }).perform
-    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_PREVIOUSLY_FAILED') }
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
   end
 
   it 'returns and replays typed non-retryable Captain business failures while marking the event failed' do
@@ -158,6 +158,102 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
     expect(event).to have_attributes(status: 'failed', error_message: 'TOOL_EXECUTION_OUTCOME_UNKNOWN')
     expect(conversation.messages.where(private: true)).not_to exist
+  end
+
+  it 'marks a lost acknowledgement after dispatch as outcome unknown without repeating the mutation' do
+    service = execution(arguments: { content: 'Ambiguous dispatched note' })
+    dispatch_service = service.send(:dispatch_service)
+    allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
+      original.call
+      raise Timeout::Error, 'provider acknowledgement timed out'
+    end
+
+    expect { service.perform }.to raise_error(Timeout::Error)
+
+    event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
+    expect(event).to have_attributes(status: 'failed', error_message: 'TOOL_EXECUTION_OUTCOME_UNKNOWN')
+    expect(event.payload).to include(
+      'phase' => 'outcome_unknown',
+      'error_code' => 'TOOL_EXECUTION_OUTCOME_UNKNOWN',
+      'dispatch_error_class' => 'Timeout::Error'
+    )
+
+    expect do
+      execution(arguments: { content: 'Ambiguous dispatched note' }).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
+    expect(conversation.messages.where(private: true).count).to eq(1)
+  end
+
+  it 'marks post-dispatch argument errors as outcome unknown without repeating the mutation' do
+    service = execution(arguments: { content: 'Ambiguous normalized note' })
+    dispatch_service = service.send(:dispatch_service)
+    allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
+      original.call
+      raise ArgumentError, 'invalid acknowledgement shape'
+    end
+
+    expect { service.perform }.to raise_error(ArgumentError)
+
+    event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
+    expect(event).to have_attributes(status: 'failed', error_message: 'TOOL_EXECUTION_OUTCOME_UNKNOWN')
+    expect(event.payload).to include(
+      'phase' => 'outcome_unknown',
+      'error_code' => 'TOOL_EXECUTION_OUTCOME_UNKNOWN',
+      'dispatch_error_class' => 'ArgumentError'
+    )
+
+    expect do
+      execution(arguments: { content: 'Ambiguous normalized note' }).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
+    expect(conversation.messages.where(private: true).count).to eq(1)
+  end
+
+  it 'marks post-dispatch domain errors as outcome unknown without repeating the mutation' do
+    service = execution(arguments: { content: 'Ambiguous domain acknowledgement' })
+    dispatch_service = service.send(:dispatch_service)
+    allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
+      original.call
+      raise Telephony::Error.new(code: 'PROVIDER_ACK_INVALID', message: 'invalid provider acknowledgement')
+    end
+
+    expect { service.perform }.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('PROVIDER_ACK_INVALID') }
+
+    event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
+    expect(event).to have_attributes(status: 'failed', error_message: 'TOOL_EXECUTION_OUTCOME_UNKNOWN')
+    expect(event.payload).to include(
+      'phase' => 'outcome_unknown',
+      'error_code' => 'TOOL_EXECUTION_OUTCOME_UNKNOWN',
+      'dispatch_error_class' => 'Telephony::Error'
+    )
+
+    expect do
+      execution(arguments: { content: 'Ambiguous domain acknowledgement' }).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
+    expect(conversation.messages.where(private: true).count).to eq(1)
+  end
+
+  it 'marks post-dispatch unknown-tool errors as outcome unknown without repeating the mutation' do
+    service = execution(arguments: { content: 'Ambiguous tool acknowledgement' })
+    dispatch_service = service.send(:dispatch_service)
+    allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
+      original.call
+      raise Telephony::AiVoice::ToolDispatchService::UnknownToolError, 'invalid tool acknowledgement'
+    end
+
+    expect { service.perform }.to raise_error(Telephony::AiVoice::ToolDispatchService::UnknownToolError)
+
+    event = account.telephony_events.find_by!(event_type: described_class::EVENT_TYPE)
+    expect(event).to have_attributes(status: 'failed', error_message: 'TOOL_EXECUTION_OUTCOME_UNKNOWN')
+    expect(event.payload).to include(
+      'phase' => 'outcome_unknown',
+      'error_code' => 'TOOL_EXECUTION_OUTCOME_UNKNOWN',
+      'dispatch_error_class' => 'Telephony::AiVoice::ToolDispatchService::UnknownToolError'
+    )
+
+    expect do
+      execution(arguments: { content: 'Ambiguous tool acknowledgement' }).perform
+    end.to raise_error(Telephony::Error) { |error| expect(error.code).to eq('TOOL_EXECUTION_OUTCOME_UNKNOWN') }
+    expect(conversation.messages.where(private: true).count).to eq(1)
   end
 
   it 'reclaims a stale reservation that never entered dispatch' do
@@ -245,12 +341,23 @@ RSpec.describe Telephony::AiVoice::ToolExecutionService do
     expect(conversation.messages.where(private: true)).not_to exist
   end
 
-  it 'does not hold the assistant assignment transaction during the tool body' do
+  it 'holds the assistant assignment fence without retaining a transaction during the tool body' do
     service = execution(arguments: { content: 'Outside assignment lock' })
     dispatch_service = service.send(:dispatch_service)
     baseline_transactions = ActiveRecord::Base.connection.open_transactions
+    assignment_fenced = false
+
+    allow(Telephony::AiVoice::AssistantAssignmentLock).to receive(:with_lock!).and_wrap_original do |original, *args, &block|
+      original.call(*args) do
+        assignment_fenced = true
+        block.call
+      ensure
+        assignment_fenced = false
+      end
+    end
 
     allow(dispatch_service).to receive(:perform).and_wrap_original do |original|
+      expect(assignment_fenced).to be(true)
       expect(ActiveRecord::Base.connection.open_transactions).to eq(baseline_transactions)
       original.call
     end

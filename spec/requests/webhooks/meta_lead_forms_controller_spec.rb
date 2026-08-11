@@ -11,7 +11,9 @@ RSpec.describe 'Meta lead form webhooks', type: :request do
       inbox: target_inbox,
       source_kind: 'meta',
       external_ref: 'meta-form-1',
-      field_schema: [],
+      field_schema: [
+        { 'name' => 'phone_number', 'label' => 'Phone number', 'type' => 'tel', 'required' => true }
+      ],
       settings: {
         'verify_token' => 'lead-verify-token',
         'meta_connection_inbox_id' => meta_channel.inbox.id

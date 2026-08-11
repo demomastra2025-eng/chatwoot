@@ -27,4 +27,13 @@ RSpec.describe Telephony::RoutingPolicy, type: :model do
     expect(policy).not_to be_valid
     expect(policy.errors[:max_call_duration_seconds]).to be_present
   end
+
+  it 'acquires the shared voice assignment lock when the Captain assistant changes' do
+    policy.save!
+    assistant = create(:captain_assistant, account: account)
+
+    expect(Telephony::AiVoice::AssistantAssignmentLock).to receive(:acquire!).with(number_binding.inbox_id).and_call_original
+
+    policy.update!(captain_assistant: assistant)
+  end
 end

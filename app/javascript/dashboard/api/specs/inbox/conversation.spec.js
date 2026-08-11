@@ -93,6 +93,7 @@ describe('#ConversationAPI', () => {
         {
           status: 'online',
           snoozed_until: null,
+          status_reason: null,
         }
       );
     });

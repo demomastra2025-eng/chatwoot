@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_09_030000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_11_093851) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1743,8 +1743,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_09_030000) do
     t.datetime "processed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "external_ref"], name: "index_lead_submissions_on_account_id_and_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
-    t.index ["account_id", "idempotency_key"], name: "index_lead_submissions_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "lead_form_id", "external_ref"], name: "idx_lead_submissions_form_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
+    t.index ["account_id", "lead_form_id", "idempotency_key"], name: "idx_lead_submissions_form_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "source_kind", "created_at"], name: "idx_on_account_id_source_kind_created_at_6919889fce"
     t.index ["account_id"], name: "index_lead_submissions_on_account_id"
     t.index ["contact_id"], name: "index_lead_submissions_on_contact_id"

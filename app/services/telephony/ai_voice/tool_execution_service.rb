@@ -33,7 +33,7 @@ class Telephony::AiVoice::ToolExecutionService
     end
     result
   rescue StandardError => e
-    fail_owned_event!(e)
+    fail_owned_event!(e, outcome_unknown: dispatch_outcome_unknown?(e))
     raise
   end
 
@@ -78,11 +78,11 @@ class Telephony::AiVoice::ToolExecutionService
   def dispatch_with_current_capability!
     dispatch_service.with_captain_assistant_assignment_lock do |assistant_id|
       verify_tool_capability!(assistant_id: assistant_id)
+      @dispatch_started = true
+      result = normalize_result(dispatch_service.perform)
+      @dispatch_started = false
+      result
     end
-    # The locked capability check is the authorization linearization point.
-    # Tool dispatch can perform remote I/O, so it must not retain Inbox,
-    # CaptainInbox, or RoutingPolicy row locks for the duration of the body.
-    normalize_result(dispatch_service.perform)
   end
 
   def tool_capability_token
@@ -216,22 +216,33 @@ class Telephony::AiVoice::ToolExecutionService
     end
   end
 
-  def fail_owned_event!(error)
+  def fail_owned_event!(error, outcome_unknown: false)
     return if @owned_event.blank? || !@owned_event.persisted?
 
     @owned_event.with_lock do
       next unless owned_event?(@owned_event) && !@owned_event.processed?
 
-      code = safe_error_code(error)
-      @owned_event.update!(
-        status: 'failed',
-        processed_at: Time.current,
-        error_message: code,
-        payload: base_event_payload.merge('phase' => 'failed', 'error_code' => code)
-      )
+      @owned_event.update!(failure_event_attributes(error, outcome_unknown: outcome_unknown))
     end
   rescue ActiveRecord::ActiveRecordError
     nil
+  end
+
+  def failure_event_attributes(error, outcome_unknown:)
+    code = outcome_unknown ? 'TOOL_EXECUTION_OUTCOME_UNKNOWN' : safe_error_code(error)
+    {
+      status: 'failed',
+      processed_at: Time.current,
+      error_message: code,
+      payload: failure_event_payload(error, code, outcome_unknown: outcome_unknown)
+    }
+  end
+
+  def failure_event_payload(error, code, outcome_unknown:)
+    payload = base_event_payload.merge('phase' => outcome_unknown ? 'outcome_unknown' : 'failed', 'error_code' => code)
+    return payload unless outcome_unknown
+
+    payload.merge('dispatch_error_class' => error.class.name.to_s.first(120))
   end
 
   def completed_event_payload(result)
@@ -252,6 +263,10 @@ class Telephony::AiVoice::ToolExecutionService
 
     normalized = result.with_indifferent_access
     normalized[:status] == 'failed' && normalized[:error].present?
+  end
+
+  def dispatch_outcome_unknown?(_error)
+    @dispatch_started == true
   end
 
   def decrypt_result!(stored_payload)

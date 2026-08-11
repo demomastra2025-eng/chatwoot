@@ -54,6 +54,10 @@ RSpec.describe Telephony::OperatorCallClaimService do
 
   def mark_browser_profile_registered!(profile)
     profile.ensure_registration_config_version!
+    lease = profile.acquire_browser_registration_lease!(
+      client_instance_id: "spec-client-#{profile.id}",
+      user_id: profile.user_id
+    )
     profile.update_browser_registration!(
       registered: true,
       registration_context: {
@@ -65,7 +69,7 @@ RSpec.describe Telephony::OperatorCallClaimService do
         sip_host: profile.sip_host,
         agent_aor: profile.agent_aor,
         registration_config_version: profile.registration_config_version,
-        registration_instance_id: "registration-#{profile.id}",
+        registration_instance_id: lease.fetch(:registration_instance_id),
         janus_session_id: "janus-session-#{profile.id}",
         janus_handle_id: "janus-handle-#{profile.id}",
         session_key: "sip_profile:#{profile.id}"

@@ -30,12 +30,16 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
   def create_browser_operator_sip_profile(agent_aor:, registered_at:, last_unregistered_at: nil)
     profile = create_operator_sip_profile(account: account, inbox: voice_inbox, agent_aor: agent_aor)
     profile.update!(availability_mode: 'browser_webphone')
+    lease = profile.acquire_browser_registration_lease!(
+      client_instance_id: "spec-client-#{profile.id}",
+      user_id: profile.user_id
+    )
 
     expect(
       profile.update_browser_registration!(
         registered: true,
         occurred_at: registered_at,
-        registration_context: browser_registration_context(profile)
+        registration_context: browser_registration_context(profile, lease.fetch(:registration_instance_id))
       )
     ).to eq(:updated)
     if last_unregistered_at
@@ -46,10 +50,10 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     profile.reload
   end
 
-  def browser_registration_context(profile)
+  def browser_registration_context(profile, registration_instance_id)
     {
       registration_config_version: profile.registration_config_version,
-      registration_instance_id: "registration-#{profile.id}",
+      registration_instance_id: registration_instance_id,
       janus_session_id: "janus-session-#{profile.id}",
       janus_handle_id: "janus-handle-#{profile.id}"
     }
@@ -2411,20 +2415,23 @@ RSpec.describe 'Telephony Bridge Routes', type: :request do
     expect(response).to have_http_status(:ok)
 
     written_events = File.readlines(debug_log_file.path).map { |line| JSON.parse(line) }
+    call_ref_digest = "sha256:#{Digest::SHA256.hexdigest('inbound-route-log-1').first(16)}"
+    app_ref_digest = "sha256:#{Digest::SHA256.hexdigest(number_binding.configured_app_ref).first(16)}"
     expect(written_events).to include(
       include(
         'event' => 'telephony_inbound_route_request',
         'path' => path,
-        'call_ref' => 'inbound-route-log-1',
+        'call_ref' => call_ref_digest,
         'account_id' => account.id.to_s
       ),
       include(
         'event' => 'telephony_inbound_route_response',
         'path' => path,
-        'call_ref' => 'inbound-route-log-1',
-        'response_payload' => include('action' => 'app', 'app_ref' => number_binding.configured_app_ref)
+        'call_ref' => call_ref_digest,
+        'response_payload' => include('action' => 'app', 'app_ref' => app_ref_digest)
       )
     )
+    expect(written_events.to_json).not_to include('inbound-route-log-1', number_binding.configured_app_ref)
   ensure
     debug_log_file&.close!
   end

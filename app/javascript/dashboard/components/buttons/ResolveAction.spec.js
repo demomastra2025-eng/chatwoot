@@ -76,6 +76,7 @@ const mountComponent = (status, { dropdownOpen = false } = {}) => {
         WootDropdownItem: { template: '<li><slot /></li>' },
         WootDropdownMenu: { template: '<ul><slot /></ul>' },
         ConversationResolveAttributesModal: { template: '<div />' },
+        ConversationStatusReasonDialog: { template: '<div />' },
       },
     },
   });

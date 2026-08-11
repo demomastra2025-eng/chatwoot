@@ -3,7 +3,7 @@ import { ref } from 'vue';
 
 import ConversationVisibilitySettings from './ConversationVisibilitySettings.vue';
 
-const updateUISettings = vi.fn();
+const updateAccount = vi.fn();
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
@@ -13,10 +13,10 @@ vi.mock('dashboard/composables', () => ({
   useAlert: vi.fn(),
 }));
 
-vi.mock('dashboard/composables/useUISettings', () => ({
-  useUISettings: () => ({
-    uiSettings: ref({}),
-    updateUISettings,
+vi.mock('dashboard/composables/useAccount', () => ({
+  useAccount: () => ({
+    currentAccount: ref({ settings: {} }),
+    updateAccount,
   }),
 }));
 
@@ -46,7 +46,7 @@ const mountComponent = () =>
 
 describe('ConversationVisibilitySettings', () => {
   beforeEach(() => {
-    updateUISettings.mockClear();
+    updateAccount.mockClear();
   });
 
   it('shows a visibility toggle for CRM pipeline filters in dialog settings', () => {

@@ -1,4 +1,16 @@
+require 'digest'
+
 class Telephony::BridgeBaseController < ApplicationController
+  DEBUG_PAYLOAD_KEYS = %w[
+    action app_ref call_ref call_sid direction event event_type mode number_ref provider status
+  ].freeze
+  DEBUG_CONTEXT_KEYS = %w[
+    account_id call_ref direction event_type method number_ref path request_id
+  ].freeze
+  DEBUG_IDENTIFIER_KEYS = %w[app_ref call_ref call_sid number_ref].freeze
+  DEBUG_IDENTIFIER_DIGEST_LENGTH = 16
+  DEBUG_PAYLOAD_STRING_LIMIT = 256
+
   before_action :authenticate_bridge!
 
   private
@@ -29,11 +41,10 @@ class Telephony::BridgeBaseController < ApplicationController
     Telephony::DebugLogger.log(
       event: event,
       payload: telephony_debug_context(payload).merge(
-        request_payload: payload,
-        response_payload: response_payload,
+        request_payload: safe_telephony_debug_payload(payload),
+        response_payload: safe_telephony_debug_payload(response_payload),
         status: status,
-        error_class: error&.class&.name,
-        error_message: error&.message
+        error_class: error&.class&.name
       ).compact
     )
   end
@@ -61,15 +72,38 @@ class Telephony::BridgeBaseController < ApplicationController
   def telephony_debug_context(payload)
     payload = payload.deep_stringify_keys
 
-    {
-      request_id: request.request_id,
-      method: request.method,
-      path: request.path,
-      account_id: payload['account_id'].presence || request.headers['X-Account-Id'].to_s.presence,
-      call_ref: payload['call_ref'].presence || payload['callRef'].presence || payload['call_sid'].presence || payload['callSid'].presence,
-      number_ref: payload['number_ref'].presence || payload['numberRef'].presence,
-      event_type: payload['event'].presence || payload['event_type'].presence || payload['eventType'].presence,
-      direction: payload['direction']
-    }.compact
+    safe_telephony_debug_payload(
+      {
+        request_id: request.request_id,
+        method: request.method,
+        path: request.path,
+        account_id: payload['account_id'].presence || request.headers['X-Account-Id'].to_s.presence,
+        call_ref: payload['call_ref'].presence || payload['callRef'].presence || payload['call_sid'].presence || payload['callSid'].presence,
+        number_ref: payload['number_ref'].presence || payload['numberRef'].presence,
+        event_type: payload['event'].presence || payload['event_type'].presence || payload['eventType'].presence,
+        direction: payload['direction']
+      },
+      allowed_keys: DEBUG_CONTEXT_KEYS
+    ).symbolize_keys
+  end
+
+  def safe_telephony_debug_payload(payload, allowed_keys: DEBUG_PAYLOAD_KEYS)
+    payload.to_h.deep_stringify_keys.slice(*allowed_keys).each_with_object({}) do |(key, value), sanitized|
+      safe_value = safe_telephony_debug_scalar(key, value)
+      sanitized[key] = safe_value unless safe_value.nil?
+    end
+  end
+
+  def safe_telephony_debug_scalar(key, value)
+    if DEBUG_IDENTIFIER_KEYS.include?(key) && (value.is_a?(String) || value.is_a?(Symbol) || value.is_a?(Numeric))
+      return "sha256:#{Digest::SHA256.hexdigest(value.to_s).first(DEBUG_IDENTIFIER_DIGEST_LENGTH)}"
+    end
+
+    case value
+    when String, Symbol
+      value.to_s.slice(0, DEBUG_PAYLOAD_STRING_LIMIT)
+    when Numeric, TrueClass, FalseClass
+      value
+    end
   end
 end

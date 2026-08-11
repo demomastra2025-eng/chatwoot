@@ -308,12 +308,12 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     assistant = create(
       :captain_assistant,
       account: account,
-      description: 'Use [Get conversation](tool://get_conversation) when caller asks about the current conversation.',
+      description: 'Use [Get contact](tool://get_contact) when caller asks about the current contact.',
       config: {
         tool_access: {
           agent: {
             enabled: true,
-            tool_ids: ['get_conversation']
+            tool_ids: ['get_contact']
           }
         }
       }
@@ -321,11 +321,11 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
     create(:captain_inbox, captain_assistant: assistant, inbox: voice_inbox)
 
     with_modified_env(ONELINK_AI_VOICE_INTERNAL_TOKEN: 'voice-secret') do
-      post '/internal/voice/ai/tools/get_conversation',
+      post '/internal/voice/ai/tools/get_contact',
            params: {
              call_ref: call_session.external_call_ref,
              account_id: account.id,
-             arguments: { conversation_id: conversation.display_id }
+             arguments: { contact_id: conversation.contact_id }
            },
            headers: { 'Authorization' => 'Bearer voice-secret' },
            as: :json
@@ -333,8 +333,8 @@ RSpec.describe 'Internal Voice AI Tools API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('result', 'action')).to eq('captain_tool')
-    expect(response.parsed_body.dig('result', 'tool_name')).to eq('get_conversation')
-    expect(response.parsed_body.dig('result', 'result')).to include("\"display_id\": #{conversation.display_id}")
+    expect(response.parsed_body.dig('result', 'tool_name')).to eq('get_contact')
+    expect(JSON.parse(response.parsed_body.dig('result', 'result')).dig('contact', 'id')).to eq(conversation.contact_id)
   end
 
   it 'does not expose built-in Captain tools that are not selected for the agent' do

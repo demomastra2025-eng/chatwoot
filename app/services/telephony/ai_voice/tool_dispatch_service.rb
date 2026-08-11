@@ -408,9 +408,10 @@ class Telephony::AiVoice::ToolDispatchService
 
   def with_captain_assistant_assignment_lock
     ensure_call_session!
+    inbox = assignment_inbox
+    return yield(captain_assistant&.id) if inbox.blank?
 
-    ActiveRecord::Base.transaction do
-      lock_assistant_assignment!
+    Telephony::AiVoice::AssistantAssignmentLock.with_lock!(inbox.id) do
       reset_assistant_assignment_cache!
       yield(captain_assistant&.id)
     end
@@ -945,30 +946,33 @@ class Telephony::AiVoice::ToolDispatchService
     @captain_assistant = assistant&.account_id == account.id ? assistant : nil
   end
 
-  def lock_assistant_assignment!
-    assignment_inbox&.lock!
-    Telephony::AiVoice::AssistantAssignmentLock.acquire!(assignment_inbox.id) if assignment_inbox.present?
-    assignment_captain_inbox&.lock!
-    routing_policy&.lock!
+  def reset_assistant_assignment_cache!
+    reset_inbox_assignment_cache!
+    reset_routing_policy_cache!
+    clear_assignment_memoization!
   end
 
-  def reset_assistant_assignment_cache!
+  def reset_inbox_assignment_cache!
     inbox = assignment_inbox
     inbox.association(:captain_inbox).reset if inbox.respond_to?(:captain_inbox)
     inbox.association(:captain_assistant).reset if inbox.respond_to?(:captain_assistant)
-    remove_instance_variable(:@captain_assistant) if defined?(@captain_assistant)
-    remove_instance_variable(:@captain_tool_definition) if defined?(@captain_tool_definition)
-    remove_instance_variable(:@captain_runtime_state) if defined?(@captain_runtime_state)
+  end
+
+  def reset_routing_policy_cache!
+    inbox = assignment_inbox
+    binding = call_session&.number_binding || inbox&.telephony_number_binding
+    binding.association(:routing_policy).reset if binding.respond_to?(:routing_policy)
+    remove_instance_variable(:@routing_policy) if defined?(@routing_policy)
+  end
+
+  def clear_assignment_memoization!
+    %i[@captain_assistant @captain_tool_definition @captain_runtime_state].each do |variable|
+      remove_instance_variable(variable) if instance_variable_defined?(variable)
+    end
   end
 
   def assignment_inbox
     @assignment_inbox ||= call_session&.inbox || conversation&.inbox
-  end
-
-  def assignment_captain_inbox
-    return unless assignment_inbox.respond_to?(:captain_inbox)
-
-    assignment_inbox.captain_inbox
   end
 
   def inbox_captain_assistant

@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils';
+import { flushPromises, shallowMount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
@@ -140,6 +140,14 @@ const NextButtonStub = {
   template: '<button :disabled="disabled" @click="$emit(\'click\')" />',
 };
 
+const ConversationStatusReasonDialogStub = {
+  name: 'ConversationStatusReasonDialog',
+  methods: {
+    open: vi.fn(async () => null),
+  },
+  template: '<div />',
+};
+
 function mountComponent() {
   return shallowMount(Index, {
     props: {
@@ -161,6 +169,7 @@ function mountComponent() {
         BulkLabelActions: BulkLabelActionsStub,
         BulkTeamActions: BulkTeamActionsStub,
         BulkUpdateActions: BulkUpdateActionsStub,
+        ConversationStatusReasonDialog: ConversationStatusReasonDialogStub,
         CustomSnoozeModal: true,
         'woot-modal': true,
       },
@@ -215,10 +224,11 @@ describe('ConversationBulkActions Index', () => {
       .findComponent(BulkTeamActionsStub)
       .vm.$emit('select', { id: 2, name: 'Team' });
     await wrapper.findAllComponents(NextButtonStub)[1].trigger('click');
+    await flushPromises();
 
     expect(wrapper.emitted('assignLabels')).toEqual([[['sales']]]);
     expect(wrapper.emitted('updateConversations')).toEqual([
-      ['resolved', null],
+      ['resolved', null, null],
     ]);
     expect(wrapper.emitted('assignAgent')).toEqual([
       [{ id: 1, name: 'Agent' }],

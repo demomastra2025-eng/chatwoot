@@ -255,8 +255,8 @@ describe('Captain prompts page', () => {
     });
 
     expect(promptForm.props('descriptionMaxLength')).toBe(20000);
-    expect(promptForm.props('descriptionInitialHeight')).toBe(304);
-    expect(promptForm.props('descriptionMinHeight')).toBe('19rem');
+    expect(promptForm.props('descriptionInitialHeight')).toBe(420);
+    expect(promptForm.props('descriptionMinHeight')).toBe('26rem');
   });
 
   it('shows scenarios as the configuration block for internal assistants', () => {

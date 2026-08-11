@@ -4,6 +4,10 @@ RSpec.describe AutomationRules::AppointmentConditionService do
   let(:account) { create(:account) }
   let(:appointment) { create(:scheduling_appointment, account: account, resource: create(:scheduling_resource, account: account)) }
 
+  before do
+    account.enable_features!('scheduling')
+  end
+
   it 'matches discrete appointment conditions' do
     rule = create(
       :automation_rule,

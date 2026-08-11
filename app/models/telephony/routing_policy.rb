@@ -69,6 +69,7 @@ class Telephony::RoutingPolicy < ApplicationRecord
   validate :validate_captain_assistant_account
 
   before_validation :normalize_values
+  before_save :lock_voice_assistant_assignment!, if: :will_save_change_to_captain_assistant_id?
 
   def ai_mode?
     mode == 'ai'
@@ -152,6 +153,11 @@ class Telephony::RoutingPolicy < ApplicationRecord
   end
 
   private
+
+  def lock_voice_assistant_assignment!
+    inbox_id = number_binding&.inbox_id
+    Telephony::AiVoice::AssistantAssignmentLock.acquire!(inbox_id) if inbox_id.present?
+  end
 
   def bridge_payload_options
     case bridge_mode
