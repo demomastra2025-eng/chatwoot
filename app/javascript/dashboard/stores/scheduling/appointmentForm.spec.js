@@ -146,6 +146,49 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('keeps a manually entered patient phone when selecting a contact without a phone', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    store.updateField('clientPhone', '+77001234567');
+    store.applyContact({ id: 7, fullName: 'Айжан', phone: '' });
+
+    expect(store.form.clientPhone).toBe('+77001234567');
+    expect(store.buildPayload()).toMatchObject({
+      client_phone: '+77001234567',
+      contact_id: 7,
+    });
+  });
+
+  it('does not carry a previous contact phone to a phone-less contact', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    store.applyContact({ id: 7, fullName: 'Айжан', phone: '+77001234567' });
+    store.applyContact({ id: 8, fullName: 'Асет', phone: '' });
+
+    expect(store.form.clientPhone).toBe('');
+  });
+
+  it('requires a Kazakhstan E.164 phone for MedElement appointments', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    store.setRequirements({ medelementPhoneRequired: true });
+
+    expect(store.validationErrors.clientPhone).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
+    );
+
+    store.updateField('clientPhone', '+14155552671');
+    expect(store.validationErrors.clientPhone).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
+    );
+
+    store.updateField('clientPhone', '+77001234567');
+    expect(store.validationErrors.clientPhone).toBe('');
+  });
+
   it('builds structured patient names and only requires the first name', () => {
     const store = useSchedulingAppointmentFormStore();
 

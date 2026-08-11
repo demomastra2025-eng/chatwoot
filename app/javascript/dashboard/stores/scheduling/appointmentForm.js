@@ -110,6 +110,17 @@ const normalizePrepaymentForm = form => ({
       : '',
 });
 
+export const isKazakhstanE164Phone = value => {
+  let digits = String(value || '').replace(/\D/g, '');
+  digits = digits.length === 10 ? `7${digits}` : digits;
+  digits =
+    digits.length === 11 && digits.startsWith('8')
+      ? `7${digits.slice(1)}`
+      : digits;
+
+  return /^7\d{10}$/.test(digits);
+};
+
 const createDefaultForm = () => ({
   appointmentType: 'primary',
   clientBirthDate: '',
@@ -153,6 +164,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       requirements: {
         companyEnabled: true,
         contactRequired: true,
+        medelementPhoneRequired: false,
       },
       recordId: null,
       selectedContact: null,
@@ -184,6 +196,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
         contactId:
           state.requirements.contactRequired && !state.form.contactId
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
+            : '',
+        clientPhone:
+          state.requirements.medelementPhoneRequired &&
+          !isKazakhstanE164Phone(state.form.clientPhone)
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
             : '',
         resourceId: !state.form.resourceId
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.RESOURCE_REQUIRED'
@@ -310,6 +327,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       applyContact(contact) {
+        const existingPhone = this.form.clientPhone || '';
+        const previousContactPhone = this.selectedContact?.phone || '';
+        const phoneCameFromPreviousContact =
+          previousContactPhone && existingPhone === previousContactPhone;
+
         this.selectedContact = contact;
         this.form = {
           ...this.form,
@@ -321,7 +343,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
           clientMiddleName: contact.middleName || '',
           clientName: contact.fullName || '',
           clientNameStructured: true,
-          clientPhone: contact.phone || '',
+          clientPhone:
+            contact.phone ||
+            (phoneCameFromPreviousContact ? '' : existingPhone),
           companyId: contact.companyId || this.form.companyId || '',
           contactId: contact.id,
         };

@@ -209,6 +209,7 @@
         "CLIENT_NAME_REQUIRED": "Enter the first name",
         "CONTACT_REQUIRED": "Select a contact",
         "END_BEFORE_START": "End time must be later than the start time",
+        "MEDELEMENT_PHONE_REQUIRED": "Enter a Kazakhstan phone number in +7XXXXXXXXXX format",
         "PREPAID_EXCEEDS_SERVICE_AMOUNT": "Prepayment cannot exceed the service amount",
         "RESOURCE_REQUIRED": "Select a specialist",
         "START_REQUIRED": "Choose a start time"

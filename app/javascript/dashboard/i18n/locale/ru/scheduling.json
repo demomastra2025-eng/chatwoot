@@ -209,6 +209,7 @@
         "CLIENT_NAME_REQUIRED": "Укажите имя",
         "CONTACT_REQUIRED": "Выберите контакт",
         "END_BEFORE_START": "Время окончания должно быть позже времени начала",
+        "MEDELEMENT_PHONE_REQUIRED": "Укажите номер Казахстана в формате +7XXXXXXXXXX",
         "PREPAID_EXCEEDS_SERVICE_AMOUNT": "Предоплата не может превышать стоимость услуги",
         "RESOURCE_REQUIRED": "Выберите специалиста",
         "START_REQUIRED": "Укажите время начала"

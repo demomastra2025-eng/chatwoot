@@ -187,6 +187,9 @@ const validationErrorMessage = key => {
     'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED': t(
       'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
     ),
+    'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED': t(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
+    ),
     'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START': t(
       'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
     ),
@@ -1684,9 +1687,17 @@ watch(
 );
 
 watch(
-  [contactSelectionRequired, companySelectionEnabled],
-  ([contactRequired, companyEnabled]) => {
-    formStore.setRequirements({ contactRequired, companyEnabled });
+  [
+    contactSelectionRequired,
+    companySelectionEnabled,
+    isSelectedFormResourceMedelement,
+  ],
+  ([contactRequired, companyEnabled, medelementPhoneRequired]) => {
+    formStore.setRequirements({
+      contactRequired,
+      companyEnabled,
+      medelementPhoneRequired,
+    });
   },
   { immediate: true }
 );
@@ -2010,17 +2021,29 @@ onMounted(async () => {
                             formStore.updateField('clientMiddleName', $event)
                           "
                         />
-                        <PhoneNumberInput
-                          v-model="formStore.form.clientPhone"
-                          class="appointment-drawer-phone-control md:col-span-3 md:col-start-2"
-                          default-country="KZ"
-                          :show-country-flag="false"
-                          :max-digits="11"
-                          :label="
-                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
-                          "
-                          size="md"
-                        />
+                        <div class="md:col-span-3 md:col-start-2">
+                          <PhoneNumberInput
+                            v-model="formStore.form.clientPhone"
+                            class="appointment-drawer-phone-control"
+                            default-country="KZ"
+                            :show-country-flag="false"
+                            :max-digits="11"
+                            :label="
+                              $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
+                            "
+                            size="md"
+                          />
+                          <p
+                            v-if="formStore.validationErrors.clientPhone"
+                            class="mt-1 mb-0 text-xs text-n-ruby-9"
+                          >
+                            {{
+                              validationErrorMessage(
+                                formStore.validationErrors.clientPhone
+                              )
+                            }}
+                          </p>
+                        </div>
                       </div>
                     </div>
 
@@ -2274,6 +2297,7 @@ onMounted(async () => {
                       :disabled="
                         isMedelementCabinetMissing ||
                         isMedelementContactMissing ||
+                        !!formStore.validationErrors.clientPhone ||
                         providerCommandsStore.ui.isExecuting
                       "
                       :is-loading="providerCommandsStore.ui.isExecuting"
