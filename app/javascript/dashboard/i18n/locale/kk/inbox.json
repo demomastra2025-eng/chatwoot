@@ -88,6 +88,19 @@
       "WHATSAPP_CONFIG_ID_MISSING": "WhatsApp Configuration ID is not configured. Please contact your administrator.",
       "CONFIGURATION_ERROR": "Configuration error occurred during reauthorization.",
       "FACEBOOK_LOAD_ERROR": "Failed to load Facebook SDK. Please try again.",
+      "PHONE_REGISTRATION": {
+        "INCOMPLETE": "Авторизация белсенді. Нөмірді тіркеуді аяқтау үшін Meta екі сатылы тексеруінің ағымдағы алты таңбалы PIN кодын енгізіңіз.",
+        "PIN_INCORRECT": "Meta бұл PIN кодын қабылдамады. Қайта көруден бұрын WhatsApp Manager ішіндегі ағымдағы PIN кодын тексеріңіз.",
+        "PHONE_VERIFICATION_REQUIRED": "Тіркеуді аяқтау үшін Meta телефон нөмірін растауды талап етеді.",
+        "RATE_LIMITED": "Meta тіркеу әрекеттерін уақытша бұғаттады. Қайта көруге рұқсат берілген уақытты күтіңіз.",
+        "REGISTERING": "Алдыңғы тіркеу нәтижесі расталмаған. Қайта көруден бұрын WhatsApp Manager ішіндегі нөмір күйін тексеріңіз.",
+        "OUTCOME_UNKNOWN": "Алдыңғы тіркеу нәтижесі белгісіз. Қайта көруден бұрын WhatsApp Manager ішіндегі нөмір күйін тексеріңіз.",
+        "REGISTRATION_FAILED": "Meta нөмірді тіркеуді аяқтамады. Қайта көруден бұрын нөмір мен PIN кодын тексеріңіз.",
+        "PIN_LABEL": "Meta екі сатылы тексеру PIN коды",
+        "PIN_PLACEHOLDER": "6 таңбалы PIN",
+        "SUBMIT": "Тіркеуді аяқтау",
+        "SUCCESS": "WhatsApp нөмірін тіркеу аяқталды"
+      },
       "TROUBLESHOOTING": {
         "TITLE": "Troubleshooting",
         "POPUP_BLOCKED": "Ensure pop-ups are allowed for this site",

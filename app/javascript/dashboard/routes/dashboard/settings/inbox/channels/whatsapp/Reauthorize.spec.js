@@ -2,6 +2,7 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 
 import Reauthorize from './Reauthorize.vue';
 import NextButton from 'next/button/Button.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
 import InboxReconnectionRequired from '../../components/InboxReconnectionRequired.vue';
 
 const setupFacebookSdkMock = vi.hoisted(() => vi.fn());
@@ -49,6 +50,7 @@ const buildWrapper = ({
   reauthorizationRequired = false,
   requiresReauthorization = false,
   providerConfig = { embedded_signup_flow: 'coexistence' },
+  whatsappRegistrationIncomplete = false,
 } = {}) =>
   shallowMount(Reauthorize, {
     props: {
@@ -61,6 +63,7 @@ const buildWrapper = ({
           ...(tokenStatus ? { token_health: { status: tokenStatus } } : {}),
         },
       },
+      whatsappRegistrationIncomplete,
     },
     global: {
       mocks: { $t: key => key },
@@ -167,5 +170,83 @@ describe('WhatsApp reauthorization', () => {
       'standard'
     );
     wrapper.unmount();
+  });
+
+  it('submits the PIN through registration without opening Meta login', async () => {
+    dispatchMock.mockResolvedValue({ id: 42 });
+    const wrapper = buildWrapper({
+      whatsappRegistrationIncomplete: true,
+      providerConfig: {
+        embedded_signup_flow: 'standard',
+        phone_registration: { status: 'pin_incorrect' },
+      },
+    });
+    await flushPromises();
+
+    expect(setupFacebookSdkMock).not.toHaveBeenCalled();
+    await wrapper.findComponent(Input).setValue('123456');
+    await wrapper.vm.$nextTick();
+    await wrapper.findAllComponents(NextButton)[0].trigger('click');
+    await flushPromises();
+
+    expect(dispatchMock).toHaveBeenCalledWith(
+      'inboxes/registerWhatsAppPhoneNumber',
+      { inboxId: 42, verificationPin: '123456' }
+    );
+    expect(initWhatsAppEmbeddedSignupMock).not.toHaveBeenCalled();
+  });
+
+  it('disables PIN retry while the previous provider outcome is unknown', async () => {
+    const wrapper = buildWrapper({
+      whatsappRegistrationIncomplete: true,
+      providerConfig: {
+        embedded_signup_flow: 'standard',
+        phone_registration: { status: 'outcome_unknown' },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.findComponent(Input).props('disabled')).toBe(true);
+    expect(
+      wrapper.findAllComponents(NextButton)[0].attributes('disabled')
+    ).toBeDefined();
+    expect(dispatchMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the reconciled health registration status over the stale inbox status', async () => {
+    const wrapper = buildWrapper({
+      whatsappRegistrationIncomplete: true,
+      providerConfig: {
+        embedded_signup_flow: 'standard',
+        phone_registration: { status: 'outcome_unknown' },
+      },
+    });
+    await wrapper.setProps({
+      phoneRegistrationStatus: 'registration_incomplete',
+    });
+    await wrapper.findComponent(Input).setValue('123456');
+
+    expect(wrapper.findComponent(Input).props('disabled')).toBe(false);
+  });
+
+  it('disables PIN retry immediately after the API returns an unknown outcome', async () => {
+    dispatchMock.mockRejectedValue({
+      response: { data: { error_code: 'outcome_unknown' } },
+    });
+    const wrapper = buildWrapper({
+      whatsappRegistrationIncomplete: true,
+      providerConfig: {
+        embedded_signup_flow: 'standard',
+        phone_registration: { status: 'registration_incomplete' },
+      },
+    });
+    await wrapper.findComponent(Input).setValue('123456');
+    await wrapper.vm.$nextTick();
+
+    await wrapper.findAllComponents(NextButton)[0].trigger('click');
+    await flushPromises();
+
+    expect(wrapper.findComponent(Input).props('disabled')).toBe(true);
+    expect(dispatchMock).toHaveBeenCalledTimes(1);
   });
 });

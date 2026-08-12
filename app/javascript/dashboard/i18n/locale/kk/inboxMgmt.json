@@ -16,6 +16,8 @@
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Хабарлама жеткізуді қалпына келтіру үшін арнаны қайта қосыңыз.",
       "TOKEN_EXPIRING": "WhatsApp авторизациясының мерзімі жақында аяқталады",
       "TOKEN_EXPIRING_DESCRIPTION": "Хабарламалар жеткізілімі үзілмеуі үшін мерзімі аяқталғанға дейін арнаны Meta арқылы қайта қосыңыз.",
+      "PHONE_REGISTRATION_REQUIRED": "WhatsApp тіркеуін аяқтау қажет",
+      "PHONE_REGISTRATION_REQUIRED_DESCRIPTION": "Авторизация белсенді, бірақ нөмірді Meta екі сатылы тексеруінің ағымдағы PIN кодымен тіркеуді аяқтау қажет.",
       "WEBHOOK_SIGNATURE_INVALID": "Webhook қолтаңбасы қате",
       "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Қайталап көруден бұрын провайдердегі webhook құпиясын немесе callback URL-ды тексеріңіз.",
       "PROVIDER_UNAVAILABLE": "Провайдер қолжетімсіз",

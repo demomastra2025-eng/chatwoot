@@ -72,6 +72,25 @@ RSpec.describe Whatsapp::ReauthorizationService do
     expect(Whatsapp::WabaLock).not_to have_received(:with_locks)
   end
 
+  it 'rejects an identity change that occurs after validation but before the WABA locks are acquired' do
+    allow(Whatsapp::WabaLock).to receive(:with_locks) do |_waba_ids, &block|
+      channel.update!(provider_config: channel.provider_config.merge('phone_number_id' => 'phone-concurrent'))
+      block.call
+    end
+    service = described_class.new(
+      account: account,
+      inbox_id: inbox.id,
+      phone_number_id: 'phone-1',
+      business_id: 'business-1',
+      waba_id: 'waba-1'
+    )
+
+    expect { service.perform('new-token', phone_info) }
+      .to raise_error(Whatsapp::ReauthorizationService::IdentityMismatchError)
+    expect(channel.reload.provider_config).to include('phone_number_id' => 'phone-concurrent')
+    expect(channel.provider_config['api_key']).not_to eq('new-token')
+  end
+
   it 'keeps reauthorization and callback recovery anchors committed when remote setup fails after credentials are saved' do
     channel.update!(provider_config: channel.provider_config.merge('reauthorization_required' => true))
     service = described_class.new(

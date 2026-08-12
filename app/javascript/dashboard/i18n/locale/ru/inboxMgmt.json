@@ -16,6 +16,8 @@
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Переподключите канал, чтобы восстановить доставку сообщений.",
       "TOKEN_EXPIRING": "Авторизация WhatsApp скоро истечёт",
       "TOKEN_EXPIRING_DESCRIPTION": "Переподключите канал через Meta до истечения срока, чтобы доставка сообщений не прерывалась.",
+      "PHONE_REGISTRATION_REQUIRED": "Нужно завершить регистрацию WhatsApp",
+      "PHONE_REGISTRATION_REQUIRED_DESCRIPTION": "Авторизация активна, но регистрацию номера нужно завершить с текущим PIN двухэтапной проверки Meta.",
       "WEBHOOK_SIGNATURE_INVALID": "Некорректная подпись webhook",
       "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Проверьте секрет webhook или callback URL у провайдера перед повторной попыткой.",
       "PROVIDER_UNAVAILABLE": "Провайдер недоступен",

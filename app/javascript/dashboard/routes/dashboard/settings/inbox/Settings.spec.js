@@ -50,6 +50,77 @@ describe('WhatsApp reauthorization visibility', () => {
       })
     ).toBe(true);
   });
+
+  it('shows registration recovery independently of the Meta token lifecycle', () => {
+    const context = {
+      isAWhatsAppCloudChannel: true,
+      inbox: {
+        reauthorization_required: false,
+        requires_reauthorization: false,
+        provider_config: {
+          phone_registration: { status: 'pin_incorrect' },
+        },
+      },
+      healthData: null,
+      whatsappTokenExpiring: false,
+    };
+    context.whatsappRegistrationIncomplete =
+      Settings.computed.whatsappRegistrationIncomplete.call(context);
+
+    expect(context.whatsappRegistrationIncomplete).toBe(true);
+    expect(Settings.computed.whatsappUnauthorized.call(context)).toBe(true);
+  });
+
+  it('uses reconciled health registration state over a stale inbox snapshot', () => {
+    expect(
+      Settings.computed.whatsappRegistrationIncomplete.call({
+        isAWhatsAppCloudChannel: true,
+        inbox: {
+          provider_config: {
+            embedded_signup_flow: 'standard',
+            phone_registration: { status: 'outcome_unknown' },
+          },
+        },
+        healthData: { phone_registration: { status: 'registered' } },
+      })
+    ).toBe(false);
+  });
+
+  it('keeps a hard token failure above a stale registration error', () => {
+    const context = {
+      isAWhatsAppCloudChannel: true,
+      inbox: {
+        reauthorization_required: false,
+        requires_reauthorization: false,
+        provider_config: {
+          token_health: { status: 'invalid' },
+          phone_registration: { status: 'pin_incorrect' },
+        },
+      },
+      healthData: null,
+      whatsappTokenExpiring: false,
+    };
+    context.whatsappRegistrationIncomplete =
+      Settings.computed.whatsappRegistrationIncomplete.call(context);
+
+    expect(context.whatsappRegistrationIncomplete).toBe(false);
+    expect(Settings.computed.whatsappUnauthorized.call(context)).toBe(true);
+  });
+
+  it('never offers Cloud phone registration for coexistence channels', () => {
+    expect(
+      Settings.computed.whatsappRegistrationIncomplete.call({
+        isAWhatsAppCloudChannel: true,
+        inbox: {
+          provider_config: { embedded_signup_flow: 'coexistence' },
+        },
+        healthData: {
+          platform_type: 'NOT_APPLICABLE',
+          throughput: { level: 'NOT_APPLICABLE' },
+        },
+      })
+    ).toBe(false);
+  });
 });
 
 describe('WhatsApp health requests', () => {

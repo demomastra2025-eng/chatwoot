@@ -89,6 +89,19 @@
       "WHATSAPP_CONFIG_ID_MISSING": "WhatsApp Configuration ID is not configured. Please contact your administrator.",
       "CONFIGURATION_ERROR": "Configuration error occurred during reauthorization.",
       "FACEBOOK_LOAD_ERROR": "Failed to load Facebook SDK. Please try again.",
+      "PHONE_REGISTRATION": {
+        "INCOMPLETE": "Authorization is active. Enter the current six-digit Meta two-step verification PIN to complete phone registration.",
+        "PIN_INCORRECT": "Meta rejected this PIN. Check the current two-step verification PIN in WhatsApp Manager before trying again.",
+        "PHONE_VERIFICATION_REQUIRED": "Meta requires phone verification before registration can be completed.",
+        "RATE_LIMITED": "Meta has temporarily blocked registration attempts. Wait until the retry time before trying again.",
+        "REGISTERING": "The previous registration outcome is not confirmed. Verify the phone status in WhatsApp Manager before retrying.",
+        "OUTCOME_UNKNOWN": "The previous registration outcome is unknown. Verify the phone status in WhatsApp Manager before retrying.",
+        "REGISTRATION_FAILED": "Meta could not complete phone registration. Verify the number and PIN before trying again.",
+        "PIN_LABEL": "Meta two-step verification PIN",
+        "PIN_PLACEHOLDER": "6-digit PIN",
+        "SUBMIT": "Complete registration",
+        "SUCCESS": "WhatsApp phone registration completed"
+      },
       "TROUBLESHOOTING": {
         "TITLE": "Troubleshooting",
         "POPUP_BLOCKED": "Ensure pop-ups are allowed for this site",

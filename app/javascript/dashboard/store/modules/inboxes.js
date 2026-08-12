@@ -882,6 +882,25 @@ export const actions = {
     commit(types.default.EDIT_INBOXES, updatedInbox);
     return updatedInbox;
   },
+  registerWhatsAppPhoneNumber: async (
+    { commit, getters: inboxGetters },
+    params
+  ) => {
+    const response = await WhatsappChannel.registerPhoneNumber(params);
+    const currentInbox = inboxGetters?.getInbox
+      ? inboxGetters.getInbox(params.inboxId)
+      : null;
+    const updatedInbox = {
+      ...currentInbox,
+      reauthorization_required: response.data.reauthorization_required,
+      provider_config: {
+        ...(currentInbox?.provider_config || {}),
+        ...(response.data.provider_config || {}),
+      },
+    };
+    commit(types.default.EDIT_INBOXES, updatedInbox);
+    return updatedInbox;
+  },
   ...channelActions,
   // TODO: Extract other create channel methods to separate files to reduce file size
   // - createChannel

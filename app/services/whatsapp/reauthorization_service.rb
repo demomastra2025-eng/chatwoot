@@ -22,10 +22,7 @@ class Whatsapp::ReauthorizationService
     inbox = @account.inboxes.find(@inbox_id)
     channel = inbox.channel
 
-    # Validate phone number matches for reauthorization
-    raise PhoneNumberMismatchError, 'Phone number does not match the existing WhatsApp channel' if phone_info[:phone_number] != channel.phone_number
-
-    validate_provider_identity!(channel)
+    validate_channel_identity!(channel, phone_info)
 
     current_waba_id = channel.provider_config.to_h['business_account_id']
     Whatsapp::WabaLock.with_locks([current_waba_id, @waba_id]) do
@@ -39,6 +36,12 @@ class Whatsapp::ReauthorizationService
   end
 
   private
+
+  def validate_channel_identity!(channel, phone_info)
+    raise PhoneNumberMismatchError, 'Phone number does not match the existing WhatsApp channel' if phone_info[:phone_number] != channel.phone_number
+
+    validate_provider_identity!(channel)
+  end
 
   def validate_provider_identity!(channel)
     current_config = channel.provider_config.to_h
@@ -58,6 +61,7 @@ class Whatsapp::ReauthorizationService
   def update_channel_config(channel, access_token, phone_info)
     channel.with_lock do
       channel.reload
+      validate_channel_identity!(channel, phone_info)
       current_config = channel.provider_config.to_h.except('authorization_status', 'authorization_error')
       channel.provider_config = current_config.merge(authorization_config(access_token, current_config))
                                               .merge(capability_config(phone_info, current_config))

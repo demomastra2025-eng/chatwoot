@@ -202,6 +202,19 @@ export const getInboxHealthStatus = inbox => {
   const detail = errorInfo.detail;
   const whatsappTokenExpiring =
     providerConfig.token_health?.status === 'expiring';
+  const phoneRegistrationStatus =
+    providerConfig.phone_registration?.status !== 'registered'
+      ? providerConfig.phone_registration?.status
+      : null;
+  const hardAuthorizationFailure =
+    providerConfig.authorization_status === 'reauthorization_required' ||
+    [
+      'invalid',
+      'permission_missing',
+      'app_id_mismatch',
+      'waba_access_missing',
+      'phone_number_mismatch',
+    ].includes(providerConfig.token_health?.status);
   const combinedState = [
     detail,
     stateFrom(inbox, ['lifecycle_state', 'connection_state', 'status']),
@@ -240,7 +253,12 @@ export const getInboxHealthStatus = inbox => {
     whatsappWebLifecycleState === WHATSAPP_WEB_CONNECTED_STATE &&
     whatsappWebConnectionState === WHATSAPP_WEB_OPEN_CONNECTION_STATE;
 
-  if (inbox.reauthorization_required || inbox.requires_reauthorization) {
+  if (
+    (inbox.reauthorization_required ||
+      inbox.requires_reauthorization ||
+      hardAuthorizationFailure) &&
+    (!phoneRegistrationStatus || hardAuthorizationFailure)
+  ) {
     return {
       id: 'reauthorization_required',
       tone: 'ruby',
@@ -249,6 +267,18 @@ export const getInboxHealthStatus = inbox => {
       descriptionKey:
         'INBOX_MGMT.HEALTH_STATUS.REAUTHORIZATION_REQUIRED_DESCRIPTION',
       detail,
+    };
+  }
+
+  if (phoneRegistrationStatus) {
+    return {
+      id: 'phone_registration_required',
+      tone: 'amber',
+      icon: 'i-lucide-shield-alert',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.PHONE_REGISTRATION_REQUIRED',
+      descriptionKey:
+        'INBOX_MGMT.HEALTH_STATUS.PHONE_REGISTRATION_REQUIRED_DESCRIPTION',
+      detail: '',
     };
   }
 

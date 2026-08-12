@@ -1,8 +1,8 @@
 class Whatsapp::ProviderConfigPresenter
   PUBLIC_PROVIDER_CONFIG_KEYS = %w[
     ai_voice_enabled authorization_expires_at authorization_status business_account_id business_id calling_capable
-    calling_enabled connection_state coexistence_sync embedded_signup_flow meta_webhook_lifecycle phone_number_id source
-    status webhook_callback_recovery
+    calling_enabled connection_state coexistence_sync embedded_signup_flow meta_webhook_lifecycle phone_number_id
+    phone_registration source status webhook_callback_recovery
   ].freeze
   PUBLIC_COEXISTENCE_SYNC_KEYS = %w[
     state deadline_at request_started_at requested_at failed_at last_error recovery_required_at completed_at
@@ -19,6 +19,9 @@ class Whatsapp::ProviderConfigPresenter
     outcome_unknown_at manual_recovery_required_at
   ].freeze
   PUBLIC_LIFECYCLE_KEYS = %w[counters last_event_at].freeze
+  PUBLIC_PHONE_REGISTRATION_KEYS = %w[
+    status provider_error_code detected_at attempted_at failed_at retry_after_at completed_at
+  ].freeze
 
   def initialize(channel)
     @channel = channel
@@ -29,6 +32,7 @@ class Whatsapp::ProviderConfigPresenter
     project_coexistence_sync!(config)
     project_callback_recovery!(config)
     project_lifecycle!(config)
+    project_phone_registration!(config)
 
     Meta::CredentialDataSanitizer.sanitize(
       config,
@@ -66,5 +70,11 @@ class Whatsapp::ProviderConfigPresenter
     config['meta_webhook_lifecycle'] = config['meta_webhook_lifecycle'].to_h.slice(
       *PUBLIC_LIFECYCLE_KEYS
     )
+  end
+
+  def project_phone_registration!(config)
+    return if config['phone_registration'].blank?
+
+    config['phone_registration'] = config['phone_registration'].to_h.slice(*PUBLIC_PHONE_REGISTRATION_KEYS)
   end
 end

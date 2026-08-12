@@ -6,6 +6,7 @@ import { useAlert } from 'dashboard/composables';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
 import WhatsappChannel from 'dashboard/api/channel/whatsappChannel';
 import NextButton from 'next/button/Button.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
 import InboxReconnectionRequired from '../../components/InboxReconnectionRequired.vue';
 import {
   setupFacebookSdk,
@@ -29,7 +30,12 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  phoneRegistrationStatus: {
+    type: String,
+    default: '',
+  },
 });
+const emit = defineEmits(['registered']);
 
 const { t } = useI18n();
 const store = useStore();
@@ -43,6 +49,9 @@ const authCode = ref(null);
 const signupBusinessData = ref(null);
 const signupFlow = ref(null);
 const selectedReauthorizationFlow = ref(null);
+const verificationPin = ref('');
+const registrationErrorCode = ref(null);
+const isSubmittingRegistration = ref(false);
 let signupMessageHandler = null;
 let signupTimeout = null;
 
@@ -66,6 +75,44 @@ const actionLabel = computed(() => {
     return t('INBOX_MGMT.COMPLETE_REGISTRATION');
   }
   return t('INBOX.REAUTHORIZE.BUTTON_TEXT');
+});
+
+const phoneRegistration = computed(() => ({
+  ...(props.inbox.provider_config?.phone_registration || {}),
+  ...(props.phoneRegistrationStatus
+    ? { status: props.phoneRegistrationStatus }
+    : {}),
+}));
+const REGISTRATION_DESCRIPTION_KEYS = {
+  incomplete: 'INBOX.REAUTHORIZE.PHONE_REGISTRATION.INCOMPLETE',
+  registration_incomplete: 'INBOX.REAUTHORIZE.PHONE_REGISTRATION.INCOMPLETE',
+  pin_incorrect: 'INBOX.REAUTHORIZE.PHONE_REGISTRATION.PIN_INCORRECT',
+  phone_verification_required:
+    'INBOX.REAUTHORIZE.PHONE_REGISTRATION.PHONE_VERIFICATION_REQUIRED',
+  rate_limited: 'INBOX.REAUTHORIZE.PHONE_REGISTRATION.RATE_LIMITED',
+  registering: 'INBOX.REAUTHORIZE.PHONE_REGISTRATION.REGISTERING',
+  outcome_unknown: 'INBOX.REAUTHORIZE.PHONE_REGISTRATION.OUTCOME_UNKNOWN',
+  registration_failed:
+    'INBOX.REAUTHORIZE.PHONE_REGISTRATION.REGISTRATION_FAILED',
+};
+const effectiveRegistrationErrorCode = computed(
+  () => registrationErrorCode.value || phoneRegistration.value.status
+);
+const registrationRetryBlocked = computed(() =>
+  ['registering', 'outcome_unknown'].includes(
+    effectiveRegistrationErrorCode.value
+  )
+);
+const pinIsValid = computed(
+  () => !registrationRetryBlocked.value && /^\d{6}$/.test(verificationPin.value)
+);
+const registrationDescription = computed(() => {
+  const key = effectiveRegistrationErrorCode.value || 'incomplete';
+  const descriptionKey = Object.hasOwn(REGISTRATION_DESCRIPTION_KEYS, key)
+    ? REGISTRATION_DESCRIPTION_KEYS[key]
+    : REGISTRATION_DESCRIPTION_KEYS.incomplete;
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  return t(descriptionKey);
 });
 
 const tokenExpiresSoon = computed(
@@ -156,6 +203,28 @@ const reauthorizeWhatsApp = async params => {
     throw error;
   } finally {
     isRequestingAuthorization.value = false;
+  }
+};
+
+const registerPhoneNumber = async () => {
+  if (!pinIsValid.value || isSubmittingRegistration.value) return;
+
+  isSubmittingRegistration.value = true;
+  registrationErrorCode.value = null;
+  try {
+    await store.dispatch('inboxes/registerWhatsAppPhoneNumber', {
+      inboxId: props.inbox.id,
+      verificationPin: verificationPin.value,
+    });
+    verificationPin.value = '';
+    useAlert(t('INBOX.REAUTHORIZE.PHONE_REGISTRATION.SUCCESS'));
+    emit('registered');
+  } catch (error) {
+    registrationErrorCode.value =
+      error?.response?.data?.error_code || 'registration_failed';
+    useAlert(registrationDescription.value);
+  } finally {
+    isSubmittingRegistration.value = false;
   }
 };
 
@@ -287,6 +356,11 @@ const requestAuthorization = async requestedFlow => {
 };
 
 onMounted(async () => {
+  if (props.whatsappRegistrationIncomplete) {
+    isLoadingFacebook.value = false;
+    return;
+  }
+
   try {
     const configurationError = getConfigurationError();
     if (configurationError) {
@@ -317,7 +391,42 @@ defineExpose({
 
 <template>
   <div
-    v-if="requiresFlowSelection"
+    v-if="whatsappRegistrationIncomplete"
+    class="mx-6 flex flex-col gap-3 rounded-xl border border-n-amber-4 bg-n-amber-3 p-4 text-n-amber-11"
+  >
+    <p class="text-sm">{{ registrationDescription }}</p>
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <Input
+        v-model="verificationPin"
+        class="w-full sm:max-w-64"
+        :disabled="registrationRetryBlocked"
+        type="password"
+        inputmode="numeric"
+        autocomplete="one-time-code"
+        maxlength="6"
+        :label="$t('INBOX.REAUTHORIZE.PHONE_REGISTRATION.PIN_LABEL')"
+        :placeholder="
+          $t('INBOX.REAUTHORIZE.PHONE_REGISTRATION.PIN_PLACEHOLDER')
+        "
+        @input="
+          verificationPin = verificationPin.replace(/\D/g, '').slice(0, 6)
+        "
+        @enter="registerPhoneNumber"
+      />
+      <NextButton
+        amber
+        :disabled="
+          registrationRetryBlocked || !pinIsValid || isSubmittingRegistration
+        "
+        :is-loading="isSubmittingRegistration"
+        @click="registerPhoneNumber"
+      >
+        {{ $t('INBOX.REAUTHORIZE.PHONE_REGISTRATION.SUBMIT') }}
+      </NextButton>
+    </div>
+  </div>
+  <div
+    v-else-if="requiresFlowSelection"
     class="mx-6 flex flex-col gap-3 rounded-xl border border-n-weak bg-n-alpha-1 p-4"
   >
     <p class="text-sm text-n-slate-11">{{ description }}</p>

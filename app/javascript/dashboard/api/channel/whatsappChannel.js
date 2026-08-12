@@ -23,6 +23,13 @@ class WhatsappChannel extends ApiClient {
       inbox_id: inboxId,
     });
   }
+
+  registerPhoneNumber({ inboxId, verificationPin }) {
+    return axios.post(`${this.baseUrl()}/whatsapp/phone_registration`, {
+      inbox_id: inboxId,
+      verification_pin: verificationPin,
+    });
+  }
 }
 
 export default new WhatsappChannel();

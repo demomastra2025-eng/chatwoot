@@ -5,7 +5,7 @@ Rails.application.config.filter_parameters += [
   :password, :secret, :_key, :auth, :crypt, :salt, :certificate, :otp, :access, :private, :protected, :ssn,
   :otp_secret, :otp_code, :backup_code, :mfa_token, :otp_backup_codes,
   :data, :base64, :qrcode, :media_data, :raw_payload, :janus_ticket,
-  :api_hash, :string_session, :pending_phone_code_hash, :qr_login_url,
+  :api_hash, :string_session, :pending_phone_code_hash, :qr_login_url, :verification_pin,
   # WebRTC SDP can include local network candidates/fingerprints and is too large/noisy for app logs.
   :sdp_answer, :sdp_offer,
   # Telegram notification binding uses profile access tokens inside incoming message text.

@@ -6,6 +6,8 @@ describe Whatsapp::WebhookSetupService do
            phone_number: '+1234567890',
            provider_config: {
              'phone_number_id' => '123456789',
+             'business_account_id' => 'test_waba_id',
+             'api_key' => 'test_access_token',
              'webhook_verify_token' => 'test_verify_token',
              'source' => 'embedded_signup'
            },
@@ -13,8 +15,8 @@ describe Whatsapp::WebhookSetupService do
            sync_templates: false,
            validate_provider_config: false)
   end
-  let(:waba_id) { 'test_waba_id' }
-  let(:access_token) { 'test_access_token' }
+  let(:waba_id) { '123456789' }
+  let(:access_token) { 'test_key' }
   let(:service) { described_class.new(channel, waba_id, access_token) }
   let(:api_client) { instance_double(Whatsapp::FacebookApiClient) }
   let(:health_service) { instance_double(Whatsapp::HealthService) }
@@ -172,6 +174,21 @@ describe Whatsapp::WebhookSetupService do
     end
   end
 
+  describe '#register_phone_number_with_pin!' do
+    it 'rejects a provider identity change that occurs before the WABA lock is acquired' do
+      lock = instance_double(Whatsapp::WabaLock)
+      allow(Whatsapp::WabaLock).to receive(:new).with(waba_id).and_return(lock)
+      allow(lock).to receive(:with_lock) do |&block|
+        channel.update!(provider_config: channel.provider_config.merge('phone_number_id' => 'rotated-phone'))
+        block.call
+      end
+      expect(api_client).not_to receive(:register_phone_number)
+
+      expect { service.register_phone_number_with_pin!('123456') }
+        .to raise_error(described_class::StalePhoneRegistrationIdentityError)
+    end
+  end
+
   describe '#perform' do
     context 'when phone number is NOT verified (should register)' do
       before do
@@ -223,23 +240,21 @@ describe Whatsapp::WebhookSetupService do
         allow(channel).to receive(:save!)
       end
 
-      it 'subscribes the WABA, persists the PIN, and registers even when the number is already verified' do
+      it 'subscribes the WABA, registers, and persists the PIN only after provider success' do
         with_modified_env FRONTEND_URL: 'https://one-link.kz' do
           expect(api_client).to receive(:subscribe_waba_webhook).ordered
-          expect(channel).to receive(:save!).ordered do
-            expect(channel.provider_config['verification_pin']).to be_present
-          end
           expect(api_client).to receive(:register_phone_number).ordered
 
           service.perform
         end
+
+        expect(channel.reload.provider_config['verification_pin']).to be_present
       end
 
       it 'preserves a stored six-digit PIN with a leading zero' do
         channel.provider_config['verification_pin'] = '012345'
 
         with_modified_env FRONTEND_URL: 'https://one-link.kz' do
-          expect(channel).not_to receive(:save!)
           expect(api_client).to receive(:register_phone_number).with('123456789', '012345')
 
           service.perform
@@ -356,7 +371,8 @@ describe Whatsapp::WebhookSetupService do
         with_modified_env FRONTEND_URL: 'https://one-link.kz' do
           expect(api_client).to receive(:register_phone_number)
           expect(api_client).to receive(:subscribe_waba_webhook)
-          expect { strict_service.perform }.to raise_error('Registration failed')
+          expect { strict_service.perform }
+            .to raise_error(Whatsapp::PhoneRegistrationService::Error, 'outcome_unknown')
         end
       end
     end

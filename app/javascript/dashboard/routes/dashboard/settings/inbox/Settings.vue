@@ -940,17 +940,56 @@ export default {
       );
     },
     whatsappUnauthorized() {
+      const providerConfig = this.inbox.provider_config || {};
+      const hardAuthorizationFailure =
+        providerConfig.authorization_status === 'reauthorization_required' ||
+        [
+          'invalid',
+          'permission_missing',
+          'app_id_mismatch',
+          'waba_access_missing',
+          'phone_number_mismatch',
+        ].includes(providerConfig.token_health?.status);
       return (
         this.isAWhatsAppCloudChannel &&
         (this.inbox.reauthorization_required ||
           this.inbox.requires_reauthorization ||
-          this.whatsappTokenExpiring)
+          hardAuthorizationFailure ||
+          this.whatsappTokenExpiring ||
+          this.whatsappRegistrationIncomplete)
       );
     },
     whatsappRegistrationIncomplete() {
-      if (!this.healthData || !this.isAWhatsAppCloudChannel) {
+      if (!this.isAWhatsAppCloudChannel) {
         return false;
       }
+
+      const providerConfig = this.inbox.provider_config || {};
+      if (providerConfig.embedded_signup_flow === 'coexistence') return false;
+
+      const hardAuthorizationStatuses = [
+        'invalid',
+        'permission_missing',
+        'app_id_mismatch',
+        'waba_access_missing',
+        'phone_number_mismatch',
+      ];
+      if (
+        providerConfig.authorization_status === 'reauthorization_required' ||
+        hardAuthorizationStatuses.includes(providerConfig.token_health?.status)
+      ) {
+        return false;
+      }
+
+      const registrationStatus =
+        this.healthData?.phone_registration?.status ||
+        providerConfig.phone_registration?.status;
+      if (registrationStatus === 'registered') return false;
+      if (registrationStatus && registrationStatus !== 'registered') {
+        return true;
+      }
+
+      if (!this.healthData) return false;
 
       return (
         this.healthData.platform_type === 'NOT_APPLICABLE' ||
@@ -2580,9 +2619,11 @@ export default {
         <WhatsappReauthorize
           v-if="whatsappUnauthorized"
           :whatsapp-registration-incomplete="whatsappRegistrationIncomplete"
+          :phone-registration-status="healthData?.phone_registration?.status"
           :inbox="inbox"
           class="mb-4"
           :class="bannerMaxWidth"
+          @registered="fetchHealthData"
         />
         <DuplicateInboxBanner
           v-if="hasDuplicateInstagramInbox"

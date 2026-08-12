@@ -16,6 +16,8 @@
       "REAUTHORIZATION_REQUIRED_DESCRIPTION": "Reconnect this channel to resume message delivery.",
       "TOKEN_EXPIRING": "WhatsApp authorization expires soon",
       "TOKEN_EXPIRING_DESCRIPTION": "Reconnect through Meta before expiration to avoid interrupted message delivery.",
+      "PHONE_REGISTRATION_REQUIRED": "WhatsApp registration needs attention",
+      "PHONE_REGISTRATION_REQUIRED_DESCRIPTION": "Authorization is active, but phone registration must be completed with the current Meta two-step verification PIN.",
       "WEBHOOK_SIGNATURE_INVALID": "Webhook signature invalid",
       "WEBHOOK_SIGNATURE_INVALID_DESCRIPTION": "Check the provider webhook secret or callback URL before retrying.",
       "PROVIDER_UNAVAILABLE": "Provider unavailable",

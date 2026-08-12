@@ -48,6 +48,56 @@ RSpec.describe Whatsapp::HealthService do
     )
   end
 
+  it 'does not apply an authorization error from credentials rotated during the health request' do
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return do
+        whatsapp_channel.with_lock do
+          whatsapp_channel.reload
+          whatsapp_channel.persist_provider_config_state!(whatsapp_channel.provider_config.merge('api_key' => 'token-2'))
+        end
+        {
+          status: 401,
+          body: { error: { message: 'Old token expired', type: 'OAuthException', code: 190 } }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        }
+      end
+
+    expect { described_class.new(whatsapp_channel).fetch_health_status }
+      .to raise_error(described_class::StaleProviderIdentityError)
+
+    config = whatsapp_channel.reload.provider_config
+    expect(config['api_key']).to eq('token-2')
+    expect(config).not_to include('authorization_status', 'authorization_error')
+    expect(whatsapp_channel.reauthorization_required?).to be(false)
+  end
+
+  it 'does not reconcile phone registration from credentials rotated during the health request' do
+    whatsapp_channel.persist_provider_config_state!(
+      whatsapp_channel.provider_config.merge(
+        'phone_registration' => { 'status' => 'outcome_unknown', 'failed_at' => 1.hour.ago.iso8601 }
+      )
+    )
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return do
+        whatsapp_channel.with_lock do
+          whatsapp_channel.reload
+          whatsapp_channel.persist_provider_config_state!(whatsapp_channel.provider_config.merge('api_key' => 'token-2'))
+        end
+        {
+          status: 200,
+          body: { id: '123456789', platform_type: 'CLOUD_API', throughput: { level: 'STANDARD' } }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        }
+      end
+
+    expect { described_class.new(whatsapp_channel).fetch_health_status }
+      .to raise_error(described_class::StaleProviderIdentityError)
+
+    config = whatsapp_channel.reload.provider_config
+    expect(config['api_key']).to eq('token-2')
+    expect(config.dig('phone_registration', 'status')).to eq('outcome_unknown')
+  end
+
   it 'redacts credentials from provider-config errors, raised errors, and logs' do
     channel_token = whatsapp_channel.provider_config['api_key']
     body = {
@@ -155,5 +205,145 @@ RSpec.describe Whatsapp::HealthService do
 
     expect(result[:verified_name]).to eq('Healthy Business')
     expect(whatsapp_channel.reload.reauthorization_required?).to be(true)
+  end
+
+  it 'bootstraps a registration recovery ledger only from pending Meta health' do
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 200,
+        body: {
+          id: '123456789',
+          platform_type: 'NOT_APPLICABLE',
+          throughput: { 'level' => 'NOT_APPLICABLE' }
+        }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    described_class.new(whatsapp_channel).fetch_health_status
+
+    expect(whatsapp_channel.reload.provider_config.fetch('phone_registration')).to include(
+      'status' => 'registration_incomplete',
+      'detected_at' => be_present
+    )
+  end
+
+  it 'does not overwrite a typed registration failure during health reconciliation' do
+    whatsapp_channel.persist_provider_config_state!(
+      whatsapp_channel.provider_config.merge(
+        'phone_registration' => { 'status' => 'pin_incorrect', 'provider_error_code' => 133_005 }
+      )
+    )
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 200,
+        body: { id: '123456789', platform_type: 'NOT_APPLICABLE' }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    described_class.new(whatsapp_channel).fetch_health_status
+
+    expect(whatsapp_channel.reload.provider_config['phone_registration']).to eq(
+      'status' => 'pin_incorrect', 'provider_error_code' => 133_005
+    )
+  end
+
+  it 'does not create a phone-registration lifecycle for coexistence channels' do
+    whatsapp_channel.persist_provider_config_state!(
+      whatsapp_channel.provider_config.merge('embedded_signup_flow' => 'coexistence')
+    )
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 200,
+        body: { id: '123456789', platform_type: 'NOT_APPLICABLE' }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    described_class.new(whatsapp_channel).fetch_health_status
+
+    expect(whatsapp_channel.reload.provider_config).not_to have_key('phone_registration')
+  end
+
+  it 'reconciles an unknown provider outcome to registered from active Cloud health' do
+    registration_api_client = instance_double(Whatsapp::FacebookApiClient)
+    allow(registration_api_client).to receive(:register_phone_number).and_raise(Timeout::Error, 'timed out')
+    expect do
+      Whatsapp::PhoneRegistrationService.new(whatsapp_channel, api_client: registration_api_client).perform(pin: '654321')
+    end.to raise_error(Whatsapp::PhoneRegistrationService::Error, 'outcome_unknown')
+
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 200,
+        body: { id: '123456789', platform_type: 'CLOUD_API', throughput: { level: 'STANDARD' } }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    travel 11.minutes
+    result = described_class.new(whatsapp_channel).fetch_health_status
+
+    config = whatsapp_channel.reload.provider_config
+    expect(config['verification_pin']).to be_nil
+    expect(config.dig('phone_registration', 'status')).to eq('registered')
+    expect(config.dig('phone_registration', Whatsapp::PhoneRegistrationService::PENDING_PIN_CIPHERTEXT_KEY)).to be_nil
+    expect(result[:phone_registration]).to include('status' => 'registered', 'completed_at' => be_present)
+    expect(result.to_json).not_to include('pending_pin_ciphertext')
+  end
+
+  it 'reopens PIN recovery without retrying Meta when health confirms registration is pending' do
+    registration_api_client = instance_double(Whatsapp::FacebookApiClient)
+    allow(registration_api_client).to receive(:register_phone_number).and_raise(Timeout::Error, 'timed out')
+    expect do
+      Whatsapp::PhoneRegistrationService.new(whatsapp_channel, api_client: registration_api_client).perform(pin: '654321')
+    end.to raise_error(Whatsapp::PhoneRegistrationService::Error, 'outcome_unknown')
+
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 200,
+        body: { id: '123456789', platform_type: 'NOT_APPLICABLE' }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    travel 11.minutes
+    described_class.new(whatsapp_channel).fetch_health_status
+
+    config = whatsapp_channel.reload.provider_config
+    expect(config).not_to have_key('verification_pin')
+    expect(config.dig('phone_registration', 'status')).to eq('registration_incomplete')
+    expect(config.dig('phone_registration', Whatsapp::PhoneRegistrationService::PENDING_PIN_CIPHERTEXT_KEY)).to be_nil
+  end
+
+  it 'does not overwrite a recent successful registration with stale pending health' do
+    whatsapp_channel.persist_provider_config_state!(
+      whatsapp_channel.provider_config.merge(
+        'phone_registration' => { 'status' => 'registered', 'completed_at' => 1.minute.ago.iso8601 }
+      )
+    )
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 200,
+        body: { id: '123456789', platform_type: 'NOT_APPLICABLE' }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    described_class.new(whatsapp_channel).fetch_health_status
+
+    expect(whatsapp_channel.reload.provider_config.dig('phone_registration', 'status')).to eq('registered')
+  end
+
+  it 'reopens registration recovery when pending health persists beyond the grace period' do
+    whatsapp_channel.persist_provider_config_state!(
+      whatsapp_channel.provider_config.merge(
+        'phone_registration' => { 'status' => 'registered', 'completed_at' => 1.hour.ago.iso8601 }
+      )
+    )
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 200,
+        body: { id: '123456789', platform_type: 'NOT_APPLICABLE' }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    described_class.new(whatsapp_channel).fetch_health_status
+
+    expect(whatsapp_channel.reload.provider_config.dig('phone_registration', 'status')).to eq('registration_incomplete')
   end
 end

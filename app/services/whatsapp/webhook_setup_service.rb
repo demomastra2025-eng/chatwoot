@@ -3,6 +3,7 @@
 class Whatsapp::WebhookSetupService
   class CallbackSetupError < RuntimeError; end
   class StaleRecoveryIdentityError < RuntimeError; end
+  class StalePhoneRegistrationIdentityError < RuntimeError; end
   class PostMutationRecoveryError < Whatsapp::FacebookApiClient::WebhookRecoveryAnchorRequiredError; end
 
   CALLBACK_RECOVERY_KEY = Whatsapp::WebhookCallbackRecoveryService::CONFIG_KEY
@@ -15,6 +16,7 @@ class Whatsapp::WebhookSetupService
     @channel = channel
     @waba_id = waba_id || channel.provider_config['business_account_id']
     @access_token = access_token || channel.provider_config['api_key']
+    @phone_number_id = channel&.provider_config&.[]('phone_number_id')
     @api_client = Whatsapp::FacebookApiClient.new(@access_token)
     @strict = strict
     @force_registration = force_registration
@@ -48,6 +50,14 @@ class Whatsapp::WebhookSetupService
     end
   end
 
+  def register_phone_number_with_pin!(pin)
+    validate_parameters!
+    with_waba_lock do
+      validate_phone_registration_identity!
+      phone_registration_service.perform(pin: pin)
+    end
+  end
+
   def require_manual_callback_recovery!(error)
     changed = callback_recovery.manual_recovery_required!(error)
     @channel.prompt_reauthorization! if changed
@@ -66,15 +76,15 @@ class Whatsapp::WebhookSetupService
   end
 
   def register_phone_number
-    phone_number_id = @channel.provider_config['phone_number_id']
-    pin = fetch_or_create_pin
+    validate_phone_registration_identity!
+    return if phone_registration_service.automatic_retry_blocked?
 
-    store_pin(pin)
-    @api_client.register_phone_number(phone_number_id, pin)
+    pin = fetch_or_create_pin
+    phone_registration_service.perform(pin: pin)
   rescue StandardError => e
     safe_message = sanitized_error_message(e)
     Rails.logger.warn("[WHATSAPP] Phone registration failed#{@strict ? '' : ' but continuing'}: #{safe_message}")
-    raise StandardError, safe_message if @strict
+    raise if @strict
   end
 
   def fetch_or_create_pin
@@ -86,11 +96,21 @@ class Whatsapp::WebhookSetupService
     (SecureRandom.random_number(900_000) + 100_000).to_s
   end
 
-  def store_pin(pin)
-    return if @channel.provider_config['verification_pin'].to_s == pin.to_s
+  def phone_registration_service
+    @phone_registration_service ||= Whatsapp::PhoneRegistrationService.new(
+      @channel,
+      api_client: @api_client,
+      phone_number_id: @phone_number_id
+    )
+  end
 
-    @channel.provider_config['verification_pin'] = pin
-    @channel.save!
+  def validate_phone_registration_identity!
+    config = @channel.reload.provider_config.to_h
+    current_identity = [config['business_account_id'], config['api_key'], config['phone_number_id']].map(&:to_s)
+    expected_identity = [@waba_id, @access_token, @phone_number_id].map(&:to_s)
+    return if current_identity == expected_identity
+
+    raise StalePhoneRegistrationIdentityError, 'WhatsApp phone registration identity changed'
   end
 
   # Recovery writes intentionally stay adjacent to the remote callback mutation.

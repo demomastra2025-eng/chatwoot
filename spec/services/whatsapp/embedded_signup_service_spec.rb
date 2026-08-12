@@ -142,6 +142,13 @@ describe Whatsapp::EmbeddedSignupService do
       service.perform
     end
 
+    it 'trusts a successful registration response without an immediate stale health probe' do
+      allow(channel).to receive(:setup_webhooks).and_return(true)
+      expect(Whatsapp::HealthService).not_to receive(:new)
+
+      expect(service.perform).to eq(channel)
+    end
+
     context 'when channel is in pending state' do
       it 'prompts reauthorization for pending channel' do
         health_service = instance_double(Whatsapp::HealthService)
@@ -206,6 +213,24 @@ describe Whatsapp::EmbeddedSignupService do
         end.to raise_error('Webhook setup error')
           .and not_change(Channel::Whatsapp, :count)
           .and not_change(Inbox, :count)
+      end
+
+      it 'keeps the authorized inbox when only phone registration needs a corrected PIN' do
+        registration_error = Whatsapp::PhoneRegistrationService::Error.new(
+          error_code: 'pin_incorrect', provider_code: 133_005
+        )
+        expect(channel).to receive(:setup_webhooks).and_raise(registration_error)
+        expect(Whatsapp::HealthService).not_to receive(:new)
+
+        expect(service.perform).to eq(channel)
+      end
+
+      it 'keeps the initial channel when Meta registration succeeded but local finalization failed' do
+        registration_error = Whatsapp::PhoneRegistrationService::Error.new(error_code: 'outcome_unknown')
+        expect(channel).to receive(:setup_webhooks).and_raise(registration_error)
+        expect(Whatsapp::HealthService).not_to receive(:new)
+
+        expect(service.perform).to eq(channel)
       end
 
       it 'does not mutate the remote subscription again when callback setup failed cleanly' do
@@ -310,6 +335,8 @@ describe Whatsapp::EmbeddedSignupService do
                                                                             throughput: { 'level' => 'STANDARD' },
                                                                             messaging_limit_tier: 'TIER_1000'
                                                                           })
+        allow(Whatsapp::WebhookSetupService).to receive(:new)
+          .and_return(instance_double(Whatsapp::WebhookSetupService, register_callback: true))
       end
 
       it 'uses ReauthorizationService and sets up webhooks' do
@@ -320,7 +347,8 @@ describe Whatsapp::EmbeddedSignupService do
           'business_id' => params[:business_id]
         ))
         expect(reauth_service).to receive(:perform).and_yield(channel).and_return(channel)
-        expect(channel).to receive(:setup_webhooks).with(strict: true, force_registration: false)
+        webhook_service = instance_double(Whatsapp::WebhookSetupService, register_callback: true)
+        expect(Whatsapp::WebhookSetupService).to receive(:new).with(channel).and_return(webhook_service)
         expect(channel).to receive(:reauthorized!)
 
         result = service_with_inbox.perform
@@ -493,7 +521,7 @@ describe Whatsapp::EmbeddedSignupService do
           allow(Whatsapp::Providers::WhatsappCloudService).to receive(:new).and_return(provider_service)
           webhook_service = instance_double(Whatsapp::WebhookSetupService)
           allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(webhook_service)
-          allow(webhook_service).to receive(:perform).and_raise('Webhook setup error')
+          allow(webhook_service).to receive(:register_callback).and_raise('Webhook setup error')
 
           expect { service_with_real_inbox.perform }.to raise_error('Webhook setup error')
 
@@ -517,7 +545,8 @@ describe Whatsapp::EmbeddedSignupService do
             whatsapp_channel
           end
 
-          allow(whatsapp_channel).to receive(:setup_webhooks).and_return(true)
+          allow(Whatsapp::WebhookSetupService).to receive(:new)
+            .and_return(instance_double(Whatsapp::WebhookSetupService, register_callback: true))
         end
 
         def stub_reauthorization_service

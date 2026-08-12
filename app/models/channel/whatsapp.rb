@@ -104,6 +104,8 @@ class Channel::Whatsapp < ApplicationRecord
   def setup_webhooks(strict: false, force_registration: false)
     perform_webhook_setup(strict: strict, force_registration: force_registration)
   rescue StandardError => e
+    raise if strict && e.is_a?(Whatsapp::PhoneRegistrationService::Error)
+
     safe_message = sanitize_provider_metadata('message' => e.message)['message']
     Rails.logger.error "[WHATSAPP] Webhook setup failed: #{safe_message}"
     prompt_reauthorization!

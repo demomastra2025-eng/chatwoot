@@ -567,6 +567,7 @@ Rails.application.routes.draw do
             resource :authorization, only: [:create] do
               post :session, action: :log_session
             end
+            resource :phone_registration, only: [:create]
           end
 
           resources :whatsapp_calls, only: [:show] do
@@ -597,6 +598,7 @@ Rails.application.routes.draw do
                 post :run_sync
                 get :sync_status
                 patch :sync_conflict
+                post :resolve_sync_conflict
                 post :import_catalog
               end
             end

@@ -26,6 +26,13 @@ RSpec.describe 'WhatsApp inbox provider config', type: :request do
       'api_key' => 'hidden-provider-key',
       'webhook_verify_token' => 'hidden-setup-token',
       'verification_pin' => '123456',
+      'phone_registration' => {
+        'status' => 'pin_incorrect',
+        'provider_error_code' => 133_005,
+        'attempt_count' => 3,
+        'pending_pin_ciphertext' => 'private-pin-ciphertext',
+        'last_provider_payload' => 'private-provider-payload'
+      },
       'future_secret' => 'hidden-by-default',
       'coexistence_sync' => {
         'state' => 'history_failed',
@@ -84,11 +91,13 @@ RSpec.describe 'WhatsApp inbox provider config', type: :request do
     expect(provider_config[:meta_webhook_lifecycle]).to eq(
       counters: { security: 2 }, last_event_at: '2026-07-18T20:00:00Z'
     )
+    expect(provider_config[:phone_registration]).to eq(status: 'pin_incorrect', provider_error_code: 133_005)
     expect(provider_config[:coexistence_sync].to_json).not_to include(
       'future_secret', 'private customer message', 'nested-token', 'nested-key', 'thread_id', 'metadata'
     )
     expect(provider_config.to_json).not_to include(
-      'hidden-provider-key', 'private-generation', 'private.example', 'private-fingerprint', 'private-payload'
+      'hidden-provider-key', 'private-generation', 'private.example', 'private-fingerprint', 'private-payload',
+      'private-provider-payload', 'private-pin-ciphertext', 'attempt_count'
     )
   end
 

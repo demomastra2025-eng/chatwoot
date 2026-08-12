@@ -81,6 +81,38 @@ describe('#getInboxHealthStatus', () => {
     });
   });
 
+  it('shows registration as an amber partial-success state instead of a disconnect', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        reauthorization_required: true,
+        provider_config: {
+          phone_registration: {
+            status: 'pin_incorrect',
+            provider_error_code: 133005,
+          },
+        },
+      })
+    ).toMatchObject({
+      id: 'phone_registration_required',
+      tone: 'amber',
+      labelKey: 'INBOX_MGMT.HEALTH_STATUS.PHONE_REGISTRATION_REQUIRED',
+    });
+  });
+
+  it('keeps hard authorization failure above stale registration state', () => {
+    expect(
+      getInboxHealthStatus({
+        id: 1,
+        reauthorization_required: true,
+        provider_config: {
+          authorization_status: 'reauthorization_required',
+          phone_registration: { status: 'pin_incorrect' },
+        },
+      })
+    ).toMatchObject({ id: 'reauthorization_required', tone: 'ruby' });
+  });
+
   it('shows an actionable warning before a WhatsApp Cloud token expires', () => {
     expect(
       getInboxHealthStatus({
