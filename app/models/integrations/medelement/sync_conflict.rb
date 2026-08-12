@@ -64,8 +64,8 @@ class Integrations::Medelement::SyncConflict < ApplicationRecord
 
   scope :actionable, -> { where(status: %w[open ignored]).order(last_seen_at: :desc) }
 
-  def ignore!(user:)
-    update!(status: 'ignored', resolved_by: user, resolved_at: Time.current, resolution_note: 'Ignored by administrator')
+  def ignore!(user:, note: 'Ignored by administrator')
+    update!(status: 'ignored', resolved_by: user, resolved_at: Time.current, resolution_note: note)
   end
 
   def reopen!

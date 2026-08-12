@@ -23,6 +23,10 @@ class HookPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
+  def resolve_sync_conflict?
+    @account_user.administrator?
+  end
+
   def import_catalog?
     @account_user.administrator?
   end

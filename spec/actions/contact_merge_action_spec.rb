@@ -128,6 +128,68 @@ describe ContactMergeAction do
       end
     end
 
+    context 'when mergee contact has operational relations' do
+      it 'moves scheduling, telephony, confirmation, reminder, lead, and assignment records' do
+        appointment = create(:scheduling_appointment, account: account, contact: mergee_contact)
+        call_session = create(:telephony_call_session, account: account, contact: mergee_contact)
+        confirmation = create(:confirmation_request, account: account, contact: mergee_contact)
+        reminder_conversation = create(:conversation, account: account, contact: mergee_contact)
+        reminder = create(:reminder, account: account, touch_conversation: reminder_conversation)
+        lead = create(:lead_submission, account: account, contact: mergee_contact)
+        ownership = create(:assignment_client_ownership, account: account, contact: mergee_contact)
+
+        contact_merge
+
+        expect(appointment.reload.contact_id).to eq(base_contact.id)
+        expect(call_session.reload.contact_id).to eq(base_contact.id)
+        expect(confirmation.reload.contact_id).to eq(base_contact.id)
+        expect(reminder.reload.target_contact_id).to eq(base_contact.id)
+        expect(lead.reload.contact_id).to eq(base_contact.id)
+        expect(ownership.reload.contact_id).to eq(base_contact.id)
+      end
+    end
+
+    context 'when both contacts have the same assignment quota identity' do
+      it 'keeps one quota record and preserves the merge transaction' do
+        user = create(:user, account: account)
+        period_start = Time.zone.today.beginning_of_month
+        create(:assignment_quota_usage, account: account, user: user, contact: base_contact, period_start: period_start)
+        create(:assignment_quota_usage, account: account, user: user, contact: mergee_contact, period_start: period_start)
+
+        contact_merge
+
+        expect(AssignmentQuotaUsage.where(account: account, user: user, contact: base_contact, period_start: period_start).count).to eq(1)
+      end
+    end
+
+    context 'when both contacts have assignment ownership' do
+      it 'blocks the merge instead of silently dropping ownership' do
+        create(:assignment_client_ownership, account: account, contact: base_contact)
+        mergee_ownership = create(:assignment_client_ownership, account: account, contact: mergee_contact)
+
+        expect { contact_merge }.to raise_error(Contacts::ReferenceMergeService::UnsafeMergeError, /assignment ownership/)
+
+        expect(mergee_ownership.reload.contact_id).to eq(mergee_contact.id)
+        expect(mergee_contact.reload).to be_present
+      end
+    end
+
+    context 'when both contacts have delivery history for the same campaign run' do
+      it 'blocks the merge instead of deleting a delivery record' do
+        campaign = create(:campaign, account: account)
+        campaign_run = create(:campaign_run, campaign: campaign, account: account, inbox: campaign.inbox)
+        create(:campaign_delivery, campaign: campaign, campaign_run: campaign_run, account: account,
+                                   inbox: campaign.inbox, contact: base_contact)
+        mergee_delivery = create(:campaign_delivery, campaign: campaign, campaign_run: campaign_run, account: account,
+                                                     inbox: campaign.inbox, contact: mergee_contact)
+
+        expect { contact_merge }.to raise_error(Contacts::ReferenceMergeService::UnsafeMergeError, /delivery history/)
+
+        expect(mergee_delivery.reload.contact_id).to eq(mergee_contact.id)
+        expect(mergee_contact.reload).to be_present
+      end
+    end
+
     context 'when contacts belong to a different account' do
       it 'throws an exception' do
         new_account = create(:account)

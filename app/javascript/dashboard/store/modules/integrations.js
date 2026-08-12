@@ -170,14 +170,27 @@ export const actions = {
       });
     }
   },
-  getHookSyncStatus: async (_, hookId) => {
-    const response = await IntegrationsAPI.getHookSyncStatus(hookId);
+  getHookSyncStatus: async (_, payload) => {
+    const hookId = typeof payload === 'object' ? payload.hookId : payload;
+    const conflictPage =
+      typeof payload === 'object' ? payload.conflictPage : undefined;
+    const response = await IntegrationsAPI.getHookSyncStatus(hookId, {
+      ...(conflictPage ? { conflict_page: conflictPage } : {}),
+      ...(typeof payload === 'object' ? payload.filters : {}),
+    });
     return response.data;
   },
   updateHookSyncConflict: async (_, { hookId, conflictId, resolution }) => {
     const response = await IntegrationsAPI.updateHookSyncConflict(hookId, {
       conflict_id: conflictId,
       resolution,
+    });
+    return response.data;
+  },
+  resolveHookSyncConflict: async (_, { hookId, conflictId, ...resolution }) => {
+    const response = await IntegrationsAPI.resolveHookSyncConflict(hookId, {
+      conflict_id: conflictId,
+      ...resolution,
     });
     return response.data;
   },

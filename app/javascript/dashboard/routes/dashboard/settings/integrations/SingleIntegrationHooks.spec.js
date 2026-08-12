@@ -6,6 +6,7 @@ const testState = vi.hoisted(() => ({
   alerts: vi.fn(),
   dispatch: vi.fn(),
   integration: null,
+  syncStatus: null,
 }));
 
 vi.mock('vuex', async importOriginal => {
@@ -105,6 +106,13 @@ const mountComponent = () =>
           template:
             '<button :disabled="disabled" @click="$emit(\'click\')">{{ label }}</button>',
         },
+        Dialog: {
+          emits: ['confirm', 'close'],
+          methods: { open() {}, close() {} },
+          template:
+            '<div><slot /><button data-test="dialog-confirm" @click="$emit(\'confirm\')">confirm</button></div>',
+        },
+        Input: true,
       },
     },
   });
@@ -124,13 +132,16 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
       visible_properties: [],
       settings_form_schema: [],
     };
+    testState.syncStatus = syncStatus;
     testState.dispatch.mockImplementation(action => {
       if (action === 'integrations/getHookSyncStatus')
-        return Promise.resolve(syncStatus);
+        return Promise.resolve(testState.syncStatus);
       if (action === 'integrations/runHookSync') {
         return Promise.resolve({ message: 'queued', sync_status: syncStatus });
       }
       if (action === 'integrations/updateHookSyncConflict')
+        return Promise.resolve(syncStatus);
+      if (action === 'integrations/resolveHookSyncConflict')
         return Promise.resolve(syncStatus);
       return Promise.reject(new Error(`Unexpected action: ${action}`));
     });
@@ -151,6 +162,27 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
     );
     expect(wrapper.text()).not.toContain(
       'Internal provider reason must not render'
+    );
+
+    wrapper.unmount();
+  });
+
+  it('always renders the conflict queue for a connected MedElement integration', async () => {
+    testState.syncStatus = {
+      run: null,
+      conflicts: [],
+      conflict_counts: { open: 0, ignored: 0, resolved: 0 },
+      conflict_pagination: { page: 1, per_page: 25, total: 0, total_pages: 1 },
+    };
+
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain(
+      'INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICTS'
+    );
+    expect(wrapper.text()).toContain(
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.EMPTY'
     );
 
     wrapper.unmount();
@@ -182,6 +214,68 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
     expect(testState.dispatch).toHaveBeenCalledWith(
       'integrations/updateHookSyncConflict',
       { hookId: 7, conflictId: 8, resolution: 'ignore' }
+    );
+
+    wrapper.unmount();
+  });
+
+  it('renders both contact cards and submits a scoped merge decision', async () => {
+    testState.syncStatus = {
+      ...syncStatus,
+      conflicts: [
+        {
+          id: 19,
+          phase: 'contacts',
+          conflict_type: 'phone_owned_by_another_contact',
+          status: 'open',
+          occurrences: 3,
+          contact_resolution: {
+            can_merge: true,
+            can_delete_primary: false,
+            can_delete_conflicting: false,
+            primary_contact: {
+              id: 101,
+              name: 'MedElement patient',
+              phone_number: null,
+              conversations_count: 0,
+              appointments_count: 1,
+              deals_count: 0,
+              call_sessions_count: 0,
+            },
+            conflicting_contact: {
+              id: 202,
+              name: 'Phone owner',
+              phone_number: '+77000000000',
+              conversations_count: 1,
+              appointments_count: 0,
+              deals_count: 1,
+              call_sessions_count: 1,
+            },
+          },
+        },
+      ],
+    };
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('MedElement patient');
+    expect(wrapper.text()).toContain('Phone owner');
+    await buttonByLabel(
+      wrapper,
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE'
+    ).trigger('click');
+    await wrapper.get('[data-test="dialog-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(testState.dispatch).toHaveBeenCalledWith(
+      'integrations/resolveHookSyncConflict',
+      {
+        hookId: 7,
+        conflictId: 19,
+        resolution: 'merge',
+        base_contact_id: 101,
+        mergee_contact_id: 202,
+      }
     );
 
     wrapper.unmount();

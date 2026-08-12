@@ -327,6 +327,39 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
       expect(response).to have_http_status(:unauthorized)
     end
+
+    it 'filters the queue by status, type, date, and account-scoped contact query' do
+      contact = create(:contact, account: account, name: 'Filter Patient')
+      run = Integrations::Medelement::SyncRun.create!(
+        account: account,
+        hook: hook,
+        requested_by: admin,
+        trigger: 'manual',
+        status: 'partial'
+      )
+      matching = Integrations::Medelement::ConflictTracker.new(sync_run: run).record!(
+        phase: 'contacts',
+        entity_type: 'contact',
+        conflict_type: 'phone_owned_by_another_contact',
+        entity_key: 'patient-filter',
+        details: { contact_id: contact.id }
+      )
+      matching.ignore!(user: admin, note: 'Separate patients')
+
+      get sync_status_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+          params: {
+            status: 'ignored',
+            conflict_type: 'phone_owned_by_another_contact',
+            contact: 'Filter Patient',
+            from: 1.day.ago.to_date.iso8601,
+            to: Date.current.iso8601
+          },
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['conflicts'].pluck('id')).to eq([matching.id])
+    end
   end
 
   describe 'PATCH /api/v1/accounts/{account.id}/integrations/hooks/{hook_id}/sync_conflict' do
@@ -377,6 +410,80 @@ RSpec.describe 'Integration Hooks API', type: :request do
             params: { conflict_id: conflict.id, resolution: 'ignore' },
             headers: agent.create_new_auth_token,
             as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(conflict.reload).to be_open
+    end
+  end
+
+  describe 'POST /api/v1/accounts/{account.id}/integrations/hooks/{hook_id}/resolve_sync_conflict' do
+    let(:hook) { create(:integrations_hook, :medelement, account: account) }
+    let(:run) do
+      Integrations::Medelement::SyncRun.create!(
+        account: account,
+        hook: hook,
+        trigger: 'manual',
+        status: 'partial'
+      )
+    end
+    let(:primary_contact) { create(:contact, account: account) }
+    let(:conflicting_contact) { create(:contact, account: account) }
+    let(:conflict) do
+      Integrations::Medelement::ConflictTracker.new(sync_run: run).record!(
+        phase: 'contacts',
+        entity_type: 'contact',
+        conflict_type: 'phone_owned_by_another_contact',
+        entity_key: 'patient-1',
+        details: { contact_id: primary_contact.id, conflicting_contact_id: conflicting_contact.id }
+      )
+    end
+
+    before { account.enable_features!('scheduling') }
+
+    it 'allows an admin to keep contacts separate with an audit note' do
+      post resolve_sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           params: { conflict_id: conflict.id, resolution: 'keep_separate', note: 'Different patients' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(conflict.reload).to have_attributes(status: 'ignored', resolution_note: 'Different patients', resolved_by: admin)
+    end
+
+    it 'allows an admin to merge only in the recorded direction' do
+      post resolve_sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           params: {
+             conflict_id: conflict.id,
+             resolution: 'merge',
+             base_contact_id: primary_contact.id,
+             mergee_contact_id: conflicting_contact.id
+           },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(Contact.exists?(conflicting_contact.id)).to be(false)
+      expect(conflict.reload).to have_attributes(status: 'resolved', resolved_by: admin)
+    end
+
+    it 'rejects unsafe deletion and preserves the conflict' do
+      create(:message, sender: conflicting_contact)
+
+      post resolve_sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           params: { conflict_id: conflict.id, resolution: 'delete', contact_id: conflicting_contact.id },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body['code']).to eq('unsafe_resolution')
+      expect(conflict.reload).to be_open
+    end
+
+    it 'does not allow an agent to resolve a contact conflict' do
+      post resolve_sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           params: { conflict_id: conflict.id, resolution: 'keep_separate', note: 'Different patients' },
+           headers: agent.create_new_auth_token,
+           as: :json
 
       expect(response).to have_http_status(:unauthorized)
       expect(conflict.reload).to be_open

@@ -16,6 +16,7 @@ class ContactMergeAction
       merge_contact_channel_profiles
       merge_crm_deal_contacts
       merge_contact_notes
+      merge_remaining_contact_references
       merge_and_remove_mergee_contact
     end
     @base_contact
@@ -52,6 +53,14 @@ class ContactMergeAction
       Note.where(contact_id: @mergee_contact.id, account_id: @mergee_contact.account_id),
       contact_id: @base_contact.id
     )
+  end
+
+  def merge_remaining_contact_references
+    Contacts::ReferenceMergeService.new(
+      account: @account,
+      base_contact: @base_contact,
+      mergee_contact: @mergee_contact
+    ).perform
   end
 
   def merge_messages

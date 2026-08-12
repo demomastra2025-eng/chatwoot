@@ -59,15 +59,23 @@ class IntegrationsAPI extends ApiClient {
     );
   }
 
-  getHookSyncStatus(hookId) {
+  getHookSyncStatus(hookId, params = {}) {
     return axios.get(
-      `${this.baseUrl()}/integrations/hooks/${hookId}/sync_status`
+      `${this.baseUrl()}/integrations/hooks/${hookId}/sync_status`,
+      { params }
     );
   }
 
   updateHookSyncConflict(hookId, data) {
     return axios.patch(
       `${this.baseUrl()}/integrations/hooks/${hookId}/sync_conflict`,
+      data
+    );
+  }
+
+  resolveHookSyncConflict(hookId, data) {
+    return axios.post(
+      `${this.baseUrl()}/integrations/hooks/${hookId}/resolve_sync_conflict`,
       data
     );
   }

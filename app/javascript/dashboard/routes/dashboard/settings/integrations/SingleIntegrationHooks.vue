@@ -9,6 +9,8 @@ import { useIntegrationHook } from 'dashboard/composables/useIntegrationHook';
 import { useBranding } from 'shared/composables/useBranding';
 import BaseSettingsHeader from 'dashboard/routes/dashboard/settings/components/BaseSettingsHeader.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
+import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
+import Input from 'dashboard/components-next/input/Input.vue';
 
 const props = defineProps({
   integrationId: {
@@ -43,16 +45,30 @@ const medelementCatalogFileInput = ref(null);
 const medelementCatalogFile = ref(null);
 const medelementCatalogMaxBytes = 5 * 1024 * 1024;
 const hookSyncStatus = ref({ run: null, conflicts: [], conflict_counts: {} });
+const resolvingConflictId = ref(null);
+const conflictFilters = ref({
+  status: '',
+  conflict_type: '',
+  contact: '',
+  from: '',
+  to: '',
+});
+const conflictResolutionDialog = ref(null);
+const pendingConflictAction = ref(null);
+const resolutionNote = ref('');
 let hookSyncPollTimer;
 let hookSyncPollFailures = 0;
 
 const syncRun = computed(() => hookSyncStatus.value?.run);
 const syncConflicts = computed(() => hookSyncStatus.value?.conflicts || []);
+const conflictPagination = computed(
+  () => hookSyncStatus.value?.conflict_pagination || { page: 1, total_pages: 1 }
+);
 const isSyncActive = computed(() =>
   ['queued', 'running', 'retrying'].includes(syncRun.value?.status)
 );
 const showHookSyncPanel = computed(
-  () => isMedelement.value && (syncRun.value || syncConflicts.value.length)
+  () => isMedelement.value && Boolean(connectedHook.value)
 );
 const syncPhases = [
   'setup',
@@ -101,6 +117,11 @@ const syncConflictTranslation = {
     'INTEGRATION_APPS.MEDELEMENT.CONFLICT_TYPE.APPOINTMENT_AMOUNT_MISMATCH',
   local_payment_preserved:
     'INTEGRATION_APPS.MEDELEMENT.CONFLICT_TYPE.LOCAL_PAYMENT_PRESERVED',
+};
+const conflictStatusTranslation = {
+  open: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS.OPEN',
+  ignored: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS.IGNORED',
+  resolved: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS.RESOLVED',
 };
 const syncCounterTranslation = {
   configured_fields:
@@ -309,7 +330,11 @@ async function fetchHookSyncStatus() {
   try {
     hookSyncStatus.value = await store.dispatch(
       'integrations/getHookSyncStatus',
-      hookId
+      {
+        hookId,
+        conflictPage: conflictPagination.value.page,
+        filters: conflictFilters.value,
+      }
     );
     hookSyncPollFailures = 0;
   } catch {
@@ -318,6 +343,131 @@ async function fetchHookSyncStatus() {
     const retryDelay = Math.min(2000 * 2 ** hookSyncPollFailures, 30000);
     scheduleHookSyncPoll(retryDelay);
   }
+}
+
+async function loadConflictPage(page) {
+  const hookId = connectedHook.value?.id;
+  if (!hookId || page < 1 || page > conflictPagination.value.total_pages)
+    return;
+
+  hookSyncStatus.value = await store.dispatch(
+    'integrations/getHookSyncStatus',
+    { hookId, conflictPage: page, filters: conflictFilters.value }
+  );
+}
+
+function applyConflictFilters() {
+  loadConflictPage(1);
+}
+
+function clearConflictFilters() {
+  conflictFilters.value = {
+    status: '',
+    conflict_type: '',
+    contact: '',
+    from: '',
+    to: '',
+  };
+  loadConflictPage(1);
+}
+
+function openContact(contact) {
+  if (!contact?.id) return;
+  window.open(
+    `/app/accounts/${route.params.accountId}/contacts/${contact.id}`,
+    '_blank',
+    'noopener,noreferrer'
+  );
+}
+
+async function resolveContactConflict(conflict, resolution) {
+  const hookId = connectedHook.value?.id;
+  if (!hookId) return false;
+
+  resolvingConflictId.value = conflict.id;
+  try {
+    hookSyncStatus.value = await store.dispatch(
+      'integrations/resolveHookSyncConflict',
+      { hookId, conflictId: conflict.id, ...resolution }
+    );
+    useAlert(t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SUCCESS'));
+    return true;
+  } catch (error) {
+    useAlert(
+      error?.response?.data?.message ||
+        t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.ERROR')
+    );
+    return false;
+  } finally {
+    resolvingConflictId.value = null;
+  }
+}
+
+function mergeContactConflict(conflict) {
+  const resolution = conflict.contact_resolution;
+  if (!resolution?.can_merge) return;
+  pendingConflictAction.value = {
+    type: 'merge',
+    conflict,
+    contact: resolution.conflicting_contact,
+  };
+  conflictResolutionDialog.value?.open();
+}
+
+function keepContactsSeparate(conflict) {
+  resolutionNote.value = '';
+  pendingConflictAction.value = { type: 'keep_separate', conflict };
+  conflictResolutionDialog.value?.open();
+}
+
+function deleteConflictContact(conflict, contact) {
+  if (!contact?.id) return;
+  pendingConflictAction.value = { type: 'delete', conflict, contact };
+  conflictResolutionDialog.value?.open();
+}
+
+const conflictDialogDescription = computed(() => {
+  const action = pendingConflictAction.value;
+  if (!action) return '';
+  if (action.type === 'keep_separate')
+    return t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.NOTE_PROMPT');
+  if (action.type === 'delete') {
+    return t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DELETE_CONFIRM', {
+      contact: action.contact.name || `#${action.contact.id}`,
+    });
+  }
+
+  const { primary_contact: primary, conflicting_contact: duplicate } =
+    action.conflict.contact_resolution;
+  return t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_CONFIRM', {
+    primary: primary.name || `#${primary.id}`,
+    duplicate: duplicate.name || `#${duplicate.id}`,
+  });
+});
+
+async function confirmConflictAction() {
+  const action = pendingConflictAction.value;
+  if (!action) return;
+  let payload;
+  if (action.type === 'merge') {
+    payload = {
+      resolution: 'merge',
+      base_contact_id: action.conflict.contact_resolution.primary_contact.id,
+      mergee_contact_id:
+        action.conflict.contact_resolution.conflicting_contact.id,
+    };
+  } else if (action.type === 'delete') {
+    payload = { resolution: 'delete', contact_id: action.contact.id };
+  } else {
+    payload = {
+      resolution: 'keep_separate',
+      note: resolutionNote.value.trim(),
+    };
+  }
+  const resolved = await resolveContactConflict(action.conflict, payload);
+  if (!resolved) return;
+  conflictResolutionDialog.value?.close();
+  pendingConflictAction.value = null;
 }
 
 async function retrySyncPhase(conflict) {
@@ -377,6 +527,20 @@ function syncPhaseLabel(phase) {
 function syncConflictLabel(type) {
   const translationKey = syncConflictTranslation[type];
   if (!translationKey) return humanizeProperty(type);
+
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  return t(translationKey);
+}
+
+function contactRoleLabel(role) {
+  return role === 'primary'
+    ? t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PRIMARY')
+    : t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CONFLICTING');
+}
+
+function conflictStatusLabel(status) {
+  const translationKey = conflictStatusTranslation[status];
+  if (!translationKey) return humanizeProperty(status);
 
   // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
   return t(translationKey);
@@ -616,7 +780,7 @@ onBeforeUnmount(clearHookSyncPoll);
         }}
       </div>
 
-      <div v-if="syncConflicts.length" class="flex flex-col gap-3">
+      <div class="flex flex-col gap-3">
         <div class="flex items-center justify-between gap-3">
           <h4 class="text-sm font-medium text-n-slate-12">
             {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICTS') }}
@@ -627,25 +791,286 @@ onBeforeUnmount(clearHookSyncPoll);
           </span>
         </div>
 
+        <div
+          class="grid gap-3 rounded-lg border border-n-weak bg-n-alpha-2 p-3 md:grid-cols-2 xl:grid-cols-5"
+        >
+          <label class="flex flex-col gap-1 text-xs text-n-slate-11">
+            {{
+              $t(
+                'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.STATUS'
+              )
+            }}
+            <select
+              v-model="conflictFilters.status"
+              class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm"
+            >
+              <option value="">
+                {{
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.ALL'
+                  )
+                }}
+              </option>
+              <option value="open">{{ conflictStatusLabel('open') }}</option>
+              <option value="ignored">
+                {{ conflictStatusLabel('ignored') }}
+              </option>
+              <option value="resolved">
+                {{ conflictStatusLabel('resolved') }}
+              </option>
+            </select>
+          </label>
+          <label class="flex flex-col gap-1 text-xs text-n-slate-11">
+            {{
+              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.TYPE')
+            }}
+            <select
+              v-model="conflictFilters.conflict_type"
+              class="rounded-lg border border-n-weak bg-n-solid-1 px-3 py-2 text-sm"
+            >
+              <option value="">
+                {{
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.ALL'
+                  )
+                }}
+              </option>
+              <option
+                v-for="(_, type) in syncConflictTranslation"
+                :key="type"
+                :value="type"
+              >
+                {{ syncConflictLabel(type) }}
+              </option>
+            </select>
+          </label>
+          <Input
+            v-model="conflictFilters.contact"
+            :label="
+              $t(
+                'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.CONTACT'
+              )
+            "
+          />
+          <Input
+            v-model="conflictFilters.from"
+            type="date"
+            :label="
+              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.FROM')
+            "
+          />
+          <Input
+            v-model="conflictFilters.to"
+            type="date"
+            :label="
+              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.TO')
+            "
+          />
+          <div class="flex flex-wrap gap-2 md:col-span-2 xl:col-span-5">
+            <NextButton
+              blue
+              :label="
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.APPLY'
+                )
+              "
+              @click="applyConflictFilters"
+            />
+            <NextButton
+              faded
+              slate
+              :label="
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.CLEAR'
+                )
+              "
+              @click="clearConflictFilters"
+            />
+          </div>
+        </div>
+
+        <p
+          v-if="!syncConflicts.length"
+          class="rounded-lg border border-n-weak bg-n-solid-1 p-4 text-sm text-n-slate-10"
+        >
+          {{
+            $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FILTER.EMPTY')
+          }}
+        </p>
+
         <article
           v-for="conflict in syncConflicts"
           :key="conflict.id"
-          class="flex flex-col gap-3 rounded-lg border border-n-weak bg-n-solid-1 p-4 lg:flex-row lg:items-center lg:justify-between"
+          class="flex flex-col gap-4 rounded-lg border border-n-weak bg-n-solid-1 p-4"
         >
-          <div>
-            <p class="text-sm font-medium text-n-slate-12">
-              {{ syncConflictLabel(conflict.conflict_type) }}
-            </p>
-            <p class="mt-1 text-xs text-n-slate-10">
-              {{
-                $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICT_META', {
-                  phase: syncPhaseLabel(conflict.phase),
-                  count: conflict.occurrences,
-                })
-              }}
-            </p>
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="text-sm font-medium text-n-slate-12">
+                {{ syncConflictLabel(conflict.conflict_type) }}
+              </p>
+              <p class="mt-1 text-xs text-n-slate-10">
+                {{
+                  $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICT_META', {
+                    phase: syncPhaseLabel(conflict.phase),
+                    count: conflict.occurrences,
+                  })
+                }}
+              </p>
+            </div>
+            <span
+              class="rounded-full bg-n-alpha-3 px-2 py-1 text-xs text-n-slate-11"
+            >
+              {{ conflictStatusLabel(conflict.status) }}
+            </span>
           </div>
+
+          <div
+            v-if="conflict.contact_resolution"
+            class="grid gap-3 lg:grid-cols-2"
+          >
+            <article
+              v-for="(contact, role) in {
+                primary: conflict.contact_resolution.primary_contact,
+                conflicting: conflict.contact_resolution.conflicting_contact,
+              }"
+              :key="role"
+              class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
+            >
+              <template v-if="contact">
+                <p
+                  class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
+                >
+                  {{ contactRoleLabel(role) }}
+                </p>
+                <p class="mt-1 text-sm font-medium text-n-slate-12">
+                  {{ contact.name || `#${contact.id}` }}
+                </p>
+                <dl class="mt-2 grid grid-cols-2 gap-2 text-xs text-n-slate-11">
+                  <div>
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PHONE'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.phone_number || '—' }}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.IIN'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.identifier_masked || '—' }}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CONVERSATIONS'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.conversations_count }}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPOINTMENTS'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.appointments_count }}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DEALS'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.deals_count }}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CALLS'
+                        )
+                      }}
+                    </dt>
+                    <dd>{{ contact.call_sessions_count }}</dd>
+                  </div>
+                </dl>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <NextButton
+                    faded
+                    slate
+                    size="sm"
+                    :label="
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.OPEN_EDIT'
+                      )
+                    "
+                    @click="openContact(contact)"
+                  />
+                  <NextButton
+                    v-if="
+                      role === 'primary'
+                        ? conflict.contact_resolution.can_delete_primary
+                        : conflict.contact_resolution.can_delete_conflicting
+                    "
+                    faded
+                    ruby
+                    size="sm"
+                    :label="
+                      $t(
+                        'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DELETE_EMPTY'
+                      )
+                    "
+                    @click="deleteConflictContact(conflict, contact)"
+                  />
+                </div>
+              </template>
+              <p v-else class="text-sm text-n-slate-10">
+                {{
+                  $t(
+                    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CONTACT_MISSING'
+                  )
+                }}
+              </p>
+            </article>
+          </div>
+
           <div class="flex flex-wrap gap-2">
+            <NextButton
+              v-if="
+                conflict.status === 'open' &&
+                conflict.contact_resolution?.can_merge
+              "
+              blue
+              :is-loading="resolvingConflictId === conflict.id"
+              :label="
+                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE')
+              "
+              @click="mergeContactConflict(conflict)"
+            />
+            <NextButton
+              v-if="conflict.status === 'open' && conflict.contact_resolution"
+              faded
+              slate
+              :label="
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.KEEP_SEPARATE'
+                )
+              "
+              @click="keepContactsSeparate(conflict)"
+            />
             <NextButton
               v-if="conflict.status === 'open'"
               faded
@@ -655,14 +1080,14 @@ onBeforeUnmount(clearHookSyncPoll);
               @click="retrySyncPhase(conflict)"
             />
             <NextButton
-              v-if="conflict.status === 'open'"
+              v-if="conflict.status === 'open' && !conflict.contact_resolution"
               faded
               slate
               :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.IGNORE')"
               @click="updateSyncConflict(conflict, 'ignore')"
             />
             <NextButton
-              v-else
+              v-if="conflict.status === 'ignored'"
               faded
               slate
               :label="$t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.REOPEN')"
@@ -670,6 +1095,38 @@ onBeforeUnmount(clearHookSyncPoll);
             />
           </div>
         </article>
+
+        <div
+          v-if="conflictPagination.total_pages > 1"
+          class="flex items-center justify-end gap-2"
+        >
+          <NextButton
+            faded
+            slate
+            :disabled="conflictPagination.page <= 1"
+            :label="
+              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PREVIOUS')
+            "
+            @click="loadConflictPage(conflictPagination.page - 1)"
+          />
+          <span class="text-xs text-n-slate-10">
+            {{
+              $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PAGE', {
+                page: conflictPagination.page,
+                total: conflictPagination.total_pages,
+              })
+            }}
+          </span>
+          <NextButton
+            faded
+            slate
+            :disabled="
+              conflictPagination.page >= conflictPagination.total_pages
+            "
+            :label="$t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.NEXT')"
+            @click="loadConflictPage(conflictPagination.page + 1)"
+          />
+        </div>
       </div>
     </section>
 
@@ -846,5 +1303,30 @@ onBeforeUnmount(clearHookSyncPoll);
         })
       }}
     </div>
+
+    <Dialog
+      ref="conflictResolutionDialog"
+      type="alert"
+      :title="$t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.TITLE')"
+      :description="conflictDialogDescription"
+      :is-loading="Boolean(resolvingConflictId)"
+      :disable-confirm-button="
+        pendingConflictAction?.type === 'keep_separate' &&
+        !resolutionNote.trim()
+      "
+      @confirm="confirmConflictAction"
+      @close="pendingConflictAction = null"
+    >
+      <Input
+        v-if="pendingConflictAction?.type === 'keep_separate'"
+        v-model="resolutionNote"
+        :label="
+          $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.NOTE_LABEL')
+        "
+        :placeholder="
+          $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.NOTE_PLACEHOLDER')
+        "
+      />
+    </Dialog>
   </div>
 </template>

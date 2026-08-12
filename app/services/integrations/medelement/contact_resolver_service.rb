@@ -185,12 +185,17 @@ class Integrations::Medelement::ContactResolverService
 
   def record_phone_conflict(patient_code, contact, comment)
     conflict_type = comment.include?('already belongs') ? 'phone_owned_by_another_contact' : 'phone_mismatch'
+    conflicting_contact_id = comment[/contact #(\d+)/, 1]&.to_i
     conflict_tracker&.record!(
       phase: 'contacts',
       entity_type: 'contact',
       conflict_type: conflict_type,
       entity_key: patient_code.presence || "contact:#{contact.id}",
-      details: { contact_id: contact.id, reason: conflict_type }
+      details: {
+        contact_id: contact.id,
+        conflicting_contact_id: conflicting_contact_id,
+        reason: conflict_type
+      }.compact
     )
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity

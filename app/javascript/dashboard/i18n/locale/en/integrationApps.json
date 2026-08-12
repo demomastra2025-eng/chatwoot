@@ -144,6 +144,48 @@
           "IMPORT_IN_PROGRESS": "A MedElement sync or catalog import is already running. Try again later.",
           "GENERIC": "Could not import the catalog. Please try again."
         }
+      },
+      "CONFLICT_RESOLUTION": {
+        "TITLE": "Contact conflict resolution",
+        "PRIMARY": "MedElement patient",
+        "CONFLICTING": "Contact owning the data",
+        "PHONE": "Phone",
+        "IIN": "IIN",
+        "CONVERSATIONS": "Conversations",
+        "APPOINTMENTS": "Appointments",
+        "DEALS": "Deals",
+        "CALLS": "Calls",
+        "OPEN_EDIT": "Open and edit",
+        "DELETE_EMPTY": "Delete empty",
+        "CONTACT_MISSING": "The linked contact no longer exists",
+        "MERGE": "Merge into patient",
+        "KEEP_SEPARATE": "Keep separate",
+        "MERGE_CONFIRM": "Merge “{duplicate}” into “{primary}”? All relations will be moved and the duplicate deleted.",
+        "DELETE_CONFIRM": "Delete empty contact “{contact}”? This cannot be undone.",
+        "NOTE_PROMPT": "Explain why these contacts must remain separate.",
+        "SUCCESS": "Conflict resolved.",
+        "ERROR": "Could not resolve the conflict.",
+        "PREVIOUS": "Previous",
+        "NEXT": "Next",
+        "NOTE_LABEL": "Resolution reason",
+        "NOTE_PLACEHOLDER": "For example: shared family number, different patients",
+        "STATUS": {
+          "OPEN": "Open",
+          "IGNORED": "Kept separate",
+          "RESOLVED": "Resolved"
+        },
+        "PAGE": "Page {page} of {total}",
+        "FILTER": {
+          "STATUS": "Status",
+          "TYPE": "Issue type",
+          "CONTACT": "Contact: name, phone, email or ID",
+          "FROM": "From date",
+          "TO": "To date",
+          "ALL": "All",
+          "APPLY": "Apply",
+          "CLEAR": "Clear",
+          "EMPTY": "No conflicts match the selected filters."
+        }
       }
     },
     "MACROCRM": {

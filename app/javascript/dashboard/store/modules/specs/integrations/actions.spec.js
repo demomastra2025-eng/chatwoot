@@ -206,7 +206,39 @@ describe('#actions', () => {
 
       await expect(actions.getHookSyncStatus({}, 2)).resolves.toEqual(data);
       expect(axios.get).toHaveBeenCalledWith(
-        expect.stringContaining('/2/sync_status')
+        expect.stringContaining('/2/sync_status'),
+        { params: {} }
+      );
+    });
+
+    it('loads a conflict queue page with the selected filters', async () => {
+      const data = { conflicts: [], conflict_pagination: { page: 3 } };
+      axios.get.mockResolvedValue({ data });
+
+      await expect(
+        actions.getHookSyncStatus(
+          {},
+          {
+            hookId: 2,
+            conflictPage: 3,
+            filters: {
+              status: 'open',
+              conflict_type: 'phone_owned_by_another_contact',
+              contact: 'Венера',
+            },
+          }
+        )
+      ).resolves.toEqual(data);
+      expect(axios.get).toHaveBeenCalledWith(
+        expect.stringContaining('/2/sync_status'),
+        {
+          params: {
+            conflict_page: 3,
+            status: 'open',
+            conflict_type: 'phone_owned_by_another_contact',
+            contact: 'Венера',
+          },
+        }
       );
     });
   });

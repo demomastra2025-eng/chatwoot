@@ -4,7 +4,7 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
 
   before_action :fetch_hook, except: [:create]
   before_action :check_authorization
-  before_action :ensure_medelement_hook!, only: [:run_sync, :sync_status, :sync_conflict, :import_catalog]
+  before_action :ensure_medelement_hook!, only: [:run_sync, :sync_status, :sync_conflict, :resolve_sync_conflict, :import_catalog]
 
   def create
     @hook = Current.account.hooks.create!(normalized_params)
@@ -58,11 +58,7 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
   end
 
   def sync_conflict
-    conflict = Integrations::Medelement::SyncConflict.find_by!(
-      id: params[:conflict_id],
-      account_id: Current.account.id,
-      hook_id: @hook.id
-    )
+    conflict = medelement_conflict!
 
     case params[:resolution]
     when 'ignore'
@@ -77,6 +73,30 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
     end
 
     render json: medelement_sync_status
+  end
+
+  def resolve_sync_conflict
+    conflict = medelement_conflict!
+    service = Integrations::Medelement::ContactResolutionService.new(conflict: conflict, user: Current.user)
+
+    case params[:resolution]
+    when 'merge'
+      service.merge_contacts!(base_contact_id: params[:base_contact_id], mergee_contact_id: params[:mergee_contact_id])
+    when 'delete'
+      service.delete!(contact_id: params[:contact_id])
+    when 'keep_separate'
+      service.keep_separate!(note: params[:note])
+    else
+      return render json: { code: 'invalid_resolution', message: 'Unsupported contact conflict resolution' },
+                    status: :unprocessable_content
+    end
+
+    render json: medelement_sync_status
+  rescue Integrations::Medelement::ContactResolutionService::UnsafeDeletionError,
+         Integrations::Medelement::ContactResolutionService::UnsupportedConflictError,
+         Contacts::ReferenceMergeService::UnsafeMergeError,
+         ArgumentError => e
+    render json: { code: 'unsafe_resolution', message: e.message }, status: :unprocessable_content
   end
 
   def import_catalog
@@ -141,8 +161,20 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
   end
 
   def medelement_sync_status(run: nil)
-    presenter = Integrations::Medelement::SyncStatusPresenter.new(hook: @hook)
+    presenter = Integrations::Medelement::SyncStatusPresenter.new(
+      hook: @hook,
+      conflict_page: params[:conflict_page],
+      filters: params.permit(:status, :conflict_type, :from, :to, :contact)
+    )
     run ? presenter.payload(run: run) : presenter.payload
+  end
+
+  def medelement_conflict!
+    Integrations::Medelement::SyncConflict.find_by!(
+      id: params[:conflict_id],
+      account_id: Current.account.id,
+      hook_id: @hook.id
+    )
   end
 
   def render_import_error(code, message, status: :unprocessable_content)
