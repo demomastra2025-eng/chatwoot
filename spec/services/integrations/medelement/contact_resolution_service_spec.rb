@@ -43,6 +43,23 @@ describe Integrations::Medelement::ContactResolutionService do
     it 'requires a non-empty note' do
       expect { service.keep_separate!(note: ' ') }.to raise_error(ArgumentError, 'Resolution note is required')
     end
+
+    it 'does not overwrite an audit decision made through a stale conflict instance' do
+      stale_conflict = described_class.new(
+        conflict: Integrations::Medelement::SyncConflict.find(conflict.id),
+        user: create(:user, account: account, role: :administrator)
+      )
+      service.keep_separate!(note: 'First administrator decision')
+
+      expect do
+        stale_conflict.keep_separate!(note: 'Stale competing decision')
+      end.to raise_error(described_class::UnsupportedConflictError, 'Only open conflicts can be resolved')
+
+      expect(conflict.reload).to have_attributes(
+        resolved_by: admin,
+        resolution_note: 'First administrator decision'
+      )
+    end
   end
 
   describe '#delete!' do

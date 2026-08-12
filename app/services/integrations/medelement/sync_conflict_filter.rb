@@ -1,4 +1,6 @@
 class Integrations::Medelement::SyncConflictFilter
+  MAX_CONTACT_ID = (2**63) - 1
+
   def initialize(hook:, filters: {})
     @hook = hook
     @filters = filters.to_h.symbolize_keys
@@ -41,9 +43,21 @@ class Integrations::Medelement::SyncConflictFilter
   end
 
   def matching_contact_ids(query)
-    hook.account.contacts.where(
+    matching_ids = hook.account.contacts.where(
       'name ILIKE :query OR email ILIKE :query OR phone_number ILIKE :query OR identifier ILIKE :query',
       query: "%#{ActiveRecord::Base.sanitize_sql_like(query)}%"
-    ).limit(500).pluck(:id).map(&:to_s)
+    ).limit(500).pluck(:id)
+    exact_id = exact_contact_id(query)
+    matching_ids << exact_id if exact_id
+    matching_ids.uniq.map(&:to_s)
+  end
+
+  def exact_contact_id(query)
+    return unless query.match?(/\A\d+\z/)
+
+    contact_id = query.to_i
+    return unless contact_id.positive? && contact_id <= MAX_CONTACT_ID
+
+    hook.account.contacts.where(id: contact_id).pick(:id)
   end
 end

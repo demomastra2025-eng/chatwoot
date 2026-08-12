@@ -42,11 +42,13 @@ class Integrations::Medelement::ContactResolutionService
 
   def keep_separate!(note:)
     ensure_contact_conflict!
-    ensure_open_conflict!
     normalized_note = note.to_s.strip
     raise ArgumentError, 'Resolution note is required' if normalized_note.blank?
 
-    conflict.ignore!(user: user, note: normalized_note)
+    conflict.with_lock do
+      ensure_open_conflict!
+      conflict.ignore!(user: user, note: normalized_note)
+    end
   end
 
   def self.safe_to_delete?(contact)
