@@ -10,6 +10,20 @@ class CampaignsAPI extends ApiClient {
     return axios.post(`${this.url}/preview`, data);
   }
 
+  importAudience({ file, inboxId, defaultCountry }) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('inbox_id', inboxId);
+    formData.append('default_country', defaultCountry);
+    return axios.post(`${this.baseUrl()}/campaign_audience_imports`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  }
+
+  getAudienceImport(id) {
+    return axios.get(`${this.baseUrl()}/campaign_audience_imports/${id}`);
+  }
+
   getAnalytics(id) {
     return axios.get(`${this.url}/${id}/analytics`);
   }

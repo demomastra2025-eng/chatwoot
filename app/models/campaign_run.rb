@@ -129,7 +129,7 @@ class CampaignRun < ApplicationRecord
     successful_count = SUCCESSFUL_DELIVERY_STATUSES.sum { |status| grouped_statuses[status] || 0 }
     successful_count += queued_pending_delivery_count
     failed_count = grouped_statuses['failed'] || 0
-    skipped_count = grouped_statuses['skipped'] || 0
+    skipped_count = (grouped_statuses['skipped'] || 0) + metadata.to_h['deleted_recipient_count'].to_i
 
     {
       total_count: audience_size,

@@ -20,10 +20,26 @@ RSpec.describe Contact do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:owner).optional }
     it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
+    it { is_expected.to have_many(:campaign_audience_recipients).dependent(:nullify) }
     it { is_expected.to have_many(:communication_threads).dependent(:destroy) }
     it { is_expected.to have_many(:conversations).dependent(:destroy_async) }
     it { is_expected.to have_many(:meta_ad_referrals).dependent(:nullify) }
     it { is_expected.to have_many(:crm_deals).through(:crm_deal_contacts) }
+  end
+
+  describe 'phone identity locking' do
+    it 'locks a normalized phone inside the contact save transaction' do
+      account = create(:account)
+      lock_transaction_states = []
+      allow(Contacts::PhoneIdentityLock).to receive(:acquire!).and_wrap_original do |original, **arguments|
+        lock_transaction_states << ActiveRecord::Base.connection.transaction_open?
+        original.call(**arguments)
+      end
+
+      create(:contact, account: account, phone_number: '+77051234567')
+
+      expect(lock_transaction_states).to eq([true])
+    end
   end
 
   describe 'concerns' do

@@ -1,7 +1,8 @@
 class Campaigns::AudienceResolver
-  pattr_initialize [:account!, :audience]
+  pattr_initialize [:account!, :audience, { audience_import: nil }]
 
   def contacts
+    return imported_contacts if audience_import.present?
     return account.contacts.none if label_titles.blank?
 
     account.contacts
@@ -15,6 +16,12 @@ class Campaigns::AudienceResolver
   end
 
   private
+
+  def imported_contacts
+    return account.contacts.none unless audience_import.account_id == account.id
+
+    account.contacts.where(id: audience_import.recipients.select(:contact_id)).distinct
+  end
 
   def label_ids
     @label_ids ||= Array.wrap(audience).filter_map do |entry|

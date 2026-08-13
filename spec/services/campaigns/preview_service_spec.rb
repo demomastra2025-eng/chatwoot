@@ -10,6 +10,76 @@ RSpec.describe Campaigns::PreviewService do
   end
 
   describe '#call' do
+    it 'uses the immutable imported audience instead of current labels' do
+      inbox = create(:inbox, account: account, channel: create(:channel_sms, account: account))
+      imported_contact = create(:contact, account: account, phone_number: '+77051234567')
+      labelled_contact = create(:contact, account: account, phone_number: '+77051234568')
+      labelled_contact.update_labels([label.title])
+      audience_import = create(:campaign_audience_import, account: account, inbox: inbox)
+      create(
+        :campaign_audience_recipient,
+        campaign_audience_import: audience_import,
+        account: account,
+        contact: imported_contact,
+        normalized_phone_number: imported_contact.phone_number
+      )
+
+      result = described_class.new(
+        account: account,
+        inbox: inbox,
+        audience: audience,
+        audience_import: audience_import
+      ).call
+
+      expect(result[:audience_size]).to eq(1)
+      expect(result[:sample_contacts].pluck(:id)).to eq([imported_contact.id])
+      expect(result[:sample_contacts].first[:target_identifier]).to eq('+77051234567')
+
+      imported_contact.update!(phone_number: '+77050000000')
+      refreshed_result = described_class.new(
+        account: account,
+        inbox: inbox,
+        audience: audience,
+        audience_import: audience_import
+      ).call
+      expect(refreshed_result[:sample_contacts].first[:target_identifier]).to eq('+77051234567')
+    end
+
+    it 'retains deleted imported recipients as non-deliverable snapshot entries' do
+      inbox = create(:inbox, account: account, channel: create(:channel_sms, account: account))
+      contact = create(:contact, account: account, phone_number: '+77051234567')
+      audience_import = create(:campaign_audience_import, account: account, inbox: inbox)
+      recipient = create(
+        :campaign_audience_recipient,
+        campaign_audience_import: audience_import,
+        account: account,
+        contact: contact,
+        normalized_phone_number: contact.phone_number
+      )
+
+      contact.destroy!
+      result = described_class.new(account: account, inbox: inbox, audience: [], audience_import: audience_import).call
+
+      expect(recipient.reload.contact_id).to be_nil
+      expect(recipient.normalized_phone_number).to eq('+77051234567')
+      expect(result[:audience_size]).to eq(1)
+      expect(result[:deliverable_count]).to eq(0)
+      expect(result[:totals]['contact_deleted']).to eq(1)
+      expect(result[:sample_contacts].first).to include(id: nil, reason: 'contact_deleted', deliverable: false)
+    end
+
+    it 'blocks blocked contacts in preview' do
+      inbox = create(:inbox, account: account, channel: create(:channel_sms, account: account))
+      contact = create(:contact, account: account, phone_number: '+77051234569', blocked: true)
+      contact.update_labels([label.title])
+
+      result = described_class.new(account: account, inbox: inbox, audience: audience).call
+
+      expect(result[:deliverable_count]).to eq(0)
+      expect(result[:totals]['blocked']).to eq(1)
+      expect(result[:sample_contacts].first[:reason]).to eq('blocked')
+    end
+
     it 'marks sms contacts with phone numbers as deliverable' do
       inbox = create(:inbox, account: account, channel: create(:channel_sms, account: account))
       contact = create(:contact, account: account, phone_number: '+15550001111')

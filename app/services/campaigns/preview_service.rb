@@ -5,11 +5,14 @@ class Campaigns::PreviewService
     unsupported_channel
     planned_not_implemented
     missing_target
+    contact_deleted
+    blocked
     outside_reply_window
     requires_template
   ].freeze
 
-  pattr_initialize [:account!, :inbox!, :audience, :message, :instructions, :text_mode, :template_params, :scheduled_at, { contact_ids: nil }]
+  pattr_initialize [:account!, :inbox!, :audience, :message, :instructions, :text_mode, :template_params, :scheduled_at,
+                    { contact_ids: nil, audience_import: nil }]
 
   def call
     {
@@ -51,7 +54,7 @@ class Campaigns::PreviewService
   end
 
   def audience_size
-    @audience_size ||= audience_contacts.count
+    @audience_size ||= full_import_preview? ? audience_import.recipients.count : audience_contacts.count
   end
 
   def compute_results!
@@ -63,6 +66,34 @@ class Campaigns::PreviewService
       @totals[result[:reason]] += 1
       @sample_contacts << result if @sample_contacts.length < SAMPLE_LIMIT
     end
+    append_deleted_recipient_results!
+  end
+
+  def append_deleted_recipient_results!
+    return unless full_import_preview?
+
+    deleted_count = audience_import.recipients.where(contact_id: nil).count
+    @totals['contact_deleted'] += deleted_count
+    [deleted_count, SAMPLE_LIMIT - @sample_contacts.length].min.times do
+      @sample_contacts << deleted_recipient_result
+    end
+  end
+
+  def deleted_recipient_result
+    {
+      id: nil,
+      name: nil,
+      phone_number: nil,
+      email: nil,
+      deliverable: false,
+      reason: 'contact_deleted',
+      target_identifier: nil,
+      error: 'Contact was deleted after the audience snapshot was created.'
+    }
+  end
+
+  def full_import_preview?
+    audience_import.present? && contact_ids.blank?
   end
 
   def audience_contacts
@@ -72,7 +103,8 @@ class Campaigns::PreviewService
                  else
                    Campaigns::AudienceResolver.new(
                      account: account,
-                     audience: audience
+                     audience: audience,
+                     audience_import: audience_import
                    ).contacts
                  end
 
@@ -81,6 +113,7 @@ class Campaigns::PreviewService
   end
 
   def preview_contact(contact)
+    return build_result(contact, reason: 'blocked', error: 'Contact is blocked.') if contact.blocked?
     return build_result(contact, reason: 'unsupported_channel', error: capabilities[:notes].first) unless capabilities[:supports_outbound_campaigns]
 
     case capabilities[:delivery_readiness]
@@ -119,7 +152,20 @@ class Campaigns::PreviewService
   end
 
   def resolve_target_identifier(contact)
+    imported_phone_number = imported_phone_number_for(contact)
+    return Campaigns::PhoneTargetResolver.new(inbox: inbox, phone_number: imported_phone_number).resolve if imported_phone_number.present?
+
     Campaigns::TargetResolver.new(inbox: inbox, contact: contact).resolve
+  end
+
+  def imported_phone_number_for(contact)
+    imported_phone_numbers[contact.id]
+  end
+
+  def imported_phone_numbers
+    return {} if audience_import.blank?
+
+    @imported_phone_numbers ||= audience_import.recipients.pluck(:contact_id, :normalized_phone_number).to_h
   end
 
   def requires_template?(contact)

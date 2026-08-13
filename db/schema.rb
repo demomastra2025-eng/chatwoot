@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_11_093851) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_12_154500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -403,6 +403,51 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_11_093851) do
     t.index ["provider", "provider_call_id"], name: "index_calls_on_provider_and_provider_call_id", unique: true
   end
 
+  create_table "campaign_audience_imports", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.bigint "created_by_id"
+    t.string "token", null: false
+    t.string "source_filename", null: false
+    t.string "default_country", null: false
+    t.integer "status", default: 0, null: false
+    t.string "processing_error"
+    t.integer "total_rows", default: 0, null: false
+    t.integer "recipient_count", default: 0, null: false
+    t.integer "created_count", default: 0, null: false
+    t.integer "existing_count", default: 0, null: false
+    t.integer "duplicate_count", default: 0, null: false
+    t.integer "invalid_count", default: 0, null: false
+    t.integer "conflict_count", default: 0, null: false
+    t.jsonb "error_samples", default: [], null: false
+    t.datetime "expires_at", null: false
+    t.datetime "claimed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "expires_at"], name: "index_campaign_audience_imports_on_account_id_and_expires_at"
+    t.index ["account_id", "status"], name: "index_campaign_audience_imports_on_account_id_and_status"
+    t.index ["account_id"], name: "index_campaign_audience_imports_on_account_id"
+    t.index ["created_by_id"], name: "index_campaign_audience_imports_on_created_by_id"
+    t.index ["inbox_id"], name: "index_campaign_audience_imports_on_inbox_id"
+    t.index ["token"], name: "index_campaign_audience_imports_on_token", unique: true
+  end
+
+  create_table "campaign_audience_recipients", force: :cascade do |t|
+    t.bigint "campaign_audience_import_id", null: false
+    t.bigint "account_id", null: false
+    t.bigint "contact_id"
+    t.string "normalized_phone_number", null: false
+    t.integer "source_row", null: false
+    t.boolean "contact_created", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_campaign_audience_recipients_on_account_id"
+    t.index ["campaign_audience_import_id", "contact_id"], name: "idx_campaign_audience_recipients_import_contact", unique: true
+    t.index ["campaign_audience_import_id", "normalized_phone_number"], name: "idx_campaign_audience_recipients_import_phone", unique: true
+    t.index ["campaign_audience_import_id"], name: "idx_campaign_audience_recipients_on_import"
+    t.index ["contact_id"], name: "index_campaign_audience_recipients_on_contact_id"
+  end
+
   create_table "campaign_deliveries", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "campaign_id", null: false
@@ -475,8 +520,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_11_093851) do
     t.string "idempotency_key"
     t.datetime "launch_requested_at"
     t.string "idempotency_fingerprint"
+    t.bigint "campaign_audience_import_id"
     t.index ["account_id", "idempotency_key"], name: "index_campaigns_on_account_id_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id"], name: "index_campaigns_on_account_id"
+    t.index ["campaign_audience_import_id"], name: "idx_campaigns_on_audience_import", unique: true
     t.index ["campaign_status"], name: "index_campaigns_on_campaign_status"
     t.index ["campaign_type"], name: "index_campaigns_on_campaign_type"
     t.index ["captain_assistant_id"], name: "index_campaigns_on_captain_assistant_id"
@@ -3263,6 +3310,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_11_093851) do
   add_foreign_key "assignment_quota_usages", "users", name: "fk_rails_assignment_quota_usages_user"
   add_foreign_key "bulk_action_runs", "accounts"
   add_foreign_key "bulk_action_runs", "users"
+  add_foreign_key "campaign_audience_imports", "accounts", on_delete: :cascade
+  add_foreign_key "campaign_audience_imports", "inboxes", on_delete: :cascade
+  add_foreign_key "campaign_audience_imports", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "campaign_audience_recipients", "accounts", on_delete: :cascade
+  add_foreign_key "campaign_audience_recipients", "campaign_audience_imports", on_delete: :cascade
+  add_foreign_key "campaign_audience_recipients", "contacts", on_delete: :nullify
   add_foreign_key "campaign_deliveries", "accounts"
   add_foreign_key "campaign_deliveries", "campaign_runs"
   add_foreign_key "campaign_deliveries", "campaigns"
@@ -3271,6 +3324,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_11_093851) do
   add_foreign_key "campaign_runs", "accounts"
   add_foreign_key "campaign_runs", "campaigns"
   add_foreign_key "campaign_runs", "inboxes"
+  add_foreign_key "campaigns", "campaign_audience_imports", on_delete: :nullify
   add_foreign_key "campaigns", "captain_assistants"
   add_foreign_key "captain_assistant_responses", "captain_document_chunks", column: "document_chunk_id", on_delete: :nullify
   add_foreign_key "captain_document_chunks", "accounts"

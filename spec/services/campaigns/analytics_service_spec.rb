@@ -57,6 +57,27 @@ RSpec.describe Campaigns::AnalyticsService do
       expect(result[:not_sent_contacts].pluck(:id)).to eq([contact_without_delivery.id])
     end
 
+    it 'retains deleted imported recipients in audience and skipped coverage totals' do
+      contact = create(:contact, account: account, phone_number: '+77051234567')
+      audience_import = create(:campaign_audience_import, account: account, inbox: sms_inbox)
+      create(
+        :campaign_audience_recipient,
+        campaign_audience_import: audience_import,
+        account: account,
+        contact: contact,
+        normalized_phone_number: contact.phone_number
+      )
+      campaign.update!(audience: [], campaign_audience_import: audience_import)
+      contact.destroy!
+
+      result = service.call
+
+      expect(result[:audience_size]).to eq(1)
+      expect(result[:processed_contacts_count]).to eq(1)
+      expect(result[:coverage_rate]).to eq(100.0)
+      expect(result[:totals]['skipped']).to eq(1)
+    end
+
     it 'returns full coverage when all audience contacts have deliveries' do
       contact_1 = create(:contact, :with_phone_number, account: account)
       contact_2 = create(:contact, :with_phone_number, account: account)

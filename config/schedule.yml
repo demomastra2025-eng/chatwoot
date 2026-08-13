@@ -155,3 +155,9 @@ remove_orphan_conversations_job:
   cron: '0 */12 * * *'
   class: 'Internal::RemoveOrphanConversationsJob'
   queue: housekeeping
+
+# executed hourly to remove expired, unlinked campaign CSV snapshots and source files
+campaign_audience_import_cleanup_job:
+  cron: '17 * * * *'
+  class: 'Campaigns::AudienceImportCleanupJob'
+  queue: housekeeping

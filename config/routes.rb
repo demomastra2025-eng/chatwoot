@@ -204,6 +204,7 @@ Rails.application.routes.draw do
             post :restart, on: :member
             post :resume, on: :member
           end
+          resources :campaign_audience_imports, only: [:create, :show]
           resources :dashboard_apps, only: [:index, :show, :create, :update, :destroy]
 
           namespace :scheduling do

@@ -22,6 +22,12 @@ import SchedulingSelectField from 'dashboard/components-next/Scheduling/Scheduli
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import TouchMessageComposer from 'dashboard/components-next/Outbound/TouchMessageComposer.vue';
 import CampaignPreviewSummary from 'dashboard/components-next/Campaigns/Pages/CampaignPage/CampaignPreviewSummary.vue';
+import CampaignAudienceFilePicker from './CampaignAudienceFilePicker.vue';
+import {
+  buildCampaignAudiencePayload,
+  hasCampaignAudience,
+  supportsCampaignFileAudience,
+} from './campaignAudience';
 import { detectTouchTextMode } from 'dashboard/components-next/Outbound/touchTextMode';
 import {
   buildTouchContentModeTabs,
@@ -62,6 +68,8 @@ const initialState = {
   templateLanguage: null,
   scheduledAt: null,
   selectedAudience: [],
+  audienceMode: 'labels',
+  audienceImport: null,
   useAiAuthoring: false,
 };
 
@@ -149,7 +157,11 @@ const rules = computed(() => ({
   templateName: requiresTemplate.value ? { required } : {},
   templateLanguage: requiresTemplate.value ? { required } : {},
   scheduledAt: { required },
-  selectedAudience: { required },
+  selectedAudience:
+    state.audienceMode === 'labels'
+      ? { required, minLength: minLength(1) }
+      : {},
+  audienceImport: state.audienceMode === 'file' ? { required } : {},
 }));
 
 const v$ = useVuelidate(rules, state);
@@ -210,6 +222,25 @@ const channelLabel = inbox => {
 const audienceList = computed(() =>
   mapToOptions(formState.labels.value, 'id', 'title')
 );
+
+const supportsFileAudience = computed(() =>
+  supportsCampaignFileAudience(selectedInbox.value?.channel_type)
+);
+
+const audienceModeOptions = computed(() => [
+  {
+    value: 'labels',
+    label: t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE_MODE.LABELS'),
+  },
+  ...(supportsFileAudience.value
+    ? [
+        {
+          value: 'file',
+          label: t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE_MODE.FILE'),
+        },
+      ]
+    : []),
+]);
 
 const inboxOptions = computed(
   () =>
@@ -319,6 +350,7 @@ const getErrorMessage = field => {
     case 'scheduledAt':
       return t('CAMPAIGN.OUTBOUND.CREATE.FORM.SCHEDULED_AT.ERROR');
     case 'selectedAudience':
+    case 'audienceImport':
       return t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE.ERROR');
     default:
       return '';
@@ -333,7 +365,8 @@ const formErrors = computed(() => ({
   template: getErrorMessage('templateName'),
   templateLanguage: getErrorMessage('templateLanguage'),
   scheduledAt: getErrorMessage('scheduledAt'),
-  audience: getErrorMessage('selectedAudience'),
+  audience:
+    getErrorMessage('selectedAudience') || getErrorMessage('audienceImport'),
 }));
 
 const titleHelpMessage = computed(() => {
@@ -380,6 +413,11 @@ const resolvedPreviewMessage = computed(() => {
 });
 
 const previewPayload = computed(() => {
+  const audiencePayload = buildCampaignAudiencePayload({
+    mode: state.audienceMode,
+    selectedAudience: state.selectedAudience,
+    audienceImport: state.audienceImport,
+  });
   const payload = {
     instructions:
       !requiresTemplate.value && state.useAiAuthoring
@@ -389,10 +427,7 @@ const previewPayload = computed(() => {
     message: resolvedPreviewMessage.value,
     inbox_id: state.inboxId,
     scheduled_at: formatToUTCString(state.scheduledAt),
-    audience: state.selectedAudience?.map(id => ({
-      id,
-      type: 'Label',
-    })),
+    ...audiencePayload,
     text_mode: requiresTemplate.value
       ? 'static'
       : detectTouchTextMode({
@@ -427,7 +462,11 @@ const canAutoPreviewTemplateCampaign = computed(() => {
       state.templateName &&
       state.templateLanguage &&
       state.scheduledAt &&
-      state.selectedAudience?.length &&
+      hasCampaignAudience({
+        mode: state.audienceMode,
+        selectedAudience: state.selectedAudience,
+        audienceImport: state.audienceImport,
+      }) &&
       selectedTemplate.value &&
       hasRequiredTemplateParams.value
   );
@@ -521,6 +560,16 @@ const handleTemplateStateChange = payload => {
   };
 };
 
+const handleAudienceImportCompleted = audienceImport => {
+  state.audienceImport = audienceImport;
+  clearPreviewState();
+};
+
+const clearAudienceImport = () => {
+  state.audienceImport = null;
+  clearPreviewState();
+};
+
 const bodyEditorId = 'outbound-campaign-message';
 const instructionsEditorId = 'outbound-campaign-instructions';
 const hasMessageError = computed(() => {
@@ -539,6 +588,8 @@ watch(
     state.templateName = null;
     state.templateLanguage = null;
     state.useAiAuthoring = false;
+    state.audienceImport = null;
+    if (!supportsFileAudience.value) state.audienceMode = 'labels';
     templateState.value = { processedParams: {}, rawRenderedTemplate: '' };
     clearPreviewState();
   }
@@ -550,6 +601,15 @@ watch(
     if (!value) {
       state.useAiAuthoring = false;
     }
+  }
+);
+
+watch(
+  () => state.audienceMode,
+  mode => {
+    if (mode === 'labels') state.audienceImport = null;
+    if (mode === 'file') state.selectedAudience = [];
+    clearPreviewState();
   }
 );
 
@@ -714,15 +774,33 @@ defineExpose({
     </SchedulingFormFieldGroup>
 
     <SchedulingFormFieldGroup :framed="false">
-      <TagMultiSelectComboBox
-        v-model="state.selectedAudience"
-        :options="audienceList"
-        :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE.LABEL')"
-        :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE.PLACEHOLDER')"
-        :has-error="!!formErrors.audience"
-        :message="formErrors.audience"
-        class="[&>div>button]:bg-n-solid-1 [&>div>button]:outline [&>div>button]:outline-1 [&>div>button]:outline-n-weak"
-      />
+      <div class="grid gap-3">
+        <SchedulingSelectField
+          v-model="state.audienceMode"
+          :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE_MODE.LABEL')"
+          :options="audienceModeOptions"
+        />
+        <TagMultiSelectComboBox
+          v-if="state.audienceMode === 'labels'"
+          v-model="state.selectedAudience"
+          :options="audienceList"
+          :label="t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE.LABEL')"
+          :placeholder="t('CAMPAIGN.OUTBOUND.CREATE.FORM.AUDIENCE.PLACEHOLDER')"
+          :has-error="!!formErrors.audience"
+          :message="formErrors.audience"
+          class="[&>div>button]:bg-n-solid-1 [&>div>button]:outline [&>div>button]:outline-1 [&>div>button]:outline-n-weak"
+        />
+        <CampaignAudienceFilePicker
+          v-else
+          :key="state.inboxId"
+          :inbox-id="state.inboxId"
+          @completed="handleAudienceImportCompleted"
+          @cleared="clearAudienceImport"
+        />
+        <p v-if="formErrors.audience" class="mb-0 text-xs text-n-ruby-11">
+          {{ formErrors.audience }}
+        </p>
+      </div>
     </SchedulingFormFieldGroup>
 
     <SchedulingFormFieldGroup :framed="false">

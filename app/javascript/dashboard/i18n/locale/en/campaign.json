@@ -308,6 +308,25 @@
             "PLACEHOLDER": "Select the customer tags",
             "ERROR": "Audience is required"
           },
+          "AUDIENCE_MODE": {
+            "LABEL": "Recipient source",
+            "LABELS": "Contact tags",
+            "FILE": "CSV file"
+          },
+          "FILE_AUDIENCE": {
+            "TITLE": "Upload recipients",
+            "DESCRIPTION": "CSV up to 5 MB and 10,000 rows. Required column: phone_number. Existing contacts are reused; missing contacts are created after E.164 normalization.",
+            "COUNTRY": "Default country",
+            "UPLOAD": "Upload and validate",
+            "REMOVE": "Remove",
+            "RECIPIENTS": "Recipients",
+            "CREATED": "Created",
+            "EXISTING": "Existing",
+            "DUPLICATES": "Duplicates",
+            "INVALID": "Invalid",
+            "CONFLICTS": "Conflicts",
+            "ERROR": "The recipient file could not be processed. Check the CSV and try again."
+          },
           "SCHEDULED_AT": {
             "LABEL": "Scheduled time",
             "PLACEHOLDER": "Please select the time",

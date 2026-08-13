@@ -9,7 +9,11 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
   def show; end
 
   def create
-    @campaign = Current.account.campaigns.create!(campaign_params)
+    Campaign.transaction do
+      audience_import = lock_audience_import_for_create
+      @campaign = Current.account.campaigns.create!(campaign_params.merge(campaign_audience_import: audience_import))
+      audience_import&.update!(claimed_at: Time.current)
+    end
   end
 
   def update
@@ -27,11 +31,13 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
 
   def preview
     inbox = Current.account.inboxes.find(permitted_campaign_params[:inbox_id])
+    audience_import = audience_import_for_preview(inbox)
 
     render json: Campaigns::PreviewService.new(
       account: Current.account,
       inbox: inbox,
       audience: permitted_campaign_params[:audience],
+      audience_import: audience_import,
       message: permitted_campaign_params[:message],
       instructions: permitted_campaign_params[:instructions],
       text_mode: permitted_campaign_params[:text_mode],
@@ -76,14 +82,40 @@ class Api::V1::Accounts::CampaignsController < Api::V1::Accounts::BaseController
     params.fetch(:campaign, params).permit(
       :title, :description, :message, :instructions, :text_mode, :enabled, :trigger_only_during_business_hours, :inbox_id, :sender_id,
       :captain_assistant_id, :scheduled_at,
+      :audience_import_token,
       audience: [:type, :id], trigger_rules: {}, template_params: {}
     )
   end
 
   def campaign_params
-    permitted_campaign_params.tap do |campaign_attributes|
+    permitted_campaign_params.except(:audience_import_token).tap do |campaign_attributes|
       assign_default_sender_for_create(campaign_attributes)
     end
+  end
+
+  def lock_audience_import_for_create
+    token = audience_import_token
+    return if token.blank?
+
+    audience_import = Current.account.campaign_audience_imports.lock.find_by!(token: token)
+    raise ActiveRecord::RecordInvalid, audience_import unless audience_import.available?
+    raise ActiveRecord::RecordInvalid, audience_import unless audience_import.inbox_id == permitted_campaign_params[:inbox_id].to_i
+
+    audience_import
+  end
+
+  def audience_import_for_preview(inbox)
+    token = audience_import_token
+    return if token.blank?
+
+    audience_import = Current.account.campaign_audience_imports.available.find_by!(token: token)
+    raise ActiveRecord::RecordNotFound unless audience_import.inbox_id == inbox.id
+
+    audience_import
+  end
+
+  def audience_import_token
+    params.dig(:campaign, :audience_import_token).presence || params[:audience_import_token].presence
   end
 
   def assign_default_sender_for_create(campaign_attributes)

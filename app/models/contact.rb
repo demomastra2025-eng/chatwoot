@@ -75,6 +75,7 @@ class Contact < ApplicationRecord
   belongs_to :account
   belongs_to :owner, class_name: 'User', optional: true
   has_many :campaign_deliveries, dependent: :delete_all
+  has_many :campaign_audience_recipients, dependent: :nullify
   has_many :communication_threads, dependent: :destroy
   has_many :conversations, dependent: :destroy_async
   has_many :contact_inboxes, dependent: :destroy_async
@@ -87,7 +88,7 @@ class Contact < ApplicationRecord
   has_many :meta_ad_referrals, dependent: :nullify
   has_many :notes, dependent: :destroy_async
   has_many :scheduling_appointments, dependent: :nullify, class_name: 'Scheduling::Appointment'
-  before_validation :prepare_contact_attributes, :normalize_phone_number
+  before_validation :prepare_contact_attributes, :normalize_phone_number, :lock_phone_identity
   before_save :sync_contact_attributes
   after_commit :sync_unified_owner, if: :saved_change_to_owner_id?
   after_create_commit :dispatch_create_event, :ip_lookup
@@ -362,6 +363,14 @@ class Contact < ApplicationRecord
       default_country: phone_number_default_country
     )
     self.phone_number = normalized_phone_number if normalized_phone_number.present?
+  end
+
+  def lock_phone_identity
+    return unless account_id.present? && (new_record? || will_save_change_to_phone_number?)
+    return if phone_number_in_database.blank? && phone_number.blank?
+    return unless ActiveRecord::Base.connection.transaction_open?
+
+    Contacts::PhoneIdentityLock.acquire!(account_id: account_id)
   end
 
   def prepare_email_attribute

@@ -36,7 +36,8 @@ class Campaigns::ResumeService
 
       Campaigns::AudienceResolver.new(
         account: campaign.account,
-        audience: campaign.audience
+        audience: campaign.audience,
+        audience_import: campaign.campaign_audience_import
       ).contacts.where.not(id: processed_ids).pluck(:id)
     end
   end

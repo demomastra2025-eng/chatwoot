@@ -18,6 +18,8 @@ class Outbound::ContactInboxResolver
   end
 
   def latest_contact_inbox
+    return if source_id.present?
+
     inbox.contact_inboxes.where(contact: contact).order(created_at: :desc).first
   end
 

@@ -277,6 +277,61 @@ RSpec.describe 'Campaigns API', type: :request do
   describe 'POST /api/v1/accounts/{account.id}/campaigns' do
     let(:inbox) { create(:inbox, account: account) }
 
+    it 'atomically claims a completed file audience for the matching account and inbox' do
+      administrator = create(:user, account: account, role: :administrator)
+      headers = administrator.create_new_auth_token
+      sms_inbox = create(:inbox, account: account, channel: create(:channel_sms, account: account))
+      audience_import = create(:campaign_audience_import, account: account, inbox: sms_inbox)
+      contact = create(:contact, account: account, phone_number: '+77051234567')
+      create(
+        :campaign_audience_recipient,
+        campaign_audience_import: audience_import,
+        account: account,
+        contact: contact,
+        normalized_phone_number: contact.phone_number
+      )
+      params = {
+        title: 'File audience campaign',
+        message: 'Hello',
+        inbox_id: sms_inbox.id,
+        scheduled_at: 1.hour.from_now.iso8601,
+        audience: [],
+        audience_import_token: audience_import.token
+      }
+
+      post "/api/v1/accounts/#{account.id}/campaigns", params: params, headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      campaign = account.campaigns.order(:id).last
+      expect(campaign.campaign_audience_import).to eq(audience_import)
+      expect(audience_import.reload.claimed_at).to be_present
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: params.merge(title: 'Reuse'), headers: headers, as: :json
+      end.not_to change(Campaign, :count)
+      expect(response).to have_http_status(:unprocessable_content)
+    end
+
+    it 'rejects file audiences from another inbox without claiming them' do
+      administrator = create(:user, account: account, role: :administrator)
+      sms_inbox = create(:inbox, account: account, channel: create(:channel_sms, account: account))
+      audience_import = create(:campaign_audience_import, account: account, inbox: sms_inbox)
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/campaigns",
+             params: {
+               title: 'Wrong inbox', message: 'Hello', inbox_id: inbox.id, scheduled_at: 1.hour.from_now.iso8601,
+               audience: [], audience_import_token: audience_import.token
+             },
+             headers: administrator.create_new_auth_token,
+             as: :json
+      end.not_to change(Campaign, :count)
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(audience_import.reload.claimed_at).to be_nil
+    end
+
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
         post "/api/v1/accounts/#{account.id}/campaigns",

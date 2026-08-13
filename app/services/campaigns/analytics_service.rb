@@ -36,17 +36,24 @@ class Campaigns::AnalyticsService
   end
 
   def grouped_statuses
-    @grouped_statuses ||= deliveries.reorder(nil).group(:status).count.transform_keys do |key|
+    @grouped_statuses ||= grouped_delivery_statuses.tap do |statuses|
+      statuses['skipped'] = statuses.fetch('skipped', 0) + deleted_recipient_count
+    end
+  end
+
+  def grouped_delivery_statuses
+    deliveries.reorder(nil).group(:status).count.transform_keys do |key|
       CampaignDelivery.statuses.key(key) || key.to_s
     end
   end
 
   def audience_contacts
     @audience_contacts ||=
-      if campaign.audience.present?
+      if campaign.audience.present? || campaign.campaign_audience_import.present?
         Campaigns::AudienceResolver.new(
           account: campaign.account,
-          audience: campaign.audience
+          audience: campaign.audience,
+          audience_import: campaign.campaign_audience_import
         ).contacts
       else
         campaign.account.contacts.where(
@@ -56,7 +63,7 @@ class Campaigns::AnalyticsService
   end
 
   def audience_size
-    @audience_size ||= audience_contacts.count
+    @audience_size ||= campaign.campaign_audience_import&.recipients&.count || audience_contacts.count
   end
 
   def not_sent_contacts
@@ -136,11 +143,15 @@ class Campaigns::AnalyticsService
   end
 
   def processed_contacts_count
-    @processed_contacts_count ||= deliveries.reorder(nil).distinct.count(:contact_id)
+    @processed_contacts_count ||= deliveries.reorder(nil).distinct.count(:contact_id) + deleted_recipient_count
   end
 
   def delivery_attempts_count
     @delivery_attempts_count ||= deliveries.count
+  end
+
+  def deleted_recipient_count
+    @deleted_recipient_count ||= campaign.campaign_audience_import&.recipients&.where(contact_id: nil)&.count.to_i
   end
 
   def serialized_runs

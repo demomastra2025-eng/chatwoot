@@ -22,6 +22,7 @@
 #  created_at                         :datetime         not null
 #  updated_at                         :datetime         not null
 #  account_id                         :bigint           not null
+#  campaign_audience_import_id        :bigint
 #  captain_assistant_id               :bigint
 #  display_id                         :integer          not null
 #  inbox_id                           :bigint           not null
@@ -29,6 +30,7 @@
 #
 # Indexes
 #
+#  idx_campaigns_on_audience_import                   (campaign_audience_import_id) UNIQUE
 #  index_campaigns_on_account_id                      (account_id)
 #  index_campaigns_on_account_id_and_idempotency_key  (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
 #  index_campaigns_on_campaign_status                 (campaign_status)
@@ -40,6 +42,7 @@
 #
 # Foreign Keys
 #
+#  fk_rails_...  (campaign_audience_import_id => campaign_audience_imports.id) ON DELETE => nullify
 #  fk_rails_...  (captain_assistant_id => captain_assistants.id)
 #
 class Campaign < ApplicationRecord
@@ -65,11 +68,13 @@ class Campaign < ApplicationRecord
   validate :inbox_must_belong_to_account
   validate :validate_ai_authoring_availability
   validate :validate_official_whatsapp_delivery_policy
+  validate :audience_import_matches_campaign
 
   belongs_to :account
   belongs_to :inbox
   belongs_to :sender, class_name: 'User', optional: true
   belongs_to :captain_assistant, class_name: 'Captain::Assistant', optional: true
+  belongs_to :campaign_audience_import, optional: true
 
   enum campaign_type: { ongoing: 0, one_off: 1 }
   # TODO : enabled attribute is unneccessary . lets move that to the campaign status with additional statuses like draft, disabled etc.
@@ -94,6 +99,7 @@ class Campaign < ApplicationRecord
   before_validation :assign_captain_assistant_from_inbox
   before_validation :ensure_correct_campaign_attributes
   after_commit :set_display_id, unless: :display_id?
+  after_destroy_commit :enqueue_audience_import_cleanup
 
   def trigger!
     return unless one_off?
@@ -167,6 +173,15 @@ class Campaign < ApplicationRecord
   end
 
   private
+
+  def enqueue_audience_import_cleanup
+    return if campaign_audience_import_id.blank?
+
+    Campaigns::AudienceImportCleanupJob.perform_later(campaign_audience_import_id)
+  rescue StandardError => e
+    Rails.logger.error("[CAMPAIGN AUDIENCE IMPORT] import=#{campaign_audience_import_id} cleanup enqueue failed: #{e.class}")
+    false
+  end
 
   def normalize_text_mode
     self.text_mode = Reminders::TextModeResolver.call(
@@ -281,6 +296,7 @@ class Campaign < ApplicationRecord
       account: account,
       inbox: inbox,
       audience: audience,
+      audience_import: campaign_audience_import,
       message: message,
       instructions: instructions,
       text_mode: text_mode,
@@ -290,6 +306,13 @@ class Campaign < ApplicationRecord
     return unless preview.dig(:totals, 'requires_template').to_i.positive?
 
     errors.add(:base, Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON)
+  end
+
+  def audience_import_matches_campaign
+    return if campaign_audience_import.blank?
+    return if campaign_audience_import.account_id == account_id && campaign_audience_import.inbox_id == inbox_id
+
+    errors.add(:campaign_audience_import_id, 'must belong to the campaign account and inbox')
   end
 
   def campaign_channel_template?

@@ -56,6 +56,11 @@ class Campaigns::OneoffBaseService
     target_identifier = target_identifier_for(contact)
     delivery = ensure_delivery(contact, target_identifier)
 
+    if contact.blocked?
+      delivery.mark_status!(status: :skipped, error_message: 'Contact is blocked')
+      return
+    end
+
     if target_identifier.blank?
       delivery.mark_status!(status: :skipped, error_message: missing_target_error_message)
       return
@@ -78,7 +83,8 @@ class Campaigns::OneoffBaseService
     @audience_contacts ||= begin
       contacts = Campaigns::AudienceResolver.new(
         account: campaign.account,
-        audience: campaign.audience
+        audience: campaign.audience,
+        audience_import: campaign.campaign_audience_import
       ).contacts
 
       contact_ids.present? ? contacts.where(id: contact_ids) : contacts
@@ -86,7 +92,7 @@ class Campaigns::OneoffBaseService
   end
 
   def audience_size
-    @audience_size ||= audience_contacts.count
+    @audience_size ||= imported_full_run? ? campaign.campaign_audience_import.recipients.count : audience_contacts.count
   end
 
   def ensure_delivery(contact, target_identifier)
@@ -101,7 +107,16 @@ class Campaigns::OneoffBaseService
   end
 
   def target_identifier_for(contact)
+    imported_phone_number = imported_phone_numbers[contact.id]
+    return Campaigns::PhoneTargetResolver.new(inbox: inbox, phone_number: imported_phone_number).resolve if imported_phone_number.present?
+
     Campaigns::TargetResolver.new(inbox: inbox, contact: contact).resolve
+  end
+
+  def imported_phone_numbers
+    return {} if campaign.campaign_audience_import.blank?
+
+    @imported_phone_numbers ||= campaign.campaign_audience_import.recipients.pluck(:contact_id, :normalized_phone_number).to_h
   end
 
   def missing_target_error_message
@@ -115,7 +130,7 @@ class Campaigns::OneoffBaseService
   def log_skip(_contact, _reason); end
 
   def log_delivery_failure(contact, error)
-    Rails.logger.error("[#{delivery_log_prefix} Campaign #{campaign.id}] Failed to send to #{target_identifier_for(contact)}: #{error.message}")
+    Rails.logger.error("[#{delivery_log_prefix} Campaign #{campaign.id}] Delivery failed for contact=#{contact.id}: #{error.class}")
   end
 
   def mark_campaign_running!
@@ -158,8 +173,19 @@ class Campaigns::OneoffBaseService
 
   def run_metadata
     {
-      provider: delivery_provider
+      provider: delivery_provider,
+      deleted_recipient_count: deleted_recipient_count
     }.compact
+  end
+
+  def imported_full_run?
+    campaign.campaign_audience_import.present? && contact_ids.nil?
+  end
+
+  def deleted_recipient_count
+    return 0 unless imported_full_run?
+
+    campaign.campaign_audience_import.recipients.where(contact_id: nil).count
   end
 
   def finalize_campaign_status!
