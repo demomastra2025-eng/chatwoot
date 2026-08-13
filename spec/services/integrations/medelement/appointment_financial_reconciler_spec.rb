@@ -4,6 +4,7 @@ RSpec.describe Integrations::Medelement::AppointmentFinancialReconciler do
   let(:appointment) do
     instance_double(
       Scheduling::Appointment,
+      id: 42,
       persisted?: true,
       service_amount: 3000,
       prepaid_amount: 0,
@@ -34,7 +35,7 @@ RSpec.describe Integrations::Medelement::AppointmentFinancialReconciler do
     expect(conflict_tracker).to have_received(:record!).with(
       hash_including(
         conflict_type: 'appointment_amount_mismatch',
-        details: hash_including(provider_amount: 0)
+        details: hash_including(appointment_id: 42, reception_code: 'reception-1', provider_amount: 0)
       )
     )
   end

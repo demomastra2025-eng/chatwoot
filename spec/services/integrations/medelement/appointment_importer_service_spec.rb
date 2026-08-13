@@ -159,10 +159,18 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
       payment_status: 'paid'
     )
     expect(conflict_tracker).to have_received(:record!).with(
-      hash_including(conflict_type: 'appointment_amount_mismatch', entity_key: reception['RECEPTION_CODE'])
+      hash_including(
+        conflict_type: 'appointment_amount_mismatch',
+        entity_key: reception['RECEPTION_CODE'],
+        details: hash_including(appointment_id: result.id, reception_code: reception['RECEPTION_CODE'])
+      )
     )
     expect(conflict_tracker).to have_received(:record!).with(
-      hash_including(conflict_type: 'local_payment_preserved', entity_key: reception['RECEPTION_CODE'])
+      hash_including(
+        conflict_type: 'local_payment_preserved',
+        entity_key: reception['RECEPTION_CODE'],
+        details: hash_including(appointment_id: result.id, reception_code: reception['RECEPTION_CODE'])
+      )
     )
   end
 end

@@ -3,19 +3,24 @@ class Integrations::Medelement::ConflictPresenter
     patient_not_found patient_update_rejected phone_owned_by_another_contact phone_mismatch
   ].freeze
 
-  def initialize(conflict:)
+  def initialize(conflict:, entity_preloader: nil)
     @conflict = conflict
+    @entity_preloader = entity_preloader
   end
 
   def payload
     conflict.api_payload.merge(
-      contact_resolution: contact_resolution_payload
+      contact_resolution: contact_resolution_payload,
+      entity_context: Integrations::Medelement::ConflictEntityPresenter.new(
+        conflict: conflict,
+        preloader: entity_preloader
+      ).payload
     ).compact
   end
 
   private
 
-  attr_reader :conflict
+  attr_reader :conflict, :entity_preloader
 
   def contact_resolution_payload
     return unless contact_conflict?

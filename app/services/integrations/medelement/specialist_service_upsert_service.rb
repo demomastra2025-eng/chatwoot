@@ -96,12 +96,22 @@ class Integrations::Medelement::SpecialistServiceUpsertService
       conflict_type: 'invalid_specialist_service',
       entity_key: entity_key,
       severity: 'error',
-      details: { reason: reason }
+      details: conflict_details(reason)
     )
     Rails.logger.warn(
       "[MEDELEMENT::SERVICES_SYNC] Skipping specialist service for account=#{account.id} " \
       "entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)} reason=#{reason}"
     )
     false
+  end
+
+  def conflict_details(reason)
+    {
+      reason: reason,
+      specialist_code: specialist_code.presence,
+      service_code: service_code.presence,
+      resource_id: resource&.id,
+      service_id: service&.id
+    }.compact
   end
 end

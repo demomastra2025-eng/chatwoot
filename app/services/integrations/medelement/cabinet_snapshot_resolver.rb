@@ -62,7 +62,11 @@ class Integrations::Medelement::CabinetSnapshotResolver
       conflict_type: 'conflicting_cabinet_name',
       entity_key: code,
       severity: 'error',
-      details: { reason: 'Provider returned multiple cabinet names', variants_count: variants_count }
+      details: {
+        reason: 'Provider returned multiple cabinet names',
+        cabinet_code: code,
+        variants_count: variants_count
+      }
     )
     Rails.logger.warn(
       "[MEDELEMENT::SPECIALISTS_SYNC] Conflicting cabinet for account=#{account.id} " \

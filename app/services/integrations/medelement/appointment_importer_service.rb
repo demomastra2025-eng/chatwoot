@@ -176,7 +176,12 @@ class Integrations::Medelement::AppointmentImporterService
       conflict_type: 'patient_unresolved',
       entity_key: reception['PATIENT_CODE'].presence || reception['RECEPTION_CODE'],
       severity: 'error',
-      details: { reason: 'Provider patient could not be linked to a contact' }
+      details: {
+        reason: 'Provider patient could not be linked to a contact',
+        reception_code: reception['RECEPTION_CODE'].presence,
+        patient_code: reception['PATIENT_CODE'].presence,
+        specialist_code: reception['specialistCode'].presence
+      }.compact
     )
   end
 

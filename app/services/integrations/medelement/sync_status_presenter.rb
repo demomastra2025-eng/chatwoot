@@ -27,8 +27,10 @@ class Integrations::Medelement::SyncStatusPresenter
   end
 
   def presented_conflicts(scope)
-    scope.offset((conflict_page - 1) * CONFLICT_LIMIT).limit(CONFLICT_LIMIT).map do |conflict|
-      Integrations::Medelement::ConflictPresenter.new(conflict: conflict).payload
+    conflicts = scope.offset((conflict_page - 1) * CONFLICT_LIMIT).limit(CONFLICT_LIMIT).to_a
+    entity_preloader = Integrations::Medelement::ConflictEntityPreloader.new(account: hook.account, conflicts: conflicts)
+    conflicts.map do |conflict|
+      Integrations::Medelement::ConflictPresenter.new(conflict: conflict, entity_preloader: entity_preloader).payload
     end
   end
 

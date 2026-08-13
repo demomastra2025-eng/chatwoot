@@ -275,7 +275,8 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
       hash_including(
         phase: 'specialists',
         conflict_type: 'conflicting_cabinet_name',
-        entity_key: 'ME-CAB-001'
+        entity_key: 'ME-CAB-001',
+        details: hash_including(cabinet_code: 'ME-CAB-001', variants_count: 2)
       )
     )
   end

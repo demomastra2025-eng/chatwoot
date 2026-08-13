@@ -197,13 +197,31 @@ class Integrations::Medelement::ReceptionsSyncService
       conflict_type: 'invalid_reception',
       entity_key: entity_key,
       severity: 'error',
-      details: { reason: error.message, resource_id: resource.id }
+      details: reception_conflict_details(reception, resource, error)
     )
     Rails.logger.warn(
       "[MEDELEMENT::RECEPTIONS_SYNC] Skipping reception for account=#{account.id} " \
       "resource_id=#{resource.id} entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)} " \
       "reason=#{error.class}"
     )
+  end
+
+  def reception_time_epoch(value)
+    parse_time(value)&.to_i
+  rescue ArgumentError
+    nil
+  end
+
+  def reception_conflict_details(reception, resource, error)
+    {
+      reason: error.message,
+      reception_code: reception['RECEPTION_CODE'].presence,
+      resource_id: resource.id,
+      specialist_code: reception['specialistCode'].presence,
+      patient_code: reception['PATIENT_CODE'].presence,
+      starts_at_unix: reception_time_epoch(reception['STARTTIME']),
+      ends_at_unix: reception_time_epoch(reception['ENDTIME'])
+    }.compact
   end
 
   def log_sync_summary(sync_result)

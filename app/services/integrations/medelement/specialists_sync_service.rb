@@ -39,8 +39,8 @@ class Integrations::Medelement::SpecialistsSyncService
   def sync_specialist!(payload)
     specialist_code = payload['specialistCode'].to_s
     specialist_name = payload['userName'].presence || payload['fullName'].presence
-    return log_skipped_specialist('missing_specialist_code') if specialist_code.blank?
-    return log_skipped_specialist('missing_name', specialist_code) if specialist_name.blank?
+    return log_skipped_specialist('missing_specialist_code', payload: payload) if specialist_code.blank?
+    return log_skipped_specialist('missing_name', specialist_code, payload: payload) if specialist_name.blank?
 
     resource = find_resource(specialist_code) || account.scheduling_resources.new
     resource.assign_attributes(specialist_attributes(resource, payload, specialist_code, specialist_name))
@@ -85,7 +85,7 @@ class Integrations::Medelement::SpecialistsSyncService
     end
   end
 
-  def log_skipped_specialist(reason, specialist_code = nil)
+  def log_skipped_specialist(reason, specialist_code = nil, payload: {})
     entity_key = specialist_code.presence || "missing:#{reason}"
     conflict_tracker&.record!(
       phase: 'specialists',
@@ -93,7 +93,12 @@ class Integrations::Medelement::SpecialistsSyncService
       conflict_type: 'invalid_specialist',
       entity_key: entity_key,
       severity: 'error',
-      details: { reason: reason }
+      details: {
+        reason: reason,
+        specialist_code: specialist_code,
+        specialist_name: payload['userName'].presence || payload['fullName'].presence,
+        specialty: payload['specialty'].presence
+      }.compact
     )
     Rails.logger.warn(
       "[MEDELEMENT::SPECIALISTS_SYNC] Skipping specialist for account=#{account.id} " \

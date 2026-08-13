@@ -280,4 +280,65 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
 
     wrapper.unmount();
   });
+
+  it('renders specialist and appointment conflict cards without exposing raw reasons', async () => {
+    testState.syncStatus = {
+      ...syncStatus,
+      conflicts: [
+        {
+          id: 31,
+          phase: 'specialists',
+          conflict_type: 'invalid_specialist',
+          status: 'open',
+          occurrences: 1,
+          details: { reason: 'raw specialist reason' },
+          entity_context: {
+            kind: 'specialist',
+            specialist_code: 'specialist-1',
+            specialty: 'Cardiology',
+            resource: { id: 41, name: 'Doctor One', active: true },
+          },
+        },
+        {
+          id: 32,
+          phase: 'receptions',
+          conflict_type: 'appointment_amount_mismatch',
+          status: 'open',
+          occurrences: 1,
+          details: { reason: 'raw appointment reason' },
+          entity_context: {
+            kind: 'appointment',
+            reception_code: 'reception-1',
+            starts_at: '2026-08-12T10:00:00Z',
+            specialist_code: 'specialist-1',
+            local_amount: 1000,
+            provider_amount: 1200,
+            appointment: {
+              id: 51,
+              client_name: 'Patient One',
+              resource_name: 'Doctor One',
+              service_name: 'Consultation',
+              status: 'scheduled',
+              payment_status: 'awaiting_payment',
+            },
+          },
+        },
+      ],
+    };
+
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-test="specialist-conflict-card"]').text()
+    ).toContain('Doctor One');
+    expect(
+      wrapper.get('[data-test="appointment-conflict-card"]').text()
+    ).toContain('Patient One');
+    expect(wrapper.text()).toContain('Consultation');
+    expect(wrapper.text()).not.toContain('raw specialist reason');
+    expect(wrapper.text()).not.toContain('raw appointment reason');
+
+    wrapper.unmount();
+  });
 });

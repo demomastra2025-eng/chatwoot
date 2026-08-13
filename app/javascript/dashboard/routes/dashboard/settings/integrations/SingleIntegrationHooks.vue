@@ -238,6 +238,31 @@ function formatValue(value, key = null) {
   return value || '--';
 }
 
+function formatConflictDate(value) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat(locale.value, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+function formatConflictAmount(value) {
+  if (value === null || value === undefined) return '—';
+  return new Intl.NumberFormat(locale.value).format(value);
+}
+
+function schedulingStatusLabel(type, value) {
+  if (!value) return '—';
+  const namespace =
+    type === 'payment'
+      ? 'SCHEDULING.PAYMENT_STATUS'
+      : 'SCHEDULING.APPOINTMENT_STATUS';
+  const key = `${namespace}.${value}`;
+  // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+  const translated = t(key);
+  return translated === key ? humanizeProperty(value) : translated;
+}
+
 const hookStatusLabel = computed(() =>
   connectedHook.value?.status
     ? t('INTEGRATION_APPS.STATUS.ENABLED')
@@ -1045,6 +1070,222 @@ onBeforeUnmount(clearHookSyncPoll);
                 }}
               </p>
             </article>
+          </div>
+
+          <div
+            v-else-if="conflict.entity_context?.kind === 'specialist'"
+            class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
+            data-test="specialist-conflict-card"
+          >
+            <p
+              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
+            >
+              {{
+                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALIST')
+              }}
+            </p>
+            <p class="mt-1 text-sm font-medium text-n-slate-12">
+              {{
+                conflict.entity_context.resource?.name ||
+                conflict.entity_context.specialist_name ||
+                conflict.entity_context.specialist_code ||
+                '—'
+              }}
+            </p>
+            <dl
+              class="mt-2 grid gap-2 text-xs text-n-slate-11 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              <div>
+                <dt>
+                  {{
+                    $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CODE')
+                  }}
+                </dt>
+                <dd>{{ conflict.entity_context.specialist_code || '—' }}</dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALTY'
+                    )
+                  }}
+                </dt>
+                <dd>{{ conflict.entity_context.specialty || '—' }}</dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.CABINET'
+                    )
+                  }}
+                </dt>
+                <dd>{{ conflict.entity_context.cabinet_code || '—' }}</dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SERVICE'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{
+                    conflict.entity_context.service?.name ||
+                    conflict.entity_context.service_code ||
+                    '—'
+                  }}
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div
+            v-else-if="conflict.entity_context?.kind === 'appointment'"
+            class="rounded-lg border border-n-weak bg-n-alpha-2 p-3"
+            data-test="appointment-conflict-card"
+          >
+            <p
+              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
+            >
+              {{
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPOINTMENT'
+                )
+              }}
+            </p>
+            <p class="mt-1 text-sm font-medium text-n-slate-12">
+              {{
+                conflict.entity_context.appointment?.client_name ||
+                conflict.entity_context.patient_code ||
+                conflict.entity_context.reception_code ||
+                '—'
+              }}
+            </p>
+            <dl
+              class="mt-2 grid gap-2 text-xs text-n-slate-11 sm:grid-cols-2 lg:grid-cols-4"
+            >
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.RECEPTION_CODE'
+                    )
+                  }}
+                </dt>
+                <dd>{{ conflict.entity_context.reception_code || '—' }}</dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DATE_TIME'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{ formatConflictDate(conflict.entity_context.starts_at) }}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SPECIALIST'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{
+                    conflict.entity_context.appointment?.resource_name ||
+                    conflict.entity_context.resource?.name ||
+                    conflict.entity_context.specialist_code ||
+                    '—'
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SERVICE'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{ conflict.entity_context.appointment?.service_name || '—' }}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS_LABEL'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{
+                    schedulingStatusLabel(
+                      'appointment',
+                      conflict.entity_context.appointment?.status
+                    )
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PAYMENT_STATUS'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{
+                    schedulingStatusLabel(
+                      'payment',
+                      conflict.entity_context.appointment?.payment_status
+                    )
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.LOCAL_AMOUNT'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{
+                    formatConflictAmount(
+                      conflict.entity_context.local_amount ??
+                        conflict.entity_context.appointment?.service_amount
+                    )
+                  }}
+                </dd>
+              </div>
+              <div>
+                <dt>
+                  {{
+                    $t(
+                      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.PROVIDER_AMOUNT'
+                    )
+                  }}
+                </dt>
+                <dd>
+                  {{
+                    formatConflictAmount(
+                      conflict.entity_context.provider_amount
+                    )
+                  }}
+                </dd>
+              </div>
+            </dl>
           </div>
 
           <div class="flex flex-wrap gap-2">

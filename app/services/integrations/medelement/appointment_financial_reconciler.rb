@@ -49,9 +49,11 @@ class Integrations::Medelement::AppointmentFinancialReconciler
       entity_key: reception['RECEPTION_CODE'],
       details: {
         reason: 'Provider amount differs from the preserved appointment amount',
+        appointment_id: appointment.id,
+        reception_code: reception['RECEPTION_CODE'].presence,
         local_amount: appointment.service_amount.to_i,
         provider_amount: provider_amount
-      }
+      }.compact
     )
   end
 
@@ -61,7 +63,11 @@ class Integrations::Medelement::AppointmentFinancialReconciler
       entity_type: 'appointment',
       conflict_type: 'local_payment_preserved',
       entity_key: reception['RECEPTION_CODE'],
-      details: { reason: 'Local payment data was preserved during provider pull' }
+      details: {
+        reason: 'Local payment data was preserved during provider pull',
+        appointment_id: appointment.id,
+        reception_code: reception['RECEPTION_CODE'].presence
+      }.compact
     )
   end
 
