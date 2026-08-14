@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ContactResolverService
   FRESHNESS_WINDOW = 24.hours
   GENDER_MAP = {
@@ -5,10 +6,11 @@ class Integrations::Medelement::ContactResolverService
     '2' => 'male'
   }.freeze
 
-  def initialize(account:, client:, conflict_tracker: nil)
+  def initialize(account:, client:, conflict_tracker: nil, organization_id: nil)
     @account = account
     @client = client
     @conflict_tracker = conflict_tracker
+    @organization_id = organization_id
   end
 
   def sync_patient!(patient_code, preferred_contact: nil)
@@ -18,16 +20,24 @@ class Integrations::Medelement::ContactResolverService
     patient = client.get_patient(patient_code: patient_code)
     return existing_contact if patient.blank?
 
+    Integrations::Medelement::ProviderScope.validate!(patient, organization_id: organization_id)
+    return existing_contact if provider_read_models_conflict?(patient_code, patient, existing_contact)
+
     upsert_contact(patient, preferred_contact: preferred_contact)
   end
 
   def sync_patient_payload!(patient, preferred_contact:)
+    patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
+    Integrations::Medelement::ProviderScope.validate!(patient, organization_id: organization_id)
+    return preferred_contact if patient_code.blank?
+    return preferred_contact if provider_read_models_conflict?(patient_code, patient, preferred_contact)
+
     upsert_contact(patient, preferred_contact: preferred_contact)
   end
 
   private
 
-  attr_reader :account, :client, :conflict_tracker
+  attr_reader :account, :client, :conflict_tracker, :organization_id
 
   def contact_for_lookup(patient_code:, iin:, email:, preferred_contact: nil)
     preferred_contact || find_by_patient_code(patient_code) ||
@@ -49,6 +59,14 @@ class Integrations::Medelement::ContactResolverService
 
   def find_by_patient_code(patient_code)
     account.contacts.find_by("custom_attributes ->> 'medelement_patient_code' = ?", patient_code.to_s)
+  end
+
+  def provider_read_models_conflict?(patient_code, direct_patient, contact)
+    Integrations::Medelement::PatientReadModelGuard.new(
+      client: client,
+      conflict_tracker: conflict_tracker,
+      organization_id: organization_id
+    ).conflict?(patient_code: patient_code, direct_patient: direct_patient, contact: contact)
   end
 
   def fresh?(contact)
@@ -140,6 +158,7 @@ class Integrations::Medelement::ContactResolverService
   # Coordinates identity lookup, uniqueness checks and custom-attribute persistence as one unit.
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def upsert_contact(patient, preferred_contact: nil)
+    Integrations::Medelement::ProviderScope.validate!(patient, organization_id: organization_id)
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
     iin = normalize_iin(patient['IIN'])
     email = patient['PATIENT_EMAIL'].to_s.downcase.presence
@@ -156,9 +175,10 @@ class Integrations::Medelement::ContactResolverService
     contact.skip_runtime_events = true
     contact.account ||= account
     first_name = patient_first_name(patient)
+    middle_name = patient['MIDDLENAME'].to_s.presence
     contact.name = first_name if first_name.present?
-    contact.last_name = patient['LASTNAME'].to_s if contact.respond_to?(:last_name=) && patient.key?('LASTNAME')
-    contact.middle_name = nil if contact.respond_to?(:middle_name=)
+    contact.last_name = patient['LASTNAME'].to_s if contact.respond_to?(:last_name=) && patient['LASTNAME'].present?
+    contact.middle_name = middle_name if contact.respond_to?(:middle_name=) && middle_name.present?
     contact.email = safe_unique_value(contact, :email, email) || contact.email
     contact.phone_number = safe_unique_value(contact, :phone_number, phone) || contact.phone_number
     contact.identifier = safe_unique_value(contact, :identifier, iin) || contact.identifier
@@ -167,12 +187,8 @@ class Integrations::Medelement::ContactResolverService
       'country_code' => 'KZ'
     )
     contact.custom_attributes = contact.custom_attributes.merge(
-      'address' => patient['FULL_ADDRESS'].to_s.presence,
-      'birth_date' => normalize_birth_date(patient['BIRTHDAY']),
-      'gender' => gender_value(patient),
-      'iin' => iin,
-      'medelement_first_name' => first_name,
-      'medelement_last_name' => patient['LASTNAME'].to_s.presence,
+      provider_profile_attributes(patient, first_name, middle_name, iin)
+    ).merge(
       'medelement_last_synced_at' => Time.current.iso8601,
       'medelement_patient_code' => patient_code.to_s,
       'phone_conflict_comment' => phone_conflict_comment,
@@ -181,6 +197,18 @@ class Integrations::Medelement::ContactResolverService
     contact.save!
     record_phone_conflict(patient_code, contact, phone_conflict_comment) if phone_conflict_comment.present?
     contact
+  end
+
+  def provider_profile_attributes(patient, first_name, middle_name, iin)
+    {
+      'address' => patient['FULL_ADDRESS'].to_s.presence,
+      'birth_date' => normalize_birth_date(patient['BIRTHDAY']),
+      'gender' => gender_value(patient),
+      'iin' => iin,
+      'medelement_first_name' => first_name,
+      'medelement_last_name' => patient['LASTNAME'].to_s.presence,
+      'medelement_middle_name' => middle_name
+    }.compact
   end
 
   def record_phone_conflict(patient_code, contact, comment)
@@ -200,3 +228,4 @@ class Integrations::Medelement::ContactResolverService
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 end
+# rubocop:enable Metrics/ClassLength

@@ -3,6 +3,8 @@ class Integrations::Medelement::ReceptionsSyncService
   InvalidReceptionError = Class.new(StandardError)
   IncompleteSnapshotError = Class.new(StandardError)
   MAX_RECEPTIONS_PER_REQUEST = 1000
+  PROVIDER_BINDING_GRACE_PERIOD = Integrations::Medelement::SpecialistsSyncService::MISSING_GRACE_PERIOD
+  PROVIDER_LAST_SEEN_AT_KEY = Integrations::Medelement::SpecialistsSyncService::LAST_SEEN_AT_KEY
 
   def initialize(account:, client:, configuration:, conflict_tracker: nil)
     @account = account
@@ -16,11 +18,13 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def perform
+    @snapshot_complete = true
     resource_map = medelement_resource_map
     snapshot = build_snapshot(resource_map)
     contacts_by_patient_code = synced_contacts(snapshot)
     sync_result = sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
-    cleanup_missing_appointments!(sync_result[:desired_external_refs])
+    cleanup_missing_appointments!(sync_result[:desired_external_refs]) if snapshot_complete?
+    sync_result[:skipped_pair_count] = skipped_pair_count
     log_sync_summary(sync_result)
     sync_result.except(:desired_external_refs)
   end
@@ -102,7 +106,14 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def medelement_resource_map
-    medelement_resources.index_by { |resource| resource.custom_attributes['medelement_specialist_code'].to_s }
+    medelement_resources.each_with_object({}) do |resource, result|
+      if stale_provider_binding?(resource)
+        skip_stale_provider_bindings!(resource)
+        next
+      end
+
+      result[resource.custom_attributes['medelement_specialist_code'].to_s] = resource
+    end
   end
 
   def reception_patient_codes(snapshot)
@@ -125,6 +136,59 @@ class Integrations::Medelement::ReceptionsSyncService
         'COMPANY_CABINET_CODE' => reception['COMPANY_CABINET_CODE'].presence || cabinet['companyCabinetCode']
       )
     end
+  end
+
+  def stale_provider_binding?(resource)
+    value = resource.custom_attributes[PROVIDER_LAST_SEEN_AT_KEY].to_s
+    return false if value.blank?
+
+    last_seen_at = Time.iso8601(value)
+    last_seen_at < Time.current - PROVIDER_BINDING_GRACE_PERIOD
+  rescue ArgumentError
+    true
+  end
+
+  def skip_stale_provider_bindings!(resource)
+    @snapshot_complete = false
+    specialist_code = resource.custom_attributes['medelement_specialist_code']
+    Array(resource.custom_attributes['medelement_cabinets']).each do |cabinet|
+      skip_stale_provider_binding!(resource, specialist_code, cabinet)
+    end
+  end
+
+  def skip_stale_provider_binding!(resource, specialist_code, cabinet)
+    @skipped_pair_count = skipped_pair_count + 1
+    entity_key = [specialist_code, cabinet['companyCabinetCode']].join(':')
+    conflict_tracker&.record!(
+      phase: 'receptions',
+      entity_type: 'specialist_cabinet',
+      conflict_type: 'stale_provider_binding',
+      entity_key: entity_key,
+      severity: 'error',
+      details: stale_provider_binding_details(resource, specialist_code, cabinet)
+    )
+    Rails.logger.warn(
+      "[MEDELEMENT::RECEPTIONS_SYNC] Skipping stale provider binding for account=#{account.id} " \
+      "resource_id=#{resource.id} entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)}"
+    )
+  end
+
+  def stale_provider_binding_details(resource, specialist_code, cabinet)
+    {
+      reason: 'Specialist/cabinet binding was not observed within the provider grace period',
+      resource_id: resource.id,
+      specialist_code: specialist_code,
+      company_cabinet_code: cabinet['companyCabinetCode'],
+      provider_last_seen_at: resource.custom_attributes[PROVIDER_LAST_SEEN_AT_KEY]
+    }
+  end
+
+  def skipped_pair_count
+    @skipped_pair_count.to_i
+  end
+
+  def snapshot_complete?
+    @snapshot_complete
   end
 
   def split_fetch_receptions_for_pair(specialist_code:, company_cabinet_code:, from:, to:)
@@ -165,7 +229,8 @@ class Integrations::Medelement::ReceptionsSyncService
       begin
         sync_reception(reception, resource, contacts_by_patient_code)
         result[:imported_count] += 1
-      rescue InvalidReceptionError, ActiveRecord::RecordInvalid, Scheduling::Error => e
+      rescue InvalidReceptionError, Integrations::Medelement::ReceptionServiceRows::InvalidSnapshotError,
+             ActiveRecord::RecordInvalid, Scheduling::Error => e
         result[:skipped_count] += 1
         log_skipped_reception(reception, resource, e)
       end
@@ -225,11 +290,12 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def log_sync_summary(sync_result)
-    return if sync_result[:skipped_count].zero?
+    return if sync_result[:skipped_count].zero? && sync_result[:skipped_pair_count].zero?
 
     Rails.logger.warn(
       "[MEDELEMENT::RECEPTIONS_SYNC] Completed with skipped receptions for account=#{account.id} " \
-      "imported=#{sync_result[:imported_count]} skipped=#{sync_result[:skipped_count]}"
+      "imported=#{sync_result[:imported_count]} skipped=#{sync_result[:skipped_count]} " \
+      "skipped_pairs=#{sync_result[:skipped_pair_count]}"
     )
   end
 
@@ -250,7 +316,8 @@ class Integrations::Medelement::ReceptionsSyncService
     Integrations::Medelement::PatientsSyncService.new(
       account: account,
       client: client,
-      conflict_tracker: conflict_tracker
+      conflict_tracker: conflict_tracker,
+      organization_id: configuration.organization_id
     )
                                                  .sync_patient_codes(reception_patient_codes(snapshot))
   end

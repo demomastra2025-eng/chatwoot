@@ -478,6 +478,7 @@ medelement:
   feature_flag: scheduling
   visible_properties:
     [
+      'organization_id',
       'timezone',
       'sync_interval_hours',
       'sync_time_of_day',
@@ -530,6 +531,13 @@ medelement:
         'name': 'enabled',
         'value': true,
         'store': 'status',
+      },
+      {
+        'label': 'Organization ID',
+        'type': 'text',
+        'name': 'organization_id',
+        'validation': 'required',
+        'help': 'Provider organization/company code used to scope all Medelement reads and writes.',
       },
       {
         'label': 'Timezone',

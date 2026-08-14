@@ -58,9 +58,9 @@ class Integrations::Medelement::AppointmentImporterService
   # Keep the provider-to-appointment mapping visible as one declarative contract.
   # rubocop:disable Metrics/MethodLength
   def appointment_attributes(appointment:, resource:, contact:, reception:, import_context:)
-    starts_at = import_context[:starts_at]
-    ends_at = import_context[:ends_at]
+    starts_at, ends_at = import_context.values_at(:starts_at, :ends_at)
     services, unresolved_service_codes = resolved_services(reception)
+    service_identity_authoritative = Integrations::Medelement::ReceptionServiceRows.identity_authoritative?(reception)
 
     base_attributes = {
       account: account,
@@ -73,15 +73,16 @@ class Integrations::Medelement::AppointmentImporterService
       status: appointment_status(reception),
       appointment_type: PRIMARY_APPOINTMENT_TYPE,
       source: MEDELEMENT_SOURCE,
-      service: services.first || appointment.service,
-      service_name_snapshot: services.map(&:name).join(', ').presence || appointment.service_name_snapshot,
+      service: service_identity_authoritative ? services.first : appointment.service,
+      service_name_snapshot: service_identity_authoritative ? services.map(&:name).join(', ').presence : appointment.service_name_snapshot,
       custom_attributes: custom_attributes(
         appointment,
         reception,
         import_context,
         contact: contact,
         services: services,
-        unresolved_service_codes: unresolved_service_codes
+        unresolved_service_codes: unresolved_service_codes,
+        service_identity_authoritative: service_identity_authoritative
       )
     }
 
@@ -137,6 +138,7 @@ class Integrations::Medelement::AppointmentImporterService
   def custom_attributes(appointment, reception, import_context, contact:, **service_data)
     services = service_data.fetch(:services)
     unresolved_service_codes = service_data.fetch(:unresolved_service_codes)
+    service_identity_authoritative = service_data.fetch(:service_identity_authoritative)
     attributes = appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(
       'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
@@ -145,7 +147,7 @@ class Integrations::Medelement::AppointmentImporterService
       'medelement_patient_unresolved' => contact.blank?,
       'source_mode' => 'imported'
     ).compact
-    return attributes if Array(reception['SERVICES']).empty?
+    return attributes unless service_identity_authoritative
 
     attributes.merge(
       'service_ids' => services.map(&:id),
@@ -165,9 +167,7 @@ class Integrations::Medelement::AppointmentImporterService
     [codes.filter_map { |code| services_by_code[code] }, codes.reject { |code| services_by_code.key?(code) }]
   end
 
-  def reception_service_rows(reception)
-    Array(reception['SERVICES']).select { |row| row.is_a?(Hash) }
-  end
+  def reception_service_rows(reception) = Integrations::Medelement::ReceptionServiceRows.active(reception)
 
   def record_unresolved_patient_conflict(reception)
     conflict_tracker&.record!(

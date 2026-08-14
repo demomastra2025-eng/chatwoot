@@ -168,7 +168,11 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
   private
 
   def conflict_scope
-    Integrations::Medelement::SyncConflict.where(account_id: account_id, hook_id: hook_id)
+    Integrations::Medelement::SyncConflict.where(
+      account_id: account_id,
+      hook_id: hook_id,
+      phase: phases
+    )
   end
 
   def requested_phases_are_supported

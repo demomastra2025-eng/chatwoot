@@ -1,4 +1,4 @@
-# rubocop:disable Metrics/ClassLength
+# rubocop:disable Metrics/AbcSize, Metrics/ClassLength, Metrics/CyclomaticComplexity
 class Integrations::Medelement::ProviderCommands::ReconciliationService
   PHASE_HANDLERS = {
     'patient_create' => :reconcile_patient_create,
@@ -26,6 +26,8 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
         'reconciliation_provider_error', status: e.status, claim_token: reconciliation_claim_token
       )
     end
+  rescue Integrations::Medelement::ProviderScope::MismatchError
+    lifecycle.fail!('provider_scope_mismatch', claim_token: reconciliation_claim_token) if reconciliation_claim_token.present?
   rescue StandardError => e
     Rails.logger.warn("[MEDELEMENT::RECONCILIATION] command_id=#{command.id} error=#{e.class}")
     lifecycle.retry_unresolved!('reconciliation_internal_error', claim_token: reconciliation_claim_token) if reconciliation_claim_token.present?
@@ -65,7 +67,11 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def reconcile_patient_create
-    code = Integrations::Medelement::ProviderCommands::PatientResolver.new(command: command, client: client).resolve_existing
+    code = Integrations::Medelement::ProviderCommands::PatientResolver.new(
+      command: command,
+      client: client,
+      organization_id: configuration.organization_id
+    ).resolve_existing
     return if code.blank?
     return if conflicting_contact_patient_code?(code)
 
@@ -91,8 +97,11 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def reconcile_reception_create
+    return if reconcile_known_created_reception
+
     candidates = destination_receptions.reject do |reception|
-      preflight_reception_codes.include?(reception['RECEPTION_CODE'].to_s) || !exact_destination_match?(reception)
+      preflight_reception_codes.include?(reception['RECEPTION_CODE'].to_s) ||
+        !reception_verifier.destination_match?(reception)
     end
     return unless candidates.one?
 
@@ -104,27 +113,30 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
   end
 
+  def reconcile_known_created_reception
+    reception_code = written_reception_code
+    return false if reception_code.blank?
+
+    reception = client.get_reception(reception_code: reception_code, version: :v2)
+    return false unless reception_verifier.destination_match?(reception, expected_reception_code: reception_code)
+
+    patient_code = reception['PATIENT_CODE'].presence || reception['PROFILE_CODE'].presence
+    success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
+    true
+  rescue Integrations::Medelement::Client::ApiError
+    false
+  end
+
   def reconcile_reception_move
     reception = client.get_reception(reception_code: provider_reception_code)
-    return unless remote_reception_identity_matches?(reception)
-    return unless remote_time(reception['STARTTIME'])&.to_i == snapshot_time('destination_starts_at').to_i
-    return unless remote_time(reception['ENDTIME'])&.to_i == snapshot_time('destination_ends_at').to_i
+    return unless reception_verifier.moved_match?(reception)
 
     success_applier.reception_moved!
   end
 
-  def remote_reception_identity_matches?(reception)
-    patient_code = reception['PROFILE_CODE'].presence || reception['PATIENT_CODE'].presence
-
-    reception.key?('REMOVED') && reception['REMOVED'].to_i.zero? &&
-      patient_code.present? && reception['SPECIALIST_CODE'].present? &&
-      patient_code.to_s == provider_patient_code.to_s &&
-      reception['SPECIALIST_CODE'].to_s == specialist_code.to_s
-  end
-
   def reconcile_reception_remove
     reception = client.get_reception(reception_code: provider_reception_code)
-    success_applier.reception_removed! if reception['REMOVED'].to_i == 1
+    success_applier.reception_removed! if reception_verifier.removed_match?(reception)
   end
 
   def destination_receptions
@@ -148,34 +160,6 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
       zone.local(exclusive_end.year, exclusive_end.month, exclusive_end.day),
       true
     )
-  end
-
-  def exact_destination_match?(reception)
-    active_reception?(reception) && reception_patient_matches?(reception) && reception_time_matches?(reception) &&
-      reception_services_match?(reception)
-  end
-
-  def reception_services_match?(reception)
-    expected_codes = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.service_codes(command.request_snapshot)
-    actual_codes = Array(reception['SERVICES']).filter_map do |service|
-      service['NOMENCLATURE_CODE'].to_s.presence if service.is_a?(Hash)
-    end
-    (expected_codes - actual_codes).empty?
-  end
-
-  def active_reception?(reception)
-    reception.key?('REMOVED') && reception['REMOVED'].to_i.zero?
-  end
-
-  def reception_patient_matches?(reception)
-    patient_code = reception['PATIENT_CODE'].presence || reception['PROFILE_CODE'].presence
-
-    patient_code.present? && provider_patient_code.present? && patient_code.to_s == provider_patient_code.to_s
-  end
-
-  def reception_time_matches?(reception)
-    remote_time(reception['STARTTIME'])&.to_i == snapshot_time('destination_starts_at').to_i &&
-      remote_time(reception['ENDTIME'])&.to_i == snapshot_time('destination_ends_at').to_i
   end
 
   def preflight_reception_codes
@@ -210,8 +194,19 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
       command.request_snapshot['provider_patient_code'].presence || command.provider_patient_code
   end
 
+  def reception_verifier
+    @reception_verifier ||= Integrations::Medelement::ProviderCommands::ReceptionVerifier.new(
+      command: command,
+      provider_patient_code: provider_patient_code
+    )
+  end
+
   def provider_reception_code
     command.request_snapshot['provider_reception_code'].to_s
+  end
+
+  def written_reception_code
+    command.execution_state.to_h['write_provider_reception_code'].presence || command.provider_reception_code
   end
 
   def patient_snapshot
@@ -230,10 +225,6 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     value.in_time_zone(reception_snapshot.fetch('time_zone')).strftime('%d.%m.%Y %H:%M:%S')
   end
 
-  def remote_time(value)
-    ActiveSupport::TimeZone[reception_snapshot.fetch('time_zone')].parse(value.to_s)
-  end
-
   def success_applier
     @success_applier ||= Integrations::Medelement::ProviderCommands::SuccessApplier.new(
       command: command,
@@ -246,4 +237,4 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     @client = Integrations::Medelement::Client.new(configuration: configuration)
   end
 end
-# rubocop:enable Metrics/ClassLength
+# rubocop:enable Metrics/AbcSize, Metrics/ClassLength, Metrics/CyclomaticComplexity

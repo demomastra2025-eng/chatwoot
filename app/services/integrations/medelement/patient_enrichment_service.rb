@@ -31,7 +31,11 @@ class Integrations::Medelement::PatientEnrichmentService
   attr_reader :hook, :client
 
   def resolver
-    @resolver ||= Integrations::Medelement::ContactResolverService.new(account: hook.account, client: client)
+    @resolver ||= Integrations::Medelement::ContactResolverService.new(
+      account: hook.account,
+      client: client,
+      organization_id: Integrations::Medelement::Configuration.new(hook: hook).organization_id
+    )
   end
 
   def ensure_contact_scope!(contact)

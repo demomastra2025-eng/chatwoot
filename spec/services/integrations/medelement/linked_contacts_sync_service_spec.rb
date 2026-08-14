@@ -27,6 +27,24 @@ RSpec.describe Integrations::Medelement::LinkedContactsSyncService do
     expect(conflict_tracker).not_to have_received(:record!)
   end
 
+  it 'passes the configured provider organization to the contact resolver' do
+    allow(resolver).to receive(:sync_patient!).with('patient-1', preferred_contact: contact).and_return(contact)
+
+    described_class.new(
+      account: account,
+      client: client,
+      conflict_tracker: conflict_tracker,
+      organization_id: 'company-1'
+    ).perform
+
+    expect(Integrations::Medelement::ContactResolverService).to have_received(:new).with(
+      account: account,
+      client: client,
+      conflict_tracker: conflict_tracker,
+      organization_id: 'company-1'
+    )
+  end
+
   it 'records a patient-not-found conflict without aborting the batch' do
     allow(resolver).to receive(:sync_patient!).and_return(nil)
 

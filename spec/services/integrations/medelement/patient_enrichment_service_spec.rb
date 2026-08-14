@@ -31,8 +31,9 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentService do
   end
 
   it 'enriches the existing contact for one exact patient match' do
-    allow(client).to receive(:search_patients_by_phone).with(phone_number: '+77011234567').and_return([search_patient])
+    allow(client).to receive(:search_patients_by_phone).with(phone_number: contact.phone_number).and_return([search_patient])
     allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient)
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([patient])
 
     resolved_contact = service.perform(contact)
 
@@ -42,6 +43,17 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentService do
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(resolved_contact.custom_attributes['medelement_patient_match_status']).to eq('matched')
     expect(resolved_contact.custom_attributes['medelement_patient_phone_fingerprint']).not_to include('77011234567')
+  end
+
+  it 'does not mutate the contact for a foreign raw patient payload' do
+    allow(client).to receive(:search_patients_by_phone).and_return([search_patient])
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(
+      patient.merge('COMPANY_CODE' => 'foreign-company')
+    )
+
+    expect { service.perform(contact) }
+      .to raise_error(Integrations::Medelement::ProviderScope::MismatchError)
+    expect(contact.reload.custom_attributes['medelement_patient_code']).to be_blank
   end
 
   it 'caches an exact-phone miss without fetching a patient' do

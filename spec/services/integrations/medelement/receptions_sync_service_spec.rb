@@ -15,7 +15,15 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       time_zone: 'Asia/Almaty'
     )
   end
-  let(:service) { described_class.new(account: account, client: client, configuration: configuration) }
+  let(:conflict_tracker) { instance_double(Integrations::Medelement::ConflictTracker, record!: true) }
+  let(:service) do
+    described_class.new(
+      account: account,
+      client: client,
+      configuration: configuration,
+      conflict_tracker: conflict_tracker
+    )
+  end
   let!(:resource) do
     create(
       :scheduling_resource,
@@ -156,6 +164,76 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       expect(existing_import.reload.status).to eq('scheduled')
       expect(existing_import.custom_attributes).not_to include('medelement_missing_syncs')
     end
+  end
+
+  it 'skips a stale provider binding before API fetch without cleaning up a partial snapshot' do
+    rejected_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'stale-specialist',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'stale-cabinet' }],
+        'medelement_last_seen_at' => Time.zone.parse('2026-03-10 10:00:00').iso8601
+      }
+    )
+    existing_import = create(
+      :scheduling_appointment,
+      account: account,
+      resource: rejected_resource,
+      source: 'medelement',
+      external_ref: 'medelement:reception:existing',
+      starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 11, 0, 0),
+      ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 11, 20, 0),
+      client_name: 'Imported'
+    )
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      result = service.perform
+
+      expect(result).to include(imported_count: 1, skipped_pair_count: 1)
+      expect(existing_import.reload.custom_attributes).not_to include('medelement_missing_syncs')
+      expect(client).not_to have_received(:get_receptions).with(hash_including(specialist_code: 'stale-specialist'))
+      expect(conflict_tracker).to have_received(:record!).with(
+        hash_including(
+          phase: 'receptions',
+          entity_type: 'specialist_cabinet',
+          conflict_type: 'stale_provider_binding',
+          severity: 'error'
+        )
+      )
+    end
+  end
+
+  it 'skips a provider binding with a malformed last-seen timestamp without cleaning up a partial snapshot' do
+    resource.update!(
+      custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => 'not-a-timestamp')
+    )
+
+    result = service.perform
+
+    expect(result).to include(imported_count: 0, skipped_pair_count: 1)
+    expect(client).not_to have_received(:get_receptions)
+    expect(conflict_tracker).to have_received(:record!).with(
+      hash_including(conflict_type: 'stale_provider_binding', severity: 'error')
+    )
+  end
+
+  it 'still aborts the snapshot for retryable provider failures' do
+    provider_error = Integrations::Medelement::Client::ApiError.new('Provider unavailable', status: 500)
+    allow(client).to receive(:get_receptions).and_raise(provider_error)
+
+    expect { service.perform }.to raise_error(provider_error)
+    expect(conflict_tracker).not_to have_received(:record!)
+  end
+
+  it 'does not mask a provider rejection for a recently observed pair' do
+    resource.update!(
+      custom_attributes: resource.custom_attributes.merge('medelement_last_seen_at' => 1.hour.ago.iso8601)
+    )
+    provider_error = Integrations::Medelement::Client::ApiError.new('Provider request failed', status: 400)
+    allow(client).to receive(:get_receptions).and_raise(provider_error)
+
+    expect { service.perform }.to raise_error(provider_error)
+    expect(conflict_tracker).not_to have_received(:record!)
   end
 
   it 'imports Medelement timestamps using Asia/Almaty as UTC+05' do

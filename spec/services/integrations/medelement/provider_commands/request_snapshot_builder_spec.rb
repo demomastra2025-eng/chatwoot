@@ -102,6 +102,33 @@ RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilde
         'middlename' => 'Ерлановна'
       )
     end
+
+    it 'freezes the configured provider organization in the patient payload' do
+      account = create(:account)
+      contact = create(
+        :contact,
+        account: account,
+        name: 'Айжан',
+        last_name: 'Касымова',
+        middle_name: 'Ерлановна',
+        phone_number: '+77015550001'
+      )
+      hook = build_stubbed(
+        :integrations_hook,
+        account: account,
+        app_id: 'medelement',
+        settings: { 'organization_id' => 'company-1' }
+      )
+
+      snapshot = described_class.new(
+        account: account,
+        hook: hook,
+        operation: 'create_patient',
+        contact: contact
+      ).build
+
+      expect(snapshot.dig('patient', 'payload', 'company_code')).to eq('company-1')
+    end
   end
 
   describe '.service_codes' do

@@ -31,6 +31,14 @@ RSpec.describe Integrations::App do
       expect(write_enabled_field.value).to be false
       expect(app.params.visible_properties).to include('write_enabled')
     end
+
+    it 'requires the provider organization in the visible integration form' do
+      organization_field = app.params.settings_form_schema.find { |field| field.name == 'organization_id' }
+
+      expect(organization_field.type).to eq('text')
+      expect(organization_field.validation).to eq('required')
+      expect(app.params.visible_properties).to include('organization_id')
+    end
   end
 
   describe '#action' do

@@ -16,10 +16,15 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
   end
 
   it 'builds the documented patient form fields' do
-    payload = described_class.new(contact: contact, patient_code: 'patient-1').build
+    payload = described_class.new(
+      contact: contact,
+      patient_code: 'patient-1',
+      organization_id: 'company-1'
+    ).build
 
     expect(payload).to include(
       'profile_code' => 'patient-1',
+      'company_code' => 'company-1',
       'lastname' => 'Ivanov',
       'name' => 'Ivan',
       'middlename' => 'Ivanovich',
@@ -31,6 +36,17 @@ RSpec.describe Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
       'patient_phone_2[2]' => '1234567',
       'iin' => '000000000000'
     )
+  end
+
+  it 'round-trips the provider middle name stored by patient pull' do
+    contact.update!(
+      name: 'Светлана',
+      last_name: 'Сулейменова',
+      middle_name: 'Темирбаевна',
+      custom_attributes: contact.custom_attributes.merge('medelement_middle_name' => 'Темирбаевна')
+    )
+
+    expect(described_class.new(contact: contact).build).to include('middlename' => 'Темирбаевна')
   end
 
   it 'uses an explicit phone without changing the contact' do

@@ -27,6 +27,7 @@ RSpec.describe 'Medelement integration settings', type: :request do
              password: 'company-password'
            },
            settings: {
+             organization_id: 'company-1',
              timezone: 'Asia/Almaty',
              write_enabled: true
            }
@@ -35,7 +36,10 @@ RSpec.describe 'Medelement integration settings', type: :request do
          as: :json
 
     expect(response).to have_http_status(:success)
-    expect(account.hooks.find_by!(app_id: 'medelement').settings['write_enabled']).to be true
+    expect(account.hooks.find_by!(app_id: 'medelement').settings).to include(
+      'organization_id' => 'company-1',
+      'write_enabled' => true
+    )
   end
 
   it 'updates the write setting without clearing existing credentials' do

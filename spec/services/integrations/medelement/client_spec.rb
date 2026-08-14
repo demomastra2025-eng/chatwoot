@@ -8,11 +8,51 @@ RSpec.describe Integrations::Medelement::Client do
       Integrations::Medelement::Configuration,
       company_login: 'clinic-login',
       password: 'secret',
-      integrator_key: 'integrator-key'
+      integrator_key: 'integrator-key',
+      organization_id: 'company-1'
     )
   end
 
+  describe 'provider organization configuration' do
+    before do
+      allow(configuration).to receive(:organization_id).and_return(nil)
+    end
+
+    it 'fails closed before normal, indexed and empty-receptions reads' do
+      expect { client.get_patient(patient_code: 'patient-1') }
+        .to raise_error(Integrations::Medelement::ProviderScope::MismatchError)
+      expect { client.search_patients_by_codes(patient_codes: ['patient-1']) }
+        .to raise_error(Integrations::Medelement::ProviderScope::MismatchError)
+      expect do
+        client.get_receptions(
+          company_cabinet_code: 'cabinet-1',
+          specialist_code: 'specialist-1',
+          begin_datetime: '01.04.2026 00:00:00',
+          end_datetime: '30.04.2026 23:59:59'
+        )
+      end.to raise_error(Integrations::Medelement::ProviderScope::MismatchError)
+    end
+  end
+
   describe '#get_receptions' do
+    it 'rejects a foreign organization declared by the response envelope' do
+      stub_request(:post, "#{described_class::BASE_URL}/v1/timetable/get_receptions")
+        .to_return(
+          status: 200,
+          body: { companyCode: 'company-2', receptions: [] }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      expect do
+        client.get_receptions(
+          company_cabinet_code: 'cabinet-1',
+          specialist_code: 'specialist-1',
+          begin_datetime: '01.04.2026 00:00:00',
+          end_datetime: '30.04.2026 23:59:59'
+        )
+      end.to raise_error(Integrations::Medelement::ProviderScope::MismatchError)
+    end
+
     it 'treats escaped-unicode 404 empty responses as an empty receptions set' do
       stub_request(:post, "#{described_class::BASE_URL}/v1/timetable/get_receptions")
         .to_return(
@@ -150,6 +190,33 @@ RSpec.describe Integrations::Medelement::Client do
       client.get_reception(reception_code: 'reception-1')
 
       expect([patient, reception_v1, reception_v2]).to all(have_been_requested.once)
+    end
+
+    it 'rejects an explicit provider organization mismatch without exposing either code' do
+      allow(configuration).to receive(:organization_id).and_return('company-1')
+      stub_request(:get, "#{described_class::BASE_URL}/doctor/v1/patient/patient-1")
+        .to_return(
+          status: 200,
+          body: { 'PROFILE_CODE' => 'patient-1', 'COMPANY_CODE' => 'company-2' }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      expect { client.get_patient(patient_code: 'patient-1') }
+        .to raise_error(Integrations::Medelement::ProviderScope::MismatchError) do |error|
+          expect(error.message).not_to include('company-1', 'company-2')
+        end
+    end
+
+    it 'accepts legacy provider responses without an organization field' do
+      allow(configuration).to receive(:organization_id).and_return('company-1')
+      stub_request(:get, "#{described_class::BASE_URL}/doctor/v1/patient/patient-1")
+        .to_return(
+          status: 200,
+          body: { 'PROFILE_CODE' => 'patient-1' }.to_json,
+          headers: { 'Content-Type' => 'application/json' }
+        )
+
+      expect(client.get_patient(patient_code: 'patient-1')).to include('PROFILE_CODE' => 'patient-1')
     end
   end
 

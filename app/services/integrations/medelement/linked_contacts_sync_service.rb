@@ -1,14 +1,15 @@
 class Integrations::Medelement::LinkedContactsSyncService
   PATIENT_CODE_KEY = 'medelement_patient_code'.freeze
 
-  def initialize(account:, client:, conflict_tracker: nil)
+  def initialize(account:, client:, conflict_tracker: nil, organization_id: nil)
     @account = account
     @client = client
     @conflict_tracker = conflict_tracker
     @resolver = Integrations::Medelement::ContactResolverService.new(
       account: account,
       client: client,
-      conflict_tracker: conflict_tracker
+      conflict_tracker: conflict_tracker,
+      organization_id: organization_id
     )
   end
 

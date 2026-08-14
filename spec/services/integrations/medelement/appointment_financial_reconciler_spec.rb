@@ -39,4 +39,20 @@ RSpec.describe Integrations::Medelement::AppointmentFinancialReconciler do
       )
     )
   end
+
+  it 'excludes soft-deleted provider service rows from the amount' do
+    new_appointment = instance_double(Scheduling::Appointment, persisted?: false)
+
+    attributes = described_class.new(
+      appointment: new_appointment,
+      reception: {
+        'SERVICES' => [
+          { 'PRICE' => 1000, 'QUANTITY' => 2, 'DELETED' => 0 },
+          { 'PRICE' => 9000, 'QUANTITY' => 1, 'DELETED' => 1 }
+        ]
+      }
+    ).attributes
+
+    expect(attributes[:service_amount]).to eq(2000)
+  end
 end

@@ -59,6 +59,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     with_owned_command do
       appointment.update!(
         status: 'cancelled',
+        payment_status: 'cancelled',
         custom_attributes: appointment.custom_attributes.to_h.merge('medelement_provider_sync_status' => 'succeeded')
       )
       complete_command!

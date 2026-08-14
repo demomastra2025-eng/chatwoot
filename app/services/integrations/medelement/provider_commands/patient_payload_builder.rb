@@ -1,9 +1,10 @@
 class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
-  def initialize(contact:, patient_code: nil, phone_number: nil, identity: nil)
+  def initialize(contact:, patient_code: nil, phone_number: nil, identity: nil, organization_id: nil)
     @contact = contact
     @patient_code = patient_code
     @phone_number = phone_number.presence || contact.phone_number
     @identity = identity.to_h.stringify_keys
+    @organization_id = organization_id
   end
 
   def build
@@ -11,6 +12,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
 
     {
       'profile_code' => patient_code.presence,
+      'company_code' => organization_id.to_s.presence,
       'name' => values.fetch(:first_name),
       'lastname' => values.fetch(:last_name),
       'middlename' => values[:middle_name],
@@ -23,7 +25,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
 
   private
 
-  attr_reader :contact, :patient_code, :phone_number, :identity
+  attr_reader :contact, :patient_code, :phone_number, :identity, :organization_id
 
   def custom_attributes
     @custom_attributes ||= contact.custom_attributes.to_h

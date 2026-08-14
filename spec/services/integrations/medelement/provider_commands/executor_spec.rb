@@ -88,6 +88,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)
     allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
     allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
+    allow(client).to receive(:search_patients_by_codes).and_return([])
   end
 
   context 'when confirmation is no longer confirmed' do
@@ -208,6 +209,54 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).not_to have_received(:create_patient)
     end
 
+    it 'does not overwrite Contact identity when the provider-command read models disagree' do
+      contact.update!(
+        name: 'Current',
+        last_name: 'Patient',
+        middle_name: 'Identity',
+        custom_attributes: { 'medelement_iin' => '940720300129' }
+      )
+      direct_patient = {
+        'PROFILE_CODE' => 'patient-1',
+        'NAME' => 'Stale',
+        'LASTNAME' => 'Version',
+        'MIDDLENAME' => 'Direct',
+        'IIN' => '940720300129',
+        'PATIENT_PHONE_2' => contact.phone_number
+      }
+      indexed_patient = direct_patient.merge(
+        'NAME' => 'Current',
+        'LASTNAME' => 'Patient',
+        'MIDDLENAME' => 'Identity'
+      )
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').and_return([direct_patient])
+      allow(client).to receive(:search_patients_by_codes).with(patient_codes: ['patient-1']).and_return([indexed_patient])
+
+      perform
+
+      expect(command.reload).to be_succeeded
+      expect(contact.reload).to have_attributes(name: 'Current', last_name: 'Patient', middle_name: 'Identity')
+    end
+
+    it 'does not link a foreign raw patient payload to the contact' do
+      contact.update!(custom_attributes: { 'medelement_iin' => '940720300129' })
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').and_return(
+        [
+          {
+            'PROFILE_CODE' => 'patient-1',
+            'COMPANY_CODE' => 'foreign-company',
+            'IIN' => '940720300129',
+            'PATIENT_PHONE_2' => contact.phone_number
+          }
+        ]
+      )
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_scope_mismatch')
+      expect(contact.reload.custom_attributes['medelement_patient_code']).to be_blank
+    end
+
     it 'persists an exact-IIN patient code before waiting for phone refresh' do
       contact.update!(custom_attributes: { 'medelement_iin' => '940720300129' })
       allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').and_return(
@@ -324,6 +373,23 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).to have_received(:get_patient).with(patient_code: 'patient-created').once
     end
 
+    it 'rejects organization drift before the provider patient create write' do
+      contact.update!(
+        name: 'Ivanov Ivan Ivanovich',
+        custom_attributes: { 'medelement_iin' => '940720300129' }
+      )
+      command.update!(execution_state: command.execution_state.merge('patient_creation_confirmed' => true))
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').and_return([])
+      allow(client).to receive(:create_patient)
+      hook.update!(settings: hook.settings.merge('organization_id' => 'drifted-company'))
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_scope_mismatch')
+      expect(client).not_to have_received(:create_patient)
+      expect(command.execution_state).not_to include('write_phase')
+    end
+
     it 'requires reconciliation when a created patient cannot be read back' do
       contact.update!(
         name: 'Ivanov Ivan Ivanovich',
@@ -413,6 +479,20 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(command.reload).to be_succeeded
     end
 
+    it 'rejects a foreign patient before the provider update write' do
+      allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(
+        'PROFILE_CODE' => 'patient-1',
+        'COMPANY_CODE' => 'foreign-company',
+        'PATIENT_PHONE_2' => contact.phone_number
+      )
+      allow(client).to receive(:update_patient)
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_scope_mismatch')
+      expect(client).not_to have_received(:update_patient)
+    end
+
     it 'uses the confirmed patient payload after the contact changes' do
       confirmed_payload = command.request_snapshot.fetch('patient').fetch('payload')
       contact.update!(name: 'Changed Person')
@@ -457,6 +537,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         'LASTNAME' => 'Ivanov',
         'PATIENT_PHONE_2' => '+77009999999'
       )
+      allow(client).to receive(:search_patients_by_codes).and_return(
+        [{ 'PROFILE_CODE' => 'patient-1', 'PATIENT_PHONE_2' => '+77009999999' }]
+      )
 
       expect { perform }.to have_enqueued_job(Integrations::Medelement::ProviderCommandReconciliationJob).with(command.id)
 
@@ -464,6 +547,25 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         status: 'reconciliation_required',
         last_error_code: 'patient_update_pending_materialization'
       )
+    end
+
+    it 'falls back to indexed patient read-back when direct GET is stale' do
+      desired_patient = {
+        'PROFILE_CODE' => 'patient-1',
+        'NAME' => 'Ivan',
+        'LASTNAME' => 'Ivanov',
+        'PATIENT_PHONE_2' => contact.phone_number
+      }
+      allow(client).to receive(:update_patient).and_return({})
+      allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(
+        desired_patient.merge('NAME' => 'Stale')
+      )
+      allow(client).to receive(:search_patients_by_codes).with(patient_codes: ['patient-1']).and_return([desired_patient])
+
+      perform
+
+      expect(command.reload).to be_succeeded
+      expect(client).to have_received(:search_patients_by_codes).once
     end
 
     it 'fences a stale executor after a replacement claims the recovered command' do
@@ -523,6 +625,26 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'reception-1')
       expect(appointment.reload).to have_attributes(source: 'medelement', external_ref: 'medelement:reception:reception-1')
       expect(appointment.custom_attributes).to include('medelement_reception_code' => 'reception-1')
+    end
+
+    it 'does not persist a provider write reference after losing the execution claim' do
+      allow_available_destination
+      allow(client).to receive(:create_reception) do
+        replacement_state = command.reload.execution_state.merge('claim_token' => 'replacement-claim')
+        command.update_columns( # rubocop:disable Rails/SkipsModelValidations
+          status: command.status_for_transition('processing'),
+          execution_state: replacement_state
+        )
+        { 'RECEPTION_CODE' => 'reception-1' }
+      end
+      allow(client).to receive(:get_reception)
+
+      perform
+
+      expect(command.reload).to be_processing
+      expect(command.provider_reception_code).to be_blank
+      expect(command.execution_state).not_to have_key('write_provider_reception_code')
+      expect(client).not_to have_received(:get_reception)
     end
 
     it 'processes an exact v1 snapshot queued by an old web process' do
@@ -588,6 +710,25 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).to have_received(:create_reception).with(params: hash_including(patient_code: 'patient-1'))
       expect(contact.reload.custom_attributes['medelement_patient_code']).to eq('patient-1')
       expect(appointment.reload.custom_attributes).not_to have_key('medelement_patient_code')
+    end
+
+    it 'does not overwrite linked Contact identity from a stale patient read during reception execution' do
+      contact.update!(name: 'Current', last_name: 'Patient', middle_name: 'Identity')
+      allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_return(
+        'PROFILE_CODE' => 'patient-1',
+        'NAME' => 'Stale',
+        'LASTNAME' => 'Version',
+        'MIDDLENAME' => 'Direct',
+        'PATIENT_PHONE_2' => contact.phone_number
+      )
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+      allow_materialized_reception
+
+      perform
+
+      expect(contact.reload).to have_attributes(name: 'Current', last_name: 'Patient', middle_name: 'Identity')
+      expect(command.reload).to be_succeeded
     end
 
     it 'uses the confirmed reception snapshot after local appointment and resource changes' do
@@ -773,15 +914,19 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     it 'verifies current remote state and applies the documented move payload' do
       allow(client).to receive(:get_reception).and_return(
         {
+          'RECEPTION_CODE' => 'reception-1',
           'PROFILE_CODE' => 'patient-1',
           'SPECIALIST_CODE' => 'specialist-1',
+          'COMPANY_CABINET_CODE' => 'cabinet-1',
           'STARTTIME' => provider_time(appointment.starts_at),
           'ENDTIME' => provider_time(appointment.ends_at),
           'REMOVED' => 0
         },
         {
+          'RECEPTION_CODE' => 'reception-1',
           'PROFILE_CODE' => 'patient-1',
           'SPECIALIST_CODE' => 'specialist-1',
+          'COMPANY_CABINET_CODE' => 'cabinet-1',
           'STARTTIME' => provider_time(new_starts_at),
           'ENDTIME' => provider_time(new_ends_at),
           'REMOVED' => 0
@@ -806,6 +951,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
   # rubocop:enable RSpec/MultipleMemoizedHelpers
 
   context 'when removing an already removed reception' do
+    let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
     let(:appointment) do
       create(
         :scheduling_appointment,
@@ -814,24 +960,35 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         resource: resource,
         source: 'medelement',
         external_ref: 'medelement:reception:reception-1',
-        custom_attributes: { 'medelement_reception_code' => 'reception-1' }
+        custom_attributes: {
+          'medelement_reception_code' => 'reception-1',
+          'medelement_cabinet_code' => 'cabinet-1'
+        }
       )
     end
     let(:operation) { 'remove_reception' }
-    let(:command_attributes) { { provider_reception_code: 'reception-1' } }
+    let(:command_attributes) do
+      { provider_patient_code: 'patient-1', provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1' }
+    end
 
     it 'reconciles local state without repeating the provider remove write' do
       allow(client).to receive(:remove_reception)
       allow(client).to receive(:get_reception).and_return(
+        'RECEPTION_CODE' => 'reception-1',
+        'PROFILE_CODE' => 'patient-1',
         'SPECIALIST_CODE' => 'specialist-1',
-        'REMOVED' => 1
+        'COMPANY_CABINET_CODE' => 'cabinet-1',
+        'STARTTIME' => provider_time(appointment.starts_at),
+        'ENDTIME' => provider_time(appointment.ends_at),
+        'REMOVED' => 1,
+        'SERVICES' => []
       )
 
       perform
 
       expect(command.reload).to be_succeeded
       expect(command.request_snapshot).not_to have_key('patient_phone_numbers')
-      expect(appointment.reload.status).to eq('cancelled')
+      expect(appointment.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
       expect(client).not_to have_received(:remove_reception)
     end
   end
@@ -841,6 +998,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       'RECEPTION_CODE' => 'reception-1',
       'PROFILE_CODE' => 'patient-1',
       'SPECIALIST_CODE' => 'specialist-1',
+      'COMPANY_CABINET_CODE' => 'cabinet-1',
       'STARTTIME' => provider_time(starts_at),
       'ENDTIME' => provider_time(ends_at),
       'REMOVED' => 0,

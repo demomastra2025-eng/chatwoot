@@ -38,11 +38,11 @@ class Integrations::Medelement::ProviderCommands::PatientActionsService
   attr_reader :actor, :command
 
   def patient_resolver
+    configuration = Integrations::Medelement::Configuration.new(hook: command.hook)
     @patient_resolver ||= Integrations::Medelement::ProviderCommands::PatientResolver.new(
       command: command,
-      client: Integrations::Medelement::Client.new(
-        configuration: Integrations::Medelement::Configuration.new(hook: command.hook)
-      )
+      client: Integrations::Medelement::Client.new(configuration: configuration),
+      organization_id: configuration.organization_id
     )
   end
 

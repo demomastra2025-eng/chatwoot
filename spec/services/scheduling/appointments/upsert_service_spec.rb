@@ -32,6 +32,24 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     expect(appointment.reload.external_ref).to be_nil
   end
 
+  it 'rejects provider-owned Medelement metadata in manual appointment custom attributes' do
+    request = -> { perform(custom_attributes: { 'medelement_reception_code' => 'spoofed' }) }
+
+    expect(&request).to raise_error(Crm::Error) do |error|
+      expect(error.code).to eq('VALIDATION_ERROR')
+    end
+    expect(appointment.reload.custom_attributes).not_to have_key('medelement_reception_code')
+  end
+
+  it 'rejects the provider source mode while preserving unrelated custom attributes' do
+    request = -> { perform(custom_attributes: { 'source_mode' => 'imported', 'note' => 'allowed' }) }
+
+    expect(&request).to raise_error(Crm::Error) do |error|
+      expect(error.code).to eq('VALIDATION_ERROR')
+    end
+    expect(appointment.reload.custom_attributes).to be_empty
+  end
+
   it 'stores structured patient names while requiring only the first name locally' do
     perform(client_first_name: 'Айжан', client_last_name: '', client_middle_name: '')
 

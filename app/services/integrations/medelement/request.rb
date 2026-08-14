@@ -22,7 +22,7 @@ class Integrations::Medelement::Request
     response = HTTParty.public_send(method, url, request_options(query.is_a?(String) ? nil : query, body))
     parsed_response = response.parsed_response
     return [] if empty_not_found && response.code.to_i == 404 && parsed_response == []
-    return parsed_response if response.success?
+    return validate_provider_scope!(parsed_response) if response.success?
 
     raise_api_error(operation, response.code.to_i, write: write)
   rescue *TRANSPORT_ERRORS => e
@@ -50,7 +50,7 @@ class Integrations::Medelement::Request
     ) { |http| http.request(request) }
     parsed_response = parse_body(response.body)
     return [] if empty_not_found && response.code.to_i == 404 && parsed_response == []
-    return parsed_response if response.is_a?(Net::HTTPSuccess)
+    return validate_provider_scope!(parsed_response) if response.is_a?(Net::HTTPSuccess)
 
     raise_api_error(operation, response.code.to_i)
   rescue *TRANSPORT_ERRORS => e
@@ -75,7 +75,7 @@ class Integrations::Medelement::Request
     )
     parsed_response = response.parsed_response
     return [] if empty_receptions_response?(response, parsed_response)
-    return Array(parsed_response['receptions']) if response.success?
+    return scoped_receptions(parsed_response) if response.success?
 
     raise_api_error('receptions', response.code.to_i)
   rescue *TRANSPORT_ERRORS => e
@@ -100,7 +100,26 @@ class Integrations::Medelement::Request
     options
   end
 
+  def validate_provider_scope!(payload)
+    Integrations::Medelement::ProviderScope.validate!(
+      payload,
+      organization_id: configuration.organization_id
+    )
+  end
+
+  def scoped_receptions(payload)
+    validated = validate_provider_scope!(payload)
+    return Array(validated['receptions']) if validated.is_a?(Hash)
+
+    Array(validated)
+  end
+
+  def validate_configuration!
+    validate_provider_scope!({})
+  end
+
   def headers(form_encoded)
+    validate_configuration!
     values = {
       'Accept' => 'application/json',
       'X-Integrator-Key' => configuration.integrator_key

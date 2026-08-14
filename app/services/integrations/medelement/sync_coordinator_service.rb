@@ -75,7 +75,8 @@ class Integrations::Medelement::SyncCoordinatorService
     Integrations::Medelement::LinkedContactsSyncService.new(
       account: hook.account,
       client: client,
-      conflict_tracker: conflict_tracker
+      conflict_tracker: conflict_tracker,
+      organization_id: configuration.organization_id
     ).perform
   end
 

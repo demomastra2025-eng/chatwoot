@@ -93,7 +93,7 @@ class Integrations::Medelement::AppointmentFinancialReconciler
   end
 
   def reception_service_rows
-    Array(reception['SERVICES']).select { |row| row.is_a?(Hash) }
+    Integrations::Medelement::ReceptionServiceRows.active(reception)
   end
 
   def decimal_value(value)

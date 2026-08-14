@@ -1,9 +1,10 @@
 class Integrations::Medelement::PatientsSyncService
-  def initialize(account:, client:, conflict_tracker: nil)
+  def initialize(account:, client:, conflict_tracker: nil, organization_id: nil)
     @resolver = Integrations::Medelement::ContactResolverService.new(
       account: account,
       client: client,
-      conflict_tracker: conflict_tracker
+      conflict_tracker: conflict_tracker,
+      organization_id: organization_id
     )
   end
 

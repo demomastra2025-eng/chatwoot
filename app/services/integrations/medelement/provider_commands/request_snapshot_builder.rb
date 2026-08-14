@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   VERSION = 2
   PATIENT_PHONE_OPERATIONS = %w[create_patient update_patient create_reception move_reception].freeze
@@ -88,7 +89,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       contact: contact,
       patient_code: operation == 'update_patient' ? patient_code : nil,
       phone_number: phone_number,
-      identity: appointment_identity
+      identity: appointment_identity, organization_id: configuration.organization_id
     ).build
     {
       'phone_number' => phone_number.to_s,
@@ -227,3 +228,4 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     value&.utc&.iso8601(6)
   end
 end
+# rubocop:enable Metrics/ClassLength

@@ -28,6 +28,54 @@ RSpec.describe Integrations::Medelement::SyncRun, type: :model do
     expect(run.summary['skipped_count']).to eq(1)
   end
 
+  it 'finishes as partial for an open patient read-model conflict and succeeds after it resolves' do
+    first_run = described_class.create!(account: account, hook: hook, trigger: 'manual', status: 'running')
+    first_tracker = Integrations::Medelement::ConflictTracker.new(sync_run: first_run)
+    first_tracker.record!(
+      phase: 'contacts',
+      entity_type: 'contact',
+      conflict_type: 'patient_read_model_conflict',
+      entity_key: 'patient-1',
+      severity: 'error',
+      details: { reason: 'Provider patient read models disagree', contact_id: 123 }
+    )
+
+    first_run.finish!
+
+    expect(first_run).to be_partial
+    expect(first_run.summary['open_conflicts']).to eq(1)
+
+    second_run = described_class.create!(account: account, hook: hook, trigger: 'retry', status: 'running')
+    Integrations::Medelement::ConflictTracker.new(sync_run: second_run).resolve_absent!('contacts')
+    second_run.finish!
+
+    expect(second_run).to be_succeeded
+    expect(second_run.summary['open_conflicts']).to eq(0)
+  end
+
+  it 'does not mark a phase-only retry partial for an open conflict from another phase' do
+    receptions_run = described_class.create!(account: account, hook: hook, trigger: 'manual', status: 'running')
+    Integrations::Medelement::ConflictTracker.new(sync_run: receptions_run).record!(
+      phase: 'receptions',
+      entity_type: 'reception',
+      conflict_type: 'invalid_reception',
+      entity_key: 'reception-1'
+    )
+    receptions_run.finish!
+    contacts_run = described_class.create!(
+      account: account,
+      hook: hook,
+      trigger: 'retry',
+      status: 'running',
+      requested_phases: ['contacts']
+    )
+
+    contacts_run.finish!
+
+    expect(contacts_run).to be_succeeded
+    expect(contacts_run.summary).to include('open_conflicts' => 0, 'ignored_conflicts' => 0)
+  end
+
   it 'rejects unsupported retry phases' do
     run = described_class.new(
       account: account,

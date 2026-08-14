@@ -25,6 +25,8 @@ class Integrations::Medelement::ProviderCommands::Executor
     fail_command!(code: 'slot_unavailable')
   rescue Integrations::Medelement::ProviderCommands::Preflight::StateChanged
     fail_command!(code: 'remote_state_changed', reconciliation: true)
+  rescue Integrations::Medelement::ProviderScope::MismatchError
+    fail_command!(code: 'provider_scope_mismatch', reconciliation: write_started?)
   rescue ClaimLost
     nil
   rescue StandardError => e
@@ -94,9 +96,13 @@ class Integrations::Medelement::ProviderCommands::Executor
   def update_patient!
     payload = command.request_snapshot.fetch('patient').fetch('payload')
     patient_code = payload.fetch('profile_code')
+    Integrations::Medelement::ProviderScope.validate_write!(payload, organization_id: configuration.organization_id)
+    remote = client.get_patient(patient_code: patient_code)
+    Integrations::Medelement::ProviderScope.validate!(remote, organization_id: payload['company_code'])
     mark_write_phase!('patient_update', provider_patient_code: patient_code)
     client.update_patient(params: payload)
     remote = read_patient_after_write(patient_code)
+    remote = indexed_patient_after_write(patient_code) unless patient_snapshot_matches?(remote)
     raise reconciliation_error('patient_update_pending_materialization') unless patient_snapshot_matches?(remote)
 
     success_applier.patient!(patient_code: patient_code)
@@ -134,12 +140,12 @@ class Integrations::Medelement::ProviderCommands::Executor
 
   def remove_reception!
     result = preflight.perform
-    return success_applier.reception_removed! if result.remote_reception['REMOVED'].to_i == 1
+    return success_applier.reception_removed! if removed_reception_matches?(result.remote_reception)
 
     mark_write_phase!('reception_remove')
     client.remove_reception(reception_code: command.request_snapshot.fetch('provider_reception_code'))
     remote = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'))
-    raise reconciliation_error('reception_remove_pending_materialization') unless remote.is_a?(Hash) && remote['REMOVED'].to_i == 1
+    raise reconciliation_error('reception_remove_pending_materialization') unless removed_reception_matches?(remote)
 
     success_applier.reception_removed!
   end
@@ -148,6 +154,7 @@ class Integrations::Medelement::ProviderCommands::Executor
     @patient_resolver ||= Integrations::Medelement::ProviderCommands::PatientResolver.new(
       command: command,
       client: client,
+      organization_id: configuration.organization_id,
       before_create: -> { mark_write_phase!('patient_create') }
     )
   end
@@ -195,10 +202,20 @@ class Integrations::Medelement::ProviderCommands::Executor
   end
 
   def record_write_reference!(provider_reception_code:)
-    command.update!(
-      provider_reception_code: provider_reception_code,
-      execution_state: command.execution_state.merge('write_provider_reception_code' => provider_reception_code)
-    )
+    state = command.execution_state.merge('write_provider_reception_code' => provider_reception_code)
+    updated = Integrations::Medelement::ProviderCommand
+              .where(id: command.id, status: command.status_for_transition('processing'))
+              .where("execution_state ->> 'claim_token' = ?", claim_token)
+              # rubocop:disable Rails/SkipsModelValidations
+              .update_all(
+                provider_reception_code: provider_reception_code,
+                execution_state: state,
+                updated_at: Time.current
+              )
+    # rubocop:enable Rails/SkipsModelValidations
+    raise ClaimLost unless updated == 1
+
+    command.reload
   end
 
   def read_reception_after_write(reception_code)
@@ -213,28 +230,35 @@ class Integrations::Medelement::ProviderCommands::Executor
     nil
   end
 
-  def created_reception_matches?(remote, patient_code)
-    return false unless moved_reception_matches?(remote, patient_code)
-
-    expected_codes = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.service_codes(command.request_snapshot)
-    actual_codes = Array(remote['SERVICES']).filter_map do |service|
-      service['NOMENCLATURE_CODE'].to_s.presence if service.is_a?(Hash)
+  def indexed_patient_after_write(patient_code)
+    Array(client.search_patients_by_codes(patient_codes: [patient_code])).find do |patient|
+      remote_patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
+      remote_patient_code.to_s == patient_code.to_s
     end
-    (expected_codes - actual_codes).empty?
+  rescue Integrations::Medelement::Client::ApiError
+    nil
+  end
+
+  def created_reception_matches?(remote, patient_code)
+    reception_verifier(patient_code).destination_match?(
+      remote,
+      expected_reception_code: command.provider_reception_code
+    )
   end
 
   def moved_reception_matches?(remote, patient_code)
-    return false unless remote.is_a?(Hash) && remote['REMOVED'].to_i.zero?
-
-    remote_patient_code = remote['PROFILE_CODE'].presence || remote['PATIENT_CODE'].presence
-    return false unless remote_patient_code.to_s == patient_code.to_s
-
-    remote_destination_times_match?(remote)
+    reception_verifier(patient_code).moved_match?(remote)
   end
 
-  def remote_destination_times_match?(remote)
-    provider_time(remote['STARTTIME'])&.to_i == snapshot_time('destination_starts_at').to_i &&
-      provider_time(remote['ENDTIME'])&.to_i == snapshot_time('destination_ends_at').to_i
+  def removed_reception_matches?(remote)
+    reception_verifier(command.request_snapshot['provider_patient_code']).removed_match?(remote)
+  end
+
+  def reception_verifier(patient_code)
+    Integrations::Medelement::ProviderCommands::ReceptionVerifier.new(
+      command: command,
+      provider_patient_code: patient_code
+    )
   end
 
   def patient_snapshot_matches?(patient)
@@ -255,15 +279,6 @@ class Integrations::Medelement::ProviderCommands::Executor
     end
 
     fields_match && Integrations::Medelement::PhoneNumber.new(patient_data.fetch('phone_number')).matches_patient?(patient)
-  end
-
-  def snapshot_time(key)
-    Time.iso8601(command.request_snapshot.fetch('reception').fetch(key))
-  end
-
-  def provider_time(value)
-    zone = command.request_snapshot.dig('reception', 'time_zone')
-    ActiveSupport::TimeZone[zone].parse(value.to_s)
   end
 
   def write_started?

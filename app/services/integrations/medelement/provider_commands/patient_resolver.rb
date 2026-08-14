@@ -1,9 +1,10 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::PatientResolver
-  def initialize(command:, client:, before_create: nil)
+  def initialize(command:, client:, before_create: nil, organization_id: nil)
     @command = command
     @client = client
     @before_create = before_create
+    @organization_id = organization_id
   end
 
   def resolve!(allow_create:)
@@ -61,13 +62,20 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
 
   private
 
-  attr_reader :command, :client, :before_create
+  attr_reader :command, :client, :before_create, :organization_id
 
   def resolve_linked_patient!
     patient = client.get_patient(patient_code: snapshot_patient_code)
     raise deterministic_error('patient_not_found') if patient.blank?
 
-    link_patient!(snapshot_patient_code, patient: patient, verify_phone: true)
+    Integrations::Medelement::ProviderScope.validate!(
+      patient,
+      organization_id: organization_id
+    )
+    validate_patient_ref!(snapshot_patient_code)
+    command.update!(provider_patient_code: snapshot_patient_code.to_s)
+    verify_phone_matches!(patient)
+    snapshot_patient_code.to_s
   end
 
   def lookup_candidates
@@ -130,6 +138,10 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     return collision_result if collision_result
 
     validate_create_payload!
+    Integrations::Medelement::ProviderScope.validate_write!(
+      patient_snapshot.fetch('payload'),
+      organization_id: organization_id
+    )
 
     before_create.call
     response = client.create_patient(params: patient_snapshot.fetch('payload'))
@@ -190,6 +202,12 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   def link_patient!(code, patient: nil, verify_phone: false)
     raise reconciliation_error('patient_ref_missing') if code.blank?
 
+    if patient
+      Integrations::Medelement::ProviderScope.validate!(
+        patient,
+        organization_id: organization_id
+      )
+    end
     validate_patient_ref!(code)
     update_contact_patient_ref!(code)
     command.update!(provider_patient_code: code.to_s)
@@ -310,7 +328,11 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def sync_contact!(patient)
-    Integrations::Medelement::ContactResolverService.new(account: command.account, client: client).sync_patient_payload!(
+    Integrations::Medelement::ContactResolverService.new(
+      account: command.account,
+      client: client,
+      organization_id: organization_id
+    ).sync_patient_payload!(
       patient,
       preferred_contact: command.contact
     )

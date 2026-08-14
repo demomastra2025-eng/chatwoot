@@ -27,24 +27,17 @@ class Integrations::Medelement::ProviderCommands::Preflight
     return if command.create_patient? || command.update_patient?
 
     remote = client.get_reception(reception_code: provider_reception_code)
-    verify_remote_patient!(remote)
-    verify_remote_specialist!(remote)
+    verify_remote_identity!(remote)
     verify_remote_state!(remote)
 
     remote
   end
 
-  def verify_remote_patient!(remote)
-    return if provider_patient_code.blank?
-    return if remote_patient_code(remote) == provider_patient_code.to_s
-
-    raise StateChanged, 'Medelement reception patient changed'
-  end
-
-  def verify_remote_specialist!(remote)
-    return if local_specialist_code.blank? || remote['SPECIALIST_CODE'].to_s == local_specialist_code
-
-    raise StateChanged, 'Medelement reception specialist changed'
+  def verify_remote_identity!(remote)
+    raise StateChanged, 'Medelement reception reference changed' unless reception_verifier.reference_matches?(remote)
+    raise StateChanged, 'Medelement reception patient changed' unless reception_verifier.patient_matches?(remote)
+    raise StateChanged, 'Medelement reception specialist changed' unless reception_verifier.specialist_matches?(remote)
+    raise StateChanged, 'Medelement reception cabinet changed' unless reception_verifier.cabinet_matches?(remote)
   end
 
   def verify_remote_state!(remote)
@@ -52,7 +45,7 @@ class Integrations::Medelement::ProviderCommands::Preflight
     return unless command.move_reception?
 
     raise StateChanged, 'Medelement reception has been removed' if remote['REMOVED'].to_i == 1
-    raise StateChanged, 'Medelement reception time changed' unless remote_time_matches_local?(remote)
+    raise StateChanged, 'Medelement reception time changed' unless reception_verifier.source_time_matches?(remote)
   end
 
   def destination_receptions
@@ -68,8 +61,14 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def verify_remove_state!(remote)
+    raise StateChanged, 'Medelement reception time changed' unless reception_verifier.source_time_matches?(remote)
+    raise StateChanged, 'Medelement reception services changed' unless reception_verifier.services_match?(remote)
     return if remote['REMOVED'].to_i == 1
 
+    verify_active_remove_state!(remote)
+  end
+
+  def verify_active_remove_state!(remote)
     raise StateChanged, 'Medelement reception is not active' unless remote['ACTIVE'].to_i == 1
 
     calendar_reception = source_receptions.find do |reception|
@@ -147,15 +146,6 @@ class Integrations::Medelement::ProviderCommands::Preflight
     end.uniq
   end
 
-  def remote_patient_code(remote)
-    remote['PROFILE_CODE'].presence || remote['PATIENT_CODE'].presence
-  end
-
-  def remote_time_matches_local?(remote)
-    parse_provider_time(remote['STARTTIME'])&.to_i == snapshot_time('source_starts_at').to_i &&
-      parse_provider_time(remote['ENDTIME'])&.to_i == snapshot_time('source_ends_at').to_i
-  end
-
   def specialist_code
     local_specialist_code.presence || raise(KeyError, 'appointment has no Medelement specialist reference')
   end
@@ -166,6 +156,13 @@ class Integrations::Medelement::ProviderCommands::Preflight
 
   def provider_patient_code
     command.request_snapshot['provider_patient_code'].presence || command.provider_patient_code
+  end
+
+  def reception_verifier
+    @reception_verifier ||= Integrations::Medelement::ProviderCommands::ReceptionVerifier.new(
+      command: command,
+      provider_patient_code: provider_patient_code
+    )
   end
 
   def provider_reception_code
