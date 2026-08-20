@@ -39,6 +39,18 @@ RSpec.describe Integrations::App do
       expect(organization_field.validation).to eq('required')
       expect(app.params.visible_properties).to include('organization_id')
     end
+
+    it 'marks integer inputs for numeric payload coercion' do
+      integer_fields = app.params.settings_form_schema.select do |field|
+        %w[receptions_days_back receptions_days_forward throttle_ms].include?(field.name)
+      end
+
+      expect(integer_fields.to_h { |field| [field.name, field.value_type] }).to eq(
+        'receptions_days_back' => 'integer',
+        'receptions_days_forward' => 'integer',
+        'throttle_ms' => 'integer'
+      )
+    end
   end
 
   describe '#action' do

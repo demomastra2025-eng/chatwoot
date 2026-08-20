@@ -610,17 +610,20 @@ medelement:
         'type': 'number',
         'name': 'receptions_days_back',
         'value': 3,
+        'value_type': 'integer',
       },
       {
         'label': 'Days forward',
         'type': 'number',
         'name': 'receptions_days_forward',
         'value': 70,
+        'value_type': 'integer',
       },
       {
         'label': 'Throttle (ms)',
         'type': 'number',
         'name': 'throttle_ms',
         'value': 275,
+        'value_type': 'integer',
       },
     ]
