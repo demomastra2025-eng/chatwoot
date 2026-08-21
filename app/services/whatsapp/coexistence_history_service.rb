@@ -57,9 +57,10 @@ class Whatsapp::CoexistenceHistoryService
   def finalize_media(media_service, failures)
     failures.concat(media_service.replay_pending)
     media_service.finalize(failures)
-    return if failures.empty?
+    retryable_failures = failures.reject { |failure| failure.to_h.with_indifferent_access[:deferred] }
+    return if retryable_failures.empty?
 
-    raise MediaHydrationError, "Failed to import #{failures.size} WhatsApp Business app history messages"
+    raise MediaHydrationError, "Failed to import #{retryable_failures.size} WhatsApp Business app history messages"
   end
 
   def history_failure_replay_service

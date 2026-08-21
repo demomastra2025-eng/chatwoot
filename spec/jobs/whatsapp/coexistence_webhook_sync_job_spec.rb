@@ -94,6 +94,27 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
     expect(reconciliation).to have_received(:reconcile_webhook!).with('history', generation: 'generation-1')
   end
 
+  it 'passes the provider envelope timestamp to contact synchronization' do
+    value = { state_sync: [] }
+    service = instance_double(Whatsapp::CoexistenceContactSyncService, perform: true)
+    reconciliation = instance_double(Whatsapp::CoexistenceSyncReconciliationService, reconcile_webhook!: true)
+    job = described_class.new
+    allow(job).to receive(:with_lock).and_yield
+    expect(Whatsapp::CoexistenceContactSyncService).to receive(:new)
+      .with(channel: channel, value: value.with_indifferent_access, provider_event_at: 1_700_000_005)
+      .and_return(service)
+    allow(Whatsapp::CoexistenceSyncReconciliationService).to receive(:new).with(channel).and_return(reconciliation)
+
+    job.perform(
+      channel.id,
+      'smb_app_state_sync',
+      value,
+      routing_context.merge(provider_event_at: 1_700_000_005)
+    )
+
+    expect(service).to have_received(:perform)
+  end
+
   it 'holds the WABA lock through metadata-free dispatch' do
     service = instance_double(Whatsapp::CoexistenceHistoryService)
     allow(Whatsapp::CoexistenceHistoryService).to receive(:new).and_return(service)

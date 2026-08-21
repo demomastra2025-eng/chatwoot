@@ -192,7 +192,8 @@ class Whatsapp::CoexistenceHistoryMediaService
       kind: 'history_media',
       message: safe_message,
       metadata: Whatsapp::CoexistenceHistoryFailureReplayService.safe_payload(channel, metadata),
-      replayable: true
+      replayable: true,
+      deferred: error.is_a?(ActiveRecord::RecordNotFound)
     }.compact
   end
 end
