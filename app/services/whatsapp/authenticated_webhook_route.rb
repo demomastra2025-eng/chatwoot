@@ -1,4 +1,8 @@
+require 'digest'
+
 class Whatsapp::AuthenticatedWebhookRoute
+  class RuntimeIdentityChangedError < StandardError; end
+
   def self.identity_snapshot(channel, route_phone)
     return {} if channel.blank?
 
@@ -19,25 +23,52 @@ class Whatsapp::AuthenticatedWebhookRoute
     @live_priority_token = live_priority_token
   end
 
-  def with_verified_route(&)
+  def with_verified_route(expected_runtime_snapshot: nil, &)
     return with_unsigned_route(&) unless @verification_context[:hmac_verified] == true
     return false if lock_waba_ids.empty?
 
-    return with_locked_route(&) if low_priority_sync_payload?
+    return with_locked_route(expected_runtime_snapshot: expected_runtime_snapshot, &) if low_priority_sync_payload?
 
-    Whatsapp::WabaLivePriority.with_waiters(lock_waba_ids, waiter_id: @live_priority_token) { with_locked_route(&) }
+    Whatsapp::WabaLivePriority.with_waiters(lock_waba_ids, waiter_id: @live_priority_token) do
+      with_locked_route(expected_runtime_snapshot: expected_runtime_snapshot, &)
+    end
+  end
+
+  def runtime_snapshot
+    return {} if @channel.blank?
+
+    config = @channel.provider_config.to_h
+    {
+      channel_id: @channel.id,
+      account_id: @channel.account_id,
+      inbox_id: @channel.inbox&.id,
+      provider: @channel.provider,
+      waba_id: config['business_account_id'].to_s,
+      phone_number_id: config['phone_number_id'].to_s,
+      route_phone: @channel.phone_number.to_s,
+      credential_fingerprint: Digest::SHA256.hexdigest(config['api_key'].to_s)
+    }.with_indifferent_access
   end
 
   private
 
-  def with_locked_route
+  def with_locked_route(expected_runtime_snapshot:)
     Whatsapp::WabaLock.with_locks(lock_waba_ids) do
       @channel&.reload
       next false unless authenticated_route_matches?
+      next false unless runtime_snapshot_matches?(expected_runtime_snapshot)
 
       yield
       true
     end
+  end
+
+  def runtime_snapshot_matches?(expected_snapshot)
+    return true if expected_snapshot.blank?
+    return true if runtime_snapshot == expected_snapshot.to_h.with_indifferent_access
+
+    Rails.logger.warn('[WHATSAPP_WEBHOOK] refused payload because runtime channel identity changed')
+    false
   end
 
   def low_priority_sync_payload?

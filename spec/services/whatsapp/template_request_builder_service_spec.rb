@@ -101,6 +101,100 @@ RSpec.describe Whatsapp::TemplateRequestBuilderService do
                                         ])
     end
 
+    it 'builds media headers from an uploaded OneLink file' do
+      allow(asset_upload_service).to receive(:upload)
+      allow(asset_upload_service).to receive(:upload_blob)
+        .with(blob_signed_id: 'signed-media-blob', media_type: 'image')
+        .and_return('4:uploaded-file-handle')
+
+      result = described_class.new(
+        template_config: {
+          name: 'photo_ready',
+          language: 'en',
+          category: 'utility',
+          header_type: 'image',
+          sample_media_blob_id: 'signed-media-blob',
+          body_text: 'Your photo is ready.'
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(result[:components].second).to eq(
+        type: 'HEADER',
+        format: 'IMAGE',
+        example: { header_handle: ['4:uploaded-file-handle'] }
+      )
+      expect(asset_upload_service).not_to have_received(:upload)
+    end
+
+    it 'prefers the account-bound blob while retaining the URL for old web compatibility' do
+      allow(asset_upload_service).to receive(:upload)
+      allow(asset_upload_service).to receive(:upload_blob)
+        .with(blob_signed_id: 'signed-media-blob', media_type: 'image')
+        .and_return('4:uploaded-file-handle')
+
+      result = described_class.new(
+        template_config: {
+          name: 'rolling_photo',
+          language: 'en',
+          category: 'utility',
+          header_type: 'image',
+          sample_media_blob_id: 'signed-media-blob',
+          sample_media_url: 'https://example.com/rolling-photo.jpg',
+          body_text: 'Your photo is ready.'
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(asset_upload_service).to have_received(:upload_blob).once
+      expect(asset_upload_service).not_to have_received(:upload)
+      expect(result[:components].second.dig(:example, :header_handle)).to eq(['4:uploaded-file-handle'])
+    end
+
+    it 'uses the rolling URL only when a valid blob reference outlived its temporary record' do
+      allow(asset_upload_service).to receive(:upload_blob)
+        .and_raise(Whatsapp::TemplateAssetUploadService::BlobReferenceUnavailableError)
+      allow(asset_upload_service).to receive(:upload)
+        .with(url: 'https://example.com/rolling-photo.jpg', media_type: 'image')
+        .and_return('4:url-fallback-handle')
+
+      result = described_class.new(
+        template_config: {
+          name: 'rolling_photo_fallback',
+          language: 'en',
+          category: 'utility',
+          header_type: 'image',
+          sample_media_blob_id: 'missing-account-blob',
+          sample_media_url: 'https://example.com/rolling-photo.jpg',
+          body_text: 'Your photo is ready.'
+        },
+        asset_upload_service: asset_upload_service
+      ).call
+
+      expect(result[:components].second.dig(:example, :header_handle)).to eq(['4:url-fallback-handle'])
+    end
+
+    it 'does not use the rolling URL for a rejected blob reference' do
+      allow(asset_upload_service).to receive(:upload_blob)
+        .and_raise(Whatsapp::TemplateAssetUploadService::BlobReferenceRejectedError)
+      expect(asset_upload_service).not_to receive(:upload)
+
+      expect do
+        described_class.new(
+          template_config: {
+            name: 'rejected_rolling_photo',
+            language: 'en',
+            category: 'utility',
+            header_type: 'image',
+            sample_media_blob_id: 'foreign-account-blob',
+            sample_media_url: 'https://example.com/rolling-photo.jpg',
+            body_text: 'Your photo is ready.'
+          },
+          asset_upload_service: asset_upload_service
+        ).call
+      end.to raise_error(Whatsapp::TemplateAssetUploadService::BlobReferenceRejectedError)
+    end
+
     it 'raises when placeholders are not sequential' do
       template_config = {
         name: 'broken_template',

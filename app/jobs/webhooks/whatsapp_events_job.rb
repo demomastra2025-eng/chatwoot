@@ -7,6 +7,8 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   queue_as :whatsapp_inbound
   retry_on LockAcquisitionError, wait: 1.second, attempts: 8
   retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
+  retry_on Whatsapp::AuthenticatedWebhookRoute::RuntimeIdentityChangedError, Whatsapp::CloudMediaDownload::MetadataFetchError, Down::Error,
+           Whatsapp::IncomingMessageWhatsappCloudService::PreparedAttachmentError, wait: 5.seconds, attempts: 8
   retry_on Whatsapp::IncomingMessageMutationService::TargetNotFoundError, wait: 5.seconds, attempts: 120
 
   def perform(params = {}, options = {})
@@ -23,22 +25,23 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
   end
 
   def dispatch_authenticated_change(channel, payload, verification_context)
-    route = Whatsapp::AuthenticatedWebhookRoute.new(
+    Whatsapp::AuthenticatedMediaWebhookDispatch.new(
       channel: channel,
       payload: payload,
       verification_context: verification_context,
-      live_priority_token: job_id
-    )
-    route.with_verified_route do
-      dispatch_change(channel, payload, verification_context[:hmac_verified] == true)
-    end
+      live_priority_token: job_id,
+      outgoing_echo: message_echo_event?(payload),
+      dispatch_action: lambda do |prepared_attachment|
+        dispatch_change(channel, payload, verification_context[:hmac_verified] == true, prepared_attachment: prepared_attachment)
+      end
+    ).perform
   end
 
   def webhook_payloads(params)
     Whatsapp::WebhookBatchNormalizer.new(params: params).perform
   end
 
-  def dispatch_change(channel, payload, hmac_verified)
+  def dispatch_change(channel, payload, hmac_verified, prepared_attachment: nil)
     field = webhook_fields(payload).first
     if field == 'account_update'
       handle_account_updates(payload) if trusted_account_update?(channel, hmac_verified)
@@ -52,7 +55,7 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
 
     return if log_inactive_payload?(channel, payload)
 
-    dispatch_non_account_change(channel, payload)
+    dispatch_non_account_change(channel, payload, prepared_attachment: prepared_attachment)
   end
 
   def log_inactive_payload?(channel, payload)
@@ -62,12 +65,12 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     true
   end
 
-  def dispatch_non_account_change(channel, payload)
+  def dispatch_non_account_change(channel, payload, prepared_attachment: nil)
     case webhook_fields(payload).first
     when 'history', 'smb_app_state_sync'
       enqueue_coexistence_sync(channel, webhook_fields(payload).first, payload)
     else
-      dispatch_message_payload(channel, payload)
+      dispatch_message_payload(channel, payload, prepared_attachment: prepared_attachment)
     end
   end
 
@@ -147,11 +150,11 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     Rails.logger.warn("Inactive WhatsApp channel: #{phone_number}")
   end
 
-  def dispatch_message_payload(channel, params)
+  def dispatch_message_payload(channel, params, prepared_attachment: nil)
     if message_echo_event?(params)
-      handle_message_echo(channel, params)
+      handle_message_echo(channel, params, prepared_attachment: prepared_attachment)
     else
-      handle_message_events(channel, params)
+      handle_message_events(channel, params, prepared_attachment: prepared_attachment)
     end
   end
 
@@ -183,17 +186,16 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
     Array(params[:entry] || params['entry']).filter_map { |entry| entry[:id] || entry['id'] }.map(&:to_s).uniq
   end
 
-  def handle_message_echo(channel, params)
-    Whatsapp::IncomingMessageWhatsappCloudService.new(inbox: channel.inbox, params: params, outgoing_echo: true).perform
+  def handle_message_echo(channel, params, prepared_attachment: nil)
+    Whatsapp::IncomingWebhookMessageDispatch.new(
+      channel: channel, params: params, outgoing_echo: true, prepared_attachment: prepared_attachment
+    ).perform
   end
 
-  def handle_message_events(channel, params)
-    case channel.provider
-    when 'whatsapp_cloud'
-      Whatsapp::IncomingMessageWhatsappCloudService.new(inbox: channel.inbox, params: params).perform
-    else
-      Whatsapp::IncomingMessageService.new(inbox: channel.inbox, params: params).perform
-    end
+  def handle_message_events(channel, params, prepared_attachment: nil)
+    Whatsapp::IncomingWebhookMessageDispatch.new(
+      channel: channel, params: params, prepared_attachment: prepared_attachment
+    ).perform
   end
 
   private

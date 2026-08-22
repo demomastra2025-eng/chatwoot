@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :request do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:whatsapp_channel) do
@@ -175,6 +175,33 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       expect(response).to have_http_status(:created)
     end
 
+    it 'passes uploaded media blob ids through to template management' do
+      expect(management_service).to receive(:create_template).with(
+        hash_including(
+          'header_type' => 'image',
+          'sample_media_blob_id' => 'signed-media-blob',
+          'sample_media_url' => 'https://app.one-link.kz/media/sample.jpg'
+        )
+      ).and_return({ success: true, template: {} })
+
+      post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates",
+           headers: admin.create_new_auth_token,
+           params: {
+             template: {
+               name: 'photo_ready',
+               language: 'en',
+               category: 'UTILITY',
+               header_type: 'image',
+               body_text: 'Your photo is ready.',
+               sample_media_blob_id: 'signed-media-blob',
+               sample_media_url: 'https://app.one-link.kz/media/sample.jpg'
+             }
+           },
+           as: :json
+
+      expect(response).to have_http_status(:created)
+    end
+
     it 'passes authentication preset params through to template management' do
       expect(management_service).to receive(:create_template).with(
         hash_including(
@@ -230,6 +257,7 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       expect(response).to have_http_status(:created)
     end
 
+    # rubocop:disable RSpec/ExampleLength
     it 'passes structured carousel cards through to template management' do
       expect(management_service).to receive(:create_template).with(
         hash_including(
@@ -237,6 +265,7 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
             hash_including(
               'header_type' => 'image',
               'sample_media_url' => 'https://example.com/card-1.jpg',
+              'sample_media_blob_id' => 'signed-card-1-blob',
               'body_text' => 'Product one',
               'buttons' => [
                 hash_including('type' => 'QUICK_REPLY', 'text' => 'Choose')
@@ -263,6 +292,7 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
                  {
                    header_type: 'image',
                    sample_media_url: 'https://example.com/card-1.jpg',
+                   sample_media_blob_id: 'signed-card-1-blob',
                    body_text: 'Product one',
                    body_examples: {},
                    buttons: [
@@ -283,6 +313,7 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
 
       expect(response).to have_http_status(:created)
     end
+    # rubocop:enable RSpec/ExampleLength
   end
 
   describe 'DELETE /api/v1/accounts/{account.id}/inboxes/{inbox.id}/whatsapp_templates/{template_name}' do

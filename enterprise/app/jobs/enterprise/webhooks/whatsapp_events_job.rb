@@ -1,5 +1,5 @@
 module Enterprise::Webhooks::WhatsappEventsJob
-  def handle_message_events(channel, params)
+  def handle_message_events(channel, params, prepared_attachment: nil)
     if call_event?(params)
       handle_call_events(channel, params)
       return
@@ -10,7 +10,7 @@ module Enterprise::Webhooks::WhatsappEventsJob
       return
     end
 
-    super
+    super(channel, params, prepared_attachment: prepared_attachment)
   end
 
   private

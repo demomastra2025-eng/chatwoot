@@ -113,9 +113,10 @@ class Whatsapp::TemplateRequestBuilderService
     card_header_type = card.fetch(:header_type, '').to_s.downcase
     raise ArgumentError, "Carousel card #{index + 1} header must be image or video" unless CAROUSEL_HEADER_TYPES.include?(card_header_type)
 
-    handle = asset_upload_service.upload(
-      url: required_value(card[:sample_media_url], "Carousel card #{index + 1} sample media URL is required"),
-      media_type: card_header_type
+    handle = upload_media_asset(
+      card,
+      media_type: card_header_type,
+      missing_error: "Carousel card #{index + 1} media file or URL is required"
     )
     {
       type: 'HEADER',
@@ -203,9 +204,10 @@ class Whatsapp::TemplateRequestBuilderService
   end
 
   def build_media_header_component
-    handle = asset_upload_service.upload(
-      url: required_string_value(:sample_media_url, 'Sample media URL is required'),
-      media_type: header_type
+    handle = upload_media_asset(
+      config,
+      media_type: header_type,
+      missing_error: 'Media file or URL is required'
     )
 
     {
@@ -224,6 +226,22 @@ class Whatsapp::TemplateRequestBuilderService
       type: 'FOOTER',
       text: string_value(:footer_text)
     }
+  end
+
+  def upload_media_asset(media_config, media_type:, missing_error:)
+    blob_signed_id = media_config[:sample_media_blob_id].to_s.strip
+    if blob_signed_id.present?
+      begin
+        return asset_upload_service.upload_blob(blob_signed_id: blob_signed_id, media_type: media_type)
+      rescue Whatsapp::TemplateAssetUploadService::BlobReferenceUnavailableError
+        # A valid account-scoped reference can outlive its temporary blob during a rolling deploy.
+      end
+    end
+
+    asset_upload_service.upload(
+      url: required_value(media_config[:sample_media_url], missing_error),
+      media_type: media_type
+    )
   end
 
   def build_buttons_component

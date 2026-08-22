@@ -1,5 +1,6 @@
 import {
   buildWhatsAppTemplatePayload,
+  createEmptyCarouselCard,
   createEmptyWhatsAppTemplateForm,
   extractSequentialTemplateVariables,
   groupWhatsAppTemplates,
@@ -10,6 +11,14 @@ import {
 } from '../whatsappTemplateLibrary';
 
 describe('whatsappTemplateLibrary', () => {
+  it('assigns stable UI-only identities to carousel cards', () => {
+    const firstCard = createEmptyCarouselCard();
+    const secondCard = createEmptyCarouselCard();
+
+    expect(firstCard.clientId).toBeTruthy();
+    expect(secondCard.clientId).not.toBe(firstCard.clientId);
+  });
+
   describe('#extractSequentialTemplateVariables', () => {
     it('extracts ordered numeric variables without duplicates', () => {
       expect(
@@ -52,6 +61,7 @@ describe('whatsappTemplateLibrary', () => {
         body_text: 'Hello {{1}}',
         footer_text: '',
         sample_media_url: '',
+        sample_media_blob_id: '',
         body_examples: { 1: ' Alex ' },
         header_examples: {},
         buttons: [
@@ -101,6 +111,18 @@ describe('whatsappTemplateLibrary', () => {
           phone_number: '+16505551234',
         },
       ]);
+    });
+
+    it('keeps the media URL fallback together with an uploaded blob id', () => {
+      const form = createEmptyWhatsAppTemplateForm();
+      form.headerType = 'image';
+      form.sampleMediaBlobId = ' signed-media-blob ';
+      form.sampleMediaUrl = ' https://app.one-link.kz/media/image.jpg ';
+
+      expect(buildWhatsAppTemplatePayload(form)).toMatchObject({
+        sample_media_blob_id: 'signed-media-blob',
+        sample_media_url: 'https://app.one-link.kz/media/image.jpg',
+      });
     });
 
     it('builds authentication templates without custom components', () => {
@@ -182,8 +204,10 @@ describe('whatsappTemplateLibrary', () => {
       form.isCarousel = true;
       form.carouselCards = [
         {
+          clientId: 'ui-only-card-id',
           headerType: 'image',
           sampleMediaUrl: ' https://example.com/card.jpg ',
+          sampleMediaBlobId: ' signed-card-blob ',
           bodyText: ' Product one ',
           bodyExamples: {},
           buttons: [
@@ -214,6 +238,7 @@ describe('whatsappTemplateLibrary', () => {
           {
             header_type: 'image',
             sample_media_url: 'https://example.com/card.jpg',
+            sample_media_blob_id: 'signed-card-blob',
             body_text: 'Product one',
             body_examples: {},
             buttons: [

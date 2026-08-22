@@ -21,6 +21,86 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
         expect(blob['blob_id']).to be_present
       end
 
+      it 'validates and account-binds WhatsApp template media before persisting the blob' do
+        expect(Whatsapp::TemplateAssetUploadService).to receive(:schedule_cleanup).and_call_original
+
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 attachment: file,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'image'
+               }
+        end.to change(ActiveStorage::Blob, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+        blob_id = response.parsed_body['blob_id']
+        blob = Whatsapp::TemplateAssetUploadService.find_account_blob(blob_id, account_id: account.id)
+        expect(blob.content_type).to eq('image/png')
+        expect(blob.metadata).to include(
+          'account_id' => account.id,
+          'upload_purpose' => 'whatsapp_template_media'
+        )
+        expect(ActiveStorage::Blob.find_signed(blob_id)).to be_nil
+
+        other_account = create(:account)
+        expect(
+          Whatsapp::TemplateAssetUploadService.find_account_blob(blob_id, account_id: other_account.id)
+        ).to be_nil
+      end
+
+      it 'does not persist WhatsApp template media with a mismatched detected type' do
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 attachment: file,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'video'
+               }
+        end.not_to change(ActiveStorage::Blob, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Unsupported video file type: image/png')
+      end
+
+      it 'does not persist arbitrary bytes that use an allowed image extension' do
+        Tempfile.create(['invalid-template-image', '.jpg']) do |tempfile|
+          tempfile.binmode
+          tempfile.write('not-valid-image-bytes')
+          tempfile.rewind
+          invalid_file = Rack::Test::UploadedFile.new(tempfile.path, 'image/jpeg', original_filename: 'evil.jpg')
+
+          expect do
+            post upload_url,
+                 headers: user.create_new_auth_token,
+                 params: {
+                   attachment: invalid_file,
+                   upload_purpose: 'whatsapp_template_media',
+                   media_type: 'image'
+                 }
+          end.not_to change(ActiveStorage::Blob, :count)
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body['error']).to eq('Unsupported image file type: application/octet-stream')
+        end
+      end
+
+      it 'does not persist WhatsApp template media without a supported media type' do
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 attachment: file,
+                 upload_purpose: 'whatsapp_template_media'
+               }
+        end.not_to change(ActiveStorage::Blob, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Unsupported header media type: ')
+      end
+
       it 'does not upload when unauthorized' do
         post upload_url,
              headers: {},
@@ -57,6 +137,91 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
         expect(blob['error']).to be_nil
         expect(blob['file_url']).to be_present
         expect(blob['blob_id']).to be_present
+      end
+
+      it 'validates remote WhatsApp template media by detected content before persisting it' do
+        stub_request(:get, valid_external_url)
+          .to_return(
+            status: 200,
+            body: File.new(Rails.root.join('spec/assets/avatar.png')),
+            headers: { 'Content-Type' => 'image/jpeg' }
+          )
+
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 external_url: valid_external_url,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'image'
+               }
+        end.to change(ActiveStorage::Blob, :count).by(1)
+
+        blob = Whatsapp::TemplateAssetUploadService.find_account_blob(response.parsed_body['blob_id'], account_id: account.id)
+        expect(response).to have_http_status(:success)
+        expect(blob.content_type).to eq('image/png')
+      end
+
+      it 'does not persist remote WhatsApp template media whose detected type mismatches the requested type' do
+        stub_request(:get, valid_external_url)
+          .to_return(
+            status: 200,
+            body: File.new(Rails.root.join('spec/assets/avatar.png')),
+            headers: { 'Content-Type' => 'video/mp4' }
+          )
+
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 external_url: valid_external_url,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'video'
+               }
+        end.not_to change(ActiveStorage::Blob, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Unsupported video file type: image/png')
+      end
+
+      it 'does not persist arbitrary remote bytes that use an allowed image extension and MIME header' do
+        stub_request(:get, valid_external_url)
+          .to_return(status: 200, body: 'not-valid-image-bytes', headers: { 'Content-Type' => 'image/jpeg' })
+
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 external_url: valid_external_url,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'image'
+               }
+        end.not_to change(ActiveStorage::Blob, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('Unsupported image file type: application/octet-stream')
+      end
+
+      it 'bounds remote WhatsApp template media before persisting it' do
+        stub_request(:get, valid_external_url)
+          .to_return(
+            status: 200,
+            body: 'x' * (Whatsapp::TemplateMediaValidator::MAX_FILE_SIZE + 1),
+            headers: { 'Content-Type' => 'application/octet-stream' }
+          )
+
+        expect do
+          post upload_url,
+               headers: user.create_new_auth_token,
+               params: {
+                 external_url: valid_external_url,
+                 upload_purpose: 'whatsapp_template_media',
+                 media_type: 'image'
+               }
+        end.not_to change(ActiveStorage::Blob, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to eq('File exceeds the maximum allowed size')
       end
 
       it 'handles invalid URL format' do
@@ -153,7 +318,7 @@ RSpec.describe 'Api::V1::Accounts::UploadController', type: :request do
            params: {}
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body['error']).to eq(I18n.t('errors.upload.missing_input'))
+      expect(response.parsed_body['error']).to eq(I18n.t('errors.upload.missing_input', locale: :en))
     end
   end
 end

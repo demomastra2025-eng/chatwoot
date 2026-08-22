@@ -2,11 +2,27 @@
 # https://developers.facebook.com/docs/whatsapp/api/media/
 
 class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageBaseService
+  class PreparedAttachmentError < StandardError; end
+
   WHATSAPP_CLOUD_DELIVERY_STATUS_ORDER = {
     'sent' => 0,
     'delivered' => 1,
     'read' => 2
   }.freeze
+
+  attr_reader :prepared_attachment
+
+  def initialize(inbox:, params:, outgoing_echo: nil, prepared_attachment: nil, require_prepared_attachment: false)
+    @prepared_attachment = prepared_attachment
+    @require_prepared_attachment = require_prepared_attachment
+    super(inbox: inbox, params: params, outgoing_echo: outgoing_echo)
+  end
+
+  def perform
+    super
+  ensure
+    @fallback_prepared_attachment&.close
+  end
 
   private
 
@@ -63,12 +79,24 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
   end
 
   def download_attachment_file(attachment_payload)
-    url_response = HTTParty.get(
-      inbox.channel.media_url(attachment_payload[:id]),
-      headers: inbox.channel.api_headers
+    download = prepared_attachment || prepare_fallback_attachment!
+    raise PreparedAttachmentError, 'Prepared WhatsApp media did not match the attachment' unless download.matches?(attachment_payload)
+    raise PreparedAttachmentError, 'Prepared WhatsApp media file is unavailable' if download.file.blank?
+
+    download.file
+  end
+
+  def prepare_fallback_attachment!
+    raise PreparedAttachmentError, 'Prepared WhatsApp media is required for live webhook dispatch' if @require_prepared_attachment
+
+    @fallback_prepared_attachment = Whatsapp::CloudMediaDownload.prepare(
+      channel: inbox.channel,
+      params: params,
+      outgoing_echo: outgoing_echo
     )
-    # This url response will be failure if the access token has expired.
-    inbox.channel.authorization_error! if url_response.unauthorized?
-    Down.download(url_response.parsed_response['url'], headers: inbox.channel.api_headers) if url_response.success?
+    raise PreparedAttachmentError, 'WhatsApp media payload could not be prepared' if @fallback_prepared_attachment.blank?
+
+    @fallback_prepared_attachment.download!
+    @fallback_prepared_attachment
   end
 end

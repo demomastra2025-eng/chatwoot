@@ -10,6 +10,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import languages from 'dashboard/components/widgets/conversation/advancedFilterItems/languages.js';
+import { uploadWhatsAppTemplateMedia } from 'dashboard/helper/uploadHelper';
 import WhatsAppTemplateCarouselEditor from './WhatsAppTemplateCarouselEditor.vue';
 import {
   buildWhatsAppTemplatePayload,
@@ -42,9 +43,14 @@ const store = useStore();
 const PHONE_NUMBER_PATTERN = /^\+[1-9]\d{1,14}$/;
 
 const dialogRef = ref(null);
+const mediaFileInputRef = ref(null);
 const isSubmitting = ref(false);
+const isUploadingMedia = ref(false);
+const isUploadingCarouselMedia = ref(false);
+const selectedMediaFileName = ref('');
 const submitError = ref('');
 const form = reactive(createEmptyWhatsAppTemplateForm());
+let mediaUploadGeneration = 0;
 
 function syncExampleMap(currentMap, variables) {
   return Object.fromEntries(
@@ -138,6 +144,20 @@ const buttonUsesCatalog = buttonType => buttonType === 'CATALOG';
 const isAuthentication = computed(() => form.category === 'AUTHENTICATION');
 const isStandardTemplate = computed(
   () => !isAuthentication.value && !form.isCarousel
+);
+const hasMediaHeader = computed(() =>
+  ['image', 'video', 'document'].includes(form.headerType)
+);
+const hasPendingMediaUpload = computed(
+  () => isUploadingMedia.value || isUploadingCarouselMedia.value
+);
+const mediaFileAccept = computed(
+  () =>
+    ({
+      image: 'image/jpeg,image/png',
+      video: 'video/mp4',
+      document: 'application/pdf',
+    })[form.headerType] || ''
 );
 
 const bodyVariableInfo = computed(() =>
@@ -300,7 +320,7 @@ const validationErrors = computed(() => {
           })
         );
       }
-      if (!card.sampleMediaUrl.trim()) {
+      if (!card.sampleMediaUrl.trim() && !card.sampleMediaBlobId.trim()) {
         errors.push(
           t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.CAROUSEL_MEDIA_REQUIRED', {
             index: visibleCardIndex,
@@ -396,8 +416,9 @@ const validationErrors = computed(() => {
   }
 
   if (
-    ['image', 'video', 'document'].includes(form.headerType) &&
-    !form.sampleMediaUrl.trim()
+    hasMediaHeader.value &&
+    !form.sampleMediaUrl.trim() &&
+    !form.sampleMediaBlobId.trim()
   ) {
     errors.push(t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.MEDIA_URL_REQUIRED'));
   }
@@ -546,8 +567,55 @@ watch(
 );
 
 const resetForm = () => {
+  mediaUploadGeneration += 1;
   Object.assign(form, createEmptyWhatsAppTemplateForm());
+  isUploadingMedia.value = false;
+  isUploadingCarouselMedia.value = false;
+  selectedMediaFileName.value = '';
   submitError.value = '';
+};
+
+const removeMediaFile = () => {
+  mediaUploadGeneration += 1;
+  isUploadingMedia.value = false;
+  form.sampleMediaUrl = '';
+  form.sampleMediaBlobId = '';
+  selectedMediaFileName.value = '';
+};
+
+const handleMediaFileChange = async event => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+
+  mediaUploadGeneration += 1;
+  const uploadGeneration = mediaUploadGeneration;
+
+  try {
+    isUploadingMedia.value = true;
+    const { blobId, fileUrl } = await uploadWhatsAppTemplateMedia(
+      file,
+      form.headerType
+    );
+    if (uploadGeneration !== mediaUploadGeneration) return;
+
+    form.sampleMediaBlobId = blobId;
+    // Keep the URL as a rolling-deploy fallback for old API instances.
+    form.sampleMediaUrl = fileUrl;
+    selectedMediaFileName.value = file.name;
+  } catch (error) {
+    if (uploadGeneration !== mediaUploadGeneration) return;
+
+    useAlert(
+      error?.response?.data?.error ||
+        error?.message ||
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.MEDIA_UPLOAD_FAILED')
+    );
+  } finally {
+    if (uploadGeneration === mediaUploadGeneration) {
+      isUploadingMedia.value = false;
+    }
+  }
 };
 
 const addButton = () => {
@@ -586,6 +654,8 @@ const toggleCarousel = event => {
   form.headerText = '';
   form.footerText = '';
   form.sampleMediaUrl = '';
+  form.sampleMediaBlobId = '';
+  selectedMediaFileName.value = '';
   form.headerExamples = {};
   form.buttons = [];
   if (form.carouselCards.length < MIN_CAROUSEL_CARDS) {
@@ -606,6 +676,8 @@ const close = () => {
 };
 
 const handleSubmit = async () => {
+  if (hasPendingMediaUpload.value) return;
+
   submitError.value = validationErrors.value[0] || '';
   if (submitError.value) {
     return;
@@ -717,6 +789,7 @@ defineExpose({
         <input
           :checked="form.isCarousel"
           type="checkbox"
+          :disabled="hasPendingMediaUpload"
           class="mt-0.5 h-4 w-4 rounded border-n-weak"
           @change="toggleCarousel"
         />
@@ -786,6 +859,7 @@ defineExpose({
       <WhatsAppTemplateCarouselEditor
         v-if="form.isCarousel"
         v-model="form.carouselCards"
+        @uploading-change="isUploadingCarouselMedia = $event"
       />
 
       <div
@@ -799,6 +873,7 @@ defineExpose({
           <ComboBox
             v-model="form.headerType"
             :options="headerTypeOptions"
+            :disabled="isUploadingMedia"
             input-like
           />
         </div>
@@ -842,15 +917,56 @@ defineExpose({
           />
         </div>
 
-        <Input
-          v-if="['image', 'video', 'document'].includes(form.headerType)"
-          v-model="form.sampleMediaUrl"
-          type="url"
-          :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL')"
-          :placeholder="
-            t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL_PLACEHOLDER')
-          "
-        />
+        <div v-if="hasMediaHeader" class="space-y-3">
+          <input
+            ref="mediaFileInputRef"
+            type="file"
+            class="hidden"
+            :accept="mediaFileAccept"
+            @change="handleMediaFileChange"
+          />
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              color="slate"
+              size="sm"
+              icon="i-lucide-upload"
+              :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_FILE')"
+              :is-loading="isUploadingMedia"
+              :disabled="isUploadingMedia"
+              @click="mediaFileInputRef?.click()"
+            />
+            <span
+              v-if="selectedMediaFileName"
+              class="min-w-0 truncate text-sm text-n-slate-11"
+            >
+              {{ selectedMediaFileName }}
+            </span>
+            <Button
+              v-if="selectedMediaFileName"
+              type="button"
+              variant="ghost"
+              color="ruby"
+              size="sm"
+              icon="i-lucide-x"
+              :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_REMOVE')"
+              @click="removeMediaFile"
+            />
+          </div>
+          <p class="mb-0 text-xs text-n-slate-10">
+            {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_SOURCE_HINT') }}
+          </p>
+          <Input
+            v-model="form.sampleMediaUrl"
+            type="url"
+            :disabled="Boolean(form.sampleMediaBlobId)"
+            :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL')"
+            :placeholder="
+              t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_URL_PLACEHOLDER')
+            "
+          />
+        </div>
       </div>
 
       <TextArea
@@ -1014,11 +1130,13 @@ defineExpose({
           variant="faded"
           color="slate"
           :label="t('DIALOG.BUTTONS.CANCEL')"
+          :disabled="hasPendingMediaUpload"
           @click="close"
         />
         <Button
           :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.CREATE_ACTION')"
           :is-loading="isSubmitting"
+          :disabled="hasPendingMediaUpload"
           @click="handleSubmit"
         />
       </div>
