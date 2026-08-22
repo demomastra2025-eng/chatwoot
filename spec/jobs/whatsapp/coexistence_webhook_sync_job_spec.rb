@@ -94,6 +94,19 @@ RSpec.describe Whatsapp::CoexistenceWebhookSyncJob do
     expect(reconciliation).to have_received(:reconcile_webhook!).with('history', generation: 'generation-1')
   end
 
+  it 'skips persisted ledger replay only for an internal dead-history recovery context' do
+    value = { history: [] }
+    service = instance_double(Whatsapp::CoexistenceHistoryService)
+    reconciliation = instance_double(Whatsapp::CoexistenceSyncReconciliationService, reconcile_webhook!: true)
+    job = described_class.new
+    allow(job).to receive(:with_lock).and_yield
+    allow(Whatsapp::CoexistenceHistoryService).to receive(:new).and_return(service)
+    allow(Whatsapp::CoexistenceSyncReconciliationService).to receive(:new).with(channel).and_return(reconciliation)
+    expect(service).to receive(:perform).with(replay_persisted_failures: false).and_return(true)
+
+    job.perform(channel.id, 'history', value, routing_context.merge(skip_persisted_failure_replay: true))
+  end
+
   it 'passes the provider envelope timestamp to contact synchronization' do
     value = { state_sync: [] }
     service = instance_double(Whatsapp::CoexistenceContactSyncService, perform: true)

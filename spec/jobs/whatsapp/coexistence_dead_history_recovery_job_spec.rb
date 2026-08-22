@@ -81,6 +81,7 @@ RSpec.describe Whatsapp::CoexistenceDeadHistoryRecoveryJob do
         provider: 'whatsapp_cloud',
         business_account_id: 'waba-1',
         sync_generation: 'generation-1',
+        skip_persisted_failure_replay: true,
         metadata: { phone_number_id: 'phone-1', display_phone_number: '15550002030' }
       }
     ).ordered.and_return(true)
@@ -89,6 +90,56 @@ RSpec.describe Whatsapp::CoexistenceDeadHistoryRecoveryJob do
     expect(dead_job).to receive(:delete).ordered
 
     expect(described_class.perform_now(channel.id)).to eq(:replayed)
+  end
+
+  it 'continues after a hydration error when the current payload is durably anchored in the ledger' do
+    failed_id = 'wamid.anchored-failure'
+    history_value['history'] = [{ 'threads' => [{ 'messages' => [{ 'id' => failed_id, 'type' => 'image' }] }] }]
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync']['history_failed_messages'] = [{ 'id' => failed_id, 'message' => { 'id' => failed_id } }]
+    channel.update!(provider_config: config)
+    sync_job = instance_double(Whatsapp::CoexistenceWebhookSyncJob)
+    scheduler = class_double(described_class)
+    continuation = instance_double(described_class, successfully_enqueued?: true)
+    allow(Whatsapp::CoexistenceWebhookSyncJob).to receive(:new).and_return(sync_job)
+    allow(sync_job).to receive(:perform).and_raise(Whatsapp::CoexistenceHistoryService::MediaHydrationError)
+    allow(described_class).to receive(:set).with(wait: 5.seconds).and_return(scheduler)
+    allow(scheduler).to receive(:perform_later).with(channel.id).and_return(continuation)
+    expect(dead_job).to receive(:delete)
+
+    expect(described_class.perform_now(channel.id)).to eq(:replayed_with_failures)
+  end
+
+  it 'preserves the source when a hydration error has no durable message anchor' do
+    history_value['history'] = [{ 'threads' => [{ 'messages' => [{ 'id' => 'wamid.unanchored', 'type' => 'image' }] }] }]
+    sync_job = instance_double(Whatsapp::CoexistenceWebhookSyncJob)
+    allow(Whatsapp::CoexistenceWebhookSyncJob).to receive(:new).and_return(sync_job)
+    allow(sync_job).to receive(:perform).and_raise(Whatsapp::CoexistenceHistoryService::MediaHydrationError)
+    allow(dead_job).to receive(:delete)
+
+    expect do
+      described_class.perform_now(channel.id)
+    end.to have_enqueued_job(described_class).with(channel.id)
+    expect(dead_job).not_to have_received(:delete)
+  end
+
+  it 'preserves a mixed source when any message has no provider id anchor' do
+    anchored_id = 'wamid.anchored'
+    history_value['history'] = [{
+      'threads' => [{ 'messages' => [{ 'id' => anchored_id, 'type' => 'image' }, { 'type' => 'image' }] }]
+    }]
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync']['history_failed_messages'] = [{ 'id' => anchored_id, 'message' => { 'id' => anchored_id } }]
+    channel.update!(provider_config: config)
+    sync_job = instance_double(Whatsapp::CoexistenceWebhookSyncJob)
+    allow(Whatsapp::CoexistenceWebhookSyncJob).to receive(:new).and_return(sync_job)
+    allow(sync_job).to receive(:perform).and_raise(Whatsapp::CoexistenceHistoryService::MediaHydrationError)
+    allow(dead_job).to receive(:delete)
+
+    expect do
+      described_class.perform_now(channel.id)
+    end.to have_enqueued_job(described_class).with(channel.id)
+    expect(dead_job).not_to have_received(:delete)
   end
 
   it 'leaves a dead payload untouched when its provider identity does not match' do

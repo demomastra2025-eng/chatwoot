@@ -129,7 +129,10 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
   def dispatch(channel, field, value, context)
     case field
     when 'history'
-      Whatsapp::CoexistenceHistoryService.new(channel: channel, value: value).perform
+      history_service = Whatsapp::CoexistenceHistoryService.new(channel: channel, value: value)
+      return history_service.perform(replay_persisted_failures: false) if context[:skip_persisted_failure_replay]
+
+      history_service.perform
     when 'smb_app_state_sync'
       Whatsapp::CoexistenceContactSyncService.new(
         channel: channel,

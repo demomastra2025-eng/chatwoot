@@ -33,9 +33,9 @@ class Whatsapp::CoexistenceHistoryFailureReplayService
   end
   private_class_method :safe_error
 
-  def perform
+  def perform(only_ids: nil)
     attempted_ids = []
-    failures = pending_failures.filter_map do |failure|
+    failures = pending_failures(only_ids: only_ids).filter_map do |failure|
       message = failure[:message].to_h.with_indifferent_access
       message_id = message[:id].presence&.to_s
       next if message_id.blank? || current_message_ids.include?(message_id)
@@ -73,16 +73,25 @@ class Whatsapp::CoexistenceHistoryFailureReplayService
 
   private
 
-  def pending_failures
-    failures = Array(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
-               .map(&:with_indifferent_access)
-               .select { |failure| failure[:kind] == 'history_thread' && failure[:message].present? }
+  def pending_failures(only_ids: nil)
+    failures = history_thread_failures
     existing_targets = existing_mutation_targets(failures)
+    failures = failures.select { |failure| mutation_target_available?(failure, existing_targets) }
+    return failures if only_ids.nil?
 
-    failures.select do |failure|
-      target_id = mutation_target_id(failure)
-      target_id.blank? || existing_targets.include?(target_id)
-    end
+    selected_ids = Array(only_ids).to_set(&:to_s)
+    failures.select { |failure| selected_ids.include?(failure[:id].to_s) }
+  end
+
+  def history_thread_failures
+    Array(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
+      .map(&:with_indifferent_access)
+      .select { |failure| failure[:kind] == 'history_thread' && failure[:message].present? }
+  end
+
+  def mutation_target_available?(failure, existing_targets)
+    target_id = mutation_target_id(failure)
+    target_id.blank? || existing_targets.include?(target_id)
   end
 
   def existing_mutation_targets(failures)

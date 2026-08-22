@@ -1,3 +1,5 @@
+# The service keeps one atomic history import/reconciliation transaction boundary.
+# rubocop:disable Metrics/ClassLength
 class Whatsapp::CoexistenceHistoryService
   class MediaHydrationError < StandardError; end
 
@@ -18,7 +20,7 @@ class Whatsapp::CoexistenceHistoryService
     @value = value.with_indifferent_access
   end
 
-  def perform
+  def perform(replay_persisted_failures: true)
     media_service, failures = import_media
 
     Array(@value[:history]).each do |history|
@@ -35,8 +37,21 @@ class Whatsapp::CoexistenceHistoryService
       update_progress(history[:metadata].to_h.with_indifferent_access)
     end
 
-    replay_history_failures(media_service, failures)
-    finalize_media(media_service, failures)
+    replay_history_failures(media_service, failures) if replay_persisted_failures
+    finalize_media(media_service, failures, replay_pending: replay_persisted_failures)
+  end
+
+  def replay_failures(failure_ids:)
+    requested_ids = Array(failure_ids).filter_map { |failure_id| failure_id.to_s.presence }.uniq
+    return { requested_ids: [], failed_ids: [] } if requested_ids.empty?
+
+    media_service, failures = import_media
+    replay_history_failures(media_service, failures, only_ids: requested_ids)
+    finalize_media(media_service, failures, only_ids: requested_ids, raise_on_failure: false)
+    remaining_ids = Array(@channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
+                    .filter_map { |failure| failure.to_h['id'].to_s.presence }
+
+    { requested_ids: requested_ids, failed_ids: requested_ids & remaining_ids }
   end
 
   private
@@ -46,19 +61,19 @@ class Whatsapp::CoexistenceHistoryService
     [service, service.perform]
   end
 
-  def replay_history_failures(media_service, failures)
-    replay_failures, attempted_ids = history_failure_replay_service.perform do |thread_id, message, metadata|
+  def replay_history_failures(media_service, failures, only_ids: nil)
+    replay_failures, attempted_ids = history_failure_replay_service.perform(only_ids: only_ids) do |thread_id, message, metadata|
       import_message(thread_id, message, metadata: metadata)
     end
     media_service.include_attempted_message_ids(attempted_ids)
     failures.concat(replay_failures)
   end
 
-  def finalize_media(media_service, failures)
-    failures.concat(media_service.replay_pending)
+  def finalize_media(media_service, failures, only_ids: nil, raise_on_failure: true, replay_pending: true)
+    failures.concat(media_service.replay_pending(only_ids: only_ids)) if replay_pending
     media_service.finalize(failures)
     retryable_failures = failures.reject { |failure| failure.to_h.with_indifferent_access[:deferred] }
-    return if retryable_failures.empty?
+    return if retryable_failures.empty? || !raise_on_failure
 
     raise MediaHydrationError, "Failed to import #{retryable_failures.size} WhatsApp Business app history messages"
   end
@@ -79,7 +94,7 @@ class Whatsapp::CoexistenceHistoryService
     raise ArgumentError, 'WhatsApp history message id is required' if source_id.blank?
 
     existing_message = Message.find_by(inbox_id: @channel.inbox.id, source_id: source_id)
-    return if existing_message.present? && !Whatsapp::HistoryMessageNormalizer.media_follow_up?(existing_message, message)
+    return if already_imported?(existing_message, message)
 
     media_hydration_required = existing_message.present?
 
@@ -95,10 +110,19 @@ class Whatsapp::CoexistenceHistoryService
     return if non_message_event?(message)
 
     imported_messages_for(message).each do |imported_message|
-      raise "WhatsApp history media was not hydrated for #{source_id}" if media_hydration_required && imported_message.attachments.empty?
-
+      validate_media_hydration!(imported_message, source_id) if media_hydration_required
       apply_history_metadata(imported_message, message, outgoing)
     end
+  end
+
+  def already_imported?(existing_message, message)
+    existing_message.present? && !Whatsapp::HistoryMessageNormalizer.media_follow_up?(existing_message, message)
+  end
+
+  def validate_media_hydration!(message, source_id)
+    return if message.attachments.any?
+
+    raise "WhatsApp history media was not hydrated for #{source_id}"
   end
 
   def build_message_payload(thread_id, message, outgoing, metadata)
@@ -243,3 +267,4 @@ class Whatsapp::CoexistenceHistoryService
     end
   end
 end
+# rubocop:enable Metrics/ClassLength

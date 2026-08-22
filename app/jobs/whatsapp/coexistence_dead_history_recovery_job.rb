@@ -43,17 +43,59 @@ class Whatsapp::CoexistenceDeadHistoryRecoveryJob < MutexApplicationJob
 
       arguments = serialized_arguments(dead_job)
       context = recovery_context(channel)
-      dispatched = Whatsapp::CoexistenceWebhookSyncJob.new.perform(channel.id, 'history', arguments.third, context)
+      dispatched = dispatch_history_payload(channel, arguments.third, context)
       raise InvalidRecoveryPayloadError, 'Dead history payload was not dispatched' unless dispatched
 
       enqueue_next!(channel)
       dead_job.delete
-      result = :replayed
+      result = dispatched
     end
     result
   end
 
   private
+
+  def dispatch_history_payload(channel, value, context)
+    dispatched = Whatsapp::CoexistenceWebhookSyncJob.new.perform(channel.id, 'history', value, context)
+    return false unless dispatched
+
+    :replayed
+  rescue Whatsapp::CoexistenceHistoryService::MediaHydrationError => e
+    raise e unless durable_payload?(channel, value)
+
+    :replayed_with_failures
+  end
+
+  def durable_payload?(channel, value)
+    ledger_ids = Array(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages')).filter_map do |failure|
+      failure.to_h['id'].presence&.to_s
+    end.to_set
+
+    history_messages(value).all? { |message| durably_anchored_message?(channel, message, ledger_ids) }
+  end
+
+  def history_messages(value)
+    Array(value.to_h['history']).flat_map do |history|
+      Array(history.to_h['threads']).flat_map { |thread| Array(thread.to_h['messages']).map(&:with_indifferent_access) }
+    end
+  end
+
+  def durably_anchored_message?(channel, message, ledger_ids)
+    message_id = message[:id].presence&.to_s
+    return false if message_id.blank?
+    return true if ledger_ids.include?(message_id)
+    return true if %w[edit reaction revoke].include?(message[:type].to_s)
+
+    source_ids = expected_source_ids(message)
+    Message.where(inbox_id: channel.inbox.id, source_id: source_ids).count == source_ids.size
+  end
+
+  def expected_source_ids(message)
+    contacts_count = Array(message[:contacts]).size
+    return [message[:id].to_s] unless message[:type].to_s == 'contacts' && contacts_count > 1
+
+    Array.new(contacts_count) { |index| "#{message[:id]}:contact:#{index}" }
+  end
 
   def matching_dead_job(channel)
     require 'sidekiq/api'
@@ -130,6 +172,7 @@ class Whatsapp::CoexistenceDeadHistoryRecoveryJob < MutexApplicationJob
       provider: channel.provider,
       business_account_id: channel.provider_config['business_account_id'],
       sync_generation: channel.provider_config.dig('coexistence_sync', 'generation'),
+      skip_persisted_failure_replay: true,
       metadata: {
         phone_number_id: channel.provider_config['phone_number_id'],
         display_phone_number: channel.phone_number.to_s.delete_prefix('+')

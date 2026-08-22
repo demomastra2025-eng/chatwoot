@@ -119,6 +119,40 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages')).to be_blank
   end
 
+  it 'locally replays only the requested persisted failure ids' do
+    failures = %w[one two].map do |suffix|
+      {
+        'id' => "wamid.local-replay-#{suffix}",
+        'kind' => 'history_thread',
+        'thread_id' => '77011112233',
+        'message' => {
+          'id' => "wamid.local-replay-#{suffix}",
+          'from' => '77011112233',
+          'timestamp' => '1700000003',
+          'type' => 'text',
+          'text' => { 'body' => "Local replay #{suffix}" }
+        },
+        'metadata' => value[:metadata].deep_stringify_keys,
+        'replayable' => true
+      }
+    end
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync'] = config['coexistence_sync'].merge(
+      'state' => 'history_failed',
+      'history_failed_messages' => failures
+    )
+    channel.update!(provider_config: config)
+
+    result = described_class.new(channel: channel, value: { metadata: value[:metadata] })
+                            .replay_failures(failure_ids: ['wamid.local-replay-one'])
+
+    expect(result).to eq(requested_ids: ['wamid.local-replay-one'], failed_ids: [])
+    expect(channel.inbox.messages.find_by!(source_id: 'wamid.local-replay-one').content).to eq('Local replay one')
+    expect(channel.inbox.messages.find_by(source_id: 'wamid.local-replay-two')).to be_nil
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
+      .to contain_exactly(include('id' => 'wamid.local-replay-two'))
+  end
+
   it 'does not persist an unreconcilable history-thread failure without a provider message id' do
     malformed_value = {
       metadata: value[:metadata],
@@ -476,6 +510,34 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
 
     sync = channel.reload.provider_config['coexistence_sync']
     expect(sync).to include('state' => 'history_failed', 'history_progress' => 100)
+  end
+
+  it 'imports a recovered dead payload without replaying the existing failure ledger' do
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync'] = config['coexistence_sync'].to_h.merge(
+      'state' => 'history_failed',
+      'history_failed_messages' => [{
+        'id' => 'wamid.existing-failure',
+        'kind' => 'history_thread',
+        'thread_id' => '77011112233',
+        'message' => {
+          'id' => 'wamid.existing-failure',
+          'from' => '77011112233',
+          'timestamp' => '1700000000',
+          'type' => 'text',
+          'text' => { 'body' => 'Persisted failure' }
+        },
+        'metadata' => value[:metadata]
+      }]
+    )
+    channel.update!(provider_config: config)
+    progress_only = { history: [{ metadata: { phase: 1, progress: 50 }, threads: [] }] }
+    expect(Whatsapp::IncomingMessageWhatsappCloudService).not_to receive(:new)
+
+    described_class.new(channel: channel, value: progress_only).perform(replay_persisted_failures: false)
+
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
+      .to contain_exactly(include('id' => 'wamid.existing-failure'))
   end
 
   it 'does not let late progress, media, or provider errors overwrite manual recovery' do

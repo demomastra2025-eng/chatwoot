@@ -10,8 +10,11 @@ class Whatsapp::CoexistenceHistoryMediaService
     end
   end
 
-  def replay_pending
-    replayable_failures.filter_map do |failure|
+  def replay_pending(only_ids: nil)
+    pending = replayable_failures(only_ids: only_ids)
+    include_attempted_message_ids(pending.filter_map { |failure| failure_id(failure).presence })
+
+    pending.filter_map do |failure|
       message = failure[:message].to_h.with_indifferent_access
       hydrate(message, metadata: failure[:metadata])
       nil
@@ -99,15 +102,23 @@ class Whatsapp::CoexistenceHistoryMediaService
     end
   end
 
-  def replayable_failures
-    history_ids = failure_ids(history_messages)
-    return [] if history_ids.empty?
+  def replayable_failures(only_ids: nil)
+    selected_ids = selected_failure_ids(only_ids)
+    return [] if selected_ids.empty?
 
     Array(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
       .map(&:with_indifferent_access)
-      .select do |failure|
-        failure[:kind] != 'history_thread' && failure[:message].present? && history_ids.include?(failure_id(failure))
-      end
+      .select { |failure| selected_media_failure?(failure, selected_ids) }
+  end
+
+  def selected_failure_ids(only_ids)
+    return failure_ids(history_messages) if only_ids.nil?
+
+    Array(only_ids).map(&:to_s).uniq
+  end
+
+  def selected_media_failure?(failure, selected_ids)
+    failure[:kind] != 'history_thread' && failure[:message].present? && selected_ids.include?(failure_id(failure))
   end
 
   def history_messages
