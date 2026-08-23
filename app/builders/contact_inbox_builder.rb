@@ -68,6 +68,9 @@ class ContactInboxBuilder
 
     ::ContactInbox.where(attrs).first_or_create!(hmac_verified: hmac_verified || false)
   rescue ActiveRecord::RecordNotUnique
+    existing_contact_inbox = ::ContactInbox.find_by(attrs)
+    return existing_contact_inbox if existing_contact_inbox.present?
+
     Rails.logger.info("[ContactInboxBuilder] RecordNotUnique #{@source_id} #{@contact.id} #{@inbox.id}")
     update_old_contact_inbox
     retry

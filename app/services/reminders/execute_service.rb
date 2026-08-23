@@ -9,6 +9,7 @@ class Reminders::ExecuteService
   def perform
     reload_reminder
     return reminder if execution_ineligible?
+    return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
     return finish_execution if reminder.delivery_materialized?
 
     execute_action

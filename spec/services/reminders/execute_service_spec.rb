@@ -2,6 +2,59 @@ require 'rails_helper'
 
 RSpec.describe Reminders::ExecuteService do
   describe '#perform' do
+    it 'cancels a missed MedElement appointment reminder before creating a WhatsApp route' do
+      zone = Time.find_zone!('Asia/Almaty')
+
+      travel_to zone.parse('2026-08-22 15:30') do
+        account = create(:account, limits: { non_web_inboxes: 10 })
+        channel = create(
+          :channel_whatsapp,
+          account: account,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        )
+        contact = create(:contact, account: account, phone_number: '+77001234567')
+        appointment = create(
+          :scheduling_appointment,
+          account: account,
+          contact: contact,
+          conversation: nil,
+          source: 'medelement',
+          starts_at: zone.parse('2026-08-22 10:40'),
+          ends_at: zone.parse('2026-08-22 11:10')
+        )
+        allow(Outbound::DeliveryPolicy).to receive(:ensure!).and_return(nil)
+        reminder = account.reminders.create!(
+          remindable: appointment,
+          target_inbox: channel.inbox,
+          target_contact: contact,
+          action_type: 'send_message',
+          content_kind: 'free_text',
+          text_mode: 'static',
+          timing_mode: 'relative',
+          relative_anchor: 'appointment.starts_at',
+          relative_offset_seconds: -2.hours.to_i,
+          timezone: 'Asia/Almaty',
+          scheduled_at: nil,
+          repeat_mode: 'once',
+          status: 'processing',
+          processing_started_at: Time.current,
+          body: 'Напоминание о приёме',
+          metadata: { 'touch_source' => 'automation' }
+        )
+
+        expect(reminder.scheduled_at.to_i).to eq(zone.parse('2026-08-22 08:40').to_i)
+        expect do
+          described_class.new(reminder: reminder).perform
+        end.not_to(change { channel.inbox.contact_inboxes.count })
+
+        expect(reminder.reload).to be_cancelled
+        expect(reminder.last_error).to eq('missed_due_to_late_automation_event')
+        expect(appointment.reload.conversation).to be_nil
+      end
+    end
+
     it 'materializes a touch into a normal outgoing message' do
       conversation = create(:conversation)
       touch = create(

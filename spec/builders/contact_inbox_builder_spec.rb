@@ -399,7 +399,7 @@ describe ContactInboxBuilder do
     end
 
     context 'when there is a race condition' do
-      let(:account) { create(:account) }
+      let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
       let(:contact) { create(:contact, account: account) }
       let(:contact2) { create(:contact, account: account) }
       let(:channel) { create(:channel_email, account: account) }
@@ -420,6 +420,43 @@ describe ContactInboxBuilder do
         expect(ContactInbox.last.inbox_id).to eq(channel.inbox.id)
         expect(existing_contact_inbox.reload.source_id).to include(source_id)
         expect(existing_contact_inbox.reload.source_id).not_to eq(source_id)
+      end
+
+      it 'reuses a route created concurrently for the same WhatsApp contact' do
+        whatsapp_account = create(:account, limits: { non_web_inboxes: 10 })
+        whatsapp_contact = create(:contact, account: whatsapp_account, phone_number: '+77001234567')
+        whatsapp_inbox = create(
+          :channel_whatsapp,
+          account: whatsapp_account,
+          provider: 'whatsapp_cloud',
+          sync_templates: false,
+          validate_provider_config: false
+        ).inbox
+        whatsapp_source_id = '77001234567'
+        existing_contact_inbox = create(
+          :contact_inbox,
+          contact: whatsapp_contact,
+          inbox: whatsapp_inbox,
+          source_id: whatsapp_source_id
+        )
+        attrs = {
+          contact_id: whatsapp_contact.id,
+          inbox_id: whatsapp_inbox.id,
+          source_id: whatsapp_source_id
+        }
+        relation = ContactInbox.where(attrs)
+        allow(ContactInbox).to receive(:where).and_call_original
+        allow(ContactInbox).to receive(:where).with(attrs).and_return(relation)
+        allow(relation).to receive(:first_or_create!).and_raise(ActiveRecord::RecordNotUnique, 'same-contact race')
+
+        contact_inbox = described_class.new(
+          contact: whatsapp_contact,
+          inbox: whatsapp_inbox,
+          source_id: whatsapp_source_id
+        ).perform
+
+        expect(contact_inbox).to eq(existing_contact_inbox)
+        expect(existing_contact_inbox.reload.source_id).to eq(whatsapp_source_id)
       end
 
       it 'does not update source_id for channels other than email or phone number' do
