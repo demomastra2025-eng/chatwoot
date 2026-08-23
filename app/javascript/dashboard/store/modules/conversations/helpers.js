@@ -3,6 +3,7 @@ import {
   MESSAGE_STATUS,
   MESSAGE_TYPE,
 } from 'shared/constants/messages';
+import { timestampInSeconds } from 'dashboard/helper/timestampHelper';
 
 const PENDING_MESSAGE_MATCH_WINDOW_SECONDS = 5 * 60;
 const ACCEPTED_OUTGOING_STATUSES = new Set([
@@ -13,20 +14,6 @@ const ACCEPTED_OUTGOING_STATUSES = new Set([
 
 const hasAttachments = message =>
   Array.isArray(message?.attachments) && message.attachments.length > 0;
-
-const timestampInSeconds = value => {
-  if (value === undefined || value === null || value === '') return null;
-
-  const numericValue = Number(value);
-  if (Number.isFinite(numericValue)) {
-    return numericValue > 100000000000
-      ? Math.floor(numericValue / 1000)
-      : numericValue;
-  }
-
-  const parsedValue = Date.parse(value);
-  return Number.isNaN(parsedValue) ? null : Math.floor(parsedValue / 1000);
-};
 
 const timestampsAreClose = (leftMessage, rightMessage) => {
   const leftTimestamp = timestampInSeconds(leftMessage?.created_at);

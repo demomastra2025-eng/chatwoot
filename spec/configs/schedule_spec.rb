@@ -29,6 +29,16 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('whatsapp_call_cleanup_job', 'queue')).to eq('whatsapp_calls')
   end
 
+  it 'sweeps pending WhatsApp mutations on the scheduled jobs queue' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule['whatsapp_pending_message_mutation_sweep_job']).to include(
+      'cron' => '*/5 * * * *',
+      'class' => 'Whatsapp::PendingMessageMutationSweepJob',
+      'queue' => 'scheduled_jobs'
+    )
+  end
+
   it 'syncs Weixin gateway channels every minute' do
     schedule = YAML.safe_load(file.read)
 

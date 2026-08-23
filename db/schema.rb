@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_23_071500) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_23_112210) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2998,11 +2998,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_23_071500) do
     t.jsonb "payload", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "attempt_count", default: 0, null: false
+    t.datetime "last_attempted_at"
+    t.string "terminal_reason"
+    t.datetime "terminal_at"
+    t.datetime "next_reconciliation_at"
+    t.string "reconciliation_token"
+    t.datetime "payload_scrubbed_at"
     t.index ["account_id", "inbox_id", "id"], name: "idx_wa_pending_mutations_account_inbox"
     t.index ["account_id"], name: "index_whatsapp_pending_message_mutations_on_account_id"
     t.index ["inbox_id", "event_id"], name: "idx_wa_pending_mutations_inbox_event", unique: true
     t.index ["inbox_id", "target_source_id", "provider_timestamp"], name: "idx_wa_pending_mutations_target_time"
     t.index ["inbox_id"], name: "index_whatsapp_pending_message_mutations_on_inbox_id"
+    t.index ["status", "next_reconciliation_at"], name: "idx_wa_pending_mutations_reconciliation"
   end
 
   create_table "whatsapp_flow_sessions", force: :cascade do |t|

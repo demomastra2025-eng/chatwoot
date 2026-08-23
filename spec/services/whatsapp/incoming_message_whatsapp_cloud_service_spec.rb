@@ -51,6 +51,29 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       )
     end
 
+    it 'preserves the parent provider timestamp for a contact message' do
+      contact_params = params.deep_dup
+      message = contact_params.dig(:entry, 0, :changes, 0, :value, :messages, 0)
+      message.replace(
+        id: 'wamid.provider-time-contact',
+        from: '2423423243',
+        timestamp: '1664799904',
+        type: 'contacts',
+        contacts: [{ name: { formatted_name: 'OneLink Contact' }, phones: [{ phone: '+77000000000' }] }]
+      )
+
+      travel_to(Time.zone.at(1_700_000_000)) do
+        described_class.new(inbox: whatsapp_channel.inbox, params: contact_params).perform
+      end
+
+      persisted = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.provider-time-contact')
+      expect(persisted.created_at.to_i).to eq(1_664_799_904)
+      expect(persisted.content_attributes).to include(
+        'external_created_at' => Time.zone.at(1_664_799_904).iso8601,
+        'whatsapp_ingested_at' => Time.zone.at(1_700_000_000).iso8601(6)
+      )
+    end
+
     it 'uses the provider timestamp for Business App echo messages' do
       contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, source_id: '2423423243')
       create(:conversation, inbox: whatsapp_channel.inbox, contact_inbox: contact_inbox)

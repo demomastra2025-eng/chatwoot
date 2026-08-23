@@ -17,6 +17,7 @@ import {
   isCommunicationThread,
   isMessageInCommunicationThread,
 } from 'dashboard/helper/communicationThreadHelper';
+import { timestampInSeconds } from 'dashboard/helper/timestampHelper';
 
 const state = {
   allConversations: [],
@@ -120,9 +121,12 @@ const conversationTargetFromPayload = payload => {
 const conversationSyncKey = (conversationId, conversationType = null) =>
   conversationType ? `${conversationType}:${conversationId}` : conversationId;
 
+const normalizedTimelineTimestamp = value => timestampInSeconds(value) ?? 0;
+
 const sortMessagesByTimeline = (leftMessage, rightMessage) => {
   const createdAtDifference =
-    Number(leftMessage.created_at || 0) - Number(rightMessage.created_at || 0);
+    normalizedTimelineTimestamp(leftMessage.created_at) -
+    normalizedTimelineTimestamp(rightMessage.created_at);
   if (createdAtDifference !== 0) return createdAtDifference;
 
   return String(leftMessage.id || '').localeCompare(
@@ -139,8 +143,7 @@ const mergeUniqueIds = (...idLists) => {
 };
 
 const messageTimestamp = message => {
-  const timestamp = Number(message?.created_at || 0);
-  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
+  return normalizedTimelineTimestamp(message?.created_at);
 };
 
 const updateDirectionalMessageTimestamp = (chat, message) => {
@@ -151,7 +154,7 @@ const updateDirectionalMessageTimestamp = (chat, message) => {
 
   if (Number(message.message_type) === MESSAGE_TYPE.INCOMING) {
     chat.last_incoming_message_at = Math.max(
-      Number(chat.last_incoming_message_at || 0),
+      normalizedTimelineTimestamp(chat.last_incoming_message_at),
       timestamp
     );
     return;
@@ -163,7 +166,7 @@ const updateDirectionalMessageTimestamp = (chat, message) => {
     )
   ) {
     chat.last_outgoing_message_at = Math.max(
-      Number(chat.last_outgoing_message_at || 0),
+      normalizedTimelineTimestamp(chat.last_outgoing_message_at),
       timestamp
     );
   }
@@ -572,8 +575,8 @@ export const mutations = {
     }
     chat.messages.sort(sortMessagesByTimeline);
     chat.timestamp = Math.max(
-      Number(chat.timestamp || 0),
-      Number(message.created_at || 0)
+      normalizedTimelineTimestamp(chat.timestamp),
+      messageTimestamp(message)
     );
   },
 
@@ -593,8 +596,8 @@ export const mutations = {
 
     chat.messages.sort(sortMessagesByTimeline);
     chat.timestamp = Math.max(
-      Number(chat.timestamp || 0),
-      Number(message.created_at || 0)
+      normalizedTimelineTimestamp(chat.timestamp),
+      messageTimestamp(message)
     );
 
     let channel = (chat.channels || []).find(
@@ -637,8 +640,8 @@ export const mutations = {
     }
     if (channel) {
       channel.last_activity_at = Math.max(
-        Number(channel.last_activity_at || 0),
-        Number(message.created_at || 0)
+        normalizedTimelineTimestamp(channel.last_activity_at),
+        messageTimestamp(message)
       );
       if (message.message_type === MESSAGE_TYPE.INCOMING) {
         channel.can_reply = true;

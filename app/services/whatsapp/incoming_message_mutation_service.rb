@@ -17,8 +17,9 @@ class Whatsapp::IncomingMessageMutationService
 
   def apply_to(target_message)
     @target_message = target_message
+    return :invalid if invalid_event_timestamp?
+
     process_mutation
-    true
   end
 
   private
@@ -34,14 +35,14 @@ class Whatsapp::IncomingMessageMutationService
     when 'revoke'
       process_revoke
     else
-      return false
+      :invalid
     end
   end
 
   def process_reaction
     reaction = message[:reaction].to_h.with_indifferent_access
     target = find_target(reaction[:message_id])
-    return if target.blank?
+    return :pending if target.blank?
 
     target.with_lock { apply_reaction(target, reaction) }
   end
@@ -50,11 +51,12 @@ class Whatsapp::IncomingMessageMutationService
     content_attributes = target.content_attributes.to_h.deep_dup
     reactions = content_attributes['whatsapp_reactions'].to_h
     reaction_events = content_attributes['whatsapp_reaction_events'].to_h
-    return unless newer_event?(reaction_events[actor_id] || reactions[actor_id], 'event_id', 'timestamp')
+    return :stale unless newer_event?(reaction_events[actor_id] || reactions[actor_id], 'event_id', 'timestamp')
 
     update_reactions(reactions, reaction)
     reaction_events[actor_id] = reaction_event_attributes
     persist_reactions(target, content_attributes, reactions, reaction_events)
+    :applied
   end
 
   def persist_reactions(target, content_attributes, reactions, reaction_events)
@@ -85,7 +87,7 @@ class Whatsapp::IncomingMessageMutationService
   def reaction_event_attributes
     {
       'event_id' => message[:id],
-      'timestamp' => message[:timestamp]
+      'timestamp' => normalized_event_timestamp
     }.compact
   end
 
@@ -96,24 +98,25 @@ class Whatsapp::IncomingMessageMutationService
   def process_edit
     edit = message[:edit].to_h.with_indifferent_access
     target = find_target(edit[:original_message_id])
-    return if target.blank?
+    return :pending if target.blank?
 
     edited_content = extract_edited_content(edit[:message])
-    return if edited_content.blank?
+    return :invalid if edited_content.blank?
 
     target.with_lock do
       content_attributes = target.content_attributes.to_h
-      next if content_attributes['deleted']
-      next unless newer_event?(content_attributes, 'whatsapp_edit_event_id', 'whatsapp_edited_at')
+      next :stale if content_attributes['deleted']
+      next :stale unless newer_event?(content_attributes, 'whatsapp_edit_event_id', 'whatsapp_edited_at')
 
       target.update!(
         content: edited_content,
         content_attributes: content_attributes.merge(
           'edited' => true,
           'whatsapp_edit_event_id' => message[:id],
-          'whatsapp_edited_at' => message[:timestamp]
+          'whatsapp_edited_at' => normalized_event_timestamp
         ).compact
       )
+      :applied
     end
   end
 
@@ -126,12 +129,12 @@ class Whatsapp::IncomingMessageMutationService
   def process_revoke
     revoke = message[:revoke].to_h.with_indifferent_access
     target = find_target(revoke[:original_message_id])
-    return if target.blank?
+    return :pending if target.blank?
 
     target.with_lock do
       content_attributes = target.content_attributes.to_h
-      next unless newer_event?(content_attributes, 'whatsapp_revoke_event_id', 'whatsapp_revoked_at')
-      next if older_than?(content_attributes['whatsapp_edited_at'])
+      next :stale unless newer_event?(content_attributes, 'whatsapp_revoke_event_id', 'whatsapp_revoked_at')
+      next :stale if older_than?(content_attributes['whatsapp_edited_at'])
 
       target.update!(
         content: I18n.t('conversations.messages.deleted'),
@@ -139,6 +142,7 @@ class Whatsapp::IncomingMessageMutationService
         content_attributes: content_attributes.merge(revoke_attributes).compact
       )
       target.attachments.destroy_all
+      :applied
     end
   end
 
@@ -146,20 +150,39 @@ class Whatsapp::IncomingMessageMutationService
     {
       'deleted' => true,
       'whatsapp_revoke_event_id' => message[:id],
-      'whatsapp_revoked_at' => message[:timestamp]
+      'whatsapp_revoked_at' => normalized_event_timestamp
     }
   end
 
   def newer_event?(attributes, event_id_key, timestamp_key)
     attributes = attributes.to_h.with_indifferent_access
     return false if attributes[event_id_key].present? && attributes[event_id_key].to_s == message[:id].to_s
-    return true if attributes[timestamp_key].blank? || message[:timestamp].blank?
 
-    message[:timestamp].to_i >= attributes[timestamp_key].to_i
+    stored_timestamp = Whatsapp::ProviderTimestamp.normalize(attributes[timestamp_key])
+    incoming_timestamp = normalized_event_timestamp_seconds
+    return true if stored_timestamp.blank? || incoming_timestamp.blank?
+
+    incoming_timestamp >= stored_timestamp
   end
 
   def older_than?(timestamp)
-    timestamp.present? && message[:timestamp].present? && message[:timestamp].to_i < timestamp.to_i
+    stored_timestamp = Whatsapp::ProviderTimestamp.normalize(timestamp)
+    incoming_timestamp = normalized_event_timestamp_seconds
+    stored_timestamp.present? && incoming_timestamp.present? && incoming_timestamp < stored_timestamp
+  end
+
+  def normalized_event_timestamp
+    normalized_event_timestamp_seconds&.to_s
+  end
+
+  def normalized_event_timestamp_seconds
+    return @normalized_event_timestamp_seconds if defined?(@normalized_event_timestamp_seconds)
+
+    @normalized_event_timestamp_seconds = Whatsapp::ProviderTimestamp.normalize(message[:timestamp])
+  end
+
+  def invalid_event_timestamp?
+    message.key?(:timestamp) && Whatsapp::ProviderTimestamp.invalid_supplied?(message[:timestamp])
   end
 
   def find_target(source_id)

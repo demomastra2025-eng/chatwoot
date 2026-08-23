@@ -5,6 +5,7 @@ class Whatsapp::PendingMessageMutationService
     return if message.blank? || message.inbox_id.blank? || message.source_id.blank?
 
     Whatsapp::PendingMessageMutation
+      .pending
       .where(inbox_id: message.inbox_id, target_source_id: message.source_id)
       .order(:provider_timestamp, :id)
       .each do |pending_mutation|
@@ -22,20 +23,25 @@ class Whatsapp::PendingMessageMutationService
     return false unless message.present? && MUTATION_EVENT_TYPES.include?(message[:type].to_s)
     return true unless persistable_event?
 
-    replay(persist_pending_mutation!)
+    pending_mutation = persist_pending_mutation!
+    return true unless pending_mutation.pending?
+
+    if Whatsapp::ProviderTimestamp.invalid_supplied?(message[:timestamp])
+      mark_invalid!(pending_mutation)
+      return true
+    end
+
+    result = replay(pending_mutation)
+    schedule_reconciliation(pending_mutation) if result == :pending
     true
   end
 
   def replay(pending_mutation)
     pending_mutation.with_lock do
       target_message = inbox.messages.find_by(source_id: pending_mutation.target_source_id)
-      next :pending if target_message.blank?
+      next record_missing_target(pending_mutation) if target_message.blank?
 
-      Whatsapp::IncomingMessageMutationService
-        .new(inbox: inbox, message: mutation_message_from_record(pending_mutation))
-        .apply_to(target_message)
-      pending_mutation.destroy!
-      :processed
+      finalize_replay(pending_mutation, target_message)
     end
   rescue ActiveRecord::RecordNotFound
     :processed
@@ -55,14 +61,49 @@ class Whatsapp::PendingMessageMutationService
   end
 
   def persist_pending_mutation!
-    Whatsapp::PendingMessageMutation.create_or_find_by!(inbox_id: inbox.id, event_id: message[:id].to_s) do |record|
-      record.account_id = inbox.account_id
-      record.target_source_id = target_source_id
-      record.mutation_type = message[:type].to_s
-      record.actor_id = actor_id
-      record.provider_timestamp = message[:timestamp].to_i
-      record.payload = normalized_payload
+    Whatsapp::PendingMessageMutation.create_or_find_by!(inbox_id: inbox.id, event_id: message[:id].to_s) do |pending_mutation|
+      pending_mutation.assign_attributes(pending_mutation_attributes)
     end
+  end
+
+  def pending_mutation_attributes
+    {
+      account_id: inbox.account_id,
+      target_source_id: target_source_id,
+      mutation_type: message[:type].to_s,
+      actor_id: actor_id,
+      provider_timestamp: Whatsapp::ProviderTimestamp.normalize(message[:timestamp]).to_i,
+      payload: normalized_payload
+    }
+  end
+
+  def record_missing_target(pending_mutation)
+    pending_mutation.record_attempt!
+    :pending
+  end
+
+  def finalize_replay(pending_mutation, target_message)
+    result = Whatsapp::IncomingMessageMutationService
+             .new(inbox: inbox, message: mutation_message_from_record(pending_mutation))
+             .apply_to(target_message)
+    return destroy_processed!(pending_mutation) if %i[applied stale].include?(result)
+    return mark_invalid!(pending_mutation) if result == :invalid
+
+    :pending
+  end
+
+  def destroy_processed!(pending_mutation)
+    pending_mutation.destroy!
+    :processed
+  end
+
+  def mark_invalid!(pending_mutation)
+    pending_mutation.mark_invalid!
+    :invalid
+  end
+
+  def schedule_reconciliation(pending_mutation)
+    pending_mutation.schedule_reconciliation_at!(pending_mutation.expires_at)
   end
 
   def normalized_payload
@@ -101,9 +142,9 @@ class Whatsapp::PendingMessageMutationService
     stored_message = {
       id: record.event_id,
       type: record.mutation_type,
-      timestamp: record.provider_timestamp.to_s,
       from: record.actor_id
     }.with_indifferent_access
+    stored_message[:timestamp] = record.provider_timestamp.to_s if record.provider_timestamp.positive?
 
     stored_message[record.mutation_type] = mutation_payload(record)
     stored_message

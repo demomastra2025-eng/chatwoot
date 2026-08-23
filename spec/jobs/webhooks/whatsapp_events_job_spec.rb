@@ -127,9 +127,9 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       job.perform_now(batched_params, verified_context(channel, sibling))
 
       expect(Whatsapp::IncomingMessageWhatsappCloudService).to have_received(:new)
-        .with(inbox: channel.inbox, params: anything).once
+        .with(inbox: channel.inbox, params: anything, require_prepared_attachment: true).once
       expect(Whatsapp::IncomingMessageWhatsappCloudService).to have_received(:new)
-        .with(inbox: sibling.inbox, params: anything).once
+        .with(inbox: sibling.inbox, params: anything, require_prepared_attachment: true).once
     end
 
     it 'dispatches a legacy signed Cloud job through a runtime-bound routing context' do
@@ -139,7 +139,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       job.perform_now(params, hmac_verified: true)
 
       expect(Whatsapp::IncomingMessageWhatsappCloudService).to have_received(:new)
-        .with(inbox: channel.inbox, params: params)
+        .with(inbox: channel.inbox, params: params, require_prepared_attachment: true)
       expect(Rails.logger).to have_received(:warn)
         .with('[WHATSAPP_WEBHOOK] processing legacy signed job with runtime-bound routing context')
     end
@@ -277,7 +277,8 @@ RSpec.describe Webhooks::WhatsappEventsJob do
     it 'still processes inbound messages when channel reauthorization is required' do
       channel.prompt_reauthorization!
       allow(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new).and_return(process_service)
-      expect(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new).with(inbox: channel.inbox, params: params)
+      expect(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new)
+        .with(inbox: channel.inbox, params: params, require_prepared_attachment: true)
       job.perform_now(params, verified_context(channel, channel_id: channel.id))
     end
 
@@ -547,7 +548,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       expect(Whatsapp::AccountUpdateService).to have_received(:new)
         .with(channel: channel, params: expected_account_update_params).once
       expect(Whatsapp::IncomingMessageWhatsappCloudService).to have_received(:new)
-        .with(inbox: channel.inbox, params: expected_message_params).once
+        .with(inbox: channel.inbox, params: expected_message_params, require_prepared_attachment: true).once
     end
 
     it 'processes every account update from a batched callback independently' do
@@ -754,9 +755,11 @@ RSpec.describe Webhooks::WhatsappEventsJob do
       }.with_indifferent_access
       dispatched_ids = []
       message_service = instance_double(Whatsapp::IncomingMessageWhatsappCloudService, perform: true)
-      allow(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new) do |inbox:, params:, outgoing_echo:|
+      allow(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new) do |inbox:, params:, outgoing_echo:,
+                                                                           require_prepared_attachment:|
         expect(inbox).to eq(channel.inbox)
         expect(outgoing_echo).to be(true)
+        expect(require_prepared_attachment).to be(true)
         dispatched_ids << params.dig(:entry, 0, :changes, 0, :value, :message_echoes, 0, :id)
         message_service
       end
@@ -787,7 +790,8 @@ RSpec.describe Webhooks::WhatsappEventsJob do
         params: hash_including(
           entry: [hash_including(changes: [hash_including(field: 'message_echoes')])]
         ),
-        outgoing_echo: true
+        outgoing_echo: true,
+        require_prepared_attachment: true
       ).and_return(message_service)
 
       job.perform_now(echo_params, verified_context(channel, channel_id: channel.id))
@@ -824,6 +828,7 @@ RSpec.describe Webhooks::WhatsappEventsJob do
 
     it 'routes each batched history media follow-up independently' do
       enable_coexistence_sync!(channel)
+      allow(Whatsapp::CloudMediaDownload).to receive(:prepare).and_return(nil)
       history_params = {
         object: 'whatsapp_business_account',
         entry: [{ id: channel.provider_config['business_account_id'], changes: [{
@@ -1191,7 +1196,8 @@ RSpec.describe Webhooks::WhatsappEventsJob do
         ]
       }
       allow(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new).and_return(process_service)
-      expect(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new).with(inbox: other_channel.inbox, params: wb_params)
+      expect(Whatsapp::IncomingMessageWhatsappCloudService).to receive(:new)
+        .with(inbox: other_channel.inbox, params: wb_params, require_prepared_attachment: true)
       job.perform_now(wb_params, verified_context(other_channel, channel_id: other_channel.id))
     end
 

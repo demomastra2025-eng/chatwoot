@@ -2,8 +2,6 @@
 # https://docs.360dialog.com/whatsapp-api/whatsapp-api/media
 # https://developers.facebook.com/docs/whatsapp/api/media/
 class Whatsapp::IncomingMessageBaseService
-  MINIMUM_PROVIDER_TIMESTAMP = Time.utc(2009, 1, 1).to_i
-
   include ::Whatsapp::IncomingMessageServiceHelpers
 
   pattr_initialize [:inbox!, :params!, :outgoing_echo]
@@ -122,7 +120,8 @@ class Whatsapp::IncomingMessageBaseService
   def create_contact_messages(message)
     contacts = Array(message['contacts'])
     contacts.each_with_index do |contact, index|
-      create_message(contact, source_id: contact_message_source_id(message, index, contacts.size))
+      contact_message = contact.to_h.with_indifferent_access.merge(timestamp: message[:timestamp])
+      create_message(contact_message, source_id: contact_message_source_id(message, index, contacts.size))
       attach_contact(contact)
       @message.save!
       after_message_persisted(@message)
@@ -382,16 +381,7 @@ class Whatsapp::IncomingMessageBaseService
   end
 
   def provider_message_time(message)
-    raw_timestamp = message[:timestamp].to_s
-    return unless raw_timestamp.match?(/\A\d+\z/)
-
-    timestamp = raw_timestamp.to_i
-    timestamp /= 1000 if timestamp >= 1_000_000_000_000
-    return unless timestamp.between?(MINIMUM_PROVIDER_TIMESTAMP, 1.day.from_now.to_i)
-
-    Time.zone.at(timestamp)
-  rescue ArgumentError, RangeError
-    nil
+    Whatsapp::ProviderTimestamp.time(message[:timestamp])
   end
 
   def record_meta_ad_referral(message)
