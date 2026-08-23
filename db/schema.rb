@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_23_150000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_23_160000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3298,6 +3298,19 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_23_150000) do
     t.index ["inbox_id", "target_source_id", "provider_timestamp"], name: "idx_wa_pending_mutations_target_time"
     t.index ["inbox_id"], name: "index_whatsapp_pending_message_mutations_on_inbox_id"
     t.index ["status", "next_reconciliation_at"], name: "idx_wa_pending_mutations_reconciliation"
+  end
+
+  create_table "whatsapp_webhook_routes", force: :cascade do |t|
+    t.string "waba_id", null: false
+    t.string "phone_number_id", null: false
+    t.string "destination", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["waba_id", "phone_number_id", "destination"], name: "idx_whatsapp_webhook_routes_exact", unique: true
+    t.index ["waba_id"], name: "idx_whatsapp_webhook_routes_waba"
+    t.check_constraint "destination::text = ANY (ARRAY['dev'::character varying, 'widget'::character varying]::text[])", name: "chk_whatsapp_webhook_routes_destination"
+    t.check_constraint "phone_number_id::text ~ '^[0-9]+$'::text", name: "chk_whatsapp_webhook_routes_phone_digits"
+    t.check_constraint "waba_id::text ~ '^[0-9]+$'::text", name: "chk_whatsapp_webhook_routes_waba_digits"
   end
 
   create_table "working_hours", force: :cascade do |t|

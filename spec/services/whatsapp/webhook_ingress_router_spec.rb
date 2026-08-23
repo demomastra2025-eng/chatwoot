@@ -23,6 +23,44 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
     expect(router.destinations).to eq(['prod'])
   end
 
+  it 'prefers a durable exact registry route over the static fallback' do
+    WhatsappWebhookRoute.create!(waba_id: '123456', phone_number_id: '987654', destination: 'widget')
+    router = described_class.new(
+      payload: payload,
+      rules: { '123456:987654' => ['dev'] },
+      targets: {}
+    )
+
+    expect(router.destinations).to eq(['widget'])
+    expect(router.target_url!('widget')).to eq('https://widget.one-link.kz/webhooks/meta/whatsapp')
+  end
+
+  it 'uses every registered destination for WABA-level events without phone metadata' do
+    WhatsappWebhookRoute.create!(waba_id: '123456', phone_number_id: '111', destination: 'dev')
+    WhatsappWebhookRoute.create!(waba_id: '123456', phone_number_id: '222', destination: 'widget')
+    waba_payload = payload.deep_dup
+    waba_payload[:entry][0][:changes][0][:value].delete(:metadata)
+
+    expect(described_class.new(payload: waba_payload, rules: {}, targets: {}).destinations)
+      .to contain_exactly('dev', 'widget')
+  end
+
+  it 'does not fan out a known unregistered phone to other registry routes in the WABA' do
+    WhatsappWebhookRoute.create!(waba_id: '123456', phone_number_id: '111', destination: 'dev')
+    WhatsappWebhookRoute.create!(waba_id: '123456', phone_number_id: '222', destination: 'widget')
+
+    expect(described_class.new(payload: payload, rules: {}, targets: {}).destinations).to eq(['prod'])
+  end
+
+  it 'falls back to production when the registry lookup is unavailable' do
+    allow(WhatsappWebhookRoute).to receive(:for_exact_route).and_raise(ActiveRecord::ConnectionNotEstablished)
+    allow(WhatsappWebhookRoute).to receive(:for_waba).and_raise(ActiveRecord::ConnectionNotEstablished)
+    allow(Rails.logger).to receive(:error)
+
+    expect(described_class.new(payload: payload, rules: {}, targets: {}).destinations).to eq(['prod'])
+    expect(Rails.logger).to have_received(:error).with(%r{using configured/local fallback}).at_least(:once)
+  end
+
   it 'routes a WABA to multiple isolated consumers' do
     router = described_class.new(
       payload: payload,

@@ -30,6 +30,19 @@ RSpec.describe Whatsapp::WebhookTeardownService do
         expect(api_client).to have_received(:unsubscribe_waba_webhook).with('test_waba_id')
       end
 
+      it 'removes only the remote route and preserves the shared Meta subscription' do
+        channel.update!(provider_config: channel.provider_config.merge('phone_number_id' => '987654'))
+        route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+        allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
+        allow(route_client).to receive(:unregister!).and_return(true)
+
+        expect(Whatsapp::FacebookApiClient).not_to receive(:new)
+        service.perform
+
+        expect(route_client).to have_received(:unregister!)
+          .with(waba_id: 'test_waba_id', phone_number_id: '987654')
+      end
+
       it 'moves the shared WABA callback to a surviving Cloud channel' do
         sibling = create(
           :channel_whatsapp,

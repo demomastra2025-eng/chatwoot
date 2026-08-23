@@ -39,24 +39,37 @@ class Whatsapp::WebhookTeardownService
   def teardown_webhook
     waba_id = @channel.provider_config['business_account_id']
     with_waba_lock(waba_id) do
-      if cross_account_sibling_exists?(waba_id)
-        Rails.logger.error '[WHATSAPP] Webhook teardown refused because WABA ownership spans multiple accounts'
-        raise WebhookHandoffError, 'WhatsApp webhook teardown refused because WABA ownership is ambiguous'
-      end
+      next unregister_remote_route!(waba_id) if route_registry_client.configured?
 
-      sibling = sibling_waba_channel(waba_id)
-      if sibling.present?
-        handoff_to_sibling!(sibling, waba_id)
-        next
-      end
-
-      if pending_deletion_sibling_exists?(waba_id)
-        Rails.logger.error '[WHATSAPP] Webhook teardown deferred because a WABA sibling is pending deletion'
-        raise WebhookHandoffError, 'WhatsApp webhook teardown refused while a sibling is pending deletion'
-      end
-
-      unsubscribe_waba!(waba_id)
+      teardown_local_subscription!(waba_id)
     end
+  end
+
+  def unregister_remote_route!(waba_id)
+    route_registry_client.unregister!(
+      waba_id: waba_id,
+      phone_number_id: @channel.provider_config['phone_number_id']
+    )
+    Rails.logger.info "[WHATSAPP] Remote webhook route removed for channel #{@channel.id}"
+  end
+
+  def teardown_local_subscription!(waba_id)
+    refuse_cross_account_handoff!(waba_id) if cross_account_sibling_exists?(waba_id)
+    sibling = sibling_waba_channel(waba_id)
+    return handoff_to_sibling!(sibling, waba_id) if sibling.present?
+
+    refuse_pending_sibling_teardown! if pending_deletion_sibling_exists?(waba_id)
+    unsubscribe_waba!(waba_id)
+  end
+
+  def refuse_cross_account_handoff!(waba_id)
+    Rails.logger.error '[WHATSAPP] Webhook teardown refused because WABA ownership spans multiple accounts'
+    raise WebhookHandoffError, "WhatsApp webhook teardown refused because WABA #{waba_id} ownership is ambiguous"
+  end
+
+  def refuse_pending_sibling_teardown!
+    Rails.logger.error '[WHATSAPP] Webhook teardown deferred because a WABA sibling is pending deletion'
+    raise WebhookHandoffError, 'WhatsApp webhook teardown refused while a sibling is pending deletion'
   end
 
   def unsubscribe_waba!(waba_id)
@@ -100,6 +113,10 @@ class Whatsapp::WebhookTeardownService
 
   def with_waba_lock(waba_id, &)
     Whatsapp::WabaLock.new(waba_id).with_lock(&)
+  end
+
+  def route_registry_client
+    @route_registry_client ||= Whatsapp::WebhookRouteRegistryClient.new
   end
 
   def handle_webhook_teardown_error(error)

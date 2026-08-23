@@ -43,20 +43,19 @@ class Whatsapp::WebhookIngressRouter
     "#{SIGNATURE_PREFIX}#{OpenSSL::HMAC.hexdigest('SHA256', secret.to_s, signed_payload)}"
   end
 
-  def initialize(payload:, rules: nil, targets: nil)
+  def initialize(payload:, rules: nil, targets: nil, route_relation: WhatsappWebhookRoute)
     @payload = payload.to_h.with_indifferent_access
     @raw_rules = rules.nil? ? GlobalConfigService.load(RULES_CONFIG_KEY, '{}') : rules
     @raw_targets = targets.nil? ? GlobalConfigService.load(TARGETS_CONFIG_KEY, '{}') : targets
+    @route_relation = route_relation
   end
 
   def destinations
-    configured_destinations = exact_route_destinations || waba_route_destinations
+    configured_destinations = registry_route_destinations.presence || exact_route_destinations || waba_route_destinations
     normalize_destinations(configured_destinations.presence || [LOCAL_DESTINATION])
   end
 
-  def routing_enabled?
-    routing_rules.present?
-  end
+  def routing_enabled? = registry_route_destinations.present? || routing_rules.present?
 
   def target_url!(destination)
     destination = destination.to_s
@@ -81,6 +80,47 @@ class Whatsapp::WebhookIngressRouter
   end
 
   private
+
+  def registry_route_destinations
+    if phone_number_id.present?
+      remote_destinations = registry_exact_route_destinations
+      return remote_destinations unless remote_destinations.present? && local_prod_owner_exists?
+
+      Rails.logger.error('[WHATSAPP] Remote webhook route conflicts with a local PROD owner; processing locally')
+      return [LOCAL_DESTINATION]
+    end
+
+    registry_waba_route_destinations
+  end
+
+  def local_prod_owner_exists?
+    @route_relation.local_prod_owner_exists?(waba_id, phone_number_id)
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.error("[WHATSAPP] Local PROD ownership lookup failed; processing locally error_class=#{e.class.name}")
+    true
+  end
+
+  def registry_exact_route_destinations
+    return [] if waba_id.blank? || phone_number_id.blank?
+
+    @registry_exact_route_destinations ||= @route_relation.for_exact_route(waba_id, phone_number_id).distinct.pluck(:destination)
+  rescue ActiveRecord::ActiveRecordError => e
+    log_registry_fallback(e)
+    []
+  end
+
+  def registry_waba_route_destinations
+    return [] if waba_id.blank?
+
+    @registry_waba_route_destinations ||= @route_relation.for_waba(waba_id).distinct.pluck(:destination)
+  rescue ActiveRecord::ActiveRecordError => e
+    log_registry_fallback(e)
+    []
+  end
+
+  def log_registry_fallback(error)
+    Rails.logger.error("[WHATSAPP] Webhook route registry lookup failed; using configured/local fallback error_class=#{error.class.name}")
+  end
 
   def exact_route_destinations
     return if waba_id.blank? || phone_number_id.blank?
@@ -119,7 +159,8 @@ class Whatsapp::WebhookIngressRouter
   end
 
   def target_urls
-    @target_urls ||= parse_object(@raw_targets, TARGETS_CONFIG_KEY).each_with_object({}) do |(destination, url), result|
+    configured_targets = FORWARD_TARGET_CONTRACT.merge(parse_object(@raw_targets, TARGETS_CONFIG_KEY).stringify_keys)
+    @target_urls ||= configured_targets.each_with_object({}) do |(destination, url), result|
       destination = destination.to_s
       validate_destination_name!(destination)
       result[destination] = validate_target_url!(destination, url)

@@ -103,6 +103,35 @@ describe Whatsapp::WebhookSetupService do
       end
     end
 
+    it 'registers the exact remote route before changing the shared provider callback' do
+      route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+      allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_VERIFY_TOKEN_CONFIG_KEY, nil).and_return('production-verify-token')
+
+      expect(route_client).to receive(:register!)
+        .with(waba_id: waba_id, phone_number_id: '123456789').ordered
+      expect(api_client).to receive(:subscribe_waba_webhook).ordered
+
+      service.register_callback
+    end
+
+    it 'does not change the provider callback when route registration fails' do
+      route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+      allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
+      allow(route_client).to receive(:register!).and_raise(Whatsapp::WebhookRouteRegistryClient::Error, 'registry unavailable')
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_VERIFY_TOKEN_CONFIG_KEY, nil).and_return('production-verify-token')
+      expect(api_client).not_to receive(:subscribe_waba_webhook)
+
+      expect { service.register_callback }
+        .to raise_error(described_class::CallbackSetupError, /registry unavailable/)
+    end
+
     it 'rejects a shared ingress without its matching verify token before provider mutation' do
       allow(GlobalConfigService).to receive(:load)
         .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
@@ -208,6 +237,17 @@ describe Whatsapp::WebhookSetupService do
       end
       expect(api_client).not_to receive(:subscribe_waba_webhook)
 
+      expect(service.register_callback_if_missing).to eq(:healthy)
+    end
+
+    it 'repairs the durable route even when the provider subscription is already healthy' do
+      route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+      allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
+      allow(api_client).to receive(:app_subscribed_to_waba?).with(waba_id).and_return(true)
+
+      expect(route_client).to receive(:register!).with(waba_id: waba_id, phone_number_id: '123456789')
       expect(service.register_callback_if_missing).to eq(:healthy)
     end
   end

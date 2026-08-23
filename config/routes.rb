@@ -938,6 +938,8 @@ Rails.application.routes.draw do
   post 'internal/voice/ai/finalize', to: 'internal/voice/ai/finalizations#create'
   post 'internal/voice/recordings/ready', to: 'internal/voice/recordings#ready'
   post 'internal/voice/recordings/stored', to: 'internal/voice/recordings#stored'
+  put 'internal/whatsapp/webhook_routes', to: 'internal/whatsapp/webhook_routes#update'
+  delete 'internal/whatsapp/webhook_routes', to: 'internal/whatsapp/webhook_routes#destroy'
 
   get 'microsoft/callback', to: 'microsoft/callbacks#show'
   get 'google/callback', to: 'google/callbacks#show'

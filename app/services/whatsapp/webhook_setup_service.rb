@@ -45,7 +45,10 @@ class Whatsapp::WebhookSetupService
     validate_parameters!
     with_waba_lock do
       validate_expected_credentials!
-      next :healthy if @api_client.app_subscribed_to_waba?(@waba_id)
+      if @api_client.app_subscribed_to_waba?(@waba_id)
+        register_remote_route!
+        next :healthy
+      end
 
       setup_webhook
       :repaired
@@ -124,6 +127,7 @@ class Whatsapp::WebhookSetupService
     validate_recovery_identity!
     callback_url, verify_token, recovery_target = callback_details
 
+    register_remote_route!(callback_url)
     callback_recovery.updating!(**recovery_target)
     subscribe_waba_callback(callback_url, verify_token)
     remote_callback_updated = true
@@ -180,6 +184,19 @@ class Whatsapp::WebhookSetupService
     callback_url = build_callback_url
     verify_token = callback_verify_token
     [callback_url, verify_token, callback_recovery_target(callback_url, verify_token)]
+  end
+
+  def register_remote_route!(callback_url = public_ingress_url)
+    return unless route_registry_client.configured?
+    unless callback_url == 'https://app.one-link.kz/webhooks/whatsapp'
+      raise ArgumentError, 'WhatsApp route registry requires the shared production webhook ingress'
+    end
+
+    route_registry_client.register!(waba_id: @waba_id, phone_number_id: @phone_number_id)
+  end
+
+  def route_registry_client
+    @route_registry_client ||= Whatsapp::WebhookRouteRegistryClient.new
   end
 
   def build_callback_url
