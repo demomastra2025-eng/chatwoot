@@ -250,6 +250,15 @@
       "HIGH": "High",
       "URGENT": "Urgent"
     },
+    "WEEKDAYS": {
+      "0": "Жексенбі",
+      "1": "Дүйсенбі",
+      "2": "Сейсенбі",
+      "3": "Сәрсенбі",
+      "4": "Бейсенбі",
+      "5": "Жұма",
+      "6": "Сенбі"
+    },
     "ATTRIBUTES": {
       "MESSAGE_TYPE": "Message Type",
       "PRIVATE_NOTE": "Private Note",
@@ -262,6 +271,9 @@
       "PAYMENT_STATUS": "Payment Status",
       "APPOINTMENT_TYPE": "Appointment Type",
       "SOURCE": "Source",
+      "APPOINTMENT_START_WEEKDAY": "Жазба басталатын апта күні",
+      "APPOINTMENT_START_TIME": "Жазбаның басталу уақыты",
+      "APPOINTMENT_SERVICE": "Қызмет",
       "DEAL_PIPELINE": "Deal Pipeline",
       "DEAL_STAGE": "Deal Stage",
       "DEAL_OWNER": "Deal Owner",

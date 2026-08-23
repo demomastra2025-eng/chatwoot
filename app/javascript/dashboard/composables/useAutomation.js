@@ -3,6 +3,7 @@ import { useStoreGetters } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
 import { useI18n } from 'vue-i18n';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 import {
   generateCustomAttributeTypes,
@@ -26,6 +27,7 @@ import {
 export function useAutomation(startValue = null) {
   const getters = useStoreGetters();
   const crmReferencesStore = useCrmReferencesStore();
+  const schedulingReferencesStore = useSchedulingReferencesStore();
   const { t } = useI18n();
 
   const {
@@ -317,6 +319,16 @@ export function useAutomation(startValue = null) {
     }
   };
 
+  const loadAppointmentServices = async () => {
+    try {
+      return await schedulingReferencesStore.loadServices({
+        include_inactive: true,
+      });
+    } catch (_error) {
+      return schedulingReferencesStore.services || [];
+    }
+  };
+
   const loadAutomationReferences = async eventNameToLoad => {
     const jobs = [];
 
@@ -325,6 +337,7 @@ export function useAutomation(startValue = null) {
       eventNameToLoad?.startsWith('appointment_')
     ) {
       jobs.push(loadFieldDefinitions('appointment'));
+      jobs.push(loadAppointmentServices());
     }
 
     if (isCrmDealsEnabled.value || eventNameToLoad?.startsWith('deal_')) {

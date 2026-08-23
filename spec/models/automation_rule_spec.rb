@@ -411,6 +411,108 @@ RSpec.describe AutomationRule do
       expect(rule.valid?).to be true
     end
 
+    it 'allows account-owned weekday, start-time, and service conditions' do
+      account.enable_features!('scheduling')
+      service = create(:scheduling_service, account: account)
+      params[:event_name] = 'appointment_created'
+      params[:conditions] = [
+        {
+          attribute_key: 'starts_at_weekday',
+          filter_operator: 'equal_to',
+          values: %w[1 2],
+          query_operator: 'AND'
+        },
+        {
+          attribute_key: 'starts_at_time',
+          filter_operator: 'is_greater_than',
+          values: ['09:30'],
+          query_operator: 'OR'
+        },
+        {
+          attribute_key: 'service_id',
+          filter_operator: 'not_equal_to',
+          values: [service.id],
+          query_operator: nil
+        }
+      ]
+      params[:actions] = [
+        {
+          action_name: :send_webhook_event,
+          action_params: ['https://example.com/hooks/appointments']
+        }
+      ]
+
+      expect(FactoryBot.build(:automation_rule, params)).to be_valid
+    end
+
+    it 'rejects malformed temporal values and cross-account appointment services' do
+      account.enable_features!('scheduling')
+      foreign_service = create(:scheduling_service)
+      params[:event_name] = 'appointment_created'
+      params[:conditions] = [
+        {
+          attribute_key: 'starts_at_weekday',
+          filter_operator: 'equal_to',
+          values: ['8'],
+          query_operator: 'AND'
+        },
+        {
+          attribute_key: 'starts_at_time',
+          filter_operator: 'equal_to',
+          values: ['24:30'],
+          query_operator: 'AND'
+        },
+        {
+          attribute_key: 'service_id',
+          filter_operator: 'equal_to',
+          values: [foreign_service.id],
+          query_operator: nil
+        }
+      ]
+      params[:actions] = [
+        {
+          action_name: :send_webhook_event,
+          action_params: ['https://example.com/hooks/appointments']
+        }
+      ]
+
+      rule = FactoryBot.build(:automation_rule, params)
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:conditions]).to include(
+        'Automation condition values starts_at_weekday,starts_at_time,service_id not supported.'
+      )
+    end
+
+    it 'rejects malformed appointment service identifiers without numeric coercion' do
+      account.enable_features!('scheduling')
+      service = create(:scheduling_service, account: account)
+      params[:event_name] = 'appointment_created'
+      params[:actions] = [
+        {
+          action_name: :send_webhook_event,
+          action_params: ['https://example.com/hooks/appointments']
+        }
+      ]
+
+      malformed_values = [0, -1, service.id.to_f, service.id + 0.5, "#{service.id}.0", BigDecimal(service.id.to_s)]
+
+      aggregate_failures do
+        malformed_values.each do |value|
+          params[:conditions] = [
+            {
+              attribute_key: 'service_id',
+              filter_operator: 'equal_to',
+              values: [value],
+              query_operator: nil
+            }
+          ]
+
+          expect(FactoryBot.build(:automation_rule, params)).not_to be_valid
+        end
+      end
+    end
+
     it 'allows appointment automation rules with native status change action' do
       account.enable_features!('scheduling')
       params[:event_name] = 'appointment_created'

@@ -47,6 +47,86 @@ RSpec.describe AutomationRules::AppointmentConditionService do
     expect(described_class.new(rule, appointment).perform).to be(true)
   end
 
+  it 'matches weekday and start time in the account reporting timezone' do
+    account.update!(reporting_timezone: 'Asia/Almaty')
+    starts_at = Time.iso8601('2026-08-23T20:30:45Z')
+    appointment.update!(starts_at: starts_at, ends_at: starts_at + 30.minutes)
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'appointment_created',
+      conditions: [
+        { attribute_key: 'starts_at_weekday', filter_operator: 'equal_to', values: ['1'], query_operator: 'AND' },
+        { attribute_key: 'starts_at_time', filter_operator: 'equal_to', values: ['01:30'], query_operator: nil }
+      ],
+      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+    )
+
+    expect(described_class.new(rule, appointment).perform).to be(true)
+
+    rule.conditions.first['filter_operator'] = 'not_equal_to'
+    rule.conditions.first['values'] = ['0']
+    expect(described_class.new(rule, appointment).perform).to be(true)
+
+    rule.conditions.first['filter_operator'] = 'equal_to'
+    rule.conditions.first['values'] = ['1']
+    rule.conditions.last['filter_operator'] = 'is_less_than'
+    rule.conditions.last['values'] = ['01:00']
+    expect(described_class.new(rule, appointment).perform).to be(false)
+
+    {
+      ['not_equal_to', '01:00'] => true,
+      ['is_greater_than', '01:00'] => true,
+      ['is_less_than', '02:00'] => true,
+      ['is_greater_than', '02:00'] => false
+    }.each do |(operator, value), expected|
+      rule.conditions.last['filter_operator'] = operator
+      rule.conditions.last['values'] = [value]
+      expect(described_class.new(rule, appointment).perform).to eq(expected)
+    end
+  end
+
+  it 'matches any appointment service and preserves AND/OR grouping' do
+    primary_service = create(:scheduling_service, account: account)
+    secondary_service = create(:scheduling_service, account: account)
+    starts_at = Time.iso8601('2026-08-23T20:30:00Z')
+    appointment.update!(
+      service: primary_service,
+      starts_at: starts_at,
+      ends_at: starts_at + 30.minutes,
+      custom_attributes: { 'service_ids' => [primary_service.id, secondary_service.id] }
+    )
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'appointment_updated',
+      conditions: [
+        { attribute_key: 'starts_at_weekday', filter_operator: 'equal_to', values: ['0'], query_operator: 'AND' },
+        { attribute_key: 'starts_at_time', filter_operator: 'is_less_than', values: ['01:00'], query_operator: 'OR' },
+        { attribute_key: 'service_id', filter_operator: 'equal_to', values: [secondary_service.id], query_operator: nil }
+      ],
+      actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+    )
+
+    expect(described_class.new(rule, appointment).perform).to be(true)
+
+    rule.conditions = [
+      { attribute_key: 'service_id', filter_operator: 'not_equal_to', values: [primary_service.id], query_operator: nil }
+    ]
+    expect(described_class.new(rule, appointment).perform).to be(false)
+
+    unrelated_service = create(:scheduling_service, account: account)
+    rule.conditions = [
+      { attribute_key: 'service_id', filter_operator: 'not_equal_to', values: [unrelated_service.id], query_operator: nil }
+    ]
+    expect(described_class.new(rule, appointment).perform).to be(true)
+
+    rule.conditions = [
+      { attribute_key: 'service_id', filter_operator: 'equal_to', values: [primary_service.id + 0.5], query_operator: nil }
+    ]
+    expect(described_class.new(rule, appointment).perform).to be(false)
+  end
+
   it 'returns false for unsupported operators' do
     rule = build(
       :automation_rule,

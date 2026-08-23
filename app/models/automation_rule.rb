@@ -106,7 +106,9 @@ class AutomationRule < ApplicationRecord
     content email country_code status message_type browser_language assignee_id team_id referer city company inbox_id
     mail_subject phone_number priority conversation_language labels private_note
   ].freeze
-  APPOINTMENT_CONDITION_ATTRIBUTES = %w[status payment_status appointment_type source].freeze
+  APPOINTMENT_CONDITION_ATTRIBUTES = %w[
+    status payment_status appointment_type source starts_at_weekday starts_at_time service_id
+  ].freeze
 
   include Rails.application.routes.url_helpers
   include Reauthorizable
@@ -121,6 +123,7 @@ class AutomationRule < ApplicationRecord
   validate :event_name_supported
   validate :feature_enabled_for_event
   validate :appointment_condition_operators_supported
+  validate :appointment_condition_values_supported
   validate :appointment_action_params_supported
   validate :conversation_action_params_supported
   validate :crm_condition_operators_supported
@@ -267,6 +270,23 @@ class AutomationRule < ApplicationRecord
     return if unsupported_conditions.blank?
 
     errors.add(:conditions, "Automation condition operators #{unsupported_conditions.join(',')} not supported.")
+  end
+
+  def appointment_condition_values_supported
+    return unless appointment_event?
+    return if conditions.blank?
+
+    unsupported_conditions = conditions.filter_map do |condition|
+      key = condition['attribute_key'].to_s
+      next unless appointment_condition_catalog.standard_field?(key)
+      next if appointment_condition_catalog.values_supported?(key, condition['values'])
+
+      key
+    end
+
+    return if unsupported_conditions.blank?
+
+    errors.add(:conditions, "Automation condition values #{unsupported_conditions.uniq.join(',')} not supported.")
   end
 
   def crm_condition_operators_supported

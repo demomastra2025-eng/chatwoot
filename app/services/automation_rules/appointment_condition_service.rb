@@ -99,6 +99,8 @@ class AutomationRules::AppointmentConditionService
   end
 
   def evaluate_standard_condition(key, operator, condition)
+    return derived_condition_service.evaluate(key, operator, condition) if derived_condition_service.supports?(key)
+
     raw_value = appointment.public_send(key)
 
     case operator
@@ -154,6 +156,10 @@ class AutomationRules::AppointmentConditionService
 
   def field_catalog
     @field_catalog ||= AutomationRules::AppointmentFieldCatalog.new(account: rule.account)
+  end
+
+  def derived_condition_service
+    @derived_condition_service ||= AutomationRules::AppointmentDerivedConditionService.new(rule, appointment)
   end
 
   def first_value(condition)

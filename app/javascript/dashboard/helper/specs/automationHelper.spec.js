@@ -4,6 +4,7 @@ import {
   OPERATOR_TYPES_3,
   OPERATOR_TYPES_4,
   OPERATOR_TYPES_7,
+  OPERATOR_TYPES_8,
 } from 'dashboard/routes/dashboard/settings/automation/operators';
 import {
   appointmentFieldDefinitions,
@@ -213,6 +214,9 @@ const BACKEND_APPOINTMENT_CONDITIONS = [
   'payment_status',
   'appointment_type',
   'source',
+  'starts_at_weekday',
+  'starts_at_time',
+  'service_id',
 ];
 
 const BACKEND_DEAL_CONDITIONS = [
@@ -326,6 +330,16 @@ describe('AUTOMATIONS backend parity', () => {
         AUTOMATIONS[eventName].conditions.find(({ key }) => key === 'source')
           .filterOperators
       ).toEqual(OPERATOR_TYPES_7);
+    });
+  });
+
+  it('uses the exact backend operators and input types for appointment start time', () => {
+    APPOINTMENT_EVENTS.forEach(eventName => {
+      expect(
+        AUTOMATIONS[eventName].conditions.find(
+          ({ key }) => key === 'starts_at_time'
+        )
+      ).toMatchObject({ inputType: 'time', filterOperators: OPERATOR_TYPES_8 });
     });
   });
 
@@ -590,6 +604,8 @@ describe('getConditionOptions', () => {
   it('returns appointment-specific options when the event is appointment-based', () => {
     const appointmentStatusOptions = [{ id: 'scheduled', name: 'Scheduled' }];
     const appointmentPaymentStatusOptions = [{ id: 'paid', name: 'Paid' }];
+    const appointmentServiceOptions = [{ id: 7, name: 'Consultation' }];
+    const appointmentWeekdayOptions = [{ id: '1', name: 'Monday' }];
 
     expect(
       helpers.getConditionOptions({
@@ -608,6 +624,24 @@ describe('getConditionOptions', () => {
         type: 'payment_status',
       })
     ).toEqual(appointmentPaymentStatusOptions);
+
+    expect(
+      helpers.getConditionOptions({
+        appointmentServiceOptions,
+        customAttributes,
+        eventName: 'appointment_created',
+        type: 'service_id',
+      })
+    ).toEqual(appointmentServiceOptions);
+
+    expect(
+      helpers.getConditionOptions({
+        appointmentWeekdayOptions,
+        customAttributes,
+        eventName: 'appointment_created',
+        type: 'starts_at_weekday',
+      })
+    ).toEqual(appointmentWeekdayOptions);
   });
 
   it('returns managed appointment field options when the event is appointment-based', () => {

@@ -9,6 +9,14 @@ const getConditionDropdownValues = vi.fn((type, eventName) => {
     return [{ id: 'follow_up', name: 'Follow-up' }];
   }
 
+  if (eventName === 'appointment_created' && type === 'starts_at_weekday') {
+    return [{ id: '1', name: 'Monday' }];
+  }
+
+  if (eventName === 'appointment_created' && type === 'service_id') {
+    return [{ id: 7, name: 'Consultation' }];
+  }
+
   if (eventName === 'deal_created' && type === 'stage_id') {
     return [{ id: 11, name: 'Sales / Qualified' }];
   }
@@ -134,6 +142,59 @@ describe('useEditableAutomation', () => {
     ]);
     expect(formatted.conditions[1].values).toEqual([
       { id: 'follow_up', name: 'Follow-up' },
+    ]);
+  });
+
+  it('round-trips appointment weekday, time, service, and query operators', () => {
+    const { formatAutomation } = useEditableAutomation();
+    const automation = {
+      event_name: 'appointment_created',
+      conditions: [
+        {
+          attribute_key: 'starts_at_weekday',
+          filter_operator: 'equal_to',
+          values: ['1'],
+          query_operator: 'and',
+        },
+        {
+          attribute_key: 'starts_at_time',
+          filter_operator: 'is_greater_than',
+          values: ['09:30'],
+          query_operator: 'or',
+        },
+        {
+          attribute_key: 'service_id',
+          filter_operator: 'not_equal_to',
+          values: [7],
+          query_operator: null,
+        },
+      ],
+      actions: [{ action_name: 'send_webhook_event', action_params: [] }],
+    };
+    const automationTypes = {
+      appointment_created: {
+        conditions: [
+          { key: 'starts_at_weekday', inputType: 'multi_select' },
+          { key: 'starts_at_time', inputType: 'time' },
+          { key: 'service_id', inputType: 'search_select' },
+        ],
+      },
+    };
+
+    const formatted = formatAutomation(automation, [], automationTypes, [
+      { key: 'send_webhook_event' },
+    ]);
+
+    expect(formatted.conditions).toEqual([
+      expect.objectContaining({
+        values: [{ id: '1', name: 'Monday' }],
+        query_operator: 'and',
+      }),
+      expect.objectContaining({ values: '09:30', query_operator: 'or' }),
+      expect.objectContaining({
+        values: [{ id: 7, name: 'Consultation' }],
+        query_operator: 'and',
+      }),
     ]);
   });
 

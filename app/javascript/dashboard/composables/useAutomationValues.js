@@ -4,6 +4,7 @@ import languages from 'dashboard/components/widgets/conversation/advancedFilterI
 import countries from 'shared/constants/countries';
 import { useStoreGetters, useMapGetter } from 'dashboard/composables/store';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 
 import {
   getActionOptions,
@@ -21,6 +22,7 @@ import {
 export default function useAutomationValues() {
   const getters = useStoreGetters();
   const crmReferencesStore = useCrmReferencesStore();
+  const schedulingReferencesStore = useSchedulingReferencesStore();
   const { t } = useI18n();
   const agents = useMapGetter('agents/getVerifiedAgents');
   const campaigns = useMapGetter('campaigns/getAllCampaigns');
@@ -147,6 +149,23 @@ export default function useAutomationValues() {
     })
   );
 
+  const appointmentServiceOptions = computed(() =>
+    (schedulingReferencesStore.services || []).map(service => ({
+      id: service.id,
+      name: service.name,
+    }))
+  );
+
+  const appointmentWeekdayOptions = computed(() => [
+    { id: '1', name: t('AUTOMATION.WEEKDAYS.1') },
+    { id: '2', name: t('AUTOMATION.WEEKDAYS.2') },
+    { id: '3', name: t('AUTOMATION.WEEKDAYS.3') },
+    { id: '4', name: t('AUTOMATION.WEEKDAYS.4') },
+    { id: '5', name: t('AUTOMATION.WEEKDAYS.5') },
+    { id: '6', name: t('AUTOMATION.WEEKDAYS.6') },
+    { id: '0', name: t('AUTOMATION.WEEKDAYS.0') },
+  ]);
+
   const appointmentFieldDefinitions = computed(
     () => crmReferencesStore.appointmentFieldDefinitions || []
   );
@@ -206,8 +225,10 @@ export default function useAutomationValues() {
       agents: agents.value,
       appointmentFieldDefinitions: appointmentFieldDefinitions.value,
       appointmentPaymentStatusOptions: appointmentPaymentStatusOptions.value,
+      appointmentServiceOptions: appointmentServiceOptions.value,
       appointmentStatusOptions: appointmentStatusOptions.value,
       appointmentTypeOptions: appointmentTypeOptions.value,
+      appointmentWeekdayOptions: appointmentWeekdayOptions.value,
       booleanFilterOptions: booleanFilterOptions.value,
       campaigns: campaigns.value,
       crmDealOwnerOptions: agents.value,
@@ -271,7 +292,9 @@ export default function useAutomationValues() {
     statusFilterOptions,
     appointmentStatusOptions,
     appointmentPaymentStatusOptions,
+    appointmentServiceOptions,
     appointmentTypeOptions,
+    appointmentWeekdayOptions,
     appointmentFieldDefinitions,
     dealFieldDefinitions,
     taskFieldDefinitions,

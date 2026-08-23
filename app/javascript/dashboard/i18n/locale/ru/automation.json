@@ -247,6 +247,15 @@
       "HIGH": "Высокая",
       "URGENT": "Срочность"
     },
+    "WEEKDAYS": {
+      "0": "Воскресенье",
+      "1": "Понедельник",
+      "2": "Вторник",
+      "3": "Среда",
+      "4": "Четверг",
+      "5": "Пятница",
+      "6": "Суббота"
+    },
     "ATTRIBUTES": {
       "MESSAGE_TYPE": "Тип сообщения",
       "PRIVATE_NOTE": "Личная заметка",
@@ -259,6 +268,9 @@
       "PAYMENT_STATUS": "Статус оплаты",
       "APPOINTMENT_TYPE": "Тип записи",
       "SOURCE": "Источник",
+      "APPOINTMENT_START_WEEKDAY": "День недели начала записи",
+      "APPOINTMENT_START_TIME": "Время начала записи",
+      "APPOINTMENT_SERVICE": "Услуга",
       "DEAL_PIPELINE": "Воронка сделки",
       "DEAL_STAGE": "Этап сделки",
       "DEAL_OWNER": "Владелец сделки",

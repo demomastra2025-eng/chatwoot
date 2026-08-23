@@ -194,8 +194,10 @@ const getManagedFieldDefinitionsForEvent = (
 
 const getManagedConditionFilterMaps = ({
   appointmentPaymentStatusOptions,
+  appointmentServiceOptions,
   appointmentStatusOptions,
   appointmentTypeOptions,
+  appointmentWeekdayOptions,
   crmDealOwnerOptions,
   crmPipelineOptions,
   crmStageOptions,
@@ -208,6 +210,8 @@ const getManagedConditionFilterMaps = ({
     status: appointmentStatusOptions,
     payment_status: appointmentPaymentStatusOptions,
     appointment_type: appointmentTypeOptions,
+    starts_at_weekday: appointmentWeekdayOptions,
+    service_id: appointmentServiceOptions,
   },
   deal: {
     pipeline_id: crmPipelineOptions,
@@ -276,8 +280,10 @@ export const getConditionOptions = ({
   agents,
   appointmentFieldDefinitions,
   appointmentPaymentStatusOptions,
+  appointmentServiceOptions,
   appointmentStatusOptions,
   appointmentTypeOptions,
+  appointmentWeekdayOptions,
   booleanFilterOptions,
   campaigns,
   crmDealOwnerOptions,
@@ -333,8 +339,10 @@ export const getConditionOptions = ({
 
   const managedConditionFilterMaps = getManagedConditionFilterMaps({
     appointmentPaymentStatusOptions,
+    appointmentServiceOptions,
     appointmentStatusOptions,
     appointmentTypeOptions,
+    appointmentWeekdayOptions,
     crmDealOwnerOptions,
     crmPipelineOptions,
     crmStageOptions,

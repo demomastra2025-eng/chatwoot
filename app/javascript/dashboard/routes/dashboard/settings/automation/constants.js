@@ -5,6 +5,7 @@ import {
   OPERATOR_TYPES_4,
   OPERATOR_TYPES_6,
   OPERATOR_TYPES_7,
+  OPERATOR_TYPES_8,
 } from './operators';
 
 const APPOINTMENT_AUTOMATION_CONDITIONS = [
@@ -31,6 +32,24 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     name: 'SOURCE',
     inputType: 'plain_text',
     filterOperators: OPERATOR_TYPES_7,
+  },
+  {
+    key: 'starts_at_weekday',
+    name: 'APPOINTMENT_START_WEEKDAY',
+    inputType: 'multi_select',
+    filterOperators: OPERATOR_TYPES_1,
+  },
+  {
+    key: 'starts_at_time',
+    name: 'APPOINTMENT_START_TIME',
+    inputType: 'time',
+    filterOperators: OPERATOR_TYPES_8,
+  },
+  {
+    key: 'service_id',
+    name: 'APPOINTMENT_SERVICE',
+    inputType: 'search_select',
+    filterOperators: OPERATOR_TYPES_1,
   },
 ];
 

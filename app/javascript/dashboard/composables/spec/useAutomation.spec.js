@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import * as automationHelper from 'dashboard/helper/automationHelper';
 import { createPinia, setActivePinia } from 'pinia';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import {
   customAttributes,
   appointmentFieldDefinitions,
@@ -55,6 +56,11 @@ describe('useAutomation', () => {
     crmReferencesStore.loadTaskStatuses = vi
       .fn()
       .mockResolvedValue(crmReferencesStore.taskStatuses);
+    const schedulingReferencesStore = useSchedulingReferencesStore();
+    schedulingReferencesStore.services = [{ id: 7, name: 'Consultation' }];
+    schedulingReferencesStore.loadServices = vi
+      .fn()
+      .mockResolvedValue(schedulingReferencesStore.services);
 
     useStoreGetters.mockReturnValue({
       'attributes/getAttributes': { value: customAttributes },
@@ -100,6 +106,10 @@ describe('useAutomation', () => {
             return [{ id: 'paid', name: 'Paid' }];
           case 'appointment_type':
             return [{ id: 'primary', name: 'Primary' }];
+          case 'starts_at_weekday':
+            return options.appointmentWeekdayOptions;
+          case 'service_id':
+            return options.appointmentServiceOptions;
           default:
             return [];
         }
@@ -341,6 +351,9 @@ describe('useAutomation', () => {
       'payment_status',
       'appointment_type',
       'source',
+      'starts_at_weekday',
+      'starts_at_time',
+      'service_id',
       'appointment_custom_attribute',
       'visit_reason',
     ]);
@@ -370,6 +383,20 @@ describe('useAutomation', () => {
     expect(
       getConditionDropdownValues('payment_status', 'appointment_created')
     ).toEqual([{ id: 'paid', name: 'Paid' }]);
+    expect(
+      getConditionDropdownValues('starts_at_weekday', 'appointment_created')
+    ).toEqual([
+      { id: '1', name: 'AUTOMATION.WEEKDAYS.1' },
+      { id: '2', name: 'AUTOMATION.WEEKDAYS.2' },
+      { id: '3', name: 'AUTOMATION.WEEKDAYS.3' },
+      { id: '4', name: 'AUTOMATION.WEEKDAYS.4' },
+      { id: '5', name: 'AUTOMATION.WEEKDAYS.5' },
+      { id: '6', name: 'AUTOMATION.WEEKDAYS.6' },
+      { id: '0', name: 'AUTOMATION.WEEKDAYS.0' },
+    ]);
+    expect(
+      getConditionDropdownValues('service_id', 'appointment_created')
+    ).toEqual([{ id: 7, name: 'Consultation' }]);
     expect(getConditionDropdownValues('team_id')).toEqual(teams);
     expect(getConditionDropdownValues('assignee_id')).toEqual(agents);
     expect(getConditionDropdownValues('contact')).toEqual(contacts);
@@ -456,6 +483,7 @@ describe('useAutomation', () => {
 
   it('loads appointment field definitions when appointment automations are requested', async () => {
     const crmReferencesStore = useCrmReferencesStore();
+    const schedulingReferencesStore = useSchedulingReferencesStore();
     const { loadAutomationReferences } = useAutomation();
 
     await loadAutomationReferences('appointment_created');
@@ -463,5 +491,8 @@ describe('useAutomation', () => {
     expect(crmReferencesStore.loadFieldDefinitions).toHaveBeenCalledWith(
       'appointment'
     );
+    expect(schedulingReferencesStore.loadServices).toHaveBeenCalledWith({
+      include_inactive: true,
+    });
   });
 });

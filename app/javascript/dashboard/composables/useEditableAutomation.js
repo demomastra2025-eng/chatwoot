@@ -74,7 +74,7 @@ export function useEditableAutomation() {
           condition.attribute_key
         );
       }
-      if (inputType === 'plain_text' || inputType === 'date') {
+      if (['plain_text', 'date', 'datetime', 'time'].includes(inputType)) {
         return { ...condition, values: condition.values[0] };
       }
       if (inputType === 'comma_separated_plain_text') {

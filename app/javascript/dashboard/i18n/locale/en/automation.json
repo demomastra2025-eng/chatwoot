@@ -250,6 +250,15 @@
       "HIGH": "High",
       "URGENT": "Urgent"
     },
+    "WEEKDAYS": {
+      "0": "Sunday",
+      "1": "Monday",
+      "2": "Tuesday",
+      "3": "Wednesday",
+      "4": "Thursday",
+      "5": "Friday",
+      "6": "Saturday"
+    },
     "ATTRIBUTES": {
       "MESSAGE_TYPE": "Message Type",
       "PRIVATE_NOTE": "Private Note",
@@ -262,6 +271,9 @@
       "PAYMENT_STATUS": "Payment Status",
       "APPOINTMENT_TYPE": "Appointment Type",
       "SOURCE": "Source",
+      "APPOINTMENT_START_WEEKDAY": "Appointment Start Weekday",
+      "APPOINTMENT_START_TIME": "Appointment Start Time",
+      "APPOINTMENT_SERVICE": "Service",
       "DEAL_PIPELINE": "Deal Pipeline",
       "DEAL_STAGE": "Deal Stage",
       "DEAL_OWNER": "Deal Owner",

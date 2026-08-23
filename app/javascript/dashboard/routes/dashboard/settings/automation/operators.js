@@ -142,3 +142,22 @@ export const OPERATOR_TYPES_7 = [
     label: 'Is not present',
   },
 ];
+
+export const OPERATOR_TYPES_8 = [
+  {
+    value: 'equal_to',
+    label: 'Equal to',
+  },
+  {
+    value: 'not_equal_to',
+    label: 'Not equal to',
+  },
+  {
+    value: 'is_greater_than',
+    label: 'Is greater than',
+  },
+  {
+    value: 'is_less_than',
+    label: 'Is less than',
+  },
+];
