@@ -54,4 +54,11 @@ RSpec.describe Whatsapp::WabaLivePriority do
   ensure
     waiter&.release!
   end
+
+  it 'raises when history work checks while live traffic is waiting' do
+    described_class.with_waiters([waba_id], waiter_id: 'job-1') do
+      expect { described_class.ensure_clear!(waba_id) }
+        .to raise_error(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+    end
+  end
 end

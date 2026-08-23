@@ -6,9 +6,10 @@ class Whatsapp::CoexistenceContactSyncService
   MAX_EVENT_KEYS_PER_TIMESTAMP = 32
   MAX_QUARANTINED_EVENT_KEYS = 50
 
-  def initialize(channel:, value:, pending_after_id: nil, pending_until_id: nil)
+  def initialize(channel:, value:, provider_event_at: nil, pending_after_id: nil, pending_until_id: nil)
     @channel = channel
     @value = value.with_indifferent_access
+    @provider_event_at = provider_event_at
     @pending_after_id = pending_after_id.to_i if pending_after_id.present?
     @pending_until_id = pending_until_id.to_i if pending_until_id.present?
   end
@@ -104,11 +105,20 @@ class Whatsapp::CoexistenceContactSyncService
 
   def contact_event(entry, contact, phone_number)
     raw_timestamp = entry.dig(:metadata, :timestamp)
+    timestamp = normalized_timestamp(raw_timestamp)
+    timestamp ||= normalized_timestamp(@provider_event_at) if raw_timestamp.blank?
+    return if timestamp.blank?
+
+    values = [timestamp, entry[:action], phone_number, contact[:first_name], contact[:full_name]]
+    { timestamp: timestamp, key: Digest::SHA256.hexdigest(values.map(&:to_s).join("\0")) }
+  end
+
+  def normalized_timestamp(raw_timestamp)
     return unless raw_timestamp.to_s.match?(/\A\d+\z/) && raw_timestamp.to_i.positive?
 
     timestamp = raw_timestamp.to_i
-    values = [timestamp, entry[:action], phone_number, contact[:first_name], contact[:full_name]]
-    { timestamp: timestamp, key: Digest::SHA256.hexdigest(values.map(&:to_s).join("\0")) }
+    timestamp /= 1000 if timestamp >= 1_000_000_000_000
+    timestamp
   end
 
   def contact_event_applicable?(current, event)

@@ -184,6 +184,8 @@ const rawRenderedTemplate = computed(() => {
 });
 
 const isFormInvalid = computed(() => {
+  if (isUploadingMedia.value) return true;
+
   if (
     !hasVariables.value &&
     !hasMediaHeader.value &&
@@ -273,6 +275,7 @@ const invalidateMediaUpload = () => {
 const removeMediaFile = () => {
   invalidateMediaUpload();
   updateMediaUrl('');
+  updateMediaName('');
   selectedMediaFileName.value = '';
 };
 

@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Whatsapp::CoexistenceHistoryMediaService
   pattr_initialize [:channel!, :value!]
 
@@ -5,16 +6,23 @@ class Whatsapp::CoexistenceHistoryMediaService
     follow_up_messages.filter_map do |raw_message|
       hydrate(raw_message.with_indifferent_access)
       nil
+    rescue Whatsapp::WabaLivePriority::LiveTrafficPendingError
+      raise
     rescue StandardError => e
       failure_payload(raw_message, e)
     end
   end
 
-  def replay_pending
-    replayable_failures.filter_map do |failure|
+  def replay_pending(only_ids: nil)
+    pending = replayable_failures(only_ids: only_ids)
+    include_attempted_message_ids(pending.filter_map { |failure| failure_id(failure).presence })
+
+    pending.filter_map do |failure|
       message = failure[:message].to_h.with_indifferent_access
       hydrate(message, metadata: failure[:metadata])
       nil
+    rescue Whatsapp::WabaLivePriority::LiveTrafficPendingError
+      raise
     rescue StandardError => e
       failure_payload(message, e, metadata: failure[:metadata])
     end
@@ -99,15 +107,23 @@ class Whatsapp::CoexistenceHistoryMediaService
     end
   end
 
-  def replayable_failures
-    history_ids = failure_ids(history_messages)
-    return [] if history_ids.empty?
+  def replayable_failures(only_ids: nil)
+    selected_ids = selected_failure_ids(only_ids)
+    return [] if selected_ids.empty?
 
     Array(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
       .map(&:with_indifferent_access)
-      .select do |failure|
-        failure[:kind] != 'history_thread' && failure[:message].present? && history_ids.include?(failure_id(failure))
-      end
+      .select { |failure| selected_media_failure?(failure, selected_ids) }
+  end
+
+  def selected_failure_ids(only_ids)
+    return failure_ids(history_messages) if only_ids.nil?
+
+    Array(only_ids).map(&:to_s).uniq
+  end
+
+  def selected_media_failure?(failure, selected_ids)
+    failure[:kind] != 'history_thread' && failure[:message].present? && selected_ids.include?(failure_id(failure))
   end
 
   def history_messages
@@ -131,13 +147,10 @@ class Whatsapp::CoexistenceHistoryMediaService
     source_id = message[:id].to_s
     raise ArgumentError, 'WhatsApp history message id is required' if source_id.blank?
 
-    target = Message.find_by(inbox_id: channel.inbox.id, source_id: source_id)
-    return if hydrated?(target)
-    raise ActiveRecord::RecordNotFound, "WhatsApp history placeholder not found for #{source_id}" if target.blank?
+    target = hydration_target(source_id, message)
+    return if target.blank?
 
-    unless Whatsapp::HistoryMessageNormalizer.media_follow_up?(target, message)
-      raise ActiveRecord::RecordNotFound, "WhatsApp history media target is not a placeholder for #{source_id}"
-    end
+    Whatsapp::WabaLivePriority.ensure_clear!(channel.provider_config.to_h['business_account_id'])
 
     suppress_runtime_events do
       Whatsapp::IncomingMessageWhatsappCloudService.new(
@@ -149,6 +162,18 @@ class Whatsapp::CoexistenceHistoryMediaService
 
     target.reload
     raise "WhatsApp history media was not hydrated for #{source_id}" unless hydrated?(target)
+  end
+
+  def hydration_target(source_id, message)
+    target = Message.find_by(inbox_id: channel.inbox.id, source_id: source_id)
+    return if hydrated?(target)
+    raise ActiveRecord::RecordNotFound, "WhatsApp history placeholder not found for #{source_id}" if target.blank?
+
+    unless Whatsapp::HistoryMessageNormalizer.media_follow_up?(target, message)
+      raise ActiveRecord::RecordNotFound, "WhatsApp history media target is not a placeholder for #{source_id}"
+    end
+
+    target
   end
 
   def hydrated?(target)
@@ -192,7 +217,9 @@ class Whatsapp::CoexistenceHistoryMediaService
       kind: 'history_media',
       message: safe_message,
       metadata: Whatsapp::CoexistenceHistoryFailureReplayService.safe_payload(channel, metadata),
-      replayable: true
+      replayable: true,
+      deferred: error.is_a?(ActiveRecord::RecordNotFound)
     }.compact
   end
 end
+# rubocop:enable Metrics/ClassLength

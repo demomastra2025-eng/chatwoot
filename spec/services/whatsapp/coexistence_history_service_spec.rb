@@ -75,6 +75,46 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     end.not_to change(Message, :count)
   end
 
+  it 'normalizes millisecond timestamps before persisting history metadata' do
+    millisecond_value = value.deep_dup
+    millisecond_value[:history][0][:threads][0][:messages].first[:timestamp] = '1700000000000'
+
+    described_class.new(channel: channel, value: millisecond_value).perform
+
+    message = channel.inbox.messages.find_by!(source_id: 'wamid.history-text-1')
+    expect(message.created_at.to_i).to eq(1_700_000_000)
+    expect(message.content_attributes['external_created_at']).to eq(Time.zone.at(1_700_000_000).iso8601)
+  end
+
+  it 'quarantines malformed timestamps before creating the history message' do
+    malformed_value = value.deep_dup
+    malformed_message = malformed_value[:history][0][:threads][0][:messages].first
+    malformed_message[:timestamp] = 'not-a-timestamp'
+
+    expect do
+      described_class.new(channel: channel, value: malformed_value).perform
+    end.to raise_error(Whatsapp::CoexistenceHistoryService::MediaHydrationError)
+
+    expect(channel.inbox.messages.find_by(source_id: malformed_message[:id])).to be_nil
+    failure = channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages').first
+    expect(failure).to include('id' => malformed_message[:id], 'replayable' => true)
+  end
+
+  it 'yields between atomic history messages when live traffic starts waiting' do
+    first_message_only = value.deep_dup
+    first_message_only[:history][0][:threads][0][:messages] = [value[:history][0][:threads][0][:messages].first]
+    allow(Whatsapp::WabaLivePriority).to receive(:ensure_clear!)
+    described_class.new(channel: channel, value: first_message_only).perform
+
+    allow(Whatsapp::WabaLivePriority).to receive(:ensure_clear!)
+      .and_raise(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+
+    expect do
+      described_class.new(channel: channel, value: value).perform
+    end.to raise_error(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+    expect(channel.inbox.messages.find_by(source_id: 'wamid.history-placeholder-1')).to be_nil
+  end
+
   it 'replays a persisted history-thread failure on a later history callback' do
     failed_value = {
       metadata: value[:metadata],
@@ -116,6 +156,78 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     end.to change(Message, :count).by(1)
 
     expect(channel.inbox.messages.find_by!(source_id: 'wamid.retry-history-thread').content).to eq('Повторяемое сообщение')
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages')).to be_blank
+  end
+
+  it 'locally replays only the requested persisted failure ids' do
+    failures = %w[one two].map do |suffix|
+      {
+        'id' => "wamid.local-replay-#{suffix}",
+        'kind' => 'history_thread',
+        'thread_id' => '77011112233',
+        'message' => {
+          'id' => "wamid.local-replay-#{suffix}",
+          'from' => '77011112233',
+          'timestamp' => '1700000003',
+          'type' => 'text',
+          'text' => { 'body' => "Local replay #{suffix}" }
+        },
+        'metadata' => value[:metadata].deep_stringify_keys,
+        'replayable' => true
+      }
+    end
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync'] = config['coexistence_sync'].merge(
+      'state' => 'history_failed',
+      'history_failed_messages' => failures
+    )
+    channel.update!(provider_config: config)
+
+    result = described_class.new(channel: channel, value: { metadata: value[:metadata] })
+                            .replay_failures(failure_ids: ['wamid.local-replay-one'])
+
+    expect(result).to eq(requested_ids: ['wamid.local-replay-one'], failed_ids: [])
+    expect(channel.inbox.messages.find_by!(source_id: 'wamid.local-replay-one').content).to eq('Local replay one')
+    expect(channel.inbox.messages.find_by(source_id: 'wamid.local-replay-two')).to be_nil
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
+      .to contain_exactly(include('id' => 'wamid.local-replay-two'))
+  end
+
+  it 'moves a persisted mutation failure to durable pending when its target is still missing' do
+    failure = {
+      'id' => 'wamid.persisted-edit-before-original',
+      'kind' => 'history_thread',
+      'thread_id' => '77011112233',
+      'message' => {
+        'id' => 'wamid.persisted-edit-before-original',
+        'from' => '77011112233',
+        'timestamp' => '1700000004',
+        'type' => 'edit',
+        'edit' => {
+          'original_message_id' => 'wamid.persisted-late-original',
+          'message' => { 'type' => 'text', 'text' => { 'body' => 'Исправленный текст' } }
+        }
+      },
+      'metadata' => value[:metadata].deep_stringify_keys,
+      'replayable' => true,
+      'deferred' => true
+    }
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync'] = config['coexistence_sync'].merge(
+      'state' => 'history_failed',
+      'history_failed_messages' => [failure]
+    )
+    channel.update!(provider_config: config)
+
+    result = described_class.new(channel: channel, value: { metadata: value[:metadata] })
+                            .replay_failures(failure_ids: [failure['id']])
+
+    expect(result).to eq(requested_ids: [failure['id']], failed_ids: [])
+    expect(Whatsapp::PendingMessageMutation.find_by!(event_id: failure['id'])).to have_attributes(
+      inbox_id: channel.inbox.id,
+      target_source_id: 'wamid.persisted-late-original',
+      mutation_type: 'edit'
+    )
     expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages')).to be_blank
   end
 
@@ -262,7 +374,7 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     end.not_to change(Attachment, :count)
   end
 
-  it 'records a retryable failure when media arrives before its placeholder' do
+  it 'defers media that arrives before its placeholder without blocking later history batches' do
     follow_up = {
       metadata: value[:metadata],
       messages: [{
@@ -274,16 +386,11 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
       }]
     }
 
-    expect do
-      described_class.new(channel: channel, value: follow_up).perform
-    end.to raise_error(
-      Whatsapp::CoexistenceHistoryService::MediaHydrationError,
-      /Failed to import 1 WhatsApp Business app history messages/
-    )
+    expect { described_class.new(channel: channel, value: follow_up).perform }.not_to raise_error
 
     sync = channel.reload.provider_config['coexistence_sync']
     expect(sync['state']).to eq('history_failed')
-    expect(sync['history_failed_messages']).to include(include('id' => 'wamid.missing-placeholder'))
+    expect(sync['history_failed_messages']).to include(include('id' => 'wamid.missing-placeholder', 'deferred' => true))
   end
 
   it 'records a retryable failure when an existing placeholder remains without an attachment' do
@@ -312,7 +419,7 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
       .to include(include('id' => 'wamid.history-placeholder-1', 'kind' => 'history_thread'))
   end
 
-  it 'clears a retryable media failure after the placeholder becomes available' do
+  it 'clears a deferred media failure after the placeholder becomes available' do
     follow_up = {
       metadata: value[:metadata],
       messages: [{
@@ -324,14 +431,10 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
       }]
     }
 
-    expect do
-      described_class.new(channel: channel, value: follow_up).perform
-    end.to raise_error(
-      Whatsapp::CoexistenceHistoryService::MediaHydrationError,
-      /Failed to import 1 WhatsApp Business app history messages/
-    )
+    expect { described_class.new(channel: channel, value: follow_up).perform }.not_to raise_error
     persisted_failure = channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages', 0)
     expect(persisted_failure.dig('message', 'id')).to eq('wamid.delayed-placeholder')
+    expect(persisted_failure['deferred']).to be(true)
 
     placeholder_chunk = {
       metadata: value[:metadata],
@@ -487,6 +590,34 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     expect(sync).to include('state' => 'history_failed', 'history_progress' => 100)
   end
 
+  it 'imports a recovered dead payload without replaying the existing failure ledger' do
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync'] = config['coexistence_sync'].to_h.merge(
+      'state' => 'history_failed',
+      'history_failed_messages' => [{
+        'id' => 'wamid.existing-failure',
+        'kind' => 'history_thread',
+        'thread_id' => '77011112233',
+        'message' => {
+          'id' => 'wamid.existing-failure',
+          'from' => '77011112233',
+          'timestamp' => '1700000000',
+          'type' => 'text',
+          'text' => { 'body' => 'Persisted failure' }
+        },
+        'metadata' => value[:metadata]
+      }]
+    )
+    channel.update!(provider_config: config)
+    progress_only = { history: [{ metadata: { phase: 1, progress: 50 }, threads: [] }] }
+    expect(Whatsapp::IncomingMessageWhatsappCloudService).not_to receive(:new)
+
+    described_class.new(channel: channel, value: progress_only).perform(replay_persisted_failures: false)
+
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
+      .to contain_exactly(include('id' => 'wamid.existing-failure'))
+  end
+
   it 'does not let late progress, media, or provider errors overwrite manual recovery' do
     config = channel.provider_config.deep_dup
     config['coexistence_sync'] = config['coexistence_sync'].to_h.merge(
@@ -626,6 +757,56 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
       described_class.new(channel: channel, value: edit_value).perform
     end.not_to change(Message, :count)
     expect(channel.inbox.messages.find_by!(source_id: 'wamid.history-text-1').content).to eq('Исправленный текст')
+  end
+
+  it 'defers a mutation until its original message arrives without retrying every history callback' do
+    edit_value = {
+      metadata: value[:metadata],
+      history: [{ threads: [{
+        id: '77011112233',
+        messages: [{
+          id: 'wamid.history-edit-before-original',
+          from: '77011112233',
+          timestamp: '1700000004',
+          type: 'edit',
+          edit: {
+            original_message_id: 'wamid.history-late-original',
+            message: { type: 'text', text: { body: 'Исправленный текст' } }
+          }
+        }]
+      }] }]
+    }
+
+    expect { described_class.new(channel: channel, value: edit_value).perform }.not_to raise_error
+    pending_mutation = Whatsapp::PendingMessageMutation.find_by!(event_id: 'wamid.history-edit-before-original')
+    expect(pending_mutation).to have_attributes(
+      target_source_id: 'wamid.history-late-original',
+      mutation_type: 'edit'
+    )
+
+    empty_chunk = { metadata: value[:metadata], history: [{ threads: [] }] }
+    expect do
+      described_class.new(channel: channel, value: empty_chunk).perform
+    end.not_to change(Whatsapp::PendingMessageMutation, :count)
+
+    original_value = {
+      metadata: value[:metadata],
+      history: [{ threads: [{
+        id: '77011112233',
+        messages: [{
+          id: 'wamid.history-late-original',
+          from: '77011112233',
+          timestamp: '1700000003',
+          type: 'text',
+          text: { body: 'Исходный текст' }
+        }]
+      }] }]
+    }
+    described_class.new(channel: channel, value: original_value).perform
+
+    expect(channel.inbox.messages.find_by!(source_id: 'wamid.history-late-original').content).to eq('Исправленный текст')
+    expect(Whatsapp::PendingMessageMutation.where(event_id: 'wamid.history-edit-before-original')).to be_empty
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages')).to be_blank
   end
 
   it 'records the official history-sharing declined error without importing data' do

@@ -30,7 +30,7 @@ class AddMedelementServiceDedupeIndex < ActiveRecord::Migration[7.1]
                       scheduling_services.id ASC
            ) AS duplicate_rank
     FROM scheduling_services
-    WHERE scheduling_services.custom_attributes ->> '#{CODE_KEY}' IS NOT NULL
+    WHERE NULLIF(BTRIM(scheduling_services.custom_attributes ->> '#{CODE_KEY}'), '') IS NOT NULL
   SQL
   RANKED_PRICES_SQL = <<~SQL.squish.freeze
     SELECT scheduling_service_prices.id,
@@ -57,7 +57,7 @@ class AddMedelementServiceDedupeIndex < ActiveRecord::Migration[7.1]
     add_index :scheduling_services,
               "account_id, (custom_attributes ->> '#{CODE_KEY}')",
               unique: true,
-              where: "custom_attributes ->> '#{CODE_KEY}' IS NOT NULL",
+              where: "NULLIF(BTRIM(custom_attributes ->> '#{CODE_KEY}'), '') IS NOT NULL",
               name: INDEX_NAME
   end
 

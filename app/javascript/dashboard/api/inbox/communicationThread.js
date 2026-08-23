@@ -2,6 +2,8 @@
 import ApiClient from '../ApiClient';
 import { buildCreatePayload } from './message';
 
+const inFlightMetaRequests = new Map();
+
 class CommunicationThreadApi extends ApiClient {
   constructor() {
     super('communication_threads', { accountScoped: true });
@@ -57,22 +59,33 @@ class CommunicationThreadApi extends ApiClient {
     teamScope,
     unread,
   } = {}) {
-    return axios.get(`${this.url}/meta`, {
-      params: {
-        inbox_id: inboxId,
-        status,
-        assignee_type: assigneeType,
-        labels,
-        team_id: teamId,
-        sort_by: sortBy,
-        crm_pipeline_id: crmPipelineId,
-        crm_stage_id: crmStageId,
-        appointment_status: appointmentStatus,
-        labels_scope: labelsScope,
-        team_scope: teamScope,
-        unread,
-      },
+    const url = `${this.url}/meta`;
+    const params = {
+      inbox_id: inboxId,
+      status,
+      assignee_type: assigneeType,
+      labels,
+      team_id: teamId,
+      sort_by: sortBy,
+      crm_pipeline_id: crmPipelineId,
+      crm_stage_id: crmStageId,
+      appointment_status: appointmentStatus,
+      labels_scope: labelsScope,
+      team_scope: teamScope,
+      unread,
+    };
+    const requestKey = JSON.stringify([url, params]);
+    const currentRequest = inFlightMetaRequests.get(requestKey);
+    if (currentRequest) return currentRequest;
+
+    let request;
+    request = axios.get(url, { params }).finally(() => {
+      if (inFlightMetaRequests.get(requestKey) === request) {
+        inFlightMetaRequests.delete(requestKey);
+      }
     });
+    inFlightMetaRequests.set(requestKey, request);
+    return request;
   }
 
   filter(payload) {

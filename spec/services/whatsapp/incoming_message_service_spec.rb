@@ -443,7 +443,7 @@ describe Whatsapp::IncomingMessageService do
     end
 
     context 'when valid contact message params' do
-      it 'creates appropriate message and attachments' do
+      it 'creates appropriate message and attachments', :aggregate_failures do
         params = { 'contacts' => [{ 'profile' => { 'name' => 'Kedar' }, 'wa_id' => '919746334593' }],
                    'messages' => [{ 'from' => '919446284490',
                                     'id' => 'wamid.SDFADSf23sfasdafasdfa',
@@ -461,13 +461,17 @@ describe Whatsapp::IncomingMessageService do
         expect(Contact.all.first.name).to eq('Kedar')
         expect(whatsapp_channel.inbox.conversations.count).not_to eq(0)
 
-        m1 = whatsapp_channel.inbox.messages.first
+        m1 = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.SDFADSf23sfasdafasdfa:contact:0')
         expect(m1.content).to eq('Apple Inc.')
+        expect(m1.created_at.to_i).to eq(1_675_823_265)
+        expect(m1.content_attributes['external_created_at']).to eq(Time.zone.at(1_675_823_265).iso8601)
         expect(m1.attachments.first.fallback_title).to eq('+911800')
         expect(m1.attachments.first.meta).to eq({})
 
-        m2 = whatsapp_channel.inbox.messages.last
+        m2 = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.SDFADSf23sfasdafasdfa:contact:1')
         expect(m2.content).to eq('Chatwoot')
+        expect(m2.created_at.to_i).to eq(1_675_823_265)
+        expect(m2.content_attributes['external_created_at']).to eq(Time.zone.at(1_675_823_265).iso8601)
         expect(m2.attachments.first.meta).to eq({ 'firstName' => 'Chatwoot' })
       end
     end

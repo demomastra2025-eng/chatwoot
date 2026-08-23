@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_12_154500) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_23_140000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2675,7 +2675,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_12_154500) do
     t.jsonb "custom_attributes", default: {}, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index "account_id, ((custom_attributes ->> 'medelement_nomenclature_code'::text))", name: "idx_scheduling_services_account_medelement_code_unique", unique: true, where: "((custom_attributes ->> 'medelement_nomenclature_code'::text) IS NOT NULL)"
+    t.index "account_id, ((custom_attributes ->> 'medelement_nomenclature_code'::text))", name: "idx_scheduling_services_account_medelement_code_unique", unique: true, where: "(NULLIF(btrim((custom_attributes ->> 'medelement_nomenclature_code'::text)), ''::text) IS NOT NULL)"
     t.index ["account_id", "active", "name"], name: "idx_scheduling_services_on_account_active_name"
     t.index ["account_id"], name: "index_scheduling_services_on_account_id"
   end
@@ -3273,6 +3273,33 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_12_154500) do
     t.index ["inbox_id"], name: "index_whatsapp_flows_on_inbox_id"
   end
 
+  create_table "whatsapp_pending_message_mutations", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "event_id", null: false
+    t.string "target_source_id", null: false
+    t.string "mutation_type", null: false
+    t.string "actor_id"
+    t.bigint "provider_timestamp", default: 0, null: false
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.string "status", default: "pending", null: false
+    t.integer "attempt_count", default: 0, null: false
+    t.datetime "last_attempted_at"
+    t.string "terminal_reason"
+    t.datetime "terminal_at"
+    t.datetime "next_reconciliation_at"
+    t.string "reconciliation_token"
+    t.datetime "payload_scrubbed_at"
+    t.index ["account_id", "inbox_id", "id"], name: "idx_wa_pending_mutations_account_inbox"
+    t.index ["account_id"], name: "index_whatsapp_pending_message_mutations_on_account_id"
+    t.index ["inbox_id", "event_id"], name: "idx_wa_pending_mutations_inbox_event", unique: true
+    t.index ["inbox_id", "target_source_id", "provider_timestamp"], name: "idx_wa_pending_mutations_target_time"
+    t.index ["inbox_id"], name: "index_whatsapp_pending_message_mutations_on_inbox_id"
+    t.index ["status", "next_reconciliation_at"], name: "idx_wa_pending_mutations_reconciliation"
+  end
+
   create_table "working_hours", force: :cascade do |t|
     t.bigint "inbox_id"
     t.bigint "account_id"
@@ -3519,6 +3546,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_12_154500) do
   add_foreign_key "whatsapp_flow_sessions", "whatsapp_flows"
   add_foreign_key "whatsapp_flows", "accounts"
   add_foreign_key "whatsapp_flows", "inboxes"
+  add_foreign_key "whatsapp_pending_message_mutations", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_pending_message_mutations", "inboxes", on_delete: :cascade
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()

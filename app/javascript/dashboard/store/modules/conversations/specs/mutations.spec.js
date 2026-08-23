@@ -166,6 +166,75 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#ADD_MESSAGE', () => {
+    it('keeps direct conversation messages ordered and deduplicated for mixed id types', () => {
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [
+          {
+            id: 11,
+            timestamp: 1710000020,
+            messages: [{ id: 2, conversation_id: 11, created_at: 1710000020 }],
+          },
+        ],
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 1,
+        conversation_id: 11,
+        created_at: 1710000010,
+      });
+      mutations[types.ADD_MESSAGE](state, {
+        id: '1',
+        conversation_id: 11,
+        created_at: 1710000010,
+      });
+
+      expect(
+        state.allConversations[0].messages.map(message => message.id)
+      ).toEqual(['1', 2]);
+      expect(state.allConversations[0].timestamp).toBe(1710000020);
+    });
+
+    it('orders ISO and epoch timestamps without poisoning the conversation timestamp', () => {
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [
+          {
+            id: 11,
+            timestamp: '2024-03-09T16:00:20.000Z',
+            last_incoming_message_at: '2024-03-09T16:00:20.000Z',
+            messages: [
+              {
+                id: 2,
+                conversation_id: 11,
+                created_at: '2024-03-09T16:00:20.000Z',
+              },
+            ],
+          },
+        ],
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 1,
+        conversation_id: 11,
+        created_at: 1710000010,
+        message_type: 0,
+      });
+
+      expect(
+        state.allConversations[0].messages.map(message => message.id)
+      ).toEqual([1, 2]);
+      expect(state.allConversations[0].timestamp).toBe(1710000020);
+      expect(state.allConversations[0].last_incoming_message_at).toBe(
+        1710000020
+      );
+      expect(Number.isNaN(state.allConversations[0].timestamp)).toBe(false);
+    });
+  });
+
   describe('#ADD_MESSAGE_TO_CHAT', () => {
     it('does not duplicate the same realtime message when native and thread events both arrive', () => {
       const message = {
@@ -196,6 +265,45 @@ describe('#mutations', () => {
 
       expect(state.allConversations[0].messages).toHaveLength(1);
       expect(state.allConversations[0].messages[0]).toEqual(message);
+    });
+
+    it('normalizes ISO channel activity when adding a thread message', () => {
+      const message = {
+        id: 100,
+        conversation_id: 11,
+        communication_thread_id: 7,
+        inbox_id: 101,
+        message_type: 0,
+        created_at: 1710000030,
+      };
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [
+          {
+            id: 7,
+            timestamp: '2024-03-09T16:00:20.000Z',
+            is_communication_thread: true,
+            conversation_ids: [11],
+            channels: [
+              {
+                conversation_id: 11,
+                inbox_id: 101,
+                last_activity_at: '2024-03-09T16:00:20.000Z',
+              },
+            ],
+            messages: [],
+          },
+        ],
+        attachments: {},
+      };
+
+      mutations[types.ADD_MESSAGE_TO_CHAT](state, { chatId: 7, message });
+
+      expect(state.allConversations[0].timestamp).toBe(1710000030);
+      expect(state.allConversations[0].channels[0].last_activity_at).toBe(
+        1710000030
+      );
     });
   });
 

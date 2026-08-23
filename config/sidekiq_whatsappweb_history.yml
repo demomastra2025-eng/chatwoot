@@ -6,6 +6,7 @@
 
 :queues:
   - whatsappweb_history
+  - whatsappweb_history_recovery
 
 production:
   :concurrency: <%= ENV.fetch("WHATSAPPWEB_HISTORY_SIDEKIQ_CONCURRENCY", 2) %>

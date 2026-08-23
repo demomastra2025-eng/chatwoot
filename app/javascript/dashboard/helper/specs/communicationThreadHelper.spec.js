@@ -138,6 +138,47 @@ describe('communicationThreadHelper', () => {
         ])
       ).toEqual([whatsappChannel]);
     });
+
+    it('orders ISO, second, and millisecond channel timestamps consistently', () => {
+      const baseTimestamp = 1_710_000_000;
+      const channels = [
+        { ...whatsappChannel, last_activity_at: baseTimestamp },
+        {
+          ...telegramChannel,
+          last_activity_at: (baseTimestamp + 100) * 1000,
+        },
+        {
+          ...whatsappOfficialCallChannel,
+          last_activity_at: new Date(
+            (baseTimestamp + 200) * 1000
+          ).toISOString(),
+        },
+      ];
+
+      expect(
+        getUniqueCommunicationChannels(channels).map(
+          channel => channel.conversation_id
+        )
+      ).toEqual([33, 22, 11]);
+      expect(
+        getCommunicationReplyChannel({ channels, messages: [] })
+      ).toMatchObject({ conversation_id: 33 });
+    });
+
+    it('uses normalized activity when choosing a duplicate channel snapshot', () => {
+      const baseTimestamp = 1_710_000_000;
+      const newerSnapshot = {
+        ...whatsappChannel,
+        last_activity_at: new Date((baseTimestamp + 100) * 1000).toISOString(),
+      };
+
+      expect(
+        getUniqueCommunicationChannels([
+          { ...whatsappChannel, last_activity_at: baseTimestamp },
+          newerSnapshot,
+        ])
+      ).toEqual([newerSnapshot]);
+    });
   });
 
   describe('#getCommunicationReplyChannels', () => {

@@ -198,6 +198,34 @@ RSpec.describe Whatsapp::CoexistenceContactSyncService do
     expect(sync['contacts_quarantined_event_keys'].size).to eq(1)
   end
 
+  it 'uses the provider envelope timestamp when a contact snapshot entry omits its timestamp' do
+    value = {
+      state_sync: [{ action: 'add', contact: { phone_number: '77011112234', full_name: 'Dana' } }]
+    }
+
+    described_class.new(channel: channel, value: value, provider_event_at: 1_700_000_005_000).perform
+
+    contact = channel.inbox.contact_inboxes.find_by!(source_id: '77011112234').contact
+    state = contact.additional_attributes.dig('whatsapp_business_app_contacts', channel.inbox.id.to_s)
+    expect(state).to include('state' => 'active', 'timestamp' => 1_700_000_005)
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'contacts_quarantined_events_count')).to be_nil
+  end
+
+  it 'does not hide a malformed contact timestamp behind the provider envelope timestamp' do
+    value = {
+      state_sync: [{
+        action: 'add',
+        contact: { phone_number: '77011112234', full_name: 'Dana' },
+        metadata: { timestamp: 'invalid' }
+      }]
+    }
+
+    described_class.new(channel: channel, value: value, provider_event_at: 1_700_000_005).perform
+
+    expect(channel.inbox.contact_inboxes.find_by(source_id: '77011112234')).to be_nil
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'contacts_quarantined_events_count')).to eq(1)
+  end
+
   it 'bounds distinct same-timestamp fingerprints and quarantines overflow events' do
     timestamp = '1700000004'
     entries = Array.new(40) do |index|

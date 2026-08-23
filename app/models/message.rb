@@ -583,11 +583,7 @@ class Message < ApplicationRecord
   end
 
   def runtime_events_suppressed?
-    skip_runtime_events || imported_history_message? || Current.suppress_runtime_events
-  end
-
-  def imported_history_message?
-    content_attributes.to_h['imported_history'] == true
+    skip_runtime_events || Current.suppress_runtime_events
   end
 end
 

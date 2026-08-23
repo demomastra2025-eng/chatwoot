@@ -1,4 +1,5 @@
 import { MESSAGE_TYPE } from 'shared/constants/messages';
+import { timestampInSeconds } from './timestampHelper';
 
 export const isCommunicationThread = chat => {
   return Boolean(
@@ -24,8 +25,8 @@ export const filterConversationsByCommunicationThreadMode = (
 
 const sortByNewestMessage = (firstMessage, secondMessage) => {
   const createdAtDifference =
-    Number(secondMessage?.created_at || 0) -
-    Number(firstMessage?.created_at || 0);
+    (timestampInSeconds(secondMessage?.created_at) ?? 0) -
+    (timestampInSeconds(firstMessage?.created_at) ?? 0);
   if (createdAtDifference !== 0) return createdAtDifference;
 
   return Number(secondMessage?.id || 0) - Number(firstMessage?.id || 0);
@@ -33,8 +34,8 @@ const sortByNewestMessage = (firstMessage, secondMessage) => {
 
 const sortByNewestChannelActivity = (firstChannel, secondChannel) => {
   const activityDifference =
-    Number(secondChannel?.last_activity_at || 0) -
-    Number(firstChannel?.last_activity_at || 0);
+    (timestampInSeconds(secondChannel?.last_activity_at) ?? 0) -
+    (timestampInSeconds(firstChannel?.last_activity_at) ?? 0);
   if (activityDifference !== 0) return activityDifference;
 
   return (
@@ -143,14 +144,14 @@ const isBetterCommunicationChannel = (candidate, current) => {
     isCommunicationChannelReplyable(candidate) ? 1 : 0,
     candidate?.can_send_text ? 1 : 0,
     candidate?.reply_window_open ? 1 : 0,
-    Number(candidate?.last_activity_at || 0),
+    timestampInSeconds(candidate?.last_activity_at) ?? 0,
     Number(candidate?.conversation_id || 0),
   ];
   const currentScore = [
     isCommunicationChannelReplyable(current) ? 1 : 0,
     current?.can_send_text ? 1 : 0,
     current?.reply_window_open ? 1 : 0,
-    Number(current?.last_activity_at || 0),
+    timestampInSeconds(current?.last_activity_at) ?? 0,
     Number(current?.conversation_id || 0),
   ];
 

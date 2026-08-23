@@ -4,8 +4,8 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
   queue_as :whatsappweb_history
 
   retry_on Whatsapp::WabaLivePriority::LiveTrafficPendingError, wait: 5.seconds, attempts: :unlimited, jitter: 0.5
-  retry_on LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
-  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
+  retry_on LockAcquisitionError, wait: 15.seconds, attempts: :unlimited, jitter: 0.5
+  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 15.seconds, attempts: :unlimited, jitter: 0.5
   retry_on Whatsapp::CoexistenceHistoryService::MediaHydrationError, wait: :polynomially_longer, attempts: 8 do |job, error|
     channel = Channel::Whatsapp.find_by(id: job.arguments.first)
     context = job.arguments.fourth.to_h.with_indifferent_access
@@ -59,7 +59,7 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
         channel.reload
         next unless valid_routing_context?(channel, context)
 
-        dispatch(channel, field, value.with_indifferent_access)
+        dispatch(channel, field, value.with_indifferent_access, context)
         reconcile(channel, field, context) if reconcile
         dispatched = true
       end
@@ -126,12 +126,19 @@ class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
     channel_ids.one? && channel_ids.first == channel.id
   end
 
-  def dispatch(channel, field, value)
+  def dispatch(channel, field, value, context)
     case field
     when 'history'
-      Whatsapp::CoexistenceHistoryService.new(channel: channel, value: value).perform
+      history_service = Whatsapp::CoexistenceHistoryService.new(channel: channel, value: value)
+      return history_service.perform(replay_persisted_failures: false) if context[:skip_persisted_failure_replay]
+
+      history_service.perform
     when 'smb_app_state_sync'
-      Whatsapp::CoexistenceContactSyncService.new(channel: channel, value: value).perform
+      Whatsapp::CoexistenceContactSyncService.new(
+        channel: channel,
+        value: value,
+        provider_event_at: context[:provider_event_at]
+      ).perform
     else
       raise ArgumentError, "Unsupported coexistence webhook field: #{field}"
     end

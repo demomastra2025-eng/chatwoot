@@ -56,4 +56,25 @@ RSpec.describe AddMedelementServiceDedupeIndex do
     )
     expect(connection.index_name_exists?(:scheduling_services, described_class::INDEX_NAME)).to be(false)
   end
+
+  it 'does not deduplicate services whose provider code is blank' do
+    account = create(:account)
+    blank_code = create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: { 'medelement_nomenclature_code' => '' }
+    )
+    whitespace_code = create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: { 'medelement_nomenclature_code' => '   ' }
+    )
+
+    migration.up
+
+    expect(blank_code.reload).to be_active
+    expect(whitespace_code.reload).to be_active
+    expect(blank_code.custom_attributes['medelement_nomenclature_code']).to eq('')
+    expect(whitespace_code.custom_attributes['medelement_nomenclature_code']).to eq('   ')
+  end
 end

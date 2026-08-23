@@ -34,6 +34,7 @@ class Whatsapp::IncomingMessageBaseService
     # processing the same message simultaneously.
     if find_message_by_source_id(message[:id])
       process_history_media_follow_up
+      replay_pending_message_mutations(@message)
       return
     end
 
@@ -119,7 +120,8 @@ class Whatsapp::IncomingMessageBaseService
   def create_contact_messages(message)
     contacts = Array(message['contacts'])
     contacts.each_with_index do |contact, index|
-      create_message(contact, source_id: contact_message_source_id(message, index, contacts.size))
+      contact_message = contact.to_h.with_indifferent_access.merge(timestamp: message[:timestamp])
+      create_message(contact_message, source_id: contact_message_source_id(message, index, contacts.size))
       attach_contact(contact)
       @message.save!
       after_message_persisted(@message)
@@ -272,8 +274,9 @@ class Whatsapp::IncomingMessageBaseService
     content_attrs = outgoing_echo ? { external_echo: true } : {}
     content_attrs[:in_reply_to_external_id] = @in_reply_to_external_id if @in_reply_to_external_id.present?
     content_attrs.merge!(message_content_attributes(message))
+    content_attrs.merge!(provider_timing_attributes(message))
 
-    @message = @conversation.messages.build(
+    message_attributes = {
       content: message_content(message),
       account_id: @inbox.account_id,
       inbox_id: @inbox.id,
@@ -283,7 +286,9 @@ class Whatsapp::IncomingMessageBaseService
       sender: outgoing_echo ? nil : @contact,
       source_id: (source_id || message[:id]).to_s,
       content_attributes: content_attrs
-    )
+    }
+    message_attributes[:created_at] = provider_message_time(message)
+    @message = @conversation.messages.build(message_attributes)
   end
 
   def contact_message_source_id(message, index, contacts_count)
@@ -360,6 +365,22 @@ class Whatsapp::IncomingMessageBaseService
 
   def after_message_persisted(message)
     record_meta_ad_referral(message)
+    replay_pending_message_mutations(message)
+  end
+
+  def replay_pending_message_mutations(message)
+    Whatsapp::IncomingMessageMutationService.replay_pending_for(message)
+  end
+
+  def provider_timing_attributes(message)
+    attributes = { 'whatsapp_ingested_at' => Time.current.iso8601(6) }
+    provider_created_at = provider_message_time(message)
+    attributes['external_created_at'] = provider_created_at.iso8601 if provider_created_at.present?
+    attributes
+  end
+
+  def provider_message_time(message)
+    Whatsapp::ProviderTimestamp.time(message[:timestamp])
   end
 
   def record_meta_ad_referral(message)

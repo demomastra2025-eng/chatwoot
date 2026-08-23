@@ -7,20 +7,27 @@ class TelegramPersonal::UpdateMessageReadStatusService
     contact_inbox = inbox.contact_inboxes.find_by(source_id: chat_id)
     return if contact_inbox.blank?
 
-    contact_inbox.conversations.includes(:messages).find_each do |conversation|
-      outgoing_messages(conversation).each do |message|
-        Messages::StatusUpdateService.new(message, 'read').perform
-      end
+    outgoing_messages(contact_inbox).find_each do |message|
+      Messages::StatusUpdateService.new(message, 'read').perform
     end
   end
 
   private
 
-  def outgoing_messages(conversation)
-    conversation.messages.outgoing.reject do |message|
-      source_id = message.source_id.to_s
-      source_id.blank? || !source_id.match?(/\A\d+\z/) || source_id.to_i > max_id
-    end
+  def outgoing_messages(contact_inbox)
+    Message.outgoing
+           .where(account_id: inbox.account_id, inbox_id: inbox.id)
+           .where(conversation_id: contact_inbox.conversations.select(:id))
+           .where.not(status: :read)
+           .where(
+             <<~SQL.squish,
+               CASE
+                 WHEN messages.source_id ~ '^[0-9]+$' THEN messages.source_id::numeric <= :max_id
+                 ELSE FALSE
+               END
+             SQL
+             max_id: max_id
+           )
   end
 
   def chat_id

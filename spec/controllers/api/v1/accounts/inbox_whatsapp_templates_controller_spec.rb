@@ -1,7 +1,7 @@
 require 'rails_helper'
 
 RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :request do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, limits: { non_web_inboxes: 10 }) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:whatsapp_channel) do
