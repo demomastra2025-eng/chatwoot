@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { applyRoleFilter } from '../helpers';
+import { applyRoleFilter, findPendingMessageIndex } from '../helpers';
 
 describe('Conversation Helpers', () => {
+  describe('#findPendingMessageIndex', () => {
+    it('matches the same server message when its id changes JSON type', () => {
+      const chat = { messages: [{ id: 42 }] };
+
+      expect(findPendingMessageIndex(chat, { id: '42' })).toBe(0);
+    });
+  });
+
   describe('#applyRoleFilter', () => {
     // Test data for conversations
     const conversationWithAssignee = {

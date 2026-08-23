@@ -31,6 +31,66 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
       }.with_indifferent_access
     end
 
+    it 'uses the provider timestamp for live inbound messages and records ingestion separately' do
+      text_params = params.deep_dup
+      message = text_params.dig(:entry, 0, :changes, 0, :value, :messages, 0)
+      message[:id] = 'wamid.provider-time-inbound'
+      message[:type] = 'text'
+      message[:text] = { body: 'provider time' }
+      message.delete(:image)
+
+      travel_to(Time.zone.at(1_700_000_000)) do
+        described_class.new(inbox: whatsapp_channel.inbox, params: text_params).perform
+      end
+
+      persisted = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.provider-time-inbound')
+      expect(persisted.created_at.to_i).to eq(1_664_799_904)
+      expect(persisted.content_attributes).to include(
+        'external_created_at' => Time.zone.at(1_664_799_904).iso8601,
+        'whatsapp_ingested_at' => Time.zone.at(1_700_000_000).iso8601(6)
+      )
+    end
+
+    it 'uses the provider timestamp for Business App echo messages' do
+      contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, source_id: '2423423243')
+      create(:conversation, inbox: whatsapp_channel.inbox, contact_inbox: contact_inbox)
+      echo_params = params.deep_dup
+      value = echo_params.dig(:entry, 0, :changes, 0, :value)
+      echo = value.delete(:messages).first
+      echo[:id] = 'wamid.provider-time-echo'
+      echo[:to] = '2423423243'
+      echo[:type] = 'text'
+      echo[:text] = { body: 'echo provider time' }
+      echo.delete(:image)
+      value[:message_echoes] = [echo]
+
+      described_class.new(inbox: whatsapp_channel.inbox, params: echo_params, outgoing_echo: true).perform
+
+      persisted = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.provider-time-echo')
+      expect(persisted).to be_outgoing
+      expect(persisted.created_at.to_i).to eq(1_664_799_904)
+      expect(persisted.content_attributes['external_created_at']).to eq(Time.zone.at(1_664_799_904).iso8601)
+    end
+
+    it 'falls back to ingestion time for an invalid future provider timestamp' do
+      text_params = params.deep_dup
+      message = text_params.dig(:entry, 0, :changes, 0, :value, :messages, 0)
+      message[:id] = 'wamid.invalid-provider-time'
+      message[:timestamp] = '999999999999999999'
+      message[:type] = 'text'
+      message[:text] = { body: 'invalid provider time' }
+      message.delete(:image)
+
+      travel_to(Time.zone.at(1_800_000_000)) do
+        described_class.new(inbox: whatsapp_channel.inbox, params: text_params).perform
+      end
+
+      persisted = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.invalid-provider-time')
+      expect(persisted.created_at.to_i).to eq(1_800_000_000)
+      expect(persisted.content_attributes).to include('whatsapp_ingested_at' => Time.zone.at(1_800_000_000).iso8601(6))
+      expect(persisted.content_attributes).not_to have_key('external_created_at')
+    end
+
     it 'releases the dedup mutex when message processing raises' do
       dedup_lock = instance_double(Whatsapp::MessageDedupLock, acquire!: true, release!: true)
       service = described_class.new(inbox: whatsapp_channel.inbox, params: params)
@@ -77,11 +137,11 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
           status: 401
         )
 
-        described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
-        expect(whatsapp_channel.inbox.conversations.count).not_to eq(0)
-        expect(Contact.all.first.name).to eq('Sojan Jose')
-        expect(whatsapp_channel.inbox.messages.first.content).to eq('Check out my product!')
-        expect(whatsapp_channel.inbox.messages.first.attachments.present?).to be false
+        expect do
+          described_class.new(inbox: whatsapp_channel.inbox, params: params).perform
+        end.to raise_error(Whatsapp::CloudMediaDownload::MetadataFetchError)
+
+        expect(whatsapp_channel.inbox.messages).to be_empty
         expect(whatsapp_channel.authorization_error_count).to eq(1)
       end
     end
@@ -393,7 +453,7 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
 
           described_class.new(inbox: whatsapp_channel.inbox, params: reply_params).perform
 
-          reply_message = whatsapp_channel.inbox.messages.last
+          reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.REPLY_MESSAGE_ID')
           expect(reply_message.content).to eq('This is a reply')
           expect(reply_message.conversation_id).to eq(conversation.id)
           expect(reply_message.content_attributes['in_reply_to']).to eq(original_message.id)
@@ -469,7 +529,7 @@ describe Whatsapp::IncomingMessageWhatsappCloudService do
 
         described_class.new(inbox: whatsapp_channel.inbox, params: campaign_reply_params).perform
 
-        reply_message = whatsapp_channel.inbox.messages.last
+        reply_message = whatsapp_channel.inbox.messages.find_by!(source_id: 'wamid.NEW_MESSAGE_ID')
         expect(reply_message.content).to eq('Need help with this campaign')
         expect(reply_message.conversation_id).to eq(conversation.id)
         expect(conversation.reload).to be_open

@@ -87,6 +87,34 @@ RSpec.describe Whatsapp::IncomingMessageWhatsappCloudService do
         'timestamp' => '1700000200'
       )
     end
+
+    it 'keeps a missing-target reaction tenant-scoped and replays it later' do
+      other_channel = create(:channel_whatsapp, provider: 'whatsapp_cloud', validate_provider_config: false, sync_templates: false)
+      other_conversation = create(:conversation, inbox: other_channel.inbox)
+      other_target = create(
+        :message,
+        conversation: other_conversation,
+        inbox: other_channel.inbox,
+        source_id: target_message.source_id
+      )
+      target_message.destroy!
+
+      perform
+
+      expect(other_target.reload.content_attributes['whatsapp_reactions']).to be_blank
+      pending = Whatsapp::PendingMessageMutation.find_by!(inbox: channel.inbox, event_id: 'wamid.event')
+      replacement = create(
+        :message,
+        conversation: conversation,
+        inbox: channel.inbox,
+        source_id: 'wamid.original'
+      )
+
+      Whatsapp::IncomingMessageMutationService.replay_pending_for(replacement)
+
+      expect(replacement.reload.content_attributes.dig('whatsapp_reactions', '15551234567', 'emoji')).to eq('👍')
+      expect { pending.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
   end
 
   context 'with an edit event' do
@@ -126,12 +154,53 @@ RSpec.describe Whatsapp::IncomingMessageWhatsappCloudService do
       expect(target_message.content_attributes['whatsapp_edit_event_id']).to eq('wamid.newer')
     end
 
-    it 'raises a retryable error when the original message has not arrived yet' do
+    it 'persists and replays the edit when the original message arrives later' do
       target_message.destroy!
 
-      expect { perform }.to raise_error(
-        Whatsapp::IncomingMessageMutationService::TargetNotFoundError,
-        /Original WhatsApp message wamid.original/
+      expect { perform }.to change(Whatsapp::PendingMessageMutation, :count).by(1)
+      expect do
+        described_class.new(inbox: channel.inbox, params: params, outgoing_echo: false).perform
+      end.not_to change(Whatsapp::PendingMessageMutation, :count)
+
+      pending = Whatsapp::PendingMessageMutation.find_by!(inbox: channel.inbox, event_id: 'wamid.event')
+      expect(pending).to have_attributes(
+        target_source_id: 'wamid.original',
+        mutation_type: 'edit',
+        provider_timestamp: 1_700_000_100
+      )
+
+      original_params = params.deep_dup
+      original_event = original_params.dig(:entry, 0, :changes, 0, :value, :messages, 0)
+      original_event.replace(
+        id: 'wamid.original',
+        from: '15551234567',
+        timestamp: '1700000000',
+        type: 'text',
+        text: { body: 'Исходный текст' }
+      )
+
+      described_class.new(inbox: channel.inbox, params: original_params, outgoing_echo: false).perform
+
+      recovered = channel.inbox.messages.find_by!(source_id: 'wamid.original')
+      expect(recovered.content).to eq('Исправленный текст')
+      expect(recovered.content_attributes).to include(
+        'edited' => true,
+        'whatsapp_edit_event_id' => 'wamid.event'
+      )
+      expect(Whatsapp::PendingMessageMutation.where(inbox: channel.inbox)).to be_empty
+    end
+
+    it 'broadcasts a later edit for a message that originated in imported history' do
+      target_message.update!(content_attributes: { imported_history: true })
+      dispatcher = Rails.configuration.dispatcher
+      allow(dispatcher).to receive(:dispatch)
+
+      perform
+
+      expect(dispatcher).to have_received(:dispatch).with(
+        Events::Types::MESSAGE_UPDATED,
+        kind_of(Time),
+        hash_including(message: target_message)
       )
     end
   end
@@ -164,6 +233,24 @@ RSpec.describe Whatsapp::IncomingMessageWhatsappCloudService do
 
       expect(target_message.reload).to have_attributes(content: 'Более новый текст')
       expect(target_message.content_attributes['deleted']).to be_nil
+    end
+
+    it 'replays a revoke that arrived before its original message' do
+      target_message.destroy!
+      perform
+      replacement = create(
+        :message,
+        conversation: conversation,
+        inbox: channel.inbox,
+        source_id: 'wamid.original',
+        content: 'Original'
+      )
+
+      Whatsapp::IncomingMessageMutationService.replay_pending_for(replacement)
+
+      expect(replacement.reload.content).to eq(I18n.t('conversations.messages.deleted'))
+      expect(replacement.content_attributes).to include('deleted' => true, 'whatsapp_revoke_event_id' => 'wamid.event')
+      expect(Whatsapp::PendingMessageMutation.where(inbox: channel.inbox)).to be_empty
     end
   end
 

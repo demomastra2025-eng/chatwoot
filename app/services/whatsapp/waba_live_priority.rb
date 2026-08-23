@@ -22,6 +22,12 @@ class Whatsapp::WabaLivePriority
       new(waba_id).waiting?
     end
 
+    def ensure_clear!(waba_id)
+      return unless waiting?(waba_id)
+
+      raise LiveTrafficPendingError, 'Live WhatsApp traffic is waiting'
+    end
+
     private
 
     def normalized_waba_ids(waba_ids)

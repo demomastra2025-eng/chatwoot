@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_07_23_023333) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_23_071500) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2987,6 +2987,24 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_023333) do
     t.index ["channel_id"], name: "idx_on_channel_id_d91985ff7a"
   end
 
+  create_table "whatsapp_pending_message_mutations", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.bigint "inbox_id", null: false
+    t.string "event_id", null: false
+    t.string "target_source_id", null: false
+    t.string "mutation_type", null: false
+    t.string "actor_id"
+    t.bigint "provider_timestamp", default: 0, null: false
+    t.jsonb "payload", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "inbox_id", "id"], name: "idx_wa_pending_mutations_account_inbox"
+    t.index ["account_id"], name: "index_whatsapp_pending_message_mutations_on_account_id"
+    t.index ["inbox_id", "event_id"], name: "idx_wa_pending_mutations_inbox_event", unique: true
+    t.index ["inbox_id", "target_source_id", "provider_timestamp"], name: "idx_wa_pending_mutations_target_time"
+    t.index ["inbox_id"], name: "index_whatsapp_pending_message_mutations_on_inbox_id"
+  end
+
   create_table "whatsapp_flow_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id", null: false
@@ -3238,6 +3256,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_07_23_023333) do
   add_foreign_key "telephony_sip_profiles", "users"
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "channel_whatsapp", column: "channel_id", on_delete: :cascade
+  add_foreign_key "whatsapp_pending_message_mutations", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_pending_message_mutations", "inboxes", on_delete: :cascade
   add_foreign_key "whatsapp_flow_sessions", "accounts"
   add_foreign_key "whatsapp_flow_sessions", "conversations"
   add_foreign_key "whatsapp_flow_sessions", "inboxes"

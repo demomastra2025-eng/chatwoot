@@ -2,6 +2,8 @@
 # https://docs.360dialog.com/whatsapp-api/whatsapp-api/media
 # https://developers.facebook.com/docs/whatsapp/api/media/
 class Whatsapp::IncomingMessageBaseService
+  MINIMUM_PROVIDER_TIMESTAMP = Time.utc(2009, 1, 1).to_i
+
   include ::Whatsapp::IncomingMessageServiceHelpers
 
   pattr_initialize [:inbox!, :params!, :outgoing_echo]
@@ -34,6 +36,7 @@ class Whatsapp::IncomingMessageBaseService
     # processing the same message simultaneously.
     if find_message_by_source_id(message[:id])
       process_history_media_follow_up
+      replay_pending_message_mutations(@message)
       return
     end
 
@@ -272,8 +275,9 @@ class Whatsapp::IncomingMessageBaseService
     content_attrs = outgoing_echo ? { external_echo: true } : {}
     content_attrs[:in_reply_to_external_id] = @in_reply_to_external_id if @in_reply_to_external_id.present?
     content_attrs.merge!(message_content_attributes(message))
+    content_attrs.merge!(provider_timing_attributes(message))
 
-    @message = @conversation.messages.build(
+    message_attributes = {
       content: message_content(message),
       account_id: @inbox.account_id,
       inbox_id: @inbox.id,
@@ -283,7 +287,10 @@ class Whatsapp::IncomingMessageBaseService
       sender: outgoing_echo ? nil : @contact,
       source_id: (source_id || message[:id]).to_s,
       content_attributes: content_attrs
-    )
+    }
+    provider_created_at = provider_message_time(message)
+    message_attributes[:created_at] = provider_created_at if provider_created_at.present?
+    @message = @conversation.messages.build(message_attributes)
   end
 
   def contact_message_source_id(message, index, contacts_count)
@@ -360,6 +367,31 @@ class Whatsapp::IncomingMessageBaseService
 
   def after_message_persisted(message)
     record_meta_ad_referral(message)
+    replay_pending_message_mutations(message)
+  end
+
+  def replay_pending_message_mutations(message)
+    Whatsapp::IncomingMessageMutationService.replay_pending_for(message)
+  end
+
+  def provider_timing_attributes(message)
+    attributes = { 'whatsapp_ingested_at' => Time.current.iso8601(6) }
+    provider_created_at = provider_message_time(message)
+    attributes['external_created_at'] = provider_created_at.iso8601 if provider_created_at.present?
+    attributes
+  end
+
+  def provider_message_time(message)
+    raw_timestamp = message[:timestamp].to_s
+    return unless raw_timestamp.match?(/\A\d+\z/)
+
+    timestamp = raw_timestamp.to_i
+    timestamp /= 1000 if timestamp >= 1_000_000_000_000
+    return unless timestamp.between?(MINIMUM_PROVIDER_TIMESTAMP, 1.day.from_now.to_i)
+
+    Time.zone.at(timestamp)
+  rescue ArgumentError, RangeError
+    nil
   end
 
   def record_meta_ad_referral(message)

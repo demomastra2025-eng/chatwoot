@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Whatsapp::CoexistenceHistoryMediaService
   pattr_initialize [:channel!, :value!]
 
@@ -5,6 +6,8 @@ class Whatsapp::CoexistenceHistoryMediaService
     follow_up_messages.filter_map do |raw_message|
       hydrate(raw_message.with_indifferent_access)
       nil
+    rescue Whatsapp::WabaLivePriority::LiveTrafficPendingError
+      raise
     rescue StandardError => e
       failure_payload(raw_message, e)
     end
@@ -18,6 +21,8 @@ class Whatsapp::CoexistenceHistoryMediaService
       message = failure[:message].to_h.with_indifferent_access
       hydrate(message, metadata: failure[:metadata])
       nil
+    rescue Whatsapp::WabaLivePriority::LiveTrafficPendingError
+      raise
     rescue StandardError => e
       failure_payload(message, e, metadata: failure[:metadata])
     end
@@ -142,13 +147,10 @@ class Whatsapp::CoexistenceHistoryMediaService
     source_id = message[:id].to_s
     raise ArgumentError, 'WhatsApp history message id is required' if source_id.blank?
 
-    target = Message.find_by(inbox_id: channel.inbox.id, source_id: source_id)
-    return if hydrated?(target)
-    raise ActiveRecord::RecordNotFound, "WhatsApp history placeholder not found for #{source_id}" if target.blank?
+    target = hydration_target(source_id, message)
+    return if target.blank?
 
-    unless Whatsapp::HistoryMessageNormalizer.media_follow_up?(target, message)
-      raise ActiveRecord::RecordNotFound, "WhatsApp history media target is not a placeholder for #{source_id}"
-    end
+    Whatsapp::WabaLivePriority.ensure_clear!(channel.provider_config.to_h['business_account_id'])
 
     suppress_runtime_events do
       Whatsapp::IncomingMessageWhatsappCloudService.new(
@@ -160,6 +162,18 @@ class Whatsapp::CoexistenceHistoryMediaService
 
     target.reload
     raise "WhatsApp history media was not hydrated for #{source_id}" unless hydrated?(target)
+  end
+
+  def hydration_target(source_id, message)
+    target = Message.find_by(inbox_id: channel.inbox.id, source_id: source_id)
+    return if hydrated?(target)
+    raise ActiveRecord::RecordNotFound, "WhatsApp history placeholder not found for #{source_id}" if target.blank?
+
+    unless Whatsapp::HistoryMessageNormalizer.media_follow_up?(target, message)
+      raise ActiveRecord::RecordNotFound, "WhatsApp history media target is not a placeholder for #{source_id}"
+    end
+
+    target
   end
 
   def hydrated?(target)
@@ -208,3 +222,4 @@ class Whatsapp::CoexistenceHistoryMediaService
     }.compact
   end
 end
+# rubocop:enable Metrics/ClassLength

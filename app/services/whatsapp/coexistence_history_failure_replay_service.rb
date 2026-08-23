@@ -36,21 +36,7 @@ class Whatsapp::CoexistenceHistoryFailureReplayService
   def perform(only_ids: nil)
     attempted_ids = []
     failures = pending_failures(only_ids: only_ids).filter_map do |failure|
-      message = failure[:message].to_h.with_indifferent_access
-      message_id = message[:id].presence&.to_s
-      next if message_id.blank? || current_message_ids.include?(message_id)
-
-      attempted_ids << message_id
-      yield(failure[:thread_id], message, failure[:metadata])
-      nil
-    rescue StandardError => e
-      self.class.failure_payload(
-        channel: channel,
-        thread_id: failure[:thread_id],
-        message: message,
-        error: e,
-        metadata: failure[:metadata]
-      )
+      replay_failure(failure, attempted_ids) { |*args| yield(*args) }
     end
     [failures, attempted_ids]
   end
@@ -60,6 +46,8 @@ class Whatsapp::CoexistenceHistoryFailureReplayService
       message = raw_message.with_indifferent_access
       yield(thread[:id], message, metadata)
       nil
+    rescue Whatsapp::WabaLivePriority::LiveTrafficPendingError
+      raise
     rescue StandardError => e
       self.class.failure_payload(
         channel: channel,
@@ -72,6 +60,26 @@ class Whatsapp::CoexistenceHistoryFailureReplayService
   end
 
   private
+
+  def replay_failure(failure, attempted_ids)
+    message = failure[:message].to_h.with_indifferent_access
+    message_id = message[:id].presence&.to_s
+    return if message_id.blank? || current_message_ids.include?(message_id)
+
+    attempted_ids << message_id
+    yield(failure[:thread_id], message, failure[:metadata])
+    nil
+  rescue Whatsapp::WabaLivePriority::LiveTrafficPendingError
+    raise
+  rescue StandardError => e
+    self.class.failure_payload(
+      channel: channel,
+      thread_id: failure[:thread_id],
+      message: message,
+      error: e,
+      metadata: failure[:metadata]
+    )
+  end
 
   def pending_failures(only_ids: nil)
     failures = history_thread_failures

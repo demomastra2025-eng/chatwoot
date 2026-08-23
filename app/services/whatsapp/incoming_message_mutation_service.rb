@@ -1,10 +1,32 @@
 class Whatsapp::IncomingMessageMutationService
   class TargetNotFoundError < StandardError; end
 
-  pattr_initialize [:inbox!, :message!, :outgoing_echo]
+  def self.replay_pending_for(message)
+    Whatsapp::PendingMessageMutationService.replay_pending_for(message)
+  end
+
+  def initialize(inbox:, message:, outgoing_echo: false)
+    @inbox = inbox
+    @message = message&.with_indifferent_access
+    @outgoing_echo = outgoing_echo
+  end
 
   def perform
-    case message[:type]
+    Whatsapp::PendingMessageMutationService.new(inbox: inbox, message: message, outgoing_echo: outgoing_echo).perform
+  end
+
+  def apply_to(target_message)
+    @target_message = target_message
+    process_mutation
+    true
+  end
+
+  private
+
+  attr_reader :inbox, :message, :outgoing_echo
+
+  def process_mutation
+    case message[:type].to_s
     when 'reaction'
       process_reaction
     when 'edit'
@@ -14,11 +36,7 @@ class Whatsapp::IncomingMessageMutationService
     else
       return false
     end
-
-    true
   end
-
-  private
 
   def process_reaction
     reaction = message[:reaction].to_h.with_indifferent_access
@@ -146,11 +164,8 @@ class Whatsapp::IncomingMessageMutationService
 
   def find_target(source_id)
     return if source_id.blank?
+    return @target_message if @target_message&.source_id.to_s == source_id.to_s
 
-    target = Message.find_by(inbox_id: inbox.id, source_id: source_id.to_s)
-    return target if target.present?
-
-    raise TargetNotFoundError,
-          "Original WhatsApp message #{source_id} is not available for #{message[:type]} event #{message[:id]}"
+    Message.find_by(inbox_id: inbox.id, source_id: source_id.to_s)
   end
 end

@@ -90,11 +90,10 @@ class Whatsapp::CoexistenceHistoryService
   end
 
   def import_message(thread_id, message, metadata: @value[:metadata])
-    source_id = message[:id]
-    raise ArgumentError, 'WhatsApp history message id is required' if source_id.blank?
-
-    existing_message = Message.find_by(inbox_id: @channel.inbox.id, source_id: source_id)
+    source_id, existing_message = import_identity(message)
     return if already_imported?(existing_message, message)
+
+    Whatsapp::WabaLivePriority.ensure_clear!(@channel.provider_config.to_h['business_account_id'])
 
     media_hydration_required = existing_message.present?
 
@@ -113,6 +112,13 @@ class Whatsapp::CoexistenceHistoryService
       validate_media_hydration!(imported_message, source_id) if media_hydration_required
       apply_history_metadata(imported_message, message, outgoing)
     end
+  end
+
+  def import_identity(message)
+    source_id = message[:id]
+    raise ArgumentError, 'WhatsApp history message id is required' if source_id.blank?
+
+    [source_id, Message.find_by(inbox_id: @channel.inbox.id, source_id: source_id)]
   end
 
   def already_imported?(existing_message, message)

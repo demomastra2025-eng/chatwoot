@@ -75,6 +75,21 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     end.not_to change(Message, :count)
   end
 
+  it 'yields between atomic history messages when live traffic starts waiting' do
+    first_message_only = value.deep_dup
+    first_message_only[:history][0][:threads][0][:messages] = [value[:history][0][:threads][0][:messages].first]
+    allow(Whatsapp::WabaLivePriority).to receive(:ensure_clear!)
+    described_class.new(channel: channel, value: first_message_only).perform
+
+    allow(Whatsapp::WabaLivePriority).to receive(:ensure_clear!)
+      .and_raise(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+
+    expect do
+      described_class.new(channel: channel, value: value).perform
+    end.to raise_error(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+    expect(channel.inbox.messages.find_by(source_id: 'wamid.history-placeholder-1')).to be_nil
+  end
+
   it 'replays a persisted history-thread failure on a later history callback' do
     failed_value = {
       metadata: value[:metadata],
@@ -700,12 +715,16 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     }
 
     expect { described_class.new(channel: channel, value: edit_value).perform }.not_to raise_error
-    failure = channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages').sole
-    expect(failure).to include('id' => 'wamid.history-edit-before-original', 'deferred' => true)
+    pending_mutation = Whatsapp::PendingMessageMutation.find_by!(event_id: 'wamid.history-edit-before-original')
+    expect(pending_mutation).to have_attributes(
+      target_source_id: 'wamid.history-late-original',
+      mutation_type: 'edit'
+    )
 
     empty_chunk = { metadata: value[:metadata], history: [{ threads: [] }] }
-    expect { described_class.new(channel: channel, value: empty_chunk).perform }.not_to raise_error
-    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages').size).to eq(1)
+    expect do
+      described_class.new(channel: channel, value: empty_chunk).perform
+    end.not_to change(Whatsapp::PendingMessageMutation, :count)
 
     original_value = {
       metadata: value[:metadata],
@@ -723,6 +742,7 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     described_class.new(channel: channel, value: original_value).perform
 
     expect(channel.inbox.messages.find_by!(source_id: 'wamid.history-late-original').content).to eq('Исправленный текст')
+    expect(Whatsapp::PendingMessageMutation.where(event_id: 'wamid.history-edit-before-original')).to be_empty
     expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages')).to be_blank
   end
 

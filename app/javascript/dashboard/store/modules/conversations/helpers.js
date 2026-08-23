@@ -74,8 +74,14 @@ export const isStalePendingMessageMatch = (pendingMessage, serverMessage) => {
 
 export const findPendingMessageIndex = (chat, message) => {
   const { echo_id: tempMessageId } = message;
+  const sameMessageId = (leftId, rightId) =>
+    leftId !== undefined &&
+    leftId !== null &&
+    rightId !== undefined &&
+    rightId !== null &&
+    String(leftId) === String(rightId);
   const identityIndex = chat.messages.findIndex(
-    m => m.id === message.id || m.id === tempMessageId
+    m => sameMessageId(m.id, message.id) || sameMessageId(m.id, tempMessageId)
   );
   if (identityIndex !== -1) return identityIndex;
 

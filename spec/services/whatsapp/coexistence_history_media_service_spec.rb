@@ -46,4 +46,28 @@ RSpec.describe Whatsapp::CoexistenceHistoryMediaService do
     expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
       .to contain_exactly(include('id' => 'wamid.media-two'))
   end
+
+  it 'does not start a pending media download while live traffic is waiting' do
+    conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+    create(
+      :message,
+      account: channel.account,
+      inbox: channel.inbox,
+      conversation: conversation,
+      source_id: 'wamid.media-one',
+      content_attributes: {
+        'imported_history' => true,
+        'whatsapp_history_original_type' => 'media_placeholder'
+      }
+    )
+    allow(Whatsapp::WabaLivePriority).to receive(:ensure_clear!)
+      .and_raise(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+
+    expect do
+      described_class.new(
+        channel: channel,
+        value: { messages: [{ id: 'wamid.media-one', type: 'image', image: { id: 'media-one' } }] }
+      ).perform
+    end.to raise_error(Whatsapp::WabaLivePriority::LiveTrafficPendingError)
+  end
 end

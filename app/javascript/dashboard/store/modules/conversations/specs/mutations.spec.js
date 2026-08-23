@@ -166,6 +166,38 @@ describe('#mutations', () => {
     });
   });
 
+  describe('#ADD_MESSAGE', () => {
+    it('keeps direct conversation messages ordered and deduplicated for mixed id types', () => {
+      const state = {
+        selectedChatId: null,
+        selectedChatType: null,
+        allConversations: [
+          {
+            id: 11,
+            timestamp: 1710000020,
+            messages: [{ id: 2, conversation_id: 11, created_at: 1710000020 }],
+          },
+        ],
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 1,
+        conversation_id: 11,
+        created_at: 1710000010,
+      });
+      mutations[types.ADD_MESSAGE](state, {
+        id: '1',
+        conversation_id: 11,
+        created_at: 1710000010,
+      });
+
+      expect(
+        state.allConversations[0].messages.map(message => message.id)
+      ).toEqual(['1', 2]);
+      expect(state.allConversations[0].timestamp).toBe(1710000020);
+    });
+  });
+
   describe('#ADD_MESSAGE_TO_CHAT', () => {
     it('does not duplicate the same realtime message when native and thread events both arrive', () => {
       const message = {

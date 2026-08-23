@@ -561,7 +561,6 @@ export const mutations = {
       chat.messages[pendingMessageIndex] = message;
     } else {
       chat.messages.push(message);
-      chat.timestamp = message.created_at;
       const { conversation: { unread_count: unreadCount = 0 } = {} } = message;
       chat.unread_count = unreadCount;
       if (
@@ -571,6 +570,11 @@ export const mutations = {
         emitter.emit(BUS_EVENTS.SCROLL_TO_MESSAGE);
       }
     }
+    chat.messages.sort(sortMessagesByTimeline);
+    chat.timestamp = Math.max(
+      Number(chat.timestamp || 0),
+      Number(message.created_at || 0)
+    );
   },
 
   [types.ADD_MESSAGE_TO_CHAT](_state, { chatId, message }) {
