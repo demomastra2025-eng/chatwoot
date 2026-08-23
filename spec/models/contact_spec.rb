@@ -19,6 +19,8 @@ RSpec.describe Contact do
   context 'with associations' do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:owner).optional }
+    it { is_expected.to have_many(:assignment_client_ownerships).dependent(:delete_all) }
+    it { is_expected.to have_many(:assignment_quota_usages).dependent(:delete_all) }
     it { is_expected.to have_many(:campaign_deliveries).dependent(:delete_all) }
     it { is_expected.to have_many(:campaign_audience_recipients).dependent(:nullify) }
     it { is_expected.to have_many(:communication_threads).dependent(:destroy) }
@@ -199,6 +201,48 @@ RSpec.describe Contact do
 
       expect(described_class.exists?(contact.id)).to be false
       expect(CommunicationThread.exists?(thread.id)).to be false
+    end
+  end
+
+  context 'when a contact has assignment tracking records' do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:contact) { create(:contact, account: account) }
+    let(:inbox) { create(:inbox, account: account) }
+    let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact) }
+    let(:assignment_policy) { create(:assignment_policy, account: account) }
+    let!(:ownership) do
+      create(
+        :assignment_client_ownership,
+        account: account,
+        contact: contact,
+        user: user,
+        assignment_policy: assignment_policy
+      )
+    end
+    let!(:quota_usage) do
+      create(
+        :assignment_quota_usage,
+        account: account,
+        contact: contact,
+        user: user,
+        conversation: conversation,
+        assignment_policy: assignment_policy
+      )
+    end
+
+    it 'deletes the ownership and quota usage with the contact' do
+      contact.destroy!
+
+      expect(AssignmentClientOwnership.exists?(ownership.id)).to be false
+      expect(AssignmentQuotaUsage.exists?(quota_usage.id)).to be false
+    end
+
+    it 'cascades the tracking record deletion when callbacks are bypassed' do
+      described_class.where(id: contact.id).delete_all
+
+      expect(AssignmentClientOwnership.exists?(ownership.id)).to be false
+      expect(AssignmentQuotaUsage.exists?(quota_usage.id)).to be false
     end
   end
 
