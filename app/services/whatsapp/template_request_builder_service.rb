@@ -230,7 +230,13 @@ class Whatsapp::TemplateRequestBuilderService
 
   def upload_media_asset(media_config, media_type:, missing_error:)
     blob_signed_id = media_config[:sample_media_blob_id].to_s.strip
-    return asset_upload_service.upload_blob(blob_signed_id: blob_signed_id, media_type: media_type) if blob_signed_id.present?
+    if blob_signed_id.present?
+      begin
+        return asset_upload_service.upload_blob(blob_signed_id: blob_signed_id, media_type: media_type)
+      rescue Whatsapp::TemplateAssetUploadService::BlobReferenceUnavailableError
+        # A valid account-scoped reference can outlive its temporary blob during a rolling deploy.
+      end
+    end
 
     asset_upload_service.upload(
       url: required_value(media_config[:sample_media_url], missing_error),

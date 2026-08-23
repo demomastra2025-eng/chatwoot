@@ -1,42 +1,82 @@
 class Whatsapp::TemplateAssetUploadService
+  class BlobReferenceUnavailableError < ArgumentError; end
+  class BlobReferenceRejectedError < ArgumentError; end
+
   MAX_DOWNLOAD_SIZE = Whatsapp::TemplateMediaValidator::MAX_FILE_SIZE
-  PRIVATE_IP_RANGES = [
-    IPAddr.new('127.0.0.0/8'),
-    IPAddr.new('10.0.0.0/8'),
-    IPAddr.new('172.16.0.0/12'),
-    IPAddr.new('192.168.0.0/16'),
-    IPAddr.new('169.254.0.0/16'),
-    IPAddr.new('::1'),
-    IPAddr.new('fc00::/7'),
-    IPAddr.new('fe80::/10')
-  ].freeze
-  DISALLOWED_HOSTS = ['localhost', /\.local\z/i].freeze
+  ALLOWED_DOWNLOAD_PORTS = [80, 443].freeze
+  UPLOAD_PURPOSE = 'whatsapp_template_media'.freeze
+  CLEANUP_DELAY = 24.hours
   pattr_initialize [:whatsapp_channel!]
+
+  class << self
+    def blob_metadata(account_id:)
+      {
+        'account_id' => account_id,
+        'upload_purpose' => UPLOAD_PURPOSE
+      }
+    end
+
+    def signed_blob_id(blob, account_id:)
+      blob.signed_id(purpose: signed_id_purpose(account_id))
+    end
+
+    def find_account_blob(signed_id, account_id:)
+      ActiveStorage::Blob.find_signed(signed_id, purpose: signed_id_purpose(account_id))
+    end
+
+    def find_upload_blob!(signed_id, account_id:)
+      ActiveStorage::Blob.find_signed!(signed_id, purpose: signed_id_purpose(account_id))
+    rescue ActiveRecord::RecordNotFound
+      raise BlobReferenceUnavailableError, 'Uploaded media file is invalid or no longer available'
+    rescue ActiveSupport::MessageVerifier::InvalidSignature
+      find_legacy_account_blob!(signed_id, account_id: account_id)
+    end
+
+    def schedule_cleanup(blob) = ActiveStorage::PurgeJob.set(wait: CLEANUP_DELAY).perform_later(blob)
+
+    private
+
+    def find_legacy_account_blob!(signed_id, account_id:)
+      blob = ActiveStorage::Blob.find_signed!(signed_id)
+      metadata = blob&.metadata.to_h
+      unless metadata['account_id'].to_s == account_id.to_s && metadata['upload_purpose'].blank?
+        raise BlobReferenceRejectedError, 'Uploaded media file is invalid or no longer available'
+      end
+
+      blob
+    rescue ActiveRecord::RecordNotFound, ActiveSupport::MessageVerifier::InvalidSignature
+      raise BlobReferenceRejectedError, 'Uploaded media file is invalid or no longer available'
+    end
+
+    def signed_id_purpose(account_id)
+      "#{UPLOAD_PURPOSE}:account:#{account_id}"
+    end
+  end
 
   def upload(url:, media_type:)
     validate_app_configuration!
     validated_url = validate_download_url!(url)
 
-    file = Down::NetHttp.download(validated_url, max_size: MAX_DOWNLOAD_SIZE, max_redirects: 0)
-    file_name = resolve_file_name(file, validated_url, media_type)
-    content_type = validate_media!(file, file_name: file_name, media_type: media_type)
+    SafeFetch.fetch(
+      validated_url,
+      max_bytes: MAX_DOWNLOAD_SIZE,
+      redirects_remaining: 0,
+      validate_content_type: false
+    ) do |result|
+      file = result.tempfile
+      file_name = resolve_file_name(file, validated_url, media_type)
+      content_type = validate_media!(file, file_name: file_name, media_type: media_type)
 
-    upload_session_id = create_upload_session(
-      file_name: file_name,
-      file_length: file.size,
-      content_type: content_type
-    )
-
-    upload_file(upload_session_id, file)
-  ensure
-    close_download(file)
+      upload_file_with_metadata(file, file_name: file_name, content_type: content_type)
+    end
+  rescue SafeFetch::Error => e
+    raise ArgumentError, "Sample media URL could not be downloaded safely: #{e.message}"
   end
 
   def upload_blob(blob_signed_id:, media_type:)
     validate_app_configuration!
-    blob = ActiveStorage::Blob.find_signed(blob_signed_id)
-    raise ArgumentError, 'Uploaded media file is invalid or no longer available' if blob.blank?
-    raise ArgumentError, 'Uploaded media file does not belong to this account' unless blob_account_id(blob) == whatsapp_channel.account_id
+    blob = self.class.find_upload_blob!(blob_signed_id, account_id: whatsapp_channel.account_id)
+    raise ArgumentError, 'Uploaded media file is already in use' if blob.attachments.exists?
 
     Whatsapp::TemplateMediaValidator.validate_size!(blob.byte_size)
 
@@ -44,7 +84,9 @@ class Whatsapp::TemplateAssetUploadService
       file_name = blob.filename.to_s
       content_type = validate_media!(file, file_name: file_name, media_type: media_type, byte_size: blob.byte_size)
 
-      upload_file_with_metadata(file, file_name: file_name, content_type: content_type)
+      handle = upload_file_with_metadata(file, file_name: file_name, content_type: content_type)
+      blob.purge_later
+      handle
     end
   end
 
@@ -67,12 +109,12 @@ class Whatsapp::TemplateAssetUploadService
 
   def validate_download_url!(url)
     uri = parse_download_uri!(url)
-    validate_public_hostname!(uri.host.to_s)
+    raise ArgumentError, 'Sample media URL cannot include credentials' if uri.userinfo.present?
+    raise ArgumentError, 'Sample media URL must use port 80 or 443' unless ALLOWED_DOWNLOAD_PORTS.include?(uri.port)
+
     uri.to_s
   rescue URI::InvalidURIError
     raise ArgumentError, 'Sample media URL must be a valid URL'
-  rescue Resolv::ResolvError, SocketError => e
-    raise ArgumentError, "Sample media URL host could not be resolved: #{e.message}"
   end
 
   def parse_download_uri!(url)
@@ -81,18 +123,6 @@ class Whatsapp::TemplateAssetUploadService
     raise ArgumentError, 'Sample media URL must include a hostname' if uri.host.blank?
 
     uri
-  end
-
-  def validate_public_hostname!(hostname)
-    raise ArgumentError, 'Sample media URL cannot use an IP address' if ip_literal?(hostname)
-    raise ArgumentError, 'Sample media URL cannot use localhost or local hostnames' if disallowed_host?(hostname)
-
-    validate_public_addresses!(Resolv.getaddresses(hostname).uniq)
-  end
-
-  def validate_public_addresses!(addresses)
-    raise ArgumentError, 'Sample media URL host could not be resolved' if addresses.empty?
-    raise ArgumentError, 'Sample media URL cannot resolve to a private IP address' if addresses.any? { |address| private_ip?(IPAddr.new(address)) }
   end
 
   def create_upload_session(file_name:, file_length:, content_type:)
@@ -153,34 +183,6 @@ class Whatsapp::TemplateAssetUploadService
     }.fetch(media_type, 'template-media.bin')
   end
 
-  def close_download(file)
-    return if file.blank?
-
-    file.close! if file.respond_to?(:close!)
-    file.close if file.respond_to?(:close) && (!file.respond_to?(:closed?) || !file.closed?)
-  rescue StandardError
-    nil
-  end
-
-  def disallowed_host?(hostname)
-    normalized_host = hostname.to_s.downcase
-
-    DISALLOWED_HOSTS.any? do |pattern|
-      pattern.is_a?(Regexp) ? normalized_host.match?(pattern) : normalized_host == pattern
-    end
-  end
-
-  def ip_literal?(hostname)
-    IPAddr.new(hostname)
-    true
-  rescue IPAddr::InvalidAddressError
-    false
-  end
-
-  def private_ip?(ip_address)
-    PRIVATE_IP_RANGES.any? { |range| range.include?(ip_address) }
-  end
-
   def parse_response(response, error_message)
     return response.parsed_response if response.success?
 
@@ -193,10 +195,6 @@ class Whatsapp::TemplateAssetUploadService
 
   def access_token
     whatsapp_channel.provider_config['api_key']
-  end
-
-  def blob_account_id(blob)
-    blob.metadata.to_h['account_id'].to_i
   end
 
   def graph_api_query

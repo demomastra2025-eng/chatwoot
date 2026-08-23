@@ -287,7 +287,8 @@ class Whatsapp::IncomingMessageBaseService
       source_id: (source_id || message[:id]).to_s,
       content_attributes: content_attrs
     }
-    message_attributes[:created_at] = provider_message_time(message)
+    provider_created_at = provider_message_time(message)
+    message_attributes[:created_at] = provider_created_at if provider_created_at.present?
     @message = @conversation.messages.build(message_attributes)
   end
 

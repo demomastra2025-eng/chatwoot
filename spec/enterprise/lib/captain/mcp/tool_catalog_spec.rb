@@ -22,10 +22,11 @@ RSpec.describe Captain::Mcp::ToolCatalog do
 
     it 'keeps tools from healthy servers when another server fails discovery' do
       healthy_server = create(:captain_mcp_server, account: account, slug: 'healthy_server')
+      allow(Rails.logger).to receive(:warn)
       allow(described_class::DiscoveryService).to receive(:new) do |server|
         discovery = instance_double(described_class::DiscoveryService)
         if server == own_server
-          allow(discovery).to receive(:tools).and_raise(Timeout::Error, 'unavailable')
+          allow(discovery).to receive(:tools).and_raise(Timeout::Error, 'unavailable token=secret-value')
         else
           allow(discovery).to receive(:tools).and_return([tool_payload_for(server)])
         end
@@ -36,6 +37,8 @@ RSpec.describe Captain::Mcp::ToolCatalog do
 
       expect(tool_ids).to include("mcp__#{healthy_server.slug}__lookup")
       expect(tool_ids).not_to include("mcp__#{own_server.slug}__lookup")
+      expect(Rails.logger).to have_received(:warn).with(include("mcp_server=#{own_server.id}: Timeout::Error"))
+      expect(Rails.logger).not_to have_received(:warn).with(include('secret-value'))
     end
 
     it 'reuses a failed discovery result inside one runtime when the Rails cache is disabled' do
@@ -189,6 +192,24 @@ RSpec.describe Captain::Mcp::ToolCatalog do
       expect { service.tools }.to raise_error(NameError, 'broken namespace')
       expect(service.tools).to eq([])
       expect(Captain::Mcp::ClientBuilder).to have_received(:with_client).once
+    end
+
+    it 'invalidates a failure cache when the server changes within the same second' do
+      updated_at = Time.zone.parse('2026-08-23 10:00:00.100000')
+      attempts = 0
+      allow(mcp_server).to receive(:updated_at) { updated_at }
+      allow(Captain::Mcp::ClientBuilder).to receive(:with_client) do |*, **, &block|
+        attempts += 1
+        raise NameError, 'broken namespace' if attempts == 1
+
+        block.call(client)
+      end
+
+      expect { service.tools }.to raise_error(NameError, 'broken namespace')
+      updated_at += 0.1
+
+      expect(service.tools).to be_present
+      expect(attempts).to eq(2)
     end
   end
 end

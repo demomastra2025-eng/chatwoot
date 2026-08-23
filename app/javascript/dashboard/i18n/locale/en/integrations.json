@@ -784,6 +784,8 @@
         "VOICE_SETTINGS": {
           "TITLE": "Voice settings",
           "DESCRIPTION": "Configure the realtime voice transport used when this Captain handles phone calls. Secrets stay in runtime environment variables.",
+          "ACTIVE_RUNTIME": "Active voice runtime",
+          "RUNTIME_NOTE": "Calls use the same Captain instructions, tools, knowledge base, and handoff rules as chat. Choose Gemini Live, OpenAI Realtime, ElevenLabs, or Cartesia with OpenRouter.",
           "PROVIDER": "Realtime provider",
           "MODEL": "Realtime model",
           "VOICE": "Voice",

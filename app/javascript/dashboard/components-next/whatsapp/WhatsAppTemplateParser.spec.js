@@ -33,6 +33,14 @@ const mediaTemplate = {
   ],
 };
 
+const documentTemplate = {
+  ...template,
+  components: [
+    { type: 'HEADER', format: 'DOCUMENT' },
+    { type: 'BODY', text: 'Hello from template' },
+  ],
+};
+
 const mountOptions = {
   global: {
     directives: {
@@ -126,12 +134,14 @@ describe('WhatsAppTemplateParser', () => {
     wrapper.vm.sendMessage();
 
     expect(wrapper.emitted('sendMessage')).toBeUndefined();
+    expect(wrapper.vm.isFormInvalid).toBe(true);
 
     upload.resolve({ fileUrl: 'https://app.one-link.kz/media/new.jpg' });
     await flushPromises();
     wrapper.vm.sendMessage();
 
     expect(wrapper.emitted('sendMessage')).toHaveLength(1);
+    expect(wrapper.vm.isFormInvalid).toBe(false);
     expect(
       wrapper.emitted('sendMessage')[0][0].templateParams.processed_params
         .header.media_url
@@ -156,5 +166,30 @@ describe('WhatsAppTemplateParser', () => {
     expect(wrapper.vm.processedParams.header.media_url).not.toBe(
       'https://app.one-link.kz/media/late.jpg'
     );
+  });
+
+  it('clears a document name together with a removed uploaded file', async () => {
+    uploadWhatsAppTemplateMedia.mockResolvedValue({
+      fileUrl: 'https://app.one-link.kz/media/invoice.pdf',
+    });
+    const wrapper = mount(WhatsAppTemplateParser, {
+      ...mountOptions,
+      props: { template: documentTemplate },
+    });
+    const file = new File(['pdf'], 'invoice.pdf', {
+      type: 'application/pdf',
+    });
+
+    await selectMediaFile(wrapper, file);
+    await flushPromises();
+    expect(wrapper.vm.processedParams.header.media_name).toBe('invoice.pdf');
+
+    const removeButton = wrapper
+      .findAllComponents({ name: 'Button' })
+      .find(button => button.props('icon') === 'i-lucide-x');
+    await removeButton.trigger('click');
+
+    expect(wrapper.vm.processedParams.header.media_url).toBe('');
+    expect(wrapper.vm.processedParams.header.media_name).toBe('');
   });
 });

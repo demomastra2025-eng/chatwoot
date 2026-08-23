@@ -1,7 +1,7 @@
 class Whatsapp::TemplateMediaValidator
   class InvalidMediaError < ArgumentError; end
 
-  MAX_FILE_SIZE = 25.megabytes
+  MAX_FILE_SIZE = 2.megabytes
   SUPPORTED_MIME_TYPES = {
     'image' => %w[image/jpeg image/png],
     'video' => %w[video/mp4],
@@ -41,7 +41,7 @@ class Whatsapp::TemplateMediaValidator
 
   def detected_content_type
     @io.rewind if @io.respond_to?(:rewind)
-    Marcel::MimeType.for(@io, name: @file_name) || 'application/octet-stream'
+    Marcel::MimeType.for(@io) || 'application/octet-stream'
   ensure
     @io.rewind if @io.respond_to?(:rewind)
   end

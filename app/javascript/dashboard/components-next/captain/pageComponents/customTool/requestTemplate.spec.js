@@ -40,6 +40,25 @@ describe('custom tool request template helpers', () => {
     ).toEqual(['customer_name', 'metadata', 'legacy_param']);
   });
 
+  it('ignores malformed legacy parameters without throwing', () => {
+    expect(
+      templateBodyParams([
+        { type: 'string' },
+        { name: 42, request_location: 'template' },
+        { name: 'valid_name', request_location: 'template' },
+      ])
+    ).toEqual([{ name: 'valid_name', request_location: 'template' }]);
+    expect(() => buildRequestTemplate([{ type: 'string' }])).not.toThrow();
+    expect(insertRequestTemplateParam('{}', { name: 42 })).toEqual({
+      template: '{}',
+      inserted: false,
+      reason: 'invalid_param',
+    });
+    expect(templateBodyParams({ name: 'not_an_array' })).toEqual([]);
+    expect(templateBodyParams('not_an_array')).toEqual([]);
+    expect(buildRequestTemplate({ name: 'not_an_array' })).toBe('');
+  });
+
   it('builds a typed JSON template without duplicating header parameters', () => {
     expect(buildRequestTemplate(params)).toBe(`{
   "customer_name": {{ customer_name | json_value }},
