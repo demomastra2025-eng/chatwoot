@@ -1,16 +1,18 @@
 const PARAM_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const normalizedParamName = value =>
+  typeof value === 'string' ? value.trim() : '';
 
 export const templateBodyParams = params =>
-  (params || []).filter(param => {
-    const name = param?.name?.trim();
+  (Array.isArray(params) ? params : []).filter(param => {
+    const name = normalizedParamName(param?.name);
     const requestLocation = param?.request_location || 'template';
     return requestLocation === 'template' && PARAM_NAME_PATTERN.test(name);
   });
 
 export const requestTemplateUsesParam = (template, paramName) => {
-  const name = paramName?.trim();
+  const name = normalizedParamName(paramName);
   if (!template || !PARAM_NAME_PATTERN.test(name)) {
     return false;
   }
@@ -38,7 +40,7 @@ export const buildRequestTemplate = params => {
 };
 
 export const insertRequestTemplateParam = (template, param) => {
-  const paramName = param?.name?.trim();
+  const paramName = normalizedParamName(param?.name);
   if (!PARAM_NAME_PATTERN.test(paramName)) {
     return { template, inserted: false, reason: 'invalid_param' };
   }

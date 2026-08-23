@@ -20,7 +20,7 @@ class Captain::Mcp::ToolCatalog
           end
         rescue StandardError => e
           Rails.logger.warn(
-            "#{name}: discovery failed for account=#{assistant.account_id} mcp_server=#{mcp_server.id}: #{e.class} #{e.message}"
+            "#{name}: discovery failed for account=#{assistant.account_id} mcp_server=#{mcp_server.id}: #{e.class}"
           )
           nil
         end
@@ -50,7 +50,7 @@ class Captain::Mcp::ToolCatalog
     private
 
     def cache_key
-      ['captain', 'mcp_server_tools', @mcp_server.id, @mcp_server.updated_at.to_i].join(':')
+      ['captain', 'mcp_server_tools', @mcp_server.id, @mcp_server.updated_at.to_f].join(':')
     end
 
     def failure_cache_key

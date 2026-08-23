@@ -62,15 +62,16 @@ RSpec.describe Captain::Mcp::ClientBuilder do
     expect(client).to have_received(:stop).once
   end
 
-  it 'logs cleanup failures without replacing a successful result' do
-    allow(client).to receive(:stop).and_raise(IOError, 'close failed')
+  it 'logs cleanup failures without replacing a successful result or exposing transport details' do
+    allow(client).to receive(:stop).and_raise(IOError, 'close failed token=secret-value')
     allow(Rails.logger).to receive(:warn)
 
     result = described_class.with_client(mcp_server, timeout_seconds: 5) { 'ok' }
 
     expect(result).to eq('ok')
     expect(Rails.logger).to have_received(:warn).with(
-      include('client cleanup failed for mcp_server=42: IOError close failed')
+      include('client cleanup failed for mcp_server=42: IOError')
     )
+    expect(Rails.logger).not_to have_received(:warn).with(include('secret-value'))
   end
 end

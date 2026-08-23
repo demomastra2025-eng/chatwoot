@@ -26,7 +26,7 @@ class Captain::Mcp::ClientBuilder
       Timeout.timeout(CLOSE_TIMEOUT_SECONDS) { client.stop }
     rescue StandardError => e
       Rails.logger.warn(
-        "#{name}: client cleanup failed for mcp_server=#{mcp_server&.id}: #{e.class} #{e.message}"
+        "#{name}: client cleanup failed for mcp_server=#{mcp_server&.id}: #{e.class}"
       )
     end
   end
