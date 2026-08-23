@@ -73,10 +73,22 @@ class Whatsapp::CoexistenceHistoryFailureRecoveryJob < MutexApplicationJob
   end
 
   def replayable_failures(channel)
-    Array(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
-      .map(&:stringify_keys)
-      .select { |failure| failure['id'].present? && failure['message'].present? }
-      .sort_by { |failure| failure['id'] }
+    failures = Array(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages'))
+               .map(&:stringify_keys)
+               .select { |failure| failure['id'].present? && failure['message'].present? }
+    ready_media_ids = existing_media_target_ids(channel, failures)
+
+    failures.select { |failure| failure['kind'] != 'history_media' || ready_media_ids.include?(failure['id'].to_s) }
+            .sort_by { |failure| failure['id'] }
+  end
+
+  def existing_media_target_ids(channel, failures)
+    media_ids = failures.filter_map do |failure|
+      failure['id'].to_s if failure['kind'] == 'history_media'
+    end
+    return Set.new if media_ids.empty?
+
+    Message.where(inbox_id: channel.inbox.id, source_id: media_ids).pluck(:source_id).to_set(&:to_s)
   end
 
   def enqueue_next!(channel, identity, after_failure_id)

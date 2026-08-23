@@ -168,6 +168,44 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
       .to contain_exactly(include('id' => 'wamid.local-replay-two'))
   end
 
+  it 'moves a persisted mutation failure to durable pending when its target is still missing' do
+    failure = {
+      'id' => 'wamid.persisted-edit-before-original',
+      'kind' => 'history_thread',
+      'thread_id' => '77011112233',
+      'message' => {
+        'id' => 'wamid.persisted-edit-before-original',
+        'from' => '77011112233',
+        'timestamp' => '1700000004',
+        'type' => 'edit',
+        'edit' => {
+          'original_message_id' => 'wamid.persisted-late-original',
+          'message' => { 'type' => 'text', 'text' => { 'body' => 'Исправленный текст' } }
+        }
+      },
+      'metadata' => value[:metadata].deep_stringify_keys,
+      'replayable' => true,
+      'deferred' => true
+    }
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync'] = config['coexistence_sync'].merge(
+      'state' => 'history_failed',
+      'history_failed_messages' => [failure]
+    )
+    channel.update!(provider_config: config)
+
+    result = described_class.new(channel: channel, value: { metadata: value[:metadata] })
+                            .replay_failures(failure_ids: [failure['id']])
+
+    expect(result).to eq(requested_ids: [failure['id']], failed_ids: [])
+    expect(Whatsapp::PendingMessageMutation.find_by!(event_id: failure['id'])).to have_attributes(
+      inbox_id: channel.inbox.id,
+      target_source_id: 'wamid.persisted-late-original',
+      mutation_type: 'edit'
+    )
+    expect(channel.reload.provider_config.dig('coexistence_sync', 'history_failed_messages')).to be_blank
+  end
+
   it 'does not persist an unreconcilable history-thread failure without a provider message id' do
     malformed_value = {
       metadata: value[:metadata],

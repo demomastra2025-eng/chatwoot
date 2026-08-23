@@ -52,6 +52,20 @@ RSpec.describe Whatsapp::CoexistenceHistoryFailureRecoveryJob do
   let(:history_service) { instance_double(Whatsapp::CoexistenceHistoryService) }
 
   before do
+    conversation = create(:conversation, account: channel.account, inbox: channel.inbox)
+    failures.each do |failure|
+      create(
+        :message,
+        account: channel.account,
+        inbox: channel.inbox,
+        conversation: conversation,
+        source_id: failure['id'],
+        content_attributes: {
+          'imported_history' => true,
+          'whatsapp_history_original_type' => 'media_placeholder'
+        }
+      )
+    end
     allow(Redis::LockManager).to receive(:new).and_return(lock_manager)
     allow(Whatsapp::WabaLock).to receive(:new).with(channel.provider_config['business_account_id']).and_return(waba_lock)
     allow(waba_lock).to receive(:with_lock).and_yield
@@ -117,6 +131,28 @@ RSpec.describe Whatsapp::CoexistenceHistoryFailureRecoveryJob do
       'history_request_state' => 'completed',
       'failure_recovery_completed_at' => kind_of(String)
     )
+    expect(sync).not_to include('failure_recovery_id', 'failure_recovery_started_at')
+  end
+
+  it 'leaves media failures durable without queueing retries until their placeholders exist' do
+    missing_failure = failures.first
+    channel.inbox.messages.find_by!(source_id: missing_failure['id']).destroy!
+    config = channel.provider_config.deep_dup
+    config['coexistence_sync']['history_failed_messages'] = [missing_failure]
+    channel.update!(provider_config: config)
+
+    expect do
+      result = described_class.perform_now(channel.id, identity)
+      expect(result).to eq(status: 'complete', requested_count: 0, failed_count: 0)
+    end.not_to have_enqueued_job(described_class)
+
+    expect(history_service).not_to have_received(:replay_failures)
+    sync = channel.reload.provider_config['coexistence_sync']
+    expect(sync).to include(
+      'state' => 'history_failed',
+      'failure_recovery_completed_at' => kind_of(String)
+    )
+    expect(sync['history_failed_messages']).to contain_exactly(include('id' => missing_failure['id']))
     expect(sync).not_to include('failure_recovery_id', 'failure_recovery_started_at')
   end
 
