@@ -18,6 +18,8 @@ const {
   isMediaLegClosedErrorMock,
   prewarmInboundAgentAnswerForCallMock,
   startCallRecordingMock,
+  startFaviconBlinkingMock,
+  stopFaviconBlinkingMock,
 } = vi.hoisted(() => ({
   reconnectMock: vi.fn(),
   clearPreparedInboundAgentAnswerMock: vi.fn(),
@@ -26,6 +28,8 @@ const {
   isMediaLegClosedErrorMock: vi.fn(() => false),
   prewarmInboundAgentAnswerForCallMock: vi.fn(),
   startCallRecordingMock: vi.fn(),
+  startFaviconBlinkingMock: vi.fn(),
+  stopFaviconBlinkingMock: vi.fn(),
 }));
 
 vi.mock('shared/helpers/mitt', () => ({
@@ -53,6 +57,14 @@ vi.mock('dashboard/api/whatsappCalls', () => ({
   default: {
     reconnect: reconnectMock,
   },
+}));
+
+vi.mock('../AudioAlerts/faviconHelper', () => ({
+  initFaviconSwitcher: vi.fn(),
+  restoreFavicon: vi.fn(),
+  showBadgeOnFavicon: vi.fn(),
+  startFaviconBlinking: startFaviconBlinkingMock,
+  stopFaviconBlinking: stopFaviconBlinkingMock,
 }));
 
 global.chatwootConfig = {
@@ -270,6 +282,46 @@ describe('ActionCableConnector - Copilot Tests', () => {
       expect(callback).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('browser tab notifications', () => {
+    const notificationPayload = inboxNotificationEnabled => ({
+      account_id: 1,
+      inbox_notification_enabled: inboxNotificationEnabled,
+      notification: { id: 42, notification_type: 'task_assignment' },
+      unread_count: 1,
+      count: 1,
+    });
+
+    it('starts favicon blinking for inbox-enabled notifications', () => {
+      const payload = notificationPayload(true);
+
+      actionCable.onNotificationCreated(payload);
+
+      expect(mockDispatch).toHaveBeenCalledWith(
+        'notifications/addNotification',
+        payload
+      );
+      expect(startFaviconBlinkingMock).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([false, undefined])(
+      'does not blink for disabled or legacy notification payloads (%s)',
+      inboxNotificationEnabled => {
+        actionCable.onNotificationCreated(
+          notificationPayload(inboxNotificationEnabled)
+        );
+
+        expect(startFaviconBlinkingMock).not.toHaveBeenCalled();
+      }
+    );
+
+    it('stops favicon blinking when the websocket disconnects', () => {
+      actionCable.onDisconnected();
+
+      expect(stopFaviconBlinkingMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('communication thread realtime events', () => {
     it('registers the communication_thread.updated event handler', () => {
       expect(actionCable.events['communication_thread.updated']).toBe(

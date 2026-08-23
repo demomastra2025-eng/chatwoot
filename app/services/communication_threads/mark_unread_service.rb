@@ -25,7 +25,8 @@ class CommunicationThreads::MarkUnreadService
 
     Conversations::LastSeenUpdater.new(conversation: conversation).perform(
       last_seen_at: last_incoming_message.created_at - 1.second,
-      update_assignee: true
+      update_assignee: true,
+      refresh_communication_thread: false
     )
   end
 

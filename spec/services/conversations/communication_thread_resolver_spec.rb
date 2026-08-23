@@ -28,6 +28,14 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(conversation.reload.communication_thread).to eq(thread)
     end
 
+    it 'resolves a persisted conversation whose trigger-populated attributes are dirty' do
+      conversation = create(:conversation, account: account)
+      conversation.display_id_will_change!
+
+      expect { described_class.new(conversation: conversation).perform }.not_to raise_error
+      expect(conversation.reload.communication_thread).to be_present
+    end
+
     it 'reuses the existing contact thread across different inbox conversations' do
       contact = create(:contact, account: account)
       first_conversation = create(:conversation, account: account, contact: contact)

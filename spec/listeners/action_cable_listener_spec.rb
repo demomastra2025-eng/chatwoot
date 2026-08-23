@@ -531,6 +531,47 @@ describe ActionCableListener do
     end
   end
 
+  describe '#notification_created' do
+    let(:event_name) { :'notification.created' }
+    let!(:notification) { create(:notification, account: account, user: agent) }
+    let!(:event) { Events::Base.new(event_name, Time.zone.now, notification: notification) }
+
+    it 'marks the realtime payload when the inbox notification type is enabled' do
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [agent.pubsub_token],
+        'notification.created',
+        {
+          account_id: notification.account_id,
+          notification: notification.push_event_data,
+          unread_count: 1,
+          count: 1,
+          inbox_notification_enabled: true
+        }
+      )
+
+      listener.notification_created(event)
+    end
+
+    it 'marks the realtime payload when the inbox notification type is disabled' do
+      setting = agent.notification_settings.find_by!(account_id: account.id)
+      setting.update!(selected_inbox_flags: [])
+
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        [agent.pubsub_token],
+        'notification.created',
+        {
+          account_id: notification.account_id,
+          notification: notification.push_event_data,
+          unread_count: 0,
+          count: 0,
+          inbox_notification_enabled: false
+        }
+      )
+
+      listener.notification_created(event)
+    end
+  end
+
   describe '#notification_deleted' do
     let(:event_name) { :'notification.deleted' }
     let!(:notification) { create(:notification, account: account, user: agent) }

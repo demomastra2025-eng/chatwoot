@@ -6,7 +6,12 @@ class ActionCableListener < BaseListener
   def notification_created(event)
     notification, account, unread_count, count = extract_notification_and_account(event)
     tokens = [event.data[:notification].user.pubsub_token]
-    broadcast(account, tokens, NOTIFICATION_CREATED, { notification: notification.push_event_data, unread_count: unread_count, count: count })
+    broadcast(account, tokens, NOTIFICATION_CREATED, {
+                notification: notification.push_event_data,
+                unread_count: unread_count,
+                count: count,
+                inbox_notification_enabled: inbox_notification_enabled?(notification)
+              })
   end
 
   def notification_updated(event)
@@ -217,6 +222,13 @@ class ActionCableListener < BaseListener
   end
 
   private
+
+  def inbox_notification_enabled?(notification)
+    setting = notification.user.notification_settings.find_by(account_id: notification.account_id)
+    return true if setting.blank?
+
+    setting.public_send("inbox_#{notification.notification_type}?")
+  end
 
   def account_token(account)
     "account_#{account.id}"

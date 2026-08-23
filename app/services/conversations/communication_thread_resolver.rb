@@ -2,7 +2,11 @@ require 'digest'
 
 class Conversations::CommunicationThreadResolver
   def initialize(conversation:)
-    @conversation = conversation
+    # Conversation DB triggers populate display_id/uuid after insert and the
+    # originating instance can still report those attributes as dirty. Locking
+    # that instance raises in Active Record, so resolve against a fresh copy
+    # without clearing the caller's saved_changes used by event dispatchers.
+    @conversation = conversation&.persisted? ? conversation.class.find(conversation.id) : conversation
   end
 
   def perform

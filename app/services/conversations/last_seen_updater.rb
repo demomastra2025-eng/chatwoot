@@ -1,7 +1,7 @@
 class Conversations::LastSeenUpdater
   pattr_initialize [:conversation!]
 
-  def perform(last_seen_at:, update_assignee: false)
+  def perform(last_seen_at:, update_assignee: false, refresh_communication_thread: true)
     return if last_seen_at.blank?
 
     updates = { agent_last_seen_at: last_seen_at }
@@ -10,5 +10,7 @@ class Conversations::LastSeenUpdater
     # rubocop:disable Rails/SkipsModelValidations
     conversation.update_columns(updates)
     # rubocop:enable Rails/SkipsModelValidations
+
+    conversation.class.find(conversation.id).refresh_communication_thread! if refresh_communication_thread
   end
 end

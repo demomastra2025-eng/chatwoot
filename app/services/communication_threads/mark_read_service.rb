@@ -15,7 +15,8 @@ class CommunicationThreads::MarkReadService
       ).perform
       Conversations::MarkReadService.new(
         conversation: conversation,
-        user: current_user
+        user: current_user,
+        refresh_communication_thread: false
       ).perform
     end
 

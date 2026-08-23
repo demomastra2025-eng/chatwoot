@@ -20,6 +20,10 @@ import {
 } from 'dashboard/composables/useWhatsappCallSession';
 import WhatsappCallsAPI from 'dashboard/api/whatsappCalls';
 import types from 'dashboard/store/mutation-types';
+import {
+  startFaviconBlinking,
+  stopFaviconBlinking,
+} from './AudioAlerts/faviconHelper';
 
 let audioNotificationHelperPromise;
 const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 1000;
@@ -179,6 +183,7 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   // eslint-disable-next-line class-methods-use-this
   onDisconnected = () => {
+    stopFaviconBlinking();
     emitter.emit(BUS_EVENTS.WEBSOCKET_DISCONNECT);
   };
 
@@ -586,6 +591,7 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   disconnect() {
     this.isDisconnected = true;
+    stopFaviconBlinking();
     if (this.sidebarUnreadCountsRefreshTimer) {
       clearTimeout(this.sidebarUnreadCountsRefreshTimer);
       this.sidebarUnreadCountsRefreshTimer = null;
@@ -653,6 +659,9 @@ class ActionCableConnector extends BaseActionCableConnector {
 
   onNotificationCreated = data => {
     this.app.$store.dispatch('notifications/addNotification', data);
+    if (data.inbox_notification_enabled === true) {
+      startFaviconBlinking();
+    }
   };
 
   onNotificationDeleted = data => {

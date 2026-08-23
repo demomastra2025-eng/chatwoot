@@ -1110,6 +1110,30 @@ RSpec.describe 'Conversations API', type: :request do
         expect(conversation.reload.agent_last_seen_at).not_to be_nil
       end
 
+      it 'refreshes the communication thread unread count' do
+        account.enable_features!('communication_threads')
+        conversation.update!(agent_last_seen_at: 1.day.ago)
+        create(
+          :message,
+          conversation: conversation,
+          account: account,
+          inbox: conversation.inbox,
+          message_type: :incoming,
+          created_at: 1.minute.ago
+        )
+        communication_thread = conversation.reload.refresh_communication_thread!
+
+        expect(communication_thread.reload.unread_count).to eq(1)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/update_last_seen",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.unread_incoming_messages_count).to eq(0)
+        expect(communication_thread.reload.unread_count).to eq(0)
+      end
+
       it 'returns the updated conversation payload' do
         conversation.update!(agent_last_seen_at: nil)
 
@@ -1383,6 +1407,22 @@ RSpec.describe 'Conversations API', type: :request do
         last_seen_at = conversation.messages.incoming.last.created_at - 1.second
         expect(conversation.reload.agent_last_seen_at).to eq(last_seen_at)
         expect(conversation.reload.assignee_last_seen_at).to eq(last_seen_at)
+      end
+
+      it 'refreshes the communication thread unread count' do
+        account.enable_features!('communication_threads')
+        conversation.update!(agent_last_seen_at: Time.current, assignee_last_seen_at: Time.current)
+        communication_thread = conversation.reload.refresh_communication_thread!
+
+        expect(communication_thread.reload.unread_count).to eq(0)
+
+        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/unread",
+             headers: agent.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(conversation.reload.unread_incoming_messages_count).to eq(1)
+        expect(communication_thread.reload.unread_count).to eq(1)
       end
     end
   end

@@ -1,7 +1,8 @@
 class Conversations::MarkReadService
-  def initialize(conversation:, user:)
+  def initialize(conversation:, user:, refresh_communication_thread: true)
     @conversation = conversation
     @user = user
+    @refresh_communication_thread = refresh_communication_thread
   end
 
   def perform
@@ -27,7 +28,11 @@ class Conversations::MarkReadService
   private
 
   def update_last_seen_on_conversation(last_seen_at, update_assignee)
-    last_seen_updater.perform(last_seen_at: last_seen_at, update_assignee: update_assignee.present?)
+    last_seen_updater.perform(
+      last_seen_at: last_seen_at,
+      update_assignee: update_assignee.present?,
+      refresh_communication_thread: @refresh_communication_thread
+    )
   end
 
   def should_update_last_seen?
