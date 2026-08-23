@@ -65,6 +65,14 @@
     "MEDELEMENT": {
       "NEXT_SYNC": "Next scheduled sync",
       "LAST_SYNC": "Last scheduled sync",
+      "SCHEDULE": {
+        "REALTIME_NEXT": "Next appointments refresh",
+        "REALTIME_LAST": "Last appointments refresh",
+        "OPERATIONAL_NEXT": "Next specialists, patients, and appointments sync",
+        "OPERATIONAL_LAST": "Last specialists, patients, and appointments sync",
+        "CATALOG_NEXT": "Next services catalog sync",
+        "CATALOG_LAST": "Last services catalog sync"
+      },
       "FREQUENCY": {
         "EVERY_MINUTES": "Every {count} minutes",
         "HOURLY": "Every hour",
@@ -76,6 +84,8 @@
         "SUCCESS": "Medelement sync has been queued. Imported data may appear in a few minutes.",
         "ERROR": "Could not start Medelement sync. Please try again later.",
         "TITLE": "Diagnostics and synchronization",
+        "DIRECTION_NOTE": "Appointment creation, moves and cancellations, together with linked patient changes, are sent from One Link to MedElement immediately without waiting for scheduled synchronization. Scheduled synchronization imports MedElement changes and reconciles state. MedElement services and specialists are read-only in One Link because the connected API provides no write operations for them.",
+        "LAST_PHASE_SYNC": "Last checked: {date}",
         "STARTED_AT": "Started",
         "STARTED_AT_VALUE": "Started: {date}",
         "RETRY_QUEUED": "The affected phase has been queued for retry.",
@@ -115,10 +125,14 @@
         "SKIPPED_COUNT": "Skipped",
         "CREATED_COUNT": "Created",
         "UPDATED_COUNT": "Changed",
-        "DEACTIVATED_COUNT": "Disabled"
+        "DEACTIVATED_COUNT": "Disabled",
+        "PROVIDER_COUNT": "Returned by MedElement",
+        "NOT_RETURNED_COUNT": "Not returned by MedElement",
+        "LOCAL_UNLINKED_COUNT": "Local only"
       },
       "CONFLICT_TYPE": {
         "INVALID_SPECIALIST": "Invalid specialist data",
+        "SPECIALIST_NOT_RETURNED": "Linked specialist was not returned by MedElement",
         "CONFLICTING_CABINET_NAME": "Cabinet has conflicting names",
         "INVALID_SERVICE": "Invalid service data",
         "INVALID_SPECIALIST_SERVICE": "Invalid specialist-service link",

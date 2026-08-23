@@ -1,6 +1,9 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::Executor
   class ClaimLost < StandardError; end
+  READBACK_DELAYS = [0, 0.25, 0.5, 1, 2, 4, 4].freeze
+  BOOKABLE_APPOINTMENT_STATUSES = %w[scheduled confirmed].freeze
+  PATIENT_WRITE_RESPONSE_KEYS = Integrations::Medelement::ProviderCommands::PatientResolver::WRITE_RESPONSE_KEYS
 
   def initialize(command:)
     @command = command
@@ -60,9 +63,21 @@ class Integrations::Medelement::ProviderCommands::Executor
     unless command.confirmation_matches_request_snapshot?(confirmation)
       raise execution_error('confirmation_snapshot_invalid', 'Medelement confirmation does not match the request snapshot')
     end
-    return if command.request_snapshot_valid?
+
+    if command.request_snapshot_valid?
+      validate_provider_scope_snapshot!
+      return
+    end
 
     raise execution_error('request_snapshot_invalid', 'Medelement confirmed request snapshot is missing or invalid')
+  end
+
+  def validate_provider_scope_snapshot!
+    return unless command.request_snapshot.key?('organization_id')
+    return if command.request_snapshot['organization_id'].to_s == configuration.organization_id.to_s
+
+    raise Integrations::Medelement::ProviderScope::MismatchError,
+          'Medelement organization changed after command creation'
   end
 
   def execution_gate_open?(confirmation)
@@ -97,25 +112,36 @@ class Integrations::Medelement::ProviderCommands::Executor
     payload = command.request_snapshot.fetch('patient').fetch('payload')
     patient_code = payload.fetch('profile_code')
     Integrations::Medelement::ProviderScope.validate_write!(payload, organization_id: configuration.organization_id)
-    remote = client.get_patient(patient_code: patient_code)
+    remote = patient_by_code(patient_code)
     Integrations::Medelement::ProviderScope.validate!(remote, organization_id: payload['company_code'])
     mark_write_phase!('patient_update', provider_patient_code: patient_code)
-    client.update_patient(params: payload)
-    remote = read_patient_after_write(patient_code)
-    remote = indexed_patient_after_write(patient_code) unless patient_snapshot_matches?(remote)
+    response = client.update_patient(params: payload)
+    remote = updated_patient_readback(response, patient_code)
     raise reconciliation_error('patient_update_pending_materialization') unless patient_snapshot_matches?(remote)
 
     success_applier.patient!(patient_code: patient_code)
   end
 
   def create_reception!
+    validate_bookable_appointment!
     patient_code = patient_resolver.resolve!(allow_create: true)
     preflight_result = preflight.perform
     reception_code = create_remote_reception!(patient_code: patient_code, preflight_result: preflight_result)
-    remote = read_reception_after_write(reception_code)
-    raise reconciliation_error('reception_create_pending_materialization') unless created_reception_matches?(remote, patient_code)
+    remote = bounded_readback do
+      candidate = read_reception_after_write(reception_code)
+      candidate = merged_destination_readback(candidate, reception_code) unless created_reception_matches?(candidate, patient_code)
+      candidate if created_reception_matches?(candidate, patient_code)
+    end
+    raise reconciliation_error('reception_create_pending_materialization') unless remote
 
     success_applier.reception_created!(reception_code: reception_code, patient_code: patient_code)
+  end
+
+  def validate_bookable_appointment!
+    appointment = command.appointment&.reload
+    return if appointment && BOOKABLE_APPOINTMENT_STATUSES.include?(appointment.status)
+
+    raise execution_error('appointment_unbookable', 'Appointment is no longer bookable')
   end
 
   def create_remote_reception!(patient_code:, preflight_result:)
@@ -132,8 +158,12 @@ class Integrations::Medelement::ProviderCommands::Executor
     preflight_result = preflight.perform
     mark_write_phase!('reception_move', preflight_reception_codes: preflight_result.reception_codes, provider_patient_code: patient_code)
     client.move_reception(params: reception_payload_builder.move_payload(patient_code: patient_code))
-    remote = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'))
-    raise reconciliation_error('reception_move_pending_materialization') unless moved_reception_matches?(remote, patient_code)
+    remote = bounded_readback do
+      candidate = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'))
+      candidate = preflight_result.remote_reception.to_h.merge(candidate.to_h)
+      candidate if moved_reception_matches?(candidate, patient_code)
+    end
+    raise reconciliation_error('reception_move_pending_materialization') unless remote
 
     success_applier.reception_moved!
   end
@@ -144,8 +174,8 @@ class Integrations::Medelement::ProviderCommands::Executor
 
     mark_write_phase!('reception_remove')
     client.remove_reception(reception_code: command.request_snapshot.fetch('provider_reception_code'))
-    remote = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'))
-    raise reconciliation_error('reception_remove_pending_materialization') unless removed_reception_matches?(remote)
+    remote = await_removed_reception(result)
+    raise reconciliation_error('reception_remove_pending_materialization') unless remote
 
     success_applier.reception_removed!
   end
@@ -218,16 +248,71 @@ class Integrations::Medelement::ProviderCommands::Executor
     command.reload
   end
 
-  def read_reception_after_write(reception_code)
-    client.get_reception(reception_code: reception_code, version: :v2)
+  def read_reception_after_write(reception_code, version: :v2)
+    client.get_reception(reception_code: reception_code, version: version)
   rescue Integrations::Medelement::Client::ApiError
     nil
   end
 
+  def merged_destination_readback(detail, reception_code)
+    scoped = destination_receptions_after_write.find do |candidate|
+      candidate['RECEPTION_CODE'].to_s == reception_code.to_s
+    end
+    scoped&.merge(detail.to_h) || detail
+  end
+
+  def destination_receptions_after_write
+    snapshot = command.request_snapshot.fetch('reception')
+    range_start, range_end = destination_calendar_bounds(snapshot)
+
+    client.get_receptions(
+      company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
+      specialist_code: snapshot.fetch('specialist_code'),
+      begin_datetime: range_start.strftime('%d.%m.%Y %H:%M:%S'),
+      end_datetime: range_end.strftime('%d.%m.%Y %H:%M:%S')
+    )
+  rescue Integrations::Medelement::Client::ApiError
+    []
+  end
+
+  def destination_calendar_bounds(snapshot)
+    zone = ActiveSupport::TimeZone[snapshot.fetch('time_zone')]
+    starts_on = Time.iso8601(snapshot.fetch('destination_starts_at')).in_time_zone(zone).to_date
+    exclusive_end = Time.iso8601(snapshot.fetch('destination_ends_at')).in_time_zone(zone).to_date + 1.day
+    [zone.local(starts_on.year, starts_on.month, starts_on.day),
+     zone.local(exclusive_end.year, exclusive_end.month, exclusive_end.day)]
+  end
+
+  def bounded_readback
+    READBACK_DELAYS.each do |delay|
+      sleep(delay) if delay.positive?
+      result = yield
+      return result if result
+    end
+    nil
+  end
+
+  def await_removed_reception(preflight_result)
+    bounded_readback do
+      candidate = read_reception_after_write(command.request_snapshot.fetch('provider_reception_code'), version: :v1)
+      candidate = preflight_result.remote_reception.to_h.merge(candidate.to_h)
+      candidate if removed_reception_matches?(candidate)
+    end
+  end
+
   def read_patient_after_write(patient_code)
-    client.get_patient(patient_code: patient_code)
+    patient_by_code(patient_code)
   rescue Integrations::Medelement::Client::ApiError
     nil
+  end
+
+  def patient_by_code(patient_code)
+    client.get_patient(patient_code: patient_code)
+  rescue Integrations::Medelement::Client::ApiError => e
+    patient = indexed_patient_after_write(patient_code)
+    return patient if patient.present?
+
+    raise e
   end
 
   def indexed_patient_after_write(patient_code)
@@ -279,6 +364,25 @@ class Integrations::Medelement::ProviderCommands::Executor
     end
 
     fields_match && Integrations::Medelement::PhoneNumber.new(patient_data.fetch('phone_number')).matches_patient?(patient)
+  end
+
+  def normalized_patient_write_response(response)
+    response.to_h.transform_keys { |key| PATIENT_WRITE_RESPONSE_KEYS.fetch(key.to_s, key.to_s) }
+  end
+
+  def updated_patient_readback(response, patient_code)
+    remote = normalized_patient_write_response(response)
+    return remote if patient_reference_matches?(remote, patient_code) && patient_snapshot_matches?(remote)
+
+    remote = read_patient_after_write(patient_code)
+    return remote if patient_snapshot_matches?(remote)
+
+    indexed_patient_after_write(patient_code)
+  end
+
+  def patient_reference_matches?(patient, expected_code)
+    code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
+    code.to_s == expected_code.to_s
   end
 
   def write_started?

@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::Preflight
   Result = Data.define(:remote_reception, :reception_codes)
   StateChanged = Class.new(StandardError)
@@ -26,7 +27,8 @@ class Integrations::Medelement::ProviderCommands::Preflight
   def verify_remote_reception!
     return if command.create_patient? || command.update_patient?
 
-    remote = client.get_reception(reception_code: provider_reception_code)
+    detail = client.get_reception(reception_code: provider_reception_code)
+    remote = merged_scoped_reception(detail)
     verify_remote_identity!(remote)
     verify_remote_state!(remote)
 
@@ -83,13 +85,24 @@ class Integrations::Medelement::ProviderCommands::Preflight
   end
 
   def source_receptions
+    return @source_receptions if defined?(@source_receptions)
+
     range = source_calendar_range
-    client.get_receptions(
+    @source_receptions = client.get_receptions(
       company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
       specialist_code: specialist_code,
       begin_datetime: provider_datetime(range.begin),
       end_datetime: provider_datetime(range.end)
     )
+  end
+
+  def merged_scoped_reception(detail)
+    return detail if reception_verifier.cabinet_matches?(detail)
+
+    scoped = source_receptions.find do |candidate|
+      candidate['RECEPTION_CODE'].to_s == provider_reception_code
+    end
+    scoped&.merge(detail) || detail
   end
 
   def verify_timetable!
@@ -214,3 +227,4 @@ class Integrations::Medelement::ProviderCommands::Preflight
     ActiveSupport::TimeZone[reception_snapshot.fetch('time_zone')].parse(value.to_s)
   end
 end
+# rubocop:enable Metrics/ClassLength

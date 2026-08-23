@@ -54,6 +54,122 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     expect(client).to have_received(:specialists).twice
   end
 
+  it 'reports provider inventory, local-only resources, and linked specialists missing from the provider response' do
+    account.enable_features!('scheduling')
+    hook = create(:integrations_hook, :medelement, account: account)
+    sync_run = Integrations::Medelement::SyncRun.create!(account: account, hook: hook)
+    missing_resource = create(
+      :scheduling_resource,
+      account: account,
+      name: 'Previously linked specialist',
+      custom_attributes: {
+        'medelement_specialist_code' => 'missing-from-provider',
+        'medelement_last_seen_at' => 1.day.ago.iso8601
+      }
+    )
+    create(:scheduling_resource, account: account, name: 'One Link only specialist', custom_attributes: {})
+
+    result = described_class.new(
+      account: account,
+      client: client,
+      configuration: configuration,
+      conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: sync_run)
+    ).perform
+
+    expect(result).to include(
+      provider_count: 1,
+      imported_count: 1,
+      skipped_count: 0,
+      not_returned_count: 1,
+      local_unlinked_count: 1
+    )
+    expect(
+      Integrations::Medelement::SyncConflict.find_by!(
+        account: account,
+        hook: hook,
+        conflict_type: 'specialist_not_returned'
+      ).details
+    ).to include('resource_id' => missing_resource.id, 'specialist_code' => 'missing-from-provider')
+  end
+
+  it 'does not report a coded malformed specialist as absent from the provider response' do
+    account.enable_features!('scheduling')
+    hook = create(:integrations_hook, :medelement, account: account)
+    sync_run = Integrations::Medelement::SyncRun.create!(account: account, hook: hook)
+    create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => 'coded-without-name' }
+    )
+    malformed_rows = [{ 'specialistCode' => 'coded-without-name' }]
+    allow(client).to receive(:specialists).and_return(malformed_rows)
+
+    result = described_class.new(
+      account: account,
+      client: client,
+      configuration: configuration,
+      conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: sync_run)
+    ).perform
+
+    expect(result).to include(provider_count: 1, imported_count: 0, skipped_count: 1, not_returned_count: 0)
+    conflicts = Integrations::Medelement::SyncConflict.where(last_sync_run_id: sync_run.id)
+    expect(conflicts.where(conflict_type: 'invalid_specialist')).to exist
+    expect(conflicts.where(conflict_type: 'specialist_not_returned')).not_to exist
+  end
+
+  it 'treats a blank specialist code as a local unlinked resource' do
+    account.enable_features!('scheduling')
+    hook = create(:integrations_hook, :medelement, account: account)
+    sync_run = Integrations::Medelement::SyncRun.create!(account: account, hook: hook)
+    create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => '' }
+    )
+
+    result = described_class.new(
+      account: account,
+      client: client,
+      configuration: configuration,
+      conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: sync_run)
+    ).perform
+
+    expect(result).to include(local_unlinked_count: 1, not_returned_count: 0)
+    expect(
+      Integrations::Medelement::SyncConflict.where(
+        last_sync_run_id: sync_run.id,
+        conflict_type: 'specialist_not_returned'
+      )
+    ).not_to exist
+  end
+
+  it 'rejects an empty injected snapshot without recording every linked specialist as missing' do
+    account.enable_features!('scheduling')
+    hook = create(:integrations_hook, :medelement, account: account)
+    sync_run = Integrations::Medelement::SyncRun.create!(account: account, hook: hook)
+    existing_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => 'existing-specialist' }
+    )
+
+    expect do
+      described_class.new(
+        account: account,
+        client: nil,
+        configuration: configuration,
+        source: { specialists: [], cabinets: [] },
+        conflict_tracker: Integrations::Medelement::ConflictTracker.new(sync_run: sync_run)
+      ).perform
+    end.to raise_error(
+      Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError,
+      'Medelement specialists snapshot is empty'
+    )
+
+    expect(existing_resource.reload).to be_active
+    expect(Integrations::Medelement::SyncConflict.where(last_sync_run_id: sync_run.id)).to be_empty
+  end
+
   it 'rejects an unstable live snapshot before applying any database changes' do
     existing_resource = create(
       :scheduling_resource,

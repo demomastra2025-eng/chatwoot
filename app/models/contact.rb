@@ -521,13 +521,26 @@ class Contact < ApplicationRecord
   def dispatch_create_event
     return if runtime_events_suppressed?
 
-    Rails.configuration.dispatcher.dispatch(CONTACT_CREATED, Time.zone.now, contact: self)
+    Rails.configuration.dispatcher.dispatch(
+      CONTACT_CREATED,
+      Time.zone.now,
+      contact: self,
+      performed_by: Current.executed_by,
+      medelement_outbound_snapshot: medelement_outbound_snapshot
+    )
   end
 
   def dispatch_update_event
     return if runtime_events_suppressed?
 
-    Rails.configuration.dispatcher.dispatch(CONTACT_UPDATED, Time.zone.now, contact: self, changed_attributes: previous_changes)
+    Rails.configuration.dispatcher.dispatch(
+      CONTACT_UPDATED,
+      Time.zone.now,
+      contact: self,
+      changed_attributes: previous_changes,
+      performed_by: Current.executed_by,
+      medelement_outbound_snapshot: medelement_outbound_snapshot
+    )
   end
 
   def dispatch_destroy_event
@@ -542,6 +555,12 @@ class Contact < ApplicationRecord
 
   def runtime_events_suppressed?
     skip_runtime_events || Current.suppress_runtime_events
+  end
+
+  def medelement_outbound_snapshot
+    return unless Current.executed_by.is_a?(User)
+
+    Integrations::Medelement::OutboundChangeService.contact_event_snapshot(self)
   end
 end
 Contact.include_mod_with('Concerns::Contact')

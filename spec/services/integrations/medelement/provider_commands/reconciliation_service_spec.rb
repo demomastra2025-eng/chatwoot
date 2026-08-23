@@ -116,7 +116,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
   context 'when patient creation returned an ambiguous result' do
     it 'adopts one exact match without repeating the create write' do
       allow(client).to receive(:search_patients_by_phone).and_return(
-        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',
+           'PATIENT_PHONE_2' => contact.phone_number }]
       )
       allow(client).to receive(:create_patient)
 
@@ -135,7 +136,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         expect do
           Integrations::Medelement::ProviderCommands::CancelService.new(command: command, actor: actor).perform
         end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_NOT_CANCELLABLE') }
-        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',
+           'PATIENT_PHONE_2' => contact.phone_number }]
       end
 
       perform
@@ -266,6 +268,26 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       expect(command.reload).to be_succeeded
     end
 
+    it 'fails closed when an exact patient candidate explicitly belongs to another organization' do
+      allow(client).to receive(:search_patients_by_phone).and_return(
+        [
+          {
+            'PROFILE_CODE' => 'patient-1',
+            'COMPANY_CODE' => 'other-company',
+            'NAME' => 'Ivan',
+            'LASTNAME' => 'Ivanov',
+            'MIDDLENAME' => '',
+            'PATIENT_PHONE_2' => contact.phone_number,
+            'REMOVED' => 0
+          }
+        ]
+      )
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_scope_mismatch')
+    end
+
     it 'keeps reconciliation pending when the remote snapshot differs' do
       allow(client).to receive(:search_patients_by_phone).and_return(
         [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Other', 'LASTNAME' => 'Ivanov', 'REMOVED' => 0 }]
@@ -307,8 +329,29 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       perform
 
       expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'created-1')
-      expect(appointment.reload.external_ref).to eq('medelement:reception:created-1')
+      expect(appointment.reload).to have_attributes(
+        external_ref: 'medelement:reception:created-1',
+        source: 'manual'
+      )
       expect(client).not_to have_received(:get_receptions)
+    end
+
+    it 'combines the v2 detail and cabinet-scoped list responses when neither response is complete' do
+      command.update!(
+        provider_reception_code: 'created-1',
+        execution_state: command.execution_state.merge('write_provider_reception_code' => 'created-1')
+      )
+      allow(client).to receive(:get_reception)
+        .with(reception_code: 'created-1', version: :v2)
+        .and_return(reception('created-1').except('COMPANY_CABINET_CODE'))
+      allow(client).to receive(:get_receptions).and_return(
+        [reception('created-1').except('SPECIALIST_CODE', 'SERVICES')]
+      )
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'created-1')
+      expect(appointment.reload.external_ref).to eq('medelement:reception:created-1')
     end
 
     it 'does not adopt the exact returned reception when its confirmed service row is soft-deleted' do
@@ -464,7 +507,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       expect(appointment.reload.external_ref).to be_blank
     end
 
-    it 'keeps reconciliation pending when the provider reception omits a confirmed service' do
+    it 'adopts the reception and keeps the confirmed service locally when provider SERVICES is empty' do
       service = create(
         :scheduling_service,
         account: account,
@@ -474,12 +517,21 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         service: service,
         custom_attributes: appointment.custom_attributes.merge('service_ids' => [service.id])
       )
-      allow(client).to receive(:get_receptions).and_return([reception('created-1').merge('SERVICES' => [])])
+      allow(client).to receive(:get_receptions).and_return([reception('created-1').except('SERVICES')])
 
       perform
 
-      expect(command.reload).to be_reconciliation_required
-      expect(appointment.reload.external_ref).to be_blank
+      expect(command.reload).to be_succeeded
+      expect(appointment.reload).to have_attributes(
+        external_ref: 'medelement:reception:created-1',
+        service_id: service.id
+      )
+      expect(appointment.custom_attributes).to include(
+        'medelement_service_binding' => 'local_only',
+        'medelement_local_nomenclature_codes' => ['service-1'],
+        'medelement_provider_nomenclature_codes' => [],
+        'service_ids' => [service.id]
+      )
     end
 
     it 'keeps reconciliation pending when the confirmed service row is soft-deleted' do
@@ -538,10 +590,12 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         'RECEPTION_CODE' => 'reception-1',
         'PROFILE_CODE' => 'patient-1',
         'SPECIALIST_CODE' => 'specialist-1',
-        'COMPANY_CABINET_CODE' => 'cabinet-1',
         'REMOVED' => 0,
         'STARTTIME' => provider_time(new_starts_at),
         'ENDTIME' => provider_time(new_ends_at)
+      )
+      allow(client).to receive(:get_receptions).and_return(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }]
       )
 
       perform
@@ -618,6 +672,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         'STARTTIME' => provider_time(new_starts_at),
         'ENDTIME' => provider_time(new_ends_at)
       )
+      allow(client).to receive(:get_receptions).and_return([])
 
       perform
 
@@ -646,12 +701,18 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
     end
 
     it 'applies local cancellation only after remote removal is visible' do
-      allow(client).to receive(:get_reception).and_return(reception('reception-1').merge('REMOVED' => 1))
+      allow(client).to receive(:get_reception).with(reception_code: 'reception-1', version: :v1).and_return(
+        reception('reception-1').except('COMPANY_CABINET_CODE').merge('REMOVED' => 1)
+      )
+      allow(client).to receive(:get_receptions).and_return(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }]
+      )
 
       perform
 
       expect(command.reload).to be_succeeded
       expect(appointment.reload.status).to eq('cancelled')
+      expect(client).to have_received(:get_reception).with(reception_code: 'reception-1', version: :v1).once
     end
 
     it 'keeps reconciliation pending when the removed reception identity differs' do

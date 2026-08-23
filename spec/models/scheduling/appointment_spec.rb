@@ -71,6 +71,24 @@ RSpec.describe Scheduling::Appointment do
       expect(updated_event.last[:changed_attributes]).to include('client_name')
     end
 
+    it 'captures the outbound snapshot before the async dispatcher boundary' do
+      Current.executed_by = create(:user, account: appointment.account)
+      captured_events = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|
+        captured_events << [event_name, data]
+      end
+
+      appointment.update!(client_name: 'Event Client')
+
+      updated_event = captured_events.find { |event_name, _| event_name == Events::Types::APPOINTMENT_UPDATED }
+      expect(updated_event.last[:medelement_outbound_snapshot]).to include(
+        'client_name' => 'Event Client',
+        Integrations::Medelement::OutboundChangeService::CONTACT_SNAPSHOT_KEY => anything
+      )
+    ensure
+      Current.reset
+    end
+
     it 'dispatches appointment.cancelled when status changes to cancelled' do
       captured_events = []
       allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|

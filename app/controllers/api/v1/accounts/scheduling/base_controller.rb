@@ -1,5 +1,6 @@
 class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseController
   before_action :ensure_scheduling_enabled!
+  around_action :with_scheduling_actor
 
   rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
@@ -10,6 +11,14 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
   rescue_from Scheduling::Error, with: :render_scheduling_error
 
   private
+
+  def with_scheduling_actor
+    previous_actor = Current.executed_by
+    Current.executed_by = Current.user if Current.user.present?
+    yield
+  ensure
+    Current.executed_by = previous_actor
+  end
 
   def ensure_finance_enabled!
     return if Current.account.feature_enabled?('scheduling_finance')

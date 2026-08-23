@@ -1,6 +1,7 @@
 class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accounts::Scheduling::BaseController
   before_action :set_provider_adapter
-  before_action :set_command, only: [:show, :confirm, :cancel, :patient_candidates, :select_patient, :confirm_patient_creation]
+  before_action :set_command,
+                only: [:show, :confirm, :cancel, :patient_candidates, :select_patient, :confirm_patient_creation, :retry]
 
   def index
     commands = provider_adapter.command_scope
@@ -39,14 +40,7 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
       )
     end
 
-    Confirmations::ResolveService.new(
-      account: Current.account,
-      confirmation_request: confirmation_request,
-      decision: 'confirmed',
-      source: 'manual',
-      actor: Current.user,
-      metadata: { surface: 'scheduling_dashboard' }
-    ).perform
+    resolve_confirmation!(confirmation_request)
 
     render_payload(provider_adapter.serialize(@command.reload))
   end
@@ -76,6 +70,11 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
 
   def confirm_patient_creation
     command = provider_adapter.confirm_patient_creation(command: @command, actor: Current.user)
+    render_payload(provider_adapter.serialize(command))
+  end
+
+  def retry
+    command = provider_adapter.retry_phone_mismatch(command: @command, actor: Current.user)
     render_payload(provider_adapter.serialize(command))
   end
 
@@ -116,6 +115,7 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
     params.permit(
       :provider, :hook_id, :appointment_id, :contact_id, :operation, :idempotency_key, :company_cabinet_code,
       :active_only,
+      :automatic,
       :patient_token,
       :desired_starts_at, :desired_ends_at
     )
@@ -131,5 +131,22 @@ class Api::V1::Accounts::Scheduling::ProviderCommandsController < Api::V1::Accou
 
   def index_limit
     params.fetch(:limit, 50).to_i.clamp(1, 100)
+  end
+
+  def automatic_confirmation?
+    ActiveModel::Type::Boolean.new.cast(command_params[:automatic])
+  end
+
+  def resolve_confirmation!(confirmation_request)
+    return Integrations::Medelement::ProviderCommands::AutoConfirmationService.new(command: @command).perform if automatic_confirmation?
+
+    Confirmations::ResolveService.new(
+      account: Current.account,
+      confirmation_request: confirmation_request,
+      decision: 'confirmed',
+      source: 'manual',
+      actor: Current.user,
+      metadata: { surface: 'scheduling_dashboard' }
+    ).perform
   end
 end

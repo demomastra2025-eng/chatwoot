@@ -33,6 +33,13 @@ class Integrations::Medelement::ProviderCommands::PatientActionsService
     )
   end
 
+  def retry_phone_mismatch!
+    resume!(
+      expected_status: 'awaiting_phone_refresh',
+      state: { 'patient_phone_mismatch_accepted' => true }
+    )
+  end
+
   private
 
   attr_reader :actor, :command

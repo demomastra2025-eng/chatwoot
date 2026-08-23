@@ -5,7 +5,7 @@ class Integrations::Medelement::ProviderCommands::ReceptionPayloadBuilder
   end
 
   def create_payload(patient_code:)
-    payload = {
+    {
       patient_code: patient_code,
       specialist_code: specialist_code,
       company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
@@ -14,9 +14,6 @@ class Integrations::Medelement::ProviderCommands::ReceptionPayloadBuilder
       description: reception_snapshot['description'],
       color_code: 0
     }.compact
-    service_codes = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.service_codes(command.request_snapshot)
-    payload[:nomenclature_code] = service_codes if service_codes.present?
-    payload
   end
 
   def move_payload(patient_code:)

@@ -43,6 +43,74 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
   end
 
+  it 'rejects a Medelement appointment without a patient last name before persistence' do
+    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    params = base_params.merge(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001')
+
+    expect do
+      post path, params: params, headers: headers, as: :json
+    end.not_to change(Scheduling::Appointment, :count)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE')
+  end
+
+  it 'creates a Medelement appointment without a selected service' do
+    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    params = base_params.except(:service_id).merge(
+      client_first_name: 'Айжан',
+      client_last_name: 'Касымова',
+      client_phone: '+77000000001'
+    )
+
+    expect do
+      post path, params: params, headers: headers, as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'service_id')).to be_nil
+  end
+
+  it 'rejects a Medelement appointment with an unmapped service before persistence' do
+    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    params = base_params.merge(
+      client_first_name: 'Айжан',
+      client_last_name: 'Касымова',
+      client_phone: '+77000000001'
+    )
+
+    expect do
+      post path, params: params, headers: headers, as: :json
+    end.not_to change(Scheduling::Appointment, :count)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_SERVICE_UNMAPPED')
+  end
+
+  it 'creates a Medelement appointment with a mapped service' do
+    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    service.update!(custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
+    create(:scheduling_service_price, account: account, resource: resource, service: service)
+    params = base_params.merge(
+      client_first_name: 'Айжан',
+      client_last_name: 'Касымова',
+      client_phone: '+77000000001'
+    )
+
+    expect do
+      post path, params: params, headers: headers, as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'service_id')).to eq(service.id)
+    expect(response_body.dig('payload', 'custom_attributes')).to include(
+      'medelement_service_binding' => 'local_only',
+      'medelement_local_nomenclature_codes' => ['service-1'],
+      'medelement_provider_nomenclature_codes' => [],
+      'service_ids' => [service.id]
+    )
+  end
+
   it 'resolves a linked conversation by display id when creating from a dialog panel' do
     conversation = create(:conversation, account: account, contact: contact)
 

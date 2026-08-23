@@ -43,7 +43,8 @@ class Integrations::Medelement::PhoneNumber
     end
 
     def extract(raw_value)
-      raw_value.to_s.scan(/(?:\+?7|8)[\d\s()xX\-]{9,}/).filter_map do |candidate|
+      value = raw_value.is_a?(Array) ? raw_value.join : raw_value.to_s
+      value.scan(/(?:\+?7|8)[\d\s()xX\-]{9,}/).filter_map do |candidate|
         normalize(candidate)
       end
     end

@@ -56,6 +56,28 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(account.contacts).to be_empty
   end
 
+  it 'rejects an unmarked direct payload whose patient code differs from the requested reference' do
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(
+      patient_payload.merge('PROFILE_CODE' => 'other-patient')
+    )
+    allow(client).to receive(:search_patients_by_codes)
+
+    expect { service.sync_patient!(patient_code) }
+      .to raise_error(Integrations::Medelement::ProviderScope::MismatchError)
+    expect(client).not_to have_received(:search_patients_by_codes)
+    expect(account.contacts).to be_empty
+  end
+
+  it 'rejects an unmarked payload when the preferred Contact has no trusted identity anchor' do
+    contact = create(:contact, account: account, name: 'Unverified')
+    allow(client).to receive(:search_patients_by_codes)
+
+    expect { service.sync_patient_payload!(patient_payload, preferred_contact: contact) }
+      .to raise_error(Integrations::Medelement::ProviderScope::MismatchError)
+    expect(client).not_to have_received(:search_patients_by_codes)
+    expect(contact.reload).to have_attributes(name: 'Unverified', identifier: nil, phone_number: nil)
+  end
+
   it 'does not create a Contact when direct and indexed provider identities disagree' do
     conflict_tracker = instance_double(Integrations::Medelement::ConflictTracker, record!: true)
     resolver = described_class.new(
@@ -121,9 +143,210 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(contact.custom_attributes['secondary_phones']).to contain_exactly(primary_phone, secondary_phone)
   end
 
+  it 'links a unique existing Contact by a valid IIN stored in custom attributes' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      name: 'Existing patient',
+      custom_attributes: { 'iin' => patient_payload['IIN'] }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+    repeated_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).to eq(existing_contact.id)
+    expect(repeated_contact.id).to eq(existing_contact.id)
+    expect(account.contacts.count).to eq(1)
+    expect(resolved_contact.reload.custom_attributes['medelement_patient_code']).to eq(patient_code)
+  end
+
+  it 'does not replace a different MedElement patient mapping found through the same IIN' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      identifier: patient_payload['IIN'],
+      custom_attributes: {
+        'iin' => patient_payload['IIN'],
+        'medelement_patient_code' => 'another-patient'
+      }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(existing_contact.reload.custom_attributes['medelement_patient_code']).to eq('another-patient')
+    expect(account.contacts.count).to eq(2)
+  end
+
+  it 'does not link a Contact with conflicting valid IIN fields' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      identifier: '940720300129',
+      custom_attributes: { 'iin' => patient_payload['IIN'] }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(existing_contact.reload.custom_attributes['medelement_patient_code']).to be_blank
+    expect(account.contacts.count).to eq(2)
+  end
+
+  it 'links a unique phone candidate only when valid IIN, full name and birth date corroborate it' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      name: 'Светлана',
+      last_name: 'Сулейменова',
+      middle_name: 'Темирбаевна',
+      phone_number: primary_phone,
+      custom_attributes: { 'birth_date' => '1972-09-14' }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).to eq(existing_contact.id)
+    expect(account.contacts.count).to eq(1)
+    expect(resolved_contact.reload).to have_attributes(identifier: patient_payload['IIN'], phone_number: primary_phone)
+    expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
+  end
+
+  it 'links a unique email candidate only when valid IIN, full name and birth date corroborate it' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      name: 'Светлана',
+      last_name: 'Сулейменова',
+      middle_name: 'Темирбаевна',
+      email: patient_payload['PATIENT_EMAIL'],
+      custom_attributes: { 'birth_date' => '1972-09-14' }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).to eq(existing_contact.id)
+    expect(account.contacts.count).to eq(1)
+    expect(resolved_contact.reload.identifier).to eq(patient_payload['IIN'])
+    expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
+  end
+
+  it 'does not link by email alone without matching demographic evidence' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      name: 'Shared family email',
+      email: patient_payload['PATIENT_EMAIL']
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(resolved_contact.email).to be_blank
+    expect(account.contacts.count).to eq(2)
+  end
+
+  it 'does not auto-link when different provider phones identify multiple demographic matches' do
+    matching_attributes = {
+      account: account,
+      name: 'Светлана',
+      last_name: 'Сулейменова',
+      middle_name: 'Темирбаевна',
+      custom_attributes: { 'birth_date' => '1972-09-14' }
+    }
+    matching_contacts = [
+      create(:contact, **matching_attributes, phone_number: primary_phone),
+      create(:contact, **matching_attributes, phone_number: secondary_phone)
+    ]
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(matching_contacts.map(&:id)).not_to include(resolved_contact.id)
+    expect(resolved_contact.phone_number).to be_blank
+    expect(matching_contacts).to all(satisfy { |contact| contact.reload.custom_attributes['medelement_patient_code'].blank? })
+    expect(account.contacts.count).to eq(3)
+  end
+
+  it 'does not link a phone candidate that has a different valid IIN' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      name: 'Светлана',
+      last_name: 'Сулейменова',
+      middle_name: 'Темирбаевна',
+      phone_number: primary_phone,
+      identifier: '940720300129',
+      custom_attributes: { 'birth_date' => '1972-09-14', 'iin' => '940720300129' }
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(resolved_contact.phone_number).to be_blank
+    expect(existing_contact.reload.custom_attributes['medelement_patient_code']).to be_blank
+    expect(account.contacts.count).to eq(2)
+  end
+
+  it 'does not link by phone and demographics when the provider IIN is missing' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      name: 'Светлана',
+      last_name: 'Сулейменова',
+      middle_name: 'Темирбаевна',
+      phone_number: primary_phone,
+      custom_attributes: { 'birth_date' => '1972-09-14' }
+    )
+    payload_without_iin = patient_payload.except('IIN')
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(payload_without_iin)
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([payload_without_iin])
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(resolved_contact.phone_number).to be_blank
+    expect(account.contacts.count).to eq(2)
+  end
+
+  it 'does not treat a short provider identifier as a valid IIN for phone matching' do
+    existing_contact = create(
+      :contact,
+      account: account,
+      name: 'Светлана',
+      last_name: 'Сулейменова',
+      middle_name: 'Темирбаевна',
+      phone_number: primary_phone,
+      custom_attributes: { 'birth_date' => '1972-09-14' }
+    )
+    payload_with_invalid_iin = patient_payload.merge('IIN' => '1234')
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(payload_with_invalid_iin)
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return(
+      [payload_with_invalid_iin]
+    )
+
+    resolved_contact = service.sync_patient!(patient_code)
+
+    expect(resolved_contact.id).not_to eq(existing_contact.id)
+    expect(resolved_contact.phone_number).to be_blank
+    expect(account.contacts.count).to eq(2)
+  end
+
   it 'keeps the Contact phone and surfaces a different provider phone for review' do
     contact_phone = ['+7', '700', '111', '2233'].join
-    contact = create(:contact, account: account, phone_number: contact_phone)
+    contact = create(
+      :contact,
+      account: account,
+      phone_number: contact_phone,
+      custom_attributes: { 'medelement_patient_code' => patient_code }
+    )
 
     resolved_contact = service.sync_patient_payload!(patient_payload, preferred_contact: contact)
 

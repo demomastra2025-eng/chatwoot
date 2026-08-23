@@ -1,6 +1,8 @@
 class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Scheduling::BaseController
   before_action :check_admin_authorization?, except: [:index, :show]
   before_action :set_service, only: [:show, :update, :destroy]
+  before_action :ensure_provider_writable_service!, only: [:update, :destroy]
+  before_action :validate_provider_owned_attributes!, only: [:create, :update]
 
   def index
     services = Current.account.scheduling_services.includes(:prices).ordered
@@ -84,6 +86,24 @@ class Api::V1::Accounts::Scheduling::ServicesController < Api::V1::Accounts::Sch
 
   def set_service
     @service = Current.account.scheduling_services.includes(:prices).find(params[:id])
+  end
+
+  def validate_provider_owned_attributes!
+    incoming = params.permit(custom_attributes: {})[:custom_attributes]
+    Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
+      incoming: incoming,
+      current: @service&.custom_attributes
+    )
+  end
+
+  def ensure_provider_writable_service!
+    return if @service.custom_attributes.to_h['medelement_nomenclature_code'].blank?
+
+    raise Scheduling::Error.new(
+      code: 'SERVICE_READ_ONLY',
+      message: 'Imported Medelement services are read-only because the provider API does not support service writes',
+      status: :unprocessable_content
+    )
   end
 
   def sync_prices!(service)

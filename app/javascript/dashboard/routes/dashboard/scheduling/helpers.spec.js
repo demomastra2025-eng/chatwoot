@@ -7,9 +7,12 @@ import {
   getServicePriceForResource,
   isAppointmentProviderOwned,
   isMedelementResource,
+  isServiceAvailableForResource,
+  medelementCommandFailureMessage,
   medelementCabinetsForResource,
   resolveAppointmentMedelementCabinetCode,
   resolveAppointmentConversationTarget,
+  servicesAvailableForResource,
   shiftAnchorDate,
 } from './helpers';
 
@@ -146,10 +149,24 @@ describe('scheduling helpers', () => {
   });
 
   it('builds a week range anchored to Monday', () => {
-    const { from, to } = buildCalendarRange('week', '2026-03-11T08:00:00.000Z');
+    const { from, to } = buildCalendarRange('week', new Date(2026, 2, 11, 8));
 
-    expect(from.toISOString()).toBe('2026-03-09T00:00:00.000Z');
-    expect(to.toISOString()).toBe('2026-03-15T23:59:59.999Z');
+    expect([
+      from.getFullYear(),
+      from.getMonth(),
+      from.getDate(),
+      from.getHours(),
+      from.getMinutes(),
+    ]).toEqual([2026, 2, 9, 0, 0]);
+    expect([
+      to.getFullYear(),
+      to.getMonth(),
+      to.getDate(),
+      to.getHours(),
+      to.getMinutes(),
+      to.getSeconds(),
+      to.getMilliseconds(),
+    ]).toEqual([2026, 2, 15, 23, 59, 59, 999]);
   });
 
   it('shifts list view by two weeks', () => {
@@ -168,13 +185,13 @@ describe('scheduling helpers', () => {
     const window = deriveVisibleMinuteWindow({
       appointments: [
         {
-          startsAt: '2026-03-09T06:30:00.000Z',
-          endsAt: '2026-03-09T07:15:00.000Z',
+          startsAt: '2026-03-09T06:30:00',
+          endsAt: '2026-03-09T07:15:00',
         },
       ],
       columns: [
         {
-          date: new Date('2026-03-09T00:00:00.000Z'),
+          date: new Date(2026, 2, 9),
           resourceId: 10,
         },
       ],
@@ -223,6 +240,101 @@ describe('scheduling helpers', () => {
     );
 
     expect(price).toBe(12000);
+  });
+
+  it('shows the full mapped Medelement catalog when the specialist has no links', () => {
+    const resource = {
+      id: 15,
+      customAttributes: { medelement_specialist_code: 'specialist-1' },
+    };
+    const linkedService = {
+      id: 1,
+      customAttributes: { medelement_nomenclature_code: 'service-1' },
+      prices: [],
+    };
+    const otherSpecialistService = {
+      id: 2,
+      customAttributes: { medelement_nomenclature_code: 'service-2' },
+      prices: [{ active: true, price: 9000, resourceId: 12 }],
+    };
+    const mappedWithoutPrices = {
+      id: 3,
+      customAttributes: { medelement_nomenclature_code: 'service-3' },
+      prices: [],
+    };
+    const localService = {
+      id: 4,
+      customAttributes: {},
+      prices: [],
+    };
+
+    expect(
+      servicesAvailableForResource(
+        [
+          linkedService,
+          otherSpecialistService,
+          mappedWithoutPrices,
+          localService,
+        ],
+        resource
+      )
+    ).toEqual([linkedService, otherSpecialistService, mappedWithoutPrices]);
+  });
+
+  it('uses only explicit links when the Medelement specialist has them', () => {
+    const resource = {
+      id: 15,
+      customAttributes: { medelement_specialist_code: 'specialist-1' },
+    };
+    const linkedService = {
+      id: 1,
+      customAttributes: { medelement_nomenclature_code: 'service-1' },
+      prices: [{ active: true, price: 0, resourceId: 15 }],
+    };
+    const unlinkedService = {
+      id: 2,
+      customAttributes: { medelement_nomenclature_code: 'service-2' },
+      prices: [],
+    };
+
+    expect(isServiceAvailableForResource(linkedService, 15)).toBe(true);
+    expect(
+      servicesAvailableForResource([linkedService, unlinkedService], resource)
+    ).toEqual([linkedService]);
+  });
+
+  it('keeps the full service list for a non-Medelement specialist', () => {
+    const services = [
+      { id: 1, prices: [] },
+      { id: 2, prices: [] },
+    ];
+
+    expect(servicesAvailableForResource(services, { id: 15 })).toEqual(
+      services
+    );
+  });
+
+  it('turns a provider HTTP 401 into a clear authentication error', () => {
+    expect(
+      medelementCommandFailureMessage({
+        lastErrorCode: 'provider_http_error',
+        lastErrorStatus: 401,
+        status: 'failed',
+      })
+    ).toEqual({ key: 'SCHEDULING.MEDELEMENT.AUTHENTICATION_FAILED' });
+  });
+
+  it('includes the HTTP status in other provider command failures', () => {
+    expect(
+      medelementCommandFailureMessage({
+        lastErrorCode: 'provider_http_error',
+        lastErrorStatus: 503,
+        status: 'failed',
+      })
+    ).toEqual({
+      key: 'SCHEDULING.MEDELEMENT.FAILED',
+      params: { code: 'provider_http_error (HTTP 503)' },
+    });
   });
 
   it('uses the existing contact thread when an appointment has no explicit conversation link', () => {

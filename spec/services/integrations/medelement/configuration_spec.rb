@@ -36,4 +36,12 @@ RSpec.describe Integrations::Medelement::Configuration do
       expect(configuration.sync_services?).to be(false)
     end
   end
+
+  describe '#receptions_sync_cron_expression' do
+    it 'uses a fixed two-minute refresh in the configured timezone' do
+      allow(hook).to receive(:settings).and_return('timezone' => 'UTC')
+
+      expect(configuration.receptions_sync_cron_expression).to eq('*/2 * * * * UTC')
+    end
+  end
 end

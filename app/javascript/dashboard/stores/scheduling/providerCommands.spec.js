@@ -18,6 +18,7 @@ vi.mock('dashboard/api/scheduling/providerCommands', () => ({
     get: vi.fn(),
     list: vi.fn(),
     patientCandidates: vi.fn(),
+    retry: vi.fn(),
     selectPatient: vi.fn(),
   },
 }));
@@ -57,7 +58,9 @@ describe('useSchedulingProviderCommandsStore', () => {
         operation: 'remove_reception',
       })
     );
-    expect(SchedulingProviderCommandsAPI.confirm).toHaveBeenCalledWith(41);
+    expect(SchedulingProviderCommandsAPI.confirm).toHaveBeenCalledWith(41, {
+      automatic: true,
+    });
     expect(SchedulingProviderCommandsAPI.get).toHaveBeenCalledWith(41);
     expect(command.status).toBe('succeeded');
     expect(store.lastCommand.status).toBe('succeeded');
@@ -169,6 +172,31 @@ describe('useSchedulingProviderCommandsStore', () => {
     expect(SchedulingProviderCommandsAPI.get).toHaveBeenCalledWith(44, {
       provider: 'medelement',
     });
+    expect(command.status).toBe('succeeded');
+  });
+
+  it('retries a provider-scoped phone mismatch command without creating a duplicate', async () => {
+    const activeCommand = {
+      appointmentId: 20,
+      id: 45,
+      operation: 'create_reception',
+      provider: 'medelement',
+      status: 'awaiting_phone_refresh',
+    };
+    SchedulingProviderCommandsAPI.retry.mockResolvedValue({
+      data: { payload: { ...activeCommand, status: 'queued' } },
+    });
+    SchedulingProviderCommandsAPI.get.mockResolvedValue({
+      data: { payload: { ...activeCommand, status: 'succeeded' } },
+    });
+    const store = useSchedulingProviderCommandsStore();
+
+    const command = await store.retryPhoneMismatch(activeCommand);
+
+    expect(SchedulingProviderCommandsAPI.retry).toHaveBeenCalledWith(45, {
+      provider: 'medelement',
+    });
+    expect(SchedulingProviderCommandsAPI.create).not.toHaveBeenCalled();
     expect(command.status).toBe('succeeded');
   });
 

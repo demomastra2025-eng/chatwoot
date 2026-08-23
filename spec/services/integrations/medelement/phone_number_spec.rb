@@ -48,6 +48,12 @@ RSpec.describe Integrations::Medelement::PhoneNumber do
 
       expect(described_class.patient_phones(patient)).to eq([first_phone, second_phone, third_phone])
     end
+
+    it 'joins the component array returned by the patient detail endpoint' do
+      patient = { 'PATIENT_PHONE_2' => ['+7', '777', '7777777'] }
+
+      expect(described_class.patient_phones(patient)).to eq(['+77777777777'])
+    end
   end
 
   describe '.contact_phones' do

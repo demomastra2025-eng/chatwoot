@@ -17,12 +17,15 @@ class Integrations::Medelement::ServicesSyncService
   def perform
     result = nil
     rows = service_rows
+    provider_codes = provider_service_codes(rows)
+    raise IncompleteSnapshotError, 'Medelement services snapshot has no services' if provider_codes.empty?
 
     Scheduling::Service.transaction do
       imported_services, skipped_count = import_services(rows)
       linked_count = sync_specialist_services(imported_services)
-      deactivate_stale_services!(imported_services.keys) if skipped_count.zero?
-      result = sync_result(imported_services, linked_count, skipped_count)
+      deactivate_stale_services!(provider_codes) if provider_codes.present? && skipped_count.zero?
+      record_not_returned_services!(provider_codes)
+      result = sync_result(imported_services, linked_count, skipped_count, provider_codes)
     end
 
     result
@@ -85,7 +88,18 @@ class Integrations::Medelement::ServicesSyncService
   end
 
   def medelement_services
-    account.scheduling_services.where("custom_attributes ->> '#{EXTERNAL_CODE_KEY}' IS NOT NULL")
+    account.scheduling_services.where("NULLIF(custom_attributes ->> '#{EXTERNAL_CODE_KEY}', '') IS NOT NULL")
+  end
+
+  def local_services
+    account.scheduling_services.active.where("NULLIF(custom_attributes ->> '#{EXTERNAL_CODE_KEY}', '') IS NULL")
+  end
+
+  def provider_service_codes(rows)
+    Array(rows).filter_map do |raw_payload|
+      payload = raw_payload.to_h.with_indifferent_access
+      (payload['serviceCode'].presence || payload['NOMENCLATURE_CODE'].presence).to_s.presence unless group_payload?(payload)
+    end.to_set
   end
 
   def stale?(last_seen_at)
@@ -96,11 +110,42 @@ class Integrations::Medelement::ServicesSyncService
     false
   end
 
-  def sync_result(imported_services, linked_count, skipped_count)
+  def sync_result(imported_services, linked_count, skipped_count, provider_codes)
     {
+      provider_count: provider_codes.size,
       imported_count: imported_services.size,
       linked_count: linked_count,
-      skipped_count: skipped_count
+      skipped_count: skipped_count,
+      not_returned_count: not_returned_count(provider_codes),
+      local_unlinked_count: local_services.count
     }
+  end
+
+  def not_returned_count(provider_codes)
+    return medelement_services.count if provider_codes.empty?
+
+    medelement_services.where.not("custom_attributes ->> '#{EXTERNAL_CODE_KEY}' IN (?)", provider_codes.to_a).count
+  end
+
+  def record_not_returned_services!(provider_codes)
+    not_returned = medelement_services.active
+    not_returned = not_returned.where.not("custom_attributes ->> '#{EXTERNAL_CODE_KEY}' IN (?)", provider_codes.to_a)
+    not_returned.find_each do |service|
+      service_code = service.custom_attributes[EXTERNAL_CODE_KEY]
+      conflict_tracker&.record!(
+        phase: 'services',
+        entity_type: 'service',
+        conflict_type: 'service_not_returned',
+        entity_key: service_code,
+        severity: 'warning',
+        details: {
+          reason: 'Service linked in One Link was not returned by the Medelement nomenclature API',
+          service_id: service.id,
+          service_code: service_code,
+          service_name: service.name,
+          last_seen_at: service.custom_attributes[LAST_SEEN_AT_KEY]
+        }.compact
+      )
+    end
   end
 end

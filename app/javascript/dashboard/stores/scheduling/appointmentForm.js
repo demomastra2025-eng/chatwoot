@@ -164,7 +164,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
       requirements: {
         companyEnabled: true,
         contactRequired: true,
+        medelementIdentityRequired: false,
         medelementPhoneRequired: false,
+        medelementServiceRequired: false,
       },
       recordId: null,
       selectedContact: null,
@@ -193,6 +195,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
         clientName: !state.form.clientFirstName?.trim()
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED'
           : '',
+        clientLastName:
+          state.requirements.medelementIdentityRequired &&
+          !state.form.clientLastName?.trim()
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
+            : '',
         contactId:
           state.requirements.contactRequired && !state.form.contactId
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.CONTACT_REQUIRED'
@@ -205,6 +212,12 @@ export const useSchedulingAppointmentFormStore = defineStore(
         resourceId: !state.form.resourceId
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.RESOURCE_REQUIRED'
           : '',
+        serviceIds:
+          state.requirements.medelementServiceRequired &&
+          normalizeIdArray(state.form.serviceIds).length === 0 &&
+          !toNumeric(state.form.serviceId)
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED'
+            : '',
         startsAt: !state.form.startsAt
           ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.START_REQUIRED'
           : '',
@@ -302,6 +315,9 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       updateField(field, value) {
+        const currentStart = new Date(this.form.startsAt);
+        const currentEnd = new Date(this.form.endsAt);
+        const durationMs = currentEnd - currentStart;
         const normalizedValue =
           field === 'serviceIds' ? normalizeIdArray(value) : value;
         const normalizedServiceIds =
@@ -316,6 +332,13 @@ export const useSchedulingAppointmentFormStore = defineStore(
                 ...(normalizedServiceIds.length
                   ? { serviceNameSnapshot: '' }
                   : {}),
+              }
+            : {}),
+          ...(field === 'startsAt' && durationMs > 0 && value
+            ? {
+                endsAt: toDateTimeInputValue(
+                  new Date(new Date(value).getTime() + durationMs)
+                ),
               }
             : {}),
         };
@@ -418,10 +441,14 @@ export const useSchedulingAppointmentFormStore = defineStore(
           const payload = compactPayload({
             birth_date: contact.birthDate,
             company_id: toNumeric(contact.companyId),
+            first_name: contact.firstName,
             full_name: contact.fullName,
             gender: contact.gender,
             iin: contact.iin || undefined,
+            last_name: contact.lastName,
+            middle_name: contact.middleName,
             phone: contact.phone,
+            resource_id: toNumeric(contact.resourceId),
           });
           const { data } = await SchedulingContactsAPI.create(payload);
           const createdContact = normalizePayload(data);
@@ -443,10 +470,14 @@ export const useSchedulingAppointmentFormStore = defineStore(
           const payload = compactPayload({
             birth_date: contact.birthDate,
             company_id: toNumeric(contact.companyId),
+            first_name: contact.firstName,
             full_name: contact.fullName,
             gender: contact.gender,
             iin: contact.iin || undefined,
+            last_name: contact.lastName,
+            middle_name: contact.middleName,
             phone: contact.phone,
+            resource_id: toNumeric(contact.resourceId),
           });
           const { data } = await SchedulingContactsAPI.update(
             contactId,

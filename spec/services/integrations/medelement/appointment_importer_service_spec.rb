@@ -110,6 +110,153 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(appointment.reload.conversation_id).to be_nil
   end
 
+  it 'reimports a trusted outbound appointment without changing its local origin' do
+    contact = create(:contact, account: account)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      resource: resource,
+      source: 'manual',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      custom_attributes: {
+        'medelement_reception_code' => reception['RECEPTION_CODE'],
+        'medelement_provider_sync_status' => 'succeeded'
+      }
+    )
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      appointment: appointment,
+      contact: contact,
+      operation: 'create_reception',
+      status: 'succeeded',
+      idempotency_key: 'trusted-outbound-create',
+      company_cabinet_code: 'cabinet-1',
+      desired_starts_at: appointment.starts_at,
+      desired_ends_at: appointment.ends_at
+    )
+
+    result = service.upsert!(
+      resource: resource,
+      contact: contact,
+      reception: reception,
+      import_context: import_context
+    )
+
+    expect(result.reload).to have_attributes(id: appointment.id, source: 'manual')
+    expect(result.custom_attributes['source_mode']).to eq('outbound')
+  end
+
+  it 'preserves a local-only service when the provider explicitly returns an empty SERVICES list' do
+    local_service = create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: { 'medelement_nomenclature_code' => 'local-service' }
+    )
+    contact = create(:contact, account: account)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      resource: resource,
+      service: local_service,
+      service_name_snapshot: local_service.name,
+      source: 'manual',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      custom_attributes: {
+        'medelement_reception_code' => reception['RECEPTION_CODE'],
+        'medelement_provider_sync_status' => 'succeeded',
+        'medelement_service_binding' => 'local_only',
+        'medelement_local_nomenclature_codes' => ['local-service'],
+        'medelement_provider_nomenclature_codes' => [],
+        'service_ids' => [local_service.id],
+        'services' => [{ 'id' => local_service.id, 'name' => local_service.name }]
+      }
+    )
+    create_succeeded_outbound_command(appointment, contact)
+
+    result = service.upsert!(
+      resource: resource,
+      contact: contact,
+      reception: reception.merge('SERVICES' => []),
+      import_context: import_context
+    )
+
+    expect(result.reload).to have_attributes(service_id: local_service.id, service_name_snapshot: local_service.name)
+    expect(result.custom_attributes).to include(
+      'medelement_service_binding' => 'local_only',
+      'medelement_local_nomenclature_codes' => ['local-service'],
+      'medelement_provider_nomenclature_codes' => [],
+      'service_ids' => [local_service.id]
+    )
+  end
+
+  it 'replaces a local-only service when the provider later returns an authoritative service' do
+    local_service = create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: { 'medelement_nomenclature_code' => 'local-service' }
+    )
+    provider_service = create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: { 'medelement_nomenclature_code' => 'provider-service' }
+    )
+    contact = create(:contact, account: account)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      resource: resource,
+      service: local_service,
+      source: 'manual',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      custom_attributes: {
+        'medelement_reception_code' => reception['RECEPTION_CODE'],
+        'medelement_provider_sync_status' => 'succeeded',
+        'medelement_service_binding' => 'local_only',
+        'medelement_local_nomenclature_codes' => ['local-service'],
+        'service_ids' => [local_service.id]
+      }
+    )
+    create_succeeded_outbound_command(appointment, contact)
+
+    result = service.upsert!(
+      resource: resource,
+      contact: contact,
+      reception: reception.merge('SERVICES' => [{ 'NOMENCLATURE_CODE' => 'provider-service' }]),
+      import_context: import_context
+    )
+
+    expect(result.reload.service_id).to eq(provider_service.id)
+    expect(result.custom_attributes).to include(
+      'medelement_service_binding' => 'provider',
+      'medelement_provider_nomenclature_codes' => ['provider-service'],
+      'service_ids' => [provider_service.id]
+    )
+    expect(result.custom_attributes).not_to have_key('medelement_local_nomenclature_codes')
+  end
+
+  it 'rejects a manual appointment with an untrusted copied provider reference' do
+    create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      source: 'manual',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      custom_attributes: { 'medelement_reception_code' => reception['RECEPTION_CODE'] }
+    )
+
+    expect do
+      service.upsert!(
+        resource: resource,
+        contact: create(:contact, account: account),
+        reception: reception,
+        import_context: import_context
+      )
+    end.to raise_error(Scheduling::Error, 'external_ref is already used by a non-Medelement appointment')
+  end
+
   it 'marks an unresolved patient without persisting the raw patient code as a client name' do
     appointment = service.upsert!(
       resource: resource,
@@ -164,13 +311,6 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(conflict_tracker).to have_received(:record!).with(
       hash_including(
         conflict_type: 'appointment_amount_mismatch',
-        entity_key: reception['RECEPTION_CODE'],
-        details: hash_including(appointment_id: result.id, reception_code: reception['RECEPTION_CODE'])
-      )
-    )
-    expect(conflict_tracker).to have_received(:record!).with(
-      hash_including(
-        conflict_type: 'local_payment_preserved',
         entity_key: reception['RECEPTION_CODE'],
         details: hash_including(appointment_id: result.id, reception_code: reception['RECEPTION_CODE'])
       )
@@ -279,5 +419,19 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
       service_amount: 4500
     )
     expect(appointment.custom_attributes['service_ids']).to eq([existing_service.id])
+  end
+
+  def create_succeeded_outbound_command(appointment, contact)
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      appointment: appointment,
+      contact: contact,
+      operation: 'create_reception',
+      status: 'succeeded',
+      idempotency_key: SecureRandom.uuid,
+      company_cabinet_code: 'cabinet-1',
+      desired_starts_at: appointment.starts_at,
+      desired_ends_at: appointment.ends_at
+    )
   end
 end

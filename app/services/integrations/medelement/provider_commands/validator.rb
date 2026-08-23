@@ -1,4 +1,5 @@
 class Integrations::Medelement::ProviderCommands::Validator
+  BOOKABLE_APPOINTMENT_STATUSES = %w[scheduled confirmed].freeze
   # Internal command validation boundary; keyword arguments make every invariant input explicit.
   # rubocop:disable Metrics/ParameterLists
   def initialize(account:, hook:, appointment:, contact:, operation:, idempotency_key:, company_cabinet_code:)
@@ -101,6 +102,7 @@ class Integrations::Medelement::ProviderCommands::Validator
       require_patient_ref!
     when 'create_reception'
       require_appointment!
+      require_bookable_appointment!
       require_contact!
       require_provider_resource!
     when 'move_reception'
@@ -113,6 +115,24 @@ class Integrations::Medelement::ProviderCommands::Validator
 
   def require_appointment!
     raise ArgumentError, 'appointment is required' if appointment.blank?
+  end
+
+  def require_bookable_appointment!
+    return if BOOKABLE_APPOINTMENT_STATUSES.include?(appointment.status)
+
+    if appointment.status == 'cancelled'
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_CANCELLED_APPOINTMENT_UNBOOKABLE',
+        message: 'A cancelled appointment cannot be created in Medelement',
+        status: :unprocessable_content
+      )
+    end
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_APPOINTMENT_UNBOOKABLE',
+      message: 'Only scheduled or confirmed appointments can be created in Medelement',
+      status: :unprocessable_content
+    )
   end
 
   def validate_move_prerequisites!

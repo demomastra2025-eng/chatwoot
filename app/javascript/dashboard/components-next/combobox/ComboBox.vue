@@ -30,6 +30,11 @@ const props = defineProps({
     default: 'bottom',
     validator: value => ['auto', 'bottom', 'top'].includes(value),
   },
+  dropdownAlign: {
+    type: String,
+    default: 'start',
+    validator: value => ['start', 'end'].includes(value),
+  },
   dropdownMinWidth: { type: Number, default: 0 },
   triggerIcon: { type: String, default: '' },
 });
@@ -76,8 +81,10 @@ const updateDropdownPosition = () => {
     requestedWidth,
     window.innerWidth - viewportPadding * 2
   );
+  const preferredLeft =
+    props.dropdownAlign === 'end' ? rect.right - width : rect.left;
   const left = Math.min(
-    Math.max(rect.left, viewportPadding),
+    Math.max(preferredLeft, viewportPadding),
     window.innerWidth - width - viewportPadding
   );
   const availableAbove = Math.max(rect.top - viewportPadding - dropdownGap, 0);
@@ -182,19 +189,29 @@ const selectOption = option => {
   search.value = '';
 };
 
-const toggleDropdown = () => {
-  if (props.disabled) return;
-  open.value = !open.value;
-  if (open.value) {
-    emit('open');
-    resolveTeleportTarget();
-    search.value = '';
-    nextTick(() => {
-      updateDropdownPosition();
-      dropdownRef.value?.focus();
-    });
-  }
+const openDropdown = () => {
+  if (props.disabled || open.value) return;
+
+  open.value = true;
+  emit('open');
+  resolveTeleportTarget();
+  search.value = '';
+  nextTick(() => {
+    updateDropdownPosition();
+    dropdownRef.value?.focus();
+  });
 };
+
+const toggleDropdown = () => {
+  if (open.value) {
+    open.value = false;
+    return;
+  }
+
+  openDropdown();
+};
+
+defineExpose({ open: openDropdown });
 
 watch(
   () => props.modelValue,

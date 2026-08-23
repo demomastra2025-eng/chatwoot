@@ -5,7 +5,17 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentService do
   let(:hook) { create(:integrations_hook, :medelement, account: account) }
   let(:client) { instance_double(Integrations::Medelement::Client) }
   let(:service) { described_class.new(hook: hook, client: client) }
-  let(:contact) { create(:contact, account: account, phone_number: '+77011234567') }
+  let(:contact) do
+    create(
+      :contact,
+      account: account,
+      name: 'Анна',
+      last_name: 'Иванова',
+      middle_name: 'Сергеевна',
+      phone_number: ['+7', '701', '123', '4567'].join,
+      custom_attributes: { 'birth_date' => '1994-07-20' }
+    )
+  end
   let(:patient_code) { '550990851604984873' }
   let(:search_patient) do
     {
@@ -20,6 +30,8 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentService do
       'LASTNAME' => 'Иванова',
       'NAME' => 'Анна',
       'MIDDLENAME' => 'Сергеевна',
+      'BIRTHDAY' => '20.07.1994',
+      'IIN' => '940720300129',
       'PATIENT_PHONE_2_STR' => '+7 701 1234567'
     }
   end
@@ -43,6 +55,32 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentService do
     expect(resolved_contact.custom_attributes['medelement_patient_code']).to eq(patient_code)
     expect(resolved_contact.custom_attributes['medelement_patient_match_status']).to eq('matched')
     expect(resolved_contact.custom_attributes['medelement_patient_phone_fingerprint']).not_to include('77011234567')
+  end
+
+  it 'does not link a unique phone result without matching demographic evidence' do
+    contact.update!(name: 'Другая', custom_attributes: { 'birth_date' => '1990-01-01' })
+    allow(client).to receive(:search_patients_by_phone).with(phone_number: contact.phone_number).and_return([search_patient])
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient)
+    allow(client).to receive(:search_patients_by_codes).with(patient_codes: [patient_code]).and_return([patient])
+
+    resolved_contact = service.perform(contact)
+
+    expect(resolved_contact.id).to eq(contact.id)
+    expect(resolved_contact.custom_attributes['medelement_patient_code']).to be_blank
+    expect(resolved_contact.custom_attributes['medelement_patient_match_status']).to eq('conflict')
+    expect(account.contacts.count).to eq(1)
+  end
+
+  it 'does not link a phone candidate when the provider IIN is invalid' do
+    allow(client).to receive(:search_patients_by_phone).with(phone_number: contact.phone_number).and_return([search_patient])
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient.except('IIN'))
+    allow(client).to receive(:search_patients_by_codes)
+
+    service.perform(contact)
+
+    expect(client).not_to have_received(:search_patients_by_codes)
+    expect(contact.reload.custom_attributes).to include('medelement_patient_match_status' => 'conflict')
+    expect(contact.custom_attributes['medelement_patient_code']).to be_blank
   end
 
   it 'does not mutate the contact for a foreign raw patient payload' do

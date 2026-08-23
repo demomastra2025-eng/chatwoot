@@ -21,6 +21,7 @@ class AsyncDispatcher < BaseDispatcher
       CsatSurveyListener.instance,
       HookListener.instance,
       InstallationWebhookListener.instance,
+      MedelementOutboundChangeListener.instance,
       NotificationListener.instance,
       ParticipationListener.instance,
       RemindersListener.instance,

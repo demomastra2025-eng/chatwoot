@@ -121,6 +121,13 @@ const mountComponent = (currentChat = defaultCurrentChat()) =>
 
 describe('SchedulingConversationAppointmentsSidebar', () => {
   beforeEach(() => {
+    mocks.resources.splice(0, mocks.resources.length, {
+      active: true,
+      id: 7,
+      name: 'Дина',
+      slotDurationMin: 30,
+      specialty: 'Стилист',
+    });
     mocks.services.splice(0, mocks.services.length, {
       active: true,
       basePrice: 5000,
@@ -420,6 +427,115 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     expect(mocks.alert).toHaveBeenCalledWith(
       'SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'
     );
+  });
+
+  it('requires MedElement patient identity but allows an appointment without a service', async () => {
+    mocks.resources[0].customAttributes = {
+      medelement_specialist_code: 'specialist-1',
+    };
+    mocks.services[0].customAttributes = {
+      medelement_nomenclature_code: 'service-9',
+    };
+    mocks.services[0].prices = [{ active: true, price: 5000, resourceId: 7 }];
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .findComponent({ name: 'SidebarActionsHeader' })
+      .vm.$emit('click', 'new_appointment');
+
+    expect(wrapper.vm.isCreateFormInvalid).toBe(true);
+    await wrapper.vm.saveCreateAppointment();
+    expect(SchedulingAppointmentsAPI.create).not.toHaveBeenCalled();
+
+    Object.assign(wrapper.vm.createForm, {
+      clientLastName: 'Касымова',
+      clientPhone: ['+7', '700', '000', '0001'].join(''),
+    });
+
+    expect(wrapper.vm.isCreateFormInvalid).toBe(false);
+  });
+
+  it('uses explicit service links for the selected MedElement specialist', async () => {
+    mocks.resources[0].customAttributes = {
+      medelement_specialist_code: 'specialist-1',
+    };
+    mocks.services.splice(
+      0,
+      mocks.services.length,
+      {
+        active: true,
+        customAttributes: { medelement_nomenclature_code: 'service-9' },
+        id: 9,
+        name: 'Консультация',
+        prices: [{ active: true, price: 5000, resourceId: 7 }],
+      },
+      {
+        active: true,
+        customAttributes: { medelement_nomenclature_code: 'service-10' },
+        id: 10,
+        name: 'Другая услуга',
+        prices: [{ active: true, price: 7000, resourceId: 8 }],
+      },
+      {
+        active: true,
+        customAttributes: { medelement_nomenclature_code: 'service-11' },
+        id: 11,
+        name: 'Услуга без персональной цены',
+        prices: [],
+      },
+      {
+        active: true,
+        customAttributes: {},
+        id: 12,
+        name: 'Локальная услуга',
+        prices: [],
+      }
+    );
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(wrapper.vm.serviceOptionsForForm({ resourceId: 7 })).toEqual([
+      { label: 'Консультация', value: 9 },
+    ]);
+  });
+
+  it('shows the full mapped catalog when the MedElement specialist has no links', async () => {
+    mocks.resources[0].customAttributes = {
+      medelement_specialist_code: 'specialist-1',
+    };
+    mocks.services.splice(
+      0,
+      mocks.services.length,
+      {
+        active: true,
+        customAttributes: { medelement_nomenclature_code: 'service-9' },
+        id: 9,
+        name: 'Консультация',
+        prices: [],
+      },
+      {
+        active: true,
+        customAttributes: { medelement_nomenclature_code: 'service-10' },
+        id: 10,
+        name: 'Другая услуга',
+        prices: [{ active: true, price: 7000, resourceId: 8 }],
+      },
+      {
+        active: true,
+        customAttributes: {},
+        id: 11,
+        name: 'Локальная услуга',
+        prices: [],
+      }
+    );
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(wrapper.vm.serviceOptionsForForm({ resourceId: 7 })).toEqual([
+      { label: 'Консультация', value: 9 },
+      { label: 'Другая услуга', value: 10 },
+    ]);
   });
 
   it('uses a free service name field when there are no configured services', async () => {

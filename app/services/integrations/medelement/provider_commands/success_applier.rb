@@ -28,13 +28,12 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       appointment.update!(
         starts_at: snapshot_time('destination_starts_at'),
         ends_at: snapshot_time('destination_ends_at'),
-        source: 'medelement',
         external_ref: "medelement:reception:#{reception_code}",
         custom_attributes: appointment.custom_attributes.to_h.except('medelement_patient_code').merge(
           'medelement_reception_code' => reception_code,
           'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
           'medelement_provider_sync_status' => 'succeeded'
-        )
+        ).merge(local_service_binding_attributes)
       )
       link_contact_patient_ref!(patient_code)
       complete_command!(provider_reception_code: reception_code, provider_patient_code: patient_code)
@@ -103,6 +102,13 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
     ensure_patient_ref_available!(patient_code)
     command.contact.skip_runtime_events = true
     command.contact.update!(custom_attributes: linked_contact_attributes(patient_code))
+  end
+
+  def local_service_binding_attributes
+    codes = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.service_codes(command.request_snapshot)
+    return {} if codes.blank?
+
+    Integrations::Medelement::AppointmentServiceBinding.new(appointment: appointment).local_only_attributes(codes)
   end
 
   def ensure_patient_ref_available!(patient_code)

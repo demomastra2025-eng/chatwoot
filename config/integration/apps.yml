@@ -571,20 +571,20 @@ medelement:
         'value': true,
       },
       {
-        'label': 'Enable confirmed write operations',
+        'label': 'Enable write operations',
         'type': 'checkbox',
         'name': 'write_enabled',
         'value': false,
-        'help': 'Allows only explicitly confirmed patient and reception commands. Imported records remain protected from generic edits.',
+        'help': 'Sends patient and reception changes to MedElement automatically. User action is requested only for conflicts or ambiguous patient data. Imported records remain protected from unsupported generic edits.',
       },
       {
         'label': 'Sync frequency',
         'type': 'select',
         'name': 'sync_interval_hours',
-        'value': 24,
+        'value': 0.25,
         'value_type': 'number',
         'validation': 'required',
-        'help': 'Choose how often Medelement sync should run. This uses stable supported intervals.',
+        'help': 'Choose how often specialists, linked patients, and appointments sync. The larger services catalog syncs separately every 6 hours.',
         'options':
           [
             { 'label': 'Every 15 minutes', 'value': 0.25 },

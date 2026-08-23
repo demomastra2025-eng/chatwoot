@@ -3,7 +3,9 @@ class Integrations::Medelement::Configuration
   DEFAULT_DAYS_BACK = 3
   DEFAULT_DAYS_FORWARD = 70
   DEFAULT_THROTTLE_MS = 275
-  DEFAULT_SYNC_INTERVAL_HOURS = 24
+  DEFAULT_SYNC_INTERVAL_HOURS = 0.25
+  CATALOG_SYNC_INTERVAL_HOURS = 6
+  RECEPTIONS_SYNC_INTERVAL_MINUTES = 2
   DEFAULT_SYNC_TIME_OF_DAY = '06:15'.freeze
   SUPPORTED_SYNC_INTERVAL_HOURS = [0.25, 0.5, 1, 2, 4, 6, 12, 24].freeze
   TIME_OF_DAY_FORMAT = /\A([01]\d|2[0-3]):[0-5]\d\z/
@@ -66,11 +68,15 @@ class Integrations::Medelement::Configuration
   end
 
   def sync_cron_expression
-    anchor_hour, anchor_minute = sync_time_of_day.split(':').map(&:to_i)
+    cron_expression(interval_hours: sync_interval_hours)
+  end
 
-    return "#{cron_minutes(anchor_minute).join(',')} * * * * #{time_zone}" if sync_interval_hours < 1
+  def catalog_sync_cron_expression
+    cron_expression(interval_hours: CATALOG_SYNC_INTERVAL_HOURS, minute_offset: 5)
+  end
 
-    "#{anchor_minute} #{cron_hours(anchor_hour).join(',')} * * * #{time_zone}"
+  def receptions_sync_cron_expression
+    "*/#{RECEPTIONS_SYNC_INTERVAL_MINUTES} * * * * #{time_zone}"
   end
 
   def throttle_ms
@@ -90,8 +96,18 @@ class Integrations::Medelement::Configuration
 
   attr_reader :hook
 
-  def cron_hours(anchor_hour)
-    return [anchor_hour] if sync_interval_hours == 24
+  def cron_expression(interval_hours:, minute_offset: 0)
+    anchor_hour, anchor_minute = sync_time_of_day.split(':').map(&:to_i)
+    anchor_total_minutes = ((anchor_hour * 60) + anchor_minute + minute_offset) % (24 * 60)
+    anchor_hour, anchor_minute = anchor_total_minutes.divmod(60)
+
+    return "#{cron_minutes(anchor_minute, interval_hours).join(',')} * * * * #{time_zone}" if interval_hours < 1
+
+    "#{anchor_minute} #{cron_hours(anchor_hour, interval_hours).join(',')} * * * #{time_zone}"
+  end
+
+  def cron_hours(anchor_hour, interval_hours)
+    return [anchor_hour] if interval_hours == 24
 
     hours = []
     hour = anchor_hour
@@ -100,14 +116,14 @@ class Integrations::Medelement::Configuration
       break if hours.include?(hour)
 
       hours << hour
-      hour = (hour + sync_interval_hours) % 24
+      hour = (hour + interval_hours) % 24
     end
 
     hours.sort
   end
 
-  def cron_minutes(anchor_minute)
-    interval_minutes = (sync_interval_hours * 60).to_i
+  def cron_minutes(anchor_minute, interval_hours)
+    interval_minutes = (interval_hours * 60).to_i
     minutes = []
     minute = anchor_minute
 

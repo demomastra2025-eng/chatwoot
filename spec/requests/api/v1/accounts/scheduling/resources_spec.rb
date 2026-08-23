@@ -70,6 +70,20 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(resource.user_id).to be_nil
   end
 
+  it 'rejects manually assigning provider-owned specialist metadata' do
+    post "/api/v1/accounts/#{account.id}/scheduling/resources",
+         params: {
+           name: 'Spoofed specialist',
+           custom_attributes: { medelement_specialist_code: 'spoofed-specialist' }
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('VALIDATION_ERROR')
+    expect(account.scheduling_resources.where("custom_attributes ->> 'medelement_specialist_code' = ?", 'spoofed-specialist')).to be_empty
+  end
+
   it 'rejects fractional resource compensation values without truncating them' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
           params: {
@@ -109,6 +123,23 @@ RSpec.describe 'Scheduling Resources API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response_body.dig('payload', 0, 'title')).to eq('Lunch')
+  end
+
+  it 'rejects modifying imported Medelement specialist identity' do
+    imported_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
+    )
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}",
+          params: { name: 'Changed locally' },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
+    expect(imported_resource.reload.name).not_to eq('Changed locally')
   end
 
   it 'rejects deleting imported Medelement specialists' do

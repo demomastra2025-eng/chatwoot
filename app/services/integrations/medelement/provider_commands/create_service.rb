@@ -5,7 +5,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   # rubocop:disable Metrics/ParameterLists
   def initialize(
     account:, hook:, operation:, idempotency_key:, appointment: nil, contact: nil, company_cabinet_code: nil,
-    actor: nil, desired_starts_at: nil, desired_ends_at: nil
+    actor: nil, desired_starts_at: nil, desired_ends_at: nil, desired_attributes: {}
   )
     @account = account
     @hook = hook
@@ -17,6 +17,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
     @actor = actor
     @desired_starts_at = desired_starts_at
     @desired_ends_at = desired_ends_at
+    @desired_attributes = desired_attributes.to_h.deep_stringify_keys
   end
   # rubocop:enable Metrics/ParameterLists
 
@@ -34,7 +35,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   private
 
   attr_reader :account, :hook, :appointment, :contact, :operation, :idempotency_key,
-              :company_cabinet_code, :actor, :desired_starts_at, :desired_ends_at
+              :company_cabinet_code, :actor, :desired_starts_at, :desired_ends_at, :desired_attributes
 
   def command_scope
     Integrations::Medelement::ProviderCommand.where(account: account)
@@ -68,8 +69,8 @@ class Integrations::Medelement::ProviderCommands::CreateService
       requested_by: actor,
       operation: operation,
       idempotency_key: idempotency_key,
-      provider_patient_code: patient_code,
-      provider_reception_code: reception_code,
+      provider_patient_code: snapshot['provider_patient_code'],
+      provider_reception_code: snapshot['provider_reception_code'],
       company_cabinet_code: company_cabinet_code.presence,
       desired_starts_at: desired_starts_at,
       desired_ends_at: desired_ends_at,
@@ -107,7 +108,8 @@ class Integrations::Medelement::ProviderCommands::CreateService
       operation: operation,
       company_cabinet_code: company_cabinet_code,
       desired_starts_at: desired_starts_at,
-      desired_ends_at: desired_ends_at
+      desired_ends_at: desired_ends_at,
+      desired_attributes: desired_attributes
     ).build
   end
 
@@ -142,7 +144,8 @@ class Integrations::Medelement::ProviderCommands::CreateService
       'operation' => operation,
       'company_cabinet_code' => company_cabinet_code.presence,
       'desired_starts_at' => serialized_time(desired_starts_at),
-      'desired_ends_at' => serialized_time(desired_ends_at)
+      'desired_ends_at' => serialized_time(desired_ends_at),
+      'desired_attributes' => desired_attributes
     }.compact
     Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(intent)
   end

@@ -98,13 +98,11 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
     write_phase_result!(phase, status: 'skipped', reason: reason, completed_at: Time.current.iso8601)
   end
 
-  def fail_phase!(phase, error)
+  def record_phase_failure!(phase, error)
     error_payload = Integrations::Medelement::ErrorSanitizer.exception_payload(error)
     write_phase_result!(phase, error_payload.merge(status: 'failed', completed_at: Time.current.iso8601))
     update!(
-      status: 'failed',
       current_phase: nil,
-      completed_at: Time.current,
       error_code: error_payload[:code],
       error_message: error_payload[:message]
     )
@@ -126,6 +124,7 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
     update!(
       status: 'retrying',
       current_phase: nil,
+      completed_at: nil,
       error_code: error_payload[:code],
       error_message: error_payload[:message]
     )

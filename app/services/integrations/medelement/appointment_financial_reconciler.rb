@@ -9,6 +9,7 @@ class Integrations::Medelement::AppointmentFinancialReconciler
 
   def attributes
     return new_appointment_attributes unless appointment.persisted?
+    return provider_owned_attributes if provider_amount_authoritative?
 
     record_conflicts
     preserved_attributes
@@ -36,9 +37,16 @@ class Integrations::Medelement::AppointmentFinancialReconciler
     }
   end
 
+  def provider_owned_attributes
+    preserved_attributes.merge(service_amount: provider_amount || appointment.service_amount)
+  end
+
+  def provider_amount_authoritative?
+    appointment.source == 'medelement' && !local_payment_present?
+  end
+
   def record_conflicts
     record_amount_conflict if provider_amount && appointment.service_amount.to_i != provider_amount
-    record_local_payment_conflict if local_payment_present?
   end
 
   def record_amount_conflict
@@ -53,20 +61,6 @@ class Integrations::Medelement::AppointmentFinancialReconciler
         reception_code: reception['RECEPTION_CODE'].presence,
         local_amount: appointment.service_amount.to_i,
         provider_amount: provider_amount
-      }.compact
-    )
-  end
-
-  def record_local_payment_conflict
-    conflict_tracker&.record!(
-      phase: 'receptions',
-      entity_type: 'appointment',
-      conflict_type: 'local_payment_preserved',
-      entity_key: reception['RECEPTION_CODE'],
-      details: {
-        reason: 'Local payment data was preserved during provider pull',
-        appointment_id: appointment.id,
-        reception_code: reception['RECEPTION_CODE'].presence
       }.compact
     )
   end

@@ -59,7 +59,7 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
 
     result = described_class.new(account: account, client: client).perform
 
-    expect(result).to eq(imported_count: 1, linked_count: 0, skipped_count: 0)
+    expect(result).to include(imported_count: 1, linked_count: 0, skipped_count: 0)
     expect(client).to have_received(:nomenclatures).with(skip: 0).once
     expect(client).to have_received(:nomenclatures).with(skip: 1).once
     expect(account.scheduling_services.count).to eq(1)
@@ -102,8 +102,8 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
 
     second_result = sync.call
 
-    expect(first_result).to eq(imported_count: 1, linked_count: 1, skipped_count: 0)
-    expect(second_result).to eq(imported_count: 1, linked_count: 1, skipped_count: 0)
+    expect(first_result).to include(imported_count: 1, linked_count: 1, skipped_count: 0)
+    expect(second_result).to include(imported_count: 1, linked_count: 1, skipped_count: 0)
     expect([service.reload.id, service_price.reload.id]).to eq(original_ids)
     expect(service).to have_attributes(
       duration_min: 40,
@@ -139,7 +139,7 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
     service = account.scheduling_services.find_by!(
       "custom_attributes ->> 'medelement_nomenclature_code' = ?", 'ME-SVC-LONG'
     )
-    expect(result).to eq(imported_count: 1, linked_count: 0, skipped_count: 0)
+    expect(result).to include(imported_count: 1, linked_count: 0, skipped_count: 0)
     expect(service.name.length).to eq(255)
     expect(service.custom_attributes['medelement_full_name']).to eq(provider_name)
 
@@ -160,7 +160,57 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
     expect(service.custom_attributes).not_to have_key('medelement_full_name')
   end
 
-  it 'deactivates a missing imported service and its prices only after the grace period' do
+  it 'reports local-only services and does not mark a malformed returned code as missing' do
+    create(:scheduling_service, account: account)
+    create(:scheduling_service, account: account, custom_attributes: { 'medelement_nomenclature_code' => '' })
+    create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: { 'medelement_nomenclature_code' => 'ME-SVC-MALFORMED' }
+    )
+
+    result = described_class.new(
+      account: account,
+      client: nil,
+      service_payloads: [{ 'NOMENCLATURE_CODE' => 'ME-SVC-MALFORMED', 'NOMENCLATURE_NAME' => '' }]
+    ).perform
+
+    expect(result).to include(
+      provider_count: 1,
+      imported_count: 0,
+      skipped_count: 1,
+      not_returned_count: 0,
+      local_unlinked_count: 2
+    )
+  end
+
+  it 'records an active linked service that is absent from the provider snapshot' do
+    now = Time.zone.parse('2026-07-28 10:00:00')
+    create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: {
+        'medelement_nomenclature_code' => 'ME-SVC-MISSING',
+        'medelement_last_seen_at' => now.iso8601
+      }
+    )
+    conflict_tracker = instance_double(Integrations::Medelement::ConflictTracker, record!: true)
+
+    result = described_class.new(
+      account: account,
+      client: nil,
+      conflict_tracker: conflict_tracker,
+      now: now,
+      service_payloads: normalized_service_payloads
+    ).perform
+
+    expect(result).to include(provider_count: 1, imported_count: 1, not_returned_count: 1)
+    expect(conflict_tracker).to have_received(:record!).with(
+      hash_including(phase: 'services', conflict_type: 'service_not_returned', severity: 'warning')
+    )
+  end
+
+  it 'rejects an empty injected snapshot without reporting every imported service as missing' do
     now = Time.zone.parse('2026-07-28 10:00:00')
     service = create(
       :scheduling_service,
@@ -172,10 +222,15 @@ RSpec.describe Integrations::Medelement::ServicesSyncService do
     )
     service_price = create(:scheduling_service_price, account: account, service: service)
 
-    described_class.new(account: account, client: nil, service_payloads: [], now: now).perform
+    expect do
+      described_class.new(account: account, client: nil, service_payloads: [], now: now).perform
+    end.to raise_error(
+      described_class::IncompleteSnapshotError,
+      'Medelement services snapshot has no services'
+    )
 
-    expect(service.reload).not_to be_active
-    expect(service_price.reload).not_to be_active
+    expect(service.reload).to be_active
+    expect(service_price.reload).to be_active
   end
 
   it 'keeps complete uncounted pages when the terminal page is empty' do

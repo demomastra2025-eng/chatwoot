@@ -12,7 +12,8 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       receptions_days_back: 3,
       receptions_days_forward: 70,
       throttle_ms: 0,
-      time_zone: 'Asia/Almaty'
+      time_zone: 'Asia/Almaty',
+      organization_id: 'company-1'
     )
   end
   let(:conflict_tracker) { instance_double(Integrations::Medelement::ConflictTracker, record!: true) }
@@ -52,6 +53,90 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
 
   before do
     allow(client).to receive(:get_receptions).and_return(reception_payload)
+    allow(client).to receive(:get_reception) do |reception_code:, **|
+      reception_payload.first.merge(
+        'RECEPTION_CODE' => reception_code,
+        'PROFILE_CODE' => reception_payload.first['PATIENT_CODE'],
+        'COMPANY_CODE' => 'company-1',
+        'SERVICES' => []
+      )
+    end
+  end
+
+  it 'imports the service and price from the provider reception detail' do
+    provider_service = create(
+      :scheduling_service,
+      account: account,
+      custom_attributes: { 'medelement_nomenclature_code' => 'service-1' }
+    )
+    allow(client).to receive(:get_reception).and_return(
+      reception_payload.first.merge(
+        'PROFILE_CODE' => reception_payload.first['PATIENT_CODE'],
+        'COMPANY_CODE' => 'company-1',
+        'SERVICES' => [
+          {
+            'NOMENCLATURE_CODE' => 'service-1',
+            'PRICE' => 4000,
+            'QUANTITY' => 1,
+            'TOTAL_SUM' => 4000,
+            'DELETED' => 0
+          }
+        ]
+      )
+    )
+
+    service.perform
+
+    appointment = account.scheduling_appointments.find_by!(source: 'medelement')
+    expect(appointment).to have_attributes(service_id: provider_service.id, service_amount: 4000)
+  end
+
+  it 'fails closed when the provider detail does not describe the listed reception' do
+    allow(client).to receive(:get_reception).and_return(
+      reception_payload.first.merge(
+        'RECEPTION_CODE' => 'another-reception',
+        'PROFILE_CODE' => reception_payload.first['PATIENT_CODE'],
+        'COMPANY_CODE' => 'company-1',
+        'SERVICES' => []
+      )
+    )
+
+    expect { service.perform }.to raise_error(
+      described_class::IncompleteSnapshotError,
+      /reception detail is incomplete/
+    )
+    expect(account.scheduling_appointments.where(source: 'medelement')).to be_empty
+  end
+
+  it 'fails closed when list and detail identify different patients' do
+    allow(client).to receive(:get_reception).and_return(
+      reception_payload.first.merge(
+        'PROFILE_CODE' => 'another-patient',
+        'COMPANY_CODE' => 'company-1',
+        'SERVICES' => []
+      )
+    )
+
+    expect { service.perform }.to raise_error(
+      described_class::IncompleteSnapshotError,
+      /reception detail is incomplete/
+    )
+    expect(account.scheduling_appointments.where(source: 'medelement')).to be_empty
+  end
+
+  it 'fails closed when the detail omits the provider organization marker' do
+    allow(client).to receive(:get_reception).and_return(
+      reception_payload.first.merge(
+        'PROFILE_CODE' => reception_payload.first['PATIENT_CODE'],
+        'SERVICES' => []
+      )
+    )
+
+    expect { service.perform }.to raise_error(
+      described_class::IncompleteSnapshotError,
+      /reception detail scope is invalid/
+    )
+    expect(account.scheduling_appointments.where(source: 'medelement')).to be_empty
   end
 
   it 'creates imported appointments without touching overlapping manual appointments' do
@@ -215,6 +300,24 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     expect(conflict_tracker).to have_received(:record!).with(
       hash_including(conflict_type: 'stale_provider_binding', severity: 'error')
     )
+  end
+
+  it 'does not poll an inactive Medelement specialist' do
+    inactive_resource = create(
+      :scheduling_resource,
+      account: account,
+      active: false,
+      custom_attributes: {
+        'medelement_specialist_code' => 'inactive-specialist',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'inactive-cabinet' }]
+      }
+    )
+
+    result = service.perform
+
+    expect(result).to include(imported_count: 1, skipped_pair_count: 0)
+    expect(client).not_to have_received(:get_receptions).with(hash_including(specialist_code: 'inactive-specialist'))
+    expect(inactive_resource.reload).not_to be_active
   end
 
   it 'still aborts the snapshot for retryable provider failures' do

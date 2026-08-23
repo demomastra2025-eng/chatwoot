@@ -20,7 +20,7 @@ class Integrations::Medelement::ContactResolverService
     patient = client.get_patient(patient_code: patient_code)
     return existing_contact if patient.blank?
 
-    Integrations::Medelement::ProviderScope.validate!(patient, organization_id: organization_id)
+    validate_patient!(patient, expected_patient_code: patient_code)
     return existing_contact if provider_read_models_conflict?(patient_code, patient, existing_contact)
 
     upsert_contact(patient, preferred_contact: preferred_contact)
@@ -28,33 +28,164 @@ class Integrations::Medelement::ContactResolverService
 
   def sync_patient_payload!(patient, preferred_contact:)
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
-    Integrations::Medelement::ProviderScope.validate!(patient, organization_id: organization_id)
+    validate_patient!(
+      patient,
+      expected_patient_code: preferred_contact.custom_attributes['medelement_patient_code'].presence,
+      expected_iin: preferred_contact.custom_attributes['iin'].presence || preferred_contact.identifier,
+      expected_phone_numbers: Integrations::Medelement::PhoneNumber.contact_phones(preferred_contact)
+    )
     return preferred_contact if patient_code.blank?
     return preferred_contact if provider_read_models_conflict?(patient_code, patient, preferred_contact)
 
     upsert_contact(patient, preferred_contact: preferred_contact)
   end
 
+  def sync_verified_demographic_candidate!(patient_code, candidate_contact:)
+    patient = client.get_patient(patient_code: patient_code)
+    return if patient.blank?
+
+    validate_patient!(patient, expected_patient_code: patient_code)
+    iin = normalize_iin(patient['IIN'])
+    return if iin.blank?
+
+    Integrations::Medelement::ProviderCommands::PatientIdentityLock.new(
+      account_id: account.id,
+      iin: iin
+    ).synchronize do
+      resolve_verified_demographic_candidate(patient_code, candidate_contact, patient, iin)
+    end
+  end
+
   private
 
   attr_reader :account, :client, :conflict_tracker, :organization_id
 
-  def contact_for_lookup(patient_code:, iin:, email:, preferred_contact: nil)
-    preferred_contact || find_by_patient_code(patient_code) ||
-      find_by_identifier(iin) ||
-      find_by_email(email)
+  def resolve_verified_demographic_candidate(patient_code, candidate_contact, patient, iin)
+    existing_contact = find_by_patient_code(patient_code)
+    return existing_contact if existing_contact
+    return if provider_read_models_conflict?(patient_code, patient, nil)
+
+    candidate = find_verified_demographic_candidate(
+      patient_code: patient_code,
+      iin: iin,
+      email: patient['PATIENT_EMAIL'].to_s.downcase.presence,
+      patient: patient
+    )
+    return unless candidate&.id == candidate_contact.id
+
+    upsert_contact(patient, preferred_contact: candidate_contact)
   end
 
-  def find_by_email(email)
-    return if email.blank?
-
-    account.contacts.from_email(email)
+  def validate_patient!(patient, expected_patient_code: nil, expected_iin: nil, expected_phone_numbers: [])
+    Integrations::Medelement::ProviderScope.validate_patient!(
+      patient,
+      organization_id: organization_id,
+      expected_patient_code: expected_patient_code,
+      expected_iin: expected_iin,
+      expected_phone_numbers: expected_phone_numbers
+    )
   end
 
-  def find_by_identifier(identifier)
-    return if identifier.blank?
+  def contact_for_lookup(patient_code:, iin:, email:, patient:, preferred_contact: nil)
+    return preferred_contact if preferred_contact
 
-    account.contacts.find_by(identifier: identifier)
+    linked_contact = find_by_patient_code(patient_code)
+    return linked_contact if linked_contact
+
+    iin_contact, identity_known = contact_by_iin(iin, patient_code)
+    return iin_contact if identity_known
+
+    find_verified_demographic_candidate(patient_code: patient_code, iin: iin, email: email, patient: patient)
+  end
+
+  def contact_by_iin(iin, patient_code)
+    contacts = contacts_by_iin(iin)
+    return [nil, false] if contacts.empty?
+
+    candidate = contacts.first if contacts.one?
+    return [candidate, true] if candidate && patient_code_available_for?(candidate, patient_code) && contact_iin_compatible?(candidate, iin)
+
+    [nil, true]
+  end
+
+  def contacts_by_iin(iin)
+    return [] if iin.blank?
+
+    account.contacts
+           .where(
+             "identifier = :iin OR custom_attributes ->> 'iin' = :iin OR custom_attributes ->> 'medelement_iin' = :iin",
+             iin: iin
+           )
+           .limit(2)
+           .to_a
+  end
+
+  def find_verified_demographic_candidate(patient_code:, iin:, email:, patient:)
+    return if iin.blank?
+
+    candidates = demographic_candidates(email: email, phones: provider_phones(patient)).select do |candidate|
+      patient_code_available_for?(candidate, patient_code) &&
+        contact_iin_compatible?(candidate, iin) &&
+        contact_name_matches?(candidate, patient) &&
+        contact_birth_date_matches?(candidate, patient)
+    end
+    candidates.one? ? candidates.first : nil
+  end
+
+  def demographic_candidates(email:, phones:)
+    candidate_ids = account.contacts.where(phone_number: phones).pluck(:id) if phones.present?
+    candidate_ids = Array(candidate_ids)
+    candidate_ids.concat(account.contacts.where('LOWER(email) = ?', email.downcase).pluck(:id)) if email.present?
+
+    account.contacts.where(id: candidate_ids.uniq).to_a
+  end
+
+  def patient_code_available_for?(contact, patient_code)
+    linked_code = contact.custom_attributes.to_h['medelement_patient_code'].to_s.presence
+    linked_code.blank? || linked_code == patient_code.to_s
+  end
+
+  def contact_iin_compatible?(contact, iin)
+    contact_iins = [
+      contact.identifier,
+      contact.custom_attributes.to_h['iin'],
+      contact.custom_attributes.to_h['medelement_iin']
+    ].filter_map { |value| normalize_iin(value) }.uniq
+    contact_iins.empty? || contact_iins == [iin]
+  end
+
+  def contact_name_matches?(contact, patient)
+    contact_tokens = normalized_name_tokens(contact.name, contact.last_name, contact.middle_name)
+    provider_tokens = normalized_name_tokens(
+      patient['FULLNAME'],
+      patient['LASTNAME'],
+      patient_first_name(patient),
+      patient['MIDDLENAME']
+    )
+
+    contact_tokens.present? && contact_tokens == provider_tokens
+  end
+
+  def normalized_name_tokens(*values)
+    values.compact_blank
+          .flat_map { |value| value.to_s.unicode_normalize(:nfkc).downcase.scan(/[[:alnum:]]+/) }
+          .uniq
+          .sort
+  end
+
+  def contact_birth_date_matches?(contact, patient)
+    provider_birth_date = normalize_birth_date(patient['BIRTHDAY'])
+    contact_birth_date = normalized_contact_birth_date(contact)
+    provider_birth_date.present? && provider_birth_date == contact_birth_date
+  end
+
+  def normalized_contact_birth_date(contact)
+    value = contact.custom_attributes.to_h['birth_date']
+    return if value.blank?
+
+    Date.parse(value.to_s).iso8601
+  rescue ArgumentError
+    nil
   end
 
   def find_by_patient_code(patient_code)
@@ -94,10 +225,7 @@ class Integrations::Medelement::ContactResolverService
     return if value.blank?
 
     iin = value.to_s.gsub(/\D/, '')
-    Scheduling::IinValidator.validate!(iin)
-    iin
-  rescue Scheduling::Error
-    nil
+    iin if Scheduling::IinValidator.valid?(iin)
   end
 
   def patient_first_name(patient)
@@ -158,7 +286,6 @@ class Integrations::Medelement::ContactResolverService
   # Coordinates identity lookup, uniqueness checks and custom-attribute persistence as one unit.
   # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def upsert_contact(patient, preferred_contact: nil)
-    Integrations::Medelement::ProviderScope.validate!(patient, organization_id: organization_id)
     patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
     iin = normalize_iin(patient['IIN'])
     email = patient['PATIENT_EMAIL'].to_s.downcase.presence
@@ -166,6 +293,7 @@ class Integrations::Medelement::ContactResolverService
       patient_code: patient_code,
       iin: iin,
       email: email,
+      patient: patient,
       preferred_contact: preferred_contact
     ) || account.contacts.new
 

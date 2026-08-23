@@ -5,6 +5,8 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   before_action :check_admin_authorization?, except: [:index, :show]
   before_action :set_resource, only: [:show, :update, :destroy]
+  before_action :ensure_provider_writable_resource!, only: [:update]
+  before_action :validate_provider_owned_attributes!, only: [:create, :update]
 
   def index
     resources = Current.account.scheduling_resources.ordered
@@ -63,6 +65,24 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   def set_resource
     @scheduling_resource = Current.account.scheduling_resources.find(params[:id])
+  end
+
+  def validate_provider_owned_attributes!
+    incoming = params.permit(custom_attributes: {})[:custom_attributes]
+    Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
+      incoming: incoming,
+      current: @scheduling_resource&.custom_attributes
+    )
+  end
+
+  def ensure_provider_writable_resource!
+    return if @scheduling_resource.custom_attributes['medelement_specialist_code'].blank?
+
+    raise Scheduling::Error.new(
+      code: 'RESOURCE_READ_ONLY',
+      message: 'Imported Medelement specialists cannot be modified because the provider API does not support specialist writes',
+      status: :unprocessable_content
+    )
   end
 
   def ensure_destroyable_resource!

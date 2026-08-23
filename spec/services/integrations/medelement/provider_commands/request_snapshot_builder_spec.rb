@@ -127,7 +127,46 @@ RSpec.describe Integrations::Medelement::ProviderCommands::RequestSnapshotBuilde
         contact: contact
       ).build
 
+      expect(snapshot['organization_id']).to eq('company-1')
       expect(snapshot.dig('patient', 'payload', 'company_code')).to eq('company-1')
+    end
+
+    it 'uses desired contact values captured by the source event' do
+      account = create(:account)
+      contact = create(
+        :contact,
+        account: account,
+        name: 'Later',
+        last_name: 'Patient',
+        email: 'later@example.com',
+        phone_number: '+77011234567',
+        custom_attributes: { 'medelement_patient_code' => 'patient-1' }
+      )
+      hook = build_stubbed(
+        :integrations_hook,
+        account: account,
+        app_id: 'medelement',
+        settings: { 'organization_id' => 'company-1' }
+      )
+
+      snapshot = described_class.new(
+        account: account,
+        hook: hook,
+        operation: 'update_patient',
+        contact: contact,
+        desired_attributes: {
+          name: 'Event',
+          email: 'event@example.com',
+          phone_number: '+77017654321'
+        }
+      ).build
+
+      expect(snapshot.dig('patient', 'payload')).to include(
+        'name' => 'Event',
+        'patient_email' => 'event@example.com'
+      )
+      expect(snapshot.dig('patient', 'phone_number')).to eq('+77017654321')
+      expect(snapshot.dig('patient', 'phone_numbers')).to eq(['+77017654321'])
     end
   end
 

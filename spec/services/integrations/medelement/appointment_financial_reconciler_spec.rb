@@ -6,6 +6,7 @@ RSpec.describe Integrations::Medelement::AppointmentFinancialReconciler do
       Scheduling::Appointment,
       id: 42,
       persisted?: true,
+      source: 'manual',
       service_amount: 3000,
       prepaid_amount: 0,
       settlement_amount: 0,
@@ -54,5 +55,32 @@ RSpec.describe Integrations::Medelement::AppointmentFinancialReconciler do
     ).attributes
 
     expect(attributes[:service_amount]).to eq(2000)
+  end
+
+  it 'accepts the provider amount for an imported appointment without local payments' do
+    allow(appointment).to receive(:source).and_return('medelement')
+
+    attributes = described_class.new(
+      appointment: appointment,
+      reception: { 'RECEPTION_CODE' => 'reception-1', 'SERVICES' => [{ 'PRICE' => 4000, 'QUANTITY' => 1 }] },
+      conflict_tracker: conflict_tracker
+    ).attributes
+
+    expect(attributes[:service_amount]).to eq(4000)
+    expect(conflict_tracker).not_to have_received(:record!)
+  end
+
+  it 'preserves an imported amount after a local payment and records only the amount divergence' do
+    allow(appointment).to receive_messages(source: 'medelement', prepaid_amount: 1000)
+
+    attributes = described_class.new(
+      appointment: appointment,
+      reception: { 'RECEPTION_CODE' => 'reception-1', 'SERVICES' => [{ 'PRICE' => 4000, 'QUANTITY' => 1 }] },
+      conflict_tracker: conflict_tracker
+    ).attributes
+
+    expect(attributes[:service_amount]).to eq(3000)
+    expect(conflict_tracker).to have_received(:record!).with(hash_including(conflict_type: 'appointment_amount_mismatch'))
+    expect(conflict_tracker).to have_received(:record!).once
   end
 end

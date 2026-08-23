@@ -1,4 +1,6 @@
 <script setup>
+import { ref } from 'vue';
+
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 
 defineProps({
@@ -45,6 +47,11 @@ defineProps({
 });
 
 const emit = defineEmits(['open', 'search', 'update:modelValue']);
+const comboBoxRef = ref(null);
+
+const open = () => comboBoxRef.value?.open();
+
+defineExpose({ open });
 
 defineOptions({
   inheritAttrs: false,
@@ -57,6 +64,7 @@ defineOptions({
       {{ label }}
     </span>
     <ComboBox
+      ref="comboBoxRef"
       v-bind="$attrs"
       :model-value="modelValue"
       :options="options"

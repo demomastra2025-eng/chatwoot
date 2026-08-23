@@ -51,8 +51,10 @@ class Integrations::Medelement::ProviderCommands::ReceptionVerifier
   def services_match?(reception)
     rows = Integrations::Medelement::ReceptionServiceRows.active(reception)
     actual_codes = rows.filter_map { |service| service['NOMENCLATURE_CODE'].to_s.presence }
+    return true if requested_service_codes.map(&:to_s).uniq.sort == actual_codes.uniq.sort
+    return false unless local_only_service_fallback?(reception, actual_codes)
 
-    rows.size == actual_codes.size && requested_service_codes.map(&:to_s).uniq.sort == actual_codes.uniq.sort
+    rows.size == actual_codes.size
   end
 
   private
@@ -95,6 +97,15 @@ class Integrations::Medelement::ProviderCommands::ReceptionVerifier
 
   def requested_service_codes
     Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.service_codes(snapshot)
+  end
+
+  def local_only_service_fallback?(reception, actual_codes)
+    return false if requested_service_codes.blank? || actual_codes.present?
+    return false if reception['SERVICES'].is_a?(Array) && reception['SERVICES'].present?
+
+    command.create_reception? || Integrations::Medelement::AppointmentServiceBinding.new(
+      appointment: command.appointment
+    ).local_only?
   end
 
   def reception_time_matches?(reception, start_key:, end_key:)

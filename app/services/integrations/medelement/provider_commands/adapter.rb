@@ -53,6 +53,10 @@ class Integrations::Medelement::ProviderCommands::Adapter
     patient_actions(command: command, actor: actor).confirm_creation!
   end
 
+  def retry_phone_mismatch(command:, actor:)
+    patient_actions(command: command, actor: actor).retry_phone_mismatch!
+  end
+
   private
 
   def patient_actions(command:, actor:)

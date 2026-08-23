@@ -78,6 +78,30 @@ const syncStatus = {
     phase_results: { services: { status: 'succeeded', imported_count: 3 } },
     created_at: '2026-08-07T12:00:00Z',
   },
+  phase_statuses: {
+    specialists: {
+      status: 'succeeded',
+      last_synced_at: '2026-08-07T11:45:00Z',
+      result: {
+        status: 'succeeded',
+        provider_count: 3,
+        not_returned_count: 1,
+        local_unlinked_count: 2,
+      },
+    },
+  },
+  schedules: [
+    {
+      key: 'operational',
+      next_sync_at_display: '2026-08-07 12:15 ALMT',
+      last_scheduled_sync_at_display: '2026-08-07 12:00 ALMT',
+    },
+    {
+      key: 'catalog',
+      next_sync_at_display: '2026-08-07 18:20 ALMT',
+      last_scheduled_sync_at_display: null,
+    },
+  ],
   conflicts: [
     {
       id: 8,
@@ -159,6 +183,12 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
     );
     expect(wrapper.text()).toContain(
       'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.IMPORTED_COUNT'
+    );
+    expect(wrapper.text()).toContain(
+      'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.PROVIDER_COUNT'
+    );
+    expect(wrapper.text()).toContain(
+      'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.OPERATIONAL_NEXT'
     );
     expect(wrapper.text()).not.toContain(
       'Internal provider reason must not render'

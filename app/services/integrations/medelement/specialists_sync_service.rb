@@ -16,25 +16,41 @@ class Integrations::Medelement::SpecialistsSyncService
 
   def perform
     rows = specialists || Integrations::Medelement::SpecialistsSnapshotService.new(client: client).perform
+    normalized_rows = Array(rows).map { |payload| normalized_payload(payload) }
+    if normalized_rows.empty?
+      raise Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError,
+            'Medelement specialists snapshot is empty'
+    end
+
     @cabinet_resolver = Integrations::Medelement::CabinetSnapshotResolver.new(
       account: account,
       source_cabinets: source_cabinets,
-      specialist_rows: rows,
+      specialist_rows: normalized_rows,
       conflict_tracker: conflict_tracker
     )
-    seen_codes = Array(rows).filter_map do |payload|
-      sync_specialist!(normalized_payload(payload))
-    end
-    # Live provider responses have no total/completeness marker; only validated catalog imports pass client: nil.
-    deactivate_stale_specialists!(seen_codes) if client.nil?
-
-    { imported_count: seen_codes.size, skipped_count: Array(rows).size - seen_codes.size }
+    sync_inventory(normalized_rows)
   end
 
   private
 
   attr_reader :account, :cabinet_resolver, :client, :configuration, :conflict_tracker, :now, :source_cabinets,
               :specialists
+
+  def sync_inventory(normalized_rows)
+    provider_codes = normalized_rows.filter_map { |payload| payload['specialistCode'].to_s.presence }.uniq
+    imported_codes = normalized_rows.filter_map { |payload| sync_specialist!(payload) }
+    not_returned_count = record_not_returned_specialists!(provider_codes)
+    # Live provider responses have no total/completeness marker; only validated catalog imports pass client: nil.
+    deactivate_stale_specialists!(provider_codes) if client.nil?
+
+    {
+      provider_count: normalized_rows.size,
+      imported_count: imported_codes.size,
+      skipped_count: normalized_rows.size - imported_codes.size,
+      not_returned_count: not_returned_count,
+      local_unlinked_count: local_unlinked_count
+    }
+  end
 
   def sync_specialist!(payload)
     specialist_code = payload['specialistCode'].to_s
@@ -85,6 +101,38 @@ class Integrations::Medelement::SpecialistsSyncService
     end
   end
 
+  def record_not_returned_specialists!(seen_codes)
+    not_returned = medelement_resources.available_for_scheduling
+    not_returned = not_returned.where("custom_attributes ->> '#{SPECIALIST_CODE_KEY}' NOT IN (?)", seen_codes) if seen_codes.present?
+    not_returned.find_each do |resource|
+      specialist_code = resource.custom_attributes[SPECIALIST_CODE_KEY]
+      conflict_tracker&.record!(
+        phase: 'specialists',
+        entity_type: 'specialist',
+        conflict_type: 'specialist_not_returned',
+        entity_key: specialist_code,
+        severity: 'warning',
+        details: not_returned_details(resource, specialist_code)
+      )
+    end
+    not_returned.count
+  end
+
+  def local_unlinked_count
+    account.scheduling_resources.available_for_scheduling
+           .where("NULLIF(custom_attributes ->> '#{SPECIALIST_CODE_KEY}', '') IS NULL").count
+  end
+
+  def not_returned_details(resource, specialist_code)
+    {
+      reason: 'Specialist linked in One Link was not returned by the Medelement timetable API',
+      resource_id: resource.id,
+      specialist_code: specialist_code,
+      specialist_name: resource.name,
+      last_seen_at: resource.custom_attributes[LAST_SEEN_AT_KEY]
+    }.compact
+  end
+
   def log_skipped_specialist(reason, specialist_code = nil, payload: {})
     entity_key = specialist_code.presence || "missing:#{reason}"
     conflict_tracker&.record!(
@@ -108,7 +156,7 @@ class Integrations::Medelement::SpecialistsSyncService
   end
 
   def medelement_resources
-    account.scheduling_resources.where("custom_attributes ->> '#{SPECIALIST_CODE_KEY}' IS NOT NULL")
+    account.scheduling_resources.where("NULLIF(custom_attributes ->> '#{SPECIALIST_CODE_KEY}', '') IS NOT NULL")
   end
 
   def normalized_payload(payload)

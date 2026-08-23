@@ -129,7 +129,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
   context 'when creating a patient' do
     it 'requires explicit selection for one phone-only provider match' do
       allow(client).to receive(:search_patients_by_phone).and_return(
-        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }]
+        [{ 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',
+           'PATIENT_PHONE_2' => contact.phone_number }]
       )
       allow(client).to receive(:create_patient)
 
@@ -149,7 +150,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       allow(client).to receive(:search_patients_by_phone).and_return(
         [
           { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Other', 'LASTNAME' => 'Person' },
-          { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' },
+          { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',
+            'PATIENT_PHONE_2' => contact.phone_number },
           { 'PROFILE_CODE' => 'patient-3', 'NAME' => 'Family', 'LASTNAME' => 'Member' }
         ]
       )
@@ -165,7 +167,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     it 'searches every snapshotted Contact phone and deduplicates candidates by patient code' do
       secondary_phone = ['+7', '777', '111', '2233'].join
       contact.update!(custom_attributes: { 'secondary_phones' => [secondary_phone] })
-      patient = { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }
+      patient = { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',
+                  'PATIENT_PHONE_2' => contact.phone_number }
       allow(client).to receive(:search_patients_by_phone).with(phone_number: contact.phone_number).and_return([patient])
       allow(client).to receive(:search_patients_by_phone).with(phone_number: secondary_phone).and_return([patient])
       allow(client).to receive(:create_patient)
@@ -257,7 +260,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(contact.reload.custom_attributes['medelement_patient_code']).to be_blank
     end
 
-    it 'persists an exact-IIN patient code before waiting for phone refresh' do
+    it 'continues with an exact-IIN patient when the provider phone differs' do
       contact.update!(custom_attributes: { 'medelement_iin' => '940720300129' })
       allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').and_return(
         [{ 'PROFILE_CODE' => 'patient-1', 'IIN' => '940720300129',
@@ -267,8 +270,11 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       perform
 
       expect(command.reload).to have_attributes(
-        status: 'awaiting_phone_refresh',
+        status: 'succeeded',
         provider_patient_code: 'patient-1'
+      )
+      expect(command.execution_state['warnings']).to include(
+        hash_including('code' => 'patient_phone_mismatch')
       )
       expect(contact.reload.custom_attributes).to include(
         'medelement_patient_code' => 'patient-1',
@@ -329,8 +335,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     it 'waits for an explicit patient selection before a write' do
       allow(client).to receive(:search_patients_by_phone).and_return(
         [
-          { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' },
-          { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }
+          { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',
+            'PATIENT_PHONE_2' => contact.phone_number },
+          { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov',
+            'PATIENT_PHONE_2' => contact.phone_number }
         ]
       )
       allow(client).to receive(:create_patient)
@@ -371,6 +379,54 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         'medelement_patient_match_status' => 'matched'
       )
       expect(client).to have_received(:get_patient).with(patient_code: 'patient-created').once
+    end
+
+    it 'uses the complete 201 patient payload without waiting for the delayed search index' do
+      contact.update!(
+        name: 'Ivanov Ivan Ivanovich',
+        custom_attributes: { 'medelement_iin' => '940720300129' }
+      )
+      command.update!(execution_state: command.execution_state.merge('patient_creation_confirmed' => true))
+      desired = command.request_snapshot.dig('patient', 'payload')
+      response = desired.slice('name', 'lastname', 'middlename', 'birthday', 'gender', 'iin').merge(
+        'profile_code' => 'patient-created',
+        'patient_phone_2' => contact.phone_number
+      )
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').twice.and_return([])
+      allow(client).to receive(:create_patient).and_return(response)
+      allow(client).to receive(:get_patient)
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-created')
+      expect(contact.reload.custom_attributes).to include('medelement_patient_code' => 'patient-created')
+      expect(client).not_to have_received(:get_patient)
+    end
+
+    it 'treats a system-confirmed outbound change as patient creation consent' do
+      contact.update!(
+        name: 'Ivanov Ivan Ivanovich',
+        custom_attributes: { 'medelement_iin' => '940720300129' }
+      )
+      confirmation_request.update!(
+        resolution_source: 'system',
+        resolution_metadata: { 'medelement_auto_sync' => true }
+      )
+      allow(client).to receive(:search_patients_by_iin).with(iin: '940720300129').twice.and_return([])
+      allow(client).to receive(:create_patient).and_return('profile_code' => 'patient-created')
+      allow(client).to receive(:get_patient).with(patient_code: 'patient-created').and_return(
+        'PROFILE_CODE' => 'patient-created',
+        'NAME' => 'Ivan',
+        'LASTNAME' => 'Ivanov',
+        'MIDDLENAME' => 'Ivanovich',
+        'IIN' => '940720300129',
+        'PATIENT_PHONE_2' => contact.phone_number
+      )
+
+      perform
+
+      expect(command.reload).to have_attributes(status: 'succeeded', provider_patient_code: 'patient-created')
+      expect(client).to have_received(:create_patient).once
     end
 
     it 'rejects organization drift before the provider patient create write' do
@@ -477,6 +533,42 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         params: hash_including('profile_code' => 'patient-1')
       )
       expect(command.reload).to be_succeeded
+    end
+
+    it 'accepts the complete 201 update payload before the direct detail endpoint materializes' do
+      desired = command.request_snapshot.dig('patient', 'payload')
+      response = desired.slice('name', 'lastname', 'middlename', 'patient_email', 'birthday', 'gender', 'iin').merge(
+        'profile_code' => 'patient-1',
+        'patient_phone_2' => contact.phone_number
+      )
+      allow(client).to receive(:update_patient).and_return(response)
+
+      perform
+
+      expect(command.reload).to be_succeeded
+      expect(client).to have_received(:get_patient).once
+      expect(client).not_to have_received(:search_patients_by_codes)
+    end
+
+    it 'uses the indexed patient record when the provider patient detail endpoint fails' do
+      indexed_patient = {
+        'PROFILE_CODE' => 'patient-1',
+        'COMPANY_CODE' => hook_settings.fetch('organization_id'),
+        'NAME' => 'Ivan',
+        'LASTNAME' => 'Ivanov',
+        'PATIENT_PHONE_2' => contact.phone_number
+      }
+      allow(client).to receive(:get_patient).with(patient_code: 'patient-1').and_raise(
+        Integrations::Medelement::Client::ApiError.new('provider detail unavailable', status: 500)
+      )
+      allow(client).to receive(:search_patients_by_codes).with(patient_codes: ['patient-1']).and_return([indexed_patient])
+      allow(client).to receive(:update_patient).and_return({})
+
+      perform
+
+      expect(command.reload).to be_succeeded
+      expect(client).to have_received(:update_patient).once
+      expect(client).to have_received(:search_patients_by_codes).at_least(:once)
     end
 
     it 'rejects a foreign patient before the provider update write' do
@@ -609,9 +701,21 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
     end
 
     it 'preflights timetable and collisions, writes once, and applies the canonical external ref' do
-      allow_available_destination
+      allow(client).to receive(:timetable).and_return(timetable_for(appointment.starts_at, appointment.ends_at))
+      allow(client).to receive(:get_receptions).and_return(
+        [],
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }]
+      )
       allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
-      allow_materialized_reception
+      allow(client).to receive(:get_reception).and_return(
+        'RECEPTION_CODE' => 'reception-1',
+        'PROFILE_CODE' => 'patient-1',
+        'SPECIALIST_CODE' => 'specialist-1',
+        'STARTTIME' => provider_time(appointment.starts_at),
+        'ENDTIME' => provider_time(appointment.ends_at),
+        'REMOVED' => 0,
+        'SERVICES' => []
+      )
 
       perform
 
@@ -623,8 +727,39 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         )
       )
       expect(command.reload).to have_attributes(status: 'succeeded', provider_reception_code: 'reception-1')
-      expect(appointment.reload).to have_attributes(source: 'medelement', external_ref: 'medelement:reception:reception-1')
+      expect(appointment.reload).to have_attributes(source: 'manual', external_ref: 'medelement:reception:reception-1')
       expect(appointment.custom_attributes).to include('medelement_reception_code' => 'reception-1')
+    end
+
+    it 'keeps the selected service locally when the provider create readback has empty SERVICES' do
+      local_service = create(
+        :scheduling_service,
+        account: account,
+        custom_attributes: { 'medelement_nomenclature_code' => 'service-1' }
+      )
+      appointment.update!(
+        service: local_service,
+        service_name_snapshot: local_service.name,
+        custom_attributes: appointment.custom_attributes.merge('service_ids' => [local_service.id])
+      )
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+      allow_materialized_reception(service_codes: [])
+
+      perform
+
+      expect(command.reload).to be_succeeded
+      expect(appointment.reload).to have_attributes(
+        service_id: local_service.id,
+        service_name_snapshot: local_service.name,
+        external_ref: 'medelement:reception:reception-1'
+      )
+      expect(appointment.custom_attributes).to include(
+        'medelement_service_binding' => 'local_only',
+        'medelement_local_nomenclature_codes' => ['service-1'],
+        'medelement_provider_nomenclature_codes' => [],
+        'service_ids' => [local_service.id]
+      )
     end
 
     it 'does not persist a provider write reference after losing the execution claim' do
@@ -647,7 +782,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).not_to have_received(:get_reception)
     end
 
-    it 'processes an exact v1 snapshot queued by an old web process' do
+    it 'processes an exact v1 snapshot without sending the unverified service field' do
       snapshot = command.request_snapshot.deep_dup
       snapshot['version'] = 1
       snapshot.fetch('reception')['nomenclature_code'] = 'legacy-service'
@@ -659,9 +794,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
 
       perform
 
-      expect(client).to have_received(:create_reception).with(
-        params: hash_including(nomenclature_code: ['legacy-service'])
-      )
+      expect(client).to have_received(:create_reception).with(params: hash_not_including(:nomenclature_code))
       expect(command.reload).to be_succeeded
     end
 
@@ -807,23 +940,25 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(client).not_to have_received(:create_reception)
     end
 
-    it 'waits for phone refresh before any reception write when the linked patient phone differs' do
+    it 'writes a reception for a strongly linked patient when only the phone differs' do
       allow(client).to receive(:get_patient).and_return(
         'PROFILE_CODE' => 'patient-1',
         'PATIENT_PHONE_2' => '+77009999999'
       )
-      allow(client).to receive(:timetable)
-      allow(client).to receive(:create_reception)
+      allow_available_destination
+      allow(client).to receive(:create_reception).and_return('RECEPTION_CODE' => 'reception-1')
+      allow_materialized_reception
 
       perform
 
       expect(command.reload).to have_attributes(
-        status: 'awaiting_phone_refresh',
-        last_error_code: 'patient_phone_mismatch'
+        status: 'succeeded',
+        last_error_code: nil
       )
-      expect(command.execution_state['patient_action']).to include('refresh_supported' => false)
-      expect(client).not_to have_received(:timetable)
-      expect(client).not_to have_received(:create_reception)
+      expect(command.execution_state['warnings']).to include(
+        hash_including('code' => 'patient_phone_mismatch')
+      )
+      expect(client).to have_received(:create_reception).once
     end
 
     it 'keeps the preflight snapshot for an ambiguous create result' do
@@ -917,7 +1052,6 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
           'RECEPTION_CODE' => 'reception-1',
           'PROFILE_CODE' => 'patient-1',
           'SPECIALIST_CODE' => 'specialist-1',
-          'COMPANY_CABINET_CODE' => 'cabinet-1',
           'STARTTIME' => provider_time(appointment.starts_at),
           'ENDTIME' => provider_time(appointment.ends_at),
           'REMOVED' => 0
@@ -933,6 +1067,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         }
       )
       allow_available_destination(starts_at: new_starts_at, ends_at: new_ends_at)
+      allow(client).to receive(:get_receptions).and_return(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1' }],
+        []
+      )
       allow(client).to receive(:move_reception).and_return({})
 
       perform
@@ -990,6 +1128,77 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
       expect(command.request_snapshot).not_to have_key('patient_phone_numbers')
       expect(appointment.reload).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
       expect(client).not_to have_received(:remove_reception)
+    end
+  end
+
+  context 'when removing an active reception' do
+    let(:contact_custom_attributes) { { 'medelement_patient_code' => 'patient-1' } }
+    let(:appointment) do
+      create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        resource: resource,
+        source: 'manual',
+        external_ref: 'medelement:reception:reception-1',
+        custom_attributes: {
+          'medelement_reception_code' => 'reception-1',
+          'medelement_cabinet_code' => 'cabinet-1'
+        }
+      )
+    end
+    let(:operation) { 'remove_reception' }
+    let(:command_attributes) do
+      { provider_patient_code: 'patient-1', provider_reception_code: 'reception-1', company_cabinet_code: 'cabinet-1' }
+    end
+
+    it 'uses v1 removal readback when v2 still exposes the stale active state' do
+      local_service = create(
+        :scheduling_service,
+        account: account,
+        custom_attributes: { 'medelement_nomenclature_code' => 'service-1' }
+      )
+      appointment.update!(
+        service: local_service,
+        custom_attributes: appointment.custom_attributes.merge(
+          'service_ids' => [local_service.id],
+          'medelement_service_binding' => 'local_only',
+          'medelement_local_nomenclature_codes' => ['service-1']
+        )
+      )
+      active_reception = {
+        'RECEPTION_CODE' => 'reception-1',
+        'PROFILE_CODE' => 'patient-1',
+        'SPECIALIST_CODE' => 'specialist-1',
+        'STARTTIME' => provider_time(appointment.starts_at),
+        'ENDTIME' => provider_time(appointment.ends_at),
+        'ACTIVE' => 1,
+        'REMOVED' => 0,
+        'SERVICES' => []
+      }
+      allow(client).to receive(:get_reception)
+        .with(reception_code: 'reception-1')
+        .and_return(active_reception)
+      allow(client).to receive(:get_reception)
+        .with(reception_code: 'reception-1', version: :v1)
+        .and_return(active_reception.slice('RECEPTION_CODE', 'PROFILE_CODE', 'STARTTIME', 'ENDTIME')
+                                    .merge('REMOVED' => 1))
+      allow(client).to receive(:get_receptions).and_return(
+        [{ 'RECEPTION_CODE' => 'reception-1', 'COMPANY_CABINET_CODE' => 'cabinet-1', 'PAID' => 'not' }]
+      )
+      allow(client).to receive(:remove_reception).and_return({})
+
+      perform
+
+      command.reload
+      expect(command).to be_succeeded, "status=#{command.status} error=#{command.last_error_code}"
+      expect(client).to have_received(:remove_reception).once
+      expect(client).to have_received(:get_reception).with(reception_code: 'reception-1', version: :v1).once
+      expect(appointment.reload).to have_attributes(
+        status: 'cancelled',
+        payment_status: 'cancelled',
+        service_id: local_service.id
+      )
     end
   end
 

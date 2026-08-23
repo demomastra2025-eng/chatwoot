@@ -59,6 +59,34 @@
       "BUTTON_TEXT": "Disconnect"
     },
     "MEDELEMENT": {
+      "SCHEDULE": {
+        "REALTIME_NEXT": "Жазылуларды келесі жедел синхрондау",
+        "REALTIME_LAST": "Жазылуларды соңғы жедел синхрондау",
+        "OPERATIONAL_NEXT": "Мамандарды, пациенттерді және жазылуларды келесі синхрондау",
+        "OPERATIONAL_LAST": "Мамандарды, пациенттерді және жазылуларды соңғы синхрондау",
+        "CATALOG_NEXT": "Қызметтер каталогын келесі синхрондау",
+        "CATALOG_LAST": "Қызметтер каталогын соңғы синхрондау"
+      },
+      "RUN_SYNC": {
+        "DIRECTION_NOTE": "Жазылуды жасау, ауыстыру және болдырмау, сондай-ақ байланыстырылған пациенттің өзгерістері жоспарлы синхрондауды күтпей One Link жүйесінен MedElement жүйесіне бірден жіберіледі. Жоспарлы синхрондау MedElement өзгерістерін импорттап, күйді салыстырады. Қосылған API жазу операцияларын ұсынбайтындықтан, MedElement қызметтері мен мамандары One Link жүйесінде тек оқуға қолжетімді.",
+        "LAST_PHASE_SYNC": "Соңғы тексеру: {date}"
+      },
+      "SYNC_COUNTER": {
+        "CONFIGURED_FIELDS": "Өрістер",
+        "IMPORTED_COUNT": "Импортталды",
+        "SYNCED_COUNT": "Жаңартылды",
+        "LINKED_COUNT": "Байланыстырылды",
+        "SKIPPED_COUNT": "Өткізілді",
+        "CREATED_COUNT": "Жасалды",
+        "UPDATED_COUNT": "Өзгертілді",
+        "DEACTIVATED_COUNT": "Өшірілді",
+        "PROVIDER_COUNT": "MedElement қайтарды",
+        "NOT_RETURNED_COUNT": "MedElement қайтармады",
+        "LOCAL_UNLINKED_COUNT": "Тек One Link жүйесінде"
+      },
+      "CONFLICT_TYPE": {
+        "SPECIALIST_NOT_RETURNED": "Байланыстырылған маманды MedElement қайтармады"
+      },
       "IMPORT": {
         "TITLE": "Каталогты импорттау",
         "DESCRIPTION": "Мамандар, кабинеттер, қызметтер және дәрігер–қызмет байланыстары бар толық JSON пакетін жүктеңіз. Қате файл қолданылмайды.",

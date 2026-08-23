@@ -65,8 +65,21 @@ RSpec.describe Integrations::Medelement::CatalogImportService do
     service_price = service.prices.find_by!(resource: resource)
 
     expect(result).to eq(
-      specialists: { imported_count: 1, skipped_count: 0 },
-      services: { imported_count: 1, linked_count: 1, skipped_count: 0 }
+      specialists: {
+        provider_count: 1,
+        imported_count: 1,
+        skipped_count: 0,
+        not_returned_count: 0,
+        local_unlinked_count: 0
+      },
+      services: {
+        provider_count: 1,
+        imported_count: 1,
+        linked_count: 1,
+        skipped_count: 0,
+        not_returned_count: 0,
+        local_unlinked_count: 0
+      }
     )
     expect(resource).to have_attributes(name: 'Synthetic specialist', specialty: 'Radiologist')
     expect(resource.custom_attributes['medelement_cabinets']).to contain_exactly(

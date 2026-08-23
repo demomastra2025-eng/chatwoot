@@ -31,13 +31,78 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     expect(coordinator).to have_received(:perform).with(sync_run: run, phases: ['services'])
   end
 
-  it 'does not let a scheduled job execute an already active manual run' do
+  it 'retries uncovered scheduled phases when another sync run is active' do
     run
 
-    job.perform(hook.id)
+    expect do
+      job.perform(hook.id, nil, %w[specialists contacts receptions])
+    end.to raise_error(described_class::ScheduledSyncBusyError)
 
     expect(run.reload).to be_queued
     expect(coordinator).not_to have_received(:perform)
+  end
+
+  it 'coalesces scheduled phases already covered by the active run' do
+    run
+
+    job.perform(hook.id, nil, ['services'])
+
+    expect(run.reload).to be_queued
+    expect(coordinator).not_to have_received(:perform)
+  end
+
+  it 'resumes a retrying scheduled run instead of coalescing its retry away' do
+    scheduled_run = Integrations::Medelement::SyncRun.create!(
+      account: account,
+      hook: hook,
+      trigger: 'scheduled',
+      status: 'retrying',
+      requested_phases: ['services'],
+      phase_results: { 'services' => { 'status' => 'failed' } }
+    )
+
+    job.perform(hook.id, nil, ['services'])
+
+    expect(scheduled_run.reload).to be_succeeded
+    expect(coordinator).to have_received(:perform).with(sync_run: scheduled_run, phases: ['services'])
+  end
+
+  it 'keeps a failing run active until the job chooses its retry state' do
+    error = Integrations::Medelement::Client::ApiError.new('Provider request failed')
+    allow(coordinator).to receive(:perform) do |sync_run:, **|
+      sync_run.start_phase!('services')
+      sync_run.record_phase_failure!('services', error)
+
+      expect(job.send(:create_scheduled_sync_run, hook, ['services'])).to be_nil
+      raise error
+    end
+
+    expect do
+      described_class.perform_now(hook.id, run.id)
+    end.to have_enqueued_job(described_class).with(hook.id, run.id)
+
+    expect(run.reload).to have_attributes(status: 'retrying', completed_at: nil)
+    expect(Integrations::Medelement::SyncRun.where(hook: hook)).to contain_exactly(run)
+  end
+
+  it 'preserves scheduled phases when ActiveJob retries a collision' do
+    run
+    phases = %w[specialists contacts receptions]
+
+    expect do
+      described_class.perform_now(hook.id, nil, phases)
+    end.to have_enqueued_job(described_class).with(hook.id, nil, phases)
+  end
+
+  it 'persists and executes only the phases assigned to an entity schedule' do
+    job.perform(hook.id, nil, %w[specialists contacts receptions])
+
+    scheduled_run = Integrations::Medelement::SyncRun.where(hook: hook, trigger: 'scheduled').sole
+    expect(scheduled_run.requested_phases).to eq(%w[specialists contacts receptions])
+    expect(coordinator).to have_received(:perform).with(
+      sync_run: scheduled_run,
+      phases: %w[specialists contacts receptions]
+    )
   end
 
   it 'does not replay a persisted run that already reached a terminal state' do

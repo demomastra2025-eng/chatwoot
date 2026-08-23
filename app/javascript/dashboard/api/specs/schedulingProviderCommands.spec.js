@@ -28,7 +28,7 @@ describe('#SchedulingProviderCommandsAPI', () => {
 
   it('creates, confirms, and fetches provider commands', () => {
     SchedulingProviderCommandsAPI.create({ operation: 'remove_reception' });
-    SchedulingProviderCommandsAPI.confirm(41);
+    SchedulingProviderCommandsAPI.confirm(41, { automatic: true });
     SchedulingProviderCommandsAPI.get(41);
 
     expect(axiosMock.post).toHaveBeenNthCalledWith(
@@ -38,7 +38,8 @@ describe('#SchedulingProviderCommandsAPI', () => {
     );
     expect(axiosMock.post).toHaveBeenNthCalledWith(
       2,
-      '/api/v1/accounts/1/scheduling/provider_commands/41/confirm'
+      '/api/v1/accounts/1/scheduling/provider_commands/41/confirm',
+      { automatic: true }
     );
     expect(axiosMock.get).toHaveBeenCalledWith(
       '/api/v1/accounts/1/scheduling/provider_commands/41'
@@ -47,6 +48,7 @@ describe('#SchedulingProviderCommandsAPI', () => {
 
   it('scopes command actions when a provider is supplied', () => {
     SchedulingProviderCommandsAPI.confirm(41, { provider: 'medelement' });
+    SchedulingProviderCommandsAPI.retry(41, { provider: 'medelement' });
     SchedulingProviderCommandsAPI.get(41, { provider: 'medelement' });
     SchedulingProviderCommandsAPI.patientCandidates(41, {
       provider: 'medelement',
@@ -54,6 +56,10 @@ describe('#SchedulingProviderCommandsAPI', () => {
 
     expect(axiosMock.post).toHaveBeenCalledWith(
       '/api/v1/accounts/1/scheduling/provider_commands/41/confirm',
+      { provider: 'medelement' }
+    );
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      '/api/v1/accounts/1/scheduling/provider_commands/41/retry',
       { provider: 'medelement' }
     );
     expect(axiosMock.get).toHaveBeenNthCalledWith(

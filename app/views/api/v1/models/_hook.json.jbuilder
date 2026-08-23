@@ -30,7 +30,8 @@ if Current.account_user&.administrator?
       next_sync_at: schedule_service.next_sync_at&.iso8601,
       next_sync_at_display: schedule_service.next_sync_at_display,
       last_scheduled_sync_at: schedule_service.last_enqueue_at&.iso8601,
-      last_scheduled_sync_at_display: schedule_service.last_enqueue_at_display
+      last_scheduled_sync_at_display: schedule_service.last_enqueue_at_display,
+      schedules: schedule_service.schedule_payload
     )
   end
 

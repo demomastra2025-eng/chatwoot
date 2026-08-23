@@ -730,6 +730,12 @@ RSpec.describe 'Contacts API', type: :request do
         # custom attributes are updated
         json_response = response.parsed_body
         expect(json_response['payload']['contact']['custom_attributes']).to eq({ 'test' => 'test', 'test1' => 'test1' })
+        contact = Contact.find(json_response.dig('payload', 'contact', 'id'))
+        expect(EventDispatcherJob).to have_been_enqueued.with(
+          'contact.created',
+          anything,
+          hash_including(contact: contact, performed_by: admin)
+        )
       end
 
       it 'does not create the contact' do
@@ -784,6 +790,15 @@ RSpec.describe 'Contacts API', type: :request do
         expect(response).to have_http_status(:success)
         expect(response).to conform_schema(200)
         expect(contact.reload.name).to eq('Test Blub')
+        expect(EventDispatcherJob).to have_been_enqueued.with(
+          'contact.updated',
+          anything,
+          hash_including(
+            contact: contact,
+            performed_by: admin,
+            medelement_outbound_snapshot: hash_including('name' => 'Test Blub')
+          )
+        )
         # custom attributes are merged properly without overwriting existing ones
         expect(contact.custom_attributes).to eq({ 'test' => 'new test', 'test1' => 'test1', 'test2' => 'test2' })
         expect(contact.additional_attributes).to eq(
@@ -798,6 +813,24 @@ RSpec.describe 'Contacts API', type: :request do
             }
           }
         )
+      end
+
+      it 'rejects changes to provider-derived contact attributes' do
+        contact.update!(
+          custom_attributes: contact.custom_attributes.merge(
+            'medelement_patient_code' => 'patient-1',
+            'secondary_phones' => ['+770****0001']
+          )
+        )
+
+        patch "/api/v1/accounts/#{account.id}/contacts/#{contact.id}",
+              headers: admin.create_new_auth_token,
+              params: { custom_attributes: { secondary_phones: ['+770****0002'] } },
+              as: :json
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
+        expect(contact.reload.custom_attributes['secondary_phones']).to eq(['+770****0001'])
       end
 
       it 'updates the contact owner and serializes it' do
@@ -1022,6 +1055,11 @@ RSpec.describe 'Contacts API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(contact.reload.custom_attributes).to eq({ 'test1' => 'test1' })
+        expect(EventDispatcherJob).to have_been_enqueued.with(
+          'contact.updated',
+          anything,
+          hash_including(contact: contact, performed_by: admin)
+        )
       end
 
       it 'deletes multiple custom attributes when requested' do
@@ -1032,6 +1070,26 @@ RSpec.describe 'Contacts API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(contact.reload.custom_attributes).to eq({})
+      end
+
+      %w[medelement_patient_code address secondary_phones phone_conflict_comment].each do |managed_key|
+        it "rejects deleting provider-managed #{managed_key}" do
+          contact.update!(
+            custom_attributes: {
+              'medelement_patient_code' => 'patient-1',
+              managed_key => 'provider value'
+            }
+          )
+
+          post "/api/v1/accounts/#{account.id}/contacts/#{contact.id}/destroy_custom_attributes",
+               headers: admin.create_new_auth_token,
+               params: { custom_attributes: [managed_key] },
+               as: :json
+
+          expect(response).to have_http_status(:unprocessable_content)
+          expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
+          expect(contact.reload.custom_attributes[managed_key]).to eq('provider value')
+        end
       end
     end
   end

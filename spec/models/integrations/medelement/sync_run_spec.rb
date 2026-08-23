@@ -97,6 +97,20 @@ RSpec.describe Integrations::Medelement::SyncRun, type: :model do
     expect(run.error_message).not_to include('Jane Doe', '123456789012')
   end
 
+  it 'clears terminal timestamps while waiting for a retry' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'scheduled', status: 'running')
+    error = Integrations::Medelement::Client::ApiError.new('Provider request failed')
+
+    run.start_phase!('specialists')
+    run.record_phase_failure!('specialists', error)
+
+    expect(run).to have_attributes(status: 'running', current_phase: nil, completed_at: nil)
+
+    run.retry!(error)
+
+    expect(run).to have_attributes(status: 'retrying', completed_at: nil)
+  end
+
   it 'blocks Medelement hook deletion while a sync run is active' do
     account.enable_features!('scheduling')
     schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)

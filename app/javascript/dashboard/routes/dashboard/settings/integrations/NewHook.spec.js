@@ -87,7 +87,7 @@ describe('NewHook edit form', () => {
           store: 'status',
         },
         {
-          label: 'Enable confirmed write operations',
+          label: 'Enable write operations',
           type: 'checkbox',
           name: 'write_enabled',
           value: true,

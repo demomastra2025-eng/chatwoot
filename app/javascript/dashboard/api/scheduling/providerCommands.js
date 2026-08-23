@@ -25,9 +25,14 @@ class SchedulingProviderCommandsAPI extends ApiClient {
     return axios.post(this.url, data);
   }
 
-  confirm(id, { provider } = {}) {
+  confirm(id, { automatic, provider } = {}) {
     const url = `${this.url}/${id}/confirm`;
-    return provider ? axios.post(url, { provider }) : axios.post(url);
+    if (automatic === undefined && !provider) return axios.post(url);
+
+    return axios.post(url, {
+      ...(automatic === undefined ? {} : { automatic }),
+      ...(provider ? { provider } : {}),
+    });
   }
 
   patientCandidates(id, { provider } = {}) {
@@ -46,6 +51,10 @@ class SchedulingProviderCommandsAPI extends ApiClient {
     return axios.post(`${this.url}/${id}/confirm_patient_creation`, {
       provider,
     });
+  }
+
+  retry(id, { provider }) {
+    return axios.post(`${this.url}/${id}/retry`, { provider });
   }
 
   cancel(id, { provider }) {

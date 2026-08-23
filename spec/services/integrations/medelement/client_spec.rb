@@ -159,7 +159,7 @@ RSpec.describe Integrations::Medelement::Client do
                          .with(body: hash_including('patient_code' => 'patient-1'))
                          .to_return(status: 201, body: '{"RECEPTION_CODE":"reception-1"}', headers: { 'Content-Type' => 'application/json' })
       move_reception = stub_request(:post, "#{described_class::BASE_URL}/v2/doctor/reception/change_reception_date")
-                       .with(body: hash_including('paient_code' => 'patient-1', 'reception_code' => 'reception-1'))
+                       .with(body: hash_including('patient_code' => 'patient-1', 'reception_code' => 'reception-1'))
                        .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
       remove_reception = stub_request(:post, "#{described_class::BASE_URL}/v2/doctor/reception/remove")
                          .with(body: { 'reception_code' => 'reception-1' })
@@ -168,7 +168,7 @@ RSpec.describe Integrations::Medelement::Client do
       client.create_patient(params: { profile_code: 'patient-1' })
       client.update_patient(params: { profile_code: 'patient-1' })
       client.create_reception(params: { patient_code: 'patient-1' })
-      client.move_reception(params: { paient_code: 'patient-1', reception_code: 'reception-1' })
+      client.move_reception(params: { patient_code: 'patient-1', reception_code: 'reception-1' })
       client.remove_reception(reception_code: 'reception-1')
 
       expect([create_patient, update_patient, create_reception, move_reception, remove_reception])
@@ -177,19 +177,28 @@ RSpec.describe Integrations::Medelement::Client do
   end
 
   describe 'read-back endpoints' do
-    it 'routes patient and both reception versions to the documented paths' do
+    it 'routes patient and the preferred v2 reception detail path to the documented paths' do
       patient = stub_request(:get, "#{described_class::BASE_URL}/doctor/v1/patient/patient-1")
-                .to_return(status: 200, body: '{"PROFILE_CODE":"patient-1"}', headers: { 'Content-Type' => 'application/json' })
-      reception_v1 = stub_request(:get, "#{described_class::BASE_URL}/v1/doctor/reception/reception-1")
-                     .to_return(status: 200, body: '{"RECEPTION_CODE":"reception-1"}', headers: { 'Content-Type' => 'application/json' })
+                .to_return(status: 200, body: '[{"PROFILE_CODE":"patient-1"}]', headers: { 'Content-Type' => 'application/json' })
       reception_v2 = stub_request(:get, "#{described_class::BASE_URL}/v2/doctor/reception/reception-1")
-                     .to_return(status: 200, body: '{"RECEPTION_CODE":"reception-1"}', headers: { 'Content-Type' => 'application/json' })
+                     .to_return(status: 200, body: '[{"RECEPTION_CODE":"reception-1"}]', headers: { 'Content-Type' => 'application/json' })
 
-      client.get_patient(patient_code: 'patient-1')
-      client.get_reception(reception_code: 'reception-1', version: :v1)
-      client.get_reception(reception_code: 'reception-1')
+      patient_result = client.get_patient(patient_code: 'patient-1')
+      reception_result = client.get_reception(reception_code: 'reception-1')
 
-      expect([patient, reception_v1, reception_v2]).to all(have_been_requested.once)
+      expect([patient, reception_v2]).to all(have_been_requested.once)
+      expect(patient_result).to include('PROFILE_CODE' => 'patient-1')
+      expect(reception_result).to include('RECEPTION_CODE' => 'reception-1')
+    end
+
+    it 'falls back to v1 when the v2 detail is not a reception JSON object' do
+      stub_request(:get, "#{described_class::BASE_URL}/v2/doctor/reception/reception-1")
+        .to_return(status: 200, body: '', headers: { 'Content-Type' => 'text/html' })
+      reception_v1 = stub_request(:get, "#{described_class::BASE_URL}/v1/doctor/reception/reception-1")
+                     .to_return(status: 200, body: '[{"RECEPTION_CODE":"reception-1"}]', headers: { 'Content-Type' => 'application/json' })
+
+      expect(client.get_reception(reception_code: 'reception-1')).to include('RECEPTION_CODE' => 'reception-1')
+      expect(reception_v1).to have_been_requested.once
     end
 
     it 'rejects an explicit provider organization mismatch without exposing either code' do
@@ -248,23 +257,34 @@ RSpec.describe Integrations::Medelement::Client do
   end
 
   describe '#timetable' do
-    it 'sends the documented two-boundary date array' do
-      stub = stub_request(:get, "#{described_class::BASE_URL}/v1/timetable/get_timetable")
-             .with(
-               query: {
-                 'date' => ['27.07.2026', '28.07.2026'],
-                 'specialistCode' => 'specialist-1'
-               }
-             )
-             .to_return(status: 200, body: '{}', headers: { 'Content-Type' => 'application/json' })
+    it 'requests and merges each date because the provider does not treat repeated dates as a range' do
+      first_day = stub_request(
+        :get,
+        "#{described_class::BASE_URL}/v1/timetable/get_timetable?date=27.07.2026&specialistCode=specialist-1"
+      )
+                  .to_return(
+                    status: 200,
+                    body: '{"27.07.2026":{"timetable":[]}}',
+                    headers: { 'Content-Type' => 'application/json' }
+                  )
+      second_day = stub_request(
+        :get,
+        "#{described_class::BASE_URL}/v1/timetable/get_timetable?date=28.07.2026&specialistCode=specialist-1"
+      )
+                   .to_return(
+                     status: 200,
+                     body: '{"28.07.2026":{"timetable":[]}}',
+                     headers: { 'Content-Type' => 'application/json' }
+                   )
 
-      client.timetable(
+      result = client.timetable(
         specialist_code: 'specialist-1',
         starts_on: Date.new(2026, 7, 27),
         ends_on: Date.new(2026, 7, 28)
       )
 
-      expect(stub).to have_been_requested.once
+      expect([first_day, second_day]).to all(have_been_requested.once)
+      expect(result.keys).to contain_exactly('27.07.2026', '28.07.2026')
     end
   end
 end

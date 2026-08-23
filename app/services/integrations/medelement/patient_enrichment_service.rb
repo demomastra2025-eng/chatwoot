@@ -18,17 +18,23 @@ class Integrations::Medelement::PatientEnrichmentService
     return mark!(contact, phone, 'not_found') if patients.empty?
     return mark!(contact, phone, 'ambiguous') unless patients.one?
 
-    patient_code = patients.first['PROFILE_CODE'].presence || patients.first['PATIENT_CODE'].presence
-    return mark!(contact, phone, 'ambiguous') if patient_code.blank?
-    return mark!(contact, phone, 'conflict') if patient_linked_to_another_contact?(contact, patient_code)
-
-    resolver.sync_patient!(patient_code, preferred_contact: contact)
-    mark!(contact.reload, phone, 'matched')
+    enrich_unique_candidate(contact, phone, patients.first)
   end
 
   private
 
   attr_reader :hook, :client
+
+  def enrich_unique_candidate(contact, phone, patient)
+    patient_code = patient['PROFILE_CODE'].presence || patient['PATIENT_CODE'].presence
+    return mark!(contact, phone, 'ambiguous') if patient_code.blank?
+    return mark!(contact, phone, 'conflict') if patient_linked_to_another_contact?(contact, patient_code)
+
+    resolved_contact = resolver.sync_verified_demographic_candidate!(patient_code, candidate_contact: contact)
+    return mark!(contact, phone, 'conflict') unless resolved_contact&.id == contact.id
+
+    mark!(contact.reload, phone, 'matched')
+  end
 
   def resolver
     @resolver ||= Integrations::Medelement::ContactResolverService.new(

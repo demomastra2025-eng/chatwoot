@@ -1,0 +1,27 @@
+{
+  "SCHEDULING": {
+    "MEDELEMENT": {
+      "APPOINTMENT_UNBOOKABLE": "Жазба аяқталған, болдырылмаған немесе келмеді деп белгіленген. Оны MedElement жүйесінде жасау бұғатталды.",
+      "AUTHENTICATION_FAILED": "MedElement авторизациядан бас тартты (HTTP 401). Компания логинін, құпиясөзін және интеграторға қолжетімділігін тексеріңіз.",
+      "NO_SPECIALIST_SERVICES": "Таңдалған маманға MedElement қызметтері байланыстырылмаған. Маман–қызмет каталогының байланыстарын жаңартыңыз."
+    },
+    "APPOINTMENT_FORM": {
+      "ERRORS": {
+        "CLIENT_LAST_NAME_REQUIRED": "Тегін көрсетіңіз",
+        "MEDELEMENT_LAST_NAME_REQUIRED": "MedElement жазбасы үшін тегін көрсетіңіз",
+        "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз"
+      }
+    },
+    "CONTACT": {
+      "IIN_REQUIRED": "ЖСН көрсетіңіз",
+      "SAVE_ACTION": "Сақтау",
+      "SELECT_ACTION": "Тізімнен таңдау"
+    },
+    "ERRORS": {
+      "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "MedElement жүйесінде тек жоспарланған немесе расталған жазбаны жасауға болады.",
+      "MEDELEMENT_SERVICE_NOT_AVAILABLE_FOR_SPECIALIST": "Таңдалған қызмет бұл MedElement маманы үшін қолжетімсіз.",
+      "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз.",
+      "MEDELEMENT_SERVICE_UNMAPPED": "Таңдалған қызмет MedElement жүйесімен байланыстырылмаған."
+    }
+  }
+}

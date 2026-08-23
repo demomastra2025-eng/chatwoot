@@ -217,6 +217,17 @@ export const useSchedulingProviderCommandsStore = defineStore(
         );
       },
 
+      retryPhoneMismatch(command, expectedIntent) {
+        return this.resumePatientAction(
+          command,
+          () =>
+            SchedulingProviderCommandsAPI.retry(command.id, {
+              provider: command.provider,
+            }),
+          expectedIntent
+        );
+      },
+
       confirmExisting(command, expectedIntent) {
         return this.resumePatientAction(
           command,
@@ -224,8 +235,11 @@ export const useSchedulingProviderCommandsStore = defineStore(
             command.provider
               ? SchedulingProviderCommandsAPI.confirm(command.id, {
                   provider: command.provider,
+                  automatic: true,
                 })
-              : SchedulingProviderCommandsAPI.confirm(command.id),
+              : SchedulingProviderCommandsAPI.confirm(command.id, {
+                  automatic: true,
+                }),
           expectedIntent
         );
       },
@@ -262,8 +276,11 @@ export const useSchedulingProviderCommandsStore = defineStore(
           const confirmResponse = command.provider
             ? await SchedulingProviderCommandsAPI.confirm(command.id, {
                 provider: command.provider,
+                automatic: true,
               })
-            : await SchedulingProviderCommandsAPI.confirm(command.id);
+            : await SchedulingProviderCommandsAPI.confirm(command.id, {
+                automatic: true,
+              });
           command = normalizePayload(confirmResponse.data);
           this.lastCommand = command;
 

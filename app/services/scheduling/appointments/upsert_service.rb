@@ -19,6 +19,7 @@ class Scheduling::Appointments::UpsertService
 
     ApplicationRecord.transaction do
       apply_attributes!
+      validate_medelement_patient!
       validate_availability!
       new_record = appointment.new_record?
       appointment.save!
@@ -26,8 +27,9 @@ class Scheduling::Appointments::UpsertService
       auto_apply_default_touch_plan! if new_record
       sync_or_cancel_related_touches!
       Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
-      appointment.reload
     end
+
+    appointment.reload
   end
 
   private
@@ -113,7 +115,7 @@ class Scheduling::Appointments::UpsertService
         settlement_amount: settlement_amount,
         requested_status: requested_payment_status
       ),
-      custom_attributes: resolve_custom_attributes(services: services)
+      custom_attributes: resolve_custom_attributes(resource: resource, services: services)
     )
   end
 
@@ -215,6 +217,80 @@ class Scheduling::Appointments::UpsertService
     resolve_optional_text(:client_phone, current: appointment.client_phone || contact&.phone_number)
   end
 
+  def validate_medelement_patient!
+    return unless medelement_resource?
+    return if appointment.status == 'cancelled'
+
+    if appointment.client_first_name.blank? || appointment.client_last_name.blank?
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
+        message: 'Patient first and last name are required for Medelement',
+        status: :unprocessable_content
+      )
+    end
+
+    validate_medelement_phone!
+    validate_medelement_services!
+  end
+
+  def validate_medelement_phone!
+    return if Integrations::Medelement::PhoneNumber.normalize(appointment.client_phone).present?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_PATIENT_PHONE_INVALID',
+      message: 'A Kazakhstan phone number is required for Medelement',
+      status: :unprocessable_content
+    )
+  end
+
+  def validate_medelement_services!
+    service_ids = medelement_service_ids
+    return if service_ids.empty?
+
+    services = account.scheduling_services.where(id: service_ids)
+
+    validate_medelement_service_mapping!(services, service_ids)
+    validate_medelement_service_availability!(service_ids)
+  end
+
+  def medelement_service_ids
+    custom_service_ids = Array(appointment.custom_attributes.to_h['service_ids']).presence
+    (custom_service_ids || Array(appointment.service_id)).compact.uniq
+  end
+
+  def validate_medelement_service_mapping!(services, service_ids)
+    all_mapped = services.size == service_ids.size && services.all? do |service|
+      service.custom_attributes.to_h['medelement_nomenclature_code'].present?
+    end
+    return if all_mapped
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_SERVICE_UNMAPPED',
+      message: 'Selected services must be linked to Medelement',
+      status: :unprocessable_content
+    )
+  end
+
+  def validate_medelement_service_availability!(service_ids)
+    linked_service_ids = account.scheduling_service_prices.active
+                                .where(resource_id: appointment.resource_id)
+                                .joins(:service)
+                                .where("NULLIF(scheduling_services.custom_attributes ->> 'medelement_nomenclature_code', '') IS NOT NULL")
+                                .pluck(:service_id)
+    return if linked_service_ids.empty?
+    return if (service_ids - linked_service_ids).empty?
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_SERVICE_UNAVAILABLE',
+      message: 'Selected services are not linked to this Medelement specialist',
+      status: :unprocessable_content
+    )
+  end
+
+  def medelement_resource?
+    appointment.resource&.custom_attributes.to_h['medelement_specialist_code'].present?
+  end
+
   def resolve_company(contact)
     return appointment.company if appointment.persisted? && !company_attachment_enabled? && !params.key?(:company_id)
     return nil unless company_attachment_enabled?
@@ -229,7 +305,7 @@ class Scheduling::Appointments::UpsertService
     contact&.owner || resource&.user || actor
   end
 
-  def resolve_custom_attributes(services:)
+  def resolve_custom_attributes(resource:, services:)
     incoming = params[:custom_attributes]
     catalog = appointment_field_catalog
     resolved_attributes = if catalog.definitions.blank?
@@ -238,8 +314,10 @@ class Scheduling::Appointments::UpsertService
                             resolve_managed_custom_attributes(incoming, catalog)
                           end
 
-    apply_intake_system_custom_attributes(resolved_attributes, incoming)
-      .merge(service_custom_attributes(services))
+    attributes = apply_intake_system_custom_attributes(resolved_attributes, incoming)
+    attributes = clear_local_service_binding(attributes) if explicit_service_selection?
+    attributes.merge(service_custom_attributes(services))
+              .merge(local_service_binding_attributes(resource, services))
   end
 
   def resolve_unmanaged_custom_attributes(incoming)
@@ -281,6 +359,25 @@ class Scheduling::Appointments::UpsertService
         }
       end
     }
+  end
+
+  def local_service_binding_attributes(resource, services)
+    return {} unless explicit_service_selection? || appointment.new_record?
+    return {} if resource.custom_attributes.to_h['medelement_specialist_code'].blank?
+    return {} if services.blank?
+
+    codes = services.filter_map do |service|
+      service.custom_attributes.to_h['medelement_nomenclature_code'].presence
+    end
+    Integrations::Medelement::AppointmentServiceBinding.new(appointment: appointment).local_only_attributes(codes)
+  end
+
+  def clear_local_service_binding(attributes)
+    attributes.except(*Integrations::Medelement::AppointmentServiceBinding::ATTRIBUTE_KEYS)
+  end
+
+  def explicit_service_selection?
+    params.key?(:service_ids) || params.key?(:service_id)
   end
 
   def appointment_field_catalog

@@ -1,5 +1,6 @@
 class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   include Sift
+  rescue_from ::Crm::Error, with: :render_crm_error
   sort_on :email, type: :string
   sort_on :name, internal_name: :order_on_name, type: :scope, scope_params: [:direction]
   sort_on :phone_number, type: :string
@@ -15,6 +16,7 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   before_action :set_current_page, only: [:index, :active, :search, :filter]
   before_action :fetch_contact, only: [:show, :update, :destroy, :avatar, :contactable_inboxes, :destroy_custom_attributes]
   before_action :set_include_contact_inboxes, only: [:index, :active, :search, :filter, :show, :update]
+  around_action :with_contact_actor, only: [:create, :update, :destroy_custom_attributes]
 
   def index
     @contacts = fetch_contacts(resolved_contacts)
@@ -89,14 +91,20 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   # TODO : refactor this method into dedicated contacts/custom_attributes controller class and routes
   def destroy_custom_attributes
+    attributes_to_destroy = params.permit(custom_attributes: [])[:custom_attributes]
+    Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
+      incoming: Array(attributes_to_destroy).index_with(nil),
+      current: @contact.custom_attributes
+    )
     @contact.custom_attributes = CustomAttributes::MutationService.destroy(
       @contact.custom_attributes,
-      params.permit(custom_attributes: [])[:custom_attributes]
+      attributes_to_destroy
     )
     @contact.save!
   end
 
   def create
+    validate_medelement_custom_attributes!(current: {})
     ActiveRecord::Base.transaction do
       @contact = Current.account.contacts.new(permitted_params.except(:avatar_url))
       @contact.save!
@@ -129,6 +137,14 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   private
+
+  def with_contact_actor
+    previous_actor = Current.executed_by
+    Current.executed_by = Current.user if Current.user.present?
+    yield
+  ensure
+    Current.executed_by = previous_actor
+  end
 
   # TODO: Move this to a finder class
   def resolved_contacts
@@ -219,9 +235,17 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
   end
 
   def contact_update_params
+    validate_medelement_custom_attributes!(current: @contact.custom_attributes)
     permitted_params.except(:custom_attributes, :avatar_url)
                     .merge({ custom_attributes: contact_custom_attributes })
                     .merge({ additional_attributes: contact_additional_attributes })
+  end
+
+  def validate_medelement_custom_attributes!(current:)
+    Integrations::Medelement::ProviderOwnedAttributesGuard.validate!(
+      incoming: permitted_params[:custom_attributes],
+      current: current
+    )
   end
 
   def storage_limit_available?(extra_bytes)
@@ -257,5 +281,11 @@ class Api::V1::Accounts::ContactsController < Api::V1::Accounts::BaseController
 
   def render_error(error, error_status)
     render json: error, status: error_status
+  end
+
+  def render_crm_error(error)
+    body = { code: error.code, error: error.message }
+    body[:details] = error.details if error.details.present?
+    render json: body, status: error.status
   end
 end

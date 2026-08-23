@@ -23,6 +23,29 @@ describe('scheduling shared helpers', () => {
     expect(formatSchedulingErrorMessage(error, t)).toBe('Нерабочее время');
   });
 
+  it.each([
+    [
+      'MEDELEMENT_SERVICE_REQUIRED',
+      'Select a service for Medelement',
+      'Выберите услугу из каталога MedElement.',
+    ],
+    [
+      'MEDELEMENT_SERVICE_UNMAPPED',
+      'Selected services must be linked to Medelement',
+      'Выбранная услуга не связана с MedElement.',
+    ],
+  ])('localizes the %s API response', (code, message, translation) => {
+    const error = {
+      response: {
+        data: { code, error: message },
+        status: 422,
+      },
+    };
+    const t = key => (key === `SCHEDULING.ERRORS.${code}` ? translation : key);
+
+    expect(formatSchedulingErrorMessage(error, t)).toBe(translation);
+  });
+
   describe('toIntegerNumeric', () => {
     it('accepts integer values and decimal zero values', () => {
       expect(toIntegerNumeric(1000, 'amount')).toBe(1000);

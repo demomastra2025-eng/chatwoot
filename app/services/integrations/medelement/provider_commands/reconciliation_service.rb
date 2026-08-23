@@ -91,7 +91,16 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   def reconcile_patient_update
     matches = client.search_patients_by_phone(phone_number: patient_snapshot.fetch('phone_number'))
     patient = matches.find { |record| record['PROFILE_CODE'].to_s == provider_patient_code.to_s }
-    return unless patient.present? && patient_snapshot_matches?(patient)
+    return if patient.blank?
+
+    Integrations::Medelement::ProviderScope.validate_patient!(
+      patient,
+      organization_id: configuration.organization_id,
+      expected_patient_code: provider_patient_code,
+      expected_iin: patient_snapshot.dig('payload', 'iin'),
+      expected_phone_numbers: [patient_snapshot.fetch('phone_number')]
+    )
+    return unless patient_snapshot_matches?(patient)
 
     success_applier.patient!(patient_code: provider_patient_code)
   end
@@ -117,7 +126,8 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     reception_code = written_reception_code
     return false if reception_code.blank?
 
-    reception = client.get_reception(reception_code: reception_code, version: :v2)
+    detail = client.get_reception(reception_code: reception_code, version: :v2)
+    reception = reconciled_created_reception(detail, reception_code)
     return false unless reception_verifier.destination_match?(reception, expected_reception_code: reception_code)
 
     patient_code = reception['PATIENT_CODE'].presence || reception['PROFILE_CODE'].presence
@@ -127,16 +137,46 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     false
   end
 
+  def reconciled_created_reception(detail, reception_code)
+    return detail if reception_verifier.destination_match?(detail, expected_reception_code: reception_code)
+
+    merged_scoped_reception(detail, destination_receptions, reception_code)
+  end
+
   def reconcile_reception_move
-    reception = client.get_reception(reception_code: provider_reception_code)
+    detail = client.get_reception(reception_code: provider_reception_code)
+    return success_applier.reception_moved! if reception_verifier.moved_match?(detail)
+    return if reception_verifier.cabinet_matches?(detail)
+
+    reception = merged_scoped_reception(detail, destination_receptions, provider_reception_code)
     return unless reception_verifier.moved_match?(reception)
 
     success_applier.reception_moved!
   end
 
   def reconcile_reception_remove
-    reception = client.get_reception(reception_code: provider_reception_code)
+    detail = client.get_reception(reception_code: provider_reception_code, version: :v1)
+    reception = completed_removed_identity(detail)
     success_applier.reception_removed! if reception_verifier.removed_match?(reception)
+  end
+
+  def completed_removed_identity(reception)
+    return reception unless reception['REMOVED'].to_i == 1
+    return reception unless reception_verifier.reference_matches?(reception)
+    return reception unless reception_verifier.patient_matches?(reception)
+    return reception unless reception_verifier.source_time_matches?(reception)
+
+    reception.merge(
+      'SPECIALIST_CODE' => specialist_code,
+      'COMPANY_CABINET_CODE' => command.request_snapshot.fetch('company_cabinet_code')
+    )
+  end
+
+  def merged_scoped_reception(detail, receptions, reception_code)
+    scoped = receptions.find do |candidate|
+      reception_verifier.reference_matches?(candidate, expected_code: reception_code)
+    end
+    scoped&.merge(detail) || detail
   end
 
   def destination_receptions
@@ -149,10 +189,28 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     )
   end
 
+  def source_receptions
+    range = source_calendar_range
+    client.get_receptions(
+      company_cabinet_code: command.request_snapshot.fetch('company_cabinet_code'),
+      specialist_code: specialist_code,
+      begin_datetime: provider_datetime(range.begin),
+      end_datetime: provider_datetime(range.end)
+    )
+  end
+
   def destination_calendar_range
+    calendar_range('destination')
+  end
+
+  def source_calendar_range
+    calendar_range('source')
+  end
+
+  def calendar_range(prefix)
     zone = ActiveSupport::TimeZone[reception_snapshot.fetch('time_zone')]
-    starts_on = snapshot_time('destination_starts_at').in_time_zone(zone).to_date
-    ends_on = snapshot_time('destination_ends_at').in_time_zone(zone).to_date
+    starts_on = snapshot_time("#{prefix}_starts_at").in_time_zone(zone).to_date
+    ends_on = snapshot_time("#{prefix}_ends_at").in_time_zone(zone).to_date
     exclusive_end = ends_on + 1.day
 
     Range.new(

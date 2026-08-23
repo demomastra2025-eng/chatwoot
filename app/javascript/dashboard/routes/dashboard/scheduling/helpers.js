@@ -570,3 +570,57 @@ export const getServicePriceForResource = (service, resourceId) => {
 
   return Number(matchingPrice?.price || service.basePrice || 0);
 };
+
+export const isServiceAvailableForResource = (service, resourceId) =>
+  (service?.prices || []).some(
+    price =>
+      Number(price.resourceId) === Number(resourceId) && price.active !== false
+  );
+
+const isMedelementService = service => {
+  const customAttributes =
+    service?.customAttributes || service?.custom_attributes || {};
+
+  return Boolean(
+    customAttributes.medelement_nomenclature_code ||
+      customAttributes.medelementNomenclatureCode
+  );
+};
+
+export const servicesAvailableForResource = (services, resource) => {
+  const availableServices = services || [];
+  if (!isMedelementResource(resource)) return availableServices;
+
+  const medelementServices = availableServices.filter(isMedelementService);
+  const linkedServices = medelementServices.filter(service =>
+    isServiceAvailableForResource(service, resource?.id)
+  );
+
+  return linkedServices.length > 0 ? linkedServices : medelementServices;
+};
+
+export const medelementCommandFailureMessage = command => {
+  if (command?.lastErrorCode === 'patient_identity_conflict') {
+    return { key: 'SCHEDULING.MEDELEMENT.PATIENT_IDENTITY_CONFLICT' };
+  }
+
+  if (
+    command?.lastErrorCode === 'provider_http_error' &&
+    Number(command?.lastErrorStatus) === 401
+  ) {
+    return { key: 'SCHEDULING.MEDELEMENT.AUTHENTICATION_FAILED' };
+  }
+
+  const code = command?.lastErrorCode || command?.status || 'failed';
+  const status = Number(command?.lastErrorStatus);
+
+  return {
+    key: 'SCHEDULING.MEDELEMENT.FAILED',
+    params: {
+      code:
+        Number.isFinite(status) && status > 0
+          ? `${code} (HTTP ${status})`
+          : code,
+    },
+  };
+};

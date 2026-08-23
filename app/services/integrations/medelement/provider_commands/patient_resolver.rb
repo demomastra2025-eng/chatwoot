@@ -1,5 +1,18 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::PatientResolver
+  WRITE_RESPONSE_KEYS = {
+    'profile_code' => 'PROFILE_CODE',
+    'patient_code' => 'PATIENT_CODE',
+    'name' => 'NAME',
+    'lastname' => 'LASTNAME',
+    'middlename' => 'MIDDLENAME',
+    'birthday' => 'BIRTHDAY',
+    'gender' => 'GENDER',
+    'iin' => 'IIN',
+    'patient_email' => 'PATIENT_EMAIL',
+    'patient_phone_2' => 'PATIENT_PHONE_2'
+  }.freeze
+
   def initialize(command:, client:, before_create: nil, organization_id: nil)
     @command = command
     @client = client
@@ -65,16 +78,19 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   attr_reader :command, :client, :before_create, :organization_id
 
   def resolve_linked_patient!
-    patient = client.get_patient(patient_code: snapshot_patient_code)
+    patient = patient_by_code(snapshot_patient_code)
     raise deterministic_error('patient_not_found') if patient.blank?
 
-    Integrations::Medelement::ProviderScope.validate!(
+    Integrations::Medelement::ProviderScope.validate_patient!(
       patient,
-      organization_id: organization_id
+      organization_id: organization_id,
+      expected_patient_code: snapshot_patient_code,
+      expected_iin: desired_iin,
+      expected_phone_numbers: snapshot_phone_numbers
     )
     validate_patient_ref!(snapshot_patient_code)
     command.update!(provider_patient_code: snapshot_patient_code.to_s)
-    verify_phone_matches!(patient)
+    record_phone_warning!(patient)
     snapshot_patient_code.to_s
   end
 
@@ -84,17 +100,28 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
       matches = Array(client.search_patients_by_iin(iin: desired_iin)).select do |patient|
         normalized_iin(patient['IIN']) == normalized_iin(desired_iin)
       end
-      return unique_candidates(matches)
+      return validated_candidates(unique_candidates(matches))
     end
 
     candidates = snapshot_phone_numbers.flat_map do |phone_number|
       client.search_patients_by_phone(phone_number: phone_number)
     end
-    unique_candidates(identity_matches(candidates))
+    validated_candidates(unique_candidates(identity_matches(candidates)))
   end
 
   def unique_candidates(candidates)
     Array(candidates).index_by { |patient| patient_code(patient).to_s }.except('').values
+  end
+
+  def validated_candidates(candidates)
+    candidates.each do |patient|
+      Integrations::Medelement::ProviderScope.validate_patient!(
+        patient,
+        organization_id: organization_id,
+        expected_iin: desired_iin,
+        expected_phone_numbers: snapshot_phone_numbers
+      )
+    end
   end
 
   def identity_matches(candidates)
@@ -148,8 +175,31 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     code = patient_code(response)
     raise reconciliation_error('patient_create_missing_ref') if code.blank?
 
-    patient = created_patient_readback(code)
+    patient = created_patient_response(response, code) || created_patient_readback(code)
     link_patient!(code, patient: patient, verify_phone: true)
+  end
+
+  def created_patient_response(response, code)
+    normalized = normalize_write_response(response)
+    desired = patient_snapshot.fetch('payload')
+    return unless patient_code(normalized).to_s == code.to_s
+    return unless write_response_fields_match?(normalized, desired)
+    return unless snapshot_phone_numbers.any? { |phone| Integrations::Medelement::PhoneNumber.new(phone).matches_patient?(normalized) }
+
+    normalized
+  end
+
+  def normalize_write_response(response)
+    response.to_h.transform_keys { |key| WRITE_RESPONSE_KEYS.fetch(key.to_s, key.to_s) }
+  end
+
+  def write_response_fields_match?(patient, desired)
+    {
+      'name' => 'NAME', 'lastname' => 'LASTNAME', 'middlename' => 'MIDDLENAME',
+      'birthday' => 'BIRTHDAY', 'gender' => 'GENDER', 'iin' => 'IIN'
+    }.all? do |local_key, remote_key|
+      desired[local_key].blank? || desired[local_key].to_s == patient[remote_key].to_s
+    end
   end
 
   def resolve_create_collision(matches)
@@ -179,7 +229,7 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def created_patient_readback(code)
-    patient = client.get_patient(patient_code: code)
+    patient = patient_by_code(code)
     return patient if patient.present?
 
     patient = created_patient_indexed_readback(code)
@@ -199,19 +249,33 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     nil
   end
 
+  def patient_by_code(code)
+    client.get_patient(patient_code: code)
+  rescue Integrations::Medelement::Client::ApiError => e
+    patient = Array(client.search_patients_by_codes(patient_codes: [code])).find do |candidate|
+      patient_code(candidate).to_s == code.to_s
+    end
+    return patient if patient.present?
+
+    raise e
+  end
+
   def link_patient!(code, patient: nil, verify_phone: false)
     raise reconciliation_error('patient_ref_missing') if code.blank?
 
     if patient
-      Integrations::Medelement::ProviderScope.validate!(
+      Integrations::Medelement::ProviderScope.validate_patient!(
         patient,
-        organization_id: organization_id
+        organization_id: organization_id,
+        expected_patient_code: code,
+        expected_iin: desired_iin,
+        expected_phone_numbers: snapshot_phone_numbers
       )
     end
     validate_patient_ref!(code)
     update_contact_patient_ref!(code)
     command.update!(provider_patient_code: code.to_s)
-    verify_phone_matches!(patient) if patient && verify_phone
+    record_phone_warning!(patient) if patient && verify_phone
     sync_contact!(patient) if patient
     code.to_s
   end
@@ -247,7 +311,11 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
   end
 
   def patient_creation_confirmed?
-    command.execution_state.to_h['patient_creation_confirmed'] == true
+    return true if command.execution_state.to_h['patient_creation_confirmed'] == true
+
+    confirmation = command.confirmation_request
+    confirmation&.confirmed? && confirmation.resolution_source == 'system' &&
+      confirmation.resolution_metadata.to_h['medelement_auto_sync'] == true
   end
 
   def selected_candidate(candidates)
@@ -310,20 +378,20 @@ class Integrations::Medelement::ProviderCommands::PatientResolver
     )
   end
 
-  def verify_phone_matches!(patient)
+  def record_phone_warning!(patient)
     phone_numbers = snapshot_phone_numbers
     raise deterministic_error('patient_phone_missing') if phone_numbers.empty?
 
     provider_phones = Integrations::Medelement::PhoneNumber.patient_phones(patient)
     return if phone_numbers.intersect?(provider_phones)
 
-    raise Integrations::Medelement::ProviderCommands::PatientActionRequired.new(
-      status: 'awaiting_phone_refresh',
-      code: 'patient_phone_mismatch',
-      metadata: {
-        'refresh_supported' => false,
-        'provider_phone_masked' => masked_value(provider_phones.first)
-      }
+    warnings = Array(command.execution_state['warnings']).reject { |warning| warning['code'] == 'patient_phone_mismatch' }
+    warnings << {
+      'code' => 'patient_phone_mismatch',
+      'provider_phone_masked' => masked_value(provider_phones.first)
+    }.compact
+    command.update!(
+      execution_state: command.execution_state.except('patient_action').merge('warnings' => warnings)
     )
   end
 

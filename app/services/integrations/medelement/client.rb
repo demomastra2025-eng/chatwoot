@@ -24,7 +24,7 @@ class Integrations::Medelement::Client
   end
 
   def get_patient(patient_code:)
-    request.call(:get, "/doctor/v1/patient/#{patient_code}", operation: 'patient')
+    single_record(request.call(:get, "/doctor/v1/patient/#{patient_code}", operation: 'patient'))
   end
 
   def search_patients_by_phone(phone_number:, skip: 0)
@@ -60,15 +60,15 @@ class Integrations::Medelement::Client
   end
 
   def timetable(specialist_code:, starts_on:, ends_on:)
-    request.call(
-      :get,
-      '/v1/timetable/get_timetable',
-      operation: 'timetable',
-      query: {
-        date: [provider_date(starts_on), provider_date(ends_on)],
-        specialistCode: specialist_code
-      }
-    )
+    (starts_on.to_date..ends_on.to_date).each_with_object({}) do |date, result|
+      payload = request.call(
+        :get,
+        '/v1/timetable/get_timetable',
+        operation: 'timetable',
+        query: URI.encode_www_form([['date', provider_date(date)], ['specialistCode', specialist_code]])
+      )
+      result.merge!(payload) if payload.is_a?(Hash)
+    end
   end
 
   def get_receptions(company_cabinet_code:, specialist_code:, begin_datetime:, end_datetime:, skip: 0)
@@ -82,8 +82,16 @@ class Integrations::Medelement::Client
   end
 
   def get_reception(reception_code:, version: :v2)
-    api_version = version.to_sym == :v1 ? 'v1' : 'v2'
-    request.call(:get, "/#{api_version}/doctor/reception/#{reception_code}", operation: 'reception')
+    return reception_detail(reception_code, :v1) if version.to_sym == :v1
+
+    detail = reception_detail(reception_code, :v2)
+    return detail if valid_reception_detail?(detail, reception_code)
+
+    reception_detail(reception_code, :v1)
+  rescue ApiError
+    return reception_detail(reception_code, :v1) unless version.to_sym == :v1
+
+    raise
   end
 
   def search_receptions(params:)
@@ -154,5 +162,17 @@ class Integrations::Medelement::Client
 
   def provider_date(value)
     value.to_date.strftime('%d.%m.%Y')
+  end
+
+  def reception_detail(reception_code, version)
+    single_record(request.call(:get, "/#{version}/doctor/reception/#{reception_code}", operation: 'reception'))
+  end
+
+  def valid_reception_detail?(detail, reception_code)
+    detail.is_a?(Hash) && detail['RECEPTION_CODE'].to_s == reception_code.to_s
+  end
+
+  def single_record(payload)
+    payload.is_a?(Array) ? payload.first : payload
   end
 end

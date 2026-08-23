@@ -23,9 +23,12 @@ import {
   toNumeric,
 } from 'dashboard/stores/scheduling/shared';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
 import {
   fromDateTimeInputValue,
   getServicePriceForResource,
+  isMedelementResource,
+  servicesAvailableForResource,
   toDateTimeInputValue,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
 import {
@@ -135,6 +138,16 @@ const serviceOptions = computed(() =>
   }))
 );
 const hasServiceOptions = computed(() => serviceOptions.value.length > 0);
+const serviceOptionsForForm = form => {
+  const resource = activeResources.value.find(
+    item => Number(item.id) === Number(form?.resourceId)
+  );
+
+  return servicesAvailableForResource(activeServices.value, resource).map(
+    service => ({ label: service.name, value: service.id })
+  );
+};
+const hasServiceOptionsForForm = form => serviceOptionsForForm(form).length > 0;
 
 const contact = computed(() => resolveChatContact(props.currentChat));
 const contactId = computed(() => resolveChatContactId(props.currentChat));
@@ -394,6 +407,14 @@ const syncFormServiceFields = form => {
 
 const handleFormResourceChange = (form, value) => {
   form.resourceId = value;
+  if (
+    !serviceOptionsForForm(form).some(
+      option => Number(option.value) === Number(form.serviceId)
+    )
+  ) {
+    form.serviceId = '';
+    form.serviceNameSnapshot = '';
+  }
   syncFormServiceFields(form);
 };
 
@@ -433,9 +454,33 @@ const appointmentFormEndsAfterStart = form => {
   return new Date(form.endsAt) > new Date(form.startsAt);
 };
 
+const medelementLastNameError = form =>
+  isMedelementResource(selectedResourceForForm(form)) &&
+  !form?.clientLastName?.trim()
+    ? t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED')
+    : '';
+
+const medelementPhoneError = form =>
+  isMedelementResource(selectedResourceForForm(form)) &&
+  !isKazakhstanE164Phone(form?.clientPhone)
+    ? t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED')
+    : '';
+
+const medelementServiceError = form =>
+  isMedelementResource(selectedResourceForForm(form)) &&
+  form?.serviceId &&
+  !serviceOptionsForForm(form).some(
+    option => Number(option.value) === Number(form?.serviceId)
+  )
+    ? t('SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED')
+    : '';
+
 const isAppointmentFormInvalid = form =>
   !contactId.value ||
   !form?.clientFirstName?.trim() ||
+  Boolean(medelementLastNameError(form)) ||
+  Boolean(medelementPhoneError(form)) ||
+  Boolean(medelementServiceError(form)) ||
   !form?.resourceId ||
   !form?.startsAt ||
   !form?.endsAt ||
@@ -602,6 +647,14 @@ const syncCreateServiceFields = () => {
 
 const handleCreateResourceChange = value => {
   createForm.resourceId = value;
+  if (
+    !serviceOptionsForForm(createForm).some(
+      option => Number(option.value) === Number(createForm.serviceId)
+    )
+  ) {
+    createForm.serviceId = '';
+    createForm.serviceNameSnapshot = '';
+  }
   syncCreateServiceFields();
 };
 
@@ -632,20 +685,12 @@ const cancelCreateAppointment = () => {
   );
 };
 
-const createFormEndsAfterStart = computed(() => {
-  if (!createForm.startsAt || !createForm.endsAt) return false;
+const createFormEndsAfterStart = computed(() =>
+  appointmentFormEndsAfterStart(createForm)
+);
 
-  return new Date(createForm.endsAt) > new Date(createForm.startsAt);
-});
-
-const isCreateFormInvalid = computed(
-  () =>
-    !contactId.value ||
-    !createForm.clientFirstName?.trim() ||
-    !createForm.resourceId ||
-    !createForm.startsAt ||
-    !createForm.endsAt ||
-    !createFormEndsAfterStart.value
+const isCreateFormInvalid = computed(() =>
+  isAppointmentFormInvalid(createForm)
 );
 
 const refreshDialogAppointments = savedAppointment => {
@@ -918,6 +963,10 @@ watch(
                         $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
                       "
                       :model-value="createForm.clientLastName"
+                      :message="medelementLastNameError(createForm)"
+                      :message-type="
+                        medelementLastNameError(createForm) ? 'error' : 'info'
+                      "
                       size="sm"
                       @update:model-value="
                         updatePatientNamePart(
@@ -970,6 +1019,10 @@ watch(
                         $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_PHONE')
                       "
                       :model-value="createForm.clientPhone"
+                      :message="medelementPhoneError(createForm)"
+                      :message-type="
+                        medelementPhoneError(createForm) ? 'error' : 'info'
+                      "
                       size="sm"
                       @update:model-value="createForm.clientPhone = $event"
                     />
@@ -1003,12 +1056,12 @@ watch(
                       {{ $t('SCHEDULING.APPOINTMENT_FORM.SERVICE') }}
                     </label>
                     <SchedulingSelectField
-                      v-if="hasServiceOptions"
+                      v-if="hasServiceOptionsForForm(createForm)"
                       id="scheduling-conversation-appointment-service"
                       class="scheduling-appointment-drawer-control scheduling-appointment-drawer-select-control"
                       :aria-label="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                       :model-value="createForm.serviceId"
-                      :options="serviceOptions"
+                      :options="serviceOptionsForForm(createForm)"
                       :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                       :empty-state="
                         $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
@@ -1017,7 +1070,7 @@ watch(
                       @update:model-value="handleCreateServiceChange"
                     />
                     <Input
-                      v-else
+                      v-else-if="!isMedelementResource(selectedCreateResource)"
                       id="scheduling-conversation-appointment-service"
                       class="scheduling-appointment-drawer-control"
                       custom-input-class="!rounded-md !bg-n-alpha-black2"
@@ -1029,6 +1082,9 @@ watch(
                         createForm.serviceNameSnapshot = $event
                       "
                     />
+                    <p v-else class="mt-1 mb-0 text-xs text-n-slate-10">
+                      {{ $t('SCHEDULING.MEDELEMENT.NO_SPECIALIST_SERVICES') }}
+                    </p>
                   </div>
 
                   <div class="scheduling-appointment-drawer-row">
@@ -1245,6 +1301,18 @@ watch(
                         appointmentForms[appointmentKey(appointment)]
                           .clientLastName
                       "
+                      :message="
+                        medelementLastNameError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
+                      :message-type="
+                        medelementLastNameError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                          ? 'error'
+                          : 'info'
+                      "
                       size="sm"
                       @update:model-value="
                         updatePatientNamePart(
@@ -1303,6 +1371,18 @@ watch(
                         appointmentForms[appointmentKey(appointment)]
                           .clientPhone
                       "
+                      :message="
+                        medelementPhoneError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
+                      :message-type="
+                        medelementPhoneError(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                          ? 'error'
+                          : 'info'
+                      "
                       size="sm"
                       @update:model-value="
                         appointmentForms[
@@ -1347,14 +1427,22 @@ watch(
                       {{ $t('SCHEDULING.APPOINTMENT_FORM.SERVICE') }}
                     </label>
                     <SchedulingSelectField
-                      v-if="hasServiceOptions"
+                      v-if="
+                        hasServiceOptionsForForm(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
                       :id="`scheduling-conversation-appointment-service-${appointment.id}`"
                       class="scheduling-appointment-drawer-control scheduling-appointment-drawer-select-control"
                       :aria-label="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                       :model-value="
                         appointmentForms[appointmentKey(appointment)].serviceId
                       "
-                      :options="serviceOptions"
+                      :options="
+                        serviceOptionsForForm(
+                          appointmentForms[appointmentKey(appointment)]
+                        )
+                      "
                       :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                       :empty-state="
                         $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
@@ -1368,7 +1456,13 @@ watch(
                       "
                     />
                     <Input
-                      v-else
+                      v-else-if="
+                        !isMedelementResource(
+                          selectedResourceForForm(
+                            appointmentForms[appointmentKey(appointment)]
+                          )
+                        )
+                      "
                       :id="`scheduling-conversation-appointment-service-${appointment.id}`"
                       class="scheduling-appointment-drawer-control"
                       custom-input-class="!rounded-md !bg-n-alpha-black2"
@@ -1385,6 +1479,9 @@ watch(
                         ].serviceNameSnapshot = $event
                       "
                     />
+                    <p v-else class="mt-1 mb-0 text-xs text-n-slate-10">
+                      {{ $t('SCHEDULING.MEDELEMENT.NO_SPECIALIST_SERVICES') }}
+                    </p>
                   </div>
 
                   <div class="scheduling-appointment-drawer-row">

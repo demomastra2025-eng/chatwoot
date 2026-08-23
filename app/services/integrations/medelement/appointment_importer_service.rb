@@ -39,7 +39,7 @@ class Integrations::Medelement::AppointmentImporterService
   attr_reader :account, :conflict_tracker
 
   def persist_appointment!(appointment, resource:, contact:, reception:, import_context:)
-    ensure_medelement_source!(appointment)
+    provider_binding(appointment, reception).validate!
     record_unresolved_patient_conflict(reception) if contact.blank?
     appointment.assign_attributes(
       appointment_attributes(
@@ -60,7 +60,8 @@ class Integrations::Medelement::AppointmentImporterService
   def appointment_attributes(appointment:, resource:, contact:, reception:, import_context:)
     starts_at, ends_at = import_context.values_at(:starts_at, :ends_at)
     services, unresolved_service_codes = resolved_services(reception)
-    service_identity_authoritative = Integrations::Medelement::ReceptionServiceRows.identity_authoritative?(reception)
+    service_binding = Integrations::Medelement::AppointmentServiceBinding.new(appointment: appointment)
+    service_identity_authoritative = service_binding.provider_identity_authoritative?(reception)
 
     base_attributes = {
       account: account,
@@ -72,7 +73,7 @@ class Integrations::Medelement::AppointmentImporterService
       duration_min: duration_minutes(starts_at, ends_at),
       status: appointment_status(reception),
       appointment_type: PRIMARY_APPOINTMENT_TYPE,
-      source: MEDELEMENT_SOURCE,
+      source: provider_binding(appointment, reception).source,
       service: service_identity_authoritative ? services.first : appointment.service,
       service_name_snapshot: service_identity_authoritative ? services.map(&:name).join(', ').presence : appointment.service_name_snapshot,
       custom_attributes: custom_attributes(
@@ -82,7 +83,7 @@ class Integrations::Medelement::AppointmentImporterService
         contact: contact,
         services: services,
         unresolved_service_codes: unresolved_service_codes,
-        service_identity_authoritative: service_identity_authoritative
+        service_binding: service_binding
       )
     }
 
@@ -138,21 +139,20 @@ class Integrations::Medelement::AppointmentImporterService
   def custom_attributes(appointment, reception, import_context, contact:, **service_data)
     services = service_data.fetch(:services)
     unresolved_service_codes = service_data.fetch(:unresolved_service_codes)
-    service_identity_authoritative = service_data.fetch(:service_identity_authoritative)
+    service_binding = service_data.fetch(:service_binding)
     attributes = appointment.custom_attributes.except(*RECONCILIATION_ATTRIBUTE_KEYS).merge(
       'medelement_cabinet_code' => reception['COMPANY_CABINET_CODE'].to_s.presence,
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
       'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,
       'medelement_specialist_code' => import_context[:specialist_code].to_s,
       'medelement_patient_unresolved' => contact.blank?,
-      'source_mode' => 'imported'
+      'source_mode' => provider_binding(appointment, reception).source_mode
     ).compact
-    return attributes unless service_identity_authoritative
-
-    attributes.merge(
-      'service_ids' => services.map(&:id),
-      'services' => services.map { |service| service.slice(:id, :name, :service_type, :duration_min) },
-      'medelement_unresolved_service_codes' => unresolved_service_codes
+    service_binding.reconcile_provider_attributes(
+      attributes: attributes,
+      reception: reception,
+      services: services,
+      unresolved_service_codes: unresolved_service_codes
     )
   end
 
@@ -189,14 +189,8 @@ class Integrations::Medelement::AppointmentImporterService
     [((ends_at - starts_at) / 60).round, MIN_DURATION_MINUTES].max
   end
 
-  def ensure_medelement_source!(appointment)
-    return unless appointment.persisted? && appointment.source.present? && appointment.source != MEDELEMENT_SOURCE
-
-    raise Scheduling::Error.new(
-      code: 'DUPLICATE_EXTERNAL_REF',
-      message: 'external_ref is already used by a non-Medelement appointment',
-      status: :conflict
-    )
+  def provider_binding(appointment, reception)
+    Integrations::Medelement::AppointmentProviderBinding.new(appointment: appointment, reception: reception)
   end
 
   def find_or_initialize_appointment(reception)

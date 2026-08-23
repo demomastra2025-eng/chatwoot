@@ -121,6 +121,35 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     )
   end
 
+  it 'system-confirms an automatic dashboard command without a second user prompt' do
+    command = Integrations::Medelement::ProviderCommands::CreateService.new(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      idempotency_key: 'dashboard-auto-confirm-command',
+      actor: agent
+    ).perform
+
+    expect do
+      post "#{path}/#{command.id}/confirm",
+           params: { automatic: true },
+           headers: headers,
+           as: :json
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandConfirmationJob)
+
+    expect(response).to have_http_status(:ok)
+    expect(command.confirmation_request.reload).to have_attributes(
+      status: 'confirmed',
+      resolution_source: 'system',
+      resolved_by: agent
+    )
+    expect(command.confirmation_request.resolution_metadata).to include(
+      'medelement_auto_sync' => true,
+      'surface' => 'onelink_outbound_change'
+    )
+  end
+
   it 'does not confirm a command from another account' do
     other_account = create(:account).tap { |record| record.enable_features!('scheduling') }
     other_contact = create(:contact, account: other_account)
@@ -130,6 +159,26 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     post "#{path}/#{other_command.id}/confirm", headers: headers, as: :json
 
     expect(response).to have_http_status(:not_found)
+  end
+
+  it 'cancels a stale command before its provider write is confirmed' do
+    command = Integrations::Medelement::ProviderCommands::CreateService.new(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      idempotency_key: 'stale-dashboard-command',
+      actor: agent
+    ).perform
+
+    expect do
+      post "#{path}/#{command.id}/cancel", headers: headers, as: :json
+    end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandJob)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'status')).to eq('cancelled')
+    expect(command.reload).to be_cancelled
+    expect(command.confirmation_request).to be_pending
   end
 
   it 'manually cancels a command awaiting reconciliation and exposes retry state' do
@@ -193,8 +242,8 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     allow(Integrations::Medelement::Client).to receive(:new).and_return(client)
     allow(client).to receive(:search_patients_by_phone).and_return(
       [
-        { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' },
-        { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov' }
+        { 'PROFILE_CODE' => 'patient-1', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'PATIENT_PHONE_2' => '+77001234567' },
+        { 'PROFILE_CODE' => 'patient-2', 'NAME' => 'Ivan', 'LASTNAME' => 'Ivanov', 'PATIENT_PHONE_2' => '+77001234567' }
       ]
     )
 
@@ -248,6 +297,38 @@ RSpec.describe 'Medelement Provider Commands API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(command.reload).to be_queued
     expect(command.execution_state).to include('patient_creation_confirmed' => true)
+  end
+
+  it 'requeues the same phone mismatch command without creating another command' do
+    command = build_patient_action_command(
+      status: 'awaiting_phone_refresh',
+      patient_action: { 'type' => 'phone_refresh', 'refresh_supported' => false }
+    )
+
+    command_count = Integrations::Medelement::ProviderCommand.count
+    expect do
+      post "#{path}/#{command.id}/retry", headers: headers, as: :json
+    end.to have_enqueued_job(Integrations::Medelement::ProviderCommandJob).with(command.id)
+
+    expect(response).to have_http_status(:ok)
+    expect(Integrations::Medelement::ProviderCommand.count).to eq(command_count)
+    expect(command.reload).to be_queued
+    expect(command.execution_state).to include('patient_phone_mismatch_accepted' => true)
+    expect(command.execution_state).not_to have_key('patient_action')
+  end
+
+  it 'rejects retry for a command that is not waiting on a phone mismatch' do
+    command = build_patient_action_command(
+      status: 'awaiting_patient_selection',
+      patient_action: { 'type' => 'patient_selection', 'candidate_count' => 1 }
+    )
+
+    expect do
+      post "#{path}/#{command.id}/retry", headers: headers, as: :json
+    end.not_to have_enqueued_job(Integrations::Medelement::ProviderCommandJob)
+
+    expect(response).to have_http_status(:conflict)
+    expect(command.reload).to be_awaiting_patient_selection
   end
 
   private

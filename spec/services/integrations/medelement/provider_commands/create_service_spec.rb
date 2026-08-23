@@ -73,6 +73,15 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     )
   end
 
+  it 'rejects reception creation for a cancelled appointment before persisting a command' do
+    appointment.update!(status: 'cancelled')
+
+    expect { perform }.to raise_error(Scheduling::Error) do |error|
+      expect(error.code).to eq('MEDELEMENT_CANCELLED_APPOINTMENT_UNBOOKABLE')
+    end
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).not_to exist
+  end
+
   it 'uses the appointment phone when the contact phone is blank without mutating the contact' do
     appointment_phone = ['+7', '700', '123', '4567'].join
     contact.update!(phone_number: nil)

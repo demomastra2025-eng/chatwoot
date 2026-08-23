@@ -1,11 +1,14 @@
 class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
-  def initialize(contact:, patient_code: nil, phone_number: nil, identity: nil, organization_id: nil)
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(contact:, patient_code: nil, phone_number: nil, identity: nil, organization_id: nil, desired_attributes: {})
     @contact = contact
     @patient_code = patient_code
-    @phone_number = phone_number.presence || contact.phone_number
+    @desired_attributes = desired_attributes.to_h.deep_stringify_keys
+    @phone_number = phone_number.presence || contact_attribute('phone_number')
     @identity = identity.to_h.stringify_keys
     @organization_id = organization_id
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def build
     values = name_values
@@ -16,7 +19,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
       'name' => values.fetch(:first_name),
       'lastname' => values.fetch(:last_name),
       'middlename' => values[:middle_name],
-      'patient_email' => contact.email.presence,
+      'patient_email' => contact_attribute('email').to_s.presence,
       'birthday' => birthday,
       'gender' => gender_code,
       'iin' => iin
@@ -25,10 +28,10 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
 
   private
 
-  attr_reader :contact, :patient_code, :phone_number, :identity, :organization_id
+  attr_reader :contact, :patient_code, :phone_number, :identity, :organization_id, :desired_attributes
 
   def custom_attributes
-    @custom_attributes ||= contact.custom_attributes.to_h
+    @custom_attributes ||= desired_attributes.fetch('custom_attributes', contact.custom_attributes).to_h
   end
 
   def phone_payload
@@ -50,16 +53,16 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
   end
 
   def explicit_name_values
-    last_name = custom_attributes['medelement_last_name'].presence || contact.last_name.to_s.presence
+    last_name = custom_attributes['medelement_last_name'].presence || contact_attribute('last_name').to_s.presence
     {
-      first_name: custom_attributes['medelement_first_name'].presence || (contact.name.to_s.presence if last_name.present?),
+      first_name: custom_attributes['medelement_first_name'].presence || (contact_attribute('name').to_s.presence if last_name.present?),
       last_name: last_name,
-      middle_name: custom_attributes['medelement_middle_name'].presence || contact.middle_name.to_s.presence
+      middle_name: custom_attributes['medelement_middle_name'].presence || contact_attribute('middle_name').to_s.presence
     }
   end
 
   def contact_name_values
-    parts = contact.name.to_s.split
+    parts = contact_attribute('name').to_s.split
     validate_name_parts!(parts)
 
     { last_name: parts.first, first_name: parts.second, middle_name: parts.drop(2).join(' ').presence }
@@ -110,7 +113,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     candidates = if appointment_identity?
                    [identity['iin']]
                  else
-                   [custom_attributes['medelement_iin'], custom_attributes['iin'], contact.identifier]
+                   [custom_attributes['medelement_iin'], custom_attributes['iin'], contact_attribute('identifier')]
                  end
     value = candidates.find { |candidate| Scheduling::IinValidator.valid?(candidate) }
     Scheduling::IinValidator.normalize(value) if value
@@ -131,7 +134,7 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
   end
 
   def gender_code
-    contact_gender = contact.gender if contact.respond_to?(:gender)
+    contact_gender = contact_attribute('gender') if contact.respond_to?(:gender)
     value = if appointment_identity?
               identity['gender'].presence
             else
@@ -157,5 +160,9 @@ class Integrations::Medelement::ProviderCommands::PatientPayloadBuilder
     return if value.blank?
 
     value[6].to_i.odd? ? 2 : 1
+  end
+
+  def contact_attribute(key)
+    desired_attributes.fetch(key.to_s) { contact.public_send(key) }
   end
 end

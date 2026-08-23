@@ -76,8 +76,21 @@ RSpec.describe 'Medelement integration settings', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(response.parsed_body['result']).to include(
-        'specialists' => { 'imported_count' => 1, 'skipped_count' => 0 },
-        'services' => { 'imported_count' => 1, 'linked_count' => 1, 'skipped_count' => 0 }
+        'specialists' => {
+          'provider_count' => 1,
+          'imported_count' => 1,
+          'skipped_count' => 0,
+          'not_returned_count' => 0,
+          'local_unlinked_count' => 0
+        },
+        'services' => {
+          'provider_count' => 1,
+          'imported_count' => 1,
+          'linked_count' => 1,
+          'skipped_count' => 0,
+          'not_returned_count' => 0,
+          'local_unlinked_count' => 0
+        }
       )
       expect(account.scheduling_service_prices.count).to eq(1)
     end

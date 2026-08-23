@@ -44,7 +44,13 @@ const macrocrmMetadata = computed(() => connectedHook.value?.metadata || {});
 const medelementCatalogFileInput = ref(null);
 const medelementCatalogFile = ref(null);
 const medelementCatalogMaxBytes = 5 * 1024 * 1024;
-const hookSyncStatus = ref({ run: null, conflicts: [], conflict_counts: {} });
+const hookSyncStatus = ref({
+  run: null,
+  phase_statuses: {},
+  schedules: [],
+  conflicts: [],
+  conflict_counts: {},
+});
 const resolvingConflictId = ref(null);
 const conflictFilters = ref({
   status: '',
@@ -60,6 +66,12 @@ let hookSyncPollTimer;
 let hookSyncPollFailures = 0;
 
 const syncRun = computed(() => hookSyncStatus.value?.run);
+const syncSchedules = computed(() => {
+  const statusSchedules = hookSyncStatus.value?.schedules || [];
+  return statusSchedules.length
+    ? statusSchedules
+    : medelementMetadata.value.schedules || [];
+});
 const syncConflicts = computed(() => hookSyncStatus.value?.conflicts || []);
 const conflictPagination = computed(
   () => hookSyncStatus.value?.conflict_pagination || { page: 1, total_pages: 1 }
@@ -94,11 +106,27 @@ const syncPhaseTranslation = {
   contacts: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.CONTACTS',
   receptions: 'INTEGRATION_APPS.MEDELEMENT.SYNC_PHASE.RECEPTIONS',
 };
+const syncScheduleTranslation = {
+  realtime: {
+    next: 'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.REALTIME_NEXT',
+    last: 'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.REALTIME_LAST',
+  },
+  operational: {
+    next: 'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.OPERATIONAL_NEXT',
+    last: 'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.OPERATIONAL_LAST',
+  },
+  catalog: {
+    next: 'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.CATALOG_NEXT',
+    last: 'INTEGRATION_APPS.MEDELEMENT.SCHEDULE.CATALOG_LAST',
+  },
+};
 const syncConflictTranslation = {
   invalid_specialist:
     'INTEGRATION_APPS.MEDELEMENT.CONFLICT_TYPE.INVALID_SPECIALIST',
   conflicting_cabinet_name:
     'INTEGRATION_APPS.MEDELEMENT.CONFLICT_TYPE.CONFLICTING_CABINET_NAME',
+  specialist_not_returned:
+    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_TYPE.SPECIALIST_NOT_RETURNED',
   invalid_service: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_TYPE.INVALID_SERVICE',
   invalid_specialist_service:
     'INTEGRATION_APPS.MEDELEMENT.CONFLICT_TYPE.INVALID_SPECIALIST_SERVICE',
@@ -134,13 +162,25 @@ const syncCounterTranslation = {
   updated_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.UPDATED_COUNT',
   deactivated_count:
     'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.DEACTIVATED_COUNT',
+  provider_count: 'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.PROVIDER_COUNT',
+  not_returned_count:
+    'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.NOT_RETURNED_COUNT',
+  local_unlinked_count:
+    'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.LOCAL_UNLINKED_COUNT',
 };
 const syncPhaseRows = computed(() =>
-  syncPhases.map(phase => ({
-    phase,
-    result: syncRun.value?.phase_results?.[phase],
-    isCurrent: syncRun.value?.current_phase === phase,
-  }))
+  syncPhases.map(phase => {
+    const history = hookSyncStatus.value?.phase_statuses?.[phase];
+    const currentResult = syncRun.value?.phase_results?.[phase];
+    const isCurrent = syncRun.value?.current_phase === phase;
+    return {
+      phase,
+      result: currentResult || history?.result,
+      status: isCurrent ? 'running' : currentResult?.status || history?.status,
+      lastSyncedAt: history?.last_synced_at,
+      isCurrent,
+    };
+  })
 );
 
 const hasCustomLogo = computed(
@@ -290,6 +330,29 @@ const hookDetails = computed(() => {
 const medelementScheduleDetails = computed(() => {
   if (!isMedelement.value || !connectedHook.value) {
     return [];
+  }
+
+  if (syncSchedules.value.length) {
+    return syncSchedules.value.flatMap(schedule => {
+      const translation = syncScheduleTranslation[schedule.key];
+      if (!translation) return [];
+      return [
+        {
+          key: `${schedule.key}_next`,
+          // Translation keys are selected from the closed allowlist above.
+          // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+          label: t(translation.next),
+          value: schedule.next_sync_at_display || '--',
+        },
+        {
+          key: `${schedule.key}_last`,
+          // Translation keys are selected from the closed allowlist above.
+          // eslint-disable-next-line @intlify/vue-i18n/no-dynamic-keys
+          label: t(translation.last),
+          value: schedule.last_scheduled_sync_at_display || '--',
+        },
+      ];
+    });
   }
 
   return [
@@ -684,7 +747,13 @@ watch(
   hookId => {
     clearHookSyncPoll();
     hookSyncPollFailures = 0;
-    hookSyncStatus.value = { run: null, conflicts: [], conflict_counts: {} };
+    hookSyncStatus.value = {
+      run: null,
+      phase_statuses: {},
+      schedules: [],
+      conflicts: [],
+      conflict_counts: {},
+    };
     if (isMedelement.value && hookId) fetchHookSyncStatus();
   },
   { immediate: true }
@@ -759,6 +828,12 @@ onBeforeUnmount(clearHookSyncPoll);
         </span>
       </header>
 
+      <p
+        class="rounded-lg border border-n-weak bg-n-solid-1 p-3 text-sm text-n-slate-11"
+      >
+        {{ $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.DIRECTION_NOTE') }}
+      </p>
+
       <div v-if="syncRun" class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <article
           v-for="row in syncPhaseRows"
@@ -771,11 +846,16 @@ onBeforeUnmount(clearHookSyncPoll);
           </p>
           <p class="mt-1 text-xs text-n-slate-10">
             {{
-              row.isCurrent
-                ? syncStatusLabel('running')
-                : row.result?.status
-                  ? syncStatusLabel(row.result.status)
-                  : $t('INTEGRATION_APPS.MEDELEMENT.SYNC_STATUS.PENDING')
+              row.status
+                ? syncStatusLabel(row.status)
+                : $t('INTEGRATION_APPS.MEDELEMENT.SYNC_STATUS.PENDING')
+            }}
+          </p>
+          <p v-if="row.lastSyncedAt" class="mt-1 text-xs text-n-slate-9">
+            {{
+              $t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.LAST_PHASE_SYNC', {
+                date: formatSyncDate(row.lastSyncedAt),
+              })
             }}
           </p>
           <dl

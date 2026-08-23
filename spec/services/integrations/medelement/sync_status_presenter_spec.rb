@@ -7,7 +7,10 @@ describe Integrations::Medelement::SyncStatusPresenter do
     Integrations::Medelement::SyncRun.create!(account: account, hook: hook, trigger: 'manual', status: 'partial')
   end
 
-  before { account.enable_features!('scheduling') }
+  before do
+    account.enable_features!('scheduling')
+    allow(Sidekiq::Cron::Job).to receive(:find).and_return(nil)
+  end
 
   def create_specialist_conflict(sequence)
     resource = create(
@@ -64,5 +67,47 @@ describe Integrations::Medelement::SyncStatusPresenter do
     conflict = described_class.new(hook: hook).payload[:conflicts].first
 
     expect(conflict.dig(:entity_context, :appointment, :id)).to eq(appointment.id)
+  end
+
+  it 'reports the latest persisted result for every phase instead of only the latest run' do
+    specialists_run = Integrations::Medelement::SyncRun.create!(
+      account: account,
+      hook: hook,
+      trigger: 'scheduled',
+      status: 'succeeded',
+      requested_phases: ['specialists'],
+      completed_at: 2.hours.ago,
+      phase_results: {
+        'specialists' => {
+          'status' => 'succeeded',
+          'provider_count' => 3,
+          'completed_at' => 2.hours.ago.iso8601
+        }
+      }
+    )
+    receptions_run = Integrations::Medelement::SyncRun.create!(
+      account: account,
+      hook: hook,
+      trigger: 'scheduled',
+      status: 'succeeded',
+      requested_phases: ['receptions'],
+      completed_at: 1.hour.ago,
+      phase_results: {
+        'receptions' => { 'status' => 'succeeded', 'imported_count' => 2, 'completed_at' => 1.hour.ago.iso8601 }
+      }
+    )
+
+    payload = described_class.new(hook: hook).payload
+
+    expect(payload.dig(:phase_statuses, 'specialists')).to include(
+      run_id: specialists_run.id,
+      status: 'succeeded',
+      result: hash_including('provider_count' => 3)
+    )
+    expect(payload.dig(:phase_statuses, 'receptions')).to include(
+      run_id: receptions_run.id,
+      status: 'succeeded',
+      result: hash_including('imported_count' => 2)
+    )
   end
 end

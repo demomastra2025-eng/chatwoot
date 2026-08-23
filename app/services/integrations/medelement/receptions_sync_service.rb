@@ -41,7 +41,42 @@ class Integrations::Medelement::ReceptionsSyncService
       end
     end
 
-    snapshot.uniq { |reception| reception['RECEPTION_CODE'].to_s }
+    snapshot
+      .uniq { |reception| reception['RECEPTION_CODE'].to_s }
+      .map { |reception| enrich_reception(reception) }
+  end
+
+  def enrich_reception(reception)
+    return reception if reception['REMOVED'].to_i == 1
+
+    reception_code = reception['RECEPTION_CODE'].to_s
+    detail = client.get_reception(reception_code: reception_code, version: :v2)
+    throttle!
+    validate_reception_detail!(detail, reception)
+
+    reception.merge(detail).merge(
+      'PATIENT_CODE' => reception['PATIENT_CODE'].presence || detail['PROFILE_CODE']
+    )
+  end
+
+  def validate_reception_detail!(detail, listed_reception)
+    valid = detail.is_a?(Hash) &&
+            detail['RECEPTION_CODE'].to_s == listed_reception['RECEPTION_CODE'].to_s &&
+            detail['SERVICES'].is_a?(Array) &&
+            detail_patient_code(detail).present? &&
+            detail_patient_code(detail) == listed_reception['PATIENT_CODE'].to_s
+    raise IncompleteSnapshotError, "Medelement reception detail is incomplete for account=#{account.id}" unless valid
+
+    Integrations::Medelement::ProviderScope.validate_write!(
+      detail,
+      organization_id: configuration.organization_id
+    )
+  rescue Integrations::Medelement::ProviderScope::MismatchError => e
+    raise IncompleteSnapshotError, "Medelement reception detail scope is invalid for account=#{account.id}: #{e.message}"
+  end
+
+  def detail_patient_code(detail)
+    (detail['PROFILE_CODE'] || detail['PATIENT_CODE']).to_s
   end
 
   def fetch_receptions_for_pair(specialist_code:, company_cabinet_code:, from:, to:)
@@ -70,7 +105,8 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def medelement_resources
-    account.scheduling_resources.where("custom_attributes ->> 'medelement_specialist_code' IS NOT NULL")
+    account.scheduling_resources.available_for_scheduling
+           .where("custom_attributes ->> 'medelement_specialist_code' IS NOT NULL")
   end
 
   def parse_time(value)

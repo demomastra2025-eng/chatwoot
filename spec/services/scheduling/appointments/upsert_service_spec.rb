@@ -9,6 +9,22 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     described_class.new(account: account, appointment: appointment, params: params).perform
   end
 
+  it 'dispatches persisted update changes before reloading the appointment' do
+    dispatcher = Rails.configuration.dispatcher
+    allow(dispatcher).to receive(:dispatch)
+
+    perform(client_comment: 'Changed')
+
+    expect(dispatcher).to have_received(:dispatch).with(
+      Events::Types::APPOINTMENT_UPDATED,
+      anything,
+      hash_including(
+        appointment: appointment,
+        changed_attributes: hash_including('client_comment' => [nil, 'Changed'])
+      )
+    )
+  end
+
   it 'rejects generic mutations of imported Medelement appointments' do
     appointment.update!(source: 'medelement', external_ref: 'medelement:reception:upsert')
 
@@ -59,6 +75,170 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       client_middle_name: nil,
       client_name: 'Айжан'
     )
+  end
+
+  context 'when the selected resource belongs to Medelement' do
+    let(:service) do
+      create(
+        :scheduling_service,
+        account: account,
+        custom_attributes: { 'medelement_nomenclature_code' => 'service-1' }
+      )
+    end
+
+    before do
+      resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    end
+
+    it 'rejects an appointment without a patient last name before persistence' do
+      request = -> { perform(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001') }
+
+      expect(&request).to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE')
+      end
+
+      expect(appointment.reload.client_first_name).to be_nil
+    end
+
+    it 'rejects an appointment without a valid Kazakhstan phone before persistence' do
+      request = -> { perform(client_first_name: 'Айжан', client_last_name: 'Касымова', client_phone: '') }
+
+      expect(&request).to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_PATIENT_PHONE_INVALID')
+      end
+
+      expect(appointment.reload.client_first_name).to be_nil
+    end
+
+    it 'accepts an appointment without a selected service' do
+      appointment.update!(
+        service: nil,
+        custom_attributes: appointment.custom_attributes.except('service_ids', 'services')
+      )
+      perform(client_first_name: 'Айжан', client_last_name: 'Касымова', client_phone: '+77000000001')
+
+      expect(appointment.reload).to have_attributes(
+        client_first_name: 'Айжан',
+        service_id: nil
+      )
+    end
+
+    it 'rejects a service that is not linked to Medelement before persistence' do
+      original_service_id = appointment.service_id
+      unmapped_service = create(:scheduling_service, account: account)
+      request = lambda do
+        perform(
+          client_first_name: 'Айжан',
+          client_last_name: 'Касымова',
+          client_phone: '+77000000001',
+          service_id: unmapped_service.id
+        )
+      end
+
+      expect(&request).to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_SERVICE_UNMAPPED')
+      end
+
+      expect(appointment.reload.service_id).to eq(original_service_id)
+    end
+
+    it 'accepts a complete provider patient identity and mapped service' do
+      perform(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: '+77000000001',
+        service_id: service.id
+      )
+
+      expect(appointment.reload).to have_attributes(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: '+77000000001',
+        service_id: service.id
+      )
+      expect(appointment.custom_attributes).to include(
+        'medelement_service_binding' => 'local_only',
+        'medelement_local_nomenclature_codes' => ['service-1'],
+        'medelement_provider_nomenclature_codes' => []
+      )
+    end
+
+    it 'clears the local-only binding when the user removes the selected service' do
+      appointment.update!(
+        service: service,
+        custom_attributes: appointment.custom_attributes.merge(
+          'service_ids' => [service.id],
+          'medelement_service_binding' => 'local_only',
+          'medelement_local_nomenclature_codes' => ['service-1'],
+          'medelement_provider_nomenclature_codes' => []
+        )
+      )
+
+      perform(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: '+77000000001',
+        service_ids: []
+      )
+
+      expect(appointment.reload.service_id).to be_nil
+      expect(appointment.custom_attributes).not_to include(
+        'medelement_service_binding',
+        'medelement_local_nomenclature_codes',
+        'medelement_provider_nomenclature_codes'
+      )
+    end
+
+    it 'accepts a mapped service without a specialist price link' do
+      other_resource = create(:scheduling_resource, account: account)
+      create(:scheduling_service_price, account: account, resource: other_resource, service: service)
+
+      perform(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: ['+7', '700', '000', '0001'].join,
+        service_id: service.id
+      )
+
+      expect(appointment.reload.service_id).to eq(service.id)
+    end
+
+    it 'accepts only linked services when the specialist has explicit links' do
+      linked_service = create(
+        :scheduling_service,
+        account: account,
+        custom_attributes: { 'medelement_nomenclature_code' => 'service-2' }
+      )
+      create(:scheduling_service_price, account: account, resource: resource, service: linked_service)
+
+      request = lambda do
+        perform(
+          client_first_name: 'Айжан',
+          client_last_name: 'Касымова',
+          client_phone: ['+7', '700', '000', '0001'].join,
+          service_id: service.id
+        )
+      end
+
+      expect(&request).to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_SERVICE_UNAVAILABLE')
+      end
+
+      perform(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: ['+7', '700', '000', '0001'].join,
+        service_id: linked_service.id
+      )
+
+      expect(appointment.reload.service_id).to eq(linked_service.id)
+    end
+
+    it 'allows cancellation of a legacy incomplete appointment' do
+      perform(status: 'cancelled')
+
+      expect(appointment.reload.status).to eq('cancelled')
+    end
   end
 
   it 'composes the display name from all structured patient name fields' do

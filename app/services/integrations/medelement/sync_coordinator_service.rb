@@ -32,7 +32,7 @@ class Integrations::Medelement::SyncCoordinatorService
     result = send("sync_#{phase}")
     persist_phase_result(phase, result)
   rescue StandardError => e
-    sync_run&.fail_phase!(phase, e)
+    sync_run&.record_phase_failure!(phase, e)
     raise
   end
 

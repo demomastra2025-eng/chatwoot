@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
+import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import { useSchedulingAppointmentFormStore } from './appointmentForm';
 
 vi.mock('dashboard/api/scheduling/appointments', () => ({
@@ -170,6 +171,79 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.form.clientPhone).toBe('');
   });
 
+  it('selects a newly created inline contact for the appointment', async () => {
+    SchedulingContactsAPI.create.mockResolvedValue({
+      data: {
+        payload: {
+          first_name: 'Айжан',
+          full_name: 'Айжан Касымова',
+          id: 17,
+          last_name: 'Касымова',
+          phone: '+77000000001',
+        },
+      },
+    });
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate();
+
+    await store.createInlineContact({
+      firstName: 'Айжан',
+      fullName: 'Айжан Касымова',
+      iin: '940720300129',
+      lastName: 'Касымова',
+      middleName: '',
+      phone: '+770****0001',
+      resourceId: 12,
+    });
+
+    expect(SchedulingContactsAPI.create).toHaveBeenCalledWith({
+      first_name: 'Айжан',
+      full_name: 'Айжан Касымова',
+      iin: '940720300129',
+      last_name: 'Касымова',
+      phone: '+770****0001',
+      resource_id: 12,
+    });
+    expect(store.contacts[0]).toMatchObject({ id: 17 });
+    expect(store.selectedContact).toMatchObject({ id: 17 });
+    expect(store.form).toMatchObject({
+      clientFirstName: 'Айжан',
+      clientLastName: 'Касымова',
+      contactId: 17,
+    });
+  });
+
+  it('passes the selected resource context when updating an inline contact', async () => {
+    SchedulingContactsAPI.update.mockResolvedValue({
+      data: { payload: { first_name: 'Айжан', id: 17 } },
+    });
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate();
+
+    await store.updateInlineContact(17, {
+      firstName: 'Айжан',
+      resourceId: 12,
+    });
+
+    expect(SchedulingContactsAPI.update).toHaveBeenCalledWith(17, {
+      first_name: 'Айжан',
+      resource_id: 12,
+    });
+  });
+
+  it('keeps the appointment duration when the start time changes', () => {
+    const store = useSchedulingAppointmentFormStore();
+    store.openCreate({
+      endsAt: '2026-03-09T10:45:00.000Z',
+      startsAt: '2026-03-09T10:00:00.000Z',
+    });
+
+    store.updateField('startsAt', '2026-03-09T12:30');
+
+    expect(store.form.startsAt).toBe('2026-03-09T12:30');
+    expect(store.form.endsAt).toBe('2026-03-09T13:15');
+  });
+
   it('requires a Kazakhstan E.164 phone for MedElement appointments', () => {
     const store = useSchedulingAppointmentFormStore();
 
@@ -187,6 +261,41 @@ describe('useSchedulingAppointmentFormStore', () => {
 
     store.updateField('clientPhone', '+77001234567');
     expect(store.validationErrors.clientPhone).toBe('');
+  });
+
+  it('requires a last name only for MedElement appointments', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    store.updateField('clientFirstName', 'Айжан');
+    expect(store.validationErrors.clientLastName).toBe('');
+
+    store.setRequirements({ medelementIdentityRequired: true });
+    expect(store.validationErrors.clientLastName).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
+    );
+
+    store.updateField('clientLastName', 'Касымова');
+    expect(store.validationErrors.clientLastName).toBe('');
+  });
+
+  it('requires a selected service only for MedElement appointments', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    expect(store.validationErrors.serviceIds).toBe('');
+
+    store.setRequirements({ medelementServiceRequired: true });
+    expect(store.validationErrors.serviceIds).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED'
+    );
+
+    store.updateField('serviceIds', [5]);
+    expect(store.validationErrors.serviceIds).toBe('');
+    expect(store.buildPayload()).toMatchObject({
+      service_id: 5,
+      service_ids: [5],
+    });
   });
 
   it('builds structured patient names and only requires the first name', () => {

@@ -87,7 +87,7 @@ FactoryBot.define do
           'sync_services' => true,
           'sync_receptions' => true,
           'sync_patients' => true,
-          'sync_interval_hours' => 24,
+          'sync_interval_hours' => 0.25,
           'sync_time_of_day' => '06:15',
           'receptions_days_back' => 3,
           'receptions_days_forward' => 70,

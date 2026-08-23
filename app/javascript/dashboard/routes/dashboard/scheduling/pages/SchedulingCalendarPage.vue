@@ -52,9 +52,11 @@ import {
   formatCalendarTitle,
   isAppointmentProviderOwned,
   isMedelementResource,
+  medelementCommandFailureMessage,
   medelementCabinetsForResource,
   resolveAppointmentMedelementCabinetCode,
   resolveAppointmentConversationTarget,
+  servicesAvailableForResource,
 } from '../helpers';
 import {
   appointmentMatchesCustomFieldFilters,
@@ -98,6 +100,8 @@ const route = useRoute();
 const router = useRouter();
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
+const contactSelectorFieldRef = ref(null);
+const inlineContactDraftInitialized = ref(false);
 const customFieldFilters = ref({});
 const filterDialogRef = ref(null);
 const appointmentFilterDraft = reactive({
@@ -189,6 +193,9 @@ const validationErrorMessage = key => {
     ),
     'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED': t(
       'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_PHONE_REQUIRED'
+    ),
+    'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED': t(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_SERVICE_REQUIRED'
     ),
     'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START': t(
       'SCHEDULING.APPOINTMENT_FORM.ERRORS.END_BEFORE_START'
@@ -305,7 +312,8 @@ const canCreateMedelementReception = computed(
   () =>
     formStore.mode === 'edit' &&
     !isSelectedAppointmentProviderOwned.value &&
-    isSelectedFormResourceMedelement.value
+    isSelectedFormResourceMedelement.value &&
+    ['scheduled', 'confirmed'].includes(formStore.form.status)
 );
 const patientActionStatuses = new Set([
   'awaiting_patient_creation',
@@ -425,12 +433,14 @@ const providerCommandConfirmLabel = computed(() => {
   if (status === 'awaiting_patient_creation') {
     return t('SCHEDULING.MEDELEMENT.PATIENT_CREATE_ACTION');
   }
+  if (status === 'awaiting_phone_refresh') {
+    return t('SCHEDULING.MEDELEMENT.PHONE_RETRY_ACTION');
+  }
 
   return t('SCHEDULING.MEDELEMENT.CONFIRM_ACTION');
 });
-const showProviderCommandConfirm = computed(
-  () =>
-    pendingProviderAction.value?.command?.status !== 'awaiting_phone_refresh'
+const showProviderCommandConfirm = computed(() =>
+  patientActionStatuses.has(pendingProviderAction.value?.command?.status)
 );
 const disableProviderCommandConfirm = computed(() => {
   if (providerCommandsStore.ui.isExecuting) return true;
@@ -474,12 +484,13 @@ const resourceOptions = computed(() =>
 );
 
 const serviceOptions = computed(() =>
-  (referencesStore.activeServices || referencesStore.services || []).map(
-    service => ({
-      label: service.name,
-      value: service.id,
-    })
-  )
+  servicesAvailableForResource(
+    referencesStore.activeServices || referencesStore.services || [],
+    selectedFormResource.value
+  ).map(service => ({
+    label: service.name,
+    value: service.id,
+  }))
 );
 const hasServiceOptions = computed(() => serviceOptions.value.length > 0);
 
@@ -706,9 +717,10 @@ const appointmentDrawerModalClass = computed(() => [
 
 const contactEditorActionLabel = computed(() =>
   isEditingContact.value
-    ? t('SCHEDULING.CONTACT.EDIT_ACTION')
+    ? t('SCHEDULING.CONTACT.SAVE_ACTION')
     : t('SCHEDULING.CONTACT.CREATE_ACTION')
 );
+const requiredContactLabel = label => `${label} *`;
 
 const customFieldFilterLabels = computed(() => ({
   noLabel: t('SCHEDULING.GENERAL.NO'),
@@ -788,8 +800,21 @@ const inlineContactIinState = computed(() =>
   parseIinMetadata(inlineContactForm.iin)
 );
 
+const isInlineContactMedelementContext = computed(
+  () =>
+    isSelectedFormResourceMedelement.value ||
+    Boolean(
+      formStore.selectedContact?.customAttributes?.medelementPatientCode ||
+        formStore.selectedContact?.custom_attributes?.medelement_patient_code
+    )
+);
+
 const inlineContactIinMessage = computed(() => {
-  if (!inlineContactForm.iin) return '';
+  if (!inlineContactForm.iin) {
+    return isInlineContactMedelementContext.value
+      ? t('SCHEDULING.CONTACT.IIN_REQUIRED')
+      : '';
+  }
   if (inlineContactIinState.value.valid) return '';
 
   if (inlineContactIinState.value.reason === 'length') {
@@ -798,6 +823,22 @@ const inlineContactIinMessage = computed(() => {
 
   return t('SCHEDULING.CONTACT.IIN_ERROR_INVALID');
 });
+const inlineContactLastNameMessage = computed(() => {
+  if (
+    isInlineContactMedelementContext.value &&
+    !String(formStore.form.clientLastName || '').trim()
+  ) {
+    return t('SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_LAST_NAME_REQUIRED');
+  }
+
+  return validationErrorMessage(formStore.validationErrors.clientLastName);
+});
+const isInlineContactSaveDisabled = computed(
+  () =>
+    !String(formStore.form.clientFirstName || '').trim() ||
+    Boolean(inlineContactLastNameMessage.value) ||
+    Boolean(inlineContactIinMessage.value)
+);
 
 const resetInlineContactForm = () => {
   Object.assign(inlineContactForm, {
@@ -1059,19 +1100,15 @@ const openCreateAppointment = (slot, defaults = {}) => {
   pendingCreateCustomFieldDefaultsHydration.value = true;
   showAppointmentConversationPanel.value = false;
   appointmentConversationContactCreateRequested.value = false;
+  contactEditorMode.value = 'create';
+  inlineContactDraftInitialized.value = false;
+  resetInlineContactForm();
   formStore.openCreate(slot, {
     customAttributes: buildDefaultCustomAttributes(
       appointmentFieldDefinitions.value
     ),
     ...defaults,
   });
-};
-
-const openEditAppointment = appointment => {
-  formStore.openEdit(appointment);
-  resetAppointmentConversationDraft();
-  appointmentConversationContactCreateRequested.value = false;
-  showAppointmentConversationPanel.value = true;
 };
 
 const handleAnchorDateSelect = async nextDate => {
@@ -1155,6 +1192,7 @@ const handleDrawerClose = () => {
   formStore.reset();
   resetAppointmentConversationDraft();
   contactEditorMode.value = null;
+  inlineContactDraftInitialized.value = false;
   resetInlineContactForm();
 };
 
@@ -1164,34 +1202,26 @@ const fillInlineContactForm = source => {
     fullName: source?.fullName || source?.clientName || '',
     gender: source?.gender || source?.clientGender || '',
     id: source?.id || null,
-    iin: source?.customAttributes?.iin || '',
+    iin:
+      source?.customAttributes?.iin ||
+      source?.identifier ||
+      source?.clientIdentifier ||
+      '',
     phone: source?.phone || source?.clientPhone || '',
   });
 };
 
-const closeInlineContactEditor = () => {
-  const shouldReopenConversationPanel =
-    appointmentConversationContactCreateRequested.value &&
-    formStore.mode === 'edit';
-
-  appointmentConversationContactCreateRequested.value = false;
-  contactEditorMode.value = null;
-  resetInlineContactForm();
-
-  if (shouldReopenConversationPanel) {
-    resetAppointmentConversationDraft();
-    showAppointmentConversationPanel.value = true;
-  }
-};
-
 const openInlineContactCreate = () => {
   contactEditorMode.value = 'create';
+  if (inlineContactDraftInitialized.value) return;
+
   if (formStore.form.contactId) {
     resetInlineContactForm();
-    return;
+  } else {
+    fillInlineContactForm(formStore.form);
   }
 
-  fillInlineContactForm(formStore.form);
+  inlineContactDraftInitialized.value = true;
 };
 
 const handleAppointmentConversationAddContact = () => {
@@ -1202,8 +1232,10 @@ const handleAppointmentConversationAddContact = () => {
   openInlineContactCreate();
 };
 
-const openInlineContactEdit = () => {
-  if (!formStore.form.contactId) return;
+function openInlineContactEdit() {
+  if (!formStore.form.contactId) {
+    return;
+  }
 
   contactEditorMode.value = 'edit';
   fillInlineContactForm(
@@ -1212,18 +1244,34 @@ const openInlineContactEdit = () => {
       id: formStore.form.contactId,
     }
   );
+}
+
+const openEditAppointment = appointment => {
+  formStore.openEdit(appointment);
+  resetAppointmentConversationDraft();
+  appointmentConversationContactCreateRequested.value = false;
+  showAppointmentConversationPanel.value = true;
+  if (formStore.form.contactId) {
+    openInlineContactEdit();
+  } else {
+    openInlineContactCreate();
+  }
 };
 
 const handleInlineContactSave = async () => {
-  if (inlineContactForm.iin && !inlineContactIinState.value.valid) {
+  if (isInlineContactSaveDisabled.value) {
     useAlert(inlineContactIinMessage.value);
     return;
   }
 
   const contactPayload = {
     ...inlineContactForm,
+    firstName: formStore.form.clientFirstName,
     fullName: appointmentClientName(),
+    lastName: formStore.form.clientLastName,
+    middleName: formStore.form.clientMiddleName,
     phone: formStore.form.clientPhone,
+    resourceId: formStore.form.resourceId,
   };
 
   try {
@@ -1233,12 +1281,21 @@ const handleInlineContactSave = async () => {
         contactPayload
       );
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_UPDATE'));
+      contactEditorMode.value = 'edit';
+      fillInlineContactForm(formStore.selectedContact || formStore.form);
     } else {
       await formStore.createInlineContact(contactPayload);
       useAlert(t('SCHEDULING.CONTACT.SUCCESS_CREATE'));
+      openInlineContactEdit();
+      if (
+        appointmentConversationContactCreateRequested.value &&
+        formStore.mode === 'edit'
+      ) {
+        appointmentConversationContactCreateRequested.value = false;
+        resetAppointmentConversationDraft();
+        showAppointmentConversationPanel.value = true;
+      }
     }
-
-    closeInlineContactEditor();
   } catch (error) {
     useAlert(formatErrorMessage(error));
   }
@@ -1319,7 +1376,15 @@ const handleContactSelect = contactId => {
 
   if (!contactId) {
     formStore.selectedContact = null;
-    closeInlineContactEditor();
+    formStore.updateField('clientBirthDate', '');
+    formStore.updateField('clientFirstName', '');
+    formStore.updateField('clientGender', '');
+    formStore.updateField('clientIdentifier', '');
+    formStore.updateField('clientLastName', '');
+    formStore.updateField('clientMiddleName', '');
+    formStore.updateField('clientPhone', '');
+    inlineContactDraftInitialized.value = false;
+    openInlineContactCreate();
     return;
   }
 
@@ -1329,7 +1394,7 @@ const handleContactSelect = contactId => {
 
   if (selectedContact) {
     formStore.applyContact(selectedContact);
-    closeInlineContactEditor();
+    openInlineContactEdit();
   }
 };
 
@@ -1342,6 +1407,8 @@ const handleContactDropdownOpen = async () => {
     // Surface API errors through the existing form store error state.
   }
 };
+
+const openContactSelector = () => contactSelectorFieldRef.value?.open();
 
 const resetAppointmentFilters = async () => {
   calendarStore.resetFilters();
@@ -1364,6 +1431,91 @@ const prepareProviderCommandAction = async (action, command) => {
   }
 };
 
+const refreshAfterProviderCommand = async action => {
+  try {
+    await calendarStore.refresh();
+  } catch {
+    // The provider result remains authoritative even if the calendar refresh fails.
+  }
+
+  if (action.closeDrawer) handleDrawerClose();
+};
+
+const showProviderCommandOutcome = async (action, command) => {
+  if (patientActionStatuses.has(command.status)) {
+    await prepareProviderCommandAction(action, command);
+    providerCommandDialogRef.value?.open();
+    return;
+  }
+
+  providerCommandDialogRef.value?.close();
+  pendingProviderAction.value = null;
+  await refreshAfterProviderCommand(action);
+
+  if (command.status === 'succeeded') {
+    useAlert(t('SCHEDULING.MEDELEMENT.SUCCESS'));
+  } else if (command.status === 'reconciliation_required') {
+    useAlert(t('SCHEDULING.MEDELEMENT.RECONCILING'));
+  } else if (['cancelled', 'declined', 'failed'].includes(command.status)) {
+    const failure = medelementCommandFailureMessage(command);
+    if (failure.key === 'SCHEDULING.MEDELEMENT.AUTHENTICATION_FAILED') {
+      useAlert(t('SCHEDULING.MEDELEMENT.AUTHENTICATION_FAILED'));
+    } else if (failure.key === 'SCHEDULING.MEDELEMENT.PATIENT_CONFLICT') {
+      useAlert(t('SCHEDULING.MEDELEMENT.PATIENT_CONFLICT'));
+    } else {
+      useAlert(t('SCHEDULING.MEDELEMENT.FAILED', failure.params));
+    }
+  } else {
+    useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
+  }
+};
+
+const executeProviderCommandAction = async action => {
+  if (action.intentMismatch) {
+    await prepareProviderCommandAction(action, action.command);
+    providerCommandDialogRef.value?.open();
+    return;
+  }
+
+  if (patientActionStatuses.has(action.command?.status)) {
+    await prepareProviderCommandAction(action, action.command);
+    providerCommandDialogRef.value?.open();
+    return;
+  }
+
+  if (action.command && action.command.status !== 'awaiting_confirmation') {
+    useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
+    return;
+  }
+
+  const command = action.command
+    ? await providerCommandsStore.confirmExisting(
+        action.command,
+        action.requestedParams
+      )
+    : await providerCommandsStore.executeConfirmed(action.params);
+  await showProviderCommandOutcome(action, command);
+};
+
+const recoverConcurrentProviderCommand = async (action, error) => {
+  const errorCode = error?.code || error?.response?.data?.code;
+  if (errorCode !== 'MEDELEMENT_COMMAND_IN_PROGRESS') return false;
+
+  const existing = await providerCommandsStore.findActive({
+    appointmentId: action.appointment.id,
+    provider: action.params.provider,
+  });
+  if (!existing) {
+    useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
+    return true;
+  }
+
+  await executeProviderCommandAction(
+    buildProviderCommandAction(action, existing)
+  );
+  return true;
+};
+
 const stageProviderCommand = async ({
   appointment,
   params,
@@ -1375,19 +1527,15 @@ const stageProviderCommand = async ({
       appointmentId: appointment.id,
       provider: params.provider,
     });
-    if (
-      existing &&
-      !patientActionStatuses.has(existing.status) &&
-      existing.status !== 'awaiting_confirmation'
-    ) {
-      useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
+    const stagedAction = buildProviderCommandAction(action, existing);
+    await executeProviderCommandAction(stagedAction);
+  } catch (error) {
+    try {
+      if (await recoverConcurrentProviderCommand(action, error)) return;
+    } catch (recoveryError) {
+      useAlert(formatErrorMessage(recoveryError));
       return;
     }
-
-    const stagedAction = buildProviderCommandAction(action, existing);
-    await prepareProviderCommandAction(stagedAction, existing);
-    providerCommandDialogRef.value?.open();
-  } catch (error) {
     useAlert(formatErrorMessage(error));
   }
 };
@@ -1434,54 +1582,19 @@ const handleProviderCommandConfirm = async () => {
         action.command,
         action.requestedParams
       );
-    } else if (action.command?.status === 'awaiting_confirmation') {
-      command = await providerCommandsStore.confirmExisting(
+    } else if (action.command?.status === 'awaiting_phone_refresh') {
+      command = await providerCommandsStore.retryPhoneMismatch(
         action.command,
         action.requestedParams
       );
     } else {
-      command = await providerCommandsStore.executeConfirmed(action.params);
-    }
-
-    if (patientActionStatuses.has(command.status)) {
-      await prepareProviderCommandAction(action, command);
       return;
     }
 
-    providerCommandDialogRef.value?.close();
-
-    try {
-      await calendarStore.refresh();
-    } catch {
-      // The provider result remains authoritative even if the calendar refresh fails.
-    }
-
-    if (action.closeDrawer) handleDrawerClose();
-
-    if (command.status === 'succeeded') {
-      useAlert(t('SCHEDULING.MEDELEMENT.SUCCESS'));
-    } else if (command.status === 'reconciliation_required') {
-      useAlert(t('SCHEDULING.MEDELEMENT.RECONCILING'));
-    } else if (['cancelled', 'declined', 'failed'].includes(command.status)) {
-      useAlert(
-        command.lastErrorCode === 'patient_identity_conflict'
-          ? t('SCHEDULING.MEDELEMENT.PATIENT_IDENTITY_CONFLICT')
-          : t('SCHEDULING.MEDELEMENT.FAILED', {
-              code: command.lastErrorCode || command.status,
-            })
-      );
-    } else {
-      useAlert(t('SCHEDULING.MEDELEMENT.QUEUED'));
-    }
+    await showProviderCommandOutcome(action, command);
   } catch (error) {
     providerCommandDialogRef.value?.close();
     useAlert(formatErrorMessage(error));
-  } finally {
-    if (
-      !patientActionStatuses.has(pendingProviderAction.value?.command?.status)
-    ) {
-      pendingProviderAction.value = null;
-    }
   }
 };
 
@@ -1677,13 +1790,20 @@ watch(
 );
 
 watch(
-  [() => formStore.isOpen, hasServiceOptions],
-  ([isOpen, hasServices]) => {
-    if (!isOpen || hasServices) return;
+  [() => formStore.isOpen, serviceOptions],
+  ([isOpen, options]) => {
+    if (!isOpen) return;
 
-    formStore.updateField('serviceIds', []);
+    const availableIds = new Set(options.map(option => Number(option.value)));
+    const selectedIds = formStore.form.serviceIds || [];
+    const compatibleIds = selectedIds.filter(id =>
+      availableIds.has(Number(id))
+    );
+    if (compatibleIds.length !== selectedIds.length) {
+      formStore.updateField('serviceIds', compatibleIds);
+    }
   },
-  { immediate: true }
+  { immediate: true, deep: true }
 );
 
 watch(
@@ -1692,11 +1812,13 @@ watch(
     companySelectionEnabled,
     isSelectedFormResourceMedelement,
   ],
-  ([contactRequired, companyEnabled, medelementPhoneRequired]) => {
+  ([contactRequired, companyEnabled, medelementRequired]) => {
     formStore.setRequirements({
       contactRequired,
       companyEnabled,
-      medelementPhoneRequired,
+      medelementIdentityRequired: medelementRequired,
+      medelementPhoneRequired: medelementRequired,
+      medelementServiceRequired: false,
     });
   },
   { immediate: true }
@@ -1926,61 +2048,51 @@ onMounted(async () => {
                     <h3 class="mb-0 text-sm font-semibold text-n-slate-12">
                       {{ $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_TITLE') }}
                     </h3>
-                    <div class="flex items-center gap-2">
+                    <div class="relative ltr:ml-auto rtl:mr-auto">
                       <Button
-                        v-if="!formStore.form.contactId"
                         size="sm"
                         variant="link"
                         color="blue"
-                        icon="i-lucide-plus"
-                        :label="$t('SCHEDULING.CONTACT.CREATE_ACTION')"
-                        @click="openInlineContactCreate"
+                        :label="$t('SCHEDULING.CONTACT.SELECT_ACTION')"
+                        @click.stop="openContactSelector"
                       />
-                      <Button
-                        v-else
-                        size="sm"
-                        variant="link"
-                        color="blue"
-                        icon="i-lucide-pencil"
-                        :label="$t('SCHEDULING.CONTACT.EDIT_ACTION')"
-                        @click="openInlineContactEdit"
+                      <SchedulingSelectField
+                        ref="contactSelectorFieldRef"
+                        class="pointer-events-none absolute right-0 top-full h-px w-px opacity-0"
+                        :model-value="formStore.form.contactId"
+                        :options="contactOptions"
+                        use-api-results
+                        dropdown-align="end"
+                        :dropdown-min-width="405"
+                        placeholder=" "
+                        :aria-label="$t('SCHEDULING.CONTACT.SELECT_ACTION')"
+                        :search-placeholder="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
+                        "
+                        :empty-state="
+                          $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_EMPTY')
+                        "
+                        @open="handleContactDropdownOpen"
+                        @search="formStore.searchContacts($event)"
+                        @update:model-value="handleContactSelect"
                       />
                     </div>
                   </div>
 
                   <div class="appointment-contact-accordion">
-                    <div class="appointment-contact-accordion-summary">
-                      <div
-                        class="grid min-w-0 flex-1 gap-2 md:grid-cols-[2rem_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]"
-                      >
-                        <div class="mb-1 flex items-center">
-                          <SchedulingSelectField
-                            class="appointment-contact-select-control w-full"
-                            :model-value="formStore.form.contactId"
-                            :options="contactOptions"
-                            use-api-results
-                            trigger-icon="i-lucide-users-round"
-                            dropdown-min-width="240"
-                            placeholder=" "
-                            :aria-label="
-                              $t('SCHEDULING.APPOINTMENT_FORM.CONTACT')
-                            "
-                            :has-error="!!formStore.validationErrors.contactId"
-                            :search-placeholder="
-                              $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
-                            "
-                            :empty-state="
-                              $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_EMPTY')
-                            "
-                            @open="handleContactDropdownOpen"
-                            @search="formStore.searchContacts($event)"
-                            @update:model-value="handleContactSelect"
-                          />
-                        </div>
+                    <div
+                      v-if="isContactEditorOpen"
+                      class="appointment-contact-accordion-summary"
+                    >
+                      <div class="grid min-w-0 flex-1 gap-2 md:grid-cols-3">
                         <Input
                           :model-value="formStore.form.clientFirstName"
                           :label="
-                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
+                            requiredContactLabel(
+                              $t(
+                                'SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME'
+                              )
+                            )
                           "
                           :message="
                             formStore.validationErrors.clientName
@@ -2006,7 +2118,19 @@ onMounted(async () => {
                         <Input
                           :model-value="formStore.form.clientLastName"
                           :label="
-                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME')
+                            isInlineContactMedelementContext
+                              ? requiredContactLabel(
+                                  $t(
+                                    'SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME'
+                                  )
+                                )
+                              : $t(
+                                  'SCHEDULING.APPOINTMENT_FORM.CLIENT_LAST_NAME'
+                                )
+                          "
+                          :message="inlineContactLastNameMessage"
+                          :message-type="
+                            inlineContactLastNameMessage ? 'error' : 'info'
                           "
                           @update:model-value="
                             formStore.updateField('clientLastName', $event)
@@ -2021,7 +2145,12 @@ onMounted(async () => {
                             formStore.updateField('clientMiddleName', $event)
                           "
                         />
-                        <div class="md:col-span-3 md:col-start-2">
+                      </div>
+                    </div>
+
+                    <div v-if="isContactEditorOpen" class="grid gap-4 pt-2">
+                      <div class="grid gap-4 md:grid-cols-2">
+                        <div>
                           <PhoneNumberInput
                             v-model="formStore.form.clientPhone"
                             class="appointment-drawer-phone-control"
@@ -2044,22 +2173,23 @@ onMounted(async () => {
                             }}
                           </p>
                         </div>
-                      </div>
-                    </div>
-
-                    <div v-if="isContactEditorOpen" class="grid gap-4 pt-3">
-                      <div class="grid gap-4 md:grid-cols-3">
                         <Input
                           v-model="inlineContactForm.iin"
                           inputmode="numeric"
                           maxlength="12"
                           custom-input-class="tabular-nums"
-                          :label="$t('SCHEDULING.CONTACT.IIN')"
+                          :label="
+                            isInlineContactMedelementContext
+                              ? `${$t('SCHEDULING.CONTACT.IIN')} *`
+                              : $t('SCHEDULING.CONTACT.IIN')
+                          "
                           :message="inlineContactIinMessage"
                           :message-type="
                             inlineContactIinMessage ? 'error' : 'info'
                           "
                         />
+                      </div>
+                      <div class="grid gap-4 md:grid-cols-2">
                         <SchedulingDateTimeField
                           v-model="inlineContactForm.birthDate"
                           type="date"
@@ -2080,15 +2210,9 @@ onMounted(async () => {
                       <div class="flex justify-end gap-2">
                         <Button
                           size="sm"
-                          variant="ghost"
-                          color="slate"
-                          :label="$t('SCHEDULING.GENERAL.CANCEL')"
-                          @click="closeInlineContactEditor"
-                        />
-                        <Button
-                          size="sm"
                           variant="faded"
                           color="slate"
+                          :disabled="isInlineContactSaveDisabled"
                           :is-loading="formStore.ui.isCreatingContact"
                           :label="contactEditorActionLabel"
                           @click="handleInlineContactSave"
@@ -2164,7 +2288,7 @@ onMounted(async () => {
                         "
                       />
                       <Input
-                        v-else
+                        v-else-if="!isSelectedFormResourceMedelement"
                         :model-value="formStore.form.serviceNameSnapshot"
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                         @update:model-value="
@@ -2174,9 +2298,22 @@ onMounted(async () => {
                           }
                         "
                       />
+                      <p v-else class="mt-1 mb-0 text-xs text-n-slate-10">
+                        {{ $t('SCHEDULING.MEDELEMENT.NO_SPECIALIST_SERVICES') }}
+                      </p>
+                      <p
+                        v-if="formStore.validationErrors.serviceIds"
+                        class="mt-1 mb-0 text-xs text-n-ruby-9"
+                      >
+                        {{
+                          validationErrorMessage(
+                            formStore.validationErrors.serviceIds
+                          )
+                        }}
+                      </p>
                     </div>
                     <div
-                      class="appointment-money-grid grid gap-4 md:col-span-2 md:grid-cols-3"
+                      class="appointment-money-grid grid gap-4 md:col-span-2 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.35fr)_minmax(0,0.8fr)]"
                     >
                       <SchedulingSelectField
                         class="appointment-drawer-select-control"
@@ -2219,8 +2356,8 @@ onMounted(async () => {
                     </div>
                     <div class="grid gap-4 md:col-span-2 md:grid-cols-2">
                       <SchedulingDateTimeField
-                        v-model="formStore.form.startsAt"
                         type="datetime"
+                        :model-value="formStore.form.startsAt"
                         :label="$t('SCHEDULING.APPOINTMENT_FORM.STARTS_AT')"
                         :message="
                           formStore.validationErrors.startsAt
@@ -2231,6 +2368,9 @@ onMounted(async () => {
                         "
                         :message-type="
                           formStore.validationErrors.startsAt ? 'error' : 'info'
+                        "
+                        @update:model-value="
+                          formStore.updateField('startsAt', $event)
                         "
                       />
                       <SchedulingDateTimeField
@@ -2550,7 +2690,7 @@ onMounted(async () => {
 }
 
 .appointment-contact-accordion-summary {
-  @apply flex items-center gap-3 rounded-lg px-1 py-1;
+  @apply flex items-start gap-3 rounded-lg px-1 py-1;
 }
 
 .appointment-contact-section {
@@ -2563,6 +2703,10 @@ onMounted(async () => {
 
 .appointment-drawer-form {
   @apply grid gap-3;
+}
+
+.appointment-drawer-form :deep(.grid) {
+  @apply items-start;
 }
 
 .appointment-drawer-form :deep(section:not(.appointment-contact-accordion)),

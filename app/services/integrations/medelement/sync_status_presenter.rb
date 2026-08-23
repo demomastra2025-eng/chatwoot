@@ -12,6 +12,8 @@ class Integrations::Medelement::SyncStatusPresenter
 
     {
       run: run&.api_payload,
+      phase_statuses: phase_statuses,
+      schedules: Integrations::Medelement::CronScheduleService.new(hook: hook).schedule_payload,
       conflicts: presented_conflicts(listed_scope),
       conflict_counts: conflict_counts,
       conflict_pagination: conflict_pagination(listed_scope.count)
@@ -52,6 +54,26 @@ class Integrations::Medelement::SyncStatusPresenter
   end
 
   def latest_run
-    Integrations::Medelement::SyncRun.where(account_id: hook.account_id, hook_id: hook.id).recent.first
+    sync_runs.recent.first
+  end
+
+  def phase_statuses
+    Integrations::Medelement::SyncRun::PHASES.index_with do |phase|
+      run = sync_runs.where('phase_results ? :phase', phase: phase).recent.first
+      next unless run
+
+      result = run.phase_results[phase]
+      {
+        run_id: run.id,
+        trigger: run.trigger,
+        status: result['status'],
+        result: result,
+        last_synced_at: result['completed_at'] || run.completed_at&.iso8601 || run.updated_at.iso8601
+      }
+    end
+  end
+
+  def sync_runs
+    Integrations::Medelement::SyncRun.where(account_id: hook.account_id, hook_id: hook.id)
   end
 end

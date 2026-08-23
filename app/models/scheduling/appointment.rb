@@ -74,10 +74,6 @@
 class Scheduling::Appointment < ApplicationRecord
   include LlmFormattable
 
-  after_create_commit :dispatch_created_event
-  after_update_commit :dispatch_updated_events
-  after_update_commit :sync_deferred_touch_enrollments
-
   belongs_to :account
   belongs_to :company, optional: true
   belongs_to :contact, optional: true
@@ -95,7 +91,11 @@ class Scheduling::Appointment < ApplicationRecord
   before_validation :sync_account_id
   before_validation :inherit_contact_owner
   before_validation :assign_duration_min
+  after_update :capture_updated_changes_for_commit
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
+  after_create_commit :dispatch_created_event
+  after_update_commit :dispatch_updated_events
+  after_update_commit :sync_deferred_touch_enrollments
   after_commit :sync_contact_owner_from_owner, if: :saved_change_to_owner_id?
 
   validates :client_name, :starts_at, :ends_at, :source, presence: true
@@ -178,7 +178,15 @@ class Scheduling::Appointment < ApplicationRecord
   end
 
   def changed_attributes_payload
-    previous_changes.except('updated_at', :updated_at)
+    (@updated_changes_for_commit.presence || previous_changes).except('updated_at', :updated_at)
+  end
+
+  def capture_updated_changes_for_commit
+    @updated_changes_for_commit ||= {}
+    saved_changes.each do |attribute, (previous_value, current_value)|
+      original_value = @updated_changes_for_commit.key?(attribute) ? @updated_changes_for_commit.dig(attribute, 0) : previous_value
+      @updated_changes_for_commit[attribute] = [original_value, current_value]
+    end
   end
 
   def dispatch_created_event
@@ -186,7 +194,8 @@ class Scheduling::Appointment < ApplicationRecord
       APPOINTMENT_CREATED,
       Time.zone.now,
       appointment: self,
-      performed_by: Current.executed_by
+      performed_by: Current.executed_by,
+      medelement_outbound_snapshot: medelement_outbound_snapshot
     )
   end
 
@@ -199,10 +208,13 @@ class Scheduling::Appointment < ApplicationRecord
       Time.zone.now,
       appointment: self,
       performed_by: Current.executed_by,
-      changed_attributes: changed_attributes
+      changed_attributes: changed_attributes,
+      medelement_outbound_snapshot: medelement_outbound_snapshot
     )
 
-    dispatch_status_event(changed_attributes) if saved_change_to_status?
+    dispatch_status_event(changed_attributes) if changed_attributes.key?('status')
+  ensure
+    @updated_changes_for_commit = nil
   end
 
   def dispatch_status_event(changed_attributes)
@@ -221,8 +233,15 @@ class Scheduling::Appointment < ApplicationRecord
       Time.zone.now,
       appointment: self,
       performed_by: Current.executed_by,
-      changed_attributes: changed_attributes
+      changed_attributes: changed_attributes,
+      medelement_outbound_snapshot: medelement_outbound_snapshot
     )
+  end
+
+  def medelement_outbound_snapshot
+    return unless Current.executed_by.is_a?(User)
+
+    Integrations::Medelement::OutboundChangeService.appointment_event_snapshot(self)
   end
 
   def assign_duration_min
