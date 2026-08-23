@@ -65,6 +65,105 @@ RSpec.describe Whatsapp::WebhookSubscriptionHealthService do
     expect(described_class.new(channel).perform).to eq(:skipped)
   end
 
+  it 'skips a channel that already requires provider reauthorization without calling Meta' do
+    channel.update!(
+      provider_config: channel.provider_config.merge(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => { 'code' => 190, 'type' => 'OAuthException' }
+      )
+    )
+
+    expect(Whatsapp::FacebookApiClient).not_to receive(:new)
+
+    expect(described_class.new(channel).perform).to eq(:skipped)
+  end
+
+  it 'records terminal provider authorization errors without retrying the health check' do
+    error_payload = {
+      'error' => {
+        'code' => 190,
+        'type' => 'OAuthException',
+        'message' => 'The token has expired'
+      }
+    }
+    response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+    provider_error = Whatsapp::FacebookApiClient::Error.new('WABA app subscriptions fetch failed', response)
+    allow(api_client).to receive(:app_subscribed_to_waba?).and_raise(provider_error)
+    allow(channel).to receive(:record_provider_authorization_error_if_current!).and_return(true)
+
+    expect(described_class.new(channel).perform).to eq(:reauthorization_required)
+    expect(channel).to have_received(:record_provider_authorization_error_if_current!).with(
+      hash_including('code' => 190, 'type' => 'OAuthException'),
+      expected_credential_fingerprint: kind_of(String)
+    )
+  end
+
+  it 'ignores a stale terminal authorization error after the credential rotates' do
+    error_payload = {
+      'error' => {
+        'code' => 190,
+        'type' => 'OAuthException',
+        'message' => 'The old token has expired'
+      }
+    }
+    response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+    provider_error = Whatsapp::FacebookApiClient::Error.new('WABA app subscriptions fetch failed', response)
+    allow(api_client).to receive(:app_subscribed_to_waba?) do
+      channel.update!(provider_config: channel.provider_config.merge('api_key' => 'rotated-token'))
+      raise provider_error
+    end
+
+    expect(described_class.new(channel).perform).to eq(:skipped)
+
+    config = channel.reload.provider_config
+    expect(config['api_key']).to eq('rotated-token')
+    expect(config).not_to include('authorization_status', 'authorization_error')
+    expect(channel.reauthorization_required?).to be(false)
+  end
+
+  it 'rejects a stale terminal authorization error when the credential rotates during the live health recheck' do
+    error_payload = {
+      'error' => {
+        'code' => 190,
+        'type' => 'OAuthException',
+        'message' => 'The old token has expired'
+      }
+    }
+    response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+    provider_error = Whatsapp::FacebookApiClient::Error.new('WABA app subscriptions fetch failed', response)
+    provider_health = instance_double(Meta::AuthorizationHealthCheckService)
+    allow(api_client).to receive(:app_subscribed_to_waba?).and_raise(provider_error)
+    allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(provider_health)
+    allow(provider_health).to receive(:healthy?) do
+      channel.update!(provider_config: channel.provider_config.merge('api_key' => 'rotated-during-health-check'))
+      false
+    end
+
+    expect(described_class.new(channel).perform).to eq(:skipped)
+
+    config = channel.reload.provider_config
+    expect(config['api_key']).to eq('rotated-during-health-check')
+    expect(config).not_to include('authorization_status', 'authorization_error')
+    expect(channel.reauthorization_required?).to be(false)
+  end
+
+  it 'keeps transient provider errors retryable without recording reauthorization' do
+    error_payload = {
+      'error' => {
+        'code' => 4,
+        'type' => 'OAuthException',
+        'message' => 'Application request limit reached'
+      }
+    }
+    response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 429)
+    provider_error = Whatsapp::FacebookApiClient::Error.new('WABA app subscriptions fetch failed', response)
+    allow(api_client).to receive(:app_subscribed_to_waba?).and_raise(provider_error)
+
+    expect(channel).not_to receive(:record_provider_authorization_error!)
+    expect { described_class.new(channel).perform }
+      .to raise_error(described_class::CheckError, /Application request limit reached/)
+  end
+
   it 'wraps provider failures in a retryable error without exposing credentials' do
     allow(api_client).to receive(:app_subscribed_to_waba?).and_raise('request failed token-secret')
 

@@ -1,3 +1,5 @@
+require 'digest'
+
 module Whatsapp::DurableReauthorization
   DURABLE_REAUTHORIZATION_CONFIG_KEY = 'reauthorization_required'.freeze
   AUTHORIZATION_FAILURE_CONFIG_KEYS = %w[authorization_status authorization_error reauthorization_required].freeze
@@ -34,7 +36,49 @@ module Whatsapp::DurableReauthorization
     end
   end
 
+  def record_provider_authorization_error_if_current!(payload, expected_credential_fingerprint:)
+    error_payload = self.class.provider_authorization_error(payload)
+    return false unless error_payload
+    return false unless provider_credential_fingerprint_matches?(expected_credential_fingerprint)
+    return false if provider_authorization_healthy_after_error?
+
+    persist_provider_authorization_error_if_current!(error_payload, expected_credential_fingerprint)
+  end
+
   private
+
+  def provider_credential_fingerprint_matches?(expected_fingerprint, config: provider_config.to_h)
+    return true if expected_fingerprint.blank?
+
+    credential_identity = [config['business_account_id'], config['api_key']]
+    Digest::SHA256.hexdigest(credential_identity.map(&:to_s).join("\0")) == expected_fingerprint
+  end
+
+  def persist_provider_authorization_error_if_current!(error_payload, expected_fingerprint)
+    already_requires_reauthorization = reauthorization_required?
+    safe_error_payload = sanitize_provider_metadata(error_payload)
+    applied = persist_provider_authorization_error_state_if_current!(safe_error_payload, expected_fingerprint)
+    return false unless applied
+
+    prompt_reauthorization! unless already_requires_reauthorization
+    true
+  end
+
+  def persist_provider_authorization_error_state_if_current!(safe_error_payload, expected_fingerprint)
+    with_lock do
+      reload
+      config = provider_config.to_h.deep_dup
+      next false unless provider_credential_fingerprint_matches?(expected_fingerprint, config: config)
+
+      persist_provider_config_state!(
+        config.merge(
+          'authorization_status' => 'reauthorization_required',
+          'authorization_error' => safe_error_payload
+        )
+      )
+      true
+    end
+  end
 
   def with_durable_reauthorization_lock(&)
     Whatsapp::WabaLock.new("channel-reauthorization-#{id}").with_lock(&)
