@@ -37,6 +37,7 @@ whatsapp_pending_message_mutation_sweep_job:
   cron: '*/5 * * * *'
   class: 'Whatsapp::PendingMessageMutationSweepJob'
   queue: scheduled_jobs
+  active_job: true
 
 # reconcile active native telephony sessions
 telephony_call_reconciliation_job:

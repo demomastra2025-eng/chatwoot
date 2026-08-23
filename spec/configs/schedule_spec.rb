@@ -35,7 +35,8 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule['whatsapp_pending_message_mutation_sweep_job']).to include(
       'cron' => '*/5 * * * *',
       'class' => 'Whatsapp::PendingMessageMutationSweepJob',
-      'queue' => 'scheduled_jobs'
+      'queue' => 'scheduled_jobs',
+      'active_job' => true
     )
   end
 
