@@ -77,7 +77,19 @@ export default {
           this.isEditing &&
           ['access_token', 'secret_settings'].includes(item.store)
         ) {
-          return { ...normalizedItem, validation: '' };
+          return {
+            ...normalizedItem,
+            validation: '',
+            placeholder:
+              normalizedItem.placeholder ||
+              this.$t('INTEGRATION_APPS.ADD.FORM.SECRET_KEEP_PLACEHOLDER'),
+            help: [
+              normalizedItem.help,
+              this.$t('INTEGRATION_APPS.ADD.FORM.SECRET_KEEP_HELP'),
+            ]
+              .filter(Boolean)
+              .join(' '),
+          };
         }
         return normalizedItem;
       });
@@ -304,7 +316,11 @@ export default {
         />
         <NextButton
           type="submit"
-          :label="$t('INTEGRATION_APPS.ADD.FORM.SUBMIT')"
+          :label="
+            isEditing
+              ? $t('INTEGRATION_APPS.ADD.FORM.SAVE')
+              : $t('INTEGRATION_APPS.ADD.FORM.SUBMIT')
+          "
           :is-loading="submitLoading"
         />
       </div>

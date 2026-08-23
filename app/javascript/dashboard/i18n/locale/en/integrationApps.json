@@ -45,7 +45,10 @@
           "LABEL": "Select Inbox",
           "PLACEHOLDER": "Select Inbox"
         },
+        "SECRET_KEEP_PLACEHOLDER": "Saved — enter a new value to replace it",
+        "SECRET_KEEP_HELP": "The saved value is hidden. Leave this field blank to keep it unchanged.",
         "SUBMIT": "Create",
+        "SAVE": "Save changes",
         "CANCEL": "Cancel"
       },
       "API": {
