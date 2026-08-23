@@ -10,12 +10,17 @@ export const SCHEDULING_VIEWS = [
   { value: 'kanban', labelKey: 'SCHEDULING.VIEWS.KANBAN' },
 ];
 
-export const APPOINTMENT_STATUS_VALUES = [
-  'scheduled',
-  'confirmed',
+export const ACTIVE_APPOINTMENT_STATUS_VALUES = ['scheduled', 'confirmed'];
+
+export const INACTIVE_APPOINTMENT_STATUS_VALUES = [
   'completed',
   'cancelled',
   'no_show',
+];
+
+export const APPOINTMENT_STATUS_VALUES = [
+  ...ACTIVE_APPOINTMENT_STATUS_VALUES,
+  ...INACTIVE_APPOINTMENT_STATUS_VALUES,
 ];
 
 export const APPOINTMENT_STATUS_ANY = 'any';

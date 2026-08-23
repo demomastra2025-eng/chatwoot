@@ -117,11 +117,32 @@ describe('useSchedulingCalendarStore', () => {
     );
   });
 
+  it('hides inactive appointments by default and includes them on opt-in', async () => {
+    showMock.mockResolvedValue({ data: { payload: {} } });
+    const store = useSchedulingCalendarStore();
+
+    await store.fetchCalendar();
+
+    expect(showMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'scheduled,confirmed' })
+    );
+
+    store.setShowInactiveAppointments(true);
+    await store.fetchCalendar();
+
+    expect(showMock.mock.calls.at(-1)[0]).not.toHaveProperty('status');
+    expect(
+      JSON.parse(window.localStorage.getItem(CALENDAR_STORAGE_KEY))
+        .showInactiveAppointments
+    ).toBe(true);
+  });
+
   it('resets all appointment filters without changing calendar navigation', () => {
     const store = useSchedulingCalendarStore();
     store.setStatusFilters(['confirmed']);
     store.setPaymentStatusFilters(['paid']);
     store.setCustomAttributeFilters({ visit_reason: ['follow_up'] });
+    store.setShowInactiveAppointments(true);
     store.setView('month');
 
     store.resetFilters();
@@ -129,6 +150,7 @@ describe('useSchedulingCalendarStore', () => {
     expect(store.statusFilters).toEqual([]);
     expect(store.paymentStatusFilters).toEqual([]);
     expect(store.customAttributeFilters).toEqual({});
+    expect(store.showInactiveAppointments).toBe(false);
     expect(store.currentView).toBe('month');
   });
 
@@ -286,6 +308,28 @@ describe('useSchedulingCalendarStore', () => {
         status: 'confirmed',
       },
     ]);
+  });
+
+  it('applies inactive visibility to realtime appointment updates', () => {
+    const store = useSchedulingCalendarStore();
+    store.currentView = 'week';
+    store.anchorDate = '2026-03-09T00:00:00.000Z';
+    const completedAppointment = {
+      ends_at: '2026-03-11T09:30:00.000Z',
+      id: 7,
+      resource_id: 5,
+      starts_at: '2026-03-11T09:00:00.000Z',
+      status: 'completed',
+    };
+
+    store.syncAppointment(completedAppointment);
+    expect(store.payload.appointments).toEqual([]);
+
+    store.setShowInactiveAppointments(true);
+    store.syncAppointment(completedAppointment);
+
+    expect(store.payload.appointments).toHaveLength(1);
+    expect(store.payload.appointments[0].status).toBe('completed');
   });
 
   it('removes synced appointments that no longer match active custom field filters', () => {

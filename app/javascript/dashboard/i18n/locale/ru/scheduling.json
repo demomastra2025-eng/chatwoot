@@ -113,6 +113,7 @@
       "RESOURCES": "Специалисты",
       "RESOURCES_SELECTED": "Выбрано: {count}",
       "RESOURCE_SEARCH": "Поиск специалиста",
+      "SHOW_INACTIVE_APPOINTMENTS": "Показывать неактуальные записи",
       "STATUS": "Статус записи"
     },
     "CALENDAR": {

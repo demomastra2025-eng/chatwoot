@@ -113,6 +113,7 @@
       "RESOURCES": "Specialists",
       "RESOURCES_SELECTED": "{count} selected",
       "RESOURCE_SEARCH": "Search specialists",
+      "SHOW_INACTIVE_APPOINTMENTS": "Show inactive appointments",
       "STATUS": "Appointment status"
     },
     "CALENDAR": {

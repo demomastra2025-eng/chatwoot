@@ -14,6 +14,7 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import Button from 'dashboard/components-next/button/Button.vue';
+import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 import CrmDealConversationPanel from 'dashboard/components-next/CRM/CrmDealConversationPanel.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
@@ -107,6 +108,7 @@ const filterDialogRef = ref(null);
 const appointmentFilterDraft = reactive({
   customFieldFilters: {},
   paymentStatusFilters: [],
+  showInactiveAppointments: false,
   statusFilters: [],
 });
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
@@ -905,6 +907,8 @@ const syncAppointmentFilterDraft = () => {
   appointmentFilterDraft.paymentStatusFilters = [
     ...calendarStore.paymentStatusFilters,
   ];
+  appointmentFilterDraft.showInactiveAppointments =
+    calendarStore.showInactiveAppointments;
   appointmentFilterDraft.customFieldFilters =
     cloneAppointmentCustomFieldFilters(customFieldFilters.value);
 };
@@ -922,6 +926,9 @@ const applyAppointmentFilters = async () => {
   );
 
   calendarStore.setStatusFilters(appointmentFilterDraft.statusFilters);
+  calendarStore.setShowInactiveAppointments(
+    appointmentFilterDraft.showInactiveAppointments
+  );
   calendarStore.setPaymentStatusFilters(
     appointmentFilterDraft.paymentStatusFilters
   );
@@ -2543,6 +2550,13 @@ onMounted(async () => {
             "
           />
         </div>
+
+        <label
+          class="flex cursor-pointer items-center gap-2 text-sm text-n-slate-12"
+        >
+          <Checkbox v-model="appointmentFilterDraft.showInactiveAppointments" />
+          <span>{{ $t('SCHEDULING.TOOLBAR.SHOW_INACTIVE_APPOINTMENTS') }}</span>
+        </label>
 
         <div class="grid gap-4 md:grid-cols-3">
           <SchedulingMultiSelectFilter

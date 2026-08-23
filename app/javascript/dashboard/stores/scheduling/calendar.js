@@ -11,7 +11,10 @@ import {
   formatCalendarTitle,
   shiftAnchorDate,
 } from 'dashboard/routes/dashboard/scheduling/helpers';
-import { CALENDAR_STORAGE_KEY } from 'dashboard/routes/dashboard/scheduling/constants';
+import {
+  ACTIVE_APPOINTMENT_STATUS_VALUES,
+  CALENDAR_STORAGE_KEY,
+} from 'dashboard/routes/dashboard/scheduling/constants';
 import { appointmentMatchesCustomFieldFilters } from 'dashboard/routes/dashboard/scheduling/customFieldFilters';
 import { preserveCustomAttributeKeys } from 'dashboard/utils/preserveCustomAttributeKeys';
 
@@ -53,6 +56,21 @@ const matchesNumericFilter = (selectedIds, value) => {
   return selectedIds.includes(Number(value));
 };
 
+const effectiveAppointmentStatusFilters = (
+  statusFilters,
+  showInactiveAppointments
+) => {
+  if (showInactiveAppointments) return statusFilters;
+
+  const activeStatusFilters = statusFilters.filter(status =>
+    ACTIVE_APPOINTMENT_STATUS_VALUES.includes(status)
+  );
+
+  return activeStatusFilters.length
+    ? activeStatusFilters
+    : ACTIVE_APPOINTMENT_STATUS_VALUES;
+};
+
 export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
   state: () => ({
     activeRequestId: 0,
@@ -64,6 +82,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     paymentStatusFilters: [],
     payload: defaultPayload(),
     selectedResourceIds: [],
+    showInactiveAppointments: false,
     statusFilters: [],
     ui: {
       error: null,
@@ -116,6 +135,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         this.selectedResourceIds = Array.isArray(parsed.selectedResourceIds)
           ? parsed.selectedResourceIds.map(Number)
           : [];
+        this.showInactiveAppointments =
+          parsed.showInactiveAppointments === true;
       } catch {
         // Ignore malformed local preferences and continue with defaults.
       } finally {
@@ -131,8 +152,8 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         JSON.stringify({
           anchorDate: this.anchorDate,
           currentView: this.currentView,
-
           selectedResourceIds: this.selectedResourceIds,
+          showInactiveAppointments: this.showInactiveAppointments,
         })
       );
     },
@@ -179,6 +200,16 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
       this.statusFilters = [...statuses];
     },
 
+    setShowInactiveAppointments(showInactiveAppointments) {
+      this.showInactiveAppointments = Boolean(showInactiveAppointments);
+      if (!this.showInactiveAppointments) {
+        this.statusFilters = this.statusFilters.filter(status =>
+          ACTIVE_APPOINTMENT_STATUS_VALUES.includes(status)
+        );
+      }
+      this.persistPreferences();
+    },
+
     setPaymentStatusFilters(statuses) {
       this.paymentStatusFilters = [...statuses];
     },
@@ -195,6 +226,7 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
     resetFilters() {
       this.clearQuickFilters();
       this.setCustomAttributeFilters({});
+      this.setShowInactiveAppointments(false);
     },
 
     async fetchCalendar(options = {}) {
@@ -223,8 +255,12 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
           params.resource_ids = this.selectedResourceIds.join(',');
         }
 
-        if (this.statusFilters.length) {
-          params.status = this.statusFilters.join(',');
+        const effectiveStatusFilters = effectiveAppointmentStatusFilters(
+          this.statusFilters,
+          this.showInactiveAppointments
+        );
+        if (effectiveStatusFilters.length) {
+          params.status = effectiveStatusFilters.join(',');
         }
 
         if (this.paymentStatusFilters.length) {
@@ -292,14 +328,18 @@ export const useSchedulingCalendarStore = defineStore('schedulingCalendar', {
         crmReferencesStore.appointmentFieldDefinitions,
         this.customAttributeFilters
       );
+      const effectiveStatusFilters = effectiveAppointmentStatusFilters(
+        this.statusFilters,
+        this.showInactiveAppointments
+      );
 
       return (
         matchesNumericFilter(
           this.selectedResourceIds,
           appointment.resourceId
         ) &&
-        (!this.statusFilters.length ||
-          this.statusFilters.includes(appointment.status)) &&
+        (!effectiveStatusFilters.length ||
+          effectiveStatusFilters.includes(appointment.status)) &&
         (!this.paymentStatusFilters.length ||
           this.paymentStatusFilters.includes(appointment.paymentStatus)) &&
         matchesCustomFields &&
