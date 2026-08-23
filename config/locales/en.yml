@@ -630,7 +630,7 @@ en:
         provider_obligations:
           title: '8. Provider Obligations'
           paragraphs:
-            - '8.1. Operation of the Service in accordance with the SLA (Section 9); notice of scheduled maintenance (48 hours); data security; support (support@vconsult.kz); documentation; incident notifications.'
+            - '8.1. Operation of the Service in accordance with the SLA (Section 9); notice of scheduled maintenance (48 hours); data security; support (support@one-link.kz); documentation; incident notifications.'
         sla:
           title: '9. SLA'
           paragraphs:
@@ -663,8 +663,8 @@ en:
           title: '13. Confidentiality'
           paragraphs:
             - '13.1. Confidential information may not be disclosed without written consent, except where required by the laws of the Republic of Kazakhstan, including requests from authorized public authorities.'
-            - '13.2. Data processing details are available at vconsult.kz/one-link/privacy.'
-            - '13.3. The DPA for EU/EEA data is available at vconsult.kz/one-link/dpa.'
+            - '13.2. Data processing details are available at https://one-link.kz/legal/en/privacy.'
+            - '13.3. The DPA for EU/EEA data is available upon request at legal@one-link.kz.'
             - '13.4. Confidentiality obligations survive for 3 years after termination.'
         force_majeure:
           title: '14. Force Majeure'
@@ -703,11 +703,11 @@ en:
           title: '19. Related Documents'
           points:
             - 'Privacy Policy'
-            - 'vconsult.kz/one-link/privacy'
+            - 'https://one-link.kz/legal/en/privacy'
             - 'Veritas Consult'
             - 'Republic of Kazakhstan'
-            - 'social@vconsult.kz'
-            - 'one-link.kz; vconsult.kz'
+            - 'legal@one-link.kz'
+            - 'one-link.kz'
             - '© 2026 IP "Veritas Consult" (VConsult)'
     privacy:
       title: 'Privacy Policy'
@@ -736,7 +736,7 @@ en:
           paragraphs:
             - '3.1. The Operator as Controller processes Client data (B2B): registration, payments, and account data.'
             - '3.2. The Operator as Processor processes End User data through the Platform on behalf of Clients.'
-            - '3.3. Detailed terms are set out in the DPA at vconsult.kz/one-link/dpa.'
+            - '3.3. The DPA is available upon request at legal@one-link.kz.'
         collected_data:
           title: '4. What Data We Collect'
           points:
@@ -762,7 +762,7 @@ en:
             - 'TikTok: identifiers, messages. Data is not sold and not used for advertising. The service may be unavailable in the EEA, Switzerland, the United Kingdom, and the United States.'
             - 'CRM systems (AmoCRM, Bitrix24, Altegio): the scope of transferred data depends on the Client integration settings.'
             - 'AI providers: data is shared in anonymized form. It is not used for training models without consent.'
-            - 'Hosting providers and contractors: DPAs are in place with all of them. The list is available at vconsult.kz/one-link/subprocessors. Changes are announced 14 days in advance.'
+            - 'Hosting providers and contractors: DPAs are in place with all of them. The list is available upon request at privacy@one-link.kz. Changes are announced 14 days in advance.'
         localization_and_transfers:
           title: '8. Data Localization and Cross-Border Transfers'
           paragraphs:
@@ -780,7 +780,7 @@ en:
           title: '10. Cookies'
           paragraphs:
             - 'Strictly necessary cookies (without consent); functional cookies (with consent); analytics cookies (with consent); marketing cookies (with separate consent).'
-            - 'A banner is displayed on the first visit. No pre-ticked checkboxes are used (C-673/17 Planet49). More details are available at vconsult.kz/one-link/cookies.'
+            - 'A banner is displayed on the first visit. No pre-ticked checkboxes are used (C-673/17 Planet49). More details are available at https://one-link.kz/legal/en/cookies.'
         data_security:
           title: '11. Data Security'
           paragraphs:
@@ -791,7 +791,7 @@ en:
           paragraphs:
             - 'Under the laws of Kazakhstan (Article 24): the right to know about collection; access; correction; blocking/destruction; withdrawal of consent (Article 8); appeal.'
             - 'Under the GDPR (EU/EEA): information (Articles 13–14); access (Article 15); rectification (Article 16); erasure (Article 17); restriction (Article 18); portability (Article 20, JSON/CSV); objection (Article 21); automated decision-making (Article 22); withdrawal of consent (Article 7(3)); complaint (Article 77).'
-            - 'Contact: privacy@one-link.kz or support@vconsult.kz. Time limits: Kazakhstan — 15 business days; GDPR — 1 month, extendable by 2 additional months for complex requests (Article 12(3)).'
+            - 'Contact: privacy@one-link.kz or support@one-link.kz. Time limits: Kazakhstan — 15 business days; GDPR — 1 month, extendable by 2 additional months for complex requests (Article 12(3)).'
         retention:
           title: '13. Retention Periods'
           points:
@@ -812,13 +812,13 @@ en:
         changes:
           title: '16. Changes'
           paragraphs:
-            - 'The current version is available at vconsult.kz/one-link/privacy. Material changes are notified by email 10 business days in advance.'
+            - 'The current version is available at https://one-link.kz/legal/en/privacy. Material changes are notified by email 10 business days in advance.'
         related_documents:
           title: '17. Related Documents'
           points:
-            - 'Terms of Service — vconsult.kz/one-link/terms'
+            - 'Terms of Service — https://one-link.kz/legal/en/terms'
             - 'Veritas Consult'
             - 'Republic of Kazakhstan'
-            - 'social@vconsult.kz'
-            - 'one-link.kz; vconsult.kz'
+            - 'legal@one-link.kz'
+            - 'one-link.kz'
             - '© 2026 IP "Veritas Consult" (VConsult)'
