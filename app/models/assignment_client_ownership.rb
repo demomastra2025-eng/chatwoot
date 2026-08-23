@@ -27,7 +27,7 @@
 # Foreign Keys
 #
 #  fk_rails_assignment_client_ownerships_account  (account_id => accounts.id)
-#  fk_rails_assignment_client_ownerships_contact  (contact_id => contacts.id)
+#  fk_rails_assignment_client_ownerships_contact  (contact_id => contacts.id) ON DELETE => cascade
 #  fk_rails_assignment_client_ownerships_policy   (assignment_policy_id => assignment_policies.id) ON DELETE => nullify
 #  fk_rails_assignment_client_ownerships_user     (user_id => users.id)
 #

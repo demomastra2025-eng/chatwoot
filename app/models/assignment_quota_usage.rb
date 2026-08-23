@@ -28,7 +28,7 @@
 # Foreign Keys
 #
 #  fk_rails_assignment_quota_usages_account       (account_id => accounts.id)
-#  fk_rails_assignment_quota_usages_contact       (contact_id => contacts.id)
+#  fk_rails_assignment_quota_usages_contact       (contact_id => contacts.id) ON DELETE => cascade
 #  fk_rails_assignment_quota_usages_conversation  (conversation_id => conversations.id)
 #  fk_rails_assignment_quota_usages_policy        (assignment_policy_id => assignment_policies.id) ON DELETE => nullify
 #  fk_rails_assignment_quota_usages_user          (user_id => users.id)

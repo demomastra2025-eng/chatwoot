@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_23_140000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_23_150000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3323,7 +3323,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_23_140000) do
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "assignment_client_ownerships", "accounts", name: "fk_rails_assignment_client_ownerships_account"
   add_foreign_key "assignment_client_ownerships", "assignment_policies", name: "fk_rails_assignment_client_ownerships_policy", on_delete: :nullify
-  add_foreign_key "assignment_client_ownerships", "contacts", name: "fk_rails_assignment_client_ownerships_contact"
+  add_foreign_key "assignment_client_ownerships", "contacts", name: "fk_rails_assignment_client_ownerships_contact", on_delete: :cascade
   add_foreign_key "assignment_client_ownerships", "users", name: "fk_rails_assignment_client_ownerships_user"
   add_foreign_key "assignment_decision_logs", "accounts", name: "fk_rails_assignment_decision_logs_account"
   add_foreign_key "assignment_decision_logs", "assignment_policies", name: "fk_rails_assignment_decision_logs_policy", on_delete: :nullify
@@ -3332,7 +3332,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_23_140000) do
   add_foreign_key "assignment_decision_logs", "users", column: "assigned_user_id", name: "fk_rails_assignment_decision_logs_assigned_user", on_delete: :nullify
   add_foreign_key "assignment_quota_usages", "accounts", name: "fk_rails_assignment_quota_usages_account"
   add_foreign_key "assignment_quota_usages", "assignment_policies", name: "fk_rails_assignment_quota_usages_policy", on_delete: :nullify
-  add_foreign_key "assignment_quota_usages", "contacts", name: "fk_rails_assignment_quota_usages_contact"
+  add_foreign_key "assignment_quota_usages", "contacts", name: "fk_rails_assignment_quota_usages_contact", on_delete: :cascade
   add_foreign_key "assignment_quota_usages", "conversations", name: "fk_rails_assignment_quota_usages_conversation"
   add_foreign_key "assignment_quota_usages", "users", name: "fk_rails_assignment_quota_usages_user"
   add_foreign_key "bulk_action_runs", "accounts"
