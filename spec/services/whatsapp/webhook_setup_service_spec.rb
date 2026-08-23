@@ -73,6 +73,8 @@ describe Whatsapp::WebhookSetupService do
         'source' => nil,
         'webhook_verify_token' => 'manual-channel-token'
       )
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
 
       with_modified_env FRONTEND_URL: 'https://one-link.kz', WHATSAPP_WEBHOOK_VERIFY_TOKEN: nil do
         expect(api_client).to receive(:subscribe_waba_webhook).with(
@@ -83,6 +85,42 @@ describe Whatsapp::WebhookSetupService do
 
         service.register_callback
       end
+    end
+
+    it 'uses the shared production ingress for embedded callbacks in another runtime' do
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_VERIFY_TOKEN_CONFIG_KEY, nil).and_return('production-verify-token')
+      expect(api_client).to receive(:subscribe_waba_webhook).with(
+        waba_id,
+        'https://app.one-link.kz/webhooks/whatsapp',
+        'production-verify-token'
+      )
+
+      with_modified_env FRONTEND_URL: 'https://dev.one-link.kz' do
+        service.register_callback
+      end
+    end
+
+    it 'rejects a shared ingress without its matching verify token before provider mutation' do
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_VERIFY_TOKEN_CONFIG_KEY, nil).and_return(nil)
+      expect(api_client).not_to receive(:subscribe_waba_webhook)
+
+      expect { service.register_callback }
+        .to raise_error(described_class::CallbackSetupError, /public webhook ingress verify token is required/)
+    end
+
+    it 'rejects an invalid shared ingress before mutating the provider callback' do
+      allow(GlobalConfigService).to receive(:load)
+        .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('http://dev.one-link.kz/webhooks/whatsapp')
+      expect(api_client).not_to receive(:subscribe_waba_webhook)
+
+      expect { service.register_callback }
+        .to raise_error(described_class::CallbackSetupError, /public webhook ingress must be an HTTPS/)
     end
 
     it 'durably records an unknown callback outcome and schedules reconciliation' do
@@ -618,7 +656,7 @@ describe Whatsapp::WebhookSetupService do
       before do
         foreign_channel = create(
           :channel_whatsapp,
-          account: create(:account),
+          account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
           provider: 'whatsapp_cloud',
           sync_templates: false,
           validate_provider_config: false
@@ -640,7 +678,7 @@ describe Whatsapp::WebhookSetupService do
       before do
         foreign_channel = create(
           :channel_whatsapp,
-          account: create(:account),
+          account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
           provider: 'whatsapp_cloud',
           sync_templates: false,
           validate_provider_config: false

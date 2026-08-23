@@ -1,8 +1,10 @@
 class Webhooks::WhatsappController < ActionController::API
   include MetaTokenVerifyConcern
   include WhatsappWebhookAuthenticationConcern
+  include WhatsappWebhookForwardingConcern
 
   before_action :verify_meta_signature!, only: :process_payload
+  before_action :verify_forwarded_delivery!, only: :process_payload
 
   def process_payload
     log_webhook_request
@@ -13,9 +15,12 @@ class Webhooks::WhatsappController < ActionController::API
       return
     end
 
-    webhook_job_payloads.each do |payload|
-      Webhooks::WhatsappEventsJob.perform_later(payload, routing_verification_context)
-    end
+    Whatsapp::WebhookIngressDispatcher.new(
+      payload: job_params,
+      central_ingress: central_ingress_callback?,
+      default_callback: default_callback?,
+      verification_context: method(:routing_verification_context)
+    ).perform
     head :ok
   end
 
@@ -23,6 +28,10 @@ class Webhooks::WhatsappController < ActionController::API
 
   def default_callback?
     request.path_parameters[:phone_number].blank?
+  end
+
+  def central_ingress_callback?
+    default_callback? && request.query_parameters['channel_id'].blank? && !forwarded_delivery?
   end
 
   def webhook_matches_channel_waba?(channel)
@@ -136,30 +145,8 @@ class Webhooks::WhatsappController < ActionController::API
     job_params
   end
 
-  def webhook_job_payloads
-    params = job_params
-    return [params] unless default_callback? && account_update_webhook?
-
-    Whatsapp::WebhookBatchNormalizer.new(params: params).perform.map { |payload| with_legacy_account_update_route(payload) }
-  end
-
-  def account_update_webhook?
-    webhook_changes.any? { |change| change[:field] == 'account_update' }
-  end
-
-  def with_legacy_account_update_route(payload)
-    return payload unless payload.dig(:entry, 0, :changes, 0, :field) == 'account_update'
-
-    waba_id = payload.dig(:entry, 0, :id).to_s
-    owner_account_id = Channel::Whatsapp.unambiguous_waba_owner_account_id(waba_id)
-    return payload if waba_id.blank? || owner_account_id.blank?
-
-    route_phone = Channel::Whatsapp.lifecycle_cloud.for_waba(waba_id).where(account_id: owner_account_id).order(:id).pick(:phone_number)
-    route_phone.present? ? payload.merge(phone_number: route_phone) : payload
-  end
-
-  def routing_verification_context
-    return waba_scoped_verification_context if default_callback?
+  def routing_verification_context(payload = job_params)
+    return waba_scoped_verification_context(payload) if default_callback?
 
     {
       hmac_verified: meta_signature_verified?,
@@ -169,20 +156,26 @@ class Webhooks::WhatsappController < ActionController::API
     }
   end
 
-  def waba_scoped_verification_context
+  def waba_scoped_verification_context(payload = job_params)
     {
       hmac_verified: meta_signature_verified?,
       channel_id: nil,
       channel_identity: {},
-      waba_account_ids: authenticated_waba_account_ids,
+      waba_account_ids: authenticated_waba_account_ids(payload_waba_ids(payload)),
       waba_scoped: true
     }
   end
 
-  def authenticated_waba_account_ids
-    webhook_waba_ids.index_with do |waba_id|
+  def authenticated_waba_account_ids(waba_ids = webhook_waba_ids)
+    waba_ids.index_with do |waba_id|
       Channel::Whatsapp.unambiguous_waba_owner_account_id(waba_id)
     end
+  end
+
+  def payload_waba_ids(payload)
+    Array(payload.to_h.with_indifferent_access[:entry]).filter_map do |entry|
+      entry.to_h.with_indifferent_access[:id].to_s.presence
+    end.uniq
   end
 
   def inactive_whatsapp_number?

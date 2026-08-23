@@ -8,6 +8,8 @@ class Whatsapp::WebhookSetupService
 
   CALLBACK_RECOVERY_KEY = Whatsapp::WebhookCallbackRecoveryService::CONFIG_KEY
   CALLBACK_RECOVERY_ACTIVE_STATES = Whatsapp::WebhookCallbackRecoveryService::ACTIVE_STATES
+  PUBLIC_INGRESS_CONFIG_KEY = 'WHATSAPP_WEBHOOK_PUBLIC_INGRESS_URL'.freeze
+  PUBLIC_INGRESS_VERIFY_TOKEN_CONFIG_KEY = 'WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN'.freeze
 
   # Positional arguments are retained for the existing setup callers.
   # rubocop:disable Metrics/ParameterLists
@@ -181,14 +183,41 @@ class Whatsapp::WebhookSetupService
   end
 
   def build_callback_url
-    @channel.callback_webhook_url
+    return @channel.callback_webhook_url if @channel.manual_webhook_callback?
+
+    public_ingress_url || @channel.callback_webhook_url
+  end
+
+  def public_ingress_url
+    value = GlobalConfigService.load(PUBLIC_INGRESS_CONFIG_KEY, nil).to_s.presence
+    return if value.blank?
+
+    uri = URI.parse(value)
+    raise ArgumentError, 'WhatsApp public webhook ingress must be an HTTPS /webhooks/whatsapp URL' unless valid_public_ingress_uri?(uri)
+
+    uri.to_s
+  rescue URI::InvalidURIError
+    raise ArgumentError, 'WhatsApp public webhook ingress must be an HTTPS /webhooks/whatsapp URL'
+  end
+
+  def valid_public_ingress_uri?(uri)
+    [
+      uri.is_a?(URI::HTTPS), uri.host.present?, uri.userinfo.blank?, uri.query.blank?, uri.fragment.blank?,
+      uri.path == '/webhooks/whatsapp'
+    ].all?
   end
 
   def callback_verify_token
+    return public_ingress_verify_token if !@channel.manual_webhook_callback? && public_ingress_url.present?
     return global_verify_token unless @channel.manual_webhook_callback?
 
     @channel.provider_config['webhook_verify_token'].presence ||
       raise(ArgumentError, 'Channel WhatsApp webhook verify token is required')
+  end
+
+  def public_ingress_verify_token
+    GlobalConfigService.load(PUBLIC_INGRESS_VERIFY_TOKEN_CONFIG_KEY, nil).presence ||
+      raise(ArgumentError, 'WhatsApp public webhook ingress verify token is required')
   end
 
   def global_verify_token

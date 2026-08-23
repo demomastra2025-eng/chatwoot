@@ -2,13 +2,16 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   MASKED_SECRET_CONFIG_KEYS = %w[
     CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY CAPTAIN_FIRECRAWL_API_KEY
     LINKEDIN_PERSONAL_GATEWAY_TOKEN LINKEDIN_PERSONAL_GATEWAY_MEDIA_SECRET
-    WHATSAPP_APP_SECRET WHATSAPP_WEBHOOK_VERIFY_TOKEN
+    WHATSAPP_APP_SECRET WHATSAPP_WEBHOOK_VERIFY_TOKEN WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN WHATSAPP_WEBHOOK_FORWARD_SECRET
   ].freeze
   CAPTAIN_CONFIG_KEYS = %w[
     CAPTAIN_OPENROUTER_API_KEY CAPTAIN_OPENROUTER_MANAGEMENT_API_KEY CAPTAIN_OPENROUTER_ENDPOINT
     CAPTAIN_FIRECRAWL_API_KEY
     CAPTAIN_AI_AGENT_SYSTEM_PROMPT CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT CAPTAIN_SYSTEM_PROMPTS
     ACCOUNT_CAPTAIN_TOKENS_LIMIT
+  ].freeze
+  WHATSAPP_WEBHOOK_ROUTING_CONFIG_KEYS = %w[
+    WHATSAPP_WEBHOOK_ROUTING_RULES WHATSAPP_WEBHOOK_FORWARD_TARGETS
   ].freeze
   APP_CONFIG_MAPPING = {
     'facebook' => %w[FB_APP_ID FB_VERIFY_TOKEN FB_APP_SECRET IG_VERIFY_TOKEN FACEBOOK_API_VERSION ENABLE_MESSENGER_CHANNEL_HUMAN_AGENT],
@@ -22,6 +25,9 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     'whatsapp_embedded' => %w[
       WHATSAPP_APP_ID WHATSAPP_APP_SECRET WHATSAPP_CONFIGURATION_ID WHATSAPP_WEBHOOK_VERIFY_TOKEN WHATSAPP_API_VERSION
       WHATSAPP_PROACTIVE_REAUTHORIZATION_ENABLED WHATSAPP_REQUIRE_NON_EXPIRING_SYSTEM_USER_TOKEN
+      WHATSAPP_WEBHOOK_PUBLIC_INGRESS_URL WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN
+      WHATSAPP_WEBHOOK_ROUTING_RULES WHATSAPP_WEBHOOK_FORWARD_TARGETS
+      WHATSAPP_WEBHOOK_FORWARD_SECRET WHATSAPP_WEBHOOK_RECEIVER_DESTINATION
     ],
     'linkedin_personal' => %w[
       LINKEDIN_PERSONAL_GATEWAY_URL LINKEDIN_PERSONAL_GATEWAY_TOKEN LINKEDIN_PERSONAL_GATEWAY_PUBLIC_BASE_URL
@@ -132,6 +138,7 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
   end
 
   def normalize_app_config_value(key, value, errors)
+    return normalize_json_object_config(key, value, errors) if WHATSAPP_WEBHOOK_ROUTING_CONFIG_KEYS.include?(key)
     return value unless key == Captain::Assistant::GLOBAL_SYSTEM_PROMPTS_INSTALLATION_CONFIG
 
     parsed_value = value.present? ? JSON.parse(value) : []
@@ -146,6 +153,16 @@ class SuperAdmin::AppConfigsController < SuperAdmin::ApplicationController
     end
   rescue JSON::ParserError
     errors << 'Captain system prompts must be valid JSON'
+    :invalid
+  end
+
+  def normalize_json_object_config(key, value, errors)
+    parsed_value = value.present? ? JSON.parse(value) : {}
+    raise JSON::ParserError unless parsed_value.is_a?(Hash)
+
+    JSON.generate(Whatsapp::WebhookIngressConfigValidator.validate!(key: key, value: parsed_value))
+  rescue JSON::ParserError, Whatsapp::WebhookIngressRouter::ConfigurationError
+    errors << "#{key.titleize} must be a supported JSON object"
     :invalid
   end
 

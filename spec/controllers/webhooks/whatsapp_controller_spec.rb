@@ -19,11 +19,11 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
     "sha256=#{OpenSSL::HMAC.hexdigest('SHA256', secret, payload)}"
   end
 
-  def post_whatsapp_webhook(path, payload, signature: signature_for(payload), env: { WHATSAPP_APP_SECRET: client_secret })
+  def post_whatsapp_webhook(path, payload, signature: signature_for(payload), env: { WHATSAPP_APP_SECRET: client_secret }, headers: {})
     with_modified_env env do
       post path,
            params: payload,
-           headers: { 'CONTENT_TYPE' => 'application/json', 'X-Hub-Signature-256' => signature }
+           headers: { 'CONTENT_TYPE' => 'application/json', 'X-Hub-Signature-256' => signature }.merge(headers)
     end
   end
 
@@ -33,6 +33,22 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
            params: payload,
            headers: { 'CONTENT_TYPE' => 'application/json' }
     end
+  end
+
+  def stub_ingress_routing(rules:, targets:)
+    allow(GlobalConfigService).to receive(:load).and_call_original
+    allow(GlobalConfigService).to receive(:load)
+      .with(Whatsapp::WebhookIngressRouter::RULES_CONFIG_KEY, '{}').and_return(rules)
+    allow(GlobalConfigService).to receive(:load)
+      .with(Whatsapp::WebhookIngressRouter::TARGETS_CONFIG_KEY, '{}').and_return(targets)
+  end
+
+  def stub_forward_receiver(destination:, secret: 'shared-internal-forward-secret')
+    allow(GlobalConfigService).to receive(:load).and_call_original
+    allow(GlobalConfigService).to receive(:load)
+      .with(Whatsapp::WebhookIngressRouter::RECEIVER_DESTINATION_CONFIG_KEY, nil).and_return(destination)
+    allow(GlobalConfigService).to receive(:load)
+      .with(Whatsapp::WebhookIngressRouter::FORWARD_SECRET_CONFIG_KEY, nil).and_return(secret)
   end
 
   before do
@@ -186,7 +202,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
     it 'splits a multi-account default update into owner-bound legacy worker payloads' do
       sibling = create(
         :channel_whatsapp,
-        account: create(:account),
+        account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         sync_templates: false,
         validate_provider_config: false
@@ -215,13 +231,168 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
         .to contain_exactly(channel.provider_config['business_account_id'], sibling.provider_config['business_account_id'])
     end
 
+    it 'routes one WABA to both DEV OneLink and Widget without processing it in production' do
+      waba_id = channel.provider_config['business_account_id']
+      stub_ingress_routing(
+        rules: { waba_id => %w[dev widget] },
+        targets: {
+          'dev' => 'https://dev.one-link.kz/webhooks/whatsapp',
+          'widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp'
+        }
+      )
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
+
+      post_whatsapp_webhook('/webhooks/whatsapp', default_account_update_body)
+
+      expect(response).to have_http_status(:success)
+      expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+      expect(Webhooks::WhatsappForwardJob).to have_received(:perform_later)
+        .with(hash_including('entry' => [hash_including('id' => waba_id)]), 'dev')
+      expect(Webhooks::WhatsappForwardJob).to have_received(:perform_later)
+        .with(hash_including('entry' => [hash_including('id' => waba_id)]), 'widget')
+    end
+
+    it 'processes a signed forwarded delivery locally instead of routing it back to DEV' do
+      waba_id = channel.provider_config['business_account_id']
+      stub_ingress_routing(
+        rules: { waba_id => ['dev'] },
+        targets: { 'dev' => 'https://dev.one-link.kz/webhooks/whatsapp' }
+      )
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
+      stub_forward_receiver(destination: 'dev')
+      forwarded_signature = Whatsapp::WebhookIngressRouter.forwarded_signature(
+        secret: 'shared-internal-forward-secret',
+        destination: 'dev',
+        body: default_account_update_body
+      )
+
+      post_whatsapp_webhook(
+        '/webhooks/whatsapp',
+        default_account_update_body,
+        headers: {
+          Whatsapp::WebhookIngressRouter::FORWARDED_HEADER => '1',
+          Whatsapp::WebhookIngressRouter::FORWARDED_DESTINATION_HEADER => 'dev',
+          Whatsapp::WebhookIngressRouter::FORWARDED_SIGNATURE_HEADER => forwarded_signature
+        }
+      )
+
+      expect(response).to have_http_status(:success)
+      expect(Webhooks::WhatsappEventsJob).to have_received(:perform_later).with(
+        hash_including('entry' => [hash_including('id' => waba_id)]),
+        hash_including(hmac_verified: true, waba_scoped: true)
+      )
+      expect(Webhooks::WhatsappForwardJob).not_to have_received(:perform_later)
+    end
+
+    it 'rejects a forged forwarded marker before dispatch' do
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
+      stub_forward_receiver(destination: 'dev')
+
+      post_whatsapp_webhook(
+        '/webhooks/whatsapp',
+        default_account_update_body,
+        headers: {
+          Whatsapp::WebhookIngressRouter::FORWARDED_HEADER => '1',
+          Whatsapp::WebhookIngressRouter::FORWARDED_DESTINATION_HEADER => 'dev',
+          Whatsapp::WebhookIngressRouter::FORWARDED_SIGNATURE_HEADER => 'sha256=invalid'
+        }
+      )
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+      expect(Webhooks::WhatsappForwardJob).not_to have_received(:perform_later)
+    end
+
+    it 'rejects a valid forwarded delivery targeted to another runtime' do
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
+      stub_forward_receiver(destination: 'widget')
+      forwarded_signature = Whatsapp::WebhookIngressRouter.forwarded_signature(
+        secret: 'shared-internal-forward-secret',
+        destination: 'dev',
+        body: default_account_update_body
+      )
+
+      post_whatsapp_webhook(
+        '/webhooks/whatsapp',
+        default_account_update_body,
+        headers: {
+          Whatsapp::WebhookIngressRouter::FORWARDED_HEADER => '1',
+          Whatsapp::WebhookIngressRouter::FORWARDED_DESTINATION_HEADER => 'dev',
+          Whatsapp::WebhookIngressRouter::FORWARDED_SIGNATURE_HEADER => forwarded_signature
+        }
+      )
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+      expect(Webhooks::WhatsappForwardJob).not_to have_received(:perform_later)
+    end
+
+    it 'rejects a forwarded delivery when the internal secret is not configured' do
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
+      stub_forward_receiver(destination: 'dev', secret: nil)
+
+      post_whatsapp_webhook(
+        '/webhooks/whatsapp',
+        default_account_update_body,
+        headers: {
+          Whatsapp::WebhookIngressRouter::FORWARDED_HEADER => '1',
+          Whatsapp::WebhookIngressRouter::FORWARDED_DESTINATION_HEADER => 'dev',
+          Whatsapp::WebhookIngressRouter::FORWARDED_SIGNATURE_HEADER => 'sha256=invalid'
+        }
+      )
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+      expect(Webhooks::WhatsappForwardJob).not_to have_received(:perform_later)
+    end
+
+    it 'splits a mixed Meta batch before routing it to isolated owners' do
+      remote_waba_id = '999999999999'
+      payload = {
+        object: 'whatsapp_business_account',
+        entry: [
+          {
+            id: channel.provider_config['business_account_id'],
+            changes: [{ field: 'messages', value: { messages: [{ id: 'wamid.prod' }] } }]
+          },
+          {
+            id: remote_waba_id,
+            changes: [{ field: 'messages', value: { messages: [{ id: 'wamid.widget' }] } }]
+          }
+        ]
+      }.to_json
+      stub_ingress_routing(
+        rules: { remote_waba_id => ['widget'] },
+        targets: { 'widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp' }
+      )
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
+
+      post_whatsapp_webhook('/webhooks/whatsapp', payload)
+
+      expect(response).to have_http_status(:success)
+      expect(Webhooks::WhatsappEventsJob).to have_received(:perform_later).with(
+        hash_including('entry' => [hash_including('id' => channel.provider_config['business_account_id'])]),
+        hash_including(waba_account_ids: { channel.provider_config['business_account_id'] => channel.account_id })
+      )
+      expect(Webhooks::WhatsappForwardJob).to have_received(:perform_later).with(
+        hash_including('entry' => [hash_including('id' => remote_waba_id)]),
+        'widget'
+      )
+    end
+
     it 'ignores a suspended cross-account WABA claim at the signed ingress boundary' do
       active_secret = 'active-owner-app-secret'
       waba_id = channel.provider_config['business_account_id']
       channel.update!(provider_config: channel.provider_config.merge('app_secret' => active_secret))
       stale_channel = create(
         :channel_whatsapp,
-        account: create(:account, status: :suspended),
+        account: create(:account, status: :suspended, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         validate_provider_config: false,
         sync_templates: false
@@ -257,7 +428,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       channel.update!(provider_config: channel.provider_config.merge('app_secret' => active_secret))
       pending_channel = create(
         :channel_whatsapp,
-        account: create(:account),
+        account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         validate_provider_config: false,
         sync_templates: false
@@ -513,7 +684,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       channel.update!(provider_config: channel.provider_config.merge('app_secret' => victim_secret))
       other_channel = create(
         :channel_whatsapp,
-        account: create(:account),
+        account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         validate_provider_config: false,
         sync_templates: false
@@ -561,7 +732,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       other_secret = 'other-account-app-secret'
       other_channel = create(
         :channel_whatsapp,
-        account: create(:account),
+        account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         validate_provider_config: false,
         sync_templates: false
@@ -639,7 +810,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       channel.update!(provider_config: channel.provider_config.merge('app_secret' => first_secret))
       second_channel = create(
         :channel_whatsapp,
-        account: create(:account),
+        account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         validate_provider_config: false,
         sync_templates: false
@@ -674,7 +845,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       global_secret = 'shared-application-secret'
       second_channel = create(
         :channel_whatsapp,
-        account: create(:account),
+        account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         validate_provider_config: false,
         sync_templates: false
@@ -734,7 +905,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       channel.update!(provider_config: channel.provider_config.merge('app_secret' => victim_secret))
       other_channel = create(
         :channel_whatsapp,
-        account: create(:account),
+        account: create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }),
         provider: 'whatsapp_cloud',
         validate_provider_config: false,
         sync_templates: false

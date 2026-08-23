@@ -184,6 +184,38 @@
   description: 'The verify token configured for the Meta app-level WhatsApp webhook callback'
   locked: false
   type: secret
+- name: WHATSAPP_WEBHOOK_PUBLIC_INGRESS_URL
+  value:
+  display_title: 'WhatsApp Public Webhook Ingress URL'
+  description: 'Optional shared HTTPS /webhooks/whatsapp callback used by Embedded Signup WABAs across OneLink runtimes.'
+  locked: false
+- name: WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN
+  value:
+  display_title: 'WhatsApp Public Webhook Verify Token'
+  description: 'Verify token accepted by the shared public ingress. Required when a remote runtime registers that callback.'
+  locked: false
+  type: secret
+- name: WHATSAPP_WEBHOOK_ROUTING_RULES
+  value: '{}'
+  display_title: 'WhatsApp Webhook Routing Rules'
+  description: 'JSON object mapping WABA or WABA:phone-number-id to prod, dev, and/or widget destinations. Unmapped events stay in production.'
+  locked: false
+- name: WHATSAPP_WEBHOOK_FORWARD_TARGETS
+  value: '{"dev":"https://dev.one-link.kz/webhooks/whatsapp","widget":"https://widget.one-link.kz/webhooks/meta/whatsapp"}'
+  display_title: 'WhatsApp Webhook Forward Targets'
+  description: 'JSON object containing both canonical DEV and Widget callback URLs. Arbitrary hosts, paths, ports, queries, and redirects are rejected.'
+  locked: false
+- name: WHATSAPP_WEBHOOK_FORWARD_SECRET
+  value:
+  display_title: 'WhatsApp Webhook Internal Forward Secret'
+  description: 'Shared secret used only to authenticate OneLink webhook relay deliveries between runtimes. Do not reuse the Meta App Secret.'
+  locked: false
+  type: secret
+- name: WHATSAPP_WEBHOOK_RECEIVER_DESTINATION
+  value:
+  display_title: 'WhatsApp Webhook Receiver Destination'
+  description: 'Local runtime identity (for example dev or widget). Forwarded deliveries for another destination are rejected.'
+  locked: false
 - name: WHATSAPP_API_VERSION
   display_title: 'WhatsApp API Version'
   description: 'Configure this if you want to use a different WhatsApp API version. Make sure its prefixed with `v`'

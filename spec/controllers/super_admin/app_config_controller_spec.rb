@@ -39,17 +39,16 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
           'CAPTAIN_OPENROUTER_API_KEY',
           'OpenRouter API Endpoint',
           'CAPTAIN_OPENROUTER_ENDPOINT',
-          'OpenRouter diagnostics',
-          'Catalog freshness',
-          'Catalog diff',
-          'Endpoint diff',
-          'Runtime telemetry',
-          'Runtime top signals',
-          'Workspace policy',
-          'Feature guardrails',
-          'policy: cache',
-          'Model eligibility samples',
-          'Queue OpenRouter Catalog Refresh'
+          'Ключ',
+          'Каталог моделей',
+          'Изменения каталога',
+          'Изменения endpoints',
+          'Runtime',
+          'Runtime-сигналы',
+          'Политика workspace',
+          'Доступность функций',
+          'Диагностика моделей',
+          'Обновить каталог моделей'
         )
       end
 
@@ -68,13 +67,20 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
       it 'does not render configured WhatsApp secrets on the embedded config page' do
         upsert_installation_config('WHATSAPP_APP_SECRET', 'test-whatsapp-app-secret')
         upsert_installation_config('WHATSAPP_WEBHOOK_VERIFY_TOKEN', 'test-whatsapp-verify-token')
+        upsert_installation_config('WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN', 'test-public-ingress-token')
+        upsert_installation_config('WHATSAPP_WEBHOOK_FORWARD_SECRET', 'test-internal-forward-secret')
         sign_in(super_admin, scope: :super_admin)
 
         get '/super_admin/app_config?config=whatsapp_embedded'
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include('Configured — leave blank to keep current key')
-        expect(response.body).not_to include('test-whatsapp-app-secret', 'test-whatsapp-verify-token')
+        expect(response.body).not_to include(
+          'test-whatsapp-app-secret',
+          'test-whatsapp-verify-token',
+          'test-public-ingress-token',
+          'test-internal-forward-secret'
+        )
       end
 
       it 'does not expose legacy direct-provider Captain key fields in Super Admin config' do
@@ -184,18 +190,91 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
       it 'keeps existing WhatsApp secrets when their masked fields are submitted blank' do
         upsert_installation_config('WHATSAPP_APP_SECRET', 'test-whatsapp-app-secret')
         upsert_installation_config('WHATSAPP_WEBHOOK_VERIFY_TOKEN', 'test-whatsapp-verify-token')
+        upsert_installation_config('WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN', 'test-public-ingress-token')
+        upsert_installation_config('WHATSAPP_WEBHOOK_FORWARD_SECRET', 'test-internal-forward-secret')
         sign_in(super_admin, scope: :super_admin)
 
         post '/super_admin/app_config?config=whatsapp_embedded', params: {
           app_config: {
             WHATSAPP_APP_SECRET: '',
-            WHATSAPP_WEBHOOK_VERIFY_TOKEN: ''
+            WHATSAPP_WEBHOOK_VERIFY_TOKEN: '',
+            WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN: '',
+            WHATSAPP_WEBHOOK_FORWARD_SECRET: ''
           }
         }
 
         expect(response).to have_http_status(:found)
         expect(InstallationConfig.find_by(name: 'WHATSAPP_APP_SECRET')&.value).to eq('test-whatsapp-app-secret')
         expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_VERIFY_TOKEN')&.value).to eq('test-whatsapp-verify-token')
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_PUBLIC_VERIFY_TOKEN')&.value).to eq('test-public-ingress-token')
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_FORWARD_SECRET')&.value).to eq('test-internal-forward-secret')
+      end
+
+      it 'normalizes WhatsApp webhook routing objects before persistence' do
+        sign_in(super_admin, scope: :super_admin)
+
+        post '/super_admin/app_config?config=whatsapp_embedded', params: {
+          app_config: {
+            WHATSAPP_WEBHOOK_ROUTING_RULES: '{ "123456": ["dev"] }',
+            WHATSAPP_WEBHOOK_FORWARD_TARGETS: <<~JSON.squish
+              {
+                "dev": "https://dev.one-link.kz/webhooks/whatsapp",
+                "widget": "https://widget.one-link.kz/webhooks/meta/whatsapp"
+              }
+            JSON
+          }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_ROUTING_RULES')&.value)
+          .to eq('{"123456":["dev"]}')
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_FORWARD_TARGETS')&.value)
+          .to eq(
+            '{"dev":"https://dev.one-link.kz/webhooks/whatsapp",' \
+            '"widget":"https://widget.one-link.kz/webhooks/meta/whatsapp"}'
+          )
+      end
+
+      it 'rejects a WhatsApp webhook routing value that is not a JSON object' do
+        upsert_installation_config('WHATSAPP_WEBHOOK_ROUTING_RULES', '{"123456":["dev"]}')
+        sign_in(super_admin, scope: :super_admin)
+
+        post '/super_admin/app_config?config=whatsapp_embedded', params: {
+          app_config: { WHATSAPP_WEBHOOK_ROUTING_RULES: '["dev"]' }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_ROUTING_RULES')&.value)
+          .to eq('{"123456":["dev"]}')
+      end
+
+      it 'rejects non-canonical WhatsApp webhook forward targets' do
+        canonical_target = {
+          dev: 'https://dev.one-link.kz/webhooks/whatsapp',
+          widget: 'https://widget.one-link.kz/webhooks/meta/whatsapp'
+        }.to_json
+        upsert_installation_config('WHATSAPP_WEBHOOK_FORWARD_TARGETS', canonical_target)
+        sign_in(super_admin, scope: :super_admin)
+
+        post '/super_admin/app_config?config=whatsapp_embedded', params: {
+          app_config: { WHATSAPP_WEBHOOK_FORWARD_TARGETS: '{"dev":"https://127.0.0.1/webhooks/whatsapp"}' }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_FORWARD_TARGETS')&.value).to eq(canonical_target)
+      end
+
+      it 'rejects invalid WhatsApp webhook route keys and destinations' do
+        existing_rules = '{"123456":["dev"]}'
+        upsert_installation_config('WHATSAPP_WEBHOOK_ROUTING_RULES', existing_rules)
+        sign_in(super_admin, scope: :super_admin)
+
+        post '/super_admin/app_config?config=whatsapp_embedded', params: {
+          app_config: { WHATSAPP_WEBHOOK_ROUTING_RULES: '{"not-a-waba":["internal"]}' }
+        }
+
+        expect(response).to have_http_status(:found)
+        expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_ROUTING_RULES')&.value).to eq(existing_rules)
       end
     end
   end
