@@ -20,6 +20,7 @@ class Scheduling::Appointments::UpsertService
     ApplicationRecord.transaction do
       apply_attributes!
       validate_medelement_patient!
+      validate_medelement_cabinet!
       validate_availability!
       new_record = appointment.new_record?
       appointment.save!
@@ -66,7 +67,7 @@ class Scheduling::Appointments::UpsertService
     prepaid_amount = resolve_int(:prepaid_amount, current: appointment.prepaid_amount || 0)
     prepaid_payment_method = resolve_prepaid_payment_method(prepaid_amount)
     settlement_amount = resolve_int(:settlement_amount, current: appointment.settlement_amount || 0)
-    client_identity = resolve_client_identity(contact)
+    client_identity = resolve_client_identity(contact, resource)
 
     requested_payment_status = resolve_string(:payment_status, current: appointment.payment_status.presence || 'awaiting_payment')
     requested_payment_status = 'cancelled' if resolve_string(:status, current: appointment.status.presence || 'scheduled') == 'cancelled' &&
@@ -189,28 +190,55 @@ class Scheduling::Appointments::UpsertService
     raise ArgumentError, 'client_name is required'
   end
 
-  def resolve_client_identity(contact)
-    structured_identity = CLIENT_NAME_PART_KEYS.any? { |key| params.key?(key) } ||
-                          CLIENT_NAME_PART_KEYS.any? { |key| appointment.public_send(key).present? }
-    return unless structured_identity
+  def resolve_client_identity(contact, resource)
+    return unless structured_client_identity?(contact, resource)
+
+    contact_identity = contact_identity_fallback(contact, resource)
 
     identity = {
-      first_name: resolve_optional_text(
-        :client_first_name,
-        current: appointment.client_first_name.presence || contact&.name
-      ),
-      last_name: resolve_optional_text(
-        :client_last_name,
-        current: appointment.client_last_name.presence || contact&.last_name
-      ),
-      middle_name: resolve_optional_text(
-        :client_middle_name,
-        current: appointment.client_middle_name.presence || contact&.middle_name
-      )
+      first_name: resolve_client_name_part(:client_first_name, contact_identity[:first_name]),
+      last_name: resolve_client_name_part(:client_last_name, contact_identity[:last_name]),
+      middle_name: resolve_client_name_part(:client_middle_name, contact_identity[:middle_name])
     }
-    return identity if identity[:first_name].present?
+    return identity if identity[:first_name].present? || medelement_resource?(resource)
 
     raise ArgumentError, 'client_first_name is required'
+  end
+
+  def structured_client_identity?(contact, resource)
+    CLIENT_NAME_PART_KEYS.any? { |key| params.key?(key) } ||
+      CLIENT_NAME_PART_KEYS.any? { |key| appointment.public_send(key).present? } ||
+      (medelement_resource?(resource) && medelement_contact_identity_present?(contact))
+  end
+
+  def medelement_contact_identity_present?(contact)
+    medelement_contact_name_present?(contact) || (contact&.name.present? && contact&.last_name.present?)
+  end
+
+  def medelement_contact_name_present?(contact)
+    %w[medelement_first_name medelement_last_name medelement_middle_name].any? do |key|
+      contact&.custom_attributes.to_h[key].present?
+    end
+  end
+
+  def contact_identity_fallback(contact, resource)
+    return medelement_contact_identity(contact) if medelement_resource?(resource) && medelement_contact_name_present?(contact)
+
+    { first_name: contact&.name, last_name: contact&.last_name, middle_name: contact&.middle_name }
+  end
+
+  def medelement_contact_identity(contact)
+    attributes = contact&.custom_attributes.to_h
+    {
+      first_name: attributes['medelement_first_name'].presence,
+      last_name: attributes['medelement_last_name'].presence,
+      middle_name: attributes['medelement_middle_name'].presence
+    }
+  end
+
+  def resolve_client_name_part(param_key, fallback)
+    current = appointment.public_send(param_key).presence || fallback
+    resolve_optional_text(param_key, current: current)
   end
 
   def resolve_client_phone(contact)
@@ -231,6 +259,34 @@ class Scheduling::Appointments::UpsertService
 
     validate_medelement_phone!
     validate_medelement_services!
+  end
+
+  def validate_medelement_cabinet!
+    return unless medelement_resource?
+    return if appointment.status == 'cancelled'
+    return unless medelement_cabinet_validation_required?
+
+    cabinet_code = appointment.custom_attributes.to_h['medelement_cabinet_code'].to_s.presence
+    if cabinet_code.blank?
+      raise Scheduling::Error.new(
+        code: 'MEDELEMENT_CABINET_REQUIRED',
+        message: 'Medelement cabinet must be selected',
+        status: :unprocessable_content
+      )
+    end
+
+    valid_codes = Array(appointment.resource.custom_attributes.to_h['medelement_cabinets']).pluck('companyCabinetCode').map(&:to_s)
+    return if cabinet_code.in?(valid_codes)
+
+    raise Scheduling::Error.new(
+      code: 'MEDELEMENT_CABINET_INVALID',
+      message: 'Medelement cabinet must belong to the selected specialist',
+      status: :unprocessable_content
+    )
+  end
+
+  def medelement_cabinet_validation_required?
+    appointment.new_record? || params.key?(:resource_id) || params[:custom_attributes].to_h.with_indifferent_access.key?(:medelement_cabinet_code)
   end
 
   def validate_medelement_phone!
@@ -287,8 +343,8 @@ class Scheduling::Appointments::UpsertService
     )
   end
 
-  def medelement_resource?
-    appointment.resource&.custom_attributes.to_h['medelement_specialist_code'].present?
+  def medelement_resource?(resource = appointment.resource)
+    resource&.custom_attributes.to_h['medelement_specialist_code'].present?
   end
 
   def resolve_company(contact)

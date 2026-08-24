@@ -19,7 +19,8 @@ class Integrations::Medelement::ProviderCommandJob < MutexApplicationJob
   def lock_keys(command)
     target_ids = []
     target_ids << "contact-#{command.contact_id}" if command.contact_id
-    target_ids << command.appointment.resource_id.to_s if command.appointment&.resource_id
+    resource_id = command.request_snapshot.to_h.dig('reception', 'resource_id') || command.appointment&.resource_id
+    target_ids << resource_id.to_s if resource_id
 
     target_ids.uniq.map do |target_id|
       format(Redis::RedisKeys::MEDELEMENT_PROVIDER_COMMAND_MUTEX, hook_id: command.hook_id, target_id: target_id)

@@ -30,6 +30,8 @@ RSpec.describe MedelementOutboundChangeListener do
       entity_id: appointment.id,
       event_name: 'appointment_updated',
       change: {
+        account_id: account.id,
+        payload_version: 2,
         changed_attributes: event.data[:changed_attributes],
         desired_attributes: hash_including(
           'starts_at' => appointment.starts_at,
@@ -52,6 +54,43 @@ RSpec.describe MedelementOutboundChangeListener do
     )
 
     listener.appointment_updated(event)
+
+    expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
+  end
+
+  it 'enqueues Captain appointment changes without assigning an assistant id as a user id' do
+    assistant = create(:captain_assistant, account: account)
+    event = Events::Base.new(
+      'appointment_created',
+      Time.current,
+      appointment: appointment,
+      performed_by: assistant
+    )
+
+    listener.appointment_created(event)
+
+    expect(Integrations::Medelement::OutboundChangeJob).to have_been_enqueued.with(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_created',
+      change: {
+        account_id: account.id,
+        payload_version: 2,
+        changed_attributes: {},
+        desired_attributes: hash_including(
+          Integrations::Medelement::OutboundChangeService::CONTACT_SNAPSHOT_KEY => anything
+        )
+      },
+      actor_id: nil,
+      event_key: a_string_starting_with('onelink-event:')
+    )
+  end
+
+  it 'ignores a Captain assistant from another account' do
+    assistant = create(:captain_assistant, account: create(:account))
+    event = Events::Base.new('appointment_created', Time.current, appointment: appointment, performed_by: assistant)
+
+    listener.appointment_created(event)
 
     expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
   end
@@ -88,6 +127,8 @@ RSpec.describe MedelementOutboundChangeListener do
       entity_id: linked_contact.id,
       event_name: 'contact_updated',
       change: {
+        account_id: account.id,
+        payload_version: 2,
         changed_attributes: { 'name' => %w[Before After] },
         desired_attributes: linked_contact.attributes.slice(*Integrations::Medelement::OutboundChangeService::CONTACT_UPDATE_KEYS)
       },
@@ -107,6 +148,8 @@ RSpec.describe MedelementOutboundChangeListener do
       entity_id: contact.id,
       event_name: 'contact.created',
       change: {
+        account_id: account.id,
+        payload_version: 2,
         changed_attributes: {},
         desired_attributes: contact.attributes.slice(*Integrations::Medelement::OutboundChangeService::CONTACT_UPDATE_KEYS)
       },
@@ -137,6 +180,8 @@ RSpec.describe MedelementOutboundChangeListener do
       entity_id: appointment.id,
       event_name: 'appointment_created',
       change: {
+        account_id: account.id,
+        payload_version: 2,
         changed_attributes: {},
         desired_attributes: hash_including(
           'client_first_name' => 'Event',

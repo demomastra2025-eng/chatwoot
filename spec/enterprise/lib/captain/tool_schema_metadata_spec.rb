@@ -119,6 +119,22 @@ RSpec.describe 'Captain tool schema metadata' do
     end
   end
 
+  it 'documents scheduling appointment types and the Medelement cabinet contract in both scopes' do
+    tool_pairs = [
+      [Captain::Tools::CreateAppointmentTool, Captain::Tools::Copilot::CreateAppointmentService],
+      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService]
+    ]
+
+    tool_pairs.each do |public_tool, assistant_tool|
+      [public_tool, assistant_tool].each do |tool|
+        expect(tool.parameters[:appointment_type].description).to include('primary, secondary, or other')
+        expect(tool.parameters[:service_id].description).to include('search_scheduling_services')
+        expect(tool.parameters[:custom_attributes].description).to include('medelement_cabinet_code')
+        expect(tool.parameters[:custom_attributes].description).to include('companyCabinetCode')
+      end
+    end
+  end
+
   it 'keeps registry descriptions aligned with runtime descriptions for representative built-in tools' do
     expect(Captain::ToolRegistry.definition_for('create_touch').description).to eq(
       Captain::Tools::CreateTouchTool.description

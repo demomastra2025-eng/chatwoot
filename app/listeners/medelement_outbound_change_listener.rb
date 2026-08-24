@@ -35,7 +35,9 @@ class MedelementOutboundChangeListener < BaseListener
       event_name: event.name,
       change: {
         changed_attributes: changed_attributes,
-        desired_attributes: desired
+        desired_attributes: desired,
+        account_id: contact.account_id,
+        payload_version: Integrations::Medelement::OutboundChangeJob::PAYLOAD_VERSION
       },
       actor_id: performed_by.id,
       event_key: event_key(event, 'contact', contact.id, desired)
@@ -45,7 +47,7 @@ class MedelementOutboundChangeListener < BaseListener
   def enqueue_appointment(event)
     appointment = event.data[:appointment]
     performed_by = event.data[:performed_by]
-    return if appointment.blank? || !performed_by.is_a?(User)
+    return if appointment.blank? || !appointment_outbound_actor?(performed_by, appointment)
 
     changed_attributes = event.data[:changed_attributes].to_h
     desired = event.data[:medelement_outbound_snapshot].presence ||
@@ -56,11 +58,23 @@ class MedelementOutboundChangeListener < BaseListener
       event_name: event.name,
       change: {
         changed_attributes: changed_attributes,
-        desired_attributes: desired
+        desired_attributes: desired,
+        account_id: appointment.account_id,
+        payload_version: Integrations::Medelement::OutboundChangeJob::PAYLOAD_VERSION
       },
-      actor_id: performed_by.id,
+      actor_id: outbound_actor_id(performed_by),
       event_key: event_key(event, 'appointment', appointment.id, desired)
     )
+  end
+
+  def appointment_outbound_actor?(actor, appointment)
+    return true if actor.is_a?(User)
+
+    defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == appointment.account_id
+  end
+
+  def outbound_actor_id(actor)
+    actor.id if actor.is_a?(User)
   end
 
   def enqueue_change(**attributes)

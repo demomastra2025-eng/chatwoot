@@ -165,6 +165,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
     service_codes = nomenclature_codes
     {
       'time_zone' => configuration.time_zone,
+      'resource_id' => appointment_resource_id,
       'specialist_code' => specialist_code,
       'source_starts_at' => timestamp(source_appointment_attribute('starts_at')),
       'source_ends_at' => timestamp(source_appointment_attribute('ends_at')),
@@ -174,6 +175,12 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'nomenclature_code' => service_codes.first,
       'nomenclature_codes' => service_codes
     }.compact
+  end
+
+  def appointment_resource_id
+    return if appointment.blank?
+
+    Integer(appointment_attribute('resource_id'), exception: false)
   end
 
   def confirmation_snapshot

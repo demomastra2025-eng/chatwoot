@@ -53,9 +53,56 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     ).perform
 
     expect(command).to have_attributes(operation: 'create_reception', appointment_id: appointment.id)
+    expect(command.request_snapshot.dig('reception', 'resource_id')).to eq(appointment.resource_id)
     expect(command.confirmation_request).to have_attributes(status: 'confirmed', resolution_source: 'system')
     expect(command.confirmation_request.resolution_metadata).to include('medelement_auto_sync' => true)
     expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.with(command.confirmation_request_id)
+  end
+
+  it 'creates and system-confirms a Captain reception command without a user requester' do
+    command = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_created',
+      actor_id: nil
+    ).perform
+
+    expect(command).to have_attributes(
+      operation: 'create_reception',
+      appointment_id: appointment.id,
+      requested_by_id: nil
+    )
+    expect(command.confirmation_request).to have_attributes(status: 'confirmed', requested_by_id: nil, resolution_source: 'system')
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.with(command.confirmation_request_id)
+  end
+
+  it 'accepts new producer metadata through the legacy worker service call' do
+    command = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_created',
+      change: {
+        account_id: account.id,
+        payload_version: Integrations::Medelement::OutboundChangeJob::PAYLOAD_VERSION
+      },
+      actor_id: nil
+    ).perform
+
+    expect(command).to have_attributes(operation: 'create_reception', appointment_id: appointment.id, requested_by_id: nil)
+  end
+
+  it 'rejects an appointment that does not belong to the bound account' do
+    foreign_account = create(:account)
+
+    expect do
+      described_class.new(
+        entity_type: 'appointment',
+        entity_id: appointment.id,
+        account_id: foreign_account.id,
+        event_name: 'appointment_created',
+        actor_id: actor.id
+      ).perform
+    end.to raise_error(ActiveRecord::RecordNotFound)
   end
 
   it 'system-confirms an existing matching dashboard command instead of creating a duplicate' do

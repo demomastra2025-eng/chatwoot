@@ -8,6 +8,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandJob do
       Integrations::Medelement::ProviderCommand,
       hook_id: 7,
       contact_id: 55,
+      request_snapshot: { 'reception' => { 'resource_id' => 101 } },
       appointment: first_appointment
     )
   end
@@ -16,6 +17,7 @@ RSpec.describe Integrations::Medelement::ProviderCommandJob do
       Integrations::Medelement::ProviderCommand,
       hook_id: 7,
       contact_id: 55,
+      request_snapshot: { 'reception' => { 'resource_id' => 202 } },
       appointment: second_appointment
     )
   end
@@ -41,5 +43,32 @@ RSpec.describe Integrations::Medelement::ProviderCommandJob do
 
     expect(reconciliation_keys).to eq(execution_keys)
     expect(execution_keys).to eq(execution_keys.sort)
+  end
+
+  it 'keeps using the immutable resource after the appointment moves' do
+    command = instance_double(
+      Integrations::Medelement::ProviderCommand,
+      hook_id: 7,
+      contact_id: nil,
+      request_snapshot: { 'reception' => { 'resource_id' => 101 } },
+      appointment: instance_double(Scheduling::Appointment, resource_id: 999)
+    )
+    expected_key = format(Redis::RedisKeys::MEDELEMENT_PROVIDER_COMMAND_MUTEX, hook_id: 7, target_id: 101)
+
+    expect(described_class.new.lock_keys(command)).to contain_exactly(expected_key)
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob.new.send(:lock_keys, command)).to contain_exactly(expected_key)
+  end
+
+  it 'falls back to the current resource for legacy snapshots' do
+    command = instance_double(
+      Integrations::Medelement::ProviderCommand,
+      hook_id: 7,
+      contact_id: nil,
+      request_snapshot: {},
+      appointment: first_appointment
+    )
+    expected_key = format(Redis::RedisKeys::MEDELEMENT_PROVIDER_COMMAND_MUTEX, hook_id: 7, target_id: 101)
+
+    expect(described_class.new.lock_keys(command)).to contain_exactly(expected_key)
   end
 end

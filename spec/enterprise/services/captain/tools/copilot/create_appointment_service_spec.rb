@@ -79,6 +79,40 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
       expect(appointment.duration_min).to eq(30)
       expect(appointment.ends_at).to eq(starts_at + 30.minutes)
     end
+
+    it 'creates a Medelement appointment from structured contact custom names' do
+      resource.update!(
+        custom_attributes: {
+          'medelement_specialist_code' => 'specialist-1',
+          'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+        }
+      )
+      contact.update!(
+        name: 'Жандаулет Гусман',
+        last_name: nil,
+        phone_number: ['+7', '700', '000', '0001'].join,
+        custom_attributes: contact.custom_attributes.merge(
+          'medelement_first_name' => 'Жандаулет',
+          'medelement_last_name' => 'Гусман',
+          'iin' => '940720300129'
+        )
+      )
+
+      execute_confirmed(
+        resource_id: resource.id,
+        starts_at: starts_at.iso8601,
+        duration_min: 30,
+        appointment_type: 'primary',
+        custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }
+      )
+
+      expect(account.scheduling_appointments.order(:id).last).to have_attributes(
+        client_first_name: 'Жандаулет',
+        client_last_name: 'Гусман',
+        client_identifier: '940720300129',
+        appointment_type: 'primary'
+      )
+    end
   end
 
   def execute_confirmed(**arguments)

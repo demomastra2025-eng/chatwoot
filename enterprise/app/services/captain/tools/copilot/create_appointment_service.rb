@@ -8,13 +8,17 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
   param :starts_at, type: :string, desc: 'Appointment start datetime in ISO 8601 format', required: true
   param :ends_at, type: :string, desc: 'Optional appointment end datetime in ISO 8601 format', required: false
   param :duration_min, type: :number, desc: 'Optional appointment duration in minutes when ends_at is not provided', required: false
-  param :service_id, type: :number, desc: 'Optional service ID used to derive duration and pricing', required: false
-  param :appointment_type, type: :string, desc: 'Appointment type', required: false
+  param :service_id, type: :number, desc: 'Optional local service ID returned by search_scheduling_services', required: false
+  param :appointment_type,
+        type: :string,
+        desc: 'Appointment type: primary, secondary, or other. Do not pass a specialty, service, or cabinet name.',
+        required: false
   param :client_comment, type: :string, desc: 'Client comment', required: false
   param :custom_attributes,
         type: :object,
-        desc: 'Optional scheduling custom attributes object. Use the matching list_*_custom_fields tool first; ' \
-              'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
+        desc: 'Optional scheduling custom attributes object. For Medelement, pass the selected ' \
+              'resource.custom_attributes.medelement_cabinets[].companyCabinetCode as medelement_cabinet_code. For other keys, use the matching ' \
+              'list_*_custom_fields tool first; only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
   def execute(resource_id:, starts_at:, ends_at: nil, duration_min: nil, service_id: nil, appointment_type: nil, client_comment: nil,

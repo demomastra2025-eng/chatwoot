@@ -89,6 +89,39 @@ RSpec.describe Scheduling::Appointment do
       Current.reset
     end
 
+    it 'captures the outbound snapshot for a Captain appointment mutation' do
+      Current.executed_by = create(:captain_assistant, account: appointment.account)
+      captured_events = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|
+        captured_events << [event_name, data]
+      end
+
+      appointment.update!(client_name: 'Captain Client')
+
+      updated_event = captured_events.find { |event_name, _| event_name == Events::Types::APPOINTMENT_UPDATED }
+      expect(updated_event.last[:medelement_outbound_snapshot]).to include(
+        'client_name' => 'Captain Client',
+        Integrations::Medelement::OutboundChangeService::CONTACT_SNAPSHOT_KEY => anything
+      )
+    ensure
+      Current.reset
+    end
+
+    it 'does not capture an outbound snapshot for a Captain assistant from another account' do
+      Current.executed_by = create(:captain_assistant, account: create(:account))
+      captured_events = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|
+        captured_events << [event_name, data]
+      end
+
+      appointment.update!(client_name: 'Cross-account Captain')
+
+      updated_event = captured_events.find { |event_name, _| event_name == Events::Types::APPOINTMENT_UPDATED }
+      expect(updated_event.last[:medelement_outbound_snapshot]).to be_nil
+    ensure
+      Current.reset
+    end
+
     it 'dispatches appointment.cancelled when status changes to cancelled' do
       captured_events = []
       allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|

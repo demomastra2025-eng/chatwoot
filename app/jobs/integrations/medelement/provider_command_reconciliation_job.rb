@@ -17,13 +17,7 @@ class Integrations::Medelement::ProviderCommandReconciliationJob < MutexApplicat
   private
 
   def lock_keys(command)
-    target_ids = []
-    target_ids << "contact-#{command.contact_id}" if command.contact_id
-    target_ids << command.appointment.resource_id.to_s if command.appointment&.resource_id
-
-    target_ids.uniq.map do |target_id|
-      format(Redis::RedisKeys::MEDELEMENT_PROVIDER_COMMAND_MUTEX, hook_id: command.hook_id, target_id: target_id)
-    end.sort
+    Integrations::Medelement::ProviderCommandJob.new.lock_keys(command)
   end
 
   def with_command_locks(keys, &)

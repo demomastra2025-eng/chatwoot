@@ -4,7 +4,7 @@ class Integrations::Medelement::OutboundChangeService
   APPOINTMENT_SNAPSHOT_KEYS = %w[
     status starts_at ends_at client_phone client_name client_first_name client_last_name client_middle_name
     client_birth_date client_gender client_identifier client_comment service_amount duration_min custom_attributes
-    external_ref service_id service_name_snapshot
+    external_ref resource_id service_id service_name_snapshot
   ].freeze
   CONTACT_UPDATE_KEYS = %w[name last_name middle_name email phone_number identifier custom_attributes].freeze
   CONTACT_SNAPSHOT_KEY = 'medelement_contact_snapshot'.freeze
@@ -46,7 +46,8 @@ class Integrations::Medelement::OutboundChangeService
   end
 
   # rubocop:disable Metrics/ParameterLists
-  def initialize(entity_type:, entity_id:, event_name:, change: {}, actor_id: nil, event_key: nil)
+  def initialize(entity_type:, entity_id:, event_name:, change: {}, account_id: nil, actor_id: nil, event_key: nil)
+    @account_id = account_id
     @entity_type = entity_type.to_s
     @entity_id = entity_id
     @event_name = event_name.to_s
@@ -70,10 +71,11 @@ class Integrations::Medelement::OutboundChangeService
 
   private
 
-  attr_reader :account, :actor_id, :changed_attributes, :desired_attributes, :entity_id, :entity_type, :event_key, :event_name, :hook
+  attr_reader :account, :account_id, :actor_id, :changed_attributes, :desired_attributes, :entity_id, :entity_type, :event_key,
+              :event_name, :hook
 
   def sync_appointment
-    appointment = Scheduling::Appointment.includes(:account, :contact, :resource, :service).find(entity_id)
+    appointment = appointment_scope.includes(:account, :contact, :resource, :service).find(entity_id)
     return if appointment.contact.blank?
     return unless provider_resource?(appointment.resource)
 
@@ -95,7 +97,7 @@ class Integrations::Medelement::OutboundChangeService
   end
 
   def sync_contact
-    contact = Contact.includes(:account).find(entity_id)
+    contact = contact_scope.includes(:account).find(entity_id)
     operation = contact_operation(contact)
     return unless operation
 
@@ -111,6 +113,18 @@ class Integrations::Medelement::OutboundChangeService
       desired_starts_at: nil,
       desired_ends_at: nil
     )
+  end
+
+  def appointment_scope
+    return Scheduling::Appointment.all if account_id.blank?
+
+    Scheduling::Appointment.where(account_id: account_id)
+  end
+
+  def contact_scope
+    return Contact.all if account_id.blank?
+
+    Contact.where(account_id: account_id)
   end
 
   def appointment_operation(appointment)

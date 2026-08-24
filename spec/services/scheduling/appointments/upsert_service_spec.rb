@@ -77,6 +77,25 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     )
   end
 
+  it 'does not populate structured identity from contact fields for non-Medelement appointments' do
+    appointment.update!(client_first_name: nil, client_last_name: nil, client_middle_name: nil)
+    appointment.contact.update!(name: 'Display name', last_name: 'Касымова', middle_name: 'Ерлановна')
+
+    perform({})
+
+    expect(appointment.reload).to have_attributes(
+      client_first_name: nil,
+      client_last_name: nil,
+      client_middle_name: nil
+    )
+  end
+
+  it 'rejects an unsupported appointment type at the model runtime boundary' do
+    expect { perform(appointment_type: 'Терапевт') }.to raise_error(ActiveRecord::RecordInvalid) do |error|
+      expect(error.record.errors.details[:appointment_type]).to include(error: :inclusion, value: 'Терапевт')
+    end
+  end
+
   context 'when the selected resource belongs to Medelement' do
     let(:service) do
       create(
@@ -87,7 +106,87 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     end
 
     before do
-      resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+      resource.update!(
+        custom_attributes: {
+          'medelement_specialist_code' => 'specialist-1',
+          'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+        }
+      )
+      appointment.update!(
+        custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-1')
+      )
+    end
+
+    it 'uses structured Medelement contact names when appointment name fields are omitted' do
+      appointment.update!(service: nil, custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
+      appointment.contact.update!(
+        name: 'Жандаулет Гусман',
+        last_name: nil,
+        middle_name: nil,
+        phone_number: ['+7', '700', '000', '0001'].join,
+        custom_attributes: appointment.contact.custom_attributes.merge(
+          'medelement_first_name' => 'Жандаулет',
+          'medelement_last_name' => 'Гусман'
+        )
+      )
+
+      perform({})
+
+      expect(appointment.reload).to have_attributes(
+        client_first_name: 'Жандаулет',
+        client_last_name: 'Гусман',
+        client_middle_name: nil,
+        client_name: 'Жандаулет Гусман'
+      )
+    end
+
+    it 'uses structured top-level contact names when appointment name fields are omitted' do
+      appointment.update!(service: nil, custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
+      appointment.contact.update!(
+        name: 'Айжан',
+        last_name: 'Касымова',
+        middle_name: 'Ерлановна',
+        phone_number: ['+7', '700', '000', '0001'].join
+      )
+
+      perform({})
+
+      expect(appointment.reload).to have_attributes(
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_middle_name: 'Ерлановна',
+        client_name: 'Айжан Касымова Ерлановна'
+      )
+    end
+
+    it 'does not mix a partial Medelement custom identity with a full display name' do
+      appointment.update!(service: nil, custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
+      appointment.contact.update!(
+        name: 'Жандаулет Гусман',
+        last_name: nil,
+        phone_number: ['+7', '700', '000', '0001'].join,
+        custom_attributes: appointment.contact.custom_attributes.merge('medelement_last_name' => 'Гусман')
+      )
+
+      expect { perform({}) }.to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE')
+      end
+      expect(appointment.reload.client_first_name).to be_nil
+    end
+
+    it 'does not fill a missing Medelement custom last name from top-level contact fields' do
+      appointment.update!(service: nil, custom_attributes: appointment.custom_attributes.except('service_ids', 'services'))
+      appointment.contact.update!(
+        name: 'Жандаулет',
+        last_name: 'Гусман',
+        phone_number: ['+7', '700', '000', '0001'].join,
+        custom_attributes: appointment.contact.custom_attributes.merge('medelement_first_name' => 'Жандаулет')
+      )
+
+      expect { perform({}) }.to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE')
+      end
+      expect(appointment.reload.client_last_name).to be_nil
     end
 
     it 'rejects an appointment without a patient last name before persistence' do
@@ -108,6 +207,46 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       end
 
       expect(appointment.reload.client_first_name).to be_nil
+    end
+
+    it 'rejects an appointment without a Medelement cabinet before persistence' do
+      appointment.update!(
+        service: nil,
+        custom_attributes: appointment.custom_attributes.except('service_ids', 'services', 'medelement_cabinet_code')
+      )
+
+      expect do
+        perform(resource_id: resource.id, client_first_name: 'Айжан', client_last_name: 'Касымова',
+                client_phone: ['+7', '700', '000', '0001'].join)
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_CABINET_REQUIRED') }
+    end
+
+    it 'rejects a Medelement cabinet that does not belong to the selected specialist' do
+      appointment.update!(
+        service: nil,
+        custom_attributes: appointment.custom_attributes.except('service_ids', 'services')
+                                                .merge('medelement_cabinet_code' => 'foreign-cabinet')
+      )
+
+      expect do
+        perform(resource_id: resource.id, client_first_name: 'Айжан', client_last_name: 'Касымова',
+                client_phone: ['+7', '700', '000', '0001'].join)
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_CABINET_INVALID') }
+    end
+
+    it 'allows an unrelated update to a legacy appointment without a cabinet' do
+      appointment.update!(
+        service: nil,
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        client_phone: ['+7', '700', '000', '0001'].join,
+        custom_attributes: appointment.custom_attributes.except('service_ids', 'services', 'medelement_cabinet_code')
+      )
+
+      perform(client_comment: 'Legacy appointment note')
+
+      expect(appointment.reload).to have_attributes(client_comment: 'Legacy appointment note')
+      expect(appointment.custom_attributes).not_to have_key('medelement_cabinet_code')
     end
 
     it 'accepts an appointment without a selected service' do

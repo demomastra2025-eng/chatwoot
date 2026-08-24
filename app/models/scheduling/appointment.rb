@@ -239,9 +239,14 @@ class Scheduling::Appointment < ApplicationRecord
   end
 
   def medelement_outbound_snapshot
-    return unless Current.executed_by.is_a?(User)
+    return unless medelement_outbound_actor?
 
     Integrations::Medelement::OutboundChangeService.appointment_event_snapshot(self)
+  end
+
+  def medelement_outbound_actor?
+    actor = Current.executed_by
+    actor.is_a?(User) || (defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account_id)
   end
 
   def assign_duration_min

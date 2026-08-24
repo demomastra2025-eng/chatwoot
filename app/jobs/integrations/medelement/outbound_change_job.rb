@@ -1,5 +1,6 @@
 class Integrations::Medelement::OutboundChangeJob < ApplicationJob
   class BusyError < StandardError; end
+  PAYLOAD_VERSION = 2
 
   queue_as :medelement_provider_commands
 
@@ -8,11 +9,13 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
 
   # rubocop:disable Metrics/ParameterLists
   def perform(entity_type:, entity_id:, event_name:, change: {}, actor_id: nil, event_key: nil)
+    account_id = account_binding(change)
     Integrations::Medelement::OutboundChangeService.new(
       entity_type: entity_type,
       entity_id: entity_id,
       event_name: event_name,
-      change: change,
+      change: service_change(change),
+      account_id: account_id,
       actor_id: actor_id,
       event_key: event_key
     ).perform
@@ -20,6 +23,30 @@ class Integrations::Medelement::OutboundChangeJob < ApplicationJob
     raise BusyError, e.message if e.code == 'MEDELEMENT_COMMAND_IN_PROGRESS'
 
     raise
+  end
+
+  private
+
+  def account_binding(change)
+    attributes = change.to_h.with_indifferent_access
+    return if legacy_payload?(attributes)
+    return attributes[:account_id] if current_payload?(attributes)
+
+    raise ArgumentError, 'Medelement outbound payload has invalid account binding'
+  end
+
+  def service_change(change)
+    change.to_h.with_indifferent_access.except(:account_id, :payload_version)
+  end
+
+  def legacy_payload?(attributes)
+    !attributes.key?(:account_id) && !attributes.key?(:payload_version)
+  end
+
+  def current_payload?(attributes)
+    attributes.key?(:account_id) && attributes.key?(:payload_version) &&
+      attributes[:payload_version].is_a?(Integer) && attributes[:payload_version] == PAYLOAD_VERSION &&
+      attributes[:account_id].is_a?(Integer) && attributes[:account_id].positive?
   end
   # rubocop:enable Metrics/ParameterLists
 end
