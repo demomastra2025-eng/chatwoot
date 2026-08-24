@@ -19,6 +19,7 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def perform
     @snapshot_complete = true
+    @appointment_snapshot_versions = load_appointment_snapshot_versions
     resource_map = medelement_resource_map
     snapshot = build_snapshot(resource_map)
     contacts_by_patient_code = synced_contacts(snapshot)
@@ -31,7 +32,17 @@ class Integrations::Medelement::ReceptionsSyncService
 
   private
 
-  attr_reader :account, :client, :configuration, :conflict_tracker, :importer
+  attr_reader :account, :client, :configuration, :conflict_tracker, :importer, :appointment_snapshot_versions
+
+  def load_appointment_snapshot_versions
+    account.scheduling_appointments
+           .where(
+             'external_ref LIKE ?',
+             "#{Integrations::Medelement::AppointmentImporterService::RECEPTION_EXTERNAL_REF_PREFIX}%"
+           )
+           .pluck(:external_ref, :updated_at)
+           .to_h
+  end
 
   def build_snapshot(resource_map)
     snapshot = resource_map.values.flat_map do |resource|
@@ -265,6 +276,9 @@ class Integrations::Medelement::ReceptionsSyncService
       begin
         sync_reception(reception, resource, contacts_by_patient_code)
         result[:imported_count] += 1
+      rescue Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError => e
+        result[:skipped_count] += 1
+        log_stale_snapshot(reception, resource, e)
       rescue InvalidReceptionError, Integrations::Medelement::ReceptionServiceRows::InvalidSnapshotError,
              ActiveRecord::RecordInvalid, Scheduling::Error => e
         result[:skipped_count] += 1
@@ -280,14 +294,35 @@ class Integrations::Medelement::ReceptionsSyncService
   def import_context_for(reception)
     starts_at = parse_time(reception['STARTTIME'])
     ends_at = parse_time(reception['ENDTIME'])
+    external_ref = external_ref_for(reception)
 
     validate_import_context!(reception, starts_at, ends_at)
 
     {
       starts_at: starts_at,
       ends_at: ends_at,
-      specialist_code: reception['specialistCode']
+      specialist_code: reception['specialistCode'],
+      snapshot_version: {
+        exists: appointment_snapshot_versions.key?(external_ref),
+        updated_at: appointment_snapshot_versions[external_ref]
+      }
     }
+  end
+
+  def log_stale_snapshot(reception, resource, error)
+    entity_key = reception['RECEPTION_CODE'].to_s
+    conflict_tracker&.record!(
+      phase: 'receptions',
+      entity_type: 'reception',
+      conflict_type: 'stale_snapshot',
+      entity_key: entity_key,
+      severity: 'warning',
+      details: reception_conflict_details(reception, resource, error)
+    )
+    Rails.logger.warn(
+      "[MEDELEMENT::RECEPTIONS_SYNC] Skipping stale reception snapshot for account=#{account.id} " \
+      "resource_id=#{resource.id} entity_digest=#{Integrations::Medelement::ErrorSanitizer.digest(entity_key)}"
+    )
   end
 
   def log_skipped_reception(reception, resource, error)

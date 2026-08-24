@@ -147,6 +147,52 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(result.custom_attributes['source_mode']).to eq('outbound')
   end
 
+  it 'rejects a provider snapshot captured before a newer local mutation' do
+    mutation_at = Time.zone.parse('2026-03-20 10:00:01')
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      source: 'medelement',
+      status: 'cancelled',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE'])
+    )
+    appointment.update!(updated_at: mutation_at)
+
+    expect do
+      service.upsert!(
+        resource: resource,
+        contact: appointment.contact,
+        reception: reception,
+        import_context: import_context.merge(snapshot_version: { exists: true, updated_at: mutation_at - 1.second })
+      )
+    end.to raise_error(Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError)
+
+    expect(appointment.reload.status).to eq('cancelled')
+  end
+
+  it 'accepts a provider snapshot captured after the latest local mutation' do
+    mutation_at = Time.zone.parse('2026-03-20 10:00:01')
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      source: 'medelement',
+      status: 'cancelled',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE'])
+    )
+    appointment.update!(updated_at: mutation_at)
+
+    service.upsert!(
+      resource: resource,
+      contact: appointment.contact,
+      reception: reception,
+      import_context: import_context.merge(snapshot_version: { exists: true, updated_at: mutation_at })
+    )
+
+    expect(appointment.reload.status).to eq('scheduled')
+  end
+
   it 'preserves a local-only service when the provider explicitly returns an empty SERVICES list' do
     local_service = create(
       :scheduling_service,

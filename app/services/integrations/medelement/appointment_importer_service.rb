@@ -1,5 +1,6 @@
 class Integrations::Medelement::AppointmentImporterService
   MEDELEMENT_SOURCE = 'medelement'.freeze
+  RECEPTION_EXTERNAL_REF_PREFIX = 'medelement:reception:'.freeze
   PRIMARY_APPOINTMENT_TYPE = 'primary'.freeze
   MIN_DURATION_MINUTES = 5
   RECONCILIATION_ATTRIBUTE_KEYS = %w[
@@ -14,7 +15,7 @@ class Integrations::Medelement::AppointmentImporterService
   end
 
   def external_ref_for(reception_code)
-    "medelement:reception:#{reception_code}"
+    "#{RECEPTION_EXTERNAL_REF_PREFIX}#{reception_code}"
   end
 
   def upsert!(resource:, contact:, reception:, import_context:)
@@ -39,6 +40,10 @@ class Integrations::Medelement::AppointmentImporterService
   attr_reader :account, :conflict_tracker
 
   def persist_appointment!(appointment, resource:, contact:, reception:, import_context:)
+    Integrations::Medelement::AppointmentSnapshotGuard.new(
+      appointment: appointment,
+      snapshot_version: import_context[:snapshot_version]
+    ).validate!
     provider_binding(appointment, reception).validate!
     record_unresolved_patient_conflict(reception) if contact.blank?
     appointment.assign_attributes(

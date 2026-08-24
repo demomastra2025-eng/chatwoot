@@ -154,6 +154,46 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
+  it 'does not restore a cancelled appointment from a snapshot captured before the Captain mutation' do
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      created_by: create(:user, account: account),
+      source: 'manual',
+      external_ref: 'medelement:reception:975592971773905133',
+      custom_attributes: {
+        'medelement_reception_code' => '975592971773905133',
+        'medelement_cabinet_code' => '37413011726129875'
+      }
+    )
+    assistant = create(:captain_assistant, account: account)
+
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      allow(client).to receive(:get_reception) do |reception_code:, **|
+        travel 1.second
+        Scheduling::Appointments::UpsertService.new(
+          account: account,
+          appointment: appointment,
+          params: { status: 'cancelled' },
+          actor: assistant
+        ).perform
+
+        reception_payload.first.merge(
+          'RECEPTION_CODE' => reception_code,
+          'PROFILE_CODE' => reception_payload.first['PATIENT_CODE'],
+          'COMPANY_CODE' => 'company-1',
+          'SERVICES' => []
+        )
+      end
+
+      expect(service.perform).to include(imported_count: 0, skipped_count: 1)
+    end
+
+    expect(appointment.reload.status).to eq('cancelled')
+    expect(conflict_tracker).to have_received(:record!).with(hash_including(conflict_type: 'stale_snapshot'))
+  end
+
   it 'requires two complete snapshots before tombstoning a missing Medelement appointment' do
     travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
       stale_imported = create(
