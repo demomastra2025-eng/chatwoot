@@ -758,6 +758,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
     end
 
     it 'accepts a signed WABA batch containing metadata for sibling phone numbers' do
+      stub_ingress_routing(rules: {}, targets: {})
       waba_id = channel.provider_config['business_account_id']
       app_secret = 'shared-waba-app-secret'
       channel.update!(provider_config: channel.provider_config.merge('app_secret' => app_secret))

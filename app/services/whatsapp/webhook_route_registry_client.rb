@@ -11,8 +11,13 @@ class Whatsapp::WebhookRouteRegistryClient
   DIGITS = /\A\d+\z/
   REQUEST_TIMEOUT = 5
   DEFAULT_VALUE = Object.new.freeze
+  REGISTRATION_TOKEN_HEADER = 'X-OneLink-Route-Registration-Token'.freeze
+  REGISTRATION_TOKEN = /\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/
 
   class Error < StandardError; end
+  Registration = Data.define(:status, :token) do
+    def created? = status == :created
+  end
 
   def self.signature(secret:, method:, destination:, timestamp:, body:)
     signed_payload = [method.to_s.upcase, destination, timestamp, body].join("\n")
@@ -39,30 +44,43 @@ class Whatsapp::WebhookRouteRegistryClient
     request_route(:put, waba_id: waba_id, phone_number_id: phone_number_id)
   end
 
-  def unregister!(waba_id:, phone_number_id:)
-    request_route(:delete, waba_id: waba_id, phone_number_id: phone_number_id)
+  def unregister!(waba_id:, phone_number_id:, registration_token: nil)
+    request_route(:delete, waba_id: waba_id, phone_number_id: phone_number_id, registration_token: registration_token)
   end
 
   private
 
-  def request_route(method, waba_id:, phone_number_id:)
+  def request_route(method, waba_id:, phone_number_id:, registration_token: nil)
     return false unless configured?
 
     validate_identifier!(waba_id)
     validate_identifier!(phone_number_id)
-    body = JSON.generate(
-      waba_id: waba_id.to_s,
-      phone_number_id: phone_number_id.to_s,
-      destination: @destination
-    )
+    body = route_body(waba_id, phone_number_id, registration_token)
     response = perform_request(method, body)
-    return true if response.is_a?(Net::HTTPSuccess)
+    if response.is_a?(Net::HTTPSuccess)
+      return registration_from(response) if method == :put
+
+      return true
+    end
 
     raise Error, "WhatsApp webhook route registry returned status=#{response.code}"
   rescue Error
     raise
   rescue StandardError => e
     raise Error, "WhatsApp webhook route registry request failed error_class=#{e.class.name}"
+  end
+
+  def registration_from(response)
+    token = response[REGISTRATION_TOKEN_HEADER].to_s.presence
+    status = response.code.to_i == 201 && token&.match?(REGISTRATION_TOKEN) ? :created : :existing
+    Registration.new(status: status, token: token)
+  end
+
+  def route_body(waba_id, phone_number_id, registration_token)
+    validate_registration_token!(registration_token) if registration_token
+    payload = { waba_id: waba_id.to_s, phone_number_id: phone_number_id.to_s, destination: @destination }
+    payload[:registration_token] = registration_token if registration_token
+    JSON.generate(payload)
   end
 
   def perform_request(method, body)
@@ -120,5 +138,11 @@ class Whatsapp::WebhookRouteRegistryClient
 
   def validate_identifier!(identifier)
     raise Error, 'WhatsApp webhook route identifiers must contain digits only' unless identifier.to_s.match?(DIGITS)
+  end
+
+  def validate_registration_token!(registration_token)
+    return if registration_token.to_s.match?(REGISTRATION_TOKEN)
+
+    raise Error, 'WhatsApp webhook route registration token is invalid'
   end
 end

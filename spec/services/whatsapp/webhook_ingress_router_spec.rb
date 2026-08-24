@@ -65,8 +65,28 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
     allow(WhatsappWebhookRoute).to receive(:for_waba).and_raise(ActiveRecord::ConnectionNotEstablished)
     allow(Rails.logger).to receive(:error)
 
-    expect(described_class.new(payload: payload, rules: {}, targets: {}).destinations).to eq(['prod'])
-    expect(Rails.logger).to have_received(:error).with(%r{using configured/local fallback}).at_least(:once)
+    router = described_class.new(payload: payload, rules: { '123456:987654' => ['dev'] }, targets: targets)
+
+    expect(router.destinations).to eq(['prod'])
+    expect(Rails.logger).to have_received(:error).with(/processing locally/).at_least(:once)
+  end
+
+  it 'keeps a locally owned PROD phone local even when a static exact route exists' do
+    allow(WhatsappWebhookRoute).to receive(:local_prod_owner_exists?).with('123456', '987654').and_return(true)
+    router = described_class.new(
+      payload: payload,
+      rules: { '123456:987654' => ['dev'] },
+      targets: targets
+    )
+
+    expect(router.destinations).to eq(['prod'])
+  end
+
+  it 'does not enable batch normalization for a local-only ownership decision' do
+    allow(WhatsappWebhookRoute).to receive(:local_prod_owner_exists?).with('123456', '987654').and_return(true)
+    router = described_class.new(payload: payload, rules: {}, targets: targets)
+
+    expect(router).not_to be_routing_enabled
   end
 
   it 'routes a WABA to multiple isolated consumers' do

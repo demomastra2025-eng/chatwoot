@@ -55,6 +55,15 @@ class Whatsapp::WebhookSetupService
     end
   end
 
+  def ensure_remote_route!
+    validate_parameters!
+    with_waba_lock do
+      validate_expected_credentials!
+      register_remote_route!
+      :healthy
+    end
+  end
+
   def register_phone_number_with_pin!(pin)
     validate_parameters!
     with_waba_lock do
@@ -127,7 +136,7 @@ class Whatsapp::WebhookSetupService
     validate_recovery_identity!
     callback_url, verify_token, recovery_target = callback_details
 
-    register_remote_route!(callback_url)
+    route_registration = register_remote_route!(callback_url)
     callback_recovery.updating!(**recovery_target)
     subscribe_waba_callback(callback_url, verify_token)
     remote_callback_updated = true
@@ -140,13 +149,26 @@ class Whatsapp::WebhookSetupService
   rescue StaleRecoveryIdentityError
     raise
   rescue StandardError => e
-    handle_setup_error!(recovery_target, e, remote_callback_updated, schedule_recovery)
+    handle_setup_error!(recovery_target, e, remote_callback_updated, schedule_recovery, route_registration)
   end
 
-  def handle_setup_error!(recovery_target, error, remote_callback_updated, schedule_recovery)
+  def handle_setup_error!(recovery_target, error, remote_callback_updated, schedule_recovery, route_registration)
     raise_post_mutation_recovery_error!(recovery_target, error, schedule_recovery: schedule_recovery) if remote_callback_updated
 
+    unregister_created_remote_route!(route_registration)
     raise_callback_setup_error!(recovery_target, error)
+  end
+
+  def unregister_created_remote_route!(route_registration)
+    return unless route_registration&.created?
+
+    route_registry_client.unregister!(
+      waba_id: @waba_id,
+      phone_number_id: @phone_number_id,
+      registration_token: route_registration.token
+    )
+  rescue StandardError => e
+    Rails.logger.error("[WHATSAPP] Failed to compensate remote webhook route: #{sanitized_error_message(e)}")
   end
 
   def raise_post_mutation_recovery_error!(recovery_target, cause, schedule_recovery:)

@@ -1,29 +1,37 @@
 class Internal::Whatsapp::WebhookRoutesController < ActionController::API
   MAX_TIMESTAMP_SKEW = 300
   BODY_KEYS = %w[destination phone_number_id waba_id].freeze
+  CONDITIONAL_DELETE_KEYS = (BODY_KEYS + %w[registration_token]).freeze
   DIGITS = /\A\d+\z/
+  REGISTRATION_TOKEN = /\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/
   DESTINATIONS = %w[dev widget].freeze
+  REGISTRATION_TOKEN_HEADER = 'X-OneLink-Route-Registration-Token'.freeze
 
   before_action :authenticate_route_request!
 
   def update
     return render_route_conflict if local_prod_owner_exists?
 
-    WhatsappWebhookRoute.create_or_find_by!(
-      waba_id: @route_payload.fetch('waba_id'),
-      phone_number_id: @route_payload.fetch('phone_number_id'),
-      destination: @route_payload.fetch('destination')
-    )
+    created, registration_token = with_route_identity_lock do
+      token = SecureRandom.uuid
+      route = WhatsappWebhookRoute.create_or_find_by!(route_identity) do |record|
+        record.registration_token = token
+      end
+      created = route.previously_new_record?
+      route.update!(registration_token: token) unless created
+      [created, token]
+    end
 
-    head :no_content
+    response.set_header(REGISTRATION_TOKEN_HEADER, registration_token)
+    head(created ? :created : :no_content)
   end
 
   def destroy
-    WhatsappWebhookRoute.where(
-      waba_id: @route_payload.fetch('waba_id'),
-      phone_number_id: @route_payload.fetch('phone_number_id'),
-      destination: @route_payload.fetch('destination')
-    ).delete_all
+    with_route_identity_lock do
+      routes = WhatsappWebhookRoute.where(route_identity)
+      routes = routes.where(registration_token: @route_payload.fetch('registration_token')) if conditional_delete?
+      routes.delete_all
+    end
 
     head :no_content
   end
@@ -52,10 +60,41 @@ class Internal::Whatsapp::WebhookRoutesController < ActionController::API
 
   def valid_route_payload?
     return false unless @route_payload.is_a?(Hash)
-    return false unless @route_payload.keys.sort == BODY_KEYS.sort
+    return false unless valid_route_payload_keys?
 
     valid_identifier?(@route_payload['waba_id']) && valid_identifier?(@route_payload['phone_number_id']) &&
-      @route_payload['destination'].is_a?(String) && DESTINATIONS.include?(@route_payload['destination'])
+      @route_payload['destination'].is_a?(String) && DESTINATIONS.include?(@route_payload['destination']) &&
+      valid_registration_token?
+  end
+
+  def valid_route_payload_keys?
+    keys = @route_payload.keys.sort
+    keys == BODY_KEYS.sort || (request.delete? && keys == CONDITIONAL_DELETE_KEYS.sort)
+  end
+
+  def valid_registration_token?
+    return true unless conditional_delete?
+
+    @route_payload['registration_token'].is_a?(String) && @route_payload['registration_token'].match?(REGISTRATION_TOKEN)
+  end
+
+  def conditional_delete? = @route_payload.key?('registration_token')
+
+  def route_identity
+    {
+      waba_id: @route_payload.fetch('waba_id'),
+      phone_number_id: @route_payload.fetch('phone_number_id'),
+      destination: @route_payload.fetch('destination')
+    }
+  end
+
+  def with_route_identity_lock(&)
+    WhatsappWebhookRoute.with_route_identity_lock(
+      @route_payload.fetch('waba_id'),
+      @route_payload.fetch('phone_number_id'),
+      @route_payload.fetch('destination'),
+      &
+    )
   end
 
   def valid_identifier?(value)

@@ -14,13 +14,31 @@ RSpec.describe 'Internal WhatsApp webhook routes' do
   end
 
   it 'idempotently registers and removes an exact route' do
-    2.times do
-      put path, params: body, headers: signed_headers(:put, body)
-      expect(response).to have_http_status(:no_content)
-    end
+    put path, params: body, headers: signed_headers(:put, body)
+    expect(response).to have_http_status(:created)
+    first_token = response.headers.fetch('X-OneLink-Route-Registration-Token')
+
+    put path, params: body, headers: signed_headers(:put, body)
+    expect(response).to have_http_status(:no_content)
+    current_token = response.headers.fetch('X-OneLink-Route-Registration-Token')
+    expect(current_token).not_to eq(first_token)
     expect(WhatsappWebhookRoute.where(payload).count).to eq(1)
 
+    stale_delete_body = JSON.generate(payload.merge(registration_token: first_token))
+    delete path, params: stale_delete_body, headers: signed_headers(:delete, stale_delete_body)
+    expect(WhatsappWebhookRoute.where(payload)).to exist
+
+    current_delete_body = JSON.generate(payload.merge(registration_token: current_token))
+    delete path, params: current_delete_body, headers: signed_headers(:delete, current_delete_body)
+    expect(response).to have_http_status(:no_content)
+    expect(WhatsappWebhookRoute.where(payload)).to be_empty
+  end
+
+  it 'keeps unconditional deletion for explicit teardown callers' do
+    WhatsappWebhookRoute.create!(payload.merge(registration_token: SecureRandom.uuid))
+
     delete path, params: body, headers: signed_headers(:delete, body)
+
     expect(response).to have_http_status(:no_content)
     expect(WhatsappWebhookRoute.where(payload)).to be_empty
   end
@@ -62,6 +80,14 @@ RSpec.describe 'Internal WhatsApp webhook routes' do
   it 'rejects non-numeric provider identifiers' do
     invalid_body = JSON.generate(payload.merge(waba_id: 'not-a-waba'))
     put path, params: invalid_body, headers: signed_headers(:put, invalid_body)
+
+    expect(response).to have_http_status(:bad_request)
+  end
+
+  it 'rejects an unsigned or malformed compensation token' do
+    invalid_body = JSON.generate(payload.merge(registration_token: 'not-a-token'))
+
+    delete path, params: invalid_body, headers: signed_headers(:delete, invalid_body)
 
     expect(response).to have_http_status(:bad_request)
   end

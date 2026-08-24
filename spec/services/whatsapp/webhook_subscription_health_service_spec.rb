@@ -27,10 +27,11 @@ RSpec.describe Whatsapp::WebhookSubscriptionHealthService do
 
   it 'does not mutate an existing official app subscription' do
     allow(api_client).to receive(:app_subscribed_to_waba?).with('waba-1').and_return(true)
-
-    expect(Whatsapp::WebhookSetupService).not_to receive(:new)
+    setup_service = instance_double(Whatsapp::WebhookSetupService, ensure_remote_route!: :healthy)
+    allow(Whatsapp::WebhookSetupService).to receive(:new).and_return(setup_service)
 
     expect(described_class.new(channel).perform).to eq(:healthy)
+    expect(setup_service).to have_received(:ensure_remote_route!)
   end
 
   it 'repairs a missing subscription through the guarded callback setup service' do
