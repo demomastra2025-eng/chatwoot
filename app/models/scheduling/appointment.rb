@@ -168,10 +168,15 @@ class Scheduling::Appointment < ApplicationRecord
     payload
   end
 
+  def mark_medelement_provider_reconciled!
+    @medelement_provider_reconciled = true
+  end
+
   private
 
   def mark_local_medelement_cancellation
     return unless source != 'medelement' && status == 'cancelled' && will_save_change_to_status?
+    return if medelement_provider_reconciled?
     return if custom_attributes.to_h['medelement_reception_code'].blank?
 
     self.custom_attributes = custom_attributes.to_h.merge(
@@ -219,12 +224,14 @@ class Scheduling::Appointment < ApplicationRecord
       appointment: self,
       performed_by: Current.executed_by,
       changed_attributes: changed_attributes,
+      medelement_provider_reconciled: medelement_provider_reconciled?,
       medelement_outbound_snapshot: medelement_outbound_snapshot
     )
 
     dispatch_status_event(changed_attributes) if changed_attributes.key?('status')
   ensure
     @updated_changes_for_commit = nil
+    @medelement_provider_reconciled = nil
   end
 
   def dispatch_status_event(changed_attributes)
@@ -244,8 +251,13 @@ class Scheduling::Appointment < ApplicationRecord
       appointment: self,
       performed_by: Current.executed_by,
       changed_attributes: changed_attributes,
+      medelement_provider_reconciled: medelement_provider_reconciled?,
       medelement_outbound_snapshot: medelement_outbound_snapshot
     )
+  end
+
+  def medelement_provider_reconciled?
+    @medelement_provider_reconciled == true
   end
 
   def medelement_outbound_snapshot

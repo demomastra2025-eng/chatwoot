@@ -231,6 +231,79 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     end
   end
 
+  it 'tombstones a missing outbound appointment without enqueueing another provider removal' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      outbound = create_trusted_outbound_appointment
+      unbound_manual = create(
+        :scheduling_appointment,
+        account: account,
+        resource: resource,
+        source: 'manual',
+        external_ref: 'medelement:reception:untrusted-outbound',
+        starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 30, 0),
+        ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 50, 0),
+        custom_attributes: {
+          'medelement_reception_code' => 'untrusted-outbound',
+          'medelement_provider_sync_status' => 'succeeded'
+        }
+      )
+      allow(client).to receive(:get_receptions).and_return([])
+
+      service.perform
+
+      expect(outbound.reload.status).to eq('scheduled')
+      expect(outbound.custom_attributes['medelement_missing_syncs']).to eq(1)
+
+      service.perform
+
+      outbound.reload
+      expect(outbound).to have_attributes(status: 'cancelled', payment_status: 'cancelled')
+      expect(outbound.custom_attributes.slice('source_mode', 'medelement_local_cancelled_at')).to eq(
+        'source_mode' => 'provider_tombstone'
+      )
+      expect(
+        Integrations::Medelement::ProviderCommand.where(appointment: outbound, operation: 'remove_reception')
+      ).to be_empty
+      expect(unbound_manual.reload.status).to eq('scheduled')
+    end
+  end
+
+  it 'does not count an appointment changed after the provider snapshot started as missing' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      outbound = create_trusted_outbound_appointment
+      allow(client).to receive(:get_receptions) do
+        travel 1.second
+        outbound.update!(client_name: 'Changed while provider snapshot was loading')
+        []
+      end
+
+      service.perform
+
+      expect(outbound.reload.status).to eq('scheduled')
+      expect(outbound.custom_attributes).not_to include('medelement_missing_since', 'medelement_missing_syncs')
+    end
+  end
+
+  it 'restores a provider-tombstoned outbound appointment when it reappears' do
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      outbound = create_trusted_outbound_appointment
+      allow(client).to receive(:get_receptions).and_return([])
+
+      service.perform
+      service.perform
+
+      expect(outbound.reload.status).to eq('cancelled')
+
+      restored_reception = reception_payload.first.merge('RECEPTION_CODE' => 'outbound-removed')
+      allow(client).to receive(:get_receptions).and_return([restored_reception])
+
+      service.perform
+
+      expect(outbound.reload).to have_attributes(status: 'scheduled', source: 'manual')
+      expect(outbound.custom_attributes).to include('source_mode' => 'outbound')
+    end
+  end
+
   it 'restores a tombstoned appointment when it reappears in a complete snapshot' do
     travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
       appointment = create(
@@ -420,5 +493,39 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       expect(account.scheduling_appointments.find_by!(external_ref: 'medelement:reception:975592971773905133')).to be_present
       expect(account.scheduling_appointments.where(source: 'medelement').count).to eq(2)
     end
+  end
+
+  def create_trusted_outbound_appointment
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      source: 'manual',
+      external_ref: 'medelement:reception:outbound-removed',
+      starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 0, 0),
+      ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 9, 20, 0),
+      custom_attributes: {
+        'medelement_reception_code' => 'outbound-removed',
+        'medelement_provider_sync_status' => 'succeeded'
+      }
+    )
+    create_succeeded_outbound_command(appointment)
+    appointment
+  end
+
+  def create_succeeded_outbound_command(appointment)
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      appointment: appointment,
+      contact: appointment.contact,
+      operation: 'create_reception',
+      status: 'succeeded',
+      idempotency_key: SecureRandom.uuid,
+      company_cabinet_code: '37413011726129875',
+      desired_starts_at: appointment.starts_at,
+      desired_ends_at: appointment.ends_at,
+      provider_reception_code: 'outbound-removed',
+      executed_at: Time.current
+    )
   end
 end

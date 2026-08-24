@@ -111,8 +111,24 @@ class Integrations::Medelement::ReceptionsSyncService
     )
   end
 
-  def imported_appointments_in_window
-    account.scheduling_appointments.where(source: 'medelement').where(starts_at: range_start..range_end)
+  def provider_backed_appointments_in_window
+    scope = account.scheduling_appointments.where(starts_at: range_start..range_end)
+    imported = scope.where(source: 'medelement')
+    trusted_outbound = scope
+                       .where(id: succeeded_outbound_appointment_ids)
+                       .where("custom_attributes ->> 'medelement_provider_sync_status' = 'succeeded'")
+                       .where(
+                         "external_ref = :prefix || (custom_attributes ->> 'medelement_reception_code')",
+                         prefix: Integrations::Medelement::AppointmentImporterService::RECEPTION_EXTERNAL_REF_PREFIX
+                       )
+
+    imported.or(trusted_outbound)
+  end
+
+  def succeeded_outbound_appointment_ids
+    Integrations::Medelement::ProviderCommand
+      .where(account_id: account.id, operation: 'create_reception', status: 'succeeded')
+      .select(:appointment_id)
   end
 
   def medelement_resources
@@ -145,10 +161,14 @@ class Integrations::Medelement::ReceptionsSyncService
   end
 
   def cleanup_missing_appointments!(desired_external_refs)
-    imported_appointments_in_window.find_each do |appointment|
+    provider_backed_appointments_in_window.find_each do |appointment|
+      next if appointment.status == 'cancelled'
       next if desired_external_refs.include?(appointment.external_ref)
 
-      Integrations::Medelement::MissingAppointmentReconciler.new(appointment: appointment).perform
+      Integrations::Medelement::MissingAppointmentReconciler.new(
+        appointment: appointment,
+        snapshot_version: appointment_snapshot_versions[appointment.external_ref]
+      ).perform
     end
   end
 

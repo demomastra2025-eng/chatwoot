@@ -133,6 +133,38 @@ RSpec.describe Scheduling::Appointment do
       expect(captured_events.map(&:first)).to include(Events::Types::APPOINTMENT_UPDATED, Events::Types::APPOINTMENT_CANCELLED)
     end
 
+    it 'captures provider reconciliation provenance on tombstone events' do
+      Current.executed_by = create(:user, account: appointment.account)
+      captured_events = []
+      allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|
+        captured_events << [event_name, data]
+      end
+
+      appointment.mark_medelement_provider_reconciled!
+      appointment.update!(
+        status: 'cancelled',
+        custom_attributes: appointment.custom_attributes.merge(
+          'medelement_reception_code' => 'provider-removed',
+          'source_mode' => 'provider_tombstone'
+        )
+      )
+
+      tombstone_events = captured_events.to_h
+                                        .slice(Events::Types::APPOINTMENT_UPDATED, Events::Types::APPOINTMENT_CANCELLED)
+                                        .values
+      expect(tombstone_events).to all(include(medelement_provider_reconciled: true))
+
+      captured_events.clear
+      appointment.update!(status: 'scheduled')
+      reopened_event = captured_events.find { |event_name, _| event_name == Events::Types::APPOINTMENT_UPDATED }
+      expect(reopened_event.last[:medelement_provider_reconciled]).to be(false)
+
+      appointment.update!(status: 'cancelled')
+      expect(appointment.custom_attributes['medelement_local_cancelled_at']).to be_present
+    ensure
+      Current.reset
+    end
+
     it 'dispatches appointment.completed when status changes to completed' do
       captured_events = []
       allow(Rails.configuration.dispatcher).to receive(:dispatch) do |event_name, _, data|

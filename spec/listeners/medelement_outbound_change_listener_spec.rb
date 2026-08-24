@@ -58,6 +58,30 @@ RSpec.describe MedelementOutboundChangeListener do
     expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
   end
 
+  it 'ignores provider-tombstoned cancellation even with a OneLink actor' do
+    appointment.mark_medelement_provider_reconciled!
+    appointment.update!(
+      status: 'cancelled',
+      custom_attributes: {
+        'medelement_reception_code' => 'provider-removed',
+        'source_mode' => 'provider_tombstone'
+      }
+    )
+    event = Events::Base.new(
+      'appointment_cancelled',
+      Time.current,
+      appointment: appointment,
+      performed_by: actor,
+      changed_attributes: { 'status' => %w[scheduled cancelled] },
+      medelement_provider_reconciled: true,
+      medelement_outbound_snapshot: nil
+    )
+
+    listener.appointment_cancelled(event)
+
+    expect(Integrations::Medelement::OutboundChangeJob).not_to have_been_enqueued
+  end
+
   it 'enqueues Captain appointment changes without assigning an assistant id as a user id' do
     assistant = create(:captain_assistant, account: account)
     event = Events::Base.new(

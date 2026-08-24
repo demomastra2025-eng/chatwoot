@@ -1,22 +1,30 @@
 class Integrations::Medelement::MissingAppointmentReconciler
   MISSING_CONFIRMATIONS_REQUIRED = 2
 
-  def initialize(appointment:)
+  def initialize(appointment:, snapshot_version:)
     @appointment = appointment
+    @snapshot_version = snapshot_version
   end
 
   def perform
-    appointment.with_lock { reconcile! }
+    appointment.with_lock { snapshot_current? ? reconcile! : :stale_snapshot }
   end
 
   private
 
-  attr_reader :appointment
+  attr_reader :appointment, :snapshot_version
+
+  def snapshot_current?
+    snapshot_version.present? && appointment.updated_at == snapshot_version
+  end
 
   def reconcile!
     attributes = missing_attributes
     missing_confirmed?(attributes) ? tombstone!(attributes) : appointment.custom_attributes = attributes
-    appointment.save! if appointment.changed?
+    return unless appointment.changed?
+
+    appointment.mark_medelement_provider_reconciled!
+    appointment.save!
   end
 
   def missing_attributes

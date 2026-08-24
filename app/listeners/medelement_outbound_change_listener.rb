@@ -47,7 +47,7 @@ class MedelementOutboundChangeListener < BaseListener
   def enqueue_appointment(event)
     appointment = event.data[:appointment]
     performed_by = event.data[:performed_by]
-    return if appointment.blank? || !appointment_outbound_actor?(performed_by, appointment)
+    return unless appointment_event_outbound?(event, appointment, performed_by)
 
     changed_attributes = event.data[:changed_attributes].to_h
     desired = event.data[:medelement_outbound_snapshot].presence ||
@@ -65,6 +65,10 @@ class MedelementOutboundChangeListener < BaseListener
       actor_id: outbound_actor_id(performed_by),
       event_key: event_key(event, 'appointment', appointment.id, desired)
     )
+  end
+
+  def appointment_event_outbound?(event, appointment, actor)
+    !event.data[:medelement_provider_reconciled] && appointment.present? && appointment_outbound_actor?(actor, appointment)
   end
 
   def appointment_outbound_actor?(actor, appointment)
