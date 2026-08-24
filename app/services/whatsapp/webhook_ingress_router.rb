@@ -17,8 +17,9 @@ class Whatsapp::WebhookIngressRouter
   DESTINATION_PATTERN = /\A[a-z][a-z0-9_-]*\z/
   FORWARD_TARGET_CONTRACT = {
     'dev' => 'https://dev.one-link.kz/webhooks/whatsapp',
-    'widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp'
+    'widget' => 'https://medelement.one-link.kz/webhooks/meta/whatsapp'
   }.freeze
+  LEGACY_FORWARD_TARGET_URLS = { 'widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp' }.freeze
   DISALLOWED_IP_RANGES = %w[
     0.0.0.0/8
     10.0.0.0/8
@@ -187,10 +188,10 @@ class Whatsapp::WebhookIngressRouter
   def validate_target_url!(destination, value)
     uri = URI.parse(value.to_s)
     expected_url = FORWARD_TARGET_CONTRACT[destination]
-    valid = expected_url.present? && uri.is_a?(URI::HTTPS) && uri.to_s == expected_url
+    valid = uri.is_a?(URI::HTTPS) && [expected_url, LEGACY_FORWARD_TARGET_URLS[destination]].compact.include?(uri.to_s)
     raise ConfigurationError, "Invalid canonical HTTPS URL for WhatsApp webhook destination: #{destination}" unless valid
 
-    uri.to_s
+    expected_url
   rescue URI::InvalidURIError
     raise ConfigurationError, "Invalid canonical HTTPS URL for WhatsApp webhook destination: #{destination}"
   end

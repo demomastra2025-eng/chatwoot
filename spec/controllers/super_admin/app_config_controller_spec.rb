@@ -231,7 +231,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
         expect(InstallationConfig.find_by(name: 'WHATSAPP_WEBHOOK_FORWARD_TARGETS')&.value)
           .to eq(
             '{"dev":"https://dev.one-link.kz/webhooks/whatsapp",' \
-            '"widget":"https://widget.one-link.kz/webhooks/meta/whatsapp"}'
+            '"widget":"https://medelement.one-link.kz/webhooks/meta/whatsapp"}'
           )
       end
 
@@ -251,7 +251,7 @@ RSpec.describe 'Super Admin Application Config API', type: :request do
       it 'rejects non-canonical WhatsApp webhook forward targets' do
         canonical_target = {
           dev: 'https://dev.one-link.kz/webhooks/whatsapp',
-          widget: 'https://widget.one-link.kz/webhooks/meta/whatsapp'
+          widget: 'https://medelement.one-link.kz/webhooks/meta/whatsapp'
         }.to_json
         upsert_installation_config('WHATSAPP_WEBHOOK_FORWARD_TARGETS', canonical_target)
         sign_in(super_admin, scope: :super_admin)

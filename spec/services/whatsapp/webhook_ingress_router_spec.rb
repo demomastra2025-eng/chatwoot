@@ -13,7 +13,7 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
   let(:targets) do
     {
       'dev' => 'https://dev.one-link.kz/webhooks/whatsapp',
-      'widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp'
+      'widget' => 'https://medelement.one-link.kz/webhooks/meta/whatsapp'
     }
   end
 
@@ -32,7 +32,15 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
     )
 
     expect(router.destinations).to eq(['widget'])
-    expect(router.target_url!('widget')).to eq('https://widget.one-link.kz/webhooks/meta/whatsapp')
+    expect(router.target_url!('widget')).to eq('https://medelement.one-link.kz/webhooks/meta/whatsapp')
+  end
+
+  it 'canonicalizes the legacy widget target to the MedElement endpoint' do
+    legacy_targets = targets.merge('widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp')
+    router = described_class.new(payload: payload, rules: { '123456' => ['widget'] }, targets: legacy_targets)
+
+    expect(router.destinations).to eq(['widget'])
+    expect(router.target_url!('widget')).to eq('https://medelement.one-link.kz/webhooks/meta/whatsapp')
   end
 
   it 'uses every registered destination for WABA-level events without phone metadata' do

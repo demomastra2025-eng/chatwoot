@@ -237,7 +237,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
         rules: { waba_id => %w[dev widget] },
         targets: {
           'dev' => 'https://dev.one-link.kz/webhooks/whatsapp',
-          'widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp'
+          'widget' => 'https://medelement.one-link.kz/webhooks/meta/whatsapp'
         }
       )
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
@@ -368,7 +368,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       }.to_json
       stub_ingress_routing(
         rules: { remote_waba_id => ['widget'] },
-        targets: { 'widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp' }
+        targets: { 'widget' => 'https://medelement.one-link.kz/webhooks/meta/whatsapp' }
       )
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
       allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
