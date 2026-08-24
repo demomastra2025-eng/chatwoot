@@ -23,7 +23,7 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
     expect(router.destinations).to eq(['prod'])
   end
 
-  it 'prefers a durable exact registry route over the static fallback' do
+  it 'uses a durable exact registry route without consulting static rules' do
     WhatsappWebhookRoute.create!(waba_id: '123456', phone_number_id: '987654', destination: 'widget')
     router = described_class.new(
       payload: payload,
@@ -35,11 +35,21 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
     expect(router.target_url!('widget')).to eq('https://medelement.one-link.kz/webhooks/meta/whatsapp')
   end
 
+  it 'keeps an unregistered phone local even when a stale static exact route exists' do
+    router = described_class.new(
+      payload: payload,
+      rules: { '123456:987654' => ['dev'] },
+      targets: targets
+    )
+
+    expect(router.destinations).to eq(['prod'])
+    expect(router).not_to be_routing_enabled
+  end
+
   it 'canonicalizes the legacy widget target to the MedElement endpoint' do
     legacy_targets = targets.merge('widget' => 'https://widget.one-link.kz/webhooks/meta/whatsapp')
     router = described_class.new(payload: payload, rules: { '123456' => ['widget'] }, targets: legacy_targets)
 
-    expect(router.destinations).to eq(['widget'])
     expect(router.target_url!('widget')).to eq('https://medelement.one-link.kz/webhooks/meta/whatsapp')
   end
 
@@ -89,31 +99,31 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
     expect(router).not_to be_routing_enabled
   end
 
-  it 'routes a WABA to multiple isolated consumers' do
+  it 'ignores stale static WABA routes' do
     router = described_class.new(
       payload: payload,
       rules: { '123456' => %w[dev widget] },
       targets: targets
     )
 
-    expect(router.destinations).to eq(%w[dev widget])
-    expect(router.target_url!('dev')).to eq('https://dev.one-link.kz/webhooks/whatsapp')
+    expect(router.destinations).to eq(['prod'])
+    expect(router).not_to be_routing_enabled
   end
 
-  it 'prefers an exact WABA and phone-number-id route' do
+  it 'ignores stale static exact routes' do
     router = described_class.new(
       payload: payload,
       rules: { '123456' => ['dev'], '123456:987654' => ['widget'] },
       targets: targets
     )
 
-    expect(router.destinations).to eq(['widget'])
+    expect(router.destinations).to eq(['prod'])
   end
 
   it 'rejects a route to an unknown destination' do
     router = described_class.new(payload: payload, rules: { '123456' => ['unknown'] }, targets: targets)
 
-    expect { router.destinations }
+    expect { router.target_url!('unknown') }
       .to raise_error(described_class::ConfigurationError, /Missing WhatsApp webhook forward target/)
   end
 
@@ -124,7 +134,7 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
       targets: { 'dev' => 'http://127.0.0.1/webhooks/whatsapp' }
     )
 
-    expect { router.destinations }
+    expect { router.target_url!('dev') }
       .to raise_error(described_class::ConfigurationError, /Invalid canonical HTTPS URL/)
   end
 
@@ -135,7 +145,7 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
       targets: { 'dev' => 'https://127.0.0.1/webhooks/whatsapp' }
     )
 
-    expect { router.destinations }
+    expect { router.target_url!('dev') }
       .to raise_error(described_class::ConfigurationError, /Invalid canonical HTTPS URL/)
   end
 

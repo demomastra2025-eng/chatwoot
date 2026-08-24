@@ -44,19 +44,25 @@ class Whatsapp::WebhookIngressRouter
     "#{SIGNATURE_PREFIX}#{OpenSSL::HMAC.hexdigest('SHA256', secret.to_s, signed_payload)}"
   end
 
-  def initialize(payload:, rules: nil, targets: nil, route_relation: WhatsappWebhookRoute)
+  def initialize(payload:, targets: nil, route_relation: WhatsappWebhookRoute, **_legacy_options)
     @payload = payload.to_h.with_indifferent_access
-    @raw_rules = rules.nil? ? GlobalConfigService.load(RULES_CONFIG_KEY, '{}') : rules
     @raw_targets = targets.nil? ? GlobalConfigService.load(TARGETS_CONFIG_KEY, '{}') : targets
     @route_relation = route_relation
   end
 
   def destinations
-    configured_destinations = registry_route_destinations.presence || exact_route_destinations || waba_route_destinations
-    normalize_destinations(configured_destinations.presence || [LOCAL_DESTINATION])
+    normalize_destinations(registry_route_destinations.presence || [LOCAL_DESTINATION])
   end
 
-  def routing_enabled? = (registry_route_destinations - [LOCAL_DESTINATION]).present? || routing_rules.present?
+  def routing_enabled?
+    return (registry_route_destinations - [LOCAL_DESTINATION]).present? if payload_waba_ids.one?
+    return false if payload_waba_ids.empty?
+
+    @route_relation.exists?(waba_id: payload_waba_ids)
+  rescue ActiveRecord::ActiveRecordError => e
+    log_registry_failure(e)
+    false
+  end
 
   def target_url!(destination)
     destination = destination.to_s
@@ -123,20 +129,14 @@ class Whatsapp::WebhookIngressRouter
     Rails.logger.error("[WHATSAPP] Webhook route registry lookup failed; processing locally error_class=#{error.class.name}")
   end
 
-  def exact_route_destinations
-    return if waba_id.blank? || phone_number_id.blank?
-
-    routing_rules["#{waba_id}:#{phone_number_id}"]
-  end
-
-  def waba_route_destinations
-    return if waba_id.blank?
-
-    routing_rules[waba_id]
-  end
-
   def waba_id
     @waba_id ||= @payload.dig(:entry, 0, :id).to_s.presence
+  end
+
+  def payload_waba_ids
+    @payload_waba_ids ||= Array(@payload[:entry]).filter_map do |entry|
+      entry.to_h.with_indifferent_access[:id].to_s.presence
+    end.uniq
   end
 
   def phone_number_id
@@ -148,15 +148,6 @@ class Whatsapp::WebhookIngressRouter
       end
     end.uniq
     @phone_number_id = phone_ids.one? ? phone_ids.first : nil
-  end
-
-  def routing_rules
-    @routing_rules ||= parse_object(@raw_rules, RULES_CONFIG_KEY).each_with_object({}) do |(route_key, destinations), result|
-      route_key = route_key.to_s
-      raise ConfigurationError, "Invalid WhatsApp webhook route key: #{route_key}" unless route_key.match?(ROUTE_KEY_PATTERN)
-
-      result[route_key] = normalize_destinations(destinations)
-    end
   end
 
   def target_urls

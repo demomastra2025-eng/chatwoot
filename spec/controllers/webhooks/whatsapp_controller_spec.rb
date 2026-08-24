@@ -233,8 +233,10 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
 
     it 'routes one WABA to both DEV OneLink and Widget without processing it in production' do
       waba_id = channel.provider_config['business_account_id']
+      WhatsappWebhookRoute.create!(waba_id: waba_id, phone_number_id: '111111111', destination: 'dev')
+      WhatsappWebhookRoute.create!(waba_id: waba_id, phone_number_id: '222222222', destination: 'widget')
       stub_ingress_routing(
-        rules: { waba_id => %w[dev widget] },
+        rules: {},
         targets: {
           'dev' => 'https://dev.one-link.kz/webhooks/whatsapp',
           'widget' => 'https://medelement.one-link.kz/webhooks/meta/whatsapp'
@@ -353,6 +355,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
 
     it 'splits a mixed Meta batch before routing it to isolated owners' do
       remote_waba_id = '999999999999'
+      WhatsappWebhookRoute.create!(waba_id: remote_waba_id, phone_number_id: '333333333', destination: 'widget')
       payload = {
         object: 'whatsapp_business_account',
         entry: [
@@ -367,7 +370,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
         ]
       }.to_json
       stub_ingress_routing(
-        rules: { remote_waba_id => ['widget'] },
+        rules: {},
         targets: { 'widget' => 'https://medelement.one-link.kz/webhooks/meta/whatsapp' }
       )
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
