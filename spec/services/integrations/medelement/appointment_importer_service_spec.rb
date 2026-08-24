@@ -193,6 +193,79 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(appointment.reload.status).to eq('scheduled')
   end
 
+  it 'rejects an active provider row after the matching removal was confirmed' do
+    contact = create(:contact, account: account)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      resource: resource,
+      source: 'manual',
+      status: 'cancelled',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      custom_attributes: { 'medelement_reception_code' => reception['RECEPTION_CODE'] }
+    )
+    Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      appointment: appointment,
+      contact: contact,
+      operation: 'remove_reception',
+      status: 'succeeded',
+      idempotency_key: 'confirmed-outbound-removal',
+      provider_reception_code: reception['RECEPTION_CODE'],
+      executed_at: Time.current
+    )
+
+    expect do
+      service.upsert!(
+        resource: resource,
+        contact: contact,
+        reception: reception,
+        import_context: import_context.merge(
+          snapshot_version: { exists: true, updated_at: appointment.updated_at }
+        )
+      )
+    end.to raise_error(Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError)
+
+    expect(appointment.reload.status).to eq('cancelled')
+  end
+
+  it 'rejects an active provider row after local cancellation before a removal command exists' do
+    contact = create(:contact, account: account)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      resource: resource,
+      source: 'manual',
+      status: 'scheduled',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      custom_attributes: { 'medelement_reception_code' => reception['RECEPTION_CODE'] }
+    )
+    allow(Rails.configuration.dispatcher).to receive(:dispatch)
+
+    appointment = Scheduling::Appointments::UpsertService.new(
+      account: account,
+      appointment: appointment,
+      params: { status: 'cancelled' }
+    ).perform
+
+    expect(appointment.custom_attributes['medelement_local_cancelled_at']).to be_present
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+    expect do
+      service.upsert!(
+        resource: resource,
+        contact: contact,
+        reception: reception,
+        import_context: import_context.merge(
+          snapshot_version: { exists: true, updated_at: appointment.updated_at }
+        )
+      )
+    end.to raise_error(Integrations::Medelement::AppointmentSnapshotGuard::StaleSnapshotError)
+
+    expect(appointment.reload.status).to eq('cancelled')
+  end
+
   it 'preserves a local-only service when the provider explicitly returns an empty SERVICES list' do
     local_service = create(
       :scheduling_service,

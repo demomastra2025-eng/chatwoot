@@ -91,6 +91,7 @@ class Scheduling::Appointment < ApplicationRecord
   before_validation :sync_account_id
   before_validation :inherit_contact_owner
   before_validation :assign_duration_min
+  before_validation :mark_local_medelement_cancellation, on: :update
   after_update :capture_updated_changes_for_commit
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
   after_create_commit :dispatch_created_event
@@ -168,6 +169,15 @@ class Scheduling::Appointment < ApplicationRecord
   end
 
   private
+
+  def mark_local_medelement_cancellation
+    return unless source != 'medelement' && status == 'cancelled' && will_save_change_to_status?
+    return if custom_attributes.to_h['medelement_reception_code'].blank?
+
+    self.custom_attributes = custom_attributes.to_h.merge(
+      Integrations::Medelement::AppointmentSnapshotGuard::LOCAL_CANCELLATION_ATTRIBUTE => Time.current.iso8601
+    )
+  end
 
   def sync_deferred_touch_enrollments
     Reminders::SyncEnrollmentService.new(remindable: self).perform

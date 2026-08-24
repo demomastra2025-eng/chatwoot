@@ -42,7 +42,7 @@ class Integrations::Medelement::AppointmentImporterService
   def persist_appointment!(appointment, resource:, contact:, reception:, import_context:)
     Integrations::Medelement::AppointmentSnapshotGuard.new(
       appointment: appointment,
-      snapshot_version: import_context[:snapshot_version]
+      snapshot_version: import_context[:snapshot_version], reception_code: reception['RECEPTION_CODE']
     ).validate!
     provider_binding(appointment, reception).validate!
     record_unresolved_patient_conflict(reception) if contact.blank?
