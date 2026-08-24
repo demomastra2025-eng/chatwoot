@@ -205,15 +205,15 @@ class Channel::Whatsapp < ApplicationRecord
   end
 
   def record_reauthorization_error!(error_payload)
-    already_requires_reauthorization = reauthorization_required?
-    safe_error_payload = sanitize_provider_metadata(error_payload)
-    mutate_provider_config! do |config|
-      config.merge(
-        'authorization_status' => 'reauthorization_required',
-        'authorization_error' => safe_error_payload
-      )
+    with_durable_reauthorization_lock do
+      reload
+      already_requires_reauthorization = reauthorization_required?
+      safe_error_payload = sanitize_provider_metadata(error_payload)
+      mutate_provider_config! do |config|
+        config.merge('authorization_status' => 'reauthorization_required', 'authorization_error' => safe_error_payload)
+      end
+      prompt_reauthorization! unless already_requires_reauthorization
     end
-    prompt_reauthorization! unless already_requires_reauthorization
   end
 
   def mutate_provider_config!

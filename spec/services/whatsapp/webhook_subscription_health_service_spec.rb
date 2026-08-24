@@ -147,6 +147,51 @@ RSpec.describe Whatsapp::WebhookSubscriptionHealthService do
     expect(channel.reauthorization_required?).to be(false)
   end
 
+  it 'leaves no partial authorization marker when the durable reauthorization lock is busy and succeeds next tick' do
+    error_payload = {
+      'error' => {
+        'code' => 190,
+        'type' => 'OAuthException',
+        'message' => 'The token has expired'
+      }
+    }
+    response = instance_double(HTTParty::Response, parsed_response: error_payload, body: error_payload.to_json, code: 400)
+    provider_error = Whatsapp::FacebookApiClient::Error.new('WABA app subscriptions fetch failed', response)
+    provider_health = instance_double(Meta::AuthorizationHealthCheckService, healthy?: false)
+    allow(api_client).to receive(:app_subscribed_to_waba?).and_raise(provider_error)
+    allow(Meta::AuthorizationHealthCheckService).to receive(:new).with(channel).and_return(provider_health)
+
+    ready = Queue.new
+    release = Queue.new
+    holder = Thread.new do
+      Whatsapp::WabaLock.new("channel-reauthorization-#{channel.id}").with_lock do
+        ready << true
+        release.pop
+      end
+    end
+    ready.pop
+
+    expect(described_class.new(channel).perform).to eq(:skipped)
+    expect(channel.reload.provider_config).not_to include(
+      'authorization_status',
+      'authorization_error',
+      'reauthorization_required'
+    )
+    expect(channel.reauthorization_required?).to be(false)
+
+    release << true
+    holder.value
+
+    expect(described_class.new(channel).perform).to eq(:reauthorization_required)
+    expect(channel.reload.provider_config).to include(
+      'authorization_status' => 'reauthorization_required',
+      'reauthorization_required' => true
+    )
+  ensure
+    release << true if holder&.alive?
+    holder&.join
+  end
+
   it 'keeps transient provider errors retryable without recording reauthorization' do
     error_payload = {
       'error' => {

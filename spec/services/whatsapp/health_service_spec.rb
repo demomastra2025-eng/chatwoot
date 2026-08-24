@@ -48,6 +48,55 @@ RSpec.describe Whatsapp::HealthService do
     )
   end
 
+  it 'leaves no partial authorization marker when the durable lock is busy and succeeds next health check' do
+    stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
+      .to_return(
+        status: 401,
+        body: {
+          error: {
+            message: 'Error validating access token: Session has expired',
+            type: 'OAuthException',
+            code: 190
+          }
+        }.to_json,
+        headers: { 'Content-Type' => 'application/json' }
+      )
+
+    ready = Queue.new
+    release = Queue.new
+    holder = Thread.new do
+      Whatsapp::WabaLock.new("channel-reauthorization-#{whatsapp_channel.id}").with_lock do
+        ready << true
+        release.pop
+      end
+    end
+    ready.pop
+
+    expect { described_class.new(whatsapp_channel).fetch_health_status }
+      .to raise_error(Whatsapp::WabaLock::LockAcquisitionError)
+    expect(whatsapp_channel.reload.provider_config).not_to include(
+      'authorization_status',
+      'authorization_error',
+      'reauthorization_required'
+    )
+    expect(whatsapp_channel.reauthorization_required?).to be(false)
+
+    release << true
+    holder.value
+
+    expect { described_class.new(whatsapp_channel).fetch_health_status }
+      .to raise_error(RuntimeError, /WhatsApp API request failed/)
+    expect(whatsapp_channel.reload.provider_config).to include(
+      'authorization_status' => 'reauthorization_required',
+      'authorization_error' => hash_including('code' => 190),
+      'reauthorization_required' => true
+    )
+    expect(whatsapp_channel.reauthorization_required?).to be(true)
+  ensure
+    release << true if holder&.alive?
+    holder&.join
+  end
+
   it 'does not apply an authorization error from credentials rotated during the health request' do
     stub_request(:get, %r{https://graph\.facebook\.com/#{api_version}/123456789})
       .to_return do

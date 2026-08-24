@@ -364,6 +364,42 @@ RSpec.describe Channel::Whatsapp do
       expect(channel.reauthorization_required?).to be(true)
     end
 
+    it 'leaves no partial authorization marker when the durable lock is busy' do
+      ready = Queue.new
+      release = Queue.new
+      holder = Thread.new do
+        Whatsapp::WabaLock.new("channel-reauthorization-#{channel.id}").with_lock do
+          ready << true
+          release.pop
+        end
+      end
+      ready.pop
+
+      expect do
+        channel.record_provider_configuration_error!('Token is missing WABA access', type: 'WhatsAppTokenHealth')
+      end.to raise_error(Whatsapp::WabaLock::LockAcquisitionError)
+      expect(channel.reload.provider_config).not_to include(
+        'authorization_status',
+        'authorization_error',
+        'reauthorization_required'
+      )
+      expect(channel.reauthorization_required?).to be(false)
+
+      release << true
+      holder.value
+
+      channel.record_provider_configuration_error!('Token is missing WABA access', type: 'WhatsAppTokenHealth')
+      expect(channel.reload.provider_config).to include(
+        'authorization_status' => 'reauthorization_required',
+        'authorization_error' => hash_including('type' => 'WhatsAppTokenHealth'),
+        'reauthorization_required' => true
+      )
+      expect(channel.reauthorization_required?).to be(true)
+    ensure
+      release << true if holder&.alive?
+      holder&.join
+    end
+
     it 'sanitizes authorization errors before provider-config persistence' do
       channel_token = channel.provider_config['api_key']
       channel.record_provider_configuration_error!(

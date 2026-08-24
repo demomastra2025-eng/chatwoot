@@ -55,13 +55,16 @@ module Whatsapp::DurableReauthorization
   end
 
   def persist_provider_authorization_error_if_current!(error_payload, expected_fingerprint)
-    already_requires_reauthorization = reauthorization_required?
     safe_error_payload = sanitize_provider_metadata(error_payload)
-    applied = persist_provider_authorization_error_state_if_current!(safe_error_payload, expected_fingerprint)
-    return false unless applied
+    with_durable_reauthorization_lock do
+      reload
+      already_requires_reauthorization = reauthorization_required?
+      applied = persist_provider_authorization_error_state_if_current!(safe_error_payload, expected_fingerprint)
+      next false unless applied
 
-    prompt_reauthorization! unless already_requires_reauthorization
-    true
+      prompt_reauthorization! unless already_requires_reauthorization
+      true
+    end
   end
 
   def persist_provider_authorization_error_state_if_current!(safe_error_payload, expected_fingerprint)

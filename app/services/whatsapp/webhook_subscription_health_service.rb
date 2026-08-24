@@ -48,7 +48,7 @@ class Whatsapp::WebhookSubscriptionHealthService
       authorization_error_result(recorded, classification.error)
     end
   rescue Whatsapp::WabaLock::LockAcquisitionError
-    Rails.logger.info("[WHATSAPP WEBHOOK SUBSCRIPTION] Deferred authorization error channel=#{@channel.id}: WABA lock busy")
+    Rails.logger.info("[WHATSAPP WEBHOOK SUBSCRIPTION] Deferred authorization error channel=#{@channel.id}: authorization lock busy")
     :skipped
   end
 
