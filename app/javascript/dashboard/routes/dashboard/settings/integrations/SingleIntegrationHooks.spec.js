@@ -292,7 +292,7 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
     expect(wrapper.text()).toContain('Phone owner');
     await buttonByLabel(
       wrapper,
-      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE'
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_TO_PRIMARY'
     ).trigger('click');
     await wrapper.get('[data-test="dialog-confirm"]').trigger('click');
     await flushPromises();
@@ -308,6 +308,145 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
       }
     );
 
+    wrapper.unmount();
+  });
+
+  it('renders field differences and submits the selected synchronization direction', async () => {
+    testState.syncStatus = {
+      ...syncStatus,
+      conflicts: [
+        {
+          id: 20,
+          phase: 'contacts',
+          conflict_type: 'phone_mismatch',
+          status: 'open',
+          occurrences: 1,
+          contact_resolution: {
+            can_sync_fields: true,
+            primary_contact: {
+              id: 101,
+              name: 'Patient',
+              conversations_count: 0,
+              appointments_count: 0,
+              deals_count: 0,
+              call_sessions_count: 0,
+            },
+            conflicting_contact: null,
+            field_comparisons: [
+              {
+                field: 'first_name',
+                onelink_value: 'Local name',
+                medelement_value: 'Provider name',
+                differs: true,
+                can_sync_to_onelink: true,
+                can_sync_to_medelement: true,
+              },
+              {
+                field: 'phone',
+                onelink_value: '+770****7777',
+                medelement_value: '+770****7060',
+                differs: true,
+                can_sync_to_onelink: true,
+                can_sync_to_medelement: true,
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    expect(
+      wrapper.get('[data-test="contact-field-comparison"]').text()
+    ).toContain('+770****7060');
+    await wrapper
+      .get('[data-test="field-direction-first_name"]')
+      .setValue('medelement_to_onelink');
+    await wrapper
+      .get('[data-test="field-direction-phone"]')
+      .setValue('onelink_to_medelement');
+    await buttonByLabel(
+      wrapper,
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPLY_FIELD_DIRECTIONS'
+    ).trigger('click');
+    await wrapper.get('[data-test="dialog-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(testState.dispatch).toHaveBeenCalledWith(
+      'integrations/resolveHookSyncConflict',
+      {
+        hookId: 7,
+        conflictId: 20,
+        resolution: 'sync_fields',
+        field_directions: {
+          first_name: 'medelement_to_onelink',
+          phone: 'onelink_to_medelement',
+        },
+      }
+    );
+
+    wrapper.unmount();
+  });
+
+  it('shows an actionable message when a field belongs to another contact', async () => {
+    testState.syncStatus = {
+      ...syncStatus,
+      conflicts: [
+        {
+          id: 20,
+          phase: 'contacts',
+          conflict_type: 'phone_mismatch',
+          status: 'open',
+          occurrences: 1,
+          contact_resolution: {
+            can_sync_fields: true,
+            field_comparisons: [
+              {
+                field: 'iin',
+                onelink_value: null,
+                medelement_value: '********0111',
+                differs: true,
+                can_sync_to_onelink: true,
+                can_sync_to_medelement: false,
+              },
+            ],
+          },
+        },
+      ],
+    };
+    testState.dispatch.mockImplementation(action => {
+      if (action === 'integrations/getHookSyncStatus')
+        return Promise.resolve(testState.syncStatus);
+      if (action === 'integrations/resolveHookSyncConflict') {
+        const error = new Error('Field already used');
+        error.response = {
+          data: {
+            code: 'contact_field_already_used',
+            field: 'iin',
+            contact_id: 5509,
+          },
+        };
+        return Promise.reject(error);
+      }
+      return Promise.reject(new Error(`Unexpected action: ${action}`));
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="field-direction-iin"]')
+      .setValue('medelement_to_onelink');
+    await buttonByLabel(
+      wrapper,
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPLY_FIELD_DIRECTIONS'
+    ).trigger('click');
+    await wrapper.get('[data-test="dialog-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(testState.alerts).toHaveBeenCalledWith(
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD_ALREADY_USED'
+    );
     wrapper.unmount();
   });
 

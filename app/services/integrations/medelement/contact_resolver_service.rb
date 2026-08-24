@@ -333,7 +333,12 @@ class Integrations::Medelement::ContactResolverService
       'birth_date' => normalize_birth_date(patient['BIRTHDAY']),
       'gender' => gender_value(patient),
       'iin' => iin,
+      'medelement_address' => patient['FULL_ADDRESS'].to_s.presence,
+      'medelement_birth_date' => normalize_birth_date(patient['BIRTHDAY']),
+      'medelement_email' => patient['PATIENT_EMAIL'].to_s.downcase.presence,
       'medelement_first_name' => first_name,
+      'medelement_gender' => gender_value(patient),
+      'medelement_iin' => iin,
       'medelement_last_name' => patient['LASTNAME'].to_s.presence,
       'medelement_middle_name' => middle_name
     }.compact
@@ -350,9 +355,15 @@ class Integrations::Medelement::ContactResolverService
       details: {
         contact_id: contact.id,
         conflicting_contact_id: conflicting_contact_id,
-        reason: conflict_type
+        reason: conflict_type,
+        local_phone_last4: Integrations::Medelement::PhoneNumber.normalize(contact.phone_number).to_s.last(4),
+        provider_phone_last4: provider_phone_from_comment(comment).to_s.last(4)
       }.compact
     )
+  end
+
+  def provider_phone_from_comment(comment)
+    comment.to_s[/Medelement phone (\+\d+)/, 1]
   end
   # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
 end

@@ -109,14 +109,18 @@ describe Integrations::Medelement::ContactResolutionService do
       end.to raise_error(ActiveRecord::RecordNotFound)
     end
 
-    it 'rejects reversing the recorded merge direction' do
-      expect do
-        service.merge_contacts!(base_contact_id: conflicting_contact.id, mergee_contact_id: primary_contact.id)
-      end.to raise_error(ActiveRecord::RecordNotFound)
+    it 'keeps the numbered phone when the administrator chooses the contact without a phone to survive' do
+      primary_contact.update!(phone_number: '+77010007777')
+      conflicting_contact.update!(phone_number: nil)
+      call_session = create(:telephony_call_session, account: account, contact: primary_contact)
 
-      expect(primary_contact.reload).to be_present
-      expect(conflicting_contact.reload).to be_present
-      expect(conflict.reload).to be_open
+      service.merge_contacts!(base_contact_id: conflicting_contact.id, mergee_contact_id: primary_contact.id)
+
+      expect(Contact.exists?(primary_contact.id)).to be(false)
+      expect(conflicting_contact.reload).to have_attributes(phone_number: '+77010007777')
+      expect(conflicting_contact.custom_attributes['medelement_patient_code']).to eq('patient-1')
+      expect(call_session.reload.contact_id).to eq(conflicting_contact.id)
+      expect(conflict.reload).to be_resolved
     end
 
     it 'rolls back the contact merge when resolving the conflict fails' do

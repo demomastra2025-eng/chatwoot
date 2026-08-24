@@ -450,7 +450,7 @@ RSpec.describe 'Integration Hooks API', type: :request do
       expect(conflict.reload).to have_attributes(status: 'ignored', resolution_note: 'Different patients', resolved_by: admin)
     end
 
-    it 'allows an admin to merge only in the recorded direction' do
+    it 'allows an admin to merge the recorded contacts' do
       post resolve_sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
            params: {
              conflict_id: conflict.id,
@@ -464,6 +464,57 @@ RSpec.describe 'Integration Hooks API', type: :request do
       expect(response).to have_http_status(:ok)
       expect(Contact.exists?(conflicting_contact.id)).to be(false)
       expect(conflict.reload).to have_attributes(status: 'resolved', resolved_by: admin)
+    end
+
+    it 'dispatches selected field synchronization with its direction' do
+      field_service = instance_double(Integrations::Medelement::ContactFieldResolutionService, perform: nil)
+      allow(Integrations::Medelement::ContactFieldResolutionService).to receive(:new).and_return(field_service)
+
+      post resolve_sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           params: {
+             conflict_id: conflict.id,
+             resolution: 'sync_fields',
+             field_directions: {
+               first_name: 'medelement_to_onelink',
+               phone: 'onelink_to_medelement'
+             }
+           },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(field_service).to have_received(:perform).with(
+        field_directions: ActionController::Parameters.new(
+          first_name: 'medelement_to_onelink',
+          phone: 'onelink_to_medelement'
+        )
+      )
+    end
+
+    it 'returns a structured response when a synchronized field belongs to another contact' do
+      error = Integrations::Medelement::ContactFieldResolutionService::FieldAlreadyUsedError.new(
+        field: 'iin',
+        contact_id: conflicting_contact.id
+      )
+      field_service = instance_double(Integrations::Medelement::ContactFieldResolutionService)
+      allow(field_service).to receive(:perform).and_raise(error)
+      allow(Integrations::Medelement::ContactFieldResolutionService).to receive(:new).and_return(field_service)
+
+      post resolve_sync_conflict_api_v1_account_integrations_hook_url(account_id: account.id, id: hook.id),
+           params: {
+             conflict_id: conflict.id,
+             resolution: 'sync_fields',
+             field_directions: { iin: 'medelement_to_onelink' }
+           },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.parsed_body).to include(
+        'code' => 'contact_field_already_used',
+        'field' => 'iin',
+        'contact_id' => conflicting_contact.id
+      )
     end
 
     it 'rejects unsafe deletion and preserves the conflict' do

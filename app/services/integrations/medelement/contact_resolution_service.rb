@@ -81,9 +81,9 @@ class Integrations::Medelement::ContactResolutionService
   end
 
   def ensure_merge_direction!(base_contact, mergee_contact)
-    expected_base_id = conflict.details['contact_id'].to_i
-    expected_mergee_id = conflict.details['conflicting_contact_id'].to_i
-    return if base_contact.id == expected_base_id && mergee_contact.id == expected_mergee_id
+    expected_ids = [conflict.details['contact_id'], conflict.details['conflicting_contact_id']].compact.map(&:to_i).sort
+    actual_ids = [base_contact.id, mergee_contact.id].sort
+    return if expected_ids.size == 2 && base_contact.id != mergee_contact.id && actual_ids == expected_ids
 
     raise ActiveRecord::RecordNotFound
   end

@@ -75,6 +75,7 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
     render json: medelement_sync_status
   end
 
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def resolve_sync_conflict
     conflict = medelement_conflict!
     service = Integrations::Medelement::ContactResolutionService.new(conflict: conflict, user: Current.user)
@@ -86,19 +87,33 @@ class Api::V1::Accounts::Integrations::HooksController < Api::V1::Accounts::Base
       service.delete!(contact_id: params[:contact_id])
     when 'keep_separate'
       service.keep_separate!(note: params[:note])
+    when 'sync_fields'
+      Integrations::Medelement::ContactFieldResolutionService.new(
+        conflict: conflict,
+        user: Current.user
+      ).perform(field_directions: params[:field_directions])
     else
       return render json: { code: 'invalid_resolution', message: 'Unsupported contact conflict resolution' },
                     status: :unprocessable_content
     end
 
     render json: medelement_sync_status
+  rescue Integrations::Medelement::ContactFieldResolutionService::FieldAlreadyUsedError => e
+    render json: {
+      code: 'contact_field_already_used',
+      field: e.field,
+      contact_id: e.contact_id,
+      message: e.message
+    }, status: :unprocessable_content
   rescue Integrations::Medelement::ContactResolutionService::UnsafeDeletionError,
          Integrations::Medelement::ContactResolutionService::UnsupportedConflictError,
+         Integrations::Medelement::ContactFieldResolutionService::ResolutionError,
          Contacts::ReferenceMergeService::UnsafeMergeError,
          ArgumentError => e
     render json: { code: 'unsafe_resolution', message: e.message }, status: :unprocessable_content
   end
 
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
   def import_catalog
     upload = params[:file]
     return render_import_error('missing_file', 'Select a JSON catalog file') unless upload.respond_to?(:read)

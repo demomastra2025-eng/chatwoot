@@ -151,6 +151,21 @@ const conflictStatusTranslation = {
   ignored: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS.IGNORED',
   resolved: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.STATUS.RESOLVED',
 };
+const conflictFieldTranslation = {
+  first_name:
+    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.FIRST_NAME',
+  last_name: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.LAST_NAME',
+  middle_name:
+    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.MIDDLE_NAME',
+  phone: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.PHONE',
+  iin: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.IIN',
+  birth_date:
+    'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.BIRTH_DATE',
+  gender: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.GENDER',
+  email: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.EMAIL',
+  address: 'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD.ADDRESS',
+};
+const selectedConflictFieldDirections = ref({});
 const syncCounterTranslation = {
   configured_fields:
     'INTEGRATION_APPS.MEDELEMENT.SYNC_COUNTER.CONFIGURED_FIELDS',
@@ -468,6 +483,17 @@ function openContact(contact) {
   );
 }
 
+function clearConflictFieldDirections(conflictId) {
+  const directions = { ...selectedConflictFieldDirections.value };
+  delete directions[conflictId];
+  selectedConflictFieldDirections.value = directions;
+}
+
+function conflictFieldLabel(field) {
+  const key = conflictFieldTranslation[field];
+  return key ? t(key) : humanizeProperty(field);
+}
+
 async function resolveContactConflict(conflict, resolution) {
   const hookId = connectedHook.value?.id;
   if (!hookId) return false;
@@ -478,26 +504,83 @@ async function resolveContactConflict(conflict, resolution) {
       'integrations/resolveHookSyncConflict',
       { hookId, conflictId: conflict.id, ...resolution }
     );
+    clearConflictFieldDirections(conflict.id);
     useAlert(t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SUCCESS'));
     return true;
   } catch (error) {
-    useAlert(
-      error?.response?.data?.message ||
-        t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.ERROR')
-    );
+    const response = error?.response?.data;
+    const message =
+      response?.code === 'contact_field_already_used'
+        ? t(
+            'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD_ALREADY_USED',
+            {
+              field: conflictFieldLabel(response.field),
+              contactId: response.contact_id,
+            }
+          )
+        : response?.message ||
+          t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.ERROR');
+    useAlert(message);
     return false;
   } finally {
     resolvingConflictId.value = null;
   }
 }
 
-function mergeContactConflict(conflict) {
+function mergeContactConflict(conflict, survivor = 'primary') {
   const resolution = conflict.contact_resolution;
   if (!resolution?.can_merge) return;
   pendingConflictAction.value = {
     type: 'merge',
     conflict,
-    contact: resolution.conflicting_contact,
+    survivor,
+  };
+  conflictResolutionDialog.value?.open();
+}
+
+function fieldDirectionsForConflict(conflict) {
+  const selected = selectedConflictFieldDirections.value[conflict.id] || {};
+  const comparisons = new Map(
+    (conflict.contact_resolution?.field_comparisons || []).map(field => [
+      field.field,
+      field,
+    ])
+  );
+  return Object.fromEntries(
+    Object.entries(selected).filter(([field, direction]) => {
+      const comparison = comparisons.get(field);
+      return direction === 'medelement_to_onelink'
+        ? comparison?.can_sync_to_onelink
+        : comparison?.can_sync_to_medelement;
+    })
+  );
+}
+
+function setConflictFieldDirection(conflict, field, direction) {
+  const directions = { ...fieldDirectionsForConflict(conflict) };
+  if (direction) directions[field] = direction;
+  else delete directions[field];
+  selectedConflictFieldDirections.value = {
+    ...selectedConflictFieldDirections.value,
+    [conflict.id]: directions,
+  };
+}
+
+function fieldDirectionLabel(direction) {
+  const key =
+    direction === 'medelement_to_onelink'
+      ? 'FROM_MEDELEMENT_TO_ONELINK'
+      : 'FROM_ONELINK_TO_MEDELEMENT';
+  return t(`INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.${key}`);
+}
+
+function syncConflictFields(conflict) {
+  const fieldDirections = fieldDirectionsForConflict(conflict);
+  if (!Object.keys(fieldDirections).length) return;
+  pendingConflictAction.value = {
+    type: 'sync_fields',
+    conflict,
+    fieldDirections,
   };
   conflictResolutionDialog.value?.open();
 }
@@ -525,11 +608,26 @@ const conflictDialogDescription = computed(() => {
     });
   }
 
+  if (action.type === 'sync_fields') {
+    const changes = Object.entries(action.fieldDirections)
+      .map(
+        ([field, direction]) =>
+          `${conflictFieldLabel(field)}: ${fieldDirectionLabel(direction)}`
+      )
+      .join('; ');
+    return t(
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SYNC_FIELDS_CONFIRM',
+      { changes }
+    );
+  }
+
   const { primary_contact: primary, conflicting_contact: duplicate } =
     action.conflict.contact_resolution;
+  const survivor = action.survivor === 'conflicting' ? duplicate : primary;
+  const mergee = action.survivor === 'conflicting' ? primary : duplicate;
   return t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_CONFIRM', {
-    primary: primary.name || `#${primary.id}`,
-    duplicate: duplicate.name || `#${duplicate.id}`,
+    primary: survivor.name || `#${survivor.id}`,
+    duplicate: mergee.name || `#${mergee.id}`,
   });
 });
 
@@ -538,14 +636,27 @@ async function confirmConflictAction() {
   if (!action) return;
   let payload;
   if (action.type === 'merge') {
+    const resolution = action.conflict.contact_resolution;
+    const base =
+      action.survivor === 'conflicting'
+        ? resolution.conflicting_contact
+        : resolution.primary_contact;
+    const mergee =
+      action.survivor === 'conflicting'
+        ? resolution.primary_contact
+        : resolution.conflicting_contact;
     payload = {
       resolution: 'merge',
-      base_contact_id: action.conflict.contact_resolution.primary_contact.id,
-      mergee_contact_id:
-        action.conflict.contact_resolution.conflicting_contact.id,
+      base_contact_id: base.id,
+      mergee_contact_id: mergee.id,
     };
   } else if (action.type === 'delete') {
     payload = { resolution: 'delete', contact_id: action.contact.id };
+  } else if (action.type === 'sync_fields') {
+    payload = {
+      resolution: 'sync_fields',
+      field_directions: action.fieldDirections,
+    };
   } else {
     payload = {
       resolution: 'keep_separate',
@@ -747,6 +858,7 @@ watch(
   hookId => {
     clearHookSyncPoll();
     hookSyncPollFailures = 0;
+    selectedConflictFieldDirections.value = {};
     hookSyncStatus.value = {
       run: null,
       phase_statuses: {},
@@ -1150,6 +1262,109 @@ onBeforeUnmount(clearHookSyncPoll);
                 }}
               </p>
             </article>
+
+            <div
+              v-if="conflict.contact_resolution.field_comparisons?.length"
+              class="overflow-x-auto rounded-lg border border-n-weak lg:col-span-2"
+              data-test="contact-field-comparison"
+            >
+              <table class="w-full text-left text-xs text-n-slate-11">
+                <thead class="bg-n-alpha-3 text-n-slate-12">
+                  <tr>
+                    <th class="px-3 py-2">
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DIRECTION'
+                        )
+                      }}
+                    </th>
+                    <th class="px-3 py-2">
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD_LABEL'
+                        )
+                      }}
+                    </th>
+                    <th class="px-3 py-2">
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.ONELINK_SOURCE'
+                        )
+                      }}
+                    </th>
+                    <th class="px-3 py-2">
+                      {{
+                        $t(
+                          'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MEDELEMENT_SOURCE'
+                        )
+                      }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="field in conflict.contact_resolution
+                      .field_comparisons"
+                    :key="field.field"
+                    :class="field.differs ? 'bg-n-amber-1' : ''"
+                    class="border-t border-n-weak"
+                  >
+                    <td class="px-3 py-2">
+                      <select
+                        :data-test="`field-direction-${field.field}`"
+                        class="min-w-48 rounded-md border border-n-weak bg-n-solid-2 px-2 py-1 text-xs text-n-slate-12"
+                        :value="
+                          fieldDirectionsForConflict(conflict)[field.field] ||
+                          ''
+                        "
+                        @change="
+                          setConflictFieldDirection(
+                            conflict,
+                            field.field,
+                            $event.target.value
+                          )
+                        "
+                      >
+                        <option value="">
+                          {{
+                            $t(
+                              'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.DO_NOT_CHANGE'
+                            )
+                          }}
+                        </option>
+                        <option
+                          v-if="field.can_sync_to_onelink"
+                          value="medelement_to_onelink"
+                        >
+                          {{
+                            $t(
+                              'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FROM_MEDELEMENT_TO_ONELINK'
+                            )
+                          }}
+                        </option>
+                        <option
+                          v-if="field.can_sync_to_medelement"
+                          value="onelink_to_medelement"
+                        >
+                          {{
+                            $t(
+                              'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FROM_ONELINK_TO_MEDELEMENT'
+                            )
+                          }}
+                        </option>
+                      </select>
+                    </td>
+                    <td class="px-3 py-2 font-medium text-n-slate-12">
+                      {{ conflictFieldLabel(field.field) }}
+                    </td>
+                    <td class="px-3 py-2">{{ field.onelink_value || '—' }}</td>
+                    <td class="px-3 py-2">
+                      {{ field.medelement_value || '—' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
 
           <div
@@ -1377,9 +1592,43 @@ onBeforeUnmount(clearHookSyncPoll);
               blue
               :is-loading="resolvingConflictId === conflict.id"
               :label="
-                $t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE')
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_TO_PRIMARY'
+                )
               "
-              @click="mergeContactConflict(conflict)"
+              @click="mergeContactConflict(conflict, 'primary')"
+            />
+            <NextButton
+              v-if="
+                conflict.status === 'open' &&
+                conflict.contact_resolution?.can_merge
+              "
+              faded
+              blue
+              :is-loading="resolvingConflictId === conflict.id"
+              :label="
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.MERGE_TO_CONFLICTING'
+                )
+              "
+              @click="mergeContactConflict(conflict, 'conflicting')"
+            />
+            <NextButton
+              v-if="
+                conflict.status === 'open' &&
+                conflict.contact_resolution?.can_sync_fields
+              "
+              blue
+              :is-loading="resolvingConflictId === conflict.id"
+              :disabled="
+                !Object.keys(fieldDirectionsForConflict(conflict)).length
+              "
+              :label="
+                $t(
+                  'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.APPLY_FIELD_DIRECTIONS'
+                )
+              "
+              @click="syncConflictFields(conflict)"
             />
             <NextButton
               v-if="conflict.status === 'open' && conflict.contact_resolution"

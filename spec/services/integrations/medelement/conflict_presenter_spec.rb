@@ -52,6 +52,46 @@ describe Integrations::Medelement::ConflictPresenter do
     )
   end
 
+  it 'shows important OneLink and MedElement fields for a phone mismatch' do
+    hook.update!(settings: hook.settings.merge('write_enabled' => true))
+    primary_contact.update!(
+      name: 'Local name',
+      phone_number: '+77010007777',
+      identifier: '950424301111',
+      custom_attributes: {
+        'medelement_patient_code' => 'patient-1',
+        'medelement_first_name' => 'Provider name',
+        'medelement_iin' => '950424309911',
+        'address' => 'Local address',
+        'medelement_address' => 'Provider address',
+        'phone_conflict_comment' => 'Medelement phone +77010007060 differs from the current Contact phone'
+      }
+    )
+    conflict = Integrations::Medelement::ConflictTracker.new(sync_run: run).record!(
+      phase: 'contacts',
+      entity_type: 'contact',
+      conflict_type: 'phone_mismatch',
+      entity_key: 'patient-1',
+      details: { contact_id: primary_contact.id }
+    )
+
+    resolution = described_class.new(conflict: conflict).payload[:contact_resolution]
+
+    expect(resolution[:can_sync_fields]).to be(true)
+    expect(resolution[:field_comparisons]).to include(
+      hash_including(
+        field: :first_name,
+        onelink_value: 'Local name',
+        medelement_value: 'Provider name',
+        differs: true,
+        can_sync_to_medelement: true
+      ),
+      hash_including(field: :phone, onelink_value: '+77010007777', medelement_value: '+77010007060', differs: true),
+      hash_including(field: :iin, differs: true),
+      hash_including(field: :address, differs: true, can_sync_to_onelink: true, can_sync_to_medelement: false)
+    )
+  end
+
   it 'presents an account-scoped specialist card' do
     resource = create(
       :scheduling_resource,
