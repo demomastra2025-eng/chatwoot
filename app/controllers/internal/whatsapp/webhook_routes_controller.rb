@@ -14,11 +14,10 @@ class Internal::Whatsapp::WebhookRoutesController < ActionController::API
 
     created, registration_token = with_waba_registry_lock do
       initial_token = SecureRandom.uuid
-      route = WhatsappWebhookRoute.create_or_find_by!(route_identity) do |record|
-        record.registration_token = initial_token
-      end
-      created = route.previously_new_record?
-      route.update!(registration_token: initial_token) if route.registration_token.blank?
+      route = WhatsappWebhookRoute.find_or_initialize_by(route_identity)
+      created = route.new_record?
+      route.registration_token = initial_token if route.registration_token.blank?
+      route.save! if route.changed?
       [created, route.registration_token]
     end
 

@@ -14,15 +14,19 @@ RSpec.describe 'Internal WhatsApp webhook routes' do
   end
 
   it 'idempotently registers and removes an exact route' do
-    put path, params: body, headers: signed_headers(:put, body)
-    expect(response).to have_http_status(:created)
-    first_token = response.headers.fetch('X-OneLink-Route-Registration-Token')
+    current_token = nil
+    route_inserts = capture_route_inserts do
+      put path, params: body, headers: signed_headers(:put, body)
+      expect(response).to have_http_status(:created)
+      first_token = response.headers.fetch('X-OneLink-Route-Registration-Token')
 
-    put path, params: body, headers: signed_headers(:put, body)
-    expect(response).to have_http_status(:no_content)
-    current_token = response.headers.fetch('X-OneLink-Route-Registration-Token')
-    expect(current_token).to eq(first_token)
-    expect(WhatsappWebhookRoute.where(payload).count).to eq(1)
+      put path, params: body, headers: signed_headers(:put, body)
+      expect(response).to have_http_status(:no_content)
+      current_token = response.headers.fetch('X-OneLink-Route-Registration-Token')
+      expect(current_token).to eq(first_token)
+    end
+
+    expect(route_inserts.one?).to be(true)
 
     current_delete_body = JSON.generate(payload.merge(registration_token: current_token))
     delete path, params: current_delete_body, headers: signed_headers(:delete, current_delete_body)
@@ -42,6 +46,18 @@ RSpec.describe 'Internal WhatsApp webhook routes' do
     expect(response).to have_http_status(:conflict)
     expect(response.parsed_body).to eq('error' => 'stale_registration_token')
     expect(WhatsappWebhookRoute.where(payload)).to exist
+  end
+
+  it 'backfills a missing registration token without attempting another insert' do
+    route = WhatsappWebhookRoute.create!(payload)
+    route_inserts = capture_route_inserts do
+      put path, params: body, headers: signed_headers(:put, body)
+    end
+
+    expect(response).to have_http_status(:no_content)
+    expect(response.headers.fetch('X-OneLink-Route-Registration-Token')).to match(WhatsappWebhookRoute::REGISTRATION_TOKEN)
+    expect(route.reload.registration_token).to eq(response.headers.fetch('X-OneLink-Route-Registration-Token'))
+    expect(route_inserts).to be_empty
   end
 
   it 'serializes route mutation with canonical ingress for the whole WABA' do
@@ -113,6 +129,16 @@ RSpec.describe 'Internal WhatsApp webhook routes' do
 
   def body
     @body ||= JSON.generate(payload)
+  end
+
+  def capture_route_inserts(&)
+    inserts = []
+    callback = lambda do |*args|
+      sql = ActiveSupport::Notifications::Event.new(*args).payload[:sql].to_s
+      inserts << sql if sql.start_with?('INSERT INTO "whatsapp_webhook_routes"')
+    end
+    ActiveSupport::Notifications.subscribed(callback, 'sql.active_record', &)
+    inserts
   end
 
   def signed_headers(method, request_body, timestamp: Time.now.to_i.to_s, signing_secret: secret)
