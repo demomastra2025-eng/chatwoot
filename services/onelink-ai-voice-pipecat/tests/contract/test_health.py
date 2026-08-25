@@ -30,6 +30,7 @@ def test_health_distinguishes_liveness_and_readiness():
     assert response.json() == {
         "status": "ok",
         "ready": False,
+        "active_sessions": 0,
         "runtime_engine": "pipecat",
         "realtime_provider": "gemini-live",
         "supported_providers": [

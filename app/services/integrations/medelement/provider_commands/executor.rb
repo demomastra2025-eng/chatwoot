@@ -5,8 +5,9 @@ class Integrations::Medelement::ProviderCommands::Executor
   BOOKABLE_APPOINTMENT_STATUSES = %w[scheduled confirmed].freeze
   PATIENT_WRITE_RESPONSE_KEYS = Integrations::Medelement::ProviderCommands::PatientResolver::WRITE_RESPONSE_KEYS
 
-  def initialize(command:)
+  def initialize(command:, client: nil)
     @command = command
+    @client = client
   end
 
   # The ordered rescue map is the public command outcome contract.
@@ -30,6 +31,9 @@ class Integrations::Medelement::ProviderCommands::Executor
     fail_command!(code: 'remote_state_changed', reconciliation: true)
   rescue Integrations::Medelement::ProviderScope::MismatchError
     fail_command!(code: 'provider_scope_mismatch', reconciliation: write_started?)
+  rescue Integrations::Medelement::ContactFieldResolutionService::FieldAlreadyUsedError => e
+    record_contact_field_conflict(e)
+    fail_command!(code: 'contact_field_conflict', reconciliation: true)
   rescue ClaimLost
     nil
   rescue StandardError => e
@@ -41,6 +45,14 @@ class Integrations::Medelement::ProviderCommands::Executor
   private
 
   attr_reader :command
+
+  def record_contact_field_conflict(error)
+    Integrations::Medelement::ContactFieldResolutionService.record_provider_command_conflict!(command, error)
+  rescue StandardError => e
+    Rails.logger.error(
+      "MedElement provider command #{command.id} could not persist contact collision: #{e.class}"
+    )
+  end
 
   def claim!
     command.with_lock do

@@ -8,8 +8,9 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
     'reception_remove' => :reconcile_reception_remove
   }.freeze
 
-  def initialize(command:)
+  def initialize(command:, client: nil)
     @command = command
+    @client = client
   end
 
   def perform
@@ -35,7 +36,11 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
 
   private
 
-  attr_reader :command, :configuration, :client, :reconciliation_claim_token
+  attr_reader :command, :configuration, :reconciliation_claim_token
+
+  def client
+    @client ||= Integrations::Medelement::Client.new(configuration: configuration)
+  end
 
   def reconcile_write!
     initialize_provider!
@@ -292,7 +297,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
 
   def initialize_provider!
     @configuration = Integrations::Medelement::Configuration.new(hook: command.hook)
-    @client = Integrations::Medelement::Client.new(configuration: configuration)
+    client
   end
 end
 # rubocop:enable Metrics/AbcSize, Metrics/ClassLength, Metrics/CyclomaticComplexity

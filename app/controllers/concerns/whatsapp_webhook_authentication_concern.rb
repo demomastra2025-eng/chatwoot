@@ -49,7 +49,7 @@ module WhatsappWebhookAuthenticationConcern
   def waba_secret_candidates
     return @waba_secret_candidates if defined?(@waba_secret_candidates)
 
-    candidates = Channel::Whatsapp.active_cloud.for_waba(webhook_waba_ids).limit(META_SECRET_CHANNEL_LIMIT).to_a
+    candidates = Channel::Whatsapp.lifecycle_cloud.for_waba(webhook_waba_ids).limit(META_SECRET_CHANNEL_LIMIT).to_a
     @waba_secret_candidates = candidates.group_by do |candidate|
       candidate.provider_config.to_h['business_account_id'].to_s
     end

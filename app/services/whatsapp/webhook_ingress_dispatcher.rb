@@ -13,6 +13,16 @@ class Whatsapp::WebhookIngressDispatcher
   private
 
   def dispatch(payload)
+    waba_id = payload.dig(:entry, 0, :id).to_s.presence
+    return dispatch_to_destinations(payload) if waba_id.blank?
+
+    Whatsapp::WabaLock.new(waba_id).with_lock do
+      payload = with_legacy_account_update_route(payload)
+      WhatsappWebhookRoute.with_waba_registry_lock(waba_id) { dispatch_to_destinations(payload) }
+    end
+  end
+
+  def dispatch_to_destinations(payload)
     destinations_for(payload).each do |destination|
       if destination == Whatsapp::WebhookIngressRouter::LOCAL_DESTINATION
         Webhooks::WhatsappEventsJob.perform_later(payload, @verification_context.call(payload))
@@ -29,14 +39,10 @@ class Whatsapp::WebhookIngressDispatcher
   end
 
   def job_payloads
-    should_normalize = ingress_routing_enabled? || (@default_callback && account_update_webhook?)
+    should_normalize = @central_ingress || (@default_callback && account_update_webhook?)
     return [@payload] unless should_normalize
 
-    Whatsapp::WebhookBatchNormalizer.new(params: @payload).perform.map { |payload| with_legacy_account_update_route(payload) }
-  end
-
-  def ingress_routing_enabled?
-    @central_ingress && Whatsapp::WebhookIngressRouter.new(payload: @payload).routing_enabled?
+    Whatsapp::WebhookBatchNormalizer.new(params: @payload).perform
   end
 
   def account_update_webhook?

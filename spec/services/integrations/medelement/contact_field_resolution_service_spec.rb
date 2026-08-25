@@ -56,7 +56,29 @@ RSpec.describe Integrations::Medelement::ContactFieldResolutionService do
       'PATIENT_PHONE_2_STR' => '+77010007060'
     }
   end
-  let(:client) { instance_double(Integrations::Medelement::Client, get_patient: patient, update_patient: {}) }
+  let(:updated_patient) { {} }
+  let(:client) do
+    instance_double(Integrations::Medelement::Client, get_patient: patient).tap do |double|
+      allow(double).to receive(:update_patient) do |params:|
+        updated_patient.replace(
+          'PROFILE_CODE' => params['profile_code'],
+          'NAME' => params['name'],
+          'LASTNAME' => params['lastname'],
+          'MIDDLENAME' => params['middlename'],
+          'IIN' => params['iin'],
+          'BIRTHDAY' => params['birthday'],
+          'GENDER' => params['gender'],
+          'PATIENT_EMAIL' => params['patient_email'],
+          'PATIENT_PHONE_2_STR' => [
+            params['patient_phone_2[0]'],
+            params['patient_phone_2[1]'],
+            params['patient_phone_2[2]']
+          ].join
+        )
+      end
+      allow(double).to receive(:search_patients_by_phone) { [updated_patient] }
+    end
+  end
 
   before { account.enable_features!('scheduling') }
 
@@ -161,7 +183,11 @@ RSpec.describe Integrations::Medelement::ContactFieldResolutionService do
       expect(error).to have_attributes(field: 'iin', contact_id: duplicate.id)
     }
 
-    expect(client).not_to have_received(:update_patient)
+    expect(client).to have_received(:update_patient).once
+    expect(Integrations::Medelement::ProviderCommand.last).to have_attributes(
+      logical_status: 'reconciliation_required',
+      last_error_code: 'contact_field_conflict'
+    )
     expect(conflict.reload.details).to include(
       'conflicting_contact_id' => duplicate.id,
       'conflicting_field' => 'iin'
@@ -218,6 +244,37 @@ RSpec.describe Integrations::Medelement::ContactFieldResolutionService do
       'first_name=medelement_to_onelink',
       'phone=onelink_to_medelement'
     )
+  end
+
+  it 'reconciles local persistence after the provider update succeeds' do
+    failed_once = false
+    allow(described_class).to receive(:apply_provider_command!).and_wrap_original do |method, command|
+      unless failed_once
+        failed_once = true
+        raise ActiveRecord::StatementInvalid, 'injected resolution persistence failure'
+      end
+
+      method.call(command)
+    end
+
+    expect do
+      service.perform(field_directions: { phone: 'onelink_to_medelement' })
+    end.to raise_error(described_class::ResolutionError, /pending: executor_error/)
+
+    command = Integrations::Medelement::ProviderCommand.last
+    expect(command).to have_attributes(logical_status: 'reconciliation_required', last_error_code: 'executor_error')
+    expect(conflict.reload).to be_open
+    expect(client).to have_received(:update_patient).once
+
+    command.update!(
+      execution_state: command.execution_state.merge('reconciliation_next_at' => 1.minute.ago.iso8601)
+    )
+
+    service.perform(field_directions: { phone: 'onelink_to_medelement' })
+
+    expect(command.reload).to be_succeeded
+    expect(conflict.reload).to be_resolved
+    expect(client).to have_received(:update_patient).once
   end
 
   it 'allows provider-only address values to update OneLink but not MedElement' do

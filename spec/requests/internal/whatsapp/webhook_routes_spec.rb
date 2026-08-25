@@ -21,26 +21,45 @@ RSpec.describe 'Internal WhatsApp webhook routes' do
     put path, params: body, headers: signed_headers(:put, body)
     expect(response).to have_http_status(:no_content)
     current_token = response.headers.fetch('X-OneLink-Route-Registration-Token')
-    expect(current_token).not_to eq(first_token)
+    expect(current_token).to eq(first_token)
     expect(WhatsappWebhookRoute.where(payload).count).to eq(1)
-
-    stale_delete_body = JSON.generate(payload.merge(registration_token: first_token))
-    delete path, params: stale_delete_body, headers: signed_headers(:delete, stale_delete_body)
-    expect(WhatsappWebhookRoute.where(payload)).to exist
 
     current_delete_body = JSON.generate(payload.merge(registration_token: current_token))
     delete path, params: current_delete_body, headers: signed_headers(:delete, current_delete_body)
     expect(response).to have_http_status(:no_content)
     expect(WhatsappWebhookRoute.where(payload)).to be_empty
+
+    delete path, params: current_delete_body, headers: signed_headers(:delete, current_delete_body)
+    expect(response).to have_http_status(:no_content)
   end
 
-  it 'keeps unconditional deletion for explicit teardown callers' do
+  it 'rejects a stale registration generation without removing the current route' do
+    WhatsappWebhookRoute.create!(payload.merge(registration_token: SecureRandom.uuid))
+    stale_delete_body = JSON.generate(payload.merge(registration_token: SecureRandom.uuid))
+
+    delete path, params: stale_delete_body, headers: signed_headers(:delete, stale_delete_body)
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to eq('error' => 'stale_registration_token')
+    expect(WhatsappWebhookRoute.where(payload)).to exist
+  end
+
+  it 'serializes route mutation with canonical ingress for the whole WABA' do
+    expect(WhatsappWebhookRoute).to receive(:with_waba_registry_lock).with('123456').and_call_original
+
+    put path, params: body, headers: signed_headers(:put, body)
+
+    expect(response).to have_http_status(:created)
+  end
+
+  it 'rejects legacy unconditional deletion without removing the current route generation' do
     WhatsappWebhookRoute.create!(payload.merge(registration_token: SecureRandom.uuid))
 
     delete path, params: body, headers: signed_headers(:delete, body)
 
-    expect(response).to have_http_status(:no_content)
-    expect(WhatsappWebhookRoute.where(payload)).to be_empty
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body).to eq('error' => 'registration_token_required')
+    expect(WhatsappWebhookRoute.where(payload)).to exist
   end
 
   it 'refuses to override a locally owned PROD phone' do

@@ -63,6 +63,7 @@ def create_app(
         return {
             "status": "ok",
             "ready": not checks,
+            "active_sessions": manager.active_count,
             "runtime_engine": "pipecat",
             "realtime_provider": runtime_settings.realtime_provider,
             "supported_providers": [

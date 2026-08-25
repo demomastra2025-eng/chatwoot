@@ -12,6 +12,7 @@ class Whatsapp::WebhookRouteRegistryClient
   REQUEST_TIMEOUT = 5
   DEFAULT_VALUE = Object.new.freeze
   REGISTRATION_TOKEN_HEADER = 'X-OneLink-Route-Registration-Token'.freeze
+  REGISTRATION_TOKEN_CONFIG_KEY = 'webhook_route_registration_token'.freeze
   REGISTRATION_TOKEN = /\A[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z/
 
   class Error < StandardError; end
@@ -72,7 +73,9 @@ class Whatsapp::WebhookRouteRegistryClient
 
   def registration_from(response)
     token = response[REGISTRATION_TOKEN_HEADER].to_s.presence
-    status = response.code.to_i == 201 && token&.match?(REGISTRATION_TOKEN) ? :created : :existing
+    raise Error, 'WhatsApp webhook route registry response is missing a valid registration token' unless token&.match?(REGISTRATION_TOKEN)
+
+    status = response.code.to_i == 201 ? :created : :existing
     Registration.new(status: status, token: token)
   end
 

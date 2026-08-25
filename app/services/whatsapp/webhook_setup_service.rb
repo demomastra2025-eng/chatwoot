@@ -46,7 +46,7 @@ class Whatsapp::WebhookSetupService
     with_waba_lock do
       validate_expected_credentials!
       if @api_client.app_subscribed_to_waba?(@waba_id)
-        register_remote_route!
+        register_and_persist_remote_route!
         next :healthy
       end
 
@@ -59,7 +59,7 @@ class Whatsapp::WebhookSetupService
     validate_parameters!
     with_waba_lock do
       validate_expected_credentials!
-      register_remote_route!
+      register_and_persist_remote_route!
       :healthy
     end
   end
@@ -136,7 +136,7 @@ class Whatsapp::WebhookSetupService
     validate_recovery_identity!
     callback_url, verify_token, recovery_target = callback_details
 
-    route_registration = register_remote_route!(callback_url)
+    route_registration = register_and_persist_remote_route!(callback_url)
     callback_recovery.updating!(**recovery_target)
     subscribe_waba_callback(callback_url, verify_token)
     remote_callback_updated = true
@@ -215,6 +215,29 @@ class Whatsapp::WebhookSetupService
     end
 
     route_registry_client.register!(waba_id: @waba_id, phone_number_id: @phone_number_id)
+  end
+
+  def register_and_persist_remote_route!(callback_url = public_ingress_url)
+    registration = register_remote_route!(callback_url)
+    persist_remote_route_registration!(registration)
+    registration
+  rescue StandardError
+    unregister_created_remote_route!(registration)
+    raise
+  end
+
+  def persist_remote_route_registration!(registration)
+    return if registration&.token.blank?
+
+    @channel.with_lock do
+      config = @channel.reload.provider_config.deep_dup
+      current_identity = [config['business_account_id'], config['phone_number_id']].map(&:to_s)
+      expected_identity = [@waba_id, @phone_number_id].map(&:to_s)
+      raise StaleRecoveryIdentityError, 'WhatsApp webhook route identity changed' unless current_identity == expected_identity
+
+      config[Whatsapp::WebhookRouteRegistryClient::REGISTRATION_TOKEN_CONFIG_KEY] = registration.token
+      @channel.update!(provider_config: config)
+    end
   end
 
   def route_registry_client

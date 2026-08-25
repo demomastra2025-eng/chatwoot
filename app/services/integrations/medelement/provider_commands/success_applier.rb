@@ -7,6 +7,7 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
   def patient!(patient_code:)
     with_owned_command do
       link_contact_patient_ref!(patient_code)
+      apply_contact_field_resolution!
       complete_command!(provider_patient_code: patient_code)
     end
   end
@@ -131,6 +132,12 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       'medelement_patient_match_status' => 'matched',
       'medelement_last_synced_at' => Time.current.iso8601
     )
+  end
+
+  def apply_contact_field_resolution!
+    return if command.execution_state.to_h['contact_field_resolution'].blank?
+
+    Integrations::Medelement::ContactFieldResolutionService.apply_provider_command!(command)
   end
 
   def released_reconciliation_state

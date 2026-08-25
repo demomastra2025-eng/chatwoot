@@ -105,6 +105,7 @@ describe Whatsapp::WebhookSetupService do
 
     it 'registers the exact remote route before changing the shared provider callback' do
       route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+      registration_token = SecureRandom.uuid
       allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
       allow(GlobalConfigService).to receive(:load)
         .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
@@ -113,11 +114,14 @@ describe Whatsapp::WebhookSetupService do
 
       expect(route_client).to receive(:register!)
         .with(waba_id: waba_id, phone_number_id: '123456789').ordered.and_return(
-          Whatsapp::WebhookRouteRegistryClient::Registration.new(status: :created, token: SecureRandom.uuid)
+          Whatsapp::WebhookRouteRegistryClient::Registration.new(status: :created, token: registration_token)
         )
       expect(api_client).to receive(:subscribe_waba_webhook).ordered
 
       service.register_callback
+
+      expect(channel.reload.provider_config[Whatsapp::WebhookRouteRegistryClient::REGISTRATION_TOKEN_CONFIG_KEY])
+        .to eq(registration_token)
     end
 
     it 'removes a newly created remote route when callback setup fails before provider mutation' do
@@ -155,8 +159,9 @@ describe Whatsapp::WebhookSetupService do
         .with(described_class::PUBLIC_INGRESS_CONFIG_KEY, nil).and_return('https://app.one-link.kz/webhooks/whatsapp')
       allow(GlobalConfigService).to receive(:load)
         .with(described_class::PUBLIC_INGRESS_VERIFY_TOKEN_CONFIG_KEY, nil).and_return('production-verify-token')
+      registration_token = SecureRandom.uuid
       allow(route_client).to receive(:register!).and_return(
-        Whatsapp::WebhookRouteRegistryClient::Registration.new(status: :existing, token: nil)
+        Whatsapp::WebhookRouteRegistryClient::Registration.new(status: :existing, token: registration_token)
       )
       allow(recovery_service).to receive(:updating!).and_raise(ActiveRecord::ConnectionNotEstablished)
       allow(recovery_service).to receive(:failed!)

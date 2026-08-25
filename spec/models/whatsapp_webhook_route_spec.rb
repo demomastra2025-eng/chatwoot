@@ -2,8 +2,8 @@ require 'rails_helper'
 require 'timeout'
 
 RSpec.describe WhatsappWebhookRoute do
-  describe '.with_route_identity_lock' do
-    it 'serializes mutations for the same route identity' do
+  describe '.with_waba_registry_lock' do
+    it 'serializes all registry mutations for the same WABA' do
       first_acquired = Queue.new
       release_first = Queue.new
       second_started = Queue.new
@@ -11,7 +11,7 @@ RSpec.describe WhatsappWebhookRoute do
 
       first = Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          described_class.with_route_identity_lock('123456', '987654', 'dev') do
+          described_class.with_waba_registry_lock('123456') do
             first_acquired << true
             release_first.pop
           end
@@ -22,7 +22,7 @@ RSpec.describe WhatsappWebhookRoute do
       second = Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
           second_started << true
-          described_class.with_route_identity_lock('123456', '987654', 'dev') do
+          described_class.with_waba_registry_lock('123456') do
             second_acquired << true
           end
         end

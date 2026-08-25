@@ -760,7 +760,7 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       expect(Webhooks::WhatsappEventsJob).to have_received(:perform_later).with(anything, hash_including(hmac_verified: true))
     end
 
-    it 'accepts a signed WABA batch containing metadata for sibling phone numbers' do
+    it 'accepts and atomizes a signed WABA batch containing metadata for sibling phone numbers' do
       stub_ingress_routing(rules: {}, targets: {})
       waba_id = channel.provider_config['business_account_id']
       app_secret = 'shared-waba-app-secret'
@@ -795,7 +795,11 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
           end
         }]
       }.to_json
-      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+      queued_payloads = []
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later) do |job_payload, verification_context|
+        expect(verification_context).to include(hmac_verified: true)
+        queued_payloads << job_payload
+      end
 
       post_whatsapp_webhook(
         '/webhooks/whatsapp',
@@ -805,7 +809,10 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       )
 
       expect(response).to have_http_status(:success)
-      expect(Webhooks::WhatsappEventsJob).to have_received(:perform_later).with(anything, hash_including(hmac_verified: true))
+      expect(queued_payloads.size).to eq(2)
+      expect(queued_payloads.map { |job_payload| job_payload.dig('entry', 0, 'changes', 0, 'value', 'metadata', 'phone_number_id') })
+        .to contain_exactly(channel.provider_config['phone_number_id'], sibling.provider_config['phone_number_id'])
+      expect(queued_payloads).to all(satisfy { |job_payload| job_payload.dig('entry', 0, 'changes').one? })
     end
 
     it 'rejects a metadata-free multi-WABA batch unless every WABA shares the signing secret' do

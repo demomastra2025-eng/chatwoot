@@ -36,15 +36,29 @@ RSpec.describe Whatsapp::WebhookRouteRegistryClient do
   end
 
   it 'distinguishes an existing route from one created by this request' do
-    stub_request(:put, url).to_return(status: 204)
+    stub_request(:put, url)
+      .to_return(status: 204, headers: { described_class::REGISTRATION_TOKEN_HEADER => registration_token })
 
-    expect(client.register!(waba_id: '123', phone_number_id: '456')).to have_attributes(status: :existing, token: nil)
+    expect(client.register!(waba_id: '123', phone_number_id: '456'))
+      .to have_attributes(status: :existing, token: registration_token)
   end
 
-  it 'treats a rolling 201 response without a generation token as existing' do
+  it 'rejects a successful response without a generation token' do
     stub_request(:put, url).to_return(status: 201)
 
-    expect(client.register!(waba_id: '123', phone_number_id: '456')).to have_attributes(status: :existing, token: nil)
+    expect { client.register!(waba_id: '123', phone_number_id: '456') }
+      .to raise_error(described_class::Error, /missing a valid registration token/)
+  end
+
+  it 'rejects a malformed generation token without logging its value' do
+    stub_request(:put, url)
+      .to_return(status: 204, headers: { described_class::REGISTRATION_TOKEN_HEADER => 'invalid-secret-token' })
+
+    expect { client.register!(waba_id: '123', phone_number_id: '456') }
+      .to raise_error(described_class::Error) do |error|
+        expect(error.message).to include('missing a valid registration token')
+        expect(error.message).not_to include('invalid-secret-token')
+      end
   end
 
   it 'is a no-op in production when client settings are absent' do

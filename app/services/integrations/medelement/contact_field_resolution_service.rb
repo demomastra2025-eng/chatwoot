@@ -21,6 +21,28 @@ class Integrations::Medelement::ContactFieldResolutionService
     'uniq_email_per_account_contact' => 'email',
     'uniq_identifier_per_account_contact' => 'iin'
   }.freeze
+  PROVIDER_COMMAND_METADATA_KEY = 'contact_field_resolution'.freeze
+
+  def self.apply_provider_command!(command)
+    metadata = command.execution_state.to_h.fetch(PROVIDER_COMMAND_METADATA_KEY)
+    conflict = Integrations::Medelement::SyncConflict.find_by!(
+      id: metadata.fetch('conflict_id'),
+      account_id: command.account_id,
+      hook_id: command.hook_id
+    )
+    user = command.account.users.find(metadata.fetch('user_id'))
+    service = new(conflict: conflict, user: user)
+    service.send(:apply_provider_command_result!, command, metadata)
+  end
+
+  def self.record_provider_command_conflict!(command, error)
+    metadata = command.execution_state.to_h.fetch(PROVIDER_COMMAND_METADATA_KEY)
+    conflict = Integrations::Medelement::SyncConflict.find_by!(
+      id: metadata.fetch('conflict_id'), account_id: command.account_id, hook_id: command.hook_id
+    )
+    user = command.account.users.find(metadata.fetch('user_id'))
+    new(conflict: conflict, user: user).send(:record_conflicting_contact!, error)
+  end
 
   def initialize(conflict:, user:, client: nil)
     @conflict = conflict
@@ -28,11 +50,25 @@ class Integrations::Medelement::ContactFieldResolutionService
     @client = client
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
   def perform(field_directions:)
     directions = normalize_directions(field_directions)
     validate_request!(directions)
+    outbound_fields = fields_for(directions, 'onelink_to_medelement')
 
+    return perform_local_resolution!(directions) if outbound_fields.empty?
+
+    perform_provider_resolution!(directions)
+  rescue FieldAlreadyUsedError => e
+    record_conflicting_contact!(e)
+    raise
+  end
+
+  private
+
+  attr_reader :conflict, :user, :client
+
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def perform_local_resolution!(directions)
     conflict.with_lock do
       raise ResolutionError, 'Only open conflicts can be resolved' unless conflict.open?
 
@@ -60,15 +96,196 @@ class Integrations::Medelement::ContactFieldResolutionService
         resolution_note: "Fields synchronized: #{directions.map { |field, direction| "#{field}=#{direction}" }.join(', ')}"
       )
     end
-  rescue FieldAlreadyUsedError => e
-    record_conflicting_contact!(e)
-    raise
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+  def perform_provider_resolution!(directions)
+    command = existing_resolution_command(directions) || create_resolution_command!(directions)
+    drive_resolution_command!(command)
+    command.reload
+    finalize_provider_resolution!(command)
   end
 
-  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
-  private
+  def finalize_provider_resolution!(command)
+    self.class.apply_provider_command!(command) if command.succeeded? && conflict.reload.open?
+    return if command.succeeded? && conflict.reload.resolved?
 
-  attr_reader :conflict, :user, :client
+    raise_recorded_field_conflict!(command) if command.last_error_code == 'contact_field_conflict'
+
+    handle_pending_provider_resolution!(command)
+  end
+
+  def handle_pending_provider_resolution!(command)
+    schedule_reconciliation(command) if command.reconciliation_required?
+    raise ResolutionError, "MedElement field synchronization is pending: #{command.last_error_code || command.logical_status}"
+  end
+
+  def existing_resolution_command(directions)
+    Integrations::Medelement::ProviderCommand.find_by(
+      account: conflict.account,
+      idempotency_key: resolution_idempotency_key(directions)
+    )
+  end
+
+  def create_resolution_command!(directions)
+    context = prepare_provider_resolution(directions)
+    command = Integrations::Medelement::ProviderCommands::CreateService.new(
+      account: conflict.account,
+      hook: conflict.hook,
+      contact: context.fetch(:contact),
+      operation: 'update_patient',
+      idempotency_key: resolution_idempotency_key(directions),
+      actor: user,
+      desired_attributes: provider_command_attributes(context.fetch(:contact), context.fetch(:desired_provider))
+    ).perform
+    persist_resolution_metadata!(command, directions, context)
+    command
+  end
+
+  # rubocop:disable Metrics/AbcSize
+  def prepare_provider_resolution(directions)
+    conflict.with_lock do
+      raise ResolutionError, 'Only open conflicts can be resolved' unless conflict.open?
+
+      contact = conflict.account.contacts.find(conflict.details.fetch('contact_id'))
+      patient_code = contact.custom_attributes['medelement_patient_code'].to_s
+      raise ResolutionError, 'MedElement patient reference is missing' if patient_code.blank?
+
+      provider = provider_values(medelement_client.get_patient(patient_code: patient_code))
+      local = onelink_values(contact)
+      inbound_fields = fields_for(directions, 'medelement_to_onelink')
+      outbound_fields = fields_for(directions, 'onelink_to_medelement')
+      ensure_selected_values!(provider, inbound_fields, 'MedElement')
+      ensure_selected_values!(local, outbound_fields, 'OneLink')
+      ensure_unique_inbound_fields!(contact, provider, inbound_fields)
+      {
+        contact: contact,
+        provider: provider,
+        desired_provider: provider.merge(local.slice(*outbound_fields))
+      }
+    end
+  end
+  # rubocop:enable Metrics/AbcSize
+
+  def provider_command_attributes(contact, desired)
+    {
+      'name' => desired['first_name'],
+      'last_name' => desired['last_name'],
+      'middle_name' => desired['middle_name'],
+      'phone_number' => desired['phone'],
+      'email' => desired['email'],
+      'gender' => desired['gender'],
+      'custom_attributes' => contact.custom_attributes.to_h.merge(
+        'medelement_first_name' => desired['first_name'],
+        'medelement_last_name' => desired['last_name'],
+        'medelement_middle_name' => desired['middle_name'],
+        'medelement_iin' => desired['iin'],
+        'medelement_birth_date' => desired['birth_date'],
+        'medelement_gender' => desired['gender']
+      )
+    }
+  end
+
+  def persist_resolution_metadata!(command, directions, context)
+    metadata = {
+      'version' => 1,
+      'conflict_id' => conflict.id,
+      'contact_id' => context.fetch(:contact).id,
+      'user_id' => user.id,
+      'directions' => directions,
+      'provider' => context.fetch(:provider),
+      'desired_provider' => context.fetch(:desired_provider)
+    }
+    metadata['fingerprint'] = resolution_metadata_fingerprint(metadata)
+    command.with_lock do
+      existing = command.execution_state.to_h[PROVIDER_COMMAND_METADATA_KEY]
+      raise ResolutionError, 'MedElement field synchronization intent changed' if existing.present? && existing != metadata
+
+      command.update!(execution_state: command.execution_state.merge(PROVIDER_COMMAND_METADATA_KEY => metadata)) if existing.blank?
+    end
+  end
+
+  def drive_resolution_command!(command)
+    if command.awaiting_confirmation?
+      Integrations::Medelement::ProviderCommands::AutoConfirmationService.new(command: command).perform
+      Integrations::Medelement::ProviderCommandConfirmationJob.perform_now(command.confirmation_request_id)
+      command.reload
+    end
+    if command.queued?
+      Integrations::Medelement::ProviderCommands::Executor.new(command: command, client: client).perform
+    elsif command.reconciliation_required? && client.present?
+      Integrations::Medelement::ProviderCommands::ReconciliationService.new(command: command, client: client).perform
+    end
+  end
+
+  def schedule_reconciliation(command)
+    Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id)
+  end
+
+  def raise_recorded_field_conflict!(command)
+    details = conflict.reload.details.to_h
+    field = details['conflicting_field'].to_s
+    contact_id = Integer(details['conflicting_contact_id'], exception: false)
+    raise ResolutionError, 'MedElement field synchronization has an unresolved contact collision' if field.blank? || contact_id.blank?
+
+    provider = command.execution_state.to_h.dig(PROVIDER_COMMAND_METADATA_KEY, 'provider').to_h
+    raise FieldAlreadyUsedError.new(field: field, contact_id: contact_id, value: provider[field])
+  end
+
+  def resolution_idempotency_key(directions)
+    fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(directions.sort.to_h)
+    "contact-field-resolution:#{conflict.id}:#{fingerprint}"
+  end
+
+  def resolution_metadata_fingerprint(metadata)
+    Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(metadata.except('fingerprint'))
+  end
+
+  # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def apply_provider_command_result!(command, metadata)
+    validate_resolution_metadata!(command, metadata)
+    conflict.with_lock do
+      next true if conflict.resolved?
+
+      raise ResolutionError, 'Only open conflicts can be resolved' unless conflict.open?
+
+      contact = conflict.account.contacts.find(metadata.fetch('contact_id'))
+      provider = metadata.fetch('provider')
+      desired_provider = metadata.fetch('desired_provider')
+      directions = metadata.fetch('directions')
+      inbound_fields = fields_for(directions, 'medelement_to_onelink')
+      ensure_unique_inbound_fields!(contact, provider, inbound_fields)
+      apply_provider_fields!(contact, provider, inbound_fields, desired_provider) if inbound_fields.present?
+      persist_resolved_provider_snapshot!(contact, desired_provider, directions)
+      conflict.update!(
+        status: 'resolved',
+        resolved_by: user,
+        resolved_at: Time.current,
+        details: conflict.details.merge('resolution_provider_command_id' => command.id),
+        resolution_note: "Fields synchronized: #{directions.map { |field, direction| "#{field}=#{direction}" }.join(', ')}"
+      )
+      true
+    end
+  end
+  # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
+
+  def validate_resolution_metadata!(command, metadata)
+    expected = resolution_metadata_fingerprint(metadata)
+    raise ResolutionError, 'MedElement field synchronization metadata is invalid' unless metadata['fingerprint'] == expected
+    return if command.update_patient? && command.contact_id == metadata['contact_id'] && command.hook_id == conflict.hook_id
+
+    raise ResolutionError, 'MedElement field synchronization target changed'
+  end
+
+  def persist_resolved_provider_snapshot!(contact, desired_provider, directions)
+    custom = contact.reload.custom_attributes.to_h
+    apply_provider_snapshot!(custom, desired_provider)
+    custom.delete('phone_conflict_comment') if directions.key?('phone')
+    return if custom == contact.custom_attributes.to_h
+
+    contact.skip_runtime_events = true
+    contact.update!(custom_attributes: custom)
+  end
 
   def normalize_directions(field_directions)
     values = if field_directions.respond_to?(:to_unsafe_h)

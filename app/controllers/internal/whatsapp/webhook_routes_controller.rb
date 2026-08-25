@@ -12,14 +12,14 @@ class Internal::Whatsapp::WebhookRoutesController < ActionController::API
   def update
     return render_route_conflict if local_prod_owner_exists?
 
-    created, registration_token = with_route_identity_lock do
-      token = SecureRandom.uuid
+    created, registration_token = with_waba_registry_lock do
+      initial_token = SecureRandom.uuid
       route = WhatsappWebhookRoute.create_or_find_by!(route_identity) do |record|
-        record.registration_token = token
+        record.registration_token = initial_token
       end
       created = route.previously_new_record?
-      route.update!(registration_token: token) unless created
-      [created, token]
+      route.update!(registration_token: initial_token) if route.registration_token.blank?
+      [created, route.registration_token]
     end
 
     response.set_header(REGISTRATION_TOKEN_HEADER, registration_token)
@@ -27,11 +27,15 @@ class Internal::Whatsapp::WebhookRoutesController < ActionController::API
   end
 
   def destroy
-    with_route_identity_lock do
+    return render_registration_token_required unless conditional_delete?
+
+    stale_generation = with_waba_registry_lock do
       routes = WhatsappWebhookRoute.where(route_identity)
-      routes = routes.where(registration_token: @route_payload.fetch('registration_token')) if conditional_delete?
-      routes.delete_all
+      deleted = routes.where(registration_token: @route_payload.fetch('registration_token')).delete_all
+      deleted.zero? && routes.exists?
     end
+
+    return render_route_generation_conflict if stale_generation
 
     head :no_content
   end
@@ -88,13 +92,8 @@ class Internal::Whatsapp::WebhookRoutesController < ActionController::API
     }
   end
 
-  def with_route_identity_lock(&)
-    WhatsappWebhookRoute.with_route_identity_lock(
-      @route_payload.fetch('waba_id'),
-      @route_payload.fetch('phone_number_id'),
-      @route_payload.fetch('destination'),
-      &
-    )
+  def with_waba_registry_lock(&)
+    WhatsappWebhookRoute.with_waba_registry_lock(@route_payload.fetch('waba_id'), &)
   end
 
   def valid_identifier?(value)
@@ -146,5 +145,13 @@ class Internal::Whatsapp::WebhookRoutesController < ActionController::API
 
   def render_route_conflict
     render json: { error: 'local_prod_owner' }, status: :conflict
+  end
+
+  def render_route_generation_conflict
+    render json: { error: 'stale_registration_token' }, status: :conflict
+  end
+
+  def render_registration_token_required
+    render json: { error: 'registration_token_required' }, status: :conflict
   end
 end

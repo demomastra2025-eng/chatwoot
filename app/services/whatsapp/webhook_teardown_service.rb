@@ -46,10 +46,20 @@ class Whatsapp::WebhookTeardownService
   end
 
   def unregister_remote_route!(waba_id)
-    route_registry_client.unregister!(
-      waba_id: waba_id,
-      phone_number_id: @channel.provider_config['phone_number_id']
-    )
+    @channel.with_lock do
+      provider_config = @channel.provider_config
+      current_waba_id = provider_config['business_account_id']
+      raise WebhookHandoffError, 'WhatsApp webhook route identity changed before teardown' if current_waba_id != waba_id
+
+      registration_token = provider_config[Whatsapp::WebhookRouteRegistryClient::REGISTRATION_TOKEN_CONFIG_KEY].presence
+      raise WebhookHandoffError, 'WhatsApp webhook route teardown requires the current registration token' if registration_token.blank?
+
+      route_registry_client.unregister!(
+        waba_id: current_waba_id,
+        phone_number_id: provider_config['phone_number_id'],
+        registration_token: registration_token
+      )
+    end
     Rails.logger.info "[WHATSAPP] Remote webhook route removed for channel #{@channel.id}"
   end
 

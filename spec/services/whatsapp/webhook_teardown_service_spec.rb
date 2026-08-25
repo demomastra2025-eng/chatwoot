@@ -31,7 +31,13 @@ RSpec.describe Whatsapp::WebhookTeardownService do
       end
 
       it 'removes only the remote route and preserves the shared Meta subscription' do
-        channel.update!(provider_config: channel.provider_config.merge('phone_number_id' => '987654'))
+        registration_token = SecureRandom.uuid
+        channel.update!(
+          provider_config: channel.provider_config.merge(
+            'phone_number_id' => '987654',
+            Whatsapp::WebhookRouteRegistryClient::REGISTRATION_TOKEN_CONFIG_KEY => registration_token
+          )
+        )
         route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
         allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
         allow(route_client).to receive(:unregister!).and_return(true)
@@ -40,7 +46,70 @@ RSpec.describe Whatsapp::WebhookTeardownService do
         service.perform
 
         expect(route_client).to have_received(:unregister!)
-          .with(waba_id: 'test_waba_id', phone_number_id: '987654')
+          .with(waba_id: 'test_waba_id', phone_number_id: '987654', registration_token: registration_token)
+      end
+
+      it 'reloads the current route generation under the channel lock before teardown' do
+        stale_token = SecureRandom.uuid
+        current_token = SecureRandom.uuid
+        channel.update!(
+          provider_config: channel.provider_config.merge(
+            'phone_number_id' => '987654',
+            Whatsapp::WebhookRouteRegistryClient::REGISTRATION_TOKEN_CONFIG_KEY => stale_token
+          )
+        )
+        service
+        persisted_channel = Channel::Whatsapp.find(channel.id)
+        allow(persisted_channel).to receive(:validate_provider_config)
+        persisted_channel.update!(
+          provider_config: persisted_channel.provider_config.merge(
+            Whatsapp::WebhookRouteRegistryClient::REGISTRATION_TOKEN_CONFIG_KEY => current_token
+          )
+        )
+        route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+        allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
+        allow(route_client).to receive(:unregister!).and_return(true)
+
+        service.perform
+
+        expect(route_client).to have_received(:unregister!)
+          .with(waba_id: 'test_waba_id', phone_number_id: '987654', registration_token: current_token)
+      end
+
+      it 'fails closed when the persisted route identity changed before teardown' do
+        registration_token = SecureRandom.uuid
+        channel.update!(
+          provider_config: channel.provider_config.merge(
+            'phone_number_id' => '987654',
+            Whatsapp::WebhookRouteRegistryClient::REGISTRATION_TOKEN_CONFIG_KEY => registration_token
+          )
+        )
+        service
+        persisted_channel = Channel::Whatsapp.find(channel.id)
+        allow(persisted_channel).to receive(:validate_provider_config)
+        persisted_channel.update!(
+          provider_config: persisted_channel.provider_config.merge('business_account_id' => 'new_waba_id')
+        )
+        route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+        allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
+
+        expect(route_client).not_to receive(:unregister!)
+        expect { service.perform }.to raise_error(
+          Whatsapp::WebhookTeardownService::WebhookHandoffError,
+          /identity changed/
+        )
+      end
+
+      it 'refuses a stale lifecycle teardown without the current route generation' do
+        channel.update!(provider_config: channel.provider_config.merge('phone_number_id' => '987654'))
+        route_client = instance_double(Whatsapp::WebhookRouteRegistryClient, configured?: true)
+        allow(Whatsapp::WebhookRouteRegistryClient).to receive(:new).and_return(route_client)
+
+        expect(route_client).not_to receive(:unregister!)
+        expect { service.perform }.to raise_error(
+          Whatsapp::WebhookTeardownService::WebhookHandoffError,
+          /current registration token/
+        )
       end
 
       it 'moves the shared WABA callback to a surviving Cloud channel' do

@@ -12,13 +12,11 @@ class WhatsappWebhookRoute < ApplicationRecord
                      .exists?(["provider_config ->> 'phone_number_id' = ?", phone_number_id])
   end
 
-  def self.with_route_identity_lock(waba_id, phone_number_id, destination)
-    lock_key = Digest::SHA256.hexdigest(
-      "whatsapp-webhook-route:#{waba_id}:#{phone_number_id}:#{destination}"
-    ).first(16).to_i(16) % ((2**63) - 1)
+  def self.with_waba_registry_lock(waba_id)
+    lock_key = Digest::SHA256.hexdigest("whatsapp-webhook-registry:#{waba_id}").first(16).to_i(16) % ((2**63) - 1)
 
-    transaction do
-      connection.execute("SELECT pg_advisory_xact_lock(#{lock_key})")
+    transaction(requires_new: true) do
+      connection.execute("SELECT pg_advisory_xact_lock(#{connection.quote(lock_key)})")
       yield
     end
   end
