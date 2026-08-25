@@ -218,6 +218,48 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
     wrapper.unmount();
   });
 
+  it('cancels the scheduled poll while loading another conflict page', async () => {
+    testState.syncStatus = {
+      ...syncStatus,
+      run: { ...syncStatus.run, status: 'running' },
+      conflict_pagination: { page: 1, per_page: 25, total: 26, total_pages: 2 },
+    };
+    let statusRequestCount = 0;
+    let resolvePageRequest;
+    const pageRequest = new Promise(resolve => {
+      resolvePageRequest = resolve;
+    });
+    testState.dispatch.mockImplementation(action => {
+      if (action !== 'integrations/getHookSyncStatus')
+        return Promise.reject(new Error(`Unexpected action: ${action}`));
+      statusRequestCount += 1;
+      return statusRequestCount === 1
+        ? Promise.resolve(testState.syncStatus)
+        : pageRequest;
+    });
+    const wrapper = mountComponent();
+    await flushPromises();
+
+    await buttonByLabel(
+      wrapper,
+      'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.NEXT'
+    ).trigger('click');
+    vi.advanceTimersByTime(2000);
+    await Promise.resolve();
+    expect(statusRequestCount).toBe(2);
+
+    resolvePageRequest({
+      ...testState.syncStatus,
+      conflict_pagination: { page: 2, per_page: 25, total: 26, total_pages: 2 },
+    });
+    await flushPromises();
+    expect(testState.dispatch).toHaveBeenLastCalledWith(
+      'integrations/getHookSyncStatus',
+      expect.objectContaining({ hookId: 7, conflictPage: 2 })
+    );
+    wrapper.unmount();
+  });
+
   it('queues an exact conflict phase retry and submits administrator decisions', async () => {
     const wrapper = mountComponent();
     await flushPromises();
@@ -314,6 +356,7 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
   it('renders field differences and submits the selected synchronization direction', async () => {
     testState.syncStatus = {
       ...syncStatus,
+      run: { ...syncStatus.run, status: 'running' },
       conflicts: [
         {
           id: 20,
@@ -354,8 +397,31 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
         },
       ],
     };
+    const resolvedStatus = {
+      ...testState.syncStatus,
+      run: { ...testState.syncStatus.run, status: 'partial' },
+      conflicts: [],
+    };
+    let statusRequestCount = 0;
+    let resolveStalePoll;
+    const stalePoll = new Promise(resolve => {
+      resolveStalePoll = resolve;
+    });
+    testState.dispatch.mockImplementation(action => {
+      if (action === 'integrations/getHookSyncStatus') {
+        statusRequestCount += 1;
+        if (statusRequestCount === 1)
+          return Promise.resolve(testState.syncStatus);
+        return stalePoll;
+      }
+      if (action === 'integrations/resolveHookSyncConflict')
+        return Promise.resolve(resolvedStatus);
+      return Promise.reject(new Error(`Unexpected action: ${action}`));
+    });
     const wrapper = mountComponent();
     await flushPromises();
+    vi.advanceTimersByTime(2000);
+    await Promise.resolve();
 
     expect(
       wrapper.get('[data-test="contact-field-comparison"]').text()
@@ -385,13 +451,19 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
         },
       }
     );
+    expect(wrapper.text()).not.toContain('Provider name');
+
+    resolveStalePoll(testState.syncStatus);
+    await flushPromises();
+    expect(wrapper.text()).not.toContain('Provider name');
 
     wrapper.unmount();
   });
 
-  it('shows an actionable message when a field belongs to another contact', async () => {
+  it('shows the field owner without letting an older poll hide it', async () => {
     testState.syncStatus = {
       ...syncStatus,
+      run: { ...syncStatus.run, status: 'running' },
       conflicts: [
         {
           id: 20,
@@ -415,9 +487,33 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
         },
       ],
     };
+    const refreshedStatus = {
+      ...testState.syncStatus,
+      conflicts: [
+        {
+          ...testState.syncStatus.conflicts[0],
+          contact_resolution: {
+            ...testState.syncStatus.conflicts[0].contact_resolution,
+            can_merge: true,
+            primary_contact: { id: 101, name: 'Patient' },
+            conflicting_contact: { id: 5509, name: 'Phone owner' },
+          },
+        },
+      ],
+    };
+    let statusRequestCount = 0;
+    let resolveStalePoll;
+    const stalePoll = new Promise(resolve => {
+      resolveStalePoll = resolve;
+    });
     testState.dispatch.mockImplementation(action => {
-      if (action === 'integrations/getHookSyncStatus')
-        return Promise.resolve(testState.syncStatus);
+      if (action === 'integrations/getHookSyncStatus') {
+        statusRequestCount += 1;
+        if (statusRequestCount === 1)
+          return Promise.resolve(testState.syncStatus);
+        if (statusRequestCount === 2) return stalePoll;
+        return Promise.resolve(refreshedStatus);
+      }
       if (action === 'integrations/resolveHookSyncConflict') {
         const error = new Error('Field already used');
         error.response = {
@@ -433,6 +529,8 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
     });
     const wrapper = mountComponent();
     await flushPromises();
+    vi.advanceTimersByTime(2000);
+    await Promise.resolve();
 
     await wrapper
       .get('[data-test="field-direction-iin"]')
@@ -447,6 +545,15 @@ describe('SingleIntegrationHooks MedElement synchronization', () => {
     expect(testState.alerts).toHaveBeenCalledWith(
       'INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.FIELD_ALREADY_USED'
     );
+    expect(testState.dispatch).toHaveBeenCalledWith(
+      'integrations/getHookSyncStatus',
+      expect.objectContaining({ hookId: 7 })
+    );
+    expect(wrapper.text()).toContain('Phone owner');
+
+    resolveStalePoll(testState.syncStatus);
+    await flushPromises();
+    expect(wrapper.text()).toContain('Phone owner');
     wrapper.unmount();
   });
 

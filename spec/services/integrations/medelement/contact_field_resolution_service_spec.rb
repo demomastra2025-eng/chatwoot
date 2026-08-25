@@ -129,7 +129,79 @@ RSpec.describe Integrations::Medelement::ContactFieldResolutionService do
 
     expect(client).not_to have_received(:update_patient)
     expect(contact.reload.identifier).to be_nil
-    expect(conflict.reload).to be_open
+    expect(conflict.reload).to have_attributes(
+      status: 'open',
+      details: hash_including(
+        'conflicting_contact_id' => duplicate.id,
+        'conflicting_field' => 'iin'
+      )
+    )
+  end
+
+  it 'normalizes a concurrent uniqueness failure into the structured collision response' do
+    contact.update!(identifier: nil)
+    duplicate = create(:contact, account: account, identifier: '950424301111')
+    race_service_class = Class.new(described_class) do
+      def ensure_unique_inbound_fields!(*); end
+
+      def persist_provider_fields!(contact, *)
+        contact.errors.add(:identifier, :taken)
+        raise ActiveRecord::RecordInvalid, contact
+      end
+    end
+    race_service = race_service_class.new(conflict: conflict, user: admin, client: client)
+
+    expect do
+      race_service.perform(field_directions: {
+                             phone: 'onelink_to_medelement',
+                             first_name: 'medelement_to_onelink',
+                             iin: 'medelement_to_onelink'
+                           })
+    end.to raise_error(described_class::FieldAlreadyUsedError) { |error|
+      expect(error).to have_attributes(field: 'iin', contact_id: duplicate.id)
+    }
+
+    expect(client).not_to have_received(:update_patient)
+    expect(conflict.reload.details).to include(
+      'conflicting_contact_id' => duplicate.id,
+      'conflicting_field' => 'iin'
+    )
+  end
+
+  it 'does not mask an unrelated validation error as a uniqueness collision' do
+    contact.update!(identifier: nil)
+    create(:contact, account: account, identifier: '950424301111')
+    invalid_service_class = Class.new(described_class) do
+      def ensure_unique_inbound_fields!(*); end
+
+      def persist_provider_fields!(contact, *)
+        contact.errors.add(:name, :blank)
+        raise ActiveRecord::RecordInvalid, contact
+      end
+    end
+    invalid_service = invalid_service_class.new(conflict: conflict, user: admin, client: client)
+
+    expect do
+      invalid_service.perform(field_directions: { iin: 'medelement_to_onelink' })
+    end.to raise_error(ActiveRecord::RecordInvalid)
+
+    expect(conflict.reload.details).not_to have_key('conflicting_contact_id')
+  end
+
+  it 'exposes the current phone owner for a safe merge after an inbound collision' do
+    patient['PATIENT_PHONE_2_STR'] = '+77000007060'
+    duplicate = create(:contact, account: account, phone_number: '+77000007060')
+
+    expect do
+      service.perform(field_directions: { phone: 'medelement_to_onelink' })
+    end.to raise_error(described_class::FieldAlreadyUsedError)
+
+    resolution = Integrations::Medelement::ConflictPresenter.new(conflict: conflict.reload).payload[:contact_resolution]
+    expect(resolution).to include(
+      can_merge: true,
+      primary_contact: hash_including(id: contact.id),
+      conflicting_contact: hash_including(id: duplicate.id)
+    )
   end
 
   it 'applies independent directions for different fields in one resolution' do

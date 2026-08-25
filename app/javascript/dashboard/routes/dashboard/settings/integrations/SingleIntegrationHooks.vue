@@ -64,6 +64,7 @@ const pendingConflictAction = ref(null);
 const resolutionNote = ref('');
 let hookSyncPollTimer;
 let hookSyncPollFailures = 0;
+let hookSyncStatusRequestId = 0;
 
 const syncRun = computed(() => hookSyncStatus.value?.run);
 const syncSchedules = computed(() => {
@@ -392,11 +393,25 @@ const macrocrmWebhookKey = computed(
   () => connectedHook.value?.reference_id || ''
 );
 
+function clearHookSyncPoll() {
+  window.clearTimeout(hookSyncPollTimer);
+  hookSyncPollTimer = undefined;
+}
+
+function beginHookSyncStatusMutation() {
+  clearHookSyncPoll();
+  hookSyncStatusRequestId += 1;
+  return hookSyncStatusRequestId;
+}
+
 async function runSyncNow() {
+  const requestId = beginHookSyncStatusMutation();
   try {
     const response = await store.dispatch('integrations/runHookSync', {
       hookId: connectedHook.value.id,
     });
+    if (requestId !== hookSyncStatusRequestId) return;
+
     hookSyncStatus.value = response.sync_status;
     hookSyncPollFailures = 0;
     // Function declarations are hoisted; keeping the action flow grouped is clearer here.
@@ -410,12 +425,11 @@ async function runSyncNow() {
       error?.response?.data?.message ||
       t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.ERROR');
     useAlert(errorMessage);
+  } finally {
+    // Function declarations are hoisted; keeping the action flow grouped is clearer here.
+    // eslint-disable-next-line no-use-before-define
+    if (requestId === hookSyncStatusRequestId) scheduleHookSyncPoll();
   }
-}
-
-function clearHookSyncPoll() {
-  window.clearTimeout(hookSyncPollTimer);
-  hookSyncPollTimer = undefined;
 }
 
 function scheduleHookSyncPoll(delay = 2000) {
@@ -429,22 +443,28 @@ function scheduleHookSyncPoll(delay = 2000) {
 async function fetchHookSyncStatus() {
   const hookId = connectedHook.value?.id;
   if (!hookId) return;
+  hookSyncStatusRequestId += 1;
+  const requestId = hookSyncStatusRequestId;
 
   try {
-    hookSyncStatus.value = await store.dispatch(
-      'integrations/getHookSyncStatus',
-      {
-        hookId,
-        conflictPage: conflictPagination.value.page,
-        filters: conflictFilters.value,
-      }
-    );
+    const status = await store.dispatch('integrations/getHookSyncStatus', {
+      hookId,
+      conflictPage: conflictPagination.value.page,
+      filters: conflictFilters.value,
+    });
+    if (requestId !== hookSyncStatusRequestId) return;
+
+    hookSyncStatus.value = status;
     hookSyncPollFailures = 0;
   } catch {
+    if (requestId !== hookSyncStatusRequestId) return;
+
     hookSyncPollFailures += 1;
   } finally {
-    const retryDelay = Math.min(2000 * 2 ** hookSyncPollFailures, 30000);
-    scheduleHookSyncPoll(retryDelay);
+    if (requestId === hookSyncStatusRequestId) {
+      const retryDelay = Math.min(2000 * 2 ** hookSyncPollFailures, 30000);
+      scheduleHookSyncPoll(retryDelay);
+    }
   }
 }
 
@@ -452,11 +472,28 @@ async function loadConflictPage(page) {
   const hookId = connectedHook.value?.id;
   if (!hookId || page < 1 || page > conflictPagination.value.total_pages)
     return;
+  clearHookSyncPoll();
+  hookSyncStatusRequestId += 1;
+  const requestId = hookSyncStatusRequestId;
 
-  hookSyncStatus.value = await store.dispatch(
-    'integrations/getHookSyncStatus',
-    { hookId, conflictPage: page, filters: conflictFilters.value }
-  );
+  try {
+    const status = await store.dispatch('integrations/getHookSyncStatus', {
+      hookId,
+      conflictPage: page,
+      filters: conflictFilters.value,
+    });
+    if (requestId !== hookSyncStatusRequestId) return;
+
+    hookSyncStatus.value = status;
+    hookSyncPollFailures = 0;
+  } catch {
+    if (requestId === hookSyncStatusRequestId) hookSyncPollFailures += 1;
+  } finally {
+    if (requestId === hookSyncStatusRequestId) {
+      const retryDelay = Math.min(2000 * 2 ** hookSyncPollFailures, 30000);
+      scheduleHookSyncPoll(retryDelay);
+    }
+  }
 }
 
 function applyConflictFilters() {
@@ -498,17 +535,26 @@ async function resolveContactConflict(conflict, resolution) {
   const hookId = connectedHook.value?.id;
   if (!hookId) return false;
 
+  const requestId = beginHookSyncStatusMutation();
   resolvingConflictId.value = conflict.id;
   try {
-    hookSyncStatus.value = await store.dispatch(
+    const status = await store.dispatch(
       'integrations/resolveHookSyncConflict',
       { hookId, conflictId: conflict.id, ...resolution }
     );
+    if (requestId !== hookSyncStatusRequestId) return false;
+
+    hookSyncStatus.value = status;
     clearConflictFieldDirections(conflict.id);
     useAlert(t('INTEGRATION_APPS.MEDELEMENT.CONFLICT_RESOLUTION.SUCCESS'));
     return true;
   } catch (error) {
+    if (requestId !== hookSyncStatusRequestId) return false;
+
     const response = error?.response?.data;
+    if (response?.code === 'contact_field_already_used') {
+      await fetchHookSyncStatus();
+    }
     const message =
       response?.code === 'contact_field_already_used'
         ? t(
@@ -524,6 +570,7 @@ async function resolveContactConflict(conflict, resolution) {
     return false;
   } finally {
     resolvingConflictId.value = null;
+    if (requestId === hookSyncStatusRequestId) scheduleHookSyncPoll();
   }
 }
 
@@ -673,11 +720,14 @@ async function retrySyncPhase(conflict) {
   const hookId = connectedHook.value?.id;
   if (!hookId || isSyncActive.value) return;
 
+  const requestId = beginHookSyncStatusMutation();
   try {
     const response = await store.dispatch('integrations/runHookSync', {
       hookId,
       phases: [conflict.phase],
     });
+    if (requestId !== hookSyncStatusRequestId) return;
+
     hookSyncStatus.value = response.sync_status;
     hookSyncPollFailures = 0;
     scheduleHookSyncPoll();
@@ -687,6 +737,8 @@ async function retrySyncPhase(conflict) {
       error?.response?.data?.message ||
         t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.ERROR')
     );
+  } finally {
+    if (requestId === hookSyncStatusRequestId) scheduleHookSyncPoll();
   }
 }
 
@@ -694,16 +746,21 @@ async function updateSyncConflict(conflict, resolution) {
   const hookId = connectedHook.value?.id;
   if (!hookId) return;
 
+  const requestId = beginHookSyncStatusMutation();
   try {
-    hookSyncStatus.value = await store.dispatch(
-      'integrations/updateHookSyncConflict',
-      { hookId, conflictId: conflict.id, resolution }
-    );
+    const status = await store.dispatch('integrations/updateHookSyncConflict', {
+      hookId,
+      conflictId: conflict.id,
+      resolution,
+    });
+    if (requestId === hookSyncStatusRequestId) hookSyncStatus.value = status;
   } catch (error) {
     useAlert(
       error?.response?.data?.message ||
         t('INTEGRATION_APPS.MEDELEMENT.RUN_SYNC.CONFLICT_ERROR')
     );
+  } finally {
+    if (requestId === hookSyncStatusRequestId) scheduleHookSyncPoll();
   }
 }
 
@@ -857,6 +914,7 @@ watch(
   () => connectedHook.value?.id,
   hookId => {
     clearHookSyncPoll();
+    hookSyncStatusRequestId += 1;
     hookSyncPollFailures = 0;
     selectedConflictFieldDirections.value = {};
     hookSyncStatus.value = {
@@ -871,7 +929,10 @@ watch(
   { immediate: true }
 );
 
-onBeforeUnmount(clearHookSyncPoll);
+onBeforeUnmount(() => {
+  clearHookSyncPoll();
+  hookSyncStatusRequestId += 1;
+});
 </script>
 
 <template>

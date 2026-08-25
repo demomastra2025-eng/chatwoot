@@ -3,11 +3,12 @@ class Integrations::Medelement::ContactFieldResolutionService
   class ResolutionError < StandardError; end
 
   class FieldAlreadyUsedError < ResolutionError
-    attr_reader :field, :contact_id
+    attr_reader :field, :contact_id, :value
 
-    def initialize(field:, contact_id:)
+    def initialize(field:, contact_id:, value: nil)
       @field = field
       @contact_id = contact_id
+      @value = value
       super("#{field} is already used by contact ##{contact_id}")
     end
   end
@@ -16,6 +17,10 @@ class Integrations::Medelement::ContactFieldResolutionService
   OUTBOUND_FIELDS = (FIELDS - ['address']).freeze
   DIRECTIONS = %w[medelement_to_onelink onelink_to_medelement].freeze
   UNIQUE_CONTACT_FIELDS = { 'phone' => 'phone_number', 'iin' => 'identifier', 'email' => 'email' }.freeze
+  UNIQUE_CONSTRAINT_FIELDS = {
+    'uniq_email_per_account_contact' => 'email',
+    'uniq_identifier_per_account_contact' => 'iin'
+  }.freeze
 
   def initialize(conflict:, user:, client: nil)
     @conflict = conflict
@@ -44,8 +49,9 @@ class Integrations::Medelement::ContactFieldResolutionService
       ensure_selected_values!(local, outbound_fields, 'OneLink')
       ensure_unique_inbound_fields!(contact, provider, inbound_fields)
 
-      desired_provider = apply_onelink_fields!(contact, patient_code, outbound_fields, provider, local)
+      desired_provider = provider.merge(local.slice(*outbound_fields))
       apply_provider_fields!(contact, provider, inbound_fields, desired_provider) if inbound_fields.present?
+      apply_onelink_fields!(contact, patient_code, outbound_fields, provider, local)
 
       conflict.update!(
         status: 'resolved',
@@ -54,6 +60,9 @@ class Integrations::Medelement::ContactFieldResolutionService
         resolution_note: "Fields synchronized: #{directions.map { |field, direction| "#{field}=#{direction}" }.join(', ')}"
       )
     end
+  rescue FieldAlreadyUsedError => e
+    record_conflicting_contact!(e)
+    raise
   end
 
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
@@ -103,7 +112,7 @@ class Integrations::Medelement::ContactFieldResolutionService
     @configuration ||= Integrations::Medelement::Configuration.new(hook: conflict.hook)
   end
 
-  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  # rubocop:disable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def apply_provider_fields!(contact, provider, fields, provider_snapshot)
     attributes = {}
     custom = contact.custom_attributes.to_h
@@ -121,10 +130,15 @@ class Integrations::Medelement::ContactFieldResolutionService
     end
 
     contact.skip_runtime_events = true
-    contact.update!(attributes.merge('custom_attributes' => custom))
+    persist_provider_fields!(contact, attributes.merge('custom_attributes' => custom))
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
+    collision = normalized_unique_write_error(e, contact, provider, fields)
+    raise unless collision
+
+    raise collision
   end
 
-  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/PerceivedComplexity
+  # rubocop:enable Metrics/AbcSize, Metrics/CyclomaticComplexity, Metrics/MethodLength, Metrics/PerceivedComplexity
   def apply_onelink_fields!(contact, patient_code, fields, provider, local)
     return provider if fields.empty?
 
@@ -225,6 +239,13 @@ class Integrations::Medelement::ContactFieldResolutionService
   end
 
   def ensure_unique_inbound_fields!(contact, provider, fields)
+    error = unique_inbound_collision(contact, provider, fields)
+    raise error if error
+  end
+
+  def unique_inbound_collision(contact, provider, fields)
+    return if contact.blank? || provider.blank? || fields.blank?
+
     UNIQUE_CONTACT_FIELDS.slice(*fields).each do |field, attribute|
       scope = contact.account.contacts.where.not(id: contact.id)
       duplicate = if attribute == 'email'
@@ -232,8 +253,59 @@ class Integrations::Medelement::ContactFieldResolutionService
                   else
                     scope.find_by(attribute => provider[field])
                   end
-      raise FieldAlreadyUsedError.new(field: field, contact_id: duplicate.id) if duplicate
+      return FieldAlreadyUsedError.new(field: field, contact_id: duplicate.id, value: provider[field]) if duplicate
     end
+    nil
+  end
+
+  def normalized_unique_write_error(error, contact, provider, fields)
+    field = unique_error_field(error, fields)
+    return if field.blank?
+
+    unique_inbound_collision(contact, provider, [field])
+  end
+
+  def unique_error_field(error, fields)
+    return unique_validation_error_field(error, fields) if error.is_a?(ActiveRecord::RecordInvalid)
+
+    UNIQUE_CONSTRAINT_FIELDS.find { |constraint, _field| error.message.include?(constraint) }&.last
+  end
+
+  def unique_validation_error_field(error, fields)
+    selected_attributes = fields.filter_map do |field|
+      attribute = UNIQUE_CONTACT_FIELDS[field]
+      [field, attribute] if attribute
+    end
+    selected_attributes.find do |_field, attribute|
+      error.record.errors.details[attribute.to_sym].any? { |detail| detail[:error] == :taken }
+    end&.first
+  end
+
+  def persist_provider_fields!(contact, attributes)
+    contact.update!(attributes)
+  end
+
+  def record_conflicting_contact!(error)
+    attribute = UNIQUE_CONTACT_FIELDS[error.field]
+    return if attribute.blank? || error.value.blank?
+
+    conflict.with_lock do
+      next unless conflict.open?
+
+      contact = conflict.account.contacts.find_by(id: error.contact_id)
+      next unless contact && unique_value_matches?(contact.public_send(attribute), error.value, attribute)
+
+      conflict.update!(details: conflict.details.merge(
+        'conflicting_contact_id' => contact.id,
+        'conflicting_field' => error.field
+      ))
+    end
+  end
+
+  def unique_value_matches?(actual, expected, attribute)
+    return actual.to_s.casecmp?(expected.to_s) if attribute == 'email'
+
+    actual.to_s == expected.to_s
   end
 
   def normalized_iin(value)
