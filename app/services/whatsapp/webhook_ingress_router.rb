@@ -93,7 +93,9 @@ class Whatsapp::WebhookIngressRouter
 
     if phone_number_id.present?
       if local_prod_owner_exists?
-        Rails.logger.error('[WHATSAPP] Local PROD owner takes precedence over remote and configured webhook routes')
+        if registry_exact_route_destinations.present?
+          Rails.logger.error('[WHATSAPP] Local PROD owner takes precedence over remote and configured webhook routes')
+        end
         return @registry_route_destinations = [LOCAL_DESTINATION]
       end
 

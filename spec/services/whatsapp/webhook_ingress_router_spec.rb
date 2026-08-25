@@ -83,6 +83,7 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
 
   it 'keeps a locally owned PROD phone local even when a static exact route exists' do
     allow(WhatsappWebhookRoute).to receive(:local_prod_owner_exists?).with('123456', '987654').and_return(true)
+    allow(Rails.logger).to receive(:error)
     router = described_class.new(
       payload: payload,
       rules: { '123456:987654' => ['dev'] },
@@ -90,6 +91,18 @@ RSpec.describe Whatsapp::WebhookIngressRouter do
     )
 
     expect(router.destinations).to eq(['prod'])
+    expect(Rails.logger).not_to have_received(:error)
+  end
+
+  it 'logs a locally owned PROD phone only when an exact remote registry route conflicts' do
+    WhatsappWebhookRoute.create!(waba_id: '123456', phone_number_id: '987654', destination: 'dev')
+    allow(WhatsappWebhookRoute).to receive(:local_prod_owner_exists?).with('123456', '987654').and_return(true)
+    allow(Rails.logger).to receive(:error)
+
+    router = described_class.new(payload: payload, rules: {}, targets: targets)
+
+    expect(router.destinations).to eq(['prod'])
+    expect(Rails.logger).to have_received(:error).with(/Local PROD owner takes precedence/)
   end
 
   it 'does not enable batch normalization for a local-only ownership decision' do
