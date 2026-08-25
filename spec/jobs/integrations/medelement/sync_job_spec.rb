@@ -29,6 +29,10 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     expect(run.reload).to be_succeeded
     expect(run.phase_results.dig('services', 'imported_count')).to eq(1)
     expect(coordinator).to have_received(:perform).with(sync_run: run, phases: ['services'])
+    expect(job).to have_received(:with_lock).with(
+      format(Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: account.id),
+      2.hours
+    )
   end
 
   it 'retries uncovered scheduled phases when another sync run is active' do

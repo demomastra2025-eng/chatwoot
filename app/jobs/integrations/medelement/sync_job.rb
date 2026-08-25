@@ -1,6 +1,6 @@
 class Integrations::Medelement::SyncJob < MutexApplicationJob
   queue_as :medium
-  LOCK_TIMEOUT = 10.minutes
+  LOCK_TIMEOUT = 2.hours
   ScheduledSyncBusyError = Class.new(StandardError)
 
   retry_on ScheduledSyncBusyError, wait: 5.minutes, attempts: 24
