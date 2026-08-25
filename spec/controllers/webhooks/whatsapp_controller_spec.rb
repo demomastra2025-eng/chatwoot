@@ -176,6 +176,25 @@ RSpec.describe 'Webhooks::WhatsappController', type: :request do
       expect(response).to have_http_status(:success)
     end
 
+    it 'durably defers a signed WABA event instead of returning 500 on lock contention' do
+      waba_lock = instance_double(Whatsapp::WabaLock)
+      allow(Whatsapp::WabaLock).to receive(:new).and_return(waba_lock)
+      allow(waba_lock).to receive(:with_lock).and_raise(Whatsapp::WabaLock::LockAcquisitionError)
+      allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+
+      expect do
+        post_whatsapp_webhook('/webhooks/whatsapp', default_account_update_body)
+      end.to have_enqueued_job(Webhooks::WhatsappIngressDispatchJob).with(
+        hash_including('entry' => [hash_including('id' => channel.provider_config['business_account_id'])]),
+        true,
+        true,
+        hash_including(hmac_verified: true, waba_scoped: true)
+      ).on_queue('whatsapp_inbound')
+
+      expect(response).to have_http_status(:success)
+      expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+    end
+
     it 'adds a database-derived callback phone for old workers processing a default account update' do
       allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
 

@@ -87,4 +87,47 @@ RSpec.describe Whatsapp::WebhookIngressDispatcher do
     expect(WhatsappWebhookRoute).to have_received(:with_waba_registry_lock).with('123456').once
     expect(WhatsappWebhookRoute).to have_received(:with_waba_registry_lock).with('654321').once
   end
+
+  it 'defers only the atomic payload that encounters WABA lock contention' do
+    normalizer = instance_double(Whatsapp::WebhookBatchNormalizer, perform: [payload])
+    waba_lock = instance_double(Whatsapp::WabaLock)
+    lock_contention_callback = instance_double(Proc)
+
+    allow(Whatsapp::WebhookBatchNormalizer).to receive(:new).and_return(normalizer)
+    allow(Whatsapp::WabaLock).to receive(:new).with('123456').and_return(waba_lock)
+    allow(waba_lock).to receive(:with_lock).and_raise(Whatsapp::WabaLock::LockAcquisitionError)
+    allow(lock_contention_callback).to receive(:call)
+    allow(Webhooks::WhatsappEventsJob).to receive(:perform_later)
+    allow(Webhooks::WhatsappForwardJob).to receive(:perform_later)
+
+    described_class.new(
+      payload: payload,
+      central_ingress: true,
+      default_callback: true,
+      verification_context: verification_context,
+      lock_contention_callback: lock_contention_callback
+    ).perform
+
+    expect(lock_contention_callback).to have_received(:call).with(payload, hmac_verified: true).once
+    expect(Webhooks::WhatsappEventsJob).not_to have_received(:perform_later)
+    expect(Webhooks::WhatsappForwardJob).not_to have_received(:perform_later)
+  end
+
+  it 'preserves lock contention for async retry when no deferral callback is provided' do
+    normalizer = instance_double(Whatsapp::WebhookBatchNormalizer, perform: [payload])
+    waba_lock = instance_double(Whatsapp::WabaLock)
+
+    allow(Whatsapp::WebhookBatchNormalizer).to receive(:new).and_return(normalizer)
+    allow(Whatsapp::WabaLock).to receive(:new).with('123456').and_return(waba_lock)
+    allow(waba_lock).to receive(:with_lock).and_raise(Whatsapp::WabaLock::LockAcquisitionError)
+
+    dispatcher = described_class.new(
+      payload: payload,
+      central_ingress: true,
+      default_callback: true,
+      verification_context: verification_context
+    )
+
+    expect { dispatcher.perform }.to raise_error(Whatsapp::WabaLock::LockAcquisitionError)
+  end
 end

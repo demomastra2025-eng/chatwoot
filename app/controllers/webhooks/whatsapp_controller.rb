@@ -19,7 +19,10 @@ class Webhooks::WhatsappController < ActionController::API
       payload: job_params,
       central_ingress: central_ingress_callback?,
       default_callback: default_callback?,
-      verification_context: method(:routing_verification_context)
+      verification_context: method(:routing_verification_context),
+      lock_contention_callback: lambda do |payload, context|
+        Webhooks::WhatsappIngressDispatchJob.perform_later!(payload, central_ingress_callback?, default_callback?, context)
+      end
     ).perform
     head :ok
   end

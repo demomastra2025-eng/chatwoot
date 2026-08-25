@@ -1,13 +1,18 @@
 class Whatsapp::WebhookIngressDispatcher
-  def initialize(payload:, central_ingress:, default_callback:, verification_context:)
+  def initialize(payload:, central_ingress:, default_callback:, verification_context:, lock_contention_callback: nil)
     @payload = payload.to_h.with_indifferent_access
     @central_ingress = central_ingress
     @default_callback = default_callback
     @verification_context = verification_context
+    @lock_contention_callback = lock_contention_callback
   end
 
   def perform
     job_payloads.each { |payload| dispatch(payload) }
+  end
+
+  def perform_normalized
+    dispatch(@payload)
   end
 
   private
@@ -20,6 +25,11 @@ class Whatsapp::WebhookIngressDispatcher
       payload = with_legacy_account_update_route(payload)
       WhatsappWebhookRoute.with_waba_registry_lock(waba_id) { dispatch_to_destinations(payload) }
     end
+  rescue Whatsapp::WabaLock::LockAcquisitionError
+    raise unless @lock_contention_callback
+
+    Rails.logger.warn('[WHATSAPP_WEBHOOK] deferred reason=waba_lock_contention')
+    @lock_contention_callback.call(payload, @verification_context.call(payload))
   end
 
   def dispatch_to_destinations(payload)
