@@ -31,7 +31,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     expect(coordinator).to have_received(:perform).with(sync_run: run, phases: ['services'])
     expect(job).to have_received(:with_lock).with(
       format(Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: account.id),
-      2.hours
+      6.hours
     )
   end
 
