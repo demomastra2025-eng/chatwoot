@@ -11,6 +11,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  showTabs: {
+    type: Boolean,
+    default: true,
+  },
   tabs: {
     type: Array,
     required: true,
@@ -122,7 +126,7 @@ const onBack = () => {
       />
 
       <TabBar
-        v-if="translatedTabs.length > 1"
+        v-if="showTabs && translatedTabs.length > 1"
         :tabs="translatedTabs"
         :initial-active-tab="activeTabIndex"
         class="flex-shrink-0"

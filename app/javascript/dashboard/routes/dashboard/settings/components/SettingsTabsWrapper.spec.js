@@ -19,7 +19,10 @@ vi.mock('dashboard/composables/store', () => ({
   useMapGetter: vi.fn(),
 }));
 
-const childComponent = { template: '<div data-test="child-view" />' };
+const childComponent = {
+  name: 'ChildView',
+  template: '<div data-test="child-view" />',
+};
 
 const RouterViewStub = {
   setup(_, { slots }) {
@@ -47,6 +50,7 @@ const TabBarStub = {
 const mountComponent = ({
   routeName = 'a',
   featureEnabled = () => true,
+  showTabs = true,
   tabs = [
     { labelKey: 'TAB.A', routeName: 'a', activeOn: ['a'] },
     { labelKey: 'TAB.B', routeName: 'b', activeOn: ['b', 'b_edit'] },
@@ -69,7 +73,7 @@ const mountComponent = ({
   });
 
   const wrapper = shallowMount(SettingsTabsWrapper, {
-    props: { tabs, keepAlive: false },
+    props: { tabs, keepAlive: false, showTabs },
     global: {
       stubs: {
         RouterView: RouterViewStub,
@@ -114,5 +118,12 @@ describe('SettingsTabsWrapper', () => {
     expect(wrapper.find('[data-test="tab-bar"]').exists()).toBe(false);
     expect(wrapper.find('[data-test="tab-b"]').exists()).toBe(false);
     expect(wrapper.find('[data-test="tab-a"]').exists()).toBe(false);
+  });
+
+  it('hides route tabs when navigation is provided by the settings sidebar', () => {
+    const { wrapper } = mountComponent({ showTabs: false });
+
+    expect(wrapper.find('[data-test="tab-bar"]').exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'ChildView' }).exists()).toBe(true);
   });
 });

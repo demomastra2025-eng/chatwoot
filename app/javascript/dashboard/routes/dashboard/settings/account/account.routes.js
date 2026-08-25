@@ -31,6 +31,7 @@ export default {
       component: SettingsTabsWrapper,
       props: {
         tabs: workspaceSettingsTabs,
+        showTabs: false,
       },
       children: [
         {
