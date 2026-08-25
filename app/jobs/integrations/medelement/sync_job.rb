@@ -1,11 +1,17 @@
 class Integrations::Medelement::SyncJob < MutexApplicationJob
   queue_as :medium
   LOCK_TIMEOUT = 6.hours
+  API_RETRY_BASE_SECONDS = 30
+  API_RETRY_MAX_SECONDS = 5.minutes.to_i
+  API_RETRY_WAIT = lambda do |executions|
+    maximum = [API_RETRY_BASE_SECONDS * (2**(executions - 1)), API_RETRY_MAX_SECONDS].min.to_f
+    Kernel.rand((maximum / 2)..maximum)
+  end
   ScheduledSyncBusyError = Class.new(StandardError)
 
   retry_on ScheduledSyncBusyError, wait: 5.minutes, attempts: 24
   retry_on LockAcquisitionError, wait: 30.seconds, attempts: 6
-  retry_on Integrations::Medelement::Client::ApiError, wait: 1.minute, attempts: 3
+  retry_on Integrations::Medelement::Client::ApiError, wait: API_RETRY_WAIT, attempts: 6
   retry_on Integrations::Medelement::ReceptionsSyncService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
   retry_on Integrations::Medelement::ServicesSyncService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
   retry_on Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
@@ -20,7 +26,7 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
       execute_sync(hook, sync_run)
     end
   rescue StandardError => e
-    if retryable_error?(e) && executions < retry_attempts_for(e)
+    if retry_will_be_enqueued?(e)
       sync_run&.retry!(e)
     else
       sync_run&.fail!(e) unless sync_run&.failed?
@@ -101,9 +107,33 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
       error.is_a?(Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError)
   end
 
+  def retry_will_be_enqueued?(error)
+    return false unless retryable_error?(error)
+
+    current_retry_execution(error) < retry_attempts_for(error)
+  end
+
+  def current_retry_execution(error)
+    return executions unless exception_executions
+
+    exception_executions.fetch([retry_error_class(error)].to_s, 0) + 1
+  end
+
+  def retry_error_class(error)
+    [
+      ScheduledSyncBusyError,
+      LockAcquisitionError,
+      Integrations::Medelement::Client::ApiError,
+      Integrations::Medelement::ReceptionsSyncService::IncompleteSnapshotError,
+      Integrations::Medelement::ServicesSyncService::IncompleteSnapshotError,
+      Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError
+    ].find { |error_class| error.is_a?(error_class) }
+  end
+
   def retry_attempts_for(error)
     return 24 if error.is_a?(ScheduledSyncBusyError)
     return 6 if error.is_a?(LockAcquisitionError)
+    return 6 if error.is_a?(Integrations::Medelement::Client::ApiError)
 
     3
   end

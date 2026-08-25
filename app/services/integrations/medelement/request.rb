@@ -7,11 +7,30 @@ class Integrations::Medelement::Request
     EOFError,
     Errno::ECONNRESET,
     Errno::ECONNREFUSED,
-    OpenSSL::SSL::SSLError
+    OpenSSL::SSL::SSLError,
+    Integrations::Medelement::RequestRateLimiter::UnavailableError
   ].freeze
 
-  def initialize(configuration:)
+  def initialize(
+    configuration:,
+    sleeper: ->(seconds) { Kernel.sleep(seconds) },
+    randomizer: ->(minimum, maximum) { Kernel.rand(minimum..maximum) },
+    rate_limiter: nil,
+    clock: nil
+  )
     @configuration = configuration
+    limiter = rate_limiter || Integrations::Medelement::RequestRateLimiter.new(
+      integrator_key: configuration.integrator_key,
+      interval_ms: configuration.throttle_ms,
+      sleeper: sleeper
+    )
+    @retry_policy = Integrations::Medelement::RequestRetryPolicy.new(
+      rate_limiter: limiter,
+      transport_errors: TRANSPORT_ERRORS,
+      sleeper: sleeper,
+      randomizer: randomizer,
+      clock: clock
+    )
   end
 
   # Public transport boundary mirrors the provider request options.
@@ -19,7 +38,9 @@ class Integrations::Medelement::Request
   def call(method, path, operation:, query: nil, body: nil, write: false, empty_not_found: false)
     url = "#{Integrations::Medelement::Client::BASE_URL}#{path}"
     url = "#{url}?#{query}" if query.is_a?(String)
-    response = HTTParty.public_send(method, url, request_options(query.is_a?(String) ? nil : query, body))
+    response = retry_policy.call(operation: operation, write: write) do
+      HTTParty.public_send(method, url, request_options(query.is_a?(String) ? nil : query, body))
+    end
     parsed_response = response.parsed_response
     return [] if empty_not_found && response.code.to_i == 404 && parsed_response == []
     return validate_provider_scope!(parsed_response) if response.success?
@@ -41,13 +62,9 @@ class Integrations::Medelement::Request
     request = Net::HTTP::Get.new(uri)
     request.basic_auth(configuration.company_login, configuration.password)
     headers(false).each { |key, value| request[key] = value }
-    response = Net::HTTP.start(
-      uri.host,
-      uri.port,
-      use_ssl: true,
-      open_timeout: REQUEST_TIMEOUT,
-      read_timeout: REQUEST_TIMEOUT
-    ) { |http| http.request(request) }
+    response = retry_policy.call(operation: operation) do
+      perform_indexed_get(uri, request)
+    end
     parsed_response = parse_body(response.body)
     return [] if empty_not_found && response.code.to_i == 404 && parsed_response == []
     return validate_provider_scope!(parsed_response) if response.is_a?(Net::HTTPSuccess)
@@ -60,19 +77,12 @@ class Integrations::Medelement::Request
   # rubocop:enable Metrics/AbcSize
 
   def receptions(company_cabinet_code:, specialist_code:, begin_datetime:, end_datetime:, skip: 0)
-    response = HTTParty.post(
-      "#{Integrations::Medelement::Client::BASE_URL}/v1/timetable/get_receptions",
-      request_options(
-        nil,
-        {
-          companyCabinetCode: company_cabinet_code,
-          specialistCode: specialist_code,
-          beginDatetime: begin_datetime,
-          endDatetime: end_datetime,
-          skip: skip
-        }
+    response = retry_policy.call(operation: 'receptions') do
+      HTTParty.post(
+        "#{Integrations::Medelement::Client::BASE_URL}/v1/timetable/get_receptions",
+        request_options(nil, receptions_body(company_cabinet_code, specialist_code, begin_datetime, end_datetime, skip))
       )
-    )
+    end
     parsed_response = response.parsed_response
     return [] if empty_receptions_response?(response, parsed_response)
     return scoped_receptions(parsed_response) if response.success?
@@ -84,7 +94,27 @@ class Integrations::Medelement::Request
 
   private
 
-  attr_reader :configuration
+  attr_reader :configuration, :retry_policy
+
+  def perform_indexed_get(uri, request)
+    Net::HTTP.start(
+      uri.host,
+      uri.port,
+      use_ssl: true,
+      open_timeout: REQUEST_TIMEOUT,
+      read_timeout: REQUEST_TIMEOUT
+    ) { |http| http.request(request) }
+  end
+
+  def receptions_body(company_cabinet_code, specialist_code, begin_datetime, end_datetime, skip)
+    {
+      companyCabinetCode: company_cabinet_code,
+      specialistCode: specialist_code,
+      beginDatetime: begin_datetime,
+      endDatetime: end_datetime,
+      skip: skip
+    }
+  end
 
   def request_options(query, body)
     options = {

@@ -9,8 +9,13 @@ RSpec.describe Integrations::Medelement::Client do
       company_login: 'clinic-login',
       password: 'secret',
       integrator_key: 'integrator-key',
-      organization_id: 'company-1'
+      organization_id: 'company-1',
+      throttle_ms: 0
     )
+  end
+
+  before do
+    allow(Kernel).to receive(:sleep)
   end
 
   describe 'provider organization configuration' do

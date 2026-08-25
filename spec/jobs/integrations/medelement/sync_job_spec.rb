@@ -147,4 +147,42 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     expect(coordinator).to have_received(:perform).with(sync_run: run, phases: [])
     expect(run.reload).to be_succeeded
   end
+
+  it 'uses bounded exponential jitter for the provider API fallback retries' do
+    allow(Kernel).to receive(:rand, &:end)
+
+    waits = (1..7).map { |executions| described_class::API_RETRY_WAIT.call(executions) }
+
+    expect(waits).to eq([30.0, 60.0, 120.0, 240.0, 300.0, 300.0, 300.0])
+    expect(job.send(:retry_attempts_for, Integrations::Medelement::Client::ApiError.new('failed'))).to eq(6)
+  end
+
+  it 'tracks provider retries independently from prior lock retries' do
+    error = Integrations::Medelement::Client::ApiError.new('Provider request failed', status: 429)
+    retry_job = described_class.new(hook.id, run.id)
+    retry_job.executions = 6
+    retry_job.exception_executions = {
+      [MutexApplicationJob::LockAcquisitionError].to_s => 1,
+      [Integrations::Medelement::Client::ApiError].to_s => 4
+    }
+    allow(retry_job).to receive(:with_lock).and_yield
+    allow(coordinator).to receive(:perform).and_raise(error)
+
+    expect { retry_job.perform_now }.to have_enqueued_job(described_class).with(hook.id, run.id)
+
+    expect(run.reload).to have_attributes(status: 'retrying', completed_at: nil)
+  end
+
+  it 'fails the run only when the provider retry handler is exhausted' do
+    error = Integrations::Medelement::Client::ApiError.new('Provider request failed', status: 429)
+    retry_job = described_class.new(hook.id, run.id)
+    retry_job.executions = 6
+    retry_job.exception_executions = { [Integrations::Medelement::Client::ApiError].to_s => 5 }
+    allow(retry_job).to receive(:with_lock).and_yield
+    allow(coordinator).to receive(:perform).and_raise(error)
+
+    expect { retry_job.perform_now }.to raise_error(error)
+
+    expect(run.reload).to be_failed
+  end
 end
