@@ -49,8 +49,8 @@ const mountComponent = (currentChat = { id: 1, inbox_id: 2 }) =>
           name: 'SchedulingConversationAppointmentsSidebar',
           template: '<div />',
         },
-        EntityTouchesCard: {
-          name: 'EntityTouchesCard',
+        ScheduledMessagesPanel: {
+          name: 'ScheduledMessagesPanel',
           props: ['conversationId', 'remindableType', 'remindableId'],
           template: '<div />',
         },
@@ -165,7 +165,7 @@ describe('ConversationSidebar', () => {
     expect(contactPanel.props('inboxId')).toBe(202);
   });
 
-  it('renders communication thread touches with the active reply and thread reminder context', async () => {
+  it('renders communication thread scheduled messages with the active reply and thread reminder context', async () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
       is_touch_sidebar_open: true,
@@ -182,13 +182,17 @@ describe('ConversationSidebar', () => {
     });
     await flushPromises();
 
-    const touchesCard = wrapper.findComponent({ name: 'EntityTouchesCard' });
-    expect(touchesCard.props('conversationId')).toBe(101);
-    expect(touchesCard.props('remindableType')).toBe('CommunicationThread');
-    expect(touchesCard.props('remindableId')).toBe(10);
+    const scheduledMessages = wrapper.findComponent({
+      name: 'ScheduledMessagesPanel',
+    });
+    expect(scheduledMessages.props('conversationId')).toBe(101);
+    expect(scheduledMessages.props('remindableType')).toBe(
+      'CommunicationThread'
+    );
+    expect(scheduledMessages.props('remindableId')).toBe(10);
   });
 
-  it('renders regular conversation touches with conversation reminder context', async () => {
+  it('renders regular conversation scheduled messages with conversation reminder context', async () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
       is_touch_sidebar_open: true,
@@ -197,9 +201,11 @@ describe('ConversationSidebar', () => {
     const wrapper = mountComponent({ id: 12, inbox_id: 2 });
     await flushPromises();
 
-    const touchesCard = wrapper.findComponent({ name: 'EntityTouchesCard' });
-    expect(touchesCard.props('conversationId')).toBe(12);
-    expect(touchesCard.props('remindableType')).toBe('Conversation');
-    expect(touchesCard.props('remindableId')).toBe(12);
+    const scheduledMessages = wrapper.findComponent({
+      name: 'ScheduledMessagesPanel',
+    });
+    expect(scheduledMessages.props('conversationId')).toBe(12);
+    expect(scheduledMessages.props('remindableType')).toBe('Conversation');
+    expect(scheduledMessages.props('remindableId')).toBe(12);
   });
 });

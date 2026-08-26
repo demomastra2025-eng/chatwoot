@@ -67,12 +67,8 @@ const APPOINTMENT_AUTOMATION_ACTIONS = [
     name: 'SEND_WEBHOOK_EVENT',
   },
   {
-    key: 'create_touch',
-    name: 'CREATE_TOUCH',
-  },
-  {
-    key: 'cancel_touches',
-    name: 'CANCEL_TOUCHES',
+    key: 'send_message',
+    name: 'SEND_MESSAGE',
   },
 ];
 
@@ -183,12 +179,8 @@ const DEAL_AUTOMATION_ACTIONS = [
     name: 'SEND_WEBHOOK_EVENT',
   },
   {
-    key: 'create_touch',
-    name: 'CREATE_TOUCH',
-  },
-  {
-    key: 'cancel_touches',
-    name: 'CANCEL_TOUCHES',
+    key: 'send_message',
+    name: 'SEND_MESSAGE',
   },
 ];
 
@@ -291,12 +283,8 @@ const TASK_AUTOMATION_ACTIONS = [
     name: 'SEND_WEBHOOK_EVENT',
   },
   {
-    key: 'create_touch',
-    name: 'CREATE_TOUCH',
-  },
-  {
-    key: 'cancel_touches',
-    name: 'CANCEL_TOUCHES',
+    key: 'send_message',
+    name: 'SEND_MESSAGE',
   },
 ];
 
@@ -487,14 +475,6 @@ const CONVERSATION_AUTOMATION_ACTIONS = [
   {
     key: 'add_private_note',
     name: 'ADD_PRIVATE_NOTE',
-  },
-  {
-    key: 'create_touch',
-    name: 'CREATE_TOUCH',
-  },
-  {
-    key: 'cancel_touches',
-    name: 'CANCEL_TOUCHES',
   },
 ];
 
@@ -823,11 +803,13 @@ export const AUTOMATION_ACTION_TYPES = [
     key: 'create_touch',
     label: 'CREATE_TOUCH',
     inputType: 'touch',
+    legacyOnly: true,
   },
   {
     key: 'cancel_touches',
     label: 'CANCEL_TOUCHES',
     inputType: null,
+    legacyOnly: true,
   },
   {
     key: 'send_attachment',
@@ -837,7 +819,7 @@ export const AUTOMATION_ACTION_TYPES = [
   {
     key: 'send_message',
     label: 'SEND_MESSAGE',
-    inputType: 'textarea',
+    inputType: 'touch',
   },
   {
     key: 'add_private_note',

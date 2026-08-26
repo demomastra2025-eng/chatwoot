@@ -442,6 +442,10 @@ describe('useAutomation', () => {
       event_name: 'deal_created',
       conditions: [],
       actions: [],
+      execution_schedule: {
+        timing_mode: 'relative',
+        relative_anchor: 'conversation.created_at',
+      },
     };
 
     automationHelper.getDefaultConditions.mockReturnValue([{}]);
@@ -461,6 +465,7 @@ describe('useAutomation', () => {
     expect(crmReferencesStore.loadPipelines).toHaveBeenCalled();
     expect(automation.value.conditions).toHaveLength(1);
     expect(automation.value.actions).toHaveLength(1);
+    expect(automation.value.execution_schedule).toEqual({});
   });
 
   it('uses appointment webhook action defaults for appointment events', () => {

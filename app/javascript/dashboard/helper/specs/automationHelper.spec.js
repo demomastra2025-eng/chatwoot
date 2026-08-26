@@ -179,6 +179,7 @@ const BACKEND_APPOINTMENT_ACTIONS = [
   'send_webhook_event',
   'change_appointment_status',
   'cancel_appointment_payment',
+  'send_message',
   'apply_touch_plan',
   'create_touch',
   'cancel_touches',
@@ -191,6 +192,7 @@ const BACKEND_DEAL_ACTIONS = [
   'assign_deal_team',
   'archive_deal',
   'unarchive_deal',
+  'send_message',
   'apply_touch_plan',
   'create_touch',
   'cancel_touches',
@@ -204,6 +206,7 @@ const BACKEND_TASK_ACTIONS = [
   'change_task_priority',
   'archive_task',
   'unarchive_task',
+  'send_message',
   'apply_touch_plan',
   'create_touch',
   'cancel_touches',
@@ -258,7 +261,11 @@ const EXPECTED_BACKEND_ACTION_UNION = [
   ]),
 ];
 
-const LEGACY_BACKEND_ONLY_ACTIONS = ['apply_touch_plan'];
+const LEGACY_BACKEND_ONLY_ACTIONS = [
+  'apply_touch_plan',
+  'create_touch',
+  'cancel_touches',
+];
 const publicAutomationActions = actions =>
   actions.filter(action => !LEGACY_BACKEND_ONLY_ACTIONS.includes(action));
 

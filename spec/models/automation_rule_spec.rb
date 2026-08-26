@@ -18,6 +18,88 @@ RSpec.describe AutomationRule do
       rule.update!(actions: [rule.actions.first, rule.actions.first])
       expect(rule.reload.actions.pluck('action_id').uniq.size).to eq(2)
     end
+
+    it 'assigns distinct stable ids to multiple send_message actions' do
+      rule = create(
+        :automation_rule,
+        actions: [
+          { action_name: 'send_message', action_params: ['First'] },
+          { action_name: 'send_message', action_params: ['Second'] }
+        ]
+      )
+      action_ids = rule.actions.pluck('action_id')
+
+      expect(action_ids.compact.uniq.size).to eq(2)
+      rule.update!(actions: rule.actions.map { |action| action.except('action_id') })
+      expect(rule.reload.actions.pluck('action_id')).to eq(action_ids)
+    end
+  end
+
+  describe 'execution schedule validation' do
+    let(:account) { create(:account) }
+
+    it 'accepts a relative anchor supported by the rule event' do
+      rule = build(
+        :automation_rule,
+        account: account,
+        event_name: 'conversation_created',
+        execution_schedule: {
+          timing_mode: 'relative',
+          relative_anchor: 'conversation.created_at',
+          relative_offset_seconds: 3600,
+          timezone: 'UTC'
+        }
+      )
+
+      expect(rule).to be_valid
+    end
+
+    it 'rejects an invalid timezone, relative anchor and offset' do
+      rule = build(
+        :automation_rule,
+        account: account,
+        event_name: 'conversation_created',
+        execution_schedule: {
+          timing_mode: 'relative',
+          relative_anchor: 'appointment.starts_at',
+          relative_offset_seconds: 'later',
+          timezone: 'Mars/Olympus'
+        }
+      )
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:execution_schedule]).to include(
+        'timezone is invalid',
+        'relative anchor is not supported for this event',
+        'relative offset seconds must be an integer'
+      )
+    end
+
+    it 'rejects an absolute schedule without an ISO 8601 timestamp' do
+      rule = build(
+        :automation_rule,
+        account: account,
+        execution_schedule: { timing_mode: 'absolute', scheduled_at: 'tomorrow' }
+      )
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:execution_schedule]).to include('scheduled_at must be an ISO 8601 timestamp')
+    end
+
+    it 'rejects fields that are incompatible with the timing mode' do
+      rule = build(
+        :automation_rule,
+        account: account,
+        execution_schedule: {
+          timing_mode: 'absolute',
+          scheduled_at: 1.day.from_now.iso8601,
+          relative_anchor: 'conversation.created_at'
+        }
+      )
+
+      expect(rule).not_to be_valid
+      expect(rule.errors[:execution_schedule]).to include('absolute timing cannot include relative fields')
+    end
   end
 
   describe 'concerns' do

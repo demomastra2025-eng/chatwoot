@@ -11,26 +11,22 @@ class AutomationRules::TouchActionService
     target_contact_id target_contact_inbox_id target_conversation_id target_inbox_id template_params text_mode timing_mode timezone
   ].freeze
 
-  attr_reader :account, :entity_kind, :record, :rule, :trigger_message
+  attr_reader :account, :entity_kind, :execution_key, :record, :rule, :trigger_message
 
-  def initialize(rule:, account:, record:, entity_kind:, trigger_message: nil)
+  def initialize(rule:, account:, record:, entity_kind:, trigger_message: nil, execution_key: nil) # rubocop:disable Metrics/ParameterLists
     @rule = rule
     @account = account
     @record = record
     @entity_kind = entity_kind
     @trigger_message = trigger_message
+    @execution_key = execution_key
   end
 
-  def apply_touch_plan(action_params)
+  def apply_touch_plan(action_params, action_key: nil)
     reminder_group = load_touch_plan!(action_params)
+    action_key = action_key.presence || 'apply_touch_plan'
 
-    result = Reminders::PlanApplicationService.new(
-      account: account,
-      reminder_group: reminder_group,
-      remindable: record,
-      actor: rule,
-      source: 'automation'
-    ).perform
+    result = find_or_apply_touch_plan(reminder_group, action_key)
     reminders = result.touches
 
     reminders.each do |reminder|
@@ -51,6 +47,21 @@ class AutomationRules::TouchActionService
     Reminders::StaleAutomationTouchService.new(reminder: reminder, trigger_message: trigger_message).perform
     Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
     reminder
+  end
+
+  def send_message(action_params, action_id: nil, action_key: nil)
+    params = normalize_touch_params(action_params).except(
+      :relative_anchor,
+      :relative_offset_seconds,
+      :relative_time_mode,
+      :relative_time_of_day,
+      :repeat_mode,
+      :repeat_until_at
+    )
+    params[:timing_mode] = DEFAULT_TIMING_MODE
+    params[:scheduled_at] = Time.current
+
+    create_touch(params, action_id: action_id, action_key: action_key || action_id || 'send_message')
   end
 
   def cancel_touches(action_params)
@@ -75,8 +86,41 @@ class AutomationRules::TouchActionService
 
   private
 
+  def find_or_apply_touch_plan(reminder_group, action_key)
+    return apply_touch_plan_once(reminder_group, action_key) unless idempotent_event_touch?
+
+    Reminder.transaction do
+      lock_automation_event!(action_key)
+      existing = existing_plan_touches(reminder_group, action_key)
+      next Reminders::PlanApplicationResult.new(execution_mode: 'eager', touches: existing) if existing.any?
+
+      apply_touch_plan_once(reminder_group, action_key)
+    end
+  end
+
+  def apply_touch_plan_once(reminder_group, action_key)
+    result = Reminders::PlanApplicationService.new(
+      account: account,
+      reminder_group: reminder_group,
+      remindable: record,
+      actor: rule,
+      source: 'automation'
+    ).perform
+    result.touches.each do |reminder|
+      reminder.mark_automation_provenance!(rule, action_key: action_key, execution_key: execution_key)
+    end
+    result
+  end
+
+  def existing_plan_touches(reminder_group, action_key)
+    account.reminders
+           .where(remindable: record, reminder_group: reminder_group)
+           .where('metadata @> ?', event_touch_identity(action_key).to_json)
+           .to_a
+  end
+
   def find_or_create_event_touch(params, action_key)
-    return Reminder.transaction { create_automation_touch(params, action_key) } if trigger_message.blank?
+    return Reminder.transaction { create_automation_touch(params, action_key) } unless idempotent_event_touch?
 
     Reminder.transaction do
       lock_automation_event!(action_key)
@@ -88,28 +132,26 @@ class AutomationRules::TouchActionService
     reminder = Reminders::CreateService.new(
       account: account,
       remindable: record,
-      attributes: build_touch_attributes(params)
+      attributes: build_touch_attributes(params, action_key)
     ).perform
-    reminder.mark_automation_provenance!(rule, trigger_message: trigger_message, action_key: action_key)
+    reminder.mark_automation_provenance!(
+      rule,
+      trigger_message: trigger_message,
+      action_key: action_key,
+      execution_key: execution_key
+    )
     reminder
   end
 
   def existing_event_touch(action_key)
     account.reminders
            .where(remindable: record)
-           .where(
-             'metadata @> ?',
-             {
-               Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
-               Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message.id,
-               Reminder::AUTOMATION_ACTION_KEY => action_key
-             }.to_json
-           )
+           .where('metadata @> ?', event_touch_identity(action_key).to_json)
            .first
   end
 
   def lock_automation_event!(action_key)
-    source = [account.id, rule.id, entity_kind, record.id, trigger_message.id, action_key].join(':')
+    source = [account.id, rule.id, entity_kind, record.id, event_identity, action_key].join(':')
     lock_key = Digest::SHA256.hexdigest("automation-touch-event:#{source}").first(16).to_i(16) % ((2**63) - 1)
     Reminder.connection.execute("SELECT pg_advisory_xact_lock(#{lock_key})")
   end
@@ -138,13 +180,13 @@ class AutomationRules::TouchActionService
     raise ArgumentError, 'create_touch delay_minutes must be a non-negative integer'
   end
 
-  def build_touch_attributes(params)
+  def build_touch_attributes(params, action_key)
     attributes = params.slice(*TOUCH_ATTRIBUTE_KEYS).to_h.symbolize_keys
     attributes[:action_type] = attributes[:action_type].presence || 'send_message'
     attributes[:content_kind] = attributes[:content_kind].presence || 'free_text'
     attributes[:timing_mode] = attributes[:timing_mode].presence || DEFAULT_TIMING_MODE
     attributes[:timezone] = attributes[:timezone].presence || DEFAULT_TIMEZONE
-    attributes[:metadata] = normalized_touch_metadata(attributes[:metadata])
+    attributes[:metadata] = normalized_touch_metadata(attributes[:metadata], action_key)
     attributes[:auto_cancel_on_incoming] = auto_cancel_on_incoming_value(params)
 
     apply_legacy_delay_defaults!(attributes, params)
@@ -165,8 +207,8 @@ class AutomationRules::TouchActionService
       attributes[:timing_mode].to_s == 'relative'
   end
 
-  def normalized_touch_metadata(metadata)
-    (metadata || {}).to_h.stringify_keys.merge(automation_metadata)
+  def normalized_touch_metadata(metadata, action_key)
+    (metadata || {}).to_h.stringify_keys.merge(automation_metadata, event_touch_identity(action_key))
   end
 
   def auto_cancel_on_incoming_value(params)
@@ -219,6 +261,23 @@ class AutomationRules::TouchActionService
       'automation_rule_id' => rule.id,
       'touch_source' => 'automation'
     }
+  end
+
+  def idempotent_event_touch?
+    execution_key.present? || trigger_message.present?
+  end
+
+  def event_identity
+    execution_key.presence || "message:#{trigger_message&.id}"
+  end
+
+  def event_touch_identity(action_key)
+    {
+      Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+      Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message&.id,
+      Reminder::AUTOMATION_ACTION_KEY => action_key,
+      Reminder::AUTOMATION_EXECUTION_KEY => execution_key
+    }.compact
   end
 
   def load_touch_plan!(action_params)

@@ -115,6 +115,29 @@ RSpec.describe AutomationRules::ActionService do
         expect(touch.target_contact).to eq(conversation.contact)
         expect(touch.target_conversation).to eq(conversation)
       end
+
+      it 'does not duplicate touch-plan reminders when the Redis completion marker fails' do
+        execution_key = "touch-plan-retry-#{SecureRandom.uuid}"
+        marker_failed = false
+        allow(Redis::Alfred).to receive(:set).and_wrap_original do |method, key, *args, **kwargs|
+          unless marker_failed
+            marker_failed = true
+            raise Redis::BaseError, 'marker write failed'
+          end
+
+          method.call(key, *args, **kwargs)
+        end
+
+        expect do
+          described_class.new(rule, account, conversation, execution_key: execution_key).perform
+        end.to raise_error(Redis::BaseError, 'marker write failed')
+
+        expect do
+          described_class.new(rule, account, conversation, execution_key: execution_key).perform
+        end.not_to(change { account.reminders.where(reminder_group: touch_plan, remindable: conversation).count })
+
+        expect(account.reminders.where(reminder_group: touch_plan, remindable: conversation).count).to eq(1)
+      end
     end
 
     describe '#perform with cancel_touches action' do
@@ -170,6 +193,30 @@ RSpec.describe AutomationRules::ActionService do
           'First automation touch',
           'Second automation touch'
         )
+      end
+
+      it 'does not duplicate a durable touch when the Redis completion marker fails after creation' do
+        execution_key = "retry-after-side-effect-#{SecureRandom.uuid}"
+        first_action_id = rule.reload.actions.first.fetch('action_id')
+        marker_failed = false
+        allow(Redis::Alfred).to receive(:set).and_wrap_original do |method, key, *args, **kwargs|
+          if key.include?(first_action_id) && !marker_failed
+            marker_failed = true
+            raise Redis::BaseError, 'marker write failed'
+          end
+
+          method.call(key, *args, **kwargs)
+        end
+
+        expect do
+          described_class.new(rule, account, conversation, execution_key: execution_key).perform
+        end.to raise_error(Redis::BaseError, 'marker write failed')
+
+        expect do
+          described_class.new(rule, account, conversation, execution_key: execution_key).perform
+        end.not_to(change { account.reminders.where(remindable: conversation).count })
+
+        expect(account.reminders.where(remindable: conversation).count).to eq(2)
       end
     end
 

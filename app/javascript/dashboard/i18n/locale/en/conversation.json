@@ -14,6 +14,20 @@
     "SEARCH_MESSAGES": "Search for messages in conversations",
     "VIEW_ORIGINAL": "View original",
     "VIEW_TRANSLATED": "View translated",
+    "SCHEDULED_MESSAGES": {
+      "TITLE": "Scheduled messages",
+      "DESCRIPTION": "Messages scheduled for delivery in this conversation.",
+      "CREATE": "Send later",
+      "EDIT": "Edit",
+      "CANCEL": "Cancel delivery",
+      "CANCELLED": "Message delivery cancelled",
+      "CANCEL_ERROR": "Could not cancel message delivery",
+      "EMPTY": "There are no scheduled messages in this conversation.",
+      "LOADING": "Loading scheduled messages…",
+      "LOAD_ERROR": "Could not load scheduled messages",
+      "AI_PREVIEW": "The message will be prepared by AI",
+      "NO_CONTENT": "Message without text"
+    },
     "EMPTY_STATE": {
       "CMD_BAR": "to open command menu",
       "KEYBOARD_SHORTCUTS": "to view keyboard shortcuts"

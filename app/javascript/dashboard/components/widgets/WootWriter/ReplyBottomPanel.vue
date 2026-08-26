@@ -192,6 +192,7 @@ export default {
     'toggleQuotedReply',
     'replaceText',
     'attachFile',
+    'scheduleMessage',
   ],
   setup(props) {
     const { setSignatureFlagForInbox, fetchSignatureFlagFromUISettings } =
@@ -867,6 +868,17 @@ export default {
     </div>
     <div class="right-wrap">
       <div v-on-clickaway="closeReplyChannelDropdown" class="reply-send-group">
+        <NextButton
+          v-if="!isNote && !isCommunicationCallReplyAction"
+          v-tooltip.top-end="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
+          type="button"
+          icon="i-lucide-clock-plus"
+          slate
+          faded
+          sm
+          :aria-label="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
+          @click="$emit('scheduleMessage')"
+        />
         <VoiceCallButton
           v-if="isCommunicationVoiceReplyAction && contactPhone"
           :label="sendButtonText"

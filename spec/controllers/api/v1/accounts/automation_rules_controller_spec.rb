@@ -152,6 +152,59 @@ RSpec.describe 'Api::V1::Accounts::AutomationRulesController', type: :request do
         )
       end
 
+      it 'persists rule-level timing with canonical rich send_message params' do
+        params[:execution_schedule] = {
+          timing_mode: 'relative',
+          relative_anchor: 'conversation.created_at',
+          relative_offset_seconds: 300,
+          timezone: 'UTC'
+        }
+        params[:actions] = [
+          {
+            action_name: :send_message,
+            action_params: {
+              body: 'Scheduled follow-up',
+              content_kind: 'free_text',
+              text_mode: 'static'
+            }
+          }
+        ]
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: params
+
+        expect(response).to have_http_status(:success)
+        rule = account.automation_rules.last
+        expect(rule.execution_schedule).to include(
+          'timing_mode' => 'relative',
+          'relative_anchor' => 'conversation.created_at',
+          'relative_offset_seconds' => '300',
+          'timezone' => 'UTC'
+        )
+        expect(rule.actions.first).to include('action_name' => 'send_message')
+        expect(rule.actions.first['action_params']).to include(
+          'body' => 'Scheduled follow-up',
+          'content_kind' => 'free_text'
+        )
+      end
+
+      it 'rejects an execution schedule that cannot run for the selected event' do
+        params[:execution_schedule] = {
+          timing_mode: 'relative',
+          relative_anchor: 'appointment.starts_at',
+          relative_offset_seconds: 'later',
+          timezone: 'Mars/Olympus'
+        }
+
+        post "/api/v1/accounts/#{account.id}/automation_rules",
+             headers: administrator.create_new_auth_token,
+             params: params
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(account.automation_rules.count).to eq(0)
+      end
+
       it 'Saves for automation_rules for account with country_code and browser_language conditions' do
         expect(account.automation_rules.count).to eq(0)
 

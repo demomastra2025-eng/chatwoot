@@ -367,6 +367,7 @@ export function useAutomation(startValue = null) {
   const onEventChange = async () => {
     automation.value.conditions = getDefaultConditions(eventName.value);
     automation.value.actions = getDefaultActions(eventName.value);
+    automation.value.execution_schedule = {};
     await loadAutomationReferences(eventName.value);
     manifestCustomAttributes();
   };

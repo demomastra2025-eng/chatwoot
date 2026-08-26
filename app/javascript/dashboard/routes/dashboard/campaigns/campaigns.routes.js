@@ -3,8 +3,6 @@ import { CONVERSATION_ACCESS_PERMISSIONS } from 'dashboard/constants/permissions
 
 const OutboundPageRouteView = () => import('./pages/OutboundPageRouteView.vue');
 const OutboundCampaignsPage = () => import('./pages/OutboundCampaignsPage.vue');
-const OutboundTouchPlansPage = () =>
-  import('./pages/OutboundTouchPlansPage.vue');
 const OutboundTemplatesPage = () => import('./pages/OutboundTemplatesPage.vue');
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 
@@ -48,14 +46,14 @@ const campaignsRoutes = {
           },
         },
         // Legacy personal-broadcast URL kept as a redirect so existing bookmarks
-        // and saved Captain/UI actions land on the canonical touches route.
+        // land on the canonical broadcasts route.
         {
           path: 'broadcasts/personal',
           name: 'outbound_broadcasts_personal_index',
           meta: touchesMeta,
           redirect: to => {
             return {
-              name: 'outbound_touches_index',
+              name: 'outbound_broadcasts_index',
               params: to.params,
               query: to.query,
             };
@@ -98,16 +96,28 @@ const campaignsRoutes = {
           path: 'touches',
           name: 'outbound_touches_index',
           meta: touchesMeta,
-          component: OutboundCampaignsPage,
-          props: {
-            mode: 'touches',
+          redirect: to => {
+            return {
+              name: 'outbound_broadcasts_index',
+              params: to.params,
+              query: to.query,
+            };
           },
         },
         {
           path: 'touch-plans',
           name: 'outbound_touch_plans_index',
           meta: touchesMeta,
-          component: OutboundTouchPlansPage,
+          redirect: to => {
+            return {
+              name: 'captain_assistants_index',
+              params: {
+                ...to.params,
+                navigationPath: 'captain_assistants_follow_ups_index',
+              },
+              query: to.query,
+            };
+          },
         },
         {
           path: 'templates',

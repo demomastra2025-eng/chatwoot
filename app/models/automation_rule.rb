@@ -67,6 +67,7 @@ class AutomationRule < ApplicationRecord
     send_webhook_event
     change_appointment_status
     cancel_appointment_payment
+    send_message
     apply_touch_plan
     create_touch
     cancel_touches
@@ -78,6 +79,7 @@ class AutomationRule < ApplicationRecord
     assign_deal_team
     archive_deal
     unarchive_deal
+    send_message
     apply_touch_plan
     create_touch
     cancel_touches
@@ -98,6 +100,7 @@ class AutomationRule < ApplicationRecord
     change_task_priority
     archive_task
     unarchive_task
+    send_message
     apply_touch_plan
     create_touch
     cancel_touches
@@ -130,6 +133,7 @@ class AutomationRule < ApplicationRecord
   validate :crm_action_params_supported
   validate :crm_stage_references_active
   validate :new_touch_plan_actions_not_supported
+  validate :execution_schedule_supported
   validate :query_operator_presence
   validate :query_operator_value
   validates :account_id, presence: true
@@ -190,6 +194,17 @@ class AutomationRule < ApplicationRecord
     end
   end
 
+  def execution_signature
+    OpenSSL::Digest::SHA256.hexdigest(
+      {
+        event_name: event_name,
+        conditions: conditions,
+        actions: actions,
+        execution_schedule: execution_schedule
+      }.to_json
+    )
+  end
+
   private
 
   def normalize_action_ids
@@ -197,7 +212,7 @@ class AutomationRule < ApplicationRecord
     seen_action_ids = Set.new
     self.actions = Array(actions).each_with_index.map do |raw_action, index|
       action = raw_action.to_h.deep_stringify_keys
-      next action unless action['action_name'] == 'create_touch'
+      next action unless action['action_name'].in?(%w[create_touch send_message])
 
       action_id = action['action_id'].presence || existing_actions[index].to_h.deep_stringify_keys['action_id'].presence
       action_id = SecureRandom.uuid if action_id.blank? || seen_action_ids.include?(action_id)
@@ -212,6 +227,77 @@ class AutomationRule < ApplicationRecord
     value = JSON.parse(value) if value.is_a?(String)
     Array(value)
   rescue JSON::ParserError
+    []
+  end
+
+  def execution_schedule_supported
+    schedule = execution_schedule.to_h.with_indifferent_access
+    return if schedule.blank?
+
+    if schedule[:timing_mode].blank?
+      errors.add(:execution_schedule, 'timing mode is required')
+      return
+    end
+
+    return validate_immediate_execution_schedule(schedule) if schedule[:timing_mode] == 'immediate'
+
+    validate_execution_timezone(schedule)
+    case schedule[:timing_mode]
+    when 'absolute'
+      validate_absolute_execution_schedule(schedule)
+    when 'relative'
+      validate_relative_execution_schedule(schedule)
+    else
+      errors.add(:execution_schedule, 'timing mode is not supported')
+    end
+  end
+
+  def validate_execution_timezone(schedule)
+    timezone = schedule[:timezone].presence || account&.reporting_timezone.presence || 'UTC'
+    errors.add(:execution_schedule, 'timezone is invalid') unless timezone.in?(TZInfo::Timezone.all_identifiers)
+  end
+
+  def validate_immediate_execution_schedule(schedule)
+    return if (schedule.keys.map(&:to_s) - ['timing_mode']).none?
+
+    errors.add(:execution_schedule, 'immediate timing cannot include schedule fields')
+  end
+
+  def validate_absolute_execution_schedule(schedule)
+    if schedule.values_at(:relative_anchor, :relative_offset_seconds, :relative_time_mode, :relative_time_of_day).any?(&:present?)
+      errors.add(:execution_schedule, 'absolute timing cannot include relative fields')
+    end
+    Time.iso8601(schedule[:scheduled_at].to_s)
+  rescue ArgumentError
+    errors.add(:execution_schedule, 'scheduled_at must be an ISO 8601 timestamp')
+  end
+
+  def validate_relative_execution_schedule(schedule)
+    errors.add(:execution_schedule, 'relative timing cannot include scheduled_at') if schedule[:scheduled_at].present?
+    anchor = schedule[:relative_anchor].to_s
+    errors.add(:execution_schedule, 'relative anchor is not supported for this event') unless anchor.in?(execution_relative_anchors)
+
+    Integer(schedule[:relative_offset_seconds])
+    validate_relative_execution_time(schedule)
+  rescue ArgumentError, TypeError
+    errors.add(:execution_schedule, 'relative offset seconds must be an integer')
+  end
+
+  def validate_relative_execution_time(schedule)
+    time_mode = schedule[:relative_time_mode].presence || Reminder::RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME
+    errors.add(:execution_schedule, 'relative time mode is invalid') unless time_mode.in?(Reminder::RELATIVE_TIME_MODES)
+    return unless time_mode == Reminder::RELATIVE_TIME_MODE_FIXED_TIME_OF_DAY
+    return if schedule[:relative_time_of_day].to_s.match?(Reminder::RELATIVE_TIME_OF_DAY_FORMAT)
+
+    errors.add(:execution_schedule, 'relative time of day must use HH:MM format')
+  end
+
+  def execution_relative_anchors
+    return Reminder::CONVERSATION_RELATIVE_ANCHORS if conversation_event?
+    return Reminder::RELATIVE_ANCHORS.grep(/^appointment\./) if appointment_event?
+    return Reminder::RELATIVE_ANCHORS.grep(/^deal\./) if crm_entity_kind == 'deal'
+    return Reminder::RELATIVE_ANCHORS.grep(/^task\./) if crm_entity_kind == 'task'
+
     []
   end
 
@@ -410,7 +496,7 @@ class AutomationRule < ApplicationRecord
       Scheduling::Constants::APPOINTMENT_STATUSES.include?(normalized_action_param(action_params))
     when 'apply_touch_plan'
       touch_plan_action_params_supported?(action_params, 'appointment')
-    when 'create_touch'
+    when 'create_touch', 'send_message'
       create_touch_action_params_supported?(action_params)
     when 'cancel_touches'
       cancel_touches_action_params_supported?(action_params, 'appointment')
@@ -434,7 +520,7 @@ class AutomationRule < ApplicationRecord
       normalized_action_param(action_params).in?(::Crm::Task::PRIORITIES)
     when 'apply_touch_plan'
       touch_plan_action_params_supported?(action_params, crm_entity_kind)
-    when 'create_touch'
+    when 'create_touch', 'send_message'
       create_touch_action_params_supported?(action_params)
     when 'cancel_touches'
       cancel_touches_action_params_supported?(action_params, crm_entity_kind)
@@ -450,11 +536,19 @@ class AutomationRule < ApplicationRecord
       touch_plan_action_params_supported?(action_params, 'conversation')
     when 'create_touch'
       create_touch_action_params_supported?(action_params)
+    when 'send_message'
+      legacy_send_message_params_supported?(action_params) || create_touch_action_params_supported?(action_params)
     when 'cancel_touches'
       cancel_touches_action_params_supported?(action_params, 'conversation')
     else
       true
     end
+  end
+
+  def legacy_send_message_params_supported?(action_params)
+    return true if action_params.is_a?(Array)
+
+    action_params.is_a?(Hash) && action_params['message'].present?
   end
 
   def new_touch_plan_actions_not_supported
@@ -586,28 +680,41 @@ class AutomationRule < ApplicationRecord
     return true if action_type.to_s == 'ai_agent_wakeup'
 
     content_kind = params[:content_kind].presence || 'free_text'
-    text_mode = Reminders::TextModeResolver.call(
+    text_mode = resolved_touch_text_mode(params, action_type)
+
+    return params[:instructions].to_s.strip.present? if text_mode.to_s == 'agent'
+    return channel_template_content_supported?(params) if content_kind.to_s == 'channel_template'
+
+    params[:body].to_s.strip.present? || Array(params[:attachments]).any?
+  end
+
+  def resolved_touch_text_mode(params, action_type)
+    Reminders::TextModeResolver.call(
       action_type: action_type,
       body: params[:body],
       instructions: params[:instructions],
       text_mode: params[:text_mode]
     )
+  end
 
-    return params[:instructions].to_s.strip.present? if text_mode.to_s == 'agent'
-    return params[:template_params].respond_to?(:to_h) && params[:template_params].to_h.present? if content_kind.to_s == 'channel_template'
-
-    params[:body].to_s.strip.present? || Array(params[:attachments]).any?
+  def channel_template_content_supported?(params)
+    params[:template_params].respond_to?(:to_h) && params[:template_params].to_h.present?
   end
 
   def create_touch_timing_supported?(params)
     return false unless delay_minutes_supported?(params[:delay_minutes])
     return false unless repeat_mode_supported?(params[:repeat_mode])
-    return false if params[:timing_mode].to_s == 'relative' && params[:relative_anchor].blank?
-    return false if params[:timing_mode].to_s == 'relative' && params[:relative_offset_seconds].blank?
-    return false if params[:timing_mode].to_s == 'relative' && params[:repeat_mode].present? && params[:repeat_mode].to_s != 'once'
+    return false unless relative_timing_supported?(params)
     return false if fixed_time_of_day_timing?(params) && params[:relative_time_of_day].to_s !~ Reminder::RELATIVE_TIME_OF_DAY_FORMAT
 
     true
+  end
+
+  def relative_timing_supported?(params)
+    return true unless params[:timing_mode].to_s == 'relative'
+    return false if params[:relative_anchor].blank? || params[:relative_offset_seconds].blank?
+
+    params[:repeat_mode].blank? || params[:repeat_mode].to_s == 'once'
   end
 
   def fixed_time_of_day_timing?(params)

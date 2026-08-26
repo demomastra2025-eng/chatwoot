@@ -183,6 +183,14 @@ const mountComponent = (props, storeOptions) =>
   });
 
 describe('ReplyBottomPanel', () => {
+  it('emits schedule-message from the send-later button', async () => {
+    const wrapper = mountComponent();
+
+    await wrapper.find('[data-icon="i-lucide-clock-plus"]').trigger('click');
+
+    expect(wrapper.emitted('scheduleMessage')).toHaveLength(1);
+  });
+
   it('keeps the direct-channel Captain status contract unchanged', async () => {
     const toggleStatus = vi.fn();
     const wrapper = mountComponent(

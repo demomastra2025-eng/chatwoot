@@ -40,7 +40,13 @@ class AutomationRuleListener < BaseListener
                                                                         { message: message, changed_attributes: changed_attributes }).perform
       next if conditions_match.blank?
 
-      ::AutomationRules::ActionService.new(rule, account, message.conversation, trigger_message: message).perform
+      ::AutomationRules::ExecutionService.new(
+        rule: rule,
+        record: message.conversation,
+        changed_attributes: changed_attributes,
+        trigger_message: message,
+        execution_key: AutomationRules::ExecutionService.execution_key_for(event: event, record: message.conversation, trigger_message: message)
+      ).perform
     end
   end
 
@@ -62,7 +68,14 @@ class AutomationRuleListener < BaseListener
 
     rules.each do |rule|
       conditions_match = ::AutomationRules::ConditionsFilterService.new(rule, conversation, { changed_attributes: changed_attributes }).perform
-      AutomationRules::ActionService.new(rule, account, conversation).perform if conditions_match.present?
+      next if conditions_match.blank?
+
+      AutomationRules::ExecutionService.new(
+        rule: rule,
+        record: conversation,
+        changed_attributes: changed_attributes,
+        execution_key: AutomationRules::ExecutionService.execution_key_for(event: event, record: conversation)
+      ).perform
     end
   end
 

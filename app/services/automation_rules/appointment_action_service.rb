@@ -4,26 +4,32 @@ class AutomationRules::AppointmentActionService
     @account = account
     @appointment = appointment
     @changed_attributes = options[:changed_attributes]
+    @execution_key = options[:execution_key]
     Current.executed_by = rule
   end
 
   def perform
-    @rule.actions.each do |action|
-      action = action.with_indifferent_access
-      begin
-        @current_action_id = action[:action_id]
-        send(action[:action_name], action[:action_params])
-      rescue StandardError => e
-        ChatwootExceptionTracker.new(e, account: @account).capture_exception
-      ensure
-        @current_action_id = nil
-      end
+    action_runner.perform do |action, index|
+      @current_action_id = action[:action_id]
+      @current_action_key = @current_action_id.presence || "legacy-index:#{index}"
+      send(action[:action_name], action[:action_params])
+    ensure
+      @current_action_id = nil
+      @current_action_key = nil
     end
   ensure
     Current.reset
   end
 
   private
+
+  def action_runner
+    @action_runner ||= AutomationRules::ActionRunner.new(
+      rule: @rule,
+      account: @account,
+      execution_key: @execution_key
+    )
+  end
 
   def send_webhook_event(webhook_url)
     payload = @appointment.automation_webhook_data.merge(event: "automation_event.#{@rule.event_name}")
@@ -51,11 +57,15 @@ class AutomationRules::AppointmentActionService
   end
 
   def apply_touch_plan(action_params)
-    touch_action_service.apply_touch_plan(action_params)
+    touch_action_service.apply_touch_plan(action_params, action_key: @current_action_key)
   end
 
   def create_touch(action_params)
-    touch_action_service.create_touch(action_params, action_id: @current_action_id)
+    touch_action_service.create_touch(action_params, action_id: @current_action_id, action_key: @current_action_key)
+  end
+
+  def send_message(action_params)
+    touch_action_service.send_message(action_params, action_id: @current_action_id, action_key: @current_action_key)
   end
 
   def cancel_touches(action_params)
@@ -91,7 +101,8 @@ class AutomationRules::AppointmentActionService
       rule: @rule,
       account: @account,
       record: @appointment,
-      entity_kind: 'appointment'
+      entity_kind: 'appointment',
+      execution_key: @execution_key
     )
   end
 end

@@ -45,7 +45,7 @@ describe('account settings routes', () => {
     );
   });
 
-  it('centralizes conversation workflow, SLA, and five additional-field entities', () => {
+  it('centralizes conversation workflow, SLA, and six additional-field entities', () => {
     const generalSettingsRoute = accountRoutes.routes.find(route =>
       route.path.endsWith('/settings/general')
     );
@@ -86,6 +86,7 @@ describe('account settings routes', () => {
       'company_attribute',
       'deal',
       'task',
+      'appointment',
     ]);
   });
 

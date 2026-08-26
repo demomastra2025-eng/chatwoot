@@ -1,22 +1,20 @@
 class AutomationRules::ActionService < ActionService
-  def initialize(rule, account, conversation, trigger_message: nil)
+  def initialize(rule, account, conversation, trigger_message: nil, execution_key: nil)
     super(conversation)
     @rule = rule
     @account = account
     @trigger_message = trigger_message
+    @execution_key = execution_key
     Current.executed_by = rule
   end
 
   def perform
-    @rule.actions.each_with_index do |action, index|
+    action_runner.perform do |action, index|
       @conversation.reload
-      action = action.with_indifferent_access
       begin
         @current_action_id = action[:action_id]
         @current_action_key = @current_action_id.presence || "legacy-index:#{index}"
         send(action[:action_name], action[:action_params])
-      rescue StandardError => e
-        ChatwootExceptionTracker.new(e, account: @account).capture_exception
       ensure
         @current_action_id = nil
         @current_action_key = nil
@@ -27,6 +25,14 @@ class AutomationRules::ActionService < ActionService
   end
 
   private
+
+  def action_runner
+    @action_runner ||= AutomationRules::ActionRunner.new(
+      rule: @rule,
+      account: @account,
+      execution_key: @execution_key
+    )
+  end
 
   def send_attachment(blob_ids)
     return if conversation_a_tweet?
@@ -49,12 +55,27 @@ class AutomationRules::ActionService < ActionService
   def send_message(message)
     return if conversation_a_tweet?
 
-    params = { content: message[0], private: false, content_attributes: { automation_rule_id: @rule.id } }
+    if rich_message_params?(message)
+      return touch_action_service.send_message(
+        message,
+        action_id: @current_action_id,
+        action_key: @current_action_key
+      )
+    end
+
+    content = message.is_a?(Hash) ? message[:message] || message['message'] : message[0]
+    params = { content: content, private: false, content_attributes: { automation_rule_id: @rule.id } }
     Messages::MessageBuilder.new(nil, @conversation, params).perform
   end
 
+  def rich_message_params?(message)
+    return false unless message.is_a?(Hash) || message.is_a?(ActionController::Parameters)
+
+    message.keys.map(&:to_s).intersect?(%w[body content_kind text_mode template_id])
+  end
+
   def apply_touch_plan(action_params)
-    touch_action_service.apply_touch_plan(action_params)
+    touch_action_service.apply_touch_plan(action_params, action_key: @current_action_key)
   end
 
   def create_touch(action_params)
@@ -93,7 +114,8 @@ class AutomationRules::ActionService < ActionService
       account: @account,
       record: @conversation,
       entity_kind: 'conversation',
-      trigger_message: @trigger_message
+      trigger_message: @trigger_message,
+      execution_key: @execution_key
     )
   end
 end

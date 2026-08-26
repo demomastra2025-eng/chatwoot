@@ -44,12 +44,11 @@ class CrmAutomationRuleListener < BaseListener
       live_record = record_scope(account, entity_kind).find_by(id: record.id)
       next if live_record.blank?
 
-      AutomationRules::CrmActionService.new(
-        rule,
-        account,
-        live_record,
-        entity_kind: entity_kind,
-        options: { changed_attributes: event.data[:changed_attributes] }
+      AutomationRules::ExecutionService.new(
+        rule: rule,
+        record: live_record,
+        changed_attributes: event.data[:changed_attributes],
+        execution_key: AutomationRules::ExecutionService.execution_key_for(event: event, record: live_record)
       ).perform
     end
   end

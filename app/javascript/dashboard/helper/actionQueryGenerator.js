@@ -31,6 +31,11 @@ const generatePayload = data => {
   let payload = actions.map(item => {
     if (Array.isArray(item.action_params)) {
       item.action_params = formatArray(item.action_params);
+    } else if (
+      item.action_name === 'send_message' &&
+      typeof item.action_params === 'object'
+    ) {
+      item.action_params = { ...item.action_params };
     } else if (typeof item.action_params === 'object') {
       item.action_params = generatePayloadForObject(item);
     } else if (!item.action_params) {

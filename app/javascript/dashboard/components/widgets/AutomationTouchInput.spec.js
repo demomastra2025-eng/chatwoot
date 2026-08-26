@@ -35,6 +35,11 @@ const whatsappTemplates = [
 ];
 
 const defaultStoreGetters = {
+  'accounts/getAccount': accountId => ({
+    id: accountId,
+    reporting_timezone: 'UTC',
+  }),
+  getCurrentAccountId: 1,
   'inboxes/getAllInboxes': [
     {
       id: 7,

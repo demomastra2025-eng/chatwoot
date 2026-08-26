@@ -19,6 +19,7 @@ export const WORKSPACE_ADDITIONAL_FIELD_TABS = [
   'company_attribute',
   'deal',
   'task',
+  'appointment',
 ];
 
 const additionalFieldsProps = route => {
@@ -39,11 +40,6 @@ const schedulingSettingsTabs = [
     labelKey: 'SIDEBAR.SCHEDULING',
     routeName: 'scheduling_settings_index',
     activeOn: ['scheduling_settings_index'],
-  },
-  {
-    labelKey: 'ATTRIBUTES_MGMT.HEADER',
-    routeName: 'scheduling_fields_settings_index',
-    activeOn: ['scheduling_fields_settings_index'],
   },
 ];
 
@@ -126,6 +122,7 @@ export default {
       component: SettingsTabsWrapper,
       props: {
         tabs: schedulingSettingsTabs,
+        showTabs: false,
       },
       children: [
         {
@@ -140,16 +137,11 @@ export default {
         {
           path: 'fields',
           name: 'scheduling_fields_settings_index',
-          component: AttributesHome,
-          props: {
-            initialTab: 'appointment',
-            showEntityTabs: false,
-            tabs: ['appointment'],
-          },
-          meta: {
-            permissions: ['administrator'],
-            featureFlag: FEATURE_FLAGS.SCHEDULING,
-          },
+          redirect: to => ({
+            name: 'workspace_additional_fields_settings_index',
+            params: to.params,
+            query: { tab: 'appointment' },
+          }),
         },
       ],
     },

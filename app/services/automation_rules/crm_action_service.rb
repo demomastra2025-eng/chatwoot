@@ -5,20 +5,20 @@ class AutomationRules::CrmActionService
     @record = record
     @entity_kind = entity_kind.to_s
     @changed_attributes = options[:changed_attributes]
+    @execution_key = options[:execution_key]
     Current.executed_by = rule
   end
 
   def perform
-    @rule.actions.each do |action|
+    action_runner.perform do |action, index|
       @record.reload
-      action = action.with_indifferent_access
       begin
         @current_action_id = action[:action_id]
+        @current_action_key = @current_action_id.presence || "legacy-index:#{index}"
         send(action[:action_name], action[:action_params])
-      rescue StandardError => e
-        ChatwootExceptionTracker.new(e, account: @account).capture_exception
       ensure
         @current_action_id = nil
+        @current_action_key = nil
       end
     end
   ensure
@@ -26,6 +26,14 @@ class AutomationRules::CrmActionService
   end
 
   private
+
+  def action_runner
+    @action_runner ||= AutomationRules::ActionRunner.new(
+      rule: rule,
+      account: account,
+      execution_key: @execution_key
+    )
+  end
 
   attr_reader :account, :record, :rule, :entity_kind
 
@@ -80,11 +88,15 @@ class AutomationRules::CrmActionService
   end
 
   def apply_touch_plan(action_params)
-    touch_action_service.apply_touch_plan(action_params)
+    touch_action_service.apply_touch_plan(action_params, action_key: @current_action_key)
   end
 
   def create_touch(action_params)
-    touch_action_service.create_touch(action_params, action_id: @current_action_id)
+    touch_action_service.create_touch(action_params, action_id: @current_action_id, action_key: @current_action_key)
+  end
+
+  def send_message(action_params)
+    touch_action_service.send_message(action_params, action_id: @current_action_id, action_key: @current_action_key)
   end
 
   def cancel_touches(action_params)
@@ -192,7 +204,8 @@ class AutomationRules::CrmActionService
       rule: rule,
       account: account,
       record: record,
-      entity_kind: entity_kind
+      entity_kind: entity_kind,
+      execution_key: @execution_key
     )
   end
 end

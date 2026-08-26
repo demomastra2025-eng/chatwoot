@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { LocalStorage } from 'shared/helpers/localStorage';
+import {
+  clearScheduledMessageDraft,
+  consumeScheduledMessageDraft,
+} from 'dashboard/composables/useScheduledMessageDraft';
 import ReplyBox from './ReplyBox.vue';
 
 const replyButtonLabel = context =>
@@ -26,6 +30,73 @@ const replyButtonLabel = context =>
 describe('ReplyBox', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    clearScheduledMessageDraft();
+  });
+
+  it('passes the current reply draft into the scheduled message editor context', () => {
+    const updateUISettings = vi.fn();
+    ReplyBox.methods.openScheduledMessages.call({
+      attachedFiles: [
+        {
+          blobSignedId: 'blob-1',
+          resource: { filename: 'quote.pdf', content_type: 'application/pdf' },
+        },
+      ],
+      accountId: 1,
+      conversationId: 42,
+      selectedReplyConversationId: 42,
+      currentChat: { id: 42, is_communication_thread: false },
+      maxLength: 1000,
+      message: 'Follow up tomorrow',
+      updateUISettings,
+    });
+
+    expect(
+      consumeScheduledMessageDraft({
+        accountId: 1,
+        conversationId: 42,
+        remindableId: 42,
+        remindableType: 'Conversation',
+      })
+    ).toMatchObject({
+      body: 'Follow up tomorrow',
+      accountId: 1,
+      attachments: [
+        {
+          signed_id: 'blob-1',
+          filename: 'quote.pdf',
+          content_type: 'application/pdf',
+        },
+      ],
+      conversationId: 42,
+      remindableId: 42,
+      remindableType: 'Conversation',
+    });
+    expect(updateUISettings).toHaveBeenCalledWith(
+      expect.objectContaining({ is_touch_sidebar_open: true })
+    );
+  });
+
+  it('uses the active reply conversation id for a communication thread draft', () => {
+    ReplyBox.methods.openScheduledMessages.call({
+      accountId: 1,
+      attachedFiles: [],
+      conversationId: 900,
+      selectedReplyConversationId: 42,
+      currentChat: { id: 700, is_communication_thread: true },
+      maxLength: 1000,
+      message: 'Thread follow-up',
+      updateUISettings: vi.fn(),
+    });
+
+    expect(
+      consumeScheduledMessageDraft({
+        accountId: 1,
+        conversationId: 42,
+        remindableId: 700,
+        remindableType: 'CommunicationThread',
+      })
+    ).toMatchObject({ body: 'Thread follow-up', conversationId: 42 });
   });
 
   it('keeps the text editor enabled for communication-thread voice channels', () => {

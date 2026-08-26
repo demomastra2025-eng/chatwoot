@@ -7,16 +7,14 @@ import { getContrastingTextColor } from '@chatwoot/utils';
 
 import { useAlert } from 'dashboard/composables';
 import { useMapGetter } from 'dashboard/composables/store';
-import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
-import { useTouchPlans } from 'dashboard/composables/useTouchPlans';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TagInput from 'dashboard/components-next/taginput/TagInput.vue';
-import TouchPlanSelectField from 'dashboard/components-next/Outbound/TouchPlanSelectField.vue';
+
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDrawer.vue';
@@ -39,9 +37,7 @@ const referencesStore = useCrmReferencesStore();
 const route = useRoute();
 const router = useRouter();
 const { checkPermissions } = usePolicy();
-const { currentAccount, updateAccount } = useAccount();
-const { isLoadingTouchPlans, loadTouchPlans, touchPlanOptionsForEntityKind } =
-  useTouchPlans();
+
 const { t } = useI18n();
 const loadSettingsPipelines = () =>
   referencesStore.loadPipelines({ include_inactive_stages: true });
@@ -54,7 +50,7 @@ const pipelineDeleteDialogRef = ref(null);
 const pipelinePendingDelete = ref(null);
 const stageDeleteDialogRef = ref(null);
 const stagePendingDelete = ref(null);
-const defaultDealTouchPlanId = ref(null);
+
 const showArchivedPipelines = ref(false);
 const pipelineNameDrafts = reactive({});
 const pipelineLastSyncedNames = reactive({});
@@ -206,9 +202,7 @@ const pipelineOptions = computed(() =>
     value: pipeline.id,
   }))
 );
-const dealTouchPlanOptions = computed(() =>
-  touchPlanOptionsForEntityKind('deal')
-);
+
 const TERMINAL_STAGE_OUTCOMES = new Set(['won', 'lost']);
 const isTerminalStageOutcome = outcome =>
   TERMINAL_STAGE_OUTCOMES.has(String(outcome || '').toLowerCase());
@@ -263,14 +257,6 @@ const stageFormDisableConfirm = computed(
 );
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
-
-const syncFromAccount = () => {
-  const accountSettings = currentAccount.value?.settings || {};
-  defaultDealTouchPlanId.value =
-    accountSettings.default_deal_touch_plan_id || null;
-};
-
-watch(currentAccount, syncFromAccount, { deep: true, immediate: true });
 
 watch(
   () => [stageForm.active, stageForm.outcome],
@@ -1032,20 +1018,7 @@ const consumeRouteAction = async () => {
   }
 };
 
-const saveDefaultDealTouchPlan = async () => {
-  try {
-    await updateAccount({
-      default_deal_touch_plan_id: defaultDealTouchPlanId.value,
-    });
-    useAlert(t('GENERAL_SETTINGS.UPDATE.SUCCESS'));
-  } catch (error) {
-    syncFromAccount();
-    useAlert(formatErrorMessage(error) || t('GENERAL_SETTINGS.UPDATE.ERROR'));
-  }
-};
-
 onMounted(async () => {
-  await loadTouchPlans();
   if (dealsEnabled.value) {
     await loadSettingsPipelines();
   }
@@ -1078,35 +1051,6 @@ onMounted(async () => {
           :description="formatErrorMessage(referencesStore.ui.error)"
           @retry="$router.go(0)"
         />
-
-        <SchedulingFormFieldGroup
-          v-if="dealsEnabled"
-          :framed="false"
-          :title="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.DEAL_TITLE')"
-          :description="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.DEAL_DESCRIPTION')"
-        >
-          <div
-            class="mt-3 grid gap-4 rounded-2xl bg-n-solid-2 p-5 outline outline-1 outline-n-container shadow-sm"
-          >
-            <TouchPlanSelectField
-              v-model="defaultDealTouchPlanId"
-              :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.LABEL')"
-              :description="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.NOTE')"
-              :options="dealTouchPlanOptions"
-              :placeholder="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.PLACEHOLDER')"
-              :disabled="!canManage || isLoadingTouchPlans"
-            />
-
-            <div>
-              <Button
-                :label="$t('CRM.SETTINGS.DEFAULT_TOUCH_PLAN.SAVE')"
-                size="sm"
-                :disabled="!canManage || isLoadingTouchPlans"
-                @click="saveDefaultDealTouchPlan"
-              />
-            </div>
-          </div>
-        </SchedulingFormFieldGroup>
 
         <SchedulingFormFieldGroup
           v-if="dealsEnabled"

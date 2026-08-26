@@ -1,7 +1,14 @@
 require 'rails_helper'
 
 RSpec.describe SchedulingAutomationRuleListener do
-  include ActiveJob::TestHelper
+  before do
+    allow(AutomationRules::ExecuteRuleJob).to receive(:perform_later) do |*arguments|
+      AutomationRules::ExecuteRuleJob.perform_now(*arguments)
+    end
+    account.enable_features!('scheduling')
+    allow(AutomationRules::AppointmentConditionService).to receive(:new).and_return(condition_service)
+    allow(AutomationRules::AppointmentActionService).to receive(:new).and_return(action_service)
+  end
 
   let(:listener) { described_class.instance }
   let(:account) { create(:account) }
@@ -9,12 +16,6 @@ RSpec.describe SchedulingAutomationRuleListener do
   let(:condition_service) { instance_double(AutomationRules::AppointmentConditionService, perform: condition_match) }
   let(:action_service) { instance_double(AutomationRules::AppointmentActionService, perform: true) }
   let(:condition_match) { true }
-
-  before do
-    account.enable_features!('scheduling')
-    allow(AutomationRules::AppointmentConditionService).to receive(:new).and_return(condition_service)
-    allow(AutomationRules::AppointmentActionService).to receive(:new).and_return(action_service)
-  end
 
   describe 'appointment_created' do
     let!(:automation_rule) do
@@ -40,7 +41,8 @@ RSpec.describe SchedulingAutomationRuleListener do
         automation_rule,
         account,
         appointment,
-        changed_attributes: nil
+        changed_attributes: nil,
+        execution_key: kind_of(String)
       )
     end
 
@@ -84,7 +86,8 @@ RSpec.describe SchedulingAutomationRuleListener do
         automation_rule,
         account,
         appointment,
-        changed_attributes: { 'status' => %w[scheduled cancelled] }
+        changed_attributes: { 'status' => %w[scheduled cancelled] },
+        execution_key: kind_of(String)
       )
     end
   end

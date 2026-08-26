@@ -3,6 +3,7 @@ import { defineAsyncComponent, useTemplateRef } from 'vue';
 import { mapGetters } from 'vuex';
 import { useAlert } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
+import { setScheduledMessageDraft } from 'dashboard/composables/useScheduledMessageDraft';
 import { useTrack } from 'dashboard/composables';
 import keyboardEventListenerMixins from 'shared/mixins/keyboardEventListenerMixins';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
@@ -95,6 +96,7 @@ export default {
   setup() {
     const {
       uiSettings,
+      updateUISettings,
       isEditorHotKeyEnabled,
       fetchSignatureFlagFromUISettings,
       setQuotedReplyFlagForInbox,
@@ -108,6 +110,7 @@ export default {
 
     return {
       uiSettings,
+      updateUISettings,
       isEditorHotKeyEnabled,
       fetchSignatureFlagFromUISettings,
       setQuotedReplyFlagForInbox,
@@ -1135,6 +1138,35 @@ export default {
       });
       this.hideContentTemplatesModal();
     },
+    openScheduledMessages() {
+      const remindableType = this.currentChat?.is_communication_thread
+        ? 'CommunicationThread'
+        : 'Conversation';
+      const attachments = this.attachedFiles
+        .map(attachment => ({
+          signed_id:
+            attachment.blobSignedId || attachment.resource?.signed_id || '',
+          filename:
+            attachment.resource?.filename || attachment.resource?.name || '',
+          content_type: attachment.resource?.content_type || '',
+        }))
+        .filter(attachment => attachment.signed_id);
+
+      setScheduledMessageDraft({
+        body: trimContent(this.message || '', this.maxLength),
+        attachments,
+        accountId: this.accountId,
+        conversationId: this.selectedReplyConversationId || this.conversationId,
+        remindableId: this.currentChat?.id,
+        remindableType,
+      });
+      this.updateUISettings({
+        is_contact_sidebar_open: false,
+        is_crm_deal_panel_open: false,
+        is_scheduling_appointments_panel_open: false,
+        is_touch_sidebar_open: true,
+      });
+    },
     setReplyMode(mode = REPLY_EDITOR_MODES.REPLY) {
       if (this.isEditingMessage && mode !== REPLY_EDITOR_MODES.REPLY) {
         return;
@@ -1735,6 +1767,7 @@ export default {
         @toggle-quoted-reply="toggleQuotedReply"
         @select-reply-channel="selectReplyChannel"
         @select-direct-reply-action="selectDirectReplyAction"
+        @schedule-message="openScheduledMessages"
         @replace-text="addIntoEditor"
         @attach-file="onFileUpload"
       />

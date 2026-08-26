@@ -6,6 +6,7 @@ import { useStoreGetters } from 'dashboard/composables/store';
 import { useOperators } from 'dashboard/components-next/filter/operators';
 import ConditionRow from 'dashboard/components-next/filter/ConditionRow.vue';
 import AutomationActionInput from 'dashboard/components/widgets/AutomationActionInput.vue';
+import AutomationTouchInput from 'dashboard/components/widgets/AutomationTouchInput.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import {
@@ -137,6 +138,30 @@ const getTranslatedAttributes = (type, event) => {
 };
 
 const eventName = computed(() => automation.value?.event_name);
+const defaultExecutionAnchor = computed(() => {
+  if (eventName.value?.startsWith('appointment_'))
+    return 'appointment.created_at';
+  if (eventName.value?.startsWith('deal_')) return 'deal.created_at';
+  if (eventName.value?.startsWith('task_')) return 'task.created_at';
+
+  return 'conversation.created_at';
+});
+const executionTimingChoice = computed({
+  get: () =>
+    automation.value?.execution_schedule?.timing_mode
+      ? 'scheduled'
+      : 'immediate',
+  set: value => {
+    automation.value.execution_schedule =
+      value === 'scheduled'
+        ? {
+            timing_mode: 'relative',
+            relative_anchor: defaultExecutionAnchor.value,
+            relative_offset_seconds: 60,
+          }
+        : {};
+  },
+});
 const currentAccountId = computed(() => getters.getCurrentAccountId.value);
 const isSchedulingFinanceEnabled = computed(() =>
   getters['accounts/isFeatureEnabledonAccount'].value(
@@ -455,6 +480,27 @@ defineExpose({ open, close });
           {{ $t('AUTOMATION.FORM.RESET_MESSAGE') }}
         </p>
       </div>
+      <section class="mb-5">
+        <label>{{ $t('AUTOMATION.ADD.FORM.WHEN.LABEL') }}</label>
+        <div
+          class="grid gap-3 rounded-xl p-3 outline outline-1 -outline-offset-1 outline-n-weak dark:outline-n-strong"
+        >
+          <select v-model="executionTimingChoice" class="m-0">
+            <option value="immediate">
+              {{ $t('AUTOMATION.ADD.FORM.WHEN.IMMEDIATE') }}
+            </option>
+            <option value="scheduled">
+              {{ $t('AUTOMATION.ADD.FORM.WHEN.SCHEDULED') }}
+            </option>
+          </select>
+          <AutomationTouchInput
+            v-if="executionTimingChoice === 'scheduled'"
+            v-model="automation.execution_schedule"
+            :event-name="eventName"
+            display-mode="schedule"
+          />
+        </div>
+      </section>
       <!-- Conditions Start -->
       <section class="mb-5">
         <label>

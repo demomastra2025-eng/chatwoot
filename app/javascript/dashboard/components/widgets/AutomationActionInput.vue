@@ -203,6 +203,7 @@ export default {
         v-if="inputType === 'touch'"
         v-model="action_params"
         :event-name="eventName"
+        :display-mode="action_name === 'send_message' ? 'message' : 'full'"
       />
       <WootMessageEditor
         v-if="inputType === 'textarea'"

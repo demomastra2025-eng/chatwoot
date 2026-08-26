@@ -1540,45 +1540,18 @@ const menuItems = computed(() => {
             : []),
         ],
       },
-      {
-        name: 'Campaigns',
-        label: t('SIDEBAR.OUTBOUND'),
-        icon: 'i-lucide-send',
-        defaultChildName: 'Touches',
-        children: [
-          {
-            name: 'Touches',
-            visibilityKey: 'Campaigns:Touches',
-            label: t('SIDEBAR.TOUCHES'),
-            icon: 'i-lucide-send',
-            activeOn: [
-              'outbound_touches_index',
-              'outbound_broadcasts_personal_index',
-            ],
-            to: accountScopedRoute('outbound_touches_index'),
-          },
-          {
-            name: 'Templates',
-            visibilityKey: 'Campaigns:Templates',
-            label: t('SIDEBAR.TEMPLATES'),
-            icon: 'i-lucide-file-text',
-            activeOn: ['outbound_templates_index'],
-            to: accountScopedRoute('outbound_templates_index'),
-          },
-          ...(checkPermissions(['administrator'])
-            ? [
-                {
-                  name: 'Mass broadcasts',
-                  visibilityKey: 'Campaigns:MassBroadcasts',
-                  label: t('SIDEBAR.MASS_BROADCASTS'),
-                  icon: 'i-lucide-radio-tower',
-                  activeOn: ['outbound_broadcasts_index'],
-                  to: accountScopedRoute('outbound_broadcasts_index'),
-                },
-              ]
-            : []),
-        ],
-      },
+      ...(checkPermissions(['administrator'])
+        ? [
+            {
+              name: 'Mass broadcasts',
+              visibilityKey: 'Campaigns:MassBroadcasts',
+              label: t('SIDEBAR.MASS_BROADCASTS'),
+              icon: 'i-lucide-megaphone',
+              activeOn: ['outbound_broadcasts_index'],
+              to: accountScopedRoute('outbound_broadcasts_index'),
+            },
+          ]
+        : []),
       {
         name: 'Captain',
         icon: 'i-woot-captain',
@@ -1794,19 +1767,6 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.SCHEDULING'),
         icon: 'i-lucide-calendar-clock',
         defaultChildName: 'Scheduling Calendar',
-        actionTitle: t('SIDEBAR.SETTINGS'),
-        actionIcon:
-          hasSchedulingSettings.value && checkPermissions(['administrator'])
-            ? 'i-lucide-settings-2'
-            : '',
-        actionActiveOn: [
-          'scheduling_settings_index',
-          'scheduling_fields_settings_index',
-        ],
-        actionTo:
-          hasSchedulingSettings.value && checkPermissions(['administrator'])
-            ? accountScopedRoute('scheduling_settings_index')
-            : '',
         children: [
           {
             name: 'Scheduling Calendar',
@@ -1834,6 +1794,18 @@ const menuItems = computed(() => {
                   label: t('SIDEBAR.SCHEDULING_EXCEPTIONS'),
                   to: accountScopedRoute('scheduling_exceptions'),
                 },
+                ...(hasSchedulingSettings.value
+                  ? [
+                      {
+                        name: 'Scheduling Settings',
+                        visibilityKey: 'Scheduling:Settings',
+                        label: t('SIDEBAR.SETTINGS'),
+                        icon: 'i-lucide-settings-2',
+                        activeOn: ['scheduling_settings_index'],
+                        to: accountScopedRoute('scheduling_settings_index'),
+                      },
+                    ]
+                  : []),
               ]
             : []),
         ],
@@ -1970,6 +1942,14 @@ const menuItems = computed(() => {
                             },
                           ]
                         : []),
+                      {
+                        name: 'Settings Templates',
+                        visibilityKey: 'Settings:Templates',
+                        label: t('SIDEBAR.TEMPLATES'),
+                        icon: 'i-lucide-file-text',
+                        activeOn: ['outbound_templates_index'],
+                        to: accountScopedRoute('outbound_templates_index'),
+                      },
                       {
                         name: 'Settings Agent Bots',
                         visibilityKey: 'Settings:AgentBots',

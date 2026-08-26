@@ -1,19 +1,22 @@
 require 'rails_helper'
 
 describe AutomationRuleListener do
+  before do
+    allow(AutomationRules::ExecuteRuleJob).to receive(:perform_later) do |*arguments|
+      AutomationRules::ExecuteRuleJob.perform_now(*arguments)
+    end
+    allow(AutomationRules::ConditionsFilterService).to receive(:new).and_return(conditions_filter_service)
+    allow(conditions_filter_service).to receive(:perform).and_return(condition_match)
+    allow(AutomationRules::ActionService).to receive(:new).and_return(action_service)
+    allow(action_service).to receive(:perform)
+  end
+
   let(:listener) { described_class.instance }
   let!(:account) { create(:account) }
   let(:conversation) { create(:conversation, account: account) }
   let(:conditions_filter_service) { double }
   let(:condition_match) { double }
   let(:action_service) { double }
-
-  before do
-    allow(AutomationRules::ConditionsFilterService).to receive(:new).and_return(conditions_filter_service)
-    allow(conditions_filter_service).to receive(:perform).and_return(condition_match)
-    allow(AutomationRules::ActionService).to receive(:new).and_return(action_service)
-    allow(action_service).to receive(:perform)
-  end
 
   describe 'communication thread realtime events' do
     it 'keeps automation rules conversation-centric until explicit thread events are designed' do
@@ -34,36 +37,36 @@ describe AutomationRuleListener do
 
     context 'when matching rules are present' do
       it 'calls AutomationRules::ActionService if conditions match' do
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_created(event)
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match' do
-        allow(condition_match).to receive(:present?).and_return(false)
+        allow(condition_match).to receive(:blank?).and_return(true)
         listener.conversation_created(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'calls AutomationRules::ActionService for each rule when multiple rules are present' do
         create(:automation_rule, event_name: 'conversation_created', account: account)
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_created(event)
         expect(AutomationRules::ActionService).to have_received(:new).twice
       end
 
       it 'does not call AutomationRules::ActionService if performed by automation' do
         event.data[:performed_by] = automation_rule
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_created(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if conversation has auto_reply in additional_attributes' do
         conversation.additional_attributes = { 'auto_reply' => true }
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_created(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
     end
   end
@@ -77,29 +80,29 @@ describe AutomationRuleListener do
 
     context 'when matching rules are present' do
       it 'calls AutomationRules::ActionService if conditions match' do
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_updated(event)
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match' do
-        allow(condition_match).to receive(:present?).and_return(false)
+        allow(condition_match).to receive(:blank?).and_return(true)
         listener.conversation_updated(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'calls AutomationRules::ActionService for each rule when multiple rules are present' do
         create(:automation_rule, event_name: 'conversation_updated', account: account)
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_updated(event)
         expect(AutomationRules::ActionService).to have_received(:new).twice
       end
 
       it 'does not call AutomationRules::ActionService if performed by automation' do
         event.data[:performed_by] = automation_rule
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_updated(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
     end
   end
@@ -113,29 +116,29 @@ describe AutomationRuleListener do
 
     context 'when matching rules are present' do
       it 'calls AutomationRules::ActionService if conditions match' do
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_opened(event)
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match' do
-        allow(condition_match).to receive(:present?).and_return(false)
+        allow(condition_match).to receive(:blank?).and_return(true)
         listener.conversation_opened(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'calls AutomationRules::ActionService for each rule when multiple rules are present' do
         create(:automation_rule, event_name: 'conversation_opened', account: account)
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_opened(event)
         expect(AutomationRules::ActionService).to have_received(:new).twice
       end
 
       it 'does not call AutomationRules::ActionService if performed by automation' do
         event.data[:performed_by] = automation_rule
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_opened(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
     end
   end
@@ -149,16 +152,16 @@ describe AutomationRuleListener do
 
     context 'when matching rules are present' do
       it 'calls AutomationRules::ActionService if conditions match' do
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_pending(event)
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if performed by automation' do
         event.data[:performed_by] = automation_rule
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_pending(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
     end
   end
@@ -172,22 +175,22 @@ describe AutomationRuleListener do
 
     context 'when matching rules are present' do
       it 'calls AutomationRules::ActionService if conditions match' do
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_transferred_to_ai(event)
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match' do
-        allow(condition_match).to receive(:present?).and_return(false)
+        allow(condition_match).to receive(:blank?).and_return(true)
         listener.conversation_transferred_to_ai(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if performed by automation' do
         event.data[:performed_by] = automation_rule
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_transferred_to_ai(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
     end
   end
@@ -201,29 +204,29 @@ describe AutomationRuleListener do
 
     context 'when matching rules are present' do
       it 'calls AutomationRules::ActionService if conditions match' do
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_resolved(event)
-        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match' do
-        allow(condition_match).to receive(:present?).and_return(false)
+        allow(condition_match).to receive(:blank?).and_return(true)
         listener.conversation_resolved(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'calls AutomationRules::ActionService for each rule when multiple rules are present' do
         create(:automation_rule, event_name: 'conversation_resolved', account: account)
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_resolved(event)
         expect(AutomationRules::ActionService).to have_received(:new).twice
       end
 
       it 'does not call AutomationRules::ActionService if performed by automation' do
         event.data[:performed_by] = automation_rule
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.conversation_resolved(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
     end
   end
@@ -238,50 +241,51 @@ describe AutomationRuleListener do
 
     context 'when matching rules are present' do
       it 'calls AutomationRules::ActionService if conditions match' do
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.message_created(event)
         expect(AutomationRules::ActionService).to have_received(:new).with(
           automation_rule,
           account,
           conversation,
-          trigger_message: message
+          trigger_message: message,
+          execution_key: kind_of(String)
         )
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match' do
-        allow(condition_match).to receive(:present?).and_return(false)
+        allow(condition_match).to receive(:blank?).and_return(true)
         listener.message_created(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'calls AutomationRules::ActionService for each rule when multiple rules are present' do
         create(:automation_rule, event_name: 'message_created', account: account)
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.message_created(event)
         expect(AutomationRules::ActionService).to have_received(:new).twice
       end
 
       it 'does not call AutomationRules::ActionService if performed by automation' do
         event.data[:performed_by] = automation_rule
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.message_created(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if message is activity message' do
         message.update!(message_type: 'activity')
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
         listener.message_created(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if message is a voice call bubble' do
         message.update!(content_type: :voice_call, content_attributes: { data: { call_sid: 'call-1' } })
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
 
         listener.message_created(event)
 
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'does not call AutomationRules::ActionService if message is auto reply email' do
@@ -290,7 +294,7 @@ describe AutomationRuleListener do
         email_conversation = create(:conversation, inbox: email_inbox, account: account)
         email_message = create(:message, conversation: email_conversation, account: account, content_attributes: { email: { auto_reply: true } })
         email_event = Events::Base.new('message_created', Time.zone.now, { message: email_message })
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
 
         listener.message_created(email_event)
         expect(AutomationRules::ActionService).not_to have_received(:new)
@@ -298,7 +302,7 @@ describe AutomationRuleListener do
 
       it 'does not call AutomationRules::ActionService if message was created by a scheduled touch' do
         message.update!(content_attributes: { touch_id: 123, touch_source: 'touch' })
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
 
         listener.message_created(event)
         expect(AutomationRules::ActionService).not_to have_received(:new)
@@ -306,7 +310,7 @@ describe AutomationRuleListener do
 
       it 'calls AutomationRules::ActionService if message is a private note' do
         message.update!(private: true)
-        allow(condition_match).to receive(:present?).and_return(true)
+        allow(condition_match).to receive(:blank?).and_return(false)
 
         listener.message_created(event)
 
@@ -314,15 +318,16 @@ describe AutomationRuleListener do
           automation_rule,
           account,
           conversation,
-          trigger_message: message
+          trigger_message: message,
+          execution_key: kind_of(String)
         )
       end
 
       it 'does not call AutomationRules::ActionService if conditions do not match based on content' do
         message.update!(processed_message_content: 'hi', content: "hi\n\nhello")
-        allow(condition_match).to receive(:present?).and_return(false)
+        allow(condition_match).to receive(:blank?).and_return(true)
         listener.message_created(event)
-        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation)
+        expect(AutomationRules::ActionService).not_to have_received(:new).with(automation_rule, account, conversation, execution_key: kind_of(String))
       end
 
       it 'passes conversation attributes to conditions filter service' do

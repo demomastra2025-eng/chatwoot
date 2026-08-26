@@ -27,11 +27,11 @@ class SchedulingAutomationRuleListener < BaseListener
       live_appointment = account.scheduling_appointments.find_by(id: appointment.id)
       next if live_appointment.blank?
 
-      AutomationRules::AppointmentActionService.new(
-        rule,
-        account,
-        live_appointment,
-        changed_attributes: event.data[:changed_attributes]
+      AutomationRules::ExecutionService.new(
+        rule: rule,
+        record: live_appointment,
+        changed_attributes: event.data[:changed_attributes],
+        execution_key: AutomationRules::ExecutionService.execution_key_for(event: event, record: live_appointment)
       ).perform
     end
   end

@@ -30,8 +30,9 @@ const SchedulingConversationAppointmentsSidebar = defineAsyncComponent(
       'dashboard/components-next/Scheduling/SchedulingConversationAppointmentsSidebar.vue'
     )
 );
-const EntityTouchesCard = defineAsyncComponent(
-  () => import('dashboard/components-next/Outbound/EntityTouchesCard.vue')
+const ScheduledMessagesPanel = defineAsyncComponent(
+  () =>
+    import('dashboard/components-next/Conversation/ScheduledMessagesPanel.vue')
 );
 
 const { accountId, currentAccount } = useAccount();
@@ -182,7 +183,7 @@ const closeAppointmentsSidebar = () => {
         />
       </div>
       <div v-if="activeTab === 'touch'" class="min-w-0 flex-1">
-        <EntityTouchesCard
+        <ScheduledMessagesPanel
           :conversation-id="activeConversationId"
           :remindable-type="remindableType"
           :remindable-id="remindableId"

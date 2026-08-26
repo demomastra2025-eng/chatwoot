@@ -106,6 +106,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  initialAttachments: {
+    type: Array,
+    default: () => [],
+  },
   inboxId: {
     type: [Number, String],
     default: '',
@@ -1097,7 +1101,7 @@ const resetForm = () => {
   form.timingMode = 'relative';
   form.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
   form.useAiAuthoring = false;
-  hydrateAttachments([]);
+  hydrateAttachments(props.initialAttachments);
   clearTargetSelection();
 };
 
@@ -1299,6 +1303,7 @@ watch(
   () => [
     props.modelValue,
     props.initialBody,
+    props.initialAttachments,
     props.touch?.id,
     props.remindableId,
     props.remindableType,

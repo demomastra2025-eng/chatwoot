@@ -95,6 +95,7 @@ class Reminder < ApplicationRecord
   POST_DELIVERY_AUTOMATION_RULE_ID_KEY = 'post_delivery_automation_rule_id'.freeze
   AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
   AUTOMATION_ACTION_KEY = 'automation_action_key'.freeze
+  AUTOMATION_EXECUTION_KEY = 'automation_execution_key'.freeze
   TRANSIENT_METADATA_KEYS = [
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
@@ -107,7 +108,8 @@ class Reminder < ApplicationRecord
       POST_DELIVERY_AUDIT_SOURCE_KEY,
       POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
-      AUTOMATION_ACTION_KEY
+      AUTOMATION_ACTION_KEY,
+      AUTOMATION_EXECUTION_KEY
     ]
   ).freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
@@ -298,13 +300,13 @@ class Reminder < ApplicationRecord
     remindable
   end
 
-  def mark_automation_provenance!(automation_rule, trigger_message: nil, action_key: nil)
+  def mark_automation_provenance!(automation_rule, trigger_message: nil, action_key: nil, execution_key: nil)
     unless automation_rule.is_a?(AutomationRule) && automation_rule.account_id == account_id
       raise ArgumentError, 'Automation rule must belong to the reminder account'
     end
 
     validate_automation_trigger_message!(trigger_message)
-    provenance = automation_provenance(automation_rule, trigger_message, action_key)
+    provenance = automation_provenance(automation_rule, trigger_message, action_key, execution_key)
 
     with_internal_metadata_write do
       update!(metadata: metadata.to_h.merge(provenance))
@@ -666,12 +668,13 @@ class Reminder < ApplicationRecord
     target_conversation_id || conversation_id || (remindable_id if remindable_type == 'Conversation')
   end
 
-  def automation_provenance(automation_rule, trigger_message, action_key)
+  def automation_provenance(automation_rule, trigger_message, action_key, execution_key)
     {
       POST_DELIVERY_AUTOMATION_RULE_ID_KEY => automation_rule.id,
       POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message&.id,
-      AUTOMATION_ACTION_KEY => action_key.presence&.to_s
+      AUTOMATION_ACTION_KEY => action_key.presence&.to_s,
+      AUTOMATION_EXECUTION_KEY => execution_key.presence&.to_s
     }.compact
   end
 

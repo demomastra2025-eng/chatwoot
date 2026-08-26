@@ -118,6 +118,11 @@ export default {
       type: String,
       default: '',
     },
+    displayMode: {
+      type: String,
+      default: 'full',
+      validator: value => ['full', 'message', 'schedule'].includes(value),
+    },
     modelValue: {
       type: [Array, Object],
       default: () => ({}),
@@ -135,8 +140,16 @@ export default {
     ...mapGetters({
       allInboxes: 'inboxes/getAllInboxes',
       cannedMessages: 'getCannedResponses',
+      currentAccountId: 'getCurrentAccountId',
+      getAccount: 'accounts/getAccount',
       getFilteredWhatsAppTemplates: 'inboxes/getFilteredWhatsAppTemplates',
     }),
+    accountTimezone() {
+      return (
+        this.getAccount(this.currentAccountId)?.reporting_timezone ||
+        BROWSER_TIMEZONE
+      );
+    },
     entityKey() {
       if (this.eventName?.startsWith('appointment_')) return 'appointment';
       if (this.eventName?.startsWith('deal_')) return 'deal';
@@ -170,7 +183,7 @@ export default {
         ...normalizedRaw,
         attachments: normalizeArray(normalizedRaw?.attachments),
         template_params: clone(normalizedRaw?.template_params || {}),
-        timezone: normalizedRaw?.timezone || BROWSER_TIMEZONE,
+        timezone: normalizedRaw?.timezone || this.accountTimezone,
       };
       const relativeTime = normalizeRelativeTimeForUnit({
         relativeTimeMode: value.relative_time_mode,
@@ -1031,7 +1044,7 @@ export default {
   <div
     class="grid gap-5 rounded-2xl bg-n-solid-1 p-4 outline outline-1 outline-n-weak"
   >
-    <SchedulingFormFieldGroup :framed="false">
+    <SchedulingFormFieldGroup v-if="displayMode !== 'schedule'" :framed="false">
       <div class="grid gap-4">
         <SchedulingSelectField
           v-if="isSendMessageTouch && !isChannelTemplate"
@@ -1141,7 +1154,7 @@ export default {
       </div>
     </SchedulingFormFieldGroup>
 
-    <SchedulingFormFieldGroup :framed="false">
+    <SchedulingFormFieldGroup v-if="displayMode !== 'message'" :framed="false">
       <div class="grid gap-4">
         <div class="rounded-2xl bg-n-surface-1 p-1">
           <TabBar
@@ -1256,7 +1269,7 @@ export default {
       </div>
     </SchedulingFormFieldGroup>
 
-    <SchedulingFormFieldGroup :framed="false">
+    <SchedulingFormFieldGroup v-if="displayMode === 'full'" :framed="false">
       <div
         class="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-2xl bg-n-alpha-black2 px-4 py-3"
       >
@@ -1281,7 +1294,7 @@ export default {
     </SchedulingFormFieldGroup>
 
     <SchedulingFormFieldGroup
-      v-if="entityKey === 'conversation'"
+      v-if="displayMode === 'full' && entityKey === 'conversation'"
       :framed="false"
     >
       <div

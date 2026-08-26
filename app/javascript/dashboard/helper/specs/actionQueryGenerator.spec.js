@@ -54,6 +54,25 @@ describe('#actionQueryGenerator', () => {
     ]);
   });
 
+  it('preserves canonical rich send_message params as an object', () => {
+    const params = {
+      body: 'Scheduled follow-up',
+      content_kind: 'free_text',
+      timing_mode: 'relative',
+    };
+
+    expect(
+      actionQueryGenerator([
+        { action_name: 'send_message', action_params: params },
+      ])
+    ).toEqual([
+      {
+        action_name: 'send_message',
+        action_params: params,
+      },
+    ]);
+  });
+
   it('preserves the stable action id while serializing edited actions', () => {
     expect(
       actionQueryGenerator([

@@ -1,7 +1,11 @@
 require 'rails_helper'
 
 RSpec.describe CrmAutomationRuleListener do
-  include ActiveJob::TestHelper
+  before do
+    allow(AutomationRules::ExecuteRuleJob).to receive(:perform_later) do |*arguments|
+      AutomationRules::ExecuteRuleJob.perform_now(*arguments)
+    end
+  end
 
   let(:listener) { described_class.instance }
   let(:account) { create(:account) }
