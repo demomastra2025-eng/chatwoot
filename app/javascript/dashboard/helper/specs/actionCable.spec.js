@@ -372,33 +372,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
     });
   });
 
-  describe('copilot event handlers', () => {
-    it('should register the copilot.message.created event handler', () => {
-      expect(Object.keys(actionCable.events)).toContain(
-        'copilot.message.created'
-      );
-      expect(actionCable.events['copilot.message.created']).toBe(
-        actionCable.onCopilotMessageCreated
-      );
-    });
-
-    it('should handle the copilot.message.created event through the ActionCable system', () => {
-      const copilotData = {
-        id: 2,
-        content: 'This is a copilot message from ActionCable',
-        conversation_id: 456,
-        created_at: '2025-05-27T15:58:04-06:00',
-        account_id: 1,
-      };
-      actionCable.onReceived({
-        event: 'copilot.message.created',
-        data: copilotData,
-      });
-      expect(mockDispatch).toHaveBeenCalledWith(
-        'copilotMessages/upsert',
-        copilotData
-      );
-    });
+  describe('call event handlers', () => {
     it('should register WhatsApp agent disconnect handler', () => {
       expect(Object.keys(actionCable.events)).toContain(
         'whatsapp_call.agent_disconnected'
@@ -642,18 +616,6 @@ describe('ActionCableConnector - Copilot Tests', () => {
       await vi.waitFor(() => {
         expect(callsStore.calls).toEqual([]);
       });
-    });
-
-    it('should reject account-scoped events without account_id', () => {
-      actionCable.onReceived({
-        event: 'copilot.message.created',
-        data: { id: 3, content: 'missing account' },
-      });
-
-      expect(mockDispatch).not.toHaveBeenCalledWith(
-        'copilotMessages/upsert',
-        expect.any(Object)
-      );
     });
 
     it('should reconnect the active media-server call when agent peer disconnects', async () => {

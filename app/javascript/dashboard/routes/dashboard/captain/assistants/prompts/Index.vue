@@ -27,21 +27,14 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
-const isInternalAssistant = computed(
-  () => assistant.value?.usage_mode === 'internal_assistant'
-);
-const isExternalAgent = computed(() => !isInternalAssistant.value);
+
 const PROMPT_TAB_RULES = 'rules';
 const PROMPT_TAB_SCENARIOS = 'scenarios';
 const promptTabs = computed(() => [
-  ...(isExternalAgent.value
-    ? [
-        {
-          key: PROMPT_TAB_RULES,
-          label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
-        },
-      ]
-    : []),
+  {
+    key: PROMPT_TAB_RULES,
+    label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.RULES'),
+  },
   {
     key: PROMPT_TAB_SCENARIOS,
     label: t('CAPTAIN.ASSISTANTS.SETTINGS.TABS.PROMPT_TABS.SCENARIOS'),
@@ -181,8 +174,6 @@ watch(
             <PromptInspector
               :assistant-id="assistant?.id"
               :assistant="assistant"
-              :show-assistant-section="isExternalAgent"
-              :show-copilot-section="isInternalAssistant"
               :show-scenarios-section="false"
             />
           </div>

@@ -1,5 +1,4 @@
 export const AGENT_TOOL_SCOPE = 'agent';
-export const ASSISTANT_TOOL_SCOPE = 'assistant';
 export const FAQ_LOOKUP_TOOL_ID = 'faq_lookup';
 export const HANDOFF_TOOL_ID = 'handoff';
 export const ADD_CONTACT_NOTE_TOOL_ID = 'add_contact_note';
@@ -16,19 +15,13 @@ const CAPABILITY_TOOL_IDS_BY_SCOPE = Object.freeze({
     WEB_SEARCH_TOOL_ID,
     WEB_SCRAPE_URL_TOOL_ID,
   ]),
-  [ASSISTANT_TOOL_SCOPE]: Object.freeze([
-    ADD_CONTACT_NOTE_TOOL_ID,
-    ADD_PRIVATE_NOTE_TOOL_ID,
-  ]),
 });
 
 const DEFAULT_CAPABILITY_TOOL_IDS_BY_SCOPE = Object.freeze({
   [AGENT_TOOL_SCOPE]: Object.freeze([FAQ_LOOKUP_TOOL_ID, HANDOFF_TOOL_ID]),
-  [ASSISTANT_TOOL_SCOPE]: Object.freeze([]),
 });
 
-const activeScopeForUsageMode = usageMode =>
-  usageMode === 'internal_assistant' ? ASSISTANT_TOOL_SCOPE : AGENT_TOOL_SCOPE;
+const activeScopeForUsageMode = () => AGENT_TOOL_SCOPE;
 
 const cloneAccess = access => JSON.parse(JSON.stringify(access || {}));
 const hasOwn = (object, key) =>
@@ -91,6 +84,8 @@ export const buildDefaultToolAccessForUsageMode = (
 export const normalizeCapabilityToolAccess = (toolAccess = {}) => {
   return Object.entries(cloneAccess(toolAccess)).reduce(
     (normalizedAccess, [scopeName, scopeAccess]) => {
+      if (scopeName !== AGENT_TOOL_SCOPE) return normalizedAccess;
+
       const normalizedScope = normalizeScopeAccess(scopeAccess);
       if (normalizedScope) {
         normalizedAccess[scopeName] = normalizedScope;

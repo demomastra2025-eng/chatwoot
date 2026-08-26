@@ -8,7 +8,7 @@ import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import CaptainAssistantAPI from 'dashboard/api/captain/assistant';
 import AssistantForm from './AssistantForm.vue';
-import AssistantUsageModeSelector from './AssistantUsageModeSelector.vue';
+
 import {
   buildDefaultToolAccessForUsageMode,
   normalizeCapabilityToolAccess,
@@ -35,13 +35,11 @@ const isCreateMode = computed(() => props.type === 'create');
 const isSubmitting = ref(false);
 const createFormState = reactive({
   name: '',
-  usageMode: 'external_agent',
   attemptedSubmit: false,
 });
 
 const resetCreateForm = () => {
   createFormState.name = '';
-  createFormState.usageMode = 'external_agent';
   createFormState.attemptedSubmit = false;
 };
 
@@ -78,10 +76,8 @@ const getDialogErrorMessage = () =>
     ? t('CAPTAIN.ASSISTANTS.CREATE.ERROR_MESSAGE')
     : t('CAPTAIN.ASSISTANTS.EDIT.ERROR_MESSAGE');
 
-const getCreateDefaultInstruction = usageMode =>
-  usageMode === 'internal_assistant'
-    ? t('CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.INTERNAL_ASSISTANT')
-    : t('CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT');
+const getCreateDefaultInstruction = () =>
+  t('CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT');
 
 const getAvatarErrorMessage = reason => {
   if (reason === 'delete') {
@@ -136,7 +132,7 @@ const syncAvatar = async ({ assistantId, avatar, removeAvatar }) => {
 };
 
 const buildCreateAssistantPayload = () => {
-  const usageMode = createFormState.usageMode || 'external_agent';
+  const usageMode = 'external_agent';
   const toolAccess = normalizeCapabilityToolAccess(
     buildDefaultToolAccessForUsageMode(usageMode),
     usageMode
@@ -145,8 +141,7 @@ const buildCreateAssistantPayload = () => {
   return {
     assistant: {
       name: createFormState.name.trim(),
-      usage_mode: usageMode,
-      description: getCreateDefaultInstruction(usageMode),
+      description: getCreateDefaultInstruction(),
       config: {
         feature_faq: false,
         feature_memory: false,
@@ -251,8 +246,6 @@ defineExpose({ dialogRef });
         :message-type="createNameError ? 'error' : 'info'"
         autofocus
       />
-
-      <AssistantUsageModeSelector v-model="createFormState.usageMode" />
     </div>
     <AssistantForm
       v-else

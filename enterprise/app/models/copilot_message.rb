@@ -25,36 +25,11 @@ class CopilotMessage < ApplicationRecord
   validates :message, presence: true
   before_validation :ensure_account
   validate :validate_message_attributes
-  after_create_commit :broadcast_message
-
-  def push_event_data
-    {
-      id: id,
-      message: message,
-      message_type: message_type,
-      created_at: created_at.to_i,
-      copilot_thread: copilot_thread.push_event_data
-    }
-  end
-
-  def enqueue_response_job(conversation_id, user_id)
-    Captain::Copilot::ResponseJob.perform_later(
-      assistant: copilot_thread.assistant,
-      conversation_id: conversation_id,
-      user_id: user_id,
-      copilot_thread_id: copilot_thread.id,
-      message: message['content']
-    )
-  end
 
   private
 
   def ensure_account
     self.account_id = copilot_thread&.account_id
-  end
-
-  def broadcast_message
-    Rails.configuration.dispatcher.dispatch(COPILOT_MESSAGE_CREATED, Time.zone.now, copilot_message: self)
   end
 
   def validate_message_attributes

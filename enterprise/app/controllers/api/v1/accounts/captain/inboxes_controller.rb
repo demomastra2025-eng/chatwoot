@@ -8,8 +8,6 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
   end
 
   def create
-    raise_internal_assistant_error! if @assistant.internal_assistant?
-
     inbox = Current.account.inboxes.find(assistant_params[:inbox_id])
     @captain_inbox = CaptainInbox.find_by(inbox: inbox)
 
@@ -88,10 +86,5 @@ class Api::V1::Accounts::Captain::InboxesController < Api::V1::Accounts::BaseCon
 
   def revalidate_inbox_cache(inbox)
     inbox.account.update_cache_key(Inbox.name.underscore)
-  end
-
-  def raise_internal_assistant_error!
-    @assistant.errors.add(:usage_mode, Captain::Assistant::INTERNAL_ASSISTANT_INBOX_ERROR)
-    raise ActiveRecord::RecordInvalid, @assistant
   end
 end

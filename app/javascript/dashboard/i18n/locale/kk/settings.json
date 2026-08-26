@@ -805,8 +805,8 @@
         "DESCRIPTION": "Handles automated responses, conversation summaries, and intelligent reply suggestions for customer interactions."
       },
       "COPILOT": {
-        "TITLE": "AI Assistant",
-        "DESCRIPTION": "Provides real-time contextual suggestions, knowledge base recommendations, and proactive insights during conversations."
+        "TITLE": "Редактор және workspace құралдары",
+        "DESCRIPTION": "Inline мәтіндік ұсыныстар мен басқарылатын MCP workspace құралдарын ұсынады."
       },
       "MODERATION": {
         "TITLE": "Moderation model",
@@ -904,8 +904,8 @@
         "DESCRIPTION": "Applies to automated customer replies and scenario handoffs."
       },
       "COPILOT": {
-        "TITLE": "AI Assistant Runtime",
-        "DESCRIPTION": "Applies to internal AI Assistant chats and operator-side tool use."
+        "TITLE": "Редактор және MCP runtime",
+        "DESCRIPTION": "Inline мәтіндік көмек пен басқарылатын MCP workspace құралдарына қолданылады."
       }
     },
     "RUNTIME_STATUS": {
@@ -960,7 +960,7 @@
       "FEATURE_LABELS": {
         "EDITOR": "Editor",
         "ASSISTANT": "AI Agent",
-        "COPILOT": "AI Assistant",
+        "COPILOT": "Редактор / MCP",
         "LABEL_SUGGESTION": "Tag Suggestion",
         "AUDIO_TRANSCRIPTION": "Audio Transcription",
         "HELP_CENTER_SEARCH": "Help Center Search",

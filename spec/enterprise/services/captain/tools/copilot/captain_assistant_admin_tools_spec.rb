@@ -32,24 +32,17 @@ RSpec.describe 'Captain assistant admin copilot tools' do
     let(:service) { described_class.new(assistant, user: admin) }
 
     it 'lists account-scoped assistants with operational metadata' do
-      create(:captain_assistant, account: account, name: 'Internal Helper', usage_mode: 'internal_assistant')
+      create(:captain_assistant, account: account, name: 'Sales Agent')
       create(:captain_assistant, account: create(:account), name: 'Other Account')
 
       payload = JSON.parse(service.execute)
 
       expect(payload['action']).to eq('list_captain_assistants')
-      expect(payload['assistants'].pluck('name')).to include('Main Bot', 'Internal Helper')
+      expect(payload['assistants'].pluck('name')).to include('Main Bot', 'Sales Agent')
       expect(payload['assistants'].pluck('name')).not_to include('Other Account')
       expect(payload['assistants'].first).to include('id', 'usage_mode', 'selected_agent_tool_ids', 'updated_at')
     end
 
-    it 'filters assistants by usage mode' do
-      create(:captain_assistant, account: account, name: 'Internal Helper', usage_mode: 'internal_assistant')
-
-      payload = JSON.parse(service.execute(usage_mode: 'internal_assistant'))
-
-      expect(payload['assistants'].pluck('usage_mode')).to eq(['internal_assistant'])
-    end
 
     it 'rejects direct non-admin execution as defense in depth' do
       agent = create(:user, account: account)

@@ -55,9 +55,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def playground
-    response = @assistant.internal_assistant? ? copilot_playground_response : agent_playground_response
-
-    render json: response
+    render json: agent_playground_response
   rescue Rack::Timeout::RequestTimeoutException, Rack::Timeout::RequestTimeoutError => e
     Rails.logger.warn(
       "#{self.class.name} playground timed out for assistant #{@assistant.id}: #{e.class} - #{e.message}"
@@ -112,14 +110,13 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def account_assistants
-    @account_assistants ||= Captain::Assistant.for_account(Current.account.id).with_attached_avatar
+    @account_assistants ||= Captain::Assistant.for_account(Current.account.id).external_agent.with_attached_avatar
   end
 
   def assistant_params
     permitted = params.require(:assistant).permit(
       :name,
       :description,
-      :usage_mode,
       config: ASSISTANT_CONFIG_FIELDS
     )
 
@@ -217,28 +214,6 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     options[:conversation] = playground_conversation if playground_params[:conversation_id].present?
 
     Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: playground_message_history)
-  end
-
-  def copilot_playground_response
-    response = Captain::Copilot::ChatService.new(
-      @assistant,
-      {
-        user_id: Current.user.id,
-        conversation_id: playground_conversation&.display_id,
-        previous_history: copilot_playground_history,
-        source: 'playground'
-      }.compact
-    ).generate_response(playground_params[:message_content])
-    payload = response.to_h.deep_stringify_keys
-
-    payload.merge('response' => payload['content'])
-  end
-
-  def copilot_playground_history
-    history = message_history.map { |message| message.slice(:role, :content) }
-    current_message = playground_params[:message_content]
-    history.pop if history.last&.slice(:role, :content) == { role: 'user', content: current_message }
-    history
   end
 
   def playground_conversation

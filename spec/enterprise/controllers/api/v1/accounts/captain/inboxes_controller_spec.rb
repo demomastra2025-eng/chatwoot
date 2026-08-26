@@ -194,19 +194,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Inboxes', type: :request do
         )
       end
 
-      it 'does not allow connecting an internal assistant to an inbox' do
-        internal_assistant = create(:captain_assistant, account: account, usage_mode: 'internal_assistant')
-
-        expect do
-          post "/api/v1/accounts/#{account.id}/captain/assistants/#{internal_assistant.id}/inboxes",
-               params: valid_params,
-               headers: admin.create_new_auth_token
-        end.not_to change(CaptainInbox, :count)
-
-        expect(response).to have_http_status(:unprocessable_content)
-        expect(response.body).to include('Internal assistants cannot be connected to channels')
-      end
-
       context 'when inbox does not exist' do
         it 'returns not found status' do
           post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/inboxes",

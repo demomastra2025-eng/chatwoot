@@ -21,10 +21,7 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-  showCopilotSection: {
-    type: Boolean,
-    default: true,
-  },
+
   showScenariosSection: {
     type: Boolean,
     default: true,
@@ -49,9 +46,7 @@ const resizeStartHeight = ref(DEFAULT_PROMPT_HEIGHT);
 const assistantPreview = computed(() =>
   props.showAssistantSection ? preview.value?.assistant : null
 );
-const copilotPreview = computed(() =>
-  props.showCopilotSection ? preview.value?.copilot : null
-);
+
 const scenarioPreviews = computed(() =>
   props.showScenariosSection ? preview.value?.scenarios || [] : []
 );
@@ -64,11 +59,6 @@ const hasAssistantUsedMetadata = computed(
   () =>
     assistantPreview.value?.used_tool_ids?.length ||
     assistantPreview.value?.used_field_ids?.length
-);
-const hasCopilotUsedMetadata = computed(
-  () =>
-    copilotPreview.value?.used_tool_ids?.length ||
-    copilotPreview.value?.used_field_ids?.length
 );
 
 const clampPromptHeight = height =>
@@ -509,129 +499,6 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
               </details>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section
-        v-if="copilotPreview"
-        class="rounded-2xl border border-n-weak bg-n-solid-1"
-      >
-        <div class="flex flex-col gap-6 px-5 py-5 md:px-6">
-          <div
-            class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
-          >
-            <div class="flex min-w-0 items-center gap-2">
-              <h4 class="text-sm font-medium text-n-slate-12">
-                {{
-                  t(
-                    'CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.COPILOT.TITLE'
-                  )
-                }}
-              </h4>
-              <SettingsInfoDialog
-                :title="
-                  t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.INFO_TITLE')
-                "
-                :description="
-                  t(
-                    'CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.INFO_DESCRIPTION'
-                  )
-                "
-                :points="previewInfoPoints"
-                align="left"
-              />
-            </div>
-            <Button
-              v-if="!assistantPreview"
-              size="sm"
-              slate
-              :label="t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.REFRESH')"
-              @click="loadPreview"
-            />
-          </div>
-
-          <div v-if="hasCopilotUsedMetadata" class="flex flex-col gap-3">
-            <div
-              v-if="copilotPreview.used_tool_ids?.length"
-              class="flex flex-col gap-2"
-            >
-              <span
-                class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-              >
-                {{
-                  t('CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.USED_TOOLS')
-                }}
-              </span>
-              <div class="overflow-x-auto pb-1">
-                <div class="flex w-max min-w-full flex-nowrap gap-2">
-                  <span
-                    v-for="toolId in copilotPreview.used_tool_ids"
-                    :key="toolId"
-                    class="shrink-0 rounded-full bg-n-alpha-2 px-2.5 py-1 text-[11px] font-medium text-n-slate-11"
-                  >
-                    {{ toolId }}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div
-              v-if="copilotPreview.used_field_ids?.length"
-              class="flex flex-col gap-2"
-            >
-              <span
-                class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-              >
-                {{
-                  t(
-                    'CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.USED_ATTRIBUTES'
-                  )
-                }}
-              </span>
-              <div class="overflow-x-auto pb-1">
-                <div class="flex w-max min-w-full flex-nowrap gap-2">
-                  <span
-                    v-for="fieldId in copilotPreview.used_field_ids"
-                    :key="fieldId"
-                    class="shrink-0 rounded-full bg-n-alpha-2 px-2.5 py-1 text-[11px] font-medium text-n-slate-11"
-                  >
-                    {{ fieldId }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-2">
-            <span
-              class="text-xs font-medium uppercase tracking-wide text-n-slate-10"
-            >
-              {{
-                t(
-                  'CAPTAIN.ASSISTANTS.SETTINGS.PROMPT_INSPECTOR.COMPILED_PROMPT'
-                )
-              }}
-            </span>
-            <div
-              class="flex min-h-[12rem] flex-col overflow-hidden rounded-xl border border-n-weak bg-n-alpha-2"
-              :style="promptPreviewStyle('copilot')"
-            >
-              <pre
-                class="min-h-0 flex-1 overflow-auto p-3 whitespace-pre-wrap break-words text-xs leading-5 text-n-slate-11"
-              ><code>{{ normalizePromptPreviewText(copilotPreview.compiled_prompt) }}</code></pre>
-              <div
-                class="group flex h-5 shrink-0 cursor-row-resize select-none items-center justify-center border-t border-n-weak text-n-slate-9 hover:bg-n-alpha-2"
-                :class="{
-                  'bg-n-alpha-2 text-n-slate-11': resizingPrompt === 'copilot',
-                }"
-                @mousedown="startPromptResize($event, 'copilot')"
-                @touchstart.prevent="startPromptResize($event, 'copilot')"
-                @dblclick="resetPromptHeight('copilot')"
-              >
-                <div class="h-0.5 w-10 rounded-full bg-current opacity-60" />
-              </div>
             </div>
           </div>
         </div>

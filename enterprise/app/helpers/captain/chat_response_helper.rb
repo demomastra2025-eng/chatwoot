@@ -70,22 +70,11 @@ module Captain::ChatResponseHelper
 
   def persist_thinking_message(tool_call)
     tool_name = tool_call.name.to_s
-    call_id = tool_call_id(tool_call)
-    trace_step = append_tool_trace_step(
+    append_tool_trace_step(
       tool_name,
       'start',
       input: tool_call.arguments,
-      tool_call_id: call_id
-    )
-
-    return if @copilot_thread.blank?
-
-    persist_tool_trace_message(
-      content: "Using #{tool_name}",
-      tool_name: tool_name,
-      call_id: call_id,
-      status: trace_step['status'],
-      input: trace_step['input']
+      tool_call_id: tool_call_id(tool_call)
     )
   end
 
@@ -93,41 +82,14 @@ module Captain::ChatResponseHelper
     return unless (tool_call = @pending_tool_calls&.pop)
 
     tool_name = tool_call.name.to_s
-    call_id = tool_call_id(tool_call)
     normalized_result = Captain::ToolResult.normalize(result)
     event = Captain::ToolResult.error?(normalized_result) ? 'failed' : 'finish'
-    trace_step = append_tool_trace_step(
+    append_tool_trace_step(
       tool_name,
       event,
       output: normalized_result,
-      tool_call_id: call_id
+      tool_call_id: tool_call_id(tool_call)
     )
-
-    return if @copilot_thread.blank?
-
-    persist_tool_trace_message(
-      content: tool_completion_content(tool_name, event),
-      tool_name: tool_name,
-      call_id: call_id,
-      status: trace_step['status'],
-      output: trace_step['output']
-    )
-  end
-
-  def persist_tool_trace_message(content:, tool_name:, call_id:, status:, **payload)
-    persist_message(
-      {
-        'content' => content,
-        'function_name' => tool_name,
-        'tool_call_id' => call_id,
-        'status' => status
-      }.merge(payload).compact,
-      'assistant_thinking'
-    )
-  end
-
-  def tool_completion_content(tool_name, event)
-    event == 'failed' ? "Failed #{tool_name}" : "Completed #{tool_name}"
   end
 
   def attach_tool_trace(parsed_response)
@@ -138,25 +100,14 @@ module Captain::ChatResponseHelper
   def record_tool_omission(parsed_response)
     return if Array(@tools).blank? || Array(@tool_trace_steps).present?
 
-    pending_tool_ids = pending_confirmation_tool_ids
     reasoning = parsed_response['reasoning'].to_s.squish
     Llm::EventBus.publish(
       'tool.omitted',
-      reason: pending_tool_ids.any? ? 'pending_confirmation_not_replayed' : 'model_returned_final_response_without_tool_call',
+      reason: 'model_returned_final_response_without_tool_call',
       available_tool_count: Array(@tools).size,
-      pending_confirmation_tool_ids: pending_tool_ids.presence,
       model_reasoning_present: reasoning.present?,
       model_reasoning_sha256: reasoning.present? ? Digest::SHA256.hexdigest(reasoning) : nil
     )
-  end
-
-  def pending_confirmation_tool_ids
-    return [] if @copilot_thread.blank?
-
-    @copilot_thread.copilot_messages.assistant_thinking.order(id: :desc).limit(50).filter_map do |message|
-      gate = message.message['confirmation_gate']
-      gate['tool_id'] if gate.present? && gate['status'] == 'pending'
-    end.uniq
   end
 
   def append_tool_trace_step(tool_name, event, **options)

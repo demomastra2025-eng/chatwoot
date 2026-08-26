@@ -95,12 +95,11 @@ module Onelink
       end
 
       def find_assistant!(assistant_id)
-        Captain::Assistant.for_account(account.id).find(assistant_id)
+        Captain::Assistant.for_account(account.id).external_agent.find(assistant_id)
       end
 
       def default_assistant
-        Captain::Assistant.for_account(account.id).internal_assistant.order(updated_at: :desc, id: :desc).first ||
-          Captain::Assistant.for_account(account.id).external_agent.order(updated_at: :desc, id: :desc).first
+        Captain::Assistant.for_account(account.id).external_agent.order(updated_at: :desc, id: :desc).first
       end
 
       def virtual_assistant
@@ -108,7 +107,7 @@ module Onelink
           account: account,
           name: VIRTUAL_ASSISTANT_NAME,
           description: VIRTUAL_ASSISTANT_DESCRIPTION,
-          usage_mode: 'internal_assistant',
+          usage_mode: 'external_agent',
           config: {}
         )
       end

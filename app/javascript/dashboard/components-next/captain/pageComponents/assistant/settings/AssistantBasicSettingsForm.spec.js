@@ -8,7 +8,6 @@ import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
   AGENT_TOOL_SCOPE,
-  ASSISTANT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
   WEB_SCRAPE_URL_TOOL_ID,
@@ -29,7 +28,7 @@ const buildWrapper = props =>
     global: {
       stubs: {
         Avatar: true,
-        AssistantUsageModeSelector: true,
+
         Button: true,
         Editor: true,
         Input: true,
@@ -166,10 +165,6 @@ describe('AssistantBasicSettingsForm', () => {
         enabled: true,
         tool_ids: [FAQ_LOOKUP_TOOL_ID, 'create_deal', HANDOFF_TOOL_ID],
       },
-      assistant: {
-        enabled: true,
-        tool_ids: ['mcp__github__list_issues'],
-      },
     });
   });
 
@@ -229,19 +224,19 @@ describe('AssistantBasicSettingsForm', () => {
     );
   });
 
-  it('preserves internal assistant tool access from the instruction/tool-reference flow', async () => {
+  it('drops legacy employee assistant tool access from AI Agent settings', async () => {
     const wrapper = buildWrapper({
       assistant: {
         id: 58,
-        name: 'Мөлдір',
-        description: 'Помогай сотрудникам.',
-        usage_mode: 'internal_assistant',
+        name: 'Sales Agent',
+        description: 'Помогай клиентам.',
+        usage_mode: 'external_agent',
         config: {
           feature_faq: false,
           feature_memory: false,
           feature_citation: true,
           tool_access: {
-            [ASSISTANT_TOOL_SCOPE]: {
+            assistant: {
               enabled: true,
               tool_ids: ['get_workspace_profile', 'mcp__github__list_issues'],
             },
@@ -253,9 +248,9 @@ describe('AssistantBasicSettingsForm', () => {
     const payload = await wrapper.vm.buildPayload();
 
     expect(payload.assistant.config.tool_access).toEqual({
-      [ASSISTANT_TOOL_SCOPE]: {
+      [AGENT_TOOL_SCOPE]: {
         enabled: true,
-        tool_ids: ['get_workspace_profile', 'mcp__github__list_issues'],
+        tool_ids: [FAQ_LOOKUP_TOOL_ID, HANDOFF_TOOL_ID],
       },
     });
   });

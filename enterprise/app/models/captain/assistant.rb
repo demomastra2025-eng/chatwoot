@@ -30,7 +30,7 @@ class Captain::Assistant < ApplicationRecord
   attr_accessor :raw_rules_config_input
 
   self.table_name = 'captain_assistants'
-  INTERNAL_ASSISTANT_INBOX_ERROR = 'Internal assistants cannot be connected to channels. Disconnect connected channels first.'
+
   DESCRIPTION_MAX_LENGTH = 20_000
   RULES_CONFIG_KEY = 'rules'
   RULE_TYPE_SYSTEM = 'system'
@@ -379,14 +379,14 @@ class Captain::Assistant < ApplicationRecord
   validates :description, presence: true
   validates :description, length: { maximum: DESCRIPTION_MAX_LENGTH }
   validates :account_id, presence: true
-  validates :usage_mode, presence: true, inclusion: { in: %w[external_agent internal_assistant] }
+  validates :usage_mode, presence: true, inclusion: { in: %w[external_agent] }
   validates :message_collapse_window_seconds,
             numericality: { only_integer: true, greater_than_or_equal_to: 0 },
             allow_blank: true
   validates :history_message_limit,
             numericality: { only_integer: true, greater_than_or_equal_to: 0 },
             allow_blank: true
-  validate :internal_assistant_cannot_have_connected_inboxes
+
   validate :validate_instruction_tools
   validate :validate_instruction_fields
   validate :validate_instruction_skills
@@ -407,8 +407,7 @@ class Captain::Assistant < ApplicationRecord
   scope :for_account, ->(account_id) { where(account_id: account_id) }
 
   enum :usage_mode, {
-    external_agent: 'external_agent',
-    internal_assistant: 'internal_assistant'
+    external_agent: 'external_agent'
   }, validate: false
 
   def available_name
@@ -885,13 +884,6 @@ class Captain::Assistant < ApplicationRecord
     config['context_access'] ||= {}
   end
 
-  def internal_assistant_cannot_have_connected_inboxes
-    return unless internal_assistant?
-    return unless captain_inboxes.exists?
-
-    errors.add(:usage_mode, INTERNAL_ASSISTANT_INBOX_ERROR)
-  end
-
   def validate_instruction_tools
     add_invalid_tool_error(:description, invalid_tool_ids_for_texts([description]))
   end
@@ -1206,7 +1198,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def runtime_tool_scope
-    internal_assistant? ? Captain::ToolAccess::SCOPE_ASSISTANT : Captain::ToolAccess::SCOPE_AGENT
+    Captain::ToolAccess::SCOPE_AGENT
   end
 
   def available_runtime_tool_ids

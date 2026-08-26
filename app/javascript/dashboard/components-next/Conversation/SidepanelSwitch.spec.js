@@ -13,7 +13,6 @@ const testState = vi.hoisted(() => ({
   uiSettings: {
     value: {
       is_contact_sidebar_open: false,
-      is_copilot_panel_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: false,
       is_touch_sidebar_open: false,
@@ -75,7 +74,6 @@ describe('SidepanelSwitch', () => {
   beforeEach(() => {
     testState.uiSettings.value = {
       is_contact_sidebar_open: false,
-      is_copilot_panel_open: false,
       is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: false,
       is_touch_sidebar_open: false,
@@ -98,7 +96,6 @@ describe('SidepanelSwitch', () => {
     expect(testState.updateUISettings).toHaveBeenCalledWith({
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,
-      is_copilot_panel_open: false,
       is_scheduling_appointments_panel_open: false,
       is_touch_sidebar_open: false,
     });
@@ -117,7 +114,6 @@ describe('SidepanelSwitch', () => {
     expect(testState.updateUISettings).toHaveBeenCalledWith({
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: false,
-      is_copilot_panel_open: false,
       is_scheduling_appointments_panel_open: true,
       is_touch_sidebar_open: false,
     });

@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   },
   uiSettings: {
     value: {
-      is_copilot_panel_open: false,
       last_active_assistant_id: null,
     },
   },
@@ -43,7 +42,6 @@ describe('CaptainPageRouteView', () => {
     mocks.updateUISettings.mockReset();
     mocks.route.params.assistantId = '42';
     mocks.uiSettings.value = {
-      is_copilot_panel_open: false,
       last_active_assistant_id: null,
     };
   });
@@ -54,29 +52,5 @@ describe('CaptainPageRouteView', () => {
     expect(mocks.updateUISettings).toHaveBeenCalledWith({
       last_active_assistant_id: 42,
     });
-  });
-
-  it('does not open the copilot panel by default inside Captain pages', () => {
-    mocks.uiSettings.value = {
-      is_copilot_panel_open: false,
-      last_active_assistant_id: 42,
-    };
-
-    mountComponent();
-
-    expect(mocks.updateUISettings).not.toHaveBeenCalled();
-  });
-
-  it('keeps the copilot panel open when leaving Captain pages', () => {
-    mocks.uiSettings.value = {
-      is_copilot_panel_open: true,
-      last_active_assistant_id: 42,
-    };
-
-    const wrapper = mountComponent();
-    mocks.updateUISettings.mockClear();
-    wrapper.unmount();
-
-    expect(mocks.updateUISettings).not.toHaveBeenCalled();
   });
 });

@@ -738,8 +738,7 @@
         "TITLE": "Create an AI agent",
         "FORM_DESCRIPTION": "Set the name and type for the AI agent. You can finish the rest in the profile right after creation.",
         "DEFAULT_INSTRUCTION": {
-          "EXTERNAL_AGENT": "Support customers only within your configured business scope and available context. Refine these instructions before going live.",
-          "INTERNAL_ASSISTANT": "Help teammates inside the workspace using the available context and tools. Refine these instructions before broader internal use."
+          "EXTERNAL_AGENT": "Support customers only within your configured business scope and available context. Refine these instructions before going live."
         },
         "SUCCESS_MESSAGE": "The AI agent has been successfully created",
         "ERROR_MESSAGE": "There was an error creating the AI agent, please try again."
@@ -930,23 +929,7 @@
           "PLACEHOLDER": "Describe how the AI agent should work and what boundaries it should follow",
           "ERROR": "The instruction is required"
         },
-        "USAGE_MODE": {
-          "TITLE": "Assistant type",
-          "DESCRIPTION": "Choose whether this assistant should reply to customers in channels or stay internal for your team only.",
-          "INTERNAL_ASSISTANT_HINT": "AI assistants stay inside the workspace. They cannot be connected to inboxes or reply directly to customers.",
-          "OPTIONS": {
-            "EXTERNAL_AGENT": {
-              "BADGE": "Customer-facing",
-              "TITLE": "AI agent",
-              "DESCRIPTION": "Use this assistant in connected channels to answer customers and handle live conversations."
-            },
-            "INTERNAL_ASSISTANT": {
-              "BADGE": "Team-only",
-              "TITLE": "AI assistant",
-              "DESCRIPTION": "Keep this assistant for teammates, internal copilots, and workspace-only guidance."
-            }
-          }
-        },
+
         "PRODUCT_NAME": {
           "LABEL": "Product Name",
           "PLACEHOLDER": "Enter product name",
@@ -1603,7 +1586,7 @@
           "PROMPTS": {
             "LABEL": "Prompts",
             "DESCRIPTION": "Instruction, response rules, and compiled prompt preview.",
-            "SECTION": "Edit the live AI agent and Copilot instruction layers without changing the system prompt contract."
+            "SECTION": "Edit the live AI agent instruction layers without changing the system prompt contract."
           },
           "PROMPT_TABS": {
             "RULES": "Rules",
@@ -1671,7 +1654,7 @@
         },
         "PROMPT_INSPECTOR": {
           "TITLE": "Prompt inspector",
-          "DESCRIPTION": "Review the compiled prompts that currently drive the AI agent, Copilot, and scenario handoffs.",
+          "DESCRIPTION": "Review the compiled prompts that currently drive the AI agent and scenario handoffs.",
           "REFRESH": "Refresh",
           "LOADING": "Loading the current prompt preview...",
           "ERROR": "The current prompt preview could not be loaded. Retry to fetch the latest compiled prompts.",
@@ -1695,10 +1678,7 @@
             "TITLE": "AI agent runtime prompt",
             "DESCRIPTION": "The root prompt currently rendered for the live AI agent."
           },
-          "COPILOT": {
-            "TITLE": "Copilot prompt",
-            "DESCRIPTION": "The operator-side AI assistant system prompt generated for this AI agent."
-          },
+
           "SCENARIOS": {
             "TITLE": "Scenario prompts",
             "DESCRIPTION": "Compiled prompts for each enabled scenario handoff agent.",

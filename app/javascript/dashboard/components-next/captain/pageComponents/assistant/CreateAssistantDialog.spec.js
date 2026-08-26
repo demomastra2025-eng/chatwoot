@@ -53,14 +53,6 @@ const inputStub = {
     '<input @input="$emit(\'update:modelValue\', $event.target.value)" />',
 };
 
-const usageModeSelectorStub = {
-  name: 'AssistantUsageModeSelector',
-  props: ['modelValue'],
-  emits: ['update:modelValue'],
-  template:
-    "<button @click=\"$emit('update:modelValue', 'internal_assistant')\" />",
-};
-
 describe('CreateAssistantDialog', () => {
   beforeEach(() => {
     dispatchMock.mockReset();
@@ -80,15 +72,11 @@ describe('CreateAssistantDialog', () => {
           Dialog: dialogStub,
           Input: inputStub,
           AssistantForm: true,
-          AssistantUsageModeSelector: usageModeSelectorStub,
         },
       },
     });
 
     expect(wrapper.findComponent({ name: 'Input' }).exists()).toBe(true);
-    expect(
-      wrapper.findComponent({ name: 'AssistantUsageModeSelector' }).exists()
-    ).toBe(true);
     expect(wrapper.findComponent({ name: 'AssistantForm' }).exists()).toBe(
       false
     );
@@ -104,7 +92,6 @@ describe('CreateAssistantDialog', () => {
           Dialog: dialogStub,
           Input: inputStub,
           AssistantForm: true,
-          AssistantUsageModeSelector: usageModeSelectorStub,
         },
       },
     });
@@ -114,8 +101,8 @@ describe('CreateAssistantDialog', () => {
     );
   });
 
-  it('creates an assistant from name and type with default settings', async () => {
-    dispatchMock.mockResolvedValueOnce({ id: 77, name: 'Ops Copilot' });
+  it('creates an AI Agent from its name with default settings', async () => {
+    dispatchMock.mockResolvedValueOnce({ id: 77, name: 'Sales Agent' });
 
     const wrapper = shallowMount(CreateAssistantDialog, {
       props: {
@@ -126,35 +113,35 @@ describe('CreateAssistantDialog', () => {
           Dialog: dialogStub,
           Input: inputStub,
           AssistantForm: true,
-          AssistantUsageModeSelector: usageModeSelectorStub,
         },
       },
     });
 
-    await wrapper.findComponent({ name: 'Input' }).setValue('Ops Copilot');
-    wrapper
-      .findComponent({ name: 'AssistantUsageModeSelector' })
-      .vm.$emit('update:modelValue', 'internal_assistant');
+    await wrapper.findComponent({ name: 'Input' }).setValue('Sales Agent');
     wrapper.findComponent({ name: 'Dialog' }).vm.$emit('confirm');
 
     await flushPromises();
 
     expect(dispatchMock).toHaveBeenCalledWith('captainAssistants/create', {
-      name: 'Ops Copilot',
-      usage_mode: 'internal_assistant',
+      name: 'Sales Agent',
       description:
-        'CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.INTERNAL_ASSISTANT',
+        'CAPTAIN.ASSISTANTS.CREATE.DEFAULT_INSTRUCTION.EXTERNAL_AGENT',
       config: {
         feature_faq: false,
         feature_memory: false,
         feature_citation: false,
         context_access: {},
-        tool_access: {},
+        tool_access: {
+          agent: {
+            enabled: true,
+            tool_ids: ['faq_lookup', 'handoff'],
+          },
+        },
       },
     });
     expect(wrapper.emitted('created')?.[0]?.[0]).toMatchObject({
       id: 77,
-      name: 'Ops Copilot',
+      name: 'Sales Agent',
     });
   });
 });

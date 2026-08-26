@@ -960,7 +960,7 @@
           "PROMPTS": {
             "LABEL": "Prompts",
             "DESCRIPTION": "Agent messages, additive instructions, prompt visibility, and behavior controls.",
-            "SECTION": "Edit the live assistant and Copilot instruction layers without changing the base system prompt."
+            "SECTION": "Live AI-агент нұсқауларын базалық system prompt'ты өзгертпей өңдеңіз."
           },
           "PROMPT_TABS": {
             "RULES": "Rules",
@@ -1012,7 +1012,7 @@
         },
         "PROMPT_INSPECTOR": {
           "TITLE": "Prompt инспекторы",
-          "DESCRIPTION": "AI-агент, Copilot және handoff сценарийлері үшін жиналған compiled prompt'тарды көрсетеді.",
+          "DESCRIPTION": "AI-агент және handoff сценарийлері үшін жиналған compiled prompt'тарды көрсетеді.",
           "REFRESH": "Жаңарту",
           "LOADING": "Ағымдағы prompt preview жүктеліп жатыр...",
           "ERROR": "Ағымдағы prompt preview жүктелмеді. Қайталап көріңіз.",
@@ -1027,10 +1027,7 @@
             "TITLE": "AI-агенттің runtime prompt'ы",
             "DESCRIPTION": "Live AI-агент үшін қазір рендерленетін түбірлік prompt."
           },
-          "COPILOT": {
-            "TITLE": "Copilot prompt'ы",
-            "DESCRIPTION": "Осы AI-агентке байланысты ішкі Copilot үшін system prompt."
-          },
+
           "SCENARIOS": {
             "TITLE": "Сценарий prompt'тары",
             "DESCRIPTION": "Әрбір қосылған scenario handoff-агент үшін жиналған prompt'тар.",

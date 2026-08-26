@@ -15,10 +15,6 @@ const props = defineProps({
     type: Number,
     required: true,
   },
-  assistant: {
-    type: Object,
-    default: () => ({}),
-  },
 });
 
 const store = useStore();
@@ -30,9 +26,6 @@ const inboxes = useMapGetter('inboxes/getInboxes');
 
 const connectionStateByInboxId = reactive({});
 const isUpdatingByInboxId = reactive({});
-const isInternalAssistant = computed(
-  () => props.assistant?.usage_mode === 'internal_assistant'
-);
 
 const inboxName = inbox => {
   if (!inbox?.name) {
@@ -106,11 +99,7 @@ watch(
 );
 
 const toggleInboxConnection = async (inbox, nextValue) => {
-  if (
-    !inbox?.id ||
-    isLockedToAnotherAssistant(inbox) ||
-    isInternalAssistant.value
-  ) {
+  if (!inbox?.id || isLockedToAnotherAssistant(inbox)) {
     return;
   }
 
@@ -156,19 +145,7 @@ const toggleDisabled = inbox => {
 <template>
   <div class="flex flex-col gap-4">
     <div
-      v-if="isInternalAssistant"
-      class="rounded-2xl border border-dashed border-n-weak bg-n-alpha-1 px-6 py-10 text-center"
-    >
-      <h3 class="text-base font-medium text-n-slate-12">
-        {{ t('CAPTAIN.ASSISTANTS.SETTINGS.CHANNELS.INTERNAL_TITLE') }}
-      </h3>
-      <p class="mt-2 text-sm text-n-slate-11">
-        {{ t('CAPTAIN.ASSISTANTS.SETTINGS.CHANNELS.INTERNAL_DESCRIPTION') }}
-      </p>
-    </div>
-
-    <div
-      v-else-if="isFetching"
+      v-if="isFetching"
       class="flex min-h-40 items-center justify-center rounded-2xl border border-n-weak bg-n-solid-1"
     >
       <Spinner />

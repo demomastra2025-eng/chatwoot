@@ -11,13 +11,12 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
-import AssistantUsageModeSelector from './AssistantUsageModeSelector.vue';
+
 import SettingsInfoDialog from './settings/SettingsInfoDialog.vue';
 import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
   AGENT_TOOL_SCOPE,
-  ASSISTANT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
   buildDefaultToolAccessForUsageMode,
@@ -70,13 +69,7 @@ const buildInitialState = () => ({
 });
 
 const state = reactive(buildInitialState());
-const isInternalAssistant = computed(
-  () => state.usageMode === 'internal_assistant'
-);
-const isExternalAgent = computed(() => !isInternalAssistant.value);
-const activeToolScope = computed(() =>
-  isExternalAgent.value ? 'agent' : 'assistant'
-);
+const activeToolScope = AGENT_TOOL_SCOPE;
 
 const validationRules = computed(() => ({
   name: { required, minLength: minLength(1) },
@@ -161,17 +154,14 @@ const faqLookupEnabled = computed({
 
 const notesEnabled = computed({
   get: () => {
-    const scopeName = activeToolScope.value;
+    const scopeName = activeToolScope;
     return (
       isToolEnabled(state.toolAccess, scopeName, ADD_CONTACT_NOTE_TOOL_ID) &&
       isToolEnabled(state.toolAccess, scopeName, ADD_PRIVATE_NOTE_TOOL_ID)
     );
   },
   set: enabled => {
-    const scopeName =
-      state.usageMode === 'internal_assistant'
-        ? ASSISTANT_TOOL_SCOPE
-        : AGENT_TOOL_SCOPE;
+    const scopeName = AGENT_TOOL_SCOPE;
 
     state.toolAccess = setToolEnabled(
       state.toolAccess,
@@ -208,23 +198,17 @@ const prepareAssistantDetails = () => {
     feature_faq: state.featureFaq,
     feature_memory: state.featureMemory,
     feature_citation: state.featureCitation,
-    handoff_message:
-      isExternalAgent.value && state.handoffMessageEnabled
-        ? state.handoffMessage
-        : '',
-    resolution_message:
-      isExternalAgent.value && state.resolutionMessageEnabled
-        ? state.resolutionMessage
-        : '',
-    auto_reply_on_last_incoming: isExternalAgent.value
-      ? state.autoReplyOnLastIncoming
-      : false,
-    message_collapse_window_seconds: isExternalAgent.value
-      ? normalizeNonNegativeInteger(state.messageCollapseWindowSeconds)
-      : 0,
-    history_message_limit: isExternalAgent.value
-      ? normalizeNonNegativeInteger(state.historyMessageLimit)
-      : 0,
+    handoff_message: state.handoffMessageEnabled ? state.handoffMessage : '',
+    resolution_message: state.resolutionMessageEnabled
+      ? state.resolutionMessage
+      : '',
+    auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
+    message_collapse_window_seconds: normalizeNonNegativeInteger(
+      state.messageCollapseWindowSeconds
+    ),
+    history_message_limit: normalizeNonNegativeInteger(
+      state.historyMessageLimit
+    ),
     context_access: {},
     tool_access: normalizeCapabilityToolAccess(
       state.toolAccess,
@@ -236,7 +220,7 @@ const prepareAssistantDetails = () => {
     assistant: {
       name: state.name,
       description: state.description || safeAssistant.value.description || '',
-      usage_mode: state.usageMode,
+      usage_mode: 'external_agent',
       config,
     },
     avatar: state.avatarFile,
@@ -256,12 +240,12 @@ const handleSubmit = async () => {
 const updateStateFromAssistant = assistant => {
   if (!assistant) return;
 
-  const { name, config, usage_mode: usageMode } = assistant;
+  const { name, config } = assistant;
 
   Object.assign(state, {
     name,
     description: resolveInstructionText(assistant),
-    usageMode: usageMode || 'external_agent',
+    usageMode: 'external_agent',
     featureFaq: config.feature_faq || false,
     featureMemory: config.feature_memory || false,
     featureCitation: config.feature_citation || false,
@@ -277,7 +261,7 @@ const updateStateFromAssistant = assistant => {
     contextAccess: {},
     toolAccess: resolveToolAccessForUsageMode(
       config.tool_access || {},
-      usageMode || 'external_agent'
+      'external_agent'
     ),
     avatarFile: null,
     avatarUrl: assistant.avatar_url || '',
@@ -314,10 +298,6 @@ watch(
         usageMode
       );
     }
-    if (usageMode !== 'external_agent') {
-      state.handoffMessageEnabled = false;
-      state.resolutionMessageEnabled = false;
-    }
   },
   { immediate: true }
 );
@@ -348,8 +328,6 @@ watch(
       :message-type="formErrors.name ? 'error' : 'info'"
     />
 
-    <AssistantUsageModeSelector v-model="state.usageMode" />
-
     <Editor
       v-model="state.description"
       override-line-breaks
@@ -367,115 +345,109 @@ watch(
       :captain-tool-scope="activeToolScope"
     />
 
-    <template v-if="isExternalAgent">
-      <div
-        class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
-      >
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex items-center gap-2">
-            <h4 class="text-sm font-medium text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.LABEL') }}
-            </h4>
-            <SettingsInfoDialog
-              :title="t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_TITLE')"
-              :description="
-                t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_DESCRIPTION')
-              "
-              :points="handoffInfoPoints"
-              align="left"
-            />
-          </div>
-          <Switch
-            v-model="state.handoffMessageEnabled"
-            class="data-[state=checked]:!bg-n-violet-9"
+    <div
+      class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+    >
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <h4 class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.LABEL') }}
+          </h4>
+          <SettingsInfoDialog
+            :title="t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_TITLE')"
+            :description="
+              t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.INFO_DESCRIPTION')
+            "
+            :points="handoffInfoPoints"
+            align="left"
           />
         </div>
-
-        <Editor
-          v-if="state.handoffMessageEnabled"
-          v-model="state.handoffMessage"
-          override-line-breaks
-          auto-height
-          :editor-key="`captain:assistant:${assistant?.id || mode}:handoff-message`"
-          :placeholder="
-            t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.PLACEHOLDER')
-          "
-          :message="formErrors.handoffMessage"
-          :message-type="formErrors.handoffMessage ? 'error' : 'info'"
-          :show-character-count="false"
-          class="z-0 compact-system-message-editor"
-          enable-captain-tools
-          enable-captain-fields
-          enable-captain-skills
-          :captain-context-assistant-id="safeAssistant.id"
-          :captain-context-access="state.contextAccess"
-          :captain-tool-access="state.toolAccess"
-          :captain-tool-scope="activeToolScope"
+        <Switch
+          v-model="state.handoffMessageEnabled"
+          class="data-[state=checked]:!bg-n-violet-9"
         />
       </div>
 
-      <div
-        class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
-      >
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex items-center gap-2">
-            <h4 class="text-sm font-medium text-n-slate-12">
-              {{ t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.LABEL') }}
-            </h4>
-            <SettingsInfoDialog
-              :title="
-                t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_TITLE')
-              "
-              :description="
-                t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_DESCRIPTION')
-              "
-              :points="resolutionInfoPoints"
-              align="left"
-            />
-          </div>
-          <Switch
-            v-model="state.resolutionMessageEnabled"
-            class="data-[state=checked]:!bg-n-violet-9"
+      <Editor
+        v-if="state.handoffMessageEnabled"
+        v-model="state.handoffMessage"
+        override-line-breaks
+        auto-height
+        :editor-key="`captain:assistant:${assistant?.id || mode}:handoff-message`"
+        :placeholder="t('CAPTAIN.ASSISTANTS.FORM.HANDOFF_MESSAGE.PLACEHOLDER')"
+        :message="formErrors.handoffMessage"
+        :message-type="formErrors.handoffMessage ? 'error' : 'info'"
+        :show-character-count="false"
+        class="z-0 compact-system-message-editor"
+        enable-captain-tools
+        enable-captain-fields
+        enable-captain-skills
+        :captain-context-assistant-id="safeAssistant.id"
+        :captain-context-access="state.contextAccess"
+        :captain-tool-access="state.toolAccess"
+        :captain-tool-scope="activeToolScope"
+      />
+    </div>
+
+    <div
+      class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
+    >
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex items-center gap-2">
+          <h4 class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.LABEL') }}
+          </h4>
+          <SettingsInfoDialog
+            :title="t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_TITLE')"
+            :description="
+              t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.INFO_DESCRIPTION')
+            "
+            :points="resolutionInfoPoints"
+            align="left"
           />
         </div>
-
-        <Editor
-          v-if="state.resolutionMessageEnabled"
-          v-model="state.resolutionMessage"
-          override-line-breaks
-          auto-height
-          :editor-key="`captain:assistant:${assistant?.id || mode}:resolution-message`"
-          :placeholder="
-            t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.PLACEHOLDER')
-          "
-          :message="formErrors.resolutionMessage"
-          :message-type="formErrors.resolutionMessage ? 'error' : 'info'"
-          :show-character-count="false"
-          class="z-0 compact-system-message-editor"
-          enable-captain-tools
-          enable-captain-fields
-          enable-captain-skills
-          :captain-context-assistant-id="safeAssistant.id"
-          :captain-context-access="state.contextAccess"
-          :captain-tool-access="state.toolAccess"
-          :captain-tool-scope="activeToolScope"
+        <Switch
+          v-model="state.resolutionMessageEnabled"
+          class="data-[state=checked]:!bg-n-violet-9"
         />
       </div>
-    </template>
+
+      <Editor
+        v-if="state.resolutionMessageEnabled"
+        v-model="state.resolutionMessage"
+        override-line-breaks
+        auto-height
+        :editor-key="`captain:assistant:${assistant?.id || mode}:resolution-message`"
+        :placeholder="
+          t('CAPTAIN.ASSISTANTS.FORM.RESOLUTION_MESSAGE.PLACEHOLDER')
+        "
+        :message="formErrors.resolutionMessage"
+        :message-type="formErrors.resolutionMessage ? 'error' : 'info'"
+        :show-character-count="false"
+        class="z-0 compact-system-message-editor"
+        enable-captain-tools
+        enable-captain-fields
+        enable-captain-skills
+        :captain-context-assistant-id="safeAssistant.id"
+        :captain-context-access="state.contextAccess"
+        :captain-tool-access="state.toolAccess"
+        :captain-tool-scope="activeToolScope"
+      />
+    </div>
 
     <fieldset class="flex flex-col gap-2.5">
       <legend class="mb-3 text-sm font-medium text-n-slate-12">
         {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
       </legend>
 
-      <label v-if="isExternalAgent" class="flex items-center gap-2">
+      <label class="flex items-center gap-2">
         <Checkbox v-model="state.featureFaq" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
         </span>
       </label>
 
-      <label v-if="isExternalAgent" class="flex items-center gap-2">
+      <label class="flex items-center gap-2">
         <Checkbox v-model="state.featureMemory" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
@@ -496,14 +468,14 @@ watch(
         </span>
       </label>
 
-      <label v-if="isExternalAgent" class="flex items-center gap-2">
+      <label class="flex items-center gap-2">
         <Checkbox v-model="faqLookupEnabled" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
         </span>
       </label>
 
-      <label v-if="isExternalAgent" class="flex items-center gap-2">
+      <label class="flex items-center gap-2">
         <Checkbox v-model="handoffToHumanEnabled" />
         <span class="text-sm font-medium text-n-slate-12">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
@@ -512,7 +484,6 @@ watch(
     </fieldset>
 
     <div
-      v-if="isExternalAgent"
       class="p-4 rounded-xl border border-n-weak bg-n-solid-1 flex items-center justify-between gap-4"
     >
       <div class="flex-1 min-w-0">
@@ -533,7 +504,7 @@ watch(
       </div>
     </div>
 
-    <div v-if="isExternalAgent" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Input
         v-model="state.messageCollapseWindowSeconds"
         type="number"

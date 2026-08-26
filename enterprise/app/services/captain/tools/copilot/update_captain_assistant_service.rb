@@ -12,7 +12,6 @@ class Captain::Tools::Copilot::UpdateCaptainAssistantService < Captain::Tools::C
   param :assistant_id, type: :integer, desc: 'Captain assistant ID', required: true
   param :name, type: :string, desc: 'Optional assistant name', required: false
   param :description, type: :string, desc: 'Optional assistant instructions/description', required: false
-  param :usage_mode, type: :string, desc: 'Optional usage mode: external_agent or internal_assistant', required: false
   param :config_json, type: :string, desc: CONFIG_JSON_DESCRIPTION, required: false
   param :response_guidelines_json, type: :string, desc: 'Optional JSON array of response guideline entries', required: false
   param :guardrails_json, type: :string, desc: 'Optional JSON array of guardrail entries', required: false
@@ -49,7 +48,6 @@ class Captain::Tools::Copilot::UpdateCaptainAssistantService < Captain::Tools::C
     {}.tap do |attributes|
       attributes[:name] = kwargs[:name] if kwargs[:name].present?
       attributes[:description] = kwargs[:description] if kwargs[:description].present?
-      attributes[:usage_mode] = kwargs[:usage_mode] if kwargs[:usage_mode].present?
     end
   end
 

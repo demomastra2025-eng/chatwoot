@@ -63,13 +63,9 @@ const isFetching = computed(() =>
 );
 
 const sortedAssistants = computed(() => {
-  return [...(assistants.value || [])]
-    .filter(
-      assistant =>
-        assistant?.usage_mode !== 'internal_assistant' ||
-        Number(assistant?.id) === connectedAssistantId.value
-    )
-    .sort((a, b) => (a?.name || '').localeCompare(b?.name || ''));
+  return [...(assistants.value || [])].sort((a, b) =>
+    (a?.name || '').localeCompare(b?.name || '')
+  );
 });
 
 const selectedAssistant = computed(() =>
@@ -126,12 +122,6 @@ const isReplyToOpenConversationsDisabled = computed(
     isUpdatingOpenConversationReplies.value ||
     !canChangeSettings.value
 );
-
-const assistantUsageBadge = assistant => {
-  return assistant?.usage_mode === 'internal_assistant'
-    ? t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.INTERNAL_ASSISTANT.BADGE')
-    : t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.EXTERNAL_AGENT.BADGE');
-};
 
 const isAssistantSelected = assistantId => {
   return (
@@ -509,9 +499,6 @@ const updateReplyToOpenConversations = async event => {
                           class="min-w-0 truncate text-sm font-medium text-n-slate-12"
                         >
                           {{ assistant.name || `#${assistant.id}` }}
-                        </span>
-                        <span class="text-xs text-n-slate-11">
-                          {{ assistantUsageBadge(assistant) }}
                         </span>
                       </span>
                     </span>

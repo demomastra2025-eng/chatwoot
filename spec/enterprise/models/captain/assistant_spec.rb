@@ -37,17 +37,6 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.handoff_tool_name.length).to be <= Captain::HandoffNaming::MAX_TOOL_NAME_LENGTH
     end
 
-    it 'allows internal assistants to keep names that are not handoff-safe' do
-      assistant = build(
-        :captain_assistant,
-        account: create(:account),
-        usage_mode: 'internal_assistant',
-        name: '!!!'
-      )
-
-      expect(assistant).to be_valid
-    end
-
     it 'allows unrelated updates for legacy assistants with already-invalid names' do
       assistant = create(:captain_assistant)
       assistant.update_column(:name, '!!!')

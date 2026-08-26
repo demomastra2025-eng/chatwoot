@@ -22,10 +22,7 @@ const props = defineProps({
     type: String,
     required: true,
   },
-  usageMode: {
-    type: String,
-    default: 'external_agent',
-  },
+
   updatedAt: {
     type: Number,
     required: true,
@@ -42,14 +39,12 @@ const [showActionsDropdown, toggleDropdown] = useToggle();
 const menuItems = computed(() => {
   const allOptions = [];
 
-  if (props.usageMode !== 'internal_assistant') {
-    allOptions.push({
-      label: t('CAPTAIN.ASSISTANTS.OPTIONS.VIEW_CONNECTED_INBOXES'),
-      value: 'viewConnectedInboxes',
-      action: 'viewConnectedInboxes',
-      icon: 'i-lucide-link',
-    });
-  }
+  allOptions.push({
+    label: t('CAPTAIN.ASSISTANTS.OPTIONS.VIEW_CONNECTED_INBOXES'),
+    value: 'viewConnectedInboxes',
+    action: 'viewConnectedInboxes',
+    icon: 'i-lucide-link',
+  });
 
   if (checkPermissions(['administrator'])) {
     allOptions.push(
@@ -72,11 +67,6 @@ const menuItems = computed(() => {
 });
 
 const lastUpdatedAt = computed(() => dynamicTime(props.updatedAt));
-const usageModeBadgeLabel = computed(() =>
-  props.usageMode === 'internal_assistant'
-    ? t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.INTERNAL_ASSISTANT.BADGE')
-    : t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.EXTERNAL_AGENT.BADGE')
-);
 
 const handleAction = ({ action, value }) => {
   toggleDropdown(false);
@@ -93,16 +83,6 @@ const handleAction = ({ action, value }) => {
         >
           {{ name }}
         </h6>
-        <span
-          class="inline-flex shrink-0 rounded-full px-2 py-1 text-xs font-medium"
-          :class="
-            usageMode === 'internal_assistant'
-              ? 'bg-n-alpha-2 text-n-slate-11'
-              : 'bg-n-brand/10 text-n-brand'
-          "
-        >
-          {{ usageModeBadgeLabel }}
-        </span>
       </div>
       <div class="flex items-center gap-2">
         <div

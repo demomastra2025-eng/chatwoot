@@ -14,7 +14,6 @@ class Captain::Assistant::PromptPreviewService
       preview_mode: PREVIEW_MODE,
       generated_at: Time.current.iso8601,
       assistant: assistant_preview,
-      copilot: copilot_preview,
       scenarios: scenario_previews
     }
   end
@@ -42,34 +41,7 @@ class Captain::Assistant::PromptPreviewService
     }
   end
 
-  def copilot_preview
-    compiled_prompt = Captain::Llm::SystemPromptsService.copilot_response_generator(
-      assistant.name,
-      assistant.system_instruction,
-      copilot_tools_summary,
-      assistant.config
-    )
-
-    {
-      prompt_id: 'captain.copilot.response_generator',
-      template_name: 'llm/copilot_response_generator',
-      prompt_sha256: digest(compiled_prompt),
-      compiled_prompt: compiled_prompt,
-      notes: [
-        'Rendered without conversation-specific copilot context.',
-        'Operator permissions can still reduce the effective tool set at runtime.'
-      ],
-      used_field_ids: [],
-      used_tool_ids: allowed_copilot_tools.pluck(:id),
-      layers: copilot_layers
-    }
-  end
-
   def scenario_previews = assistant.scenarios.enabled.map { |scenario| scenario_preview(scenario) }
-
-  def allowed_copilot_tools
-    assistant.allowed_assistant_tools
-  end
 
   def assistant_layers
     [
@@ -96,23 +68,6 @@ class Captain::Assistant::PromptPreviewService
     ]
   end
 
-  def copilot_layers
-    [
-      text_layer('assistant_name', 'Assistant name', assistant.name),
-      text_layer('global_system_instruction', 'Global system instruction', Llm::Config.global_assistant_system_prompt),
-      text_layer('assistant_instruction', 'System instruction', assistant.system_instruction),
-      list_layer(
-        'available_tools',
-        'Available copilot tools',
-        allowed_copilot_tools.map { |tool| "#{tool[:id]}: #{tool[:description]}" }
-      )
-    ]
-  end
-
-  def copilot_tools_summary
-    Captain::ToolCatalog.summary_for(allowed_copilot_tools)
-  end
-
   def assistant_used_tool_ids
     assistant_runtime_tools.pluck(:id)
   end
@@ -126,11 +81,7 @@ class Captain::Assistant::PromptPreviewService
   end
 
   def assistant_runtime_tools
-    if assistant.internal_assistant?
-      assistant.allowed_assistant_tools
-    else
-      assistant.prompt_runtime_agent_tools
-    end
+    assistant.prompt_runtime_agent_tools
   end
 
   def effective_runtime_tools_note

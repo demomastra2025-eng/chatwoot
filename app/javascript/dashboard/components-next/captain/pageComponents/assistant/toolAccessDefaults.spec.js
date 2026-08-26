@@ -122,10 +122,6 @@ describe('toolAccessDefaults', () => {
         enabled: true,
         tool_ids: [FAQ_LOOKUP_TOOL_ID, 'create_deal', HANDOFF_TOOL_ID],
       },
-      assistant: {
-        enabled: true,
-        tool_ids: ['mcp__github__list_issues'],
-      },
     });
   });
 

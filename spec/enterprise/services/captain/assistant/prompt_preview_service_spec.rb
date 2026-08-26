@@ -7,7 +7,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
   let(:assistant) { create(:captain_assistant, account: account, description: 'Handle billing questions only.') }
 
   describe '#preview' do
-    it 'builds assistant and copilot previews from the unified instruction contract' do
+    it 'builds the AI Agent preview from the unified instruction contract' do
       preview = described_class.new(assistant: assistant).preview
 
       expect(preview.dig(:assistant, :layers)).to include(
@@ -26,28 +26,7 @@ RSpec.describe Captain::Assistant::PromptPreviewService do
       expect(preview.dig(:assistant, :compiled_prompt)).to include(
         'Use only the fields and tools explicitly available in this prompt'
       )
-      expect(preview.dig(:copilot, :layers)).to include(
-        include(id: 'assistant_instruction', title: 'System instruction', enabled: true, value: 'Handle billing questions only.')
-      )
-    end
-
-    it 'uses assistant tool access when building the copilot preview summary' do
-      assistant.update!(
-        config: assistant.config.merge(
-          'tool_access' => {
-            'assistant' => {
-              'enabled' => true,
-              'tool_ids' => ['search_documentation']
-            }
-          }
-        )
-      )
-
-      preview = described_class.new(assistant: assistant).preview
-
-      expect(preview.dig(:copilot, :used_tool_ids)).to eq(['search_documentation'])
-      expect(preview.dig(:copilot, :compiled_prompt)).to include('search_documentation')
-      expect(preview.dig(:copilot, :compiled_prompt)).not_to include('faq_lookup')
+      expect(preview).not_to have_key(:copilot)
     end
 
     it 'builds preview metadata when rules and restrictions are stored as arrays' do

@@ -106,8 +106,4 @@ module Enterprise::Api::V1::Accounts::ConversationsController
                  .where(private: false)
                  .last
   end
-
-  def copilot_params
-    params.permit(:previous_history, :message, :assistant_id)
-  end
 end

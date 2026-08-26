@@ -102,8 +102,8 @@ module Captain::ToolAccess
     enabled && Array(raw_scope['tool_ids']).map(&:to_s).include?(normalized_tool_id)
   end
 
-  def runtime_scope_for(assistant)
-    assistant.respond_to?(:internal_assistant?) && assistant.internal_assistant? ? SCOPE_ASSISTANT : SCOPE_AGENT
+  def runtime_scope_for(_assistant)
+    SCOPE_AGENT
   end
 
   def available_tools_for_scope(assistant, scope_name)

@@ -114,12 +114,6 @@ export const CAPTAIN_EVENTS = Object.freeze({
   LABEL_SUGGESTION_DISMISSED: 'Captain: Label suggestion dismissed',
 });
 
-export const COPILOT_EVENTS = Object.freeze({
-  SEND_SUGGESTED: 'Copilot: Send suggested message',
-  SEND_MESSAGE: 'Copilot: Sent a message',
-  USE_CAPTAIN_RESPONSE: 'Copilot: Used captain response',
-});
-
 export const SNOOZE_EVENTS = Object.freeze({
   NLP_SNOOZE_APPLIED: 'Applied snooze via text-to-date input',
 });

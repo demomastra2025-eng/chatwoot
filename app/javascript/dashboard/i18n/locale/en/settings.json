@@ -693,11 +693,11 @@
     },
     "WEB_ACCESS": {
       "TITLE": "Firecrawl web access",
-      "DESCRIPTION": "Control public web access for the AI Agent and AI Assistant through the One Link policy layer.",
+      "DESCRIPTION": "Control public web access for AI Agents and MCP workspace tools through the One Link policy layer.",
       "PROVIDER_TITLE": "Web access provider",
       "PROVIDER_DESCRIPTION": "Firecrawl powers search, page reading, and document parsing. Results go through workspace policy, limits, and tool tracing.",
       "SCOPE_AGENT": "AI Agent",
-      "SCOPE_ASSISTANT": "AI Assistant",
+      "SCOPE_ASSISTANT": "MCP workspace tools",
       "STATUS": {
         "CONFIGURED": "Firecrawl configured",
         "MISSING": "Firecrawl endpoint is not configured"
@@ -849,8 +849,8 @@
         "DESCRIPTION": "Handles automated responses, conversation summaries, and intelligent reply suggestions for customer interactions."
       },
       "COPILOT": {
-        "TITLE": "AI Assistant",
-        "DESCRIPTION": "Provides real-time contextual suggestions, knowledge base recommendations, and proactive insights during conversations."
+        "TITLE": "Editor and workspace tools",
+        "DESCRIPTION": "Provides inline writing suggestions and governed MCP workspace tool calls."
       },
       "MODERATION": {
         "TITLE": "Moderation model",
@@ -948,8 +948,8 @@
         "DESCRIPTION": "Applies to customer-facing automated replies."
       },
       "COPILOT": {
-        "TITLE": "AI Assistant Runtime",
-        "DESCRIPTION": "Applies to internal AI Assistant chats and tools."
+        "TITLE": "Editor and MCP runtime",
+        "DESCRIPTION": "Applies to inline writing assistance and governed MCP workspace tools."
       }
     },
     "RUNTIME_STATUS": {
@@ -1005,7 +1005,7 @@
       "FEATURE_LABELS": {
         "EDITOR": "Editor",
         "ASSISTANT": "AI Agent",
-        "COPILOT": "AI Assistant",
+        "COPILOT": "Editor / MCP",
         "LABEL_SUGGESTION": "Tag Suggestion",
         "AUDIO_TRANSCRIPTION": "Audio Transcription",
         "HELP_CENTER_SEARCH": "Help Center Search",

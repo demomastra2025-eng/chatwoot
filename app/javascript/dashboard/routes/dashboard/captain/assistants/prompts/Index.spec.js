@@ -259,22 +259,6 @@ describe('Captain prompts page', () => {
     expect(promptForm.props('descriptionMinHeight')).toBe('26rem');
   });
 
-  it('shows scenarios as the configuration block for internal assistants', () => {
-    assistantRecord.usage_mode = 'internal_assistant';
-
-    const wrapper = buildWrapper();
-
-    expect(wrapper.find('[data-testid="scenarios-manager"]').exists()).toBe(
-      true
-    );
-    expect(
-      wrapper.find('[data-testid="scenarios-manager"]').attributes()
-    ).toMatchObject({
-      'data-show-header': 'true',
-    });
-    expect(wrapper.find('[data-testid="rules-manager"]').exists()).toBe(false);
-  });
-
   it('shows the rules validation error and skips update when page-level save cannot build the rules payload', async () => {
     rulesBuildPayloadMock.mockImplementation(() => {
       throw new Error('CAPTAIN.ASSISTANTS.RULES.MALFORMED_RULES_ERROR');

@@ -24,7 +24,7 @@ const deleteAssistantDialog = ref(null);
 const generalBasicFormRef = ref(null);
 const generalSystemFormRef = ref(null);
 const voiceSystemFormRef = ref(null);
-const draftUsageMode = ref('external_agent');
+
 const activeSettingsTab = ref('profile');
 
 const uiFlags = useMapGetter('captainAssistants/getUIFlags');
@@ -34,13 +34,7 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
-const effectiveUsageMode = computed(
-  () => draftUsageMode.value || assistant.value?.usage_mode || 'external_agent'
-);
-const isInternalAssistant = computed(
-  () => effectiveUsageMode.value === 'internal_assistant'
-);
-const isExternalAgent = computed(() => !isInternalAssistant.value);
+
 const assistantConfig = computed(() => assistant.value?.config || {});
 const settingsTabs = computed(() => [
   {
@@ -87,14 +81,6 @@ watch(
     }
 
     store.dispatch('captainAssistants/show', currentAssistantId);
-  },
-  { immediate: true }
-);
-
-watch(
-  assistant,
-  currentAssistant => {
-    draftUsageMode.value = currentAssistant?.usage_mode || 'external_agent';
   },
   { immediate: true }
 );
@@ -172,7 +158,6 @@ const mergeAssistantPayloads = (basicPayload, systemPayload) => {
       ...systemAssistant,
       name: basicAssistant.name,
       description: basicAssistant.description,
-      usage_mode: basicAssistant.usage_mode,
       config: {
         ...assistantConfig.value,
         ...pickConfigKeys(basicAssistant.config, BASIC_SETTINGS_CONFIG_KEYS),
@@ -213,10 +198,6 @@ const handleVoiceSave = async () => {
 
 const handleDelete = () => {
   deleteAssistantDialog.value.dialogRef.open();
-};
-
-const handleUsageModeUpdate = nextUsageMode => {
-  draftUsageMode.value = nextUsageMode || 'external_agent';
 };
 
 const handleSettingsTabChanged = tab => {
@@ -270,7 +251,6 @@ const handleDeleteSuccess = () => {
                 :assistant="assistant"
                 :show-description-field="false"
                 :show-submit-button="false"
-                @update:usage-mode="handleUsageModeUpdate"
               />
             </div>
           </div>
@@ -286,8 +266,6 @@ const handleDeleteSuccess = () => {
               <AssistantSystemSettingsForm
                 ref="generalSystemFormRef"
                 :assistant="assistant"
-                :show-conversation-messages="isExternalAgent"
-                :show-automation-settings="isExternalAgent"
                 :show-voice-settings="false"
                 :show-submit-button="false"
               />

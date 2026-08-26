@@ -2,23 +2,22 @@ require 'io/console'
 require 'readline'
 
 namespace :captain do
-  desc 'Start interactive chat with Captain assistant - internal assistants require a user ID'
-  task :chat, %i[assistant_id user_id conversation_id] => :environment do |_, args|
+  desc 'Start interactive chat with a Captain AI Agent'
+  task :chat, %i[assistant_id conversation_id] => :environment do |_, args|
     assistant_id = args[:assistant_id] || ARGV[1]
-    user_id = args[:user_id] || ENV.fetch('USER_ID', nil)
     conversation_id = args[:conversation_id] || ENV.fetch('CONVERSATION_ID', nil)
 
     unless assistant_id
       puts '❌ Please provide an assistant ID'
-      puts 'Usage: rake captain:chat[assistant_id,user_id,conversation_display_id]'
+      puts 'Usage: rake captain:chat[assistant_id,conversation_display_id]'
       puts "\nAvailable assistants:"
-      Captain::Assistant.includes(:account).each do |assistant|
+      Captain::Assistant.external_agent.includes(:account).each do |assistant|
         puts "  ID: #{assistant.id} - #{assistant.name} (Account: #{assistant.account.name})"
       end
       exit 1
     end
 
-    assistant = Captain::Assistant.find_by(id: assistant_id)
+    assistant = Captain::Assistant.external_agent.find_by(id: assistant_id)
     unless assistant
       puts "❌ Assistant with ID #{assistant_id} not found"
       exit 1
@@ -27,15 +26,14 @@ namespace :captain do
     # Clear ARGV to prevent gets from reading files
     ARGV.clear
 
-    chat_session = CaptainChatSession.new(assistant, user_id: user_id, conversation_id: conversation_id)
+    chat_session = CaptainChatSession.new(assistant, conversation_id: conversation_id)
     chat_session.start
   end
 end
 
 class CaptainChatSession
-  def initialize(assistant, user_id: nil, conversation_id: nil)
+  def initialize(assistant, conversation_id: nil)
     @assistant = assistant
-    @user = find_copilot_user(user_id)
     @conversation = find_permitted_conversation(conversation_id)
     @message_history = []
   end
@@ -145,31 +143,10 @@ class CaptainChatSession
   end
 
   def generate_assistant_response
-    return generate_copilot_response if @assistant.internal_assistant?
-
     options = { assistant: @assistant, callbacks: build_callbacks, source: 'captain_chat' }
     options[:conversation] = @conversation if @conversation
     runner = Captain::Assistant::AgentRunnerService.new(**options)
     runner.generate_response(message_history: @message_history)
-  end
-
-  def generate_copilot_response
-    config = {
-      user_id: @user.id,
-      previous_history: copilot_history,
-      source: 'captain_chat'
-    }
-    config[:conversation_id] = @conversation.display_id if @conversation
-
-    Captain::Copilot::ChatService.new(@assistant, config).generate_response(@message_history.last[:content])
-  end
-
-  def copilot_history
-    @message_history.first(@message_history.length - 1).filter_map do |message|
-      next unless %w[user assistant].include?(message[:role])
-
-      message.slice(:role, :content)
-    end
   end
 
   def build_callbacks
@@ -238,20 +215,10 @@ class CaptainChatSession
     puts 'Message history cleared'
   end
 
-  def find_copilot_user(user_id)
-    return if @assistant.external_agent?
-
-    abort 'USER_ID is required for internal assistants' if user_id.blank?
-
-    @assistant.account.users.find(user_id)
-  end
-
   def find_permitted_conversation(conversation_id)
     return if conversation_id.blank?
 
-    relation = @assistant.account.conversations
-    relation = Conversations::PermissionFilterService.new(relation, @user, @assistant.account).perform if @user
-    relation.find_by!(display_id: conversation_id)
+    @assistant.account.conversations.find_by!(display_id: conversation_id)
   end
 
   def dim_text(text)

@@ -86,11 +86,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
     before do
       upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
-      upsert_installation_config('CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT', 'Never expose internal-only notes to end customers.')
     end
 
     # rubocop:disable RSpec/MultipleExpectations
-    it 'returns compiled assistant, copilot, and scenario prompts for settings inspection' do
+    it 'returns compiled AI Agent and scenario prompts for settings inspection' do
       scenario
 
       get "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/prompt_preview",
@@ -102,8 +101,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       expect(json_response.dig(:assistant, :compiled_prompt)).to include('Handles billing and account setup questions.')
       expect(json_response.dig(:assistant, :compiled_prompt)).to include('Never reveal internal routing.')
       expect(json_response.dig(:assistant, :prompt_id)).to eq('captain_v2.assistant.root')
-      expect(json_response.dig(:copilot, :compiled_prompt)).to include('Handles billing and account setup questions.')
-      expect(json_response.dig(:copilot, :compiled_prompt)).to include('Never expose internal-only notes to end customers.')
+      expect(json_response).not_to have_key(:copilot)
       expect(json_response[:scenarios]).to include(
         hash_including(
           title: 'Billing disputes',
@@ -513,7 +511,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(response).to have_http_status(:success)
       end
 
-      it 'creates an internal assistant when usage_mode is provided' do
+      it 'ignores the retired internal assistant usage mode on create' do
         attributes_with_usage_mode = valid_attributes.deep_dup
         attributes_with_usage_mode[:assistant][:usage_mode] = 'internal_assistant'
 
@@ -523,8 +521,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
              as: :json
 
         expect(response).to have_http_status(:success)
-        expect(json_response[:usage_mode]).to eq('internal_assistant')
-        expect(Captain::Assistant.order(:id).last.usage_mode).to eq('internal_assistant')
+        expect(json_response[:usage_mode]).to eq('external_agent')
+        expect(Captain::Assistant.order(:id).last.usage_mode).to eq('external_agent')
       end
 
       it 'stores an explicit empty context_access on create' do
@@ -940,30 +938,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
             'content' => 'Stay focused.'
           )
         )
-      end
-
-      it 'updates usage_mode when the assistant is not connected to inboxes' do
-        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: { assistant: { usage_mode: 'internal_assistant' } },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(json_response[:usage_mode]).to eq('internal_assistant')
-        expect(assistant.reload.usage_mode).to eq('internal_assistant')
-      end
-
-      it 'does not allow switching a connected assistant to internal mode' do
-        create(:captain_inbox, captain_assistant: assistant, inbox: create(:inbox, account: account))
-
-        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
-              params: { assistant: { usage_mode: 'internal_assistant' } },
-              headers: admin.create_new_auth_token,
-              as: :json
-
-        expect(response).to have_http_status(:unprocessable_content)
-        expect(response.body).to include('Internal assistants cannot be connected to channels')
-        expect(assistant.reload.usage_mode).to eq('external_agent')
       end
 
       it 'allows clearing context_access to an explicit empty hash' do
@@ -1418,41 +1392,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
              as: :json
 
         expect(response).to have_http_status(:not_found)
-      end
-    end
-
-    context 'when the assistant is an internal assistant' do
-      let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'internal_assistant') }
-      let(:chat_service) { instance_double(Captain::Copilot::ChatService) }
-
-      it 'uses the employee copilot runtime with actor and non-duplicated history' do
-        params_with_latest_message = {
-          message_content: 'Hello assistant',
-          message_history: [
-            { role: 'assistant', content: 'Previous response', agent_name: 'billing_scenario' },
-            { role: 'user', content: 'Hello assistant' }
-          ]
-        }
-        allow(Captain::Copilot::ChatService).to receive(:new).with(
-          assistant,
-          {
-            user_id: agent.id,
-            previous_history: [{ role: 'assistant', content: 'Previous response' }],
-            source: 'playground'
-          }
-        ).and_return(chat_service)
-        allow(chat_service).to receive(:generate_response).with('Hello assistant').and_return(
-          'content' => 'Copilot response',
-          'reasoning' => 'Used account tools'
-        )
-
-        post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
-             params: params_with_latest_message,
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(json_response).to include(response: 'Copilot response', content: 'Copilot response')
       end
     end
   end

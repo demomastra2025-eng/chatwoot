@@ -14,7 +14,7 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
   let(:account) { create(:account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
   let(:agent) { create(:user, account: account, role: :agent) }
-  let!(:assistant) { create(:captain_assistant, account: account, usage_mode: 'internal_assistant') }
+  let!(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
 
   def json_response
     JSON.parse(response.body, symbolize_names: true)
@@ -69,6 +69,17 @@ RSpec.describe 'Api::V1::Accounts::Mcp', type: :request do
       get "/api/v1/accounts/#{account.id}/mcp", headers: mcp_headers(other_user)
 
       expect(response).to have_http_status(:unauthorized)
+    end
+
+    it 'rejects an explicit legacy internal assistant' do
+      internal_assistant = create(:captain_assistant, account: account)
+      Captain::Assistant.connection.execute(
+        "UPDATE captain_assistants SET usage_mode = 'internal_assistant' WHERE id = #{internal_assistant.id}"
+      )
+
+      get "/api/v1/accounts/#{account.id}/mcp?assistant_id=#{internal_assistant.id}", headers: mcp_headers(admin)
+
+      expect(response).to have_http_status(:not_found)
     end
   end
 

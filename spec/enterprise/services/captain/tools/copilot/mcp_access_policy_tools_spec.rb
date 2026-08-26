@@ -25,7 +25,7 @@ RSpec.describe 'Captain MCP access policy copilot tools' do
       record.save!
     end
   end
-  let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'internal_assistant') }
+  let(:assistant) { create(:captain_assistant, account: account, usage_mode: 'external_agent') }
   let(:admin) { create(:user, :administrator, account: account) }
 
   before do

@@ -390,8 +390,7 @@ module Onelink
           assistant: auth_context.assistant,
           scope_name: auth_context.scope_name,
           user: auth_context.user,
-          conversation: conversation_for(arguments, meta),
-          copilot_thread: copilot_thread_for(meta)
+          conversation: conversation_for(arguments, meta)
         )
       end
 
@@ -401,16 +400,6 @@ module Onelink
 
         auth_context.account.conversations.find_by(id: conversation_id) ||
           auth_context.account.conversations.find_by(display_id: conversation_id)
-      end
-
-      def copilot_thread_for(meta)
-        thread_id = meta_value(meta, 'copilot_thread_id')
-        return if thread_id.blank?
-
-        auth_context.account
-                    .copilot_threads
-                    .where(user_id: auth_context.user.id, assistant_id: auth_context.assistant.id)
-                    .find_by(id: thread_id)
       end
 
       def meta_value(meta, key)

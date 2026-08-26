@@ -22,12 +22,6 @@ const isAssistantActive = assistant => {
   return assistant.id === Number(currentAssistantId.value);
 };
 
-const assistantUsageBadge = assistant => {
-  return assistant?.usage_mode === 'internal_assistant'
-    ? t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.INTERNAL_ASSISTANT.BADGE')
-    : t('CAPTAIN.ASSISTANTS.FORM.USAGE_MODE.OPTIONS.EXTERNAL_AGENT.BADGE');
-};
-
 const fetchDataForRoute = async (routeName, assistantId) => {
   const dataFetchMap = {
     captain_assistants_responses_index: async () => {
@@ -134,16 +128,6 @@ const handleAssistantChange = async assistant => {
         <span class="min-w-0 flex flex-row gap-2 items-center">
           <span class="text-sm font-medium truncate text-n-slate-12">
             {{ assistant.name || '' }}
-          </span>
-          <span
-            class="inline-flex rounded-full px-2 py-0.5 text-[0.6875rem] font-medium"
-            :class="
-              assistant?.usage_mode === 'internal_assistant'
-                ? 'bg-n-alpha-2 text-n-slate-11'
-                : 'bg-n-brand/10 text-n-brand'
-            "
-          >
-            {{ assistantUsageBadge(assistant) }}
           </span>
         </span>
         <Avatar

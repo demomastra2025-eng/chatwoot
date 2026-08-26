@@ -11,12 +11,10 @@ import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
-import AssistantUsageModeSelector from '../AssistantUsageModeSelector.vue';
 import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
   AGENT_TOOL_SCOPE,
-  ASSISTANT_TOOL_SCOPE,
   FAQ_LOOKUP_TOOL_ID,
   HANDOFF_TOOL_ID,
   WEB_SCRAPE_URL_TOOL_ID,
@@ -44,10 +42,7 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
-  showUsageModeField: {
-    type: Boolean,
-    default: true,
-  },
+
   showDescriptionField: {
     type: Boolean,
     default: true,
@@ -74,7 +69,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['submit', 'update:usageMode']);
+const emit = defineEmits(['submit']);
 
 const { t } = useI18n();
 const captainConfigStore = useCaptainConfigStore();
@@ -100,14 +95,7 @@ const initialState = {
 
 const state = reactive({ ...initialState });
 const instructionEditorRef = ref(null);
-const isExternalAgent = computed(
-  () => state.usageMode !== 'internal_assistant'
-);
-const activeToolScope = computed(() =>
-  state.usageMode === 'internal_assistant'
-    ? ASSISTANT_TOOL_SCOPE
-    : AGENT_TOOL_SCOPE
-);
+const activeToolScope = AGENT_TOOL_SCOPE;
 const validationRules = {
   name: { required, minLength: minLength(1) },
   description: { required, minLength: minLength(1) },
@@ -229,17 +217,14 @@ const isFirecrawlConfigured = computed(
 
 const notesEnabled = computed({
   get: () => {
-    const scopeName = activeToolScope.value;
+    const scopeName = activeToolScope;
     return (
       isToolEnabled(state.toolAccess, scopeName, ADD_CONTACT_NOTE_TOOL_ID) &&
       isToolEnabled(state.toolAccess, scopeName, ADD_PRIVATE_NOTE_TOOL_ID)
     );
   },
   set: enabled => {
-    const scopeName =
-      state.usageMode === 'internal_assistant'
-        ? ASSISTANT_TOOL_SCOPE
-        : AGENT_TOOL_SCOPE;
+    const scopeName = AGENT_TOOL_SCOPE;
 
     state.toolAccess = setToolEnabled(
       state.toolAccess,
@@ -266,7 +251,7 @@ const updateStateFromAssistant = assistant => {
   const { config = {} } = assistant;
   state.name = assistant.name;
   state.description = resolveInstructionText(assistant);
-  state.usageMode = assistant.usage_mode || 'external_agent';
+  state.usageMode = 'external_agent';
   state.features = {
     conversationFaqs: config.feature_faq || false,
     memories: config.feature_memory || false,
@@ -314,10 +299,6 @@ const buildPayload = async () => {
     assistantPayload.description = state.description;
   }
 
-  if (props.showIdentityFields && props.showUsageModeField) {
-    assistantPayload.usage_mode = state.usageMode;
-  }
-
   if (props.showFeatureFlags) {
     assistantPayload.config = {
       feature_faq: state.features.conversationFaqs,
@@ -358,8 +339,6 @@ watch(
       state.toolAccess,
       newUsageMode
     );
-
-    emit('update:usageMode', newUsageMode);
   },
   { immediate: true }
 );
@@ -398,11 +377,6 @@ defineExpose({
         :placeholder="t('CAPTAIN.ASSISTANTS.FORM.NAME.PLACEHOLDER')"
         :message="formErrors.name"
         :message-type="formErrors.name ? 'error' : 'info'"
-      />
-
-      <AssistantUsageModeSelector
-        v-if="showUsageModeField"
-        v-model="state.usageMode"
       />
 
       <div v-if="showDescriptionField" class="flex flex-col gap-2">
@@ -459,17 +433,11 @@ defineExpose({
         {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
       </label>
       <div class="flex flex-col gap-3">
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3"
-        >
+        <label class="flex items-center justify-between gap-3">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
           <Switch v-model="state.features.conversationFaqs" />
         </label>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3"
-        >
+        <label class="flex items-center justify-between gap-3">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
           <Switch v-model="state.features.memories" />
         </label>
@@ -481,10 +449,7 @@ defineExpose({
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
           <Switch v-model="state.features.citations" />
         </label>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3"
-        >
+        <label class="flex items-center justify-between gap-3">
           <span>
             {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH') }}
             <span class="block text-xs text-n-slate-11">
@@ -496,10 +461,7 @@ defineExpose({
             :disabled="!isFirecrawlConfigured"
           />
         </label>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3"
-        >
+        <label class="flex items-center justify-between gap-3">
           <span>
             {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING') }}
             <span class="block text-xs text-n-slate-11">
@@ -515,10 +477,7 @@ defineExpose({
             :disabled="!isFirecrawlConfigured"
           />
         </label>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3"
-        >
+        <label class="flex items-center justify-between gap-3">
           <span>
             {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING') }}
             <span class="block text-xs text-n-slate-11">
@@ -534,23 +493,14 @@ defineExpose({
             :disabled="!isFirecrawlConfigured"
           />
         </label>
-        <div
-          v-if="isExternalAgent && !isFirecrawlConfigured"
-          class="text-xs text-n-amber-11"
-        >
+        <div v-if="!isFirecrawlConfigured" class="text-xs text-n-amber-11">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
         </div>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3"
-        >
+        <label class="flex items-center justify-between gap-3">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
           <Switch v-model="faqLookupEnabled" />
         </label>
-        <label
-          v-if="isExternalAgent"
-          class="flex items-center justify-between gap-3"
-        >
+        <label class="flex items-center justify-between gap-3">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
           <Switch v-model="handoffToHumanEnabled" />
         </label>
