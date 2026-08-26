@@ -1989,6 +1989,16 @@ const menuItems = computed(() => {
   );
 });
 
+const notificationMenuItem = computed(() =>
+  menuItems.value.find(item => item.name === 'Inbox')
+);
+
+const primaryMenuItems = computed(() =>
+  isEffectivelyCollapsed.value
+    ? menuItems.value.filter(item => item.name !== 'Inbox')
+    : menuItems.value
+);
+
 const resolvePath = to => {
   if (to) return router.resolve(to)?.path || '/';
   return '/';
@@ -2218,7 +2228,7 @@ const desktopSidebarWidth = computed(() => {
           :class="{ 'items-center': isEffectivelyCollapsed }"
         >
           <SidebarGroup
-            v-for="item in menuItems"
+            v-for="item in primaryMenuItems"
             :key="item.name"
             v-bind="item"
             :show-collapsed-popover="false"
@@ -2247,12 +2257,26 @@ const desktopSidebarWidth = computed(() => {
         />
         <div
           class="px-1 py-1.5 flex-shrink-0 flex w-full z-50 gap-2 items-center border-t border-n-weak shadow-[0px_-2px_4px_0px_rgba(27,28,29,0.02)]"
-          :class="isEffectivelyCollapsed ? 'justify-center' : 'justify-between'"
+          :class="
+            isEffectivelyCollapsed
+              ? 'flex-col justify-center'
+              : 'justify-between'
+          "
         >
           <SidebarProfileMenu
             :is-collapsed="isEffectivelyCollapsed"
             @open-key-shortcut-modal="emit('openKeyShortcutModal')"
           />
+          <ul
+            v-if="isEffectivelyCollapsed && notificationMenuItem"
+            class="flex m-0 list-none"
+            :class="{ 'justify-center': isEffectivelyCollapsed }"
+          >
+            <SidebarGroup
+              v-bind="notificationMenuItem"
+              :show-collapsed-popover="false"
+            />
+          </ul>
         </div>
       </section>
     </div>
