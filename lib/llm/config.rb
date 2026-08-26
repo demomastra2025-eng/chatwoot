@@ -6,6 +6,11 @@ module Llm::Config
   DEFAULT_TRANSCRIPTION_MODEL = 'openai/gpt-4o-mini-transcribe'.freeze
   DEFAULT_MODERATION_MODEL = 'openai/gpt-oss-safeguard-20b'.freeze
   DEFAULT_OPENROUTER_MODERATION_MODEL_FEATURE = 'moderation'.freeze
+  INSTALLATION_MANAGED_MODEL_CONFIGS = {
+    'audio_transcription' => 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL',
+    'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
+    'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL'
+  }.freeze
   OPENAI_DEFAULT_API_BASE = 'https://api.openai.com/v1'.freeze
   OPENROUTER_DEFAULT_API_BASE = 'https://openrouter.ai/api/v1'.freeze
   RUNTIME_CACHE_KEY = :llm_config_runtime_cache
@@ -61,8 +66,13 @@ module Llm::Config
     def model_for(feature: nil, account: nil, fallback: DEFAULT_MODEL)
       feature_key = feature.to_s.presence
 
-      account_model = account_model_for(account, feature_key)
-      return account_model if account_model.present?
+      if installation_managed_model_feature?(feature_key)
+        managed_model = installation_managed_model_for(feature_key, account: account)
+        return managed_model if managed_model.present?
+      else
+        account_model = account_model_for(account, feature_key)
+        return account_model if account_model.present?
+      end
 
       installation_model = installation_model_for(feature_key, account: account)
       return installation_model if installation_model.present?
@@ -287,6 +297,28 @@ module Llm::Config
       return if account.blank? || feature_key.blank?
 
       model_name = account.captain_models.to_h.with_indifferent_access[feature_key]
+      return if model_name.blank?
+
+      model_name = normal_feature_model_name(feature_key, model_name, account: account)
+      return if model_name.blank?
+      return unless feature_model_allowed?(feature_key, model_name, account: account)
+
+      canonical_model = Llm::Models.canonical_model_name(model_name)
+      return unless runtime_usable_model?(canonical_model, account: account)
+
+      provider = provider_for_model(canonical_model, account: account)
+      return unless provider_available?(provider, account: account)
+
+      canonical_model
+    end
+
+    def installation_managed_model_feature?(feature_key)
+      INSTALLATION_MANAGED_MODEL_CONFIGS.key?(feature_key.to_s)
+    end
+
+    def installation_managed_model_for(feature_key, account: nil)
+      config_name = INSTALLATION_MANAGED_MODEL_CONFIGS[feature_key.to_s]
+      model_name = installation_config_value(config_name).presence
       return if model_name.blank?
 
       model_name = normal_feature_model_name(feature_key, model_name, account: account)

@@ -10,7 +10,7 @@ class Captain::Tools::Copilot::WebScrapeUrlService < Captain::Tools::Copilot::We
 
   def execute(url:)
     ensure_firecrawl_configured!
-    ensure_web_access_enabled!(:scrape)
+    ensure_web_tool_enabled!('web_scrape_url')
 
     uri = validate_public_url!(url)
     response = firecrawl.scrape(

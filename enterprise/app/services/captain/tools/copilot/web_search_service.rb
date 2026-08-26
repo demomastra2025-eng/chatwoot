@@ -11,7 +11,7 @@ class Captain::Tools::Copilot::WebSearchService < Captain::Tools::Copilot::WebAc
 
   def execute(query:, limit: nil)
     ensure_firecrawl_configured!
-    ensure_web_access_enabled!(:search)
+    ensure_web_tool_enabled!('web_search')
 
     effective_limit = Llm::RuntimePolicy.web_search_limit(
       preferences: runtime_preferences,

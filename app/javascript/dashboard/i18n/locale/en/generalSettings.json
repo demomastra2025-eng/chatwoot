@@ -14,6 +14,14 @@
       "ERROR": "Could not update company settings, try again!",
       "SUCCESS": "Company settings updated"
     },
+    "SIDEBAR_VISIBILITY": {
+      "TITLE": "Menu visibility",
+      "DESCRIPTION": "Choose which left sidebar sections are available across this workspace.",
+      "NOTE": "These settings apply to every employee. Sections without the required role, permission, or feature access remain hidden automatically.",
+      "SAVE": "Save visibility",
+      "UPDATE_SUCCESS": "Menu visibility updated",
+      "UPDATE_ERROR": "Could not update menu visibility. Please try again."
+    },
     "ACCOUNT_DELETE_SECTION": {
       "TITLE": "Delete my company",
       "NOTE": "Once you delete the company, all related data will be deleted.",

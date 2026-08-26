@@ -58,13 +58,6 @@
           "UPDATE_SUCCESS": "Your Language settings have been updated successfully",
           "UPDATE_ERROR": "There is an error while updating the language settings, please try again",
           "USE_ACCOUNT_DEFAULT": "Use account default"
-        },
-        "SIDEBAR_VISIBILITY": {
-          "TITLE": "Left sidebar sections",
-          "NOTE": "Choose which sections stay visible in the left sidebar. By default, every section is shown.",
-          "SAVE": "Save sidebar visibility",
-          "UPDATE_SUCCESS": "Sidebar visibility has been updated successfully",
-          "UPDATE_ERROR": "There is an error while updating the sidebar visibility, please try again"
         }
       },
       "MESSAGE_SIGNATURE_SECTION": {
@@ -413,6 +406,7 @@
     "CAPTAIN_PLAYGROUND": "Playground",
     "CAPTAIN_INBOXES": "Inboxes",
     "CAPTAIN_SETTINGS": "AI Settings",
+    "CAPTAIN_USAGE": "Expenses and budget",
     "CAPTAIN_PROMPTS": "Prompts",
     "CAPTAIN_FOLLOW_UPS": "Follow-up scenarios",
     "CAPTAIN_RESTRICTIONS": "Restrictions",
@@ -428,6 +422,7 @@
     "INTEGRATIONS": "Integrations",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Profile",
+    "VISIBILITY": "Visibility",
     "MY_COMPANY": "Company",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -821,6 +816,7 @@
       },
       "NO_MODELS_MATCH": "No models match your search.",
       "NO_COMPATIBLE_MODELS": "No compatible configured model. Configure an OpenRouter key or wait for the catalog refresh to finish.",
+      "MANAGED_GLOBALLY": "The model is selected globally by the OneLink administrator.",
       "DIAGNOSTICS": {
         "TITLE": "Selected model {model} is not available",
         "SEARCH_TITLE": "{model} cannot be used for this feature",
@@ -858,7 +854,7 @@
       },
       "MODERATION": {
         "TITLE": "Moderation model",
-        "DESCRIPTION": "Classifies unsafe text before/after AI replies. OpenRouter models must support structured JSON output."
+        "DESCRIPTION": "A separate safety model checks incoming text and generated replies for unsafe content before they are used."
       },
       "AUDIO_TRANSCRIPTION": {
         "TITLE": "Audio recognition model",

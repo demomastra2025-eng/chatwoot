@@ -509,6 +509,9 @@ class Captain::Assistant < ApplicationRecord
 
     available_ids = available_tool_ids
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
+    explicit_tool_ids.select! do |tool_id|
+      Captain::ToolAccess.per_assistant_web_tool_enabled?(self, tool_id, scope_name: Captain::ToolAccess::SCOPE_AGENT)
+    end
 
     (scenario_default_tool_ids + explicit_tool_ids)
       .uniq
@@ -562,6 +565,9 @@ class Captain::Assistant < ApplicationRecord
                    end
     referenced_ids = prompt_referenced_tool_ids_for_template(:assistant) + prompt_referenced_skill_script_tool_ids_for_template(:assistant)
     prompt_ids = companion_expanded_tool_ids(referenced_ids)
+    prompt_ids.select! do |tool_id|
+      Captain::ToolAccess.per_assistant_web_tool_enabled?(self, tool_id, scope_name: Captain::ToolAccess::SCOPE_AGENT)
+    end
     direct_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, selected_ids)
     prompt_tools = Captain::ToolCatalog.available_tools_for_ids(self, Captain::ToolAccess::SCOPE_AGENT, prompt_ids).select do |tool|
       prompt_visible_tool?(tool, scope_name: Captain::ToolAccess::SCOPE_AGENT)
@@ -1221,6 +1227,9 @@ class Captain::Assistant < ApplicationRecord
     selected_ids = selected_tool_ids_for_scope(scope_name)
     default_ids = default_tool_ids_for_scope(scope_name)
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
+    explicit_tool_ids.select! do |tool_id|
+      Captain::ToolAccess.per_assistant_web_tool_enabled?(self, tool_id, scope_name: scope_name)
+    end
 
     ((selected_ids & default_ids) + explicit_tool_ids)
       .uniq

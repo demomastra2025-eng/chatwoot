@@ -1,17 +1,11 @@
 import {
-  SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY,
-  SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_ITEMS,
-  PERSONAL_SIDEBAR_VISIBILITY_ITEMS,
-  buildAccountScopedSidebarUISettings,
   buildEffectiveSidebarVisibilitySettings,
   buildSidebarVisibilityState,
   filterSidebarMenuItems,
-  getAccountScopedSidebarHiddenItems,
-  getConversationSidebarHiddenItemsFromState,
   getSidebarHiddenItems,
   getSidebarHiddenItemsFromState,
 } from './sidebarVisibility';
@@ -46,6 +40,8 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Captain:Evaluations']).toBe(true);
     expect(visibilityState['Captain:Observability']).toBe(true);
     expect(visibilityState['Captain:FAQs']).toBe(true);
+    expect(visibilityState['Captain:Usage']).toBe(true);
+    expect(visibilityState['Captain:AISettings']).toBe(true);
     expect(visibilityState['Captain:Documents']).toBeUndefined();
     expect(visibilityState['Conversation:Channels']).toBeUndefined();
     expect(visibilityState['Conversation:AllChannels']).toBeUndefined();
@@ -55,7 +51,7 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['MyCompany:Tags']).toBe(true);
     expect(visibilityState['MyCompany:Employees']).toBe(true);
     expect(visibilityState.Employees).toBeUndefined();
-    expect(visibilityState.Settings).toBe(true);
+    expect(visibilityState.Settings).toBeUndefined();
     expect(visibilityState['Settings:Automation']).toBe(true);
     expect(visibilityState.SMM).toBeUndefined();
     expect(visibilityState['SMM:LeadForms']).toBeUndefined();
@@ -78,6 +74,7 @@ describe('sidebarVisibility', () => {
           'Settings:CustomAttributes',
           'Settings:Macros',
           'Settings:Workspace',
+          'Settings',
           'MyCompany:Tags',
           'Reports',
         ],
@@ -103,6 +100,9 @@ describe('sidebarVisibility', () => {
     ).toEqual([
       'Conversation:Statuses',
       'MyCompany:Workspace',
+      'MyCompany:ConversationClosure',
+      'MyCompany:SLA',
+      'MyCompany:AdditionalFields',
       'MyCompany:LeadForms',
       'MyCompany:Channels',
       'MyCompany:Tags',
@@ -122,8 +122,11 @@ describe('sidebarVisibility', () => {
     const settingsChildKeys = settingsItem.children.map(item => item.key);
 
     expect(itemKeys).not.toContain('MyCompany');
-    expect(settingsChildKeys.slice(0, 9)).toEqual([
+    expect(settingsChildKeys.slice(0, 12)).toEqual([
       'MyCompany:Workspace',
+      'MyCompany:ConversationClosure',
+      'MyCompany:SLA',
+      'MyCompany:AdditionalFields',
       'MyCompany:LeadForms',
       'MyCompany:Channels',
       'MyCompany:Tags',
@@ -133,39 +136,41 @@ describe('sidebarVisibility', () => {
       'MyCompany:Policies',
       'MyCompany:AuditLogs',
     ]);
-    expect(settingsChildKeys[9]).toBe('Settings:Automation');
+    expect(settingsChildKeys[12]).toBe('Settings:Automation');
     expect(settingsChildKeys).not.toContain('Settings:LeadForms');
     expect(itemKeys).not.toContain('SMM');
+    expect(settingsItem.configurable).toBe(false);
   });
 
-  it('excludes account-controlled deal and appointment dialog visibility from personal settings menu', () => {
-    const conversationItem = PERSONAL_SIDEBAR_VISIBILITY_ITEMS.find(
-      item => item.key === 'Conversation'
-    );
-    const conversationChildKeys = conversationItem.children.map(
-      item => item.key
-    );
+  it('keeps the settings container visible for access to visibility management', () => {
+    expect(
+      getSidebarHiddenItems({
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings'],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+          SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      })
+    ).toEqual([]);
 
-    expect(conversationChildKeys).toContain('Conversation:Statuses');
-    expect(conversationChildKeys).not.toContain('Conversation:Pipelines');
-    expect(conversationChildKeys).not.toContain(
-      'Conversation:AppointmentStatuses'
-    );
-    expect(conversationChildKeys).not.toContain(
-      'Conversation:AppointmentStatus:scheduled'
-    );
-    expect(conversationChildKeys).not.toContain(
-      'Conversation:AppointmentStatus:confirmed'
-    );
-    expect(conversationChildKeys).not.toContain(
-      'Conversation:AppointmentStatus:completed'
-    );
-    expect(conversationChildKeys).not.toContain(
-      'Conversation:AppointmentStatus:cancelled'
-    );
-    expect(conversationChildKeys).not.toContain(
-      'Conversation:AppointmentStatus:no_show'
-    );
+    expect(
+      filterSidebarMenuItems(
+        [
+          {
+            name: 'Settings',
+            children: [{ name: 'Visibility' }],
+          },
+        ],
+        {
+          [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings'],
+          [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+            SIDEBAR_VISIBILITY_CURRENT_VERSION,
+        }
+      )
+    ).toEqual([
+      {
+        name: 'Settings',
+        children: [{ name: 'Visibility' }],
+      },
+    ]);
   });
 
   it('keeps merged prompts visible for legacy settings when only restrictions or prompts were hidden', () => {
@@ -262,115 +267,31 @@ describe('sidebarVisibility', () => {
     ).toEqual(['Captain:Prompts']);
   });
 
-  it('merges account policy visibility with account-scoped personal overrides', () => {
-    const uiSettings = {
-      [SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]: {
-        1: ['Reports'],
-        2: ['Campaigns'],
-      },
-      [SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY]: {
-        1: SIDEBAR_VISIBILITY_CURRENT_VERSION,
-        2: SIDEBAR_VISIBILITY_CURRENT_VERSION,
-      },
-    };
+  it('uses only the account-wide visibility policy', () => {
     const accountSettings = {
-      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Teams'],
+      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: [
+        'Conversation:Pipelines',
+        'Reports',
+      ],
       [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
         SIDEBAR_VISIBILITY_CURRENT_VERSION,
     };
 
-    expect(getAccountScopedSidebarHiddenItems(uiSettings, 1)).toEqual([
-      'Reports',
-    ]);
     expect(
       buildEffectiveSidebarVisibilitySettings({
-        accountId: 1,
         accountSettings,
-        uiSettings,
-      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
-    ).toEqual(['Conversation:Teams', 'Reports']);
-    expect(
-      buildEffectiveSidebarVisibilitySettings({
-        accountId: 2,
-        accountSettings,
-        uiSettings,
-      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
-    ).toEqual(['Conversation:Teams', 'Campaigns']);
-    expect(
-      buildEffectiveSidebarVisibilitySettings({
-        accountId: 1,
-        accountSettings: {},
-        uiSettings,
-      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
-    ).toEqual(['Reports']);
-    expect(
-      buildEffectiveSidebarVisibilitySettings({
-        accountId: 3,
-        accountSettings: {},
-        uiSettings,
-      })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
-    ).toEqual(['Conversation:Statuses']);
-  });
-
-  it('ignores personal overrides for deal and appointment dialog visibility', () => {
-    const uiSettings = {
-      [SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]: {
-        1: [
-          'Conversation:Pipelines',
-          'Conversation:AppointmentStatuses',
-          'Conversation:AppointmentStatus:scheduled',
-          'Reports',
-        ],
-      },
-      [SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY]: {
-        1: SIDEBAR_VISIBILITY_CURRENT_VERSION,
-      },
-    };
-
-    expect(getAccountScopedSidebarHiddenItems(uiSettings, 1)).toEqual([
-      'Reports',
-    ]);
-    expect(
-      buildAccountScopedSidebarUISettings({
-        accountId: 1,
-        hiddenItems: [
-          'Conversation:Pipelines',
-          'Conversation:AppointmentStatuses',
-          'Conversation:AppointmentStatus:scheduled',
-          'Reports',
-        ],
-        uiSettings: {},
-      })[SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]
-    ).toEqual({ 1: ['Reports'] });
-    expect(
-      buildEffectiveSidebarVisibilitySettings({
-        accountId: 1,
-        accountSettings: {
-          [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Conversation:Pipelines'],
-          [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
-            SIDEBAR_VISIBILITY_CURRENT_VERSION,
+        uiSettings: {
+          dashboard_sidebar_hidden_items_by_account: {
+            1: ['Campaigns'],
+          },
         },
-        uiSettings,
       })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
     ).toEqual(['Conversation:Pipelines', 'Reports']);
-  });
-
-  it('falls back to legacy personal sidebar visibility before account-scoped settings exist', () => {
-    const uiSettings = {
-      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Settings:Macros'],
-    };
-
-    expect(getAccountScopedSidebarHiddenItems(uiSettings, 1)).toEqual([
-      'Conversation:Statuses',
-      'Settings:Macros',
-    ]);
     expect(
       buildEffectiveSidebarVisibilitySettings({
-        accountId: 1,
         accountSettings: {},
-        uiSettings,
       })[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
-    ).toEqual(['Conversation:Statuses', 'Settings:Macros']);
+    ).toEqual(['Conversation:Statuses']);
   });
 
   it('filters hidden sidebar sections and subsections from the rendered menu', () => {
@@ -439,22 +360,5 @@ describe('sidebarVisibility', () => {
         'Settings:Macros': false,
       })
     ).toEqual(['Campaigns', 'Settings:Macros']);
-  });
-
-  it('builds conversation-only hidden items from the draft state', () => {
-    expect(
-      getConversationSidebarHiddenItemsFromState({
-        Reports: false,
-        'Conversation:Teams': false,
-        'Conversation:AppointmentStatuses': false,
-        'Conversation:AppointmentStatus:scheduled': false,
-        'Conversation:Assignee:me': false,
-      })
-    ).toEqual([
-      'Conversation:Assignee:me',
-      'Conversation:AppointmentStatuses',
-      'Conversation:AppointmentStatus:scheduled',
-      'Conversation:Teams',
-    ]);
   });
 });

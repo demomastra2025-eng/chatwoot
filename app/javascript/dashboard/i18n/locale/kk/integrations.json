@@ -732,6 +732,13 @@
           "ALLOW_FAQ_LOOKUP": "Сәйкес жауаптарды табу үшін FAQ іздеуді пайдалану",
           "ALLOW_HUMAN_HANDOFF": "AI-агент көмектесе алмаса, адамға беру",
           "ALLOW_WEB_ACCESS": "Веб-іздеуге рұқсат ету",
+          "WEB_SEARCH": "Веб-іздеу",
+          "WEB_SEARCH_DESCRIPTION": "Ашық интернеттен өзекті ақпаратты іздеу.",
+          "WEB_PAGE_READING": "Веб-беттерді оқу",
+          "WEB_PAGE_READING_DESCRIPTION": "Көрсетілген ашық сілтеменің мазмұнын оқу.",
+          "DOCUMENT_READING": "Құжаттарды оқу",
+          "DOCUMENT_READING_DESCRIPTION": "Клиент жіберген файлдардан алынған мәтінді пайдалану.",
+          "WEB_PROVIDER_REQUIRED": "Бұл мүмкіндіктер үшін әкімші веб-провайдерді баптауы керек.",
           "ALLOW_CONTACT_ATTRIBUTES": "Контакт ақпаратына қол жеткізуге рұқсат ету"
         },
         "ACCESS_MODES": {

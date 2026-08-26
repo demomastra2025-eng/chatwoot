@@ -159,11 +159,9 @@ class Captain::ToolCatalog
       flags.all? do |flag|
         case flag
         when 'web_search'
-          Llm::RuntimePolicy.web_access_enabled?(:search, account: assistant.account) &&
-            Captain::Tools::FirecrawlService.configured?
+          Captain::Tools::FirecrawlService.configured?
         when 'web_scrape'
-          Llm::RuntimePolicy.web_access_enabled?(:scrape, account: assistant.account) &&
-            Captain::Tools::FirecrawlService.configured?
+          Captain::Tools::FirecrawlService.configured?
         else
           true
         end

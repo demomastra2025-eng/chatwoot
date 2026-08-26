@@ -18,7 +18,7 @@ class Captain::OpenAiMessageBuilderService
     ['received at', %i[received_at receivedAt]]
   ].freeze
 
-  pattr_initialize [:message!]
+  pattr_initialize [:message!, :assistant]
 
   # Extracts text and image URLs from multimodal content array (reverse of generate_content)
   def self.extract_text_and_attachments(content)
@@ -145,7 +145,7 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def extract_document_texts(attachments)
-    return '' unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: @message.account)
+    return '' unless document_reading_enabled?
 
     file_attachments(attachments).filter_map do |attachment|
       document_text = Messages::DocumentParsingService.extracted_text(attachment)
@@ -156,7 +156,7 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def unparsed_attachment_summary(attachments)
-    document_parse_enabled = Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: @message.account)
+    document_parse_enabled = document_reading_enabled?
     unparsed_attachments = attachments.where.not(file_type: %i[image audio]).reject do |attachment|
       document_parse_enabled && attachment.file_type == 'file' && Messages::DocumentParsingService.extracted_text(attachment).present?
     end
@@ -170,6 +170,10 @@ class Captain::OpenAiMessageBuilderService
 
   def file_attachments(attachments)
     attachments.where(file_type: :file)
+  end
+
+  def document_reading_enabled?
+    Messages::DocumentParsingService.reading_enabled_for?(@assistant)
   end
 
   def attachment_filename(attachment)

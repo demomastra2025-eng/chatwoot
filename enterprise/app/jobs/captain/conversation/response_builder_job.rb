@@ -161,7 +161,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def prepare_multimodal_message_content(message, previous_assistant_message: nil)
-    content = Captain::OpenAiMessageBuilderService.new(message: message).generate_content
+    content = Captain::OpenAiMessageBuilderService.new(message: message, assistant: @assistant).generate_content
     return content unless receipt_image_after_request?(message, previous_assistant_message)
 
     append_receipt_attachment_context(content)
@@ -207,7 +207,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def wait_for_document_parsing
-    return unless Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+    return unless Messages::DocumentParsingService.reading_enabled_for?(@assistant)
     return unless pending_document_parsing?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + DOCUMENT_PARSE_WAIT_TIMEOUT.to_f

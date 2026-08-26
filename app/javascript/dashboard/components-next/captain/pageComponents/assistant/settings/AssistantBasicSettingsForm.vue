@@ -1,14 +1,16 @@
 <script setup>
-import { reactive, computed, watch, ref } from 'vue';
+import { reactive, computed, watch, ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { storeToRefs } from 'pinia';
 import { useVuelidate } from '@vuelidate/core';
 import { required, minLength } from '@vuelidate/validators';
 
 import Input from 'dashboard/components-next/input/Input.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
-import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
+import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import AssistantUsageModeSelector from '../AssistantUsageModeSelector.vue';
 import {
   ADD_CONTACT_NOTE_TOOL_ID,
@@ -75,6 +77,8 @@ const props = defineProps({
 const emit = defineEmits(['submit', 'update:usageMode']);
 
 const { t } = useI18n();
+const captainConfigStore = useCaptainConfigStore();
+const { runtimeMetadata } = storeToRefs(captainConfigStore);
 
 const initialState = {
   name: '',
@@ -85,6 +89,7 @@ const initialState = {
     memories: false,
     citations: false,
     web: false,
+    documentReading: false,
   },
   contextAccess: {},
   toolAccess: buildDefaultToolAccessForUsageMode(),
@@ -190,17 +195,10 @@ const faqLookupEnabled = computed({
   },
 });
 
-const webAccessEnabled = computed({
+const webSearchEnabled = computed({
   get: () =>
-    state.features.web ||
-    (isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, WEB_SEARCH_TOOL_ID) &&
-      isToolEnabled(
-        state.toolAccess,
-        AGENT_TOOL_SCOPE,
-        WEB_SCRAPE_URL_TOOL_ID
-      )),
+    isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, WEB_SEARCH_TOOL_ID),
   set: enabled => {
-    state.features.web = enabled;
     state.toolAccess = setToolEnabled(
       state.toolAccess,
       AGENT_TOOL_SCOPE,
@@ -208,6 +206,13 @@ const webAccessEnabled = computed({
       enabled,
       state.usageMode
     );
+  },
+});
+
+const webPageReadingEnabled = computed({
+  get: () =>
+    isToolEnabled(state.toolAccess, AGENT_TOOL_SCOPE, WEB_SCRAPE_URL_TOOL_ID),
+  set: enabled => {
     state.toolAccess = setToolEnabled(
       state.toolAccess,
       AGENT_TOOL_SCOPE,
@@ -217,6 +222,10 @@ const webAccessEnabled = computed({
     );
   },
 });
+
+const isFirecrawlConfigured = computed(
+  () => runtimeMetadata.value?.web_access?.configured === true
+);
 
 const notesEnabled = computed({
   get: () => {
@@ -263,6 +272,7 @@ const updateStateFromAssistant = assistant => {
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
     web: config.feature_web || false,
+    documentReading: config.feature_document_reading || false,
   };
   state.contextAccess = {};
   state.toolAccess = resolveToolAccessForUsageMode(
@@ -270,7 +280,8 @@ const updateStateFromAssistant = assistant => {
     state.usageMode
   );
   if (state.features.web) {
-    webAccessEnabled.value = true;
+    webSearchEnabled.value = true;
+    webPageReadingEnabled.value = true;
   }
   state.avatarFile = null;
   state.avatarUrl = assistant.avatar_url || '';
@@ -312,7 +323,8 @@ const buildPayload = async () => {
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
-      feature_web: webAccessEnabled.value,
+      feature_web: webSearchEnabled.value && webPageReadingEnabled.value,
+      feature_document_reading: state.features.documentReading,
       tool_access: state.toolAccess,
     };
   }
@@ -351,6 +363,10 @@ watch(
   },
   { immediate: true }
 );
+
+onMounted(() => {
+  captainConfigStore.fetch();
+});
 
 defineExpose({
   buildPayload,
@@ -442,34 +458,101 @@ defineExpose({
       <label class="text-sm font-medium text-n-slate-12">
         {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
       </label>
-      <div class="flex flex-col gap-2">
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="state.features.conversationFaqs" />
+      <div class="flex flex-col gap-3">
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3"
+        >
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
+          <Switch v-model="state.features.conversationFaqs" />
         </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="state.features.memories" />
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3"
+        >
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_MEMORIES') }}
+          <Switch v-model="state.features.memories" />
         </label>
-        <label class="flex items-center gap-2">
-          <Checkbox v-model="notesEnabled" />
+        <label class="flex items-center justify-between gap-3">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_NOTES') }}
+          <Switch v-model="notesEnabled" />
         </label>
-        <label class="flex items-center gap-2">
-          <Checkbox v-model="state.features.citations" />
+        <label class="flex items-center justify-between gap-3">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CITATIONS') }}
+          <Switch v-model="state.features.citations" />
         </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="webAccessEnabled" />
-          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_WEB_ACCESS') }}
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3"
+        >
+          <span>
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH') }}
+            <span class="block text-xs text-n-slate-11">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_SEARCH_DESCRIPTION') }}
+            </span>
+          </span>
+          <Switch
+            v-model="webSearchEnabled"
+            :disabled="!isFirecrawlConfigured"
+          />
         </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="faqLookupEnabled" />
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3"
+        >
+          <span>
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PAGE_READING_DESCRIPTION'
+                )
+              }}
+            </span>
+          </span>
+          <Switch
+            v-model="webPageReadingEnabled"
+            :disabled="!isFirecrawlConfigured"
+          />
+        </label>
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3"
+        >
+          <span>
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING_DESCRIPTION'
+                )
+              }}
+            </span>
+          </span>
+          <Switch
+            v-model="state.features.documentReading"
+            :disabled="!isFirecrawlConfigured"
+          />
+        </label>
+        <div
+          v-if="isExternalAgent && !isFirecrawlConfigured"
+          class="text-xs text-n-amber-11"
+        >
+          {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.WEB_PROVIDER_REQUIRED') }}
+        </div>
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3"
+        >
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_FAQ_LOOKUP') }}
+          <Switch v-model="faqLookupEnabled" />
         </label>
-        <label v-if="isExternalAgent" class="flex items-center gap-2">
-          <Checkbox v-model="handoffToHumanEnabled" />
+        <label
+          v-if="isExternalAgent"
+          class="flex items-center justify-between gap-3"
+        >
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_HUMAN_HANDOFF') }}
+          <Switch v-model="handoffToHumanEnabled" />
         </label>
       </div>
     </div>

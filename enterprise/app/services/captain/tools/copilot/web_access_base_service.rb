@@ -10,16 +10,16 @@ class Captain::Tools::Copilot::WebAccessBaseService < Captain::Tools::Copilot::B
     account.captain_preferences[:runtime].to_h.stringify_keys
   end
 
-  def ensure_web_access_enabled!(capability)
-    return if Llm::RuntimePolicy.web_access_enabled?(capability, preferences: runtime_preferences)
-
-    raise ArgumentError, 'Web access is disabled in Captain settings'
-  end
-
   def ensure_firecrawl_configured!
     return if Captain::Tools::FirecrawlService.configured?
 
     raise ArgumentError, 'Firecrawl is not configured'
+  end
+
+  def ensure_web_tool_enabled!(tool_id)
+    return if Captain::ToolAccess.per_assistant_web_tool_enabled?(assistant, tool_id)
+
+    raise ArgumentError, 'Web capability is disabled for this assistant'
   end
 
   def firecrawl

@@ -5,7 +5,8 @@ module Captain::ToolAccess
     SCOPE_AGENT,
     SCOPE_ASSISTANT
   ].freeze
-  DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup web_search web_scrape_url handoff].freeze
+  DEFAULT_AGENT_TOOL_IDS = %w[faq_lookup handoff].freeze
+  PER_ASSISTANT_WEB_TOOL_IDS = %w[web_search web_scrape_url].freeze
 
   module_function
 
@@ -80,6 +81,29 @@ module Captain::ToolAccess
 
   def available_tool_ids_for(assistant, scope_name)
     available_tools_for_scope(assistant, scope_name).pluck(:id)
+  end
+
+  def per_assistant_web_tool_enabled?(assistant, tool_id, scope_name: nil)
+    normalized_tool_id = tool_id.to_s
+    return true unless PER_ASSISTANT_WEB_TOOL_IDS.include?(normalized_tool_id)
+    return false if assistant.blank?
+
+    normalized_scope = (scope_name.presence || runtime_scope_for(assistant)).to_s
+    raw_access = assistant.config.is_a?(Hash) ? assistant.config['tool_access'] : nil
+    raw_access = raw_access.to_h.deep_stringify_keys if raw_access.respond_to?(:to_h)
+    raw_scope = raw_access[normalized_scope] if raw_access.is_a?(Hash)
+
+    unless raw_scope.is_a?(Hash)
+      return ActiveModel::Type::Boolean.new.cast(assistant.config.to_h['feature_web'])
+    end
+
+    raw_scope = raw_scope.deep_stringify_keys
+    enabled = raw_scope.key?('enabled') ? ActiveModel::Type::Boolean.new.cast(raw_scope['enabled']) : true
+    enabled && Array(raw_scope['tool_ids']).map(&:to_s).include?(normalized_tool_id)
+  end
+
+  def runtime_scope_for(assistant)
+    assistant.respond_to?(:internal_assistant?) && assistant.internal_assistant? ? SCOPE_ASSISTANT : SCOPE_AGENT
   end
 
   def available_tools_for_scope(assistant, scope_name)

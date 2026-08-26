@@ -117,7 +117,7 @@ class Reminders::CaptainGeneratedMessageService
 
     messages.map do |message|
       payload = {
-        content: Captain::OpenAiMessageBuilderService.new(message: message).generate_content,
+        content: Captain::OpenAiMessageBuilderService.new(message: message, assistant: assistant).generate_content,
         role: message.message_type == 'incoming' ? 'user' : 'assistant'
       }
       payload[:agent_name] = message.additional_attributes['agent_name'] if message.additional_attributes&.dig('agent_name').present?

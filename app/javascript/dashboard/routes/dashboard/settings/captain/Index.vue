@@ -7,7 +7,6 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { useCaptain } from 'dashboard/composables/useCaptain';
 import { useConfig } from 'dashboard/composables/useConfig';
 import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
-import { formatBytes } from 'shared/helpers/FileHelper';
 
 import SettingsLayout from '../SettingsLayout.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
@@ -22,6 +21,13 @@ import NextSelect from 'dashboard/components-next/select/Select.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CaptainPaywall from 'next/captain/pageComponents/Paywall.vue';
+
+const props = defineProps({
+  section: {
+    type: String,
+    default: 'settings',
+  },
+});
 
 const { t } = useI18n();
 const { captainEnabled } = useCaptain();
@@ -40,6 +46,7 @@ const {
 } = storeToRefs(captainConfigStore);
 
 const isLoading = computed(() => uiFlags.value.isFetching);
+const isUsagePage = computed(() => props.section === 'usage');
 const audioTranscriptionPrompt = ref('');
 const knowledgeChunkSize = ref(0);
 const moderationFailureMode = ref('fail_open');
@@ -136,10 +143,6 @@ function formatPercent(value) {
 
 function formatRate(value) {
   return `${formatPercent(Number(value || 0) * 100)}%`;
-}
-
-function formatFileSize(value) {
-  return formatBytes(Number(value || 0), 0);
 }
 
 function providerHealthStatus(provider) {
@@ -528,111 +531,7 @@ const runtimeHealthItems = computed(() => [
     }),
   },
 ]);
-const openRouterReliabilityItems = computed(() => [
-  {
-    key: 'structured_recovery',
-    icon: 'i-lucide-wand-sparkles',
-    title: t('CAPTAIN_SETTINGS.RELIABILITY.STRUCTURED_RECOVERY_TITLE'),
-    description: t(
-      'CAPTAIN_SETTINGS.RELIABILITY.STRUCTURED_RECOVERY_DESCRIPTION'
-    ),
-    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.AUTO'),
-  },
-  {
-    key: 'context_compression',
-    icon: 'i-lucide-file-stack',
-    title: t('CAPTAIN_SETTINGS.RELIABILITY.CONTEXT_COMPRESSION_TITLE'),
-    description: t(
-      'CAPTAIN_SETTINGS.RELIABILITY.CONTEXT_COMPRESSION_DESCRIPTION'
-    ),
-    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.OVERFLOW_ONLY'),
-  },
-  {
-    key: 'zero_completion',
-    icon: 'i-lucide-shield-check',
-    title: t('CAPTAIN_SETTINGS.RELIABILITY.ZERO_COMPLETION_TITLE'),
-    description: t('CAPTAIN_SETTINGS.RELIABILITY.ZERO_COMPLETION_DESCRIPTION'),
-    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.AUTO'),
-  },
-  {
-    key: 'server_time',
-    icon: 'i-lucide-clock-3',
-    title: t('CAPTAIN_SETTINGS.RELIABILITY.SERVER_TIME_TITLE'),
-    description: t('CAPTAIN_SETTINGS.RELIABILITY.SERVER_TIME_DESCRIPTION'),
-    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.SYSTEM'),
-  },
-  {
-    key: 'blocked_extensions',
-    icon: 'i-lucide-lock-keyhole',
-    title: t('CAPTAIN_SETTINGS.RELIABILITY.BLOCKED_EXTENSIONS_TITLE'),
-    description: t(
-      'CAPTAIN_SETTINGS.RELIABILITY.BLOCKED_EXTENSIONS_DESCRIPTION'
-    ),
-    status: t('CAPTAIN_SETTINGS.RELIABILITY.STATUS.PROTECTED'),
-  },
-]);
-const webAccessMetadata = computed(
-  () => runtimeMetadata.value?.web_access || {}
-);
-const isFirecrawlConfigured = computed(
-  () => webAccessMetadata.value.configured === true
-);
-const webAccessStatusLabel = computed(() =>
-  isFirecrawlConfigured.value
-    ? t('CAPTAIN_SETTINGS.WEB_ACCESS.STATUS.CONFIGURED')
-    : t('CAPTAIN_SETTINGS.WEB_ACCESS.STATUS.MISSING')
-);
-const webAccessStatusClasses = computed(() =>
-  isFirecrawlConfigured.value
-    ? 'border-n-teal-8 text-n-teal-11 bg-n-teal-2'
-    : 'border-n-amber-8 text-n-amber-11 bg-n-amber-2'
-);
-const webAccessItems = computed(() => [
-  {
-    key: 'web_search_enabled',
-    icon: 'i-lucide-search',
-    title: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.TITLE'),
-    description: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.DESCRIPTION'),
-    enabled: runtime.value.web_search_enabled === true,
-    limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.LIMIT', {
-      count:
-        runtime.value.web_search_max_results ||
-        webAccessMetadata.value.search_default_results ||
-        5,
-    }),
-  },
-  {
-    key: 'web_scrape_enabled',
-    icon: 'i-lucide-file-search',
-    title: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.TITLE'),
-    description: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.DESCRIPTION'),
-    enabled: runtime.value.web_scrape_enabled === true,
-    limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.SCRAPE.LIMIT', {
-      count: formatNumber(
-        runtime.value.web_scrape_max_chars ||
-          webAccessMetadata.value.scrape_default_max_chars ||
-          12000
-      ),
-    }),
-  },
-  {
-    key: 'web_document_parse_enabled',
-    icon: 'i-lucide-file-text',
-    title: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.TITLE'),
-    description: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.DESCRIPTION'),
-    enabled: runtime.value.web_document_parse_enabled === true,
-    limit: t('CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.LIMIT', {
-      count: formatNumber(
-        runtime.value.web_document_parse_max_chars ||
-          webAccessMetadata.value.document_parse_default_max_chars ||
-          24000
-      ),
-      size: formatFileSize(
-        webAccessMetadata.value.document_parse_max_file_bytes || 0
-      ),
-    }),
-  },
-]);
+
 const usageMetricCards = computed(() => [
   {
     key: 'today_spend',
@@ -710,12 +609,7 @@ const isKnowledgeChunkSizeDirty = computed(
   () => Number(knowledgeChunkSize.value) !== storedKnowledgeChunkSize.value
 );
 
-const visibleProviderKeyOrder = [
-  'openrouter',
-  // 'openai',
-  // 'anthropic',
-  // 'gemini',
-];
+const visibleProviderKeyOrder = ['openrouter'];
 
 const providerKeyCards = computed(() => {
   return visibleProviderKeyOrder
@@ -736,16 +630,6 @@ const providerKeyCards = computed(() => {
     })
     .filter(Boolean);
 });
-const providerCredentialStatus = provider => {
-  switch (provider.credential.source) {
-    case 'account':
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.STATUS.ACCOUNT');
-    case 'global':
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.STATUS.GLOBAL');
-    default:
-      return t('CAPTAIN_SETTINGS.PROVIDER_KEYS.STATUS.MISSING');
-  }
-};
 const isProviderApiKeyDirty = providerKey =>
   providerApiKeys[providerKey]?.trim().length > 0;
 const selectedKnowledgeChunkOption = computed(() =>
@@ -857,12 +741,6 @@ async function handleRuntimeChange(runtimeConfig) {
     useAlert(t('CAPTAIN_SETTINGS.API.ERROR'));
     captainConfigStore.fetch();
   }
-}
-
-async function handleWebAccessToggle(key, enabled) {
-  await handleRuntimeChange({
-    [key]: enabled,
-  });
 }
 
 async function handleBudgetSave() {
@@ -1007,14 +885,23 @@ onMounted(() => {
   >
     <template #header>
       <BaseSettingsHeader
-        :title="t('CAPTAIN_SETTINGS.TITLE')"
-        :description="t('CAPTAIN_SETTINGS.DESCRIPTION')"
+        :title="
+          isUsagePage
+            ? t('CAPTAIN_SETTINGS.USAGE.TITLE')
+            : t('CAPTAIN_SETTINGS.TITLE')
+        "
+        :description="
+          isUsagePage
+            ? t('CAPTAIN_SETTINGS.USAGE.DESCRIPTION')
+            : t('CAPTAIN_SETTINGS.DESCRIPTION')
+        "
         icon-name="captain"
       />
     </template>
     <template #body>
       <div v-if="captainEnabled" class="flex flex-col gap-8">
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.PROVIDER_KEYS.TITLE')"
           :description="t('CAPTAIN_SETTINGS.PROVIDER_KEYS.DESCRIPTION')"
         >
@@ -1024,49 +911,14 @@ onMounted(() => {
               :key="provider.key"
               class="grid w-full gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
             >
-              <div class="flex items-start justify-between gap-3">
-                <div class="flex min-w-0 items-start gap-3">
-                  <Icon
-                    icon="i-lucide-key-round"
-                    class="mt-0.5 size-4 shrink-0 text-n-slate-11"
-                  />
-                  <div class="min-w-0">
-                    <div class="text-sm font-medium text-n-slate-12">
-                      {{ provider.displayName }}
-                    </div>
-                    <div class="mt-0.5 text-xs text-n-slate-11">
-                      {{
-                        t('CAPTAIN_SETTINGS.PROVIDER_KEYS.STATUS_LABEL', {
-                          status: providerCredentialStatus(provider),
-                        })
-                      }}
-                    </div>
-                    <div
-                      v-if="provider.credential.health?.status"
-                      class="mt-1 text-xs text-n-slate-11"
-                    >
-                      {{
-                        t('CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_LABEL', {
-                          status: providerHealthStatus(provider),
-                        })
-                      }}
-                      <span v-if="provider.credential.health?.checked_at">
-                        {{
-                          t('CAPTAIN_SETTINGS.PROVIDER_KEYS.CHECKED_AT', {
-                            date: formatDateTime(
-                              provider.credential.health.checked_at
-                            ),
-                          })
-                        }}
-                      </span>
-                    </div>
-                  </div>
+              <div class="flex min-w-0 items-center gap-3">
+                <Icon
+                  icon="i-lucide-key-round"
+                  class="size-4 shrink-0 text-n-slate-11"
+                />
+                <div class="text-sm font-medium text-n-slate-12">
+                  {{ provider.displayName }}
                 </div>
-                <span
-                  class="shrink-0 rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-[11px] font-medium text-n-slate-11"
-                >
-                  {{ providerCredentialStatus(provider) }}
-                </span>
               </div>
 
               <div class="flex flex-col gap-3 md:flex-row md:items-center">
@@ -1116,126 +968,7 @@ onMounted(() => {
         </SectionLayout>
 
         <SectionLayout
-          :title="t('CAPTAIN_SETTINGS.RELIABILITY.TITLE')"
-          :description="t('CAPTAIN_SETTINGS.RELIABILITY.DESCRIPTION')"
-          with-border
-        >
-          <div
-            class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5"
-            data-test="captain-reliability-section"
-          >
-            <div
-              v-for="item in openRouterReliabilityItems"
-              :key="item.key"
-              class="grid gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <Icon
-                  :icon="item.icon"
-                  class="mt-0.5 size-4 shrink-0 text-n-slate-11"
-                />
-                <span
-                  class="shrink-0 rounded-md border border-n-weak bg-n-alpha-2 px-2 py-0.5 text-[11px] font-medium text-n-slate-11"
-                >
-                  {{ item.status }}
-                </span>
-              </div>
-              <div class="grid gap-1">
-                <div class="text-xs font-medium text-n-slate-12">
-                  {{ item.title }}
-                </div>
-                <div class="text-xs leading-5 text-n-slate-11">
-                  {{ item.description }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </SectionLayout>
-
-        <SectionLayout
-          :title="t('CAPTAIN_SETTINGS.WEB_ACCESS.TITLE')"
-          :description="t('CAPTAIN_SETTINGS.WEB_ACCESS.DESCRIPTION')"
-          with-border
-        >
-          <div class="grid gap-4" data-test="captain-web-access-section">
-            <div
-              class="flex flex-col gap-3 rounded-xl border border-n-weak bg-n-solid-1 p-4 sm:flex-row sm:items-start sm:justify-between"
-            >
-              <div class="flex min-w-0 items-start gap-3">
-                <Icon
-                  icon="i-lucide-globe-2"
-                  class="mt-0.5 size-4 shrink-0 text-n-slate-11"
-                />
-                <div class="min-w-0">
-                  <div class="text-sm font-medium text-n-slate-12">
-                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.PROVIDER_TITLE') }}
-                  </div>
-                  <div class="mt-0.5 text-xs leading-5 text-n-slate-11">
-                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.PROVIDER_DESCRIPTION') }}
-                  </div>
-                </div>
-              </div>
-              <span
-                class="shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium"
-                :class="webAccessStatusClasses"
-              >
-                {{ webAccessStatusLabel }}
-              </span>
-            </div>
-
-            <div class="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
-              <div
-                v-for="item in webAccessItems"
-                :key="item.key"
-                class="grid gap-4 rounded-xl border border-n-weak bg-n-solid-1 p-4"
-              >
-                <div class="flex items-start justify-between gap-4">
-                  <div class="flex min-w-0 items-start gap-3">
-                    <Icon
-                      :icon="item.icon"
-                      class="mt-0.5 size-4 shrink-0 text-n-slate-11"
-                    />
-                    <div class="min-w-0">
-                      <div class="text-sm font-medium text-n-slate-12">
-                        {{ item.title }}
-                      </div>
-                      <div class="mt-0.5 text-xs leading-5 text-n-slate-11">
-                        {{ item.description }}
-                      </div>
-                    </div>
-                  </div>
-                  <Switch
-                    :model-value="item.enabled"
-                    :disabled="!isFirecrawlConfigured"
-                    @change="
-                      enabled => handleWebAccessToggle(item.key, enabled)
-                    "
-                  />
-                </div>
-
-                <div class="flex flex-wrap gap-2 border-t border-n-weak pt-3">
-                  <span
-                    class="rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-[11px] font-medium text-n-slate-11"
-                  >
-                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.SCOPE_AGENT') }}
-                  </span>
-                  <span
-                    class="rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-[11px] font-medium text-n-slate-11"
-                  >
-                    {{ t('CAPTAIN_SETTINGS.WEB_ACCESS.SCOPE_ASSISTANT') }}
-                  </span>
-                  <span
-                    class="rounded-md border border-n-weak bg-n-alpha-2 px-2 py-1 text-[11px] font-medium text-n-slate-11"
-                  >
-                    {{ item.limit }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </SectionLayout>
-
-        <SectionLayout
+          v-if="isUsagePage"
           :title="t('CAPTAIN_SETTINGS.USAGE.TITLE')"
           :description="t('CAPTAIN_SETTINGS.USAGE.DESCRIPTION')"
           with-border
@@ -1580,6 +1313,7 @@ onMounted(() => {
 
         <!-- Model Configuration Section -->
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.MODEL_CONFIG.TITLE')"
           :description="t('CAPTAIN_SETTINGS.MODEL_CONFIG.DESCRIPTION')"
         >
@@ -1803,6 +1537,7 @@ onMounted(() => {
         </SectionLayout>
 
         <SectionLayout
+          v-if="!isUsagePage"
           :title="t('CAPTAIN_SETTINGS.MODEL_CONFIG.SPECIALIZED_TITLE')"
           :description="
             t('CAPTAIN_SETTINGS.MODEL_CONFIG.SPECIALIZED_DESCRIPTION')
@@ -1819,6 +1554,7 @@ onMounted(() => {
               :title="feature.title"
               :description="feature.description"
               :models="modelsForFeature(feature.key)"
+              :allow-model-selection="feature.key === 'moderation'"
               :show-controls="feature.key !== 'image_recognition'"
               @change="handleModelChange"
             >

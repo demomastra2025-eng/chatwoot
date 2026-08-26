@@ -998,6 +998,13 @@
           "ALLOW_FAQ_LOOKUP": "Use FAQ lookup to search for relevant answers",
           "ALLOW_HUMAN_HANDOFF": "Hand off to a human when the AI agent cannot help",
           "ALLOW_WEB_ACCESS": "Allow web search",
+          "WEB_SEARCH": "Web search",
+          "WEB_SEARCH_DESCRIPTION": "Find current information on the public web.",
+          "WEB_PAGE_READING": "Read web pages",
+          "WEB_PAGE_READING_DESCRIPTION": "Read the content of a provided public URL.",
+          "DOCUMENT_READING": "Read documents",
+          "DOCUMENT_READING_DESCRIPTION": "Use text extracted from customer file attachments.",
+          "WEB_PROVIDER_REQUIRED": "These capabilities require the web provider to be configured by an administrator.",
           "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         },
         "ACCESS_MODES": {

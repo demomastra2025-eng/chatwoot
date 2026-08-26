@@ -1069,7 +1069,10 @@ RSpec.describe Message do
 
   describe '#content_for_llm' do
     it 'uses parsed document text when Captain document reading is enabled' do
-      account = create(:account, captain_runtime: { 'web_document_parse_enabled' => true })
+      account = create(:account)
+      account.enable_features!('captain_integration')
+      assistant = create(:captain_assistant, account: account, config: { 'feature_document_reading' => true })
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
       conversation = create(:conversation, account: account)
       message = create(:message, conversation: conversation, content: nil)
       message.attachments.create!(
@@ -1078,7 +1081,8 @@ RSpec.describe Message do
         meta: { 'parsed_text' => 'Parsed file text' }
       )
 
-      expect(message.content_for_llm).to eq('[File Attachment] Parsed file text')
+      expect(message.content_for_llm(assistant: assistant)).to eq('[File Attachment] Parsed file text')
+      expect(message.content_for_llm).to eq('[Attachment]')
     end
   end
 end

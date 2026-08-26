@@ -31,11 +31,8 @@ const isFeatureEnabledonAccount = useMapGetter(
 );
 
 const settingsBackRoutes = {
-  company_fields_settings_index: 'companies_dashboard_index',
   crm_settings_index: 'crm_deals_index',
-  crm_deal_fields_settings_index: 'crm_deals_index',
   crm_task_settings_index: 'crm_tasks_index',
-  crm_task_fields_settings_index: 'crm_tasks_index',
 };
 
 const canShowTab = tab => {

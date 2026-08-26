@@ -90,7 +90,7 @@ RSpec.describe Messages::DocumentParsingService, type: :service do
       end
     end
 
-    context 'when document parsing is disabled' do
+    context 'when Captain integration is disabled' do
       let(:attachment) do
         message.attachments.create!(
           account: account,
@@ -100,7 +100,7 @@ RSpec.describe Messages::DocumentParsingService, type: :service do
       end
 
       before do
-        account.update!(captain_runtime: { 'web_document_parse_enabled' => false })
+        account.disable_features!('captain_integration')
       end
 
       it 'does not parse or call Firecrawl' do

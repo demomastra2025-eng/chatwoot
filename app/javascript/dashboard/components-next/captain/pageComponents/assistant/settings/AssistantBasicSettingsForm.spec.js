@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, shallowMount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 
 import AssistantBasicSettingsForm from './AssistantBasicSettingsForm.vue';
+import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import {
   ADD_CONTACT_NOTE_TOOL_ID,
   ADD_PRIVATE_NOTE_TOOL_ID,
@@ -29,9 +31,9 @@ const buildWrapper = props =>
         Avatar: true,
         AssistantUsageModeSelector: true,
         Button: true,
-        Checkbox: true,
         Editor: true,
         Input: true,
+        Switch: true,
       },
     },
   });
@@ -39,6 +41,12 @@ const buildWrapper = props =>
 describe('AssistantBasicSettingsForm', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    setActivePinia(createPinia());
+    const captainConfigStore = useCaptainConfigStore();
+    captainConfigStore.runtimeMetadata = {
+      web_access: { configured: true },
+    };
+    vi.spyOn(captainConfigStore, 'fetch').mockResolvedValue();
   });
 
   it('includes capability tool access in profile payload so checkbox changes persist', async () => {
@@ -71,6 +79,7 @@ describe('AssistantBasicSettingsForm', () => {
       feature_memory: false,
       feature_citation: false,
       feature_web: false,
+      feature_document_reading: false,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
           enabled: true,
@@ -190,6 +199,34 @@ describe('AssistantBasicSettingsForm', () => {
     await flushPromises();
 
     expect(payload.assistant.config.feature_web).toBe(true);
+  });
+
+  it('persists web search, page reading, and document reading independently', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: { tool_access: {} },
+      },
+    });
+
+    wrapper.vm.webSearchEnabled = true;
+    wrapper.vm.webPageReadingEnabled = false;
+    wrapper.vm.state.features.documentReading = true;
+    await wrapper.vm.$nextTick();
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.feature_document_reading).toBe(true);
+    expect(payload.assistant.config.feature_web).toBe(false);
+    expect(payload.assistant.config.tool_access.agent.tool_ids).toContain(
+      WEB_SEARCH_TOOL_ID
+    );
+    expect(payload.assistant.config.tool_access.agent.tool_ids).not.toContain(
+      WEB_SCRAPE_URL_TOOL_ID
+    );
   });
 
   it('preserves internal assistant tool access from the instruction/tool-reference flow', async () => {

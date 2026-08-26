@@ -216,6 +216,15 @@ watch(selectedTabKey, () => {
 });
 
 watch(
+  () => props.initialTab,
+  tab => {
+    if (tab && isTabAllowed(tab)) {
+      selectedTabKey.value = tab;
+    }
+  }
+);
+
+watch(
   () => crmFieldForm.entityKind,
   entityKind => {
     crmFieldForm.contexts = filterCrmFieldContexts(

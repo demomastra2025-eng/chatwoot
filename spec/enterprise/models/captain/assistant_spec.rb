@@ -369,6 +369,47 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
     end
 
+    it 'does not add an explicitly referenced web tool when its per-assistant toggle is off' do
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+      assistant.description = 'Use [Web Search](tool://web_search) when needed.'
+      assistant.config = {
+        'context_access' => {},
+        'tool_access' => {
+          'agent' => {
+            'enabled' => true,
+            'tool_ids' => ['faq_lookup']
+          }
+        }
+      }
+
+      expect(assistant).to be_valid
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup')
+    end
+
+    it 'does not add a scenario-referenced web tool when its per-assistant toggle is off' do
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+      assistant.config = {
+        'tool_access' => {
+          'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+        }
+      }
+
+      expect(assistant.scenario_agent_tool_ids(referenced_tool_ids: ['web_search'])).to be_empty
+    end
+
+    it 'does not add a voice prompt-referenced web tool when its per-assistant toggle is off' do
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+      assistant.description = 'Use [Web Search](tool://web_search) when needed.'
+      assistant.config = {
+        'tool_access' => {
+          'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+        }
+      }
+
+      expect(assistant.voice_runtime_agent_tools.pluck(:id)).to contain_exactly('faq_lookup')
+    end
+
     it 'does not include non-default tools in the runtime set when they are only checked but not referenced' do
       account.enable_features!('crm_deals')
 

@@ -1,13 +1,17 @@
 require 'rails_helper'
 
 RSpec.describe Captain::OpenAiMessageBuilderService do
-  subject(:service) { described_class.new(message: message) }
+  subject(:service) { described_class.new(message: message, assistant: assistant) }
 
   let(:message) { create(:message, content: 'Hello world') }
+  let(:assistant) do
+    create(:captain_assistant, account: message.account, config: { 'feature_document_reading' => true })
+  end
   let(:image_recognition_service) { instance_double(Captain::ImageRecognitionService, perform: 'Recognized image content') }
 
   before do
     allow(Captain::ImageRecognitionService).to receive(:new).and_return(image_recognition_service)
+    allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
   end
 
   describe '#generate_content' do
@@ -252,7 +256,7 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
       end
 
       before do
-        message.account.update!(captain_runtime: { 'web_document_parse_enabled' => true })
+        message.account.enable_features!('captain_integration')
       end
 
       it 'includes stored document text instead of a generic attachment placeholder' do
@@ -264,6 +268,30 @@ RSpec.describe Captain::OpenAiMessageBuilderService do
           { type: 'text', text: "Document attachment: contract.pdf\nContract terms text" }
         )
         expect(result).not_to include({ type: 'text', text: 'User has shared an attachment' })
+      end
+
+      it 'does not expose parsed document text when the assistant capability is disabled' do
+        assistant.update!(config: { 'feature_document_reading' => false })
+        document_attachment.update!(meta: { 'parsed_text' => 'Contract terms text' })
+
+        result = service.send(:attachment_parts, attachments)
+
+        expect(result).not_to include(
+          { type: 'text', text: "Document attachment: contract.pdf\nContract terms text" }
+        )
+        expect(result).to include({ type: 'text', text: 'User has shared file attachment(s): contract.pdf' })
+      end
+
+      it 'does not expose cached document text when Firecrawl is unavailable' do
+        allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
+        document_attachment.update!(meta: { 'parsed_text' => 'Contract terms text' })
+
+        result = service.send(:attachment_parts, attachments)
+
+        expect(result).not_to include(
+          { type: 'text', text: "Document attachment: contract.pdf\nContract terms text" }
+        )
+        expect(result).to include({ type: 'text', text: 'User has shared file attachment(s): contract.pdf' })
       end
     end
 

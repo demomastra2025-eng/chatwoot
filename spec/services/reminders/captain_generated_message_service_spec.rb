@@ -5,7 +5,12 @@ RSpec.describe Reminders::CaptainGeneratedMessageService do
     it 'uses a temporary assistant clone for generation but returns the persisted assistant as message sender' do
       account = create(:account)
       conversation = create(:conversation, account: account)
-      assistant = create(:captain_assistant, account: account, description: 'Base assistant instructions')
+      assistant = create(
+        :captain_assistant,
+        account: account,
+        description: 'Base assistant instructions',
+        config: { 'feature_document_reading' => true }
+      )
       reminder = create(
         :reminder,
         account: account,
@@ -19,6 +24,8 @@ RSpec.describe Reminders::CaptainGeneratedMessageService do
         Captain::Assistant::AgentRunnerService,
         generate_response: { response: 'Generated follow-up', captain_trace: { 'steps' => [] } }
       )
+      history_message = create(:message, conversation: conversation, account: account, content: 'History')
+      allow(Captain::OpenAiMessageBuilderService).to receive(:new).and_call_original
 
       expect(Captain::Assistant::AgentRunnerService).to receive(:new) do |**kwargs|
         generation_assistant = kwargs.fetch(:assistant)
@@ -34,6 +41,10 @@ RSpec.describe Reminders::CaptainGeneratedMessageService do
         expect(result[:assistant]).to eq(assistant)
         expect(result[:assistant]).to be_persisted
       end.not_to change(Captain::Assistant, :count)
+      expect(Captain::OpenAiMessageBuilderService).to have_received(:new).with(
+        message: history_message,
+        assistant: have_attributes(config: include('feature_document_reading' => true))
+      )
     end
   end
 end

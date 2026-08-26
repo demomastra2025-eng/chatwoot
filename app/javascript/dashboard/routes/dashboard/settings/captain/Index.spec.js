@@ -145,10 +145,11 @@ const basePayload = ({ audioModel }) => ({
   },
 });
 
-const mountComponent = store => {
+const mountComponent = (store, props = {}) => {
   vi.spyOn(store, 'fetch').mockResolvedValue();
 
   return shallowMount(Index, {
+    props,
     global: {
       stubs: {
         SettingsLayout: {
@@ -162,10 +163,11 @@ const mountComponent = store => {
             'title',
             'description',
             'models',
+            'allowModelSelection',
             'showControls',
           ],
           template:
-            '<section :data-feature-key="featureKey"><span v-for="model in models || []" :key="model.id" data-test="model-id">{{ model.id }}</span><slot name="controls" /></section>',
+            '<section :data-feature-key="featureKey" :data-allow-model-selection="allowModelSelection"><span v-for="model in models || []" :key="model.id" data-test="model-id">{{ model.id }}</span><slot name="controls" /></section>',
         },
         ModelDropdown: true,
         NextButton: { template: '<button type="button"><slot /></button>' },
@@ -221,10 +223,10 @@ describe('Captain settings OpenRouter UX', () => {
     const wrapper = mountComponent(store);
 
     expect(wrapper.text()).toContain('OpenRouter');
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_LABEL'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_STATUS.VALID'
     );
     expect(wrapper.text()).not.toContain('OpenAI');
@@ -367,7 +369,7 @@ describe('Captain settings OpenRouter UX', () => {
       })
     );
 
-    const wrapper = mountComponent(store);
+    const wrapper = mountComponent(store, { section: 'usage' });
 
     expect(wrapper.find('[data-test="captain-usage-section"]').exists()).toBe(
       true
@@ -377,7 +379,7 @@ describe('Captain settings OpenRouter UX', () => {
     expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.NO_RECENT_ERRORS');
   });
 
-  it('renders web access controls and saves shared agent settings', async () => {
+  it('does not render shared web access controls in account settings', () => {
     const store = useCaptainConfigStore();
     const payload = basePayload({
       audioModel: {
@@ -390,33 +392,12 @@ describe('Captain settings OpenRouter UX', () => {
       },
     });
     store.applyPayload(payload);
-    const updateSpy = vi
-      .spyOn(store, 'updatePreferences')
-      .mockResolvedValue({ data: payload });
-
     const wrapper = mountComponent(store);
 
     expect(
       wrapper.find('[data-test="captain-web-access-section"]').exists()
-    ).toBe(true);
-    expect(wrapper.text()).toContain(
-      'CAPTAIN_SETTINGS.WEB_ACCESS.SEARCH.TITLE'
-    );
-    expect(wrapper.text()).toContain(
-      'CAPTAIN_SETTINGS.WEB_ACCESS.DOCUMENTS.TITLE'
-    );
-    expect(wrapper.text()).toContain('40 MB');
-    expect(wrapper.text()).toContain(
-      'CAPTAIN_SETTINGS.WEB_ACCESS.SCOPE_ASSISTANT'
-    );
-
-    await wrapper.vm.handleWebAccessToggle('web_search_enabled', true);
-
-    expect(updateSpy).toHaveBeenCalledWith({
-      captain_runtime: {
-        web_search_enabled: true,
-      },
-    });
+    ).toBe(false);
+    expect(wrapper.text()).not.toContain('CAPTAIN_SETTINGS.WEB_ACCESS.TITLE');
   });
 
   it('preserves zero budget limits and warning thresholds', () => {

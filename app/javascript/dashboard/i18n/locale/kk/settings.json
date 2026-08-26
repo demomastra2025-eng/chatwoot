@@ -58,13 +58,6 @@
           "UPDATE_SUCCESS": "Your Language settings have been updated successfully",
           "UPDATE_ERROR": "There is an error while updating the language settings, please try again",
           "USE_ACCOUNT_DEFAULT": "Use account default"
-        },
-        "SIDEBAR_VISIBILITY": {
-          "TITLE": "Left sidebar sections",
-          "NOTE": "Choose which sections stay visible in the left sidebar. By default, every section is shown.",
-          "SAVE": "Save sidebar visibility",
-          "UPDATE_SUCCESS": "Sidebar visibility has been updated successfully",
-          "UPDATE_ERROR": "There is an error while updating the sidebar visibility, please try again"
         }
       },
       "MESSAGE_SIGNATURE_SECTION": {
@@ -396,6 +389,7 @@
     "CAPTAIN_PLAYGROUND": "Playground",
     "CAPTAIN_INBOXES": "Channels",
     "CAPTAIN_SETTINGS": "Settings",
+    "CAPTAIN_USAGE": "Шығындар және бюджет",
     "CAPTAIN_PROMPTS": "Нұсқаулар",
     "CAPTAIN_FOLLOW_UPS": "Дожим сценарийлері",
     "CAPTAIN_RESTRICTIONS": "Restrictions",
@@ -411,6 +405,7 @@
     "INTEGRATIONS": "Интеграциялар",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Профиль",
+    "VISIBILITY": "Көріну",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -777,6 +772,7 @@
       },
       "NO_MODELS_MATCH": "Іздеуіңізге сәйкес модельдер жоқ.",
       "NO_COMPATIBLE_MODELS": "Үйлесімді бапталған модель жоқ. OpenRouter кілтін баптаңыз немесе каталог жаңартылуын күтіңіз.",
+      "MANAGED_GLOBALLY": "Модельді OneLink әкімшісі жаһандық деңгейде таңдайды.",
       "DIAGNOSTICS": {
         "TITLE": "Таңдалған {model} моделі қолжетімді емес",
         "SEARCH_TITLE": "{model} бұл функция үшін қолданылмайды",
@@ -814,7 +810,7 @@
       },
       "MODERATION": {
         "TITLE": "Moderation model",
-        "DESCRIPTION": "Classifies unsafe text before/after AI replies. OpenRouter models must support structured JSON output."
+        "DESCRIPTION": "Бөлек қорғаныс моделі кіріс мәтін мен дайын жауапты қолданар алдында қауіпті мазмұнға тексереді."
       },
       "AUDIO_TRANSCRIPTION": {
         "TITLE": "Audio recognition model",

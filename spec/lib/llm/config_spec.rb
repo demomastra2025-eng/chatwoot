@@ -175,6 +175,30 @@ RSpec.describe Llm::Config do
   end
 
   describe '.model_for' do
+    it 'keeps audio, image, and FAQ embedding models installation-managed' do
+      expect(described_class::INSTALLATION_MANAGED_MODEL_CONFIGS).to eq(
+        'audio_transcription' => 'CAPTAIN_AUDIO_TRANSCRIPTION_MODEL',
+        'image_recognition' => 'CAPTAIN_IMAGE_RECOGNITION_MODEL',
+        'help_center_search' => 'CAPTAIN_EMBEDDING_MODEL'
+      )
+    end
+
+    it 'uses the installation audio model instead of an account override' do
+      account = create(:account, captain_models: { 'audio_transcription' => 'whisper-1' })
+      upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', '[REDACTED]')
+      upsert_installation_config('CAPTAIN_AUDIO_TRANSCRIPTION_MODEL', 'openai/gpt-4o-mini-transcribe')
+      allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
+        'openai/gpt-4o-mini-transcribe' => {
+          'provider' => 'openrouter',
+          'type' => 'transcription',
+          'capabilities' => %w[audio_input transcription]
+        }
+      )
+
+      expect(described_class.model_for(feature: 'audio_transcription', account: account))
+        .to eq('openai/gpt-4o-mini-transcribe')
+    end
+
     it 'normalizes legacy Anthropic aliases from installation config when the provider key is configured' do
       upsert_installation_config('CAPTAIN_DEFAULT_MODEL', 'claude-sonnet-4.6')
       upsert_installation_config('CAPTAIN_ANTHROPIC_API_KEY', 'anthropic-key')

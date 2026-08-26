@@ -10,7 +10,12 @@ RSpec.describe Campaigns::CaptainGeneratedMessageService do
     let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox) }
 
     it 'uses the assistant fixed on the campaign even if the active inbox assistant changes before execution' do
-      fixed_assistant = create(:captain_assistant, account: account, name: 'Fixed Campaign AI')
+      fixed_assistant = create(
+        :captain_assistant,
+        account: account,
+        name: 'Fixed Campaign AI',
+        config: { 'feature_document_reading' => true }
+      )
       active_assistant = create(:captain_assistant, account: account, name: 'New Inbox AI')
       captain_inbox = create(:captain_inbox, inbox: inbox, captain_assistant: fixed_assistant)
       campaign = create(
@@ -23,6 +28,7 @@ RSpec.describe Campaigns::CaptainGeneratedMessageService do
         captain_assistant: fixed_assistant
       )
       captain_inbox.update!(captain_assistant: active_assistant)
+      history_message = create(:message, conversation: conversation, account: account, inbox: inbox, content: 'History')
       runner = instance_double(Captain::Assistant::AgentRunnerService, generate_response: { response: 'Fixed assistant message' })
 
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(runner)
@@ -38,6 +44,10 @@ RSpec.describe Campaigns::CaptainGeneratedMessageService do
           conversation: conversation,
           source: 'campaign_agent'
         )
+      )
+      expect(Captain::OpenAiMessageBuilderService).to have_received(:new).with(
+        message: history_message,
+        assistant: have_attributes(config: include('feature_document_reading' => true))
       )
     end
   end

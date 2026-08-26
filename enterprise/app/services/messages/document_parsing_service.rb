@@ -15,7 +15,15 @@ class Messages::DocumentParsingService
       return false if account.blank?
       return false unless account.feature_enabled?('captain_integration')
 
-      Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+      true
+    end
+
+    def reading_enabled_for?(assistant)
+      return false if assistant.blank?
+      return false unless ActiveModel::Type::Boolean.new.cast(assistant.config.to_h['feature_document_reading'])
+      return false unless Captain::Tools::FirecrawlService.configured?
+
+      enabled_for_account?(assistant.account)
     end
 
     def parseable_attachment?(attachment)

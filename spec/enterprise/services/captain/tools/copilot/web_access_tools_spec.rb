@@ -8,13 +8,21 @@ RSpec.describe 'Captain web access tools' do
   let(:firecrawl) { instance_double(Captain::Tools::FirecrawlService) }
 
   before do
+    assistant.update!(
+      config: {
+        'tool_access' => {
+          'agent' => { 'enabled' => true, 'tool_ids' => %w[web_search web_scrape_url] },
+          'assistant' => { 'enabled' => true, 'tool_ids' => %w[web_search web_scrape_url] }
+        }
+      }
+    )
     allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
     allow(Captain::Tools::FirecrawlService).to receive(:new).and_return(firecrawl)
   end
 
   describe Captain::Tools::Copilot::WebSearchService do
-    it 'searches through Firecrawl when web search is enabled' do
-      account.update!(captain_runtime: { 'web_search_enabled' => true, 'web_search_max_results' => 3 })
+    it 'searches through Firecrawl using account-level limits' do
+      account.update!(captain_runtime: { 'web_search_enabled' => false, 'web_search_max_results' => 3 })
       allow(firecrawl).to receive(:search).and_return(
         double(parsed_response: {
                  'success' => true,
@@ -37,15 +45,24 @@ RSpec.describe 'Captain web access tools' do
       )
     end
 
-    it 'is not available until enabled in Captain runtime settings' do
+    it 'is not available when Firecrawl is not configured' do
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
+
+      expect(described_class.new(assistant).execute(query: 'firecrawl')).to start_with('ERROR:')
+    end
+
+    it 'does not execute when web search is disabled for the assistant' do
+      assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
+      expect(firecrawl).not_to receive(:search)
+
       expect(described_class.new(assistant).execute(query: 'firecrawl')).to start_with('ERROR:')
     end
   end
 
   describe Captain::Tools::Copilot::WebScrapeUrlService do
-    it 'reads a public URL through Firecrawl when page reading is enabled' do
+    it 'reads a public URL through Firecrawl using account-level limits' do
       long_body = 'A' * 1100
-      account.update!(captain_runtime: { 'web_scrape_enabled' => true, 'web_scrape_max_chars' => 1000 })
+      account.update!(captain_runtime: { 'web_scrape_enabled' => false, 'web_scrape_max_chars' => 1000 })
       allow(firecrawl).to receive(:scrape).and_return(
         double(parsed_response: {
                  'success' => true,
@@ -65,23 +82,21 @@ RSpec.describe 'Captain web access tools' do
     end
 
     it 'rejects local URLs' do
-      account.update!(captain_runtime: { 'web_scrape_enabled' => true })
-
       expect(described_class.new(assistant).execute(url: 'http://localhost:3000')).to include('ERROR:')
     end
   end
 
   describe Captain::ToolCatalog do
-    it 'exposes web access tools only when Firecrawl and runtime toggles are enabled' do
-      expect(described_class.available_tool_ids_for(assistant, Captain::ToolAccess::SCOPE_AGENT))
-        .not_to include('web_search', 'web_scrape_url')
-
-      account.update!(captain_runtime: { 'web_search_enabled' => true, 'web_scrape_enabled' => true })
-
+    it 'uses Firecrawl configuration as the global prerequisite' do
       expect(described_class.available_tool_ids_for(assistant, Captain::ToolAccess::SCOPE_AGENT))
         .to include('web_search', 'web_scrape_url')
       expect(described_class.available_tool_ids_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT))
         .to include('web_search', 'web_scrape_url')
+
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
+
+      expect(described_class.available_tool_ids_for(assistant, Captain::ToolAccess::SCOPE_AGENT))
+        .not_to include('web_search', 'web_scrape_url')
     end
   end
 end

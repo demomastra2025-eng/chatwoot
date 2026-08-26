@@ -105,15 +105,22 @@ module Onelink
         flags.all? do |flag|
           case flag
           when 'web_search'
-            Llm::RuntimePolicy.web_access_enabled?(:search, account: auth_context.account) &&
-              Captain::Tools::FirecrawlService.configured?
+            web_tool_available?('web_search')
           when 'web_scrape'
-            Llm::RuntimePolicy.web_access_enabled?(:scrape, account: auth_context.account) &&
-              Captain::Tools::FirecrawlService.configured?
+            web_tool_available?('web_scrape_url')
           else
             true
           end
         end
+      end
+
+      def web_tool_available?(tool_id)
+        Captain::Tools::FirecrawlService.configured? &&
+          Captain::ToolAccess.per_assistant_web_tool_enabled?(
+            auth_context.assistant,
+            tool_id,
+            scope_name: auth_context.scope_name
+          )
       end
 
       def apply_assistant_confirmation(tool_definition)

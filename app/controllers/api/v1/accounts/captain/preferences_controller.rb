@@ -1,6 +1,6 @@
 class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::BaseController
-  HELP_CENTER_SEARCH_FEATURE = 'help_center_search'.freeze
   OPENROUTER_PROVIDER = Llm::OpenRouterModelCatalog::PROVIDER
+  INSTALLATION_MANAGED_MODEL_KEYS = Llm::Config::INSTALLATION_MANAGED_MODEL_CONFIGS.keys.freeze
   RELEASE_GATE_INTEGER_KEYS = %w[
     min_request_count
     max_avg_duration_ms
@@ -43,12 +43,20 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def update
+    locked_model_keys = requested_installation_managed_model_keys
+    if locked_model_keys.any?
+      return render json: {
+        error: 'installation_managed_models',
+        fields: locked_model_keys
+      }, status: :unprocessable_content
+    end
+
     params_to_update = captain_params
     Account.transaction do
+      remove_stale_installation_managed_model_overrides
       @current_account.captain_models = params_to_update[:captain_models] if params_to_update[:captain_models]
       @current_account.captain_features = params_to_update[:captain_features] if params_to_update[:captain_features]
       @current_account.captain_runtime = params_to_update[:captain_runtime] if params_to_update[:captain_runtime]
-      reconcile_help_center_search_model_for_runtime_change(params_to_update)
       @current_account.captain_observability = params_to_update[:captain_observability] if params_to_update[:captain_observability]
       update_provider_credentials if provider_credentials_update?
       @current_account.save!
@@ -94,8 +102,21 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def merged_captain_models
-    existing_models = @current_account.captain_models || {}
+    existing_models = @current_account.captain_models.to_h.except(*INSTALLATION_MANAGED_MODEL_KEYS)
     existing_models.merge(permitted_captain_models)
+  end
+
+  def requested_installation_managed_model_keys
+    raw_models = params[:captain_models]
+    return [] unless raw_models.respond_to?(:keys)
+
+    raw_models.keys.map(&:to_s) & INSTALLATION_MANAGED_MODEL_KEYS
+  end
+
+  def remove_stale_installation_managed_model_overrides
+    current_models = @current_account.captain_models.to_h
+    normalized_models = current_models.except(*INSTALLATION_MANAGED_MODEL_KEYS)
+    @current_account.captain_models = normalized_models if normalized_models != current_models
   end
 
   def merged_captain_features
@@ -115,32 +136,10 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
     )
   end
 
-  def reconcile_help_center_search_model_for_runtime_change(params_to_update)
-    return unless params_to_update[:captain_runtime].to_h.key?('knowledge_chunk_size')
-    return if help_center_search_model_update_requested?
-
-    current_models = @current_account.captain_models.to_h.stringify_keys
-    current_model = current_models[HELP_CENTER_SEARCH_FEATURE]
-    return if current_model.blank?
-    return if Llm::Models.valid_model_for?(HELP_CENTER_SEARCH_FEATURE, current_model, account: @current_account)
-
-    replacement_model = Llm::Models.default_model_for(HELP_CENTER_SEARCH_FEATURE, account: @current_account).presence ||
-                        Llm::Models.models_for(HELP_CENTER_SEARCH_FEATURE, account: @current_account).first
-    @current_account.captain_models = current_models.merge(HELP_CENTER_SEARCH_FEATURE => replacement_model).compact
-  end
-
-  def help_center_search_model_update_requested?
-    raw_models = params[:captain_models]
-    return false unless raw_models.respond_to?(:to_unsafe_h) || raw_models.respond_to?(:to_h)
-
-    raw_hash = raw_models.respond_to?(:to_unsafe_h) ? raw_models.to_unsafe_h : raw_models.to_h
-    raw_hash.with_indifferent_access.key?(HELP_CENTER_SEARCH_FEATURE)
-  end
 
   def permitted_captain_models
     params.require(:captain_models).permit(
-      :editor, :assistant, :copilot, :label_suggestion,
-      :audio_transcription, :image_recognition, :help_center_search, :moderation
+      :editor, :assistant, :copilot, :label_suggestion, :moderation
     ).to_h.stringify_keys
   end
 

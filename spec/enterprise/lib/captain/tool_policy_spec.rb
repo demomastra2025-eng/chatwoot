@@ -6,6 +6,43 @@ RSpec.describe Captain::ToolPolicy do
   let(:user) { create(:user) }
 
   describe '.runtime_allowed?' do
+    it 'uses Firecrawl availability instead of removed account web flags' do
+      account.update!(captain_runtime: { 'web_search_enabled' => false })
+      assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => ['web_search'] } } })
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+      tool_definition = Captain::ToolRegistry.definition_for('web_search').to_h
+
+      expect(described_class.runtime_allowed?(
+               tool_definition,
+               assistant: assistant,
+               scope_name: Captain::ToolAccess::SCOPE_AGENT
+             )).to be(true)
+    end
+
+    it 'blocks a web tool that is disabled for the assistant' do
+      assistant.update!(config: { 'tool_access' => { 'agent' => { 'enabled' => true, 'tool_ids' => [] } } })
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(true)
+      tool_definition = Captain::ToolRegistry.definition_for('web_search').to_h
+
+      expect(described_class.runtime_allowed?(
+               tool_definition,
+               assistant: assistant,
+               scope_name: Captain::ToolAccess::SCOPE_AGENT
+             )).to be(false)
+    end
+
+    it 'blocks web tools when Firecrawl is unavailable' do
+      account.update!(captain_runtime: { 'web_search_enabled' => true })
+      allow(Captain::Tools::FirecrawlService).to receive(:configured?).and_return(false)
+      tool_definition = Captain::ToolRegistry.definition_for('web_search').to_h
+
+      expect(described_class.runtime_allowed?(
+               tool_definition,
+               assistant: assistant,
+               scope_name: Captain::ToolAccess::SCOPE_AGENT
+             )).to be(false)
+    end
+
     it 'allows agent tools when their required feature is enabled' do
       account.enable_features!('crm_deals')
       tool_definition = Captain::ToolRegistry.definition_for('create_deal').to_h

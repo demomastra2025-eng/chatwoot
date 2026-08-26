@@ -998,6 +998,13 @@
           "ALLOW_FAQ_LOOKUP": "Использовать FAQ для поиска подходящих ответов",
           "ALLOW_HUMAN_HANDOFF": "Передавать человеку, если AI-агент не может помочь",
           "ALLOW_WEB_ACCESS": "Разрешить веб-поиск",
+          "WEB_SEARCH": "Веб-поиск",
+          "WEB_SEARCH_DESCRIPTION": "Искать актуальную информацию в открытом интернете.",
+          "WEB_PAGE_READING": "Чтение страниц",
+          "WEB_PAGE_READING_DESCRIPTION": "Читать содержимое указанной публичной ссылки.",
+          "DOCUMENT_READING": "Чтение документов",
+          "DOCUMENT_READING_DESCRIPTION": "Использовать текст из файлов, присланных клиентом.",
+          "WEB_PROVIDER_REQUIRED": "Для этих возможностей администратор должен настроить веб-провайдер.",
           "ALLOW_CONTACT_ATTRIBUTES": "Разрешить доступ к информации о контакте"
         },
         "ACCESS_MODES": {

@@ -99,18 +99,18 @@ class Captain::ToolPolicy
     required_runtime_flags.all? do |flag|
       case flag
       when 'web_search'
-        web_access_available?(:search)
+        web_access_available?('web_search')
       when 'web_scrape'
-        web_access_available?(:scrape)
+        web_access_available?('web_scrape_url')
       else
         true
       end
     end
   end
 
-  def web_access_available?(capability)
-    Llm::RuntimePolicy.web_access_enabled?(capability, account: assistant.account) &&
-      Captain::Tools::FirecrawlService.configured?
+  def web_access_available?(tool_id)
+    Captain::Tools::FirecrawlService.configured? &&
+      Captain::ToolAccess.per_assistant_web_tool_enabled?(assistant, tool_id, scope_name: scope_name)
   end
 
   def confirmation_requirements_satisfied?

@@ -143,4 +143,22 @@ describe('Attributes settings index', () => {
       { label: 'CRM.SETTINGS.FIELD_TABS.TASKS', value: 'task' },
     ]);
   });
+
+  it('shows the five workspace entities and follows a route-driven tab change', async () => {
+    const tabs = [
+      'conversation_attribute',
+      'contact_attribute',
+      'company_attribute',
+      'deal',
+      'task',
+    ];
+    const wrapper = mountComponent({ initialTab: 'deal', tabs });
+
+    expect(wrapper.vm.availableTabs.map(tab => tab.key)).toEqual(tabs);
+    expect(wrapper.vm.selectedTabKey).toBe('deal');
+
+    await wrapper.setProps({ initialTab: 'task' });
+
+    expect(wrapper.vm.selectedTabKey).toBe('task');
+  });
 });

@@ -300,7 +300,7 @@ class Message < ApplicationRecord
 
   # Returns message content suitable for LLM consumption
   # Falls back to audio transcription or attachment placeholder when content is nil
-  def content_for_llm
+  def content_for_llm(assistant: nil)
     return content if content.present?
 
     audio_transcription = attachments
@@ -310,7 +310,7 @@ class Message < ApplicationRecord
                           .presence
     return "[Voice Message] #{audio_transcription}" if audio_transcription.present?
 
-    if Llm::RuntimePolicy.web_access_enabled?(:document_parse, account: account)
+    if Messages::DocumentParsingService.reading_enabled_for?(assistant)
       document_text = attachments
                       .where(file_type: :file)
                       .filter_map { |att| att.meta&.dig('parsed_text').presence || att.meta&.dig('transcribed_text').presence }

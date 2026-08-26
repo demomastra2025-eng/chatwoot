@@ -47,8 +47,8 @@ import {
   INBOX_FLOW_ROUTE_NAMES,
 } from 'dashboard/routes/dashboard/settings/inbox/helpers/inboxFlowRoutes';
 import { employeeSettingsTabs } from 'dashboard/routes/dashboard/settings/employeeSettingsTabs';
-import { CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/conversationSettingsTabs';
 import { WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES } from 'dashboard/routes/dashboard/settings/workspaceSettingsTabs';
+import { canAccessSLASettings } from 'dashboard/routes/dashboard/settings/sla/slaSettingsPolicy';
 import {
   isInboxPendingDeletion,
   isWhatsappWebInbox,
@@ -90,7 +90,7 @@ const SIDEBAR_RUNTIME_ATTENTION_POLL_INTERVAL_MS = 15 * 1000;
 const { accountScopedRoute, currentAccount, isOnChatwootCloud } = useAccount();
 const route = useRoute();
 const router = useRouter();
-const { checkPermissions } = usePolicy();
+const { checkPermissions, shouldShow } = usePolicy();
 const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
 const searchShortcut = useKbd([`$mod`, 'k']);
@@ -117,7 +117,6 @@ const DESKTOP_SECONDARY_COLUMN_WIDTH = 178;
 const COMPANY_ACTIVE_ROUTE_NAMES = [
   'companies_dashboard_index',
   'companies_dashboard_show',
-  'company_fields_settings_index',
 ];
 
 const accountId = useMapGetter('getCurrentAccountId');
@@ -154,6 +153,17 @@ const hasCrmDeals = computed(() => {
   );
 });
 
+const hasCrmTasks = computed(() => {
+  return isFeatureEnabledonAccount.value(
+    accountId.value,
+    FEATURE_FLAGS.CRM_TASKS
+  );
+});
+
+const hasSLA = computed(() => {
+  return canAccessSLASettings(shouldShow);
+});
+
 const hasAutomationRules = computed(() => {
   return (
     checkPermissions(['administrator']) &&
@@ -178,12 +188,12 @@ const hasAuditLogs = computed(() => {
   );
 });
 
-const hasContactSettingsAccess = computed(() => {
+const hasSettingsAccess = computed(() => {
   return checkPermissions(['administrator']);
 });
 
-const hasSettingsAccess = computed(() => {
-  return checkPermissions(['administrator']);
+const hasCrmSettingsAccess = computed(() => {
+  return checkPermissions(['crm_settings_view', 'crm_settings_manage']);
 });
 
 const hasCompanies = computed(() => {
@@ -1199,16 +1209,6 @@ const contactTagSettingsRouteNames = [
 ];
 
 const labelSidebarActionItems = computed(() => [
-  ...(hasContactSettingsAccess.value
-    ? [
-        {
-          title: t('SIDEBAR.SETTINGS'),
-          icon: 'i-lucide-settings-2',
-          to: accountScopedRoute('labels_list'),
-          activeOn: contactTagSettingsRouteNames,
-        },
-      ]
-    : []),
   {
     title: t('LABEL_MGMT.HEADER_BTN_TXT'),
     icon: 'i-lucide-plus',
@@ -1217,17 +1217,6 @@ const labelSidebarActionItems = computed(() => [
 ]);
 
 const conversationSidebarActionItems = computed(() => [
-  ...(checkPermissions(['administrator'])
-    ? [
-        {
-          key: 'conversation-settings',
-          label: t('SIDEBAR.CONVERSATION_WORKFLOW'),
-          icon: 'i-lucide-settings-2',
-          activeOn: CONVERSATION_SETTINGS_ACTIVE_ROUTE_NAMES,
-          to: accountScopedRoute('conversation_workflow_index'),
-        },
-      ]
-    : []),
   {
     key: 'compose-conversation',
     label: t('CONTACT_PANEL.NEW_MESSAGE'),
@@ -1250,6 +1239,50 @@ const buildMyCompanySettingsMenuItems = () => [
     activeOn: WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES,
     to: accountScopedRoute('general_settings_index'),
   },
+  {
+    name: 'Visibility',
+    label: t('SIDEBAR.VISIBILITY'),
+    icon: 'i-lucide-eye',
+    activeOn: ['workspace_sidebar_visibility_settings_index'],
+    to: accountScopedRoute('workspace_sidebar_visibility_settings_index'),
+  },
+  {
+    name: 'Conversation Closure',
+    visibilityKey: 'MyCompany:ConversationClosure',
+    label: t('CONVERSATION_WORKFLOW.TABS.CLOSURE'),
+    icon: 'i-lucide-message-square-check',
+    activeOn: ['workspace_conversation_workflow_settings_index'],
+    to: accountScopedRoute('workspace_conversation_workflow_settings_index'),
+  },
+  ...(hasSLA.value
+    ? [
+        {
+          name: 'SLA',
+          visibilityKey: 'MyCompany:SLA',
+          label: t('CONVERSATION_WORKFLOW.TABS.SLA'),
+          icon: 'i-lucide-timer',
+          activeOn: ['workspace_sla_settings_index'],
+          to: accountScopedRoute('workspace_sla_settings_index'),
+        },
+      ]
+    : []),
+  ...(hasLegacyCustomAttributes.value || hasCrmDeals.value || hasCrmTasks.value
+    ? [
+        {
+          name: 'Additional Fields',
+          visibilityKey: 'MyCompany:AdditionalFields',
+          label: t('ATTRIBUTES_MGMT.HEADER'),
+          icon: 'i-lucide-list-plus',
+          permissions: [
+            'administrator',
+            'crm_settings_view',
+            'crm_settings_manage',
+          ],
+          activeOn: ['workspace_additional_fields_settings_index'],
+          to: accountScopedRoute('workspace_additional_fields_settings_index'),
+        },
+      ]
+    : []),
   {
     name: 'Lead Forms',
     visibilityKey: 'MyCompany:LeadForms',
@@ -1329,9 +1362,14 @@ const buildMyCompanySettingsMenuItems = () => [
 ];
 
 const myCompanySettingsMenuItems = computed(() => {
-  if (!checkPermissions(['administrator'])) return [];
+  const items = buildMyCompanySettingsMenuItems();
+  const accessibleItems = hasSettingsAccess.value
+    ? items
+    : items.filter(
+        item => item.permissions?.length && checkPermissions(item.permissions)
+      );
   return filterSidebarMenuItems(
-    buildMyCompanySettingsMenuItems(),
+    accessibleItems,
     effectiveSidebarVisibilitySettings.value
   );
 });
@@ -1547,14 +1585,6 @@ const menuItems = computed(() => {
         label: 'AI',
         defaultChildName: 'Profile',
         activeOn: ['captain_assistants_create_index'],
-        ...(checkPermissions(['administrator'])
-          ? {
-              actionTitle: t('SIDEBAR.CAPTAIN_SETTINGS'),
-              actionIcon: 'i-lucide-settings-2',
-              actionActiveOn: ['captain_settings_index'],
-              actionTo: accountScopedRoute('captain_settings_index'),
-            }
-          : {}),
         children: [
           {
             name: 'Profile',
@@ -1636,6 +1666,26 @@ const menuItems = computed(() => {
               navigationPath: 'captain_assistants_responses_index',
             }),
           },
+          ...(checkPermissions(['administrator'])
+            ? [
+                {
+                  name: 'AI expenses',
+                  visibilityKey: 'Captain:Usage',
+                  label: t('SIDEBAR.CAPTAIN_USAGE'),
+                  icon: 'i-lucide-wallet-cards',
+                  activeOn: ['captain_usage_index'],
+                  to: accountScopedRoute('captain_usage_index'),
+                },
+                {
+                  name: 'AI settings',
+                  visibilityKey: 'Captain:AISettings',
+                  label: t('SIDEBAR.CAPTAIN_SETTINGS'),
+                  icon: 'i-lucide-settings-2',
+                  activeOn: ['captain_settings_index'],
+                  to: accountScopedRoute('captain_settings_index'),
+                },
+              ]
+            : []),
         ],
       },
       {
@@ -1643,19 +1693,6 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.CONTACTS'),
         icon: 'i-lucide-square-user-round',
         defaultChildName: 'All Contacts',
-        actionTitle: t('SIDEBAR.SETTINGS'),
-        actionIcon: hasContactSettingsAccess.value ? 'i-lucide-settings-2' : '',
-        actionActiveOn: [
-          'contact_fields_settings_index',
-          ...contactTagSettingsRouteNames,
-        ],
-        actionTo: hasContactSettingsAccess.value
-          ? accountScopedRoute(
-              hasLegacyCustomAttributes.value
-                ? 'contact_fields_settings_index'
-                : 'labels_list'
-            )
-          : '',
         children: [
           {
             name: 'All Contacts',
@@ -1743,22 +1780,14 @@ const menuItems = computed(() => {
         label: t('SIDEBAR.PIPELINES'),
         icon: 'i-lucide-filter',
         to: accountScopedRoute('crm_deals_index'),
-        activeOn: [
-          'crm_deals_index',
-          'crm_settings_index',
-          'crm_deal_fields_settings_index',
-        ],
+        activeOn: ['crm_deals_index', 'crm_settings_index'],
       },
       {
         name: 'CRM Tasks',
         label: t('SIDEBAR.CRM_TASKS'),
         icon: 'i-lucide-list-todo',
         to: accountScopedRoute('crm_tasks_index'),
-        activeOn: [
-          'crm_tasks_index',
-          'crm_task_settings_index',
-          'crm_task_fields_settings_index',
-        ],
+        activeOn: ['crm_tasks_index', 'crm_task_settings_index'],
       },
       {
         name: 'Scheduling',
@@ -1918,7 +1947,7 @@ const menuItems = computed(() => {
           },
         ],
       },
-      ...(hasSettingsAccess.value
+      ...(hasSettingsAccess.value || hasCrmSettingsAccess.value
         ? [
             {
               name: 'Settings',
@@ -1927,46 +1956,50 @@ const menuItems = computed(() => {
               defaultChildName: 'Workspace',
               children: [
                 ...myCompanySettingsMenuItems.value,
-                ...(hasAutomationRules.value
+                ...(hasSettingsAccess.value
                   ? [
+                      ...(hasAutomationRules.value
+                        ? [
+                            {
+                              name: 'Settings Automation',
+                              visibilityKey: 'Settings:Automation',
+                              label: t('SIDEBAR.AUTOMATION'),
+                              icon: 'i-lucide-repeat',
+                              activeOn: ['automation_list'],
+                              to: accountScopedRoute('automation_list'),
+                            },
+                          ]
+                        : []),
                       {
-                        name: 'Settings Automation',
-                        visibilityKey: 'Settings:Automation',
-                        label: t('SIDEBAR.AUTOMATION'),
-                        icon: 'i-lucide-repeat',
-                        activeOn: ['automation_list'],
-                        to: accountScopedRoute('automation_list'),
+                        name: 'Settings Agent Bots',
+                        visibilityKey: 'Settings:AgentBots',
+                        label: t('SIDEBAR.AGENT_BOTS'),
+                        icon: 'i-lucide-webhook',
+                        to: accountScopedRoute('agent_bots'),
+                      },
+                      {
+                        name: 'Settings Macros',
+                        visibilityKey: 'Settings:Macros',
+                        label: t('SIDEBAR.MACROS'),
+                        icon: 'i-lucide-toy-brick',
+                        to: accountScopedRoute('macros_wrapper'),
+                      },
+                      {
+                        name: 'Settings Integrations',
+                        visibilityKey: 'Settings:Integrations',
+                        label: t('SIDEBAR.INTEGRATIONS'),
+                        icon: 'i-lucide-blocks',
+                        to: accountScopedRoute('settings_applications'),
+                      },
+                      {
+                        name: 'Settings Billing',
+                        visibilityKey: 'Settings:Billing',
+                        label: t('SIDEBAR.BILLING'),
+                        icon: 'i-lucide-credit-card',
+                        to: accountScopedRoute('billing_settings_index'),
                       },
                     ]
                   : []),
-                {
-                  name: 'Settings Agent Bots',
-                  visibilityKey: 'Settings:AgentBots',
-                  label: t('SIDEBAR.AGENT_BOTS'),
-                  icon: 'i-lucide-webhook',
-                  to: accountScopedRoute('agent_bots'),
-                },
-                {
-                  name: 'Settings Macros',
-                  visibilityKey: 'Settings:Macros',
-                  label: t('SIDEBAR.MACROS'),
-                  icon: 'i-lucide-toy-brick',
-                  to: accountScopedRoute('macros_wrapper'),
-                },
-                {
-                  name: 'Settings Integrations',
-                  visibilityKey: 'Settings:Integrations',
-                  label: t('SIDEBAR.INTEGRATIONS'),
-                  icon: 'i-lucide-blocks',
-                  to: accountScopedRoute('settings_applications'),
-                },
-                {
-                  name: 'Settings Billing',
-                  visibilityKey: 'Settings:Billing',
-                  label: t('SIDEBAR.BILLING'),
-                  icon: 'i-lucide-credit-card',
-                  to: accountScopedRoute('billing_settings_index'),
-                },
               ],
             },
           ]

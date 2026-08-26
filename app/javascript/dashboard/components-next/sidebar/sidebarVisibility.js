@@ -2,10 +2,6 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY =
-  'dashboard_sidebar_hidden_items_by_account';
-export const SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY =
-  'dashboard_sidebar_hidden_items_version_by_account';
 export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 16;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
@@ -15,6 +11,9 @@ const LEGACY_EMPLOYEES_VISIBILITY_KEY = 'Employees';
 const MY_COMPANY_VISIBILITY_KEY = 'MyCompany';
 const MY_COMPANY_VISIBILITY_ITEM_KEYS = Object.freeze([
   'MyCompany:Workspace',
+  'MyCompany:ConversationClosure',
+  'MyCompany:SLA',
+  'MyCompany:AdditionalFields',
   'MyCompany:LeadForms',
   'MyCompany:Channels',
   'MyCompany:Tags',
@@ -36,11 +35,6 @@ export const CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS = Object.freeze({
   cancelled: 'Conversation:AppointmentStatus:cancelled',
   no_show: 'Conversation:AppointmentStatus:no_show',
 });
-const ACCOUNT_CONTROLLED_CONVERSATION_VISIBILITY_KEYS = Object.freeze([
-  CONVERSATION_PIPELINES_VISIBILITY_KEY,
-  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-  ...Object.values(CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS),
-]);
 const LEGACY_CONVERSATION_DEFAULT_PIPELINE_VISIBILITY_KEY =
   'Conversation:DefaultPipeline';
 const REPORTS_DEALS_VISIBILITY_KEY = 'Reports:Deals';
@@ -52,14 +46,18 @@ const MY_COMPANY_LEAD_FORMS_VISIBILITY_KEY = 'MyCompany:LeadForms';
 const LEGACY_SMM_LEAD_FORMS_VISIBILITY_KEY = 'SMM:LeadForms';
 const LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY = 'Settings:LeadForms';
 
-const item = (key, labelKey, children = []) => ({
+const item = (key, labelKey, children = [], configurable = true) => ({
   key,
   labelKey,
   children,
+  configurable,
 });
 
 const MY_COMPANY_VISIBILITY_ITEMS = Object.freeze([
   item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
+  item('MyCompany:ConversationClosure', 'CONVERSATION_WORKFLOW.TABS.CLOSURE'),
+  item('MyCompany:SLA', 'CONVERSATION_WORKFLOW.TABS.SLA'),
+  item('MyCompany:AdditionalFields', 'ATTRIBUTES_MGMT.HEADER'),
   item(MY_COMPANY_LEAD_FORMS_VISIBILITY_KEY, 'SIDEBAR.LEAD_FORMS'),
   item('MyCompany:Channels', 'SIDEBAR.CHANNELS'),
   item('MyCompany:Tags', 'SIDEBAR.LABELS'),
@@ -81,39 +79,43 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     ),
     item(
       CONVERSATION_STATUSES_VISIBILITY_KEY,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STATUSES'
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STATUSES',
+      [
+        item('Conversation:Pending', 'SIDEBAR.PENDING_CONVERSATIONS'),
+        item('Conversation:Open', 'SIDEBAR.OPEN_CONVERSATIONS'),
+        item('Conversation:Snoozed', 'SIDEBAR.SNOOZED_CONVERSATIONS'),
+        item('Conversation:Resolved', 'SIDEBAR.RESOLVED_CONVERSATIONS'),
+      ]
     ),
-    item('Conversation:Pending', 'SIDEBAR.PENDING_CONVERSATIONS'),
-    item('Conversation:Open', 'SIDEBAR.OPEN_CONVERSATIONS'),
-    item('Conversation:Snoozed', 'SIDEBAR.SNOOZED_CONVERSATIONS'),
-    item('Conversation:Resolved', 'SIDEBAR.RESOLVED_CONVERSATIONS'),
     item(
       CONVERSATION_PIPELINES_VISIBILITY_KEY,
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
     ),
     item(
       CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENTS'
-    ),
-    item(
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.scheduled,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.SCHEDULED'
-    ),
-    item(
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.confirmed,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CONFIRMED'
-    ),
-    item(
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.completed,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.COMPLETED'
-    ),
-    item(
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.cancelled,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CANCELLED'
-    ),
-    item(
-      CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.NO_SHOW'
+      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENTS',
+      [
+        item(
+          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.scheduled,
+          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.SCHEDULED'
+        ),
+        item(
+          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.confirmed,
+          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CONFIRMED'
+        ),
+        item(
+          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.completed,
+          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.COMPLETED'
+        ),
+        item(
+          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.cancelled,
+          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CANCELLED'
+        ),
+        item(
+          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
+          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.NO_SHOW'
+        ),
+      ]
     ),
     item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
     item('Conversation:Teams', 'SIDEBAR.TEAMS'),
@@ -133,6 +135,8 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:Observability', 'SIDEBAR.CAPTAIN_OBSERVABILITY'),
     item('Captain:Evaluations', 'SIDEBAR.CAPTAIN_EVALUATIONS'),
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
+    item('Captain:Usage', 'SIDEBAR.CAPTAIN_USAGE'),
+    item('Captain:AISettings', 'SIDEBAR.CAPTAIN_SETTINGS'),
   ]),
   item('Contacts', 'SIDEBAR.CONTACTS', [
     item('Contacts:All', 'SIDEBAR.ALL_CONTACTS'),
@@ -167,35 +171,24 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Portals:Locales', 'SIDEBAR.HELP_CENTER.LOCALES'),
     item('Portals:Settings', 'SIDEBAR.HELP_CENTER.SETTINGS'),
   ]),
-  item('Settings', 'SIDEBAR.ADDITIONAL', [
-    ...MY_COMPANY_VISIBILITY_ITEMS,
-    item('Settings:Automation', 'SIDEBAR.AUTOMATION'),
-    item('Settings:AgentBots', 'SIDEBAR.AGENT_BOTS'),
-    item('Settings:Macros', 'SIDEBAR.MACROS'),
-    item('Settings:Integrations', 'SIDEBAR.INTEGRATIONS'),
-    item('Settings:Billing', 'SIDEBAR.BILLING'),
-  ]),
+  item(
+    'Settings',
+    'SIDEBAR.ADDITIONAL',
+    [
+      ...MY_COMPANY_VISIBILITY_ITEMS,
+      item('Settings:Automation', 'SIDEBAR.AUTOMATION'),
+      item('Settings:AgentBots', 'SIDEBAR.AGENT_BOTS'),
+      item('Settings:Macros', 'SIDEBAR.MACROS'),
+      item('Settings:Integrations', 'SIDEBAR.INTEGRATIONS'),
+      item('Settings:Billing', 'SIDEBAR.BILLING'),
+    ],
+    false
+  ),
 ]);
 
-export const PERSONAL_SIDEBAR_VISIBILITY_ITEMS = Object.freeze(
-  SIDEBAR_VISIBILITY_ITEMS.map(visibilityItem => {
-    if (visibilityItem.key !== 'Conversation') {
-      return visibilityItem;
-    }
-
-    return {
-      ...visibilityItem,
-      children: visibilityItem.children.filter(
-        child =>
-          !ACCOUNT_CONTROLLED_CONVERSATION_VISIBILITY_KEYS.includes(child.key)
-      ),
-    };
-  })
-);
-
 const flattenSidebarVisibilityItems = items =>
-  items.flatMap(({ key, children = [] }) => [
-    key,
+  items.flatMap(({ key, children = [], configurable = true }) => [
+    ...(configurable ? [key] : []),
     ...flattenSidebarVisibilityItems(children),
   ]);
 
@@ -219,11 +212,6 @@ export const normalizeSidebarHiddenItems = hiddenItems => {
 
   return SIDEBAR_VISIBILITY_ITEM_KEYS.filter(key => hiddenItemsSet.has(key));
 };
-
-const normalizePersonalSidebarHiddenItems = hiddenItems =>
-  normalizeSidebarHiddenItems(hiddenItems).filter(
-    key => !ACCOUNT_CONTROLLED_CONVERSATION_VISIBILITY_KEYS.includes(key)
-  );
 
 const normalizeLegacyCaptainPromptsVisibility = (hiddenItems, version) => {
   const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
@@ -414,104 +402,16 @@ export const getSidebarHiddenItems = uiSettings =>
     )
   );
 
-const accountScopedValue = (uiSettings, settingsKey, accountId) => {
-  const scopedSettings = uiSettings?.[settingsKey];
-  const accountKey = String(accountId || '');
-
-  if (!accountKey || !scopedSettings || typeof scopedSettings !== 'object') {
-    return undefined;
-  }
-
-  return scopedSettings[accountKey];
-};
-
-export const getAccountScopedSidebarHiddenItems = (uiSettings, accountId) => {
-  const scopedHiddenItems = accountScopedValue(
-    uiSettings,
-    SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY,
-    accountId
-  );
-
-  if (!Array.isArray(scopedHiddenItems)) {
-    return normalizePersonalSidebarHiddenItems(
-      Array.isArray(uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY])
-        ? getSidebarHiddenItems(uiSettings)
-        : getSidebarHiddenItems({})
-    );
-  }
-
-  return normalizePersonalSidebarHiddenItems(
-    getSidebarHiddenItems({
-      [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: scopedHiddenItems,
-      [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
-        accountScopedValue(
-          uiSettings,
-          SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY,
-          accountId
-        ) || SIDEBAR_VISIBILITY_CURRENT_VERSION,
-    })
-  );
-};
-
-export const buildAccountScopedSidebarUISettings = ({
-  uiSettings,
-  accountId,
-  hiddenItems,
-}) => {
-  const accountKey = String(accountId || '');
-  if (!accountKey) return {};
-
-  return {
-    [SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY]: {
-      ...(uiSettings?.[SIDEBAR_VISIBILITY_ACCOUNT_UI_SETTINGS_KEY] || {}),
-      [accountKey]: normalizePersonalSidebarHiddenItems(hiddenItems),
-    },
-    [SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY]: {
-      ...(uiSettings?.[SIDEBAR_VISIBILITY_ACCOUNT_VERSION_UI_SETTINGS_KEY] ||
-        {}),
-      [accountKey]: SIDEBAR_VISIBILITY_CURRENT_VERSION,
-    },
-  };
-};
-
 export const buildEffectiveSidebarVisibilitySettings = ({
-  uiSettings,
   accountSettings,
-  accountId,
-}) => {
-  const accountPolicyHiddenItems = Array.isArray(
-    accountSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]
-  )
-    ? getSidebarHiddenItems(accountSettings)
-    : [];
-  const personalHiddenItems = getAccountScopedSidebarHiddenItems(
-    uiSettings,
-    accountId
-  );
-
-  return {
-    ...(uiSettings || {}),
-    [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: normalizeSidebarHiddenItems([
-      ...accountPolicyHiddenItems,
-      ...personalHiddenItems,
-    ]),
-    [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
-      SIDEBAR_VISIBILITY_CURRENT_VERSION,
-  };
-};
-
-export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze(
-  SIDEBAR_VISIBILITY_ITEMS.find(
-    visibilityItem => visibilityItem.key === 'Conversation'
-  )?.children || []
-);
-
-export const getConversationSidebarHiddenItems = uiSettings =>
-  getSidebarHiddenItems(uiSettings).filter(key =>
-    CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.some(
-      visibilityItem => visibilityItem.key === key
-    )
-  );
+}) => ({
+  ...(accountSettings || {}),
+  [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: getSidebarHiddenItems(
+    accountSettings || {}
+  ),
+  [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+    SIDEBAR_VISIBILITY_CURRENT_VERSION,
+});
 
 export const buildSidebarVisibilityState = uiSettings => {
   const hiddenItems = new Set(getSidebarHiddenItems(uiSettings));
@@ -524,13 +424,6 @@ export const buildSidebarVisibilityState = uiSettings => {
 
 export const getSidebarHiddenItemsFromState = state =>
   SIDEBAR_VISIBILITY_ITEM_KEYS.filter(key => state?.[key] === false);
-
-export const getConversationSidebarHiddenItemsFromState = state =>
-  getSidebarHiddenItemsFromState(state).filter(key =>
-    CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.some(
-      visibilityItem => visibilityItem.key === key
-    )
-  );
 
 export const filterSidebarMenuItems = (menuItems, uiSettings) => {
   const hiddenItems = new Set(getSidebarHiddenItems(uiSettings));

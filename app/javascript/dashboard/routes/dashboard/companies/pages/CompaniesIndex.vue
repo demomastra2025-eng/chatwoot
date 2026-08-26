@@ -4,10 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useI18n } from 'vue-i18n';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAlert } from 'dashboard/composables';
-import { useMapGetter } from 'dashboard/composables/store';
-import { usePolicy } from 'dashboard/composables/usePolicy';
 import { debounce } from '@chatwoot/utils';
-import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useCompaniesStore } from 'dashboard/stores/companies';
 import CompaniesListLayout from 'dashboard/components-next/Companies/CompaniesListLayout.vue';
 import CompaniesCard from 'dashboard/components-next/Companies/CompaniesCard/CompaniesCard.vue';
@@ -21,12 +18,7 @@ const companiesStore = useCompaniesStore();
 const route = useRoute();
 const router = useRouter();
 const { t } = useI18n();
-const { checkPermissions } = usePolicy();
 const createCompanyDialogRef = ref(null);
-const accountId = useMapGetter('getCurrentAccountId');
-const isFeatureEnabledonAccount = useMapGetter(
-  'accounts/isFeatureEnabledonAccount'
-);
 
 const { updateUISettings, uiSettings } = useUISettings();
 
@@ -63,14 +55,6 @@ const activeSort = computed(() => sortState.activeSort);
 const activeOrdering = computed(() => sortState.activeOrdering);
 
 const isFetchingList = computed(() => uiFlags.value.fetchingList);
-const showCompanySettingsButton = computed(
-  () =>
-    checkPermissions(['administrator']) &&
-    isFeatureEnabledonAccount.value(
-      accountId.value,
-      FEATURE_FLAGS.CUSTOM_ATTRIBUTES
-    )
-);
 
 const buildSortAttr = () =>
   `${sortState.activeOrdering}${sortState.activeSort}`;
@@ -133,13 +117,6 @@ const onPageChange = page => {
 
 const openCreateCompanyDialog = prefill => {
   createCompanyDialogRef.value?.openWithPrefill(prefill || null);
-};
-
-const openCompanySettings = () => {
-  router.push({
-    name: 'company_fields_settings_index',
-    params: { accountId: route.params.accountId || accountId.value },
-  });
 };
 
 const showCompany = companyId => {
@@ -269,13 +246,11 @@ watch(
     :active-sort="activeSort"
     :active-ordering="activeOrdering"
     :is-fetching-list="isFetchingList"
-    :show-settings-button="showCompanySettingsButton"
     :show-pagination-footer="!!companies.length"
     @update:current-page="onPageChange"
     @update:sort="handleSort"
     @search="onSearch"
     @create="openCreateCompanyDialog"
-    @open-settings="openCompanySettings"
   >
     <div v-if="isFetchingList" class="flex items-center justify-center p-8">
       <span class="text-n-slate-11 text-base">{{

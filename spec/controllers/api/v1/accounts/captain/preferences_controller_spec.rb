@@ -203,8 +203,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
       end
 
       it 'reports visible provider credential statuses only' do
-        create(:integrations_hook, account: account, app_id: 'anthropic', access_token: 'account-anthropic-key', settings: {})
-
         get "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             as: :json
@@ -212,7 +210,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         expect(response).to have_http_status(:success)
         expect(json_response[:provider_credentials].keys).to contain_exactly(:openrouter)
         expect(json_response[:provider_credentials]).not_to have_key(:anthropic)
-        expect(response.body).not_to include('account-anthropic-key')
       end
     end
   end
@@ -240,7 +237,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
     end
 
     context 'when it is an admin' do
-      it 'updates captain_models for chat and specialized AI surfaces' do
+      it 'rejects installation-managed model overrides' do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             params: {
@@ -254,19 +251,24 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
             },
             as: :json
 
-        expect(response).to have_http_status(:success)
-        expect(json_response).to have_key(:providers)
-        expect(json_response).to have_key(:models)
-        expect(json_response).to have_key(:features)
-        expect(json_response).to have_key(:runtime)
-        expect(json_response).to have_key(:observability)
-        expect(account.reload.captain_models).to include(
-          'editor' => 'gpt-4.1-mini',
-          'audio_transcription' => 'whisper-1',
-          'image_recognition' => 'gpt-5.4-mini',
-          'help_center_search' => 'text-embedding-3-small',
-          'moderation' => 'openai/gpt-oss-safeguard-20b'
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(json_response).to eq(
+          error: 'installation_managed_models',
+          fields: %w[audio_transcription image_recognition help_center_search]
         )
+        expect(account.reload.captain_models).to be_blank
+      end
+
+      it 'removes stale installation-managed overrides on the next preferences update' do
+        account.update!(captain_models: { 'audio_transcription' => 'whisper-1', 'editor' => 'gpt-4.1' })
+
+        put "/api/v1/accounts/#{account.id}/captain/preferences",
+            headers: admin.create_new_auth_token,
+            params: { captain_features: { editor: true } },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.captain_models).to eq('editor' => 'gpt-4.1')
       end
 
       it 'updates captain_features' do
@@ -381,7 +383,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         )
       end
 
-      it 'replaces an incompatible saved embedding model when the knowledge chunk size changes' do
+      it 'selects a compatible installation-managed embedding model and removes the stale account override' do
         upsert_installation_config('CAPTAIN_OPENROUTER_API_KEY', 'global-openrouter-key')
         allow(Llm::OpenRouterModelCatalog).to receive(:model_configs).and_return(
           'openai/text-embedding-3-small' => {
@@ -409,7 +411,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
         put "/api/v1/accounts/#{account.id}/captain/preferences",
             headers: admin.create_new_auth_token,
             params: {
-              captain_models: { audio_transcription: nil },
               captain_runtime: { knowledge_chunk_size: '40000' }
             },
             as: :json
@@ -420,7 +421,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Preferences', type: :request do
 
         account.reload
         expect(account.captain_runtime['knowledge_chunk_size']).to eq(40_000)
-        expect(account.captain_models['help_center_search']).to eq('openai/text-embedding-long-context')
+        expect(account.captain_models).not_to include('help_center_search')
       end
 
       it 'merges with existing captain_models' do

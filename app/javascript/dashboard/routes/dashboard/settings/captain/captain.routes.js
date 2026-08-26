@@ -6,6 +6,26 @@ const Index = () => import('./Index.vue');
 export default {
   routes: [
     {
+      path: frontendURL('accounts/:accountId/captain/usage'),
+      component: SettingsWrapper,
+      meta: {
+        permissions: ['administrator'],
+        featureFlag: FEATURE_FLAGS.CAPTAIN,
+        installationTypes: [
+          INSTALLATION_TYPES.ENTERPRISE,
+          INSTALLATION_TYPES.CLOUD,
+        ],
+      },
+      children: [
+        {
+          path: '',
+          name: 'captain_usage_index',
+          component: Index,
+          props: { section: 'usage' },
+        },
+      ],
+    },
+    {
       path: frontendURL('accounts/:accountId/settings/captain'),
       meta: {
         permissions: ['administrator'],
@@ -22,6 +42,7 @@ export default {
           path: '',
           name: 'captain_settings_index',
           component: Index,
+          props: { section: 'settings' },
           meta: {
             permissions: ['administrator'],
             featureFlag: FEATURE_FLAGS.CAPTAIN,

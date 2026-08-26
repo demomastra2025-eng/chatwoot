@@ -336,8 +336,16 @@
   value: 'openai/gpt-oss-safeguard-20b'
   locked: false
 - name: CAPTAIN_EMBEDDING_MODEL
-  display_title: 'Embedding Model (optional)'
-  description: 'The embedding model configured for use in AI Agents. Default: text-embedding-3-small'
+  display_title: 'FAQ Embedding Model'
+  description: 'Installation-wide embedding model for FAQ and knowledge search. Workspace administrators cannot override it.'
+  locked: false
+- name: CAPTAIN_AUDIO_TRANSCRIPTION_MODEL
+  display_title: 'Audio Transcription Model'
+  description: 'Installation-wide model for audio transcription. Workspace administrators cannot override it.'
+  locked: false
+- name: CAPTAIN_IMAGE_RECOGNITION_MODEL
+  display_title: 'Image Recognition Model'
+  description: 'Installation-wide model for image recognition. Workspace administrators cannot override it.'
   locked: false
 - name: CAPTAIN_FIRECRAWL_API_KEY
   display_title: 'FireCrawl API Key (optional)'
