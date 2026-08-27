@@ -1,3 +1,5 @@
 backend: RAILS_ENV=test bin/rails s -p 5050
 vite: bin/vite dev
 worker: RAILS_ENV=test dotenv bundle exec sidekiq -C config/sidekiq.yml
+medelement_sync_worker: RAILS_ENV=test ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_medelement_sync.yml
+medelement_commands_worker: RAILS_ENV=test ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_medelement_commands.yml

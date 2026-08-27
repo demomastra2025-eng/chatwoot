@@ -24,7 +24,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
         cron: '*/2 * * * * Asia/Almaty',
         args: [hook.id, nil, %w[receptions]],
         active_job: true,
-        queue: 'medium',
+        queue: 'medelement_sync',
         status: 'enabled'
       )
     )
@@ -35,7 +35,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
         cron: '0,15,30,45 * * * * Asia/Almaty',
         args: [hook.id, nil, %w[specialists contacts receptions]],
         active_job: true,
-        queue: 'medium',
+        queue: 'medelement_sync',
         status: 'enabled'
       )
     )

@@ -1,5 +1,5 @@
 class Integrations::Medelement::CleanupJob < MutexApplicationJob
-  queue_as :medium
+  queue_as :medelement_sync
   LOCK_TIMEOUT = 10.minutes
 
   retry_on LockAcquisitionError, wait: 30.seconds, attempts: 6

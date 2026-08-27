@@ -18,7 +18,7 @@ trigger_scheduled_items_job:
 medelement_provider_command_dispatcher_job:
   cron: '*/1 * * * *'
   class: 'Integrations::Medelement::ProviderCommandDispatcherJob'
-  queue: scheduled_jobs
+  queue: medelement_provider_commands
 
 # executed every minute to keep Weixin Personal gateway pollers synced after gateway restarts
 weixin_sync_channels_job:

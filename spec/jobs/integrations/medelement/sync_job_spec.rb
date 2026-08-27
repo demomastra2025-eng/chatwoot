@@ -1,4 +1,5 @@
 require 'rails_helper'
+require 'erb'
 
 RSpec.describe Integrations::Medelement::SyncJob, type: :job do
   let(:account) { create(:account) }
@@ -21,6 +22,82 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
       phases.each { |phase| sync_run.complete_phase!(phase, imported_count: 1, skipped_count: 0) }
       sync_run.finish!
     end
+  end
+
+  describe 'Sidekiq queue isolation' do
+    def rendered_config(path)
+      YAML.safe_load(
+        ERB.new(Rails.root.join(path).read).result,
+        permitted_classes: [Symbol],
+        aliases: true
+      )
+    end
+
+    it 'routes provider reads and cleanup to the isolated sync queue' do
+      jobs = [
+        described_class,
+        Integrations::Medelement::PatientEnrichmentJob,
+        Integrations::Medelement::CleanupJob,
+        Integrations::Medelement::DispatchJob
+      ]
+
+      expect(jobs.map(&:queue_name).uniq).to eq(['medelement_sync'])
+    end
+
+    it 'routes provider writes and their dispatcher to the isolated commands queue' do
+      jobs = [
+        Integrations::Medelement::ProviderCommandDispatcherJob,
+        Integrations::Medelement::ProviderCommandJob,
+        Integrations::Medelement::ProviderCommandConfirmationJob,
+        Integrations::Medelement::ProviderCommandReconciliationJob,
+        Integrations::Medelement::OutboundChangeJob
+      ]
+
+      expect(jobs.map(&:queue_name).uniq).to eq(['medelement_provider_commands'])
+    end
+
+    it 'serves each MedElement queue from a dedicated worker only' do
+      with_modified_env(
+        MEDELEMENT_SYNC_SIDEKIQ_CONCURRENCY: nil,
+        MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY: nil
+      ) do
+        sync_config = rendered_config('config/sidekiq_medelement_sync.yml')
+        commands_config = rendered_config('config/sidekiq_medelement_commands.yml')
+        shared_config = rendered_config('config/sidekiq.yml')
+
+        expect(sync_config[:queues]).to eq(['medelement_sync'])
+        expect(sync_config[:concurrency]).to eq(1)
+        expect(commands_config[:queues]).to eq(['medelement_provider_commands'])
+        expect(commands_config[:concurrency]).to eq(2)
+        expect(shared_config[:queues]).not_to include('medelement_sync', 'medelement_provider_commands')
+      end
+    end
+  end
+
+  it 'reroutes jobs serialized on the legacy shared queue without running provider work' do
+    legacy_job = described_class.new
+    legacy_job.queue_name = 'medium'
+    configured_job = instance_double(ActiveJob::ConfiguredJob)
+    rerouted_job = instance_double(described_class)
+    allow(described_class).to receive(:set).with(queue: 'medelement_sync').and_return(configured_job)
+    allow(configured_job).to receive(:perform_later).and_return(rerouted_job)
+
+    legacy_job.perform(hook.id, run.id, ['services'])
+
+    expect(configured_job).to have_received(:perform_later).with(hook.id, run.id, ['services'])
+    expect(coordinator).not_to have_received(:perform)
+  end
+
+  it 'raises when a legacy queue reroute cannot be enqueued' do
+    legacy_job = described_class.new
+    legacy_job.queue_name = 'medium'
+    configured_job = instance_double(ActiveJob::ConfiguredJob)
+    allow(described_class).to receive(:set).with(queue: 'medelement_sync').and_return(configured_job)
+    allow(configured_job).to receive(:perform_later).and_return(false)
+
+    expect { legacy_job.perform(hook.id, run.id, ['services']) }
+      .to raise_error(ActiveJob::EnqueueError, 'Failed to reroute legacy Medelement sync job')
+    expect(coordinator).not_to have_received(:perform)
   end
 
   it 'executes and completes the exact persisted run passed by the launcher' do

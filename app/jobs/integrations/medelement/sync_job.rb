@@ -1,5 +1,5 @@
 class Integrations::Medelement::SyncJob < MutexApplicationJob
-  queue_as :medium
+  queue_as :medelement_sync
   LOCK_TIMEOUT = 6.hours
   API_RETRY_BASE_SECONDS = 30
   API_RETRY_MAX_SECONDS = 5.minutes.to_i
@@ -18,6 +18,8 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
   discard_on ActiveRecord::RecordNotFound
 
   def perform(hook_id, sync_run_id = nil, scheduled_phases = nil)
+    return reroute_legacy_queue(hook_id, sync_run_id, scheduled_phases) if queue_name != self.class.queue_name
+
     hook = Integrations::Hook.find(hook_id)
     sync_run = find_or_create_sync_run(hook, sync_run_id, scheduled_phases)
     return unless sync_run
@@ -35,6 +37,13 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
   end
 
   private
+
+  def reroute_legacy_queue(hook_id, sync_run_id, scheduled_phases)
+    rerouted_job = self.class.set(queue: self.class.queue_name).perform_later(hook_id, sync_run_id, scheduled_phases)
+    return true if rerouted_job
+
+    raise ActiveJob::EnqueueError, 'Failed to reroute legacy Medelement sync job'
+  end
 
   def execute_sync(hook, sync_run)
     hook.reload

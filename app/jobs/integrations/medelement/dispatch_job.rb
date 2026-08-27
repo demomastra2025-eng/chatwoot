@@ -1,5 +1,5 @@
 class Integrations::Medelement::DispatchJob < ApplicationJob
-  queue_as :scheduled_jobs
+  queue_as :medelement_sync
 
   def perform
     Integrations::Hook.where(app_id: 'medelement', status: Integrations::Hook.statuses[:enabled]).find_each do |hook|

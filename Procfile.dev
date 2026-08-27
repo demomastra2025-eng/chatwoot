@@ -1,6 +1,8 @@
 backend: bin/rails s -p 3000
 # https://github.com/mperham/sidekiq/issues/3090#issuecomment-389748695
 worker: ENABLE_SIDEKIQ_CRON=true dotenv bundle exec sidekiq -C config/sidekiq.yml
+medelement_sync_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true MEDELEMENT_SYNC_SIDEKIQ_CONCURRENCY=${MEDELEMENT_SYNC_SIDEKIQ_CONCURRENCY:-1} SIDEKIQ_DB_POOL=${DEV_MEDELEMENT_SYNC_DB_POOL:-2} dotenv bundle exec sidekiq -C config/sidekiq_medelement_sync.yml
+medelement_commands_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY=${MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY:-2} SIDEKIQ_DB_POOL=${DEV_MEDELEMENT_COMMANDS_DB_POOL:-3} dotenv bundle exec sidekiq -C config/sidekiq_medelement_commands.yml
 telegram_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true TELEGRAM_INBOUND_SIDEKIQ_CONCURRENCY=${TELEGRAM_INBOUND_SIDEKIQ_CONCURRENCY:-1} dotenv bundle exec sidekiq -C config/sidekiq_telegram_inbound.yml
 telegram_personal_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY=${TELEGRAM_PERSONAL_INBOUND_SIDEKIQ_CONCURRENCY:-1} dotenv bundle exec sidekiq -C config/sidekiq_telegram_personal_inbound.yml
 outbound_messages_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true dotenv bundle exec sidekiq -C config/sidekiq_outbound_messages.yml
