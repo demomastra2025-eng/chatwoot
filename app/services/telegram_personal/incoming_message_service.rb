@@ -7,7 +7,9 @@ class TelegramPersonal::IncomingMessageService
 
   def perform
     return unless private_chat?
-    return if inbox.messages.exists?(source_id: storage_source_id)
+
+    existing_message = inbox.messages.find_by(source_id: storage_source_id)
+    return reconcile_incomplete_history_media!(existing_message) if existing_message.present?
     return unless lock_message_source_id!
 
     set_contact
@@ -99,6 +101,7 @@ class TelegramPersonal::IncomingMessageService
     @message.attachments.new(
       account_id: @message.account_id,
       file_type: normalized_file_type(attachment[:kind], attachment_file.content_type),
+      meta: telegram_attachment_meta(attachment),
       file: {
         io: attachment_file,
         filename: attachment[:filename].presence || attachment_file.original_filename,
@@ -127,11 +130,75 @@ class TelegramPersonal::IncomingMessageService
   end
 
   def mark_media_only_message_unavailable
-    return if @unavailable_attachments.blank?
+    return if @unavailable_attachments.blank? && !history_media_incomplete?
     return if @message.content.present?
     return if @message.attachments.present?
 
     @message.content = ATTACHMENT_PLACEHOLDER
+  end
+
+  def reconcile_incomplete_history_media!(message)
+    return unless imported_history?
+    return unless message.content_attributes.to_h['telegram_history_media_incomplete']
+    return if history_media_incomplete?
+
+    @message = message
+    @message.with_lock do
+      @message.reload
+      next unless @message.content_attributes.to_h['telegram_history_media_incomplete']
+
+      @unavailable_attachments = []
+      attach_missing_history_media
+      complete_history_media_enrichment! if history_media_enrichment_complete?
+      @message.save!
+    end
+  end
+
+  def attach_missing_history_media
+    Array.wrap(params[:attachments]).each do |attachment|
+      next if attachment[:url].blank?
+      next if attachment_already_present?(attachment)
+
+      attach_single_file(attachment)
+    end
+  end
+
+  def history_media_enrichment_complete?
+    expected_ids = Array.wrap(params[:attachments]).filter_map do |attachment|
+      attachment[:telegram_message_id].to_s.presence
+    end.uniq
+    return false if expected_ids.blank? || @unavailable_attachments.present?
+
+    attached_ids = @message.attachments.filter_map do |attachment|
+      attachment.meta.to_h['telegram_message_id'].to_s.presence
+    end
+    (expected_ids - attached_ids).empty?
+  end
+
+  def complete_history_media_enrichment!
+    content_attributes = @message.content_attributes.to_h.except(
+      'telegram_history_media_incomplete',
+      'telegram_history_media_skipped_message_ids',
+      'telegram_unavailable_attachments'
+    )
+    @message.content_attributes = content_attributes
+    @message.content = '' if @message.content == ATTACHMENT_PLACEHOLDER && params[:text].blank? && params[:caption].blank?
+  end
+
+  def attachment_already_present?(attachment)
+    telegram_message_id = attachment[:telegram_message_id].to_s
+    return false if telegram_message_id.blank?
+
+    @message.attachments.any? do |existing_attachment|
+      existing_attachment.meta.to_h['telegram_message_id'].to_s == telegram_message_id
+    end
+  end
+
+  def telegram_attachment_meta(attachment)
+    telegram_message_id = attachment[:telegram_message_id].to_s
+    return {} if telegram_message_id.blank?
+
+    { telegram_message_id: telegram_message_id }
   end
 
   def attach_location
@@ -229,12 +296,22 @@ class TelegramPersonal::IncomingMessageService
       attrs[:voice_note] = true if voice_note?
       attrs[:external_created_at] = provider_message_time.iso8601 if provider_message_time.present?
       attrs[:imported_history] = true if imported_history?
+      attrs.merge!(history_media_content_attributes)
       attrs[:in_reply_to_external_id] = params[:reply_to_message_id].to_s if params[:reply_to_message_id].present?
       attrs[:telegram_message_ids] = telegram_message_ids if telegram_message_ids.many?
       attrs[:grouped_id] = params[:grouped_id].to_s if params[:grouped_id].present?
       attrs[:telegram_reactions] = params[:reactions].to_h if params[:reactions].present?
       attrs[:telegram_forwarded_from] = params[:forwarded_from].to_h if params[:forwarded_from].present?
     end
+  end
+
+  def history_media_content_attributes
+    return {} unless history_media_incomplete?
+
+    {
+      telegram_history_media_incomplete: true,
+      telegram_history_media_skipped_message_ids: history_media_skipped_message_ids
+    }
   end
 
   def reconciled_message_content_attributes
@@ -252,6 +329,14 @@ class TelegramPersonal::IncomingMessageService
 
   def imported_history?
     ActiveModel::Type::Boolean.new.cast(params[:imported_history])
+  end
+
+  def history_media_incomplete?
+    imported_history? && ActiveModel::Type::Boolean.new.cast(params[:history_media_incomplete])
+  end
+
+  def history_media_skipped_message_ids
+    Array.wrap(params[:history_media_skipped_message_ids]).map(&:to_s).reject(&:blank?).uniq
   end
 
   def provider_message_time

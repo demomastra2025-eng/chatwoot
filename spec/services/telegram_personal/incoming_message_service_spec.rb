@@ -213,5 +213,149 @@ RSpec.describe TelegramPersonal::IncomingMessageService do
         )
       )
     end
+
+    it 'enriches an incomplete media-only history message without duplicates' do
+      base_params = {
+        message_id: '701',
+        imported_history: true,
+        chat_id: '23',
+        peer_user_id: '23',
+        sender_id: '23',
+        chat_type: 'private',
+        first_name: 'Sojan',
+        username: 'sojan'
+      }
+      described_class.new(
+        inbox: channel.inbox,
+        params: base_params.merge(
+          history_media_incomplete: true,
+          history_media_skipped_message_ids: ['701']
+        )
+      ).perform
+
+      message = channel.inbox.messages.last
+      expect(message.content).to eq('[Attachment]')
+      expect(message.attachments).to be_empty
+      expect(message.content_attributes['telegram_history_media_incomplete']).to be(true)
+
+      replay_params = base_params.merge(
+        history_media_incomplete: false,
+        attachments: [
+          {
+            kind: 'photo',
+            url: 'https://chatwoot-assets.local/sample.png',
+            filename: 'sample.png',
+            content_type: 'image/png',
+            telegram_message_id: '701'
+          }
+        ]
+      )
+      described_class.new(inbox: channel.inbox, params: replay_params).perform
+      described_class.new(inbox: channel.inbox, params: replay_params).perform
+
+      message.reload
+      expect(message.content).to eq('')
+      expect(message.attachments.count).to eq(1)
+      expect(message.attachments.first.meta['telegram_message_id']).to eq('701')
+      expect(message.content_attributes).not_to include(
+        'telegram_history_media_incomplete',
+        'telegram_history_media_skipped_message_ids'
+      )
+    end
+
+    it 'enriches only the missing attachment in a partial history album' do
+      base_params = {
+        message_id: '801',
+        telegram_message_ids: %w[801 802],
+        grouped_id: '9801',
+        imported_history: true,
+        chat_id: '23',
+        peer_user_id: '23',
+        sender_id: '23',
+        chat_type: 'private',
+        text: 'album caption',
+        first_name: 'Sojan',
+        username: 'sojan'
+      }
+      first_attachment = {
+        kind: 'photo',
+        url: 'https://chatwoot-assets.local/sample.png',
+        filename: 'sample.png',
+        content_type: 'image/png',
+        telegram_message_id: '801'
+      }
+      second_attachment = {
+        kind: 'video',
+        url: 'https://chatwoot-assets.local/sample.mov',
+        filename: 'sample.mov',
+        content_type: 'video/mp4',
+        telegram_message_id: '802'
+      }
+      described_class.new(
+        inbox: channel.inbox,
+        params: base_params.merge(
+          history_media_incomplete: true,
+          history_media_skipped_message_ids: ['802'],
+          attachments: [first_attachment]
+        )
+      ).perform
+
+      replay_params = base_params.merge(
+        history_media_incomplete: false,
+        attachments: [first_attachment, second_attachment]
+      )
+      described_class.new(inbox: channel.inbox, params: replay_params).perform
+      described_class.new(inbox: channel.inbox, params: replay_params).perform
+
+      message = channel.inbox.messages.last
+      expect(channel.inbox.messages.count).to eq(1)
+      expect(message.attachments.count).to eq(2)
+      expect(message.attachments.map { |attachment| attachment.meta['telegram_message_id'] }).to match_array(%w[801 802])
+      expect(message.content_attributes).not_to have_key('telegram_history_media_incomplete')
+    end
+
+    it 'keeps the incomplete marker when media enrichment download fails' do
+      base_params = {
+        message_id: '901',
+        imported_history: true,
+        chat_id: '23',
+        peer_user_id: '23',
+        sender_id: '23',
+        chat_type: 'private',
+        first_name: 'Sojan',
+        username: 'sojan'
+      }
+      described_class.new(
+        inbox: channel.inbox,
+        params: base_params.merge(
+          history_media_incomplete: true,
+          history_media_skipped_message_ids: ['901']
+        )
+      ).perform
+
+      allow(Down).to receive(:download).and_raise(StandardError, 'temporary media failure')
+      described_class.new(
+        inbox: channel.inbox,
+        params: base_params.merge(
+          history_media_incomplete: false,
+          attachments: [
+            {
+              kind: 'photo',
+              url: 'https://chatwoot-assets.local/retry.png',
+              filename: 'retry.png',
+              content_type: 'image/png',
+              telegram_message_id: '901'
+            }
+          ]
+        )
+      ).perform
+
+      message = channel.inbox.messages.last
+      expect(message.attachments).to be_empty
+      expect(message.content_attributes['telegram_history_media_incomplete']).to be(true)
+      expect(message.content_attributes['telegram_unavailable_attachments']).to include(
+        hash_including('filename' => 'retry.png', 'error' => 'StandardError')
+      )
+    end
   end
 end
