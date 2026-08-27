@@ -594,7 +594,16 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def accessible_inboxes
     @accessible_inboxes ||= begin
       inboxes = Current.account.inboxes.includes(:channel)
-      Current.account_user&.administrator? ? inboxes : inboxes.where(id: Current.user.inboxes.where(account_id: Current.account.id).select(:id))
+      if Current.account_user&.administrator?
+        inboxes
+      else
+        assigned_voice_inbox_ids = Current.user.inboxes.where(
+          account_id: Current.account.id,
+          channel_type: 'Channel::Voice'
+        ).select(:id)
+
+        inboxes.where.not(channel_type: 'Channel::Voice').or(inboxes.where(id: assigned_voice_inbox_ids))
+      end
     end
   end
 

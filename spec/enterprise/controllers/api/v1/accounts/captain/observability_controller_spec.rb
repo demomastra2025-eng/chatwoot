@@ -167,7 +167,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
         expect(json_response[:payload].map { |event| event[:id] }).not_to include(other_account_event.id)
       end
 
-      it 'supports filtering by feature, event name, assistant_id, and date range' do
+      it 'enforces assistant logs while supporting event, assistant, and date filters' do
         create(
           :llm_event,
           account: account,
@@ -180,7 +180,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
 
         get "/api/v1/accounts/#{account.id}/captain/observability",
             params: {
-              feature: 'assistant',
+              feature: 'copilot',
               event_name: 'llm.chat.complete',
               assistant_id: 101,
               since: 3.hours.ago.to_i.to_s,
@@ -277,7 +277,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
     end
 
     it 'returns Prometheus-compatible account-scoped AI metrics for admins' do
+      create(:llm_event, account: account, feature: 'copilot', event_name: 'llm.chat.complete')
+
       get "/api/v1/accounts/#{account.id}/captain/observability/metrics",
+          params: { feature: 'copilot' },
           headers: admin.create_new_auth_token
 
       expect(response).to have_http_status(:success)
@@ -334,7 +337,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
       expect(Llm::ReleaseCheck::Runner).to have_received(:new).with(
         account: account,
         date_range: be_a(Range),
-        filters: {},
+        filters: { 'feature' => 'assistant' },
         evaluation_model: nil,
         include_live_evals: false
       )
@@ -343,7 +346,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
     it 'passes filters and explicit live-eval parameters to the runner' do
       get "/api/v1/accounts/#{account.id}/captain/observability/release_check",
           params: {
-            feature: 'assistant',
+            feature: 'copilot',
             runtime_mode: 'captain_runtime',
             session_id: 'session-1',
             flag: 'tool_failure',
@@ -394,7 +397,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
     end
 
     it 'exports matching events as JSON' do
+      create(:llm_event, account: account, feature: 'copilot', event_name: 'llm.chat.complete')
+
       get "/api/v1/accounts/#{account.id}/captain/observability/export",
+          params: { feature: 'copilot' },
           headers: admin.create_new_auth_token
 
       expect(response).to have_http_status(:success)
@@ -409,8 +415,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
     end
 
     it 'exports matching events as CSV' do
+      create(:llm_event, account: account, feature: 'copilot', event_name: 'copilot.secret.event')
+
       get "/api/v1/accounts/#{account.id}/captain/observability/export",
-          params: { export_format: 'csv' },
+          params: { export_format: 'csv', feature: 'copilot' },
           headers: admin.create_new_auth_token
 
       expect(response).to have_http_status(:success)
@@ -420,11 +428,56 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
       expect(response.body).to include('event_name')
       expect(response.body).to include('moderation_stage')
       expect(response.body).to include('llm.chat.complete')
+      expect(response.body).not_to include('copilot.secret.event')
+    end
+  end
+
+  describe 'DELETE /api/v1/accounts/{account.id}/captain/observability/event' do
+    let!(:assistant_event) { create(:llm_event, account: account, feature: 'assistant') }
+    let!(:other_feature_event) { create(:llm_event, account: account, feature: 'copilot') }
+
+    it 'deletes one account-scoped AI Agent event' do
+      delete "/api/v1/accounts/#{account.id}/captain/observability/event",
+             headers: admin.create_new_auth_token,
+             params: { event_id: assistant_event.id },
+             as: :json
+
+      expect(response).to have_http_status(:no_content)
+      expect(LlmEvent.exists?(assistant_event.id)).to be(false)
+      expect(LlmEvent.exists?(other_feature_event.id)).to be(true)
+    end
+
+    it 'does not delete events from another feature' do
+      delete "/api/v1/accounts/#{account.id}/captain/observability/event",
+             headers: admin.create_new_auth_token,
+             params: { event_id: other_feature_event.id },
+             as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
+  end
+
+  describe 'DELETE /api/v1/accounts/{account.id}/captain/observability/clear' do
+    let!(:assistant_event) { create(:llm_event, account: account, feature: 'assistant') }
+    let!(:other_feature_event) { create(:llm_event, account: account, feature: 'copilot') }
+    let!(:other_account_event) do
+      create(:llm_event, account: create(:account), feature: 'assistant')
+    end
+
+    it 'clears only AI Agent events for the current account' do
+      delete "/api/v1/accounts/#{account.id}/captain/observability/clear",
+             headers: admin.create_new_auth_token,
+             as: :json
+
+      expect(response).to have_http_status(:no_content)
+      expect(LlmEvent.exists?(assistant_event.id)).to be(false)
+      expect(LlmEvent.exists?(other_feature_event.id)).to be(true)
+      expect(LlmEvent.exists?(other_account_event.id)).to be(true)
     end
   end
 
   describe 'annotations' do
-    let!(:event) { create(:llm_event, account: account) }
+    let!(:event) { create(:llm_event, account: account, feature: 'assistant') }
     let!(:annotation) do
       create(
         :llm_event_annotation,
@@ -476,6 +529,17 @@ RSpec.describe 'Api::V1::Accounts::Captain::Observability', type: :request do
 
       expect(response).to have_http_status(:no_content)
       expect(event.annotations.exists?(annotation.id)).to be(false)
+    end
+
+    it 'does not expose annotations for copilot events' do
+      copilot_event = create(:llm_event, account: account, feature: 'copilot')
+
+      get "/api/v1/accounts/#{account.id}/captain/observability/annotations",
+          params: { event_id: copilot_event.id },
+          headers: admin.create_new_auth_token,
+          as: :json
+
+      expect(response).to have_http_status(:not_found)
     end
   end
 end

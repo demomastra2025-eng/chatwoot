@@ -8,9 +8,6 @@ RSpec.describe Conversations::PermissionFilterService do
   let(:agent) { create(:user, account: account, role: :agent) }
   let!(:inbox) { create(:inbox, account: account) }
 
-  # This inbox_member is used to establish the agent's access to the inbox
-  before { create(:inbox_member, user: agent, inbox: inbox) }
-
   describe '#perform' do
     context 'when user is an administrator' do
       it 'returns all conversations' do
@@ -27,20 +24,37 @@ RSpec.describe Conversations::PermissionFilterService do
     end
 
     context 'when user is an agent' do
-      it 'returns all conversations with no further filtering' do
-        inbox_ids = agent.inboxes.where(account_id: account.id).pluck(:id)
+      let(:other_inbox) { create(:inbox, account: account) }
+      let!(:other_conversation) { create(:conversation, account: account, inbox: other_inbox) }
+      let(:voice_inbox) { create(:channel_voice, :sipuni, account: account).inbox }
+      let!(:voice_conversation) { create(:conversation, account: account, inbox: voice_inbox) }
 
-        # The base implementation returns all conversations
-        # expecting the caller to filter by assigned inboxes
+      it 'returns every messaging conversation but only assigned Voice conversations' do
         result = described_class.new(
-          account.conversations.where(inbox_id: inbox_ids),
+          account.conversations,
           agent,
           account
         ).perform
 
         expect(result).to include(conversation)
         expect(result).to include(another_conversation)
-        expect(result.count).to eq(2)
+        expect(result).to include(other_conversation)
+        expect(result).not_to include(voice_conversation)
+        expect(result.count).to eq(3)
+
+        create(:inbox_member, user: agent, inbox: voice_inbox)
+
+        expect(described_class.new(account.conversations, agent, account).perform).to include(voice_conversation)
+      end
+    end
+
+    context 'when user does not belong to the account' do
+      let(:outsider) { create(:user) }
+
+      it 'returns no conversations' do
+        result = described_class.new(account.conversations, outsider, account).perform
+
+        expect(result).to be_empty
       end
     end
 

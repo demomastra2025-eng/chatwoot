@@ -8,14 +8,12 @@ const flattenRoutes = items =>
   ]);
 
 describe('captain routes', () => {
-  it('exposes a dedicated AI evaluations page', () => {
+  it('does not expose the removed AI evaluations page', () => {
     const evaluationRoute = flattenRoutes(routes).find(
       route => route.name === 'captain_evaluations_index'
     );
 
-    expect(evaluationRoute).toBeTruthy();
-    expect(evaluationRoute.path).toContain('/captain/evaluations');
-    expect(evaluationRoute.meta.permissions).toEqual(['administrator']);
+    expect(evaluationRoute).toBeUndefined();
   });
 
   it('redirects the removed assistant playground page to prompts', () => {

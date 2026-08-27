@@ -37,7 +37,7 @@ describe('sidebarVisibility', () => {
     expect(visibilityState['Campaigns:Touches']).toBe(true);
     expect(visibilityState['Campaigns:TouchPlans']).toBeUndefined();
     expect(visibilityState['Captain:FollowUps']).toBe(true);
-    expect(visibilityState['Captain:Evaluations']).toBe(true);
+    expect(visibilityState['Captain:Evaluations']).toBeUndefined();
     expect(visibilityState['Captain:Observability']).toBe(true);
     expect(visibilityState['Captain:FAQs']).toBe(true);
     expect(visibilityState['Captain:Usage']).toBe(true);

@@ -13,7 +13,45 @@ RSpec.describe 'Telephony Calls API', type: :request do
     account.enable_features!('channel_voice')
   end
 
+  it 'rejects an agent without membership in the Voice inbox' do
+    agent = create(:user, account: account, role: :agent)
+
+    post path,
+         params: { inbox_id: voice_inbox.id, contact_id: contact.id },
+         headers: agent.create_new_auth_token,
+         as: :json
+
+    expect(response).to have_http_status(:not_found)
+  end
+
   describe 'GET /api/v1/accounts/:account_id/telephony/calls' do
+    it 'hides Voice call history and details from an unassigned agent' do
+      agent = create(:user, account: account, role: :agent)
+      agent_headers = agent.create_new_auth_token
+      call_session = create_history_session(
+        call_ref: 'sipuni:janus:79:restricted-call',
+        status: 'completed',
+        logical_key: 'janus-inbound:restricted-call',
+        group_ref: 'sipuni:janus:79:restricted-call'
+      )
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls", headers: agent_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include('payload' => [], 'meta' => { 'count' => 0 })
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}", headers: agent_headers
+      expect(response).to have_http_status(:not_found)
+
+      get "/api/v1/accounts/#{account.id}/telephony/calls/#{call_session.external_call_ref}/recording", headers: agent_headers
+      expect(response).to have_http_status(:not_found)
+
+      create(:inbox_member, user: agent, inbox: voice_inbox)
+      get "/api/v1/accounts/#{account.id}/telephony/calls", headers: agent_headers
+
+      expect(response.parsed_body['payload'].pluck('id')).to contain_exactly(call_session.id)
+    end
+
     it 'returns one completed logical call for multiple inbound operator branches' do
       logical_key = 'janus-inbound:shared-provider-call'
       primary_ref = 'sipuni:janus:79:primary-call-id'

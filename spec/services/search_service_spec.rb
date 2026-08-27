@@ -96,11 +96,16 @@ describe SearchService do
       it 'searches across message content and return in created_at desc' do
         # random messages in another account
         create(:message, content: 'Harry Potter is a wizard')
-        # random messsage in inbox with out access
-        create(:message, account: account, inbox: create(:inbox, account: account), content: 'Harry Potter is a wizard')
+        # message in another inbox of the same account remains visible without inbox membership
+        account_message = create(
+          :message,
+          account: account,
+          inbox: create(:inbox, account: account),
+          content: 'Harry Potter is a wizard'
+        )
         params = { q: 'Harry' }
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Message')
-        expect(search.perform[:messages].map(&:id)).to eq([message2.id, message.id])
+        expect(search.perform[:messages].map(&:id)).to contain_exactly(message2.id, message.id, account_message.id)
       end
 
       context 'with feature flag for search type' do
@@ -286,12 +291,12 @@ describe SearchService do
         expect(search.perform[:conversations].map(&:id)).to eq([matching_conversation.id])
       end
 
-      it 'keeps message-content conversation search account and inbox scoped' do
-        inaccessible_inbox = create(:inbox, account: account)
-        inaccessible_conversation = create(
+      it 'keeps message-content conversation search account scoped across all inboxes' do
+        account_inbox = create(:inbox, account: account)
+        account_conversation = create(
           :conversation,
           contact: create(:contact, account_id: account.id),
-          inbox: inaccessible_inbox,
+          inbox: account_inbox,
           account: account
         )
         other_account = create(:account)
@@ -303,13 +308,13 @@ describe SearchService do
           account: other_account
         )
 
-        create(:message, conversation: inaccessible_conversation, account: account, inbox: inaccessible_inbox, content: 'scoped secret phrase')
+        create(:message, conversation: account_conversation, account: account, inbox: account_inbox, content: 'scoped secret phrase')
         create(:message, conversation: other_conversation, account: other_account, inbox: other_inbox, content: 'scoped secret phrase')
 
         params = { q: 'scoped secret phrase' }
         search = described_class.new(current_user: user, current_account: account, params: params, search_type: 'Conversation')
 
-        expect(search.perform[:conversations]).to be_empty
+        expect(search.perform[:conversations].map(&:id)).to contain_exactly(account_conversation.id)
       end
 
       it 'searches conversations by phone when the query uses 8 instead of +7' do
@@ -467,14 +472,13 @@ describe SearchService do
         account_user.update!(role: 'agent')
       end
 
-      it 'filters by accessible inbox_id when user has limited access' do
-        # Create an additional inbox that user is NOT assigned to
+      it 'searches all account inboxes without membership filtering' do
         create(:inbox, account: account)
 
         base_query = search.send(:message_base_query)
 
-        # Should have both time and inbox filters
         expect(base_query.to_sql).to include('created_at >= ')
+        expect(base_query.to_sql).to include('conversation_id')
         expect(base_query.to_sql).to include('inbox_id')
       end
 
@@ -485,14 +489,138 @@ describe SearchService do
           create(:inbox_member, user: user, inbox: other_inbox)
         end
 
-        it 'skips inbox filtering as optimization' do
+        it 'keeps the channel-aware permission filter' do
           base_query = search.send(:message_base_query)
 
-          # Should only have the time filter, not inbox filter
           expect(base_query.to_sql).to include('created_at >= ')
-          expect(base_query.to_sql).not_to include('inbox_id')
+          expect(base_query.to_sql).to include('conversation_id')
+          expect(base_query.to_sql).to include('inbox_id')
         end
       end
+    end
+  end
+
+  describe 'custom role visibility' do
+    let(:custom_role) do
+      create(:custom_role, account: account, permissions: ['conversation_participating_manage'])
+    end
+    let(:other_inbox) { create(:inbox, account: account) }
+    let(:allowed_conversation) do
+      create(:conversation, account: account, inbox: inbox, assignee: user)
+    end
+    let(:hidden_same_inbox_conversation) do
+      create(:conversation, account: account, inbox: inbox)
+    end
+    let(:hidden_other_inbox_conversation) do
+      create(:conversation, account: account, inbox: other_inbox, assignee: user)
+    end
+
+    before do
+      account.account_users.find_by!(user: user).update!(custom_role: custom_role)
+      [allowed_conversation, hidden_same_inbox_conversation, hidden_other_inbox_conversation].each do |conversation|
+        create(
+          :message,
+          account: account,
+          inbox: conversation.inbox,
+          conversation: conversation,
+          content: 'custom role scoped phrase'
+        )
+      end
+    end
+
+    it 'limits conversation and SQL message search to permitted conversations' do
+      conversation_search = described_class.new(
+        current_user: user,
+        current_account: account,
+        params: { q: 'custom role scoped phrase' },
+        search_type: 'Conversation'
+      )
+      message_search = described_class.new(
+        current_user: user,
+        current_account: account,
+        params: { q: 'custom role scoped phrase' },
+        search_type: 'Message'
+      )
+
+      expect(conversation_search.perform[:conversations].map(&:id)).to contain_exactly(
+        allowed_conversation.id,
+        hidden_other_inbox_conversation.id
+      )
+      expect(message_search.perform[:messages].map(&:conversation_id)).to contain_exactly(
+        allowed_conversation.id,
+        hidden_other_inbox_conversation.id
+      )
+    end
+
+    it 'passes permitted conversation ids to enterprise advanced search' do
+      scoped_search = described_class.new(
+        current_user: user,
+        current_account: account,
+        params: { q: 'custom role scoped phrase' },
+        search_type: 'Message'
+      )
+
+      expect(scoped_search.send(:build_where_conditions)).to include(
+        account_id: account.id,
+        conversation_id: contain_exactly(allowed_conversation.id, hidden_other_inbox_conversation.id),
+        inbox_id: contain_exactly(inbox.id, other_inbox.id)
+      )
+    end
+  end
+
+  describe 'Voice visibility' do
+    let(:voice_inbox) { create(:channel_voice, :sipuni, account: account).inbox }
+    let(:voice_contact) { create(:contact, account: account, name: 'Restricted Voice Search') }
+    let(:voice_conversation) do
+      create(:conversation, account: account, inbox: voice_inbox, contact: voice_contact)
+    end
+
+    before do
+      create(
+        :message,
+        account: account,
+        inbox: voice_inbox,
+        conversation: voice_conversation,
+        content: 'restricted voice search phrase'
+      )
+    end
+
+    it 'excludes Voice conversations and messages until the agent is assigned to the inbox' do
+      conversation_search = described_class.new(
+        current_user: user,
+        current_account: account,
+        params: { q: 'Restricted Voice Search' },
+        search_type: 'Conversation'
+      )
+      message_search = described_class.new(
+        current_user: user,
+        current_account: account,
+        params: { q: 'restricted voice search phrase' },
+        search_type: 'Message'
+      )
+
+      expect(conversation_search.perform[:conversations]).not_to include(voice_conversation)
+      expect(message_search.perform[:messages].map(&:conversation_id)).not_to include(voice_conversation.id)
+      expect(message_search.send(:build_where_conditions)[:conversation_id]).not_to include(voice_conversation.id)
+
+      create(:inbox_member, user: user, inbox: voice_inbox)
+
+      assigned_conversation_search = described_class.new(
+        current_user: user,
+        current_account: account,
+        params: { q: 'Restricted Voice Search' },
+        search_type: 'Conversation'
+      )
+      assigned_message_search = described_class.new(
+        current_user: user,
+        current_account: account,
+        params: { q: 'restricted voice search phrase' },
+        search_type: 'Message'
+      )
+
+      expect(assigned_conversation_search.perform[:conversations]).to include(voice_conversation)
+      expect(assigned_message_search.perform[:messages].map(&:conversation_id)).to include(voice_conversation.id)
+      expect(assigned_message_search.send(:build_where_conditions)[:conversation_id]).to include(voice_conversation.id)
     end
   end
 

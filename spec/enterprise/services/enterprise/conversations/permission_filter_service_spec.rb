@@ -32,7 +32,7 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
     end
 
     context 'when user is a regular agent' do
-      it 'returns all conversations in assigned inboxes' do
+      it 'returns all account conversations regardless of inbox membership' do
         result = Conversations::PermissionFilterService.new(
           account.conversations,
           agent,
@@ -42,8 +42,8 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         expect(result).to include(assigned_conversation)
         expect(result).to include(unassigned_conversation)
         expect(result).to include(another_assigned_conversation)
-        expect(result).not_to include(another_inbox_conversation)
-        expect(result.count).to eq(3)
+        expect(result).to include(another_inbox_conversation)
+        expect(result.count).to eq(4)
       end
     end
 
@@ -76,12 +76,12 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
           test_account
         ).perform
 
-        # Should have access to all conversations
-        expect(result.count).to eq(3)
+        # Should have access to all messaging conversations, regardless of inbox membership.
+        expect(result.count).to eq(4)
         expect(result).to include(assigned_conversation)
         expect(result).to include(unassigned_conversation)
         expect(result).to include(other_assigned_conversation)
-        expect(result).not_to include(other_inbox_conversation)
+        expect(result).to include(other_inbox_conversation)
       end
     end
 
@@ -107,7 +107,7 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         assigned_conversation = create(:conversation, account: test_account, inbox: test_inbox, assignee: test_agent)
         participating_conversation = create(:conversation, account: test_account, inbox: test_inbox, assignee: nil)
         create(:conversation_participant, conversation: participating_conversation, account: test_account, user: test_agent)
-        other_inbox_conversation = create(:conversation, account: test_account, inbox: test_inbox2, assignee: nil)
+        other_inbox_conversation = create(:conversation, account: test_account, inbox: test_inbox2, assignee: test_agent)
 
         # Run the test
         result = Conversations::PermissionFilterService.new(
@@ -117,11 +117,11 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         ).perform
 
         # Should see conversations assigned to this agent and conversations where the agent participates.
-        expect(result.count).to eq(2)
+        expect(result.count).to eq(3)
         expect(result).to include(assigned_conversation)
         expect(result).to include(participating_conversation)
         expect(result).not_to include(other_conversation)
-        expect(result).not_to include(other_inbox_conversation)
+        expect(result).to include(other_inbox_conversation)
       end
     end
 
@@ -156,13 +156,41 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         ).perform
 
         # Should see unassigned conversations AND conversations assigned to this agent
-        expect(result.count).to eq(2)
+        expect(result.count).to eq(3)
         expect(result).to include(unassigned_conversation)
         expect(result).to include(assigned_conversation)
 
         # Should NOT include conversations assigned to others
         expect(result).not_to include(other_assigned_conversation)
-        expect(result).not_to include(other_inbox_conversation)
+        expect(result).to include(other_inbox_conversation)
+      end
+    end
+
+    context 'when a custom role has no conversation permissions' do
+      it 'returns no conversations' do
+        custom_role = create(:custom_role, account: account, permissions: [])
+        account.account_users.find_by!(user: agent).update!(custom_role: custom_role)
+
+        result = Conversations::PermissionFilterService.new(account.conversations, agent, account).perform
+
+        expect(result).to be_empty
+      end
+    end
+
+    context 'when a custom role can manage conversations in a Voice inbox' do
+      it 'still requires Voice inbox membership' do
+        custom_role = create(:custom_role, account: account, permissions: ['conversation_manage'])
+        account.account_users.find_by!(user: agent).update!(custom_role: custom_role)
+        voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+        voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+
+        service = -> { Conversations::PermissionFilterService.new(account.conversations, agent, account).perform }
+
+        expect(service.call).not_to include(voice_conversation)
+
+        create(:inbox_member, user: agent, inbox: voice_inbox)
+
+        expect(service.call).to include(voice_conversation)
       end
     end
 
@@ -200,11 +228,11 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
         # Should behave the same as conversation_unassigned_manage test
         # - Show both unassigned and assigned to this agent
         # - Do not show conversations assigned to others
-        expect(result.count).to eq(2)
+        expect(result.count).to eq(3)
         expect(result).to include(unassigned_conversation)
         expect(result).to include(assigned_to_agent)
         expect(result).not_to include(other_assigned_conversation)
-        expect(result).not_to include(other_inbox_conversation)
+        expect(result).to include(other_inbox_conversation)
       end
     end
   end

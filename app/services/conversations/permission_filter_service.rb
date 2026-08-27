@@ -9,9 +9,9 @@ class Conversations::PermissionFilterService
 
   def perform
     return conversations_for_captain_assistant if captain_assistant_actor?
-    return conversations if user_role == 'administrator'
+    return accessible_conversations if account_member?
 
-    accessible_conversations
+    conversations.none
   end
 
   private
@@ -28,7 +28,17 @@ class Conversations::PermissionFilterService
   end
 
   def accessible_conversations
-    conversations.where(inbox: user.inboxes.where(account_id: account.id))
+    conversations.where(inbox_id: accessible_inbox_ids)
+  end
+
+  def accessible_inbox_ids
+    account_inboxes = account.inboxes
+    return account_inboxes.select(:id) if user_role == 'administrator'
+
+    messaging_inboxes = account_inboxes.where.not(channel_type: 'Channel::Voice')
+    assigned_voice_inboxes = user.inboxes.where(account_id: account.id, channel_type: 'Channel::Voice')
+
+    messaging_inboxes.or(account_inboxes.where(id: assigned_voice_inboxes.select(:id))).select(:id)
   end
 
   def account_user
@@ -37,6 +47,10 @@ class Conversations::PermissionFilterService
 
   def user_role
     account_user&.role
+  end
+
+  def account_member?
+    user_role.in?(%w[administrator agent])
   end
 end
 

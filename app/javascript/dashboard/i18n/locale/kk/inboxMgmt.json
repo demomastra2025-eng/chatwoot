@@ -910,9 +910,13 @@
       },
       "AGENTS": {
         "TITLE": "Employees",
-        "DESC": "Here you can add employees to manage your newly created inbox. Only these selected employees will have access to your inbox. Employees who are not part of this inbox will not be able to see or respond to messages in it after they sign in.",
-        "ADMIN_NOTE_LABEL": "PS:",
-        "ADMIN_NOTE": "As an administrator, if you need access to all inboxes, add yourself as an agent to every inbox you create.",
+        "DESC": "Осы арна арқылы қоңырау қабылдайтын және шалатын қызметкерлерді таңдап, олардың телефон профильдерін баптаңыз. Аккаунттағы барлық қызметкер арна диалогтарын көре береді.",
+        "ALL_ACCESS_TITLE": "Арнаға қолжетімділік",
+        "ALL_ACCESS_DESC": "Жаңа арна аккаунттағы барлық қызметкерге қолжетімді болады. Диалогтағы жауаптыны тағайындау жұмыс пен хабарландыруларды басқарады, бірақ хат алмасуды жасырмайды.",
+        "ALL_ACCESS_CARD_TITLE": "Барлығына қолжетімді",
+        "ALL_ACCESS_CARD_DESC": "Аккаунттағы барлық қызметкер қол жеткізеді: {count}.",
+        "ADMIN_NOTE_LABEL": "Маңызды:",
+        "ADMIN_NOTE": "Бұл таңдау диалогтардың көрінуін емес, телефонияны басқарады.",
         "VALIDATION_ERROR": "Add at least one agent to your new Inbox",
         "PICK_AGENTS": "Pick employees for the inbox"
       },
@@ -955,6 +959,7 @@
     },
     "AGENTS": {
       "BUTTON_TEXT": "Қызметкерлерді қосу",
+      "CONTINUE_BUTTON_TEXT": "Жалғастыру",
       "SAVE_BUTTON_TEXT": "Қызметкерлерді сақтау",
       "SAVE_SUCCESS": "Қызметкерлер мен SIP баптаулары сақталды",
       "ADD_AGENTS": "Inbox-қа қызметкерлер қосылуда..."
@@ -1411,7 +1416,7 @@
         "PLACEHOLDER": "Enter domains separated by commas (eg: *.OneLink.dev, OneLink.com)"
       },
       "INBOX_AGENTS": "Employees",
-      "INBOX_AGENTS_SUB_TEXT": "Add or remove employees from this inbox",
+      "INBOX_AGENTS_SUB_TEXT": "Осы арна арқылы қоңырау қабылдайтын және шалатын қызметкерлерді баптаңыз",
       "AGENT_ASSIGNMENT": "Conversation Assignment",
       "AGENT_ASSIGNMENT_SUB_TEXT": "Update conversation assignment settings",
       "UPDATE": "Update",

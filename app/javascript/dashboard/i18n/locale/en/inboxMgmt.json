@@ -956,9 +956,13 @@
       },
       "AGENTS": {
         "TITLE": "Agents",
-        "DESC": "Here you can add agents to manage your newly created inbox. Only these selected agents will have access to your inbox. Agents who are not part of this inbox will not be able to see or respond to messages in it after they sign in.",
-        "ADMIN_NOTE_LABEL": "PS:",
-        "ADMIN_NOTE": "As an administrator, if you need access to all inboxes, add yourself as an agent to every inbox you create.",
+        "DESC": "Choose the employees who can receive and place calls through this channel and configure their phone profiles. Every account employee can still see the channel conversations.",
+        "ALL_ACCESS_TITLE": "Channel access",
+        "ALL_ACCESS_DESC": "The new channel will be available to every account employee. Assigning an owner in a conversation controls work and notifications, not visibility.",
+        "ALL_ACCESS_CARD_TITLE": "Available to everyone",
+        "ALL_ACCESS_CARD_DESC": "All account employees will have access: {count}.",
+        "ADMIN_NOTE_LABEL": "Important:",
+        "ADMIN_NOTE": "This selection controls telephony, not conversation visibility.",
         "VALIDATION_ERROR": "Add at least one agent to your new Inbox",
         "PICK_AGENTS": "Pick agents for the inbox"
       },
@@ -1001,6 +1005,7 @@
     },
     "AGENTS": {
       "BUTTON_TEXT": "Add agents",
+      "CONTINUE_BUTTON_TEXT": "Continue",
       "SAVE_BUTTON_TEXT": "Save agents",
       "SAVE_SUCCESS": "Agents and SIP settings saved",
       "ADD_AGENTS": "Adding Agents to your Inbox..."
@@ -1581,7 +1586,7 @@
         "DESCRIPTION": "Restrict which websites can embed your chat widget. For security, only add domains you own and trust. Add one or more domains separated by commas. Leave blank to allow all domains (not recommended for production)."
       },
       "INBOX_AGENTS": "Agents",
-      "INBOX_AGENTS_SUB_TEXT": "Add or remove agents from this inbox",
+      "INBOX_AGENTS_SUB_TEXT": "Configure employees who can receive and place calls through this channel",
       "AGENT_ASSIGNMENT": "Conversation Assignment",
       "AGENT_ASSIGNMENT_SUB_TEXT": "Update conversation assignment settings",
       "UPDATE": "Update",

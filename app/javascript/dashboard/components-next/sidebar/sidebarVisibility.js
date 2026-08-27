@@ -133,7 +133,6 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
     item('Captain:Channels', 'SIDEBAR.CAPTAIN_CHANNELS'),
     item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),
     item('Captain:Observability', 'SIDEBAR.CAPTAIN_OBSERVABILITY'),
-    item('Captain:Evaluations', 'SIDEBAR.CAPTAIN_EVALUATIONS'),
     item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
     item('Captain:Usage', 'SIDEBAR.CAPTAIN_USAGE'),
     item('Captain:AISettings', 'SIDEBAR.CAPTAIN_SETTINGS'),

@@ -76,10 +76,17 @@ describe('AddAgents', () => {
     updateVirtualPbxChannelMock.mockResolvedValue({ payload: { errors: [] } });
   });
 
-  it('preserves accountId when moving to the finish step', async () => {
-    const wrapper = buildWrapper();
+  it('grants a messaging channel to every account employee without manual selection', async () => {
+    const wrapper = buildWrapper({
+      agents: [
+        { id: 7, name: 'Agent One' },
+        { id: 8, name: 'Agent Two' },
+      ],
+    });
     await flushPromises();
-    wrapper.vm.selectedAgentIds = [7, 8];
+
+    expect(wrapper.vm.selectedAgentIds).toEqual([7, 8]);
+    expect(wrapper.findComponent({ name: 'TagInput' }).exists()).toBe(false);
 
     await wrapper.vm.addAgents();
     await flushPromises();

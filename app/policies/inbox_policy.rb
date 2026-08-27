@@ -11,7 +11,17 @@ class InboxPolicy < ApplicationPolicy
     end
 
     def resolve
-      scope.where(id: user.assigned_inboxes.select(:id))
+      return scope.none if account_user.blank?
+
+      account_inboxes = scope.where(account_id: account.id)
+      return account_inboxes if account_user.administrator?
+
+      assigned_voice_inbox_ids = user.inboxes.where(
+        account_id: account.id,
+        channel_type: 'Channel::Voice'
+      ).select(:id)
+
+      account_inboxes.where.not(channel_type: 'Channel::Voice').or(account_inboxes.where(id: assigned_voice_inbox_ids))
     end
   end
 
@@ -22,8 +32,11 @@ class InboxPolicy < ApplicationPolicy
   def show?
     # FIXME: for agent bots, lets bring this validation to policies as well in future
     return true if @user.is_a?(AgentBot)
+    return false unless account_user.present? && record.account_id == account&.id
+    return true if account_user.administrator?
+    return true unless record.channel_type == 'Channel::Voice'
 
-    Current.user.assigned_inboxes.include? record
+    user.inboxes.where(account_id: account.id, channel_type: 'Channel::Voice').exists?(id: record.id)
   end
 
   def assignable_agents?

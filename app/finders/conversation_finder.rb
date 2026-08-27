@@ -88,9 +88,9 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
   def set_inboxes
     @inbox_ids = if params[:inbox_id]
-                   @current_user.assigned_inboxes.where(id: params[:inbox_id])
+                   current_account.inboxes.where(id: params[:inbox_id])
                  else
-                   @current_user.assigned_inboxes.pluck(:id)
+                   current_account.inboxes.pluck(:id)
                  end
   end
 
@@ -140,7 +140,8 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       conversation_ids = current_account.mentions.where(user: current_user).pluck(:conversation_id)
       @conversations = @conversations.where(id: conversation_ids)
     when 'participating'
-      @conversations = current_user.participating_conversations.where(account_id: current_account.id)
+      participating_ids = current_user.participating_conversations.where(account_id: current_account.id).select(:id)
+      @conversations = @conversations.where(id: participating_ids)
     when 'unattended'
       @conversations = @conversations.unattended
     end
@@ -361,7 +362,8 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       conversation_ids = current_account.mentions.where(user: current_user).pluck(:conversation_id)
       scope.where(id: conversation_ids)
     when 'participating'
-      current_user.participating_conversations.where(account_id: current_account.id)
+      participating_ids = current_user.participating_conversations.where(account_id: current_account.id).select(:id)
+      scope.where(id: participating_ids)
     when 'unattended'
       scope.unattended
     else

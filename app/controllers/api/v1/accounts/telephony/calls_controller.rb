@@ -7,7 +7,7 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   before_action :authenticate_recording_request!, only: [:recording]
 
   def index
-    sessions = Current.account.telephony_call_sessions
+    sessions = accessible_call_sessions
     sessions = sessions.where(inbox_id: params[:inbox_id]) if params[:inbox_id].present?
     sessions = sessions.where(direction: params[:direction]) if params[:direction].present?
     sessions = Telephony::LogicalCallHistoryQuery.new(
@@ -24,13 +24,14 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
   end
 
   def show
+    authorize_call_session_access!
     payload = @call_session.to_telephony_h
     payload[:recording_url] = recording_url_for_call_session if recording_available?
     render_payload(payload)
   end
 
   def recording
-    authorize_recording_access!
+    authorize_call_session_access!
 
     path = recording_file_path
     if path.present?
@@ -95,6 +96,17 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
 
   private
 
+  def accessible_call_sessions
+    sessions = Current.account.telephony_call_sessions
+    return sessions if Current.account_user.administrator?
+
+    sessions.where(inbox_id: assigned_voice_inboxes.select(:id))
+  end
+
+  def assigned_voice_inboxes
+    Current.user.inboxes.where(account_id: Current.account.id, channel_type: 'Channel::Voice')
+  end
+
   def preload_call_session_associations(sessions)
     ActiveRecord::Associations::Preloader.new(
       records: sessions,
@@ -120,24 +132,18 @@ class Api::V1::Accounts::Telephony::CallsController < Api::V1::Accounts::Telepho
     @call_session = Current.account.telephony_call_sessions.find_by!(external_call_ref: params[:call_ref])
   end
 
-  def authorize_recording_access!
+  def authorize_call_session_access!
     return if @signed_recording_request_authorized
+    return if Current.account_user&.administrator?
 
-    if @call_session.conversation.present?
-      authorize @call_session.conversation, :show?
-      return
-    end
-
-    if @call_session.inbox.present?
-      authorize @call_session.inbox, :show?
-      return
-    end
+    inbox_id = @call_session.inbox_id || @call_session.conversation&.inbox_id
+    return if inbox_id.present? && assigned_voice_inboxes.exists?(id: inbox_id)
 
     raise ActiveRecord::RecordNotFound, 'Recording could not be found'
   end
 
   def authorize_recording_upload!
-    authorize_recording_access!
+    authorize_call_session_access!
     return if recording_upload_owned_by_current_user?
 
     raise ActiveRecord::RecordNotFound, 'Recording could not be found'

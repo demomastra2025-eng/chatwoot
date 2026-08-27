@@ -10,7 +10,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
   before_action :check_admin_authorization?
 
   def show
-    query = events_query
+    query = assistant_events_query
     snapshot = query.snapshot
     release_gate = query.release_gate(account: Current.account)
     alerts = Llm::Monitoring::AlertEvaluator.new(release_gate_report: release_gate).call
@@ -35,7 +35,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
   end
 
   def metrics
-    query = events_query
+    query = assistant_events_query
     release_gate = query.release_gate(account: Current.account)
     alerts = Llm::Monitoring::AlertEvaluator.new(release_gate_report: release_gate).call
 
@@ -61,7 +61,7 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
   end
 
   def export
-    query = events_query
+    query = assistant_events_query
     total_count = query.export_count
     events = query.export_events(limit: MAX_EXPORT_ROWS)
     payload = events.map { |event| serialize_event(event) }
@@ -76,14 +76,28 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
     )
   end
 
+  def event
+    assistant_events.find(params.require(:event_id)).destroy!
+    head :no_content
+  end
+
+  def clear
+    assistant_events.find_each(&:destroy!)
+    head :no_content
+  end
+
   private
 
-  def events_query
-    @events_query ||= Llm::Monitoring::EventsQuery.new(
+  def assistant_events_query
+    @assistant_events_query ||= Llm::Monitoring::EventsQuery.new(
       scope: Current.account.llm_events,
-      params: observability_params,
+      params: observability_params.to_h.merge(feature: 'assistant'),
       date_range: effective_range
     )
+  end
+
+  def assistant_events
+    Current.account.llm_events.where(feature: 'assistant')
   end
 
   def observability_params
@@ -110,7 +124,10 @@ class Api::V1::Accounts::Captain::ObservabilityController < Api::V1::Accounts::B
   end
 
   def release_check_filters
-    observability_params.to_h.except('page', 'per_page', 'since', 'until').compact_blank
+    observability_params.to_h
+                        .except('page', 'per_page', 'since', 'until')
+                        .merge('feature' => 'assistant')
+                        .compact_blank
   end
 
   def effective_range

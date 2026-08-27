@@ -25,7 +25,23 @@ class SearchService
   private
 
   def accessable_inbox_ids
-    @accessable_inbox_ids ||= @current_user.assigned_inboxes.pluck(:id)
+    @accessable_inbox_ids ||= permission_filtered_conversations.distinct.pluck(:inbox_id)
+  end
+
+  def accessible_conversation_ids
+    @accessible_conversation_ids ||= permission_filtered_conversations.pluck(:id)
+  end
+
+  def permission_filtered_conversations
+    @permission_filtered_conversations ||= Conversations::PermissionFilterService.new(
+      current_account.conversations,
+      current_user,
+      current_account
+    ).perform
+  end
+
+  def custom_role_scope?
+    account_user&.custom_role_id.present?
   end
 
   def search_query
@@ -53,9 +69,9 @@ class SearchService
       search_bindings: search_bindings
     )
 
-    conversations_query = current_account.conversations.where(inbox_id: accessable_inbox_ids)
-                                         .joins('INNER JOIN contacts ON conversations.contact_id = contacts.id')
-                                         .where(search_conditions.join(' OR '), search_bindings)
+    conversations_query = permission_filtered_conversations
+                          .joins('INNER JOIN contacts ON conversations.contact_id = contacts.id')
+                          .where(search_conditions.join(' OR '), search_bindings)
 
     if current_account.feature_enabled?('advanced_search')
       conversations_query = apply_time_filter(conversations_query,
@@ -127,6 +143,7 @@ class SearchService
 
   def message_base_query
     query = current_account.messages.where('created_at >= ?', 3.months.ago)
+    query = query.where(conversation_id: permission_filtered_conversations.select(:id))
     query = query.where(inbox_id: accessable_inbox_ids) unless should_skip_inbox_filtering?
     query
   end
@@ -171,11 +188,7 @@ class SearchService
   end
 
   def should_skip_inbox_filtering?
-    account_user.administrator? || user_has_access_to_all_inboxes?
-  end
-
-  def user_has_access_to_all_inboxes?
-    accessable_inbox_ids.sort == current_account.inboxes.pluck(:id).sort
+    account_user&.administrator?
   end
 
   def use_gin_search

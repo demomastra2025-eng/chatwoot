@@ -73,16 +73,11 @@ Rails.application.routes.draw do
               get :metrics
               get :release_check
               get :export
+              delete :event
+              delete :clear
               resources :annotations, only: [:index, :create, :destroy], controller: 'observability_annotations'
             end
             resource :preferences, only: [:show, :update]
-            resource :evaluations, only: [:show], controller: 'evaluations' do
-              post :run
-              get :run_status
-              post :import_conversation
-              post :run_dataset
-              post :red_team
-            end
             resources :assistants do
               member do
                 patch :avatar

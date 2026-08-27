@@ -40,30 +40,34 @@ RSpec.describe ConversationPolicy, type: :policy do
       end
     end
 
-    context 'when agent has inbox access' do
+    context 'when agent belongs to the account' do
       let(:inbox) { create(:inbox, account: account) }
       let(:conversation) { create(:conversation, account: account, inbox: inbox) }
 
-      before { create(:inbox_member, user: agent, inbox: inbox) }
-
-      it 'allows access' do
+      it 'allows access without inbox membership' do
         expect(subject).to permit(agent_context, conversation)
       end
     end
 
-    context 'when agent has team access' do
-      let(:team) { create(:team, account: account) }
-      let(:conversation) { create(:conversation, :with_team, account: account, team: team) }
+    context 'when conversation belongs to a Voice inbox' do
+      let(:voice_inbox) { create(:channel_voice, :sipuni, account: account).inbox }
+      let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
 
-      before { create(:team_member, team: team, user: agent) }
+      it 'requires Voice inbox membership for an agent' do
+        expect(subject).not_to permit(agent_context, conversation)
 
-      it 'allows access' do
+        create(:inbox_member, user: agent, inbox: voice_inbox)
+
         expect(subject).to permit(agent_context, conversation)
+      end
+
+      it 'allows an administrator without Voice inbox membership' do
+        expect(subject).to permit(administrator_context, conversation)
       end
     end
 
-    context 'when agent lacks inbox and team access' do
-      let(:conversation) { create(:conversation, account: account) }
+    context 'when conversation belongs to another account' do
+      let(:conversation) { create(:conversation, account: create(:account)) }
 
       it 'denies access' do
         expect(subject).not_to permit(agent_context, conversation)

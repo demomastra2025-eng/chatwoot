@@ -28,6 +28,14 @@ class CaptainObservability extends ApiClient {
     return axios.get(`${this.url}/release_check`, { params });
   }
 
+  deleteEvent(eventId) {
+    return axios.delete(`${this.url}/event`, { params: { event_id: eventId } });
+  }
+
+  clear() {
+    return axios.delete(`${this.url}/clear`);
+  }
+
   listAnnotations(eventId) {
     return axios.get(`${this.url}/annotations`, {
       params: { event_id: eventId },

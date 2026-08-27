@@ -2637,6 +2637,36 @@
     },
     "OBSERVABILITY": {
       "TITLE": "Logs",
+      "SIMPLE": {
+        "REFRESH": "Refresh",
+        "CLEAR": "Clear",
+        "DELETE": "Delete",
+        "EVENT": "AI event",
+        "NO_MODEL": "Model not specified",
+        "EMPTY_TITLE": "No logs yet",
+        "EMPTY_DESCRIPTION": "Recent AI Agent events will appear here.",
+        "LOAD_ERROR": "Could not load logs",
+        "DELETE_TITLE": "Delete this entry?",
+        "DELETE_DESCRIPTION": "This entry will be permanently deleted.",
+        "DELETE_SUCCESS": "Entry deleted",
+        "DELETE_ERROR": "Could not delete the entry",
+        "CLEAR_TITLE": "Clear all AI Agent logs?",
+        "CLEAR_DESCRIPTION": "All AI Agent entries will be permanently deleted.",
+        "CLEAR_SUCCESS": "AI Agent logs cleared",
+        "CLEAR_ERROR": "Could not clear logs",
+        "DETAILS": {
+          "STATUS": "Status",
+          "MODEL": "Model",
+          "PROVIDER": "Provider",
+          "TOOL": "Tool",
+          "DURATION": "Duration",
+          "TOKENS": "Tokens",
+          "COST": "Cost",
+          "TIME": "Time",
+          "ERROR": "Execution error",
+          "DATA": "Event data"
+        }
+      },
       "TABS": {
         "OVERVIEW": "Overview",
         "EVENTS": "Events",

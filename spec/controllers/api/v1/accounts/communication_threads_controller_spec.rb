@@ -157,7 +157,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
-    it 'does not expose inaccessible channel links inside an accessible thread' do
+    it 'exposes every account channel link without inbox membership' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
@@ -167,11 +167,30 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:success)
       thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
-      expect(thread_payload[:channels].pluck(:conversation_id)).to eq([accessible_conversation.display_id])
-      expect(thread_payload[:channels].pluck(:conversation_id)).not_to include(inaccessible_conversation.display_id)
+      expect(thread_payload[:channels].pluck(:conversation_id)).to contain_exactly(
+        accessible_conversation.display_id,
+        inaccessible_conversation.display_id
+      )
     end
 
-    it 'does not expose Meta ads referral metadata from inaccessible channel links' do
+    it 'hides Voice channel links until the agent is assigned to the Voice inbox' do
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+      voice_thread = voice_conversation.reload.communication_thread || voice_conversation.refresh_communication_thread!
+
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+
+      thread_ids = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).pluck(:id)
+      expect(thread_ids).not_to include(voice_thread.display_id)
+
+      create(:inbox_member, user: agent, inbox: voice_inbox)
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+
+      assigned_thread_ids = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).pluck(:id)
+      expect(assigned_thread_ids).to include(voice_thread.display_id)
+    end
+
+    it 'exposes the latest Meta ads referral metadata across account channel links' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
@@ -216,10 +235,6 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response).to have_http_status(:success)
       thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
       expect(thread_payload.dig(:meta, :meta_ad_referral)).to include(
-        ad_id: 'visible-ad',
-        headline: 'Visible ad'
-      )
-      expect(thread_payload.dig(:meta, :meta_ad_referral)).not_to include(
         ad_id: 'hidden-ad',
         headline: 'Hidden ad'
       )
@@ -227,7 +242,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(thread_payload.dig(:meta, :sender, :additional_attributes)).not_to have_key(:last_meta_ad_referral)
     end
 
-    it 'does not sort accessible threads by messages from inaccessible channel links' do
+    it 'sorts threads by messages from every account channel link' do
       base_time = Time.zone.now
       hidden_contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: hidden_contact, created_at: base_time - 5.days)
@@ -236,14 +251,20 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
       create(:inbox_member, user: agent, inbox: visible_conversation.inbox)
-      accessible_message = create(
+      create(
         :message,
         account: account,
         conversation: accessible_conversation,
         message_type: :incoming,
         created_at: base_time - 2.days
       )
-      create(:message, account: account, conversation: inaccessible_conversation, message_type: :incoming, created_at: base_time)
+      account_wide_message = create(
+        :message,
+        account: account,
+        conversation: inaccessible_conversation,
+        message_type: :incoming,
+        created_at: base_time
+      )
       create(:message, account: account, conversation: visible_conversation, message_type: :incoming, created_at: base_time - 1.hour)
 
       get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
@@ -252,11 +273,11 @@ RSpec.describe 'Communication Threads API', type: :request do
       payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
       expect(payload.pluck(:id).first(2)).to eq(
         [
-          visible_conversation.reload.communication_thread.display_id,
-          accessible_conversation.reload.communication_thread.display_id
+          accessible_conversation.reload.communication_thread.display_id,
+          visible_conversation.reload.communication_thread.display_id
         ]
       )
-      expect(payload.second.dig(:last_non_activity_message, :id)).to eq(accessible_message.id)
+      expect(payload.first.dig(:last_non_activity_message, :id)).to eq(account_wide_message.id)
     end
 
     it 'filters threads by child conversation labels' do
@@ -778,9 +799,14 @@ RSpec.describe 'Communication Threads API', type: :request do
       create_thread_stage_deal(second_matching_conversation, matching_stage)
 
       hidden_linked_conversation = create(:conversation, account: account, contact: matching_conversation.contact)
-      matching_public_message = create(:message, conversation: matching_conversation, message_type: :incoming, created_at: base_time - 2.days)
-      matching_activity_message = create(:message, conversation: matching_conversation, message_type: :activity, created_at: base_time)
-      create(:message, conversation: hidden_linked_conversation, message_type: :incoming, created_at: base_time + 1.hour)
+      create(:message, conversation: matching_conversation, message_type: :incoming, created_at: base_time - 2.days)
+      create(:message, conversation: matching_conversation, message_type: :activity, created_at: base_time)
+      account_wide_message = create(
+        :message,
+        conversation: hidden_linked_conversation,
+        message_type: :incoming,
+        created_at: base_time + 1.hour
+      )
       create(:message, conversation: second_matching_conversation, message_type: :incoming, created_at: base_time - 1.hour)
 
       post "/api/v1/accounts/#{account.id}/communication_threads/filter",
@@ -794,12 +820,12 @@ RSpec.describe 'Communication Threads API', type: :request do
       payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
       expect(payload.pluck(:id)).to eq(
         [
-          second_matching_conversation.reload.communication_thread.display_id,
-          matching_conversation.reload.communication_thread.display_id
+          matching_conversation.reload.communication_thread.display_id,
+          second_matching_conversation.reload.communication_thread.display_id
         ]
       )
-      expect(payload.second.dig(:messages, 0, :id)).to eq(matching_activity_message.id)
-      expect(payload.second.dig(:last_non_activity_message, :id)).to eq(matching_public_message.id)
+      expect(payload.first.dig(:messages, 0, :id)).to eq(account_wide_message.id)
+      expect(payload.first.dig(:last_non_activity_message, :id)).to eq(account_wide_message.id)
     end
 
     it 'applies explicit dashboard sorting to advanced filter results' do
@@ -938,7 +964,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(message_ids).not_to include(imported_older.id)
     end
 
-    it 'filters timeline messages by inbox access' do
+    it 'returns timeline messages from every account channel link' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
@@ -951,8 +977,7 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:success)
       message_ids = JSON.parse(response.body, symbolize_names: true)[:payload].pluck(:id)
-      expect(message_ids).to eq([visible_message.id])
-      expect(message_ids).not_to include(hidden_message.id)
+      expect(message_ids).to eq([visible_message.id, hidden_message.id])
     end
   end
 
@@ -1265,7 +1290,6 @@ RSpec.describe 'Communication Threads API', type: :request do
       target_inbox = create(:inbox, account: account)
       target_contact_inbox = create(:contact_inbox, contact: contact, inbox: target_inbox)
       create(:inbox_member, user: agent, inbox: existing_conversation.inbox)
-      create(:inbox_member, user: agent, inbox: target_inbox)
       thread = existing_conversation.reload.communication_thread
 
       expect do
@@ -1317,12 +1341,32 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:not_found)
     end
+
+    it 'keeps an unassigned Voice channel outside account-wide messaging capability' do
+      contact = create(:contact, :with_email, account: account)
+      conversation = create(:conversation, account: account, contact: contact)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      voice_channel = create(:channel_voice, :sipuni, account: account)
+      voice_inbox = voice_channel.inbox
+      voice_contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+           params: {
+             content: 'No voice capability',
+             channel_key: "inbox:#{voice_inbox.id}",
+             target_contact_inbox_id: voice_contact_inbox.id
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
   end
 
   describe 'GET /api/v1/accounts/:account_id/communication_threads/:id/channels' do
     it 'returns capability metadata for accessible child conversations' do
       conversation = create(:conversation, account: account)
-      create(:inbox_member, user: agent, inbox: conversation.inbox)
       thread = conversation.reload.communication_thread
 
       get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/channels", headers: headers, as: :json
@@ -1361,7 +1405,6 @@ RSpec.describe 'Communication Threads API', type: :request do
       unlinked_inbox = create(:inbox, :with_email, account: account)
       create(:contact_inbox, contact: contact, inbox: unlinked_inbox)
       create(:inbox_member, user: agent, inbox: inbox)
-      create(:inbox_member, user: agent, inbox: unlinked_inbox)
       thread = older_conversation.reload.communication_thread
 
       get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/channels", headers: headers, as: :json
@@ -1403,7 +1446,7 @@ RSpec.describe 'Communication Threads API', type: :request do
   end
 
   describe 'GET /api/v1/accounts/:account_id/communication_threads/:id/labels' do
-    it 'returns the deduplicated label set from accessible child conversations' do
+    it 'returns the deduplicated label set from every account child conversation' do
       contact = create(:contact, :with_email, account: account)
       first_conversation = create(:conversation, account: account, contact: contact)
       second_conversation = create(:conversation, account: account, contact: contact)
@@ -1419,7 +1462,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels", headers: headers, as: :json
 
       expect(response).to have_http_status(:success)
-      expect(response.parsed_body['payload']).to contain_exactly('contact_vip', 'vip', 'billing', 'follow_up')
+      expect(response.parsed_body['payload']).to contain_exactly('contact_vip', 'vip', 'billing', 'follow_up', 'hidden')
     end
   end
 
@@ -1444,7 +1487,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(contact.reload.label_list).to contain_exactly('vip', 'paid')
     end
 
-    it 'updates labels only on accessible linked child conversations when the thread has hidden channels' do
+    it 'updates labels on linked child conversations without inbox membership' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact)
       inaccessible_conversation = create(:conversation, account: account, contact: contact)
@@ -1459,7 +1502,7 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       expect(response).to have_http_status(:success)
       expect(accessible_conversation.reload.label_list).to contain_exactly('vip', 'paid')
-      expect(inaccessible_conversation.reload.label_list).to contain_exactly('hidden')
+      expect(inaccessible_conversation.reload.label_list).to contain_exactly('vip', 'paid')
     end
   end
 
@@ -1571,7 +1614,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(second_conversation.reload.custom_attributes).not_to have_key('pinned')
     end
 
-    it 'rejects updates when the agent cannot access every linked channel' do
+    it 'updates every linked account channel without inbox membership' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
       inaccessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
@@ -1583,11 +1626,10 @@ RSpec.describe 'Communication Threads API', type: :request do
             headers: headers,
             as: :json
 
-      expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body['error']).to include('without access to all linked channels')
-      expect(accessible_conversation.reload).to be_open
-      expect(inaccessible_conversation.reload).to be_open
-      expect(thread.reload).to be_open
+      expect(response).to have_http_status(:success)
+      expect(accessible_conversation.reload).to be_resolved
+      expect(inaccessible_conversation.reload).to be_resolved
+      expect(thread.reload).to be_resolved
     end
 
     it 'rejects invalid agent bot assignments' do

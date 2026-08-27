@@ -30,7 +30,7 @@ class Api::V1::Accounts::Captain::ObservabilityAnnotationsController < Api::V1::
   private
 
   def set_llm_event
-    @llm_event = Current.account.llm_events.find(annotation_params[:event_id] || params[:event_id])
+    @llm_event = Current.account.llm_events.where(feature: 'assistant').find(annotation_params[:event_id] || params[:event_id])
   end
 
   def annotation_params

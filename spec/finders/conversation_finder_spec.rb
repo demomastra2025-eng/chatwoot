@@ -51,11 +51,23 @@ describe ConversationFinder do
         expect(result[:conversations].map(&:id)).to include(restricted_conversation.id)
       end
 
-      it 'does not return conversations from inboxes where agent is not a member' do
+      it 'returns conversations from account inboxes where agent is not a member' do
         params = { inbox_id: restricted_inbox.id }
         result = described_class.new(user_1, params).perform
 
-        expect(result[:conversations].map(&:id)).not_to include(restricted_conversation.id)
+        expect(result[:conversations].map(&:id)).to include(restricted_conversation.id)
+      end
+
+      it 'requires Voice inbox membership' do
+        voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+        voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+        params = { inbox_id: voice_inbox.id, status: 'all' }
+
+        expect(described_class.new(user_1, params).perform[:conversations]).not_to include(voice_conversation)
+
+        create(:inbox_member, user: user_1, inbox: voice_inbox)
+
+        expect(described_class.new(user_1, params).perform[:conversations]).to include(voice_conversation)
       end
 
       it 'returns only the conversations from the inbox if inbox_id filter is passed' do
@@ -655,6 +667,46 @@ describe ConversationFinder do
       end
     end
 
+    context 'with participating conversation counts' do
+      let(:params) { { conversation_type: 'participating', status: 'all', assignee_type: 'all' } }
+
+      it 'keeps an unassigned Voice participant out of payload and count scopes' do
+        voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+        voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+        voice_membership = create(:inbox_member, inbox: voice_inbox, user: user_1)
+        create(:conversation_participant, account: account, conversation: voice_conversation, user: user_1)
+        voice_membership.destroy!
+
+        full_result = conversation_finder.perform
+        meta_result = conversation_finder.perform_meta_only
+
+        expect(full_result[:conversations]).not_to include(voice_conversation)
+        expect(full_result[:count]).to include(all_count: 0, assigned_count: 0, unassigned_count: 0, mine_count: 0)
+        expect(meta_result[:count]).to eq(full_result[:count])
+
+        create(:inbox_member, inbox: voice_inbox, user: user_1)
+
+        permitted_result = conversation_finder.perform
+        expect(permitted_result[:conversations]).to include(voice_conversation)
+        expect(permitted_result[:count][:all_count]).to eq(1)
+      end
+
+      it 'keeps empty custom-role permissions out of payload and count scopes' do
+        participating_conversation = create(:conversation, account: account, inbox: restricted_inbox)
+        create(:inbox_member, inbox: restricted_inbox, user: user_1)
+        create(:conversation_participant, account: account, conversation: participating_conversation, user: user_1)
+        restricted_role = create(:custom_role, account: account, permissions: [])
+        account.account_users.find_by!(user: user_1).update!(custom_role: restricted_role)
+
+        full_result = conversation_finder.perform
+        meta_result = conversation_finder.perform_meta_only
+
+        expect(full_result[:conversations]).to be_empty
+        expect(full_result[:count]).to include(all_count: 0, assigned_count: 0, unassigned_count: 0, mine_count: 0)
+        expect(meta_result[:count]).to eq(full_result[:count])
+      end
+    end
+
     context 'with unattended' do
       let(:params) { { status: 'open', assignee_type: 'me', conversation_type: 'unattended' } }
 
@@ -665,7 +717,7 @@ describe ConversationFinder do
                               assignee: user_1, waiting_since: Time.now.utc) # unattended_conversation_waiting_since
 
         result = conversation_finder.perform
-        expect(result[:conversations].length).to be 2
+        expect(result[:conversations].length).to eq(5)
       end
     end
   end

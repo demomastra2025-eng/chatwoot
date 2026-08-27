@@ -21,7 +21,10 @@ export default {
   validations: {
     selectedAgentIds: {
       isEmpty() {
-        return !!this.selectedAgentIds.length;
+        return (
+          !this.isVirtualPbxProfileAssignmentInbox ||
+          !!this.selectedAgentIds.length
+        );
       },
     },
   },
@@ -122,7 +125,7 @@ export default {
         return this.$t('INBOX_MGMT.AGENTS.SAVE_BUTTON_TEXT');
       }
 
-      return this.$t('INBOX_MGMT.AGENTS.BUTTON_TEXT');
+      return this.$t('INBOX_MGMT.AGENTS.CONTINUE_BUTTON_TEXT');
     },
   },
   watch: {
@@ -131,8 +134,11 @@ export default {
     },
   },
   async mounted() {
-    this.$store.dispatch('agents/get');
+    await this.$store.dispatch('agents/get');
     await Promise.all([this.loadInboxMembers(), this.loadVirtualPbxStatus()]);
+    if (!this.isVirtualPbxProfileAssignmentInbox) {
+      this.selectedAgentIds = this.agentList.map(({ id }) => Number(id));
+    }
     this.ensureVirtualPbxProfilesForSelectedAgents();
   },
   methods: {
@@ -364,11 +370,23 @@ export default {
   <div class="h-full w-full p-6 col-span-6">
     <form class="flex flex-wrap flex-col mx-0" @submit.prevent="addAgents()">
       <div class="w-full">
-        <PageHeader :header-title="$t('INBOX_MGMT.ADD.AGENTS.TITLE')">
+        <PageHeader
+          :header-title="
+            isVirtualPbxProfileAssignmentInbox
+              ? $t('INBOX_MGMT.ADD.AGENTS.TITLE')
+              : $t('INBOX_MGMT.ADD.AGENTS.ALL_ACCESS_TITLE')
+          "
+        >
           <template #content>
             <div class="text-sm w-full text-n-slate-11 space-y-2">
-              <p>{{ $t('INBOX_MGMT.ADD.AGENTS.DESC') }}</p>
               <p>
+                {{
+                  isVirtualPbxProfileAssignmentInbox
+                    ? $t('INBOX_MGMT.ADD.AGENTS.DESC')
+                    : $t('INBOX_MGMT.ADD.AGENTS.ALL_ACCESS_DESC')
+                }}
+              </p>
+              <p v-if="isVirtualPbxProfileAssignmentInbox">
                 <strong>{{
                   $t('INBOX_MGMT.ADD.AGENTS.ADMIN_NOTE_LABEL')
                 }}</strong>
@@ -380,7 +398,7 @@ export default {
         </PageHeader>
       </div>
       <div>
-        <div class="w-full mb-4">
+        <div v-if="isVirtualPbxProfileAssignmentInbox" class="w-full mb-4">
           <label :class="{ error: v$.selectedAgentIds.$error }">
             {{ $t('INBOX_MGMT.ADD.AGENTS.TITLE') }}
             <div
@@ -400,6 +418,25 @@ export default {
               {{ $t('INBOX_MGMT.ADD.AGENTS.VALIDATION_ERROR') }}
             </span>
           </label>
+        </div>
+
+        <div
+          v-else
+          class="mb-4 flex items-start gap-3 rounded-xl border border-n-weak bg-n-alpha-2 p-4"
+        >
+          <span class="i-lucide-users mt-0.5 size-5 shrink-0 text-n-slate-11" />
+          <div>
+            <div class="text-sm font-medium text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.AGENTS.ALL_ACCESS_CARD_TITLE') }}
+            </div>
+            <div class="mt-1 text-sm text-n-slate-11">
+              {{
+                $t('INBOX_MGMT.ADD.AGENTS.ALL_ACCESS_CARD_DESC', {
+                  count: selectedAgentIds.length,
+                })
+              }}
+            </div>
+          </div>
         </div>
 
         <div

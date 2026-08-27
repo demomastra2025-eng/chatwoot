@@ -6,12 +6,12 @@ on:
   pull_request:
     paths:
       - '.github/workflows/captain_ai_evals.yml'
-      - 'app/controllers/api/v1/accounts/captain/evaluations_controller.rb'
-      - 'app/javascript/dashboard/api/captain/evaluations.js'
-      - 'app/javascript/dashboard/api/specs/captainEvaluations.spec.js'
       - 'app/javascript/dashboard/i18n/locale/en/integrations.json'
       - 'app/javascript/dashboard/i18n/locale/ru/integrations.json'
-      - 'app/javascript/dashboard/routes/dashboard/captain/evaluations/**'
+      - 'app/javascript/dashboard/routes/dashboard/captain/captain.routes.js'
+      - 'app/javascript/dashboard/routes/dashboard/captain/captain.routes.spec.js'
+      - 'app/javascript/dashboard/components-next/sidebar/sidebarVisibility.js'
+      - 'app/javascript/dashboard/components-next/sidebar/sidebarVisibility.spec.js'
       - 'config/llm_evals/**'
       - 'config/routes.rb'
       - 'enterprise/lib/captain/evals/**'
@@ -100,23 +100,15 @@ jobs:
             spec/enterprise/lib/captain/evals/tool_safety_suite_spec.rb \
             spec/enterprise/lib/captain/evals/red_team_suite_spec.rb \
             spec/enterprise/lib/captain/evals/conversation_completion_suite_spec.rb \
-            spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb \
-            spec/controllers/api/v1/accounts/captain/evaluations_controller_spec.rb
+            spec/enterprise/lib/captain/evals/ai_voice_trace_suite_spec.rb
 
       - name: Run deterministic AI eval CI gate
         run: |
           bundle exec rake llm:evals:ci
           bundle exec rake llm:evals:tribunal FORMAT=json STRICT=true
 
-      - name: Run Captain evaluations frontend checks
+      - name: Run Captain navigation checks
         run: |
           pnpm exec vitest run \
-            app/javascript/dashboard/api/specs/captainEvaluations.spec.js \
-            app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js \
             app/javascript/dashboard/routes/dashboard/captain/captain.routes.spec.js \
             app/javascript/dashboard/components-next/sidebar/sidebarVisibility.spec.js
-          pnpm exec eslint \
-            app/javascript/dashboard/api/captain/evaluations.js \
-            app/javascript/dashboard/api/specs/captainEvaluations.spec.js \
-            app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.vue \
-            app/javascript/dashboard/routes/dashboard/captain/evaluations/Index.spec.js

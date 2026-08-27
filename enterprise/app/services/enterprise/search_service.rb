@@ -16,7 +16,10 @@ module Enterprise::SearchService
   private
 
   def build_where_conditions
-    conditions = { account_id: current_account.id }
+    conditions = {
+      account_id: current_account.id,
+      conversation_id: accessible_conversation_ids
+    }
     conditions[:inbox_id] = accessable_inbox_ids unless should_skip_inbox_filtering?
     conditions
   end

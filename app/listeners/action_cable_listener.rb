@@ -49,7 +49,7 @@ class ActionCableListener < BaseListener
     message, account = extract_message_and_account(event)
     ensure_communication_thread_for_message_broadcast(message)
     conversation = message.conversation
-    dashboard_tokens = user_tokens(account, conversation.inbox.members)
+    dashboard_tokens = conversation_dashboard_tokens(account, conversation)
     customer_tokens = contact_tokens(conversation.contact_inbox, message)
 
     broadcast(account, dashboard_tokens, MESSAGE_CREATED, message.push_event_data)
@@ -61,7 +61,7 @@ class ActionCableListener < BaseListener
     message, account = extract_message_and_account(event)
     ensure_communication_thread_for_message_broadcast(message)
     conversation = message.conversation
-    dashboard_tokens = user_tokens(account, conversation.inbox.members)
+    dashboard_tokens = conversation_dashboard_tokens(account, conversation)
     customer_tokens = contact_tokens(conversation.contact_inbox, message)
 
     broadcast(account, dashboard_tokens, MESSAGE_UPDATED, message.push_event_data.merge(previous_changes: event.data[:previous_changes]))
@@ -77,7 +77,7 @@ class ActionCableListener < BaseListener
   def first_reply_created(event)
     message, account = extract_message_and_account(event)
     conversation = message.conversation
-    tokens = user_tokens(account, conversation.inbox.members)
+    tokens = conversation_dashboard_tokens(account, conversation)
 
     broadcast(account, tokens, FIRST_REPLY_CREATED, message.push_event_data)
     broadcast_communication_thread_update(conversation, FIRST_REPLY_CREATED, message: message)
@@ -85,7 +85,7 @@ class ActionCableListener < BaseListener
 
   def conversation_created(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
+    tokens = conversation_dashboard_tokens(account, conversation) + contact_inbox_tokens(conversation.contact_inbox)
 
     broadcast(account, tokens, CONVERSATION_CREATED, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, CONVERSATION_CREATED)
@@ -93,7 +93,7 @@ class ActionCableListener < BaseListener
 
   def conversation_read(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members)
+    tokens = conversation_dashboard_tokens(account, conversation)
 
     broadcast(account, tokens, CONVERSATION_READ, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, CONVERSATION_READ)
@@ -101,7 +101,7 @@ class ActionCableListener < BaseListener
 
   def conversation_status_changed(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
+    tokens = conversation_dashboard_tokens(account, conversation) + contact_inbox_tokens(conversation.contact_inbox)
 
     broadcast(account, tokens, CONVERSATION_STATUS_CHANGED, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, CONVERSATION_STATUS_CHANGED)
@@ -109,7 +109,7 @@ class ActionCableListener < BaseListener
 
   def conversation_updated(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members) + contact_inbox_tokens(conversation.contact_inbox)
+    tokens = conversation_dashboard_tokens(account, conversation) + contact_inbox_tokens(conversation.contact_inbox)
 
     broadcast(account, tokens, CONVERSATION_UPDATED, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, CONVERSATION_UPDATED)
@@ -149,7 +149,7 @@ class ActionCableListener < BaseListener
 
   def assignee_changed(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members)
+    tokens = conversation_dashboard_tokens(account, conversation)
 
     broadcast(account, tokens, ASSIGNEE_CHANGED, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, ASSIGNEE_CHANGED)
@@ -157,7 +157,7 @@ class ActionCableListener < BaseListener
 
   def team_changed(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members)
+    tokens = conversation_dashboard_tokens(account, conversation)
 
     broadcast(account, tokens, TEAM_CHANGED, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, TEAM_CHANGED)
@@ -165,7 +165,7 @@ class ActionCableListener < BaseListener
 
   def conversation_contact_changed(event)
     conversation, account = extract_conversation_and_account(event)
-    tokens = user_tokens(account, conversation.inbox.members)
+    tokens = conversation_dashboard_tokens(account, conversation)
 
     broadcast(account, tokens, CONVERSATION_CONTACT_CHANGED, conversation.push_event_data)
     broadcast_communication_thread_update(conversation, CONVERSATION_CONTACT_CHANGED)
@@ -218,7 +218,8 @@ class ActionCableListener < BaseListener
     conversation, account = extract_conversation_and_account(event)
     user = event.data[:user]
 
-    broadcast(account, [user.pubsub_token], CONVERSATION_MENTIONED, conversation.push_event_data)
+    tokens = conversation_dashboard_tokens(account, conversation) & [user.pubsub_token]
+    broadcast(account, tokens, CONVERSATION_MENTIONED, conversation.push_event_data)
   end
 
   private
@@ -292,9 +293,8 @@ class ActionCableListener < BaseListener
     end
   end
 
-  def communication_thread_dashboard_users(account, links)
-    users = links.flat_map { |link| link.inbox.members.to_a } + account.administrators.to_a
-    users.index_by(&:id).values
+  def communication_thread_dashboard_users(account, _links)
+    account.users.to_a
   end
 
   def communication_thread_visible_links_for(account, user, links)
@@ -404,8 +404,29 @@ class ActionCableListener < BaseListener
                            user.pubsub_token
                          end
 
-    tokens = user_tokens(account, conversation.inbox.members) + [conversation.contact_inbox.pubsub_token]
+    tokens = conversation_dashboard_tokens(account, conversation) + [conversation.contact_inbox.pubsub_token]
     current_user_token.present? ? tokens - [current_user_token] : tokens
+  end
+
+  def conversation_dashboard_tokens(account, conversation)
+    voice_member_user_ids = conversation.inbox.channel_type == 'Channel::Voice' ? conversation.inbox.members.ids : nil
+    participant_user_ids = conversation.conversation_participants.pluck(:user_id)
+    permitted_agents = account.account_users
+                              .where(role: :agent)
+                              .includes(:user, :custom_role)
+                              .filter_map do |account_user|
+      user = account_user.user
+      context = {
+        user: user,
+        account: account,
+        account_user: account_user,
+        voice_member_user_ids: voice_member_user_ids,
+        participant_user_ids: participant_user_ids
+      }
+      user if ConversationPolicy.new(context, conversation).show?
+    end
+
+    user_tokens(account, permitted_agents)
   end
 
   def user_tokens(account, agents)

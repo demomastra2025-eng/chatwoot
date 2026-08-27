@@ -26,7 +26,7 @@ describe ActionCableListener do
       expect(conversation.inbox.reload.inbox_members.count).to eq(1)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*account.users.pluck(:pubsub_token)),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
       )
@@ -36,6 +36,51 @@ describe ActionCableListener do
         message.push_event_data(include_communication_thread: false).merge(account_id: account.id)
       )
       listener.message_created(event)
+    end
+
+    it 'uses conversation permissions for account-wide messaging dashboard recipients' do
+      create(:user, account: account, role: :agent)
+      restricted_agent = create(:user, account: account, role: :agent)
+      create(:inbox_member, inbox: inbox, user: restricted_agent)
+      restricted_role = create(:custom_role, account: account, permissions: [])
+      account.account_users.find_by!(user: restricted_agent).update!(custom_role: restricted_role)
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(*account.users.where.not(id: restricted_agent.id).pluck(:pubsub_token)),
+        'message.created',
+        message.push_event_data.merge(account_id: account.id)
+      )
+    end
+
+    it 'keeps standard Voice message events restricted by membership and custom role' do
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      voice_member = create(:user, account: account, role: :agent)
+      restricted_member = create(:user, account: account, role: :agent)
+      unassigned_agent = create(:user, account: account, role: :agent)
+      create(:inbox_member, inbox: voice_inbox, user: voice_member)
+      create(:inbox_member, inbox: voice_inbox, user: restricted_member)
+      restricted_role = create(:custom_role, account: account, permissions: [])
+      account.account_users.find_by!(user: restricted_member).update!(custom_role: restricted_role)
+      voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+      voice_message = create(:message, account: account, inbox: voice_inbox, conversation: voice_conversation)
+      voice_event = Events::Base.new(event_name, Time.zone.now, message: voice_message)
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(voice_event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        a_collection_containing_exactly(voice_member.pubsub_token, admin.pubsub_token),
+        'message.created',
+        voice_message.push_event_data.merge(account_id: account.id)
+      )
+      expect(ActionCableBroadcastJob).not_to have_received(:perform_later).with(
+        a_collection_including(unassigned_agent.pubsub_token, restricted_member.pubsub_token),
+        'message.created',
+        anything
+      )
     end
 
     it 'uses the dedicated realtime queue for voice-call messages' do
@@ -57,7 +102,7 @@ describe ActionCableListener do
       verified_contact_inbox = create(:contact_inbox, contact: conversation.contact, inbox: inbox, hmac_verified: true)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*account.users.pluck(:pubsub_token)),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
       )
@@ -78,7 +123,7 @@ describe ActionCableListener do
       listener.message_created(event)
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*account.users.pluck(:pubsub_token)),
         'message.created',
         message.push_event_data.merge(account_id: account.id)
       )
@@ -121,6 +166,44 @@ describe ActionCableListener do
         [admin.pubsub_token],
         'communication_thread.updated',
         expected_payload
+      )
+    end
+
+    it 'broadcasts a communication thread refresh to an agent outside the inbox' do
+      account.enable_features!('communication_threads')
+      account_wide_agent = create(:user, account: account)
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(event)
+
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
+        [account_wide_agent.pubsub_token],
+        'communication_thread.updated',
+        hash_including(conversation_ids: [conversation.display_id])
+      )
+    end
+
+    it 'does not broadcast a Voice communication thread to an unassigned agent' do
+      account.enable_features!('communication_threads')
+      unassigned_agent = create(:user, account: account)
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+      voice_message = create(
+        :message,
+        account: account,
+        inbox: voice_inbox,
+        conversation: voice_conversation,
+        content_type: :voice_call
+      )
+      voice_event = Events::Base.new(event_name, Time.zone.now, message: voice_message)
+      allow(ActionCableBroadcastJob).to receive(:perform_later)
+
+      listener.message_created(voice_event)
+
+      expect(ActionCableBroadcastJob).not_to have_received(:perform_later).with(
+        [unassigned_agent.pubsub_token],
+        'communication_thread.updated',
+        anything
       )
     end
 
@@ -207,7 +290,7 @@ describe ActionCableListener do
       )
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*account.users.pluck(:pubsub_token)),
         'message.created',
         dashboard_payload
       )
@@ -268,7 +351,7 @@ describe ActionCableListener do
       )
     end
 
-    it 'filters communication thread realtime payloads per recipient conversation permission scope' do
+    it 'broadcasts account-wide communication thread payloads to agents outside the source inbox' do
       account.enable_features!('communication_threads')
       communication_thread = conversation.refresh_communication_thread!
       contact = conversation.contact
@@ -284,17 +367,17 @@ describe ActionCableListener do
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [agent.pubsub_token],
         'communication_thread.updated',
-        hash_including(conversation_ids: [conversation.display_id])
+        hash_including(conversation_ids: contain_exactly(conversation.display_id, second_conversation.display_id))
       )
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [admin.pubsub_token],
         'communication_thread.updated',
         hash_including(conversation_ids: contain_exactly(conversation.display_id, second_conversation.display_id))
       )
-      expect(ActionCableBroadcastJob).not_to have_received(:perform_later).with(
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [second_agent.pubsub_token],
         'communication_thread.updated',
-        anything
+        hash_including(conversation_ids: contain_exactly(conversation.display_id, second_conversation.display_id))
       )
       expect(communication_thread.communication_thread_conversations.count).to eq(2)
     end
@@ -317,7 +400,7 @@ describe ActionCableListener do
 
       communication_thread = conversation.reload.communication_thread
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(*account.users.pluck(:pubsub_token)),
         'message.updated',
         hash_including(
           id: message.id,
@@ -631,11 +714,21 @@ describe ActionCableListener do
       conversation.add_labels(['support'])
     end
 
-    it 'sends update to inbox members' do
+    it 'sends update to every permitted account employee and the contact' do
       expect(conversation.inbox.reload.inbox_members.count).to eq(1)
+      account_wide_agent = create(:user, account: account, role: :agent)
+      restricted_agent = create(:user, account: account, role: :agent)
+      create(:inbox_member, inbox: inbox, user: restricted_agent)
+      restricted_role = create(:custom_role, account: account, permissions: [])
+      account.account_users.find_by!(user: restricted_agent).update!(custom_role: restricted_role)
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        [agent.pubsub_token, admin.pubsub_token, conversation.contact_inbox.pubsub_token],
+        a_collection_containing_exactly(
+          agent.pubsub_token,
+          account_wide_agent.pubsub_token,
+          admin.pubsub_token,
+          conversation.contact_inbox.pubsub_token
+        ),
         'conversation.updated',
         conversation.push_event_data.merge(account_id: account.id)
       )
@@ -646,7 +739,7 @@ describe ActionCableListener do
       expect(conversation.reload.push_event_data[:labels]).to eq(conversation.labels.pluck(:name))
 
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        [agent.pubsub_token, admin.pubsub_token, conversation.contact_inbox.pubsub_token],
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token, conversation.contact_inbox.pubsub_token),
         'conversation.updated',
         conversation.push_event_data.merge(account_id: account.id)
       )
