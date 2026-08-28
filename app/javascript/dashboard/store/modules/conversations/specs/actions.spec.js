@@ -92,40 +92,270 @@ describe('conversation actions', () => {
   });
 
   describe('#markCommunicationThreadRead', () => {
-    it('marks the thread read without committing a full thread update that would retrigger scroll/read loop', async () => {
+    it('optimistically marks the thread read and reconciles the minimal server state', async () => {
       const commit = vi.fn();
       const dispatch = vi.fn();
       vi.spyOn(Date, 'now').mockReturnValue(1712345678000);
       vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockResolvedValue({
         data: {
           id: 7,
+          agent_last_seen_at: 1712345679,
           unread_count: 0,
-          messages: [],
-          channels: [{ conversation_id: 11, inbox_id: 101 }],
-          meta: { sender: { id: 42 } },
         },
       });
 
       await actions.markCommunicationThreadRead(
-        { commit, dispatch },
+        { commit, dispatch, state: { allConversations: [] } },
         { id: 7 }
       );
 
       expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledWith({
         id: 7,
       });
-      expect(commit).toHaveBeenCalledWith(types.UPDATE_MESSAGE_UNREAD_COUNT, {
-        id: 7,
-        lastSeen: 1712345678,
-        unreadCount: 0,
-        conversationType: 'communication_thread',
-        channels: [{ conversation_id: 11, inbox_id: 101 }],
-      });
+      expect(commit.mock.calls).toContainEqual([
+        types.UPDATE_MESSAGE_UNREAD_COUNT,
+        {
+          id: 7,
+          lastSeen: 1712345678,
+          unreadCount: 0,
+          conversationType: 'communication_thread',
+        },
+      ]);
+      expect(commit.mock.calls).toContainEqual([
+        types.UPDATE_MESSAGE_UNREAD_COUNT,
+        {
+          id: 7,
+          lastSeen: 1712345679,
+          unreadCount: 0,
+          conversationType: 'communication_thread',
+        },
+      ]);
       expect(commit).not.toHaveBeenCalledWith(
         types.UPDATE_CONVERSATION,
         expect.anything()
       );
-      expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
+      expect(dispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        { communicationThreadMode: true, status: undefined },
+        { root: true }
+      );
+    });
+
+    it('rolls optimistic unread state back when the request fails', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockRejectedValue(
+        new Error('network error')
+      );
+
+      await actions.markCommunicationThreadRead(
+        {
+          commit,
+          dispatch,
+          state: {
+            allConversations: [
+              {
+                id: 7,
+                is_communication_thread: true,
+                unread_count: 3,
+                agent_last_seen_at: 1712345600,
+              },
+            ],
+          },
+        },
+        { id: 7 }
+      );
+
+      expect(commit).toHaveBeenLastCalledWith(
+        types.UPDATE_MESSAGE_UNREAD_COUNT,
+        {
+          id: 7,
+          lastSeen: 1712345600,
+          unreadCount: 3,
+          conversationType: 'communication_thread',
+        }
+      );
+      expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledTimes(2);
+      expect(dispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        { communicationThreadMode: true, status: undefined },
+        { root: true }
+      );
+    });
+
+    it('keeps the optimistic read state when the retry succeeds', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead')
+        .mockRejectedValueOnce(new Error('temporary failure'))
+        .mockResolvedValueOnce({
+          data: { id: 7, agent_last_seen_at: 1712345679, unread_count: 0 },
+        });
+
+      await actions.markCommunicationThreadRead(
+        {
+          commit,
+          dispatch,
+          state: {
+            allConversations: [
+              {
+                id: 7,
+                is_communication_thread: true,
+                unread_count: 3,
+                agent_last_seen_at: 1712345600,
+              },
+            ],
+          },
+        },
+        { id: 7 }
+      );
+
+      expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledTimes(2);
+      expect(commit).not.toHaveBeenCalledWith(
+        types.UPDATE_MESSAGE_UNREAD_COUNT,
+        expect.objectContaining({ unreadCount: 3 })
+      );
+      expect(commit).toHaveBeenLastCalledWith(
+        types.UPDATE_MESSAGE_UNREAD_COUNT,
+        expect.objectContaining({ id: 7, unreadCount: 0 })
+      );
+    });
+
+    it('does not start a parallel retry while the first request is pending', async () => {
+      vi.useFakeTimers();
+      try {
+        const commit = vi.fn();
+        const dispatch = vi.fn();
+        let resolveRead;
+        vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockReturnValue(
+          new Promise(resolve => {
+            resolveRead = resolve;
+          })
+        );
+        const context = {
+          commit,
+          dispatch,
+          rootGetters: { getCurrentAccountId: 1 },
+          state: {
+            allConversations: [
+              { id: 7, is_communication_thread: true, unread_count: 5 },
+            ],
+          },
+        };
+
+        const request = actions.markCommunicationThreadRead(context, { id: 7 });
+        await vi.advanceTimersByTimeAsync(4000);
+
+        expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledTimes(1);
+        resolveRead({
+          data: {
+            id: 7,
+            agent_last_seen_at: 1712345678,
+            unread_count: 0,
+          },
+        });
+        await request;
+
+        expect(commit).not.toHaveBeenCalledWith(
+          types.UPDATE_MESSAGE_UNREAD_COUNT,
+          expect.objectContaining({ id: 7, unreadCount: 5 })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('ignores a stale read response after the thread is marked unread', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      let resolveRead;
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockReturnValue(
+        new Promise(resolve => {
+          resolveRead = resolve;
+        })
+      );
+      vi.spyOn(CommunicationThreadApi, 'markMessagesUnread').mockResolvedValue({
+        data: {
+          id: 7,
+          agent_last_seen_at: 1712345600,
+          unread_count: 2,
+        },
+      });
+      const context = {
+        commit,
+        dispatch,
+        rootGetters: { getCurrentAccountId: 1 },
+        state: {
+          allConversations: [
+            { id: 7, is_communication_thread: true, unread_count: 3 },
+          ],
+        },
+      };
+
+      const readRequest = actions.markCommunicationThreadRead(context, {
+        id: 7,
+      });
+      const unreadRequest = actions.markMessagesUnread(context, {
+        id: 7,
+        conversationType: 'communication_thread',
+      });
+      await Promise.resolve();
+      expect(CommunicationThreadApi.markMessagesUnread).not.toHaveBeenCalled();
+      resolveRead({
+        data: { id: 7, agent_last_seen_at: 1712345679, unread_count: 0 },
+      });
+      await readRequest;
+      await unreadRequest;
+
+      expect(commit).toHaveBeenLastCalledWith(
+        types.UPDATE_MESSAGE_UNREAD_COUNT,
+        expect.objectContaining({ id: 7, unreadCount: 2 })
+      );
+    });
+
+    it('does not overwrite a newer realtime unread state', async () => {
+      let resolveRead;
+      const thread = {
+        id: 7,
+        is_communication_thread: true,
+        unread_count: 3,
+        agent_last_seen_at: 1712345600,
+      };
+      const commit = vi.fn((_type, payload) => {
+        thread.unread_count = payload.unreadCount;
+        thread.agent_last_seen_at = payload.lastSeen;
+      });
+      const dispatch = vi.fn();
+      vi.spyOn(Date, 'now').mockReturnValue(1712345678000);
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockReturnValue(
+        new Promise(resolve => {
+          resolveRead = resolve;
+        })
+      );
+
+      const request = actions.markCommunicationThreadRead(
+        {
+          commit,
+          dispatch,
+          state: { allConversations: [thread] },
+          rootGetters: { getCurrentAccountId: 1 },
+        },
+        { id: 7 }
+      );
+      await Promise.resolve();
+      thread.unread_count = 1;
+      resolveRead({
+        data: { id: 7, agent_last_seen_at: 1712345679, unread_count: 0 },
+      });
+      await request;
+
+      expect(thread.unread_count).toBe(1);
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        expect.any(Object),
+        { root: true }
+      );
     });
   });
 
@@ -155,7 +385,11 @@ describe('conversation actions', () => {
         unreadCount: 2,
         conversationType: 'communication_thread',
       });
-      expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
+      expect(dispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        { communicationThreadMode: true, status: undefined },
+        { root: true }
+      );
     });
   });
 

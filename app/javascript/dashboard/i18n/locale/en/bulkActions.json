@@ -25,6 +25,8 @@
     "RESOLVE_SUCCESFUL": "Conversations resolved successfully.",
     "RESOLVE_FAILED": "Failed to resolve conversations. Please try again.",
     "ALL_CONVERSATIONS_SELECTED_ALERT": "Conversations visible on this page are only selected.",
+    "SELECT_ALL_MATCHING": "Select all {count}",
+    "ALL_MATCHING_SELECTED": "All conversations in the current set are selected: {count}.",
     "AGENT_LIST_LOADING": "Loading agents",
     "PROGRESS": {
       "TITLE": "{action}: {processedCount}/{totalCount}",

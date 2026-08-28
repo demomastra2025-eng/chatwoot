@@ -61,6 +61,16 @@ describe('SidebarGroupLeaf', () => {
     );
   });
 
+  it('renders the total inside the blue marker when the set has unread dialogs', () => {
+    const wrapper = mountComponent({ count: 42, hasUnread: true });
+    const badge = wrapper.find('[data-test-id="sidebar-unread-badge"]');
+
+    expect(badge.text()).toBe('42');
+    expect(wrapper.find('[data-test-id="sidebar-plain-count"]').exists()).toBe(
+      false
+    );
+  });
+
   it('shows large conversation totals without capping', () => {
     const wrapper = mountComponent({ count: 1234 });
 

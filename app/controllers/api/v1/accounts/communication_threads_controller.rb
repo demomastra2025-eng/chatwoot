@@ -15,6 +15,9 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     :update_last_seen,
     :unread
   ].freeze
+  OPERATIONAL_THREAD_ACTIONS = %i[
+    update update_labels destroy_conversations create_message update_last_seen unread
+  ].freeze
 
   rescue_from CommunicationThreadFinder::InvalidParameter, with: :render_communication_thread_parameter_error
   rescue_from CommunicationThreads::MessageCreateService::Error, with: :render_communication_thread_parameter_error
@@ -24,6 +27,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   before_action :ensure_communication_threads_feature_enabled!
   before_action :communication_thread, only: MEMBER_THREAD_ACTIONS
   before_action :ensure_thread_accessible!, only: MEMBER_THREAD_ACTIONS
+  before_action :ensure_thread_operationally_accessible!, only: OPERATIONAL_THREAD_ACTIONS
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
   before_action :validate_update_params!, only: [:update]
 
@@ -67,7 +71,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @communication_thread = CommunicationThreads::UpdateService.new(
       communication_thread: @communication_thread,
       params: permitted_update_params,
-      accessible_links: accessible_links_for(@communication_thread),
+      accessible_links: operational_links_for(@communication_thread),
       actor: Current.user,
       source: 'communication_thread'
     ).perform
@@ -115,7 +119,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def update_labels
     label_values = permitted_label_params[:labels] || []
-    conversations = accessible_links_for(@communication_thread).includes(:conversation).map(&:conversation)
+    conversations = operational_links_for(@communication_thread).includes(:conversation).map(&:conversation)
     @labels = Labels::UnifiedAssignmentService.new(
       contact: @communication_thread.contact,
       conversations: conversations,
@@ -141,7 +145,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       current_user: Current.user,
       params: permitted_message_params,
       accessible_inboxes: accessible_inboxes,
-      accessible_links: accessible_links_for(@communication_thread)
+      accessible_links: operational_links_for(@communication_thread)
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
@@ -154,18 +158,19 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       communication_thread: @communication_thread,
       current_user: Current.user,
       current_account: Current.account,
-      accessible_links: accessible_links_for(@communication_thread)
+      accessible_links: operational_links_for(@communication_thread)
     ).perform
-    preload_accessible_links([@communication_thread], include_unlinked: true)
-    preload_crm_deal_stages([@communication_thread])
-    preload_meta_ad_referrals([@communication_thread])
-    render :show
+    render json: {
+      id: @communication_thread.display_id,
+      agent_last_seen_at: Time.current.to_i,
+      unread_count: @communication_thread.unread_count.to_i
+    }
   end
 
   def unread
     @communication_thread = CommunicationThreads::MarkUnreadService.new(
       communication_thread: @communication_thread,
-      accessible_links: accessible_links_for(@communication_thread)
+      accessible_links: operational_links_for(@communication_thread)
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
@@ -232,7 +237,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def selected_delete_conversations
     conversation_ids = permitted_delete_conversation_ids
-    selected_links = accessible_links_for(@communication_thread)
+    selected_links = operational_links_for(@communication_thread)
                      .includes(:conversation)
                      .select { |link| conversation_ids.include?(link.conversation.display_id) }
 
@@ -364,8 +369,14 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     raise ActiveRecord::RecordNotFound
   end
 
+  def ensure_thread_operationally_accessible!
+    return if operational_links_for(@communication_thread).exists?
+
+    raise ActiveRecord::RecordNotFound
+  end
+
   def ensure_full_thread_accessible_for_update!
-    return if accessible_links_for(@communication_thread).count == @communication_thread.communication_thread_conversations.count
+    return if operational_links_for(@communication_thread).count == @communication_thread.communication_thread_conversations.count
 
     raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
   end
@@ -589,6 +600,25 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       Current.user,
       Current.account
     ).perform
+  end
+
+  def operational_links_for(thread)
+    operational_links.where(communication_thread_id: thread.id)
+  end
+
+  def operational_links
+    CommunicationThreadConversation.where(
+      account_id: Current.account.id,
+      conversation_id: operational_conversations.select(:id)
+    )
+  end
+
+  def operational_conversations
+    @operational_conversations ||= Conversations::PermissionFilterService.new(
+      Current.account.conversations,
+      Current.user,
+      Current.account
+    ).perform_operational
   end
 
   def accessible_inboxes

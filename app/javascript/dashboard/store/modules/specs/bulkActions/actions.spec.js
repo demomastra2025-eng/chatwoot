@@ -41,18 +41,50 @@ describe('#actions', () => {
       ]);
     });
 
+    it('replaces explicit ids with the server-side selection contract', async () => {
+      const selection = {
+        mode: 'all_matching',
+        filters: { status: 'open', assignee_type: 'all' },
+        excluded_ids: [9],
+      };
+      dispatch.mockResolvedValue(bulkActionRun);
+      axios.post.mockResolvedValue({ data: { payload: bulkActionRun } });
+
+      await actions.process(
+        { commit, dispatch, state: { serverSelection: selection } },
+        payload
+      );
+
+      expect(axios.post).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ ids: [], selection })
+      );
+    });
+
     it('sends correct actions if API is error', async () => {
       axios.post.mockRejectedValue({ message: 'Incorrect header' });
 
       await expect(
         actions.process({ commit, dispatch }, payload)
-      ).rejects.toThrow(Error);
+      ).rejects.toMatchObject({ message: 'Incorrect header' });
 
       expect(commit.mock.calls).toEqual([
         [types.default.SET_BULK_ACTIONS_FLAG, { isUpdating: true }],
         [types.default.SET_BULK_ACTION_RUN, null],
         [types.default.SET_BULK_ACTIONS_FLAG, { isUpdating: false }],
       ]);
+    });
+
+    it('preserves the failed record count from polling errors', async () => {
+      const pollingError = new Error('2 records failed');
+      pollingError.failedCount = 2;
+      axios.post.mockResolvedValue({ data: { payload: bulkActionRun } });
+      dispatch.mockRejectedValue(pollingError);
+
+      await expect(actions.process({ commit, dispatch }, payload)).rejects.toBe(
+        pollingError
+      );
+      expect(pollingError.failedCount).toBe(2);
     });
   });
 
@@ -93,6 +125,7 @@ describe('#actions', () => {
       await actions.clearSelectedConversationIds({ commit });
       expect(commit.mock.calls).toEqual([
         [types.default.CLEAR_SELECTED_CONVERSATION_IDS],
+        [types.default.SET_BULK_SELECTION, null],
       ]);
     });
   });

@@ -178,7 +178,7 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
     end
 
     context 'when a custom role can manage conversations in a Voice inbox' do
-      it 'still requires Voice inbox membership' do
+      it 'keeps Voice conversations readable without inbox membership' do
         custom_role = create(:custom_role, account: account, permissions: ['conversation_manage'])
         account.account_users.find_by!(user: agent).update!(custom_role: custom_role)
         voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
@@ -186,11 +186,21 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
 
         service = -> { Conversations::PermissionFilterService.new(account.conversations, agent, account).perform }
 
-        expect(service.call).not_to include(voice_conversation)
+        expect(service.call).to include(voice_conversation)
+      end
+
+      it 'keeps Voice mutations scoped to inbox membership' do
+        custom_role = create(:custom_role, account: account, permissions: ['conversation_manage'])
+        account.account_users.find_by!(user: agent).update!(custom_role: custom_role)
+        voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+        voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
+        service = Conversations::PermissionFilterService.new(account.conversations, agent, account)
+
+        expect(service.perform_operational).not_to include(voice_conversation)
 
         create(:inbox_member, user: agent, inbox: voice_inbox)
 
-        expect(service.call).to include(voice_conversation)
+        expect(service.perform_operational).to include(voice_conversation)
       end
     end
 

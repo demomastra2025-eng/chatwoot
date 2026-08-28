@@ -69,6 +69,17 @@ class BulkActionRun < ApplicationRecord
   end
 
   def complete!
+    reload
+    if failed_count.positive?
+      update!(
+        status: :failed,
+        completed_at: Time.current,
+        processed_count: total_count,
+        error_message: "#{failed_count} records failed"
+      )
+      return
+    end
+
     update!(
       status: :completed,
       completed_at: Time.current,

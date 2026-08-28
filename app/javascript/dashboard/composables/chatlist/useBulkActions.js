@@ -15,7 +15,17 @@ export function useBulkActions() {
   const selectedConversations = useMapGetter(
     'bulkActions/getSelectedConversationIds'
   );
+  const serverSelection = useMapGetter('bulkActions/getServerSelection');
   const selectedInboxes = ref([]);
+
+  const bulkActionFailureMessage = (error, fallbackKey) => {
+    if (Number(error?.failedCount || 0) > 0) {
+      return t('BULK_ACTION.PROGRESS.FAILED', {
+        count: error.failedCount,
+      });
+    }
+    return t(fallbackKey);
+  };
 
   const normalizeInboxIds = inboxIds => {
     const ids = Array.isArray(inboxIds) ? inboxIds : [inboxIds];
@@ -24,6 +34,14 @@ export function useBulkActions() {
 
   function selectConversation(conversationId, inboxIds) {
     store.dispatch('bulkActions/setSelectedConversationIds', conversationId);
+    if (serverSelection.value) {
+      store.dispatch('bulkActions/setServerSelection', {
+        ...serverSelection.value,
+        excluded_ids: (serverSelection.value.excluded_ids || []).filter(
+          id => id !== conversationId
+        ),
+      });
+    }
     selectedInboxes.value = [
       ...selectedInboxes.value,
       ...normalizeInboxIds(inboxIds),
@@ -32,6 +50,17 @@ export function useBulkActions() {
 
   function deSelectConversation(conversationId, inboxIds) {
     store.dispatch('bulkActions/removeSelectedConversationIds', conversationId);
+    if (serverSelection.value) {
+      store.dispatch('bulkActions/setServerSelection', {
+        ...serverSelection.value,
+        excluded_ids: [
+          ...new Set([
+            ...(serverSelection.value.excluded_ids || []),
+            conversationId,
+          ]),
+        ],
+      });
+    }
     normalizeInboxIds(inboxIds).forEach(inboxId => {
       const index = selectedInboxes.value.indexOf(inboxId);
 
@@ -105,8 +134,8 @@ export function useBulkActions() {
       } else {
         useAlert(t('BULK_ACTION.ASSIGN_SUCCESFUL'));
       }
-    } catch (err) {
-      useAlert(t('BULK_ACTION.ASSIGN_FAILED'));
+    } catch (error) {
+      useAlert(bulkActionFailureMessage(error, 'BULK_ACTION.ASSIGN_FAILED'));
     }
   }
 
@@ -135,8 +164,10 @@ export function useBulkActions() {
       } else {
         useAlert(t('BULK_ACTION.LABELS.ASSIGN_SUCCESFUL'));
       }
-    } catch (err) {
-      useAlert(t('BULK_ACTION.LABELS.ASSIGN_FAILED'));
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(error, 'BULK_ACTION.LABELS.ASSIGN_FAILED')
+      );
     }
   }
 
@@ -157,8 +188,13 @@ export function useBulkActions() {
           conversationId,
         })
       );
-    } catch (err) {
-      useAlert(t('CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_REMOVAL.FAILED'));
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(
+          error,
+          'CONVERSATION.CARD_CONTEXT_MENU.API.LABEL_REMOVAL.FAILED'
+        )
+      );
     }
   }
 
@@ -173,8 +209,10 @@ export function useBulkActions() {
       });
       store.dispatch('bulkActions/clearSelectedConversationIds');
       useAlert(t('BULK_ACTION.TEAMS.ASSIGN_SUCCESFUL'));
-    } catch (err) {
-      useAlert(t('BULK_ACTION.TEAMS.ASSIGN_FAILED'));
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(error, 'BULK_ACTION.TEAMS.ASSIGN_FAILED')
+      );
     }
   }
 
@@ -254,8 +292,10 @@ export function useBulkActions() {
       } else {
         useAlert(t('BULK_ACTION.UPDATE.UPDATE_SUCCESFUL'));
       }
-    } catch (err) {
-      useAlert(t('BULK_ACTION.UPDATE.UPDATE_FAILED'));
+    } catch (error) {
+      useAlert(
+        bulkActionFailureMessage(error, 'BULK_ACTION.UPDATE.UPDATE_FAILED')
+      );
     }
   }
 
@@ -276,8 +316,8 @@ export function useBulkActions() {
       });
       resetBulkActions();
       useAlert(t('BULK_ACTION.MARK_READ.SUCCESS'));
-    } catch (err) {
-      useAlert(t('BULK_ACTION.MARK_READ.FAILED'));
+    } catch (error) {
+      useAlert(bulkActionFailureMessage(error, 'BULK_ACTION.MARK_READ.FAILED'));
     }
   }
 

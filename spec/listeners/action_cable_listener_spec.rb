@@ -55,7 +55,7 @@ describe ActionCableListener do
       )
     end
 
-    it 'keeps standard Voice message events restricted by membership and custom role' do
+    it 'broadcasts standard Voice message events account-wide while honoring custom roles' do
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       voice_member = create(:user, account: account, role: :agent)
       restricted_member = create(:user, account: account, role: :agent)
@@ -72,12 +72,14 @@ describe ActionCableListener do
       listener.message_created(voice_event)
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
-        a_collection_containing_exactly(voice_member.pubsub_token, admin.pubsub_token),
+        a_collection_containing_exactly(
+          *account.users.where.not(id: restricted_member.id).pluck(:pubsub_token)
+        ),
         'message.created',
         voice_message.push_event_data.merge(account_id: account.id)
       )
       expect(ActionCableBroadcastJob).not_to have_received(:perform_later).with(
-        a_collection_including(unassigned_agent.pubsub_token, restricted_member.pubsub_token),
+        a_collection_including(restricted_member.pubsub_token),
         'message.created',
         anything
       )
@@ -183,7 +185,7 @@ describe ActionCableListener do
       )
     end
 
-    it 'does not broadcast a Voice communication thread to an unassigned agent' do
+    it 'broadcasts a Voice communication thread to an account agent without inbox membership' do
       account.enable_features!('communication_threads')
       unassigned_agent = create(:user, account: account)
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
@@ -200,7 +202,7 @@ describe ActionCableListener do
 
       listener.message_created(voice_event)
 
-      expect(ActionCableBroadcastJob).not_to have_received(:perform_later).with(
+      expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [unassigned_agent.pubsub_token],
         'communication_thread.updated',
         anything

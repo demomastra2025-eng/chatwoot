@@ -455,14 +455,13 @@ describe SearchService do
         described_class.new(current_user: admin_user, current_account: account, params: params, search_type: search_type)
       end
 
-      it 'does not filter by inbox_id' do
-        # Testing the private method itself seems like the best way to ensure
-        # that the inboxes are not added to the search query
+      it 'scopes messages to account inboxes without membership filtering' do
+        # Verify the account boundary without reintroducing membership-only visibility.
         base_query = admin_search.send(:message_base_query)
 
-        # Should only have the time filter, not inbox filter
         expect(base_query.to_sql).to include('created_at >= ')
-        expect(base_query.to_sql).not_to include('inbox_id')
+        expect(base_query.to_sql).to include('conversation_id')
+        expect(base_query.to_sql).to include('inboxes"."account_id')
       end
     end
 
@@ -585,7 +584,7 @@ describe SearchService do
       )
     end
 
-    it 'excludes Voice conversations and messages until the agent is assigned to the inbox' do
+    it 'includes account-readable Voice conversations and messages without inbox membership' do
       conversation_search = described_class.new(
         current_user: user,
         current_account: account,
@@ -599,28 +598,9 @@ describe SearchService do
         search_type: 'Message'
       )
 
-      expect(conversation_search.perform[:conversations]).not_to include(voice_conversation)
-      expect(message_search.perform[:messages].map(&:conversation_id)).not_to include(voice_conversation.id)
-      expect(message_search.send(:build_where_conditions)[:conversation_id]).not_to include(voice_conversation.id)
-
-      create(:inbox_member, user: user, inbox: voice_inbox)
-
-      assigned_conversation_search = described_class.new(
-        current_user: user,
-        current_account: account,
-        params: { q: 'Restricted Voice Search' },
-        search_type: 'Conversation'
-      )
-      assigned_message_search = described_class.new(
-        current_user: user,
-        current_account: account,
-        params: { q: 'restricted voice search phrase' },
-        search_type: 'Message'
-      )
-
-      expect(assigned_conversation_search.perform[:conversations]).to include(voice_conversation)
-      expect(assigned_message_search.perform[:messages].map(&:conversation_id)).to include(voice_conversation.id)
-      expect(assigned_message_search.send(:build_where_conditions)[:conversation_id]).to include(voice_conversation.id)
+      expect(conversation_search.perform[:conversations]).to include(voice_conversation)
+      expect(message_search.perform[:messages].map(&:conversation_id)).to include(voice_conversation.id)
+      expect(message_search.send(:build_where_conditions)[:conversation_id]).to include(voice_conversation.id)
     end
   end
 

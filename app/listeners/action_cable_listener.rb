@@ -409,7 +409,6 @@ class ActionCableListener < BaseListener
   end
 
   def conversation_dashboard_tokens(account, conversation)
-    voice_member_user_ids = conversation.inbox.channel_type == 'Channel::Voice' ? conversation.inbox.members.ids : nil
     participant_user_ids = conversation.conversation_participants.pluck(:user_id)
     permitted_agents = account.account_users
                               .where(role: :agent)
@@ -420,7 +419,6 @@ class ActionCableListener < BaseListener
         user: user,
         account: account,
         account_user: account_user,
-        voice_member_user_ids: voice_member_user_ids,
         participant_user_ids: participant_user_ids
       }
       user if ConversationPolicy.new(context, conversation).show?

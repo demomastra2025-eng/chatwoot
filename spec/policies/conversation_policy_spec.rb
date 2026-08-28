@@ -53,11 +53,7 @@ RSpec.describe ConversationPolicy, type: :policy do
       let(:voice_inbox) { create(:channel_voice, :sipuni, account: account).inbox }
       let(:conversation) { create(:conversation, account: account, inbox: voice_inbox) }
 
-      it 'requires Voice inbox membership for an agent' do
-        expect(subject).not_to permit(agent_context, conversation)
-
-        create(:inbox_member, user: agent, inbox: voice_inbox)
-
+      it 'allows an account agent without Voice inbox membership' do
         expect(subject).to permit(agent_context, conversation)
       end
 

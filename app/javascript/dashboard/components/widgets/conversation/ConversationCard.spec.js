@@ -132,11 +132,13 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
+      expect.objectContaining({
+        path: '/app/accounts/530/communication_threads/5',
+      })
     );
   });
 
-  it('preserves the assignee tab query when opening a communication thread', async () => {
+  it('keeps the thread URL clean while preserving list return state', async () => {
     window.history.replaceState(
       {},
       '',
@@ -156,12 +158,19 @@ describe('ConversationCard', () => {
 
     await wrapper.trigger('click');
 
-    expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
-    );
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/app/accounts/530/communication_threads/5',
+      state: {
+        conversationListReturnPath: {
+          accountId: '530',
+          threadId: '5',
+          path: '/app/accounts/530/communication_threads?status=open&assignee_type=all',
+        },
+      },
+    });
   });
 
-  it('uses the explicit active assignee tab instead of a stale location fallback', async () => {
+  it('does not include an explicit assignee tab in a communication thread URL', async () => {
     window.history.replaceState(
       {},
       '',
@@ -181,9 +190,16 @@ describe('ConversationCard', () => {
 
     await wrapper.trigger('click');
 
-    expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=me'
-    );
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/app/accounts/530/communication_threads/5',
+      state: {
+        conversationListReturnPath: {
+          accountId: '530',
+          threadId: '5',
+          path: '/app/accounts/530/communication_threads?status=open&assignee_type=all',
+        },
+      },
+    });
   });
 
   it('keeps same-id child conversations from being highlighted as active communication threads', () => {
@@ -218,7 +234,9 @@ describe('ConversationCard', () => {
     await wrapper.trigger('click');
 
     expect(mocks.routerPush).toHaveBeenCalledWith(
-      '/app/accounts/530/communication_threads/5?status=open&assignee_type=all'
+      expect.objectContaining({
+        path: '/app/accounts/530/communication_threads/5',
+      })
     );
   });
 
@@ -396,22 +414,7 @@ describe('ConversationCard', () => {
     ).toBe(true);
   });
 
-  it('renders the combined customer/reply activity time under the avatar and compact inbox name inline with the contact', () => {
-    const wrapper = mountComponent();
-    const timeAgo = findTimeAgoByTestId(
-      wrapper,
-      'conversation-directional-message-times'
-    );
-    const inboxName = wrapper.findComponent({ name: 'InboxName' });
-
-    expect(timeAgo.exists()).toBe(true);
-    expect(timeAgo.props('lastActivityTimestamp')).toBe(1710000000);
-    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(0);
-    expect(inboxName.exists()).toBe(true);
-    expect(inboxName.props('compact')).toBe(true);
-  });
-
-  it('keeps both side activity times in one timer under the avatar', () => {
+  it('does not render directional activity durations and keeps the inbox compact', () => {
     const wrapper = mountComponent({
       chat: {
         ...baseChat,
@@ -419,37 +422,13 @@ describe('ConversationCard', () => {
         last_outgoing_message_at: 1710003600,
       },
     });
+    const inboxName = wrapper.findComponent({ name: 'InboxName' });
 
-    const timeAgo = findTimeAgoByTestId(
-      wrapper,
-      'conversation-directional-message-times'
-    );
-
-    expect(timeAgo.exists()).toBe(true);
-    expect(timeAgo.props('lastActivityTimestamp')).toBe(1710000000);
-    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(1710003600);
     expect(
-      findTimeAgoByTestId(wrapper, 'conversation-last-outgoing-time')
+      findTimeAgoByTestId(wrapper, 'conversation-directional-message-times')
     ).toBe(undefined);
-  });
-
-  it('shows the manager/SLA attempt timer when only outgoing activity exists', () => {
-    const wrapper = mountComponent({
-      chat: {
-        ...baseChat,
-        last_incoming_message_at: null,
-        last_outgoing_message_at: 1710003600,
-      },
-    });
-
-    const timeAgo = findTimeAgoByTestId(
-      wrapper,
-      'conversation-directional-message-times'
-    );
-
-    expect(timeAgo.exists()).toBe(true);
-    expect(timeAgo.props('lastActivityTimestamp')).toBe(0);
-    expect(timeAgo.props('secondaryActivityTimestamp')).toBe(1710003600);
+    expect(inboxName.exists()).toBe(true);
+    expect(inboxName.props('compact')).toBe(true);
   });
 
   it('keeps the inbox name visible inside a specific inbox route', () => {

@@ -14,11 +14,7 @@ class ConversationPolicy < ApplicationPolicy
   private
 
   def agent_can_view_conversation?
-    return false unless account_user.present? && record.account_id == account&.id
-    return true unless record.inbox&.channel_type == 'Channel::Voice'
-    return user_context[:voice_member_user_ids].include?(user.id) if user_context.key?(:voice_member_user_ids)
-
-    user.inboxes.where(account_id: account.id, channel_type: 'Channel::Voice').exists?(id: record.inbox_id)
+    account_user.present? && record.account_id == account&.id
   end
 
   def administrator?

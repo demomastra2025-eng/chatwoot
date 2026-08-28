@@ -9,6 +9,7 @@ import Avatar from 'next/avatar/Avatar.vue';
 import SLACardLabel from './components/SLACardLabel.vue';
 import wootConstants from 'dashboard/constants/globals';
 import { conversationListPageURL } from 'dashboard/helper/URLHelper';
+import { conversationListReturnPath } from 'dashboard/helper/conversationListReturnContext';
 import { snoozedReopenTime } from 'dashboard/helper/snoozeHelpers';
 import { useInbox } from 'dashboard/composables/useInbox';
 import { useI18n } from 'vue-i18n';
@@ -69,6 +70,14 @@ const backButtonUrl = computed(() => {
     params: { inbox_id: inboxId, label, teamId, id: customViewId },
     name,
   } = route;
+
+  if (name === 'communication_thread_conversation') {
+    const returnPath = conversationListReturnPath({
+      accountId: accountId.value,
+      threadId: route.params.communication_thread_id,
+    });
+    if (returnPath) return returnPath;
+  }
 
   const conversationTypeMap = {
     conversation_through_mentions: 'mention',

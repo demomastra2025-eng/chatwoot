@@ -30,6 +30,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  matchingConversationCount: {
+    type: Number,
+    default: 0,
+  },
   selectedInboxes: {
     type: Array,
     default: () => [],
@@ -50,6 +54,7 @@ const props = defineProps({
 
 const emit = defineEmits([
   'selectAllConversations',
+  'selectAllMatching',
   'assignAgent',
   'assignLabels',
   'assignTeam',
@@ -66,6 +71,7 @@ const { t } = useI18n();
 
 const bulkActionRun = useMapGetter('bulkActions/getCurrentBulkActionRun');
 const bulkActionUiFlags = useMapGetter('bulkActions/getUIFlags');
+const serverSelection = useMapGetter('bulkActions/getServerSelection');
 const showCustomTimeSnoozeModal = ref(false);
 const statusReasonDialogRef = ref(null);
 
@@ -149,6 +155,11 @@ function markRead() {
   emit('markRead');
 }
 
+function selectAllMatching() {
+  if (bulkActionUiFlags.value.isUpdating) return;
+  emit('selectAllMatching');
+}
+
 function onCmdSnoozeConversation(snoozeType) {
   if (snoozeType === wootConstants.SNOOZE_OPTIONS.UNTIL_CUSTOM_TIME) {
     showCustomTimeSnoozeModal.value = true;
@@ -201,16 +212,38 @@ onUnmounted(() => {
     leave-to-class="opacity-0 scale-95 translate-y-2"
   >
     <div
-      v-if="conversations.length > 0"
+      v-if="conversations.length > 0 || serverSelection"
       v-bind="attrs"
-      class="px-2 absolute bottom-20 sm:bottom-4 left-1/2 -translate-x-1/2 z-30 w-full origin-bottom pointer-events-none"
+      class="shrink-0 z-30 w-full px-2 pb-2 origin-top pointer-events-none"
     >
       <div class="pointer-events-auto mx-auto max-w-4xl">
         <div
-          v-if="allConversationsSelected"
+          v-if="allConversationsSelected && !serverSelection"
           class="bg-n-amber-2 outline -outline-offset-1 outline-1 outline-n-amber-5 rounded-lg text-sm mb-2 py-1.5 px-2 text-n-amber-text"
         >
-          {{ $t('BULK_ACTION.ALL_CONVERSATIONS_SELECTED_ALERT') }}
+          <span>{{ $t('BULK_ACTION.ALL_CONVERSATIONS_SELECTED_ALERT') }}</span>
+          <button
+            v-if="matchingConversationCount > conversations.length"
+            class="ml-1 font-medium text-n-blue-11 hover:underline"
+            type="button"
+            @click="selectAllMatching"
+          >
+            {{
+              $t('BULK_ACTION.SELECT_ALL_MATCHING', {
+                count: matchingConversationCount,
+              })
+            }}
+          </button>
+        </div>
+        <div
+          v-else-if="serverSelection"
+          class="bg-n-blue-2 outline -outline-offset-1 outline-1 outline-n-blue-5 rounded-lg text-sm mb-2 py-1.5 px-2 text-n-blue-text"
+        >
+          {{
+            $t('BULK_ACTION.ALL_MATCHING_SELECTED', {
+              count: matchingConversationCount,
+            })
+          }}
         </div>
         <div
           class="flex items-center justify-between p-2 bg-n-button-color outline outline-1 -outline-offset-1 rounded-[10px] outline-n-weak shadow-[0_0_12px_0_rgba(27,40,59,0.08)]"

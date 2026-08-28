@@ -8,6 +8,7 @@ import wootConstants from 'dashboard/constants/globals';
 import ConversationBasicFilter from './widgets/conversation/ConversationBasicFilter.vue';
 import ConversationLocalSearch from './widgets/conversation/ConversationLocalSearch.vue';
 import ChatListChannelFilter from './widgets/conversation/ChatListChannelFilter.vue';
+import ConversationStatusFilter from './widgets/conversation/ConversationStatusFilter.vue';
 import SwitchLayout from 'dashboard/routes/dashboard/conversation/search/SwitchLayout.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 
@@ -22,6 +23,10 @@ const props = defineProps({
   channelFilterItems: { type: Array, default: () => [] },
   activeChannelFilterKey: { type: String, default: '' },
   activeUnreadOnly: { type: Boolean, default: false },
+  activeStatus: { type: String, default: 'open' },
+  showStatusFilter: { type: Boolean, default: false },
+  showAiStatus: { type: Boolean, default: false },
+  searchResultCount: { type: Number, default: null },
 });
 
 const emit = defineEmits([
@@ -32,6 +37,7 @@ const emit = defineEmits([
   'filtersModal',
   'channelFilterSelect',
   'unreadFilterToggle',
+  'statusFilterChange',
 ]);
 
 const localSearchQuery = defineModel('localSearchQuery', {
@@ -104,9 +110,25 @@ const toggleConversationLayout = () => {
         >
           {{ formattedAllCount }}
         </span>
+        <span
+          v-if="searchResultCount !== null && !isListLoading"
+          class="mx-1 shrink-0 text-xs text-n-slate-10"
+        >
+          {{
+            $t('CHAT_LIST.LOCAL_SEARCH.RESULT_COUNT', {
+              count: searchResultCount,
+            })
+          }}
+        </span>
       </template>
     </div>
     <div class="flex shrink-0 items-center gap-1">
+      <ConversationStatusFilter
+        v-if="showStatusFilter"
+        :model-value="activeStatus"
+        :show-ai="showAiStatus"
+        @update:model-value="emit('statusFilterChange', $event)"
+      />
       <NextButton
         v-tooltip.top-end="unreadFilterTooltip"
         :aria-label="unreadFilterTooltip"

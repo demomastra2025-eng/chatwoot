@@ -16,7 +16,9 @@ class CommunicationThreads::MarkUnreadService
   attr_reader :communication_thread, :accessible_links
 
   def conversations
-    @conversations ||= accessible_links.includes(:conversation).filter_map(&:conversation)
+    links = accessible_links
+    links = links.includes(:conversation) if links.respond_to?(:includes)
+    @conversations ||= links.filter_map(&:conversation)
   end
 
   def mark_conversation_unread(conversation)

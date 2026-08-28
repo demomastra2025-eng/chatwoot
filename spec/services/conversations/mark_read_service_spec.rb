@@ -80,6 +80,21 @@ RSpec.describe Conversations::MarkReadService do
         expect(projected_message.source_id).to eq('wa-incoming-1')
         expect { projected_message.content }.to raise_error(ActiveModel::MissingAttributeError)
       end
+
+      it 'keeps the conversation unread when provider synchronization fails' do
+        previous_last_seen_at = conversation.agent_last_seen_at
+        sync_service = instance_double(WhatsappWeb::MarkMessagesReadService)
+        allow(WhatsappWeb::MarkMessagesReadService).to receive(:new).and_return(sync_service)
+        allow(sync_service).to receive(:perform).and_raise(StandardError, 'provider unavailable')
+
+        expect do
+          described_class.new(conversation: conversation, user: user).perform
+        end.to raise_error(StandardError, 'provider unavailable')
+
+        expect(conversation.reload.agent_last_seen_at.to_f)
+          .to be_within(0.000001).of(previous_last_seen_at.to_f)
+        expect(conversation.unread_messages).to include(incoming_message)
+      end
     end
 
     context 'when syncing WhatsApp Cloud read receipts' do

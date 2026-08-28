@@ -59,16 +59,13 @@ import {
   isTelegramPersonalConnected,
 } from 'dashboard/helper/telegramPersonal';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
+import { resolveDefaultPipelineWithStages } from './crmDefaultPipelineSidebar';
 import {
-  resolveDefaultPipelineWithStages,
-  resolveDialogDealCount,
-} from './crmDefaultPipelineSidebar';
-import {
-  APPOINTMENT_STATUS_ANY,
   APPOINTMENT_STATUS_ICON_CLASSES,
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_VALUES,
 } from 'dashboard/routes/dashboard/scheduling/constants';
+import { conversationListContextState } from 'dashboard/helper/conversationListContext';
 
 const props = defineProps({
   isMobileSidebarOpen: {
@@ -257,37 +254,13 @@ const contactCustomViews = useMapGetter('customViews/getContactCustomViews');
 const conversationCustomViews = useMapGetter(
   'customViews/getConversationCustomViews'
 );
-const conversationSidebarUnreadCounts = useMapGetter(
-  'getConversationSidebarUnreadCounts'
-);
+
 const conversationStats = useMapGetter('conversationStats/getStats');
 
 const sortedInboxes = computed(() =>
   inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
 );
 const selectedConversation = useMapGetter('getSelectedChat');
-
-const getSidebarUnreadCount = (collection, key) => {
-  if (!key) return 0;
-  return Number(
-    conversationSidebarUnreadCounts.value?.[collection]?.[key] || 0
-  );
-};
-
-const statusUnreadCount = status => getSidebarUnreadCount('statuses', status);
-const teamUnreadCount = teamId => getSidebarUnreadCount('teams', teamId);
-const labelUnreadCount = label => getSidebarUnreadCount('labels', label);
-const appointmentStatusCount = status =>
-  getSidebarUnreadCount('appointment_statuses', status);
-const appointmentStatusTotalCount = computed(() => {
-  const anyCount = appointmentStatusCount(APPOINTMENT_STATUS_ANY);
-  if (anyCount > 0) return anyCount;
-
-  return APPOINTMENT_STATUS_VALUES.reduce(
-    (total, status) => total + appointmentStatusCount(status),
-    0
-  );
-});
 
 const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
 const conversationAssigneeTypes = [
@@ -363,10 +336,6 @@ const currentAppointmentStatus = computed(() => {
   const status = currentAppointmentStatusFilter.value;
   return APPOINTMENT_STATUS_VALUES.includes(status) ? status : '';
 });
-
-const hasAnyAppointmentStatusFilter = computed(
-  () => currentAppointmentStatusFilter.value === APPOINTMENT_STATUS_ANY
-);
 
 const truthyQueryValue = value =>
   value === true || value === 'true' || value === '1' || value === 1;
@@ -617,27 +586,19 @@ const withConversationStatus = (name, params = {}, queryOverrides = {}) =>
     conversationNavigationQuery(queryOverrides)
   );
 
-const withCurrentConversationScopeStatus = status =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({ status })
-  );
-
 const withCurrentConversationScopeAssigneeType = assigneeType =>
   accountScopedRoute(
     resolveConversationRouteName(currentConversationScope.value.name),
     currentConversationScope.value.params,
-    conversationNavigationQuery({ assignee_type: assigneeType })
-  );
-
-const withConversationWithoutCrm = (name = 'home', params = {}) =>
-  accountScopedRoute(
-    resolveConversationRouteName(name),
-    params,
     conversationNavigationQuery({
+      assignee_type: assigneeType,
       crm_pipeline_id: undefined,
       crm_stage_id: undefined,
+      appointment_status: undefined,
+      status: conversationListContextState(
+        uiSettings.value,
+        `assignee:${assigneeType}`
+      ).status,
     })
   );
 
@@ -681,35 +642,6 @@ const withTeamScopeToggle = () =>
         }
       );
 
-const isCurrentCrmPipelineOnly = pipelineId => {
-  const routePipelineId =
-    route.query.crm_pipeline_id ?? route.query.crmPipelineId;
-  const routeStageId = route.query.crm_stage_id ?? route.query.crmStageId;
-
-  return String(routePipelineId || '') === String(pipelineId) && !routeStageId;
-};
-
-const withCurrentConversationScopeCrmPipeline = pipelineId => {
-  const query = conversationNavigationQuery({
-    crm_pipeline_id: pipelineId,
-    crm_stage_id: undefined,
-  });
-
-  return accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    {
-      ...query,
-      crm_stage_id: undefined,
-    }
-  );
-};
-
-const withCurrentConversationScopeCrmPipelineToggle = pipelineId =>
-  isCurrentCrmPipelineOnly(pipelineId)
-    ? withConversationWithoutCrm('home')
-    : withCurrentConversationScopeCrmPipeline(pipelineId);
-
 const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
   accountScopedRoute(
     resolveConversationRouteName(currentConversationScope.value.name),
@@ -717,6 +649,12 @@ const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
     conversationNavigationQuery({
       crm_pipeline_id: pipelineId,
       crm_stage_id: stageId,
+      appointment_status: undefined,
+      assignee_type: wootConstants.ASSIGNEE_TYPE.ALL,
+      status: conversationListContextState(
+        uiSettings.value,
+        `crm-stage:${stageId}`
+      ).status,
     })
   );
 
@@ -727,17 +665,15 @@ const withCurrentConversationScopeAppointmentStatus = status =>
     conversationNavigationQuery({
       appointment_status:
         currentAppointmentStatus.value === status ? undefined : status,
-    })
-  );
-
-const withCurrentConversationScopeAnyAppointments = () =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({
-      appointment_status: hasAnyAppointmentStatusFilter.value
-        ? undefined
-        : APPOINTMENT_STATUS_ANY,
+      crm_pipeline_id: undefined,
+      crm_stage_id: undefined,
+      assignee_type: wootConstants.ASSIGNEE_TYPE.ALL,
+      status: conversationListContextState(
+        uiSettings.value,
+        currentAppointmentStatus.value === status
+          ? `assignee:${wootConstants.ASSIGNEE_TYPE.ALL}`
+          : `appointment:${status}`
+      ).status,
     })
   );
 
@@ -768,12 +704,7 @@ const appointmentStatusSidebarItems = computed(() => {
       visibilityKey: CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
       label: t('SCHEDULING.DIALOGS.SIDEBAR_TITLE'),
       icon: 'i-lucide-calendar-clock',
-      count: appointmentStatusTotalCount.value,
-      active: hasAnyAppointmentStatusFilter.value,
-      suppressExactPathActive: true,
-      activeOn: [],
       suppressHeaderActiveWhenChildActive: true,
-      to: withCurrentConversationScopeAnyAppointments(),
       children: APPOINTMENT_STATUS_VALUES.map(status => ({
         name: `AppointmentStatus:${status}`,
         visibilityKey: CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS[status],
@@ -782,7 +713,6 @@ const appointmentStatusSidebarItems = computed(() => {
         iconClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
         labelClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
         countClass: APPOINTMENT_STATUS_ICON_CLASSES[status],
-        count: appointmentStatusCount(status),
         active: currentAppointmentStatus.value === status,
         activeOn: conversationStatusActiveOn,
         to: withCurrentConversationScopeAppointmentStatus(status),
@@ -806,7 +736,6 @@ const crmPipelineSidebarItems = computed(() => {
     name: `PipelineStage:${pipeline.id}:${stage.id}`,
     label: stage.name,
     connectorColor: stage.color,
-    count: resolveDialogDealCount(stage),
     activeOn: conversationStatusActiveOn,
     to: withCurrentConversationScopeCrmStage(pipeline.id, stage.id),
   }));
@@ -814,16 +743,12 @@ const crmPipelineSidebarItems = computed(() => {
   const pipelineItem = {
     name: `Pipeline:${pipeline.id}`,
     visibilityKey: 'Conversation:Pipelines',
-    label: pipeline.name,
+    label: t('SIDEBAR.PIPELINES'),
     icon: 'i-lucide-filter',
-    active: isCurrentCrmPipelineOnly(pipeline.id),
-    activeOn: conversationStatusActiveOn,
-    count: resolveDialogDealCount(pipeline),
-    to: withCurrentConversationScopeCrmPipelineToggle(pipeline.id),
   };
 
   if (!stageChildren.length) {
-    return [pipelineItem];
+    return [];
   }
 
   return [
@@ -868,6 +793,14 @@ const conversationAssigneeStatusItems = computed(() =>
       [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]:
         conversationStats.value?.unAssignedCount,
     };
+    const unreadCountByTab = {
+      [wootConstants.ASSIGNEE_TYPE.ME]:
+        conversationStats.value?.mineUnreadCount,
+      [wootConstants.ASSIGNEE_TYPE.ALL]:
+        conversationStats.value?.allUnreadCount,
+      [wootConstants.ASSIGNEE_TYPE.UNASSIGNED]:
+        conversationStats.value?.unAssignedUnreadCount,
+    };
 
     return {
       name: `Assignee:${key}`,
@@ -875,6 +808,7 @@ const conversationAssigneeStatusItems = computed(() =>
       label: conversationAssigneeStatusLabels.value[key],
       icon: conversationAssigneeStatusIcons[key],
       count: Number(countByTab[key] || 0),
+      hasUnread: Number(unreadCountByTab[key] || 0) > 0,
       activeOn: conversationStatusActiveOn,
       to: withCurrentConversationScopeAssigneeType(key),
     };
@@ -1116,7 +1050,12 @@ onMounted(async () => {
     store.dispatch('labels/get'),
     store.dispatch('inboxes/get'),
     store.dispatch('notifications/unReadCount'),
-    store.dispatch('fetchSidebarUnreadCounts'),
+    ...([
+      'communication_threads_dashboard',
+      'communication_thread_conversation',
+    ].includes(route.name)
+      ? []
+      : [store.dispatch('fetchSidebarUnreadCounts')]),
     store.dispatch('teams/get'),
     store.dispatch('attributes/get'),
     store.dispatch('customViews/get', 'conversation'),
@@ -1402,50 +1341,6 @@ const menuItems = computed(() => {
         actionItems: conversationSidebarActionItems.value,
         children: [
           ...conversationAssigneeStatusItems.value,
-          {
-            name: 'Statuses',
-            visibilityKey: 'Conversation:Statuses',
-            label: t('CHAT_LIST.CHAT_SORT.STATUS'),
-            icon: 'i-lucide-list-filter',
-            children: [
-              {
-                name: 'Pending',
-                visibilityKey: 'Conversation:Pending',
-                label: t('SIDEBAR.PENDING_CONVERSATIONS'),
-                icon: 'i-woot-captain',
-                badge: statusUnreadCount('pending'),
-                activeOn: conversationStatusActiveOn,
-                to: withCurrentConversationScopeStatus('pending'),
-              },
-              {
-                name: 'Open',
-                visibilityKey: 'Conversation:Open',
-                label: t('SIDEBAR.OPEN_CONVERSATIONS'),
-                icon: 'i-lucide-inbox',
-                badge: statusUnreadCount('open'),
-                activeOn: conversationStatusActiveOn,
-                to: withCurrentConversationScopeStatus('open'),
-              },
-              {
-                name: 'Snoozed',
-                visibilityKey: 'Conversation:Snoozed',
-                icon: 'i-lucide-timer-reset',
-                badge: statusUnreadCount('snoozed'),
-                activeOn: conversationStatusActiveOn,
-                label: t('SIDEBAR.SNOOZED_CONVERSATIONS'),
-                to: withCurrentConversationScopeStatus('snoozed'),
-              },
-              {
-                name: 'Resolved',
-                visibilityKey: 'Conversation:Resolved',
-                icon: 'i-lucide-check-check',
-                badge: statusUnreadCount('resolved'),
-                activeOn: conversationStatusActiveOn,
-                label: t('SIDEBAR.RESOLVED_CONVERSATIONS'),
-                to: withCurrentConversationScopeStatus('resolved'),
-              },
-            ],
-          },
           ...crmPipelineSidebarItems.value,
           ...appointmentStatusSidebarItems.value,
           {
@@ -1475,7 +1370,7 @@ const menuItems = computed(() => {
             children: teams.value.map(team => ({
               name: `${team.name}-${team.id}`,
               label: team.name,
-              badge: teamUnreadCount(team.id),
+
               to: withConversationStatus(
                 'team_conversations',
                 {
@@ -1505,7 +1400,7 @@ const menuItems = computed(() => {
                     ...labels.value.map(label => ({
                       name: `${label.title}-${label.id}`,
                       label: labelDisplayTitle(label),
-                      badge: labelUnreadCount(label.title),
+
                       compactIconGap: labelMarkerType(label) === 'emoji',
                       iconClass:
                         labelMarkerType(label) === 'emoji' ? '!size-5' : '',

@@ -165,20 +165,7 @@ export const conversationUrl = ({
     ? `accounts/${accountId}/communication_threads/${id}`
     : `accounts/${accountId}/conversations/${id}`;
   if (communicationThread) {
-    return appendQueryToPath(
-      url,
-      conversationQuery({
-        status,
-        assigneeType,
-        defaultAssigneeType: 'all',
-        crmPipelineId,
-        crmStageId,
-        appointmentStatus,
-        labelsScope,
-        teamScope,
-        unread,
-      })
-    );
+    return url;
   }
   if (activeInbox) {
     url = `accounts/${accountId}/inbox/${activeInbox}/conversations/${id}`;

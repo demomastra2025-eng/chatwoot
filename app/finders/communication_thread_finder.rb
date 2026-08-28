@@ -101,10 +101,11 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     SQL
   end
 
-  def initialize(current_user, params)
+  def initialize(current_user, params = nil, operational: false, **legacy_params)
     @current_user = current_user
     @current_account = current_user.account
-    @params = params
+    @params = params || legacy_params
+    @operational = operational
   end
 
   def perform
@@ -122,6 +123,12 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     set_up
 
     { count: thread_counts }
+  end
+
+  def perform_scope
+    set_up
+    filter_by_assignee_type
+    @communication_threads
   end
 
   private
@@ -251,8 +258,37 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       assigned_unread_count: all_unread_count - unassigned_unread_count,
       unassigned_unread_count: unassigned_unread_count,
       all_unread_count: all_unread_count,
-      assignee_counts: assignee_counts_for(base_thread_scope),
-      unread_counts: unread_counts
+      assignee_counts: {
+        mine_count: mine_count,
+        assigned_count: all_count - unassigned_count,
+        unassigned_count: unassigned_count,
+        all_count: all_count
+      },
+      unread_counts: include_context_counts? ? unread_counts : {},
+      context_counts: include_context_counts? ? context_counts : {}
+    }
+  end
+
+  def context_counts
+    scope = scoped_thread_relation(
+      include_crm_deal_context: false,
+      include_scheduling_appointment_context: false,
+      include_assignee: false,
+      include_unread: false
+    )
+    crm_service = Crm::DealDialogUnreadCountService.new(
+      account: current_account,
+      communication_thread_scope: scope
+    )
+    appointment_service = Scheduling::AppointmentDialogCountService.new(
+      account: current_account,
+      communication_thread_scope: scope
+    )
+
+    {
+      pipelines: crm_service.communication_thread_pipeline_counts,
+      stages: crm_service.communication_thread_stage_counts,
+      appointment_statuses: appointment_service.communication_thread_status_counts
     }
   end
 
@@ -559,6 +595,10 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     !params.key?(:include_meta) || ActiveModel::Type::Boolean.new.cast(params[:include_meta])
   end
 
+  def include_context_counts?
+    ActiveModel::Type::Boolean.new.cast(params[:include_context_counts])
+  end
+
   def thread_list_preloads
     [
       {
@@ -574,11 +614,25 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def accessible_conversations
-    @accessible_conversations ||= Conversations::PermissionFilterService.new(
-      current_account.conversations,
-      current_user,
-      current_account
-    ).perform
+    @accessible_conversations ||= begin
+      permission_service = Conversations::PermissionFilterService.new(
+        current_account.conversations,
+        current_user,
+        current_account
+      )
+      scope = @operational ? permission_service.perform_operational : permission_service.perform
+
+      case params[:conversation_type]
+      when 'mention'
+        scope.where(id: current_account.mentions.where(user: current_user).select(:conversation_id))
+      when 'participating'
+        scope.where(id: current_user.participating_conversations.where(account_id: current_account.id).select(:id))
+      when 'unattended'
+        scope.unattended
+      else
+        scope
+      end
+    end
   end
 
   def crm_pipeline_id

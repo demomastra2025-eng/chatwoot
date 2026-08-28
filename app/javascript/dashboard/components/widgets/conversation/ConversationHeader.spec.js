@@ -5,6 +5,7 @@ import chatlistRu from 'dashboard/i18n/locale/ru/chatlist.json';
 import conversationRu from 'dashboard/i18n/locale/ru/conversation.json';
 import schedulingRu from 'dashboard/i18n/locale/ru/scheduling.json';
 import ConversationHeader from './ConversationHeader.vue';
+import { rememberConversationListReturnPath } from 'dashboard/helper/conversationListReturnContext';
 
 const translationMessages = {
   ...chatlistRu,
@@ -46,7 +47,7 @@ vi.mock('dashboard/helper/URLHelper', () => ({
 vi.mock('vue-router', () => ({
   useRoute: () => ({
     name: 'communication_thread_conversation',
-    params: {},
+    params: { communication_thread_id: 7 },
     query: { status: 'open' },
   }),
 }));
@@ -121,6 +122,20 @@ const mountComponent = props =>
   });
 
 describe('ConversationHeader', () => {
+  it('returns to the remembered clean-URL list context', () => {
+    rememberConversationListReturnPath({
+      accountId: 530,
+      threadId: 7,
+      path: '/app/accounts/530/custom_view/9/conversations',
+    });
+
+    const wrapper = mountComponent({ showBackButton: true });
+
+    expect(
+      wrapper.findComponent({ name: 'BackButton' }).attributes('back-url')
+    ).toBe('/app/accounts/530/custom_view/9/conversations');
+  });
+
   it('shows communication thread contact identities instead of target inbox names', () => {
     const wrapper = mountComponent();
 

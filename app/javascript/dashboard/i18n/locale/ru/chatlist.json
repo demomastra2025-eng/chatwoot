@@ -16,15 +16,15 @@
     "FILTER_ALL": "Все",
     "ASSIGNEE_TYPE_TABS": {
       "me": "Мои",
-      "unassigned": "Неназначен",
+      "unassigned": "Неназначенные",
       "all": "Все"
     },
     "CHAT_STATUS_FILTER_ITEMS": {
       "open": {
-        "TEXT": "Открыто"
+        "TEXT": "Открытые"
       },
       "resolved": {
-        "TEXT": "Закрыто"
+        "TEXT": "Закрытые"
       },
       "pending": {
         "TEXT": "AI"
@@ -33,7 +33,7 @@
         "TEXT": "Отложенные"
       },
       "all": {
-        "TEXT": "Все"
+        "TEXT": "Все статусы"
       }
     },
     "VIEW_FILTER": "Просмотр",
@@ -43,7 +43,8 @@
       "TOOLTIP_LABEL": "Искать диалоги",
       "PLACEHOLDER": "Поиск по имени, номеру, аккаунту или идентификатору",
       "EMPTY": "По этому запросу диалоги не найдены.",
-      "CLEAR_BUTTON_LABEL": "Очистить локальный поиск"
+      "CLEAR_BUTTON_LABEL": "Очистить локальный поиск",
+      "RESULT_COUNT": "Найдено {count}"
     },
     "CHAT_SORT": {
       "STATUS": "Статус",

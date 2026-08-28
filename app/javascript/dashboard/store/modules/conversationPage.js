@@ -12,6 +12,12 @@ const state = {
     unassigned: false,
     all: false,
   },
+  totalCount: {
+    me: 0,
+    unassigned: 0,
+    all: 0,
+    appliedFilters: 0,
+  },
 };
 
 export const getters = {
@@ -24,6 +30,9 @@ export const getters = {
   getCurrentPage: $state => {
     return $state.currentPage;
   },
+  getTotalCount: $state => filter => {
+    return $state.totalCount[filter] || 0;
+  },
 };
 
 export const actions = {
@@ -32,6 +41,9 @@ export const actions = {
   },
   setEndReached({ commit }, { filter }) {
     commit(types.default.SET_CONVERSATION_END_REACHED, { filter });
+  },
+  setTotalCount({ commit }, { filter, count }) {
+    commit(types.default.SET_CONVERSATION_TOTAL_COUNT, { filter, count });
   },
   reset({ commit }) {
     commit(types.default.CLEAR_CONVERSATION_PAGE);
@@ -58,6 +70,12 @@ export const mutations = {
       [filter]: true,
     };
   },
+  [types.default.SET_CONVERSATION_TOTAL_COUNT]: ($state, { filter, count }) => {
+    $state.totalCount = {
+      ...$state.totalCount,
+      [filter]: Number(count || 0),
+    };
+  },
   [types.default.CLEAR_CONVERSATION_PAGE]: $state => {
     $state.currentPage = {
       me: 0,
@@ -71,6 +89,12 @@ export const mutations = {
       unassigned: false,
       all: false,
       appliedFilters: false,
+    };
+    $state.totalCount = {
+      me: 0,
+      unassigned: 0,
+      all: 0,
+      appliedFilters: 0,
     };
   },
 };

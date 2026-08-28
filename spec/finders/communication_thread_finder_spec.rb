@@ -145,47 +145,34 @@ RSpec.describe CommunicationThreadFinder do
       expect(result[:communication_threads].map(&:id)).not_to include(no_appointment_thread.id)
     end
 
-    it 'keeps appointment status counts as dialog counts scoped by thread context' do
-      _confirmed_thread, confirmed_conversation = create_thread_with_conversation(unread_count: 1)
-      _scheduled_thread, scheduled_conversation = create_thread_with_conversation(unread_count: 1)
-      _read_thread, read_conversation = create_thread_with_conversation(unread_count: 0)
+    it 'returns assignment counters without secondary context counts by default' do
+      mine_thread, = create_thread_with_conversation(unread_count: 2)
+      unassigned_thread, = create_thread_with_conversation(unread_count: 1)
+      assigned_read_thread, = create_thread_with_conversation(unread_count: 0)
+      other_user = create(:user, account: account)
+      mine_thread.update!(assignee: user)
+      assigned_read_thread.update!(assignee: other_user)
+      expect(Crm::DealDialogUnreadCountService).not_to receive(:new)
+      expect(Scheduling::AppointmentDialogCountService).not_to receive(:new)
 
-      create(
-        :scheduling_appointment,
-        account: account,
-        contact: confirmed_conversation.contact,
-        conversation: confirmed_conversation,
-        status: 'confirmed'
-      )
-      create(
-        :scheduling_appointment,
-        account: account,
-        contact: confirmed_conversation.contact,
-        conversation: confirmed_conversation,
-        status: 'confirmed'
-      )
-      create(
-        :scheduling_appointment,
-        account: account,
-        contact: scheduled_conversation.contact,
-        conversation: scheduled_conversation,
-        status: 'scheduled'
-      )
-      create(
-        :scheduling_appointment,
-        account: account,
-        contact: read_conversation.contact,
-        conversation: read_conversation,
-        status: 'confirmed'
-      )
-      create(:scheduling_appointment, account: account, status: 'confirmed')
+      result = described_class.new(
+        user,
+        status: 'all',
+        assignee_type: 'all'
+      ).perform
 
-      result = finder.perform
-
-      expect(result[:count].dig(:unread_counts, :appointment_statuses)).to include(
-        'any' => 2,
-        'confirmed' => 1,
-        'scheduled' => 1
+      expect(result[:communication_threads]).to include(mine_thread, unassigned_thread, assigned_read_thread)
+      expect(result[:count]).to include(
+        mine_count: 1,
+        assigned_count: 2,
+        unassigned_count: 1,
+        all_count: 3,
+        mine_unread_count: 1,
+        assigned_unread_count: 1,
+        unassigned_unread_count: 1,
+        all_unread_count: 2,
+        unread_counts: {},
+        context_counts: {}
       )
     end
   end

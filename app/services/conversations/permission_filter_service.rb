@@ -14,6 +14,13 @@ class Conversations::PermissionFilterService
     conversations.none
   end
 
+  def perform_operational
+    return conversations_for_captain_assistant if captain_assistant_actor?
+    return operational_conversations if account_member?
+
+    conversations.none
+  end
+
   private
 
   def conversations_for_captain_assistant
@@ -32,6 +39,14 @@ class Conversations::PermissionFilterService
   end
 
   def accessible_inbox_ids
+    account.inboxes.select(:id)
+  end
+
+  def operational_conversations
+    conversations.where(inbox_id: operational_inbox_ids)
+  end
+
+  def operational_inbox_ids
     account_inboxes = account.inboxes
     return account_inboxes.select(:id) if user_role == 'administrator'
 

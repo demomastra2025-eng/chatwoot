@@ -25,6 +25,8 @@
     "RESOLVE_SUCCESFUL": "Беседы успешно завершены.",
     "RESOLVE_FAILED": "Не удалось завершить диалоги, попробуйте еще раз.",
     "ALL_CONVERSATIONS_SELECTED_ALERT": "Беседы, видимые на этой странице, выбраны.",
+    "SELECT_ALL_MATCHING": "Выбрать все {count}",
+    "ALL_MATCHING_SELECTED": "Выбраны все диалоги текущего набора: {count}.",
     "AGENT_LIST_LOADING": "Загрузка сотрудников",
     "PROGRESS": {
       "TITLE": "{action}: {processedCount}/{totalCount}",

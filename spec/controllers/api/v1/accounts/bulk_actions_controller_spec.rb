@@ -78,13 +78,140 @@ RSpec.describe 'Api::V1::Accounts::BulkActionsController', type: :request do
         create(:communication_thread_conversation, communication_thread: thread, conversation: conversation)
         create(:inbox_member, inbox: conversation.inbox, user: agent)
 
-        post "/api/v1/accounts/#{account.id}/bulk_actions",
-             headers: agent.create_new_auth_token,
-             params: { type: 'CommunicationThread', fields: { status: 'resolved' }, ids: [thread.display_id] }
+        perform_enqueued_jobs do
+          post "/api/v1/accounts/#{account.id}/bulk_actions/v2",
+               headers: agent.create_new_auth_token,
+               params: {
+                 type: 'CommunicationThread',
+                 fields: { status: 'resolved' },
+                 selection: {
+                   mode: 'all_matching',
+                   filters: { status: 'all', assignee_type: 'all' },
+                   excluded_ids: []
+                 }
+               }
+        end
 
         expect(response).to have_http_status(:success)
         expect(response.parsed_body.dig('payload', 'resource_type')).to eq('CommunicationThread')
         expect(response.parsed_body.dig('payload', 'action_name')).to eq('update_status')
+        expect(response.parsed_body.dig('payload', 'metadata', 'selection_mode')).to eq('all_matching')
+        expect(conversation.reload.status).to eq('resolved')
+      end
+
+      it 'rejects an empty explicit selection instead of enqueuing a successful no-op' do
+        auth_headers = agent.create_new_auth_token
+        clear_enqueued_jobs
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/bulk_actions",
+               headers: auth_headers,
+               params: { type: 'Conversation', fields: { status: 'resolved' }, ids: [] }
+        end.not_to have_enqueued_job(BulkActionsJob)
+
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+
+      it 'rejects incomplete, unknown, or invalid server selections' do
+        auth_headers = agent.create_new_auth_token
+        account.enable_features!('communication_threads')
+        custom_attribute = create(
+          :custom_attribute_definition,
+          account: account,
+          attribute_key: 'bulk_score',
+          attribute_display_type: :number,
+          attribute_model: :conversation_attribute
+        )
+
+        [
+          { filters: { status: 'all' } },
+          { filters: { status: 'all', assignee_type: 'all', unsupported_scope: 'ignored' } },
+          { filters: { status: 'not-a-status', assignee_type: 'all' } },
+          { filters: { status: 'all', assignee_type: 'everybody' } },
+          { filters: { status: 'all', assignee_type: 'all', labels_scope: 'typo' } },
+          { filters: { status: 'all', assignee_type: 'all', team_scope: 'typo' } },
+          { filters: { status: 'all', assignee_type: 'all', unread: 'sometimes' } },
+          { filters: { status: 'all', assignee_type: 'all', unread: 'true' } },
+          { filters: { status: 'all', assignee_type: 'all', team_id: 'not-an-id' } },
+          { filters: { status: 'all', assignee_type: 'all', page: '' } },
+          { filters: { status: 'all', assignee_type: 'all', labels: {} } },
+          { filters: { status: 'all', assignee_type: 'all', labels: '' } },
+          { filters: { status: 'all', assignee_type: 'all', communication_thread_mode: false } },
+          { filters: { status: 'all', assignee_type: 'all', communication_thread_mode: 'true' } },
+          { filters: { status: 'all', assignee_type: 'all', conversation_type: 'unknown' } },
+          { filters: { status: 'all', assignee_type: 'all', appointment_status: '' } },
+          { filters: { status: 'all', assignee_type: 'all' }, excluded_ids: '1' },
+          { filters: { status: 'all', assignee_type: 'all' }, excluded_ids: ['not-an-id'] },
+          { filters: { status: 'all', assignee_type: 'all' }, payload: {} },
+          { filters: { status: 'all', assignee_type: 'all' }, payload: '' },
+          {
+            filters: { status: 'all', assignee_type: 'all' },
+            payload: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], unexpected: true }]
+          },
+          {
+            filters: { status: 'all', assignee_type: 'all' },
+            payload: [{ attribute_key: 'status', filter_operator: 'unknown', values: ['open'] }]
+          },
+          {
+            filters: { status: 'all', assignee_type: 'all' },
+            payload: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['unknown'] }]
+          },
+          {
+            filters: { status: 'all', assignee_type: 'all' },
+            payload: [
+              {
+                attribute_key: custom_attribute.attribute_key,
+                custom_attribute_type: 'conversation_attribute',
+                filter_operator: 'contains',
+                values: ['80']
+              }
+            ]
+          },
+          {
+            filters: { status: 'all', assignee_type: 'all' },
+            payload: [
+              {
+                attribute_key: custom_attribute.attribute_key,
+                custom_attribute_type: 'invalid',
+                filter_operator: 'contains',
+                values: ['80']
+              }
+            ]
+          },
+          {
+            filters: { status: 'all', assignee_type: 'all' },
+            payload: [
+              {
+                attribute_key: custom_attribute.attribute_key,
+                custom_attribute_type: 'contact_attribute',
+                filter_operator: 'contains',
+                values: ['80']
+              }
+            ]
+          },
+          {
+            filters: { status: 'all', assignee_type: 'all' },
+            payload: [
+              { attribute_key: 'status', filter_operator: 'equal_to', values: ['open'] },
+              { attribute_key: 'priority', filter_operator: 'equal_to', values: ['high'] }
+            ]
+          }
+        ].each do |selection|
+          clear_enqueued_jobs
+          post "/api/v1/accounts/#{account.id}/bulk_actions/v2",
+               headers: auth_headers,
+               params: {
+                 type: 'CommunicationThread',
+                 fields: { status: 'resolved' },
+                 selection: { mode: 'all_matching', **selection }
+               },
+               as: :json
+
+          bulk_jobs = enqueued_jobs.select { |job| job[:job] == BulkActionsJob }
+          expect(bulk_jobs).to be_empty, "accepted invalid selection: #{selection.inspect}"
+
+          expect(response).to have_http_status(:unprocessable_content)
+        end
       end
 
       it 'returns the bulk action run status for the current user' do

@@ -51,7 +51,8 @@ export const buildConversationList = (
   requestPayload,
   responseData,
   filterType,
-  replaceExistingList = false
+  replaceExistingList = false,
+  updateConversationStats = true
 ) => {
   const { payload: conversationList, meta: metaData } = responseData;
   context.commit(
@@ -60,8 +61,20 @@ export const buildConversationList = (
       : types.SET_ALL_CONVERSATION,
     conversationList
   );
-  if (metaData && Object.keys(metaData).length) {
+  if (metaData && Object.keys(metaData).length && updateConversationStats) {
     context.dispatch('conversationStats/set', metaData);
+  }
+  const totalCountKey = {
+    me: 'mine_count',
+    unassigned: 'unassigned_count',
+    all: 'all_count',
+    appliedFilters: 'all_count',
+  }[filterType];
+  if (totalCountKey && metaData?.[totalCountKey] !== undefined) {
+    context.dispatch('conversationPage/setTotalCount', {
+      filter: filterType,
+      count: metaData[totalCountKey],
+    });
   }
   if (metaData?.unread_counts) {
     context.commit(

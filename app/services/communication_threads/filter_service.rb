@@ -4,12 +4,22 @@ class CommunicationThreads::FilterService < FilterService
   ATTRIBUTE_MODEL = 'conversation_attribute'
   DEFAULT_SORT = 'last_activity_at_desc'
 
-  def initialize(params, user, account)
+  def initialize(params, user, account, operational: false)
     @account = account
+    @operational = operational
     super(params, user)
   end
 
   def perform
+    perform_scope
+
+    {
+      communication_threads: communication_threads,
+      count: include_meta? ? thread_counts : {}
+    }
+  end
+
+  def perform_scope
     validate_query_operator
     validate_sort_by!
     @base_matching_conversations = apply_conversation_scopes(query_builder(@filters['conversations']))
@@ -19,19 +29,26 @@ class CommunicationThreads::FilterService < FilterService
         apply_crm_deal_context(@base_thread_scope)
       )
     )
-
-    {
-      communication_threads: communication_threads,
-      count: include_meta? ? thread_counts : {}
-    }
   end
 
   def base_relation
-    Conversations::PermissionFilterService.new(
+    permission_service = Conversations::PermissionFilterService.new(
       @account.conversations,
       @user,
       @account
-    ).perform
+    )
+    scope = @operational ? permission_service.perform_operational : permission_service.perform
+
+    case @params[:conversation_type]
+    when 'mention'
+      scope.where(id: @account.mentions.where(user: @user).select(:conversation_id))
+    when 'participating'
+      scope.where(id: @user.participating_conversations.where(account_id: @account.id).select(:id))
+    when 'unattended'
+      scope.unattended
+    else
+      scope
+    end
   end
 
   def current_page
@@ -40,6 +57,10 @@ class CommunicationThreads::FilterService < FilterService
 
   def include_meta?
     !@params.key?(:include_meta) || ActiveModel::Type::Boolean.new.cast(@params[:include_meta])
+  end
+
+  def include_context_counts?
+    ActiveModel::Type::Boolean.new.cast(@params[:include_context_counts])
   end
 
   def filter_config
@@ -183,18 +204,62 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def thread_counts
-    assignee_counts = assignee_counts_for(@communication_threads)
+    counts = aggregate_assignment_counts(@communication_threads)
+    assignee_counts = counts.slice(:mine_count, :assigned_count, :unassigned_count, :all_count)
     {
       mine_count: assignee_counts[:mine_count],
       assigned_count: assignee_counts[:assigned_count],
       unassigned_count: assignee_counts[:unassigned_count],
       all_count: assignee_counts[:all_count],
-      mine_unread_count: unread_thread_count(@communication_threads.where(assignee_id: @user.id)),
-      assigned_unread_count: unread_thread_count(@communication_threads.where.not(assignee_id: nil)),
-      unassigned_unread_count: unread_thread_count(@communication_threads.where(assignee_id: nil)),
-      all_unread_count: unread_thread_count(@communication_threads),
+      mine_unread_count: counts[:mine_unread_count],
+      assigned_unread_count: counts[:assigned_unread_count],
+      unassigned_unread_count: counts[:unassigned_unread_count],
+      all_unread_count: counts[:all_unread_count],
       assignee_counts: assignee_counts,
-      unread_counts: unread_counts
+      unread_counts: include_context_counts? ? unread_counts : {},
+      context_counts: include_context_counts? ? context_counts : {}
+    }
+  end
+
+  def context_counts
+    crm_scope = crm_unread_count_base_scope
+    appointment_scope = appointment_unread_count_base_scope
+    crm_service = crm_unread_count_service(crm_scope)
+
+    {
+      pipelines: crm_service.communication_thread_pipeline_counts,
+      stages: crm_service.communication_thread_stage_counts,
+      appointment_statuses: scheduling_appointment_count_service(appointment_scope).communication_thread_status_counts
+    }
+  end
+
+  def aggregate_assignment_counts(scope)
+    relation = CommunicationThread.where(id: scope.except(:order).select(:id))
+    user_id = @user.id.to_i
+    values = Array(
+      relation.pick(
+        Arel.sql('COUNT(*)'),
+        Arel.sql("COUNT(*) FILTER (WHERE communication_threads.assignee_id = #{user_id})"),
+        Arel.sql('COUNT(*) FILTER (WHERE communication_threads.assignee_id IS NULL)'),
+        Arel.sql('COUNT(*) FILTER (WHERE communication_threads.unread_count > 0)'),
+        Arel.sql(
+          "COUNT(*) FILTER (WHERE communication_threads.unread_count > 0 AND communication_threads.assignee_id = #{user_id})"
+        ),
+        Arel.sql(
+          'COUNT(*) FILTER (WHERE communication_threads.unread_count > 0 AND communication_threads.assignee_id IS NULL)'
+        )
+      )
+    ).map(&:to_i)
+
+    {
+      all_count: values[0],
+      mine_count: values[1],
+      unassigned_count: values[2],
+      assigned_count: values[0] - values[2],
+      all_unread_count: values[3],
+      mine_unread_count: values[4],
+      unassigned_unread_count: values[5],
+      assigned_unread_count: values[3] - values[5]
     }
   end
 

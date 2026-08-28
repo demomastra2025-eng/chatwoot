@@ -29,7 +29,9 @@ class CommunicationThreads::MarkReadService
   attr_reader :communication_thread, :current_user, :current_account, :accessible_links
 
   def conversations
-    @conversations ||= accessible_links.includes(:conversation).filter_map(&:conversation)
+    links = accessible_links
+    links = links.includes(:conversation) if links.respond_to?(:includes)
+    @conversations ||= links.filter_map(&:conversation)
   end
 
   def refresh_communication_thread!

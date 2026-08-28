@@ -17,6 +17,7 @@ const props = defineProps({
   active: { type: Boolean, default: false },
   badge: { type: [Number, String], default: 0 },
   count: { type: [Number, String], default: null },
+  hasUnread: { type: Boolean, default: false },
   component: { type: Function, default: null },
   connectorColor: { type: String, default: '' },
 });
@@ -137,8 +138,12 @@ const handleLeafClick = async event => {
         <div class="flex-1 truncate min-w-0 text-sm" :class="labelClass">
           {{ label }}
         </div>
+        <SidebarUnreadBadge
+          v-if="hasPlainCount && hasUnread"
+          :value="plainCountLabel"
+        />
         <span
-          v-if="hasPlainCount"
+          v-else-if="hasPlainCount"
           data-test-id="sidebar-plain-count"
           class="shrink-0 text-xs font-medium leading-5 tabular-nums"
           :class="countClass || 'text-current'"

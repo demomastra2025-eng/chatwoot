@@ -395,7 +395,8 @@ const actions = {
           ),
         },
         params.assigneeType,
-        Number(params.page || 1) === 1
+        Number(params.page || 1) === 1,
+        false
       );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
@@ -421,7 +422,10 @@ const actions = {
     }
   },
 
-  fetchSidebarUnreadCounts: async ({ commit, state = {} }, params = null) => {
+  fetchSidebarUnreadCounts: async (
+    { commit, dispatch, state = {} },
+    params = null
+  ) => {
     sidebarUnreadCountsRequestId += 1;
     const requestId = sidebarUnreadCountsRequestId;
     try {
@@ -434,8 +438,17 @@ const actions = {
           : ConversationApi;
         const {
           data: { meta },
-        } = await statsApi.meta(requestParams);
+        } = await statsApi.meta({
+          ...requestParams,
+          ...(requestParams.communicationThreadMode
+            ? { includeContextCounts: true }
+            : {}),
+        });
+        if (requestId !== sidebarUnreadCountsRequestId) return undefined;
         counts = meta?.unread_counts || {};
+        if (requestParams.communicationThreadMode && meta) {
+          dispatch('conversationStats/set', meta);
+        }
       } else {
         const {
           data: { counts: globalCounts },
@@ -476,7 +489,8 @@ const actions = {
         params,
         responseData,
         'appliedFilters',
-        Number(params.page || 1) === 1
+        Number(params.page || 1) === 1,
+        !params?.communicationThreadMode
       );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {

@@ -173,7 +173,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
-    it 'hides Voice channel links until the agent is assigned to the Voice inbox' do
+    it 'keeps Voice channel links readable without Voice inbox membership' do
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
       voice_thread = voice_conversation.reload.communication_thread || voice_conversation.refresh_communication_thread!
@@ -181,13 +181,27 @@ RSpec.describe 'Communication Threads API', type: :request do
       get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
 
       thread_ids = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).pluck(:id)
-      expect(thread_ids).not_to include(voice_thread.display_id)
+      expect(thread_ids).to include(voice_thread.display_id)
+    end
+
+    it 'requires Voice inbox membership for thread mutations' do
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      voice_conversation = create(:conversation, account: account, inbox: voice_inbox, status: :open)
+      voice_thread = voice_conversation.reload.communication_thread || voice_conversation.refresh_communication_thread!
+      thread_path = "/api/v1/accounts/#{account.id}/communication_threads/#{voice_thread.display_id}"
+
+      patch thread_path, params: { status: 'resolved' }, headers: headers, as: :json
+      expect(response).to have_http_status(:not_found)
+      expect(voice_conversation.reload).to be_open
+
+      post "#{thread_path}/update_last_seen", headers: headers, as: :json
+      expect(response).to have_http_status(:not_found)
 
       create(:inbox_member, user: agent, inbox: voice_inbox)
-      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+      patch thread_path, params: { status: 'resolved' }, headers: headers, as: :json
 
-      assigned_thread_ids = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).pluck(:id)
-      expect(assigned_thread_ids).to include(voice_thread.display_id)
+      expect(response).to have_http_status(:success)
+      expect(voice_conversation.reload).to be_resolved
     end
 
     it 'exposes the latest Meta ads referral metadata across account channel links' do
@@ -364,7 +378,13 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
 
       get "/api/v1/accounts/#{account.id}/communication_threads",
-          params: { status: 'open', assignee_type: 'all', crm_pipeline_id: pipeline.id, crm_stage_id: stage.id },
+          params: {
+            status: 'open',
+            assignee_type: 'all',
+            crm_pipeline_id: pipeline.id,
+            crm_stage_id: stage.id,
+            include_context_counts: true
+          },
           headers: headers,
           as: :json
 
@@ -377,6 +397,10 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
       expect(body.dig(:data, :meta, :unread_counts, :pipelines)).to include(pipeline.id.to_s.to_sym => 3)
       expect(body.dig(:data, :meta, :unread_counts, :stages)).to include(
+        stage.id.to_s.to_sym => 2,
+        other_stage.id.to_s.to_sym => 1
+      )
+      expect(body.dig(:data, :meta, :context_counts, :stages)).to include(
         stage.id.to_s.to_sym => 2,
         other_stage.id.to_s.to_sym => 1
       )
@@ -508,16 +532,16 @@ RSpec.describe 'Communication Threads API', type: :request do
       end
 
       get "/api/v1/accounts/#{account.id}/communication_threads",
-          params: { status: 'open', assignee_type: 'me', inbox_id: first_inbox.id },
+          params: { status: 'open', assignee_type: 'me', inbox_id: first_inbox.id, include_context_counts: true },
           headers: headers,
           as: :json
 
       expect(response).to have_http_status(:success)
       meta = response.parsed_body.dig('data', 'meta')
       expect(meta['assignee_counts']).to include(
-        'mine_count' => 3,
-        'unassigned_count' => 1,
-        'all_count' => 4
+        'mine_count' => 1,
+        'unassigned_count' => 0,
+        'all_count' => 1
       )
       expect(meta.dig('unread_counts', 'statuses')).to include('open' => 1)
       expect(meta['unread_counts']).to include('all' => 2)
@@ -768,7 +792,8 @@ RSpec.describe 'Communication Threads API', type: :request do
         conversation.reload.communication_thread.update!(unread_count: 1)
       end
 
-      post "/api/v1/accounts/#{account.id}/communication_threads/filter?crm_stage_id=#{matching_stage.id}",
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter" \
+           "?crm_stage_id=#{matching_stage.id}&include_context_counts=true",
            params: {
              payload: [advanced_filter_payload.first.merge(query_operator: nil)]
            },
@@ -1012,6 +1037,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(second_conversation.reload.unread_incoming_messages_count).to eq(0)
       expect(thread.reload.unread_count).to eq(0)
       expect(response.parsed_body['unread_count']).to eq(0)
+      expect(response.parsed_body.keys).to contain_exactly('id', 'agent_last_seen_at', 'unread_count')
     end
   end
 

@@ -29,7 +29,7 @@ RSpec.describe Conversations::PermissionFilterService do
       let(:voice_inbox) { create(:channel_voice, :sipuni, account: account).inbox }
       let!(:voice_conversation) { create(:conversation, account: account, inbox: voice_inbox) }
 
-      it 'returns every messaging conversation but only assigned Voice conversations' do
+      it 'returns every account conversation for read visibility' do
         result = described_class.new(
           account.conversations,
           agent,
@@ -39,12 +39,19 @@ RSpec.describe Conversations::PermissionFilterService do
         expect(result).to include(conversation)
         expect(result).to include(another_conversation)
         expect(result).to include(other_conversation)
-        expect(result).not_to include(voice_conversation)
-        expect(result.count).to eq(3)
+        expect(result).to include(voice_conversation)
+        expect(result.count).to eq(4)
+      end
+
+      it 'keeps Voice mutations scoped to inbox membership' do
+        service = described_class.new(account.conversations, agent, account)
+
+        expect(service.perform_operational).to include(conversation, another_conversation, other_conversation)
+        expect(service.perform_operational).not_to include(voice_conversation)
 
         create(:inbox_member, user: agent, inbox: voice_inbox)
 
-        expect(described_class.new(account.conversations, agent, account).perform).to include(voice_conversation)
+        expect(service.perform_operational).to include(voice_conversation)
       end
     end
 

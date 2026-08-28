@@ -63,6 +63,7 @@ Rails.application.routes.draw do
             resource :contact_merge, only: [:create]
           end
           resource :bulk_actions, only: [:create]
+          post 'bulk_actions/v2', to: 'bulk_actions#create'
           resources :bulk_action_runs, only: [:show]
           resources :agents, only: [:index, :create, :update, :destroy] do
             post :bulk_create, on: :collection

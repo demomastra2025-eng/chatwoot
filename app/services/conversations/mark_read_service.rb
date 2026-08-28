@@ -8,15 +8,15 @@ class Conversations::MarkReadService
   def perform
     if assignee? && @conversation.assignee_unread_messages.exists?
       sync_payload = unread_message_sync_payload
-      update_last_seen_on_conversation(Time.current.utc, true)
       sync_mark_read_receipts(sync_payload)
+      update_last_seen_on_conversation(Time.current.utc, true)
       return
     end
 
     if !assignee? && @conversation.unread_messages.exists?
       sync_payload = unread_message_sync_payload
-      update_last_seen_on_conversation(Time.current.utc, false)
       sync_mark_read_receipts(sync_payload)
+      update_last_seen_on_conversation(Time.current.utc, false)
       return
     end
 

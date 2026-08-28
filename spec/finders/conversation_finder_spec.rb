@@ -58,14 +58,10 @@ describe ConversationFinder do
         expect(result[:conversations].map(&:id)).to include(restricted_conversation.id)
       end
 
-      it 'requires Voice inbox membership' do
+      it 'keeps Voice conversations readable without inbox membership' do
         voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
         voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
         params = { inbox_id: voice_inbox.id, status: 'all' }
-
-        expect(described_class.new(user_1, params).perform[:conversations]).not_to include(voice_conversation)
-
-        create(:inbox_member, user: user_1, inbox: voice_inbox)
 
         expect(described_class.new(user_1, params).perform[:conversations]).to include(voice_conversation)
       end
@@ -613,19 +609,30 @@ describe ConversationFinder do
       it 'filters based on params, sort order but returns all conversations without pagination with in time range' do
         # value of updated_within is in seconds
         # write spec based on that
+        existing_unassigned_ids = account.conversations.where(assignee_id: nil).pluck(:id)
         conversations = create_list(:conversation, 50, account: account,
                                                        inbox: inbox, assignee: nil,
                                                        updated_at: Time.now.utc - 30.seconds,
                                                        created_at: Time.now.utc - 30.seconds)
-        # update updated_at of 27 conversations to be with in 20 seconds
-        conversations[0..27].each do |conversation|
-          conversation.update(updated_at: Time.now.utc - 10.seconds)
+        # Refresh 28 conversations inside the 20-second window with deterministic sort timestamps.
+        refreshed_at = Time.current
+        account.conversations
+               .where(id: existing_unassigned_ids)
+               .update_all(updated_at: refreshed_at - 10.seconds)
+        conversations.first(28).each_with_index do |conversation, index|
+          conversation.update_columns(
+            updated_at: refreshed_at - 10.seconds,
+            created_at: refreshed_at - 30.seconds + index.seconds
+          )
         end
         result = conversation_finder.perform
         # pagination is not applied
         # filters are applied
-        # modified conversations + 1 conversation created during set up
-        expect(result[:conversations].length).to be 29
+        # Explicitly refreshed conversations and pre-existing recent unassigned conversations are inside the window.
+        expect(result[:conversations].map(&:id)).to contain_exactly(
+          *existing_unassigned_ids,
+          *conversations.first(28).map(&:id)
+        )
         # ensure that the conversations are sorted by created_at
         expect(result[:conversations].first.created_at).to be < result[:conversations].last.created_at
       end
@@ -670,7 +677,7 @@ describe ConversationFinder do
     context 'with participating conversation counts' do
       let(:params) { { conversation_type: 'participating', status: 'all', assignee_type: 'all' } }
 
-      it 'keeps an unassigned Voice participant out of payload and count scopes' do
+      it 'keeps an unassigned Voice participant in account-readable payload and count scopes' do
         voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
         voice_conversation = create(:conversation, account: account, inbox: voice_inbox)
         voice_membership = create(:inbox_member, inbox: voice_inbox, user: user_1)
@@ -680,15 +687,9 @@ describe ConversationFinder do
         full_result = conversation_finder.perform
         meta_result = conversation_finder.perform_meta_only
 
-        expect(full_result[:conversations]).not_to include(voice_conversation)
-        expect(full_result[:count]).to include(all_count: 0, assigned_count: 0, unassigned_count: 0, mine_count: 0)
+        expect(full_result[:conversations]).to include(voice_conversation)
+        expect(full_result[:count]).to include(all_count: 1, assigned_count: 0, unassigned_count: 1, mine_count: 0)
         expect(meta_result[:count]).to eq(full_result[:count])
-
-        create(:inbox_member, inbox: voice_inbox, user: user_1)
-
-        permitted_result = conversation_finder.perform
-        expect(permitted_result[:conversations]).to include(voice_conversation)
-        expect(permitted_result[:count][:all_count]).to eq(1)
       end
 
       it 'keeps empty custom-role permissions out of payload and count scopes' do

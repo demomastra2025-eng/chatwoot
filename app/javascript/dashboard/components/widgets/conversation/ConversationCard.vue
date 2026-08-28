@@ -9,12 +9,13 @@ import {
   MESSAGE_TYPES,
 } from 'dashboard/components-next/message/constants';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
+import { rememberConversationListReturnPath } from 'dashboard/helper/conversationListReturnContext';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
 import MessagePreview from './MessagePreview.vue';
 import InboxName from '../InboxName.vue';
-import TimeAgo from 'dashboard/components/ui/TimeAgo.vue';
+
 import CardLabels from './conversationCardComponents/CardLabels.vue';
 import CardPriorityIcon from 'dashboard/components-next/Conversation/ConversationCard/CardPriorityIcon.vue';
 import SLACardLabel from './components/SLACardLabel.vue';
@@ -67,7 +68,8 @@ const ConversationContextMenu = defineAsyncComponent(
 
 const router = useRouter();
 const store = useStore();
-const { t } = useI18n();
+const { t, locale } = useI18n();
+const currentLocale = computed(() => locale?.value || 'en');
 
 const hovered = ref(false);
 const showContextMenu = ref(false);
@@ -82,10 +84,6 @@ const INLINE_META_MAX_LENGTH = 12;
 const INBOX_NAME_MAX_LENGTH = 15;
 const LONG_PRESS_MS = 550;
 const LONG_PRESS_MOVE_TOLERANCE = 10;
-const OUTGOING_SIDE_MESSAGE_TYPES = [
-  MESSAGE_TYPES.OUTGOING,
-  MESSAGE_TYPES.TEMPLATE,
-];
 
 const clearLongPressTimer = () => {
   if (!longPressTimer.value) return;
@@ -157,17 +155,6 @@ const truncateInlineMetaText = value => {
     : text;
 };
 
-const timestampValue = value => {
-  const timestamp = Number(value || 0);
-  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
-};
-
-const messageCreatedAt = message =>
-  timestampValue(message?.created_at ?? message?.createdAt);
-
-const isOutgoingSideMessageType = messageType =>
-  OUTGOING_SIDE_MESSAGE_TYPES.includes(Number(messageType));
-
 const contactDisplayName = computed(() =>
   truncateInlineMetaText(currentContact.value.name)
 );
@@ -234,39 +221,51 @@ const lastMessageType = computed(
     lastMessageInChat.value?.messageType
 );
 
-const lastIncomingMessageAt = computed(() => {
-  const explicitTimestamp = timestampValue(
-    props.chat.last_incoming_message_at ?? props.chat.lastIncomingMessageAt
+const lastMessageTimestamp = computed(() =>
+  Number(
+    lastMessageInChat.value?.created_at ??
+      lastMessageInChat.value?.createdAt ??
+      props.chat.last_activity_at ??
+      props.chat.lastActivityAt ??
+      props.chat.timestamp ??
+      0
+  )
+);
+
+const lastMessageTimeLabel = computed(() => {
+  if (!lastMessageTimestamp.value) return '';
+  const date = new Date(lastMessageTimestamp.value * 1000);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dateStart = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
   );
-  if (explicitTimestamp) return explicitTimestamp;
+  const dayDifference = Math.round((todayStart - dateStart) / 86400000);
 
-  return Number(lastMessageType.value) === MESSAGE_TYPES.INCOMING
-    ? messageCreatedAt(lastMessageInChat.value)
-    : 0;
+  if (dayDifference === 0) {
+    return new Intl.DateTimeFormat(currentLocale.value, {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
+  }
+  if (dayDifference === 1) {
+    return t('CONVERSATION.DATE_DIVIDER.YESTERDAY');
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return new Intl.DateTimeFormat(currentLocale.value, {
+      day: 'numeric',
+      month: 'short',
+    }).format(date);
+  }
+
+  return new Intl.DateTimeFormat(currentLocale.value, {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+  }).format(date);
 });
-
-const lastOutgoingMessageAt = computed(() => {
-  const explicitTimestamp = timestampValue(
-    props.chat.last_outgoing_message_at ?? props.chat.lastOutgoingMessageAt
-  );
-  if (explicitTimestamp) return explicitTimestamp;
-
-  return isOutgoingSideMessageType(lastMessageType.value)
-    ? messageCreatedAt(lastMessageInChat.value)
-    : 0;
-});
-
-const incomingActivityTooltip = computed(() =>
-  t('CHAT_LIST.CHAT_TIME_STAMP.LAST_INCOMING')
-);
-
-const outgoingActivityTooltip = computed(() =>
-  t('CHAT_LIST.CHAT_TIME_STAMP.LAST_OUTGOING')
-);
-
-const hasDirectionalMessageTime = computed(() =>
-  Boolean(lastIncomingMessageAt.value || lastOutgoingMessageAt.value)
-);
 
 const appointmentStatusLabels = computed(() => ({
   cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
@@ -422,7 +421,7 @@ const messagePreviewClass = computed(() => {
     isLastMessageActivity.value || !lastMessageInChat.value
       ? 'text-n-slate-11'
       : 'text-n-slate-12',
-    hasUnread.value ? 'font-medium' : '',
+    hasUnread.value ? 'font-semibold' : '',
     !props.compact && hasUnread.value ? 'ltr:pr-4 rtl:pl-4' : '',
     props.compact && hasUnread.value ? 'ltr:pr-6 rtl:pl-6' : '',
   ];
@@ -459,6 +458,13 @@ const onCardClick = e => {
 
   const path = conversationPath.value;
   if (!path) return;
+  const navigationState = isCommunicationThreadChat.value
+    ? rememberConversationListReturnPath({
+        accountId: accountId.value,
+        threadId: props.chat.id,
+        path: `${window.location.pathname}${window.location.search}`,
+      })
+    : {};
 
   // Handle Ctrl/Cmd + Click for new tab
   if (e.metaKey || e.ctrlKey) {
@@ -474,7 +480,9 @@ const onCardClick = e => {
   // Skip if already active
   if (isActiveChat.value) return;
 
-  router.push(path);
+  router.push(
+    isCommunicationThreadChat.value ? { path, state: navigationState } : path
+  );
 };
 
 const onThumbnailHover = () => {
@@ -735,18 +743,6 @@ const togglePinnedConversation = async nextPinnedState => {
         />
         <span class="sr-only">{{ appointmentStatusStickerTitle }}</span>
       </span>
-      <TimeAgo
-        v-if="!hideThumbnail && hasDirectionalMessageTime"
-        data-test-id="conversation-directional-message-times"
-        display-mode="compact_elapsed"
-        class="mt-1 max-w-14 whitespace-nowrap"
-        :last-activity-timestamp="lastIncomingMessageAt"
-        :secondary-activity-timestamp="lastOutgoingMessageAt"
-        :created-at-timestamp="chat.created_at"
-        :conversation-id="`${chat.id}-directional-${lastIncomingMessageAt}-${lastOutgoingMessageAt}`"
-        :tooltip-text-override="incomingActivityTooltip"
-        :secondary-tooltip-text-override="outgoingActivityTooltip"
-      />
     </div>
     <div
       class="px-0 py-2 border-b group-hover:border-transparent flex-1 border-n-slate-3 min-w-0"
@@ -796,6 +792,12 @@ const togglePinnedConversation = async nextPinnedState => {
         >
           <i class="i-lucide-pin size-3 text-n-slate-11" />
           {{ t('CONVERSATION.CARD_CONTEXT_MENU.PINNED_BADGE') }}
+        </span>
+        <span
+          v-if="lastMessageTimeLabel"
+          class="ml-auto shrink-0 text-xxs font-normal normal-case tabular-nums text-n-slate-10"
+        >
+          {{ lastMessageTimeLabel }}
         </span>
       </h4>
       <div

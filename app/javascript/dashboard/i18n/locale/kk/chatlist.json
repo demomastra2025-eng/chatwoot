@@ -21,19 +21,19 @@
     },
     "CHAT_STATUS_FILTER_ITEMS": {
       "open": {
-        "TEXT": "Open"
+        "TEXT": "Ашық"
       },
       "resolved": {
-        "TEXT": "Resolved"
+        "TEXT": "Жабық"
       },
       "pending": {
-        "TEXT": "AI agents"
+        "TEXT": "AI"
       },
       "snoozed": {
-        "TEXT": "Snoozed"
+        "TEXT": "Кейінге қалдырылған"
       },
       "all": {
-        "TEXT": "All"
+        "TEXT": "Барлық мәртебелер"
       }
     },
     "VIEW_FILTER": "View",
@@ -43,7 +43,8 @@
       "TOOLTIP_LABEL": "Диалогтарды іздеу",
       "PLACEHOLDER": "Аты, нөмірі, аккаунты немесе идентификаторы бойынша іздеу",
       "EMPTY": "Бұл сұрау бойынша диалогтар табылмады.",
-      "CLEAR_BUTTON_LABEL": "Жергілікті іздеуді тазарту"
+      "CLEAR_BUTTON_LABEL": "Жергілікті іздеуді тазарту",
+      "RESULT_COUNT": "Табылды: {count}"
     },
     "CHAT_SORT": {
       "STATUS": "Status",

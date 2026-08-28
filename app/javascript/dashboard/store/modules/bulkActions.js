@@ -12,6 +12,7 @@ export const state = {
     isUpdating: false,
   },
   currentBulkActionRun: null,
+  serverSelection: null,
 };
 
 export const getters = {
@@ -24,20 +25,28 @@ export const getters = {
   getCurrentBulkActionRun(_state) {
     return _state.currentBulkActionRun;
   },
+  getServerSelection(_state) {
+    return _state.serverSelection;
+  },
 };
 
 export const actions = {
-  process: async function processAction({ commit, dispatch }, payload) {
+  process: async function processAction(
+    { commit, dispatch, state: $state = {} },
+    payload
+  ) {
     commit(types.SET_BULK_ACTIONS_FLAG, { isUpdating: true });
     commit(types.SET_BULK_ACTION_RUN, null);
     try {
       const {
         data: { payload: bulkActionRun },
-      } = await BulkActionsAPI.create(payload);
+      } = await BulkActionsAPI.create(
+        $state.serverSelection
+          ? { ...payload, ids: [], selection: $state.serverSelection }
+          : payload
+      );
       commit(types.SET_BULK_ACTION_RUN, bulkActionRun);
       return await dispatch('pollRunStatus', bulkActionRun.id);
-    } catch (error) {
-      throw new Error(error);
     } finally {
       commit(types.SET_BULK_ACTIONS_FLAG, { isUpdating: false });
     }
@@ -54,7 +63,11 @@ export const actions = {
       }
 
       if (bulkActionRun.status === 'failed') {
-        throw new Error(bulkActionRun.error_message || 'Bulk action failed');
+        const error = new Error(
+          bulkActionRun.error_message || 'Bulk action failed'
+        );
+        error.failedCount = Number(bulkActionRun.failed_count || 0);
+        throw error;
       }
 
       if (attempt >= 239) {
@@ -75,6 +88,10 @@ export const actions = {
   },
   clearSelectedConversationIds({ commit }) {
     commit(types.CLEAR_SELECTED_CONVERSATION_IDS);
+    commit(types.SET_BULK_SELECTION, null);
+  },
+  setServerSelection({ commit }, selection) {
+    commit(types.SET_BULK_SELECTION, selection);
   },
   clearCurrentBulkActionRun({ commit }) {
     commit(types.SET_BULK_ACTION_RUN, null);
@@ -107,6 +124,9 @@ export const mutations = {
   },
   [types.SET_BULK_ACTION_RUN](_state, bulkActionRun) {
     _state.currentBulkActionRun = bulkActionRun;
+  },
+  [types.SET_BULK_SELECTION](_state, selection) {
+    _state.serverSelection = selection;
   },
 };
 

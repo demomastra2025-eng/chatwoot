@@ -5,7 +5,8 @@ class CommunicationThreads::UpdateService
     @communication_thread = communication_thread
     @current_account = communication_thread.account
     @params = params.to_h.with_indifferent_access
-    @accessible_links = accessible_links.includes(:conversation)
+    @accessible_links = accessible_links
+    @accessible_links = accessible_links.includes(:conversation) if accessible_links.respond_to?(:includes)
     @actor = actor
     @source = source.to_s.presence || 'communication_thread'
   end

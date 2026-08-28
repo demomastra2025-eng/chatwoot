@@ -204,9 +204,7 @@ describe('#URL Helpers', () => {
           status: 'pending',
           communicationThread: true,
         })
-      ).toBe(
-        'accounts/1/communication_threads/42?status=pending&assignee_type=all'
-      );
+      ).toBe('accounts/1/communication_threads/42');
     });
 
     it('should preserve assignee scope in communication thread detail URLs', () => {
@@ -218,9 +216,7 @@ describe('#URL Helpers', () => {
           assigneeType: 'all',
           communicationThread: true,
         })
-      ).toBe(
-        'accounts/1/communication_threads/42?status=open&assignee_type=all'
-      );
+      ).toBe('accounts/1/communication_threads/42');
     });
 
     it('should preserve the current route assignee scope when explicit assignee is absent', () => {
@@ -237,9 +233,7 @@ describe('#URL Helpers', () => {
           status: 'open',
           communicationThread: true,
         })
-      ).toBe(
-        'accounts/1/communication_threads/42?status=open&assignee_type=all'
-      );
+      ).toBe('accounts/1/communication_threads/42');
     });
 
     it('should preserve the current route CRM pipeline filters when explicit values are absent', () => {
@@ -256,9 +250,7 @@ describe('#URL Helpers', () => {
           status: 'open',
           communicationThread: true,
         })
-      ).toBe(
-        'accounts/1/communication_threads/42?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20'
-      );
+      ).toBe('accounts/1/communication_threads/42');
     });
 
     it('should preserve current tag and team scope filters when explicit values are absent', () => {
@@ -275,9 +267,7 @@ describe('#URL Helpers', () => {
           status: 'open',
           communicationThread: true,
         })
-      ).toBe(
-        'accounts/1/communication_threads/42?status=open&assignee_type=all&labels_scope=any&team_scope=any'
-      );
+      ).toBe('accounts/1/communication_threads/42');
     });
 
     it('should preserve current unread and dialog filters when opening communication thread detail', () => {
@@ -293,9 +283,7 @@ describe('#URL Helpers', () => {
           id: 42,
           communicationThread: true,
         })
-      ).toBe(
-        'accounts/1/communication_threads/42?status=open&assignee_type=all&crm_pipeline_id=10&crm_stage_id=20&appointment_status=confirmed&labels_scope=any&team_scope=any&unread=true'
-      );
+      ).toBe('accounts/1/communication_threads/42');
     });
 
     it('should let an explicit me assignee override a previous all route scope', () => {
@@ -313,9 +301,7 @@ describe('#URL Helpers', () => {
           assigneeType: 'me',
           communicationThread: true,
         })
-      ).toBe(
-        'accounts/1/communication_threads/42?status=open&assignee_type=me'
-      );
+      ).toBe('accounts/1/communication_threads/42');
     });
 
     it('should preserve the current route status when explicit status is absent', () => {

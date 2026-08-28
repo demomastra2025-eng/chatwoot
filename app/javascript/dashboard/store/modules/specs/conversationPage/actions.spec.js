@@ -22,6 +22,16 @@ describe('#actions', () => {
     });
   });
 
+  describe('#setTotalCount', () => {
+    it('stores the total for the active list scope', () => {
+      actions.setTotalCount({ commit }, { filter: 'all', count: 42 });
+      expect(commit.mock.calls).toContainEqual([
+        types.default.SET_CONVERSATION_TOTAL_COUNT,
+        { filter: 'all', count: 42 },
+      ]);
+    });
+  });
+
   describe('#reset', () => {
     it('sends correct actions', () => {
       actions.reset({ commit });

@@ -11,6 +11,7 @@ json.data do
       json.all_unread_count @communication_threads_count[:all_unread_count]
       json.assignee_counts @communication_threads_count[:assignee_counts]
       json.unread_counts @communication_threads_count[:unread_counts]
+      json.context_counts @communication_threads_count[:context_counts]
     end
   end
   json.payload do

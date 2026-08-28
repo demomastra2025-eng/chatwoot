@@ -20,6 +20,7 @@ describe('#mutations', () => {
       const state = {
         currentPage: { me: 1, unassigned: 2, all: 3 },
         hasEndReached: { me: true, unassigned: true, all: true },
+        totalCount: { me: 4, unassigned: 5, all: 9, appliedFilters: 2 },
       };
       mutations[types.default.CLEAR_CONVERSATION_PAGE](state);
       expect(state).toEqual({
@@ -30,6 +31,7 @@ describe('#mutations', () => {
           all: false,
           appliedFilters: false,
         },
+        totalCount: { me: 0, unassigned: 0, all: 0, appliedFilters: 0 },
       });
     });
   });
@@ -61,6 +63,17 @@ describe('#mutations', () => {
         unassigned: true,
         all: true,
       });
+    });
+  });
+
+  describe('#SET_CONVERSATION_TOTAL_COUNT', () => {
+    it('sets a numeric total for one list scope', () => {
+      const state = { totalCount: { all: 1 } };
+      mutations[types.default.SET_CONVERSATION_TOTAL_COUNT](state, {
+        filter: 'all',
+        count: '42',
+      });
+      expect(state.totalCount).toEqual({ all: 42 });
     });
   });
 });

@@ -39,4 +39,10 @@ describe('#getters', () => {
     expect(getters.getHasEndReached(state)('unassigned')).toEqual(true);
     expect(getters.getHasEndReached(state)('all')).toEqual(false);
   });
+
+  it('getTotalCount', () => {
+    const state = { totalCount: { all: 42, appliedFilters: 7 } };
+    expect(getters.getTotalCount(state)('all')).toEqual(42);
+    expect(getters.getTotalCount(state)('appliedFilters')).toEqual(7);
+  });
 });
