@@ -3,6 +3,10 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 
 const props = defineProps({
+  iconOnly: {
+    type: Boolean,
+    default: false,
+  },
   modelValue: {
     type: String,
     required: true,
@@ -31,8 +35,14 @@ const handleViewSelect = value => {
       size="sm"
       color="slate"
       :variant="view.value === modelValue ? 'solid' : 'ghost'"
-      :label="view.label"
-      class="!h-7 !rounded-md !px-2.5 !text-sm"
+      :icon="iconOnly ? view.icon : ''"
+      :label="iconOnly ? '' : view.label"
+      :aria-label="view.label"
+      :aria-pressed="view.value === modelValue"
+      :title="view.label"
+      type="button"
+      class="!h-7 !rounded-md !text-sm"
+      :class="iconOnly ? '!w-7 !p-0' : '!px-2.5'"
       @click="handleViewSelect(view.value)"
     />
   </ButtonGroup>

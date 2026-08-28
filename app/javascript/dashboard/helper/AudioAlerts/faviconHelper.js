@@ -12,7 +12,9 @@ const badgeFaviconPath = favicon => {
   const size = ['16x16', '32x32', '96x96'].includes(declaredSize)
     ? declaredSize
     : '32x32';
-  return `/favicon-badge-${size}.png`;
+  const originalHref = originalFaviconHrefs.get(favicon);
+  const faviconPrefix = originalHref?.includes('/dev-favicon') ? 'dev-' : '';
+  return `/${faviconPrefix}favicon-badge-${size}.png`;
 };
 
 export const showBadgeOnFavicon = () => {

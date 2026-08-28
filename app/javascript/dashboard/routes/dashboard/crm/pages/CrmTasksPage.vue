@@ -494,9 +494,21 @@ const statusMetaById = computed(() =>
 const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
 
 const viewOptions = computed(() => [
-  { label: t('CRM.VIEWS.LIST'), value: 'list' },
-  { label: t('CRM.VIEWS.BOARD'), value: 'board' },
-  { label: t('SCHEDULING.VIEWS.CALENDAR'), value: 'calendar' },
+  {
+    icon: 'i-lucide-list',
+    label: t('CRM.VIEWS.LIST'),
+    value: 'list',
+  },
+  {
+    icon: 'i-lucide-columns-3',
+    label: t('CRM.VIEWS.BOARD'),
+    value: 'board',
+  },
+  {
+    icon: 'i-lucide-calendar-days',
+    label: t('SCHEDULING.VIEWS.CALENDAR'),
+    value: 'calendar',
+  },
 ]);
 
 const taskScopeOptions = computed(() => [
@@ -1919,19 +1931,6 @@ watch(
 <template>
   <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
     <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.TASKS.TITLE')">
-      <template #title-actions>
-        <Button
-          v-if="canAccessTaskSettings"
-          size="sm"
-          color="slate"
-          variant="ghost"
-          icon="i-lucide-settings-2"
-          class="!size-7 !text-n-slate-11 hover:!text-n-slate-12"
-          :aria-label="$t('SIDEBAR.SETTINGS')"
-          :title="$t('SIDEBAR.SETTINGS')"
-          @click="openTaskSettings"
-        />
-      </template>
       <template #left>
         <label
           v-for="scope in taskScopeOptions"
@@ -1956,6 +1955,23 @@ watch(
             {{ scope.label }}
           </span>
         </label>
+        <SchedulingViewSwitcher
+          icon-only
+          :model-value="currentPresentation"
+          :views="viewOptions"
+          @update:model-value="handlePresentationChange"
+        />
+        <Button
+          v-if="canAccessTaskSettings"
+          size="sm"
+          color="slate"
+          variant="ghost"
+          icon="i-lucide-settings-2"
+          class="!size-7 !text-n-slate-11 hover:!text-n-slate-12"
+          :aria-label="$t('SIDEBAR.SETTINGS')"
+          :title="$t('SIDEBAR.SETTINGS')"
+          @click="openTaskSettings"
+        />
       </template>
       <template #actions>
         <SelectMenu
@@ -1992,11 +2008,7 @@ watch(
           class="!text-n-slate-11 hover:!text-n-slate-12"
           @click="openFilterDialog"
         />
-        <SchedulingViewSwitcher
-          :model-value="currentPresentation"
-          :views="viewOptions"
-          @update:model-value="handlePresentationChange"
-        />
+
         <Button
           v-if="canManageTasks"
           size="sm"

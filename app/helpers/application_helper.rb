@@ -1,4 +1,12 @@
 module ApplicationHelper
+  DEV_FAVICON_HOST = 'dev.one-link.kz'.freeze
+
+  def onelink_favicon_path(filename)
+    return "/dev-#{filename}?v=onelink-dev-20260828" if dev_favicon_request?
+
+    "/#{filename}?v=onelink-brand"
+  end
+
   def available_locales_with_name
     ENABLED_LANGUAGES_CONFIG.map { |_key, val| val.slice(:name, :iso_639_1_code) }
   end
@@ -8,5 +16,11 @@ module ApplicationHelper
     features.each_with_object({}) do |feature, hash|
       hash[feature['name']] = feature['help_url'] if feature['help_url']
     end
+  end
+
+  private
+
+  def dev_favicon_request?
+    Rails.env.development? || request.host == DEV_FAVICON_HOST
   end
 end

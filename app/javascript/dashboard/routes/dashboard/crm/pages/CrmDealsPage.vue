@@ -349,16 +349,15 @@ const selectedPipeline = computed(
     null
 );
 
-const pipelineToggleItems = computed(() =>
+const pipelineFilterOptions = computed(() =>
   activePipelines.value.map(pipeline => ({
-    id: `crm-deals-pipeline-${pipeline.id}`,
     label: pipeline.name,
-    value: pipeline.id,
+    value: String(pipeline.id),
   }))
 );
 
 const hasSelectedPipeline = pipelineId =>
-  pipelineToggleItems.value.some(
+  pipelineFilterOptions.value.some(
     item => Number(item.value) === Number(pipelineId)
   );
 
@@ -367,7 +366,9 @@ const resolvePipelineFilterId = pipelineId => {
     return pipelineId;
   }
 
-  return defaultPipeline.value?.id || pipelineToggleItems.value[0]?.value || '';
+  return (
+    defaultPipeline.value?.id || pipelineFilterOptions.value[0]?.value || ''
+  );
 };
 
 const isActivePipeline = pipelineId =>
@@ -532,8 +533,16 @@ const shouldRenderBoard = computed(
 );
 
 const viewOptions = computed(() => [
-  { label: t('CRM.VIEWS.BOARD'), value: 'board' },
-  { label: t('CRM.VIEWS.LIST'), value: 'list' },
+  {
+    icon: 'i-lucide-columns-3',
+    label: t('CRM.VIEWS.BOARD'),
+    value: 'board',
+  },
+  {
+    icon: 'i-lucide-list',
+    label: t('CRM.VIEWS.LIST'),
+    value: 'list',
+  },
 ]);
 
 const boardSortOptions = computed(() => [
@@ -2811,7 +2820,22 @@ watch(
         class="!bg-n-slate-2"
         :title="$t('CRM.DEALS.TITLE')"
       >
-        <template #title-actions>
+        <template #left>
+          <SelectMenu
+            icon="i-lucide-funnel"
+            :model-value="
+              String(filters.pipelineId || selectedPipeline?.id || '')
+            "
+            :options="pipelineFilterOptions"
+            :label="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
+            sub-menu-position="bottom"
+            @update:model-value="selectPipelineFilter"
+          />
+          <SchedulingViewSwitcher
+            v-model="currentPresentation"
+            icon-only
+            :views="viewOptions"
+          />
           <Button
             v-if="canAccessDealSettings"
             size="sm"
@@ -2823,31 +2847,6 @@ watch(
             :title="$t('SIDEBAR.SETTINGS')"
             @click="openDealSettings"
           />
-        </template>
-        <template #left>
-          <label
-            v-for="pipeline in pipelineToggleItems"
-            :key="pipeline.id"
-            class="relative flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-n-weak focus-within:outline-offset-2"
-            :class="
-              isActivePipeline(pipeline.value)
-                ? 'border-n-weak bg-n-solid-1 text-n-slate-12 shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
-                : 'border-transparent bg-transparent text-n-slate-11 hover:bg-n-alpha-black2/60 hover:text-n-slate-12'
-            "
-          >
-            <input
-              :id="pipeline.id"
-              class="size-3 flex-shrink-0 border-n-slate-6 text-n-slate-12 focus:ring-n-weak focus:ring-offset-0"
-              type="radio"
-              name="crm-deals-pipeline"
-              :value="pipeline.value"
-              :checked="isActivePipeline(pipeline.value)"
-              @change="selectPipelineFilter(pipeline.value)"
-            />
-            <span class="text-xs font-medium leading-none">
-              {{ pipeline.label }}
-            </span>
-          </label>
         </template>
         <template #actions>
           <div
@@ -2895,10 +2894,7 @@ watch(
             class="!text-n-slate-11 hover:!text-n-slate-12"
             @click="openFilterDialog"
           />
-          <SchedulingViewSwitcher
-            v-model="currentPresentation"
-            :views="viewOptions"
-          />
+
           <Button
             v-if="canManageDeals"
             size="sm"

@@ -117,6 +117,16 @@ describe('faviconHelper', () => {
     ).toEqual(originalHrefs);
   });
 
+  it('uses the DEV notification badge for a DEV favicon', () => {
+    document.head.innerHTML =
+      '<link class="favicon" rel="icon" sizes="32x32" href="/dev-favicon-32x32.png?v=onelink-dev-20260828">';
+    setVisibilityState('hidden');
+
+    startFaviconBlinking();
+
+    expect(faviconPath()).toBe('/dev-favicon-badge-32x32.png');
+  });
+
   it('restores an icon that originally had no href', () => {
     document.head.innerHTML = '<link rel="icon" sizes="32x32">';
     const icon = document.querySelector('link[rel~="icon"]');
