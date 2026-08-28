@@ -57,6 +57,24 @@ class Whatsapp::TemplateProcessorService
     process_enhanced_template_params(template, normalized_params['processed_params'])
   end
 
+  def carousel_template_media_source(template, card_index)
+    template_media_source_store.source_for(
+      template_name: template['name'],
+      language: template['language'],
+      card_index: card_index
+    )
+  end
+
+  def carousel_media_upload_supported? = channel.provider == 'whatsapp_cloud'
+
+  def carousel_media_upload_service
+    @carousel_media_upload_service ||= Whatsapp::TemplateSendMediaUploadService.new(whatsapp_channel: channel)
+  end
+
+  def template_media_source_store
+    @template_media_source_store ||= Whatsapp::TemplateMediaSourceStore.new(whatsapp_channel: channel)
+  end
+
   def process_enhanced_template_params(template, processed_params = nil)
     processed_params ||= template_params['processed_params']
     processed_params = render_template_param_values(processed_params || {})

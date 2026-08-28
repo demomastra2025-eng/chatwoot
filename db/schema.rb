@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_24_143000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_28_062000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -3300,6 +3300,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_24_143000) do
     t.index ["status", "next_reconciliation_at"], name: "idx_wa_pending_mutations_reconciliation"
   end
 
+  create_table "whatsapp_template_media_sources", force: :cascade do |t|
+    t.bigint "whatsapp_channel_id", null: false
+    t.string "template_name", null: false
+    t.string "language", null: false
+    t.integer "card_index", null: false
+    t.string "media_type", null: false
+    t.text "source_url"
+    t.string "meta_media_id"
+    t.datetime "meta_media_uploaded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["whatsapp_channel_id", "template_name", "language", "card_index"], name: "idx_wa_template_media_source_identity", unique: true
+    t.index ["whatsapp_channel_id"], name: "index_whatsapp_template_media_sources_on_whatsapp_channel_id"
+  end
+
   create_table "whatsapp_webhook_routes", force: :cascade do |t|
     t.string "waba_id", null: false
     t.string "phone_number_id", null: false
@@ -3562,6 +3577,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_24_143000) do
   add_foreign_key "whatsapp_flows", "inboxes"
   add_foreign_key "whatsapp_pending_message_mutations", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_pending_message_mutations", "inboxes", on_delete: :cascade
+  add_foreign_key "whatsapp_template_media_sources", "channel_whatsapp", column: "whatsapp_channel_id", on_delete: :cascade
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()

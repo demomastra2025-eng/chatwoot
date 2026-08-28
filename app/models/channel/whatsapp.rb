@@ -23,6 +23,7 @@ class Channel::Whatsapp < ApplicationRecord
   include Whatsapp::DurableReauthorization
   include WhatsappProviderLifecycle
   include WhatsappChannelRouting
+  include Whatsapp::TemplateMediaSourceAssociation
 
   self.table_name = 'channel_whatsapp'
   EDITABLE_ATTRS = [:phone_number, :provider, { provider_config: {} }].freeze
@@ -43,14 +44,11 @@ class Channel::Whatsapp < ApplicationRecord
           as: :channel,
           class_name: 'Meta::ChannelCredentialHealth',
           dependent: :destroy
-
   after_create :sync_templates
   before_destroy :teardown_webhooks, unless: :skip_webhook_teardown
   after_commit :setup_webhooks, on: :create, if: :should_auto_setup_webhooks?
 
-  def name
-    'Whatsapp'
-  end
+  def name = 'Whatsapp'
 
   # Meta WhatsApp Calling is only available for Cloud API channels provisioned
   # through embedded signup and explicitly enabled for calling.

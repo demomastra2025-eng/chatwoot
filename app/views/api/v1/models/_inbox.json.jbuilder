@@ -195,7 +195,12 @@ end
 
 ### WhatsApp Channel
 if resource.whatsapp?
-  json.message_templates resource.channel.try(:message_templates)
+  message_templates = if resource.channel.is_a?(Channel::Whatsapp)
+                        Whatsapp::TemplateMediaSourcePresenter.new(whatsapp_channel: resource.channel).perform
+                      else
+                        resource.channel.try(:message_templates)
+                      end
+  json.message_templates message_templates
   json.message_templates_last_updated resource.channel.try(:message_templates_last_updated)
   if Current.account_user&.administrator?
     provider_config = Whatsapp::ProviderConfigPresenter.new(resource.channel).perform

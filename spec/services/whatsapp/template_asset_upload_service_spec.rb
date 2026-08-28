@@ -82,11 +82,11 @@ RSpec.describe Whatsapp::TemplateAssetUploadService do
   end
 
   describe '.schedule_cleanup' do
-    it 'uses the rollback-compatible Active Storage purge job with the blob GlobalID' do
-      blob = instance_double(ActiveStorage::Blob)
+    it 'uses the attachment-aware cleanup job with the blob id' do
+      blob = instance_double(ActiveStorage::Blob, id: 42)
       configured_job = instance_double(ActiveJob::ConfiguredJob)
-      expect(ActiveStorage::PurgeJob).to receive(:set).with(wait: described_class::CLEANUP_DELAY).and_return(configured_job)
-      expect(configured_job).to receive(:perform_later).with(blob)
+      expect(Whatsapp::TemplateMediaCleanupJob).to receive(:set).with(wait: described_class::CLEANUP_DELAY).and_return(configured_job)
+      expect(configured_job).to receive(:perform_later).with(42)
 
       described_class.schedule_cleanup(blob)
     end
@@ -193,7 +193,6 @@ RSpec.describe Whatsapp::TemplateAssetUploadService do
         attachments: instance_double(ActiveRecord::Associations::CollectionProxy, exists?: false)
       )
       allow(blob).to receive(:open).and_yield(file)
-      allow(blob).to receive(:purge_later)
       allow(described_class).to receive(:find_upload_blob!).with('signed-blob', account_id: 1).and_return(blob)
       allow(Marcel::MimeType).to receive(:for).with(file).and_return('application/pdf')
 
@@ -202,7 +201,6 @@ RSpec.describe Whatsapp::TemplateAssetUploadService do
       allow(HTTParty).to receive(:post).and_return(upload_session_response, upload_response)
 
       expect(service.upload_blob(blob_signed_id: 'signed-blob', media_type: 'document')).to eq('uploaded-handle-123')
-      expect(blob).to have_received(:purge_later)
     ensure
       file&.close!
     end

@@ -56,7 +56,11 @@ export const replaceTemplateVariables = (
   });
 };
 
-const buildCarouselCardParameters = (card, cardIndex) => {
+const buildCarouselCardParameters = (
+  card,
+  cardIndex,
+  supportsMediaUpload = false
+) => {
   const header = findComponentByType(card, COMPONENT_TYPES.HEADER);
   const body = findComponentByType(card, COMPONENT_TYPES.BODY);
   const buttons = findComponentByType(card, COMPONENT_TYPES.BUTTONS);
@@ -66,7 +70,11 @@ const buildCarouselCardParameters = (card, cardIndex) => {
     card_index: cardIndex,
     header: {
       media_id: '',
+      media_blob_id: '',
       media_type: header?.format?.toLowerCase() || '',
+      has_template_media:
+        supportsMediaUpload && Boolean(header?.one_link_media?.attached),
+      supports_media_upload: supportsMediaUpload,
     },
     body: Object.fromEntries(bodyVariables.map(variable => [variable, ''])),
     buttons: (buttons?.buttons || []).flatMap((button, buttonIndex) => {
@@ -92,7 +100,13 @@ const addInteractiveTemplateParameters = (template, allVariables) => {
   const carousel = findComponentByType(template, COMPONENT_TYPES.CAROUSEL);
   if (carousel) {
     allVariables.carousel = {
-      cards: (carousel.cards || []).map(buildCarouselCardParameters),
+      cards: (carousel.cards || []).map((card, cardIndex) =>
+        buildCarouselCardParameters(
+          card,
+          cardIndex,
+          Boolean(template.one_link_carousel_media_upload_supported)
+        )
+      ),
     };
   }
 };
