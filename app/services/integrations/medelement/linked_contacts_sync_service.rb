@@ -38,9 +38,10 @@ class Integrations::Medelement::LinkedContactsSyncService
 
     record_patient_not_found(contact, patient_code, result, 'Provider returned no patient')
   rescue Integrations::Medelement::Client::ApiError => e
-    raise unless e.status == 404
+    raise unless patient_missing_from_allowed_scope?(patient_code, e)
 
-    record_patient_not_found(contact, patient_code, result, 'Provider patient was not found')
+    reason = e.status == 403 ? 'Provider denied linked patient and code search returned no patient' : 'Provider patient was not found'
+    record_patient_not_found(contact, patient_code, result, reason)
   rescue ActiveRecord::RecordInvalid, Scheduling::Error => e
     record_update_rejected(contact, patient_code, result, e)
   end
@@ -48,6 +49,20 @@ class Integrations::Medelement::LinkedContactsSyncService
   def record_patient_not_found(contact, patient_code, result, reason)
     result[:skipped_count] += 1
     record_conflict(contact, patient_code, 'patient_not_found', reason: reason)
+  end
+
+  def patient_missing_from_allowed_scope?(patient_code, error)
+    return true if error.status == 404
+    return false unless error.status == 403
+    return false if patient_code.blank?
+
+    patients = client.search_patients_by_codes(patient_codes: [patient_code])
+    patients.none? do |patient|
+      codes = patient.to_h.with_indifferent_access.values_at(:PROFILE_CODE, :PATIENT_CODE).compact.map(&:to_s)
+      codes.include?(patient_code)
+    end
+  rescue Integrations::Medelement::Client::ApiError
+    raise error
   end
 
   def record_update_rejected(contact, patient_code, result, error)
