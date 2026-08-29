@@ -51,6 +51,16 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       }, status: :unprocessable_content
     end
 
+    disallowed_provider_keys = provider_credentials_params.keys.reject do |provider_name|
+      provider_byok_allowed?(provider_name)
+    end
+    if disallowed_provider_keys.any?
+      return render json: {
+        error: 'provider_byok_disabled',
+        providers: disallowed_provider_keys
+      }, status: :forbidden
+    end
+
     params_to_update = captain_params
     Account.transaction do
       remove_stale_installation_managed_model_overrides
@@ -135,7 +145,6 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       attributes: permitted_captain_observability
     )
   end
-
 
   def permitted_captain_models
     params.require(:captain_models).permit(
@@ -330,6 +339,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
       result[provider_name] = {
         display_name: provider_config['display_name'].presence || provider_name,
         account_configured: account_configured,
+        byok_allowed: provider_byok_allowed?(provider_name),
         global_configured: Llm::Config.installation_provider_available?(provider_name),
         provider_configured: Llm::Config.provider_available?(provider_name, account: Current.account),
         source: provider_credential_source(provider_name, hook)
@@ -348,7 +358,7 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
   end
 
   def provider_credential_source(provider_name, hook)
-    return 'account' if provider_account_key_configured?(hook)
+    return 'account' if provider_byok_allowed?(provider_name) && provider_account_key_configured?(hook)
     return 'global' if Llm::Config.installation_provider_available?(provider_name)
 
     'missing'
@@ -384,6 +394,10 @@ class Api::V1::Accounts::Captain::PreferencesController < Api::V1::Accounts::Bas
 
   def provider_credentials_update?
     params[:provider_credentials].present? || params.key?(:openrouter_api_key) || params.key?(:remove_openrouter_api_key)
+  end
+
+  def provider_byok_allowed?(provider_name)
+    Llm::Config.account_provider_byok_allowed?(provider_name, account: @current_account)
   end
 
   def update_provider_credentials

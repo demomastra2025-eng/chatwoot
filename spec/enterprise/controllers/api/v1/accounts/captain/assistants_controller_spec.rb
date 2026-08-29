@@ -88,7 +88,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
     end
 
-    # rubocop:disable RSpec/MultipleExpectations
     it 'returns compiled AI Agent and scenario prompts for settings inspection' do
       scenario
 
@@ -109,7 +108,6 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       )
     end
-    # rubocop:enable RSpec/MultipleExpectations
   end
 
   describe 'POST /api/v1/accounts/{account.id}/captain/assistants/{id}/voice_preview' do
@@ -1308,7 +1306,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       before do
         allow(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
-          source: 'playground'
+          source: 'playground',
+          callbacks: hash_including(
+            on_tool_start: kind_of(Proc),
+            on_tool_complete: kind_of(Proc)
+          )
         ).and_return(agent_runner_service)
         allow(agent_runner_service).to receive(:generate_response).and_return({ response: 'Assistant response' })
       end
@@ -1316,7 +1318,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       it 'generates a response with the agent runner service' do
         expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
-          source: 'playground'
+          source: 'playground',
+          callbacks: hash_including(
+            on_tool_start: kind_of(Proc),
+            on_tool_complete: kind_of(Proc)
+          )
         ).and_return(agent_runner_service)
 
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",
@@ -1369,7 +1375,11 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(Captain::Assistant::AgentRunnerService).to receive(:new).with(
           assistant: assistant,
           conversation: conversation,
-          source: 'playground'
+          source: 'playground',
+          callbacks: hash_including(
+            on_tool_start: kind_of(Proc),
+            on_tool_complete: kind_of(Proc)
+          )
         ).and_return(agent_runner_service)
 
         post "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}/playground",

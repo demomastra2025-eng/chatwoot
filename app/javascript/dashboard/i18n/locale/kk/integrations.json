@@ -483,7 +483,14 @@
       "MESSAGE_PLACEHOLDER": "Type your message...",
       "HEADER": "Playground",
       "DESCRIPTION": "Use this playground to send messages to your assistant and check if it responds accurately, quickly, and in the tone you expect.",
-      "CREDIT_NOTE": "Messages sent here will count toward your Captain credits."
+      "CREDIT_NOTE": "Мұнда жіберілген хабарламалар AI кредиттеріне есептеледі.",
+      "TRACE_TITLE": "Орындалу барысы",
+      "TRACE_DESCRIPTION": "Әр жауап үшін агент шешімдері мен шақырылған құралдар.",
+      "TRACE_EMPTY": "Trace көру үшін хабарлама жіберіңіз.",
+      "TRACE_RESPONSE": "Жауап {number}",
+      "TRACE_REASONING": "Reasoning",
+      "TRACE_TOOLS": "Құралдар",
+      "TRACE_NO_TOOLS": "Құралдар шақырылмады"
     },
     "PAYWALL": {
       "TITLE": "Upgrade to use Captain AI",
@@ -507,7 +514,7 @@
       "EDIT": "Update"
     },
     "ASSISTANTS": {
-      "HEADER": "Assistants",
+      "HEADER": "AI-агенттер",
       "NO_ASSISTANTS_AVAILABLE": "There are no assistants available in your account.",
       "ADD_NEW": "Create a new assistant",
       "DELETE": {
@@ -517,6 +524,7 @@
         "SUCCESS_MESSAGE": "The assistant has been successfully deleted",
         "ERROR_MESSAGE": "There was an error deleting the assistant, please try again."
       },
+
       "FORM_DESCRIPTION": "Fill out the details below to name your assistant, describe its purpose, and specify the product it will support.",
       "CREATE": {
         "TITLE": "Create an assistant",
@@ -540,6 +548,16 @@
         "TEMPERATURE": {
           "LABEL": "Response Temperature",
           "DESCRIPTION": "Adjust how creative or restrictive the assistant's responses should be. Lower values produce more focused and deterministic responses, while higher values allow for more creative and varied outputs."
+        },
+        "MESSAGE_COLLAPSE_WINDOW_SECONDS": {
+          "LABEL": "Хабарламаларды біріктіру терезесі, секунд",
+          "PLACEHOLDER": "Секунд санын енгізіңіз",
+          "DESCRIPTION": "AI-агент қатар келген хабарламаларды бір жауапқа біріктіру үшін қанша секунд күтетінін көрсетеді. 0 = бірден жауап беру."
+        },
+        "HISTORY_MESSAGE_LIMIT": {
+          "LABEL": "Тарихтағы хабарламалар лимиті",
+          "PLACEHOLDER": "Хабарламалар санын енгізіңіз",
+          "DESCRIPTION": "AI-агент жауап алдында оқи алатын жария диалог хабарламаларының саны. 0 = бүкіл тарих."
         },
         "DESCRIPTION": {
           "LABEL": "Description",
@@ -723,8 +741,17 @@
           "PLACEHOLDER": "Ішкі Copilot үшін қосымша нұсқауларды енгізіңіз",
           "DESCRIPTION": "Міндетті емес. Бұл өріс командалық Copilot мінез-құлқын реттейді, бірақ live AI-агент prompt'ына әсер етпейді."
         },
+        "MODEL": {
+          "LABEL": "Жауап беру моделі",
+          "DESCRIPTION": "OneLink әкімшісі рұқсат еткен каталогтан модельді таңдаңыз."
+        },
+        "AUTO_REPLY_ON_LAST_INCOMING": {
+          "TITLE": "Соңғы кіріс хабарламаға автоматты жауап",
+          "DESCRIPTION": "Қызметкер диалогты AI-агентке қолмен ауыстырғанда, соңғы жария хабарлама клиенттен болса, агент бірден жауап береді."
+        },
         "FEATURES": {
           "TITLE": "Мүмкіндіктер",
+          "DESCRIPTION": "Осы AI-агентке қолжетімді мүмкіндіктер мен құралдарды қосыңыз.",
           "ALLOW_CONVERSATION_FAQS": "Шешілген диалогтардан FAQ жасау",
           "ALLOW_MEMORIES": "Клиентпен өзара әрекеттесуден негізгі мәліметтерді естеліктер ретінде сақтау.",
           "ALLOW_NOTES": "Контакт жазбаларын және диалогтағы жеке жазбаларды жасауға рұқсат ету",
@@ -738,6 +765,8 @@
           "WEB_PAGE_READING_DESCRIPTION": "Көрсетілген ашық сілтеменің мазмұнын оқу.",
           "DOCUMENT_READING": "Құжаттарды оқу",
           "DOCUMENT_READING_DESCRIPTION": "Клиент жіберген файлдардан алынған мәтінді пайдалану.",
+          "IMAGE_UNDERSTANDING": "Клиент суреттерін түсіну",
+          "IMAGE_UNDERSTANDING_DESCRIPTION": "Жауап дайындау кезінде жаңа суреттердің мәтіндік сипаттамасын алу. Негізгі модельге түпнұсқа сурет берілмейді.",
           "WEB_PROVIDER_REQUIRED": "Бұл мүмкіндіктер үшін әкімші веб-провайдерді баптауы керек.",
           "ALLOW_CONTACT_ATTRIBUTES": "Контакт ақпаратына қол жеткізуге рұқсат ету"
         },
@@ -1833,6 +1862,43 @@
     },
     "OBSERVABILITY": {
       "TITLE": "Логтар",
+      "LOGS": {
+        "TITLE": "Логтар",
+        "TIMELINE_TITLE": "AI-агент сұраулары",
+        "TIMELINE_DESCRIPTION": "Таңдалған кезеңдегі сұраулар саны",
+        "TOTAL_REQUESTS": "Барлық сұраулар: {count}",
+        "REQUESTS": "Сұраулар: {count}",
+        "MILLISECONDS": "мс",
+        "SECONDS": "с",
+        "CUSTOM_RANGE": {
+          "SINCE": "Басталуы",
+          "UNTIL": "Аяқталуы",
+          "APPLY": "Қолдану",
+          "INVALID": "Дұрыс кезеңді көрсетіңіз: басталу күні аяқталу күнінен ертерек болуы керек."
+        },
+        "EMPTY_TITLE": "Таңдалған кезеңде сұраулар жоқ",
+        "EMPTY_DESCRIPTION": "Басқа кезеңді таңдаңыз немесе кейінірек тексеріңіз.",
+        "COLUMNS": {
+          "DATETIME": "Күні мен уақыты",
+          "MODEL": "Модель",
+          "INPUT_TOKENS": "Кіріс токендер",
+          "OUTPUT_TOKENS": "Шығыс токендер",
+          "COST": "Cost, $",
+          "DURATION": "Жауап уақыты"
+        },
+        "RANGES": {
+          "15m": "Соңғы 15 минут",
+          "30m": "Соңғы 30 минут",
+          "1h": "Соңғы сағат",
+          "3h": "Соңғы 3 сағат",
+          "24h": "Соңғы 24 сағат",
+          "48h": "Соңғы 48 сағат",
+          "7d": "Соңғы апта",
+          "30d": "Соңғы ай",
+          "1y": "Соңғы жыл",
+          "CUSTOM": "Ерікті кезең"
+        }
+      },
       "SIMPLE": {
         "REFRESH": "Жаңарту",
         "CLEAR": "Тазалау",

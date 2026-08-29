@@ -6,6 +6,10 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
 
   attr_reader :account, :attachment, :image_url
 
+  def self.cached_description(attachment)
+    attachment&.meta.to_h[CACHE_KEY].to_s.strip.presence
+  end
+
   def initialize(account:, image_url:, attachment: nil)
     @account = account
     @attachment = attachment
@@ -84,7 +88,7 @@ class Captain::ImageRecognitionService < Llm::BaseAiService
   end
 
   def cached_description
-    attachment&.meta.to_h[CACHE_KEY].to_s.strip.presence
+    self.class.cached_description(attachment)
   end
 
   def cache_description(description)

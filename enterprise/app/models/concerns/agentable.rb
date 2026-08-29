@@ -88,9 +88,15 @@ module Concerns::Agentable
   end
 
   def agent_model
+    agent_account = respond_to?(:account) ? account : nil
+    configured_model = respond_to?(:model) ? model.to_s.strip.presence : nil
+    if configured_model.present? && Llm::Models.valid_model_for?(:assistant, configured_model, account: agent_account)
+      return Llm::Models.canonical_model_name(configured_model)
+    end
+
     Llm::Config.model_for(
       feature: :assistant,
-      account: respond_to?(:account) ? account : nil,
+      account: agent_account,
       fallback: LlmConstants::DEFAULT_MODEL
     )
   end

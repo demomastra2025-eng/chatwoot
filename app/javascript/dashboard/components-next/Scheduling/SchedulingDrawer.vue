@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue';
-import { OnClickOutside } from '@vueuse/components';
+import { vOnClickOutside } from '@vueuse/components';
 import { useEventListener } from '@vueuse/core';
 
 import Button from 'dashboard/components-next/button/Button.vue';
@@ -153,12 +153,12 @@ useEventListener(document, 'keydown', event => {
           :leave-from-class="panelTransitionClasses.leaveFrom"
           :leave-to-class="panelTransitionClasses.leaveTo"
         >
-          <OnClickOutside
-            :class="clickOutsideClass"
-            :options="{ ignore: clickOutsideIgnore }"
-            @trigger="handleOutsideTrigger"
-          >
+          <div v-if="modelValue" :class="clickOutsideClass">
             <aside
+              v-on-click-outside="[
+                handleOutsideTrigger,
+                { ignore: clickOutsideIgnore },
+              ]"
               class="flex h-full w-full flex-col overflow-hidden border border-n-weak bg-n-solid-2 shadow-2xl sm:rounded-[1.75rem]"
               :class="[widthClass, panelClass]"
             >
@@ -209,7 +209,7 @@ useEventListener(document, 'keydown', event => {
                 </slot>
               </footer>
             </aside>
-          </OnClickOutside>
+          </div>
         </Transition>
       </div>
     </Transition>

@@ -382,7 +382,7 @@
     "ADDITIONAL": "Settings",
     "CONTACTS": "Contacts",
     "CRM": "CRM",
-    "PIPELINES": "Pipelines",
+    "PIPELINES": "Deals",
     "DEFAULT_PIPELINE": "Main",
     "CRM_DEALS": "Deals",
     "CRM_TASKS": "Tasks",
@@ -422,7 +422,8 @@
     "INTEGRATIONS": "Integrations",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Profile",
-    "VISIBILITY": "Visibility",
+    "VISIBILITY": "Sidebar settings",
+    "CONVERSATION_SETTINGS": "Conversations",
     "MY_COMPANY": "Company",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -635,6 +636,14 @@
   "CAPTAIN_SETTINGS": {
     "TITLE": "AI Staff Settings",
     "DESCRIPTION": "Configure your AI models and features for AI Staff. AI Staff uses credit-based billing, and credits are charged for each AI action based on the selected model.",
+    "WORKSPACE_FEATURES": {
+      "TITLE": "Workspace capabilities",
+      "DESCRIPTION": "Enable only the AI features your employees and AI agents need.",
+      "ASSISTANTS": "AI agents",
+      "ASSISTANTS_DESCRIPTION": "Allow AI agents to reply to customers in connected channels.",
+      "TEXT_IMPROVEMENT": "Text improvement",
+      "TEXT_IMPROVEMENT_DESCRIPTION": "Allow employees to improve a drafted reply."
+    },
     "LOADING": "Loading AI Staff configuration...",
     "LINK_TEXT": "Learn more about AI credits",
     "NOT_ENABLED": "AI Staff is not enabled for your account. Please upgrade your plan to access AI Staff features.",

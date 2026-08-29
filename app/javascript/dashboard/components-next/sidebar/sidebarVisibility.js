@@ -2,7 +2,7 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 16;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 17;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -49,140 +49,23 @@ const LEGACY_SETTINGS_LEAD_FORMS_VISIBILITY_KEY = 'Settings:LeadForms';
 const item = (key, labelKey, children = [], configurable = true) => ({
   key,
   labelKey,
-  children,
+  ...(children.length ? { children } : {}),
   configurable,
 });
 
-const MY_COMPANY_VISIBILITY_ITEMS = Object.freeze([
-  item('MyCompany:Workspace', 'SIDEBAR.ACCOUNT_SETTINGS'),
-  item('MyCompany:ConversationClosure', 'CONVERSATION_WORKFLOW.TABS.CLOSURE'),
-  item('MyCompany:SLA', 'CONVERSATION_WORKFLOW.TABS.SLA'),
-  item('MyCompany:AdditionalFields', 'ATTRIBUTES_MGMT.HEADER'),
-  item(MY_COMPANY_LEAD_FORMS_VISIBILITY_KEY, 'SIDEBAR.LEAD_FORMS'),
-  item('MyCompany:Channels', 'SIDEBAR.CHANNELS'),
-  item('MyCompany:Tags', 'SIDEBAR.LABELS'),
-  item('MyCompany:Employees', 'EMPLOYEE_SETTINGS.TABS.EMPLOYEES'),
-  item('MyCompany:Teams', 'EMPLOYEE_SETTINGS.TABS.TEAM'),
-  item('MyCompany:Roles', 'EMPLOYEE_SETTINGS.TABS.ROLES'),
-  item('MyCompany:Policies', 'EMPLOYEE_SETTINGS.TABS.ASSIGNMENT'),
-  item('MyCompany:AuditLogs', 'SIDEBAR.AUDIT_LOGS'),
-]);
-
 export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Inbox', 'SIDEBAR.INBOX'),
-  item('Conversation', 'SIDEBAR.CONVERSATIONS', [
-    item('Conversation:Assignee:all', 'CHAT_LIST.ASSIGNEE_TYPE_TABS.all'),
-    item('Conversation:Assignee:me', 'CHAT_LIST.ASSIGNEE_TYPE_TABS.me'),
-    item(
-      'Conversation:Assignee:unassigned',
-      'CHAT_LIST.ASSIGNEE_TYPE_TABS.unassigned'
-    ),
-    item(
-      CONVERSATION_STATUSES_VISIBILITY_KEY,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.STATUSES',
-      [
-        item('Conversation:Pending', 'SIDEBAR.PENDING_CONVERSATIONS'),
-        item('Conversation:Open', 'SIDEBAR.OPEN_CONVERSATIONS'),
-        item('Conversation:Snoozed', 'SIDEBAR.SNOOZED_CONVERSATIONS'),
-        item('Conversation:Resolved', 'SIDEBAR.RESOLVED_CONVERSATIONS'),
-      ]
-    ),
-    item(
-      CONVERSATION_PIPELINES_VISIBILITY_KEY,
-      'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
-    ),
-    item(
-      CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-      'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENTS',
-      [
-        item(
-          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.scheduled,
-          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.SCHEDULED'
-        ),
-        item(
-          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.confirmed,
-          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CONFIRMED'
-        ),
-        item(
-          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.completed,
-          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.COMPLETED'
-        ),
-        item(
-          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.cancelled,
-          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CANCELLED'
-        ),
-        item(
-          CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
-          'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.NO_SHOW'
-        ),
-      ]
-    ),
-    item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
-    item('Conversation:Teams', 'SIDEBAR.TEAMS'),
-    item('Conversation:Labels', 'SIDEBAR.LABELS'),
-  ]),
-  item('Campaigns', 'SIDEBAR.OUTBOUND', [
-    item('Campaigns:Templates', 'SIDEBAR.TEMPLATES'),
-    item(TOUCHES_VISIBILITY_KEY, 'SIDEBAR.TOUCHES'),
-    item('Campaigns:MassBroadcasts', 'SIDEBAR.MASS_BROADCASTS'),
-  ]),
-  item('Captain', 'SIDEBAR.CAPTAIN', [
-    item('Captain:Settings', 'PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
-    item('Captain:Prompts', 'SIDEBAR.CAPTAIN_PROMPTS'),
-    item('Captain:FollowUps', 'SIDEBAR.CAPTAIN_FOLLOW_UPS'),
-    item('Captain:Channels', 'SIDEBAR.CAPTAIN_CHANNELS'),
-    item('Captain:Tools', 'SIDEBAR.CAPTAIN_TOOLS'),
-    item('Captain:Observability', 'SIDEBAR.CAPTAIN_OBSERVABILITY'),
-    item('Captain:FAQs', 'SIDEBAR.CAPTAIN_RESPONSES'),
-    item('Captain:Usage', 'SIDEBAR.CAPTAIN_USAGE'),
-    item('Captain:AISettings', 'SIDEBAR.CAPTAIN_SETTINGS'),
-  ]),
-  item('Contacts', 'SIDEBAR.CONTACTS', [
-    item('Contacts:All', 'SIDEBAR.ALL_CONTACTS'),
-    item('Contacts:Active', 'SIDEBAR.ACTIVE'),
-    item('Contacts:Segments', 'SIDEBAR.CUSTOM_VIEWS_SEGMENTS'),
-    item('Contacts:Tagged', 'SIDEBAR.TAGGED_WITH'),
-  ]),
+  item('Conversation', 'SIDEBAR.CONVERSATIONS'),
+  item('Campaigns:MassBroadcasts', 'SIDEBAR.MASS_BROADCASTS'),
+  item('Captain', 'SIDEBAR.CAPTAIN'),
+  item('Contacts', 'SIDEBAR.CONTACTS'),
   item('Companies', 'SIDEBAR.COMPANIES'),
   item('CRM', 'SIDEBAR.PIPELINES'),
   item('CRM Tasks', 'SIDEBAR.CRM_TASKS'),
-  item('Scheduling', 'SIDEBAR.SCHEDULING', [
-    item('Scheduling:Calendar', 'SIDEBAR.SCHEDULING_CALENDAR'),
-    item('Scheduling:Resources', 'SIDEBAR.SCHEDULING_RESOURCES'),
-    item('Scheduling:Services', 'SIDEBAR.SCHEDULING_SERVICES'),
-    item('Scheduling:Exceptions', 'SIDEBAR.SCHEDULING_EXCEPTIONS'),
-  ]),
-  item('Reports', 'SIDEBAR.REPORTS', [
-    item('Reports:Overview', 'SIDEBAR.REPORTS_OVERVIEW'),
-    item('Reports:Conversation', 'SIDEBAR.REPORTS_CONVERSATION'),
-    item(REPORTS_DEALS_VISIBILITY_KEY, 'SIDEBAR.REPORTS_DEALS'),
-    item('Reports:Agent', 'SIDEBAR.REPORTS_AGENT'),
-    item('Reports:Label', 'SIDEBAR.REPORTS_LABEL'),
-    item('Reports:Inbox', 'SIDEBAR.REPORTS_INBOX'),
-    item('Reports:Team', 'SIDEBAR.REPORTS_TEAM'),
-    item('Reports:CSAT', 'SIDEBAR.CSAT'),
-    item('Reports:SLA', 'SIDEBAR.REPORTS_SLA'),
-    item('Reports:Bot', 'SIDEBAR.REPORTS_BOT'),
-  ]),
-  item('Portals', 'SIDEBAR.HELP_CENTER.TITLE', [
-    item('Portals:Articles', 'SIDEBAR.HELP_CENTER.ARTICLES'),
-    item('Portals:Categories', 'SIDEBAR.HELP_CENTER.CATEGORIES'),
-    item('Portals:Locales', 'SIDEBAR.HELP_CENTER.LOCALES'),
-    item('Portals:Settings', 'SIDEBAR.HELP_CENTER.SETTINGS'),
-  ]),
-  item(
-    'Settings',
-    'SIDEBAR.ADDITIONAL',
-    [
-      ...MY_COMPANY_VISIBILITY_ITEMS,
-      item('Settings:Automation', 'SIDEBAR.AUTOMATION'),
-      item('Settings:AgentBots', 'SIDEBAR.AGENT_BOTS'),
-      item('Settings:Macros', 'SIDEBAR.MACROS'),
-      item('Settings:Integrations', 'SIDEBAR.INTEGRATIONS'),
-      item('Settings:Billing', 'SIDEBAR.BILLING'),
-    ],
-    false
-  ),
+  item('Scheduling', 'SIDEBAR.SCHEDULING'),
+  item('Reports', 'SIDEBAR.REPORTS'),
+  item('Portals', 'SIDEBAR.HELP_CENTER.TITLE'),
+  item('Settings', 'SIDEBAR.ADDITIONAL', [], false),
 ]);
 
 const flattenSidebarVisibilityItems = items =>
@@ -370,36 +253,48 @@ const normalizeLegacyLeadFormsVisibility = (hiddenItems, version) => {
   return hiddenItemsSet;
 };
 
-export const getSidebarHiddenItems = uiSettings =>
-  normalizeSidebarHiddenItems(
-    Array.from(
-      normalizeLegacyLeadFormsVisibility(
-        normalizeRemovedMyCompanyGroupVisibility(
-          normalizeLegacyReportsDealsVisibility(
-            normalizeLegacyConversationPipelinesVisibility(
-              normalizeDefaultConversationStatusVisibility(
-                normalizeLegacyMyCompanyVisibility(
-                  normalizeLegacyTouchesVisibility(
-                    normalizeLegacyCaptainPromptsVisibility(
-                      uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY],
-                      uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-                    ),
-                    uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-                  ),
-                  uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-                ),
-                uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-              ),
-              uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-            ),
-            uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-          ),
-          uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-        ),
-        uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]
-      )
-    )
+const normalizeMainMenuVisibility = (hiddenItems, version) => {
+  const hiddenItemsSet = toHiddenItemsSet(hiddenItems);
+  if (Number(version || 0) >= 17) return hiddenItemsSet;
+
+  const broadcastsWereHidden =
+    hiddenItemsSet.has('Campaigns') ||
+    hiddenItemsSet.has(TOUCHES_VISIBILITY_KEY) ||
+    hiddenItemsSet.has(LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY) ||
+    hiddenItemsSet.has('Campaigns:MassBroadcasts');
+
+  hiddenItemsSet.delete('Campaigns');
+  hiddenItemsSet.delete(TOUCHES_VISIBILITY_KEY);
+  hiddenItemsSet.delete(LEGACY_PERSONAL_BROADCASTS_VISIBILITY_KEY);
+  if (broadcastsWereHidden) {
+    hiddenItemsSet.add('Campaigns:MassBroadcasts');
+  }
+
+  return hiddenItemsSet;
+};
+
+export const getSidebarHiddenItems = uiSettings => {
+  const version = uiSettings?.[SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY];
+  let hiddenItems = uiSettings?.[SIDEBAR_VISIBILITY_UI_SETTINGS_KEY];
+
+  hiddenItems = normalizeLegacyCaptainPromptsVisibility(hiddenItems, version);
+  hiddenItems = normalizeLegacyTouchesVisibility(hiddenItems, version);
+  hiddenItems = normalizeLegacyMyCompanyVisibility(hiddenItems, version);
+  hiddenItems = normalizeDefaultConversationStatusVisibility(
+    hiddenItems,
+    version
   );
+  hiddenItems = normalizeLegacyConversationPipelinesVisibility(
+    hiddenItems,
+    version
+  );
+  hiddenItems = normalizeLegacyReportsDealsVisibility(hiddenItems, version);
+  hiddenItems = normalizeRemovedMyCompanyGroupVisibility(hiddenItems, version);
+  hiddenItems = normalizeLegacyLeadFormsVisibility(hiddenItems, version);
+  hiddenItems = normalizeMainMenuVisibility(hiddenItems, version);
+
+  return normalizeSidebarHiddenItems(Array.from(hiddenItems));
+};
 
 export const buildEffectiveSidebarVisibilitySettings = ({
   accountSettings,

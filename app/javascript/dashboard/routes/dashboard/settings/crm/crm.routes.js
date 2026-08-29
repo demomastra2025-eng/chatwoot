@@ -29,11 +29,6 @@ const dealSettingsTabs = [
     routeName: 'crm_settings_index',
     activeOn: ['crm_settings_index'],
   },
-  {
-    labelKey: 'ATTRIBUTES_MGMT.HEADER',
-    routeName: 'crm_deal_fields_settings_index',
-    activeOn: ['crm_deal_fields_settings_index'],
-  },
 ];
 
 const taskSettingsTabs = [
@@ -45,26 +40,6 @@ const taskSettingsTabs = [
 ];
 
 const redirectToCrmLanding = (to, _from, next) => {
-  if (hasCrmDealsEnabled(to.params.accountId)) {
-    next();
-    return;
-  }
-
-  if (hasCrmTasksEnabled(to.params.accountId)) {
-    next({
-      name: 'crm_task_settings_index',
-      params: to.params,
-      query: to.query,
-    });
-    return;
-  }
-
-  next({
-    path: frontendURL(`accounts/${to.params.accountId}`),
-  });
-};
-
-const requireCrmDeals = (to, _from, next) => {
   if (hasCrmDealsEnabled(to.params.accountId)) {
     next();
     return;
@@ -111,6 +86,7 @@ export default {
       component: SettingsTabsWrapper,
       props: {
         tabs: taskSettingsTabs,
+        keepAlive: false,
       },
       children: [
         {
@@ -128,14 +104,11 @@ export default {
         {
           path: 'fields',
           name: 'crm_task_fields_settings_index',
-          component: AttributesHome,
-          props: {
-            initialTab: 'task',
-            showEntityTabs: false,
-            tabs: ['task'],
-          },
-          meta: crmSettingsMeta,
-          beforeEnter: requireCrmTasks,
+          redirect: to => ({
+            name: 'workspace_additional_fields_settings_index',
+            params: to.params,
+            query: { tab: 'task' },
+          }),
         },
       ],
     },
@@ -144,6 +117,10 @@ export default {
       component: SettingsTabsWrapper,
       props: {
         tabs: dealSettingsTabs,
+        fullWidth: true,
+        keepAlive: false,
+        showBackButton: false,
+        showTabs: false,
       },
       children: [
         {
@@ -156,14 +133,11 @@ export default {
         {
           path: 'fields',
           name: 'crm_deal_fields_settings_index',
-          component: AttributesHome,
-          props: {
-            initialTab: 'deal',
-            showEntityTabs: false,
-            tabs: ['deal'],
-          },
-          meta: crmSettingsMeta,
-          beforeEnter: requireCrmDeals,
+          redirect: to => ({
+            name: 'workspace_additional_fields_settings_index',
+            params: to.params,
+            query: { tab: 'deal' },
+          }),
         },
       ],
     },

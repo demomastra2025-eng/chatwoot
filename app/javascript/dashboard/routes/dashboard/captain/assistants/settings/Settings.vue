@@ -22,6 +22,7 @@ const store = useStore();
 
 const deleteAssistantDialog = ref(null);
 const generalBasicFormRef = ref(null);
+const generalCapabilitiesFormRef = ref(null);
 const generalSystemFormRef = ref(null);
 const voiceSystemFormRef = ref(null);
 
@@ -54,10 +55,17 @@ const activeSettingsTabIndex = computed(() =>
 );
 
 const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
+  'model',
+  'temperature',
+  'auto_reply_on_last_incoming',
+  'message_collapse_window_seconds',
+  'history_message_limit',
   'feature_faq',
   'feature_memory',
   'feature_citation',
   'feature_web',
+  'feature_document_reading',
+  'feature_image_understanding',
   'context_access',
   'tool_access',
 ]);
@@ -65,10 +73,6 @@ const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
 const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
   'handoff_message',
   'resolution_message',
-  'temperature',
-  'auto_reply_on_last_incoming',
-  'message_collapse_window_seconds',
-  'history_message_limit',
 ]);
 
 const VOICE_SETTINGS_CONFIG_KEYS = Object.freeze(['voice_settings']);
@@ -173,10 +177,19 @@ const handleGeneralSave = async () => {
   const basicPayload = await generalBasicFormRef.value?.buildPayload?.();
   if (!basicPayload) return;
 
+  const capabilitiesPayload =
+    await generalCapabilitiesFormRef.value?.buildPayload?.();
+  if (!capabilitiesPayload) return;
+
   const systemPayload = await generalSystemFormRef.value?.buildPayload?.();
   if (!systemPayload) return;
 
-  await handleSubmit(mergeAssistantPayloads(basicPayload, systemPayload));
+  await handleSubmit(
+    mergeAssistantPayloads(
+      mergeAssistantPayloads(basicPayload, capabilitiesPayload),
+      systemPayload
+    )
+  );
 };
 
 const handleVoiceSave = async () => {
@@ -250,6 +263,24 @@ const handleDeleteSuccess = () => {
                 ref="generalBasicFormRef"
                 :assistant="assistant"
                 :show-description-field="false"
+                :show-capabilities="false"
+                :show-submit-button="false"
+              />
+            </div>
+          </div>
+
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+            <div class="flex flex-col gap-6">
+              <SettingsHeader
+                :heading="t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE')"
+                :description="t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DESCRIPTION')"
+              />
+              <AssistantBasicSettingsForm
+                ref="generalCapabilitiesFormRef"
+                :assistant="assistant"
+                :show-avatar-section="false"
+                :show-identity-fields="false"
+                :show-core-settings="false"
                 :show-submit-button="false"
               />
             </div>
@@ -302,8 +333,6 @@ const handleDeleteSuccess = () => {
                 ref="voiceSystemFormRef"
                 :assistant="assistant"
                 :show-conversation-messages="false"
-                :show-temperature-setting="false"
-                :show-automation-settings="false"
                 show-voice-settings
                 :show-submit-button="false"
               />

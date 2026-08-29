@@ -16,24 +16,15 @@ describe('captain routes', () => {
     expect(evaluationRoute).toBeUndefined();
   });
 
-  it('redirects the removed assistant playground page to prompts', () => {
+  it('exposes the assistant sandbox at the playground route', () => {
     const playgroundRoute = flattenRoutes(routes).find(
       route => route.name === 'captain_assistants_playground_index'
     );
 
     expect(playgroundRoute).toBeTruthy();
     expect(playgroundRoute.path).toContain('/captain/:assistantId/playground');
-    expect(playgroundRoute.component).toBeUndefined();
-    expect(
-      playgroundRoute.redirect({
-        params: { accountId: '1', assistantId: '2' },
-        query: { source: 'legacy' },
-      })
-    ).toEqual({
-      name: 'captain_assistants_prompts_index',
-      params: { accountId: '1', assistantId: '2' },
-      query: { source: 'legacy' },
-    });
+    expect(playgroundRoute.component).toBeTypeOf('function');
+    expect(playgroundRoute.redirect).toBeUndefined();
   });
 
   it('redirects the removed channels page to channel settings', () => {

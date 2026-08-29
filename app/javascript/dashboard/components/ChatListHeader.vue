@@ -7,7 +7,6 @@ import wootConstants from 'dashboard/constants/globals';
 
 import ConversationBasicFilter from './widgets/conversation/ConversationBasicFilter.vue';
 import ConversationLocalSearch from './widgets/conversation/ConversationLocalSearch.vue';
-import ChatListChannelFilter from './widgets/conversation/ChatListChannelFilter.vue';
 import ConversationStatusFilter from './widgets/conversation/ConversationStatusFilter.vue';
 import SwitchLayout from 'dashboard/routes/dashboard/conversation/search/SwitchLayout.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
@@ -19,9 +18,6 @@ const props = defineProps({
   isOnExpandedLayout: { type: Boolean, required: true },
   conversationStats: { type: Object, required: true },
   isListLoading: { type: Boolean, required: true },
-  showChannelFilter: { type: Boolean, default: false },
-  channelFilterItems: { type: Array, default: () => [] },
-  activeChannelFilterKey: { type: String, default: '' },
   activeUnreadOnly: { type: Boolean, default: false },
   activeStatus: { type: String, default: 'open' },
   showStatusFilter: { type: Boolean, default: false },
@@ -35,7 +31,6 @@ const emit = defineEmits([
   'resetFilters',
   'basicFilterChange',
   'filtersModal',
-  'channelFilterSelect',
   'unreadFilterToggle',
   'statusFilterChange',
 ]);
@@ -88,11 +83,11 @@ const toggleConversationLayout = () => {
     }"
   >
     <div class="flex min-w-0 flex-1 items-center">
-      <ChatListChannelFilter
-        v-if="showChannelFilter"
-        :items="channelFilterItems"
-        :active-key="activeChannelFilterKey"
-        @select="emit('channelFilterSelect', $event)"
+      <ConversationStatusFilter
+        v-if="showStatusFilter"
+        :model-value="activeStatus"
+        :show-ai="showAiStatus"
+        @update:model-value="emit('statusFilterChange', $event)"
       />
       <template v-else>
         <h1
@@ -123,12 +118,6 @@ const toggleConversationLayout = () => {
       </template>
     </div>
     <div class="flex shrink-0 items-center gap-1">
-      <ConversationStatusFilter
-        v-if="showStatusFilter"
-        :model-value="activeStatus"
-        :show-ai="showAiStatus"
-        @update:model-value="emit('statusFilterChange', $event)"
-      />
       <NextButton
         v-tooltip.top-end="unreadFilterTooltip"
         :aria-label="unreadFilterTooltip"

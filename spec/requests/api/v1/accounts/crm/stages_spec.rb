@@ -102,6 +102,31 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(ordered_outcomes).to all(be_in(Crm::Stage::TERMINAL_OUTCOMES))
   end
 
+  it 'ignores direct position writes outside the pipeline reorder endpoint' do
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    proposal = pipeline.stages.find_by!(code: 'proposal')
+    original_position = proposal.position
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{proposal.id}",
+          params: { name: 'Proposal updated', position: 99 },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(proposal.reload).to have_attributes(name: 'Proposal updated', position: original_position)
+
+    post "/api/v1/accounts/#{account.id}/crm/pipelines/#{pipeline.id}/stages",
+         params: { name: 'Negotiation', position: 99 },
+         headers: headers,
+         as: :json
+
+    created_stage = pipeline.stages.find_by!(code: 'negotiation')
+    first_terminal_position = pipeline.stages.where(outcome: Crm::Stage::TERMINAL_OUTCOMES).minimum(:position)
+
+    expect(response).to have_http_status(:created)
+    expect(created_stage.position).to be < first_terminal_position
+  end
+
   it 'updates a stage color' do
     stage = account.crm_stages.find_by!(code: 'proposal')
 
@@ -182,6 +207,53 @@ RSpec.describe 'CRM Stages API', type: :request do
     delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
            headers: headers,
            as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('STANDARD_STAGE_LOCKED')
+    expect(account.crm_stages.exists?(stage.id)).to be(true)
+  end
+
+  it 'allows disabling the technical unsorted stage and assigns another open stage as default' do
+    stage = account.crm_stages.find_by!(code: 'new')
+    fallback_stage = stage.pipeline.stages.find_by!(code: 'qualified')
+    original_attributes = stage.slice(:name, :outcome, :position)
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+          params: {
+            active: false,
+            default: false,
+            name: 'Moved stage',
+            outcome: 'lost',
+            position: 99
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(stage.reload).to have_attributes(active: false, default: false)
+    expect(stage.slice(:name, :outcome, :position)).to eq(original_attributes)
+    expect(fallback_stage.reload).to be_default
+  end
+
+  it 'allows disabling a custom default stage and assigns another open stage as default' do
+    stage = account.crm_stages.find_by!(code: 'qualified')
+    fallback_stage = stage.pipeline.stages.find_by!(code: 'proposal')
+    stage.update!(default: true)
+
+    patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
+          params: { active: false, default: false },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(stage.reload).to have_attributes(active: false, default: false)
+    expect(fallback_stage.reload).to be_default
+  end
+
+  it 'rejects deleting the technical unsorted stage' do
+    stage = account.crm_stages.find_by!(code: 'new')
+
+    delete "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}", headers: headers, as: :json
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response.parsed_body['code']).to eq('STANDARD_STAGE_LOCKED')

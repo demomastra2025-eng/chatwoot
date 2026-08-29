@@ -73,11 +73,11 @@ describe('AssistantsIndexPage', () => {
     mocks.route.query = {};
   });
 
-  it('routes the legacy playground sidebar target to prompts', async () => {
+  it('routes the playground sidebar target to the assistant sandbox', async () => {
     await mountPage();
 
     expect(mocks.replace).toHaveBeenCalledWith({
-      name: 'captain_assistants_prompts_index',
+      name: 'captain_assistants_playground_index',
       params: {
         accountId: '1',
         assistantId: 2,

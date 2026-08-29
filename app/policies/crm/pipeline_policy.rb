@@ -15,6 +15,10 @@ class Crm::PipelinePolicy < Crm::BasePolicy
     settings_manage_access?
   end
 
+  def reorder_stages?
+    update?
+  end
+
   def destroy?
     settings_manage_access?
   end

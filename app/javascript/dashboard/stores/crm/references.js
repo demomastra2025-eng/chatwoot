@@ -211,6 +211,26 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       }
     },
 
+    async reorderStages(pipelineId, stageIds) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = await CrmPipelinesAPI.reorderStages(
+          pipelineId,
+          stageIds
+        );
+        const pipeline = normalizePayload(response.data);
+        this.pipelines = upsertPipelineInList(this.pipelines, pipeline);
+        return pipeline;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
     async loadTaskStatuses(params = {}) {
       this.ui.isLoadingTaskStatuses = true;
       this.ui.error = null;

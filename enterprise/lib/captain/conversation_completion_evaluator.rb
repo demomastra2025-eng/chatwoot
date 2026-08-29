@@ -50,7 +50,8 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
 
     result = {
       complete: message['complete'] == true || message[:complete] == true,
-      reason: message['reason'] || message[:reason] || 'No reason provided'
+      reason: message['reason'] || message[:reason] || 'No reason provided',
+      evaluated: true
     }
     generated_message = message['message'] || message[:message]
     result[:message] = generated_message if generated_message.present?
@@ -58,7 +59,7 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
   end
 
   def default_incomplete_response(reason)
-    { complete: false, reason: reason }
+    { complete: false, reason: reason, evaluated: false }
   end
 
   # Prefer the system API key over the account's OpenAI hook key.

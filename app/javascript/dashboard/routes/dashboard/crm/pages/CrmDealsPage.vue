@@ -175,6 +175,7 @@ const persistedPreferencesByAccount = useLocalStorage(
 
 const LIST_PAGE_SIZE = 25;
 const DEALS_PAGE_SIZE = 100;
+const BOARD_DEALS_PER_STAGE = 8;
 
 const filters = reactive({
   aiOnly: false,
@@ -229,11 +230,13 @@ const form = reactive({
 const ui = reactive({
   error: null,
   isLoading: true,
+  isLoadMoreFailed: false,
   isLoadingMore: false,
   isSaving: false,
   isSavingComment: false,
   isTimelineLoading: false,
 });
+let dealsRequestGeneration = 0;
 
 const closeDealTitleEditor = () => {
   editingDealTitleId.value = null;
@@ -327,7 +330,7 @@ const activePipelines = computed(() =>
 
 const pipelineOptions = computed(() =>
   referencesStore.pipelines.map(pipeline => ({
-    icon: 'i-lucide-funnel',
+    icon: 'i-lucide-briefcase-business',
     label: pipeline.name,
     value: pipeline.id,
   }))
@@ -348,6 +351,11 @@ const selectedPipeline = computed(
     defaultPipeline.value ||
     null
 );
+
+const stageDisplayName = stage =>
+  stage?.code === 'new'
+    ? t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED')
+    : stage?.name;
 
 const pipelineFilterOptions = computed(() =>
   activePipelines.value.map(pipeline => ({
@@ -380,7 +388,7 @@ const stageOptions = computed(() =>
       pipeline => Number(pipeline.id) === Number(form.pipelineId)
     )?.stages || []
   ).map(stage => ({
-    label: stage.name,
+    label: stageDisplayName(stage),
     stageColor: stage.color || DEFAULT_STAGE_COLOR,
     value: stage.id,
   }))
@@ -439,7 +447,7 @@ const filterStageOptions = computed(() => {
   );
 
   return (pipeline?.stages || []).map(stage => ({
-    label: stage.name,
+    label: stageDisplayName(stage),
     stageColor: stage.color || DEFAULT_STAGE_COLOR,
     value: stage.id,
   }));
@@ -455,9 +463,10 @@ const boardStages = computed(() => {
   return pipelines.flatMap(pipeline =>
     (pipeline.stages || []).map(stage => ({
       color: stage.color,
+      code: stage.code,
       id: stage.id,
-      label: stage.name,
-      name: stage.name,
+      label: stageDisplayName(stage),
+      name: stageDisplayName(stage),
       outcome: stage.outcome,
       pipelineId: pipeline.id,
     }))
@@ -665,7 +674,7 @@ const pipelineNameById = computed(() =>
 const stageNameById = computed(() =>
   referencesStore.pipelines.reduce((result, pipeline) => {
     (pipeline.stages || []).forEach(stage => {
-      result[stage.id] = stage.name;
+      result[stage.id] = stageDisplayName(stage);
     });
     return result;
   }, {})
@@ -784,27 +793,6 @@ const resolveDealSortValue = computed(() =>
     stageNameById: stageNameById.value,
   })
 );
-
-const resolveDealBoardSortValue = (deal, key) => {
-  switch (key) {
-    case 'amount':
-      return Number(resolveDealAmountMajor(deal) ?? 0);
-    case 'createdAt':
-      return deal.createdAt ? new Date(deal.createdAt).getTime() : null;
-    case 'expectedCloseOn':
-      return deal.expectedCloseOn
-        ? new Date(deal.expectedCloseOn).getTime()
-        : null;
-    case 'position':
-      return Number(deal.position ?? Number.MAX_SAFE_INTEGER);
-    case 'title':
-      return normalizeFilterText(deal.title);
-    case 'updatedAt':
-      return deal.updatedAt ? new Date(deal.updatedAt).getTime() : null;
-    default:
-      return null;
-  }
-};
 
 const sortedListDeals = computed(() =>
   sortListRecords(
@@ -1854,7 +1842,9 @@ const saveDealContactLink = async contactId => {
   });
   const updatedDeal = normalizePayload(response.data);
 
-  upsertDeal(updatedDeal);
+  // Defined with the board loader below; this handler only runs after setup.
+  // eslint-disable-next-line no-use-before-define
+  await applyDealMutation(updatedDeal);
   selectedDeal.value = updatedDeal;
   populateFormFromDeal(updatedDeal);
   captureFormBaseline();
@@ -1955,7 +1945,9 @@ const saveDeal = async () => {
       deal = normalizePayload(response.data);
     }
 
-    upsertDeal(deal);
+    // Defined with the board loader below; this handler only runs after setup.
+    // eslint-disable-next-line no-use-before-define
+    await applyDealMutation(deal);
     selectedDeal.value = deal;
     pendingCreateCustomFieldDefaultsHydration.value = false;
     populateFormFromDeal(deal);
@@ -1977,6 +1969,15 @@ const saveDeal = async () => {
         : t('CRM.DEALS.SUCCESS_CREATED')
     );
   } catch (error) {
+    if (currentPresentation.value === 'board') {
+      try {
+        // Declared with the board loader below; this handler runs after setup.
+        // eslint-disable-next-line no-use-before-define
+        await loadDeals();
+      } catch {
+        // Keep the original mutation error as the surfaced failure.
+      }
+    }
     useAlert(formatErrorMessage(error));
   } finally {
     ui.isSaving = false;
@@ -1993,7 +1994,9 @@ const toggleArchived = async deal => {
           lock_version: deal.lockVersion,
         });
     const updatedDeal = normalizePayload(response.data);
-    upsertDeal(updatedDeal);
+    // Defined with the board loader below; this handler only runs after setup.
+    // eslint-disable-next-line no-use-before-define
+    await applyDealMutation(updatedDeal);
     if (
       selectedDeal.value &&
       Number(selectedDeal.value.id) === Number(updatedDeal.id)
@@ -2010,10 +2013,15 @@ const toggleArchived = async deal => {
   }
 };
 
-const buildDealsFetchParams = page =>
-  compactPayload({
+const buildDealsFetchParams = page => {
+  const isBoard = currentPresentation.value === 'board';
+
+  return compactPayload({
     ai_only: filters.aiOnly || undefined,
     archived: filters.archived,
+    board: isBoard || undefined,
+    board_sort: isBoard ? boardSort.key : undefined,
+    board_sort_directions: isBoard ? { ...boardSortDirections } : undefined,
     company_id: filters.companyId || undefined,
     contact_id: filters.contactId || undefined,
     created_from: filters.dateRange.from || undefined,
@@ -2021,41 +2029,83 @@ const buildDealsFetchParams = page =>
     custom_attribute_filters: customFieldFilters.value,
     owner_id: filters.ownerId || undefined,
     page,
-    per_page: DEALS_PAGE_SIZE,
+    per_page: isBoard ? BOARD_DEALS_PER_STAGE : DEALS_PAGE_SIZE,
     pipeline_id: filters.pipelineId || undefined,
     q: listQuickFilters.q || undefined,
     stage_id: filters.stageId || undefined,
     team_id: filters.teamId || undefined,
   });
+};
 
 async function loadDeals({ append = false, page = null } = {}) {
   if (append && (ui.isLoadingMore || !hasMoreDeals.value)) return;
 
+  if (!append) {
+    dealsRequestGeneration += 1;
+  }
+  const requestGeneration = dealsRequestGeneration;
   const nextPage = page || (append ? Number(dealsMeta.value.page || 1) + 1 : 1);
 
   if (append) {
+    ui.isLoadMoreFailed = false;
     ui.isLoadingMore = true;
   } else {
     ui.isLoading = true;
+    ui.isLoadMoreFailed = false;
+    ui.isLoadingMore = false;
     listCurrentPage.value = 1;
+    ui.error = null;
   }
-  ui.error = null;
 
   try {
     const { data } = await CrmDealsAPI.get(buildDealsFetchParams(nextPage));
+    if (requestGeneration !== dealsRequestGeneration) return;
+
     const nextDeals = normalizePayload(data);
     dealsMeta.value = normalizeMeta(data);
     deals.value = append ? mergeDealsById(deals.value, nextDeals) : nextDeals;
     syncSelectedDeal(deals.value);
   } catch (error) {
-    ui.error = error;
+    if (requestGeneration !== dealsRequestGeneration) return;
+
+    if (append) {
+      ui.isLoadMoreFailed = true;
+      useAlert(formatErrorMessage(error));
+    } else {
+      ui.error = error;
+    }
   } finally {
-    ui.isLoading = false;
-    ui.isLoadingMore = false;
+    if (requestGeneration === dealsRequestGeneration) {
+      ui.isLoading = false;
+      ui.isLoadingMore = false;
+    }
   }
 }
 
 const loadMoreDeals = () => loadDeals({ append: true });
+
+async function applyDealMutation(deal) {
+  if (currentPresentation.value === 'board') {
+    await loadDeals();
+    return;
+  }
+
+  upsertDeal(deal);
+}
+
+const handlePresentationChange = async presentation => {
+  if (currentPresentation.value === presentation) return;
+
+  currentPresentation.value = presentation;
+  await loadDeals();
+};
+
+const handleBoardSortChange = async sortKey => {
+  if (boardSort.key === sortKey) return;
+
+  boardSort.key = sortKey;
+  await loadDeals();
+};
 
 const scheduleDealsReload = useDebounceFn(() => {
   loadDeals();
@@ -2070,6 +2120,11 @@ const handleCrmDealRealtimeEvent = payload => {
     Number(selectedDeal.value.id) === Number(realtimeDeal.id);
   if (isSelectedDeal) {
     selectedDeal.value = realtimeDeal;
+  }
+
+  if (currentPresentation.value === 'board') {
+    scheduleDealsReload();
+    return;
   }
 
   const filterMatch = dealMatchesCurrentFilters(realtimeDeal);
@@ -2132,7 +2187,7 @@ const saveDealTitle = async deal => {
       title: nextTitle,
     });
     const updatedDeal = normalizePayload(response.data);
-    upsertDeal(updatedDeal);
+    await applyDealMutation(updatedDeal);
 
     if (
       selectedDeal.value &&
@@ -2197,6 +2252,7 @@ const openDealSettings = () => {
   router.push({
     name: 'crm_settings_index',
     params: { accountId: accountId.value },
+    query: { pipelineId: selectedPipeline.value?.id },
   });
 };
 
@@ -2204,13 +2260,6 @@ const handleAiOnlyFilterChange = async value => {
   filters.aiOnly = Boolean(value);
   listCurrentPage.value = 1;
   await loadDeals();
-};
-
-const handleBoardCreateDeal = async ({ pipelineId, stageId }) => {
-  await openCreateDrawer({
-    pipelineId,
-    stageId,
-  });
 };
 
 const customFieldFilterOptions = definition =>
@@ -2408,7 +2457,7 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
             transition_reason: transitionReason || undefined,
           });
     const updatedDeal = normalizePayload(response.data);
-    upsertDeal(updatedDeal);
+    await applyDealMutation(updatedDeal);
 
     if (
       selectedDeal.value &&
@@ -2461,7 +2510,7 @@ const handleDealOwnerChange = async ({ deal, ownerId }) => {
       owner_id: nextOwnerId,
     });
     const updatedDeal = normalizePayload(response.data);
-    upsertDeal(updatedDeal);
+    await applyDealMutation(updatedDeal);
 
     if (
       selectedDeal.value &&
@@ -2599,7 +2648,9 @@ const consumeDealOpenQuery = async () => {
     if (!deal) {
       const { data } = await CrmDealsAPI.show(dealId);
       deal = normalizePayload(data);
-      upsertDeal(deal);
+      if (currentPresentation.value !== 'board') {
+        upsertDeal(deal);
+      }
     }
 
     await openEditDrawer(deal);
@@ -2710,10 +2761,11 @@ watch(
   { deep: true }
 );
 
-const toggleBoardSortDirection = stageId => {
+const toggleBoardSortDirection = async stageId => {
   const key = String(stageId);
   boardSortDirections[key] =
     boardSortDirections[key] === 'desc' ? 'asc' : 'desc';
+  await loadDeals();
 };
 
 onBeforeRouteLeave(() => {
@@ -2818,34 +2870,30 @@ watch(
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden md:order-last">
       <SchedulingPageHeader
         class="!bg-n-slate-2"
-        :title="$t('CRM.DEALS.TITLE')"
+        :title="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
       >
-        <template #left>
+        <template #title>
           <SelectMenu
-            icon="i-lucide-funnel"
             :model-value="
               String(filters.pipelineId || selectedPipeline?.id || '')
             "
             :options="pipelineFilterOptions"
             :label="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
+            size="lg"
+            variant="ghost"
+            trigger-class="!max-w-[28rem] !px-0 !text-lg !font-semibold !text-n-slate-12 hover:!bg-transparent"
+            :highlight-trigger="false"
+            sub-menu-align="start"
             sub-menu-position="bottom"
             @update:model-value="selectPipelineFilter"
           />
+        </template>
+        <template #left>
           <SchedulingViewSwitcher
-            v-model="currentPresentation"
             icon-only
+            :model-value="currentPresentation"
             :views="viewOptions"
-          />
-          <Button
-            v-if="canAccessDealSettings"
-            size="sm"
-            color="slate"
-            variant="ghost"
-            icon="i-lucide-settings-2"
-            class="!size-7 !text-n-slate-11 hover:!text-n-slate-12"
-            :aria-label="$t('SIDEBAR.SETTINGS')"
-            :title="$t('SIDEBAR.SETTINGS')"
-            @click="openDealSettings"
+            @update:model-value="handlePresentationChange"
           />
         </template>
         <template #actions>
@@ -2884,7 +2932,7 @@ watch(
             :options="boardSortOptions"
             :label="selectedBoardSortLabel"
             sub-menu-position="bottom"
-            @update:model-value="boardSort.key = $event"
+            @update:model-value="handleBoardSortChange"
           />
           <Button
             size="sm"
@@ -2901,6 +2949,17 @@ watch(
             icon="i-lucide-plus"
             :label="$t('CRM.DEALS.NEW_DEAL')"
             @click="openCreateDrawer"
+          />
+          <Button
+            v-if="canAccessDealSettings"
+            size="sm"
+            color="slate"
+            variant="ghost"
+            icon="i-lucide-settings"
+            class="!size-8 !text-n-slate-11 hover:!text-n-slate-12"
+            :aria-label="$t('SIDEBAR.SETTINGS')"
+            :title="$t('SIDEBAR.SETTINGS')"
+            @click="openDealSettings"
           />
         </template>
       </SchedulingPageHeader>
@@ -2951,6 +3010,7 @@ watch(
             :field-definitions="dealFieldDefinitions"
             :has-more="hasMoreDeals"
             :is-loading-more="ui.isLoadingMore"
+            :load-more-failed="ui.isLoadMoreFailed"
             :owners="ownerOptions"
             :show-sort-toggle="boardSort.key !== MANUAL_BOARD_SORT_KEY"
             :stage-counts="stageCounts"
@@ -2958,10 +3018,8 @@ watch(
             :sort-direction-labels="boardSortDirectionLabels"
             :sort-directions="boardSortDirections"
             :sort-key="boardSort.key"
-            :sort-value-resolver="resolveDealBoardSortValue"
             @change-owner="handleDealOwnerChange"
             @change-stage="handleDealStageChange"
-            @create-deal="handleBoardCreateDeal"
             @load-more="loadMoreDeals"
             @select-deal="openEditDrawer"
             @toggle-sort-direction="toggleBoardSortDirection"

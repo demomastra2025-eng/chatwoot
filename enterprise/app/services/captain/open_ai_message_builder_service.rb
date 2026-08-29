@@ -18,7 +18,7 @@ class Captain::OpenAiMessageBuilderService
     ['received at', %i[received_at receivedAt]]
   ].freeze
 
-  pattr_initialize [:message!, :assistant]
+  pattr_initialize [:message!, :assistant, { image_description_attachment_ids: [] }]
 
   # Extracts text and image URLs from multimodal content array (reverse of generate_content)
   def self.extract_text_and_attachments(content)
@@ -87,13 +87,22 @@ class Captain::OpenAiMessageBuilderService
     keys.lazy.map { |key| referral[key] }.find(&:present?)
   end
 
-  def image_description_part(attachment, image_url)
-    description = Captain::ImageRecognitionService.new(
-      account: @message.account,
-      attachment: attachment,
-      image_url: image_url
-    ).perform
-    text_part("Image attachment: #{description}") if description.present?
+  def image_description_part(attachment)
+    return text_part('Image attachment: User shared an image') unless image_understanding_enabled?
+
+    description = Captain::ImageRecognitionService.cached_description(attachment)
+    if description.blank? && generate_image_description?(attachment)
+      image_url = get_attachment_url(attachment)
+      if image_url.present?
+        description = Captain::ImageRecognitionService.new(
+          account: @message.account,
+          attachment: attachment,
+          image_url: image_url
+        ).perform
+      end
+    end
+
+    text_part("Image attachment: #{description.presence || 'User shared an image'}")
   end
 
   def attachment_parts(attachments)
@@ -113,17 +122,17 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def image_parts(image_attachments)
-    image_attachments.each_with_object([]) do |attachment, parts|
-      url = get_attachment_url(attachment)
-      next if url.blank?
-
-      parts << image_url_part(url)
-      parts << image_description_part(attachment, url)
-    end.compact
+    image_attachments.map { |attachment| image_description_part(attachment) }
   end
 
-  def image_url_part(url)
-    { type: 'image_url', image_url: { url: url } }
+  def generate_image_description?(attachment)
+    return false unless image_understanding_enabled?
+
+    Array(@image_description_attachment_ids).map(&:to_i).include?(attachment.id)
+  end
+
+  def image_understanding_enabled?
+    ActiveModel::Type::Boolean.new.cast(@assistant&.feature_image_understanding)
   end
 
   def get_attachment_url(attachment)

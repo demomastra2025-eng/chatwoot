@@ -1,13 +1,18 @@
 <script setup>
-import { computed, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from 'vue';
 import { useI18n } from 'vue-i18n';
 import Draggable from 'vuedraggable';
 
-import Button from 'dashboard/components-next/button/Button.vue';
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import CrmDealOwnerMenu from './CrmDealOwnerMenu.vue';
 import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
-import { sortListRecords } from 'dashboard/routes/dashboard/crm/listSort';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
 const props = defineProps({
@@ -32,6 +37,10 @@ const props = defineProps({
     default: false,
   },
   isLoadingMore: {
+    type: Boolean,
+    default: false,
+  },
+  loadMoreFailed: {
     type: Boolean,
     default: false,
   },
@@ -66,16 +75,11 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  sortValueResolver: {
-    type: Function,
-    default: null,
-  },
 });
 
 const emit = defineEmits([
   'changeOwner',
   'changeStage',
-  'createDeal',
   'loadMore',
   'selectDeal',
   'toggleSortDirection',
@@ -83,6 +87,7 @@ const emit = defineEmits([
 const { locale, t } = useI18n();
 
 const boardColumns = ref({});
+const boardScrollContainer = ref(null);
 const canDragDeals = computed(() => props.canManage && props.canReorder);
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
@@ -113,21 +118,6 @@ const sortDirectionLabel = columnId =>
 const resolveBoardPosition = index =>
   props.sortKey === 'position' ? index + 1 : null;
 
-const sortColumnDeals = (items, columnId) => {
-  if (!props.sortKey || !props.sortValueResolver) {
-    return items;
-  }
-
-  return sortListRecords(
-    items,
-    {
-      direction: columnSortDirection(columnId),
-      key: props.sortKey,
-    },
-    props.sortValueResolver
-  );
-};
-
 const syncBoardColumns = () => {
   const nextColumns = createBoardState();
   const fallbackStageId = Number(props.stages[0]?.id);
@@ -139,10 +129,6 @@ const syncBoardColumns = () => {
     if (!stageId) return;
 
     nextColumns[stageId].push({ ...deal, stageId });
-  });
-
-  Object.keys(nextColumns).forEach(stageId => {
-    nextColumns[stageId] = sortColumnDeals(nextColumns[stageId], stageId);
   });
 
   boardColumns.value = nextColumns;
@@ -167,7 +153,6 @@ const kanbanColumns = computed(() =>
     color: stage.color,
     deals: boardColumns.value[Number(stage.id)] || [],
     label: stage.name,
-    pipelineId: Number(stage.pipelineId),
     stageId: Number(stage.id),
   }))
 );
@@ -175,10 +160,57 @@ const kanbanColumns = computed(() =>
 const columnDealCount = column =>
   Number(props.stageCounts?.[String(column.stageId)]) || column.deals.length;
 
-const handleBoardScroll = event => {
-  if (!props.hasMore || props.isLoadingMore) return;
+let lastBoardScrollTop = 0;
+let lastAutoFillSignature = null;
+let resizeObserver = null;
 
+const loadMoreIfBoardDoesNotOverflow = async () => {
+  await nextTick();
+  const element = boardScrollContainer.value;
+  if (
+    !element ||
+    !props.hasMore ||
+    props.isLoadingMore ||
+    props.loadMoreFailed
+  ) {
+    return;
+  }
+  if (element.scrollHeight > element.clientHeight + 1) return;
+
+  const dealSignature = props.deals.map(deal => deal.id).join(',');
+  if (lastAutoFillSignature === dealSignature) return;
+
+  lastAutoFillSignature = dealSignature;
+  emit('loadMore');
+};
+
+watch(
+  [
+    () => props.deals.map(deal => deal.id).join(','),
+    () => props.hasMore,
+    () => props.isLoadingMore,
+  ],
+  () => loadMoreIfBoardDoesNotOverflow(),
+  { flush: 'post' }
+);
+
+onMounted(() => {
+  loadMoreIfBoardDoesNotOverflow();
+  if (typeof ResizeObserver === 'undefined') return;
+
+  resizeObserver = new ResizeObserver(() => loadMoreIfBoardDoesNotOverflow());
+  resizeObserver.observe(boardScrollContainer.value);
+});
+
+onBeforeUnmount(() => resizeObserver?.disconnect());
+
+const handleBoardScroll = event => {
   const element = event.currentTarget;
+  const isScrollingDown = element.scrollTop > lastBoardScrollTop;
+  lastBoardScrollTop = element.scrollTop;
+  if (!props.hasMore || props.isLoadingMore) return;
+  if (!isScrollingDown) return;
+
   const distanceToBottom =
     element.scrollHeight - element.scrollTop - element.clientHeight;
 
@@ -255,14 +287,15 @@ const handleOwnerChange = (deal, ownerId) => {
 
 <template>
   <div
+    ref="boardScrollContainer"
     class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2"
     @scroll.passive="handleBoardScroll"
   >
-    <div class="mx-auto flex w-max min-h-full items-start gap-2 py-1">
+    <div class="mx-auto flex w-max min-h-full items-stretch gap-2 py-1">
       <section
         v-for="column in kanbanColumns"
         :key="column.stageId"
-        class="crm-deal-board-column group/crm-column flex min-h-full w-[17rem] shrink-0 self-start flex-col overflow-visible"
+        class="crm-deal-board-column flex min-h-full w-[17rem] shrink-0 self-stretch flex-col overflow-visible"
       >
         <header
           class="sticky top-0 z-10 rounded-t-xl bg-n-slate-2/95 px-4 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
@@ -379,58 +412,20 @@ const handleOwnerChange = (deal, ownerId) => {
               />
             </article>
           </template>
-
-          <template #footer>
-            <template v-if="!column.deals.length">
-              <div v-if="canManage" class="block">
-                <button
-                  type="button"
-                  class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
-                  @click.stop="
-                    emit('createDeal', {
-                      pipelineId: column.pipelineId,
-                      stageId: column.stageId,
-                    })
-                  "
-                >
-                  <span class="size-3 i-lucide-plus" aria-hidden="true" />
-                  <span>{{ $t('CRM.DEALS.NEW_DEAL') }}</span>
-                </button>
-              </div>
-            </template>
-
-            <div
-              v-else-if="canManage"
-              class="hidden group-hover/crm-column:block group-focus-within/crm-column:block"
-            >
-              <button
-                type="button"
-                class="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-n-strong bg-transparent px-2.5 py-2 text-[10px] font-medium text-n-slate-12 transition-colors hover:bg-n-alpha-1"
-                @click.stop="
-                  emit('createDeal', {
-                    pipelineId: column.pipelineId,
-                    stageId: column.stageId,
-                  })
-                "
-              >
-                <span class="size-3 i-lucide-plus" aria-hidden="true" />
-                <span>{{ $t('CRM.DEALS.NEW_DEAL') }}</span>
-              </button>
-            </div>
-          </template>
         </Draggable>
       </section>
     </div>
-    <div v-if="hasMore" class="flex justify-center px-4 py-3">
-      <Button
-        size="sm"
-        color="slate"
-        variant="ghost"
-        icon="i-lucide-plus"
-        :is-loading="isLoadingMore"
-        :label="$t('CRM.DEALS.LOAD_MORE')"
+    <div
+      v-if="loadMoreFailed && hasMore"
+      class="sticky left-0 flex justify-center py-3"
+    >
+      <button
+        type="button"
+        class="rounded-md border border-n-weak bg-n-surface-1 px-3 py-2 text-sm font-medium text-n-slate-12 hover:bg-n-alpha-black2"
         @click="emit('loadMore')"
-      />
+      >
+        {{ $t('CRM.DEALS.RETRY_LOAD') }}
+      </button>
     </div>
   </div>
 </template>

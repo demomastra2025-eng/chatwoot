@@ -305,9 +305,29 @@ const headerActionItems = computed(() => {
 // We could use the RouterLink isActive too, but our routes are not always
 // nested correctly, so we need to check the active state ourselves
 // TODO: Audit the routes and fix the nesting and remove this
-const activeChildren = computed(() =>
-  navigableChildren.value.filter(matchesChildRoute)
-);
+const routeMatchSpecificity = child => {
+  const activeRouteScore = child.activeOn?.includes(route.name) ? 1000 : 0;
+  const exactPathScore = route.path === resolvePath(child.to) ? 100 : 0;
+  const queryScore = Object.keys(child?.to?.query || {}).length * 10;
+  const paramsScore = Object.keys(child?.to?.params || {}).length * 10;
+
+  return activeRouteScore + exactPathScore + queryScore + paramsScore;
+};
+
+const activeChildren = computed(() => {
+  const matches = navigableChildren.value.filter(matchesChildRoute);
+  const groupMatches = matches.filter(child => Array.isArray(child.children));
+  const leafMatches = matches.filter(child => !Array.isArray(child.children));
+  const activeLeaf = leafMatches.reduce((bestMatch, child) => {
+    if (!bestMatch) return child;
+
+    return routeMatchSpecificity(child) > routeMatchSpecificity(bestMatch)
+      ? child
+      : bestMatch;
+  }, null);
+
+  return activeLeaf ? [...groupMatches, activeLeaf] : groupMatches;
+});
 
 const activeChildNames = computed(() =>
   activeChildren.value.map(child => child.name)
@@ -424,10 +444,8 @@ watch(
           :type="collapsedNavigationTarget ? undefined : 'button'"
           class="flex items-center justify-center size-9 rounded-lg"
           :class="{
-            'text-n-slate-12 bg-n-alpha-2':
-              isActive || hasActiveChild || isExpanded,
-            'text-n-slate-11 hover:bg-n-alpha-2':
-              !isActive && !hasActiveChild && !isExpanded,
+            'text-n-slate-12 bg-n-alpha-2': isActive || hasActiveChild,
+            'text-n-slate-11 hover:bg-n-alpha-2': !isActive && !hasActiveChild,
           }"
           :title="label"
           @click="handleCollapsedClick"

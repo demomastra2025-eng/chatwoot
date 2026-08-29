@@ -1186,6 +1186,13 @@ const buildMyCompanySettingsMenuItems = () => [
     to: accountScopedRoute('workspace_sidebar_visibility_settings_index'),
   },
   {
+    name: 'Conversation Settings',
+    label: t('SIDEBAR.CONVERSATION_SETTINGS'),
+    icon: 'i-lucide-messages-square',
+    activeOn: ['workspace_conversation_settings_index'],
+    to: accountScopedRoute('workspace_conversation_settings_index'),
+  },
+  {
     name: 'Conversation Closure',
     visibilityKey: 'MyCompany:ConversationClosure',
     label: t('CONVERSATION_WORKFLOW.TABS.CLOSURE'),
@@ -1458,7 +1465,6 @@ const menuItems = computed(() => {
             name: 'Profile',
             visibilityKey: 'Captain:Settings',
             label: t('PROFILE_SETTINGS.FORM.PROFILE_SECTION.TITLE'),
-            icon: 'i-lucide-id-card',
             activeOn: ['captain_assistants_settings_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_settings_index',
@@ -1468,7 +1474,6 @@ const menuItems = computed(() => {
             name: 'Prompts',
             visibilityKey: 'Captain:Prompts',
             label: t('SIDEBAR.CAPTAIN_PROMPTS'),
-            icon: 'i-lucide-message-square-text',
             activeOn: [
               'captain_assistants_prompts_index',
               'captain_assistants_scenarios_index',
@@ -1481,10 +1486,18 @@ const menuItems = computed(() => {
             }),
           },
           {
+            name: 'Sandbox',
+            visibilityKey: 'Captain:Playground',
+            label: t('SIDEBAR.CAPTAIN_PLAYGROUND'),
+            activeOn: ['captain_assistants_playground_index'],
+            to: accountScopedRoute('captain_assistants_index', {
+              navigationPath: 'captain_assistants_playground_index',
+            }),
+          },
+          {
             name: 'Follow-up scenarios',
             visibilityKey: 'Captain:FollowUps',
             label: t('SIDEBAR.CAPTAIN_FOLLOW_UPS'),
-            icon: 'i-lucide-route',
             activeOn: ['captain_assistants_follow_ups_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_assistants_follow_ups_index',
@@ -1494,7 +1507,6 @@ const menuItems = computed(() => {
             name: 'Tools',
             visibilityKey: 'Captain:Tools',
             label: t('SIDEBAR.CAPTAIN_TOOLS'),
-            icon: 'i-lucide-wrench',
             activeOn: ['captain_tools_index'],
             to: accountScopedRoute('captain_assistants_index', {
               navigationPath: 'captain_tools_index',
@@ -1504,7 +1516,6 @@ const menuItems = computed(() => {
             name: 'Observability',
             visibilityKey: 'Captain:Observability',
             label: t('SIDEBAR.CAPTAIN_OBSERVABILITY'),
-            icon: 'i-lucide-activity',
             activeOn: ['captain_observability_index'],
             to: accountScopedRoute('captain_observability_index'),
           },
@@ -1512,7 +1523,6 @@ const menuItems = computed(() => {
             name: 'Knowledge Base',
             visibilityKey: 'Captain:FAQs',
             label: t('SIDEBAR.CAPTAIN_RESPONSES'),
-            icon: 'i-lucide-book-open',
             activeOn: [
               'captain_assistants_responses_index',
               'captain_assistants_responses_pending',
@@ -1528,17 +1538,8 @@ const menuItems = computed(() => {
                   name: 'AI expenses',
                   visibilityKey: 'Captain:Usage',
                   label: t('SIDEBAR.CAPTAIN_USAGE'),
-                  icon: 'i-lucide-wallet-cards',
                   activeOn: ['captain_usage_index'],
                   to: accountScopedRoute('captain_usage_index'),
-                },
-                {
-                  name: 'AI settings',
-                  visibilityKey: 'Captain:AISettings',
-                  label: t('SIDEBAR.CAPTAIN_SETTINGS'),
-                  icon: 'i-lucide-settings-2',
-                  activeOn: ['captain_settings_index'],
-                  to: accountScopedRoute('captain_settings_index'),
                 },
               ]
             : []),
@@ -1634,7 +1635,7 @@ const menuItems = computed(() => {
       {
         name: 'CRM',
         label: t('SIDEBAR.PIPELINES'),
-        icon: 'i-lucide-filter',
+        icon: 'i-lucide-briefcase-business',
         to: accountScopedRoute('crm_deals_index'),
         activeOn: ['crm_deals_index', 'crm_settings_index'],
       },
@@ -1683,7 +1684,6 @@ const menuItems = computed(() => {
                         name: 'Scheduling Settings',
                         visibilityKey: 'Scheduling:Settings',
                         label: t('SIDEBAR.SETTINGS'),
-                        icon: 'i-lucide-settings-2',
                         activeOn: ['scheduling_settings_index'],
                         to: accountScopedRoute('scheduling_settings_index'),
                       },

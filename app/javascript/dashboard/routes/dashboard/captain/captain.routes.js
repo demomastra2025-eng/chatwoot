@@ -8,6 +8,8 @@ const AssistantEmptyStateIndex = () => import('./assistants/Index.vue');
 const AssistantSettingsIndex = () =>
   import('./assistants/settings/Settings.vue');
 const AssistantPromptsIndex = () => import('./assistants/prompts/Index.vue');
+const AssistantPlaygroundIndex = () =>
+  import('./assistants/playground/Index.vue');
 const AssistantFollowUpsIndex = () =>
   import('../campaigns/pages/OutboundTouchPlansPage.vue');
 const DocumentsIndex = () => import('./documents/Index.vue');
@@ -110,13 +112,9 @@ const assistantRoutes = [
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/playground'),
-    redirect: to => ({
-      name: 'captain_assistants_prompts_index',
-      params: to.params,
-      query: to.query,
-    }),
+    component: AssistantPlaygroundIndex,
     name: 'captain_assistants_playground_index',
-    meta,
+    meta: metaV2,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/channels'),

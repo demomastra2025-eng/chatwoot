@@ -4,6 +4,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   MAX_MESSAGE_LENGTH = 10_000
   MAX_RESPONSE_ARTIFACT_ATTACHMENTS = 10
+  MAX_IMAGE_DESCRIPTIONS_PER_RESPONSE = 3
   SINGLE_ATTACHMENT_MESSAGE_CHANNELS = %w[Channel::Whatsapp Channel::WhatsappWeb].freeze
   AUDIO_TRANSCRIPTION_WAIT_TIMEOUT = 5.seconds
   AUDIO_TRANSCRIPTION_WAIT_INTERVAL = 0.25.seconds
@@ -126,15 +127,20 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def collect_previous_messages
     messages = if history_message_limit.positive?
-                 conversation_messages_scope.reorder(created_at: :desc).limit(history_message_limit).to_a.reverse
+                 conversation_messages_scope.includes(:attachments).reorder(created_at: :desc).limit(history_message_limit).to_a.reverse
                else
-                 conversation_messages_scope.to_a
+                 conversation_messages_scope.includes(:attachments).to_a
                end
+    image_description_attachment_ids = image_description_attachment_ids_for(messages)
 
     messages.each_with_index.map do |message, index|
       previous_assistant_message = previous_assistant_message_for(messages, index)
       message_hash = {
-        content: prepare_multimodal_message_content(message, previous_assistant_message: previous_assistant_message),
+        content: prepare_multimodal_message_content(
+          message,
+          previous_assistant_message: previous_assistant_message,
+          image_description_attachment_ids: image_description_attachment_ids
+        ),
         role: determine_role(message)
       }
 
@@ -160,8 +166,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     message.message_type == 'incoming' ? 'user' : 'assistant'
   end
 
-  def prepare_multimodal_message_content(message, previous_assistant_message: nil)
-    content = Captain::OpenAiMessageBuilderService.new(message: message, assistant: @assistant).generate_content
+  def prepare_multimodal_message_content(message, previous_assistant_message: nil, image_description_attachment_ids: [])
+    content = Captain::OpenAiMessageBuilderService.new(
+      message: message,
+      assistant: @assistant,
+      image_description_attachment_ids: image_description_attachment_ids
+    ).generate_content
     return content unless receipt_image_after_request?(message, previous_assistant_message)
 
     append_receipt_attachment_context(content)
@@ -234,6 +244,20 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     messages.select do |message|
       message.message_type == 'incoming' && (latest_outgoing_at.blank? || message.created_at > latest_outgoing_at)
     end
+  end
+
+  def image_description_attachment_ids_for(messages)
+    return [] unless ActiveModel::Type::Boolean.new.cast(@assistant.feature_image_understanding)
+
+    latest_outgoing_at = messages.select { |message| message.message_type == 'outgoing' }.filter_map(&:created_at).max
+    pending_incoming = messages.select do |message|
+      message.message_type == 'incoming' && (latest_outgoing_at.blank? || message.created_at > latest_outgoing_at)
+    end
+
+    pending_incoming.flat_map(&:attachments)
+                    .select { |attachment| attachment.file_type == 'image' }
+                    .last(MAX_IMAGE_DESCRIPTIONS_PER_RESPONSE)
+                    .map(&:id)
   end
 
   def handoff_requested?

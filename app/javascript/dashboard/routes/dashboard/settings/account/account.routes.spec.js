@@ -22,7 +22,21 @@ describe('account settings routes', () => {
     });
   });
 
-  it('places lead forms inside general settings', () => {
+  it('exposes conversation settings for administrators', () => {
+    const generalSettingsRoute = accountRoutes.routes.find(route =>
+      route.path.endsWith('/settings/general')
+    );
+    const conversationSettingsRoute = generalSettingsRoute.children.find(
+      route => route.name === 'workspace_conversation_settings_index'
+    );
+
+    expect(conversationSettingsRoute).toMatchObject({
+      path: 'conversations',
+      meta: { permissions: ['administrator'] },
+    });
+  });
+
+  it('keeps lead forms routable without showing them as a general-settings tab', () => {
     const generalSettingsRoute = accountRoutes.routes.find(route =>
       route.path.endsWith('/settings/general')
     );
@@ -35,11 +49,9 @@ describe('account settings routes', () => {
       meta: { permissions: ['administrator'] },
     });
     expect(generalSettingsRoute.props.tabs).toBe(workspaceSettingsTabs);
-    expect(workspaceSettingsTabs).toContainEqual({
-      labelKey: 'SIDEBAR.LEAD_FORMS',
-      routeName: 'lead_forms_index',
-      activeOn: ['lead_forms_index'],
-    });
+    expect(workspaceSettingsTabs).not.toContainEqual(
+      expect.objectContaining({ routeName: 'lead_forms_index' })
+    );
     expect(WORKSPACE_SETTINGS_ACTIVE_ROUTE_NAMES).not.toContain(
       'lead_forms_index'
     );

@@ -1,6 +1,6 @@
 class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::BaseController
   before_action :ensure_crm_deals_enabled!
-  before_action :set_pipeline, only: [:show, :update, :destroy]
+  before_action :set_pipeline, only: [:show, :update, :destroy, :reorder_stages]
 
   def index
     authorize ::Crm::Pipeline
@@ -50,6 +50,22 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
     head :no_content
   end
 
+  def reorder_stages
+    authorize @pipeline
+    ordered_stage_ids = Array(params[:stage_ids]).map(&:to_i)
+
+    ApplicationRecord.transaction do
+      @pipeline.lock!
+      movable_stages = movable_stages_scope
+      ensure_complete_stage_order!(movable_stages, ordered_stage_ids)
+      persist_stage_order!(movable_stages, ordered_stage_ids)
+    end
+
+    render_payload(
+      ::Crm::PayloadBuilder.pipeline(@pipeline.reload, include_inactive_stages: true)
+    )
+  end
+
   private
 
   def bootstrap_defaults!
@@ -86,5 +102,37 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
       message: 'You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.',
       status: :unprocessable_content
     )
+  end
+
+  def ensure_complete_stage_order!(movable_stages, ordered_stage_ids)
+    expected_stage_ids = movable_stages.pluck(:id)
+    return if ordered_stage_ids.length == expected_stage_ids.length && ordered_stage_ids.sort == expected_stage_ids.sort
+
+    raise ::Crm::Error.new(
+      code: 'INVALID_STAGE_ORDER',
+      message: 'Stage order must contain every movable stage in this pipeline exactly once.',
+      status: :unprocessable_content
+    )
+  end
+
+  def movable_stages_scope
+    @pipeline.stages
+             .where(outcome: 'open')
+             .where.not(code: ::Crm::Stage::TECHNICAL_STAGE_CODES)
+  end
+
+  def persist_stage_order!(movable_stages, ordered_stage_ids)
+    stages_by_id = movable_stages.index_by(&:id)
+    ordered_stage_ids.each_with_index do |stage_id, index|
+      stages_by_id.fetch(stage_id).update!(position: index + 1)
+    end
+
+    @pipeline.stages.where(code: ::Crm::Stage::TECHNICAL_STAGE_CODES).find_each do |stage|
+      stage.update!(position: 0) unless stage.position.zero?
+    end
+
+    @pipeline.stages.where(outcome: ::Crm::Stage::TERMINAL_OUTCOMES).ordered.each_with_index do |stage, index|
+      stage.update!(position: ordered_stage_ids.length + index + 1)
+    end
   end
 end

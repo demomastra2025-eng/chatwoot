@@ -78,6 +78,7 @@
       "DEAL_STAGE_INVALID_TRANSITION_REASON": "Choose a transition reason from the configured list.",
       "DEAL_STAGE_REQUIRES_CLOSING_REASONS": "Choose a closing reason before moving the deal to this stage.",
       "DEAL_STAGE_REQUIRES_TRANSITION_REASON": "Choose a transition reason before moving the deal to this stage.",
+      "DEFAULT_STAGE_REQUIRES_FALLBACK": "Create another active open stage before disabling the default stage.",
       "DEAL_STAGE_REQUIRES_FIELDS": "Fill required fields before moving the deal to a closed stage: {fields}.",
       "DUPLICATE_EXTERNAL_REF": "This external reference already exists in CRM.",
       "DUPLICATE_IDEMPOTENCY_KEY": "This idempotency key has already been used.",
@@ -89,6 +90,7 @@
       "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
       "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
       "STANDARD_STAGE_LOCKED": "Standard Won and Lost stages can only be renamed and configured with closing reasons.",
+      "UNSORTED_STAGE_REQUIRES_FALLBACK": "Create at least one active open stage before disabling Unsorted.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
       "TASK_STATUS_REQUIRES_FIELDS": "Fill required fields before marking the task as done: {fields}.",
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
@@ -173,6 +175,7 @@
         "WIN_PROBABILITY": "Win probability"
       },
       "LOAD_MORE": "Load more",
+      "RETRY_LOAD": "Retry loading",
       "CONVERSATION_PLACEHOLDER": {
         "ADD_CONTACT": "Add contact",
         "CONTACT": "Contact",
@@ -232,7 +235,7 @@
         "TITLE": "Deal",
         "UPDATED": "Updated"
       },
-      "TITLE": "Pipelines",
+      "TITLE": "Deals",
       "CLOSING_REASONS": {
         "CONFIRM": "Apply",
         "EMPTY_STATE": "No reasons available",
@@ -483,16 +486,22 @@
         "DELETE_CONFIRM": "Delete",
         "DELETE_DESCRIPTION": "Archived pipeline “{name}” can only be deleted when it has no deals.",
         "DELETE_TITLE": "Delete pipeline?",
-        "DESCRIPTION": "Pipelines and stages drive the native deal board and transition rules.",
+        "BACK_TO_DEALS": "Back",
+        "CURRENT_KICKER": "Selected deal settings",
+        "DESCRIPTION": "Stages and sources for the selected deal pipeline.",
         "DRAG": "Drag pipeline",
         "EDIT_TITLE": "Edit pipeline",
         "FORM": {
+          "AUTO_CREATE": "Automatic deal creation",
           "AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT": "Auto-create deal through channel",
+          "AUTO_CREATE_DEAL_ON_CHANNEL_CONTACT_HELP": "Create a deal when a contact first reaches a connected channel.",
           "CODE": "Code",
           "DEFAULT": "Primary",
           "NAME": "Name",
           "POSITION": "Position"
         },
+        "LEAD_FORMS_HELP": "Website forms and API requests that feed new incoming leads.",
+        "LEAD_FORMS_TITLE": "Lead forms",
         "NEW_PIPELINE_HELP": "Code will be generated automatically",
         "EMPTY_FILTERED": "No pipelines found for this search",
         "RESTORE": "Restore",
@@ -501,7 +510,10 @@
         "SUCCESS_ARCHIVED": "Pipeline archived",
         "SUCCESS_DELETE": "Pipeline deleted",
         "SUCCESS_RESTORED": "Pipeline restored",
-        "SUCCESS_SAVE": "Pipeline saved",
+        "SOURCES_TITLE": "Deal sources",
+        "STAGE_FLOW_HELP": "Drag open stages. Won and Lost always remain at the end.",
+        "STAGE_FLOW_TITLE": "Deal stages",
+        "SUCCESS_SAVE": "Deal settings saved",
         "TABLE": {
           "AUTO_CREATE": "Auto",
           "DEFAULT": "Primary",
@@ -509,11 +521,13 @@
           "STAGES": "Stages",
           "STATUS": "Status"
         },
-        "TITLE": "Pipelines"
+        "TITLE": "Deals",
+        "UNSORTED_HELP": "Send incoming requests here first when they need manual qualification."
       },
       "STAGES": {
         "CREATE_TITLE": "Create stage",
         "DEFAULT_BADGE": "Default",
+        "INACTIVE_BADGE": "Stage hidden",
         "DELETE": "Delete stage",
         "DELETE_CONFIRM": "Delete",
         "DELETE_DESCRIPTION": "You cannot delete stage “{name}” while it still has deals. Move all open and closed deals to another stage first.",
@@ -521,6 +535,7 @@
         "EDIT_TITLE": "Edit stage",
         "FORM": {
           "ACTIVE": "Stage is active",
+          "ACTIVE_HELP": "Hidden stages are not shown on the working board.",
           "COLOR": "Color",
           "COLOR_UNAVAILABLE": "Already used in this pipeline",
           "CLOSING_REASONS": "Closing reasons",
@@ -554,9 +569,14 @@
         "REORDER": "Reorder stages",
         "REORDER_DESCRIPTION": "Drag stages to change their order inside the “{name}” pipeline.",
         "REORDER_TITLE": "Stage order",
+        "SYSTEM": {
+          "POSITION_LOCKED": "System stages cannot be moved",
+          "UNSORTED": "Unsorted"
+        },
         "SUCCESS_DELETE": "Stage deleted",
         "SUCCESS_REORDER": "Stage order saved",
-        "SUCCESS_SAVE": "Stage saved"
+        "SUCCESS_SAVE": "Stage saved",
+        "WON_HELP": "Successfully closed deals"
       },
       "TASK_STATUSES": {
         "ADD": "Add status",

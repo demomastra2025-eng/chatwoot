@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, nextTick, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import {
   getActiveDateRange,
@@ -48,6 +48,26 @@ const props = defineProps({
     type: Array,
     default: undefined,
   },
+  autoOpen: {
+    type: Boolean,
+    default: false,
+  },
+  forceOpen: {
+    type: Boolean,
+    default: false,
+  },
+  calendarOnly: {
+    type: Boolean,
+    default: false,
+  },
+  compact: {
+    type: Boolean,
+    default: false,
+  },
+  hideTrigger: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['dateRangeChanged']);
@@ -75,7 +95,9 @@ const normalizeSelectedDate = (
   return boundary === 'start' ? startOfDay(value) : endOfDay(value);
 };
 
-const showDatePicker = ref(false);
+// If the picker opens while the Select click is still propagating, the
+// outside-click directive immediately consumes that click and closes it.
+const showDatePicker = ref(props.forceOpen);
 const hasPendingSelection = ref(false);
 const calendarViews = ref({ start: WEEK, end: WEEK });
 const currentDate = ref(new Date());
@@ -309,12 +331,21 @@ const selectDate = day => {
   selectedRange.value = CUSTOM_RANGE;
   monthOffset.value = 0;
   if (!selectingEndDate.value || day < selectedStartDate.value) {
-    selectedStartDate.value = day;
+    selectedStartDate.value = startOfDay(day);
     selectedEndDate.value = null;
     selectingEndDate.value = true;
   } else {
-    selectedEndDate.value = day;
+    selectedEndDate.value = endOfDay(day);
     selectingEndDate.value = false;
+    if (props.calendarOnly) {
+      hasPendingSelection.value = false;
+      emit('dateRangeChanged', [
+        selectedStartDate.value,
+        selectedEndDate.value,
+        selectedRange.value,
+      ]);
+      showDatePicker.value = false;
+    }
   }
 };
 
@@ -384,6 +415,15 @@ const initializeCalendarMonths = () => {
   }
 };
 
+onMounted(async () => {
+  if (!props.autoOpen) return;
+
+  await nextTick();
+  initializeCalendarMonths();
+  hasPendingSelection.value = false;
+  showDatePicker.value = true;
+});
+
 const toggleDatePicker = () => {
   showDatePicker.value = !showDatePicker.value;
   if (showDatePicker.value) {
@@ -394,6 +434,7 @@ const toggleDatePicker = () => {
 
 const closeDatePicker = () => {
   if (!showDatePicker.value) return;
+  if (props.forceOpen) return;
 
   if (!hasPendingSelection.value) {
     showDatePicker.value = false;
@@ -414,6 +455,7 @@ const closeDatePicker = () => {
     class="relative flex-shrink-0 font-inter"
   >
     <DatePickerButton
+      v-if="!props.hideTrigger"
       :active="props.active"
       :inactive-label="props.inactiveLabel"
       :ranges="props.presetRanges"
@@ -428,24 +470,38 @@ const closeDatePicker = () => {
     />
     <div
       v-if="showDatePicker"
-      class="flex absolute top-9 ltr:left-0 rtl:right-0 z-30 shadow-md select-none w-[880px] rounded-2xl bg-n-alpha-3 backdrop-blur-[100px] border-0 outline outline-1 outline-n-container"
+      class="absolute z-30 flex origin-top-left select-none rounded-2xl border-0 bg-n-alpha-3 shadow-md outline outline-1 outline-n-container backdrop-blur-[100px] ltr:left-0 rtl:right-0"
+      :class="[
+        props.hideTrigger ? 'top-1' : 'top-9',
+        props.calendarOnly ? 'w-[340px]' : 'w-[880px]',
+        props.compact ? 'scale-[0.8]' : '',
+      ]"
     >
       <CalendarDateRange
+        v-if="!props.calendarOnly"
         :selected-range="selectedRange"
         :ranges="props.presetRanges"
         @set-range="setDateRange"
       />
       <div
-        class="flex flex-col w-[680px] ltr:border-l rtl:border-r border-n-strong"
+        class="flex flex-col"
+        :class="
+          props.calendarOnly
+            ? 'w-[340px]'
+            : 'w-[680px] border-n-strong ltr:border-l rtl:border-r'
+        "
       >
         <div class="flex justify-around h-fit">
-          <!-- Calendars for Start and End Dates -->
+          <!-- Custom range uses one calendar: first click is start, second is end. -->
           <div
-            v-for="calendar in [START_CALENDAR, END_CALENDAR]"
+            v-for="calendar in props.calendarOnly
+              ? [START_CALENDAR]
+              : [START_CALENDAR, END_CALENDAR]"
             :key="`${calendar}-calendar`"
             class="flex flex-col items-center"
           >
             <CalendarDateInput
+              v-if="!props.calendarOnly"
               :calendar-type="calendar"
               :date-value="
                 calendar === START_CALENDAR ? manualStartDate : manualEndDate
@@ -507,7 +563,11 @@ const closeDatePicker = () => {
             </div>
           </div>
         </div>
-        <CalendarFooter @change="emitDateRange" @clear="resetDatePicker" />
+        <CalendarFooter
+          v-if="!props.calendarOnly"
+          @change="emitDateRange"
+          @clear="resetDatePicker"
+        />
       </div>
     </div>
   </div>

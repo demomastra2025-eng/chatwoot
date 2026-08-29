@@ -18,6 +18,12 @@ class CrmPipelinesAPI extends ApiClient {
     return axios.patch(`${this.baseUrl()}/crm/stages/${stageId}`, data);
   }
 
+  reorderStages(pipelineId, stageIds) {
+    return axios.patch(`${this.url}/${pipelineId}/reorder_stages`, {
+      stage_ids: stageIds,
+    });
+  }
+
   deletePipeline(pipelineId) {
     return this.delete(pipelineId);
   }

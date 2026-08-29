@@ -1,6 +1,20 @@
 class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseController
   DEFAULT_PER_PAGE = 100
   MAX_PER_PAGE = 500
+  DEAL_PRELOADS = [
+    :company,
+    :originating_conversation,
+    :originating_communication_thread,
+    { deal_contacts: :contact }
+  ].freeze
+  BOARD_SORT_COLUMNS = {
+    'amount' => 'COALESCE(crm_deals.amount_minor, 0)',
+    'createdAt' => 'crm_deals.created_at',
+    'expectedCloseOn' => 'crm_deals.expected_close_on',
+    'position' => 'crm_deals.position',
+    'title' => 'LOWER(crm_deals.title)',
+    'updatedAt' => 'crm_deals.updated_at'
+  }.freeze
 
   CREATE_PARAM_KEYS = %i[
     pipeline_id
@@ -51,7 +65,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     authorize ::Crm::Deal
 
     deals = filtered_deals
-    paginated_deals = deals.offset(page_offset).limit(per_page_param)
+    paginated_deals = board_mode? ? board_page(deals) : deals.offset(page_offset).limit(per_page_param)
 
     render_payload(
       paginated_deals.map { |deal| ::Crm::PayloadBuilder.deal(deal) },
@@ -220,12 +234,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def filtered_deals
-    scope = policy_scope(::Crm::Deal).preload(
-      :company,
-      :originating_conversation,
-      :originating_communication_thread,
-      deal_contacts: :contact
-    ).ordered
+    scope = policy_scope(::Crm::Deal).preload(*DEAL_PRELOADS).ordered
     scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
     %i[pipeline_id stage_id owner_id team_id company_id].each do |field_name|
       scope = filter_by_exact(scope, field_name)
@@ -256,16 +265,67 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     (page_param - 1) * per_page_param
   end
 
+  def board_mode?
+    parse_boolean(params[:board])
+  end
+
+  def board_page(scope)
+    ranked_deals = scope.except(:preload).reorder(nil).select('crm_deals.*', Arel.sql(board_row_number_sql))
+
+    ::Crm::Deal
+      .with(ranked_deals: ranked_deals)
+      .from('ranked_deals AS crm_deals')
+      .where(board_row_number: (page_offset + 1)..(page_offset + per_page_param))
+      .preload(*DEAL_PRELOADS)
+      .reorder(Arel.sql('crm_deals.stage_id ASC, crm_deals.board_row_number ASC'))
+  end
+
+  def board_row_number_sql
+    <<~SQL.squish
+      ROW_NUMBER() OVER (
+        PARTITION BY crm_deals.stage_id
+        ORDER BY #{board_order_sql}
+      ) AS board_row_number
+    SQL
+  end
+
+  def board_order_sql
+    sort_column = BOARD_SORT_COLUMNS.fetch(params[:board_sort].to_s, BOARD_SORT_COLUMNS.fetch('position'))
+    return "#{sort_column} ASC NULLS LAST, crm_deals.id ASC" if sort_column == BOARD_SORT_COLUMNS.fetch('position')
+
+    descending_stage_ids = board_sort_directions.filter_map do |stage_id, direction|
+      numeric_stage_id = stage_id.to_i
+      numeric_stage_id if numeric_stage_id.positive? && direction == 'desc'
+    end
+    return "#{sort_column} ASC NULLS LAST, crm_deals.id ASC" if descending_stage_ids.empty?
+
+    id_list = descending_stage_ids.join(', ')
+    <<~SQL.squish
+      CASE WHEN crm_deals.stage_id IN (#{id_list}) THEN #{sort_column} END DESC NULLS LAST,
+      CASE WHEN crm_deals.stage_id NOT IN (#{id_list}) THEN #{sort_column} END ASC NULLS LAST,
+      crm_deals.id ASC
+    SQL
+  end
+
+  def board_sort_directions
+    raw_directions = params[:board_sort_directions]
+    return {} unless raw_directions.respond_to?(:to_unsafe_h)
+
+    raw_directions.to_unsafe_h.transform_values(&:to_s)
+  end
+
   def pagination_meta(scope, records)
-    total_count = scope.reorder(nil).count
-    total_pages = (total_count.to_f / per_page_param).ceil
+    stage_counts = scope.reorder(nil).group(:stage_id).count.transform_keys(&:to_s)
+    total_count = stage_counts.values.sum
+    paginated_count = board_mode? ? stage_counts.values.max.to_i : total_count
+    total_pages = (paginated_count.to_f / per_page_param).ceil
 
     {
       count: records.size,
       has_more: page_param < total_pages,
       page: page_param,
       per_page: per_page_param,
-      stage_counts: scope.reorder(nil).group(:stage_id).count.transform_keys(&:to_s),
+      stage_counts: stage_counts,
       total_count: total_count,
       total_pages: total_pages
     }

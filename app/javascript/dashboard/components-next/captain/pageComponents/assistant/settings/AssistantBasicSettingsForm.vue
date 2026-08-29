@@ -6,6 +6,7 @@ import { useVuelidate } from '@vuelidate/core';
 import { required, minLength } from '@vuelidate/validators';
 
 import Input from 'dashboard/components-next/input/Input.vue';
+import Select from 'dashboard/components-next/select/Select.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Editor from 'dashboard/components-next/Editor/Editor.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
@@ -63,6 +64,14 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  showCoreSettings: {
+    type: Boolean,
+    default: true,
+  },
+  showCapabilities: {
+    type: Boolean,
+    default: true,
+  },
   showSubmitButton: {
     type: Boolean,
     default: true,
@@ -79,12 +88,18 @@ const initialState = {
   name: '',
   description: '',
   usageMode: 'external_agent',
+  model: '',
+  temperature: 1,
+  autoReplyOnLastIncoming: false,
+  messageCollapseWindowSeconds: 0,
+  historyMessageLimit: 0,
   features: {
     conversationFaqs: false,
     memories: false,
     citations: false,
     web: false,
     documentReading: false,
+    imageUnderstanding: false,
   },
   contextAccess: {},
   toolAccess: buildDefaultToolAccessForUsageMode(),
@@ -215,6 +230,25 @@ const isFirecrawlConfigured = computed(
   () => runtimeMetadata.value?.web_access?.configured === true
 );
 
+const assistantModelOptions = computed(() =>
+  captainConfigStore.getModelsForFeature('assistant').map(model => ({
+    value: model.id,
+    label: model.display_name || model.id,
+  }))
+);
+
+const formattedTemperature = computed(() =>
+  Number(state.temperature || 0).toFixed(1)
+);
+const temperatureOrDefault = value =>
+  value === null || value === undefined || value === '' ? 1 : Number(value);
+const normalizeNonNegativeInteger = value => {
+  const normalizedValue = Number(value);
+  return Number.isFinite(normalizedValue) && normalizedValue > 0
+    ? Math.floor(normalizedValue)
+    : 0;
+};
+
 const notesEnabled = computed({
   get: () => {
     const scopeName = activeToolScope;
@@ -252,12 +286,20 @@ const updateStateFromAssistant = assistant => {
   state.name = assistant.name;
   state.description = resolveInstructionText(assistant);
   state.usageMode = 'external_agent';
+  state.model = config.model || '';
+  state.temperature = temperatureOrDefault(config.temperature);
+  state.autoReplyOnLastIncoming = Boolean(config.auto_reply_on_last_incoming);
+  state.messageCollapseWindowSeconds = Number(
+    config.message_collapse_window_seconds || 0
+  );
+  state.historyMessageLimit = Number(config.history_message_limit || 0);
   state.features = {
     conversationFaqs: config.feature_faq || false,
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
     web: config.feature_web || false,
     documentReading: config.feature_document_reading || false,
+    imageUnderstanding: config.feature_image_understanding || false,
   };
   state.contextAccess = {};
   state.toolAccess = resolveToolAccessForUsageMode(
@@ -299,13 +341,29 @@ const buildPayload = async () => {
     assistantPayload.description = state.description;
   }
 
-  if (props.showFeatureFlags) {
+  if (props.showFeatureFlags && props.showCoreSettings) {
     assistantPayload.config = {
+      model: state.model,
+      temperature: temperatureOrDefault(state.temperature),
+      message_collapse_window_seconds: normalizeNonNegativeInteger(
+        state.messageCollapseWindowSeconds
+      ),
+      history_message_limit: normalizeNonNegativeInteger(
+        state.historyMessageLimit
+      ),
+    };
+  }
+
+  if (props.showFeatureFlags && props.showCapabilities) {
+    assistantPayload.config = {
+      ...(assistantPayload.config || {}),
+      auto_reply_on_last_incoming: state.autoReplyOnLastIncoming,
       feature_faq: state.features.conversationFaqs,
       feature_memory: state.features.memories,
       feature_citation: state.features.citations,
       feature_web: webSearchEnabled.value && webPageReadingEnabled.value,
       feature_document_reading: state.features.documentReading,
+      feature_image_understanding: state.features.imageUnderstanding,
       tool_access: state.toolAccess,
     };
   }
@@ -343,8 +401,12 @@ watch(
   { immediate: true }
 );
 
-onMounted(() => {
-  captainConfigStore.fetch();
+onMounted(async () => {
+  await captainConfigStore.fetch();
+  if (!state.model) {
+    state.model =
+      captainConfigStore.getSelectedModelForFeature('assistant') || '';
+  }
 });
 
 defineExpose({
@@ -378,6 +440,102 @@ defineExpose({
         :message="formErrors.name"
         :message-type="formErrors.name ? 'error' : 'info'"
       />
+
+      <section
+        v-if="showFeatureFlags && showCoreSettings"
+        class="flex flex-col gap-5"
+      >
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-medium text-n-slate-12">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.LABEL') }}
+          </label>
+          <Select
+            v-model="state.model"
+            :options="assistantModelOptions"
+            class="w-full"
+          />
+          <p class="m-0 text-xs text-n-slate-11">
+            {{ t('CAPTAIN.ASSISTANTS.FORM.MODEL.DESCRIPTION') }}
+          </p>
+        </div>
+
+        <div class="flex items-center justify-between gap-6">
+          <div class="min-w-0">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.TEMPERATURE.LABEL') }}
+            </label>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.TEMPERATURE.DESCRIPTION') }}
+            </p>
+          </div>
+          <div class="flex w-72 shrink-0 items-center gap-3">
+            <input
+              v-model.number="state.temperature"
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              class="captain-temperature-slider min-w-0 flex-1"
+            />
+            <span
+              class="inline-flex w-12 shrink-0 justify-center rounded-full bg-n-alpha-2 px-2 py-1 text-sm font-medium tabular-nums text-n-violet-11"
+            >
+              {{ formattedTemperature }}
+            </span>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between gap-6">
+          <div class="min-w-0">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.LABEL'
+                )
+              }}
+            </label>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.DESCRIPTION'
+                )
+              }}
+            </p>
+          </div>
+          <Input
+            v-model="state.messageCollapseWindowSeconds"
+            type="number"
+            min="0"
+            :placeholder="
+              t(
+                'CAPTAIN.ASSISTANTS.FORM.MESSAGE_COLLAPSE_WINDOW_SECONDS.PLACEHOLDER'
+              )
+            "
+            class="w-36 shrink-0"
+          />
+        </div>
+        <div class="flex items-center justify-between gap-6">
+          <div class="min-w-0">
+            <label class="text-sm font-medium text-n-slate-12">
+              {{ t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.LABEL') }}
+            </label>
+            <p class="mt-1 text-xs text-n-slate-11">
+              {{
+                t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.DESCRIPTION')
+              }}
+            </p>
+          </div>
+          <Input
+            v-model="state.historyMessageLimit"
+            type="number"
+            min="0"
+            :placeholder="
+              t('CAPTAIN.ASSISTANTS.FORM.HISTORY_MESSAGE_LIMIT.PLACEHOLDER')
+            "
+            class="w-36 shrink-0"
+          />
+        </div>
+      </section>
 
       <div v-if="showDescriptionField" class="flex flex-col gap-2">
         <div class="flex w-full flex-wrap items-center justify-between gap-2">
@@ -428,11 +586,21 @@ defineExpose({
       </div>
     </template>
 
-    <div v-if="showFeatureFlags" class="flex flex-col gap-2">
-      <label class="text-sm font-medium text-n-slate-12">
-        {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.TITLE') }}
-      </label>
-      <div class="flex flex-col gap-3">
+    <section v-if="showFeatureFlags && showCapabilities">
+      <div class="capability-list flex flex-col divide-y divide-n-weak/50">
+        <label class="flex items-center justify-between gap-3">
+          <span>
+            {{ t('CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.TITLE') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.AUTO_REPLY_ON_LAST_INCOMING.DESCRIPTION'
+                )
+              }}
+            </span>
+          </span>
+          <Switch v-model="state.autoReplyOnLastIncoming" />
+        </label>
         <label class="flex items-center justify-between gap-3">
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_CONVERSATION_FAQS') }}
           <Switch v-model="state.features.conversationFaqs" />
@@ -479,6 +647,19 @@ defineExpose({
         </label>
         <label class="flex items-center justify-between gap-3">
           <span>
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING') }}
+            <span class="block text-xs text-n-slate-11">
+              {{
+                t(
+                  'CAPTAIN.ASSISTANTS.FORM.FEATURES.IMAGE_UNDERSTANDING_DESCRIPTION'
+                )
+              }}
+            </span>
+          </span>
+          <Switch v-model="state.features.imageUnderstanding" />
+        </label>
+        <label class="flex items-center justify-between gap-3">
+          <span>
             {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.DOCUMENT_READING') }}
             <span class="block text-xs text-n-slate-11">
               {{
@@ -505,7 +686,7 @@ defineExpose({
           <Switch v-model="handoffToHumanEnabled" />
         </label>
       </div>
-    </div>
+    </section>
 
     <div v-if="showSubmitButton">
       <Button
@@ -515,3 +696,18 @@ defineExpose({
     </div>
   </div>
 </template>
+
+<style scoped>
+.capability-list > label {
+  padding-block: 0.75rem;
+}
+
+.capability-list > label:not(:first-of-type) {
+  border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.captain-temperature-slider {
+  cursor: pointer;
+  accent-color: rgb(124 58 237);
+}
+</style>

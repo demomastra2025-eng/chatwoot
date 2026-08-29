@@ -6,9 +6,4 @@ export const workspaceSettingsTabs = [
     routeName: 'general_settings_index',
     activeOn: ['general_settings_index'],
   },
-  {
-    labelKey: 'SIDEBAR.LEAD_FORMS',
-    routeName: 'lead_forms_index',
-    activeOn: ['lead_forms_index'],
-  },
 ];

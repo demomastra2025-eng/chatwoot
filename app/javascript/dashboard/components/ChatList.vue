@@ -69,10 +69,7 @@ import { matchesFilters } from '../store/modules/conversations/helpers/filterHel
 import { CONVERSATION_EVENTS } from '../helper/AnalyticsHelper/events';
 import { resolveBulkSelectionPayload } from '../helper/bulkSelection';
 import { conversationMatchesLocalSearch } from './widgets/conversation/helpers/conversationSearch';
-import {
-  filterConversationsByCommunicationThreadMode,
-  getCommunicationThreadChannelFilterInboxes,
-} from 'dashboard/helper/communicationThreadHelper';
+import { filterConversationsByCommunicationThreadMode } from 'dashboard/helper/communicationThreadHelper';
 import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
@@ -502,37 +499,6 @@ const conversationCustomAttributes = useFunctionGetter(
   'conversation_attribute'
 );
 
-const sortedChannelInboxes = computed(() => {
-  const sourceInboxes = props.communicationThreadMode
-    ? getCommunicationThreadChannelFilterInboxes(inboxesList.value)
-    : inboxesList.value;
-
-  return sourceInboxes
-    .slice()
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-});
-
-const channelFilterItems = computed(() => [
-  {
-    key: 'all',
-    label: t('CONVERSATION.COMMUNICATION_THREAD.ALL_CHANNELS'),
-    icon: 'i-lucide-mailbox',
-  },
-  ...sortedChannelInboxes.value.map(channelInbox => ({
-    key: `inbox:${channelInbox.id}`,
-    label: channelInbox.display_name || channelInbox.name,
-    inbox: channelInbox,
-  })),
-]);
-
-const activeChannelFilterKey = computed(() => {
-  if (props.conversationInbox) {
-    return `inbox:${props.conversationInbox}`;
-  }
-
-  return props.communicationThreadMode ? 'all' : '';
-});
-
 const activeCrmPipelineId = computed(
   () => route.query.crm_pipeline_id || route.query.crmPipelineId || ''
 );
@@ -606,10 +572,6 @@ const defaultCrmPipelineStages = computed(() => {
     id: stage.id,
     name: stage.name,
   }));
-});
-
-const shouldShowChannelFilter = computed(() => {
-  return !props.communicationThreadMode && Boolean(props.conversationInbox);
 });
 
 const activeAssigneeTabCount = computed(() => {
@@ -1371,33 +1333,6 @@ function onBasicFilterChange(value, type) {
   resetAndFetchData();
 }
 
-function channelFilterQuery() {
-  return conversationNavigationQuery({ status: activeStatus.value });
-}
-
-function onChannelFilterSelect(item) {
-  resetBulkActions();
-  clearLocalSearch();
-
-  const accountId = currentAccountId.value || route.params.accountId;
-  if (item.key === 'all') {
-    router.push({
-      name: 'communication_threads_dashboard',
-      params: { accountId },
-      query: channelFilterQuery(),
-    });
-    return;
-  }
-
-  if (!item.inbox?.id) return;
-
-  router.push({
-    name: 'inbox_dashboard',
-    params: { accountId, inbox_id: item.inbox.id },
-    query: channelFilterQuery(),
-  });
-}
-
 function openLastSavedItemInFolder() {
   const lastItemOfFolder = folders.value[folders.value.length - 1];
   const lastItemId = lastItemOfFolder.id;
@@ -2033,9 +1968,6 @@ watch(conversationFilters, (newVal, oldVal) => {
       :is-on-expanded-layout="isOnExpandedLayout"
       :conversation-stats="conversationStats"
       :is-list-loading="chatListLoading && !conversationList.length"
-      :show-channel-filter="shouldShowChannelFilter"
-      :channel-filter-items="channelFilterItems"
-      :active-channel-filter-key="activeChannelFilterKey"
       :active-unread-only="activeUnreadOnly"
       :active-status="activeStatus"
       :show-status-filter="communicationThreadMode"
@@ -2046,7 +1978,6 @@ watch(conversationFilters, (newVal, oldVal) => {
       @filters-modal="onToggleAdvanceFiltersModal"
       @reset-filters="resetConversationFilters"
       @basic-filter-change="onBasicFilterChange"
-      @channel-filter-select="onChannelFilterSelect"
       @unread-filter-toggle="onUnreadFilterToggle"
       @status-filter-change="updateConversationStatusQuery"
     />

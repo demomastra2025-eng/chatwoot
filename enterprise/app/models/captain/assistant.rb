@@ -366,7 +366,8 @@ class Captain::Assistant < ApplicationRecord
 
   store_accessor :config, :temperature, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
-                 :auto_reply_on_last_incoming, :context_access, :tool_access
+                 :auto_reply_on_last_incoming, :context_access, :tool_access,
+                 :model, :feature_image_understanding
 
   before_validation :initialize_context_access_config, on: :create
   before_validation :ensure_usage_mode
@@ -401,6 +402,7 @@ class Captain::Assistant < ApplicationRecord
   validate :validate_guardrail_fields
   validate :validate_guardrail_skills
   validate :validate_fish_voice_reference
+  validate :validate_conversational_model
 
   scope :ordered, -> { order(created_at: :desc) }
 
@@ -748,6 +750,13 @@ class Captain::Assistant < ApplicationRecord
   end
 
   private
+
+  def validate_conversational_model
+    return if model.blank?
+    return if Llm::Models.valid_model_for?(:assistant, model, account: account)
+
+    errors.add(:config, :assistant_model_not_allowed)
+  end
 
   def destroy_personal_knowledge
     documents.visibility_personal.find_each(&:destroy!)

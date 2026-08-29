@@ -347,6 +347,11 @@
   display_title: 'Image Recognition Model'
   description: 'Installation-wide model for image recognition. Workspace administrators cannot override it.'
   locked: false
+- name: CAPTAIN_ASSISTANT_MODEL_ALLOWLIST
+  display_title: 'AI Agent Model Catalogue'
+  description: 'Optional JSON array of conversational model IDs that workspace AI agents may select. Blank allows every capability-safe assistant model.'
+  locked: false
+  type: code
 - name: CAPTAIN_FIRECRAWL_API_KEY
   display_title: 'FireCrawl API Key (optional)'
   description: 'The FireCrawl API key for the AI Agents service'
@@ -357,11 +362,7 @@
   description: 'Installation-wide system instructions appended to every customer-facing AI agent and scenario prompt.'
   locked: false
   type: code
-- name: CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT
-  display_title: 'AI Assistant Global System Prompt'
-  description: 'Installation-wide system instructions appended to every internal AI assistant and Copilot prompt.'
-  locked: false
-  type: code
+
 - name: CAPTAIN_SYSTEM_PROMPTS
   display_title: 'AI System Prompts'
   description: 'Installation-wide system prompts managed centrally. Agents can only enable or disable them in their own settings.'

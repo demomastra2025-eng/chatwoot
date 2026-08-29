@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { describe, expect, it } from 'vitest';
 
 import SchedulingDrawer from './SchedulingDrawer.vue';
@@ -46,5 +47,19 @@ describe('SchedulingDrawer', () => {
     expect(wrapper.html()).toContain('!overflow-hidden');
     expect(wrapper.html()).toContain('flex h-full min-h-0 p-0');
     expect(wrapper.html()).toContain('!max-w-[min(96rem,calc(100vw-1.5rem))]');
+  });
+
+  it('renders without the OnClickOutside component and closes from outside', async () => {
+    const wrapper = mountDrawer();
+
+    expect(wrapper.findComponent({ name: 'OnClickOutside' }).exists()).toBe(
+      false
+    );
+
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    expect(wrapper.emitted('update:modelValue')).toContainEqual([false]);
   });
 });

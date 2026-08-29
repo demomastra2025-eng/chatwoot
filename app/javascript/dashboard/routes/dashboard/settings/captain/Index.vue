@@ -630,6 +630,9 @@ const providerKeyCards = computed(() => {
     })
     .filter(Boolean);
 });
+const openrouterByokAllowed = computed(
+  () => providerCredentials.value.openrouter?.byok_allowed === true
+);
 const isProviderApiKeyDirty = providerKey =>
   providerApiKeys[providerKey]?.trim().length > 0;
 const selectedKnowledgeChunkOption = computed(() =>
@@ -901,7 +904,7 @@ onMounted(() => {
     <template #body>
       <div v-if="captainEnabled" class="flex flex-col gap-8">
         <SectionLayout
-          v-if="!isUsagePage"
+          v-if="!isUsagePage && openrouterByokAllowed"
           :title="t('CAPTAIN_SETTINGS.PROVIDER_KEYS.TITLE')"
           :description="t('CAPTAIN_SETTINGS.PROVIDER_KEYS.DESCRIPTION')"
         >
@@ -1313,7 +1316,7 @@ onMounted(() => {
 
         <!-- Model Configuration Section -->
         <SectionLayout
-          v-if="!isUsagePage"
+          v-if="false"
           :title="t('CAPTAIN_SETTINGS.MODEL_CONFIG.TITLE')"
           :description="t('CAPTAIN_SETTINGS.MODEL_CONFIG.DESCRIPTION')"
         >
@@ -1537,7 +1540,7 @@ onMounted(() => {
         </SectionLayout>
 
         <SectionLayout
-          v-if="!isUsagePage"
+          v-if="false"
           :title="t('CAPTAIN_SETTINGS.MODEL_CONFIG.SPECIALIZED_TITLE')"
           :description="
             t('CAPTAIN_SETTINGS.MODEL_CONFIG.SPECIALIZED_DESCRIPTION')

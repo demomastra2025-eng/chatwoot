@@ -201,13 +201,18 @@ const defaultStageForPipeline = pipeline =>
   (pipeline?.stages || []).find(stage => stage.active) ||
   pipeline?.stages?.[0];
 
+const stageDisplayName = stage =>
+  stage?.code === 'new'
+    ? t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED')
+    : stage?.name;
+
 const stageOptionsForForm = form =>
   (
     referencesStore.pipelines.find(
       pipeline => Number(pipeline.id) === Number(form?.pipelineId)
     )?.stages || []
   ).map(stage => ({
-    label: stage.name,
+    label: stageDisplayName(stage),
     stageColor: stage.color || DEFAULT_STAGE_COLOR,
     value: stage.id,
   }));
@@ -235,7 +240,7 @@ const ownerOptions = computed(() =>
 
 const pipelineOptions = computed(() =>
   activePipelines.value.map(pipeline => ({
-    icon: 'i-lucide-funnel',
+    icon: 'i-lucide-briefcase-business',
     label: pipeline.name,
     value: pipeline.id,
   }))

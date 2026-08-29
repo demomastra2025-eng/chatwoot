@@ -74,11 +74,17 @@ describe('AssistantBasicSettingsForm', () => {
     await flushPromises();
 
     expect(payload.assistant.config).toEqual({
+      model: '',
+      temperature: 1,
+      auto_reply_on_last_incoming: false,
+      message_collapse_window_seconds: 0,
+      history_message_limit: 0,
       feature_faq: false,
       feature_memory: false,
       feature_citation: false,
       feature_web: false,
       feature_document_reading: false,
+      feature_image_understanding: false,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
           enabled: true,

@@ -104,8 +104,10 @@ class Crm::Bootstrap::AccountService
   def legacy_source_values(entity_kind, key)
     return [] unless entity_kind == 'deal' && key == 'source'
 
-    account.crm_deals.pluck(:custom_attributes).filter_map do |custom_attributes|
-      custom_attributes.to_h[key].presence
-    end.map(&:to_s).uniq
+    account.crm_deals
+           .where("crm_deals.custom_attributes ? 'source'")
+           .where("NULLIF(BTRIM(crm_deals.custom_attributes ->> 'source'), '') IS NOT NULL")
+           .distinct
+           .pluck(Arel.sql("crm_deals.custom_attributes ->> 'source'"))
   end
 end

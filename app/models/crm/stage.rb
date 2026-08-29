@@ -39,6 +39,7 @@ class Crm::Stage < ApplicationRecord
 
   OUTCOMES = %w[open won lost].freeze
   TERMINAL_OUTCOMES = %w[won lost].freeze
+  TECHNICAL_STAGE_CODES = %w[new].freeze
   STANDARD_COLORS = [
     '#E11D48',
     '#DC2626',
@@ -65,7 +66,15 @@ class Crm::Stage < ApplicationRecord
   LOST_COLOR = '#DC2626'.freeze
   DEFAULT_COLOR = STANDARD_COLORS.first
   HEX_COLOR_FORMAT = /\A#[A-F0-9]{6}\z/i
-  TERMINAL_STAGE_SORT_SQL = Arel.sql("CASE WHEN crm_stages.outcome IN ('won', 'lost') THEN 1 ELSE 0 END").freeze
+  SYSTEM_STAGE_SORT_SQL = Arel.sql(<<~SQL.squish).freeze
+    CASE
+      WHEN crm_stages.code = 'new' THEN 0
+      WHEN crm_stages.outcome = 'open' THEN 1
+      WHEN crm_stages.outcome = 'won' THEN 2
+      WHEN crm_stages.outcome = 'lost' THEN 3
+      ELSE 4
+    END
+  SQL
 
   belongs_to :account, class_name: '::Account'
   belongs_to :pipeline, class_name: '::Crm::Pipeline', inverse_of: :stages
@@ -87,7 +96,7 @@ class Crm::Stage < ApplicationRecord
   validate :closing_reason_required_requires_options
   validate :transition_reason_required_requires_options
 
-  scope :ordered, -> { order(TERMINAL_STAGE_SORT_SQL, :position, :id) }
+  scope :ordered, -> { order(SYSTEM_STAGE_SORT_SQL, :position, :id) }
   scope :active, -> { where(active: true) }
 
   before_validation :sync_account_id
@@ -118,6 +127,18 @@ class Crm::Stage < ApplicationRecord
 
   def terminal_outcome?
     outcome.in?(TERMINAL_OUTCOMES)
+  end
+
+  def technical_stage?
+    code.in?(TECHNICAL_STAGE_CODES)
+  end
+
+  def system_stage?
+    technical_stage? || terminal_outcome?
+  end
+
+  def position_locked?
+    system_stage?
   end
 
   def canonical_closing_reasons(values)

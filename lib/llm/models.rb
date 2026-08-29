@@ -136,12 +136,14 @@ module Llm::Models
 
       if openrouter_no_fallback_active_for?(feature_key, account: account)
         static_fallback_models = account_static_models_for_feature(feature_key, static_models, account, runtime_filtered: runtime_filtered)
-        return (dynamic_models.presence || static_fallback_models).uniq if feature_key == 'help_center_search'
+        if feature_key == 'help_center_search'
+          return filter_assistant_model_catalog(feature_key, (dynamic_models.presence || static_fallback_models).uniq)
+        end
 
-        return (dynamic_models + static_fallback_models).uniq
+        return filter_assistant_model_catalog(feature_key, (dynamic_models + static_fallback_models).uniq)
       end
 
-      (static_models + dynamic_models).uniq
+      filter_assistant_model_catalog(feature_key, (static_models + dynamic_models).uniq)
     end
 
     def valid_model_for?(feature, model_name, account: nil)
@@ -152,6 +154,7 @@ module Llm::Models
       feature_key = feature.to_s
       canonical_name = canonical_model_name(model_name)
       return false if feature_key.blank? || canonical_name.blank?
+      return false unless assistant_model_allowed_by_catalog?(feature_key, canonical_name)
 
       model_config = model_config(canonical_name, account: account)
       return false if model_config.blank?
@@ -396,6 +399,36 @@ module Llm::Models
     end
 
     private
+
+    def filter_assistant_model_catalog(feature_key, models)
+      return models unless feature_key == 'assistant'
+
+      models.select { |model_name| assistant_model_allowed_by_catalog?(feature_key, model_name) }
+    end
+
+    def assistant_model_allowed_by_catalog?(feature_key, model_name)
+      return true unless feature_key == 'assistant'
+
+      allowlist = assistant_model_allowlist
+      allowlist.nil? || allowlist.include?(canonical_model_name(model_name))
+    end
+
+    def assistant_model_allowlist
+      raw_value = InstallationConfig.find_by(name: 'CAPTAIN_ASSISTANT_MODEL_ALLOWLIST')&.value
+      return nil if raw_value.blank?
+
+      values = if raw_value.is_a?(Array)
+                 raw_value
+               elsif raw_value.is_a?(String)
+                 JSON.parse(raw_value)
+               else
+                 []
+               end
+      Array(values).filter_map { |model_name| canonical_model_name(model_name).presence }.uniq
+    rescue JSON::ParserError
+      Rails.logger.error('[LLM] CAPTAIN_ASSISTANT_MODEL_ALLOWLIST must be a JSON array; no assistant models are allowed')
+      []
+    end
 
     def dynamic_model_configs(account: nil)
       return {} unless openrouter_catalog_enabled?(account: account)

@@ -144,7 +144,7 @@ const senderId = computed(() => chatMetadata.value.sender?.id);
 
 const currentContact = computed(() => {
   return senderId.value
-    ? store.getters['contacts/getContact'](senderId.value)
+    ? store.getters['contacts/getContact'](senderId.value) || {}
     : {};
 });
 
@@ -703,7 +703,7 @@ const togglePinnedConversation = async nextPinnedState => {
     >
       <Avatar
         v-if="!hideThumbnail"
-        :name="currentContact.name"
+        :name="contactDisplayName"
         :src="currentContact.thumbnail"
         :size="28"
         :status="currentContact.availability_status"
@@ -726,6 +726,12 @@ const togglePinnedConversation = async nextPinnedState => {
           </label>
         </template>
       </Avatar>
+      <span
+        v-if="!hideThumbnail && lastMessageTimeLabel"
+        class="mt-1 max-w-10 truncate text-center text-[9px] font-normal leading-3 tabular-nums text-n-slate-10"
+      >
+        {{ lastMessageTimeLabel }}
+      </span>
       <span
         v-if="!hideThumbnail && primaryAppointmentStatus"
         data-test-id="conversation-appointment-status-sticker"
@@ -792,12 +798,6 @@ const togglePinnedConversation = async nextPinnedState => {
         >
           <i class="i-lucide-pin size-3 text-n-slate-11" />
           {{ t('CONVERSATION.CARD_CONTEXT_MENU.PINNED_BADGE') }}
-        </span>
-        <span
-          v-if="lastMessageTimeLabel"
-          class="ml-auto shrink-0 text-xxs font-normal normal-case tabular-nums text-n-slate-10"
-        >
-          {{ lastMessageTimeLabel }}
         </span>
       </h4>
       <div

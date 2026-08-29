@@ -28,6 +28,11 @@ const CalendarDateRangeStub = {
   `,
 };
 
+const CalendarWeekStub = {
+  emits: ['selectDate'],
+  template: '<div data-testid="calendar-month" />',
+};
+
 const mountDatePicker = (props = {}) =>
   mount(DatePicker, {
     attachTo: document.body,
@@ -41,7 +46,7 @@ const mountDatePicker = (props = {}) =>
         CalendarDateRange: CalendarDateRangeStub,
         CalendarFooter: true,
         CalendarMonth: true,
-        CalendarWeek: true,
+        CalendarWeek: CalendarWeekStub,
         CalendarYear: true,
         DatePickerButton: DatePickerButtonStub,
       },
@@ -88,5 +93,78 @@ describe('DatePicker outside interaction', () => {
 
     expect(wrapper.find('.w-\\[880px\\]').exists()).toBe(false);
     expect(wrapper.emitted('dateRangeChanged')).toHaveLength(1);
+  });
+
+  it('opens the compact calendar-only range picker immediately', async () => {
+    wrapper = mountDatePicker({
+      autoOpen: true,
+      calendarOnly: true,
+      compact: true,
+      hideTrigger: true,
+      rangeType: 'custom',
+    });
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.find('[data-testid="date-picker-trigger"]').exists()).toBe(
+      false
+    );
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(true);
+    expect(wrapper.find('.scale-\\[0\\.8\\]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="date-range-preset"]').exists()).toBe(
+      false
+    );
+
+    const calendars = wrapper.findAllComponents(CalendarWeekStub);
+    expect(calendars).toHaveLength(1);
+    calendars[0].vm.$emit('selectDate', new Date(2026, 0, 10, 12));
+    await nextTick();
+    calendars[0].vm.$emit('selectDate', new Date(2026, 0, 20, 12));
+    await nextTick();
+
+    const [[start, end]] = wrapper.emitted('dateRangeChanged')[0];
+    expect(start.getHours()).toBe(0);
+    expect(end.getHours()).toBe(23);
+    expect(end.getMinutes()).toBe(59);
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(false);
+  });
+
+  it('opens only after the Select click that mounted it has propagated', async () => {
+    document.body.addEventListener(
+      'click',
+      () => {
+        wrapper = mountDatePicker({
+          autoOpen: true,
+          calendarOnly: true,
+          hideTrigger: true,
+          rangeType: 'custom',
+        });
+      },
+      { once: true }
+    );
+
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(false);
+
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(true);
+  });
+
+  it('keeps a force-open calendar visible during outside interaction', async () => {
+    wrapper = mountDatePicker({
+      calendarOnly: true,
+      forceOpen: true,
+      hideTrigger: true,
+      rangeType: 'custom',
+    });
+
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await nextTick();
+
+    expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(true);
   });
 });

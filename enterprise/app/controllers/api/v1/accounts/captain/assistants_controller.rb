@@ -6,6 +6,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :handoff_message_enabled, :handoff_message_mode,
     :resolution_message_enabled, :resolution_message_mode,
     :temperature,
+    :model, :feature_image_understanding,
     :auto_reply_on_last_incoming,
     :message_collapse_window_seconds, :history_message_limit
   ].freeze
@@ -210,10 +211,39 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
   end
 
   def agent_playground_response
-    options = { assistant: @assistant, source: 'playground' }
+    tool_trace = []
+    options = {
+      assistant: @assistant,
+      source: 'playground',
+      callbacks: playground_trace_callbacks(tool_trace)
+    }
     options[:conversation] = playground_conversation if playground_params[:conversation_id].present?
 
-    Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: playground_message_history)
+    response = Captain::Assistant::AgentRunnerService.new(**options).generate_response(message_history: playground_message_history)
+    response['tool_trace'] = tool_trace
+    response
+  end
+
+  def playground_trace_callbacks(tool_trace)
+    {
+      on_tool_start: ->(*args) { tool_trace << playground_trace_entry('start', args) },
+      on_tool_complete: ->(*args) { tool_trace << playground_trace_entry('complete', args) },
+      on_tool_error: ->(*args) { tool_trace << playground_trace_entry('error', args) }
+    }
+  end
+
+  def playground_trace_entry(event, args)
+    tool = args.first
+    tool_name = if tool.is_a?(String) || tool.is_a?(Symbol)
+                  tool
+                elsif tool.respond_to?(:name)
+                  tool.name
+                elsif tool.respond_to?(:tool_name)
+                  tool.tool_name
+                else
+                  tool.class.name.demodulize
+                end
+    { event: event, tool: tool_name.to_s }
   end
 
   def playground_conversation

@@ -164,6 +164,7 @@ describe('Captain assistant settings page', () => {
         usage_mode: 'external_agent',
         config: {
           feature_faq: true,
+          temperature: 0.4,
         },
       },
     });
@@ -173,7 +174,6 @@ describe('Captain assistant settings page', () => {
       assistant: {
         config: {
           handoff_message: '',
-          temperature: 0.4,
           voice_settings: {
             provider: 'gemini-live',
             model: 'gemini-3.1-flash-live-preview',

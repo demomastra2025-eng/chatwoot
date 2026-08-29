@@ -48,7 +48,6 @@ const generateRouterParams = () => {
 };
 
 const LEGACY_NAVIGATION_ALIASES = {
-  captain_assistants_playground_index: 'captain_assistants_prompts_index',
   captain_assistants_channels_index: 'channels',
   captain_assistants_inboxes_index: 'channels',
   captain_assistants_responses_index: 'knowledge_base',
@@ -68,6 +67,7 @@ const VALID_NAVIGATION_ROUTES = [
   'captain_assistants_scenarios_index', // Legacy prompts alias
   'captain_assistants_settings_index', // Settings page
   'captain_assistants_prompts_index', // Prompts page
+  'captain_assistants_playground_index', // Assistant sandbox
   'captain_assistants_follow_ups_index', // Follow-up scenarios
   'captain_assistants_restrictions_index', // Legacy prompts alias
   'captain_assistants_guardrails_index', // Legacy prompts alias

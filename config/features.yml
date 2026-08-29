@@ -137,6 +137,10 @@
   display_name: AI Agents
   enabled: false
   premium: true
+- name: captain_openrouter_byok
+  display_name: AI Agents - Workspace OpenRouter Key
+  enabled: false
+  premium: true
 - name: custom_roles
   display_name: Custom Roles
   enabled: false

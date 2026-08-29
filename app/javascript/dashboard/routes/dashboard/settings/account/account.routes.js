@@ -5,6 +5,7 @@ import { SLA_SETTINGS_ROUTE_META } from '../sla/slaSettingsPolicy';
 const Index = () => import('./Index.vue');
 const SidebarVisibilitySettings = () =>
   import('./SidebarVisibilitySettings.vue');
+const ConversationSettings = () => import('./ConversationSettings.vue');
 const Scheduling = () => import('./Scheduling.vue');
 const LeadForms = () => import('../leadForms/Index.vue');
 const SettingsTabsWrapper = () =>
@@ -68,6 +69,14 @@ export default {
           path: 'visibility',
           name: 'workspace_sidebar_visibility_settings_index',
           component: SidebarVisibilitySettings,
+          meta: {
+            permissions: ['administrator'],
+          },
+        },
+        {
+          path: 'conversations',
+          name: 'workspace_conversation_settings_index',
+          component: ConversationSettings,
           meta: {
             permissions: ['administrator'],
           },

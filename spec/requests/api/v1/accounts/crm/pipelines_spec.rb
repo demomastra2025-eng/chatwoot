@@ -25,6 +25,11 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(response.parsed_body.dig('payload', 0, 'code')).to eq('sales_pipeline')
     stages = response.parsed_body.dig('payload', 0, 'stages')
     expect(stages.pluck('code')).to eq(%w[new qualified proposal won lost])
+    expect(stages.find { |stage| stage['code'] == 'new' }).to include(
+      'system' => true,
+      'position' => 0,
+      'position_locked' => true
+    )
     expect(stages.find { |stage| stage['code'] == 'won' }).to include('outcome' => 'won', 'color' => Crm::Stage::WON_COLOR)
     expect(stages.find { |stage| stage['code'] == 'lost' }).to include('outcome' => 'lost', 'color' => Crm::Stage::LOST_COLOR)
   end
@@ -229,6 +234,65 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     get path, headers: headers, as: :json
     sales_pipeline = response.parsed_body.fetch('payload').find { |item| item['id'] == pipeline.id }
     expect(sales_pipeline.fetch('stages').pluck('id')).not_to include(created_stage_id)
+  end
+
+  it 'atomically reorders only movable stages inside one pipeline' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    follow_up = create(:crm_stage, account: account, pipeline: pipeline, code: 'follow_up')
+    movable_stages = pipeline.stages.where(outcome: 'open').where.not(code: 'new')
+    ordered_ids = [follow_up.id] + movable_stages.where.not(id: follow_up.id).order(position: :desc).pluck(:id)
+
+    patch "#{path}/#{pipeline.id}/reorder_stages",
+          params: { stage_ids: ordered_ids },
+          headers: headers,
+          as: :json
+
+    ordered_stages = pipeline.reload.stages.ordered
+
+    expect(response).to have_http_status(:ok)
+    expect(ordered_stages.first.code).to eq('new')
+    expect(ordered_stages.last(2).map(&:outcome)).to eq(%w[won lost])
+    expect(ordered_stages.where(outcome: 'open').where.not(code: 'new').pluck(:id)).to eq(ordered_ids)
+  end
+
+  it 'rejects incomplete or cross-pipeline stage orders' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    other_pipeline = create(:crm_pipeline, account: account)
+    foreign_stage = create(:crm_stage, account: account, pipeline: other_pipeline)
+
+    patch "#{path}/#{pipeline.id}/reorder_stages",
+          params: { stage_ids: [foreign_stage.id] },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('INVALID_STAGE_ORDER')
+
+    movable_stage_ids = pipeline.stages.where(outcome: 'open').where.not(code: 'new').pluck(:id)
+    duplicate_stage_ids = movable_stage_ids.length > 1 ? [movable_stage_ids.first] * movable_stage_ids.length : []
+
+    patch "#{path}/#{pipeline.id}/reorder_stages",
+          params: { stage_ids: duplicate_stage_ids },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('INVALID_STAGE_ORDER')
+  end
+
+  it 'rejects stage reordering without CRM settings management access' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    movable_stage_ids = pipeline.stages.where(outcome: 'open').where.not(code: 'new').pluck(:id)
+
+    patch "#{path}/#{pipeline.id}/reorder_stages",
+          params: { stage_ids: movable_stage_ids },
+          headers: agent.create_new_auth_token,
+          as: :json
+
+    expect(response).to have_http_status(:unauthorized)
   end
 
   it 'deletes an archived pipeline without deals' do

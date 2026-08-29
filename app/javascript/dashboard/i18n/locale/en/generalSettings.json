@@ -15,12 +15,19 @@
       "SUCCESS": "Company settings updated"
     },
     "SIDEBAR_VISIBILITY": {
-      "TITLE": "Menu visibility",
-      "DESCRIPTION": "Choose which left sidebar sections are available across this workspace.",
-      "NOTE": "These settings apply to every employee. Sections without the required role, permission, or feature access remain hidden automatically.",
-      "SAVE": "Save visibility",
-      "UPDATE_SUCCESS": "Menu visibility updated",
-      "UPDATE_ERROR": "Could not update menu visibility. Please try again."
+      "TITLE": "Sidebar settings",
+      "DESCRIPTION": "Choose the primary sections shown in the employee sidebar.",
+      "SAVE": "Save settings",
+      "UPDATE_SUCCESS": "Sidebar settings updated",
+      "UPDATE_ERROR": "Could not update sidebar settings. Please try again."
+    },
+    "CONVERSATIONS": {
+      "TITLE": "Conversations",
+      "DESCRIPTION": "Configure features available to employees while working with conversations.",
+      "TEXT_IMPROVEMENT": "Text improvement",
+      "TEXT_IMPROVEMENT_DESCRIPTION": "Allow employees to improve and rephrase a message with AI before sending it.",
+      "UPDATE_SUCCESS": "Conversation settings updated",
+      "UPDATE_ERROR": "Could not update conversation settings. Please try again."
     },
     "ACCOUNT_DELETE_SECTION": {
       "TITLE": "Delete my company",

@@ -718,6 +718,69 @@ describe('SidebarGroup', () => {
     expect(wrapper.find('button[title="Conversations"]').exists()).toBe(true);
   });
 
+  it('does not style a stale expanded collapsed group as active', () => {
+    sidebarCollapsed.value = true;
+    expandedItem.value = 'Conversation';
+    Object.assign(routeState, {
+      name: 'settings_index',
+      path: '/settings',
+      query: {},
+      params: {},
+    });
+
+    const wrapper = mountComponent();
+    const link = wrapper.find('[title="Conversations"]');
+
+    expect(link.classes()).not.toContain('bg-n-alpha-2');
+  });
+
+  it('keeps only the most specific matching leaf active', async () => {
+    Object.assign(routeState, {
+      name: 'shared_route',
+      path: '/shared',
+      query: { view: 'specific' },
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      children: [
+        {
+          name: 'Shared',
+          label: 'Shared',
+          to: { name: 'shared_route', path: '/shared' },
+          suppressHeaderActiveWhenChildActive: true,
+          children: [
+            {
+              name: 'Generic',
+              label: 'Generic',
+              to: { name: 'shared_route', path: '/shared' },
+              activeOn: ['shared_route'],
+            },
+            {
+              name: 'Specific',
+              label: 'Specific',
+              to: {
+                name: 'shared_route',
+                path: '/shared',
+                query: { view: 'specific' },
+              },
+              activeOn: ['shared_route'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await nextTick();
+
+    const activeNames = wrapper
+      .find('[data-test-id="sidebar-subgroup"]')
+      .attributes('data-active-child-names');
+
+    expect(activeNames).toContain('Specific');
+    expect(activeNames).not.toContain('Generic');
+  });
+
   it('does not select an action-only collapsed group for a secondary column', async () => {
     sidebarCollapsed.value = true;
     const wrapper = mountComponent({

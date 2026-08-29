@@ -16,6 +16,8 @@ describe('CRM settings routes', () => {
     expect(taskParent.props.tabs).toEqual([
       expect.objectContaining({ routeName: 'crm_task_settings_index' }),
     ]);
+    expect(dealParent.props.keepAlive).toBe(false);
+    expect(taskParent.props.keepAlive).toBe(false);
 
     expect(
       childByName(dealParent, 'crm_deal_fields_settings_index').redirect({

@@ -20,6 +20,27 @@ const props = defineProps({
     type: String,
     required: true,
   },
+  size: {
+    type: String,
+    default: 'sm',
+  },
+  variant: {
+    type: String,
+    default: 'faded',
+  },
+  triggerClass: {
+    type: String,
+    default: '',
+  },
+  highlightTrigger: {
+    type: Boolean,
+    default: true,
+  },
+  subMenuAlign: {
+    type: String,
+    default: 'end',
+    validator: value => ['start', 'end'].includes(value),
+  },
   subMenuPosition: {
     type: String,
     default: 'right',
@@ -51,11 +72,16 @@ const handleSelect = value => {
     class="relative flex flex-col gap-1 w-fit"
   >
     <Button
-      size="sm"
+      :size="size"
       color="slate"
-      variant="faded"
+      :variant="variant"
       class="!w-fit max-w-40"
-      :class="{ 'dark:!bg-n-alpha-2 !bg-n-slate-9/20': isOpen }"
+      :class="[
+        triggerClass,
+        {
+          'dark:!bg-n-alpha-2 !bg-n-slate-9/20': isOpen && highlightTrigger,
+        },
+      ]"
       @click="toggleMenu"
     >
       <template #default>
@@ -65,7 +91,7 @@ const handleSelect = value => {
             :icon="icon"
             class="size-4 shrink-0 text-n-slate-11"
           />
-          <span class="min-w-0 truncate">{{ labelValue }}</span>
+          <span class="min-w-0 truncate text-left">{{ labelValue }}</span>
           <Icon
             icon="i-lucide-chevron-down"
             class="size-4 shrink-0 text-n-slate-11"
@@ -81,7 +107,11 @@ const handleSelect = value => {
           subMenuPosition === 'right',
         'ltr:right-full rtl:left-full ltr:mr-1 rtl:ml-1':
           subMenuPosition === 'left',
-        'top-full mt-1 ltr:right-0 rtl:left-0': subMenuPosition === 'bottom',
+        'top-full mt-1': subMenuPosition === 'bottom',
+        'ltr:left-0 rtl:right-0':
+          subMenuPosition === 'bottom' && subMenuAlign === 'start',
+        'ltr:right-0 rtl:left-0':
+          subMenuPosition === 'bottom' && subMenuAlign === 'end',
       }"
     >
       <Button

@@ -368,7 +368,7 @@
     "COMPANIES": "Ұйымдар",
     "ALL_COMPANIES": "Барлық ұйымдар",
     "CRM": "CRM",
-    "PIPELINES": "Воронкалар",
+    "PIPELINES": "Мәмілелер",
     "DEFAULT_PIPELINE": "Негізгі",
     "CRM_DEALS": "Мәмілелер",
     "CRM_TASKS": "Міндеттер",
@@ -405,7 +405,8 @@
     "INTEGRATIONS": "Интеграциялар",
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Профиль",
-    "VISIBILITY": "Көріну",
+    "VISIBILITY": "Сайдбарды баптау",
+    "CONVERSATION_SETTINGS": "Диалогтар",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -618,6 +619,14 @@
   "CAPTAIN_SETTINGS": {
     "TITLE": "Captain Settings",
     "DESCRIPTION": "Configure your AI models and features for Captain. Captain follows a credit based billing, you will be charged credits for every action Captain takes based on the model selected.",
+    "WORKSPACE_FEATURES": {
+      "TITLE": "Workspace мүмкіндіктері",
+      "DESCRIPTION": "Қызметкерлер мен AI-агенттерге қажет AI функцияларын ғана қосыңыз.",
+      "ASSISTANTS": "AI-агенттер",
+      "ASSISTANTS_DESCRIPTION": "AI-агенттерге қосылған арналарда клиенттерге жауап беруге рұқсат ету.",
+      "TEXT_IMPROVEMENT": "Мәтінді жақсарту",
+      "TEXT_IMPROVEMENT_DESCRIPTION": "Қызметкерлерге дайындалған жауап мәтінін жақсартуға рұқсат ету."
+    },
     "LOADING": "Loading Captain configuration...",
     "LINK_TEXT": "Learn more about AI credits",
     "NOT_ENABLED": "AI Staff is not enabled for your account. Please upgrade your plan to access AI Staff features.",

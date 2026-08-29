@@ -487,7 +487,14 @@
       "MESSAGE_PLACEHOLDER": "Type your message...",
       "HEADER": "Playground",
       "DESCRIPTION": "Use this playground to send messages to your AI agent and check if it responds accurately, quickly, and in the tone you expect.",
-      "CREDIT_NOTE": "Messages sent here will count toward your AI Agent credits."
+      "CREDIT_NOTE": "Messages sent here will count toward your AI Agent credits.",
+      "TRACE_TITLE": "Execution trace",
+      "TRACE_DESCRIPTION": "Agent decisions and tools called for each response.",
+      "TRACE_EMPTY": "Send a message to see the trace.",
+      "TRACE_RESPONSE": "Response {number}",
+      "TRACE_REASONING": "Reasoning",
+      "TRACE_TOOLS": "Tools",
+      "TRACE_NO_TOOLS": "No tools were called"
     },
     "EVALUATIONS": {
       "TITLE": "Testing",
@@ -733,6 +740,7 @@
         "SUCCESS_MESSAGE": "The AI agent has been successfully deleted",
         "ERROR_MESSAGE": "There was an error deleting the AI agent, please try again."
       },
+
       "FORM_DESCRIPTION": "Set the name, type, and instruction for the AI agent.",
       "CREATE": {
         "TITLE": "Create an AI agent",
@@ -771,7 +779,7 @@
           "DESCRIPTION": "Adjust how creative or restrictive the AI agent's responses should be. Lower values produce more focused and deterministic responses, while higher values allow for more creative and varied outputs."
         },
         "MESSAGE_COLLAPSE_WINDOW_SECONDS": {
-          "LABEL": "Message Collapse Window",
+          "LABEL": "Message collapse window, seconds",
           "PLACEHOLDER": "Enter seconds",
           "DESCRIPTION": "How many seconds to wait before replying so nearby incoming messages are grouped. Use 0 to reply immediately."
         },
@@ -972,8 +980,13 @@
           "SKILLS": "Skills"
         },
         "CATALOG_ITEM_USED": "Used",
+        "MODEL": {
+          "LABEL": "Response model",
+          "DESCRIPTION": "Choose from the model catalogue allowed by the OneLink administrator."
+        },
         "FEATURES": {
           "TITLE": "Features",
+          "DESCRIPTION": "Enable the capabilities and tools available to this AI agent.",
           "ALLOW_CONVERSATION_FAQS": "Generate FAQs from resolved conversations",
           "ALLOW_MEMORIES": "Capture key details as memories from customer interactions.",
           "ALLOW_NOTES": "Allow creating contact notes and private conversation notes",
@@ -987,6 +1000,8 @@
           "WEB_PAGE_READING_DESCRIPTION": "Read the content of a provided public URL.",
           "DOCUMENT_READING": "Read documents",
           "DOCUMENT_READING_DESCRIPTION": "Use text extracted from customer file attachments.",
+          "IMAGE_UNDERSTANDING": "Understand customer images",
+          "IMAGE_UNDERSTANDING_DESCRIPTION": "Generate a text description of new images while preparing a reply. The original image is not sent to the response model.",
           "WEB_PROVIDER_REQUIRED": "These capabilities require the web provider to be configured by an administrator.",
           "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         },
@@ -2637,6 +2652,43 @@
     },
     "OBSERVABILITY": {
       "TITLE": "Logs",
+      "LOGS": {
+        "TITLE": "Logs",
+        "TIMELINE_TITLE": "AI agent requests",
+        "TIMELINE_DESCRIPTION": "Request count for the selected period",
+        "TOTAL_REQUESTS": "Total requests: {count}",
+        "REQUESTS": "Requests: {count}",
+        "MILLISECONDS": "ms",
+        "SECONDS": "s",
+        "CUSTOM_RANGE": {
+          "SINCE": "Start",
+          "UNTIL": "End",
+          "APPLY": "Apply",
+          "INVALID": "Choose a valid range: the start must be earlier than the end."
+        },
+        "EMPTY_TITLE": "No requests in this period",
+        "EMPTY_DESCRIPTION": "Select another period or check again later.",
+        "COLUMNS": {
+          "DATETIME": "Date and time",
+          "MODEL": "Model",
+          "INPUT_TOKENS": "Input tokens",
+          "OUTPUT_TOKENS": "Output tokens",
+          "COST": "Cost, $",
+          "DURATION": "Response time"
+        },
+        "RANGES": {
+          "15m": "Past 15 minutes",
+          "30m": "Past 30 minutes",
+          "1h": "Past hour",
+          "3h": "Past 3 hours",
+          "24h": "Past 24 hours",
+          "48h": "Past 48 hours",
+          "7d": "Past week",
+          "30d": "Past month",
+          "1y": "Past year",
+          "CUSTOM": "Custom range"
+        }
+      },
       "SIMPLE": {
         "REFRESH": "Refresh",
         "CLEAR": "Clear",

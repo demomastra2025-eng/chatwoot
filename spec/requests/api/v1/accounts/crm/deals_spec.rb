@@ -497,6 +497,97 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(meta.dig('stage_counts', stage.id.to_s)).to eq(3)
   end
 
+  it 'loads one board page for every stage in the pipeline' do
+    pipeline = create(:crm_pipeline, account: account)
+    first_stage = create(:crm_stage, account: account, pipeline: pipeline)
+    second_stage = create(:crm_stage, account: account, pipeline: pipeline)
+    create_list(:crm_deal, 3, account: account, pipeline: pipeline, stage: first_stage)
+    create_list(:crm_deal, 3, account: account, pipeline: pipeline, stage: second_stage)
+
+    get path,
+        params: { board: true, page: 1, per_page: 2, pipeline_id: pipeline.id },
+        headers: headers,
+        as: :json
+
+    payload = response.parsed_body['payload']
+    meta = response.parsed_body['meta']
+
+    expect(response).to have_http_status(:ok)
+    expect(payload.group_by { |deal| deal['stage_id'] }.transform_values(&:size)).to eq(
+      first_stage.id => 2,
+      second_stage.id => 2
+    )
+    expect(meta).to include(
+      'count' => 4,
+      'has_more' => true,
+      'page' => 1,
+      'per_page' => 2,
+      'total_count' => 6,
+      'total_pages' => 2
+    )
+
+    get path,
+        params: { board: true, page: 2, per_page: 2, pipeline_id: pipeline.id },
+        headers: headers,
+        as: :json
+
+    expect(response.parsed_body['payload'].group_by { |deal| deal['stage_id'] }.transform_values(&:size)).to eq(
+      first_stage.id => 1,
+      second_stage.id => 1
+    )
+    expect(response.parsed_body.dig('meta', 'has_more')).to be(false)
+  end
+
+  it 'paginates each board stage using the selected sort and direction' do
+    pipeline = create(:crm_pipeline, account: account)
+    stage = create(:crm_stage, account: account, pipeline: pipeline)
+    deals = 10.times.map do |index|
+      create(
+        :crm_deal,
+        account: account,
+        amount_minor: (index + 1) * 100,
+        currency: 'USD',
+        pipeline: pipeline,
+        position: index + 1,
+        stage: stage
+      )
+    end
+
+    get path,
+        params: {
+          board: true,
+          board_sort: 'amount',
+          board_sort_directions: { stage.id.to_s => 'desc' },
+          page: 1,
+          per_page: 8,
+          pipeline_id: pipeline.id
+        },
+        headers: headers,
+        as: :json
+
+    first_page_ids = response.parsed_body['payload'].pluck('id')
+
+    expect(response).to have_http_status(:ok)
+    expect(first_page_ids).to eq(deals.last(8).reverse.map(&:id))
+
+    get path,
+        params: {
+          board: true,
+          board_sort: 'amount',
+          board_sort_directions: { stage.id.to_s => 'desc' },
+          page: 2,
+          per_page: 8,
+          pipeline_id: pipeline.id
+        },
+        headers: headers,
+        as: :json
+
+    second_page_ids = response.parsed_body['payload'].pluck('id')
+
+    expect(second_page_ids).to eq(deals.first(2).reverse.map(&:id))
+    expect(first_page_ids & second_page_ids).to be_empty
+  end
+
   it 'returns compact company and primary contact in the deal payload' do
     company = create(:company, account: account, name: 'Onelink LLC')
     contact = create(:contact, :with_email, account: account, company: company, name: 'Aruzhan')

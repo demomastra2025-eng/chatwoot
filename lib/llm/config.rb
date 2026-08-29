@@ -136,10 +136,6 @@ module Llm::Config
       installation_text_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT')
     end
 
-    def global_assistant_system_prompt
-      installation_text_config('CAPTAIN_AI_ASSISTANT_SYSTEM_PROMPT')
-    end
-
     def installation_default_model
       installation_config_value('CAPTAIN_DEFAULT_MODEL').presence ||
         installation_config_value('CAPTAIN_OPEN_AI_MODEL').presence
@@ -151,6 +147,13 @@ module Llm::Config
 
     def account_provider_available?(provider, account: nil)
       account_api_key(provider, account).present?
+    end
+
+    def account_provider_byok_allowed?(provider, account: nil)
+      return false if account.blank?
+      return true unless provider.to_s == 'openrouter'
+
+      account.feature_enabled?('captain_openrouter_byok')
     end
 
     def installation_provider_available?(provider)
@@ -270,6 +273,8 @@ module Llm::Config
     end
 
     def account_api_key(provider, account)
+      return unless account_provider_byok_allowed?(provider, account: account)
+
       hook = account_provider_hook(account, provider)
       settings = hook&.settings.to_h.with_indifferent_access
 
@@ -277,6 +282,8 @@ module Llm::Config
     end
 
     def account_api_base(provider, account)
+      return unless account_provider_byok_allowed?(provider, account: account)
+
       settings = account_provider_hook(account, provider)&.settings.to_h.with_indifferent_access
       settings[:api_base].presence || settings[:base_url].presence || settings[:endpoint].presence
     end

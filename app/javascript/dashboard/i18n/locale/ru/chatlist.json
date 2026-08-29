@@ -21,16 +21,16 @@
     },
     "CHAT_STATUS_FILTER_ITEMS": {
       "open": {
-        "TEXT": "Открытые"
+        "TEXT": "Открыто"
       },
       "resolved": {
-        "TEXT": "Закрытые"
+        "TEXT": "Закрыто"
       },
       "pending": {
         "TEXT": "AI"
       },
       "snoozed": {
-        "TEXT": "Отложенные"
+        "TEXT": "Отложено"
       },
       "all": {
         "TEXT": "Все статусы"

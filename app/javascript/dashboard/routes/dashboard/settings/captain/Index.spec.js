@@ -189,7 +189,7 @@ describe('Captain settings OpenRouter UX', () => {
     setActivePinia(createPinia());
   });
 
-  it('renders only the OpenRouter provider key card in normal Captain settings', () => {
+  it('does not expose provider credentials in disabled workspace AI settings', () => {
     const store = useCaptainConfigStore();
     store.applyPayload({
       ...basePayload({
@@ -222,7 +222,7 @@ describe('Captain settings OpenRouter UX', () => {
 
     const wrapper = mountComponent(store);
 
-    expect(wrapper.text()).toContain('OpenRouter');
+    expect(wrapper.text()).not.toContain('OpenRouter');
     expect(wrapper.text()).not.toContain(
       'CAPTAIN_SETTINGS.PROVIDER_KEYS.HEALTH_LABEL'
     );
@@ -256,7 +256,7 @@ describe('Captain settings OpenRouter UX', () => {
     ).toBe(false);
   });
 
-  it('keeps the audio prompt control for prompt-aware audio chat models', () => {
+  it('does not expose service-model prompt controls in workspace settings', () => {
     const store = useCaptainConfigStore();
     store.applyPayload(
       basePayload({
@@ -275,10 +275,10 @@ describe('Captain settings OpenRouter UX', () => {
 
     expect(
       wrapper.find('[data-test="audio-transcription-prompt"]').exists()
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('filters embedding models by the selected knowledge chunk constraints', () => {
+  it('does not expose embedding model controls in workspace settings', () => {
     const audioModel = {
       id: 'openai/gpt-audio-mini',
       display_name: 'GPT Audio Mini',
@@ -345,13 +345,7 @@ describe('Captain settings OpenRouter UX', () => {
       '[data-feature-key="help_center_search"]'
     );
 
-    expect(embeddingBlock.text()).toContain('openai/text-embedding-3-small');
-    expect(embeddingBlock.text()).not.toContain(
-      'openai/text-embedding-small-context'
-    );
-    expect(embeddingBlock.text()).not.toContain(
-      'openai/text-embedding-wrong-dimensions'
-    );
+    expect(embeddingBlock.exists()).toBe(false);
   });
 
   it('renders OpenRouter usage and budget summary', () => {

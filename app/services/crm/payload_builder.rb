@@ -51,6 +51,8 @@ module Crm::PayloadBuilder
       color: stage.color,
       position: stage.position,
       outcome: stage.outcome,
+      system: stage.system_stage?,
+      position_locked: stage.position_locked?,
       closing_reason_options: stage.closing_reason_options,
       closing_reason_required: stage.closing_reason_required,
       transition_reason_options: stage.transition_reason_options,

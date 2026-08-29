@@ -308,6 +308,14 @@ describe('ConversationCard', () => {
     expect(wrapper.findComponent({ name: 'Avatar' }).props('size')).toBe(28);
   });
 
+  it('passes an empty string to Avatar when the contact is not loaded', () => {
+    mocks.storeGetters['contacts/getContact'].mockReturnValue(undefined);
+
+    const wrapper = mountComponent();
+
+    expect(wrapper.findComponent({ name: 'Avatar' }).props('name')).toBe('');
+  });
+
   it('renders CRM stage color accents on the left card edge', () => {
     const wrapper = mountComponent({
       chat: {
