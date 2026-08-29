@@ -126,7 +126,7 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
       include(
         'id' => lost_stage.id,
         'closing_reason_options' => ['Too expensive', 'Competitor'],
-        'closing_reason_required' => true
+        'closing_reason_required' => false
       )
     )
   end

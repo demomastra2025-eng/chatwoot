@@ -198,7 +198,10 @@ class Crm::Stage < ApplicationRecord
   def normalize_closing_reason_config
     self.closing_reason_options = self.class.normalize_closing_reason_values(closing_reason_options)
 
-    return if terminal_outcome?
+    if terminal_outcome?
+      self.closing_reason_required = false
+      return
+    end
 
     self.closing_reason_options = []
     self.closing_reason_required = false

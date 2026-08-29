@@ -257,7 +257,17 @@
         "EMPTY_COLUMN": "Бұл күйде міндеттер жоқ",
         "EMPTY_COLUMN_DESCRIPTION": "Осы күйге ауыстырылған жаңа міндеттер осында көрінеді.",
         "EMPTY_STATUS_DESCRIPTION": "Тақтада жұмыс үдерісінің бағандары көрінуі үшін кемінде бір міндет күйін қосыңыз.",
-        "EMPTY_STATUS_TITLE": "Әзірге міндет күйлері жоқ"
+        "EMPTY_STATUS_TITLE": "Әзірге міндет күйлері жоқ",
+        "OVERDUE_BADGE": "Мерзімі өткен",
+        "TIME_BUCKETS": {
+          "LATER": "Кейінірек",
+          "NEXT_WEEK": "Келесі аптада",
+          "OVERDUE": "Мерзімі өткендер",
+          "THIS_WEEK": "Осы аптада",
+          "TODAY": "Бүгін",
+          "TOMORROW": "Ертең",
+          "UNSCHEDULED": "Мерзімсіз"
+        }
       },
       "LIST": {
         "EMPTY_FILTERED": "Ағымдағы жылдам сүзгілерге сәйкес міндеттер табылмады.",
@@ -308,14 +318,25 @@
         "CANCELLED_PREFIX": "Орындамады",
         "CANCELLED_TITLE": "Міндет орындалмады",
         "CHANGE_ACTION": "Нәтиже",
+        "CHANGE_TITLE": "Орындалу нәтижесі",
         "COMPLETED_DESCRIPTION": "Нақты не орындалғанын қысқаша жазыңыз.",
         "COMPLETED_LABEL": "Не орындалды?",
         "COMPLETED_PREFIX": "Орындалды",
         "COMPLETED_TITLE": "Міндет орындалды",
-        "DESCRIPTION": "Міндет нәтижесін тізімнен таңдап, қажет болса толық мәлімет қосыңыз.",
+        "CONFIRM_WITHOUT_NOTE": "Міндетті түсініктемесіз орындадым",
+        "CONFIRM_WITHOUT_NOTE_HELP": "Нәтиже мәтіні қажет болмаса, осы тармақты белгілеңіз. Бұл кездейсоқ орындаудан қорғайды.",
+        "DESCRIPTION": "Нәтижені жазыңыз немесе түсініктемесіз орындалғанын нақты растаңыз.",
         "NOTE_LABEL": "Нәтиже туралы пікір",
         "NOT_DONE_LABEL": "Себеп",
+        "OPTIONAL_NOTE_LABEL": "Орындалу нәтижесі",
+        "OPTIONAL_NOTE_PLACEHOLDER": "Не орындалды?",
         "TITLE": "Міндетті орындау"
+      },
+      "STATE_FILTER": {
+        "LABEL": "Міндет күйі",
+        "active": "Белсенді",
+        "all": "Барлығы",
+        "completed": "Орындалған"
       },
       "ACTIVITY_TYPE": {
         "call": "Қоңырау",
@@ -470,6 +491,9 @@
           "CLOSING_REASONS_REQUIRED": "Себепті міндеттеу",
           "CLOSING_REASONS_REQUIRED_ERROR": "Кемінде бір себеп қосыңыз немесе міндеттілікті өшіріңіз.",
           "CLOSING_REASONS_REQUIRED_HELP": "Таңдалған себепсіз мәмілені бұл кезеңге ауыстыру мүмкін болмайды.",
+          "LOSS_REASONS_ENABLED": "Жеңілу себебін көрсету",
+          "LOSS_REASONS_ENABLED_HELP": "Мәміле «Жоғалды» кезеңіне ауысқанда алдымен «Себепсіз», содан кейін бапталған себептер көрсетіледі.",
+          "LOSS_REASONS_SHORT": "Себептер",
           "TRANSITION_REASONS": "Ауыстыру себептері",
           "TRANSITION_REASONS_HELP": "Бұл нұсқалар менеджер немесе Captain мәмілені осы ашық кезеңге ауыстырғанда көрсетіледі.",
           "TRANSITION_REASONS_PLACEHOLDER": "Мысалы: Төлем күтілуде, Құжаттар қажет, Клиент ойланып жатыр",

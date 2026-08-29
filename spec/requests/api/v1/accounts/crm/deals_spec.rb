@@ -273,12 +273,13 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(deal.reload.events.where(event_type: 'deal_stage_changed')).to exist
   end
 
-  it 'requires configured closing reasons when moving a deal to a required terminal stage' do
+  it 'allows no closing reason when moving a deal to a terminal stage' do
     Crm::Bootstrap::AccountService.new(account: account).perform
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     open_stage = pipeline.stages.find_by!(code: 'new')
     lost_stage = pipeline.stages.find_by!(code: 'lost')
-    lost_stage.update!(closing_reason_options: ['Too expensive', 'Competitor'], closing_reason_required: true)
+    lost_stage.update!(closing_reason_options: ['Too expensive', 'Competitor'])
+    lost_stage.update_column(:closing_reason_required, true)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
 
     post "#{path}/#{deal.id}/transition_stage",
@@ -286,10 +287,9 @@ RSpec.describe 'CRM Deals API', type: :request do
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('DEAL_STAGE_REQUIRES_CLOSING_REASONS')
-    expect(response.parsed_body.dig('details', 'closing_reason_options')).to eq(['Too expensive', 'Competitor'])
-    expect(deal.reload.stage_id).to eq(open_stage.id)
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'closing_reasons')).to eq([])
+    expect(deal.reload.stage_id).to eq(lost_stage.id)
   end
 
   it 'stores selected closing reasons on the deal and stage-change event' do

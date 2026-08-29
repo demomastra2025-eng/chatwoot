@@ -995,6 +995,7 @@ const appointmentEvents = computed(() => {
           ? null
           : appointment.resourceId,
       appointment,
+      hideStatus: Boolean(appointment.hideStatus),
       status: appointment.status,
       statusIcon: appointment.statusIcon || '',
       statusLabel: appointment.statusLabel || '',
@@ -1129,7 +1130,7 @@ const customFieldSummaryTitle = appointment => {
 const eventTitle = event => {
   return [
     formatEventTimeRange(event),
-    resolveEventStatusLabel(event),
+    event.hideStatus ? '' : resolveEventStatusLabel(event),
     event.resourceName,
     event.clientName,
     customFieldSummaryTitle(event.appointment),
@@ -1705,7 +1706,10 @@ onMounted(() => {
                 :title="eventTitle(event)"
               >
                 <div class="scheduling-vue-cal__event-header">
-                  <span class="scheduling-vue-cal__event-status-icon">
+                  <span
+                    v-if="!event.hideStatus"
+                    class="scheduling-vue-cal__event-status-icon"
+                  >
                     <span
                       class="size-[0.625rem] shrink-0"
                       :class="[resolveEventStatusIcon(event)]"

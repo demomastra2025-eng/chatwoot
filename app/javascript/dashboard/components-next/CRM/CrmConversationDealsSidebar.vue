@@ -1094,7 +1094,6 @@ watch(dealFieldDefinitions, definitions => {
                 :deal="item.deal"
                 :statuses="taskStatuses"
                 :task-field-definitions="taskFieldDefinitions"
-                :team-options="teamOptions"
               />
 
               <div class="flex items-center justify-end gap-2">

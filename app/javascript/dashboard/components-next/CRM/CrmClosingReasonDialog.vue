@@ -2,10 +2,8 @@
 import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 
-import Button from 'dashboard/components-next/button/Button.vue';
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
-import TagMultiSelectComboBox from 'dashboard/components-next/combobox/TagMultiSelectComboBox.vue';
 
 const { t } = useI18n();
 
@@ -13,12 +11,12 @@ const REASON_KIND = {
   CLOSING: 'closing',
   TRANSITION: 'transition',
 };
+const NO_REASON_VALUE = '__crm_no_reason__';
 const CANCELLED = Symbol('crm-stage-reason-cancelled');
 
 const dialogRef = ref(null);
 const stage = ref(null);
 const reasonKind = ref(REASON_KIND.CLOSING);
-const selectedReasons = ref([]);
 const selectedReason = ref('');
 const pendingResolver = ref(null);
 
@@ -40,21 +38,10 @@ const configuredReasons = computed(() =>
     : normalizeReasons(stage.value?.closingReasonOptions)
 );
 
-const reasonOptions = computed(() =>
-  configuredReasons.value.map(reason => ({
-    label: reason,
-    value: reason,
-  }))
-);
-
-const reasonOptionValues = computed(
-  () => new Set(reasonOptions.value.map(option => option.value))
-);
-
 const reasonRequired = computed(() =>
   isTransitionReason.value
     ? Boolean(stage.value?.transitionReasonRequired)
-    : Boolean(stage.value?.closingReasonRequired)
+    : false
 );
 
 const stageName = computed(() => {
@@ -65,11 +52,7 @@ const stageName = computed(() => {
     : t('CRM.DEALS.CLOSING_REASONS.STAGE_FALLBACK');
 });
 
-const hasSelectedReason = computed(() =>
-  isTransitionReason.value
-    ? Boolean(selectedReason.value)
-    : selectedReasons.value.length > 0
-);
+const hasSelectedReason = computed(() => Boolean(selectedReason.value));
 
 const disableConfirm = computed(() => !hasSelectedReason.value);
 
@@ -93,6 +76,20 @@ const noReasonText = computed(() =>
   isTransitionReason.value
     ? t('CRM.DEALS.TRANSITION_REASONS.NO_REASON')
     : t('CRM.DEALS.CLOSING_REASONS.NO_REASON')
+);
+
+const reasonOptions = computed(() => [
+  ...(!reasonRequired.value
+    ? [{ label: noReasonText.value, value: NO_REASON_VALUE }]
+    : []),
+  ...configuredReasons.value.map(reason => ({
+    label: reason,
+    value: reason,
+  })),
+]);
+
+const reasonOptionValues = computed(
+  () => new Set(reasonOptions.value.map(option => option.value))
 );
 
 const descriptionText = computed(() => {
@@ -148,7 +145,6 @@ const resolvePending = value => {
 const reset = () => {
   stage.value = null;
   reasonKind.value = REASON_KIND.CLOSING;
-  selectedReasons.value = [];
   selectedReason.value = '';
 };
 
@@ -158,14 +154,16 @@ const handleClose = () => {
 };
 
 const handleConfirm = () => {
-  resolvePending(
-    isTransitionReason.value ? selectedReason.value : [...selectedReasons.value]
-  );
-  dialogRef.value?.close();
-};
+  const noReasonSelected = selectedReason.value === NO_REASON_VALUE;
+  let resolvedValue = selectedReason.value;
 
-const handleNoReason = () => {
-  resolvePending(isTransitionReason.value ? '' : []);
+  if (noReasonSelected) {
+    resolvedValue = isTransitionReason.value ? '' : [];
+  } else if (!isTransitionReason.value) {
+    resolvedValue = [selectedReason.value];
+  }
+
+  resolvePending(resolvedValue);
   dialogRef.value?.close();
 };
 
@@ -181,15 +179,15 @@ const open = ({
 
   if (isTransitionReason.value) {
     const candidate = normalizeReasons([currentReason])[0] || '';
+    const fallback = reasonRequired.value ? '' : NO_REASON_VALUE;
     selectedReason.value = reasonOptionValues.value.has(candidate)
       ? candidate
-      : '';
-    selectedReasons.value = [];
+      : fallback;
   } else {
-    selectedReasons.value = normalizeReasons(currentReasons).filter(reason =>
+    const candidate = normalizeReasons(currentReasons).find(reason =>
       reasonOptionValues.value.has(reason)
     );
-    selectedReason.value = '';
+    selectedReason.value = candidate || NO_REASON_VALUE;
   }
 
   return new Promise(resolve => {
@@ -227,38 +225,19 @@ defineExpose({ CANCELLED, open });
         input-like
         @update:model-value="selectedReason = $event"
       />
-      <TagMultiSelectComboBox
+      <ComboBox
         v-else
-        v-model="selectedReasons"
+        :model-value="selectedReason"
         :options="reasonOptions"
         :placeholder="placeholderText"
         :search-placeholder="searchPlaceholderText"
         :empty-state="emptyStateText"
-        dropdown-placement="auto"
+        input-like
+        @update:model-value="selectedReason = $event"
       />
       <p v-if="showRequiredHint" class="mb-0 text-xs text-n-ruby-10">
         {{ requiredHintText }}
       </p>
     </div>
-    <template #footer>
-      <div class="flex items-center justify-between w-full gap-3">
-        <Button
-          v-if="!reasonRequired"
-          variant="faded"
-          color="slate"
-          class="w-full"
-          type="button"
-          :label="noReasonText"
-          @click="handleNoReason"
-        />
-        <Button
-          color="blue"
-          class="w-full"
-          type="submit"
-          :label="confirmText"
-          :disabled="disableConfirm"
-        />
-      </div>
-    </template>
   </Dialog>
 </template>

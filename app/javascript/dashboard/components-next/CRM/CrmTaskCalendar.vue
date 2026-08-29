@@ -25,10 +25,7 @@ const props = defineProps({
     type: Object,
     default: () => ({}),
   },
-  statusNames: {
-    type: Object,
-    default: () => ({}),
-  },
+
   tasks: {
     type: Array,
     default: () => [],
@@ -46,17 +43,6 @@ const emit = defineEmits([
   'selectTask',
 ]);
 const { t } = useI18n();
-
-const priorityColor = priority => {
-  const colors = {
-    high: '#D97706',
-    low: '#0F766E',
-    medium: '#2563EB',
-    urgent: '#DC2626',
-  };
-
-  return colors[priority] || '#2563EB';
-};
 
 const activityTypeLabelByValue = computed(() => ({
   call: t('CRM.TASKS.ACTIVITY_TYPE.call'),
@@ -94,7 +80,6 @@ const resolveTaskRange = task => {
 const buildTaskSubtitle = task => {
   return [
     activityTypeLabel(task),
-    props.statusNames[task.statusId],
     props.dealNames[task.dealId],
     props.assigneeNames[task.assigneeId],
   ]
@@ -102,32 +87,41 @@ const buildTaskSubtitle = task => {
     .join(' · ');
 };
 
+const isOverdue = task => {
+  if (!task?.dueAt) return false;
+
+  const dueAt = new Date(task.dueAt);
+  return !Number.isNaN(dueAt.getTime()) && dueAt < new Date();
+};
+
 const calendarTasks = computed(() =>
   props.tasks
+    .filter(task => !task.archivedAt && !task.completedAt)
     .map(task => {
       const range = resolveTaskRange(task);
       if (!range) {
         return null;
       }
 
+      const overdue = isOverdue(task);
+
       return {
         id: task.id,
         startsAt: range.startsAt.toISOString(),
         endsAt: range.endsAt.toISOString(),
-        status: task.archivedAt ? 'cancelled' : 'scheduled',
-        statusIcon: task.archivedAt ? 'i-lucide-archive' : 'i-lucide-list-todo',
-        statusLabel: task.archivedAt
-          ? t('CRM.GENERAL.ARCHIVED')
-          : props.statusNames[task.statusId] || t('CRM.GENERAL.EMPTY_VALUE'),
+        hideStatus: !overdue,
+        status: 'scheduled',
+        statusIcon: 'i-lucide-circle-alert',
+        statusLabel: overdue ? t('CRM.TASKS.BOARD.OVERDUE_BADGE') : '',
         title: task.title,
         subtitle: buildTaskSubtitle(task),
         clientName: task.title,
         customAttributes: task.customAttributes,
         serviceNameSnapshot: buildTaskSubtitle(task),
-        resourceColor: priorityColor(task.priority),
+        resourceColor: '#2563EB',
         resourceName: '',
-        muted: Boolean(task.archivedAt),
-        cancelled: Boolean(task.archivedAt),
+        muted: false,
+        cancelled: false,
         task,
       };
     })

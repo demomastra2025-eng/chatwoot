@@ -4,7 +4,8 @@ import store from '../../../../store';
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const Index = () => import('./Index.vue');
-const TaskSettings = () => import('./TaskSettings.vue');
+
+const AttributesHome = () => import('../attributes/Index.vue');
 
 const hasCrmDealsEnabled = accountId =>
   store.getters['accounts/isFeatureEnabledonAccount'](
@@ -28,21 +29,28 @@ const dealSettingsTabs = [
     routeName: 'crm_settings_index',
     activeOn: ['crm_settings_index'],
   },
+  {
+    labelKey: 'ATTRIBUTES_MGMT.HEADER',
+    routeName: 'crm_deal_fields_settings_index',
+    activeOn: ['crm_deal_fields_settings_index'],
+  },
 ];
 
 const taskSettingsTabs = [
   {
-    labelKey: 'CRM.SETTINGS.TASK_STATUSES.TITLE',
+    labelKey: 'ATTRIBUTES_MGMT.HEADER',
     routeName: 'crm_task_settings_index',
-    activeOn: ['crm_task_settings_index'],
+    activeOn: ['crm_task_settings_index', 'crm_task_fields_settings_index'],
   },
 ];
 
 const redirectToCrmLanding = (to, _from, next) => {
-  if (
-    to.query.action === 'create-task-status' &&
-    hasCrmTasksEnabled(to.params.accountId)
-  ) {
+  if (hasCrmDealsEnabled(to.params.accountId)) {
+    next();
+    return;
+  }
+
+  if (hasCrmTasksEnabled(to.params.accountId)) {
     next({
       name: 'crm_task_settings_index',
       params: to.params,
@@ -51,6 +59,12 @@ const redirectToCrmLanding = (to, _from, next) => {
     return;
   }
 
+  next({
+    path: frontendURL(`accounts/${to.params.accountId}`),
+  });
+};
+
+const requireCrmDeals = (to, _from, next) => {
   if (hasCrmDealsEnabled(to.params.accountId)) {
     next();
     return;
@@ -102,18 +116,26 @@ export default {
         {
           path: '',
           name: 'crm_task_settings_index',
-          component: TaskSettings,
+          component: AttributesHome,
+          props: {
+            initialTab: 'task',
+            showEntityTabs: false,
+            tabs: ['task'],
+          },
           meta: crmSettingsMeta,
           beforeEnter: requireCrmTasks,
         },
         {
           path: 'fields',
           name: 'crm_task_fields_settings_index',
-          redirect: to => ({
-            name: 'workspace_additional_fields_settings_index',
-            params: to.params,
-            query: { ...to.query, tab: 'task' },
-          }),
+          component: AttributesHome,
+          props: {
+            initialTab: 'task',
+            showEntityTabs: false,
+            tabs: ['task'],
+          },
+          meta: crmSettingsMeta,
+          beforeEnter: requireCrmTasks,
         },
       ],
     },
@@ -134,11 +156,14 @@ export default {
         {
           path: 'fields',
           name: 'crm_deal_fields_settings_index',
-          redirect: to => ({
-            name: 'workspace_additional_fields_settings_index',
-            params: to.params,
-            query: { ...to.query, tab: 'deal' },
-          }),
+          component: AttributesHome,
+          props: {
+            initialTab: 'deal',
+            showEntityTabs: false,
+            tabs: ['deal'],
+          },
+          meta: crmSettingsMeta,
+          beforeEnter: requireCrmDeals,
         },
       ],
     },

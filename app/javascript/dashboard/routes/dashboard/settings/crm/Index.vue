@@ -207,9 +207,15 @@ const TERMINAL_STAGE_OUTCOMES = new Set(['won', 'lost']);
 const isTerminalStageOutcome = outcome =>
   TERMINAL_STAGE_OUTCOMES.has(String(outcome || '').toLowerCase());
 const isTerminalStage = stage => isTerminalStageOutcome(stage?.outcome);
+const isLostStage = stage =>
+  String(stage?.outcome || '').toLowerCase() === 'lost';
 const stageFormIsTerminal = computed(() =>
   Boolean(stageForm.id && isTerminalStageOutcome(stageForm.outcome))
 );
+const stageFormIsLost = computed(
+  () => stageForm.id && String(stageForm.outcome).toLowerCase() === 'lost'
+);
+const lossReasonsEnabled = ref(false);
 
 const stageFormCanBeDefault = computed(
   () =>
@@ -234,13 +240,6 @@ const stageFormTransitionReasonOptions = computed(() =>
   normalizedTextValues(stageForm.transitionReasonOptions)
 );
 
-const stageFormHasInvalidClosingReasonRequirement = computed(
-  () =>
-    stageFormIsTerminal.value &&
-    stageForm.closingReasonRequired &&
-    stageFormClosingReasonOptions.value.length === 0
-);
-
 const stageFormHasInvalidTransitionReasonRequirement = computed(
   () =>
     !stageFormIsTerminal.value &&
@@ -252,7 +251,6 @@ const stageFormDisableConfirm = computed(
   () =>
     !stageForm.name.trim() ||
     !stageForm.pipelineId ||
-    stageFormHasInvalidClosingReasonRequirement.value ||
     stageFormHasInvalidTransitionReasonRequirement.value
 );
 
@@ -741,6 +739,7 @@ const resetStageForm = () => {
     transitionReasonOptions: [],
     transitionReasonRequired: false,
   });
+  lossReasonsEnabled.value = false;
 };
 
 const openNewPipelineRow = () => {
@@ -780,6 +779,9 @@ const openStageDrawer = ({ pipeline, stage } = {}) => {
       ),
       transitionReasonRequired: Boolean(stage.transitionReasonRequired),
     });
+    lossReasonsEnabled.value =
+      stage.outcome === 'lost' &&
+      normalizedTextValues(stage.closingReasonOptions).length > 0;
   } else {
     resetStageForm();
     stageForm.pipelineId =
@@ -854,10 +856,16 @@ const buildStageSavePayload = () => {
   };
 
   if (stageFormIsTerminal.value) {
+    if (!stageFormIsLost.value) {
+      return basePayload;
+    }
+
     return {
       ...basePayload,
-      closing_reason_options: stageFormClosingReasonOptions.value,
-      closing_reason_required: Boolean(stageForm.closingReasonRequired),
+      closing_reason_options: lossReasonsEnabled.value
+        ? stageFormClosingReasonOptions.value
+        : [],
+      closing_reason_required: false,
     };
   }
 
@@ -879,6 +887,26 @@ const saveStage = async () => {
     useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
     stageDrawerOpen.value = false;
     resetStageForm();
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  }
+};
+
+const toggleInlineLossReasons = async (stage, nextValue) => {
+  if (nextValue) {
+    openStageDrawer({ stage });
+    lossReasonsEnabled.value = true;
+    return;
+  }
+
+  try {
+    await referencesStore.saveStage({
+      id: stage.id,
+      name: stage.name,
+      closing_reason_options: [],
+      closing_reason_required: false,
+    });
+    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
   } catch (error) {
     useAlert(formatErrorMessage(error));
   }
@@ -1250,6 +1278,34 @@ onMounted(async () => {
                                 {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
                               </span>
                             </button>
+                            <div
+                              v-if="isLostStage(stage)"
+                              class="flex shrink-0 items-center gap-1.5 px-1"
+                              @click.stop
+                            >
+                              <span class="text-[10px] text-n-slate-10">
+                                {{
+                                  $t(
+                                    'CRM.SETTINGS.STAGES.FORM.LOSS_REASONS_SHORT'
+                                  )
+                                }}
+                              </span>
+                              <Switch
+                                :model-value="
+                                  normalizedTextValues(
+                                    stage.closingReasonOptions
+                                  ).length > 0
+                                "
+                                :disabled="
+                                  !canManage ||
+                                  !row.active ||
+                                  referencesStore.ui.isSaving
+                                "
+                                @update:model-value="
+                                  toggleInlineLossReasons(stage, $event)
+                                "
+                              />
+                            </div>
                             <button
                               v-if="
                                 canManage &&
@@ -1481,48 +1537,42 @@ onMounted(async () => {
           </label>
         </div>
         <div
-          v-if="stageFormIsTerminal"
+          v-if="stageFormIsLost"
           class="grid gap-3 rounded-xl border border-n-weak p-3"
         >
-          <div class="grid gap-1">
-            <span class="text-sm font-medium text-n-slate-12">
-              {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS') }}
-            </span>
-            <span class="text-xs leading-5 text-n-slate-11">
-              {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_HELP') }}
-            </span>
-          </div>
-          <TagInput
-            v-model="stageForm.closingReasonOptions"
-            class="rounded-lg bg-n-alpha-black2 p-2 outline outline-1 outline-n-weak"
-            allow-create
-            :auto-open-dropdown="false"
-            :placeholder="
-              $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_PLACEHOLDER')
-            "
-          />
           <div class="flex items-center gap-3">
             <Switch
-              :model-value="stageForm.closingReasonRequired"
-              @update:model-value="stageForm.closingReasonRequired = $event"
+              :model-value="lossReasonsEnabled"
+              @update:model-value="lossReasonsEnabled = $event"
             />
             <div class="grid gap-1">
               <span class="text-sm font-medium text-n-slate-12">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_REQUIRED') }}
+                {{ $t('CRM.SETTINGS.STAGES.FORM.LOSS_REASONS_ENABLED') }}
               </span>
               <span class="text-xs leading-5 text-n-slate-11">
-                {{
-                  $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_REQUIRED_HELP')
-                }}
+                {{ $t('CRM.SETTINGS.STAGES.FORM.LOSS_REASONS_ENABLED_HELP') }}
               </span>
             </div>
           </div>
-          <p
-            v-if="stageFormHasInvalidClosingReasonRequirement"
-            class="mb-0 text-xs leading-5 text-n-ruby-10"
-          >
-            {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_REQUIRED_ERROR') }}
-          </p>
+          <template v-if="lossReasonsEnabled">
+            <div class="grid gap-1">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS') }}
+              </span>
+              <span class="text-xs leading-5 text-n-slate-11">
+                {{ $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_HELP') }}
+              </span>
+            </div>
+            <TagInput
+              v-model="stageForm.closingReasonOptions"
+              class="rounded-lg bg-n-alpha-black2 p-2 outline outline-1 outline-n-weak"
+              allow-create
+              :auto-open-dropdown="false"
+              :placeholder="
+                $t('CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_PLACEHOLDER')
+              "
+            />
+          </template>
         </div>
         <div v-if="!stageFormIsTerminal" class="grid gap-3">
           <span class="text-sm font-medium text-n-slate-12">

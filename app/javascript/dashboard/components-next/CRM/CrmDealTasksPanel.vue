@@ -11,6 +11,8 @@ import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
+import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
+import { completionOutcomeForTask } from 'dashboard/components-next/CRM/taskCompletion';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import {
@@ -52,10 +54,6 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
-  teamOptions: {
-    type: Array,
-    default: () => [],
-  },
 });
 
 const emit = defineEmits(['created', 'updated']);
@@ -64,7 +62,6 @@ const { t } = useI18n();
 const taskDialogRef = ref(null);
 const resultDialogRef = ref(null);
 const selectedTask = ref(null);
-const pendingResult = ref(null);
 const tasks = ref([]);
 const ui = reactive({
   isLoading: false,
@@ -84,19 +81,7 @@ const form = reactive({
   teamId: '',
   title: '',
 });
-const resultForm = reactive({
-  note: '',
-  outcome: '',
-});
-
 const TASK_ACTIVITY_TYPES = ['task', 'call', 'meeting', 'message', 'touch'];
-const TASK_OUTCOMES_BY_ACTIVITY_TYPE = {
-  call: ['answered', 'no_answer', 'busy', 'cancelled', 'not_done'],
-  meeting: ['held', 'cancelled', 'no_show', 'rescheduled', 'not_done'],
-  message: ['sent', 'failed', 'not_done'],
-  task: ['completed', 'not_done', 'cancelled'],
-  touch: ['completed', 'no_answer', 'cancelled', 'not_done'],
-};
 const NOT_DONE_OUTCOME = 'not_done';
 
 const activityTypeMetaByValue = computed(() => ({
@@ -144,23 +129,6 @@ const outcomeLabelByValue = computed(() => ({
   sent: t('CRM.TASKS.OUTCOME.sent'),
 }));
 
-const buildOutcomeOptions = (activityType, currentOutcome = '') => {
-  const values = new Set(TASK_OUTCOMES_BY_ACTIVITY_TYPE[activityType] || []);
-
-  if (currentOutcome) {
-    values.add(currentOutcome);
-  }
-
-  return [...values].map(value => ({
-    label: outcomeLabelByValue.value[value] || value,
-    value,
-  }));
-};
-
-const outcomeOptions = computed(() =>
-  buildOutcomeOptions(form.activityType, form.outcome)
-);
-
 const activityTypeLabel = task =>
   activityTypeMetaByValue.value[task.activityType || 'task']?.label ||
   task.activityType;
@@ -171,22 +139,7 @@ const activityTypeIcon = task =>
 
 const updateFormActivityType = value => {
   form.activityType = TASK_ACTIVITY_TYPES.includes(value) ? value : 'task';
-
-  if (
-    form.outcome &&
-    !TASK_OUTCOMES_BY_ACTIVITY_TYPE[form.activityType]?.includes(form.outcome)
-  ) {
-    form.outcome = '';
-    form.outcomeNote = '';
-  }
 };
-
-const priorityOptions = computed(() => [
-  { label: t('CRM.TASKS.PRIORITY.low'), value: 'low' },
-  { label: t('CRM.TASKS.PRIORITY.medium'), value: 'medium' },
-  { label: t('CRM.TASKS.PRIORITY.high'), value: 'high' },
-  { label: t('CRM.TASKS.PRIORITY.urgent'), value: 'urgent' },
-]);
 
 const defaultStatus = computed(
   () =>
@@ -197,23 +150,6 @@ const defaultStatus = computed(
 
 const doneStatus = computed(() =>
   props.statuses.find(status => status.category === 'done')
-);
-
-const resultOutcomeOptions = computed(() => {
-  const task = pendingResult.value?.task;
-  if (!task) return [];
-
-  return buildOutcomeOptions(task.activityType || 'task', resultForm.outcome);
-});
-
-const resultDialogTitle = computed(() => t('CRM.TASKS.RESULT_DIALOG.TITLE'));
-const resultDialogDescription = computed(() =>
-  t('CRM.TASKS.RESULT_DIALOG.DESCRIPTION')
-);
-const resultNoteLabel = computed(() =>
-  resultForm.outcome === NOT_DONE_OUTCOME
-    ? t('CRM.TASKS.RESULT_DIALOG.NOT_DONE_LABEL')
-    : t('CRM.TASKS.RESULT_DIALOG.NOTE_LABEL')
 );
 
 const applicableTaskFieldDefinitions = computed(() =>
@@ -282,7 +218,8 @@ const canOpenTaskDialog = task =>
   canEditTask(task) ||
   (!task.archivedAt && taskStatusCategory(task) === 'done');
 
-const canSetTaskResult = task => props.canManageTasks && !task.archivedAt;
+const canSetTaskResult = task =>
+  props.canManageTasks && !task.archivedAt && Boolean(doneStatus.value);
 
 const sortedTasks = computed(() =>
   [...tasks.value].sort((left, right) => {
@@ -319,12 +256,7 @@ const isTaskFormDisabled = computed(
     !hasDeal.value ||
     (form.outcome === NOT_DONE_OUTCOME && !form.outcomeNote.trim())
 );
-const isResultDisabled = computed(
-  () =>
-    !pendingResult.value?.task ||
-    !resultForm.outcome ||
-    (resultForm.outcome === NOT_DONE_OUTCOME && !resultForm.note.trim())
-);
+
 const taskDialogTitle = computed(() => {
   if (isTaskReadOnly.value) return t('CRM.TASKS.VIEW_TITLE');
   if (isEditingTask.value) return t('CRM.TASKS.EDIT_TITLE');
@@ -521,52 +453,27 @@ const saveTask = async () => {
 const openTaskResultDialog = task => {
   if (!canSetTaskResult(task)) return;
 
-  const currentOutcome = taskResultValue(task) || task.outcome || '';
-  pendingResult.value = { task };
-  resultForm.outcome = currentOutcome;
-  resultForm.note = currentOutcome ? task.outcomeNote || '' : '';
-  resultDialogRef.value?.open();
+  resultDialogRef.value?.open(task);
 };
 
 const closeTaskResultDialog = () => {
   resultDialogRef.value?.close();
-  pendingResult.value = null;
-  resultForm.note = '';
-  resultForm.outcome = '';
 };
 
-const saveTaskResult = async () => {
-  if (isResultDisabled.value) return;
-
+const saveTaskResult = async ({ task, note }) => {
   const currentTask =
-    tasks.value.find(
-      item => Number(item.id) === Number(pendingResult.value.task.id)
-    ) || pendingResult.value.task;
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
 
   ui.isSaving = true;
 
   try {
-    let updatedTask;
-
-    if (doneStatus.value) {
-      const transitionResponse = await CrmTasksAPI.changeStatus(
-        currentTask.id,
-        {
-          lock_version: currentTask.lockVersion,
-          outcome: resultForm.outcome,
-          outcome_note: resultForm.note.trim(),
-          status_id: Number(doneStatus.value.id),
-        }
-      );
-      updatedTask = normalizePayload(transitionResponse.data);
-    } else {
-      const response = await CrmTasksAPI.update(currentTask.id, {
-        lock_version: currentTask.lockVersion,
-        outcome: resultForm.outcome,
-        outcome_note: resultForm.note.trim(),
-      });
-      updatedTask = normalizePayload(response.data);
-    }
+    const transitionResponse = await CrmTasksAPI.changeStatus(currentTask.id, {
+      lock_version: currentTask.lockVersion,
+      outcome: completionOutcomeForTask(currentTask),
+      outcome_note: note,
+      status_id: Number(doneStatus.value.id),
+    });
+    const updatedTask = normalizePayload(transitionResponse.data);
 
     upsertTask(updatedTask);
     emit('updated', updatedTask);
@@ -789,36 +696,12 @@ defineExpose({ openCreateTaskDialog, loadTasks });
       <div class="crm-task-dialog-grid">
         <SchedulingSelectField
           class="crm-task-dialog-control crm-task-dialog-select-control"
-          :label="$t('CRM.TASKS.FORM.STATUS')"
-          :model-value="form.statusId"
-          :disabled="isTaskReadOnly"
-          :options="
-            statuses.map(status => ({ label: status.name, value: status.id }))
-          "
-          dropdown-placement="auto"
-          @update:model-value="form.statusId = $event"
-        />
-        <SchedulingSelectField
-          class="crm-task-dialog-control crm-task-dialog-select-control"
           :label="$t('CRM.TASKS.FORM.ACTIVITY_TYPE')"
           :model-value="form.activityType"
           :disabled="isTaskReadOnly"
           :options="activityTypeOptions"
           dropdown-placement="auto"
           @update:model-value="updateFormActivityType"
-        />
-      </div>
-
-      <div class="crm-task-dialog-grid">
-        <SchedulingSelectField
-          class="crm-task-dialog-control crm-task-dialog-select-control"
-          :label="$t('CRM.TASKS.FORM.OUTCOME')"
-          :model-value="form.outcome"
-          :disabled="isTaskReadOnly"
-          :options="outcomeOptions"
-          :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
-          dropdown-placement="auto"
-          @update:model-value="form.outcome = $event"
         />
         <SchedulingSelectField
           class="crm-task-dialog-control crm-task-dialog-select-control"
@@ -852,28 +735,6 @@ defineExpose({ openCreateTaskDialog, loadTasks });
         />
       </div>
 
-      <div class="crm-task-dialog-grid">
-        <SchedulingSelectField
-          class="crm-task-dialog-control crm-task-dialog-select-control"
-          :label="$t('CRM.TASKS.FORM.PRIORITY')"
-          :model-value="form.priority"
-          :disabled="isTaskReadOnly"
-          :options="priorityOptions"
-          dropdown-placement="auto"
-          @update:model-value="form.priority = $event"
-        />
-        <SchedulingSelectField
-          v-if="teamOptions.length || form.teamId"
-          class="crm-task-dialog-control crm-task-dialog-select-control"
-          :label="$t('CRM.TASKS.FORM.TEAM')"
-          :model-value="form.teamId"
-          :disabled="isTaskReadOnly"
-          :options="teamOptions"
-          dropdown-placement="auto"
-          @update:model-value="form.teamId = $event"
-        />
-      </div>
-
       <TextArea
         class="crm-task-dialog-control crm-task-dialog-textarea-control"
         :label="$t('CRM.TASKS.FORM.DESCRIPTION')"
@@ -884,19 +745,6 @@ defineExpose({ openCreateTaskDialog, loadTasks });
         min-height="3rem"
         max-height="none"
         @update:model-value="form.description = $event"
-      />
-
-      <TextArea
-        v-if="form.outcome"
-        class="crm-task-dialog-control crm-task-dialog-textarea-control"
-        :label="$t('CRM.TASKS.FORM.OUTCOME_NOTE')"
-        :model-value="form.outcomeNote"
-        :disabled="isTaskReadOnly"
-        auto-height
-        custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1.5 hover:!border-n-slate-6"
-        min-height="3rem"
-        max-height="none"
-        @update:model-value="form.outcomeNote = $event"
       />
 
       <CrmCustomFieldsSection
@@ -912,40 +760,11 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     </div>
   </Dialog>
 
-  <Dialog
+  <CrmTaskCompletionDialog
     ref="resultDialogRef"
-    width="lg"
-    :title="resultDialogTitle"
-    :description="resultDialogDescription"
-    :confirm-button-label="$t('CRM.GENERAL.SAVE')"
-    :disable-confirm-button="isResultDisabled"
     :is-loading="ui.isSaving"
     @confirm="saveTaskResult"
-  >
-    <div class="crm-task-dialog-form">
-      <SchedulingSelectField
-        class="crm-task-dialog-control crm-task-dialog-select-control"
-        :label="$t('CRM.TASKS.FORM.OUTCOME')"
-        :model-value="resultForm.outcome"
-        :options="resultOutcomeOptions"
-        :placeholder="$t('CRM.TASKS.FORM.OUTCOME')"
-        dropdown-placement="auto"
-        @update:model-value="resultForm.outcome = $event"
-      />
-
-      <TextArea
-        v-if="resultForm.outcome"
-        class="crm-task-dialog-control crm-task-dialog-textarea-control"
-        :label="resultNoteLabel"
-        :model-value="resultForm.note"
-        auto-height
-        custom-text-area-wrapper-class="!rounded-md !border-n-weak !bg-n-alpha-black2 !px-2 !py-1.5 hover:!border-n-slate-6"
-        min-height="5rem"
-        max-height="none"
-        @update:model-value="resultForm.note = $event"
-      />
-    </div>
-  </Dialog>
+  />
 </template>
 
 <style scoped>

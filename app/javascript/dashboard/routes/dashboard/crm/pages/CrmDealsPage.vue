@@ -3532,7 +3532,6 @@ watch(
                       :deal="selectedDeal"
                       :statuses="taskStatuses"
                       :task-field-definitions="taskFieldDefinitions"
-                      :team-options="teamOptions"
                       @created="loadTimeline(selectedDeal.id)"
                       @updated="loadTimeline(selectedDeal.id)"
                     />

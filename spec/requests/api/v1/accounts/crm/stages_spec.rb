@@ -151,9 +151,9 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'name')).to eq('Closed Lost')
     expect(response.parsed_body.dig('payload', 'closing_reason_options')).to eq(['Too expensive', 'Competitor'])
-    expect(response.parsed_body.dig('payload', 'closing_reason_required')).to be(true)
+    expect(response.parsed_body.dig('payload', 'closing_reason_required')).to be(false)
     expect(stage.reload.closing_reason_options).to eq(['Too expensive', 'Competitor'])
-    expect(stage.closing_reason_required).to be(true)
+    expect(stage.closing_reason_required).to be(false)
   end
 
   it 'configures transition reasons on open stages' do

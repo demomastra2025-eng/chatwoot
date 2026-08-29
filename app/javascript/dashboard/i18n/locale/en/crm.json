@@ -277,6 +277,16 @@
         "EMPTY_COLUMN_DESCRIPTION": "New tasks moved to this status will appear here.",
         "EMPTY_STATUS_DESCRIPTION": "Add at least one task status so the board can render columns for your workflow.",
         "EMPTY_STATUS_TITLE": "No task statuses yet",
+        "OVERDUE_BADGE": "Overdue",
+        "TIME_BUCKETS": {
+          "LATER": "Later",
+          "NEXT_WEEK": "Next week",
+          "OVERDUE": "Overdue",
+          "THIS_WEEK": "This week",
+          "TODAY": "Today",
+          "TOMORROW": "Tomorrow",
+          "UNSCHEDULED": "No due date"
+        },
         "SORT": {
           "LABEL": "Sort by",
           "ORDER": "Order",
@@ -344,14 +354,25 @@
         "CANCELLED_PREFIX": "Not done",
         "CANCELLED_TITLE": "Task not done",
         "CHANGE_ACTION": "Result",
+        "CHANGE_TITLE": "Completion result",
         "COMPLETED_DESCRIPTION": "Briefly record what exactly was completed.",
         "COMPLETED_LABEL": "What was done?",
         "COMPLETED_PREFIX": "Done",
         "COMPLETED_TITLE": "Task done",
-        "DESCRIPTION": "Choose the task outcome from the list and add details if needed.",
+        "CONFIRM_WITHOUT_NOTE": "I completed the task without a comment",
+        "CONFIRM_WITHOUT_NOTE_HELP": "Check this when no result text is needed. This prevents accidental completion.",
+        "DESCRIPTION": "Describe the result or explicitly confirm completion without a comment.",
         "NOTE_LABEL": "Result comment",
         "NOT_DONE_LABEL": "Reason",
+        "OPTIONAL_NOTE_LABEL": "Completion result",
+        "OPTIONAL_NOTE_PLACEHOLDER": "What was done?",
         "TITLE": "Complete task"
+      },
+      "STATE_FILTER": {
+        "LABEL": "Task state",
+        "active": "Active",
+        "all": "All",
+        "completed": "Completed"
       },
       "ACTIVITY_TYPE": {
         "call": "Call",
@@ -508,6 +529,9 @@
           "CLOSING_REASONS_REQUIRED": "Require a reason",
           "CLOSING_REASONS_REQUIRED_ERROR": "Add at least one reason or turn off the requirement.",
           "CLOSING_REASONS_REQUIRED_HELP": "Deals cannot move to this stage without a selected reason.",
+          "LOSS_REASONS_ENABLED": "Ask for a loss reason",
+          "LOSS_REASONS_ENABLED_HELP": "When a deal moves to Lost, “No reason” is shown first, followed by the configured reasons.",
+          "LOSS_REASONS_SHORT": "Reasons",
           "TRANSITION_REASONS": "Transition reasons",
           "TRANSITION_REASONS_HELP": "These options are shown when a manager or Captain moves a deal into this open stage.",
           "TRANSITION_REASONS_PLACEHOLDER": "Example: Waiting for payment, Needs documents, Customer is thinking",
