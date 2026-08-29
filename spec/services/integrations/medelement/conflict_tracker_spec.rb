@@ -60,6 +60,20 @@ RSpec.describe Integrations::Medelement::ConflictTracker do
     expect(conflict.resolution_note).to include('successful sync phase')
   end
 
+  it 'resolves only conflicts belonging to processed entity keys for a bounded phase' do
+    tracker = described_class.new(sync_run: first_run)
+    tracker.record!(phase: 'contacts', entity_type: 'contact', conflict_type: 'phone_mismatch', entity_key: 'patient-1')
+    tracker.record!(phase: 'contacts', entity_type: 'contact', conflict_type: 'phone_mismatch', entity_key: 'patient-2')
+    first_run.update!(status: 'succeeded')
+    second_run = Integrations::Medelement::SyncRun.create!(account: account, hook: hook, trigger: 'retry', status: 'running')
+
+    described_class.new(sync_run: second_run).resolve_absent!('contacts', entity_keys: ['patient-1'])
+
+    conflicts = Integrations::Medelement::SyncConflict.order(:id)
+    expect(conflicts.first).to be_resolved
+    expect(conflicts.second).to be_open
+  end
+
   it 'preserves an administrator ignore decision when the conflict repeats' do
     tracker = described_class.new(sync_run: first_run)
     tracker.record!(

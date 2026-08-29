@@ -20,7 +20,7 @@ class MutexApplicationJob < ApplicationJob
     begin
       if lock_manager.lock(lock_key, timeout)
         log_attempt(lock_key, executions)
-        yield
+        yield -> { lock_manager.renew(lock_key, timeout) }
         # release the lock after the block has been executed
         lock_manager.unlock(lock_key)
       else

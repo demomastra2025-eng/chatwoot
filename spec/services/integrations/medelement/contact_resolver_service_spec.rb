@@ -443,6 +443,51 @@ RSpec.describe Integrations::Medelement::ContactResolverService do
     expect(resolved_contact.id).to eq(contact.id)
   end
 
+  it 'does not refresh a fresh explicitly linked contact' do
+    contact = create(
+      :contact,
+      account: account,
+      custom_attributes: {
+        'medelement_patient_code' => patient_code,
+        'medelement_last_synced_at' => Time.current.iso8601
+      }
+    )
+    allow(client).to receive(:get_patient)
+
+    resolved_contact = service.sync_patient!(patient_code, preferred_contact: contact)
+
+    expect(client).not_to have_received(:get_patient)
+    expect(resolved_contact.id).to eq(contact.id)
+  end
+
+  it 'preserves a Contact with a foreign owner and records an integrity conflict' do
+    foreign_owner = create(:user, account: create(:account))
+    contact = create(
+      :contact,
+      account: account,
+      name: 'Current name',
+      custom_attributes: { 'medelement_patient_code' => patient_code }
+    )
+    # rubocop:disable Rails/SkipsModelValidations
+    contact.update_column(:owner_id, foreign_owner.id)
+    # rubocop:enable Rails/SkipsModelValidations
+    conflict_tracker = instance_double(Integrations::Medelement::ConflictTracker, record!: nil)
+    scoped_service = described_class.new(
+      account: account,
+      client: client,
+      conflict_tracker: conflict_tracker,
+      organization_id: 'company-1'
+    )
+    allow(client).to receive(:get_patient).with(patient_code: patient_code).and_return(patient_payload)
+
+    resolved_contact = scoped_service.sync_patient!(patient_code, preferred_contact: contact)
+
+    expect(resolved_contact.reload).to have_attributes(name: 'Current name', owner_id: foreign_owner.id)
+    expect(conflict_tracker).to have_received(:record!).with(
+      hash_including(conflict_type: 'foreign_contact_owner', entity_key: patient_code, severity: 'error')
+    )
+  end
+
   it 'preserves the Contact and records a conflict when provider read models disagree' do
     contact = create(
       :contact,

@@ -19,8 +19,13 @@ class Integrations::Medelement::ConflictTracker
     retry
   end
 
-  def resolve_absent!(phase)
-    conflict_scope.open.where(phase: phase).where.not(last_sync_run_id: sync_run.id).find_each(&:resolve_automatically!)
+  def resolve_absent!(phase, entity_keys: nil)
+    scope = conflict_scope.open.where(phase: phase).where.not(last_sync_run_id: sync_run.id)
+    if entity_keys
+      entity_key_digests = entity_keys.map { |entity_key| Integrations::Medelement::ErrorSanitizer.digest(entity_key) }
+      scope = scope.where(entity_key_digest: entity_key_digests)
+    end
+    scope.find_each(&:resolve_automatically!)
   end
 
   private

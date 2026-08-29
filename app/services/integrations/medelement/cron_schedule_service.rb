@@ -3,9 +3,10 @@ require 'sidekiq/cron/job'
 class Integrations::Medelement::CronScheduleService
   JOB_NAME_PREFIX = 'integrations_medelement_hook'.freeze
   LEGACY_DISPATCH_JOB_NAME = 'integrations_medelement_dispatch_job'.freeze
-  OPERATIONAL_PHASES = %w[specialists contacts receptions].freeze
+  OPERATIONAL_PHASES = %w[specialists].freeze
   CATALOG_PHASES = %w[setup services].freeze
   REALTIME_PHASES = %w[receptions].freeze
+  CONTACT_PHASES = %w[contacts].freeze
 
   def self.sync_all!
     return true unless cron_enabled?
@@ -125,6 +126,7 @@ class Integrations::Medelement::CronScheduleService
     [
       { key: 'realtime', phases: REALTIME_PHASES, cron: configuration.receptions_sync_cron_expression },
       { key: 'operational', phases: OPERATIONAL_PHASES, cron: configuration.sync_cron_expression },
+      { key: 'contacts', phases: CONTACT_PHASES, cron: configuration.contacts_sync_cron_expression },
       { key: 'catalog', phases: CATALOG_PHASES, cron: configuration.catalog_sync_cron_expression }
     ]
   end
@@ -132,11 +134,11 @@ class Integrations::Medelement::CronScheduleService
   def job_attributes(schedule)
     {
       name: job_name(schedule.fetch(:key)),
-      klass: 'Integrations::Medelement::SyncJob',
+      klass: 'Integrations::Medelement::ScheduledSyncJob',
       cron: schedule.fetch(:cron),
-      args: [hook.id, nil, schedule.fetch(:phases)],
+      args: [hook.id, schedule.fetch(:phases)],
       active_job: true,
-      queue: 'medelement_sync',
+      queue: 'scheduled_jobs',
       status: hook.enabled? ? 'enabled' : 'disabled',
       description: "Medelement #{schedule.fetch(:key)} sync for account #{hook.account_id}, hook #{hook.id}"
     }

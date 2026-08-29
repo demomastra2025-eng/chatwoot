@@ -1,6 +1,6 @@
 class Integrations::Medelement::SyncJob < MutexApplicationJob
   queue_as :medelement_sync
-  LOCK_TIMEOUT = 6.hours
+  LOCK_TIMEOUT = 30.minutes
   API_RETRY_BASE_SECONDS = 30
   API_RETRY_MAX_SECONDS = 5.minutes.to_i
   API_RETRY_WAIT = lambda do |executions|
@@ -11,6 +11,8 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
 
   retry_on ScheduledSyncBusyError, wait: 5.minutes, attempts: 24
   retry_on LockAcquisitionError, wait: 30.seconds, attempts: 6
+  retry_on Integrations::Medelement::SyncRunHeartbeat::LockLeaseLostError, wait: 30.seconds, attempts: 6
+  retry_on ActiveJob::EnqueueError, wait: 30.seconds, attempts: 3
   retry_on Integrations::Medelement::Client::ApiError, wait: API_RETRY_WAIT, attempts: 6
   retry_on Integrations::Medelement::ReceptionsSyncService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
   retry_on Integrations::Medelement::ServicesSyncService::IncompleteSnapshotError, wait: 5.minutes, attempts: 3
@@ -21,40 +23,71 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
     return reroute_legacy_queue(hook_id, sync_run_id, scheduled_phases) if queue_name != self.class.queue_name
 
     hook = Integrations::Hook.find(hook_id)
-    sync_run = find_or_create_sync_run(hook, sync_run_id, scheduled_phases)
-    return unless sync_run
-
-    with_lock(lock_key(hook.account_id), LOCK_TIMEOUT) do
-      execute_sync(hook, sync_run)
-    end
+    execute_and_continue(hook, sync_run_id, scheduled_phases)
   rescue StandardError => e
-    if retry_will_be_enqueued?(e)
-      sync_run&.retry!(e)
-    else
-      sync_run&.fail!(e) unless sync_run&.failed?
-    end
+    handle_sync_error(hook, @sync_run, e)
     raise
   end
 
   private
 
+  def execute_and_continue(hook, sync_run_id, scheduled_phases)
+    @sync_run = find_or_create_sync_run(hook, sync_run_id, scheduled_phases)
+    return unless @sync_run
+
+    with_lock(lock_key(hook.account_id), LOCK_TIMEOUT) do |renew_lock|
+      execute_sync(hook, @sync_run, renew_lock: renew_lock)
+    end
+    enqueue_pending_sync(hook, @sync_run)
+    @sync_run
+  end
+
+  def handle_sync_error(hook, sync_run, error)
+    return if sync_run_terminal?(sync_run)
+
+    if retry_will_be_enqueued?(error)
+      sync_run&.retry!(error)
+      return
+    end
+
+    sync_run&.fail!(error) unless sync_run&.failed?
+    enqueue_pending_sync(hook, sync_run) if hook && sync_run
+  end
+
   def reroute_legacy_queue(hook_id, sync_run_id, scheduled_phases)
     rerouted_job = self.class.set(queue: self.class.queue_name).perform_later(hook_id, sync_run_id, scheduled_phases)
-    return true if rerouted_job
+    return true if rerouted_job&.successfully_enqueued?
 
     raise ActiveJob::EnqueueError, 'Failed to reroute legacy Medelement sync job'
   end
 
-  def execute_sync(hook, sync_run)
+  def execute_sync(hook, sync_run, renew_lock: nil)
     hook.reload
-    sync_run.reload
-    return if sync_run.terminal?
+    phases = Integrations::Medelement::HookRuntimeLock.with_hook(account_id: hook.account_id, hook_id: hook.id) do
+      sync_run.reload
+      next if sync_run.terminal?
 
-    sync_run.start!
-    Integrations::Medelement::SyncCoordinatorService.new(hook: hook).perform(
-      sync_run: sync_run,
-      phases: sync_run.remaining_phases
-    )
+      sync_run.start!
+      sync_run.remaining_phases
+    end
+    return unless phases
+
+    Integrations::Medelement::SyncRunHeartbeat.new(sync_run, renew_lock: renew_lock).around do
+      Integrations::Medelement::SyncCoordinatorService.new(hook: hook).perform(
+        sync_run: sync_run,
+        phases: phases
+      )
+    end
+  end
+
+  def enqueue_pending_sync(hook, sync_run)
+    Integrations::Medelement::ScheduledSyncLauncher.enqueue_pending!(hook: hook, completed_run: sync_run)
+  end
+
+  def sync_run_terminal?(sync_run)
+    sync_run&.reload&.terminal?
+  rescue ActiveRecord::RecordNotFound
+    true
   end
 
   def find_or_create_sync_run(hook, sync_run_id, scheduled_phases)
@@ -108,12 +141,7 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
   end
 
   def retryable_error?(error)
-    error.is_a?(ScheduledSyncBusyError) ||
-      error.is_a?(LockAcquisitionError) ||
-      error.is_a?(Integrations::Medelement::Client::ApiError) ||
-      error.is_a?(Integrations::Medelement::ReceptionsSyncService::IncompleteSnapshotError) ||
-      error.is_a?(Integrations::Medelement::ServicesSyncService::IncompleteSnapshotError) ||
-      error.is_a?(Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError)
+    retry_error_classes.any? { |error_class| error.is_a?(error_class) }
   end
 
   def retry_will_be_enqueued?(error)
@@ -129,19 +157,27 @@ class Integrations::Medelement::SyncJob < MutexApplicationJob
   end
 
   def retry_error_class(error)
+    retry_error_classes.find { |error_class| error.is_a?(error_class) }
+  end
+
+  def retry_error_classes
     [
       ScheduledSyncBusyError,
       LockAcquisitionError,
+      Integrations::Medelement::SyncRunHeartbeat::LockLeaseLostError,
+      ActiveJob::EnqueueError,
       Integrations::Medelement::Client::ApiError,
       Integrations::Medelement::ReceptionsSyncService::IncompleteSnapshotError,
       Integrations::Medelement::ServicesSyncService::IncompleteSnapshotError,
       Integrations::Medelement::SpecialistsSnapshotService::IncompleteSnapshotError
-    ].find { |error_class| error.is_a?(error_class) }
+    ]
   end
 
   def retry_attempts_for(error)
     return 24 if error.is_a?(ScheduledSyncBusyError)
     return 6 if error.is_a?(LockAcquisitionError)
+    return 6 if error.is_a?(Integrations::Medelement::SyncRunHeartbeat::LockLeaseLostError)
+    return 3 if error.is_a?(ActiveJob::EnqueueError)
     return 6 if error.is_a?(Integrations::Medelement::Client::ApiError)
 
     3

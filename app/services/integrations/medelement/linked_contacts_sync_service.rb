@@ -1,5 +1,7 @@
 class Integrations::Medelement::LinkedContactsSyncService
   PATIENT_CODE_KEY = 'medelement_patient_code'.freeze
+  BATCH_CURSOR_KEY = 'medelement_batch_considered_at'.freeze
+  BATCH_SIZE = 100
 
   def initialize(account:, client:, conflict_tracker: nil, organization_id: nil)
     @account = account
@@ -14,11 +16,21 @@ class Integrations::Medelement::LinkedContactsSyncService
   end
 
   def perform
-    result = { linked_count: linked_contacts.count, synced_count: 0, skipped_count: 0 }
+    linked_count = linked_contacts.count
+    contacts = linked_contacts
+               .order(Arel.sql("NULLIF(custom_attributes ->> '#{BATCH_CURSOR_KEY}', '') ASC NULLS FIRST, id ASC"))
+               .limit(BATCH_SIZE)
+    selected_count = contacts.size
+    result = {
+      linked_count: linked_count,
+      selected_count: selected_count,
+      deferred_count: linked_count - selected_count,
+      synced_count: 0,
+      skipped_count: 0
+    }
 
-    linked_contacts.find_each(batch_size: 100) do |contact|
-      sync_contact(contact, result)
-    end
+    processed_entity_keys = contacts.map { |contact| process_contact(contact, result) }
+    resolve_processed_conflicts!(processed_entity_keys)
 
     result
   end
@@ -26,6 +38,13 @@ class Integrations::Medelement::LinkedContactsSyncService
   private
 
   attr_reader :account, :client, :conflict_tracker, :resolver
+
+  def process_contact(contact, result)
+    entity_key = conflict_entity_key(contact)
+    sync_contact(contact, result)
+    mark_batch_considered!(contact)
+    entity_key
+  end
 
   def linked_contacts
     account.contacts.where("custom_attributes ->> '#{PATIENT_CODE_KEY}' IS NOT NULL")
@@ -44,6 +63,25 @@ class Integrations::Medelement::LinkedContactsSyncService
     record_patient_not_found(contact, patient_code, result, reason)
   rescue ActiveRecord::RecordInvalid, Scheduling::Error => e
     record_update_rejected(contact, patient_code, result, e)
+  end
+
+  def mark_batch_considered!(contact)
+    contact.with_lock do
+      contact.reload
+      attributes = contact.custom_attributes.merge(BATCH_CURSOR_KEY => Time.current.iso8601)
+      # This isolated scheduler cursor must advance even when legacy contact validations are not repairable by this sync.
+      # rubocop:disable Rails/SkipsModelValidations
+      contact.update_column(:custom_attributes, attributes)
+      # rubocop:enable Rails/SkipsModelValidations
+    end
+  end
+
+  def conflict_entity_key(contact)
+    contact.custom_attributes[PATIENT_CODE_KEY].to_s.presence || "contact:#{contact.id}"
+  end
+
+  def resolve_processed_conflicts!(entity_keys)
+    conflict_tracker&.resolve_absent!('contacts', entity_keys: entity_keys)
   end
 
   def record_patient_not_found(contact, patient_code, result, reason)

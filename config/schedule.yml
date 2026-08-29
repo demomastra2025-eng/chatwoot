@@ -20,6 +20,12 @@ medelement_provider_command_dispatcher_job:
   class: 'Integrations::Medelement::ProviderCommandDispatcherJob'
   queue: medelement_provider_commands
 
+# fails orphaned read-sync runs and launches one coalesced continuation
+medelement_stale_sync_run_recovery_job:
+  cron: '*/5 * * * *'
+  class: 'Integrations::Medelement::StaleSyncRunRecoveryJob'
+  queue: scheduled_jobs
+
 # executed every minute to keep Weixin Personal gateway pollers synced after gateway restarts
 weixin_sync_channels_job:
   cron: '*/1 * * * *'

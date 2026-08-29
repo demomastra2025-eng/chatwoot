@@ -16,7 +16,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
   let(:job) { described_class.new }
 
   before do
-    allow(job).to receive(:with_lock).and_yield
+    allow(job).to receive(:with_lock).and_yield(-> { true })
     allow(Integrations::Medelement::SyncCoordinatorService).to receive(:new).with(hook: hook).and_return(coordinator)
     allow(coordinator).to receive(:perform) do |sync_run:, phases:|
       phases.each { |phase| sync_run.complete_phase!(phase, imported_count: 1, skipped_count: 0) }
@@ -78,7 +78,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     legacy_job = described_class.new
     legacy_job.queue_name = 'medium'
     configured_job = instance_double(ActiveJob::ConfiguredJob)
-    rerouted_job = instance_double(described_class)
+    rerouted_job = instance_double(described_class, successfully_enqueued?: true)
     allow(described_class).to receive(:set).with(queue: 'medelement_sync').and_return(configured_job)
     allow(configured_job).to receive(:perform_later).and_return(rerouted_job)
 
@@ -93,7 +93,8 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     legacy_job.queue_name = 'medium'
     configured_job = instance_double(ActiveJob::ConfiguredJob)
     allow(described_class).to receive(:set).with(queue: 'medelement_sync').and_return(configured_job)
-    allow(configured_job).to receive(:perform_later).and_return(false)
+    rerouted_job = instance_double(described_class, successfully_enqueued?: false)
+    allow(configured_job).to receive(:perform_later).and_return(rerouted_job)
 
     expect { legacy_job.perform(hook.id, run.id, ['services']) }
       .to raise_error(ActiveJob::EnqueueError, 'Failed to reroute legacy Medelement sync job')
@@ -108,7 +109,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     expect(coordinator).to have_received(:perform).with(sync_run: run, phases: ['services'])
     expect(job).to have_received(:with_lock).with(
       format(Redis::Alfred::MEDELEMENT_SYNC_MUTEX, account_id: account.id),
-      6.hours
+      30.minutes
     )
   end
 
@@ -164,6 +165,17 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
 
     expect(run.reload).to have_attributes(status: 'retrying', completed_at: nil)
     expect(Integrations::Medelement::SyncRun.where(hook: hook)).to contain_exactly(run)
+  end
+
+  it 'retries the durable run after losing the owner lock lease' do
+    error = Integrations::Medelement::SyncRunHeartbeat::LockLeaseLostError.new('lease lost')
+    allow(coordinator).to receive(:perform).and_raise(error)
+
+    expect do
+      described_class.perform_now(hook.id, run.id)
+    end.to have_enqueued_job(described_class).with(hook.id, run.id)
+
+    expect(run.reload).to have_attributes(status: 'retrying', completed_at: nil)
   end
 
   it 'preserves scheduled phases when ActiveJob retries a collision' do
@@ -242,7 +254,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
       [MutexApplicationJob::LockAcquisitionError].to_s => 1,
       [Integrations::Medelement::Client::ApiError].to_s => 4
     }
-    allow(retry_job).to receive(:with_lock).and_yield
+    allow(retry_job).to receive(:with_lock).and_yield(-> { true })
     allow(coordinator).to receive(:perform).and_raise(error)
 
     expect { retry_job.perform_now }.to have_enqueued_job(described_class).with(hook.id, run.id)
@@ -255,7 +267,7 @@ RSpec.describe Integrations::Medelement::SyncJob, type: :job do
     retry_job = described_class.new(hook.id, run.id)
     retry_job.executions = 6
     retry_job.exception_executions = { [Integrations::Medelement::Client::ApiError].to_s => 5 }
-    allow(retry_job).to receive(:with_lock).and_yield
+    allow(retry_job).to receive(:with_lock).and_yield(-> { true })
     allow(coordinator).to receive(:perform).and_raise(error)
 
     expect { retry_job.perform_now }.to raise_error(error)

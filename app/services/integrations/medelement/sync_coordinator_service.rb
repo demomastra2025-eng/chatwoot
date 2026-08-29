@@ -40,6 +40,8 @@ class Integrations::Medelement::SyncCoordinatorService
     return sync_run&.skip_phase!(phase, 'disabled_by_configuration') if result == :disabled
 
     sync_run&.complete_phase!(phase, result || {})
+    return if phase == 'contacts'
+
     conflict_tracker&.resolve_absent!(phase)
   end
 

@@ -4,6 +4,37 @@ RSpec.describe Integrations::Medelement::SyncRun, type: :model do
   let(:account) { create(:account) }
   let(:hook) { create(:integrations_hook, account: account) }
 
+  it 'refreshes the recovery lease only while the run is active' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'scheduled', status: 'running')
+    run.update!(updated_at: 1.hour.ago)
+
+    expect(run.heartbeat!).to be(true)
+    expect(run.reload.updated_at).to be > 1.minute.ago
+
+    run.fail!(StandardError.new('stopped'))
+    failed_at = run.updated_at
+    expect(run.heartbeat!).to be(false)
+    expect(run.reload.updated_at).to eq(failed_at)
+  end
+
+  it 'does not overwrite a terminal run with a late failure' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'scheduled', status: 'running')
+    run.finish!
+
+    run.fail!(StandardError.new('late worker failure'))
+
+    expect(run.reload).to be_succeeded
+  end
+
+  it 'does not resurrect a terminal run with a late retry' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'scheduled', status: 'running')
+    run.finish!
+
+    run.retry!(StandardError.new('late retryable failure'))
+
+    expect(run.reload).to be_succeeded
+  end
+
   it 'records a successful phase lifecycle and summary' do
     run = described_class.create!(account: account, hook: hook, trigger: 'manual')
 
