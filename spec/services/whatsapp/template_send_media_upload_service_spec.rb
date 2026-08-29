@@ -29,18 +29,21 @@ RSpec.describe Whatsapp::TemplateSendMediaUploadService do
     allow(Whatsapp::TemplateMediaValidator).to receive(:validate!).and_return('image/jpeg')
   end
 
-  it 'uploads the retained file to the phone media endpoint and caches its Meta id' do
-    response = instance_double(HTTParty::Response, success?: true, parsed_response: { 'id' => 'meta-media-42' })
-    expect(HTTParty).to receive(:post).once do |url, options|
-      expect(url).to eq("https://graph.facebook.com/v22.0/#{channel.provider_config['phone_number_id']}/media")
-      expect(options[:body]).to include(messaging_product: 'whatsapp', type: 'image/jpeg')
-      response
-    end
+  it 'uploads the retained file to the phone media endpoint and caches its Meta id', :aggregate_failures do
+    endpoint = "https://graph.facebook.com/v22.0/#{channel.provider_config['phone_number_id']}/media"
+    captured_request = nil
+    stub_request(:post, endpoint)
+      .with { |request| captured_request = request }
+      .to_return(status: 200, body: { id: 'meta-media-42' }.to_json, headers: { 'Content-Type' => 'application/json' })
 
     expect(service.call(media_type: 'image', source: source)).to eq('meta-media-42')
     expect(service.call(media_type: 'image', source: source)).to eq('meta-media-42')
     expect(source.reload).to have_attributes(meta_media_id: 'meta-media-42')
     expect(source.meta_media_uploaded_at).to be_present
+    expect(captured_request.headers['Content-Type']).to start_with('multipart/form-data; boundary=')
+    expect(captured_request.body).to include("name=\"messaging_product\"\r\n\r\nwhatsapp\r\n")
+    expect(captured_request.body).to include("name=\"type\"\r\n\r\nimage/jpeg\r\n")
+    expect(captured_request.body).to match(%r{name="file"; filename="[^"]+"\r\nContent-Type: image/jpeg\r\n\r\nimage-bytes\r\n})
   end
 
   it 'rejects a retained source that belongs to another channel' do

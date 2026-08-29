@@ -1177,6 +1177,58 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(message.additional_attributes.dig('delivery_policy', 'delivery_mode')).to eq('channel_template')
     end
 
+    it 'creates an official WhatsApp carousel template message from a communication thread' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      carousel_cards = [
+        { 'components' => [{ 'type' => 'HEADER', 'format' => 'IMAGE' }, { 'type' => 'BODY', 'text' => 'Карточка {{1}}' }] },
+        { 'components' => [{ 'type' => 'HEADER', 'format' => 'IMAGE' }, { 'type' => 'BODY', 'text' => 'Карточка {{1}}' }] }
+      ]
+      whatsapp_channel.update!(
+        message_templates: [{
+          'name' => 'carousel_test',
+          'status' => 'APPROVED',
+          'category' => 'MARKETING',
+          'language' => 'ru',
+          'components' => [{ 'type' => 'CAROUSEL', 'cards' => carousel_cards }]
+        }]
+      )
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = conversation.reload.communication_thread
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+             params: {
+               content: 'Карусель товаров',
+               conversation_id: conversation.display_id,
+               content_kind: 'channel_template',
+               template_params: {
+                 name: 'carousel_test',
+                 language: 'ru',
+                 processed_params: {
+                   carousel: {
+                     cards: [
+                       { card_index: 0, header: { media_type: 'image', has_template_media: true }, body: { '1' => 'Один' }, buttons: [] },
+                       { card_index: 1, header: { media_type: 'image', has_template_media: true }, body: { '1' => 'Два' }, buttons: [] }
+                     ]
+                   }
+                 }
+               }
+             },
+             headers: headers,
+             as: :json
+      end.to change { conversation.messages.outgoing.count }.by(1)
+
+      expect(response).to have_http_status(:success)
+      message = conversation.messages.outgoing.last
+      expect(message.additional_attributes.dig('template_params', 'name')).to eq('carousel_test')
+      expect(message.additional_attributes.dig('delivery_policy', 'template', 'components', 0, 'type')).to eq('CAROUSEL')
+    end
+
     it 'rejects public text delivery through voice call channels' do
       contact = create(:contact, phone_number: '+15550001234', account: account)
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox

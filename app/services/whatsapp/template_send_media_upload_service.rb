@@ -106,6 +106,7 @@ class Whatsapp::TemplateSendMediaUploadService
       headers: { 'Authorization' => "Bearer #{access_token}" },
       query: Whatsapp::FacebookApiClient.appsecret_proof_query(access_token),
       multipart: true,
+      stream_body: false,
       body: {
         messaging_product: 'whatsapp',
         type: content_type,
