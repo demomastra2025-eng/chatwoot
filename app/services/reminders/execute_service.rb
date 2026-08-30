@@ -180,6 +180,7 @@ class Reminders::ExecuteService
   def fail_reminder!(message)
     return reminder.fail!(message) unless reminder.persisted?
 
+    reminder.reload if reminder.has_changes_to_save?
     reminder.with_lock do
       reminder.reload
       next unless reminder.processing?

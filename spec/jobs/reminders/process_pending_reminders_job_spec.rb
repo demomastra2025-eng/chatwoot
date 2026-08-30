@@ -29,5 +29,22 @@ RSpec.describe Reminders::ProcessPendingRemindersJob do
 
       expect(reminder.reload).to be_pending
     end
+
+    it 'quarantines an invalid due touch without blocking valid touches' do
+      invalid_reminder = create(:reminder, scheduled_at: 5.minutes.ago, status: :pending)
+      invalid_reminder.target_contact = create(:contact, account: invalid_reminder.account)
+      invalid_reminder.save!(validate: false)
+      valid_reminder = create(:reminder, scheduled_at: 5.minutes.ago, status: :pending)
+
+      expect do
+        described_class.perform_now
+      end.to have_enqueued_job(Reminders::ExecuteReminderJob)
+        .with(valid_reminder.id, kind_of(String))
+        .on_queue('reminders')
+
+      expect(valid_reminder.reload).to be_processing
+      expect(invalid_reminder.reload).to be_failed
+      expect(invalid_reminder.last_error).to include('Target contact must match the other target associations')
+    end
   end
 end

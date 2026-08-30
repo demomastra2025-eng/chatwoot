@@ -13,6 +13,24 @@ RSpec.describe WhatsappWeb::ContactSyncService do
 
   let(:channel) { create(:channel_whatsapp_web) }
 
+  def create_reminder_for_contact_inbox(contact_inbox)
+    conversation = create(
+      :conversation, account: contact_inbox.contact.account, inbox: contact_inbox.inbox,
+                     contact: contact_inbox.contact, contact_inbox: contact_inbox
+    )
+    create(:reminder, account: contact_inbox.contact.account, touch_conversation: conversation)
+  end
+
+  def expect_reminder_reassigned(reminder, target_contact, original_fingerprint, contact_inbox:)
+    expect(contact_inbox.reload.contact).to eq(target_contact)
+    reminder.reload
+    expect(reminder.target_contact).to eq(target_contact)
+    expect(reminder.fingerprint).not_to eq(original_fingerprint)
+    duplicate_reminder = reminder.dup
+    expect(duplicate_reminder).not_to be_valid
+    expect(duplicate_reminder.errors[:base]).to include('An open touch with the same content already exists')
+  end
+
   it 'imports personal whatsapp jids as contacts' do
     allow(Avatar::AvatarFromUrlJob).to receive(:perform_later)
 
@@ -684,6 +702,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
         pushName: 'Alice'
       }
     ).perform
+    original_reminder_fingerprint = (reminder = create_reminder_for_contact_inbox(provisional_contact_inbox)).fingerprint
 
     expect(Avatar::AvatarFromUrlJob).not_to receive(:perform_later)
 
@@ -699,7 +718,7 @@ RSpec.describe WhatsappWeb::ContactSyncService do
 
     expect(resolved_contact_inbox).to be_present
     expect(resolved_contact_inbox.contact_id).to eq(shared_contact.id)
-    expect(resolved_contact_inbox.reload.contact).to eq(shared_contact)
+    expect_reminder_reassigned(reminder, shared_contact, original_reminder_fingerprint, contact_inbox: resolved_contact_inbox)
     expect(Contact.find_by(id: provisional_contact_inbox.contact_id)).to be_nil
     expect(channel.inbox.contact_inboxes.find_by(source_id: '249262822686958@lid')&.contact_id).to eq(shared_contact.id)
     expect(channel.inbox.contact_inboxes.find_by(source_id: '77077064008')&.contact_id).to eq(shared_contact.id)

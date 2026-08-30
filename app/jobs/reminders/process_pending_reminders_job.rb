@@ -14,7 +14,34 @@ class Reminders::ProcessPendingRemindersJob < ApplicationJob
   def claim_due_reminders
     Reminder.transaction do
       reminders = Reminder.pending.due.lock('FOR UPDATE SKIP LOCKED').limit(BATCH_SIZE).to_a
-      reminders.map { |reminder| [reminder, reminder.mark_processing!] }
+      reminders.filter_map { |reminder| claim_reminder(reminder) }
     end
+  end
+
+  def claim_reminder(reminder)
+    [reminder, reminder.mark_processing!]
+  rescue ActiveRecord::RecordInvalid => e
+    quarantine_invalid_reminder!(reminder, e)
+    nil
+  end
+
+  def quarantine_invalid_reminder!(reminder, error)
+    validation_message = error.record.errors.full_messages.to_sentence
+    reminder.reload
+    # The record is already invalid, so normal validation cannot persist its terminal quarantine state.
+    # rubocop:disable Rails/SkipsModelValidations
+    reminder.update_columns(
+      status: Reminder.statuses.fetch('failed'),
+      processing_started_at: nil,
+      last_error: validation_message,
+      attempts_count: reminder.attempts_count.to_i + 1,
+      metadata: reminder.metadata.to_h.except(*Reminder::TRANSIENT_METADATA_KEYS),
+      updated_at: Time.current
+    )
+    # rubocop:enable Rails/SkipsModelValidations
+    Rails.logger.error(
+      "[REMINDERS] quarantined invalid reminder id=#{reminder.id} " \
+      "account_id=#{reminder.account_id} errors=#{validation_message}"
+    )
   end
 end
