@@ -9,9 +9,14 @@ class Whatsapp::AuthenticatedMediaWebhookDispatch
   ]
 
   def perform
-    verified = route.with_verified_route { prepare_or_dispatch }
-    return false unless verified
-    return true if prepared_attachment.blank?
+    @runtime_snapshot = route.verified_runtime_snapshot
+    return false if runtime_snapshot == false
+
+    @prepared_attachment = prepare_attachment
+    if prepared_attachment.blank?
+      dispatch_with_verified_route(nil)
+      return true
+    end
 
     download_and_dispatch
   ensure
@@ -31,15 +36,6 @@ class Whatsapp::AuthenticatedMediaWebhookDispatch
     )
   end
 
-  def prepare_or_dispatch
-    @prepared_attachment = prepare_attachment
-    if prepared_attachment.present?
-      @runtime_snapshot = route.runtime_snapshot
-    else
-      dispatch_action.call(nil)
-    end
-  end
-
   def prepare_attachment
     return unless channel&.provider == 'whatsapp_cloud'
 
@@ -52,11 +48,15 @@ class Whatsapp::AuthenticatedMediaWebhookDispatch
 
   def download_and_dispatch
     prepared_attachment.download!
-    dispatched = route.with_verified_route(expected_runtime_snapshot: runtime_snapshot) do
-      dispatch_action.call(prepared_attachment)
-    end
-    raise Whatsapp::AuthenticatedWebhookRoute::RuntimeIdentityChangedError unless dispatched
+    dispatch_with_verified_route(prepared_attachment)
 
     true
+  end
+
+  def dispatch_with_verified_route(attachment)
+    dispatched = route.with_verified_route(expected_runtime_snapshot: runtime_snapshot) do
+      dispatch_action.call(attachment)
+    end
+    raise Whatsapp::AuthenticatedWebhookRoute::RuntimeIdentityChangedError unless dispatched
   end
 end

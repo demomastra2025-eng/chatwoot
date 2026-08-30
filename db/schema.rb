@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_28_062000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_30_140000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1070,6 +1070,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_28_062000) do
     t.integer "unread_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "session_started_at"
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
     t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"

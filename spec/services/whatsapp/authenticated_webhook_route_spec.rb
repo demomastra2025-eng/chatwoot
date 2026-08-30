@@ -84,6 +84,17 @@ RSpec.describe Whatsapp::AuthenticatedWebhookRoute do
     expect(route.runtime_snapshot.to_s).not_to include('secret-token')
   end
 
+  it 'returns a frozen verified runtime snapshot without exposing the lock block to callers' do
+    route = route_for('messages')
+    snapshot = { channel_id: 7, credential_fingerprint: 'fingerprint' }.with_indifferent_access
+    allow(route).to receive(:runtime_snapshot).and_return(snapshot)
+
+    result = route.verified_runtime_snapshot
+
+    expect(result).to eq(snapshot)
+    expect(result).to be_frozen
+  end
+
   def route_for(*fields)
     route = described_class.new(
       channel: nil,

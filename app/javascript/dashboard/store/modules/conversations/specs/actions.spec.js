@@ -127,6 +127,36 @@ describe('conversation actions', () => {
       );
       expect(dispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
     });
+
+    it('coalesces concurrent read requests for the same thread', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      let resolveRequest;
+      const request = new Promise(resolve => {
+        resolveRequest = resolve;
+      });
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockReturnValue(
+        request
+      );
+
+      const firstCall = actions.markCommunicationThreadRead(
+        { commit, dispatch },
+        { id: 7 }
+      );
+      const secondCall = actions.markCommunicationThreadRead(
+        { commit, dispatch },
+        { id: 7 }
+      );
+
+      expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledTimes(1);
+      resolveRequest({
+        data: { id: 7, agent_last_seen_at: 1712345678, unread_count: 0 },
+      });
+      await Promise.all([firstCall, secondCall]);
+
+      expect(commit).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('#markMessagesUnread', () => {

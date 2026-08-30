@@ -34,6 +34,14 @@ class Whatsapp::AuthenticatedWebhookRoute
     end
   end
 
+  def verified_runtime_snapshot(expected_runtime_snapshot: nil)
+    verified_snapshot = nil
+    verified = with_verified_route(expected_runtime_snapshot: expected_runtime_snapshot) do
+      verified_snapshot = runtime_snapshot.deep_dup.freeze
+    end
+    verified ? verified_snapshot : false
+  end
+
   def runtime_snapshot
     return {} if @channel.blank?
 

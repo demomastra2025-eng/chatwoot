@@ -398,6 +398,33 @@ RSpec.describe Message do
       expect(message.conversation.open?).to be true
     end
 
+    it 'starts a new communication thread session before reopening a resolved thread' do
+      account = conversation.account
+      account.enable_features!('communication_threads')
+      previous_message = create(
+        :message,
+        account: account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing,
+        created_at: 2.days.ago
+      )
+      conversation.resolved!
+      communication_thread = conversation.reload.refresh_communication_thread!
+
+      message.save!
+
+      expect(communication_thread.reload.session_started_at).to be_within(0.001.seconds).of(message.created_at)
+      administrator = create(:user, :administrator, account: account)
+      allow(administrator).to receive(:account).and_return(account)
+      visible_messages = CommunicationThreadMessageFinder.new(
+        communication_thread: communication_thread,
+        current_user: administrator
+      ).perform
+      expect(visible_messages).to include(message)
+      expect(visible_messages).not_to include(previous_message)
+    end
+
     it 'reopens snoozed conversation when the message is from a contact' do
       conversation.snoozed!
       message.save!

@@ -25,6 +25,45 @@ const shouldUseCommunicationThreadApi = (state, { id, conversationType }) => {
   return Boolean(getCommunicationThreadById(state, id));
 };
 
+const pendingCommunicationThreadReadRequests = new Map();
+
+const executeCommunicationThreadRead = async ({ commit, dispatch }, data) => {
+  try {
+    const { data: communicationThread } =
+      await CommunicationThreadApi.markMessageRead(data);
+    const lastSeen =
+      communicationThread.agent_last_seen_at || Math.floor(Date.now() / 1000);
+    const unreadPayload = {
+      id: communicationThread.id,
+      lastSeen,
+      unreadCount: communicationThread.unread_count,
+      conversationType: 'communication_thread',
+    };
+    if (communicationThread.channels) {
+      unreadPayload.channels = communicationThread.channels;
+    }
+    commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, unreadPayload);
+    dispatch('fetchSidebarUnreadCounts');
+  } catch (error) {
+    // Keep read state unchanged when the request fails.
+  }
+};
+
+const markCommunicationThreadRead = (context, data) => {
+  const requestKey = String(data.id);
+  const pendingRequest = pendingCommunicationThreadReadRequests.get(requestKey);
+  if (pendingRequest) return pendingRequest;
+
+  const request = executeCommunicationThreadRead(context, data);
+  pendingCommunicationThreadReadRequests.set(requestKey, request);
+  request.finally(() => {
+    if (pendingCommunicationThreadReadRequests.get(requestKey) === request) {
+      pendingCommunicationThreadReadRequests.delete(requestKey);
+    }
+  });
+  return request;
+};
+
 export default {
   markMessagesRead: async ({ commit, dispatch }, data) => {
     try {
@@ -42,27 +81,7 @@ export default {
     }
   },
 
-  markCommunicationThreadRead: async ({ commit, dispatch }, data) => {
-    try {
-      const { data: communicationThread } =
-        await CommunicationThreadApi.markMessageRead(data);
-      const lastSeen =
-        communicationThread.agent_last_seen_at || Math.floor(Date.now() / 1000);
-      const unreadPayload = {
-        id: communicationThread.id,
-        lastSeen,
-        unreadCount: communicationThread.unread_count,
-        conversationType: 'communication_thread',
-      };
-      if (communicationThread.channels) {
-        unreadPayload.channels = communicationThread.channels;
-      }
-      commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, unreadPayload);
-      dispatch('fetchSidebarUnreadCounts');
-    } catch (error) {
-      // Handle error
-    }
-  },
+  markCommunicationThreadRead,
 
   markMessagesUnread: async ({ commit, dispatch, state }, data) => {
     const { id } = data;

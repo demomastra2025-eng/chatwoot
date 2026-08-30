@@ -235,21 +235,38 @@ class ActionCableListener < BaseListener
   end
 
   def broadcast_communication_thread_update(conversation, source_event, message: nil)
-    account = conversation&.account
-    return unless account&.feature_enabled?(COMMUNICATION_THREAD_FEATURE)
+    return unless communication_thread_realtime_enabled?(conversation, message)
 
+    enqueue_communication_thread_realtime(conversation, source_event, message)
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
+    Rails.logger.warn("[CommunicationThreads] realtime refresh skipped conversation=#{conversation&.id}: #{e.class}: #{e.message}")
+  end
+
+  def enqueue_communication_thread_realtime(conversation, source_event, message)
     communication_thread = conversation.communication_thread || conversation.refresh_communication_thread!
     return if communication_thread.blank?
 
-    communication_thread.reload
-    links = communication_thread.communication_thread_conversations.includes(
-      :conversation,
-      { contact_inbox: :channel_profile },
-      inbox: [:members, :channel]
-    ).to_a
-    broadcast_communication_thread_dashboard_updates(account, communication_thread, links, conversation, source_event, message)
-  rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotFound => e
-    Rails.logger.warn("[CommunicationThreads] realtime refresh skipped conversation=#{conversation&.id}: #{e.class}: #{e.message}")
+    CommunicationThreads::RealtimeUpdateJob.perform_later(
+      **{
+        communication_thread_id: communication_thread.id,
+        source_conversation_id: conversation.id,
+        source_event: source_event,
+        message_id: message&.id,
+        performer_id: Current.user&.id
+      }.compact
+    )
+  end
+
+  def aggregate_activity_message?(message)
+    message&.additional_attributes.to_h['communication_thread_event_id'].present?
+  end
+
+  def communication_thread_realtime_enabled?(conversation, message)
+    return false if conversation.blank?
+    return false if conversation.skip_communication_thread_realtime
+    return false if aggregate_activity_message?(message)
+
+    conversation.account.feature_enabled?(COMMUNICATION_THREAD_FEATURE)
   end
 
   def ensure_communication_thread_for_message_broadcast(message)
@@ -275,126 +292,6 @@ class ActionCableListener < BaseListener
   def reset_communication_thread_associations(conversation)
     conversation.association(:communication_thread_conversation).reset
     conversation.association(:communication_thread).reset
-  end
-
-  def broadcast_communication_thread_dashboard_updates(account, communication_thread, links, source_conversation, source_event, message)
-    payloads_by_visible_link_ids = {}
-
-    communication_thread_dashboard_users(account, links).each do |user|
-      visible_links = communication_thread_visible_links_for(account, user, links)
-      next if visible_links.blank?
-      next unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
-
-      visible_link_ids = visible_links.map(&:id).sort
-      payload = payloads_by_visible_link_ids[visible_link_ids] ||=
-        communication_thread_realtime_payload(communication_thread, visible_links, source_conversation, source_event, message)
-      broadcast(account, [user.pubsub_token], COMMUNICATION_THREAD_UPDATED, payload)
-    end
-  end
-
-  def communication_thread_dashboard_users(account, links)
-    users = links.flat_map { |link| link.inbox.members.to_a } + account.administrators.to_a
-    users.index_by(&:id).values
-  end
-
-  def communication_thread_visible_links_for(account, user, links)
-    accessible_conversation_ids = Conversations::PermissionFilterService.new(
-      account.conversations.where(id: links.map(&:conversation_id)),
-      user,
-      account
-    ).perform.pluck(:id)
-
-    links.select { |link| accessible_conversation_ids.include?(link.conversation_id) }
-  end
-
-  def communication_thread_realtime_payload(communication_thread, links, source_conversation, source_event, message)
-    channels = communication_thread_channel_payloads(communication_thread, links)
-    directional_message_timestamps = communication_thread_directional_message_timestamps(communication_thread, links)
-    appointment_statuses = communication_thread_scheduling_appointment_statuses(communication_thread)
-
-    {
-      id: communication_thread.display_id,
-      communication_thread_id: communication_thread.display_id,
-      is_communication_thread: true,
-      meta: communication_thread_meta(communication_thread, source_conversation),
-      source_event: source_event,
-      message_id: message&.id,
-      conversation_id: source_conversation.display_id,
-      conversation_ids: links.map { |link| link.conversation.display_id },
-      channels: channels,
-      contact_id: communication_thread.contact_id,
-      inbox_id: source_conversation.inbox_id,
-      inbox_name: source_conversation.inbox&.name,
-      contact_inbox_id: source_conversation.contact_inbox_id,
-      channel: source_conversation.inbox&.channel_type,
-      medium: communication_thread_medium(source_conversation.inbox),
-      can_reply: channels.any? { |channel| communication_thread_channel_replyable?(channel) },
-      status: communication_thread.status,
-      priority: communication_thread.priority,
-      assignee_id: communication_thread.assignee_id,
-      team_id: communication_thread.team_id,
-      labels: communication_thread_label_list(links),
-      scheduling_appointment_statuses: appointment_statuses,
-      unread_count: communication_thread.unread_count,
-      last_activity_at: communication_thread.last_activity_at.to_i,
-      last_incoming_message_at: directional_message_timestamps[:incoming]&.to_i,
-      last_outgoing_message_at: directional_message_timestamps[:outgoing]&.to_i,
-      timestamp: communication_thread.last_activity_at.to_i,
-      updated_at: communication_thread.updated_at.to_f
-    }.tap do |payload|
-      payload[:message] = communication_thread_message_payload(message, communication_thread) if message.present?
-    end
-  end
-
-  def communication_thread_message_payload(message, communication_thread)
-    message.push_event_data.merge(
-      communication_thread_id: communication_thread.display_id
-    )
-  end
-
-  def communication_thread_medium(inbox)
-    inbox&.channel.respond_to?(:medium) ? inbox.channel.medium : nil
-  end
-
-  def communication_thread_meta(communication_thread, source_conversation)
-    {
-      sender: communication_thread.contact.push_event_data(contact_inbox: source_conversation.contact_inbox),
-      channel: 'CommunicationThread',
-      assignee: communication_thread.assignee&.push_event_data,
-      assignee_type: communication_thread.assignee.present? ? 'User' : nil,
-      team: communication_thread.team&.push_event_data
-    }
-  end
-
-  def communication_thread_channel_payloads(communication_thread, links)
-    CommunicationThreads::ChannelCapabilitiesBuilder.new(
-      links: links,
-      contact: communication_thread.contact,
-      deduplicate_linked: false
-    ).perform
-  end
-
-  def communication_thread_directional_message_timestamps(communication_thread, links)
-    Conversations::DirectionalMessageTimestampPreloader
-      .new(account: communication_thread.account)
-      .for_communication_threads(communication_thread.id => links)
-      .fetch(communication_thread.id, {})
-  end
-
-  def communication_thread_scheduling_appointment_statuses(communication_thread)
-    Scheduling::AppointmentDialogStatusContextBuilder
-      .new(account: communication_thread.account)
-      .for_communication_threads([communication_thread])
-      .fetch(communication_thread.id, [])
-  end
-
-  def communication_thread_channel_replyable?(channel)
-    channel[:can_reply] || channel[:can_send_text] || channel[:requires_template] ||
-      (channel[:channel] == 'Channel::Voice' && !channel[:disabled])
-  end
-
-  def communication_thread_label_list(links)
-    links.flat_map { |link| link.conversation&.label_list }.compact.uniq
   end
 
   def typing_event_listener_tokens(account, conversation, user)

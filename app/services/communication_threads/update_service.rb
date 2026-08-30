@@ -11,11 +11,15 @@ class CommunicationThreads::UpdateService
   end
 
   def perform
-    CommunicationThread.transaction do
+    source_conversation = accessible_links.first&.conversation
+    updated_thread = CommunicationThread.transaction do
       sync_accessible_conversations!
       refresh_communication_thread!
       communication_thread.reload
     end
+
+    enqueue_realtime_update(updated_thread, source_conversation)
+    updated_thread
   end
 
   private
@@ -30,6 +34,7 @@ class CommunicationThreads::UpdateService
 
   def sync_conversation!(conversation)
     conversation.skip_communication_thread_refresh = true
+    conversation.skip_communication_thread_realtime = true
     conversation.communication_thread_event_id = communication_thread_event_id
     assign_priority!(conversation)
     assign_agent!(conversation)
@@ -117,6 +122,17 @@ class CommunicationThreads::UpdateService
 
   def communication_thread_event_id
     @communication_thread_event_id ||= SecureRandom.uuid
+  end
+
+  def enqueue_realtime_update(updated_thread, source_conversation)
+    return if source_conversation.blank?
+
+    CommunicationThreads::RealtimeUpdateJob.perform_later(
+      communication_thread_id: updated_thread.id,
+      source_conversation_id: source_conversation.id,
+      source_event: params.key?(:status) ? 'conversation.status_changed' : 'conversation.updated',
+      performer_id: actor&.id
+    )
   end
 
   def refresh_communication_thread!

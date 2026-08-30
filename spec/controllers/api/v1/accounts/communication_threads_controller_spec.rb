@@ -954,6 +954,36 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(message_ids).to eq([visible_message.id])
       expect(message_ids).not_to include(hidden_message.id)
     end
+
+    it 'keeps the first unread cursor inside the current thread session' do
+      conversation = create(:conversation, account: account, agent_last_seen_at: 3.days.ago)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      historical_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        created_at: 2.days.ago
+      )
+      thread = conversation.reload.communication_thread
+      thread.update!(session_started_at: 1.day.ago)
+      current_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        created_at: 1.hour.ago
+      )
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('meta', 'first_unread_message_id')).to eq(current_message.id)
+      expect(response.parsed_body['payload'].pluck('id')).to include(current_message.id)
+      expect(response.parsed_body['payload'].pluck('id')).not_to include(historical_message.id)
+    end
   end
 
   describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/update_last_seen' do
@@ -987,6 +1017,10 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(second_conversation.reload.unread_incoming_messages_count).to eq(0)
       expect(thread.reload.unread_count).to eq(0)
       expect(response.parsed_body['unread_count']).to eq(0)
+      expect(response.parsed_body['channels']).to contain_exactly(
+        a_hash_including('conversation_id' => first_conversation.display_id, 'unread_count' => 0),
+        a_hash_including('conversation_id' => second_conversation.display_id, 'unread_count' => 0)
+      )
     end
   end
 
