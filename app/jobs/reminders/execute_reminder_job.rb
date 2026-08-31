@@ -3,6 +3,14 @@ class Reminders::ExecuteReminderJob < ApplicationJob
 
   discard_on ActiveRecord::RecordNotFound
   discard_on Reminders::UndeliverableTargetError
+  retry_on Reminders::RetryableExecutionError, wait: :polynomially_longer, attempts: 3 do |job, error|
+    reminder_id, processing_claim = job.arguments
+    reminder = Reminder.find_by(id: reminder_id)
+    next if reminder.blank? || !reminder.processing?
+    next unless reminder.processing_claim_token.to_s == processing_claim.to_s
+
+    reminder.fail!(error.message)
+  end
 
   def perform(reminder_id, processing_claim = nil)
     reminder = Reminder.find(reminder_id)

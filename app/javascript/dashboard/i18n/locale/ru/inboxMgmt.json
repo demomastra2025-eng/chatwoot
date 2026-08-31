@@ -1661,7 +1661,7 @@
       "WHATSAPP_TEMPLATES_SYNC_TITLE": "Синхронизировать шаблоны",
       "WHATSAPP_TEMPLATES_SYNC_SUBHEADER": "Вручную синхронизируйте шаблоны сообщений из WhatsApp, чтобы обновить доступные шаблоны.",
       "WHATSAPP_TEMPLATES_SYNC_BUTTON": "Синхронизировать шаблоны",
-      "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Синхронизация шаблонов успешно запущена. Обновление может занять несколько минут.",
+      "WHATSAPP_TEMPLATES_SYNC_SUCCESS": "Шаблоны синхронизированы",
       "WHATSAPP_CALLING_TITLE": "WhatsApp Calling",
       "WHATSAPP_CALLING_SUBHEADER": "Разрешить операторам совершать и принимать WhatsApp Cloud звонки из этого канала.",
       "WHATSAPP_CALLING_LABEL": "Включить WhatsApp Calling",

@@ -62,6 +62,7 @@ class Captain::Assistant < ApplicationRecord
   MESSAGE_MODE_STATIC = 'static'
   MESSAGE_MODE_AI = 'ai'
   MESSAGE_MODES = [MESSAGE_MODE_STATIC, MESSAGE_MODE_AI].freeze
+  HANDOFF_TOOL_ID = 'handoff'
   CRM_DEAL_PIPELINE_COMPANION_TOOL_IDS = %w[list_deal_pipelines list_deal_stages].freeze
   CRM_DEAL_READ_COMPANION_TOOL_IDS = %w[get_deal search_deals].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
@@ -492,21 +493,25 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def allowed_agent_tool_ids
-    effective_tool_ids_for(
-      Captain::ToolAccess::SCOPE_AGENT,
-      referenced_tool_ids: referenced_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
+    filter_lifecycle_tool_ids(
+      effective_tool_ids_for(
+        Captain::ToolAccess::SCOPE_AGENT,
+        referenced_tool_ids: referenced_tool_ids_for_scope(Captain::ToolAccess::SCOPE_AGENT)
+      )
     )
   end
 
   def effective_agent_tool_ids(referenced_tool_ids: [])
-    effective_tool_ids_for(
-      Captain::ToolAccess::SCOPE_AGENT,
-      referenced_tool_ids: referenced_tool_ids
+    filter_lifecycle_tool_ids(
+      effective_tool_ids_for(
+        Captain::ToolAccess::SCOPE_AGENT,
+        referenced_tool_ids: referenced_tool_ids
+      )
     )
   end
 
   def scenario_agent_tool_ids(referenced_tool_ids: [])
-    return [] unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
+    return filter_lifecycle_tool_ids([]) unless tool_scope_enabled?(Captain::ToolAccess::SCOPE_AGENT)
 
     available_ids = available_tool_ids
     explicit_tool_ids = companion_expanded_tool_ids(Array(referenced_tool_ids).map(&:to_s))
@@ -514,7 +519,7 @@ class Captain::Assistant < ApplicationRecord
       Captain::ToolAccess.per_assistant_web_tool_enabled?(self, tool_id, scope_name: Captain::ToolAccess::SCOPE_AGENT)
     end
 
-    (scenario_default_tool_ids + explicit_tool_ids)
+    filter_lifecycle_tool_ids(scenario_default_tool_ids + explicit_tool_ids)
       .uniq
       .select { |tool_id| available_ids.include?(tool_id) }
   end
@@ -525,10 +530,12 @@ class Captain::Assistant < ApplicationRecord
       available_agent_tools
     )
 
-    Captain::ToolAccess.allowed_tool_ids_for(
-      self,
-      Captain::ToolAccess::SCOPE_AGENT,
-      fallback_ids: fallback_ids
+    filter_lifecycle_tool_ids(
+      Captain::ToolAccess.allowed_tool_ids_for(
+        self,
+        Captain::ToolAccess::SCOPE_AGENT,
+        fallback_ids: fallback_ids
+      )
     )
   end
 
@@ -547,9 +554,11 @@ class Captain::Assistant < ApplicationRecord
   def prompt_runtime_agent_tools
     explicit_tool_ids = prompt_referenced_tool_ids_for_template(:assistant) + prompt_referenced_skill_script_tool_ids_for_template(:assistant)
 
-    prompt_visible_tools_for_scope(
-      Captain::ToolAccess::SCOPE_AGENT,
-      explicit_tool_ids: explicit_tool_ids
+    filter_lifecycle_tools(
+      prompt_visible_tools_for_scope(
+        Captain::ToolAccess::SCOPE_AGENT,
+        explicit_tool_ids: explicit_tool_ids
+      )
     )
   end
 
@@ -574,7 +583,9 @@ class Captain::Assistant < ApplicationRecord
       prompt_visible_tool?(tool, scope_name: Captain::ToolAccess::SCOPE_AGENT)
     end
 
-    (direct_tools + prompt_tools).uniq { |tool| tool[:id].to_s }
+    (direct_tools + prompt_tools)
+      .uniq { |tool| tool[:id].to_s }
+      .reject { |tool| tool[:id].to_s == HANDOFF_TOOL_ID }
   end
 
   def tool_glossary_groups(tools = direct_agent_tools, tool_ids = nil)
@@ -733,6 +744,18 @@ class Captain::Assistant < ApplicationRecord
     config['auto_reply_on_last_incoming'] == true
   end
 
+  def handoff_enabled?
+    return config_boolean_value('handoff_enabled', default: true) if config.key?('handoff_enabled')
+
+    legacy_agent_access = Captain::ToolAccess.normalized_access_for(self).fetch(Captain::ToolAccess::SCOPE_AGENT, {})
+    legacy_agent_access['enabled'] && Array(legacy_agent_access['tool_ids']).include?(HANDOFF_TOOL_ID)
+  end
+
+  def auto_completion_enabled?
+    config_boolean_value('auto_completion_enabled', default: true) &&
+      Captain::OutcomeReasonConfig.new(self).configured?(:completion)
+  end
+
   def handoff_message_enabled?
     message_config_enabled?('handoff_message_enabled')
   end
@@ -818,6 +841,7 @@ class Captain::Assistant < ApplicationRecord
       assistant_identity_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_IDENTITY),
       assistant_specialized_scenarios_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_SCENARIOS),
       assistant_human_handoff_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_ASSISTANT_HUMAN_HANDOFF),
+      outcome_reasons: outcome_reason_prompt_context,
       current_context_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_CURRENT_CONTEXT),
       reference_glossary_rule: enabled_system_template_rule_content(SYSTEM_TEMPLATE_SLOT_REFERENCE_GLOSSARY),
       runtime_tool_ids: prompt_runtime_agent_tools.pluck(:id),
@@ -840,7 +864,7 @@ class Captain::Assistant < ApplicationRecord
   end
 
   def scenario_default_tool_ids
-    selected_agent_tool_ids & ['handoff']
+    handoff_enabled? ? selected_agent_tool_ids & ['handoff'] : []
   end
 
   def remove_legacy_config_keys
@@ -875,6 +899,41 @@ class Captain::Assistant < ApplicationRecord
   def config_integer_value(key)
     value = config[key]
     value.present? ? value.to_i : 0
+  end
+
+  def config_boolean_value(key, default:)
+    return default unless config.key?(key)
+
+    ActiveModel::Type::Boolean.new.cast(config[key])
+  end
+
+  def filter_lifecycle_tool_ids(tool_ids)
+    filtered_ids = Array(tool_ids).map(&:to_s).select { |tool_id| lifecycle_tool_enabled?(tool_id) }
+    filtered_ids << HANDOFF_TOOL_ID if handoff_enabled? && available_tool_ids.include?(HANDOFF_TOOL_ID)
+    filtered_ids.uniq
+  end
+
+  def filter_lifecycle_tools(tools)
+    filtered_tools = Array(tools).select { |tool| lifecycle_tool_enabled?(tool[:id]) }
+    if handoff_enabled? && filtered_tools.none? { |tool| tool[:id].to_s == HANDOFF_TOOL_ID }
+      handoff_tool = available_agent_tools.find { |tool| tool[:id].to_s == HANDOFF_TOOL_ID }
+      filtered_tools << handoff_tool if handoff_tool
+    end
+    filtered_tools
+  end
+
+  def lifecycle_tool_enabled?(tool_id)
+    return handoff_enabled? if tool_id.to_s == HANDOFF_TOOL_ID
+    return auto_completion_enabled? if tool_id.to_s == 'resolve_conversation'
+
+    true
+  end
+
+  def outcome_reason_prompt_context
+    context = Captain::OutcomeReasonConfig.new(self).prompt_context
+    context['handoff'] = [] unless handoff_enabled?
+    context['completion'] = [] unless auto_completion_enabled?
+    context
   end
 
   def message_config_enabled?(key)

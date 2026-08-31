@@ -140,14 +140,6 @@ const NextButtonStub = {
   template: '<button :disabled="disabled" @click="$emit(\'click\')" />',
 };
 
-const ConversationStatusReasonDialogStub = {
-  name: 'ConversationStatusReasonDialog',
-  methods: {
-    open: vi.fn(async () => null),
-  },
-  template: '<div />',
-};
-
 function mountComponent() {
   return shallowMount(Index, {
     props: {
@@ -169,7 +161,6 @@ function mountComponent() {
         BulkLabelActions: BulkLabelActionsStub,
         BulkTeamActions: BulkTeamActionsStub,
         BulkUpdateActions: BulkUpdateActionsStub,
-        ConversationStatusReasonDialog: ConversationStatusReasonDialogStub,
         CustomSnoozeModal: true,
         'woot-modal': true,
       },
@@ -228,7 +219,7 @@ describe('ConversationBulkActions Index', () => {
 
     expect(wrapper.emitted('assignLabels')).toEqual([[['sales']]]);
     expect(wrapper.emitted('updateConversations')).toEqual([
-      ['resolved', null, null],
+      ['resolved', null],
     ]);
     expect(wrapper.emitted('assignAgent')).toEqual([
       [{ id: 1, name: 'Agent' }],

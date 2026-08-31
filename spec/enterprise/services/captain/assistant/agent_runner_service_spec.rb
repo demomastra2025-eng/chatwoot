@@ -1496,7 +1496,12 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         def set_attribute(*); end
       end
       root_span = instance_double(span_class)
-      context_wrapper = Struct.new(:context).new({ __otel_tracing: { root_span: root_span } })
+      context_wrapper = Struct.new(:context).new(
+        {
+          __otel_tracing: { root_span: root_span },
+          pending_human_handoff: { reason: 'Customer needs a specialist' }
+        }
+      )
 
       allow(ChatwootApp).to receive(:otel_enabled?).and_return(true)
       allow(runner).to receive(:on_tool_complete) do |&block|
@@ -1517,6 +1522,28 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
       )
       expect(root_span).to receive(:set_attribute).with('langfuse.trace.metadata.credit_used', 'false')
       run_complete_callback.call('assistant', nil, context_wrapper)
+    end
+
+    it 'does not mark a rejected handoff tool attempt as a handoff' do
+      service = described_class.new(assistant: assistant, conversation: conversation)
+      runner = instance_double(Captain::Runtime::AgentRunner)
+      tool_complete_callback = nil
+      context_wrapper = Struct.new(:context).new({})
+
+      allow(ChatwootApp).to receive(:otel_enabled?).and_return(false)
+      allow(runner).to receive(:on_tool_complete) do |&block|
+        tool_complete_callback = block
+        runner
+      end
+
+      service.send(:add_usage_metadata_callback, runner)
+      tool_complete_callback.call(
+        Captain::Tools::HandoffTool.new(assistant).name,
+        'A specific handoff explanation is required',
+        context_wrapper
+      )
+
+      expect(context_wrapper.context).not_to have_key(:captain_v2_handoff_tool_called)
     end
 
     it 'tracks artifact ids exposed by completed tool results' do

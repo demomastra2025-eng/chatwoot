@@ -77,22 +77,6 @@ RSpec.describe Reminders::PostDeliveryActionService do
     )
   end
 
-  it 'resolves as a system action when manual API transitions require a status reason' do
-    account.update!(
-      conversation_status_reason_config: {
-        'resolved' => { options: ['Issue resolved'], required: true }
-      }
-    )
-    message = materialized_message
-
-    expect(described_class.new(message: message).perform).to be(true)
-    expect(conversation.reload).to be_resolved
-    expect(ConversationStatusTransition.last).to have_attributes(
-      actor: actor,
-      source: 'system',
-      reason: nil
-    )
-  end
 
   it 'fails closed when neither a trusted API creator nor automation provenance exists' do
     reminder.update!(creator: nil)

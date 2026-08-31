@@ -192,47 +192,92 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
   end
 
   describe '#resolve_conversation' do
-    it 'maps a free-text Captain reason only when it matches configured status reasons' do
-      account.update!(
-        conversation_status_reason_config: {
-          resolved: { options: ['Customer confirmed'], required: false }
+    it 'records the configured assistant completion outcome' do
+      assistant.update!(
+        config: {
+          'outcome_reason_settings' => {
+            'completion_reasons' => [
+              { 'id' => 'customer_confirmed', 'label' => 'Customer confirmed' },
+              { 'id' => 'other', 'label' => 'Other' }
+            ]
+          }
         }
       )
 
-      operations.resolve_conversation(reason: 'customer confirmed')
+      operations.resolve_conversation(
+        reason: 'Customer confirmed resolution',
+        status_reason: 'customer_confirmed'
+      )
 
       expect(conversation.reload).to be_resolved
       expect(conversation.status_transitions.last.reason).to eq('Customer confirmed')
     end
 
-    it 'does not pass arbitrary Captain free text as a status reason' do
-      account.update!(
-        conversation_status_reason_config: {
-          resolved: { options: ['Customer confirmed'], required: false }
+    it 'records other without treating the explanation as a stable outcome id' do
+      assistant.update!(
+        config: {
+          'outcome_reason_settings' => {
+            'completion_reasons' => [{ 'id' => 'other', 'label' => 'Other' }]
+          }
         }
       )
 
       operations.resolve_conversation(reason: 'free-text internal explanation')
 
       expect(conversation.reload).to be_resolved
-      expect(conversation.status_transitions.last.reason).to be_nil
+      expect(conversation.status_transitions.last.reason).to eq('Other')
+      expect(conversation.status_transitions.last.metadata).to include('outcome_reason_id' => 'other')
     end
   end
 
   describe '#handoff' do
     let(:conversation) { create(:conversation, account: account, inbox: inbox, contact: contact, contact_inbox: contact_inbox, status: 'pending') }
 
-    it 'canonicalizes explicit handoff status reasons before transition' do
-      account.update!(
-        conversation_status_reason_config: {
-          open: { options: ['Needs agent'], required: false }
+    it 'records the configured assistant handoff outcome' do
+      assistant.update!(
+        config: {
+          'outcome_reason_settings' => {
+            'handoff_reasons' => [
+              { 'id' => 'needs_agent', 'label' => 'Needs agent' },
+              { 'id' => 'other', 'label' => 'Other' }
+            ]
+          }
         }
       )
 
-      operations.handoff(status_reason: 'needs agent')
+      operations.handoff(status_reason: 'needs_agent', reason: 'Клиенту требуется помощь сотрудника')
 
       expect(conversation.reload).to be_open
       expect(conversation.status_transitions.last.reason).to eq('Needs agent')
+    end
+
+    it 'requires a concrete explanation before recording an agent-scoped other handoff' do
+      assistant.update!(
+        config: {
+          'outcome_reason_settings' => {
+            'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Другое' }]
+          }
+        }
+      )
+      captain_operations = described_class.new(assistant: assistant, conversation: conversation)
+
+      expect do
+        captain_operations.handoff(status_reason: 'other')
+      end.to raise_error(ArgumentError, 'A specific handoff explanation is required')
+        .and not_change(Message, :count)
+
+      captain_operations.handoff(
+        status_reason: 'other',
+        reason: 'Клиент просит нестандартную отсрочку платежа'
+      )
+
+      expect(conversation.reload).to be_open
+      expect(conversation.status_transitions.last.metadata).to include(
+        'outcome_reason_id' => 'other',
+        'outcome_reason_type' => 'handoff',
+        'outcome_reason_explanation' => 'Клиент просит нестандартную отсрочку платежа'
+      )
+      expect(conversation.messages.private.last.content).to eq('Клиент просит нестандартную отсрочку платежа')
     end
   end
 end

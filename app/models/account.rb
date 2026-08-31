@@ -57,7 +57,6 @@ class Account < ApplicationRecord
   store_accessor :settings, :reporting_timezone
   store_accessor :settings, :keep_pending_on_bot_failure
   store_accessor :settings, :captain_auto_resolve_mode
-  store_accessor :settings, :conversation_status_reason_config
   store_accessor :settings,
                  :scheduling_contact_required,
                  :scheduling_company_enabled,

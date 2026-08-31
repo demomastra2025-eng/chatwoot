@@ -1655,6 +1655,10 @@ const openCreateDrawer = async prefill => {
   selectedDeal.value = null;
   pendingCreateCustomFieldDefaultsHydration.value = true;
   resetForm();
+  const dealPrefill = prefill?.currentTarget ? null : prefill;
+  if (dealPrefill) {
+    Object.assign(form, dealPrefill);
+  }
   drawerOpen.value = true;
   dealActivityTab.value = 'history';
   hasVisitedDealTasksTab.value = false;
@@ -1663,8 +1667,7 @@ const openCreateDrawer = async prefill => {
   resetDealConversationDraft();
   await Promise.all([loadContacts(''), loadCompanies('')]);
 
-  if (prefill) {
-    Object.assign(form, prefill);
+  if (dealPrefill) {
     showLinkedConversationPanel.value = canOpenLinkedConversation.value;
   }
 
@@ -2948,7 +2951,7 @@ watch(
             size="sm"
             icon="i-lucide-plus"
             :label="$t('CRM.DEALS.NEW_DEAL')"
-            @click="openCreateDrawer"
+            @click="openCreateDrawer()"
           />
           <Button
             v-if="canAccessDealSettings"
@@ -3020,6 +3023,7 @@ watch(
             :sort-key="boardSort.key"
             @change-owner="handleDealOwnerChange"
             @change-stage="handleDealStageChange"
+            @create-deal="stageId => openCreateDrawer({ stageId })"
             @load-more="loadMoreDeals"
             @select-deal="openEditDrawer"
             @toggle-sort-direction="toggleBoardSortDirection"
@@ -3031,7 +3035,7 @@ watch(
             title=""
             :description="$t('CRM.DEALS.EMPTY_DESCRIPTION')"
             :action-label="canManageDeals ? $t('CRM.DEALS.NEW_DEAL') : ''"
-            @action="openCreateDrawer"
+            @action="openCreateDrawer()"
           />
 
           <div

@@ -59,19 +59,17 @@ describe('SidebarVisibilitySettings', () => {
     useAlert.mockReset();
   });
 
-  it('shows all workspace sidebar sections, including conversation visibility', () => {
+  it('shows only top-level workspace navigation sections', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.text()).toContain('SIDEBAR.INBOX');
     expect(wrapper.text()).toContain('SIDEBAR.CONVERSATIONS');
     expect(wrapper.text()).toContain('SIDEBAR.ADDITIONAL');
 
-    wrapper.vm.expandedSections = { Conversation: true };
-
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
     );
-    expect(wrapper.text()).toContain(
+    expect(wrapper.text()).not.toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENTS'
     );
   });
@@ -85,7 +83,6 @@ describe('SidebarVisibilitySettings', () => {
 
     expect(updateAccount).toHaveBeenCalledWith({
       [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: expect.arrayContaining([
-        'Conversation:Statuses',
         'Conversation:Pipelines',
         'Reports',
       ]),
@@ -100,7 +97,7 @@ describe('SidebarVisibilitySettings', () => {
   it('hydrates the draft from workspace settings', () => {
     currentAccount.value = {
       settings: {
-        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns'],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:MassBroadcasts'],
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
           SIDEBAR_VISIBILITY_CURRENT_VERSION,
       },
@@ -108,32 +105,21 @@ describe('SidebarVisibilitySettings', () => {
 
     const wrapper = mountComponent();
 
-    expect(wrapper.vm.visibilityDraft.Campaigns).toBe(false);
+    expect(wrapper.vm.visibilityDraft['Campaigns:MassBroadcasts']).toBe(false);
     expect(wrapper.vm.visibilityDraft.Reports).toBe(true);
   });
 
-  it('keeps visibility management reachable and reflects runtime hierarchy', async () => {
+  it('keeps Settings visible and leaves conversation details to their own page', () => {
     const wrapper = mountComponent();
 
     expect(
       wrapper.find('#workspace-sidebar-visibility-settings').exists()
     ).toBe(false);
 
-    wrapper.vm.expandedSections = { Conversation: true };
-    wrapper.vm.visibilityDraft['Conversation:Statuses'] = false;
-    await wrapper.vm.$nextTick();
-
     expect(
       wrapper
-        .find('#workspace-sidebar-visibility-conversation-open')
-        .attributes('disabled')
-    ).toBeDefined();
-    expect(
-      wrapper
-        .find(
-          '#workspace-sidebar-visibility-conversation-appointmentstatus-scheduled'
-        )
-        .attributes('disabled')
-    ).toBeUndefined();
+        .find('#workspace-sidebar-visibility-conversation-pipelines')
+        .exists()
+    ).toBe(false);
   });
 });

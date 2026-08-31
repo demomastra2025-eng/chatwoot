@@ -13,14 +13,14 @@ class Captain::ResponseSchema < RubyLLM::Schema
   ).freeze
   HANDOFF_REASON_DESCRIPTION = (
     [
-      'Concise internal reason for opening the conversation / handing it to a human agent when ',
-      'response is conversation_handoff. Return an empty string when no handoff is requested.'
+      'Required concise factual explanation of what happened and why a human is needed when ',
+      'response is conversation_handoff. Return an empty string only when no handoff is requested.'
     ].join
   ).freeze
   HANDOFF_STATUS_REASON_DESCRIPTION = (
     [
-      'Configured conversation status reason for opening/handoff when status reasons are enabled. ',
-      'Use only an exact configured option; return an empty string when unknown or not configured.'
+      'Exact configured assistant handoff outcome ID. ',
+      'Return an empty string when the configured outcome is unknown.'
     ].join
   ).freeze
   REASONING_DESCRIPTION = (

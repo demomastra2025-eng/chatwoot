@@ -21,44 +21,6 @@ module AccountSettingsSchema
           'type': %w[array null],
           'items': { 'type': 'string' }
         },
-        'conversation_status_reason_config': {
-          'type': %w[object null],
-          'properties': {
-            'open': {
-              'type': %w[object null],
-              'properties': {
-                'options': { 'type': %w[array null], 'items': { 'type': 'string' } },
-                'required': { 'type': %w[boolean null] }
-              },
-              'additionalProperties': false
-            },
-            'resolved': {
-              'type': %w[object null],
-              'properties': {
-                'options': { 'type': %w[array null], 'items': { 'type': 'string' } },
-                'required': { 'type': %w[boolean null] }
-              },
-              'additionalProperties': false
-            },
-            'pending': {
-              'type': %w[object null],
-              'properties': {
-                'options': { 'type': %w[array null], 'items': { 'type': 'string' } },
-                'required': { 'type': %w[boolean null] }
-              },
-              'additionalProperties': false
-            },
-            'snoozed': {
-              'type': %w[object null],
-              'properties': {
-                'options': { 'type': %w[array null], 'items': { 'type': 'string' } },
-                'required': { 'type': %w[boolean null] }
-              },
-              'additionalProperties': false
-            }
-          },
-          'additionalProperties': false
-        },
         'captain_models': {
           'type': %w[object null],
           'properties': {

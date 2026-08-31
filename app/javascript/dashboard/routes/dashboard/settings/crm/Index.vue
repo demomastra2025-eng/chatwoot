@@ -1,7 +1,12 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+} from 'vue-router';
 import Draggable from 'vuedraggable';
 
 import { useAlert } from 'dashboard/composables';
@@ -25,8 +30,6 @@ import { formatCrmErrorMessage } from 'dashboard/stores/crm/shared';
 import {
   DEFAULT_STAGE_COLOR,
   STAGE_STANDARD_COLORS,
-  getUnavailableStageColors,
-  pickStageColor,
 } from 'dashboard/stores/crm/stageColors';
 import {
   isTechnicalStage,
@@ -51,18 +54,28 @@ const canManage = computed(() =>
   checkPermissions(['administrator', 'crm_settings_manage'])
 );
 
-const stageDrawerOpen = ref(false);
+const autoCreateSwitchResetKey = ref(0);
+const pipelineDrawerOpen = ref(false);
+const pipelineDeleteDialogRef = ref(null);
+const pipelinePendingDelete = ref(null);
 const stageDeleteDialogRef = ref(null);
 const stagePendingDelete = ref(null);
-const stageOrderSaving = ref(false);
+const stageDeletionChecking = ref(false);
+const unsavedChangesDialogRef = ref(null);
 const pipelineSaving = ref(false);
 const settingsSaving = ref(false);
 const movableStageRows = ref([]);
 const lossReasonsEnabled = ref(false);
 const closingReasonDraft = ref([]);
+const unsortedActiveDraft = ref(true);
+const deletedStageIds = ref([]);
+const stageDraftBaseline = ref('');
 const stageNameDrafts = reactive({});
-const pendingInsertIndex = ref(null);
+const pipelineNameDraft = ref('');
 const isLeaving = ref(false);
+let temporaryStageSequence = 0;
+let unsavedDecisionPromise = null;
+let resolveUnsavedDecision = null;
 
 const routePipelineId = computed(() => {
   const value = Array.isArray(route.query.pipelineId)
@@ -92,6 +105,33 @@ const selectedPipeline = computed(
 const selectedStages = computed(() =>
   sortStages(selectedPipeline.value?.stages || [])
 );
+const autoCreateStageOptions = computed(() =>
+  sortStages(selectedPipeline.value?.stages || [])
+    .filter(
+      stage =>
+        stage.active !== false &&
+        String(stage.outcome).toLowerCase() === 'open' &&
+        !isTechnicalStage(stage)
+    )
+    .map(stage => ({ label: stage.name, value: String(stage.id) }))
+);
+const selectedAutoCreateStageId = computed(() =>
+  String(
+    selectedPipeline.value?.stages?.find(
+      stage =>
+        stage.active !== false &&
+        stage.default &&
+        String(stage.outcome).toLowerCase() === 'open' &&
+        !isTechnicalStage(stage)
+    )?.id || ''
+  )
+);
+const selectedAutoCreateStageLabel = computed(
+  () =>
+    autoCreateStageOptions.value.find(
+      option => option.value === selectedAutoCreateStageId.value
+    )?.label || t('CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL')
+);
 const unsortedStage = computed(() =>
   selectedStages.value.find(isTechnicalStage)
 );
@@ -106,25 +146,15 @@ const lostStage = computed(() =>
   )
 );
 
-const stageForm = reactive({
-  active: true,
-  closingReasonOptions: [],
-  color: DEFAULT_STAGE_COLOR,
-  default: false,
+const pipelineForm = reactive({
   id: null,
   name: '',
-  outcome: 'open',
-  pipelineId: '',
-  transitionReasonOptions: [],
-  transitionReasonRequired: false,
 });
 
-const stageFormIsTerminal = computed(() =>
-  Boolean(stageForm.id && isTerminalStageOutcome(stageForm.outcome))
+const pipelineFormDisableConfirm = computed(
+  () => !String(pipelineForm.name || '').trim()
 );
-const stageFormIsLost = computed(
-  () => stageForm.id && String(stageForm.outcome).toLowerCase() === 'lost'
-);
+
 const normalizedTextValues = values => [
   ...new Set(
     (Array.isArray(values) ? values : [values])
@@ -132,25 +162,30 @@ const normalizedTextValues = values => [
       .filter(Boolean)
   ),
 ];
-const normalizedStageFormClosingReasons = computed(() =>
-  normalizedTextValues(stageForm.closingReasonOptions)
-);
-const normalizedStageFormTransitionReasons = computed(() =>
-  normalizedTextValues(stageForm.transitionReasonOptions)
-);
 const normalizedClosingReasonDraft = computed(() =>
   normalizedTextValues(closingReasonDraft.value)
 );
-const stageFormDisableConfirm = computed(
+
+const stageDraftName = stage =>
+  String(stageNameDrafts[stage?.id] ?? stage?.name ?? '').trim();
+const buildStageDraftState = () => ({
+  closingReasons: lossReasonsEnabled.value
+    ? normalizedClosingReasonDraft.value
+    : [],
+  lostName: lostStage.value ? stageDraftName(lostStage.value) : '',
+  regularStages: movableStageRows.value.map((stage, index) => ({
+    color: String(stage.color || '').toUpperCase(),
+    id: String(stage.id),
+    name: stageDraftName(stage),
+    position: index + 1,
+  })),
+  unsortedActive: unsortedStage.value ? unsortedActiveDraft.value : null,
+  wonName: wonStage.value ? stageDraftName(wonStage.value) : '',
+});
+const hasUnsavedStageChanges = computed(
   () =>
-    !String(stageForm.name || '').trim() ||
-    (!stageFormIsTerminal.value && !String(stageForm.color || '').trim()) ||
-    (!stageFormIsTerminal.value &&
-      stageForm.transitionReasonRequired &&
-      normalizedStageFormTransitionReasons.value.length === 0)
-);
-const unavailableStageColors = computed(() =>
-  getUnavailableStageColors(selectedPipeline.value?.stages || [], stageForm.id)
+    Boolean(stageDraftBaseline.value) &&
+    JSON.stringify(buildStageDraftState()) !== stageDraftBaseline.value
 );
 
 const formatErrorMessage = error => formatCrmErrorMessage(error, t);
@@ -169,14 +204,21 @@ const syncSelectedPipelineRoute = async () => {
 };
 
 const syncSelectedPipelineState = () => {
-  movableStageRows.value = selectedStages.value.filter(
-    stage => !isTechnicalStage(stage) && !isTerminalStageOutcome(stage.outcome)
-  );
+  movableStageRows.value = selectedStages.value
+    .filter(
+      stage =>
+        !isTechnicalStage(stage) && !isTerminalStageOutcome(stage.outcome)
+    )
+    .map(stage => ({ ...stage, draft: false }));
+  pipelineNameDraft.value = selectedPipeline.value?.name || '';
   selectedStages.value.forEach(stage => {
     stageNameDrafts[stage.id] = stage.name;
   });
   closingReasonDraft.value = [...(lostStage.value?.closingReasonOptions || [])];
   lossReasonsEnabled.value = normalizedClosingReasonDraft.value.length > 0;
+  unsortedActiveDraft.value = unsortedStage.value?.active !== false;
+  deletedStageIds.value = [];
+  stageDraftBaseline.value = JSON.stringify(buildStageDraftState());
 };
 
 const loadSettings = async () => {
@@ -185,25 +227,18 @@ const loadSettings = async () => {
   syncSelectedPipelineState();
 };
 
+watch(routePipelineId, syncSelectedPipelineState);
 watch(
-  () => [routePipelineId.value, referencesStore.pipelines],
-  () => syncSelectedPipelineState(),
+  () => referencesStore.pipelines,
+  () => {
+    if (!settingsSaving.value && !hasUnsavedStageChanges.value) {
+      syncSelectedPipelineState();
+    }
+  },
   { deep: true }
 );
 
-const prepareForRouteLeave = async () => {
-  if (isLeaving.value) return;
-
-  isLeaving.value = true;
-  stageDrawerOpen.value = false;
-  await nextTick();
-};
-
-onBeforeRouteLeave(prepareForRouteLeave);
-
 const backToDeals = async () => {
-  await prepareForRouteLeave();
-
   try {
     const navigationFailure = await router.push({
       name: 'crm_deals_index',
@@ -225,22 +260,23 @@ const selectPipeline = pipelineId =>
     },
   });
 
-const openLeadForms = () =>
-  router.push({
-    name: 'lead_forms_index',
-    params: { accountId: accountId.value },
-  });
+const openCreatePipelineDrawer = () => {
+  pipelineForm.id = null;
+  pipelineForm.name = '';
+  pipelineDrawerOpen.value = true;
+};
 
-const togglePipelineAutoCreate = async value => {
-  const pipeline = selectedPipeline.value;
-  if (!pipeline) return;
+const savePipeline = async () => {
+  if (pipelineFormDisableConfirm.value) return;
 
   pipelineSaving.value = true;
   try {
-    await referencesStore.savePipeline({
-      id: pipeline.id,
-      auto_create_deal_on_channel_contact: value,
+    const pipeline = await referencesStore.savePipeline({
+      id: pipelineForm.id || undefined,
+      name: String(pipelineForm.name).trim(),
     });
+    pipelineDrawerOpen.value = false;
+    await selectPipeline(pipeline.id);
     useAlert(t('CRM.SETTINGS.PIPELINES.SUCCESS_SAVE'));
   } catch (error) {
     useAlert(formatErrorMessage(error));
@@ -249,240 +285,321 @@ const togglePipelineAutoCreate = async value => {
   }
 };
 
-const toggleUnsortedStage = async active => {
-  if (!unsortedStage.value) return;
-
-  try {
-    await referencesStore.saveStage({
-      id: unsortedStage.value.id,
-      active,
-      color: unsortedStage.value.color,
-    });
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
-  }
-};
-
-const persistStageOrder = async event => {
-  if (!selectedPipeline.value || stageOrderSaving.value) return;
-  if (event.oldIndex === event.newIndex) return;
-
-  stageOrderSaving.value = true;
-  try {
-    await referencesStore.reorderStages(
-      selectedPipeline.value.id,
-      movableStageRows.value.map(stage => stage.id)
-    );
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_REORDER'));
-  } catch (error) {
-    syncSelectedPipelineState();
-    useAlert(formatErrorMessage(error));
-  } finally {
-    stageOrderSaving.value = false;
-  }
-};
-
-const saveInlineStageName = async stage => {
-  const name = String(stageNameDrafts[stage.id] || '').trim();
-  if (!name || name === stage.name) {
-    stageNameDrafts[stage.id] = stage.name;
+const saveInlinePipelineName = async () => {
+  const name = String(pipelineNameDraft.value || '').trim();
+  if (!selectedPipeline.value || name === selectedPipeline.value.name) return;
+  if (!name) {
+    pipelineNameDraft.value = selectedPipeline.value.name;
     return;
   }
 
+  pipelineSaving.value = true;
   try {
-    await referencesStore.saveStage({ id: stage.id, name });
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
+    await referencesStore.savePipeline({
+      id: selectedPipeline.value.id,
+      name,
+    });
+    useAlert(t('CRM.SETTINGS.PIPELINES.SUCCESS_SAVE'));
   } catch (error) {
-    stageNameDrafts[stage.id] = stage.name;
+    pipelineNameDraft.value = selectedPipeline.value.name;
     useAlert(formatErrorMessage(error));
+  } finally {
+    pipelineSaving.value = false;
   }
 };
 
-const saveInlineClosingReasons = async () => {
-  if (!canManage.value || !lostStage.value) return;
+const openDeletePipelineDialog = () => {
+  if (!selectedPipeline.value) return;
 
+  pipelinePendingDelete.value = selectedPipeline.value;
+  pipelineDeleteDialogRef.value?.open();
+};
+
+const deletePipeline = async () => {
+  if (!pipelinePendingDelete.value) return;
+
+  pipelineSaving.value = true;
   try {
-    await referencesStore.saveStage({
-      id: lostStage.value.id,
-      name: String(
-        stageNameDrafts[lostStage.value.id] || lostStage.value.name
-      ).trim(),
-      closing_reason_options: lossReasonsEnabled.value
-        ? normalizedClosingReasonDraft.value
-        : [],
-      closing_reason_required: false,
-    });
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
+    await referencesStore.deletePipeline(pipelinePendingDelete.value);
+    pipelineDeleteDialogRef.value?.close();
+    pipelinePendingDelete.value = null;
+    await referencesStore.loadPipelines({ include_inactive_stages: true });
+    await syncSelectedPipelineRoute();
+    useAlert(t('CRM.SETTINGS.PIPELINES.SUCCESS_DELETE'));
   } catch (error) {
-    syncSelectedPipelineState();
     useAlert(formatErrorMessage(error));
+  } finally {
+    pipelineSaving.value = false;
   }
+};
+
+const openLeadForms = () =>
+  router.push({
+    name: 'lead_forms_index',
+    params: { accountId: accountId.value },
+  });
+
+const persistPipelineAutoCreate = async (pipeline, value, stageId) => {
+  if (!pipeline) return false;
+
+  pipelineSaving.value = true;
+  try {
+    await referencesStore.savePipeline({
+      id: pipeline.id,
+      auto_create_deal_on_channel_contact: value,
+      auto_create_stage_id: stageId,
+    });
+    useAlert(t('CRM.SETTINGS.PIPELINES.SUCCESS_SAVE'));
+    return true;
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+    return false;
+  } finally {
+    pipelineSaving.value = false;
+  }
+};
+
+const resetPipelineAutoCreateSwitch = () => {
+  autoCreateSwitchResetKey.value += 1;
+};
+
+const togglePipelineAutoCreate = async value => {
+  const pipeline = selectedPipeline.value;
+  if (!pipeline) return;
+
+  if (!value) {
+    const saved = await persistPipelineAutoCreate(pipeline, false);
+    if (!saved) resetPipelineAutoCreateSwitch();
+    return;
+  }
+
+  const openStages = sortStages(pipeline.stages || []).filter(
+    stage =>
+      stage.active !== false &&
+      String(stage.outcome).toLowerCase() === 'open' &&
+      !isTechnicalStage(stage)
+  );
+  const stageId = String(
+    openStages.find(stage => stage.default)?.id || openStages[0]?.id || ''
+  );
+  const saved = stageId
+    ? await persistPipelineAutoCreate(pipeline, true, stageId)
+    : false;
+  if (!saved) resetPipelineAutoCreateSwitch();
+};
+
+const updatePipelineAutoCreateStage = async stageId => {
+  const saved = await persistPipelineAutoCreate(
+    selectedPipeline.value,
+    true,
+    stageId
+  );
+  if (!saved)
+    await referencesStore.loadPipelines({ include_inactive_stages: true });
+};
+
+const toggleUnsortedStage = active => {
+  unsortedActiveDraft.value = active;
+};
+
+const saveInlineStageName = stage => {
+  stageNameDrafts[stage.id] = stageDraftName(stage);
 };
 
 const saveSettings = async () => {
-  if (!canManage.value || settingsSaving.value) return;
+  if (!canManage.value || settingsSaving.value || !selectedPipeline.value)
+    return false;
+  if (!hasUnsavedStageChanges.value) return true;
 
-  const lost = lostStage.value;
+  const pipelineId = selectedPipeline.value.id;
+  const draftRows = movableStageRows.value.map((stage, index) => ({
+    ...stage,
+    name: stageDraftName(stage),
+    position: index + 1,
+  }));
+  const deletedIds = [...deletedStageIds.value];
+  const terminalStages = [wonStage.value, lostStage.value].filter(Boolean);
+  const originalUnsortedStage = unsortedStage.value;
   const closingReasons = lossReasonsEnabled.value
     ? normalizedClosingReasonDraft.value
     : [];
-  const currentClosingReasons = normalizedTextValues(
-    lost?.closingReasonOptions || []
+  const hasBlankStageName = [...draftRows, ...terminalStages].some(
+    stage => !stageDraftName(stage)
   );
-
-  const payloads = selectedStages.value
-    .map(stage => {
-      const payload = { id: stage.id };
-      const name = String(stageNameDrafts[stage.id] || '').trim();
-      if (name && name !== stage.name) payload.name = name;
-
-      if (
-        stage.id === lost?.id &&
-        JSON.stringify(closingReasons) !== JSON.stringify(currentClosingReasons)
-      ) {
-        payload.closing_reason_options = closingReasons;
-        payload.closing_reason_required = false;
-      }
-
-      return Object.keys(payload).length > 1 ? payload : null;
-    })
-    .filter(Boolean);
+  if (hasBlankStageName) {
+    useAlert(t('CRM.ERRORS.VALIDATION_ERROR'));
+    return false;
+  }
 
   settingsSaving.value = true;
   try {
-    await Promise.all(
-      payloads.map(payload => referencesStore.saveStage(payload))
-    );
-    if (payloads.length) {
-      await referencesStore.loadPipelines({ include_inactive_stages: true });
-    }
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
-  } catch (error) {
+    await referencesStore.batchUpdateStages(pipelineId, {
+      deleted_stage_ids: deletedIds,
+      stages: draftRows.map(stage => ({
+        id: stage.draft ? undefined : stage.id,
+        name: stage.name,
+        color: stage.color,
+        active: stage.draft ? true : stage.active !== false,
+      })),
+      technical_stage: originalUnsortedStage
+        ? {
+            id: originalUnsortedStage.id,
+            active: unsortedActiveDraft.value,
+          }
+        : undefined,
+      terminal_stages: terminalStages.map(stage => ({
+        id: stage.id,
+        name: stageDraftName(stage),
+        closing_reason_options:
+          stage.id === lostStage.value?.id
+            ? closingReasons
+            : normalizedTextValues(stage.closingReasonOptions || []),
+      })),
+    });
+    await referencesStore.loadPipelines({ include_inactive_stages: true });
     syncSelectedPipelineState();
+    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
+    return true;
+  } catch (error) {
     useAlert(formatErrorMessage(error));
+    return false;
   } finally {
     settingsSaving.value = false;
   }
 };
 
+const settleUnsavedDecision = decision => {
+  const resolve = resolveUnsavedDecision;
+  resolveUnsavedDecision = null;
+  unsavedDecisionPromise = null;
+  unsavedChangesDialogRef.value?.close();
+  resolve?.(decision);
+};
+
+const requestUnsavedDecision = () => {
+  if (unsavedDecisionPromise) return unsavedDecisionPromise;
+
+  unsavedDecisionPromise = new Promise(resolve => {
+    resolveUnsavedDecision = resolve;
+    unsavedChangesDialogRef.value?.open();
+  });
+  return unsavedDecisionPromise;
+};
+
+const resolveUnsavedChanges = async () => {
+  if (!hasUnsavedStageChanges.value) return true;
+
+  const decision = await requestUnsavedDecision();
+  if (decision === 'stay') return false;
+  if (decision === 'save') return saveSettings();
+
+  syncSelectedPipelineState();
+  return true;
+};
+
+const prepareForRouteLeave = async () => {
+  if (isLeaving.value) return true;
+
+  const canLeave = await resolveUnsavedChanges();
+  if (!canLeave) return false;
+
+  isLeaving.value = true;
+  pipelineDrawerOpen.value = false;
+  await nextTick();
+  return true;
+};
+
+onBeforeRouteLeave(prepareForRouteLeave);
+onBeforeRouteUpdate((to, from) => {
+  const nextPipelineId = Array.isArray(to.query.pipelineId)
+    ? to.query.pipelineId[0]
+    : to.query.pipelineId;
+  const currentPipelineId = Array.isArray(from.query.pipelineId)
+    ? from.query.pipelineId[0]
+    : from.query.pipelineId;
+
+  return String(nextPipelineId || '') === String(currentPipelineId || '')
+    ? true
+    : resolveUnsavedChanges();
+});
+
 const toggleInlineClosingReasons = value => {
   lossReasonsEnabled.value = value;
-  if (!value) saveInlineClosingReasons();
 };
 
-const resetStageForm = () => {
-  Object.assign(stageForm, {
+const randomStageColor = () => {
+  const index = Math.floor(Math.random() * STAGE_STANDARD_COLORS.length);
+  return STAGE_STANDARD_COLORS[index] || DEFAULT_STAGE_COLOR;
+};
+
+const focusStageName = async stageId => {
+  await nextTick();
+  document.querySelector(`[data-stage-name-id="${stageId}"]`)?.focus();
+};
+
+const createStageAt = async insertIndex => {
+  if (!canManage.value || !selectedPipeline.value) return;
+
+  const targetIndex = Math.max(
+    0,
+    Math.min(Number(insertIndex) || 0, movableStageRows.value.length)
+  );
+  temporaryStageSequence += 1;
+  const temporaryId = `draft-stage-${temporaryStageSequence}`;
+  const newStageName = t('CRM.SETTINGS.STAGES.NEW_NAME');
+  const draftStage = {
     active: true,
-    closingReasonOptions: [],
-    color: pickStageColor(selectedPipeline.value?.stages || []),
-    default: false,
-    id: null,
-    name: '',
+    color: randomStageColor(),
+    draft: true,
+    id: temporaryId,
+    name: newStageName,
     outcome: 'open',
-    pipelineId: selectedPipeline.value?.id || '',
-    transitionReasonOptions: [],
-    transitionReasonRequired: false,
-  });
-  lossReasonsEnabled.value = false;
+    pipelineId: selectedPipeline.value.id,
+    position: targetIndex + 1,
+  };
+
+  movableStageRows.value.splice(targetIndex, 0, draftStage);
+  stageNameDrafts[temporaryId] = newStageName;
+  await focusStageName(temporaryId);
 };
 
-const openStageDrawer = (stage, insertIndex = null) => {
-  pendingInsertIndex.value = stage ? null : insertIndex;
-  resetStageForm();
-  if (stage) {
-    Object.assign(stageForm, {
-      active: stage.active !== false,
-      closingReasonOptions: [...(stage.closingReasonOptions || [])],
-      color: stage.color || DEFAULT_STAGE_COLOR,
-      default: Boolean(stage.default),
-      id: stage.id,
-      name: stage.name,
-      outcome: stage.outcome,
-      pipelineId: stage.pipelineId || selectedPipeline.value?.id,
-      transitionReasonOptions: [...(stage.transitionReasonOptions || [])],
-      transitionReasonRequired: Boolean(stage.transitionReasonRequired),
-    });
-    lossReasonsEnabled.value =
-      normalizedTextValues(stage.closingReasonOptions).length > 0;
-  }
-  stageDrawerOpen.value = true;
+const saveInlineStageColor = (stage, color) => {
+  if (!color || color.toUpperCase() === stage.color?.toUpperCase()) return;
+  stage.color = color;
 };
 
-const saveStage = async () => {
-  if (stageFormDisableConfirm.value) return;
+const openDeleteStageDialog = async stage => {
+  if (!stage || isTerminalStageOutcome(stage.outcome)) return;
 
-  const payload = stageFormIsTerminal.value
-    ? {
-        id: stageForm.id,
-        name: String(stageForm.name).trim(),
-        closing_reason_options:
-          stageFormIsLost.value && lossReasonsEnabled.value
-            ? normalizedStageFormClosingReasons.value
-            : [],
-        closing_reason_required: false,
-      }
-    : {
-        id: stageForm.id || undefined,
-        pipelineId: stageForm.pipelineId,
-        name: String(stageForm.name).trim(),
-        color: stageForm.color,
-        active: stageForm.active,
-        default: stageForm.default,
-        transition_reason_options: normalizedStageFormTransitionReasons.value,
-        transition_reason_required: stageForm.transitionReasonRequired,
-      };
-
-  const stageOrderBeforeCreate = movableStageRows.value.map(stage => stage.id);
-  let createdStage = null;
-
+  stageDeletionChecking.value = true;
   try {
-    const savedStage = await referencesStore.saveStage(payload);
-    if (!payload.id) createdStage = savedStage;
-    if (!payload.id && pendingInsertIndex.value !== null) {
-      stageOrderBeforeCreate.splice(pendingInsertIndex.value, 0, savedStage.id);
-      await referencesStore.reorderStages(
-        selectedPipeline.value.id,
-        stageOrderBeforeCreate
-      );
-    }
-    await referencesStore.loadPipelines({ include_inactive_stages: true });
-    stageDrawerOpen.value = false;
-    pendingInsertIndex.value = null;
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_SAVE'));
+    if (!stage.draft) await referencesStore.checkStageDeletion(stage.id);
+    stagePendingDelete.value = {
+      draft: stage.draft,
+      id: stage.id,
+      name: stageDraftName(stage),
+    };
+    stageDeleteDialogRef.value?.open();
   } catch (error) {
-    if (createdStage) {
-      try {
-        await referencesStore.loadPipelines({ include_inactive_stages: true });
-      } catch {
-        // The created stage is already present in Pinia from saveStage.
-      }
-      stageDrawerOpen.value = false;
-      pendingInsertIndex.value = null;
-    }
     useAlert(formatErrorMessage(error));
+  } finally {
+    stageDeletionChecking.value = false;
   }
 };
 
-const openDeleteStageDialog = () => {
-  if (!stageForm.id || stageFormIsTerminal.value) return;
-  stagePendingDelete.value = { id: stageForm.id, name: stageForm.name };
-  stageDeleteDialogRef.value?.open();
-};
-
-const deleteStage = async () => {
+const deleteStage = () => {
   if (!stagePendingDelete.value) return;
 
-  try {
-    await referencesStore.deleteStage(stagePendingDelete.value);
-    stageDeleteDialogRef.value?.close();
-    stageDrawerOpen.value = false;
-    stagePendingDelete.value = null;
-    useAlert(t('CRM.SETTINGS.STAGES.SUCCESS_DELETE'));
-  } catch (error) {
-    useAlert(formatErrorMessage(error));
+  const stage = stagePendingDelete.value;
+  movableStageRows.value = movableStageRows.value.filter(
+    candidate => String(candidate.id) !== String(stage.id)
+  );
+  delete stageNameDrafts[stage.id];
+  if (!stage.draft && !deletedStageIds.value.includes(stage.id)) {
+    deletedStageIds.value.push(stage.id);
   }
+  stageDeleteDialogRef.value?.close();
+  stagePendingDelete.value = null;
 };
 
 const stageCardStyle = stage => ({
@@ -494,18 +611,14 @@ const pipelineAutoCreateEnabled = computed(() =>
       selectedPipeline.value?.auto_create_deal_on_channel_contact
   )
 );
-const stageColorDisabled = color =>
-  unavailableStageColors.value.has(String(color || '').toUpperCase());
-
-const updateStageActive = active => {
-  stageForm.active = active;
-  if (!active) stageForm.default = false;
-};
-
+const pipelineAutoCreateSwitchKey = computed(
+  () =>
+    `${selectedPipeline.value?.id}-${pipelineAutoCreateEnabled.value}-${autoCreateSwitchResetKey.value}`
+);
 const handleRouteAction = async () => {
   if (route.query.action !== 'create-stage' || !canManage.value) return;
 
-  openStageDrawer();
+  await createStageAt(movableStageRows.value.length);
   const query = { ...route.query };
   delete query.action;
   await router.replace({ query });
@@ -548,20 +661,46 @@ onMounted(async () => {
             :title="selectedPipeline.name"
           >
             <template #title>
-              <SelectMenu
-                :model-value="String(selectedPipeline.id)"
-                :options="pipelineOptions"
-                :label="selectedPipeline.name"
-                size="lg"
-                variant="ghost"
-                trigger-class="!max-w-[28rem] !px-0 !text-lg !font-semibold !text-n-slate-12 hover:!bg-transparent"
-                :highlight-trigger="false"
-                sub-menu-align="start"
-                sub-menu-position="bottom"
-                @update:model-value="selectPipeline"
-              />
+              <div class="flex min-w-0 items-center gap-1">
+                <input
+                  v-model="pipelineNameDraft"
+                  data-testid="pipeline-name-input"
+                  type="text"
+                  class="min-w-48 max-w-[28rem] rounded-md border border-transparent bg-transparent px-1 py-1 text-lg font-semibold text-n-slate-12 outline-none transition hover:border-n-weak focus:border-n-brand focus:bg-n-surface-1"
+                  :disabled="!canManage || pipelineSaving"
+                  @blur="saveInlinePipelineName"
+                  @keydown.enter="$event.currentTarget.blur()"
+                />
+                <SelectMenu
+                  :model-value="String(selectedPipeline.id)"
+                  :options="pipelineOptions"
+                  label=""
+                  :action-label="
+                    canManage ? $t('CRM.SETTINGS.PIPELINES.ADD') : ''
+                  "
+                  size="sm"
+                  variant="ghost"
+                  trigger-class="!max-w-8 !px-1 hover:!bg-transparent"
+                  :trigger-aria-label="selectedPipeline.name"
+                  :highlight-trigger="false"
+                  sub-menu-align="start"
+                  sub-menu-position="bottom"
+                  @update:model-value="selectPipeline"
+                  @action="openCreatePipelineDrawer"
+                />
+              </div>
             </template>
             <template #actions>
+              <Button
+                v-if="canManage"
+                size="sm"
+                color="ruby"
+                variant="ghost"
+                icon="i-lucide-trash-2"
+                :aria-label="$t('CRM.SETTINGS.PIPELINES.DELETE')"
+                :title="$t('CRM.SETTINGS.PIPELINES.DELETE')"
+                @click="openDeletePipelineDialog"
+              />
               <Button
                 color="slate"
                 variant="ghost"
@@ -571,9 +710,12 @@ onMounted(async () => {
                 @click="backToDeals"
               />
               <Button
+                data-testid="save-settings-button"
                 :label="$t('CRM.GENERAL.SAVE')"
                 :is-loading="settingsSaving"
-                :disabled="!canManage || settingsSaving"
+                :disabled="
+                  !canManage || settingsSaving || !hasUnsavedStageChanges
+                "
                 @click="saveSettings"
               />
             </template>
@@ -605,6 +747,7 @@ onMounted(async () => {
                         {{ $t('CRM.SETTINGS.PIPELINES.FORM.AUTO_CREATE') }}
                       </div>
                       <Switch
+                        :key="pipelineAutoCreateSwitchKey"
                         :model-value="pipelineAutoCreateEnabled"
                         :disabled="!canManage || pipelineSaving"
                         @update:model-value="togglePipelineAutoCreate"
@@ -617,6 +760,39 @@ onMounted(async () => {
                         )
                       }}
                     </p>
+                    <div v-if="pipelineAutoCreateEnabled" class="grid gap-2">
+                      <span class="text-xs font-medium text-n-slate-11">
+                        {{
+                          $t(
+                            'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.STAGE_LABEL'
+                          )
+                        }}
+                      </span>
+                      <SelectMenu
+                        v-if="canManage && !pipelineSaving"
+                        data-testid="auto-create-stage-select"
+                        :model-value="selectedAutoCreateStageId"
+                        :options="autoCreateStageOptions"
+                        :label="selectedAutoCreateStageLabel"
+                        class="w-full"
+                        sub-menu-align="start"
+                        sub-menu-position="bottom"
+                        @update:model-value="updatePipelineAutoCreateStage"
+                      />
+                      <span v-else class="text-sm font-medium text-n-slate-12">
+                        {{ selectedAutoCreateStageLabel }}
+                      </span>
+                      <p
+                        v-if="autoCreateStageOptions.length === 0"
+                        class="mb-0 text-xs leading-5 text-n-ruby-10"
+                      >
+                        {{
+                          $t(
+                            'CRM.SETTINGS.PIPELINES.AUTO_CREATE_DIALOG.NO_STAGES'
+                          )
+                        }}
+                      </p>
+                    </div>
                   </div>
 
                   <div class="grid gap-3 px-5 py-4">
@@ -628,11 +804,9 @@ onMounted(async () => {
                         {{ $t('CRM.SETTINGS.STAGES.SYSTEM.UNSORTED') }}
                       </div>
                       <Switch
-                        :model-value="unsortedStage?.active !== false"
+                        :model-value="unsortedActiveDraft"
                         :disabled="
-                          !canManage ||
-                          !unsortedStage ||
-                          referencesStore.ui.isSaving
+                          !canManage || !unsortedStage || settingsSaving
                         "
                         @update:model-value="toggleUnsortedStage"
                       />
@@ -675,18 +849,21 @@ onMounted(async () => {
                       animation="200"
                       ghost-class="pipeline-ghost"
                       class="flex items-stretch"
-                      :disabled="!canManage || stageOrderSaving"
-                      @end="persistStageOrder"
+                      :disabled="!canManage || settingsSaving"
                     >
                       <template #item="{ element: stage, index }">
                         <div class="flex shrink-0 items-stretch">
                           <button
                             v-if="canManage"
                             type="button"
-                            class="group relative flex w-8 shrink-0 items-center justify-center"
+                            data-modal-safe-interaction
+                            :data-testid="`create-stage-at-${index}`"
+                            class="stage-create-button group relative flex w-8 shrink-0 items-center justify-center"
                             :aria-label="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
                             :title="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
-                            @click="openStageDrawer(null, index)"
+                            :disabled="settingsSaving"
+                            @pointerdown.stop
+                            @click.prevent.stop="createStageAt(index)"
                           >
                             <span
                               class="absolute inset-x-0 h-px bg-n-weak transition-colors group-hover:bg-n-brand/50"
@@ -700,7 +877,8 @@ onMounted(async () => {
 
                           <article
                             class="flex min-h-44 w-[15rem] shrink-0 flex-col rounded-xl border-t-4 bg-n-slate-2 shadow-sm"
-                            :class="stage.active === false ? 'opacity-60' : ''"
+                            :data-stage-id="stage.id"
+                            :data-draft-stage="stage.draft ? 'true' : undefined"
                             :style="stageCardStyle(stage)"
                           >
                             <div class="flex flex-col px-3 pt-1">
@@ -720,27 +898,44 @@ onMounted(async () => {
                               <input
                                 v-model="stageNameDrafts[stage.id]"
                                 type="text"
-                                class="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-sm font-semibold text-n-slate-12 outline-none transition hover:border-n-weak focus:border-n-brand focus:bg-n-surface-1"
-                                :disabled="
-                                  !canManage || referencesStore.ui.isSaving
+                                :data-stage-name-id="stage.id"
+                                :placeholder="
+                                  $t('CRM.SETTINGS.STAGES.FORM.NAME')
                                 "
+                                class="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-sm font-semibold text-n-slate-12 outline-none transition hover:border-n-weak focus:border-n-brand focus:bg-n-surface-1"
+                                :disabled="!canManage || settingsSaving"
                                 @blur="saveInlineStageName(stage)"
                                 @keydown.enter="$event.currentTarget.blur()"
                               />
                             </div>
-                            <div class="grid gap-3 px-3 pb-3 pt-2">
-                              <span
-                                v-if="stage.default"
-                                class="w-fit rounded-full bg-n-brand/10 px-2 py-0.5 text-[10px] font-semibold text-n-brand"
-                              >
-                                {{ $t('CRM.SETTINGS.STAGES.DEFAULT_BADGE') }}
-                              </span>
-                              <span
-                                v-if="stage.active === false"
-                                class="text-xs text-n-slate-9"
-                              >
-                                {{ $t('CRM.SETTINGS.STAGES.INACTIVE_BADGE') }}
-                              </span>
+                            <div
+                              class="mt-auto flex items-center justify-between gap-2 px-3 pb-3 pt-2"
+                            >
+                              <SchedulingColorPicker
+                                compact
+                                :model-value="stage.color"
+                                :palette="STAGE_STANDARD_COLORS"
+                                :trigger-label="
+                                  $t('CRM.SETTINGS.STAGES.FORM.COLOR')
+                                "
+                                :disabled="!canManage || settingsSaving"
+                                @update:model-value="
+                                  saveInlineStageColor(stage, $event)
+                                "
+                              />
+                              <Button
+                                v-if="canManage"
+                                size="xs"
+                                color="ruby"
+                                variant="ghost"
+                                icon="i-lucide-trash-2"
+                                :aria-label="$t('CRM.SETTINGS.STAGES.DELETE')"
+                                :title="$t('CRM.SETTINGS.STAGES.DELETE')"
+                                :disabled="
+                                  settingsSaving || stageDeletionChecking
+                                "
+                                @click="openDeleteStageDialog(stage)"
+                              />
                             </div>
                           </article>
                         </div>
@@ -750,10 +945,16 @@ onMounted(async () => {
                     <button
                       v-if="canManage"
                       type="button"
-                      class="group relative flex w-8 shrink-0 items-center justify-center"
+                      data-testid="create-stage-button"
+                      data-modal-safe-interaction
+                      class="stage-create-button group relative flex w-8 shrink-0 items-center justify-center"
                       :aria-label="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
                       :title="$t('CRM.SETTINGS.STAGES.CREATE_TITLE')"
-                      @click="openStageDrawer(null, movableStageRows.length)"
+                      :disabled="settingsSaving"
+                      @pointerdown.stop
+                      @click.prevent.stop="
+                        createStageAt(movableStageRows.length)
+                      "
                     >
                       <span
                         class="absolute inset-x-0 h-px bg-n-weak transition-colors group-hover:bg-n-brand/50"
@@ -775,7 +976,7 @@ onMounted(async () => {
                           v-model="stageNameDrafts[wonStage.id]"
                           type="text"
                           class="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-sm font-semibold text-n-slate-12 outline-none transition hover:border-n-weak focus:border-n-brand focus:bg-n-surface-1"
-                          :disabled="!canManage || referencesStore.ui.isSaving"
+                          :disabled="!canManage || settingsSaving"
                           @blur="saveInlineStageName(wonStage)"
                           @keydown.enter="$event.currentTarget.blur()"
                         />
@@ -797,7 +998,7 @@ onMounted(async () => {
                           v-model="stageNameDrafts[lostStage.id]"
                           type="text"
                           class="w-full rounded-md border border-transparent bg-transparent px-1 py-1 text-sm font-semibold text-n-slate-12 outline-none transition hover:border-n-weak focus:border-n-brand focus:bg-n-surface-1"
-                          :disabled="!canManage || referencesStore.ui.isSaving"
+                          :disabled="!canManage || settingsSaving"
                           @blur="saveInlineStageName(lostStage)"
                           @keydown.enter="$event.currentTarget.blur()"
                         />
@@ -811,9 +1012,7 @@ onMounted(async () => {
                           </span>
                           <Switch
                             :model-value="lossReasonsEnabled"
-                            :disabled="
-                              !canManage || referencesStore.ui.isSaving
-                            "
+                            :disabled="!canManage || settingsSaving"
                             @update:model-value="toggleInlineClosingReasons"
                           />
                         </div>
@@ -822,26 +1021,13 @@ onMounted(async () => {
                             v-model="closingReasonDraft"
                             class="rounded-lg bg-n-surface-1 p-2 outline outline-1 outline-n-weak"
                             allow-create
-                            :disabled="
-                              !canManage || referencesStore.ui.isSaving
-                            "
+                            :disabled="!canManage || settingsSaving"
                             :auto-open-dropdown="false"
                             :placeholder="
                               $t(
                                 'CRM.SETTINGS.STAGES.FORM.CLOSING_REASONS_PLACEHOLDER'
                               )
                             "
-                          />
-                          <Button
-                            size="sm"
-                            class="justify-self-end"
-                            :is-loading="referencesStore.ui.isSaving"
-                            :disabled="
-                              !canManage ||
-                              normalizedClosingReasonDraft.length === 0
-                            "
-                            :label="$t('CRM.GENERAL.SAVE')"
-                            @click="saveInlineClosingReasons"
                           />
                         </template>
                       </div>
@@ -856,145 +1042,48 @@ onMounted(async () => {
     </template>
 
     <SchedulingDrawer
-      v-model="stageDrawerOpen"
+      v-model="pipelineDrawerOpen"
+      placement="center"
       width="sm"
       :title="
-        stageForm.id
-          ? $t('CRM.SETTINGS.STAGES.EDIT_TITLE')
-          : $t('CRM.SETTINGS.STAGES.CREATE_TITLE')
+        pipelineForm.id
+          ? $t('CRM.SETTINGS.PIPELINES.EDIT_TITLE')
+          : $t('CRM.SETTINGS.PIPELINES.CREATE_TITLE')
       "
       :confirm-label="$t('CRM.GENERAL.SAVE')"
-      :is-loading="referencesStore.ui.isSaving"
-      :disable-confirm="stageFormDisableConfirm"
-      @confirm="saveStage"
+      :is-loading="pipelineSaving"
+      :disable-confirm="pipelineFormDisableConfirm"
+      @confirm="savePipeline"
     >
-      <div class="mx-auto grid w-full max-w-[26rem] gap-4">
+      <div class="grid gap-2">
         <Input
-          v-if="!stageForm.id"
-          :label="$t('CRM.SETTINGS.STAGES.FORM.NAME')"
-          :model-value="stageForm.name"
-          @update:model-value="stageForm.name = $event"
+          autofocus
+          :label="$t('CRM.SETTINGS.PIPELINES.FORM.NAME')"
+          :model-value="pipelineForm.name"
+          @update:model-value="pipelineForm.name = $event"
+          @enter="savePipeline"
         />
-
-        <template v-if="!stageFormIsTerminal">
-          <div class="grid gap-3">
-            <span class="text-sm font-medium text-n-slate-12">
-              {{ $t('CRM.SETTINGS.STAGES.FORM.COLOR') }}
-            </span>
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="color in STAGE_STANDARD_COLORS"
-                :key="color"
-                type="button"
-                class="size-8 rounded-full border-2 border-n-container transition-transform hover:scale-105 disabled:cursor-not-allowed disabled:opacity-30"
-                :class="
-                  stageForm.color?.toUpperCase() === color.toUpperCase()
-                    ? 'ring-2 ring-n-slate-8 ring-offset-2 ring-offset-n-surface-1'
-                    : ''
-                "
-                :style="{ backgroundColor: color }"
-                :disabled="stageColorDisabled(color)"
-                @click="stageForm.color = color"
-              />
-            </div>
-            <SchedulingColorPicker v-model="stageForm.color" />
-          </div>
-
-          <div v-if="stageForm.id" class="flex items-center gap-3">
-            <Switch
-              :model-value="stageForm.active"
-              @update:model-value="updateStageActive"
-            />
-            <div class="grid gap-1">
-              <span class="text-sm font-medium text-n-slate-12">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.ACTIVE') }}
-              </span>
-              <span class="text-xs text-n-slate-10">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.ACTIVE_HELP') }}
-              </span>
-            </div>
-          </div>
-
-          <div class="flex items-center gap-3">
-            <Switch
-              :model-value="stageForm.default"
-              :disabled="!stageForm.active"
-              @update:model-value="stageForm.default = $event"
-            />
-            <div class="grid gap-1">
-              <span class="text-sm font-medium text-n-slate-12">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.DEFAULT') }}
-              </span>
-              <span class="text-xs text-n-slate-10">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.DEFAULT_HELP') }}
-              </span>
-            </div>
-          </div>
-
-          <div class="grid gap-3 rounded-xl border border-n-weak p-4">
-            <div class="grid gap-1">
-              <span class="text-sm font-medium text-n-slate-12">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS') }}
-              </span>
-              <span class="text-xs leading-5 text-n-slate-10">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_HELP') }}
-              </span>
-            </div>
-            <TagInput
-              v-model="stageForm.transitionReasonOptions"
-              class="rounded-lg bg-n-alpha-black2 p-2 outline outline-1 outline-n-weak"
-              allow-create
-              :auto-open-dropdown="false"
-              :placeholder="
-                $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_PLACEHOLDER')
-              "
-            />
-            <div class="flex items-center gap-3">
-              <Switch
-                :model-value="stageForm.transitionReasonRequired"
-                :disabled="normalizedStageFormTransitionReasons.length === 0"
-                @update:model-value="
-                  stageForm.transitionReasonRequired = $event
-                "
-              />
-              <span class="text-sm text-n-slate-12">
-                {{ $t('CRM.SETTINGS.STAGES.FORM.TRANSITION_REASONS_REQUIRED') }}
-              </span>
-            </div>
-          </div>
-        </template>
+        <p v-if="!pipelineForm.id" class="mb-0 text-xs text-n-slate-10">
+          {{ $t('CRM.SETTINGS.PIPELINES.NEW_PIPELINE_HELP') }}
+        </p>
       </div>
-
-      <template #footer>
-        <div class="flex items-center justify-between gap-3">
-          <Button
-            v-if="stageForm.id && !stageFormIsTerminal"
-            size="sm"
-            color="ruby"
-            variant="outline"
-            :label="$t('CRM.SETTINGS.STAGES.DELETE')"
-            @click="openDeleteStageDialog"
-          />
-          <div v-else />
-          <div class="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="faded"
-              color="slate"
-              :label="$t('SCHEDULING.GENERAL.CANCEL')"
-              @click="stageDrawerOpen = false"
-            />
-            <Button
-              size="sm"
-              :is-loading="referencesStore.ui.isSaving"
-              :disabled="stageFormDisableConfirm || referencesStore.ui.isSaving"
-              :label="$t('CRM.GENERAL.SAVE')"
-              @click="saveStage"
-            />
-          </div>
-        </div>
-      </template>
     </SchedulingDrawer>
+
+    <Dialog
+      ref="pipelineDeleteDialogRef"
+      width="md"
+      type="alert"
+      :title="$t('CRM.SETTINGS.PIPELINES.DELETE_TITLE')"
+      :description="
+        $t('CRM.SETTINGS.PIPELINES.DELETE_DESCRIPTION', {
+          name: pipelinePendingDelete?.name || '',
+        })
+      "
+      :confirm-button-label="$t('CRM.SETTINGS.PIPELINES.DELETE_CONFIRM')"
+      :is-loading="pipelineSaving"
+      @close="pipelinePendingDelete = null"
+      @confirm="deletePipeline"
+    />
 
     <Dialog
       ref="stageDeleteDialogRef"
@@ -1007,9 +1096,44 @@ onMounted(async () => {
         })
       "
       :confirm-button-label="$t('CRM.SETTINGS.STAGES.DELETE_CONFIRM')"
-      :is-loading="referencesStore.ui.isSaving"
+      :is-loading="settingsSaving"
       @close="stagePendingDelete = null"
       @confirm="deleteStage"
     />
+
+    <Dialog
+      ref="unsavedChangesDialogRef"
+      width="md"
+      :title="$t('CRM.SETTINGS.STAGES.UNSAVED.TITLE')"
+      :description="$t('CRM.SETTINGS.STAGES.UNSAVED.DESCRIPTION')"
+      :show-cancel-button="false"
+      :show-confirm-button="false"
+      @close="settleUnsavedDecision('stay')"
+    >
+      <template #footer>
+        <div class="flex w-full flex-col gap-2 sm:flex-row">
+          <Button
+            class="w-full"
+            color="slate"
+            variant="faded"
+            :label="$t('CRM.SETTINGS.STAGES.UNSAVED.STAY')"
+            @click="settleUnsavedDecision('stay')"
+          />
+          <Button
+            class="w-full"
+            color="slate"
+            variant="faded"
+            :label="$t('CRM.SETTINGS.STAGES.UNSAVED.DISCARD')"
+            @click="settleUnsavedDecision('discard')"
+          />
+          <Button
+            class="w-full"
+            color="blue"
+            :label="$t('CRM.SETTINGS.STAGES.UNSAVED.SAVE')"
+            @click="settleUnsavedDecision('save')"
+          />
+        </div>
+      </template>
+    </Dialog>
   </SettingsLayout>
 </template>

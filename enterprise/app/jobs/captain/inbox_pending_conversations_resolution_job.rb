@@ -1,12 +1,15 @@
 class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
   CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON = 'no outstanding questions'.freeze
   CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON = 'pending clarification from customer'.freeze
+  TIME_BASED_COMPLETION_EXPLANATION = 'Customer did not respond within the configured inactivity period.'.freeze
 
   queue_as :low
 
   def perform(inbox)
+    inbox.captain_assistant&.reload
     return if inbox.account.captain_auto_resolve_disabled?
     return if inbox.account.auto_resolve_after.blank?
+    return unless inbox.captain_assistant&.auto_completion_enabled?
 
     if evaluate_conversation_completion?(inbox.account)
       perform_with_evaluation(inbox)
@@ -27,8 +30,11 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Current.executed_by = inbox.captain_assistant
 
     resolvable_pending_conversations(inbox).each do |conversation|
-      create_resolution_message(conversation, inbox)
-      transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system')
+      conversation.with_lock do
+        transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system')
+        create_private_note(conversation, inbox, "Auto-resolved: #{TIME_BASED_COMPLETION_EXPLANATION}")
+        create_resolution_message(conversation, inbox)
+      end
     end
   end
 
@@ -37,20 +43,30 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
 
     resolvable_pending_conversations(inbox).each do |conversation|
       evaluation = evaluate_conversation(conversation, inbox)
+      next unless evaluation[:evaluated] == true
       next unless still_resolvable_after_evaluation?(conversation)
 
-      if evaluation[:complete]
-        resolve_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
-      else
-        handoff_conversation(conversation, inbox, evaluation[:reason], generated_message: evaluation[:message])
-      end
+      apply_evaluation(conversation, inbox, evaluation)
     end
+  end
+
+  def apply_evaluation(conversation, inbox, evaluation)
+    method = evaluation[:complete] ? :resolve_conversation : :handoff_conversation
+    send(
+      method,
+      conversation,
+      inbox,
+      evaluation[:reason],
+      status_reason: evaluation[:status_reason],
+      generated_message: evaluation[:message]
+    )
   end
 
   def evaluate_conversation(conversation, inbox)
     Captain::ConversationCompletionService.new(
       account: inbox.account,
-      conversation_display_id: conversation.display_id
+      conversation_display_id: conversation.display_id,
+      outcome_reasons: Captain::OutcomeReasonConfig.new(inbox.captain_assistant).prompt_context
     ).perform
   end
 
@@ -80,34 +96,58 @@ class Captain::InboxPendingConversationsResolutionJob < ApplicationJob
     Time.now.utc - auto_resolve_after.minutes
   end
 
-  def resolve_conversation(conversation, inbox, reason, generated_message: nil)
-    create_private_note(conversation, inbox, "Auto-resolved: #{reason}")
-    create_resolution_message(conversation, inbox, generated_message: generated_message)
-    conversation.with_captain_activity_context(
-      reason: CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON,
-      reason_type: :inference
-    ) { transition_conversation_status!(conversation, 'resolved', actor: inbox.captain_assistant, source: 'system') }
+  def resolve_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
+    raise ArgumentError, 'A specific completion explanation is required' if reason.to_s.squish.blank?
+
+    conversation.with_lock do
+      transition_agent_outcome(conversation, inbox.captain_assistant, :completion, status_reason, explanation: reason)
+      create_private_note(conversation, inbox, "Auto-resolved: #{reason}")
+      create_resolution_message(conversation, inbox, generated_message: generated_message)
+    end
     conversation.dispatch_captain_inference_resolved_event
   end
 
-  def handoff_conversation(conversation, inbox, reason, generated_message: nil)
-    create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
-    create_handoff_message(conversation, inbox, generated_message: generated_message)
-    conversation.with_captain_activity_context(
-      reason: CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON,
-      reason_type: :inference
-    ) { conversation.bot_handoff!(actor: inbox.captain_assistant, source: 'system') }
+  def handoff_conversation(conversation, inbox, reason, status_reason: nil, generated_message: nil)
+    return unless inbox.captain_assistant&.handoff_enabled?
+
+    raise ArgumentError, 'A specific handoff explanation is required' if reason.to_s.squish.blank?
+
+    conversation.with_lock do
+      transition_agent_outcome(conversation, inbox.captain_assistant, :handoff, status_reason, explanation: reason)
+      create_private_note(conversation, inbox, "Auto-handoff: #{reason}")
+      create_handoff_message(conversation, inbox, generated_message: generated_message)
+    end
     conversation.dispatch_captain_inference_handoff_event
     send_out_of_office_message_if_applicable(conversation.reload)
   end
 
-  def transition_conversation_status!(conversation, status, actor:, source:)
+  def transition_agent_outcome(conversation, assistant, type, status_reason, explanation:)
+    transition_options = outcome_transition_options(assistant, type, status_reason, explanation: explanation)
+    activity_reason = type == :completion ? CAPTAIN_INFERENCE_RESOLVE_ACTIVITY_REASON : CAPTAIN_INFERENCE_HANDOFF_ACTIVITY_REASON
+    Current.executed_by = assistant
+    conversation.captain_activity_reason = activity_reason
+    conversation.captain_activity_reason_type = :inference
+
+    if type == :completion
+      transition_conversation_status!(conversation, 'resolved', actor: assistant, source: 'captain', **transition_options)
+    else
+      conversation.bot_handoff!(actor: assistant, source: 'captain', **transition_options)
+    end
+  end
+
+  def transition_conversation_status!(conversation, status, actor:, source:, **transition_options)
     Conversations::StatusTransitionService.new(
       conversation: conversation,
       params: { status: status },
       actor: actor,
-      source: source
+      source: source,
+      **transition_options
     ).perform
+  end
+
+  def outcome_transition_options(assistant, type, reason, explanation: nil)
+    config = Captain::OutcomeReasonConfig.new(assistant)
+    config.transition_options(type, config.resolve(type, reason), explanation: explanation)
   end
 
   def send_out_of_office_message_if_applicable(conversation)

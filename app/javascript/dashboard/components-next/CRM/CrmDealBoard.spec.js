@@ -46,6 +46,14 @@ describe('CrmDealBoard', () => {
     );
   });
 
+  it('emits the selected stage when creating a deal from a column', async () => {
+    const wrapper = mountBoard({ canManage: true });
+
+    await wrapper.findAll('.crm-deal-board-add-button')[1].trigger('click');
+
+    expect(wrapper.emitted('createDeal')).toEqual([[2]]);
+  });
+
   it('loads the next page near the vertical scroll boundary without a button', async () => {
     const wrapper = mountBoard({ hasMore: true });
     const scrollContainer = wrapper.element;

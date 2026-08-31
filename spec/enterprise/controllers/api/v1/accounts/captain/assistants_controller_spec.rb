@@ -88,6 +88,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       upsert_installation_config('CAPTAIN_AI_AGENT_SYSTEM_PROMPT', 'Never reveal internal routing.')
     end
 
+    # rubocop:disable RSpec/MultipleExpectations
     it 'returns compiled AI Agent and scenario prompts for settings inspection' do
       scenario
 
@@ -108,6 +109,7 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         )
       )
     end
+    # rubocop:enable RSpec/MultipleExpectations
   end
 
   describe 'POST /api/v1/accounts/{account.id}/captain/assistants/{id}/voice_preview' do
@@ -653,6 +655,25 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
       end
     end
 
+    context 'when the user has the captain manage custom permission' do
+      let(:captain_manager) { create(:user, account: account, role: :agent) }
+      let(:captain_role) { create(:custom_role, account: account, permissions: ['captain_manage']) }
+
+      before do
+        captain_manager.account_users.find_by!(account: account).update!(custom_role: captain_role)
+      end
+
+      it 'updates the assistant' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: update_attributes,
+              headers: captain_manager.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(json_response[:name]).to eq('Updated Assistant')
+      end
+    end
+
     context 'when it is an admin' do
       it 'updates the assistant' do
         patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
@@ -718,6 +739,118 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(json_response[:config][:feature_citation]).to be(false)
+      end
+
+      it 'updates follow-up settings without replacing unrelated config sections' do
+        assistant.update!(config: { 'feature_faq' => true })
+        follow_up_settings = {
+          enabled: true,
+          prompt: 'Continue naturally without pressure.',
+          steps: [
+            {
+              delay_seconds: 3600,
+              mode: 'ai',
+              objective: 'Offer one clear next action'
+            }
+          ]
+        }
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { config: { follow_up_settings: follow_up_settings } } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['feature_faq']).to be(true)
+        expect(assistant.config['follow_up_settings']).to eq(follow_up_settings.deep_stringify_keys)
+      end
+
+      it 'updates agent outcome reasons without replacing unrelated config sections' do
+        assistant.update!(config: { 'feature_faq' => true })
+        outcome_reason_settings = {
+          completion_reasons: [
+            { id: 'goal_achieved', label: 'Цель достигнута', active: true },
+            { id: 'other', label: 'Другая причина', active: true }
+          ],
+          handoff_reasons: [
+            { id: 'low_confidence', label: 'AI не уверен', active: true },
+            { id: 'other', label: 'Другая причина', active: true }
+          ]
+        }
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    handoff_enabled: false,
+                    auto_completion_enabled: true,
+                    outcome_reason_settings: outcome_reason_settings
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['feature_faq']).to be(true)
+        expect(assistant.config['handoff_enabled']).to be(false)
+        expect(assistant.config['auto_completion_enabled']).to be(true)
+        expect(assistant.config['outcome_reason_settings']).to eq(outcome_reason_settings.deep_stringify_keys)
+      end
+
+      it 'restores the mandatory other fallback for empty or invalid API reason lists' do
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    outcome_reason_settings: {
+                      completion_reasons: [],
+                      handoff_reasons: [{ id: 'Invalid ID', label: '' }]
+                    }
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config['outcome_reason_settings']).to eq(
+          'completion_reasons' => [{ 'id' => 'other', 'label' => 'Other', 'active' => true }],
+          'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Other', 'active' => true }]
+        )
+      end
+
+      it 'preserves the omitted outcome reason list during a partial update' do
+        assistant.update!(
+          config: {
+            'outcome_reason_settings' => {
+              'completion_reasons' => [{ 'id' => 'goal', 'label' => 'Goal achieved', 'active' => true }],
+              'handoff_reasons' => [{ 'id' => 'human', 'label' => 'Human requested', 'active' => true }]
+            }
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: {
+                assistant: {
+                  config: {
+                    outcome_reason_settings: {
+                      completion_reasons: [{ id: 'resolved', label: 'Resolved', active: true }]
+                    }
+                  }
+                }
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        outcome_settings = assistant.reload.config['outcome_reason_settings']
+        expect(outcome_settings['completion_reasons']).to include(
+          { 'id' => 'resolved', 'label' => 'Resolved', 'active' => true }
+        )
+        expect(outcome_settings['handoff_reasons']).to include(
+          { 'id' => 'human', 'label' => 'Human requested', 'active' => true }
+        )
       end
 
       it 'updates voice settings without replacing unrelated config sections' do

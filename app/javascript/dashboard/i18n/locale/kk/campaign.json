@@ -1026,7 +1026,13 @@
         "FREE_TEXT": "Еркін мәтін",
         "WHATSAPP": "WhatsApp"
       },
+      "FREE_TEXT": {
+        "TITLE": "Жылдам жауаптар",
+        "DESCRIPTION": "Қызметкерлер диалогтарға қоса алатын дайын жауаптарды жасаңыз."
+      },
       "WHATSAPP": {
+        "TITLE": "WhatsApp шаблондары",
+        "DESCRIPTION": "Мақұлданған WhatsApp хабарлама шаблондарын қарап, басқарыңыз.",
         "EMPTY_TITLE": "Шаблондарға арналған WhatsApp inbox жоқ",
         "EMPTY_DESCRIPTION": "Хабарлама шаблондарын көру және басқару үшін WhatsApp inbox қосыңыз немесе таңдаңыз.",
         "INBOX_LABEL": "WhatsApp inbox",

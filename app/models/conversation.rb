@@ -173,13 +173,14 @@ class Conversation < ApplicationRecord
     save
   end
 
-  def bot_handoff!(status_reason: nil, actor: Current.user || Current.executed_by, source: 'system')
+  def bot_handoff!(status_reason: nil, actor: Current.user || Current.executed_by, source: 'system', audit: {})
     self.waiting_since = Time.current if waiting_since.blank?
     Conversations::StatusTransitionService.new(
       conversation: self,
       params: { status: 'open', status_reason: status_reason }.compact,
       actor: actor,
-      source: source
+      source: source,
+      audit: audit
     ).perform
     dispatcher_dispatch(CONVERSATION_BOT_HANDOFF)
   end

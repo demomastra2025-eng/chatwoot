@@ -217,6 +217,13 @@ RSpec.describe 'Accounts API', type: :request do
         auto_resolve_ignore_waiting: false,
         dashboard_sidebar_hidden_items: ['Conversation:Resolved'],
         dashboard_sidebar_hidden_items_version: 14,
+        dashboard_conversation_sidebar_pipeline_visibility: {
+          configured: true,
+          pipelines: [
+            { id: 7, enabled: true, hidden_stage_ids: [72] },
+            { id: 8, enabled: false, hidden_stage_ids: [] }
+          ]
+        },
         timezone: 'Asia/Kolkata',
         industry: 'Technology',
         company_size: '1-10'
@@ -252,6 +259,10 @@ RSpec.describe 'Accounts API', type: :request do
         ].each do |attribute|
           expect(account.reload.settings[attribute]).to eq(params[attribute.to_sym])
         end
+
+        expect(account.reload.settings['dashboard_conversation_sidebar_pipeline_visibility']).to eq(
+          params[:dashboard_conversation_sidebar_pipeline_visibility].deep_stringify_keys
+        )
 
         %w[timezone industry company_size].each do |attribute|
           expect(account.reload.custom_attributes[attribute]).to eq(params[attribute.to_sym])

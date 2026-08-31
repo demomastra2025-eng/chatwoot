@@ -125,6 +125,12 @@ const campaignsRoutes = {
           meta: templatesMeta,
           component: OutboundTemplatesPage,
         },
+        {
+          path: 'templates/whatsapp',
+          name: 'outbound_whatsapp_templates_index',
+          meta: templatesMeta,
+          component: OutboundTemplatesPage,
+        },
       ],
     },
     {

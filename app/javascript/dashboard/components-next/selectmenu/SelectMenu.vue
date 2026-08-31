@@ -4,6 +4,10 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 
 const props = defineProps({
+  actionLabel: {
+    type: String,
+    default: '',
+  },
   icon: {
     type: String,
     default: '',
@@ -32,6 +36,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  triggerAriaLabel: {
+    type: String,
+    default: '',
+  },
   highlightTrigger: {
     type: Boolean,
     default: true,
@@ -50,7 +58,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits(['action', 'update:modelValue']);
 
 const isOpen = ref(false);
 
@@ -64,6 +72,11 @@ const handleSelect = value => {
   emit('update:modelValue', value);
   isOpen.value = false;
 };
+
+const handleAction = () => {
+  emit('action');
+  isOpen.value = false;
+};
 </script>
 
 <template>
@@ -75,6 +88,7 @@ const handleSelect = value => {
       :size="size"
       color="slate"
       :variant="variant"
+      :aria-label="triggerAriaLabel || undefined"
       class="!w-fit max-w-40"
       :class="[
         triggerClass,
@@ -127,6 +141,17 @@ const handleSelect = value => {
         :class="{ '!bg-n-alpha-2': option.value === modelValue }"
         @click="handleSelect(option.value)"
       />
+      <div v-if="actionLabel" class="mt-1 border-t border-n-weak pt-1">
+        <Button
+          :label="actionLabel"
+          icon="i-lucide-plus"
+          size="sm"
+          variant="ghost"
+          color="slate"
+          class="!h-8 !w-full !justify-start !px-2.5"
+          @click="handleAction"
+        />
+      </div>
     </div>
   </div>
 </template>

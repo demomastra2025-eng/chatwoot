@@ -34,6 +34,14 @@ describe('account settings routes', () => {
       path: 'conversations',
       meta: { permissions: ['administrator'] },
     });
+
+    const conversationNavigationRoute = generalSettingsRoute.children.find(
+      route => route.name === 'workspace_conversation_visibility_settings_index'
+    );
+    expect(conversationNavigationRoute).toMatchObject({
+      path: 'conversation-navigation',
+      meta: { permissions: ['administrator'] },
+    });
   });
 
   it('keeps lead forms routable without showing them as a general-settings tab', () => {

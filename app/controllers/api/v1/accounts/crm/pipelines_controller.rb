@@ -25,6 +25,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
 
     pipeline = nil
     ApplicationRecord.transaction do
+      lock_account_for_pipeline_defaults!
       pipeline = Current.account.crm_pipelines.new(pipeline_params)
       pipeline.position = nil unless params.key?(:position)
       pipeline.save!
@@ -36,16 +37,30 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
 
   def update
     authorize @pipeline
-    @pipeline.update!(pipeline_params)
+
+    ApplicationRecord.transaction do
+      lock_account_for_pipeline_defaults!
+      @pipeline.lock!
+      was_default = @pipeline.active? && @pipeline.default?
+      set_auto_create_default_stage!
+      @pipeline.update!(pipeline_params)
+      promote_default_pipeline! if was_default && (!@pipeline.active? || !@pipeline.default?)
+    end
 
     render_payload(::Crm::PayloadBuilder.pipeline(@pipeline.reload))
   end
 
   def destroy
     authorize @pipeline
-    ensure_archived_pipeline!
-    ensure_destroyable_pipeline!
-    @pipeline.destroy!
+
+    ApplicationRecord.transaction do
+      lock_account_for_pipeline_defaults!
+      @pipeline.lock!
+      ensure_destroyable_pipeline!
+      was_default = @pipeline.default?
+      @pipeline.destroy!
+      promote_default_pipeline! if was_default
+    end
 
     head :no_content
   end
@@ -76,22 +91,30 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
     params.permit(:name, :code, :position, :active, :default, :auto_create_deal_on_channel_contact)
   end
 
+  def set_auto_create_default_stage!
+    return if params[:auto_create_stage_id].blank?
+
+    stage = @pipeline.stages.active.find_by(
+      id: params[:auto_create_stage_id],
+      outcome: 'open'
+    )
+    if stage.blank?
+      raise ::Crm::Error.new(
+        code: 'INVALID_AUTO_CREATE_STAGE',
+        message: 'Auto-created deals require an active open stage from the selected pipeline.',
+        status: :unprocessable_content
+      )
+    end
+
+    stage.update!(default: true)
+  end
+
   def include_inactive_stages?
     ActiveModel::Type::Boolean.new.cast(params[:include_inactive_stages])
   end
 
   def set_pipeline
     @pipeline = policy_scope(::Crm::Pipeline).includes(:stages).find(params[:id])
-  end
-
-  def ensure_archived_pipeline!
-    return unless @pipeline.active?
-
-    raise ::Crm::Error.new(
-      code: 'PIPELINE_MUST_BE_ARCHIVED',
-      message: 'You can only delete an archived pipeline.',
-      status: :unprocessable_content
-    )
   end
 
   def ensure_destroyable_pipeline!
@@ -102,6 +125,15 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
       message: 'You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.',
       status: :unprocessable_content
     )
+  end
+
+  def promote_default_pipeline!
+    replacement = Current.account.crm_pipelines.active.ordered.lock.first
+    replacement&.update!(default: true)
+  end
+
+  def lock_account_for_pipeline_defaults!
+    Current.account.lock!
   end
 
   def ensure_complete_stage_order!(movable_stages, ordered_stage_ids)

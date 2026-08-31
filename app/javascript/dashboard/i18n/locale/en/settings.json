@@ -415,25 +415,26 @@
     "HOME": "Home",
     "AGENTS": "Agents",
     "AGENT_BOTS": "Webhooks",
-    "AUDIT_LOGS": "Audit Logs",
+    "AUDIT_LOGS": "Activity log",
     "INBOXES": "Inboxes",
     "NOTIFICATIONS": "Notifications",
-    "CANNED_RESPONSES": "Templates",
+    "CANNED_RESPONSES": "Quick replies",
     "INTEGRATIONS": "Integrations",
     "PROFILE_SETTINGS": "Profile Settings",
-    "ACCOUNT_SETTINGS": "Profile",
-    "VISIBILITY": "Sidebar settings",
-    "CONVERSATION_SETTINGS": "Conversations",
+    "ACCOUNT_SETTINGS": "Company profile",
+    "VISIBILITY": "Navigation",
+    "CONVERSATION_SETTINGS": "Message editor",
     "MY_COMPANY": "Company",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
     "TAG_SETTINGS": "Tag settings",
     "CUSTOM_ATTRIBUTES": "Additional Fields",
     "AUTOMATION": "Automation",
+    "AUTOMATION_RULES": "Automation rules",
     "MACROS": "Macros",
     "LEAD_FORMS": "Leads",
     "TEAMS": "Teams",
-    "BILLING": "Billing",
+    "BILLING": "Plan and billing",
     "CUSTOM_VIEWS_FOLDER": "Folders",
     "CUSTOM_VIEWS_SEGMENTS": "Segments",
     "ALL_CONTACTS": "All Contacts",
@@ -456,6 +457,15 @@
     "TOUCHES": "Touches",
     "TOUCH_PLANS": "Follow-ups",
     "TEMPLATES": "Templates",
+    "WHATSAPP_TEMPLATES": "WhatsApp templates",
+    "SETTINGS_SECTIONS": {
+      "COMPANY": "Company",
+      "CONVERSATIONS": "Conversations",
+      "CHANNELS": "Channels and connections",
+      "AUTOMATION": "Automation",
+      "TEAM": "Team and access",
+      "DATA": "Data"
+    },
     "ONGOING": "Ongoing",
     "ONE_OFF": "One off",
     "REPORTS_SLA": "SLA",
@@ -504,7 +514,8 @@
     "DOCS": "Read docs",
     "SECURITY": "Security",
     "CAPTAIN_AI": "AI Staff",
-    "CONVERSATION_WORKFLOW": "Conversation settings"
+    "CONVERSATION_WORKFLOW": "Conversation settings",
+    "CAPTAIN_OUTCOMES": "Outcomes and handoffs"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1170,42 +1181,54 @@
     },
     "TABS": {
       "CLOSURE": "Conversation closure",
-      "VISIBILITY": "Visibility",
+      "VISIBILITY": "Conversation navigation",
       "SLA": "SLA"
     },
     "VISIBILITY": {
       "HEADER": {
-        "TITLE": "Conversation visibility",
-        "DESCRIPTION": "Choose which conversation navigation groups are shown in the sidebar."
+        "TITLE": "Conversation navigation",
+        "DESCRIPTION": "Choose which lists and business sections are shown inside Conversations."
       },
       "SECTIONS": {
-        "ASSIGNEE": "Ownership",
+        "ASSIGNEE": "All, Mine, Unassigned",
         "STATUSES": "Statuses",
-        "PIPELINE": "Conversation pipelines",
+        "PIPELINE": "Deals",
         "APPOINTMENTS": "Appointments",
-        "ORGANIZATION": "Organization"
+        "ORGANIZATION": "Main navigation"
       },
       "DESCRIPTIONS": {
-        "ASSIGNEE": "Show or hide All, Mine, and Unassigned conversation scopes.",
+        "ASSIGNEE": "When disabled, the All filter remains fixed.",
         "STATUSES": "Show or hide status navigation. Statuses are hidden by default.",
-        "PIPELINE": "Show or hide conversation filters by the general pipeline, AI pipeline, and their stages.",
-        "APPOINTMENTS": "Show or hide appointment status filters in the conversation sidebar.",
-        "ORGANIZATION": "Show or hide custom views, teams, and tags."
+        "PIPELINE": "Choose the main pipeline and configure its stages.",
+        "APPOINTMENTS": "Configure which appointment statuses are shown."
+      },
+      "SUMMARY": {
+        "HIDDEN": "Hidden",
+        "PIPELINE_EMPTY": "Select a main pipeline",
+        "PIPELINE": "{pipeline} · {visible} of {total} stages",
+        "STATUSES": "Showing {visible} of {total} statuses",
+        "CONFIGURE": "Configure",
+        "COLLAPSE": "Collapse"
       },
       "ITEMS": {
         "STATUSES": "Status group",
-        "APPOINTMENTS": "Appointment status group",
+        "APPOINTMENTS": "Show records",
+        "PIPELINES_LOADING": "Loading pipelines…",
+        "PIPELINES_EMPTY": "No active pipelines with stages",
+        "PRIMARY_PIPELINE": "Main pipeline",
+        "PRIMARY_PIPELINE_PLACEHOLDER": "Select a pipeline",
+        "STAGES": "Stages",
         "APPOINTMENT_STATUSES": {
-          "SCHEDULED": "Assigned",
+          "SCHEDULED": "Scheduled",
           "CONFIRMED": "Confirmed",
-          "COMPLETED": "Done",
+          "COMPLETED": "Completed",
           "CANCELLED": "Cancelled",
           "NO_SHOW": "No show"
         }
       },
       "SAVE": {
-        "BUTTON": "Save visibility",
-        "SUCCESS": "Conversation visibility updated"
+        "BUTTON": "Save navigation",
+        "SUCCESS": "Conversation navigation updated"
       }
     },
     "REQUIRED_ATTRIBUTES": {

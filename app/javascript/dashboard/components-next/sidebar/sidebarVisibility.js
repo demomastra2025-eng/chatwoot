@@ -2,7 +2,7 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
-export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 17;
+export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 19;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
 const LEGACY_CAPTAIN_RESTRICTIONS_VISIBILITY_KEY = 'Captain:Restrictions';
@@ -25,9 +25,17 @@ const MY_COMPANY_VISIBILITY_ITEM_KEYS = Object.freeze([
 ]);
 const MY_COMPANY_EMPLOYEES_VISIBILITY_KEY = 'MyCompany:Employees';
 const CONVERSATION_STATUSES_VISIBILITY_KEY = 'Conversation:Statuses';
+export const CONVERSATION_ASSIGNEE_VISIBILITY_KEY = 'Conversation:Assignee';
+const CONVERSATION_ASSIGNEE_ITEM_KEYS = new Set([
+  'Conversation:Assignee:all',
+  'Conversation:Assignee:me',
+  'Conversation:Assignee:unassigned',
+]);
 export const CONVERSATION_PIPELINES_VISIBILITY_KEY = 'Conversation:Pipelines';
 export const CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY =
   'Conversation:AppointmentStatuses';
+export const CONVERSATION_ORGANIZATION_VISIBILITY_KEY =
+  'Conversation:Organization';
 export const CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS = Object.freeze({
   scheduled: 'Conversation:AppointmentStatus:scheduled',
   confirmed: 'Conversation:AppointmentStatus:confirmed',
@@ -53,9 +61,61 @@ const item = (key, labelKey, children = [], configurable = true) => ({
   configurable,
 });
 
+export const CONVERSATION_SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
+  item(
+    CONVERSATION_ASSIGNEE_VISIBILITY_KEY,
+    'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ASSIGNEE'
+  ),
+  item('Conversation:Assignee:all', 'CHAT_LIST.ASSIGNEE_TYPE_TABS.all'),
+  item('Conversation:Assignee:me', 'CHAT_LIST.ASSIGNEE_TYPE_TABS.me'),
+  item(
+    'Conversation:Assignee:unassigned',
+    'CHAT_LIST.ASSIGNEE_TYPE_TABS.unassigned'
+  ),
+  item(
+    CONVERSATION_PIPELINES_VISIBILITY_KEY,
+    'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
+  ),
+  item(
+    CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
+    'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENTS'
+  ),
+  item(
+    CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.scheduled,
+    'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.SCHEDULED'
+  ),
+  item(
+    CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.confirmed,
+    'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CONFIRMED'
+  ),
+  item(
+    CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.completed,
+    'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.COMPLETED'
+  ),
+  item(
+    CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.cancelled,
+    'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.CANCELLED'
+  ),
+  item(
+    CONVERSATION_APPOINTMENT_STATUS_VISIBILITY_KEYS.no_show,
+    'CONVERSATION_WORKFLOW.VISIBILITY.ITEMS.APPOINTMENT_STATUSES.NO_SHOW'
+  ),
+  item(
+    CONVERSATION_ORGANIZATION_VISIBILITY_KEY,
+    'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.ORGANIZATION'
+  ),
+  item('Conversation:Folders', 'SIDEBAR.CUSTOM_VIEWS_FOLDER'),
+  item('Conversation:Teams', 'SIDEBAR.TEAMS'),
+  item('Conversation:Labels', 'SIDEBAR.LABELS'),
+]);
+
 export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Inbox', 'SIDEBAR.INBOX'),
-  item('Conversation', 'SIDEBAR.CONVERSATIONS'),
+  item(
+    'Conversation',
+    'SIDEBAR.CONVERSATIONS',
+    CONVERSATION_SIDEBAR_VISIBILITY_ITEMS
+  ),
   item('Campaigns:MassBroadcasts', 'SIDEBAR.MASS_BROADCASTS'),
   item('Captain', 'SIDEBAR.CAPTAIN'),
   item('Contacts', 'SIDEBAR.CONTACTS'),
@@ -80,6 +140,14 @@ const SIDEBAR_VISIBILITY_ITEM_KEYS = flattenSidebarVisibilityItems(
 
 const getItemKey = sidebarItem =>
   sidebarItem?.visibilityKey || sidebarItem?.name;
+
+const conversationParentVisibilityKey = itemKey => {
+  if (itemKey?.startsWith('Conversation:Assignee:')) {
+    return CONVERSATION_ASSIGNEE_VISIBILITY_KEY;
+  }
+
+  return null;
+};
 
 const toHiddenItemsSet = hiddenItems => {
   if (hiddenItems instanceof Set) {
@@ -307,8 +375,26 @@ export const buildEffectiveSidebarVisibilitySettings = ({
     SIDEBAR_VISIBILITY_CURRENT_VERSION,
 });
 
+const normalizeConversationAssigneeHiddenItems = hiddenItems => {
+  const normalizedHiddenItems = new Set(hiddenItems);
+
+  if (normalizedHiddenItems.has(CONVERSATION_ASSIGNEE_VISIBILITY_KEY)) {
+    normalizedHiddenItems.delete('Conversation:Assignee:all');
+    normalizedHiddenItems.add('Conversation:Assignee:me');
+    normalizedHiddenItems.add('Conversation:Assignee:unassigned');
+  } else {
+    CONVERSATION_ASSIGNEE_ITEM_KEYS.forEach(key => {
+      normalizedHiddenItems.delete(key);
+    });
+  }
+
+  return normalizedHiddenItems;
+};
+
 export const buildSidebarVisibilityState = uiSettings => {
-  const hiddenItems = new Set(getSidebarHiddenItems(uiSettings));
+  const hiddenItems = normalizeConversationAssigneeHiddenItems(
+    getSidebarHiddenItems(uiSettings)
+  );
 
   return SIDEBAR_VISIBILITY_ITEM_KEYS.reduce((visibility, key) => {
     visibility[key] = !hiddenItems.has(key);
@@ -316,15 +402,61 @@ export const buildSidebarVisibilityState = uiSettings => {
   }, {});
 };
 
+const conversationVisibilityItemKeys = new Set(
+  CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.map(
+    visibilityItem => visibilityItem.key
+  )
+);
+
+const normalizeConversationSidebarHiddenItems = hiddenItems => {
+  const normalizedHiddenItems =
+    normalizeConversationAssigneeHiddenItems(hiddenItems);
+  normalizedHiddenItems.delete(CONVERSATION_ORGANIZATION_VISIBILITY_KEY);
+
+  return CONVERSATION_SIDEBAR_VISIBILITY_ITEMS.map(
+    visibilityItem => visibilityItem.key
+  ).filter(key => normalizedHiddenItems.has(key));
+};
+
+export const getConversationSidebarHiddenItems = uiSettings =>
+  normalizeConversationSidebarHiddenItems(
+    getSidebarHiddenItems(uiSettings).filter(key =>
+      conversationVisibilityItemKeys.has(key)
+    )
+  );
+
 export const getSidebarHiddenItemsFromState = state =>
   SIDEBAR_VISIBILITY_ITEM_KEYS.filter(key => state?.[key] === false);
+
+export const getConversationSidebarHiddenItemsFromState = state =>
+  normalizeConversationSidebarHiddenItems(
+    getSidebarHiddenItemsFromState(state).filter(key =>
+      conversationVisibilityItemKeys.has(key)
+    )
+  );
+
+export const isConversationAssigneeSelectionLocked = uiSettings =>
+  getSidebarHiddenItems(uiSettings).includes(
+    CONVERSATION_ASSIGNEE_VISIBILITY_KEY
+  );
 
 export const filterSidebarMenuItems = (menuItems, uiSettings) => {
   const hiddenItems = new Set(getSidebarHiddenItems(uiSettings));
 
   const filterItems = items =>
     items.flatMap(sidebarItem => {
-      if (hiddenItems.has(getItemKey(sidebarItem))) {
+      const itemKey = getItemKey(sidebarItem);
+      const parentVisibilityKey = conversationParentVisibilityKey(itemKey);
+      const isAssigneeItem = CONVERSATION_ASSIGNEE_ITEM_KEYS.has(itemKey);
+      const isAssigneeLocked = hiddenItems.has(
+        CONVERSATION_ASSIGNEE_VISIBILITY_KEY
+      );
+      if (
+        isAssigneeItem
+          ? isAssigneeLocked && itemKey !== 'Conversation:Assignee:all'
+          : hiddenItems.has(itemKey) ||
+            (parentVisibilityKey && hiddenItems.has(parentVisibilityKey))
+      ) {
         return [];
       }
 

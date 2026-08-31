@@ -1026,7 +1026,13 @@
         "FREE_TEXT": "Свободный текст",
         "WHATSAPP": "WhatsApp"
       },
+      "FREE_TEXT": {
+        "TITLE": "Быстрые ответы",
+        "DESCRIPTION": "Создавайте готовые ответы, которые сотрудники могут вставлять в диалоги."
+      },
       "WHATSAPP": {
+        "TITLE": "Шаблоны WhatsApp",
+        "DESCRIPTION": "Просматривайте и управляйте одобренными шаблонами сообщений WhatsApp.",
         "EMPTY_TITLE": "Нет WhatsApp inbox для шаблонов",
         "EMPTY_DESCRIPTION": "Подключите или выберите WhatsApp inbox, чтобы просматривать и управлять шаблонами сообщений.",
         "INBOX_LABEL": "WhatsApp inbox",

@@ -342,7 +342,7 @@ RSpec.describe Captain::Assistant, type: :model do
       expect(glossary_field_ids).to include('contact.email')
     end
 
-    it 'adds explicitly referenced capability tools even when their checkbox is off' do
+    it 'does not add handoff from a prompt reference when the canonical setting is absent and legacy access excludes it' do
       assistant.description = 'Use [Handoff to Human](tool://handoff) when needed.'
       assistant.config = {
         'context_access' => {},
@@ -355,7 +355,38 @@ RSpec.describe Captain::Assistant, type: :model do
       }
 
       expect(assistant).to be_valid
-      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
+    end
+
+    it 'forces handoff into scenario runtime without changing the separate voice runtime' do
+      assistant.config = {
+        'handoff_enabled' => true,
+        'tool_access' => {
+          'agent' => {
+            'enabled' => false,
+            'tool_ids' => ['faq_lookup']
+          }
+        }
+      }
+
+      expect(assistant.scenario_agent_tool_ids).to contain_exactly('handoff')
+      expect(assistant.voice_runtime_agent_tools).to be_empty
+    end
+
+    it 'keeps text handoff out of scenario and the separate voice runtime catalog' do
+      assistant.config = {
+        'handoff_enabled' => false,
+        'tool_access' => {
+          'agent' => {
+            'enabled' => true,
+            'tool_ids' => %w[faq_lookup handoff]
+          }
+        }
+      }
+
+      expect(assistant.scenario_agent_tool_ids).not_to include('handoff')
+      expect(assistant.voice_runtime_agent_tools.pluck(:id)).not_to include('handoff')
+      expect(assistant.voice_runtime_agent_tools.pluck(:id)).to include('faq_lookup')
     end
 
     it 'does not add an explicitly referenced web tool when its per-assistant toggle is off' do
@@ -1138,6 +1169,7 @@ RSpec.describe Captain::Assistant, type: :model do
     before do
       assistant.update!(
         config: {
+          'handoff_enabled' => true,
           'context_access' => {
             'contact' => {
               'enabled' => true,
@@ -1180,6 +1212,78 @@ RSpec.describe Captain::Assistant, type: :model do
           entry[:id]
         end
       end).to include('contact.email')
+    end
+
+    it 'removes human handoff from runtime tools when handoff is disabled' do
+      assistant.config['handoff_enabled'] = false
+      assistant.description = 'Use [Handoff to Human](tool://handoff) if needed.'
+
+      expect(assistant.allowed_agent_tool_ids).to contain_exactly('faq_lookup')
+    end
+  end
+
+  describe 'conversation lifecycle capabilities' do
+    it 'keeps handoff enabled but blocks auto completion until outcomes are configured' do
+      assistant = build(:captain_assistant, config: {})
+
+      expect(assistant).to be_handoff_enabled
+      expect(assistant).not_to be_auto_completion_enabled
+    end
+
+    it 'honors explicit disabled capability flags' do
+      assistant = build(
+        :captain_assistant,
+        config: {
+          'handoff_enabled' => false,
+          'auto_completion_enabled' => false
+        }
+      )
+
+      expect(assistant).not_to be_handoff_enabled
+      expect(assistant).not_to be_auto_completion_enabled
+    end
+
+    it 'enables auto completion when completion outcomes are configured' do
+      assistant = build(
+        :captain_assistant,
+        config: {
+          'auto_completion_enabled' => true,
+          'outcome_reason_settings' => {
+            'completion_reasons' => [{ 'id' => 'resolved', 'label' => 'Resolved', 'active' => true }]
+          }
+        }
+      )
+
+      expect(assistant).to be_auto_completion_enabled
+    end
+
+    it 'forces the handoff tool into runtime when the canonical capability is enabled' do
+      assistant = build(
+        :captain_assistant,
+        config: {
+          'handoff_enabled' => true,
+          'tool_access' => {
+            'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+          }
+        }
+      )
+
+      expect(assistant.selected_agent_tool_ids).to contain_exactly('faq_lookup', 'handoff')
+      expect(assistant.prompt_runtime_agent_tools.pluck(:id)).to include('handoff')
+    end
+
+    it 'uses legacy tool access only when the canonical capability flag is absent' do
+      assistant = build(
+        :captain_assistant,
+        config: {
+          'tool_access' => {
+            'agent' => { 'enabled' => true, 'tool_ids' => ['faq_lookup'] }
+          }
+        }
+      )
+
+      expect(assistant).not_to be_handoff_enabled
+      expect(assistant.selected_agent_tool_ids).to contain_exactly('faq_lookup')
     end
   end
 end

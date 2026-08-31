@@ -204,8 +204,12 @@ class Crm::Stage < ApplicationRecord
   end
 
   def normalize_code
-    base = code.presence || name
-    self.code = ::Crm::CodeNormalizer.normalize(base)
+    generated_code = code.blank?
+    normalized_code = ::Crm::CodeNormalizer.normalize(code.presence || name)
+    duplicate_code = generated_code && pipeline&.stages&.where(code: normalized_code)&.exists?
+    normalized_code = "#{normalized_code}_#{SecureRandom.hex(6)}" if duplicate_code
+
+    self.code = normalized_code
   end
 
   def normalize_name

@@ -115,7 +115,13 @@ class Api::V1::AccountsController < Api::BaseController
       :default_deal_touch_plan_id,
       :default_task_touch_plan_id,
       :dashboard_sidebar_hidden_items_version,
-      { dashboard_sidebar_hidden_items: [] }
+      { dashboard_sidebar_hidden_items: [] },
+      {
+        dashboard_conversation_sidebar_pipeline_visibility: [
+          :configured,
+          { pipelines: [:id, :enabled, { hidden_stage_ids: [] }] }
+        ]
+      }
     ]
   end
 

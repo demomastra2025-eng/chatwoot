@@ -12,6 +12,7 @@
 #  completed_at                :datetime
 #  content_kind                :integer          default("free_text"), not null
 #  fingerprint                 :string
+#  idempotency_key             :string
 #  instructions                :text
 #  last_error                  :text
 #  last_materialized_anchor_at :datetime
@@ -166,7 +167,8 @@ class Reminder < ApplicationRecord
   }
   enum :action_type, {
     send_message: 0,
-    ai_agent_wakeup: 1
+    ai_agent_wakeup: 1,
+    captain_follow_up: 2
   }
   enum :content_kind, {
     free_text: 0,
@@ -282,6 +284,21 @@ class Reminder < ApplicationRecord
 
   def processing_claim_token
     metadata.to_h[PROCESSING_CLAIM_KEY].presence
+  end
+
+  def release_processing_claim!(claim_token)
+    with_lock do
+      reload
+      next unless processing? && processing_claim_token == claim_token && !delivery_materialized?
+
+      with_internal_metadata_write do
+        update!(
+          status: :pending,
+          processing_started_at: nil,
+          metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY)
+        )
+      end
+    end
   end
 
   def delivery_materialized?
@@ -510,7 +527,7 @@ class Reminder < ApplicationRecord
   end
 
   def content_ready?
-    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
+    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup? || captain_follow_up?
     return false unless send_message?
     return instructions.present? if agent?
     return template_params.present? if channel_template?
@@ -696,7 +713,7 @@ class Reminder < ApplicationRecord
   end
 
   def route_resolved?
-    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup?
+    return target_conversation_id.present? || conversation_id.present? if ai_agent_wakeup? || captain_follow_up?
 
     return false if target_inbox_id.blank?
     return true if target_contact_inbox_id.present?

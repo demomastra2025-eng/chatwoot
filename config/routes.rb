@@ -238,12 +238,20 @@ Rails.application.routes.draw do
           end
           namespace :crm do
             resources :pipelines, only: [:index, :show, :create, :update, :destroy] do
-              resources :stages, only: [:create]
+              resources :stages, only: [:create] do
+                collection do
+                  patch :batch_update
+                end
+              end
               member do
                 patch :reorder_stages
               end
             end
-            resources :stages, only: [:update, :destroy]
+            resources :stages, only: [:update, :destroy] do
+              member do
+                get :deletion_check
+              end
+            end
             resources :task_statuses, only: [:index, :create, :update, :destroy]
             resources :field_definitions, only: [:index, :create, :update, :destroy]
             resources :reports, only: [] do

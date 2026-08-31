@@ -4,8 +4,8 @@ class Captain::Tools::Copilot::ResolveConversationService < Captain::Tools::Copi
   end
 
   description 'Resolve the current conversation when the issue has been addressed or the conversation should be closed'
-  param :reason, type: :string, desc: 'Optional reason for resolving the conversation', required: false
-  param :status_reason, type: :string, desc: 'Configured conversation status reason for resolving when status reasons are enabled', required: false
+  param :reason, type: :string, desc: 'Required concise factual explanation of why the conversation can be completed.', required: true
+  param :status_reason, type: :string, desc: 'Exact configured assistant completion outcome ID', required: false
 
   def execute(reason: nil, status_reason: nil)
     conversation = conversation_operations.resolve_conversation(reason: reason, status_reason: status_reason)

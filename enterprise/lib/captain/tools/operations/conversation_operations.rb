@@ -177,14 +177,25 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
 
   def handoff(reason: nil, status_reason: nil)
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
+    raise ArgumentError, 'A specific handoff explanation is required' if reason.to_s.squish.blank?
 
-    add_private_note(note: reason) if reason.present?
-    conversation.bot_handoff!(
-      status_reason: configured_status_reason_for(conversation, 'open', status_reason, fallback_reason: reason),
-      actor: actor || assistant,
-      source: captain_status_source
+    resolved_status_reason, transition_options = outcome_reason_and_transition_options(
+      :handoff,
+      conversation,
+      'open',
+      status_reason,
+      fallback_reason: reason
     )
-    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation) unless conversation.campaign.present?
+    conversation.with_lock do
+      conversation.bot_handoff!(
+        status_reason: resolved_status_reason,
+        actor: actor || assistant,
+        source: captain_status_source,
+        **transition_options
+      )
+      add_private_note(note: reason)
+    end
+    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation) if conversation.campaign.blank?
     conversation.reload
   end
 
@@ -192,25 +203,16 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
     raise ArgumentError, 'Conversation is already resolved' if conversation.resolved?
     raise ArgumentError, 'Auto-resolve is disabled for this account' if conversation.account.captain_auto_resolve_disabled?
+    raise ArgumentError, 'A specific completion explanation is required' if reason.to_s.squish.blank?
 
-    params = { status: 'resolved' }
-    status_reason = configured_status_reason_for(conversation, 'resolved', status_reason, fallback_reason: reason)
-    params[:status_reason] = status_reason if status_reason.present?
-
-    transition = lambda do
-      ::Conversations::StatusTransitionService.new(
-        conversation: conversation,
-        params: params,
-        actor: actor || assistant,
-        source: captain_status_source
-      ).perform
-    end
-
-    if reason.present?
-      conversation.with_captain_activity_context(reason: reason, reason_type: :tool, &transition)
-    else
-      transition.call
-    end
+    status_reason, transition_options = outcome_reason_and_transition_options(
+      :completion,
+      conversation,
+      'resolved',
+      status_reason,
+      fallback_reason: reason
+    )
+    perform_resolution_transition(status_reason, reason, transition_options)
     conversation.reload
   end
 
@@ -228,6 +230,23 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
   end
 
   private
+
+  def perform_resolution_transition(status_reason, reason, transition_options)
+    params = { status: 'resolved' }
+    params[:status_reason] = status_reason if status_reason.present? && transition_options.empty?
+    transition = lambda do
+      ::Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: params,
+        actor: actor || assistant,
+        source: captain_status_source,
+        **transition_options
+      ).perform
+    end
+    return transition.call if reason.blank?
+
+    conversation.with_captain_activity_context(reason: reason, reason_type: :tool, &transition)
+  end
 
   def validated_assignee_type!(assignee_id:, assignee_type:)
     raise ArgumentError, 'assignee_id is required when assignee_type is provided' if assignee_id.blank?
@@ -437,12 +456,14 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     @actor_account_user ||= AccountUser.find_by(account_id: account.id, user_id: actor.id)
   end
 
-  def configured_status_reason_for(target_conversation, target_status, explicit_reason, fallback_reason: nil)
-    config = ::Conversations::StatusReasonConfig.new(target_conversation.account)
-    explicit_reason = explicit_reason.to_s.strip.presence
-    return config.resolve_reason!(target_status, explicit_reason, enforce_required: false) if explicit_reason.present?
+  def outcome_reason_and_transition_options(type, _target_conversation, _target_status, explicit_reason, fallback_reason: nil)
+    outcome_config = Captain::OutcomeReasonConfig.new(assistant)
+    outcome_reason = outcome_config.resolve(type, explicit_reason)
 
-    config.canonical_reason(target_status, fallback_reason)
+    [
+      outcome_reason&.fetch('label'),
+      outcome_config.transition_options(type, outcome_reason, explanation: fallback_reason)
+    ]
   end
 
   def captain_status_source

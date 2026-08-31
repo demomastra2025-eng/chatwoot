@@ -99,14 +99,32 @@ const hasRenderableGroup = child =>
 const hasRenderableLeaf = child =>
   !child.headerAction && child.to && isAllowed(child.to);
 
-const visibleChildren = computed(() =>
-  props.children.filter(
-    child =>
-      hasRenderableTabs(child) ||
-      hasRenderableGroup(child) ||
-      hasRenderableLeaf(child)
-  )
-);
+const isRenderableNavigationItem = child =>
+  hasRenderableTabs(child) ||
+  hasRenderableGroup(child) ||
+  hasRenderableLeaf(child);
+
+const visibleChildren = computed(() => {
+  const children = [];
+  let pendingSection = null;
+
+  props.children.forEach(child => {
+    if (child.type === 'section') {
+      pendingSection = child;
+      return;
+    }
+
+    if (!isRenderableNavigationItem(child)) return;
+
+    if (pendingSection) {
+      children.push(pendingSection);
+      pendingSection = null;
+    }
+    children.push(child);
+  });
+
+  return children;
+});
 
 const isSubGroupHeaderActive = child => {
   if (
@@ -174,7 +192,17 @@ const openHeaderAction = async action => {
     <nav class="min-h-0 flex-1 overflow-y-auto px-2 py-2 no-scrollbar">
       <ul class="grid m-0 list-none min-w-0">
         <template v-for="(child, index) in visibleChildren" :key="child.name">
-          <li v-if="child.children && index > 0" class="my-1 h-px bg-n-weak" />
+          <li
+            v-if="child.type === 'section'"
+            data-test="sidebar-section-label"
+            class="mt-2 border-t border-n-weak px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-n-slate-9 first:mt-0 first:border-t-0 first:pt-1"
+          >
+            {{ child.label }}
+          </li>
+          <li
+            v-if="child.type !== 'section' && child.children && index > 0"
+            class="my-1 h-px bg-n-weak"
+          />
           <SidebarAssigneeTabs
             v-if="child.type === 'tabs'"
             :items="child.items"
@@ -200,7 +228,11 @@ const openHeaderAction = async action => {
             :compact-header="child.compactHeader"
           />
           <SidebarGroupLeaf
-            v-else-if="!child.headerAction && isAllowed(child.to)"
+            v-else-if="
+              child.type !== 'section' &&
+              !child.headerAction &&
+              isAllowed(child.to)
+            "
             v-bind="child"
             :label="getChildDisplayLabel(child)"
             :active="activeChildNames.includes(child.name)"

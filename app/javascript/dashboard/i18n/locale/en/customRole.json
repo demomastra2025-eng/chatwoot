@@ -44,7 +44,8 @@
       "CRM_SETTINGS_VIEW": "View CRM settings",
       "CRM_SETTINGS_MANAGE": "Manage CRM settings",
       "REPORT_MANAGE": "Manage reports",
-      "KNOWLEDGE_BASE_MANAGE": "Manage knowledge base"
+      "KNOWLEDGE_BASE_MANAGE": "Manage knowledge base",
+      "CAPTAIN_MANAGE": "Manage AI agents"
     },
     "FORM": {
       "NAME": {

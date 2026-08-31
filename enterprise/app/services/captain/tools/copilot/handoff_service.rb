@@ -4,8 +4,8 @@ class Captain::Tools::Copilot::HandoffService < Captain::Tools::Copilot::BaseAcc
   end
 
   description 'Hand off the current conversation to a human team'
-  param :reason, type: :string, desc: 'Optional handoff reason for the human team', required: false
-  param :status_reason, type: :string, desc: 'Configured conversation status reason for opening/handoff when status reasons are enabled',
+  param :reason, type: :string, desc: 'Required concise factual explanation of what happened and why a human is needed', required: true
+  param :status_reason, type: :string, desc: 'Exact configured assistant handoff outcome ID',
                         required: false
 
   def execute(reason: nil, status_reason: nil)

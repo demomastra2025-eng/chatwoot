@@ -977,6 +977,7 @@ class Captain::Assistant::AgentRunnerService
   def track_handoff_usage(tool_name, handoff_tool_name, context_wrapper)
     return unless context_wrapper&.context
     return unless tool_name.to_s == handoff_tool_name
+    return unless context_wrapper.context[:pending_human_handoff].present?
 
     context_wrapper.context[:captain_v2_handoff_tool_called] = true
     @handoff_tool_called = true

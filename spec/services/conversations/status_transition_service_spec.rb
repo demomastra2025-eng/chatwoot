@@ -5,16 +5,6 @@ RSpec.describe Conversations::StatusTransitionService do
   let(:conversation) { create(:conversation, account: account, status: 'open') }
   let(:agent) { create(:user, account: account, role: :agent) }
 
-  def configure_status_reasons(status, options:, required: false)
-    account.update!(
-      conversation_status_reason_config: {
-        status.to_s => {
-          options: options,
-          required: required
-        }
-      }
-    )
-  end
 
   def transition(params:, source: 'manual', actor: agent)
     described_class.new(
@@ -43,55 +33,31 @@ RSpec.describe Conversations::StatusTransitionService do
     )
   end
 
-  it 'requires configured reasons for manual transitions' do
-    configure_status_reasons(:resolved, options: ['Вопрос решён'], required: true)
 
-    expect do
-      transition(params: { status: 'resolved' })
-    end.to raise_error(Conversations::StatusReasonConfig::Error) { |error|
-      expect(error.code).to eq('CONVERSATION_STATUS_REASON_REQUIRED')
-      expect(error.details).to include(reason_options: ['Вопрос решён'])
-    }
+  it 'records a prevalidated agent outcome reason and analytics metadata' do
+    described_class.new(
+      conversation: conversation,
+      params: { status: 'resolved' },
+      actor: agent,
+      source: 'captain',
+      audit: {
+        reason_override: 'Цель достигнута',
+        metadata: {
+          outcome_reason_id: 'goal_achieved',
+          outcome_reason_type: 'completion',
+          assistant_id: 42
+        }
+      }
+    ).perform
 
-    expect(conversation.reload.status).to eq('open')
-  end
-
-  it 'canonicalizes configured reasons case-insensitively' do
-    configure_status_reasons(:resolved, options: ['Вопрос решён'], required: true)
-
-    transition(params: { status: 'resolved', status_reason: 'вопрос решён' })
-
-    expect(conversation.reload.status).to eq('resolved')
-    expect(conversation.status_transitions.last.reason).to eq('Вопрос решён')
-  end
-
-  it 'rejects unconfigured submitted reasons' do
-    configure_status_reasons(:resolved, options: ['Вопрос решён'], required: false)
-
-    expect do
-      transition(params: { status: 'resolved', status_reason: 'Свободный текст' })
-    end.to raise_error(Conversations::StatusReasonConfig::Error) { |error|
-      expect(error.code).to eq('CONVERSATION_STATUS_REASON_INVALID')
-      expect(error.details).to include(invalid_reason: 'Свободный текст')
-    }
-  end
-
-  it 'does not enforce required reasons when the status is unchanged' do
-    configure_status_reasons(:open, options: ['Back to operator'], required: true)
-
-    expect do
-      transition(params: { status: 'open' })
-    end.not_to(change { ConversationStatusTransition.count })
-
-    expect(conversation.reload.status).to eq('open')
-  end
-
-  it 'does not enforce required reasons for source-aware system transitions' do
-    configure_status_reasons(:resolved, options: ['Вопрос решён'], required: true)
-
-    transition(params: { status: 'resolved' }, source: 'system', actor: nil)
-
-    expect(conversation.reload.status).to eq('resolved')
-    expect(conversation.status_transitions.last).to have_attributes(reason: nil, source: 'system')
+    expect(conversation.status_transitions.last).to have_attributes(
+      reason: 'Цель достигнута',
+      source: 'captain',
+      metadata: include(
+        'outcome_reason_id' => 'goal_achieved',
+        'outcome_reason_type' => 'completion',
+        'assistant_id' => 42
+      )
+    )
   end
 end

@@ -27,6 +27,23 @@ describe('captain routes', () => {
     expect(playgroundRoute.redirect).toBeUndefined();
   });
 
+  it('redirects the legacy outcomes route to the assistant profile', () => {
+    const outcomesRoute = flattenRoutes(routes).find(
+      route => route.name === 'captain_assistants_outcomes_index'
+    );
+
+    expect(outcomesRoute).toBeTruthy();
+    expect(outcomesRoute.path).toContain('/captain/:assistantId/outcomes');
+    expect(outcomesRoute.component).toBeUndefined();
+    expect(
+      outcomesRoute.redirect({ params: { assistantId: '42' }, query: {} })
+    ).toEqual({
+      name: 'captain_assistants_settings_index',
+      params: { assistantId: '42' },
+      query: { tab: 'profile' },
+    });
+  });
+
   it('redirects the removed channels page to channel settings', () => {
     const channelsRoute = flattenRoutes(routes).find(
       route => route.name === 'captain_assistants_channels_index'
@@ -44,6 +61,23 @@ describe('captain routes', () => {
       name: 'settings_inbox_list',
       params: { accountId: '1' },
       query: { source: 'legacy' },
+    });
+  });
+
+  it('hides assistant configuration routes from ordinary agents', () => {
+    const managedRouteNames = [
+      'captain_assistants_create_index',
+      'captain_assistants_follow_ups_index',
+      'captain_assistants_prompts_index',
+      'captain_assistants_settings_index',
+    ];
+
+    managedRouteNames.forEach(routeName => {
+      const route = flattenRoutes(routes).find(item => item.name === routeName);
+      expect(route.meta.permissions).toEqual([
+        'administrator',
+        'captain_manage',
+      ]);
     });
   });
 });

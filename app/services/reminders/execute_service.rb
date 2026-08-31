@@ -13,7 +13,13 @@ class Reminders::ExecuteService
     return finish_execution if reminder.delivery_materialized?
 
     execute_action
+  rescue Reminders::RetryableExecutionError
+    raise
   rescue StandardError => e
+    if @reminder.captain_follow_up?
+      raise Reminders::RetryableExecutionError, e.message
+    end
+
     fail_reminder!(e.message)
     raise
   end
@@ -32,6 +38,8 @@ class Reminders::ExecuteService
       execute_send_message
     when 'ai_agent_wakeup'
       execute_ai_agent_wakeup
+    when 'captain_follow_up'
+      execute_captain_follow_up
     else
       raise ArgumentError, "Unsupported touch action: #{reminder.action_type}"
     end
@@ -108,6 +116,31 @@ class Reminders::ExecuteService
     message = finalize_ai_agent_wakeup(conversation, generated_payload, delivery_policy)
 
     finish_execution(message)
+  end
+
+  def execute_captain_follow_up
+    metadata = reminder.metadata.to_h.fetch('captain_follow_up')
+    outcome = Captain::Conversation::FollowUpJob.perform_now(
+      reminder.target_conversation_id || reminder.conversation_id,
+      metadata.fetch('assistant_id'),
+      metadata.fetch('anchor_message_id'),
+      metadata.fetch('step_index')
+    )
+    if outcome == :in_progress
+      raise Reminders::RetryableExecutionError, 'Captain follow-up attempt is still processing'
+    end
+
+    complete_without_materialized_delivery
+  end
+
+  def complete_without_materialized_delivery
+    reminder.with_lock do
+      reminder.reload
+      return unless reminder.processing?
+      return unless reminder.processing_claim_token == @processing_claim
+
+      reminder.complete!
+    end
   end
 
   def finalize_ai_agent_wakeup(conversation, generated_payload, delivery_policy)

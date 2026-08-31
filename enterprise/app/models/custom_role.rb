@@ -23,6 +23,7 @@
 # - 'contact_manage': Can manage contacts.
 # - 'report_manage': Can manage reports.
 # - 'knowledge_base_manage': Can manage knowledge base portals.
+# - 'captain_manage': Can manage AI agents.
 
 class CustomRole < ApplicationRecord
   belongs_to :account
@@ -43,6 +44,7 @@ class CustomRole < ApplicationRecord
     outbound_manage
     report_manage
     knowledge_base_manage
+    captain_manage
   ].freeze
 
   validates :name, presence: true

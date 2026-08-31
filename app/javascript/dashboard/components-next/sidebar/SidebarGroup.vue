@@ -488,8 +488,15 @@ watch(
         class="grid m-0 list-none sidebar-group-children min-w-0"
       >
         <template v-for="child in children" :key="child.name">
+          <li
+            v-if="child.type === 'section'"
+            data-test="sidebar-section-label"
+            class="mt-2 border-t border-n-weak px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wide text-n-slate-9 first:mt-0 first:border-t-0 first:pt-1"
+          >
+            {{ child.label }}
+          </li>
           <SidebarAssigneeTabs
-            v-if="child.type === 'tabs'"
+            v-else-if="child.type === 'tabs'"
             v-show="
               isExpanded ||
               child.items?.some(item => activeChildNames.includes(item.name))

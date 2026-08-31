@@ -6,7 +6,7 @@
 # Enterprise::Captain::ConversationCompletionService marks results as non-billable even when
 # they include a customer-facing generated message for auto-resolve/handoff flows.
 class Captain::ConversationCompletionService < Captain::BaseTaskService
-  pattr_initialize [:account!, :conversation_display_id!]
+  pattr_initialize [:account!, :conversation_display_id!, { outcome_reasons: {} }]
 
   def perform
     evaluator.perform
@@ -18,7 +18,8 @@ class Captain::ConversationCompletionService < Captain::BaseTaskService
     Captain::ConversationCompletionEvaluator.new(
       account: account,
       conversation_display_id: conversation_display_id,
-      messages: conversation_messages(start_from: 0)
+      messages: conversation_messages(start_from: 0),
+      outcome_reasons: outcome_reasons
     )
   end
 end

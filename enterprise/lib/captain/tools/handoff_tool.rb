@@ -1,11 +1,14 @@
 class Captain::Tools::HandoffTool < Captain::Tools::BasePublicTool
   description 'Hand off the current conversation to a human team'
-  param :reason, type: 'string', desc: 'Optional handoff reason for the human team', required: false
-  param :status_reason, type: 'string', desc: 'Configured conversation status reason for opening/handoff when status reasons are enabled',
+  param :reason, type: 'string', desc: 'Required concise factual explanation of what happened and why a human is needed.', required: true
+  param :status_reason, type: 'string', desc: 'Exact configured assistant handoff outcome ID',
                         required: false
   param :message, type: 'string', desc: 'Optional customer-facing handoff message to send when AI handoff message mode is enabled', required: false
 
   def perform(tool_context, reason: nil, status_reason: nil, message: nil)
+    return 'Handoff to a human is disabled for this assistant' unless assistant.handoff_enabled?
+    return 'A specific handoff explanation is required' if reason.to_s.squish.blank?
+
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
 

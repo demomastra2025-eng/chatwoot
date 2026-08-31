@@ -12,6 +12,8 @@ const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const AttributesHome = () => import('../attributes/Index.vue');
 const ConversationWorkflow = () => import('../conversationWorkflow/index.vue');
+const ConversationVisibilitySettings = () =>
+  import('../conversationWorkflow/ConversationVisibilitySettings.vue');
 const SLASettings = () => import('../sla/Index.vue');
 
 export const WORKSPACE_ADDITIONAL_FIELD_TABS = [
@@ -77,6 +79,14 @@ export default {
           path: 'conversations',
           name: 'workspace_conversation_settings_index',
           component: ConversationSettings,
+          meta: {
+            permissions: ['administrator'],
+          },
+        },
+        {
+          path: 'conversation-navigation',
+          name: 'workspace_conversation_visibility_settings_index',
+          component: ConversationVisibilitySettings,
           meta: {
             permissions: ['administrator'],
           },

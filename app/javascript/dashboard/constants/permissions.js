@@ -11,6 +11,7 @@ export const AVAILABLE_CUSTOM_ROLE_PERMISSIONS = [
   'crm_settings_manage',
   'report_manage',
   'knowledge_base_manage',
+  'captain_manage',
 ];
 
 export const ROLES = ['agent', 'administrator'];

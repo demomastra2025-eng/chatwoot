@@ -29,5 +29,23 @@ RSpec.describe Reminders::ProcessPendingRemindersJob do
 
       expect(reminder.reload).to be_pending
     end
+
+    it 'releases all claims that were not enqueued when the queue rejects a job' do
+      reminders = create_list(:reminder, 2, scheduled_at: 5.minutes.ago, status: :pending)
+      enqueue_error = ActiveJob::EnqueueError.new('Queue unavailable')
+      failed_job = instance_double(
+        Reminders::ExecuteReminderJob,
+        successfully_enqueued?: false,
+        enqueue_error: enqueue_error
+      )
+      allow(Reminders::ExecuteReminderJob).to receive(:perform_later).and_return(failed_job)
+
+      expect do
+        described_class.perform_now
+      end.to raise_error(ActiveJob::EnqueueError, 'Queue unavailable')
+
+      expect(reminders.map { |reminder| reminder.reload.status }).to eq(%w[pending pending])
+      expect(reminders.map(&:processing_claim_token)).to eq([nil, nil])
+    end
   end
 end

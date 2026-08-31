@@ -3,7 +3,7 @@
 class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
   RESPONSE_SCHEMA = Captain::ConversationCompletionSchema
 
-  pattr_initialize [:account!, :messages!, { conversation_display_id: nil }, { model: nil }]
+  pattr_initialize [:account!, :messages!, { conversation_display_id: nil }, { model: nil }, { outcome_reasons: {} }]
 
   def perform
     content = format_messages_as_string
@@ -12,7 +12,7 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
     response = make_api_call(
       model: resolved_model,
       messages: [
-        { role: 'system', content: render_task_prompt('conversation_completion') },
+        { role: 'system', content: render_task_prompt('conversation_completion', outcome_reasons: outcome_reasons) },
         { role: 'user', content: content }
       ],
       schema: RESPONSE_SCHEMA
@@ -48,14 +48,23 @@ class Captain::ConversationCompletionEvaluator < Captain::BaseTaskService
   def parse_response(message)
     return default_incomplete_response('Invalid response format') unless message.is_a?(Hash)
 
+    reason = response_value(message, :reason).to_s.squish
+    return default_incomplete_response('Completion explanation is required') if reason.blank?
+
     result = {
       complete: message['complete'] == true || message[:complete] == true,
-      reason: message['reason'] || message[:reason] || 'No reason provided',
+      reason: reason,
       evaluated: true
     }
-    generated_message = message['message'] || message[:message]
+    generated_message = response_value(message, :message)
     result[:message] = generated_message if generated_message.present?
+    status_reason = response_value(message, :status_reason)
+    result[:status_reason] = status_reason if status_reason.present?
     result
+  end
+
+  def response_value(message, key)
+    message[key.to_s] || message[key]
   end
 
   def default_incomplete_response(reason)

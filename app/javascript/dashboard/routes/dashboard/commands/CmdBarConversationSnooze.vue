@@ -9,14 +9,12 @@ import { findSnoozeTime } from 'dashboard/helper/snoozeHelpers';
 import { CMD_SNOOZE_CONVERSATION } from 'dashboard/helper/commandbar/events';
 import wootConstants from 'dashboard/constants/globals';
 import CustomSnoozeModal from 'dashboard/components/CustomSnoozeModal.vue';
-import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 
 const store = useStore();
 const getters = useStoreGetters();
 const { t } = useI18n();
 const showCustomSnoozeModal = ref(false);
-const statusReasonDialogRef = ref(null);
 
 const selectedChat = computed(() => getters.getSelectedChat.value);
 const contextMenuChatId = computed(() => getters.getContextMenuChatId.value);
@@ -44,24 +42,11 @@ const targetConversationType = computed(() =>
     : 'conversation'
 );
 
-const resolveStatusReason = async status => {
-  const result = await statusReasonDialogRef.value?.open({ status });
-  if (result === statusReasonDialogRef.value?.CANCELLED) {
-    return { cancelled: true };
-  }
-
-  return { statusReason: result };
-};
-
 const toggleStatus = async (status, snoozedUntil) => {
-  const { cancelled, statusReason } = await resolveStatusReason(status);
-  if (cancelled) return;
-
   await store.dispatch('toggleStatus', {
     conversationId: targetChat.value?.id,
     status,
     snoozedUntil,
-    statusReason,
     conversationType: targetConversationType.value,
   });
   store.dispatch('setContextMenuChatId', null);
@@ -112,5 +97,4 @@ useEmitter(CMD_SNOOZE_CONVERSATION, onCmdSnoozeConversation);
       @choose-time="chooseSnoozeTime"
     />
   </woot-modal>
-  <ConversationStatusReasonDialog ref="statusReasonDialogRef" />
 </template>

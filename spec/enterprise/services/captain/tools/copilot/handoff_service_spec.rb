@@ -21,17 +21,22 @@ RSpec.describe Captain::Tools::Copilot::HandoffService do
     end
   end
 
-  context 'with configured open status reasons' do
+  context 'with configured assistant handoff outcomes' do
     let(:conversation) { create(:conversation, account: account, status: 'pending') }
 
     it 'returns the canonical status reason written by the transition' do
-      account.update!(
-        conversation_status_reason_config: {
-          open: { options: ['Needs agent'], required: false }
+      assistant.update!(
+        config: {
+          'outcome_reason_settings' => {
+            'handoff_reasons' => [
+              { 'id' => 'needs_agent', 'label' => 'Needs agent' },
+              { 'id' => 'other', 'label' => 'Other' }
+            ]
+          }
         }
       )
 
-      payload = JSON.parse(service.execute(status_reason: 'needs agent'))
+      payload = JSON.parse(service.execute(status_reason: 'needs_agent'))
 
       expect(payload['status']).to eq('open')
       expect(payload['status_reason']).to eq('Needs agent')

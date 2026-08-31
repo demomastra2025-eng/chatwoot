@@ -492,6 +492,96 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.content).to eq('Captain wakeup message')
     end
 
+    it 'executes a persisted Captain follow-up touch and completes it' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      anchor_message = create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        target_conversation: conversation,
+        status: :processing,
+        action_type: :captain_follow_up,
+        metadata: {
+          'captain_follow_up' => {
+            'assistant_id' => assistant.id,
+            'anchor_message_id' => anchor_message.id,
+            'step_index' => 1
+          }
+        }
+      )
+      expect(Captain::Conversation::FollowUpJob).to receive(:perform_now).with(
+        conversation.id,
+        assistant.id,
+        anchor_message.id,
+        1
+      )
+
+      described_class.new(reminder: touch).perform
+
+      expect(touch.reload).to be_completed
+    end
+
+    it 'keeps a failed Captain follow-up claim processing for the job retry' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      anchor_message = create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        target_conversation: conversation,
+        status: :processing,
+        action_type: :captain_follow_up,
+        metadata: {
+          'captain_follow_up' => {
+            'assistant_id' => assistant.id,
+            'anchor_message_id' => anchor_message.id,
+            'step_index' => 0
+          }
+        }
+      )
+      allow(Captain::Conversation::FollowUpJob).to receive(:perform_now).and_raise('temporary failure')
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to raise_error(Reminders::RetryableExecutionError, 'temporary failure')
+
+      expect(touch.reload).to be_processing
+    end
+
+    it 'keeps a Captain follow-up claim processing while another attempt owns the lease' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      anchor_message = create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        target_conversation: conversation,
+        status: :processing,
+        action_type: :captain_follow_up,
+        metadata: {
+          'captain_follow_up' => {
+            'assistant_id' => assistant.id,
+            'anchor_message_id' => anchor_message.id,
+            'step_index' => 0
+          }
+        }
+      )
+      allow(Captain::Conversation::FollowUpJob).to receive(:perform_now).and_return(:in_progress)
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to raise_error(
+        Reminders::RetryableExecutionError,
+        'Captain follow-up attempt is still processing'
+      )
+
+      expect(touch.reload).to be_processing
+    end
+
     it 'creates the next recurring touch after successful execution' do
       conversation = create(:conversation)
       scheduled_at = Time.zone.parse('2026-04-13 13:00:00 UTC')

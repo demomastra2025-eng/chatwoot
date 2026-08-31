@@ -40,7 +40,8 @@ RSpec.describe Captain::ConversationCompletionService do
         messages: [
           { role: 'user', content: 'What are your hours?' },
           { role: 'assistant', content: 'We are open 9-5 Monday to Friday.' }
-        ]
+        ],
+        outcome_reasons: {}
       ).and_return(evaluator)
 
       expect(service.perform).to eq(complete: true, reason: 'Done')
@@ -53,6 +54,7 @@ RSpec.describe Captain::ConversationCompletionService do
           content: {
             'complete' => true,
             'reason' => 'Customer question was fully answered',
+            'status_reason' => 'question_resolved',
             'message' => 'I’m closing this conversation because your question has been answered.'
           },
           input_tokens: 100,
@@ -78,6 +80,10 @@ RSpec.describe Captain::ConversationCompletionService do
         result = service.perform
 
         expect(result[:message]).to eq('I’m closing this conversation because your question has been answered.')
+      end
+
+      it 'returns the configured stable status reason id when provided' do
+        expect(service.perform[:status_reason]).to eq('question_resolved')
       end
 
       it 'uses the account assistant model when configured' do

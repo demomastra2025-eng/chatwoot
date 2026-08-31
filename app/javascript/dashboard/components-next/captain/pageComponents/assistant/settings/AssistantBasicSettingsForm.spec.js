@@ -85,6 +85,7 @@ describe('AssistantBasicSettingsForm', () => {
       feature_web: false,
       feature_document_reading: false,
       feature_image_understanding: false,
+      handoff_enabled: true,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
           enabled: true,
@@ -133,6 +134,35 @@ describe('AssistantBasicSettingsForm', () => {
         tool_ids: [],
       },
     });
+    expect(payload.assistant.config.handoff_enabled).toBe(false);
+  });
+
+  it('uses the existing handoff checkbox as the single handoff capability source', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: {
+          handoff_enabled: false,
+          tool_access: {
+            [AGENT_TOOL_SCOPE]: {
+              enabled: true,
+              tool_ids: [HANDOFF_TOOL_ID],
+            },
+          },
+        },
+      },
+    });
+
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(wrapper.vm.handoffToHumanEnabled).toBe(false);
+    expect(payload.assistant.config.handoff_enabled).toBe(false);
+    expect(
+      payload.assistant.config.tool_access[AGENT_TOOL_SCOPE].tool_ids
+    ).not.toContain(HANDOFF_TOOL_ID);
   });
 
   it('preserves unrelated tool access entries when saving profile checkboxes', async () => {

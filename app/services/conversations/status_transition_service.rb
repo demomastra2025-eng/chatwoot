@@ -1,23 +1,21 @@
 class Conversations::StatusTransitionService
   include DateRangeHelper
 
-  def initialize(conversation:, params: {}, actor: nil, source: 'manual')
+  def initialize(conversation:, params: {}, actor: nil, source: 'manual', audit: {})
     @conversation = conversation
     @account = conversation.account
     @params = params.to_h.with_indifferent_access
     @actor = actor
     @source = source.to_s.presence || 'manual'
+    @reason_override = audit.to_h[:reason_override].to_s.squish.presence
+    @metadata = audit.to_h.fetch(:metadata, {}).to_h.deep_stringify_keys
   end
 
   def perform
     previous_status = conversation.status
     target_status = resolve_target_status(previous_status)
     status_changing = previous_status != target_status
-    reason = reason_config.resolve_reason!(
-      target_status,
-      params[:status_reason],
-      enforce_required: enforce_reason? && status_changing
-    )
+    reason = reason_override
 
     conversation.status = target_status
     assign_snoozed_until!
@@ -30,7 +28,8 @@ class Conversations::StatusTransitionService
 
   private
 
-  attr_reader :conversation, :account, :params, :actor, :source
+  attr_reader :conversation, :account, :params, :actor, :source, :reason_override, :metadata
+
 
   def resolve_target_status(previous_status)
     return params[:status].to_s if params[:status].present?
@@ -44,9 +43,6 @@ class Conversations::StatusTransitionService
     conversation.snoozed_until = params[:snoozed_until].present? ? parse_date_time(params[:snoozed_until].to_s) : nil
   end
 
-  def reason_config
-    @reason_config ||= Conversations::StatusReasonConfig.new(account)
-  end
 
   def record_transition!(previous_status:, target_status:, reason:)
     ConversationStatusTransition.create!(
@@ -67,13 +63,10 @@ class Conversations::StatusTransitionService
     'manual'
   end
 
-  def enforce_reason?
-    %w[manual api bulk_action communication_thread captain copilot].include?(normalized_source)
-  end
 
   def transition_metadata
-    metadata = {}
-    metadata[:snoozed_until] = conversation.snoozed_until.iso8601 if conversation.snoozed_until.present?
-    metadata
+    result = metadata.deep_dup
+    result[:snoozed_until] = conversation.snoozed_until.iso8601 if conversation.snoozed_until.present?
+    result
   end
 end

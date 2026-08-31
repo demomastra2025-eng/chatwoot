@@ -22,12 +22,52 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       expect(tool.parameters).to have_key(:reason)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
-      expect(tool.parameters[:reason].description).to eq('Optional handoff reason for the human team')
-      expect(tool.parameters[:reason].required).to be false
+      expect(tool.parameters[:reason].description).to eq(
+        'Required concise factual explanation of what happened and why a human is needed.'
+      )
+      expect(tool.parameters[:reason].required).to be true
     end
   end
 
   describe '#perform' do
+    it 'does not request a handoff when the capability is disabled' do
+      disabled_assistant = build(:captain_assistant, config: { 'handoff_enabled' => false })
+      disabled_tool = described_class.new(disabled_assistant)
+      context = Struct.new(:state, :context).new({}, {})
+
+      expect(disabled_tool.perform(context)).to eq('Handoff to a human is disabled for this assistant')
+      expect(context.context).not_to have_key(:pending_human_handoff)
+    end
+
+    it 'requires a non-empty explanation for every handoff' do
+      assistant.config['outcome_reason_settings'] = {
+        'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Другое' }]
+      }
+
+      expect(tool.perform(tool_context, status_reason: 'other')).to eq(
+        'A specific handoff explanation is required'
+      )
+      expect(run_context.context).not_to have_key(:pending_human_handoff)
+    end
+
+    it 'accepts other with a concrete explanation for the human team' do
+      assistant.config['outcome_reason_settings'] = {
+        'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Другое' }]
+      }
+
+      result = tool.perform(
+        tool_context,
+        status_reason: 'other',
+        reason: 'Клиент просит нестандартную отсрочку платежа'
+      )
+
+      expect(result).to be_a(RubyLLM::Tool::Halt)
+      expect(run_context.context[:pending_human_handoff]).to include(
+        status_reason: 'other',
+        reason: 'Клиент просит нестандартную отсрочку платежа'
+      )
+    end
+
     context 'when conversation exists' do
       context 'with reason provided' do
         it 'stores pending handoff context and halts the runtime' do
@@ -60,24 +100,13 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       end
 
       context 'without reason provided' do
-        it 'halts the runtime without creating messages' do
+        it 'rejects the handoff without creating messages or pending context' do
           expect do
             result = tool.perform(tool_context)
-            expect(result).to be_a(RubyLLM::Tool::Halt)
-            expect(result.content).to eq('Conversation handed off to human support team')
+            expect(result).to eq('A specific handoff explanation is required')
           end.not_to change(Message, :count)
 
-          expect(run_context.context[:pending_human_handoff]).not_to have_key(:reason)
-          expect(run_context.context[:pending_human_handoff]).to have_key(:timestamp)
-        end
-
-        it 'logs tool usage with default reason' do
-          expect(tool).to receive(:log_tool_usage).with(
-            'tool_handoff',
-            { conversation_id: conversation.id, reason: 'Agent requested handoff' }
-          )
-
-          tool.perform(tool_context)
+          expect(run_context.context).not_to have_key(:pending_human_handoff)
         end
       end
 

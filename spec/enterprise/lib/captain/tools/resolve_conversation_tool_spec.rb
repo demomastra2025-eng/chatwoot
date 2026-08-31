@@ -2,7 +2,17 @@ require 'rails_helper'
 
 RSpec.describe Captain::Tools::ResolveConversationTool do
   let(:account) { create(:account) }
-  let(:assistant) { create(:captain_assistant, account: account) }
+  let(:assistant) do
+    create(
+      :captain_assistant,
+      account: account,
+      config: {
+        'outcome_reason_settings' => {
+          'completion_reasons' => [{ 'id' => 'other', 'label' => 'Other', 'active' => true }]
+        }
+      }
+    )
+  end
   let(:inbox) { create(:inbox, account: account) }
   let(:conversation) { create(:conversation, account: account, inbox: inbox, status: :open) }
   let(:tool) { described_class.new(assistant) }
@@ -17,6 +27,13 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
   end
 
   describe 'resolving a conversation' do
+    it 'does not resolve when automatic completion is disabled for the assistant' do
+      assistant.update!(config: assistant.config.merge('auto_completion_enabled' => false))
+
+      expect(tool.perform(tool_context)).to eq('Automatic completion is disabled for this assistant')
+      expect(conversation.reload).to be_open
+    end
+
     it 'marks resolved and enqueues an activity message with the reason when provided' do
       result = tool.perform(tool_context, reason: 'Possible spam')
       payload = JSON.parse(result)
@@ -40,34 +57,53 @@ RSpec.describe Captain::Tools::ResolveConversationTool do
       )
     end
 
-    it 'marks resolved without requiring a reason' do
-      result = tool.perform(tool_context)
-      payload = JSON.parse(result)
-
-      expect(conversation.reload).to be_resolved
-      expect(payload).to include(
-        'action' => 'resolve_conversation',
-        'conversation_id' => conversation.id,
-        'conversation_display_id' => conversation.display_id,
-        'status' => 'resolved'
-      )
-      expect(payload).not_to have_key('reason')
+    it 'does not resolve without a specific completion explanation' do
+      expect(tool.perform(tool_context)).to eq('A specific completion explanation is required')
+      expect(conversation.reload).to be_open
     end
 
-    it 'canonicalizes explicit configured status reasons' do
-      account.update!(
-        conversation_status_reason_config: {
-          resolved: { options: ['Customer confirmed'], required: false }
-        }
+    it 'requires a specific explanation when the selected completion reason is other' do
+      assistant.update!(
+        config: assistant.config.merge(
+          'outcome_reason_settings' => {
+            'completion_reasons' => [{ 'id' => 'other', 'label' => 'Другое' }]
+          }
+        )
       )
 
-      result = tool.perform(tool_context, status_reason: 'customer confirmed')
-      payload = JSON.parse(result)
+      expect(tool.perform(tool_context, status_reason: 'other')).to eq('A specific completion explanation is required')
+      expect(conversation.reload).to be_open
+    end
+
+    it 'rejects the generic other label as an explanation' do
+      expect(tool.perform(tool_context, reason: 'Other', status_reason: 'other')).to eq(
+        'A specific completion explanation is required'
+      )
+      expect(conversation.reload).to be_open
+    end
+
+    it 'records the concrete other explanation for analytics' do
+      assistant.update!(
+        config: assistant.config.merge(
+          'outcome_reason_settings' => {
+            'completion_reasons' => [{ 'id' => 'other', 'label' => 'Другое' }]
+          }
+        )
+      )
+
+      tool.perform(
+        tool_context,
+        status_reason: 'other',
+        reason: 'Клиент завершил обращение нестандартным запросом'
+      )
 
       expect(conversation.reload).to be_resolved
-      expect(payload['status_reason']).to eq('Customer confirmed')
-      expect(conversation.status_transitions.last.reason).to eq('Customer confirmed')
+      expect(conversation.status_transitions.last.metadata).to include(
+        'outcome_reason_id' => 'other',
+        'outcome_reason_explanation' => 'Клиент завершил обращение нестандартным запросом'
+      )
     end
+
 
     it 'creates a conversation_resolved reporting event' do
       create(:captain_inbox, captain_assistant: assistant, inbox: inbox)

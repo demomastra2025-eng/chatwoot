@@ -10,6 +10,27 @@ import {
   upsertRecord,
 } from './shared';
 
+const pipelineLoadRequests = new WeakMap();
+const pipelinePublicationStates = new WeakMap();
+
+const pipelineAccountId = () =>
+  String(CrmPipelinesAPI.accountIdFromRoute || '');
+
+const publicationStateFor = (store, accountId) => {
+  const current = pipelinePublicationStates.get(store);
+  if (current?.accountId === accountId) return current;
+
+  const next = {
+    accountId,
+    latestGeneration: 0,
+    publishedGeneration: 0,
+    includesInactiveStages: false,
+  };
+  pipelinePublicationStates.set(store, next);
+  store.pipelines = [];
+  return next;
+};
+
 const defaultUi = () => ({
   error: null,
   isLoadingFieldDefinitions: false,
@@ -32,6 +53,20 @@ const sortStages = stages =>
       Number(left.position ?? 0) - Number(right.position ?? 0) ||
       Number(left.id ?? 0) - Number(right.id ?? 0)
   );
+
+const shiftStagePositionsForInsert = (pipelines, stage) =>
+  pipelines.map(pipeline => {
+    if (Number(pipeline.id) !== Number(stage.pipelineId)) return pipeline;
+
+    return {
+      ...pipeline,
+      stages: (pipeline.stages || []).map(existingStage =>
+        Number(existingStage.position) >= Number(stage.position)
+          ? { ...existingStage, position: Number(existingStage.position) + 1 }
+          : existingStage
+      ),
+    };
+  });
 
 const upsertStageInPipelines = (pipelines, stage) => {
   return pipelines.map(pipeline => {
@@ -126,18 +161,61 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
     },
 
     async loadPipelines(params = {}) {
+      const accountId = pipelineAccountId();
+      const requestKey = JSON.stringify([accountId, params]);
+      const requests = pipelineLoadRequests.get(this) || new Map();
+      const existingRequest = requests.get(requestKey);
+      if (existingRequest) return existingRequest;
+
+      const publicationState = publicationStateFor(this, accountId);
+      const requestGeneration = publicationState.latestGeneration + 1;
+      publicationState.latestGeneration = requestGeneration;
+      const includesInactiveStages = params.include_inactive_stages === true;
+
       this.ui.isLoadingPipelines = true;
       this.ui.error = null;
 
-      try {
+      const request = (async () => {
         const { data } = await CrmPipelinesAPI.get(params);
-        this.pipelines = normalizePayload(data);
+        const pipelines = normalizePayload(data);
+        const currentState = pipelinePublicationStates.get(this);
+        const accountIsCurrent = pipelineAccountId() === accountId;
+        const stateIsCurrent = currentState?.accountId === accountId;
+        if (!accountIsCurrent || !stateIsCurrent) return this.pipelines;
+
+        const wouldDowngradeFullData =
+          currentState.includesInactiveStages && !includesInactiveStages;
+        const staleRequest =
+          requestGeneration < currentState.latestGeneration &&
+          !(includesInactiveStages && !currentState.includesInactiveStages);
+        if (wouldDowngradeFullData || staleRequest) return this.pipelines;
+
+        this.pipelines = pipelines;
+        currentState.publishedGeneration = requestGeneration;
+        currentState.includesInactiveStages = includesInactiveStages;
         return this.pipelines;
+      })();
+      requests.set(requestKey, request);
+      pipelineLoadRequests.set(this, requests);
+
+      try {
+        return await request;
       } catch (error) {
-        this.ui.error = extractCrmError(error);
+        const currentState = pipelinePublicationStates.get(this);
+        if (
+          pipelineAccountId() === accountId &&
+          currentState?.accountId === accountId &&
+          requestGeneration === currentState.latestGeneration
+        ) {
+          this.ui.error = extractCrmError(error);
+        }
         throw error;
       } finally {
-        this.ui.isLoadingPipelines = false;
+        requests.delete(requestKey);
+        if (!requests.size) {
+          pipelineLoadRequests.delete(this);
+          this.ui.isLoadingPipelines = false;
+        }
       }
     },
 
@@ -186,6 +264,13 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
           : await CrmPipelinesAPI.createStage(payload.pipelineId, payload);
 
         const stage = normalizePayload(response.data);
+        if (
+          !payload.id &&
+          stage.position !== null &&
+          stage.position !== undefined
+        ) {
+          this.pipelines = shiftStagePositionsForInsert(this.pipelines, stage);
+        }
         this.pipelines = upsertStageInPipelines(this.pipelines, stage);
         return stage;
       } catch (error) {
@@ -211,6 +296,11 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       }
     },
 
+    async checkStageDeletion(stageId) {
+      const { data } = await CrmPipelinesAPI.checkStageDeletion(stageId);
+      return normalizePayload(data);
+    },
+
     async reorderStages(pipelineId, stageIds) {
       this.ui.isSaving = true;
       this.ui.error = null;
@@ -219,6 +309,26 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
         const response = await CrmPipelinesAPI.reorderStages(
           pipelineId,
           stageIds
+        );
+        const pipeline = normalizePayload(response.data);
+        this.pipelines = upsertPipelineInList(this.pipelines, pipeline);
+        return pipeline;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async batchUpdateStages(pipelineId, payload) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = await CrmPipelinesAPI.batchUpdateStages(
+          pipelineId,
+          payload
         );
         const pipeline = normalizePayload(response.data);
         this.pipelines = upsertPipelineInList(this.pipelines, pipeline);

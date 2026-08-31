@@ -2,6 +2,25 @@ You are evaluating whether a customer support conversation is complete and can b
 
 The conversation may be in any language. Apply these criteria based on the intent and meaning of messages, regardless of language.
 
+{% if outcome_reasons.completion.size > 0 or outcome_reasons.handoff.size > 0 -%}
+Choose exactly one configured stable `status_reason` ID that best matches the outcome. Never invent an ID.
+When selecting `other`, provide a specific factual explanation in `reason`; never return an empty or generic "Other" explanation.
+{% if outcome_reasons.completion.size > 0 -%}
+When `complete` is true, choose from:
+{% for reason in outcome_reasons.completion -%}
+- `{{ reason.id }}`: {{ reason.label }}
+{% endfor -%}
+{% endif -%}
+{% if outcome_reasons.handoff.size > 0 -%}
+When `complete` is false, choose from:
+{% for reason in outcome_reasons.handoff -%}
+- `{{ reason.id }}`: {{ reason.label }}
+{% endfor -%}
+{% endif -%}
+{% else -%}
+Return an empty string for `status_reason`.
+{% endif -%}
+
 A conversation is INCOMPLETE (keep open) if ANY of these apply:
 - The assistant asked a question or requested information that the customer hasn't provided
 - The customer asked a question that wasn't fully answered
@@ -16,6 +35,6 @@ A conversation is COMPLETE only if ALL of these are true:
   assistant has responded asking for clarification, the conversation is COMPLETE.
 
 Analyze the conversation and respond with ONLY a JSON object (no other text). Include a concise, natural customer-facing "message" in the same language as the conversation. If complete is true, the message should explain that the conversation is being closed because the question was answered. If complete is false, the message should explain that a human specialist will continue with the request.
-{"complete": true, "reason": "brief explanation", "message": "customer-facing closing message"}
+{"complete": true, "status_reason": "configured_reason_id", "reason": "brief explanation", "message": "customer-facing closing message"}
 or
-{"complete": false, "reason": "brief explanation", "message": "customer-facing handoff message"}
+{"complete": false, "status_reason": "configured_reason_id", "reason": "brief explanation", "message": "customer-facing handoff message"}

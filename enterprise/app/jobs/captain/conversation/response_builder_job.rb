@@ -63,6 +63,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     cancelled = response_cancelled?
     handle_error(e)
     raise e unless cancelled
+  rescue ActiveRecord::RecordInvalid
+    raise
   rescue StandardError => e
     handle_error(e)
   ensure
@@ -116,13 +118,38 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     ensure_response_content_for_artifact_failure!(attachment_ids)
 
+    outgoing_message = nil
     ActiveRecord::Base.transaction do
-      create_messages(attachment_ids: attachment_ids)
+      outgoing_message = create_messages(attachment_ids: attachment_ids)
+      schedule_first_follow_up(outgoing_message)
       Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
       account.increment_response_usage
       account.increment_token_usage(@response.dig('usage', 'total_tokens'))
     end
     true
+  end
+
+  def schedule_first_follow_up(outgoing_message)
+    settings = @assistant.config.to_h.deep_stringify_keys.fetch('follow_up_settings', {}).to_h
+    first_step = Array(settings['steps']).first.to_h.deep_stringify_keys
+    delay_seconds = first_step['delay_seconds'].to_i
+    return unless settings['enabled'] == true && outgoing_message.present? && delay_seconds.positive?
+    return unless follow_up_step_configured?(settings, first_step)
+
+    Captain::Conversation::FollowUpJob.schedule!(
+      conversation: @conversation,
+      assistant: @assistant,
+      anchor_message: outgoing_message,
+      step_index: 0,
+      delay_seconds: delay_seconds
+    )
+  end
+
+  def follow_up_step_configured?(settings, step)
+    static_step = step['mode'].to_s == 'static' || (step['mode'].blank? && step['message'].present?)
+    return step['message'].to_s.strip.present? if static_step
+
+    settings['prompt'].to_s.strip.present? && step['objective'].to_s.strip.present?
   end
 
   def collect_previous_messages
@@ -261,11 +288,20 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def handoff_requested?
+    return false unless @assistant.handoff_enabled?
+
     v2_handoff_tool_fired? || ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
   end
 
   def response_cancelled?
-    assistant_cancelled_response? || manager_cancelled_response?
+    assistant_cancelled_response? || manager_cancelled_response? || disabled_handoff_response?
+  end
+
+  def disabled_handoff_response?
+    return false if @assistant.handoff_enabled?
+    return false if @response.blank?
+
+    v2_handoff_tool_fired? || ['conversation_handoff', PROVIDER_ERROR_HANDOFF_RESPONSE].include?(@response['response'])
   end
 
   def assistant_cancelled_response?
@@ -336,22 +372,32 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def process_action(action)
     case action
     when 'handoff'
+      return unless handoff_explanation_valid?
+
       I18n.with_locale(@assistant.account.locale) do
-        create_handoff_private_note
-        create_handoff_message
-        bot_handoff_with_activity_reason
+        @conversation.with_lock do
+          bot_handoff_with_activity_reason
+          create_handoff_private_note
+          create_handoff_message(preserve_waiting_since: true)
+        end
         send_out_of_office_message_if_applicable
       end
     when 'provider_error_handoff'
-      create_provider_error_private_note
-      bot_handoff_with_activity_reason(provider_error_note_content)
+      @conversation.with_lock do
+        bot_handoff_with_activity_reason(provider_error_note_content)
+        create_provider_error_private_note
+      end
       send_out_of_office_message_if_applicable
     when 'v2_handoff'
+      return unless handoff_explanation_valid?
+
       if conversation_pending?
         I18n.with_locale(@assistant.account.locale) do
-          create_handoff_private_note
-          create_handoff_message
-          bot_handoff_with_activity_reason
+          @conversation.with_lock do
+            bot_handoff_with_activity_reason
+            create_handoff_private_note
+            create_handoff_message(preserve_waiting_since: true)
+          end
           send_out_of_office_message_if_applicable
         end
       else
@@ -362,28 +408,63 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def bot_handoff_with_activity_reason(reason = handoff_activity_reason)
     status_reason = handoff_status_reason
-    source = status_reason.present? ? 'captain' : 'system'
+    source = 'captain'
+    return perform_bot_handoff(status_reason, source) if reason.blank?
 
-    if reason.present?
-      @conversation.with_captain_activity_context(
-        reason: reason,
-        reason_type: v2_handoff_tool_fired? ? :tool : :inference
-      ) { @conversation.bot_handoff!(status_reason: status_reason, actor: @assistant, source: source) }
-    else
-      @conversation.bot_handoff!(status_reason: status_reason, actor: @assistant, source: source)
-    end
+    reason_type = v2_handoff_tool_fired? ? :tool : :inference
+    @conversation.captain_activity_reason = reason
+    @conversation.captain_activity_reason_type = reason_type
+    perform_bot_handoff(status_reason, source)
+  end
+
+  def perform_bot_handoff(status_reason, source)
+    @conversation.bot_handoff!(
+      status_reason: status_reason,
+      actor: @assistant,
+      source: source,
+      **handoff_transition_options
+    )
   end
 
   def handoff_activity_reason
-    @response['handoff_reason'].to_s.strip.presence || @response['reasoning'].to_s.strip.presence
+    handoff_explanation
+  end
+
+  def handoff_explanation
+    @response['handoff_reason'].to_s.strip.presence
+  end
+
+  def handoff_explanation_valid?
+    return false if handoff_explanation.blank?
+
+    !outcome_reason_config.explanation_required?(
+      :handoff,
+      candidate: handoff_outcome_reason&.fetch('id'),
+      explanation: handoff_explanation
+    )
   end
 
   def handoff_status_reason
-    explicit_reason = @response['handoff_status_reason'].to_s.strip.presence || @response['status_reason'].to_s.strip.presence
-    config = Conversations::StatusReasonConfig.new(@conversation.account)
-    return config.resolve_reason!('open', explicit_reason, enforce_required: false) if explicit_reason.present?
+    handoff_outcome_reason&.fetch('label')
+  end
 
-    config.canonical_reason('open', handoff_activity_reason)
+  def handoff_transition_options
+    outcome_reason_config.transition_options(
+      :handoff,
+      handoff_outcome_reason,
+      explanation: handoff_explanation
+    )
+  end
+
+  def handoff_outcome_reason
+    @handoff_outcome_reason ||= outcome_reason_config.resolve(
+      :handoff,
+      @response['handoff_status_reason'].to_s.strip.presence || @response['status_reason'].to_s.strip.presence
+    )
+  end
+
+  def outcome_reason_config
+    @outcome_reason_config ||= Captain::OutcomeReasonConfig.new(@assistant)
   end
 
   def send_out_of_office_message_if_applicable

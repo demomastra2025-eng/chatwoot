@@ -27,7 +27,6 @@ import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirecti
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import IntersectionObserver from 'dashboard/components/IntersectionObserver.vue';
 import ConversationResolveAttributesModal from 'dashboard/components-next/ConversationWorkflow/ConversationResolveAttributesModal.vue';
-import ConversationStatusReasonDialog from 'dashboard/components-next/ConversationWorkflow/ConversationStatusReasonDialog.vue';
 
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { useAlert } from 'dashboard/composables';
@@ -73,6 +72,11 @@ import { filterConversationsByCommunicationThreadMode } from 'dashboard/helper/c
 import { labelDisplayTitle } from 'dashboard/helper/labels';
 import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import { resolveDefaultPipelineWithStages } from 'dashboard/components-next/sidebar/crmDefaultPipelineSidebar';
+import {
+  isValidConversationPipelineSelection,
+  resolveVisibleConversationPipelines,
+} from 'dashboard/components-next/sidebar/conversationPipelineVisibility';
+import { isConversationAssigneeSelectionLocked } from 'dashboard/components-next/sidebar/sidebarVisibility';
 import {
   CONVERSATION_LIST_CONTEXT_SETTINGS_KEY,
   conversationListContextKey,
@@ -123,7 +127,6 @@ const store = useStore();
 const crmReferencesStore = useCrmReferencesStore();
 
 const resolveAttributesModalRef = ref(null);
-const statusReasonDialogRef = ref(null);
 const conversationListRef = ref(null);
 const virtualListRef = ref(null);
 
@@ -212,6 +215,7 @@ const inboxesList = useMapGetter('inboxes/getInboxes');
 const campaigns = useMapGetter('campaigns/getAllCampaigns');
 const labels = useMapGetter('labels/getLabels');
 const currentAccountId = useMapGetter('getCurrentAccountId');
+const getAccount = useMapGetter('accounts/getAccount');
 const isFeatureEnabledonAccount = useMapGetter(
   'accounts/isFeatureEnabledonAccount'
 );
@@ -288,6 +292,12 @@ const showAiStatus = computed(() =>
   isFeatureEnabledonAccount.value(currentAccountId.value, FEATURE_FLAGS.CAPTAIN)
 );
 
+const isAssigneeSelectionLocked = computed(() =>
+  isConversationAssigneeSelectionLocked(
+    getAccount.value?.(currentAccountId.value)?.settings || {}
+  )
+);
+
 const routeConversationStatus = computed(() => {
   const { status } = route.query;
   const savedStatus = conversationListContextState(
@@ -305,6 +315,10 @@ const routeConversationStatus = computed(() => {
 });
 
 const routeConversationAssigneeType = computed(() => {
+  if (isAssigneeSelectionLocked.value) {
+    return wootConstants.ASSIGNEE_TYPE.ALL;
+  }
+
   const assigneeType = route.query.assignee_type || route.query.assigneeType;
   return Object.values(wootConstants.ASSIGNEE_TYPE).includes(assigneeType)
     ? assigneeType
@@ -812,6 +826,8 @@ const uniqueInboxes = computed(() => {
   return [...new Set(selectedInboxes.value)];
 });
 
+const crmReferenceLoadFailed = ref(false);
+
 // ---------------------- Methods -----------------------
 function setFiltersFromUISettings() {
   const { order_by: orderBy } = conversationListContextState(
@@ -827,23 +843,31 @@ function setFiltersFromUISettings() {
     : wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC;
 }
 
-function ensureCrmReferencesLoaded({ force = false } = {}) {
+async function ensureCrmReferencesLoaded({ force = false } = {}) {
   if (!force && !activeCrmPipelineId.value && !activeCrmStageId.value) {
-    return Promise.resolve();
+    return true;
   }
 
-  if (
-    crmReferencesStore.pipelines.length ||
-    crmReferencesStore.ui?.isLoadingPipelines
-  ) {
-    return Promise.resolve();
+  if (crmReferencesStore.pipelines.length) {
+    crmReferenceLoadFailed.value = false;
+    return true;
   }
 
-  return crmReferencesStore.loadPipelines().catch(() => {});
+  try {
+    await crmReferencesStore.loadPipelines();
+    crmReferenceLoadFailed.value = false;
+    return true;
+  } catch {
+    crmReferenceLoadFailed.value = true;
+    return false;
+  }
 }
 
 async function normalizeCommunicationThreadRouteContext() {
   if (!props.communicationThreadMode) return;
+
+  const referencesLoaded = await ensureCrmReferencesLoaded();
+  if (!referencesLoaded) return;
 
   const queryUpdates = {};
   const requestedStatus = route.query.status;
@@ -863,11 +887,16 @@ async function normalizeCommunicationThreadRouteContext() {
     ).status;
   }
 
-  if (activeCrmStageId.value) {
-    const stageExists = defaultCrmPipelineStages.value.some(
-      stage => String(stage.id) === String(activeCrmStageId.value)
+  if (activeCrmPipelineId.value || activeCrmStageId.value) {
+    const selectionIsValid = isValidConversationPipelineSelection(
+      resolveVisibleConversationPipelines(
+        crmReferencesStore.pipelines,
+        uiSettings.value
+      ),
+      activeCrmPipelineId.value,
+      activeCrmStageId.value
     );
-    if (!stageExists) {
+    if (!selectionIsValid) {
       queryUpdates.crm_pipeline_id = undefined;
       queryUpdates.crm_stage_id = undefined;
       queryUpdates.assignee_type = wootConstants.ASSIGNEE_TYPE.ALL;
@@ -1550,29 +1579,16 @@ async function markAsRead(conversationId) {
   }
 }
 
-async function resolveStatusReason(status) {
-  const result = await statusReasonDialogRef.value?.open({ status });
-  if (result === statusReasonDialogRef.value?.CANCELLED) {
-    return { cancelled: true };
-  }
-
-  return { statusReason: result };
-}
-
 async function toggleConversationStatus(
   conversationId,
   status,
   snoozedUntil,
   customAttributes = null
 ) {
-  const { cancelled, statusReason } = await resolveStatusReason(status);
-  if (cancelled) return;
-
   const payload = {
     conversationId,
     status,
     snoozedUntil,
-    statusReason,
     conversationType: props.communicationThreadMode
       ? 'communication_thread'
       : 'conversation',
@@ -1680,9 +1696,6 @@ useEmitter('fetch_conversation_stats', () => {
 onMounted(async () => {
   store.dispatch('setChatListFilters', conversationFilters.value);
   setFiltersFromUISettings();
-  if (activeCrmStageId.value) {
-    await ensureCrmReferencesLoaded();
-  }
   await normalizeCommunicationThreadRouteContext();
   setFiltersFromUISettings();
   store.dispatch('setChatStatusFilter', activeStatus.value);
@@ -1982,6 +1995,20 @@ watch(conversationFilters, (newVal, oldVal) => {
       @status-filter-change="updateConversationStatusQuery"
     />
 
+    <div
+      v-if="crmReferenceLoadFailed"
+      class="flex items-center justify-between gap-3 border-b border-n-weak bg-n-amber-2 px-4 py-2 text-xs text-n-slate-12"
+    >
+      <span>{{ $t('CRM.DEALS.PIPELINES_LOAD_ERROR') }}</span>
+      <button
+        type="button"
+        class="shrink-0 font-medium text-n-brand hover:underline"
+        @click="normalizeCommunicationThreadRouteContext"
+      >
+        {{ $t('CRM.DEALS.RETRY_LOAD') }}
+      </button>
+    </div>
+
     <TeleportWithDirection
       v-if="showAddFoldersModal"
       to="#saveFilterTeleportTarget"
@@ -2134,6 +2161,5 @@ watch(conversationFilters, (newVal, oldVal) => {
       ref="resolveAttributesModalRef"
       @submit="handleResolveWithAttributes"
     />
-    <ConversationStatusReasonDialog ref="statusReasonDialogRef" />
   </div>
 </template>

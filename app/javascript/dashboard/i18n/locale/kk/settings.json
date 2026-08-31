@@ -398,25 +398,26 @@
     "HOME": "Home",
     "AGENTS": "Employees",
     "AGENT_BOTS": "Вебхуктар",
-    "AUDIT_LOGS": "Audit Logs",
+    "AUDIT_LOGS": "Әрекеттер журналы",
     "INBOXES": "Channels",
     "NOTIFICATIONS": "Notifications",
-    "CANNED_RESPONSES": "Canned Responses",
+    "CANNED_RESPONSES": "Жылдам жауаптар",
     "INTEGRATIONS": "Интеграциялар",
     "PROFILE_SETTINGS": "Profile Settings",
-    "ACCOUNT_SETTINGS": "Профиль",
-    "VISIBILITY": "Сайдбарды баптау",
-    "CONVERSATION_SETTINGS": "Диалогтар",
+    "ACCOUNT_SETTINGS": "Компания профилі",
+    "VISIBILITY": "Навигация",
+    "CONVERSATION_SETTINGS": "Хабарлама редакторы",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
     "TAG_SETTINGS": "Tag settings",
     "CUSTOM_ATTRIBUTES": "Қосымша өрістер",
-    "AUTOMATION": "Automation",
-    "MACROS": "Macros",
+    "AUTOMATION": "Автоматтандыру",
+    "AUTOMATION_RULES": "Автоматтандыру ережелері",
+    "MACROS": "Макростар",
     "LEAD_FORMS": "Өтінімдер",
     "TEAMS": "Teams",
-    "BILLING": "Billing",
+    "BILLING": "Тариф және төлем",
     "CUSTOM_VIEWS_FOLDER": "Folders",
     "CUSTOM_VIEWS_SEGMENTS": "Segments",
     "ALL_CONTACTS": "All Contacts",
@@ -438,7 +439,16 @@
     "AUDIENCES": "Audiences",
     "TOUCHES": "Касания",
     "TOUCH_PLANS": "Дожимы",
-    "TEMPLATES": "Templates",
+    "TEMPLATES": "Шаблондар",
+    "WHATSAPP_TEMPLATES": "WhatsApp шаблондары",
+    "SETTINGS_SECTIONS": {
+      "COMPANY": "Компания",
+      "CONVERSATIONS": "Диалогтар",
+      "CHANNELS": "Арналар және қосылымдар",
+      "AUTOMATION": "Автоматтандыру",
+      "TEAM": "Команда және қолжетімділік",
+      "DATA": "Деректер"
+    },
     "ONGOING": "Ongoing",
     "ONE_OFF": "One off",
     "REPORTS_SLA": "SLA",
@@ -487,7 +497,8 @@
     "DOCS": "Read docs",
     "SECURITY": "Security",
     "CAPTAIN_AI": "Captain",
-    "CONVERSATION_WORKFLOW": "Диалог баптаулары"
+    "CONVERSATION_WORKFLOW": "Диалог баптаулары",
+    "CAPTAIN_OUTCOMES": "Нәтижелер және қызметкерге беру"
   },
   "LEAD_FORMS": {
     "KICKER": "Lead intake",
@@ -1125,31 +1136,43 @@
     },
     "TABS": {
       "CLOSURE": "Диалогты аяқтау",
-      "VISIBILITY": "Көрінуі",
+      "VISIBILITY": "Диалог навигациясы",
       "SLA": "SLA"
     },
     "VISIBILITY": {
       "HEADER": {
-        "TITLE": "Диалогтардың көрінуі",
-        "DESCRIPTION": "Сайдбарда диалог навигациясының қай топтары көрсетілетінін таңдаңыз."
+        "TITLE": "Диалог навигациясы",
+        "DESCRIPTION": "Диалогтар ішінде көрсетілетін тізімдер мен бизнес бөлімдерін таңдаңыз."
       },
       "SECTIONS": {
-        "ASSIGNEE": "Иелік",
+        "ASSIGNEE": "Барлығы, Менің, Тағайындалмаған",
         "STATUSES": "Статустар",
-        "PIPELINE": "Диалог воронкалары",
+        "PIPELINE": "Мәмілелер",
         "APPOINTMENTS": "Жазылымдар",
-        "ORGANIZATION": "Ұйымдастыру"
+        "ORGANIZATION": "Негізгі навигация"
       },
       "DESCRIPTIONS": {
-        "ASSIGNEE": "Барлығы, Менің және Тағайындалмаған топтарын көрсету немесе жасыру.",
+        "ASSIGNEE": "Өшірілген кезде «Барлығы» сүзгісі өзгеріссіз қалады.",
         "STATUSES": "Статус навигациясын көрсету немесе жасыру. Әдепкі бойынша статустар жасырылған.",
-        "PIPELINE": "Жалпы воронка, AI воронкасы және олардың кезеңдері бойынша диалог сүзгілерін көрсету немесе жасыру.",
-        "APPOINTMENTS": "Диалог сайдбарындағы жазылым статус сүзгілерін көрсету немесе жасыру.",
-        "ORGANIZATION": "Пайдаланушы көріністерін, командаларды және тегтерді көрсету немесе жасыру."
+        "PIPELINE": "Негізгі воронканы таңдап, оның кезеңдерін баптаңыз.",
+        "APPOINTMENTS": "Көрсетілетін жазылым статустарын баптаңыз."
+      },
+      "SUMMARY": {
+        "HIDDEN": "Жасырылған",
+        "PIPELINE_EMPTY": "Негізгі воронканы таңдаңыз",
+        "PIPELINE": "{pipeline} · кезеңдер: {visible}/{total}",
+        "STATUSES": "Көрсетілетін статустар: {visible}/{total}",
+        "CONFIGURE": "Баптау",
+        "COLLAPSE": "Жию"
       },
       "ITEMS": {
         "STATUSES": "Статус тобы",
-        "APPOINTMENTS": "Жазылым статус тобы",
+        "APPOINTMENTS": "Жазбаларды көрсету",
+        "PIPELINES_LOADING": "Воронкалар жүктелуде…",
+        "PIPELINES_EMPTY": "Кезеңдері бар белсенді воронкалар жоқ",
+        "PRIMARY_PIPELINE": "Негізгі воронка",
+        "PRIMARY_PIPELINE_PLACEHOLDER": "Воронканы таңдаңыз",
+        "STAGES": "Кезеңдер",
         "APPOINTMENT_STATUSES": {
           "SCHEDULED": "Тағайындалды",
           "CONFIRMED": "Раст.",
@@ -1159,8 +1182,8 @@
         }
       },
       "SAVE": {
-        "BUTTON": "Көрінуді сақтау",
-        "SUCCESS": "Диалогтардың көрінуі жаңартылды"
+        "BUTTON": "Навигацияны сақтау",
+        "SUCCESS": "Диалог навигациясы жаңартылды"
       }
     },
     "REQUIRED_ATTRIBUTES": {

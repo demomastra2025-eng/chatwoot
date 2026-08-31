@@ -731,6 +731,79 @@
     },
     "ASSISTANTS": {
       "HEADER": "AI Agents",
+      "FOLLOW_UPS": {
+        "HEADER": "Follow-ups",
+        "DESCRIPTION": "A sequence of messages sent when the customer does not reply. Before each step, the system checks for a new reply and whether the conversation is complete.",
+        "PROMPT_LABEL": "AI follow-up instruction",
+        "PROMPT_DESCRIPTION": "Used only to generate follow-ups and does not change the main AI agent's normal replies.",
+        "PROMPT_PLACEHOLDER": "Describe the tone, constraints, and approach for follow-ups",
+        "DEFAULT_PROMPT": "Continue the conversation naturally. Do not introduce yourself again or repeat previous messages. Briefly remind the customer about the unfinished topic and offer one clear next action without pressure.",
+        "STEP": "Step {number}",
+        "DELAY": "Delay",
+        "UNIT": "Delay unit",
+        "MINUTES": "minutes",
+        "HOURS": "hours",
+        "DAYS": "days",
+        "MINUTES_SHORT": "min",
+        "HOURS_SHORT": "h",
+        "DAYS_SHORT": "d",
+        "DELAY_SUMMARY": "After {delay} {unit}",
+        "MODE": "Message mode",
+        "MODE_AI": "Generate with AI",
+        "MODE_STATIC": "Static text",
+        "OBJECTIVE_LABEL": "Touch objective",
+        "OBJECTIVE_PLACEHOLDER": "For example: gently remind the customer about the unfinished topic",
+        "STATIC_MESSAGE_LABEL": "Customer message",
+        "MESSAGE_PLACEHOLDER": "Message to the customer",
+        "EMPTY_STEP_SUMMARY": "Add a touch objective",
+        "REMOVE_STEP": "Remove step",
+        "ADD_STEP": "Add step",
+        "SAVE": "Save",
+        "VALIDATION": "Add at least one completed step with a delay.",
+        "PROMPT_VALIDATION": "Add an instruction for AI follow-ups.",
+        "DEFAULT_OBJECTIVE_1": "Gently remind the customer about the unfinished topic without pressure.",
+        "DEFAULT_OBJECTIVE_2": "Ask whether the customer needs more information to make a decision.",
+        "DEFAULT_OBJECTIVE_3": "Make a polite final touch and leave an easy way to return to the conversation."
+      },
+      "OUTCOMES": {
+        "HEADER": "Outcomes and handoffs",
+        "DESCRIPTION": "Configure the reasons the AI agent uses when completing a conversation or handing it to a human.",
+        "ADD": "Add",
+        "REMOVE": "Remove reason",
+        "ACTIVE": "Active reason",
+        "PLACEHOLDER": "Reason label",
+        "EMPTY": "No reasons configured",
+        "SAVE": "Save",
+        "VALIDATION": "Complete or remove empty reasons.",
+        "COMPLETION": {
+          "ENABLE_TITLE": "Automatically complete conversations",
+          "ENABLE_DESCRIPTION": "The AI agent can complete a conversation when the customer's task is resolved.",
+          "TITLE": "Completion reasons",
+          "DESCRIPTION": "The agent selects one reason when it considers the customer’s task complete."
+        },
+        "HANDOFF": {
+          "TITLE": "Human handoff reasons",
+          "DESCRIPTION": "The agent selects one reason when it opens the conversation for a human."
+        },
+        "DEFAULTS": {
+          "COMPLETION": {
+            "GOAL_ACHIEVED": "Goal achieved",
+            "QUESTION_RESOLVED": "Question resolved",
+            "CUSTOMER_DECLINED": "Customer declined",
+            "NO_RESPONSE": "Customer stopped responding"
+          },
+          "HANDOFF": {
+            "CUSTOMER_REQUESTED_HUMAN": "Customer requested a human",
+            "LOW_CONFIDENCE": "AI is not confident in the answer",
+            "MANUAL_ACTION_REQUIRED": "Manual action required",
+            "COMPLAINT_OR_CONFLICT": "Complaint or conflict",
+            "TOOL_OR_POLICY_LIMIT": "Tool or policy limitation"
+          },
+          "COMMON": {
+            "OTHER": "Other reason"
+          }
+        }
+      },
       "NO_ASSISTANTS_AVAILABLE": "There are no AI agents available in your account.",
       "ADD_NEW": "Create a new AI agent",
       "DELETE": {

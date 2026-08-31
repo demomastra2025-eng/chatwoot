@@ -81,4 +81,33 @@ describe('SidebarSecondaryColumn', () => {
     expect(openCompose).toHaveBeenCalledTimes(1);
     expect(routerPush).not.toHaveBeenCalled();
   });
+
+  it('renders flat section labels only when they contain navigation items', () => {
+    const wrapper = mountComponent({
+      children: [
+        {
+          type: 'section',
+          name: 'Settings Section Company',
+          label: 'Company',
+        },
+        {
+          name: 'Workspace',
+          label: 'Company profile',
+          to: { name: 'general_settings_index' },
+        },
+        {
+          type: 'section',
+          name: 'Settings Section Empty',
+          label: 'Empty',
+        },
+      ],
+    });
+
+    const sectionLabels = wrapper.findAll(
+      '[data-test="sidebar-section-label"]'
+    );
+    expect(sectionLabels).toHaveLength(1);
+    expect(sectionLabels[0].text()).toBe('Company');
+    expect(wrapper.text()).not.toContain('Empty');
+  });
 });

@@ -8,6 +8,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :temperature,
     :model, :feature_image_understanding,
     :auto_reply_on_last_incoming,
+    :handoff_enabled, :auto_completion_enabled,
     :message_collapse_window_seconds, :history_message_limit
   ].freeze
   VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze
@@ -125,6 +126,8 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     merge_optional_array_param!(permitted, :guardrails)
     merge_optional_config_param!(permitted, :context_access)
     merge_optional_config_param!(permitted, :tool_access)
+    merge_optional_config_param!(permitted, :follow_up_settings)
+    merge_optional_config_param!(permitted, :outcome_reason_settings)
     merge_optional_config_param!(permitted, :voice_settings, voice_settings: true)
     merge_optional_config_param!(permitted, :rules)
 
@@ -135,6 +138,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     attributes = assistant_params.to_h.deep_symbolize_keys
     existing_config = attributes[:config].is_a?(Hash) ? attributes[:config].deep_stringify_keys : {}
     existing_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'])
+    normalize_outcome_reason_settings!(existing_config)
 
     attributes.merge(config: existing_config)
   end
@@ -148,6 +152,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     if incoming_config.key?('voice_settings')
       incoming_config['voice_settings'] = normalized_voice_settings(existing_config['voice_settings'], incoming_config['voice_settings'])
     end
+    normalize_outcome_reason_settings!(incoming_config, existing_config['outcome_reason_settings'])
 
     attributes.merge(config: existing_config.merge(incoming_config))
   end
@@ -157,6 +162,13 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
       settings.merge!(source) if source.is_a?(Hash)
     end
     Telephony::AiVoice::VoiceSettingsDefaults.normalize(merged)
+  end
+
+  def normalize_outcome_reason_settings!(config, existing_settings = nil)
+    return unless config.key?('outcome_reason_settings')
+
+    merged_settings = existing_settings.to_h.deep_merge(config['outcome_reason_settings'].to_h)
+    config['outcome_reason_settings'] = Captain::OutcomeReasonConfig.normalize_settings(merged_settings)
   end
 
   def render_fish_voice_reference_error_or_raise(error)

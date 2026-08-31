@@ -11,6 +11,7 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import AssistantBasicSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantBasicSettingsForm.vue';
 import AssistantSystemSettingsForm from 'dashboard/components-next/captain/pageComponents/assistant/settings/AssistantSystemSettingsForm.vue';
+import AssistantOutcomeSettingsForm from '../outcomes/Index.vue';
 import VoiceAgentPreview from 'dashboard/components-next/captain/pageComponents/assistant/settings/VoiceAgentPreview.vue';
 import DeleteDialog from 'dashboard/components-next/captain/pageComponents/DeleteDialog.vue';
 import TabBar from 'dashboard/components-next/tabbar/TabBar.vue';
@@ -24,7 +25,9 @@ const deleteAssistantDialog = ref(null);
 const generalBasicFormRef = ref(null);
 const generalCapabilitiesFormRef = ref(null);
 const generalSystemFormRef = ref(null);
+const generalOutcomeFormRef = ref(null);
 const voiceSystemFormRef = ref(null);
+const handoffEnabled = ref(true);
 
 const activeSettingsTab = ref('profile');
 
@@ -57,9 +60,12 @@ const activeSettingsTabIndex = computed(() =>
 const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
   'model',
   'temperature',
-  'auto_reply_on_last_incoming',
   'message_collapse_window_seconds',
   'history_message_limit',
+]);
+
+const CAPABILITY_SETTINGS_CONFIG_KEYS = Object.freeze([
+  'auto_reply_on_last_incoming',
   'feature_faq',
   'feature_memory',
   'feature_citation',
@@ -67,12 +73,18 @@ const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
   'feature_document_reading',
   'feature_image_understanding',
   'context_access',
+  'handoff_enabled',
   'tool_access',
 ]);
 
 const SYSTEM_SETTINGS_CONFIG_KEYS = Object.freeze([
   'handoff_message',
   'resolution_message',
+]);
+
+const OUTCOME_SETTINGS_CONFIG_KEYS = Object.freeze([
+  'auto_completion_enabled',
+  'outcome_reason_settings',
 ]);
 
 const VOICE_SETTINGS_CONFIG_KEYS = Object.freeze(['voice_settings']);
@@ -152,20 +164,32 @@ const pickConfigKeys = (config = {}, keys = []) =>
     return result;
   }, {});
 
-const mergeAssistantPayloads = (basicPayload, systemPayload) => {
+const mergeAssistantPayloads = (
+  basicPayload,
+  capabilitiesPayload,
+  systemPayload,
+  outcomePayload
+) => {
   const basicAssistant = basicPayload?.assistant || {};
-  const systemAssistant = systemPayload?.assistant || {};
 
   return {
     assistant: {
       ...basicAssistant,
-      ...systemAssistant,
-      name: basicAssistant.name,
-      description: basicAssistant.description,
       config: {
         ...assistantConfig.value,
         ...pickConfigKeys(basicAssistant.config, BASIC_SETTINGS_CONFIG_KEYS),
-        ...pickConfigKeys(systemAssistant.config, SYSTEM_SETTINGS_CONFIG_KEYS),
+        ...pickConfigKeys(
+          capabilitiesPayload?.assistant?.config,
+          CAPABILITY_SETTINGS_CONFIG_KEYS
+        ),
+        ...pickConfigKeys(
+          systemPayload?.assistant?.config,
+          SYSTEM_SETTINGS_CONFIG_KEYS
+        ),
+        ...pickConfigKeys(
+          outcomePayload?.assistant?.config,
+          OUTCOME_SETTINGS_CONFIG_KEYS
+        ),
       },
     },
     avatar: basicPayload?.avatar ?? null,
@@ -184,12 +208,20 @@ const handleGeneralSave = async () => {
   const systemPayload = await generalSystemFormRef.value?.buildPayload?.();
   if (!systemPayload) return;
 
-  await handleSubmit(
-    mergeAssistantPayloads(
-      mergeAssistantPayloads(basicPayload, capabilitiesPayload),
-      systemPayload
-    )
+  const outcomePayload = await generalOutcomeFormRef.value?.buildPayload?.();
+  if (!outcomePayload) {
+    useAlert(t('CAPTAIN.ASSISTANTS.OUTCOMES.VALIDATION'));
+    return;
+  }
+
+  const mergedPayload = mergeAssistantPayloads(
+    basicPayload,
+    capabilitiesPayload,
+    systemPayload,
+    outcomePayload
   );
+
+  await handleSubmit(mergedPayload);
 };
 
 const handleVoiceSave = async () => {
@@ -215,6 +247,10 @@ const handleDelete = () => {
 
 const handleSettingsTabChanged = tab => {
   activeSettingsTab.value = tab?.key || 'profile';
+};
+
+const handleHandoffCapabilityChange = enabled => {
+  handoffEnabled.value = enabled;
 };
 
 const handleDeleteSuccess = () => {
@@ -282,8 +318,17 @@ const handleDeleteSuccess = () => {
                 :show-identity-fields="false"
                 :show-core-settings="false"
                 :show-submit-button="false"
+                @handoff-capability-change="handleHandoffCapabilityChange"
               />
             </div>
+          </div>
+
+          <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">
+            <AssistantOutcomeSettingsForm
+              ref="generalOutcomeFormRef"
+              :assistant="assistant"
+              :handoff-enabled="handoffEnabled"
+            />
           </div>
 
           <div class="rounded-2xl bg-n-solid-1 p-5 md:p-6">

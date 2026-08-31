@@ -6,7 +6,9 @@ const dispatchMock = vi.fn();
 const useAlertMock = vi.fn();
 const routerPushMock = vi.fn();
 const basicBuildPayloadMock = vi.fn();
+const capabilitiesBuildPayloadMock = vi.fn();
 const systemBuildPayloadMock = vi.fn();
+const outcomeBuildPayloadMock = vi.fn();
 
 const assistantRecord = {
   id: 57,
@@ -39,8 +41,18 @@ const ButtonStub = defineComponent({
 
 const AssistantBasicSettingsFormStub = defineComponent({
   name: 'AssistantBasicSettingsForm',
-  setup(_props, { expose }) {
-    expose({ buildPayload: basicBuildPayloadMock });
+  props: {
+    showCoreSettings: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  setup(props, { expose }) {
+    expose({
+      buildPayload: props.showCoreSettings
+        ? basicBuildPayloadMock
+        : capabilitiesBuildPayloadMock,
+    });
     return () => h('div', 'basic-form');
   },
 });
@@ -50,6 +62,14 @@ const AssistantSystemSettingsFormStub = defineComponent({
   setup(_props, { expose }) {
     expose({ buildPayload: systemBuildPayloadMock });
     return () => h('div', 'system-form');
+  },
+});
+
+const AssistantOutcomeSettingsFormStub = defineComponent({
+  name: 'AssistantOutcomeSettingsForm',
+  setup(_props, { expose }) {
+    expose({ buildPayload: outcomeBuildPayloadMock });
+    return () => h('div', 'outcome-form');
   },
 });
 
@@ -123,6 +143,10 @@ vi.mock(
   () => ({ default: AssistantSystemSettingsFormStub })
 );
 
+vi.mock('../outcomes/Index.vue', () => ({
+  default: AssistantOutcomeSettingsFormStub,
+}));
+
 vi.mock(
   'dashboard/components-next/captain/pageComponents/DeleteDialog.vue',
   () => ({
@@ -163,8 +187,18 @@ describe('Captain assistant settings page', () => {
         description: 'Updated description',
         usage_mode: 'external_agent',
         config: {
-          feature_faq: true,
           temperature: 0.4,
+        },
+      },
+    });
+
+    capabilitiesBuildPayloadMock.mockReset();
+    capabilitiesBuildPayloadMock.mockResolvedValue({
+      assistant: {
+        config: {
+          feature_faq: false,
+          handoff_enabled: false,
+          tool_access: { custom_tools: false },
         },
       },
     });
@@ -188,6 +222,19 @@ describe('Captain assistant settings page', () => {
         },
       },
     });
+
+    outcomeBuildPayloadMock.mockReset();
+    outcomeBuildPayloadMock.mockResolvedValue({
+      assistant: {
+        config: {
+          auto_completion_enabled: true,
+          outcome_reason_settings: {
+            completion_reasons: [{ id: 'other', label: 'Other', active: true }],
+            handoff_reasons: [{ id: 'other', label: 'Other', active: true }],
+          },
+        },
+      },
+    });
   });
 
   it('keeps existing voice settings when saving the profile tab', async () => {
@@ -201,8 +248,15 @@ describe('Captain assistant settings page', () => {
       description: 'Updated description',
       usage_mode: 'external_agent',
       config: expect.objectContaining({
-        feature_faq: true,
+        feature_faq: false,
         handoff_message: '',
+        handoff_enabled: false,
+        tool_access: { custom_tools: false },
+        auto_completion_enabled: true,
+        outcome_reason_settings: expect.objectContaining({
+          completion_reasons: expect.any(Array),
+          handoff_reasons: expect.any(Array),
+        }),
         temperature: 0.4,
         voice_settings: assistantRecord.config.voice_settings,
       }),

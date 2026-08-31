@@ -166,6 +166,63 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.last.content).to eq('Hey, welcome to Captain V2')
     end
 
+    it 'schedules an AI follow-up step after creating the assistant response' do
+      assistant.update!(
+        config: {
+          'follow_up_settings' => {
+            'enabled' => true,
+            'prompt' => 'Continue naturally.',
+            'steps' => [
+              {
+                'delay_seconds' => 3600,
+                'mode' => 'ai',
+                'objective' => 'Offer one clear next action'
+              }
+            ]
+          }
+        }
+      )
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.to change { Reminder.captain_follow_up.count }.by(1)
+
+      scheduled_touch = Reminder.captain_follow_up.last
+      expect(scheduled_touch.conversation).to eq(conversation)
+      expect(scheduled_touch.metadata.dig('captain_follow_up', 'assistant_id')).to eq(assistant.id)
+    end
+
+    it 'does not schedule an incomplete AI follow-up step' do
+      assistant.update!(
+        config: {
+          'follow_up_settings' => {
+            'enabled' => true,
+            'prompt' => 'Continue naturally.',
+            'steps' => [{ 'delay_seconds' => 3600, 'mode' => 'ai', 'objective' => '' }]
+          }
+        }
+      )
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.not_to(change { Reminder.captain_follow_up.count })
+    end
+
+    it 'rolls back the assistant response when the first persisted follow-up cannot be created' do
+      assistant.update!(
+        config: {
+          'follow_up_settings' => {
+            'enabled' => true,
+            'steps' => [{ 'delay_seconds' => 3600, 'message' => 'Still interested?' }]
+          }
+        }
+      )
+      allow(Captain::Conversation::FollowUpJob).to receive(:schedule!).and_raise(ActiveRecord::RecordInvalid)
+
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.to raise_error(ActiveRecord::RecordInvalid)
+        .and not_change(conversation.messages, :count)
+    end
+
     it 'increments usage response' do
       described_class.perform_now(conversation, assistant)
 
@@ -633,7 +690,11 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
                         })
       allow(agent_runner_service).to receive(:generate_response) do
         conversation.bot_handoff!
-        { 'response' => '', 'handoff_tool_called' => true }
+        {
+          'response' => '',
+          'handoff_tool_called' => true,
+          'handoff_reason' => 'Клиенту требуется помощь сотрудника'
+        }
       end
 
       described_class.perform_now(conversation, assistant)
@@ -644,15 +705,140 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.waiting_since).to be_present
     end
 
-    # Regression (PR #13417): wrapping create_handoff_message and bot_handoff! in the
-    # same transaction defers the message's after_create_commit until commit, at which
-    # point it clears waiting_since (bot_response). The handoff path must stay outside
-    # the transaction so the callback fires before bot_handoff! sets waiting_since.
+    it 'does not create a public message for an already open V2 handoff without its dedicated explanation' do
+      assistant.update!(config: {
+                          'handoff_message_enabled' => true,
+                          'handoff_message_mode' => 'static',
+                          'handoff_message' => 'Connecting you to a human agent.'
+                        })
+      allow(agent_runner_service).to receive(:generate_response) do
+        conversation.bot_handoff!
+        {
+          'response' => '',
+          'handoff_tool_called' => true,
+          'handoff_reason' => '',
+          'reasoning' => 'Internal model reasoning must not be used as the explanation'
+        }
+      end
+
+      expect do
+        described_class.perform_now(conversation, assistant)
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(conversation.reload).to be_open
+    end
+
+    # Regression (PR #13417): the handoff message commits after bot_handoff!, so it must
+    # preserve waiting_since when status, note, and customer message share a transaction.
     context 'when handoff is requested' do
       let(:agent) { create(:user, account: account, role: :agent) }
 
       before do
-        allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_reason' => 'Клиенту требуется помощь сотрудника'
+          }
+        )
+      end
+
+      it 'does not expose the handoff sentinel or open the conversation when handoff is disabled' do
+        assistant.update!(config: assistant.config.merge('handoff_enabled' => false))
+
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.count })
+
+        expect(conversation.reload).to be_pending
+      end
+
+      it 'keeps the conversation pending when other has no specific explanation' do
+        assistant.update!(
+          config: assistant.config.merge(
+            'outcome_reason_settings' => {
+              'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Другое' }]
+            }
+          )
+        )
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_status_reason' => 'other',
+            'handoff_reason' => '',
+            'reasoning' => 'Internal model reasoning must not be used as the explanation'
+          }
+        )
+
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.count })
+
+        expect(conversation.reload).to be_pending
+      end
+
+      it 'keeps the conversation pending when other repeats its generic label' do
+        assistant.update!(
+          config: assistant.config.merge(
+            'outcome_reason_settings' => {
+              'handoff_reasons' => [{ 'id' => 'other', 'label' => 'Другое' }]
+            }
+          )
+        )
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_status_reason' => 'other',
+            'handoff_reason' => 'Другое'
+          }
+        )
+
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.count })
+
+        expect(conversation.reload).to be_pending
+      end
+
+      it 'records a configured stable handoff reason without classifying the explanation' do
+        assistant.update!(
+          config: assistant.config.merge(
+            'outcome_reason_settings' => {
+              'handoff_reasons' => [{ 'id' => 'low_confidence', 'label' => 'AI не уверен' }]
+            }
+          )
+        )
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_status_reason' => 'low_confidence',
+            'handoff_reason' => 'В базе знаний нет подтверждённого ответа'
+          }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload).to be_open
+        expect(conversation.status_transitions.last).to have_attributes(reason: 'AI не уверен', source: 'captain')
+        expect(conversation.status_transitions.last.metadata).to include(
+          'outcome_reason_id' => 'low_confidence',
+          'outcome_reason_explanation' => 'В базе знаний нет подтверждённого ответа'
+        )
+      end
+
+      it 'keeps the conversation pending when a regular handoff has only internal reasoning' do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_reason' => '',
+            'reasoning' => 'Internal model reasoning must not be used as the explanation'
+          }
+        )
+
+        expect do
+          described_class.perform_now(conversation, assistant)
+        end.not_to(change { conversation.messages.outgoing.count })
+
+        expect(conversation.reload).to be_pending
       end
 
       it 'restores waiting_since after the handoff message callbacks' do
@@ -663,6 +849,20 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         conversation.reload
         expect(conversation.status).to eq('open')
         expect(conversation.waiting_since).to be_present
+      end
+
+      it 'records a V2 tool handoff with the valid captain transition source' do
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => '',
+            'handoff_tool_called' => true,
+            'handoff_reason' => 'Клиенту требуется помощь сотрудника'
+          }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.status_transitions.last.source).to eq('captain')
       end
 
       it 'preserves waiting_since so a human reply consumes it for reply_time tracking' do
@@ -692,6 +892,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         allow(agent_runner_service).to receive(:generate_response).and_return(
           {
             'response' => 'conversation_handoff',
+            'handoff_reason' => 'Клиенту требуется помощь сотрудника',
             'captain_trace' => trace_payload
           }
         )
@@ -738,6 +939,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         allow(agent_runner_service).to receive(:generate_response).and_return(
           {
             'response' => 'conversation_handoff',
+            'handoff_reason' => 'Customer needs a specialist',
             'handoff_message' => 'I’ll connect you with a specialist who can continue from here.'
           }
         )
@@ -1242,7 +1444,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           closed_all_day: true,
           open_all_day: false
         )
-        allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          { 'response' => 'conversation_handoff', 'handoff_reason' => 'Customer needs a specialist' }
+        )
       end
 
       it 'sends out of office message after handoff' do
@@ -1266,7 +1470,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           open_all_day: true,
           closed_all_day: false
         )
-        allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          { 'response' => 'conversation_handoff', 'handoff_reason' => 'Customer needs a specialist' }
+        )
       end
 
       it 'does not send out of office message after handoff' do
@@ -1312,7 +1518,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           closed_all_day: true,
           open_all_day: false
         )
-        allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'conversation_handoff' })
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          { 'response' => 'conversation_handoff', 'handoff_reason' => 'Customer needs a specialist' }
+        )
       end
 
       it 'does not send out of office message' do

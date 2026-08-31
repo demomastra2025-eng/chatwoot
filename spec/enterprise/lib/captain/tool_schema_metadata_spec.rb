@@ -150,22 +150,24 @@ RSpec.describe 'Captain tool schema metadata' do
     )
   end
 
-  it 'exposes optional reason parameters for resolve and handoff in both scopes' do
+  it 'requires factual explanations for resolve and handoff in both scopes' do
     resolve_public = Captain::Tools::ResolveConversationTool.parameters
     resolve_assistant = Captain::Tools::Copilot::ResolveConversationService.parameters
     handoff_public = Captain::Tools::HandoffTool.parameters
     handoff_assistant = Captain::Tools::Copilot::HandoffService.parameters
 
-    expect(resolve_public[:reason].required).to be(false)
-    expect(resolve_assistant[:reason].required).to be(false)
+    expect(resolve_public[:reason].required).to be(true)
+    expect(resolve_assistant[:reason].required).to be(true)
     expect(resolve_public[:status_reason].required).to be(false)
     expect(resolve_assistant[:status_reason].required).to be(false)
-    expect(resolve_public[:reason].description).to eq('Optional reason for resolving the conversation')
-    expect(resolve_assistant[:reason].description).to eq('Optional reason for resolving the conversation')
+    expect(resolve_public[:reason].description).to include('Required concise factual explanation')
+    expect(resolve_assistant[:reason].description).to include('Required concise factual explanation')
     expect(resolve_public[:status_reason].description).to include('Configured conversation status reason')
     expect(resolve_assistant[:status_reason].description).to include('Configured conversation status reason')
-    expect(handoff_public[:reason].description).to eq('Optional handoff reason for the human team')
-    expect(handoff_assistant[:reason].description).to eq('Optional handoff reason for the human team')
+    expect(handoff_public[:reason].required).to be(true)
+    expect(handoff_assistant[:reason].required).to be(true)
+    expect(handoff_public[:reason].description).to include('Required concise factual explanation')
+    expect(handoff_assistant[:reason].description).to include('Required concise factual explanation')
     expect(handoff_public[:status_reason].description).to include('Configured conversation status reason')
     expect(handoff_assistant[:status_reason].description).to include('Configured conversation status reason')
   end

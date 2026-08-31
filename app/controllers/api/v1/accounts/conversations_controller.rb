@@ -3,7 +3,6 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   include DateRangeHelper
   include HmacConcern
 
-  rescue_from Conversations::StatusReasonConfig::Error, with: :render_status_reason_error
 
   before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :create, :filter]
   before_action :inbox, :contact, :contact_inbox, only: [:create]
@@ -215,12 +214,10 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def status_transition_params
-    params.permit(:status, :snoozed_until, :status_reason)
+    params.permit(:status, :snoozed_until)
   end
 
-  def render_status_reason_error(error)
-    render json: { error: error.message, code: error.code, details: error.details }, status: error.status
-  end
+
 
   def assign_conversation
     @conversation.assignee = current_user

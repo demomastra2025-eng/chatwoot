@@ -87,6 +87,7 @@ class Captain::Scenario < ApplicationRecord
       scenario_human_handoff_rule: assistant.enabled_system_template_rule_content(
         Captain::Assistant::SYSTEM_TEMPLATE_SLOT_SCENARIO_HUMAN_HANDOFF
       ),
+      outcome_reasons: Captain::OutcomeReasonConfig.new(assistant).prompt_context,
       current_context_rule: assistant.enabled_system_template_rule_content(
         Captain::Assistant::SYSTEM_TEMPLATE_SLOT_CURRENT_CONTEXT
       ),

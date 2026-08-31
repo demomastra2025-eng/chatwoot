@@ -1026,7 +1026,13 @@
         "FREE_TEXT": "Free text",
         "WHATSAPP": "WhatsApp"
       },
+      "FREE_TEXT": {
+        "TITLE": "Quick replies",
+        "DESCRIPTION": "Create reusable replies that employees can insert into conversations."
+      },
       "WHATSAPP": {
+        "TITLE": "WhatsApp templates",
+        "DESCRIPTION": "Browse and manage approved WhatsApp message templates.",
         "EMPTY_TITLE": "No WhatsApp inboxes for templates",
         "EMPTY_DESCRIPTION": "Connect or select a WhatsApp inbox to browse and manage message templates.",
         "INBOX_LABEL": "WhatsApp inbox",

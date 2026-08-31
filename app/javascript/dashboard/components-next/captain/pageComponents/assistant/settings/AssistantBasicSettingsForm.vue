@@ -78,7 +78,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['submit']);
+const emit = defineEmits(['submit', 'handoffCapabilityChange']);
 
 const { t } = useI18n();
 const captainConfigStore = useCaptainConfigStore();
@@ -181,6 +181,7 @@ const handoffToHumanEnabled = computed({
       enabled,
       state.usageMode
     );
+    emit('handoffCapabilityChange', enabled);
   },
 });
 
@@ -306,6 +307,11 @@ const updateStateFromAssistant = assistant => {
     config.tool_access || {},
     state.usageMode
   );
+  if (Object.prototype.hasOwnProperty.call(config, 'handoff_enabled')) {
+    handoffToHumanEnabled.value = config.handoff_enabled !== false;
+  } else {
+    emit('handoffCapabilityChange', handoffToHumanEnabled.value);
+  }
   if (state.features.web) {
     webSearchEnabled.value = true;
     webPageReadingEnabled.value = true;
@@ -364,6 +370,7 @@ const buildPayload = async () => {
       feature_web: webSearchEnabled.value && webPageReadingEnabled.value,
       feature_document_reading: state.features.documentReading,
       feature_image_understanding: state.features.imageUnderstanding,
+      handoff_enabled: handoffToHumanEnabled.value,
       tool_access: state.toolAccess,
     };
   }

@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAlert } from 'dashboard/composables';
 import { useStore } from 'dashboard/composables/store';
+import { usePolicy } from 'dashboard/composables/usePolicy';
 
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -32,6 +33,8 @@ const props = defineProps({
 
 const { t } = useI18n();
 const store = useStore();
+const { checkPermissions } = usePolicy();
+const canManageTemplates = computed(() => checkPermissions(['administrator']));
 
 const searchQuery = ref('');
 const isSyncingTemplates = ref(false);
@@ -58,18 +61,9 @@ const csatTemplateName = computed(
   () => props.inbox?.csat_config?.template?.name || ''
 );
 
-const lastUpdatedText = computed(() => {
-  if (!props.inbox?.message_templates_last_updated) {
-    return t('WHATSAPP_TEMPLATES.MANAGEMENT.NOT_SYNCED_YET');
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(props.inbox.message_templates_last_updated));
-});
-
 const syncTemplates = async () => {
+  if (!canManageTemplates.value) return;
+
   try {
     isSyncingTemplates.value = true;
     await store.dispatch('inboxes/syncTemplates', props.inbox.id);
@@ -82,16 +76,20 @@ const syncTemplates = async () => {
 };
 
 const openCreateDialog = () => {
+  if (!canManageTemplates.value) return;
+
   createDialogRef.value?.open();
 };
 
 const openDeleteDialog = template => {
+  if (!canManageTemplates.value) return;
+
   templatePendingDelete.value = template;
   deleteDialogRef.value?.open();
 };
 
 const deleteTemplate = async () => {
-  if (!templatePendingDelete.value) {
+  if (!canManageTemplates.value || !templatePendingDelete.value) {
     return;
   }
 
@@ -129,7 +127,9 @@ const getStatusClass = templateStatus => {
 };
 
 const canDeleteTemplate = templateGroup =>
-  templateGroup?.name && templateGroup.name !== csatTemplateName.value;
+  canManageTemplates.value &&
+  templateGroup?.name &&
+  templateGroup.name !== csatTemplateName.value;
 
 const sectionComponent = computed(() =>
   props.embedded ? 'div' : SettingsFieldSection
@@ -139,6 +139,12 @@ const containerClass = computed(() =>
 );
 const getTemplateParameters = template =>
   getTemplateParameterDefinitions(template).map(parameter => parameter.label);
+
+defineExpose({
+  isSyncingTemplates,
+  openCreateDialog,
+  syncTemplates,
+});
 </script>
 
 <template>
@@ -156,40 +162,27 @@ const getTemplateParameters = template =>
     >
       <div class="space-y-5">
         <div
-          class="flex flex-col gap-3 rounded-2xl border border-n-weak bg-n-surface-1 p-4 md:flex-row md:items-center md:justify-between"
+          v-if="!embedded && canManageTemplates"
+          class="flex justify-end gap-2"
         >
-          <div class="space-y-1">
-            <p class="mb-0 text-sm font-medium text-n-slate-12">
-              {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.SUPPORTED_TITLE') }}
-            </p>
-            <p class="mb-0 text-sm text-n-slate-11">
-              {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.SUPPORTED_DESCRIPTION') }}
-            </p>
-            <p class="mb-0 text-xs text-n-slate-10">
-              {{
-                t('WHATSAPP_TEMPLATES.MANAGEMENT.LAST_SYNC', {
-                  timestamp: lastUpdatedText,
-                })
-              }}
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-3">
-            <Button
-              variant="outline"
-              color="slate"
-              icon="i-lucide-refresh-cw"
-              :label="
-                t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_BUTTON')
-              "
-              :is-loading="isSyncingTemplates"
-              @click="syncTemplates"
-            />
-            <Button
-              icon="i-lucide-plus"
-              :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.CREATE_ACTION')"
-              @click="openCreateDialog"
-            />
-          </div>
+          <Button
+            variant="outline"
+            color="slate"
+            icon="i-lucide-refresh-cw"
+            :aria-label="
+              t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_BUTTON')
+            "
+            :title="
+              t('INBOX_MGMT.SETTINGS_POPUP.WHATSAPP_TEMPLATES_SYNC_BUTTON')
+            "
+            :is-loading="isSyncingTemplates"
+            @click="syncTemplates"
+          />
+          <Button
+            icon="i-lucide-plus"
+            :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.CREATE_ACTION')"
+            @click="openCreateDialog"
+          />
         </div>
 
         <Input
@@ -351,9 +344,14 @@ const getTemplateParameters = template =>
       </div>
     </component>
 
-    <CreateWhatsAppTemplateDialog ref="createDialogRef" :inbox-id="inbox.id" />
+    <CreateWhatsAppTemplateDialog
+      v-if="canManageTemplates"
+      ref="createDialogRef"
+      :inbox-id="inbox.id"
+    />
 
     <Dialog
+      v-if="canManageTemplates"
       ref="deleteDialogRef"
       type="alert"
       :title="t('WHATSAPP_TEMPLATES.MANAGEMENT.DELETE_TITLE')"

@@ -8,7 +8,7 @@ class Captain::AssistantPolicy < ApplicationPolicy
   end
 
   def tools?
-    @account_user.administrator?
+    manage?
   end
 
   def context_fields?
@@ -16,11 +16,11 @@ class Captain::AssistantPolicy < ApplicationPolicy
   end
 
   def create?
-    @account_user.administrator?
+    manage?
   end
 
   def update?
-    @account_user.administrator?
+    manage?
   end
 
   def avatar?
@@ -28,7 +28,7 @@ class Captain::AssistantPolicy < ApplicationPolicy
   end
 
   def destroy?
-    @account_user.administrator?
+    manage?
   end
 
   def playground?
@@ -61,5 +61,11 @@ class Captain::AssistantPolicy < ApplicationPolicy
 
   def source_text?
     show?
+  end
+
+  private
+
+  def manage?
+    administrator_access? || has_permission?('captain_manage')
   end
 end

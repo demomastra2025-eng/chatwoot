@@ -24,12 +24,20 @@ class CrmPipelinesAPI extends ApiClient {
     });
   }
 
+  batchUpdateStages(pipelineId, data) {
+    return axios.patch(`${this.url}/${pipelineId}/stages/batch_update`, data);
+  }
+
   deletePipeline(pipelineId) {
     return this.delete(pipelineId);
   }
 
   deleteStage(stageId) {
     return axios.delete(`${this.baseUrl()}/crm/stages/${stageId}`);
+  }
+
+  checkStageDeletion(stageId) {
+    return axios.get(`${this.baseUrl()}/crm/stages/${stageId}/deletion_check`);
   }
 }
 

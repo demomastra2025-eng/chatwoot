@@ -11,7 +11,7 @@ const AssistantPromptsIndex = () => import('./assistants/prompts/Index.vue');
 const AssistantPlaygroundIndex = () =>
   import('./assistants/playground/Index.vue');
 const AssistantFollowUpsIndex = () =>
-  import('../campaigns/pages/OutboundTouchPlansPage.vue');
+  import('./assistants/followUps/Index.vue');
 const DocumentsIndex = () => import('./documents/Index.vue');
 const ResponsesIndex = () => import('./responses/Index.vue');
 const ResponsesPendingIndex = () => import('./responses/Pending.vue');
@@ -27,6 +27,14 @@ const metaV2 = {
   permissions: ['administrator', 'agent'],
   featureFlag: FEATURE_FLAGS.CAPTAIN_V2,
   installationTypes: [INSTALLATION_TYPES.CLOUD, INSTALLATION_TYPES.ENTERPRISE],
+};
+const manageMeta = {
+  ...meta,
+  permissions: ['administrator', 'captain_manage'],
+};
+const manageMetaV2 = {
+  ...metaV2,
+  permissions: ['administrator', 'captain_manage'],
 };
 
 const sharedKnowledgeRoutes = [
@@ -108,7 +116,7 @@ const assistantRoutes = [
       query: to.query,
     }),
     name: 'captain_assistants_scenarios_index',
-    meta: metaV2,
+    meta: manageMetaV2,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/playground'),
@@ -141,19 +149,29 @@ const assistantRoutes = [
     path: frontendURL('accounts/:accountId/captain/:assistantId/settings'),
     component: AssistantSettingsIndex,
     name: 'captain_assistants_settings_index',
-    meta,
+    meta: manageMeta,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/prompts'),
     component: AssistantPromptsIndex,
     name: 'captain_assistants_prompts_index',
-    meta,
+    meta: manageMeta,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/follow-ups'),
     component: AssistantFollowUpsIndex,
     name: 'captain_assistants_follow_ups_index',
-    meta: metaV2,
+    meta: manageMetaV2,
+  },
+  {
+    path: frontendURL('accounts/:accountId/captain/:assistantId/outcomes'),
+    redirect: to => ({
+      name: 'captain_assistants_settings_index',
+      params: to.params,
+      query: { ...to.query, tab: 'profile' },
+    }),
+    name: 'captain_assistants_outcomes_index',
+    meta: manageMetaV2,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/access'),
@@ -163,7 +181,7 @@ const assistantRoutes = [
       query: to.query,
     }),
     name: 'captain_assistants_access_index',
-    meta,
+    meta: manageMeta,
   },
   {
     path: frontendURL('accounts/:accountId/captain/:assistantId/restrictions'),
@@ -173,7 +191,7 @@ const assistantRoutes = [
       query: to.query,
     }),
     name: 'captain_assistants_restrictions_index',
-    meta: metaV2,
+    meta: manageMetaV2,
   },
   {
     path: frontendURL(
@@ -185,7 +203,7 @@ const assistantRoutes = [
       query: to.query,
     }),
     name: 'captain_assistants_guardrails_index',
-    meta: metaV2,
+    meta: manageMetaV2,
   },
   {
     path: frontendURL(
@@ -197,14 +215,14 @@ const assistantRoutes = [
       query: to.query,
     }),
     name: 'captain_assistants_guidelines_index',
-    meta: metaV2,
+    meta: manageMetaV2,
   },
   {
     path: frontendURL('accounts/:accountId/captain/assistants'),
     component: AssistantEmptyStateIndex,
     name: 'captain_assistants_create_index',
     meta: {
-      permissions: ['administrator', 'agent'],
+      permissions: ['administrator', 'captain_manage'],
       installationTypes: [
         INSTALLATION_TYPES.CLOUD,
         INSTALLATION_TYPES.ENTERPRISE,

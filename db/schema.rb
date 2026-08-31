@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
+ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -644,6 +644,30 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.index ["status"], name: "index_captain_documents_on_status"
   end
 
+  create_table "captain_follow_up_attempts", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "assistant_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "anchor_message_id", null: false
+    t.integer "step_index", null: false
+    t.string "attempt_key", limit: 64, null: false
+    t.text "generated_content"
+    t.string "status", default: "processing", null: false
+    t.datetime "processing_started_at", null: false
+    t.datetime "generated_at"
+    t.datetime "completed_at"
+    t.datetime "expires_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_captain_follow_up_attempts_on_account_id"
+    t.index ["anchor_message_id", "created_at"], name: "index_captain_follow_up_attempts_on_anchor_and_created_at"
+    t.index ["anchor_message_id"], name: "index_captain_follow_up_attempts_on_anchor_message_id"
+    t.index ["assistant_id"], name: "index_captain_follow_up_attempts_on_assistant_id"
+    t.index ["attempt_key"], name: "index_captain_follow_up_attempts_on_attempt_key", unique: true
+    t.index ["conversation_id"], name: "index_captain_follow_up_attempts_on_conversation_id"
+    t.index ["status", "expires_at"], name: "index_captain_follow_up_attempts_on_status_and_expires_at"
+  end
+
   create_table "captain_inboxes", force: :cascade do |t|
     t.bigint "captain_assistant_id", null: false
     t.bigint "inbox_id", null: false
@@ -1071,6 +1095,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.integer "unread_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.datetime "session_started_at"
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
     t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"
@@ -1751,6 +1776,25 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.index ["title", "account_id"], name: "index_labels_on_title_and_account_id", unique: true
   end
 
+  create_table "lead_form_meta_webhook_events", force: :cascade do |t|
+    t.string "fingerprint", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "locked_at"
+    t.string "lease_token"
+    t.datetime "next_retry_at"
+    t.datetime "processed_at"
+    t.datetime "retry_deadline_at", null: false
+    t.datetime "retain_until", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["fingerprint"], name: "index_lead_form_meta_webhook_events_on_fingerprint", unique: true
+    t.index ["retain_until"], name: "index_lead_form_meta_webhook_events_on_retain_until"
+    t.index ["status", "next_retry_at"], name: "idx_lead_meta_webhook_events_retry"
+  end
+
   create_table "lead_forms", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id"
@@ -1879,7 +1923,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.index ["account_id", "created_at"], name: "index_llm_eval_runs_on_account_id_and_created_at"
     t.index ["account_id", "status"], name: "index_llm_eval_runs_on_account_id_and_status"
     t.index ["account_id"], name: "index_llm_eval_runs_on_account_id"
-    t.index ["account_id"], name: "index_llm_eval_runs_one_active_live_per_account", unique: true, where: "(((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))"
+    t.index ["account_id"], name: "index_llm_eval_runs_one_active_live_per_account", unique: true, where: "(((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))"
     t.index ["user_id"], name: "index_llm_eval_runs_on_user_id"
   end
 
@@ -2266,6 +2310,43 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.index ["channel_type", "channel_id"], name: "index_meta_channel_credential_healths_on_channel", unique: true
   end
 
+  create_table "meta_messaging_webhook_event_routes", force: :cascade do |t|
+    t.bigint "meta_messaging_webhook_event_id", null: false
+    t.bigint "account_id", null: false
+    t.string "channel_type", null: false
+    t.bigint "channel_id", null: false
+    t.string "provider_target_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "idx_meta_messaging_event_routes_account"
+    t.index ["account_id"], name: "index_meta_messaging_webhook_event_routes_on_account_id"
+    t.index ["channel_type", "channel_id"], name: "idx_meta_messaging_event_routes_channel"
+    t.index ["meta_messaging_webhook_event_id", "channel_type", "channel_id"], name: "idx_meta_messaging_event_routes_unique", unique: true
+  end
+
+  create_table "meta_messaging_webhook_events", force: :cascade do |t|
+    t.string "provider", null: false
+    t.string "fingerprint", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.integer "delay_seconds", default: 0, null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "locked_at"
+    t.string "lease_token"
+    t.datetime "next_retry_at"
+    t.datetime "processed_at"
+    t.datetime "retry_deadline_at", null: false
+    t.datetime "retain_until", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["fingerprint"], name: "index_meta_messaging_webhook_events_on_fingerprint", unique: true
+    t.index ["retain_until"], name: "index_meta_messaging_webhook_events_on_retain_until"
+    t.index ["status", "locked_at"], name: "idx_meta_messaging_events_stale"
+    t.index ["status", "next_retry_at"], name: "idx_meta_messaging_events_retry"
+    t.index ["status", "retry_deadline_at"], name: "idx_meta_messaging_events_deadline"
+  end
+
   create_table "notes", force: :cascade do |t|
     t.text "content", null: false
     t.bigint "account_id", null: false
@@ -2430,6 +2511,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.jsonb "template_params", default: {}, null: false
     t.jsonb "metadata", default: {}, null: false
     t.string "fingerprint"
+    t.string "idempotency_key"
     t.boolean "auto_cancel_on_incoming", default: false, null: false
     t.integer "attempts_count", default: 0, null: false
     t.text "last_error"
@@ -2449,6 +2531,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.string "response_action"
     t.integer "response_button_index"
     t.index ["account_id", "fingerprint"], name: "idx_reminders_on_account_fingerprint"
+    t.index ["account_id", "idempotency_key"], name: "idx_reminders_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "owner_id", "scheduled_at"], name: "idx_reminders_on_account_owner_scheduled"
     t.index ["account_id", "repeat_mode", "scheduled_at"], name: "idx_reminders_on_account_repeat_scheduled"
     t.index ["account_id", "status", "scheduled_at"], name: "idx_reminders_on_account_status_scheduled"
@@ -2463,7 +2546,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.index ["target_conversation_id"], name: "index_reminders_on_target_conversation_id"
     t.index ["target_inbox_id"], name: "index_reminders_on_target_inbox_id"
     t.check_constraint "post_delivery_action IS NULL OR post_delivery_action::text = 'resolve_conversation'::text AND action_type = 0 AND repeat_mode = 0 AND remindable_type::text = 'Conversation'::text AND remindable_id IS NOT NULL AND conversation_id = remindable_id AND target_conversation_id = remindable_id", name: "reminders_post_delivery_action_supported"
-    t.check_constraint "response_action IS NULL AND response_button_index IS NULL OR response_action::text = 'confirm_appointment'::text AND response_button_index = 0 AND action_type = 0 AND content_kind = 1 AND repeat_mode = 0 AND remindable_type::text = 'Scheduling::Appointment'::text AND remindable_id IS NOT NULL", name: "reminders_response_action_supported"
+    t.check_constraint "response_action IS NULL AND response_button_index IS NULL OR response_action::text = 'confirm_appointment'::text AND response_button_index >= 0 AND response_button_index <= 2 AND action_type = 0 AND content_kind = 1 AND repeat_mode = 0 AND remindable_type::text = 'Scheduling::Appointment'::text AND remindable_id IS NOT NULL", name: "reminders_response_action_supported"
   end
 
   create_table "reporting_events", force: :cascade do |t|
@@ -2521,9 +2604,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.string "status", default: "scheduled", null: false
     t.string "appointment_type", default: "primary", null: false
     t.string "client_name", null: false
-    t.string "client_first_name"
-    t.string "client_last_name"
-    t.string "client_middle_name"
     t.string "client_phone"
     t.string "client_identifier"
     t.date "client_birth_date"
@@ -2545,6 +2625,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.datetime "updated_at", null: false
     t.integer "compensation_percent_snapshot", default: 0, null: false
     t.bigint "owner_id"
+    t.string "client_first_name"
+    t.string "client_last_name"
+    t.string "client_middle_name"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
@@ -3142,9 +3225,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.datetime "updated_at", null: false
     t.bigint "automation_rule_id"
     t.string "source_action_id"
-    t.index ["account_id", "automation_rule_id", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action", unique: true, where: "(((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('completed'::character varying)::text])) AND (automation_rule_id IS NOT NULL))"
+    t.index ["account_id", "automation_rule_id", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action", unique: true, where: "(((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))"
     t.index ["account_id", "idempotency_key"], name: "idx_touch_plan_enrollments_on_account_idempotency", unique: true
-    t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text]))"
+    t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))"
     t.index ["account_id"], name: "index_touch_plan_enrollments_on_account_id"
     t.index ["automation_rule_id"], name: "index_touch_plan_enrollments_on_automation_rule_id"
     t.index ["remindable_type", "remindable_id", "status"], name: "idx_touch_plan_enrollments_on_remindable_status"
@@ -3228,6 +3311,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.index ["channel_id"], name: "idx_on_channel_id_d91985ff7a"
   end
 
+  create_table "whatsapp_flow_endpoints", force: :cascade do |t|
+    t.integer "account_id", null: false
+    t.bigint "channel_id", null: false
+    t.string "identifier", null: false
+    t.text "private_key"
+    t.text "public_key"
+    t.jsonb "flow_configs", default: {}, null: false
+    t.datetime "key_uploaded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_whatsapp_flow_endpoints_on_account_id"
+    t.index ["channel_id"], name: "index_whatsapp_flow_endpoints_on_channel_id", unique: true
+    t.index ["identifier"], name: "index_whatsapp_flow_endpoints_on_identifier", unique: true
+  end
+
   create_table "whatsapp_flow_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "inbox_id", null: false
@@ -3301,6 +3399,48 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
     t.index ["status", "next_reconciliation_at"], name: "idx_wa_pending_mutations_reconciliation"
   end
 
+  create_table "whatsapp_template_media_sources", force: :cascade do |t|
+    t.bigint "whatsapp_channel_id", null: false
+    t.string "template_name", null: false
+    t.string "language", null: false
+    t.integer "card_index", null: false
+    t.string "media_type", null: false
+    t.text "source_url"
+    t.string "meta_media_id"
+    t.datetime "meta_media_uploaded_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["whatsapp_channel_id", "template_name", "language", "card_index"], name: "idx_wa_template_media_source_identity", unique: true
+    t.index ["whatsapp_channel_id"], name: "index_whatsapp_template_media_sources_on_whatsapp_channel_id"
+  end
+
+  create_table "whatsapp_webhook_events", force: :cascade do |t|
+    t.integer "account_id"
+    t.bigint "channel_id"
+    t.string "fingerprint", null: false
+    t.string "field", default: "unknown", null: false
+    t.string "status", default: "pending", null: false
+    t.jsonb "payload", default: {}, null: false
+    t.jsonb "verification_context", default: {}, null: false
+    t.integer "attempts", default: 0, null: false
+    t.text "last_error"
+    t.datetime "locked_at"
+    t.string "lease_token"
+    t.datetime "next_retry_at"
+    t.datetime "processed_at"
+    t.datetime "retry_deadline_at", null: false
+    t.datetime "retain_until", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "diagnostic_context", default: {}, null: false
+    t.index ["account_id", "channel_id", "created_at"], name: "idx_wa_webhook_events_account_channel"
+    t.index ["account_id"], name: "index_whatsapp_webhook_events_on_account_id"
+    t.index ["channel_id"], name: "index_whatsapp_webhook_events_on_channel_id"
+    t.index ["fingerprint"], name: "index_whatsapp_webhook_events_on_fingerprint", unique: true
+    t.index ["retain_until"], name: "index_whatsapp_webhook_events_on_retain_until"
+    t.index ["status", "next_retry_at"], name: "idx_wa_webhook_events_retry"
+  end
+
   create_table "whatsapp_webhook_routes", force: :cascade do |t|
     t.string "waba_id", null: false
     t.string "phone_number_id", null: false
@@ -3372,6 +3512,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
   add_foreign_key "captain_document_chunks", "accounts"
   add_foreign_key "captain_document_chunks", "captain_assistants", column: "assistant_id", on_delete: :nullify
   add_foreign_key "captain_document_chunks", "captain_documents", column: "document_id"
+  add_foreign_key "captain_follow_up_attempts", "accounts", on_delete: :cascade
+  add_foreign_key "captain_follow_up_attempts", "captain_assistants", column: "assistant_id", on_delete: :cascade
+  add_foreign_key "captain_follow_up_attempts", "conversations", on_delete: :cascade
+  add_foreign_key "captain_follow_up_attempts", "messages", column: "anchor_message_id", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "accounts", on_delete: :cascade
   add_foreign_key "captain_knowledge_answer_cache_entries", "captain_assistants", column: "assistant_id", on_delete: :nullify
   add_foreign_key "captain_mcp_servers", "accounts"
@@ -3461,13 +3605,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
   add_foreign_key "medelement_sync_runs", "accounts", on_delete: :cascade
   add_foreign_key "medelement_sync_runs", "integrations_hooks", column: "hook_id", on_delete: :nullify
   add_foreign_key "medelement_sync_runs", "users", column: "requested_by_id", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "accounts", on_delete: :cascade
-  add_foreign_key "meta_ad_referrals", "communication_threads", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "contacts", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "conversations", on_delete: :nullify
-  add_foreign_key "meta_ad_referrals", "inboxes", on_delete: :cascade
-  add_foreign_key "meta_ad_referrals", "messages", on_delete: :nullify
+  add_foreign_key "meta_ad_referrals", "accounts"
+  add_foreign_key "meta_ad_referrals", "communication_threads"
+  add_foreign_key "meta_ad_referrals", "contacts"
+  add_foreign_key "meta_ad_referrals", "conversations"
+  add_foreign_key "meta_ad_referrals", "inboxes"
+  add_foreign_key "meta_ad_referrals", "messages"
   add_foreign_key "meta_channel_credential_healths", "accounts", on_delete: :cascade
+  add_foreign_key "meta_messaging_webhook_event_routes", "accounts", on_delete: :cascade
+  add_foreign_key "meta_messaging_webhook_event_routes", "meta_messaging_webhook_events", on_delete: :cascade
   add_foreign_key "reminder_groups", "accounts"
   add_foreign_key "reminder_groups", "captain_assistants", column: "assistant_id"
   add_foreign_key "reminder_groups", "users", column: "creator_id"
@@ -3553,6 +3699,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
   add_foreign_key "touch_plan_enrollments", "reminder_groups"
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_coexistence_contact_pending_events", "channel_whatsapp", column: "channel_id", on_delete: :cascade
+  add_foreign_key "whatsapp_flow_endpoints", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_flow_endpoints", "channel_whatsapp", column: "channel_id", on_delete: :cascade
   add_foreign_key "whatsapp_flow_sessions", "accounts"
   add_foreign_key "whatsapp_flow_sessions", "conversations"
   add_foreign_key "whatsapp_flow_sessions", "inboxes"
@@ -3563,6 +3711,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_26_120000) do
   add_foreign_key "whatsapp_flows", "inboxes"
   add_foreign_key "whatsapp_pending_message_mutations", "accounts", on_delete: :cascade
   add_foreign_key "whatsapp_pending_message_mutations", "inboxes", on_delete: :cascade
+  add_foreign_key "whatsapp_template_media_sources", "channel_whatsapp", column: "whatsapp_channel_id", on_delete: :cascade
+  add_foreign_key "whatsapp_webhook_events", "accounts", on_delete: :cascade
+  add_foreign_key "whatsapp_webhook_events", "channel_whatsapp", column: "channel_id", on_delete: :nullify
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)
 CREATE OR REPLACE FUNCTION public.accounts_after_insert_row_tr()

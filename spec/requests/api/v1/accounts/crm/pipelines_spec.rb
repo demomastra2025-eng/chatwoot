@@ -129,6 +129,62 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(original_default.reload.default).to be(false)
   end
 
+  it 'promotes the next active pipeline when deactivating the default pipeline' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    replacement = create(:crm_pipeline, account: account, active: true, default: false)
+
+    patch "#{path}/#{pipeline.id}",
+          params: { active: false },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(pipeline.reload).to be_inactive
+    expect(replacement.reload.default).to be(true)
+  end
+
+  it 'atomically enables channel auto-create with the selected default stage' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    original_default = pipeline.stages.find_by!(default: true)
+    selected_stage = pipeline.stages.find_by!(code: 'qualified')
+
+    patch "#{path}/#{pipeline.id}",
+          params: {
+            auto_create_deal_on_channel_contact: true,
+            auto_create_stage_id: selected_stage.id
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(pipeline.reload.auto_create_deal_on_channel_contact).to be(true)
+    expect(selected_stage.reload.default).to be(true)
+    expect(original_default.reload.default).to be(false)
+  end
+
+  it 'rolls back the selected default stage when the pipeline update fails' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    original_default = pipeline.stages.find_by!(default: true)
+    selected_stage = pipeline.stages.find_by!(code: 'qualified')
+
+    patch "#{path}/#{pipeline.id}",
+          params: {
+            name: '',
+            auto_create_deal_on_channel_contact: true,
+            auto_create_stage_id: selected_stage.id
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(pipeline.reload.auto_create_deal_on_channel_contact).to be(false)
+    expect(original_default.reload.default).to be(true)
+    expect(selected_stage.reload.default).to be(false)
+  end
+
   it 'creates a pipeline with a russian name and auto-generated code' do
     post path,
          params: { name: 'Новая воронка продаж', default: false },
@@ -306,14 +362,25 @@ RSpec.describe 'CRM Pipelines API', type: :request do
     expect(account.crm_stages.where(pipeline_id: pipeline.id)).not_to exist
   end
 
-  it 'rejects deleting an active pipeline' do
+  it 'deletes an active pipeline without deals' do
     pipeline = create(:crm_pipeline, account: account, active: true, default: false)
+    create(:crm_stage, account: account, pipeline: pipeline)
 
     delete "#{path}/#{pipeline.id}", headers: headers, as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('PIPELINE_MUST_BE_ARCHIVED')
-    expect(account.crm_pipelines.where(id: pipeline.id)).to exist
+    expect(response).to have_http_status(:no_content)
+    expect(account.crm_pipelines.where(id: pipeline.id)).not_to exist
+  end
+
+  it 'promotes the next active pipeline after deleting the default pipeline' do
+    get path, headers: headers, as: :json
+    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
+    replacement = create(:crm_pipeline, account: account, active: true, default: false)
+
+    delete "#{path}/#{pipeline.id}", headers: headers, as: :json
+
+    expect(response).to have_http_status(:no_content)
+    expect(replacement.reload.default).to be(true)
   end
 
   it 'rejects deleting an archived pipeline with deals' do

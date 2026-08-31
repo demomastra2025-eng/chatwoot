@@ -41,7 +41,8 @@
       "CRM_SETTINGS_VIEW": "Просмотр настроек CRM",
       "CRM_SETTINGS_MANAGE": "Управление настройками CRM",
       "REPORT_MANAGE": "Управление отчетами",
-      "KNOWLEDGE_BASE_MANAGE": "Управление базой знаний"
+      "KNOWLEDGE_BASE_MANAGE": "Управление базой знаний",
+      "CAPTAIN_MANAGE": "Управление AI-агентами"
     },
     "FORM": {
       "NAME": {

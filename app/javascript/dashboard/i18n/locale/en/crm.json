@@ -86,9 +86,9 @@
       "GENERIC": "Something went wrong while working with CRM.",
       "LOAD_TITLE": "Unable to load CRM data",
       "NOT_FOUND": "The requested CRM record could not be found.",
-      "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline first.",
+      "PIPELINE_HAS_DEALS": "You cannot delete a pipeline while it still has deals. Move all open and closed deals to stages in another pipeline on the deal list page.",
       "PIPELINE_MUST_BE_ARCHIVED": "You can only delete an archived pipeline.",
-      "STAGE_HAS_DEALS": "You cannot delete a stage while it still has deals. Move all open and closed deals to another stage first.",
+      "STAGE_HAS_DEALS": "This stage cannot be deleted. Move its deals first.",
       "STANDARD_STAGE_LOCKED": "Standard Won and Lost stages can only be renamed and configured with closing reasons.",
       "UNSORTED_STAGE_REQUIRES_FALLBACK": "Create at least one active open stage before disabling Unsorted.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
@@ -124,6 +124,7 @@
       "EMPTY_DESCRIPTION": "Create your first deal to start tracking pipeline movement.",
       "EMPTY_TITLE": "No deals yet",
       "BOARD": {
+        "ADD_TO_STAGE": "Create a deal in “{stage}”",
         "CREATE_STAGE": "Create stage",
         "EMPTY_COLUMN_DESCRIPTION": "New deals moved to this stage will appear here.",
         "EMPTY_PIPELINE_DESCRIPTION": "Add at least one stage so the board can render columns for this pipeline.",
@@ -175,6 +176,7 @@
         "WIN_PROBABILITY": "Win probability"
       },
       "LOAD_MORE": "Load more",
+      "PIPELINES_LOAD_ERROR": "Could not load the selected CRM pipeline. Your filter was preserved.",
       "RETRY_LOAD": "Retry loading",
       "CONVERSATION_PLACEHOLDER": {
         "ADD_CONTACT": "Add contact",
@@ -479,12 +481,20 @@
       "LOADING": "Loading CRM settings...",
       "PIPELINES": {
         "ADD": "Add pipeline",
+        "AUTO_CREATE_DIALOG": {
+          "CONFIRM": "Enable auto-create",
+          "DESCRIPTION": "Choose where new channel deals in “{name}” will be created.",
+          "NO_STAGES": "Create or activate an open stage before enabling auto-create.",
+          "STAGE_HELP": "This stage becomes the default starting stage for new deals in the pipeline.",
+          "STAGE_LABEL": "Default stage",
+          "TITLE": "Auto-create deals"
+        },
         "ARCHIVE": "Archive",
         "ARCHIVED_STATUS": "Archived",
         "CREATE_TITLE": "Create pipeline",
         "DELETE": "Delete pipeline",
         "DELETE_CONFIRM": "Delete",
-        "DELETE_DESCRIPTION": "Archived pipeline “{name}” can only be deleted when it has no deals.",
+        "DELETE_DESCRIPTION": "Pipeline “{name}” and its stages will be deleted. Deletion is only available when it has no deals.",
         "DELETE_TITLE": "Delete pipeline?",
         "BACK_TO_DEALS": "Back",
         "CURRENT_KICKER": "Selected deal settings",
@@ -513,7 +523,7 @@
         "SOURCES_TITLE": "Deal sources",
         "STAGE_FLOW_HELP": "Drag open stages. Won and Lost always remain at the end.",
         "STAGE_FLOW_TITLE": "Deal stages",
-        "SUCCESS_SAVE": "Deal settings saved",
+        "SUCCESS_SAVE": "Pipeline saved",
         "TABLE": {
           "AUTO_CREATE": "Auto",
           "DEFAULT": "Primary",
@@ -526,11 +536,12 @@
       },
       "STAGES": {
         "CREATE_TITLE": "Create stage",
+        "NEW_NAME": "New stage",
         "DEFAULT_BADGE": "Default",
         "INACTIVE_BADGE": "Stage hidden",
         "DELETE": "Delete stage",
         "DELETE_CONFIRM": "Delete",
-        "DELETE_DESCRIPTION": "You cannot delete stage “{name}” while it still has deals. Move all open and closed deals to another stage first.",
+        "DELETE_DESCRIPTION": "Stage “{name}” will be deleted after you save the changes.",
         "DELETE_TITLE": "Delete stage?",
         "EDIT_TITLE": "Edit stage",
         "FORM": {
@@ -576,6 +587,13 @@
         "SUCCESS_DELETE": "Stage deleted",
         "SUCCESS_REORDER": "Stage order saved",
         "SUCCESS_SAVE": "Stage saved",
+        "UNSAVED": {
+          "DESCRIPTION": "Save your stage changes before leaving?",
+          "DISCARD": "Don't save",
+          "SAVE": "Save",
+          "STAY": "Stay",
+          "TITLE": "You have unsaved changes"
+        },
         "WON_HELP": "Successfully closed deals"
       },
       "TASK_STATUSES": {

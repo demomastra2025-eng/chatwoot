@@ -80,6 +80,7 @@ const props = defineProps({
 const emit = defineEmits([
   'changeOwner',
   'changeStage',
+  'createDeal',
   'loadMore',
   'selectDeal',
   'toggleSortDirection',
@@ -312,6 +313,20 @@ const handleOwnerChange = (deal, ownerId) => {
               >
                 {{ columnDealCount(column) }}
               </span>
+              <button
+                v-if="canManage"
+                type="button"
+                class="crm-deal-board-add-button flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-n-slate-11 transition-colors hover:bg-n-alpha-black2 hover:text-n-brand"
+                :aria-label="
+                  $t('CRM.DEALS.BOARD.ADD_TO_STAGE', { stage: column.label })
+                "
+                :title="
+                  $t('CRM.DEALS.BOARD.ADD_TO_STAGE', { stage: column.label })
+                "
+                @click.stop="emit('createDeal', column.stageId)"
+              >
+                <i class="i-lucide-plus size-4" aria-hidden="true" />
+              </button>
               <button
                 v-if="showSortToggle"
                 type="button"

@@ -1,26 +1,45 @@
 class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
   description 'Resolve the current conversation when the issue has been addressed or the conversation should be closed'
-  param :reason, type: 'string', desc: 'Optional reason for resolving the conversation', required: false
-  param :status_reason, type: 'string', desc: 'Configured conversation status reason for resolving when status reasons are enabled', required: false
+  param :reason, type: 'string', desc: 'Required concise factual explanation of why the conversation can be completed.', required: true
+  param :status_reason, type: 'string', desc: 'Exact configured assistant completion outcome ID', required: false
 
   def perform(tool_context, reason: nil, status_reason: nil)
+    return 'Automatic completion is disabled for this assistant' unless assistant.auto_completion_enabled?
+    return 'A specific completion explanation is required' if reason.to_s.squish.blank?
+    if Captain::OutcomeReasonConfig.new(assistant).explanation_required?(
+      :completion,
+      candidate: status_reason,
+      explanation: reason
+    )
+      return 'A specific completion explanation is required'
+    end
+
     conversation = find_conversation(tool_context.state)
     return 'Conversation not found' unless conversation
     return "Conversation ##{conversation.display_id} is already resolved" if conversation.resolved?
     return 'Auto-resolve is disabled for this account' if conversation.account.captain_auto_resolve_disabled?
 
     log_tool_usage('resolve_conversation', { conversation_id: conversation.id, reason: reason })
+    resolved_status_reason = transition_conversation(conversation, reason, status_reason)
+    resolution_success(conversation.reload, reason, resolved_status_reason)
+  end
 
-    params = { status: 'resolved' }
-    resolved_status_reason = configured_status_reason_for(conversation, 'resolved', status_reason, fallback_reason: reason)
-    params[:status_reason] = resolved_status_reason if resolved_status_reason.present?
+  private
 
+  def transition_conversation(conversation, reason, status_reason)
+    params, transition_options, resolved_status_reason = resolution_transition_attributes(reason, status_reason)
+    perform_status_transition(conversation, params, transition_options, reason)
+    resolved_status_reason
+  end
+
+  def perform_status_transition(conversation, params, transition_options, reason)
     transition = lambda do
       Conversations::StatusTransitionService.new(
         conversation: conversation,
         params: params,
         actor: assistant,
-        source: 'captain'
+        source: 'captain',
+        **transition_options
       ).perform
     end
 
@@ -29,8 +48,16 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
     else
       transition.call
     end
-    conversation.reload
+  end
 
+  def resolution_transition_attributes(reason, status_reason)
+    params = { status: 'resolved' }
+    resolved_reason, options = resolved_reason_and_transition_options(status_reason, explanation: reason)
+    params[:status_reason] = resolved_reason if resolved_reason.present? && options.empty?
+    [params, options, resolved_reason]
+  end
+
+  def resolution_success(conversation, reason, resolved_status_reason)
     tool_success(
       data: {
         action: 'resolve_conversation',
@@ -43,17 +70,16 @@ class Captain::Tools::ResolveConversationTool < Captain::Tools::BasePublicTool
     )
   end
 
-  private
-
   def permissions
     %w[conversation_manage conversation_unassigned_manage conversation_participating_manage]
   end
 
-  def configured_status_reason_for(conversation, target_status, explicit_reason, fallback_reason: nil)
-    config = Conversations::StatusReasonConfig.new(conversation.account)
-    explicit_reason = explicit_reason.to_s.strip.presence
-    return config.resolve_reason!(target_status, explicit_reason, enforce_required: false) if explicit_reason.present?
-
-    config.canonical_reason(target_status, fallback_reason)
+  def resolved_reason_and_transition_options(explicit_reason, explanation: nil)
+    outcome_config = Captain::OutcomeReasonConfig.new(assistant)
+    outcome_reason = outcome_config.resolve(:completion, explicit_reason)
+    [
+      outcome_reason&.fetch('label'),
+      outcome_config.transition_options(:completion, outcome_reason, explanation: explanation)
+    ]
   end
 end
