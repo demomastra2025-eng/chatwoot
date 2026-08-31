@@ -1493,6 +1493,14 @@ describe('#addMentions', () => {
       );
 
       expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get.mock.calls[0][1].params).toEqual({
+        include_history: true,
+      });
+      expect(axios.get.mock.calls[1][1].params).toEqual({
+        after: 100,
+        before: 300,
+        include_history: true,
+      });
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_PREVIOUS_CONVERSATIONS,
         {

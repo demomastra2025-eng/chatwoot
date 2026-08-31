@@ -223,6 +223,52 @@ describe('conversation actions', () => {
     });
   });
 
+  describe('#fetchPreviousMessages', () => {
+    it('keeps full communication-thread history available while paginating backwards', async () => {
+      const commit = vi.fn();
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            unread_count: 0,
+            messages: [],
+            channels: [],
+            meta: {},
+          },
+        ],
+      };
+      vi.spyOn(CommunicationThreadApi, 'messages').mockResolvedValue({
+        data: {
+          meta: { channels: [] },
+          payload: [{ id: 180, created_at: 180 }],
+        },
+      });
+
+      await actions.fetchPreviousMessages(
+        { commit, state },
+        {
+          conversationId: 7,
+          conversationType: 'communication_thread',
+          before: 200,
+        }
+      );
+
+      expect(CommunicationThreadApi.messages).toHaveBeenCalledWith(7, {
+        after: undefined,
+        before: 200,
+        include_history: true,
+      });
+      expect(commit).toHaveBeenCalledWith(types.SET_PREVIOUS_CONVERSATIONS, {
+        id: 7,
+        conversationType: 'communication_thread',
+        data: [{ id: 180, created_at: 180 }],
+      });
+    });
+  });
+
   describe('#setCommunicationThreadPinned', () => {
     it('updates thread pin state through the communication-thread update endpoint', async () => {
       const commit = vi.fn();
