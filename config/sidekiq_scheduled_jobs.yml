@@ -1,0 +1,7 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("SCHEDULED_JOBS_SIDEKIQ_CONCURRENCY", 2) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - scheduled_jobs

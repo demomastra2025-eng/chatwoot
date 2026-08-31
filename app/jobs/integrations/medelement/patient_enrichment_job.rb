@@ -1,5 +1,5 @@
 class Integrations::Medelement::PatientEnrichmentJob < MutexApplicationJob
-  queue_as :medium
+  queue_as :medelement_sync
 
   LOCK_TIMEOUT = 1.minute
 

@@ -198,6 +198,77 @@ RSpec.describe Whatsapp::TemplateProcessorService do
       )
     end
 
+    it 'uploads and uses the file retained by the carousel template author' do
+      channel.update!(provider: 'whatsapp_cloud')
+      channel.update!(message_templates: [carousel_template])
+      source = channel.template_media_sources.create!(
+        template_name: 'carousel_template',
+        language: 'en_us',
+        card_index: 0,
+        media_type: 'image',
+        source_url: 'https://cdn.example.com/product.jpg'
+      )
+      uploader = instance_double(Whatsapp::TemplateSendMediaUploadService)
+      allow(Whatsapp::TemplateSendMediaUploadService).to receive(:new)
+        .with(whatsapp_channel: channel)
+        .and_return(uploader)
+      expect(uploader).to receive(:call).with(
+        media_type: 'image',
+        source: source,
+        temporary_blob_signed_id: nil
+      ).and_return('meta-media-from-author-file')
+
+      service = described_class.new(
+        channel: channel,
+        template_params: {
+          'name' => 'carousel_template',
+          'language' => 'en_US',
+          'processed_params' => {
+            'carousel' => {
+              'cards' => [{
+                'card_index' => 0,
+                'header' => { 'media_type' => 'image', 'has_template_media' => true },
+                'body' => { '1' => 'One' },
+                'buttons' => [
+                  { 'index' => 0, 'type' => 'quick_reply', 'parameter' => 'product-one' },
+                  { 'index' => 1, 'type' => 'url', 'parameter' => 'one' }
+                ]
+              }]
+            }
+          }
+        }
+      )
+
+      _, _, _, components = service.call
+      expect(components.dig(0, :cards, 0, :components, 0, :parameters, 0, :image, :id))
+        .to eq('meta-media-from-author-file')
+    end
+
+    it 'requires a manual Meta media ID after switching retained media to a legacy provider' do
+      channel.update!(message_templates: [carousel_template])
+      channel.template_media_sources.create!(
+        template_name: 'carousel_template',
+        language: 'en_us',
+        card_index: 0,
+        media_type: 'image',
+        source_url: 'https://cdn.example.com/product.jpg'
+      )
+      service = described_class.new(
+        channel: channel,
+        template_params: {
+          'name' => 'carousel_template',
+          'language' => 'en_US',
+          'processed_params' => {
+            'carousel' => {
+              'cards' => [{ 'card_index' => 0, 'header' => {}, 'body' => { '1' => 'One' }, 'buttons' => [] }]
+            }
+          }
+        }
+      )
+
+      expect { service.call }.to raise_error(ArgumentError, 'Carousel card 1 Meta media ID is required')
+    end
+
     it 'renders field references in processed template params before building WhatsApp Cloud components' do
       account = channel.account
       contact = create(:contact, account: account, name: 'Ахан')

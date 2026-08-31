@@ -21,9 +21,7 @@
   - default
   - mailers
   - action_mailbox_routing
-  - medelement_provider_commands
   - low
-  - scheduled_jobs
   - deferred
   - telegram_personal_history
   - purgable

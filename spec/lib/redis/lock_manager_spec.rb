@@ -33,6 +33,31 @@ RSpec.describe Redis::LockManager do
       lock_manager.unlock(lock_key)
       expect(lock_manager.locked?(lock_key)).to be false
     end
+
+    it 'does not delete a successor lock after the original lease expires' do
+      lock_manager.lock(lock_key)
+      Redis::Alfred.set(lock_key, 'successor-token', ex: 1.minute)
+
+      expect(lock_manager.unlock(lock_key)).to be(false)
+      expect(Redis::Alfred.get(lock_key)).to eq('successor-token')
+    end
+  end
+
+  describe '#renew' do
+    it 'extends a lease owned by this manager' do
+      lock_manager.lock(lock_key, 1)
+
+      expect(lock_manager.renew(lock_key, 1.minute)).to be(true)
+      expect(Redis::Alfred.get(lock_key)).to be_present
+    end
+
+    it 'does not extend a successor lease' do
+      lock_manager.lock(lock_key, 1)
+      Redis::Alfred.set(lock_key, 'successor-token', ex: 1.minute)
+
+      expect(lock_manager.renew(lock_key, 1.hour)).to be(false)
+      expect(Redis::Alfred.get(lock_key)).to eq('successor-token')
+    end
   end
 
   describe '#locked?' do

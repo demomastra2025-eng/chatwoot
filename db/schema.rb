@@ -2188,6 +2188,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "status"], name: "idx_medelement_sync_runs_account_status"
     t.index ["account_id"], name: "index_medelement_sync_runs_on_account_id"
+    t.index ["completed_at"], name: "idx_medelement_sync_runs_terminal_completed", where: "((status)::text = ANY ((ARRAY['succeeded'::character varying, 'partial'::character varying, 'failed'::character varying])::text[]))"
     t.index ["hook_id", "created_at"], name: "idx_medelement_sync_runs_hook_created"
     t.index ["hook_id"], name: "idx_medelement_sync_runs_one_active_hook", unique: true, where: "((hook_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'retrying'::character varying])::text[])))"
     t.index ["hook_id"], name: "index_medelement_sync_runs_on_hook_id"
@@ -3440,7 +3441,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["retain_until"], name: "index_whatsapp_webhook_events_on_retain_until"
     t.index ["status", "next_retry_at"], name: "idx_wa_webhook_events_retry"
   end
-
   create_table "whatsapp_webhook_routes", force: :cascade do |t|
     t.string "waba_id", null: false
     t.string "phone_number_id", null: false

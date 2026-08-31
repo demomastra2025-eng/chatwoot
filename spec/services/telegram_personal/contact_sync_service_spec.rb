@@ -17,6 +17,24 @@ RSpec.describe TelegramPersonal::ContactSyncService do
   let(:account) { create(:account, limits: { non_web_inboxes: ChatwootApp.max_limit }) }
   let(:channel) { create(:channel_telegram_personal, account: account, phone_number: '+77066318623') }
 
+  def create_reminder_for_contact_inbox(contact_inbox)
+    conversation = create(
+      :conversation, account: contact_inbox.contact.account, inbox: contact_inbox.inbox,
+                     contact: contact_inbox.contact, contact_inbox: contact_inbox
+    )
+    create(:reminder, account: contact_inbox.contact.account, touch_conversation: conversation)
+  end
+
+  def expect_reminder_reassigned(reminder, target_contact, original_fingerprint, contact_inbox:)
+    expect(contact_inbox.reload.contact).to eq(target_contact)
+    reminder.reload
+    expect(reminder.target_contact).to eq(target_contact)
+    expect(reminder.fingerprint).not_to eq(original_fingerprint)
+    duplicate_reminder = reminder.dup
+    expect(duplicate_reminder).not_to be_valid
+    expect(duplicate_reminder.errors[:base]).to include('An open touch with the same content already exists')
+  end
+
   it 'creates a stable telegram personal contact profile and contact inbox' do
     contact_inbox = nil
 
@@ -206,6 +224,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
       identifier: 'telegram_personal:134527512'
     )
     contact_inbox = create(:contact_inbox, inbox: channel.inbox, contact: telegram_contact, source_id: '134527512')
+    original_reminder_fingerprint = (reminder = create_reminder_for_contact_inbox(contact_inbox)).fingerprint
 
     expect do
       described_class.new(
@@ -222,7 +241,7 @@ RSpec.describe TelegramPersonal::ContactSyncService do
       ).perform
     end.not_to raise_error
 
-    expect(contact_inbox.reload.contact).to eq(shared_contact)
+    expect_reminder_reassigned(reminder, shared_contact, original_reminder_fingerprint, contact_inbox: contact_inbox)
     expect { telegram_contact.reload }.to raise_error(ActiveRecord::RecordNotFound)
     expect(shared_contact.reload.additional_attributes).to include(
       'provider' => 'whatsapp_web',

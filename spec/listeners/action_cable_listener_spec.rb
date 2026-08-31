@@ -120,9 +120,7 @@ describe ActionCableListener do
       account.enable_features!('communication_threads')
       communication_thread = conversation.refresh_communication_thread!
       allow(ActionCableBroadcastJob).to receive(:perform_later)
-      expect(listener).to receive(:communication_thread_realtime_payload).once.and_call_original
-
-      listener.message_created(event)
+      perform_communication_thread_realtime { listener.message_created(event) }
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         a_collection_containing_exactly(*account.users.pluck(:pubsub_token)),
@@ -176,7 +174,7 @@ describe ActionCableListener do
       account_wide_agent = create(:user, account: account)
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(event)
+      perform_communication_thread_realtime { listener.message_created(event) }
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [account_wide_agent.pubsub_token],
@@ -200,7 +198,7 @@ describe ActionCableListener do
       voice_event = Events::Base.new(event_name, Time.zone.now, message: voice_message)
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(voice_event)
+      perform_communication_thread_realtime { listener.message_created(voice_event) }
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [unassigned_agent.pubsub_token],
@@ -223,7 +221,9 @@ describe ActionCableListener do
       )
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.message_created(event)
+      end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [agent.pubsub_token],
@@ -243,7 +243,9 @@ describe ActionCableListener do
       create(:scheduling_appointment, account: account, contact: conversation.contact, conversation: conversation, status: 'confirmed')
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.message_created(event)
+      end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [agent.pubsub_token],
@@ -262,7 +264,9 @@ describe ActionCableListener do
       conversation.association(:communication_thread).reset
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.message_created(event)
+      end
 
       communication_thread = conversation.reload.communication_thread
       dashboard_payload = hash_including(
@@ -315,7 +319,9 @@ describe ActionCableListener do
       communication_thread.update!(team: team)
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.message_created(event)
+      end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [agent.pubsub_token],
@@ -337,7 +343,9 @@ describe ActionCableListener do
       communication_thread.update!(assignee: nil, team: nil)
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.message_created(event)
+      end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [agent.pubsub_token],
@@ -364,7 +372,9 @@ describe ActionCableListener do
       create(:inbox_member, user: second_agent, inbox: second_inbox)
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_created(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.message_created(event)
+      end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [agent.pubsub_token],
@@ -398,7 +408,9 @@ describe ActionCableListener do
       account.enable_features!('communication_threads')
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.message_updated(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.message_updated(event)
+      end
 
       communication_thread = conversation.reload.communication_thread
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
@@ -445,7 +457,9 @@ describe ActionCableListener do
       account.enable_features!('communication_threads')
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.conversation_created(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.conversation_created(event)
+      end
 
       communication_thread = conversation.reload.communication_thread
       expected_payload = hash_including(
@@ -580,7 +594,9 @@ describe ActionCableListener do
       communication_thread = conversation.reload.communication_thread
       allow(ActionCableBroadcastJob).to receive(:perform_later)
 
-      listener.conversation_contact_changed(event)
+      perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob) do
+        listener.conversation_contact_changed(event)
+      end
 
       expect(ActionCableBroadcastJob).to have_received(:perform_later).with(
         [agent.pubsub_token],
@@ -777,5 +793,9 @@ describe ActionCableListener do
 
       listener.crm_deal_created(event)
     end
+  end
+
+  def perform_communication_thread_realtime(&)
+    perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob, &)
   end
 end

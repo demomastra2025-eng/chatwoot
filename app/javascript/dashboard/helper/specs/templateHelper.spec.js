@@ -434,13 +434,18 @@ describe('templateHelper', () => {
       const result = buildTemplateParameters(
         {
           category: 'MARKETING',
+          one_link_carousel_media_upload_supported: true,
           components: [
             {
               type: 'CAROUSEL',
               cards: [
                 {
                   components: [
-                    { type: 'HEADER', format: 'IMAGE' },
+                    {
+                      type: 'HEADER',
+                      format: 'IMAGE',
+                      one_link_media: { attached: true },
+                    },
                     { type: 'BODY', text: 'Product {{1}}' },
                     {
                       type: 'BUTTONS',
@@ -461,7 +466,13 @@ describe('templateHelper', () => {
       expect(result.carousel.cards).toEqual([
         {
           card_index: 0,
-          header: { media_id: '', media_type: 'image' },
+          header: {
+            media_id: '',
+            media_blob_id: '',
+            media_type: 'image',
+            has_template_media: true,
+            supports_media_upload: true,
+          },
           body: { 1: '' },
           buttons: [
             { index: 0, type: 'quick_reply', parameter: '' },
@@ -469,6 +480,33 @@ describe('templateHelper', () => {
           ],
         },
       ]);
+    });
+
+    it('ignores retained Cloud media markers when upload support is disabled', () => {
+      const result = buildTemplateParameters({
+        one_link_carousel_media_upload_supported: false,
+        components: [
+          {
+            type: 'CAROUSEL',
+            cards: [
+              {
+                components: [
+                  {
+                    type: 'HEADER',
+                    format: 'IMAGE',
+                    one_link_media: { attached: true },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(result.carousel.cards[0].header).toMatchObject({
+        has_template_media: false,
+        supports_media_upload: false,
+      });
     });
 
     it('should validate that replaceTemplateVariables preserves unreplaced variables', () => {

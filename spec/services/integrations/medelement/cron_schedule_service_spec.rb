@@ -12,7 +12,7 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
     allow(Sidekiq::Cron::Job).to receive(:find).and_return(nil)
   end
 
-  it 'creates realtime, operational and catalog schedules with exact phases' do
+  it 'creates coalesced realtime, operational, contacts and catalog schedules with exact phases' do
     hook = build_stubbed(:integrations_hook, :medelement, account: account)
 
     described_class.new(hook: hook).sync!
@@ -20,30 +20,37 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
     expect(Sidekiq::Cron::Job).to have_received(:create).with(
       hash_including(
         name: "integrations_medelement_hook_#{hook.id}_realtime",
-        klass: 'Integrations::Medelement::SyncJob',
+        klass: 'Integrations::Medelement::ScheduledSyncJob',
         cron: '*/2 * * * * Asia/Almaty',
-        args: [hook.id, nil, %w[receptions]],
+        args: [hook.id, %w[receptions]],
         active_job: true,
-        queue: 'medium',
+        queue: 'scheduled_jobs',
         status: 'enabled'
       )
     )
     expect(Sidekiq::Cron::Job).to have_received(:create).with(
       hash_including(
         name: "integrations_medelement_hook_#{hook.id}_operational",
-        klass: 'Integrations::Medelement::SyncJob',
+        klass: 'Integrations::Medelement::ScheduledSyncJob',
         cron: '0,15,30,45 * * * * Asia/Almaty',
-        args: [hook.id, nil, %w[specialists contacts receptions]],
+        args: [hook.id, %w[specialists]],
         active_job: true,
-        queue: 'medium',
+        queue: 'scheduled_jobs',
         status: 'enabled'
+      )
+    )
+    expect(Sidekiq::Cron::Job).to have_received(:create).with(
+      hash_including(
+        name: "integrations_medelement_hook_#{hook.id}_contacts",
+        cron: Integrations::Medelement::Configuration.new(hook: hook).contacts_sync_cron_expression,
+        args: [hook.id, %w[contacts]]
       )
     )
     expect(Sidekiq::Cron::Job).to have_received(:create).with(
       hash_including(
         name: "integrations_medelement_hook_#{hook.id}_catalog",
         cron: '20 0,6,12,18 * * * Asia/Almaty',
-        args: [hook.id, nil, %w[setup services]]
+        args: [hook.id, %w[setup services]]
       )
     )
     expect(Sidekiq::Cron::Job).to have_received(:destroy).with("integrations_medelement_hook_#{hook.id}")
@@ -105,10 +112,10 @@ RSpec.describe Integrations::Medelement::CronScheduleService do
 
   it 'attempts every schedule when one cron job cannot be created' do
     hook = build_stubbed(:integrations_hook, :medelement, account: account)
-    allow(Sidekiq::Cron::Job).to receive(:create).and_return(false, true, true)
+    allow(Sidekiq::Cron::Job).to receive(:create).and_return(false, true, true, true)
 
     expect(described_class.new(hook: hook).sync!).to be(false)
-    expect(Sidekiq::Cron::Job).to have_received(:create).exactly(3).times
+    expect(Sidekiq::Cron::Job).to have_received(:create).exactly(4).times
   end
 
   it 'carries the catalog offset into the next hour' do

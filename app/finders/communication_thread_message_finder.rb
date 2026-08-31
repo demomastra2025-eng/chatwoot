@@ -32,10 +32,17 @@ class CommunicationThreadMessageFinder
   end
 
   def scoped_messages
-    Message.where(
+    scope = Message.where(
       account_id: current_account.id,
       conversation_id: accessible_conversations.select(:id)
     )
+    return scope if include_history? || communication_thread.session_started_at.blank?
+
+    scope.where('messages.created_at >= ?', communication_thread.session_started_at)
+  end
+
+  def include_history?
+    ActiveModel::Type::Boolean.new.cast(params[:include_history])
   end
 
   def messages_after(after_id)

@@ -114,5 +114,29 @@ RSpec.describe CommunicationThreads::UpdateService do
       expect(first_event_id).to be_present
       expect(conversation.communication_thread_event_id).to eq(first_event_id)
     end
+
+    it 'queues one aggregate realtime refresh for a multi-conversation update' do
+      contact = create(:contact, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact, status: :open)
+      create(:conversation, account: account, contact: contact, status: :open)
+      thread = first_conversation.reload.communication_thread
+      links = thread.communication_thread_conversations.order(:id)
+      actor = create(:user, account: account)
+      allow(CommunicationThreads::RealtimeUpdateJob).to receive(:perform_later)
+
+      described_class.new(
+        communication_thread: thread,
+        params: ActionController::Parameters.new(status: 'resolved').permit!,
+        accessible_links: links,
+        actor: actor
+      ).perform
+
+      expect(CommunicationThreads::RealtimeUpdateJob).to have_received(:perform_later).once.with(
+        communication_thread_id: thread.id,
+        source_conversation_id: first_conversation.id,
+        source_event: 'conversation.status_changed',
+        performer_id: actor.id
+      )
+    end
   end
 end

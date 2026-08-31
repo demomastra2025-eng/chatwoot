@@ -8,7 +8,8 @@ RSpec.describe Integrations::Medelement::HookRuntimeLock do
     account.enable_features!('scheduling')
     schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true, destroy!: true)
     allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
-    allow(Integrations::Medelement::SyncJob).to receive(:perform_later)
+    enqueued_job = instance_double(Integrations::Medelement::SyncJob, successfully_enqueued?: true)
+    allow(Integrations::Medelement::SyncJob).to receive(:perform_later).and_return(enqueued_job)
   end
 
   let(:account) { create(:account) }

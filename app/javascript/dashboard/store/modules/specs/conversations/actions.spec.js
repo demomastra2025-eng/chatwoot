@@ -459,6 +459,7 @@ describe('#actions', () => {
 
     it('uses communication thread meta for filtered thread unread counts', async () => {
       const localCommit = vi.fn();
+      const localDispatch = vi.fn();
       const counts = { all: 2, inboxes: { 1: 2 } };
       const metaSpy = vi
         .spyOn(CommunicationThreadApi, 'meta')
@@ -466,6 +467,7 @@ describe('#actions', () => {
 
       await actions.fetchSidebarUnreadCounts({
         commit: localCommit,
+        dispatch: localDispatch,
         state: {
           conversationFilters: {
             status: 'open',
@@ -479,11 +481,15 @@ describe('#actions', () => {
         status: 'open',
         assigneeType: 'me',
         communicationThreadMode: true,
+        includeContextCounts: true,
       });
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
         counts
       );
+      expect(localDispatch).toHaveBeenCalledWith('conversationStats/set', {
+        unread_counts: counts,
+      });
 
       metaSpy.mockRestore();
     });
@@ -573,8 +579,8 @@ describe('#actions', () => {
         { id: 7 }
       );
 
-      expect(localCommit).toHaveBeenCalledTimes(1);
-      expect(localCommit).toHaveBeenCalledWith(
+      expect(localCommit).toHaveBeenCalledTimes(2);
+      expect(localCommit).toHaveBeenLastCalledWith(
         types.UPDATE_MESSAGE_UNREAD_COUNT,
         {
           id: 7,
@@ -584,7 +590,11 @@ describe('#actions', () => {
           channels: [{ conversation_id: 11, agent_last_seen_at: 123 }],
         }
       );
-      expect(localDispatch).toHaveBeenCalledWith('fetchSidebarUnreadCounts');
+      expect(localDispatch).toHaveBeenCalledWith(
+        'conversationStats/get',
+        { communicationThreadMode: true, status: undefined },
+        { root: true }
+      );
     });
   });
 
@@ -1493,6 +1503,14 @@ describe('#addMentions', () => {
       );
 
       expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get.mock.calls[0][1].params).toEqual({
+        include_history: true,
+      });
+      expect(axios.get.mock.calls[1][1].params).toEqual({
+        after: 100,
+        before: 300,
+        include_history: true,
+      });
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_PREVIOUS_CONVERSATIONS,
         {

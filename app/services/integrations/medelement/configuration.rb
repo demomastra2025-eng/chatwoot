@@ -6,6 +6,8 @@ class Integrations::Medelement::Configuration
   DEFAULT_SYNC_INTERVAL_HOURS = 0.25
   CATALOG_SYNC_INTERVAL_HOURS = 6
   RECEPTIONS_SYNC_INTERVAL_MINUTES = 2
+  DEFAULT_RECEPTION_DETAIL_REFRESH_MINUTES = 360
+  DEFAULT_RECEPTION_DETAIL_BUDGET = 50
   DEFAULT_SYNC_TIME_OF_DAY = '06:15'.freeze
   SUPPORTED_SYNC_INTERVAL_HOURS = [0.25, 0.5, 1, 2, 4, 6, 12, 24].freeze
   TIME_OF_DAY_FORMAT = /\A([01]\d|2[0-3]):[0-5]\d\z/
@@ -77,6 +79,19 @@ class Integrations::Medelement::Configuration
 
   def receptions_sync_cron_expression
     "*/#{RECEPTIONS_SYNC_INTERVAL_MINUTES} * * * * #{time_zone}"
+  end
+
+  def contacts_sync_cron_expression
+    minute = (hook.id * 13) % 60
+    "#{minute} * * * * #{time_zone}"
+  end
+
+  def reception_detail_refresh_interval
+    integer_setting('reception_detail_refresh_minutes', DEFAULT_RECEPTION_DETAIL_REFRESH_MINUTES).clamp(15, 24 * 60).minutes
+  end
+
+  def reception_detail_budget
+    integer_setting('reception_detail_budget', DEFAULT_RECEPTION_DETAIL_BUDGET).clamp(1, 500)
   end
 
   def throttle_ms

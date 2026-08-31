@@ -32,7 +32,7 @@ class Whatsapp::TemplateAssetUploadService
       find_legacy_account_blob!(signed_id, account_id: account_id)
     end
 
-    def schedule_cleanup(blob) = ActiveStorage::PurgeJob.set(wait: CLEANUP_DELAY).perform_later(blob)
+    def schedule_cleanup(blob) = Whatsapp::TemplateMediaCleanupJob.set(wait: CLEANUP_DELAY).perform_later(blob.id)
 
     private
 
@@ -84,9 +84,7 @@ class Whatsapp::TemplateAssetUploadService
       file_name = blob.filename.to_s
       content_type = validate_media!(file, file_name: file_name, media_type: media_type, byte_size: blob.byte_size)
 
-      handle = upload_file_with_metadata(file, file_name: file_name, content_type: content_type)
-      blob.purge_later
-      handle
+      upload_file_with_metadata(file, file_name: file_name, content_type: content_type)
     end
   end
 

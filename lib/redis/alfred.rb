@@ -29,6 +29,10 @@ module Redis::Alfred
       Redis::CompareAndDelete.call($alfred, key, value)
     end
 
+    def expire_if_value(key, value, seconds)
+      Redis::CompareAndExpire.call($alfred, key, value, seconds)
+    end
+
     # increment a key by 1. throws error if key value is incompatible
     # sets key to 0 before operation if key doesn't exist
     def incr(key)

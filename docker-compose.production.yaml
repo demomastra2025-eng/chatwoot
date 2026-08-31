@@ -66,6 +66,48 @@ services:
       - shared-services
     restart: always
 
+  medelement-sync-worker:
+    <<: *base
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=false
+      - ENABLE_SIDEKIQ_CRON=false
+      - DISABLE_SIDEKIQ_ALIVE=true
+      - MEDELEMENT_SYNC_SIDEKIQ_CONCURRENCY=${MEDELEMENT_SYNC_SIDEKIQ_CONCURRENCY:-1}
+      - SIDEKIQ_DB_POOL=${MEDELEMENT_SYNC_DB_POOL:-2}
+    entrypoint: docker/entrypoints/rails.sh
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_medelement_sync.yml']
+    networks:
+      - default
+      - shared-services
+    restart: always
+
+  medelement-commands-worker:
+    <<: *base
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - INSTALLATION_ENV=docker
+      - CW_AUTO_PREPARE_DB=false
+      - ENABLE_SIDEKIQ_CRON=false
+      - DISABLE_SIDEKIQ_ALIVE=true
+      - MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY=${MEDELEMENT_COMMANDS_SIDEKIQ_CONCURRENCY:-2}
+      - SIDEKIQ_DB_POOL=${MEDELEMENT_COMMANDS_DB_POOL:-3}
+    entrypoint: docker/entrypoints/rails.sh
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_medelement_commands.yml']
+    networks:
+      - default
+      - shared-services
+    restart: always
+
   telegram-inbound-worker:
     <<: *base
     depends_on:

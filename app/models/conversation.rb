@@ -62,7 +62,8 @@ class Conversation < ApplicationRecord
   include PushDataHelper
   include ConversationMuteHelpers
 
-  attr_accessor :skip_runtime_events, :skip_communication_thread_refresh, :communication_thread_event_id
+  attr_accessor :skip_runtime_events, :skip_communication_thread_refresh, :skip_communication_thread_realtime,
+                :communication_thread_event_id
 
   validates :account_id, presence: true
   validates :inbox_id, presence: true

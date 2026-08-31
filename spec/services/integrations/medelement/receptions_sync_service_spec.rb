@@ -11,6 +11,8 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
       sync_patients?: false,
       receptions_days_back: 3,
       receptions_days_forward: 70,
+      reception_detail_budget: 50,
+      reception_detail_refresh_interval: 6.hours,
       throttle_ms: 0,
       time_zone: 'Asia/Almaty',
       organization_id: 'company-1'
@@ -61,6 +63,107 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
         'SERVICES' => []
       )
     end
+  end
+
+  it 'skips provider detail for an unchanged appointment until its detail refresh expires' do
+    first_result = service.perform
+    second_result = service.perform
+
+    expect(first_result).to include(imported_count: 1, detail_skipped_count: 0, detail_deferred_count: 0)
+    expect(second_result).to include(imported_count: 0, detail_skipped_count: 1, detail_deferred_count: 0)
+    expect(client).to have_received(:get_reception).once
+    expect(account.scheduling_appointments.first.custom_attributes).to include(
+      'medelement_list_fingerprint' => a_string_matching(/\A[0-9a-f]{64}\z/),
+      'medelement_detail_synced_at' => be_present
+    )
+  end
+
+  it 'uses the bounded realtime window and reports the effective range' do
+    realtime_service = described_class.new(
+      account: account,
+      client: client,
+      configuration: configuration,
+      conflict_tracker: conflict_tracker,
+      window_mode: :realtime
+    )
+
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      result = realtime_service.perform
+
+      expect(result).to include(
+        window_mode: 'realtime',
+        window_start: '2026-03-19T00:00:00+05:00',
+        window_end: '2026-04-04T00:00:00+05:00'
+      )
+      expect(client).to have_received(:get_receptions).with(
+        hash_including(
+          begin_datetime: '19.03.2026 00:00:00',
+          end_datetime: '04.04.2026 00:00:00'
+        )
+      )
+    end
+  end
+
+  it 'rejects an unknown window mode before making provider requests' do
+    expect do
+      described_class.new(account: account, client: client, configuration: configuration, window_mode: :unknown)
+    end.to raise_error(ArgumentError, /Unsupported Medelement receptions window mode/)
+
+    expect(client).not_to have_received(:get_receptions)
+  end
+
+  it 'backs off unchanged detail after a persistent local validation rejection' do
+    service.perform
+    appointment = account.scheduling_appointments.first
+    foreign_owner = create(:user, account: create(:account))
+    # rubocop:disable Rails/SkipsModelValidations
+    appointment.update_column(:owner_id, foreign_owner.id)
+    appointment.update_column(
+      :custom_attributes,
+      appointment.custom_attributes.except('medelement_detail_synced_at').merge('concurrent_marker' => 'preserve-me')
+    )
+    # rubocop:enable Rails/SkipsModelValidations
+    travel 7.hours
+
+    rejected_result = service.perform
+    deferred_result = service.perform
+
+    expect(rejected_result).to include(skipped_count: 1, detail_retry_deferred_count: 0)
+    expect(deferred_result).to include(imported_count: 0, skipped_count: 0, detail_retry_deferred_count: 1)
+    expect(client).to have_received(:get_reception).twice
+    expect(appointment.reload.custom_attributes).to include(
+      'medelement_detail_retry_at' => be_present,
+      'concurrent_marker' => 'preserve-me'
+    )
+  end
+
+  it 'refreshes provider detail immediately when the list fingerprint changes' do
+    service.perform
+    reception_payload.first['STARTTIME'] = '2026-03-21 10:00:00'
+    reception_payload.first['ENDTIME'] = '2026-03-21 10:20:00'
+
+    result = service.perform
+
+    expect(result).to include(imported_count: 1, detail_skipped_count: 0, detail_deferred_count: 0)
+    expect(client).to have_received(:get_reception).twice
+    expect(account.scheduling_appointments.first.starts_at.in_time_zone('Asia/Almaty').strftime('%H:%M')).to eq('10:00')
+  end
+
+  it 'bounds detail work and defers the remaining listed appointments without treating them as missing' do
+    second_reception = reception_payload.first.merge(
+      'RECEPTION_CODE' => '975592971773905134',
+      'PATIENT_CODE' => '550990851604984874',
+      'STARTTIME' => '2026-03-21 10:00:00',
+      'ENDTIME' => '2026-03-21 10:20:00'
+    )
+    reception_payload << second_reception
+    allow(configuration).to receive(:reception_detail_budget).and_return(1)
+
+    result = service.perform
+
+    expect(result).to include(imported_count: 1, detail_skipped_count: 0, detail_deferred_count: 1)
+    expect(client).to have_received(:get_reception).once
+    expect(account.scheduling_appointments.count).to eq(1)
   end
 
   it 'imports the service and price from the provider reception detail' do
@@ -399,6 +502,27 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
         )
       )
     end
+  end
+
+  it 'does not clean up imported appointments when no valid provider pair was queried' do
+    resource.update!(active: false)
+    existing_import = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      source: 'medelement',
+      external_ref: 'medelement:reception:existing',
+      starts_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 11, 0, 0),
+      ends_at: ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 22, 11, 20, 0),
+      client_name: 'Imported'
+    )
+
+    result = service.perform
+
+    expect(result).to include(imported_count: 0)
+    expect(client).not_to have_received(:get_receptions)
+    expect(existing_import.reload.status).to eq('scheduled')
+    expect(existing_import.custom_attributes).not_to include('medelement_missing_syncs')
   end
 
   it 'skips a provider binding with a malformed last-seen timestamp without cleaning up a partial snapshot' do

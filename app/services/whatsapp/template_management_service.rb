@@ -7,13 +7,13 @@ class Whatsapp::TemplateManagementService
     request_body = template_request_builder(template_config).call
     response = whatsapp_channel.provider_service.create_template(request_body)
 
-    return handle_template_create_failure(response, request_body) unless response.success?
+    return handle_template_create_failure(response, request_body, template_config) unless response.success?
 
-    create_success_result(response.parsed_response, request_body)
+    create_success_result(response.parsed_response, request_body, template_config)
   rescue ArgumentError => e
     failure_result(sanitized_provider_data(e.message))
   rescue StandardError => e
-    return handle_timeout_recovery(request_body, e) if request_body && recoverable_timeout_error?(e)
+    return handle_timeout_recovery(request_body, template_config, e) if request_body && recoverable_timeout_error?(e)
 
     Rails.logger.error(
       "[WHATSAPP TEMPLATE MANAGEMENT] create failed for channel=#{whatsapp_channel.id}: #{e.class}: #{sanitized_provider_data(e.message)}"
@@ -26,6 +26,7 @@ class Whatsapp::TemplateManagementService
 
     return provider_failure_result(response, default_message: 'Template deletion failed') unless response.success?
 
+    template_media_source_store.delete!(template_name)
     remove_local_template(template_name)
     enqueue_sync
 
@@ -46,23 +47,24 @@ class Whatsapp::TemplateManagementService
     )
   end
 
-  def create_success_result(response_body, request_body)
+  def create_success_result(response_body, request_body, template_config)
     template = build_local_template(response_body, request_body)
+    retain_template_media_sources!(template_config, template)
     upsert_local_template(template)
     enqueue_sync
 
     { success: true, template: template }
   end
 
-  def handle_template_create_failure(response, request_body)
-    recovery_result = recover_remote_template(request_body, response: response)
+  def handle_template_create_failure(response, request_body, template_config)
+    recovery_result = recover_remote_template(request_body, template_config, response: response)
     return recovery_result if recovery_result[:success]
 
     provider_failure_result(response, default_message: 'Template creation failed')
   end
 
-  def handle_timeout_recovery(request_body, error)
-    recovery_result = recover_remote_template(request_body, exception: error)
+  def handle_timeout_recovery(request_body, template_config, error)
+    recovery_result = recover_remote_template(request_body, template_config, exception: error)
     return recovery_result if recovery_result[:success]
 
     enqueue_sync
@@ -72,13 +74,14 @@ class Whatsapp::TemplateManagementService
     )
   end
 
-  def recover_remote_template(request_body, response: nil, exception: nil)
+  def recover_remote_template(request_body, template_config, response: nil, exception: nil)
     return failure_result(nil) unless recoverable_template_result?(response, exception)
 
     remote_template = find_remote_template(request_body[:name], request_body[:language])
     return failure_result(nil) if remote_template.blank?
 
     template = normalize_remote_template(remote_template, request_body)
+    retain_template_media_sources!(template_config, template)
     upsert_local_template(template)
     enqueue_sync
 
@@ -166,9 +169,15 @@ class Whatsapp::TemplateManagementService
     update_local_cache!(templates)
   end
 
-  def update_local_cache!(templates)
-    whatsapp_channel.update_message_templates_cache!(templates)
+  def update_local_cache!(templates) = whatsapp_channel.update_message_templates_cache!(templates)
+
+  def retain_template_media_sources!(template_config, template)
+    return if template_config.to_h.with_indifferent_access[:carousel_cards].blank?
+
+    template_media_source_store.replace!(template_config, template: template)
   end
+
+  def template_media_source_store = @template_media_source_store ||= Whatsapp::TemplateMediaSourceStore.new(whatsapp_channel: whatsapp_channel)
 
   def enqueue_sync = Channels::Whatsapp::TemplatesSyncJob.perform_later(whatsapp_channel)
 
@@ -200,13 +209,9 @@ class Whatsapp::TemplateManagementService
     { user_message: nil, details: nil }
   end
 
-  def failure_result(error, details: nil, response_body: nil)
-    { success: false, error: error, details: details, response_body: response_body }
-  end
+  def failure_result(error, details: nil, response_body: nil) = { success: false, error: error, details: details, response_body: response_body }
 
-  def internal_failure_result(_error)
-    failure_result('Template operation failed. Please try again.', details: nil, response_body: nil)
-  end
+  def internal_failure_result(_error) = failure_result('Template operation failed. Please try again.', details: nil, response_body: nil)
 
   def sanitized_provider_data(data)
     Meta::CredentialDataSanitizer.sanitize(

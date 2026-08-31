@@ -7,7 +7,7 @@ class Integrations::Medelement::SyncRunLauncher
 
   def perform
     run, enqueued = create_or_find_run
-    Integrations::Medelement::SyncJob.perform_later(hook.id, run.id) if enqueued
+    enqueue_sync_job!(run) if enqueued
     [run, enqueued]
   rescue ActiveRecord::RecordNotUnique
     retry
@@ -19,6 +19,13 @@ class Integrations::Medelement::SyncRunLauncher
   private
 
   attr_reader :hook, :phases, :requested_by
+
+  def enqueue_sync_job!(run)
+    job = Integrations::Medelement::SyncJob.perform_later(hook.id, run.id)
+    return if job&.successfully_enqueued?
+
+    raise ActiveJob::EnqueueError, 'Failed to enqueue Medelement sync job'
+  end
 
   def create_or_find_run
     Integrations::Medelement::HookRuntimeLock.with_hook(account_id: hook.account_id, hook_id: hook.id) do |locked_hook|

@@ -47,6 +47,33 @@ RSpec.describe Outbound::ChannelTemplateCatalog do
       expect(catalog.find_template(name: 'auth_code', language: 'en')).to be_nil
     end
 
+    it 'allows approved WhatsApp carousel templates in policy lookup' do
+      inbox = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false).inbox
+      inbox.channel.update!(
+        message_templates: [
+          {
+            'name' => 'carousel_test',
+            'status' => 'APPROVED',
+            'category' => 'MARKETING',
+            'language' => 'ru',
+            'components' => [
+              {
+                'type' => 'CAROUSEL',
+                'cards' => [
+                  { 'components' => [{ 'type' => 'HEADER', 'format' => 'IMAGE' }, { 'type' => 'BODY', 'text' => 'Карточка {{1}}' }] }
+                ]
+              }
+            ]
+          }
+        ]
+      )
+
+      template = described_class.new(inbox: inbox).find_template(name: 'carousel_test', language: 'ru')
+
+      expect(template).to include(name: 'carousel_test', supported: true)
+      expect(template[:components].first['type']).to eq('CAROUSEL')
+    end
+
     it 'lists approved Twilio WhatsApp templates' do
       channel = create(:channel_twilio_sms, medium: :whatsapp, account: account)
       inbox = create(:inbox, channel: channel, account: account)

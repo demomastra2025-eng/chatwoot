@@ -254,6 +254,35 @@ RSpec.describe Reminders::ExecuteService do
       expect(touch.last_error).to be_nil
     end
 
+    it 'preserves the original failure when the failed operation leaves dirty attributes' do
+      conversation = create(:conversation)
+      assistant = create(:captain_assistant, account: conversation.account)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: conversation,
+        status: :processing,
+        text_mode: :agent,
+        instructions: 'Generate a follow-up',
+        metadata: { 'captain_assistant_id' => assistant.id }
+      )
+      generator = instance_double(Reminders::CaptainGeneratedMessageService)
+      allow(Reminders::CaptainGeneratedMessageService).to receive(:new).and_return(generator)
+      allow(generator).to receive(:perform) do
+        touch.assign_attributes(body: 'Unsaved partial result')
+        raise 'generation failed with dirty attributes'
+      end
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to raise_error(RuntimeError, 'generation failed with dirty attributes')
+
+      expect(touch.reload).to be_failed
+      expect(touch.last_error).to eq('generation failed with dirty attributes')
+      expect(touch.body).not_to eq('Unsaved partial result')
+    end
+
     it 'does not send a stale generated payload after the processing reminder is edited concurrently' do
       conversation = create(:conversation)
       assistant = create(:captain_assistant, account: conversation.account)

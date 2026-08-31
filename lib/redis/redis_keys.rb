@@ -64,6 +64,9 @@ module Redis::RedisKeys
   # Track conversation assignments to agents for rate limiting
   ASSIGNMENT_KEY = 'ASSIGNMENT::%<inbox_id>d::AGENT::%<agent_id>d::CONVERSATION::%<conversation_id>d'.freeze
   ASSIGNMENT_KEY_PATTERN = 'ASSIGNMENT::%<inbox_id>d::AGENT::%<agent_id>d::*'.freeze
+  AUTO_ASSIGNMENT_JOB_QUEUED = 'AUTO_ASSIGNMENT_JOB::%<inbox_id>d::QUEUED'.freeze
+  AUTO_ASSIGNMENT_JOB_RUNNING = 'AUTO_ASSIGNMENT_JOB::%<inbox_id>d::RUNNING'.freeze
+  AUTO_ASSIGNMENT_LEGACY_DRAIN = 'AUTO_ASSIGNMENT_JOB::%<inbox_id>d::LEGACY_DRAIN'.freeze
 
   ## Account Email Rate Limiting
   ACCOUNT_OUTBOUND_EMAIL_COUNT_KEY = 'OUTBOUND_EMAIL_COUNT::%<account_id>d::%<date>s'.freeze

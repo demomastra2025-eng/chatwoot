@@ -44,6 +44,15 @@ RSpec.describe Integrations::Medelement::NomenclaturesSnapshotService do
     expect(sleeps).to be_empty
   end
 
+  it 'does not retry an unavailable provider catalog' do
+    error = Integrations::Medelement::Client::CatalogUnavailableError.new('catalog unavailable', status: 404)
+    allow(client).to receive(:nomenclatures).with(skip: 0).and_raise(error)
+
+    expect { snapshot.perform }.to raise_error(error)
+    expect(client).to have_received(:nomenclatures).with(skip: 0).once
+    expect(sleeps).to be_empty
+  end
+
   it 'stops after the bounded page retry budget is exhausted' do
     error = Integrations::Medelement::Client::ApiError.new('transport failed')
     allow(client).to receive(:nomenclatures).with(skip: 0).and_raise(error)

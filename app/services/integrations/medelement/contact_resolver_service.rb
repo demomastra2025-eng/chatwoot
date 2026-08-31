@@ -14,8 +14,8 @@ class Integrations::Medelement::ContactResolverService
   end
 
   def sync_patient!(patient_code, preferred_contact: nil)
-    existing_contact = find_by_patient_code(patient_code)
-    return existing_contact if preferred_contact.nil? && fresh?(existing_contact)
+    existing_contact = preferred_contact || find_by_patient_code(patient_code)
+    return existing_contact if fresh?(existing_contact)
 
     patient = client.get_patient(patient_code: patient_code)
     return existing_contact if patient.blank?
@@ -296,6 +296,7 @@ class Integrations::Medelement::ContactResolverService
       patient: patient,
       preferred_contact: preferred_contact
     ) || account.contacts.new
+    return preserve_foreign_owner_contact(contact, patient_code) if foreign_owner?(contact)
 
     _source_phone, phone, phone_conflict_comment = resolved_phone(contact, patient)
     primary_phone = Integrations::Medelement::PhoneNumber.normalize(phone.presence || contact.phone_number)
@@ -342,6 +343,22 @@ class Integrations::Medelement::ContactResolverService
       'medelement_last_name' => patient['LASTNAME'].to_s.presence,
       'medelement_middle_name' => middle_name
     }.compact
+  end
+
+  def foreign_owner?(contact)
+    contact.owner_id.present? && !account.users.exists?(id: contact.owner_id)
+  end
+
+  def preserve_foreign_owner_contact(contact, patient_code)
+    conflict_tracker&.record!(
+      phase: 'contacts',
+      entity_type: 'contact',
+      conflict_type: 'foreign_contact_owner',
+      entity_key: patient_code.presence || "contact:#{contact.id}",
+      severity: 'error',
+      details: { reason: 'Contact owner does not belong to the integration account', contact_id: contact.id }
+    )
+    contact
   end
 
   def record_phone_conflict(patient_code, contact, comment)

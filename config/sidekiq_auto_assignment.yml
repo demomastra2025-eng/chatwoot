@@ -1,0 +1,7 @@
+---
+:verbose: false
+:concurrency: <%= ENV.fetch("AUTO_ASSIGNMENT_SIDEKIQ_CONCURRENCY", 1) %>
+:timeout: 25
+:max_retries: 3
+:queues:
+  - auto_assignment

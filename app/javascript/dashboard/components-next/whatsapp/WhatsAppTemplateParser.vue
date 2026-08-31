@@ -56,6 +56,9 @@ const processedParams = ref({});
 const mediaFileInputRef = ref(null);
 const isUploadingMedia = ref(false);
 const selectedMediaFileName = ref('');
+const carouselMediaFileInputRefs = ref({});
+const selectedCarouselMediaFileNames = ref({});
+const uploadingCarouselCardIndex = ref(null);
 
 const cloneProcessedParams = value => JSON.parse(JSON.stringify(value || {}));
 
@@ -221,7 +224,14 @@ const isFormInvalid = computed(() => {
 
   const carouselCards = processedParams.value.carousel?.cards || [];
   const hasInvalidCarouselCard = carouselCards.some(card => {
-    if (!card.header?.media_id) return true;
+    const header = card.header || {};
+    if (
+      !header.media_id &&
+      !header.media_blob_id &&
+      !header.has_template_media
+    ) {
+      return true;
+    }
     if (Object.values(card.body || {}).some(value => !value)) return true;
 
     return (card.buttons || []).some(
@@ -245,6 +255,8 @@ const v$ = useVuelidate(
 
 const initializeTemplateParameters = () => {
   selectedMediaFileName.value = '';
+  selectedCarouselMediaFileNames.value = {};
+  uploadingCarouselCardIndex.value = null;
   const baseProcessedParams = buildTemplateParameters(
     props.template,
     hasMediaHeader.value
@@ -270,6 +282,7 @@ let mediaUploadGeneration = 0;
 const invalidateMediaUpload = () => {
   mediaUploadGeneration += 1;
   isUploadingMedia.value = false;
+  uploadingCarouselCardIndex.value = null;
 };
 
 const removeMediaFile = () => {
@@ -310,6 +323,74 @@ const handleMediaFileChange = async event => {
       isUploadingMedia.value = false;
     }
   }
+};
+
+const setCarouselMediaFileInputRef = (element, cardIndex) => {
+  if (element) {
+    carouselMediaFileInputRefs.value[cardIndex] = element;
+  } else {
+    delete carouselMediaFileInputRefs.value[cardIndex];
+  }
+};
+
+const carouselMediaAccept = mediaType =>
+  ({
+    image: 'image/jpeg,image/png',
+    video: 'video/mp4',
+  })[mediaType] || '';
+
+const handleCarouselMediaFileChange = async (cardIndex, event) => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+
+  const card = processedParams.value.carousel?.cards?.[cardIndex];
+  if (!card) return;
+
+  mediaUploadGeneration += 1;
+  const uploadGeneration = mediaUploadGeneration;
+  try {
+    isUploadingMedia.value = true;
+    uploadingCarouselCardIndex.value = cardIndex;
+    const { blobId } = await uploadWhatsAppTemplateMedia(
+      file,
+      card.header?.media_type
+    );
+    if (uploadGeneration !== mediaUploadGeneration) return;
+    if (!blobId) {
+      throw new Error('Uploaded carousel media reference is missing');
+    }
+
+    card.header.media_blob_id = blobId;
+    card.header.media_id = '';
+    selectedCarouselMediaFileNames.value = {
+      ...selectedCarouselMediaFileNames.value,
+      [cardIndex]: file.name,
+    };
+  } catch (error) {
+    if (uploadGeneration !== mediaUploadGeneration) return;
+
+    useAlert(
+      error?.response?.data?.error ||
+        error?.message ||
+        t('WHATSAPP_TEMPLATES.MANAGEMENT.ERRORS.MEDIA_UPLOAD_FAILED')
+    );
+  } finally {
+    if (uploadGeneration === mediaUploadGeneration) {
+      isUploadingMedia.value = false;
+      uploadingCarouselCardIndex.value = null;
+    }
+  }
+};
+
+const removeCarouselMediaFile = cardIndex => {
+  const card = processedParams.value.carousel?.cards?.[cardIndex];
+  if (!card) return;
+
+  card.header.media_blob_id = '';
+  const fileNames = { ...selectedCarouselMediaFileNames.value };
+  delete fileNames[cardIndex];
+  selectedCarouselMediaFileNames.value = fileNames;
 };
 
 const sendMessage = () => {
@@ -563,7 +644,81 @@ defineExpose({
               })
             }}
           </p>
+          <template v-if="card.header.supports_media_upload">
+            <input
+              :ref="element => setCarouselMediaFileInputRef(element, cardIndex)"
+              type="file"
+              class="hidden"
+              :accept="carouselMediaAccept(card.header.media_type)"
+              :disabled="isUploadingMedia"
+              @change="event => handleCarouselMediaFileChange(cardIndex, event)"
+            />
+            <div class="flex flex-wrap items-center gap-2 mb-2.5">
+              <Button
+                type="button"
+                variant="outline"
+                color="slate"
+                size="sm"
+                icon="i-lucide-upload"
+                :label="
+                  card.header.has_template_media ||
+                  card.header.media_blob_id ||
+                  selectedCarouselMediaFileNames[cardIndex]
+                    ? t('WHATSAPP_TEMPLATES.PARSER.CAROUSEL_MEDIA_REPLACE')
+                    : t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_FILE')
+                "
+                :is-loading="uploadingCarouselCardIndex === cardIndex"
+                :disabled="isUploadingMedia"
+                @click="carouselMediaFileInputRefs[cardIndex]?.click()"
+              />
+              <span
+                v-if="selectedCarouselMediaFileNames[cardIndex]"
+                class="min-w-0 truncate text-sm text-n-slate-11"
+              >
+                {{ selectedCarouselMediaFileNames[cardIndex] }}
+              </span>
+              <span
+                v-else-if="
+                  card.header.has_template_media && !card.header.media_blob_id
+                "
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('WHATSAPP_TEMPLATES.PARSER.CAROUSEL_MEDIA_ATTACHED') }}
+              </span>
+              <span
+                v-else-if="card.header.media_blob_id"
+                class="text-sm text-n-slate-11"
+              >
+                {{ t('WHATSAPP_TEMPLATES.PARSER.CAROUSEL_MEDIA_SELECTED') }}
+              </span>
+              <Button
+                v-if="
+                  selectedCarouselMediaFileNames[cardIndex] ||
+                  card.header.media_blob_id
+                "
+                type="button"
+                variant="ghost"
+                color="ruby"
+                size="sm"
+                icon="i-lucide-x"
+                :label="t('WHATSAPP_TEMPLATES.MANAGEMENT.FIELDS.MEDIA_REMOVE')"
+                :disabled="isUploadingMedia"
+                @click="removeCarouselMediaFile(cardIndex)"
+              />
+            </div>
+            <p
+              v-if="
+                !card.header.has_template_media &&
+                !card.header.media_blob_id &&
+                !selectedCarouselMediaFileNames[cardIndex]
+              "
+              class="mb-2.5 text-xs text-n-ruby-9"
+            >
+              {{ t('WHATSAPP_TEMPLATES.PARSER.CAROUSEL_MEDIA_REQUIRED') }}
+            </p>
+          </template>
           <TemplateParamInput
+            v-else
             v-model="card.header.media_id"
             type="text"
             class="w-full mb-2.5"

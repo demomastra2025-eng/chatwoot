@@ -41,6 +41,35 @@ const documentTemplate = {
   ],
 };
 
+const carouselTemplate = ({ attached = true } = {}) => ({
+  ...template,
+  name: 'product_carousel',
+  one_link_carousel_media_upload_supported: true,
+  components: [
+    {
+      type: 'CAROUSEL',
+      cards: [
+        {
+          components: [
+            {
+              type: 'HEADER',
+              format: 'IMAGE',
+              ...(attached
+                ? {
+                    one_link_media: {
+                      attached: true,
+                      file_name: 'product.jpg',
+                    },
+                  }
+                : {}),
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 const mountOptions = {
   global: {
     directives: {
@@ -191,5 +220,62 @@ describe('WhatsAppTemplateParser', () => {
 
     expect(wrapper.vm.processedParams.header.media_url).toBe('');
     expect(wrapper.vm.processedParams.header.media_name).toBe('');
+  });
+
+  it('uses carousel media attached by the template author without a Meta media ID field', async () => {
+    const wrapper = mount(WhatsAppTemplateParser, {
+      ...mountOptions,
+      props: { template: carouselTemplate() },
+    });
+    await nextTick();
+
+    expect(wrapper.vm.isFormInvalid).toBe(false);
+    expect(wrapper.text()).toContain(
+      'WHATSAPP_TEMPLATES.PARSER.CAROUSEL_MEDIA_ATTACHED'
+    );
+    expect(wrapper.find('input[type="text"]').exists()).toBe(false);
+
+    wrapper.vm.sendMessage();
+    expect(
+      wrapper.emitted('sendMessage')[0][0].templateParams.processed_params
+        .carousel.cards[0].header
+    ).toMatchObject({ has_template_media: true, media_id: '' });
+  });
+
+  it('accepts a replacement carousel file when the template has no retained media', async () => {
+    uploadWhatsAppTemplateMedia.mockResolvedValue({
+      blobId: 'signed-carousel-blob',
+      fileUrl: 'https://app.one-link.kz/media/product.jpg',
+    });
+    const wrapper = mount(WhatsAppTemplateParser, {
+      ...mountOptions,
+      props: { template: carouselTemplate({ attached: false }) },
+    });
+    const file = new File(['image'], 'product.jpg', { type: 'image/jpeg' });
+
+    await nextTick();
+    expect(wrapper.vm.isFormInvalid).toBe(true);
+    await selectMediaFile(wrapper, file);
+    await flushPromises();
+
+    expect(uploadWhatsAppTemplateMedia).toHaveBeenCalledWith(file, 'image');
+    expect(
+      wrapper.vm.processedParams.carousel.cards[0].header.media_blob_id
+    ).toBe('signed-carousel-blob');
+    expect(wrapper.vm.isFormInvalid).toBe(false);
+  });
+
+  it('keeps the legacy Meta media ID input for providers without Cloud upload support', async () => {
+    const legacyTemplate = carouselTemplate({ attached: false });
+    legacyTemplate.one_link_carousel_media_upload_supported = false;
+    const wrapper = mount(WhatsAppTemplateParser, {
+      ...mountOptions,
+      props: { template: legacyTemplate },
+    });
+
+    await nextTick();
+
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false);
+    expect(wrapper.find('template-param-input-stub').exists()).toBe(true);
   });
 });

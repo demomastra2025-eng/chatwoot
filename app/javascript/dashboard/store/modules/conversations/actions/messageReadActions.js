@@ -24,9 +24,9 @@ const markCommunicationThreadReadWithRetry = async (data, attempt = 1) => {
 
 const enqueueCommunicationThreadReadOperation = (operationKey, operation) => {
   const previousOperation = communicationThreadReadOperations.get(operationKey);
-  const currentOperation = (previousOperation || Promise.resolve())
-    .catch(() => undefined)
-    .then(operation);
+  const currentOperation = previousOperation
+    ? previousOperation.catch(() => undefined).then(operation)
+    : operation();
   communicationThreadReadOperations.set(operationKey, currentOperation);
 
   return currentOperation.finally(() => {
@@ -90,15 +90,18 @@ export default {
     { commit, dispatch, state, rootGetters },
     data
   ) => {
+    const revisionKey = `${rootGetters?.getCurrentAccountId || 'current'}:${data.id}`;
+    const pendingOperation = communicationThreadReadOperations.get(revisionKey);
+    if (pendingOperation) return pendingOperation;
+
     const communicationThread = (state?.allConversations || []).find(
       chat => String(chat.id) === String(data.id) && isCommunicationThread(chat)
     );
-    if (communicationThread?.unread_count === 0) return;
+    if (communicationThread?.unread_count === 0) return undefined;
 
     const previousUnreadCount = communicationThread?.unread_count;
     const previousLastSeen = communicationThread?.agent_last_seen_at;
     const optimisticLastSeen = Math.floor(Date.now() / 1000);
-    const revisionKey = `${rootGetters?.getCurrentAccountId || 'current'}:${data.id}`;
     const revision = nextCommunicationThreadReadRevision(revisionKey);
     const isCurrentRevision = () =>
       communicationThreadReadRevisions.get(revisionKey) === revision;
@@ -113,7 +116,7 @@ export default {
         revisionKey,
         () => markCommunicationThreadReadWithRetry(data)
       );
-      if (!isCurrentRevision()) return;
+      if (!isCurrentRevision()) return undefined;
       const currentThread = (state?.allConversations || []).find(
         chat =>
           String(chat.id) === String(data.id) && isCommunicationThread(chat)
@@ -126,7 +129,7 @@ export default {
           currentThread.agent_last_seen_at === previousLastSeen);
       if (!stateMatchesOptimisticRead) {
         refreshCommunicationThreadStats(dispatch, state);
-        return;
+        return undefined;
       }
       const lastSeen = readState.agent_last_seen_at || optimisticLastSeen;
       const unreadPayload = {
@@ -135,6 +138,7 @@ export default {
         unreadCount: readState.unread_count,
         conversationType: 'communication_thread',
       };
+      if (readState.channels) unreadPayload.channels = readState.channels;
       commit(mutationTypes.UPDATE_MESSAGE_UNREAD_COUNT, unreadPayload);
       refreshCommunicationThreadStats(dispatch, state);
     } catch (error) {
@@ -162,6 +166,7 @@ export default {
       }
       if (isCurrentRevision()) refreshCommunicationThreadStats(dispatch, state);
     }
+    return undefined;
   },
 
   markMessagesUnread: async (

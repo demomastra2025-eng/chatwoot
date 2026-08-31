@@ -13,6 +13,15 @@ describe ContactMergeAction do
                      custom_attributes: { val_test: 'new', val_new: 'new', val_empty_new: '' }, account: account)
   end
 
+  def expect_reminder_reassigned(reminder, target_contact, original_fingerprint)
+    reminder.reload
+    expect(reminder.target_contact).to eq(target_contact)
+    expect(reminder.fingerprint).not_to eq(original_fingerprint)
+    duplicate_reminder = reminder.dup
+    expect(duplicate_reminder).not_to be_valid
+    expect(duplicate_reminder.errors[:base]).to include('An open touch with the same content already exists')
+  end
+
   before do
     2.times.each do
       create(:conversation, contact: base_contact)
@@ -135,6 +144,7 @@ describe ContactMergeAction do
         confirmation = create(:confirmation_request, account: account, contact: mergee_contact)
         reminder_conversation = create(:conversation, account: account, contact: mergee_contact)
         reminder = create(:reminder, account: account, touch_conversation: reminder_conversation)
+        original_reminder_fingerprint = reminder.fingerprint
         lead = create(:lead_submission, account: account, contact: mergee_contact)
         ownership = create(:assignment_client_ownership, account: account, contact: mergee_contact)
 
@@ -143,7 +153,7 @@ describe ContactMergeAction do
         expect(appointment.reload.contact_id).to eq(base_contact.id)
         expect(call_session.reload.contact_id).to eq(base_contact.id)
         expect(confirmation.reload.contact_id).to eq(base_contact.id)
-        expect(reminder.reload.target_contact_id).to eq(base_contact.id)
+        expect_reminder_reassigned(reminder, base_contact, original_reminder_fingerprint)
         expect(lead.reload.contact_id).to eq(base_contact.id)
         expect(ownership.reload.contact_id).to eq(base_contact.id)
       end

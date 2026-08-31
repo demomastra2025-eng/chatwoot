@@ -1,5 +1,5 @@
 class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
-  queue_as :scheduled_jobs
+  queue_as :medelement_provider_commands
 
   BATCH_SIZE = 200
   STALE_PROCESSING_AGE = 15.minutes

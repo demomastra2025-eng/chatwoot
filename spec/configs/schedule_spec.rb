@@ -29,6 +29,12 @@ RSpec.context 'with valid schedule.yml' do
     expect(schedule.dig('whatsapp_call_cleanup_job', 'queue')).to eq('whatsapp_calls')
   end
 
+  it 'dispatches MedElement provider commands from the isolated commands queue' do
+    schedule = YAML.safe_load(file.read)
+
+    expect(schedule.dig('medelement_provider_command_dispatcher_job', 'queue')).to eq('medelement_provider_commands')
+  end
+
   it 'sweeps pending WhatsApp mutations on the scheduled jobs queue' do
     schedule = YAML.safe_load(file.read)
 

@@ -5,7 +5,6 @@ class Outbound::ChannelTemplateCatalog
     LIST
     PRODUCT
     CATALOG
-    CAROUSEL
     LIMITED_TIME_OFFER
     CALL_PERMISSION_REQUEST
   ].freeze

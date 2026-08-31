@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::AppointmentImporterService
   MEDELEMENT_SOURCE = 'medelement'.freeze
   RECEPTION_EXTERNAL_REF_PREFIX = 'medelement:reception:'.freeze
@@ -7,6 +8,7 @@ class Integrations::Medelement::AppointmentImporterService
     medelement_missing_since
     medelement_missing_syncs
     medelement_removed_at
+    medelement_detail_retry_at
   ].freeze
 
   def initialize(account:, conflict_tracker: nil)
@@ -150,6 +152,8 @@ class Integrations::Medelement::AppointmentImporterService
       'medelement_reception_code' => reception['RECEPTION_CODE'].to_s,
       'medelement_source_created_at' => reception['CREATED_AT'].to_s.presence,
       'medelement_specialist_code' => import_context[:specialist_code].to_s,
+      'medelement_list_fingerprint' => import_context[:list_fingerprint],
+      'medelement_detail_synced_at' => import_context[:detail_synced_at],
       'medelement_patient_unresolved' => contact.blank?,
       'source_mode' => provider_binding(appointment, reception).source_mode
     ).compact
@@ -204,3 +208,4 @@ class Integrations::Medelement::AppointmentImporterService
     )
   end
 end
+# rubocop:enable Metrics/ClassLength

@@ -507,6 +507,21 @@ class Message < ApplicationRecord
   end
 
   def reopen_resolved_conversation
+    communication_thread = conversation.communication_thread if communication_threads_enabled?
+    if communication_thread&.resolved?
+      communication_thread.with_lock do
+        if conversation.reload.resolved?
+          communication_thread.update!(session_started_at: created_at)
+          perform_reopen_transition
+        end
+      end
+      return
+    end
+
+    perform_reopen_transition
+  end
+
+  def perform_reopen_transition
     # mark resolved bot conversation as pending to be reopened by bot processor service
     if conversation.inbox.active_bot?
       transition_conversation_status!('pending', source: 'contact')

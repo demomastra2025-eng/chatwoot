@@ -25,6 +25,7 @@
 #  idx_medelement_sync_runs_account_status        (account_id,status)
 #  idx_medelement_sync_runs_hook_created          (hook_id,created_at)
 #  idx_medelement_sync_runs_one_active_hook       (hook_id) UNIQUE WHERE ((hook_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'retrying'::character varying])::text[])))
+#  idx_medelement_sync_runs_terminal_completed    (completed_at) WHERE ((status)::text = ANY ((ARRAY['succeeded'::character varying, 'partial'::character varying, 'failed'::character varying])::text[]))
 #  index_medelement_sync_runs_on_account_id       (account_id)
 #  index_medelement_sync_runs_on_hook_id          (hook_id)
 #  index_medelement_sync_runs_on_requested_by_id  (requested_by_id)
@@ -37,6 +38,7 @@
 #
 # rubocop:enable Layout/LineLength
 class Integrations::Medelement::SyncRun < ApplicationRecord
+  InactiveRunError = Class.new(StandardError)
   self.table_name = 'medelement_sync_runs'
 
   PHASES = %w[setup specialists services contacts receptions].freeze
@@ -87,15 +89,36 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
 
   def start_phase!(phase)
     validate_phase!(phase)
-    update!(current_phase: phase)
+    with_lock do
+      reload
+      raise InactiveRunError, 'Medelement sync run is no longer active' if terminal?
+
+      update!(current_phase: phase)
+    end
+  end
+
+  def heartbeat!
+    with_lock do
+      reload
+      next false if terminal?
+
+      update!(updated_at: Time.current)
+      true
+    end
   end
 
   def complete_phase!(phase, result = {})
     write_phase_result!(phase, result.to_h.merge(status: 'succeeded', completed_at: Time.current.iso8601))
   end
 
-  def skip_phase!(phase, reason)
-    write_phase_result!(phase, status: 'skipped', reason: reason, completed_at: Time.current.iso8601)
+  def skip_phase!(phase, reason, skipped_count: 0)
+    write_phase_result!(
+      phase,
+      status: 'skipped',
+      reason: reason,
+      skipped_count: skipped_count,
+      completed_at: Time.current.iso8601
+    )
   end
 
   def record_phase_failure!(phase, error)
@@ -110,41 +133,56 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
 
   def fail!(error)
     error_payload = Integrations::Medelement::ErrorSanitizer.exception_payload(error)
-    update!(
-      status: 'failed',
-      current_phase: nil,
-      completed_at: Time.current,
-      error_code: error_payload[:code],
-      error_message: error_payload[:message]
-    )
+    with_lock do
+      reload
+      next if terminal?
+
+      update!(
+        status: 'failed',
+        current_phase: nil,
+        completed_at: Time.current,
+        error_code: error_payload[:code],
+        error_message: error_payload[:message]
+      )
+    end
   end
 
   def retry!(error)
     error_payload = Integrations::Medelement::ErrorSanitizer.exception_payload(error)
-    update!(
-      status: 'retrying',
-      current_phase: nil,
-      completed_at: nil,
-      error_code: error_payload[:code],
-      error_message: error_payload[:message]
-    )
+    with_lock do
+      reload
+      next if terminal?
+
+      update!(
+        status: 'retrying',
+        current_phase: nil,
+        completed_at: nil,
+        error_code: error_payload[:code],
+        error_message: error_payload[:message]
+      )
+    end
   end
 
   def finish!
-    open_conflicts = conflict_scope.open.count
-    skipped = phase_results.values.sum { |result| result.to_h['skipped_count'].to_i }
-    final_status = open_conflicts.positive? || skipped.positive? ? 'partial' : 'succeeded'
+    with_lock do
+      reload
+      next if terminal?
 
-    update!(
-      status: final_status,
-      current_phase: nil,
-      completed_at: Time.current,
-      summary: {
-        open_conflicts: open_conflicts,
-        ignored_conflicts: conflict_scope.ignored.count,
-        skipped_count: skipped
-      }
-    )
+      open_conflicts = conflict_scope.open.count
+      skipped = phase_results.values.sum { |result| result.to_h['skipped_count'].to_i }
+      final_status = open_conflicts.positive? || skipped.positive? ? 'partial' : 'succeeded'
+
+      update!(
+        status: final_status,
+        current_phase: nil,
+        completed_at: Time.current,
+        summary: summary.merge(
+          open_conflicts: open_conflicts,
+          ignored_conflicts: conflict_scope.ignored.count,
+          skipped_count: skipped
+        )
+      )
+    end
   end
 
   def api_payload
@@ -187,6 +225,11 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
 
   def write_phase_result!(phase, result)
     validate_phase!(phase)
-    update!(phase_results: phase_results.merge(phase.to_s => result.deep_stringify_keys))
+    with_lock do
+      reload
+      raise InactiveRunError, 'Medelement sync run is no longer active' if terminal?
+
+      update!(phase_results: phase_results.merge(phase.to_s => result.deep_stringify_keys))
+    end
   end
 end

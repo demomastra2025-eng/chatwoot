@@ -16,7 +16,7 @@ class AutoAssignment::PeriodicAssignmentJob < ApplicationJob
           inboxes.each do |inbox|
             next unless inbox.auto_assignment_v2_enabled?
 
-            AutoAssignment::AssignmentJob.perform_later(inbox_id: inbox.id)
+            AutoAssignment::AssignmentJob.enqueue(inbox_id: inbox.id)
           end
         end
       end

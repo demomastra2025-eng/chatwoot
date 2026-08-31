@@ -4,9 +4,10 @@ RSpec.describe Integrations::Medelement::SyncRunLauncher do
   let(:account) { create(:account) }
   let(:hook) { create(:integrations_hook, account: account) }
   let(:admin) { create(:user, account: account, role: :administrator) }
+  let(:enqueued_job) { instance_double(Integrations::Medelement::SyncJob, successfully_enqueued?: true) }
 
   before do
-    allow(Integrations::Medelement::SyncJob).to receive(:perform_later)
+    allow(Integrations::Medelement::SyncJob).to receive(:perform_later).and_return(enqueued_job)
   end
 
   it 'creates a persisted manual run before enqueueing the job' do
@@ -54,5 +55,15 @@ RSpec.describe Integrations::Medelement::SyncRunLauncher do
 
     expect(Integrations::Medelement::SyncRun.count).to be_zero
     expect(Integrations::Medelement::SyncJob).not_to have_received(:perform_later)
+  end
+
+  it 'fails the manual run when the queue adapter rejects enqueue without raising' do
+    allow(enqueued_job).to receive(:successfully_enqueued?).and_return(false)
+
+    expect do
+      described_class.new(hook: hook, requested_by: admin).perform
+    end.to raise_error(ActiveJob::EnqueueError, 'Failed to enqueue Medelement sync job')
+
+    expect(Integrations::Medelement::SyncRun.where(hook: hook).sole).to be_failed
   end
 end

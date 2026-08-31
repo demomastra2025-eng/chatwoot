@@ -51,6 +51,32 @@ RSpec.describe Whatsapp::TemplateManagementService do
       expect(whatsapp_channel.message_templates.first['components'].first['text']).to eq('Order {{1}} updated')
     end
 
+    it 'retains carousel media sources after Meta accepts the template' do
+      response = instance_double(
+        HTTParty::Response,
+        success?: true,
+        parsed_response: { 'id' => 'template-id', 'status' => 'PENDING' }
+      )
+      template_config = {
+        name: 'order_update',
+        language: 'en',
+        carousel_cards: [{ header_type: 'image', sample_media_blob_id: 'signed-blob' }]
+      }
+      source_store = instance_double(Whatsapp::TemplateMediaSourceStore)
+      allow(provider_service).to receive(:create_template).with(request_body).and_return(response)
+      allow(Whatsapp::TemplateMediaSourceStore).to receive(:new)
+        .with(whatsapp_channel: whatsapp_channel)
+        .and_return(source_store)
+      expect(source_store).to receive(:replace!).with(
+        template_config,
+        template: hash_including('name' => 'order_update', 'language' => 'en')
+      )
+
+      result = described_class.new(whatsapp_channel: whatsapp_channel).create_template(template_config)
+
+      expect(result[:success]).to be(true)
+    end
+
     it 'recovers the local cache when provider reports that the template already exists' do
       provider_error = {
         'error' => {

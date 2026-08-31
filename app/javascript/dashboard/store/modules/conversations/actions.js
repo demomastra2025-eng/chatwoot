@@ -518,6 +518,7 @@ const actions = {
         } = await CommunicationThreadApi.messages(data.conversationId, {
           after: data.after,
           before: data.before,
+          include_history: true,
         });
         const messagesPayload = await payloadWithFirstUnreadPage({
           request: data,
@@ -525,7 +526,10 @@ const actions = {
           meta,
           payload,
           fetchPage: params =>
-            CommunicationThreadApi.messages(data.conversationId, params),
+            CommunicationThreadApi.messages(data.conversationId, {
+              ...params,
+              include_history: true,
+            }),
         });
         selectedChat.channels = meta.channels || selectedChat.channels || [];
         selectedChat.meta = {

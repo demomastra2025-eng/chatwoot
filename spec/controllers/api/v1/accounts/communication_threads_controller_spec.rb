@@ -1004,6 +1004,36 @@ RSpec.describe 'Communication Threads API', type: :request do
       message_ids = JSON.parse(response.body, symbolize_names: true)[:payload].pluck(:id)
       expect(message_ids).to eq([visible_message.id, hidden_message.id])
     end
+
+    it 'keeps the first unread cursor inside the current thread session' do
+      conversation = create(:conversation, account: account, agent_last_seen_at: 3.days.ago)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      historical_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        created_at: 2.days.ago
+      )
+      thread = conversation.reload.communication_thread
+      thread.update!(session_started_at: 1.day.ago)
+      current_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        created_at: 1.hour.ago
+      )
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages", headers: headers, as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.dig('meta', 'first_unread_message_id')).to eq(current_message.id)
+      expect(response.parsed_body['payload'].pluck('id')).to include(current_message.id)
+      expect(response.parsed_body['payload'].pluck('id')).not_to include(historical_message.id)
+    end
   end
 
   describe 'POST /api/v1/accounts/:account_id/communication_threads/:id/update_last_seen' do
@@ -1037,7 +1067,11 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(second_conversation.reload.unread_incoming_messages_count).to eq(0)
       expect(thread.reload.unread_count).to eq(0)
       expect(response.parsed_body['unread_count']).to eq(0)
-      expect(response.parsed_body.keys).to contain_exactly('id', 'agent_last_seen_at', 'unread_count')
+      expect(response.parsed_body.keys).to contain_exactly('id', 'agent_last_seen_at', 'unread_count', 'channels')
+      expect(response.parsed_body['channels']).to contain_exactly(
+        a_hash_including('conversation_id' => first_conversation.display_id, 'unread_count' => 0),
+        a_hash_including('conversation_id' => second_conversation.display_id, 'unread_count' => 0)
+      )
     end
   end
 
@@ -1226,6 +1260,58 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(message.content).to eq('Shipping update: 2')
       expect(message.additional_attributes.dig('template_params', 'name')).to eq('sample_shipping_confirmation')
       expect(message.additional_attributes.dig('delivery_policy', 'delivery_mode')).to eq('channel_template')
+    end
+
+    it 'creates an official WhatsApp carousel template message from a communication thread' do
+      whatsapp_channel = create(:channel_whatsapp, account: account, sync_templates: false, validate_provider_config: false)
+      carousel_cards = [
+        { 'components' => [{ 'type' => 'HEADER', 'format' => 'IMAGE' }, { 'type' => 'BODY', 'text' => 'Карточка {{1}}' }] },
+        { 'components' => [{ 'type' => 'HEADER', 'format' => 'IMAGE' }, { 'type' => 'BODY', 'text' => 'Карточка {{1}}' }] }
+      ]
+      whatsapp_channel.update!(
+        message_templates: [{
+          'name' => 'carousel_test',
+          'status' => 'APPROVED',
+          'category' => 'MARKETING',
+          'language' => 'ru',
+          'components' => [{ 'type' => 'CAROUSEL', 'cards' => carousel_cards }]
+        }]
+      )
+      whatsapp_inbox = whatsapp_channel.inbox
+      contact = create(:contact, account: account)
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: whatsapp_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: whatsapp_inbox, contact_inbox: contact_inbox)
+      create(:message, account: account, inbox: whatsapp_inbox, conversation: conversation, message_type: 'incoming', created_at: 25.hours.ago)
+      create(:inbox_member, user: agent, inbox: whatsapp_inbox)
+      thread = conversation.reload.communication_thread
+
+      expect do
+        post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
+             params: {
+               content: 'Карусель товаров',
+               conversation_id: conversation.display_id,
+               content_kind: 'channel_template',
+               template_params: {
+                 name: 'carousel_test',
+                 language: 'ru',
+                 processed_params: {
+                   carousel: {
+                     cards: [
+                       { card_index: 0, header: { media_type: 'image', has_template_media: true }, body: { '1' => 'Один' }, buttons: [] },
+                       { card_index: 1, header: { media_type: 'image', has_template_media: true }, body: { '1' => 'Два' }, buttons: [] }
+                     ]
+                   }
+                 }
+               }
+             },
+             headers: headers,
+             as: :json
+      end.to change { conversation.messages.outgoing.count }.by(1)
+
+      expect(response).to have_http_status(:success)
+      message = conversation.messages.outgoing.last
+      expect(message.additional_attributes.dig('template_params', 'name')).to eq('carousel_test')
+      expect(message.additional_attributes.dig('delivery_policy', 'template', 'components', 0, 'type')).to eq('CAROUSEL')
     end
 
     it 'rejects public text delivery through voice call channels' do

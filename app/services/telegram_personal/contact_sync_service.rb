@@ -269,6 +269,10 @@ class TelegramPersonal::ContactSyncService
     ContactChannelProfile.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Conversation.where(contact_id: source_contact.id).update_all(contact_id: target_contact.id, updated_at: now)
     Message.where(sender_type: 'Contact', sender_id: source_contact.id).update_all(sender_id: target_contact.id, updated_at: now)
+    Contacts::ReferenceMergeService.merge_reminder_references!(
+      base_contact: target_contact,
+      mergee_contact: source_contact
+    )
 
     {
       'Note' => :contact_id,

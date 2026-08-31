@@ -253,7 +253,8 @@ RSpec.describe 'Integration Hooks API', type: :request do
 
     before do
       account.enable_features!('scheduling')
-      allow(Integrations::Medelement::SyncJob).to receive(:perform_later)
+      enqueued_job = instance_double(Integrations::Medelement::SyncJob, successfully_enqueued?: true)
+      allow(Integrations::Medelement::SyncJob).to receive(:perform_later).and_return(enqueued_job)
     end
 
     it 'queues Medelement sync for an admin' do
@@ -578,7 +579,8 @@ RSpec.describe 'Integration Hooks API', type: :request do
       it 'enqueues a manual medelement sync for admin' do
         account.enable_features!('scheduling')
         medelement_hook = create(:integrations_hook, :medelement, account: account)
-        allow(Integrations::Medelement::SyncJob).to receive(:perform_later)
+        enqueued_job = instance_double(Integrations::Medelement::SyncJob, successfully_enqueued?: true)
+        allow(Integrations::Medelement::SyncJob).to receive(:perform_later).and_return(enqueued_job)
 
         post process_event_api_v1_account_integrations_hook_url(account_id: account.id, id: medelement_hook.id),
              params: { event: 'sync' },

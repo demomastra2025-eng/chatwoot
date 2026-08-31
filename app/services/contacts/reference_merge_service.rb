@@ -38,8 +38,17 @@ class Contacts::ReferenceMergeService
     ensure_assignment_ownerships_do_not_collide!
     deduplicate_assignment_quota_usages!
     ensure_campaign_deliveries_do_not_collide!
+    self.class.merge_reminder_references!(base_contact: base_contact, mergee_contact: mergee_contact)
 
     remaining_references.each { |table, column| bulk_reassign(table, column) }
+  end
+
+  def self.merge_reminder_references!(base_contact:, mergee_contact:)
+    raise UnsafeMergeError, 'Reminder contacts must belong to the same account.' unless base_contact.account_id == mergee_contact.account_id
+
+    Reminder.where(account_id: base_contact.account_id, target_contact_id: mergee_contact.id).find_each do |reminder|
+      reminder.update!(target_contact: base_contact)
+    end
   end
 
   def self.safe_to_delete?(contact)
@@ -70,7 +79,7 @@ class Contacts::ReferenceMergeService
   attr_reader :account, :base_contact, :mergee_contact
 
   def remaining_references
-    REFERENCE_COLUMNS.except(*HANDLED_BY_CONTACT_MERGE)
+    REFERENCE_COLUMNS.except(*HANDLED_BY_CONTACT_MERGE, 'reminders')
   end
 
   def ensure_provider_commands_do_not_collide!

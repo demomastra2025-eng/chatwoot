@@ -101,6 +101,7 @@ describe('conversation actions', () => {
           id: 7,
           agent_last_seen_at: 1712345679,
           unread_count: 0,
+          channels: [{ conversation_id: 11, unread_count: 0 }],
         },
       });
 
@@ -128,6 +129,7 @@ describe('conversation actions', () => {
           lastSeen: 1712345679,
           unreadCount: 0,
           conversationType: 'communication_thread',
+          channels: [{ conversation_id: 11, unread_count: 0 }],
         },
       ]);
       expect(commit).not.toHaveBeenCalledWith(
@@ -357,6 +359,36 @@ describe('conversation actions', () => {
         { root: true }
       );
     });
+
+    it('coalesces concurrent read requests for the same thread', async () => {
+      const commit = vi.fn();
+      const dispatch = vi.fn();
+      let resolveRequest;
+      const request = new Promise(resolve => {
+        resolveRequest = resolve;
+      });
+      vi.spyOn(CommunicationThreadApi, 'markMessageRead').mockReturnValue(
+        request
+      );
+
+      const firstCall = actions.markCommunicationThreadRead(
+        { commit, dispatch },
+        { id: 7 }
+      );
+      const secondCall = actions.markCommunicationThreadRead(
+        { commit, dispatch },
+        { id: 7 }
+      );
+
+      expect(CommunicationThreadApi.markMessageRead).toHaveBeenCalledTimes(1);
+      resolveRequest({
+        data: { id: 7, agent_last_seen_at: 1712345678, unread_count: 0 },
+      });
+      await Promise.all([firstCall, secondCall]);
+
+      expect(commit).toHaveBeenCalledTimes(2);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('#markMessagesUnread', () => {
@@ -424,6 +456,52 @@ describe('conversation actions', () => {
         { communicationThreadMode: true },
         { root: true }
       );
+    });
+  });
+
+  describe('#fetchPreviousMessages', () => {
+    it('keeps full communication-thread history available while paginating backwards', async () => {
+      const commit = vi.fn();
+      const state = {
+        selectedChatId: 7,
+        selectedChatType: 'communication_thread',
+        allConversations: [
+          {
+            id: 7,
+            is_communication_thread: true,
+            unread_count: 0,
+            messages: [],
+            channels: [],
+            meta: {},
+          },
+        ],
+      };
+      vi.spyOn(CommunicationThreadApi, 'messages').mockResolvedValue({
+        data: {
+          meta: { channels: [] },
+          payload: [{ id: 180, created_at: 180 }],
+        },
+      });
+
+      await actions.fetchPreviousMessages(
+        { commit, state },
+        {
+          conversationId: 7,
+          conversationType: 'communication_thread',
+          before: 200,
+        }
+      );
+
+      expect(CommunicationThreadApi.messages).toHaveBeenCalledWith(7, {
+        after: undefined,
+        before: 200,
+        include_history: true,
+      });
+      expect(commit).toHaveBeenCalledWith(types.SET_PREVIOUS_CONVERSATIONS, {
+        id: 7,
+        conversationType: 'communication_thread',
+        data: [{ id: 180, created_at: 180 }],
+      });
     });
   });
 

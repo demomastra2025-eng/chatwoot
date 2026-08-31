@@ -38,6 +38,32 @@ services:
       - RAILS_ENV=production
     command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
 
+  medelement-sync-worker:
+    <<: *base
+    image: chatwoot:latest
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - ENABLE_SIDEKIQ_CRON=false
+      - DISABLE_SIDEKIQ_ALIVE=true
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_medelement_sync.yml']
+
+  medelement-commands-worker:
+    <<: *base
+    image: chatwoot:latest
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      - NODE_ENV=production
+      - RAILS_ENV=production
+      - ENABLE_SIDEKIQ_CRON=false
+      - DISABLE_SIDEKIQ_ALIVE=true
+    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq_medelement_commands.yml']
+
   postgres:
     image: pgvector/pgvector:pg16
     restart: always

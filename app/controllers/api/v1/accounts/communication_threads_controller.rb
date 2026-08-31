@@ -154,16 +154,18 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def update_last_seen
-    @communication_thread = CommunicationThreads::MarkReadService.new(
+    service = CommunicationThreads::MarkReadService.new(
       communication_thread: @communication_thread,
       current_user: Current.user,
       current_account: Current.account,
       accessible_links: operational_links_for(@communication_thread)
-    ).perform
+    )
+    @communication_thread = service.perform
     render json: {
       id: @communication_thread.display_id,
-      agent_last_seen_at: Time.current.to_i,
-      unread_count: @communication_thread.unread_count.to_i
+      unread_count: @communication_thread.unread_count,
+      agent_last_seen_at: service.last_seen_at&.to_i,
+      channels: service.channel_read_states
     }
   end
 
@@ -187,17 +189,17 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def first_unread_message_id_for(communication_thread)
     conversation_ids = accessible_links_for(communication_thread).select(:conversation_id)
 
-    Message.joins(:conversation)
-           .where(
-             account_id: Current.account.id,
-             conversation_id: conversation_ids,
-             message_type: Message.message_types[:incoming],
-             private: false
-           )
-           .where('messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)', Time.zone.at(0))
-           .reorder('messages.created_at ASC', 'messages.id ASC')
-           .limit(1)
-           .pick(:id)
+    messages = Message.joins(:conversation)
+                      .where(
+                        account_id: Current.account.id,
+                        conversation_id: conversation_ids,
+                        message_type: Message.message_types[:incoming],
+                        private: false
+                      )
+                      .where('messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)', Time.zone.at(0))
+    messages = messages.where('messages.created_at >= ?', communication_thread.session_started_at) if communication_thread.session_started_at?
+
+    messages.reorder('messages.created_at ASC', 'messages.id ASC').limit(1).pick(:id)
   end
 
   def first_unread_cursor_requested?
@@ -576,9 +578,17 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
                                        .index_by(&:conversation_id)
 
     @accessible_links_by_thread_id.transform_values do |thread_links|
-      thread_links.filter_map { |link| last_messages_by_conversation_id[link.conversation_id] }
-                  .max_by { |message| [message.created_at, message.id] }
+      messages = thread_links.filter_map { |link| last_messages_by_conversation_id[link.conversation_id] }
+      messages_in_current_session(messages, thread_links).max_by { |message| [message.created_at, message.id] }
     end
+  end
+
+  def messages_in_current_session(messages, thread_links)
+    thread_id = thread_links.first&.communication_thread_id
+    session_started_at = @communication_threads_by_id[thread_id]&.session_started_at
+    return messages if session_started_at.blank?
+
+    messages.select { |message| message.created_at >= session_started_at }
   end
 
   def accessible_links_for(thread)

@@ -138,4 +138,32 @@ describe CommunicationThreadMessageFinder do
     expect(result).to include(late_message)
     expect(result).not_to include(early_message, hidden_cursor)
   end
+
+  it 'hides messages from a resolved session while preserving explicit history access' do
+    previous_message = create(
+      :message,
+      created_at: 2.days.ago,
+      conversation: first_conversation,
+      account: account,
+      inbox: first_conversation.inbox
+    )
+    communication_thread.update!(session_started_at: 1.day.ago)
+    current_message = create(
+      :message,
+      created_at: 1.hour.ago,
+      conversation: first_conversation,
+      account: account,
+      inbox: first_conversation.inbox
+    )
+
+    expect(finder.perform).to include(current_message)
+    expect(finder.perform).not_to include(previous_message)
+
+    history = described_class.new(
+      communication_thread: communication_thread,
+      current_user: user,
+      params: { include_history: true }
+    ).perform
+    expect(history).to include(previous_message, current_message)
+  end
 end

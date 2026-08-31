@@ -1,6 +1,8 @@
 release: POSTGRES_STATEMENT_TIMEOUT=600s bundle exec rails db:chatwoot_prepare && echo $SOURCE_VERSION > .git_sha
 web: bundle exec rails ip_lookup:setup && bin/rails server -p $PORT -e $RAILS_ENV
 worker: ENABLE_SIDEKIQ_CRON=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq.yml
+medelement_sync_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_medelement_sync.yml
+medelement_commands_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_medelement_commands.yml
 telegram_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_telegram_inbound.yml
 telegram_personal_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_telegram_personal_inbound.yml
 outbound_messages_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_outbound_messages.yml

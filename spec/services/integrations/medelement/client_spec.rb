@@ -9,8 +9,13 @@ RSpec.describe Integrations::Medelement::Client do
       company_login: 'clinic-login',
       password: 'secret',
       integrator_key: 'integrator-key',
-      organization_id: 'company-1'
+      organization_id: 'company-1',
+      throttle_ms: 0
     )
+  end
+
+  before do
+    allow(Kernel).to receive(:sleep)
   end
 
   describe 'provider organization configuration' do
@@ -111,6 +116,19 @@ RSpec.describe Integrations::Medelement::Client do
         Integrations::Medelement::Client::ApiError,
         'Medelement receptions transport failed: Errno::ECONNRESET'
       )
+    end
+  end
+
+  describe '#nomenclatures' do
+    it 'classifies a provider 404 as an unavailable optional catalog' do
+      stub_request(:get, "#{described_class::BASE_URL}/v1/doctor/nomenclatures")
+        .with(query: { skip: 0 })
+        .to_return(status: 404, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+      expect { client.nomenclatures }.to raise_error(described_class::CatalogUnavailableError) do |error|
+        expect(error.status).to eq(404)
+        expect(error).not_to be_retryable
+      end
     end
   end
 
