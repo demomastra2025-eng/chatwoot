@@ -25,6 +25,7 @@
 #  idx_medelement_sync_runs_account_status        (account_id,status)
 #  idx_medelement_sync_runs_hook_created          (hook_id,created_at)
 #  idx_medelement_sync_runs_one_active_hook       (hook_id) UNIQUE WHERE ((hook_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'retrying'::character varying])::text[])))
+#  idx_medelement_sync_runs_terminal_completed    (completed_at) WHERE ((status)::text = ANY ((ARRAY['succeeded'::character varying, 'partial'::character varying, 'failed'::character varying])::text[]))
 #  index_medelement_sync_runs_on_account_id       (account_id)
 #  index_medelement_sync_runs_on_hook_id          (hook_id)
 #  index_medelement_sync_runs_on_requested_by_id  (requested_by_id)
@@ -110,8 +111,14 @@ class Integrations::Medelement::SyncRun < ApplicationRecord
     write_phase_result!(phase, result.to_h.merge(status: 'succeeded', completed_at: Time.current.iso8601))
   end
 
-  def skip_phase!(phase, reason)
-    write_phase_result!(phase, status: 'skipped', reason: reason, completed_at: Time.current.iso8601)
+  def skip_phase!(phase, reason, skipped_count: 0)
+    write_phase_result!(
+      phase,
+      status: 'skipped',
+      reason: reason,
+      skipped_count: skipped_count,
+      completed_at: Time.current.iso8601
+    )
   end
 
   def record_phase_failure!(phase, error)

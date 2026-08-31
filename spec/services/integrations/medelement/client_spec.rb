@@ -119,6 +119,19 @@ RSpec.describe Integrations::Medelement::Client do
     end
   end
 
+  describe '#nomenclatures' do
+    it 'classifies a provider 404 as an unavailable optional catalog' do
+      stub_request(:get, "#{described_class::BASE_URL}/v1/doctor/nomenclatures")
+        .with(query: { skip: 0 })
+        .to_return(status: 404, body: '{}', headers: { 'Content-Type' => 'application/json' })
+
+      expect { client.nomenclatures }.to raise_error(described_class::CatalogUnavailableError) do |error|
+        expect(error.status).to eq(404)
+        expect(error).not_to be_retryable
+      end
+    end
+  end
+
   describe '#search_patients_by_phone' do
     it 'uses documented phone components and keeps exact matches only' do
       response = instance_double(

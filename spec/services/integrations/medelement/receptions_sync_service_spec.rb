@@ -78,6 +78,40 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
     )
   end
 
+  it 'uses the bounded realtime window and reports the effective range' do
+    realtime_service = described_class.new(
+      account: account,
+      client: client,
+      configuration: configuration,
+      conflict_tracker: conflict_tracker,
+      window_mode: :realtime
+    )
+
+    travel_to(Time.zone.parse('2026-03-20 10:00:00')) do
+      result = realtime_service.perform
+
+      expect(result).to include(
+        window_mode: 'realtime',
+        window_start: '2026-03-19T00:00:00+05:00',
+        window_end: '2026-04-04T00:00:00+05:00'
+      )
+      expect(client).to have_received(:get_receptions).with(
+        hash_including(
+          begin_datetime: '19.03.2026 00:00:00',
+          end_datetime: '04.04.2026 00:00:00'
+        )
+      )
+    end
+  end
+
+  it 'rejects an unknown window mode before making provider requests' do
+    expect do
+      described_class.new(account: account, client: client, configuration: configuration, window_mode: :unknown)
+    end.to raise_error(ArgumentError, /Unsupported Medelement receptions window mode/)
+
+    expect(client).not_to have_received(:get_receptions)
+  end
+
   it 'backs off unchanged detail after a persistent local validation rejection' do
     service.perform
     appointment = account.scheduling_appointments.first

@@ -8,6 +8,9 @@ class Integrations::Medelement::ReceptionsSyncService
   DETAIL_RETRY_AT_KEY = 'medelement_detail_retry_at'.freeze
   DETAIL_STATE_KEY = '_MEDELEMENT_DETAIL_STATE'.freeze
   DETAIL_RETRY_INTERVAL = 15.minutes
+  REALTIME_DAYS_BACK = 1
+  REALTIME_DAYS_FORWARD = 14
+  WINDOW_MODES = %i[full realtime].freeze
   LIST_FINGERPRINT_FIELDS = %w[
     RECEPTION_CODE PATIENT_CODE STARTTIME ENDTIME ACTIVE REMOVED PAID NOTIFY MARKER_CODE
     SPECIALIST_CODE COMPANY_CABINET_CODE specialistCode
@@ -15,11 +18,14 @@ class Integrations::Medelement::ReceptionsSyncService
   PROVIDER_BINDING_GRACE_PERIOD = Integrations::Medelement::SpecialistsSyncService::MISSING_GRACE_PERIOD
   PROVIDER_LAST_SEEN_AT_KEY = Integrations::Medelement::SpecialistsSyncService::LAST_SEEN_AT_KEY
 
-  def initialize(account:, client:, configuration:, conflict_tracker: nil)
+  def initialize(account:, client:, configuration:, conflict_tracker: nil, window_mode: :full)
     @account = account
     @client = client
     @configuration = configuration
     @conflict_tracker = conflict_tracker
+    @window_mode = window_mode.to_sym
+    raise ArgumentError, "Unsupported Medelement receptions window mode: #{window_mode}" unless @window_mode.in?(WINDOW_MODES)
+
     @importer = Integrations::Medelement::AppointmentImporterService.new(
       account: account,
       conflict_tracker: conflict_tracker
@@ -37,13 +43,14 @@ class Integrations::Medelement::ReceptionsSyncService
     sync_result = sync_snapshot(snapshot, resource_map, contacts_by_patient_code)
     cleanup_missing_appointments!(sync_result[:desired_external_refs]) if snapshot_complete?
     sync_result[:skipped_pair_count] = skipped_pair_count
+    sync_result.merge!(window_metadata)
     log_sync_summary(sync_result)
     sync_result.except(:desired_external_refs)
   end
 
   private
 
-  attr_reader :account, :client, :configuration, :conflict_tracker, :importer, :appointment_snapshot_versions
+  attr_reader :account, :client, :configuration, :conflict_tracker, :importer, :appointment_snapshot_versions, :window_mode
 
   def load_appointment_snapshot_versions
     account.scheduling_appointments
@@ -235,16 +242,36 @@ class Integrations::Medelement::ReceptionsSyncService
 
   def range_end
     @range_end ||= begin
-      date = Time.current.in_time_zone(configuration.time_zone).to_date + configuration.receptions_days_forward + 1
+      date = Time.current.in_time_zone(configuration.time_zone).to_date + range_days_forward + 1
       ActiveSupport::TimeZone[configuration.time_zone].local(date.year, date.month, date.day)
     end
   end
 
   def range_start
     @range_start ||= begin
-      date = Time.current.in_time_zone(configuration.time_zone).to_date - configuration.receptions_days_back
+      date = Time.current.in_time_zone(configuration.time_zone).to_date - range_days_back
       ActiveSupport::TimeZone[configuration.time_zone].local(date.year, date.month, date.day)
     end
+  end
+
+  def range_days_back
+    return configuration.receptions_days_back if window_mode == :full
+
+    [configuration.receptions_days_back, REALTIME_DAYS_BACK].min
+  end
+
+  def range_days_forward
+    return configuration.receptions_days_forward if window_mode == :full
+
+    [configuration.receptions_days_forward, REALTIME_DAYS_FORWARD].min
+  end
+
+  def window_metadata
+    {
+      window_mode: window_mode.to_s,
+      window_start: range_start.iso8601,
+      window_end: range_end.iso8601
+    }
   end
 
   def throttle!

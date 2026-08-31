@@ -1,5 +1,6 @@
 class Integrations::Medelement::SyncCoordinatorService
   SyncUnavailableError = Class.new(StandardError)
+  SkippedPhase = Data.define(:reason, :skipped_count)
 
   def initialize(hook:)
     @hook = hook
@@ -37,12 +38,21 @@ class Integrations::Medelement::SyncCoordinatorService
   end
 
   def persist_phase_result(phase, result)
-    return sync_run&.skip_phase!(phase, 'disabled_by_configuration') if result == :disabled
+    return persist_disabled_phase(phase) if result == :disabled
+    return persist_skipped_phase(phase, result) if result.is_a?(SkippedPhase)
 
     sync_run&.complete_phase!(phase, result || {})
     return if phase == 'contacts'
 
     conflict_tracker&.resolve_absent!(phase)
+  end
+
+  def persist_disabled_phase(phase)
+    sync_run&.skip_phase!(phase, 'disabled_by_configuration')
+  end
+
+  def persist_skipped_phase(phase, result)
+    sync_run&.skip_phase!(phase, result.reason, skipped_count: result.skipped_count)
   end
 
   def sync_setup
@@ -69,6 +79,11 @@ class Integrations::Medelement::SyncCoordinatorService
       client: client,
       **tracking_options
     ).perform
+  rescue Integrations::Medelement::Client::CatalogUnavailableError
+    Rails.logger.warn(
+      "[MEDELEMENT::SERVICES_SYNC] Provider catalog is unavailable for account=#{hook.account_id} hook=#{hook.id} status=404"
+    )
+    SkippedPhase.new('provider_catalog_unavailable', 1)
   end
 
   def sync_contacts
@@ -89,8 +104,13 @@ class Integrations::Medelement::SyncCoordinatorService
       account: hook.account,
       client: client,
       configuration: configuration,
+      window_mode: receptions_window_mode,
       **tracking_options
     ).perform
+  end
+
+  def receptions_window_mode
+    Integrations::Medelement::ReceptionsWindowSelector.new(hook: hook, sync_run: sync_run).call
   end
 
   def tracking_options

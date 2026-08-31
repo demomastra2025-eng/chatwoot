@@ -59,6 +59,22 @@ RSpec.describe Integrations::Medelement::SyncRun, type: :model do
     expect(run.summary['skipped_count']).to eq(1)
   end
 
+  it 'finishes as partial when a provider capability phase is skipped' do
+    run = described_class.create!(account: account, hook: hook, trigger: 'manual')
+
+    run.start!
+    run.skip_phase!('services', 'provider_catalog_unavailable', skipped_count: 1)
+    run.finish!
+
+    expect(run).to be_partial
+    expect(run.phase_results['services']).to include(
+      'status' => 'skipped',
+      'reason' => 'provider_catalog_unavailable',
+      'skipped_count' => 1
+    )
+    expect(run.summary['skipped_count']).to eq(1)
+  end
+
   it 'finishes as partial for an open patient read-model conflict and succeeds after it resolves' do
     first_run = described_class.create!(account: account, hook: hook, trigger: 'manual', status: 'running')
     first_tracker = Integrations::Medelement::ConflictTracker.new(sync_run: first_run)

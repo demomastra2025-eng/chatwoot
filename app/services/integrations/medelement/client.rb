@@ -17,6 +17,8 @@ class Integrations::Medelement::Client
     end
   end
 
+  class CatalogUnavailableError < ApiError; end
+
   BASE_URL = 'https://api3.medelement.com'.freeze
 
   def initialize(configuration:)
@@ -57,6 +59,10 @@ class Integrations::Medelement::Client
     params = { skip: skip }
     params[:q] = query if query.present?
     Array(request.call(:get, '/v1/doctor/nomenclatures', operation: 'nomenclatures', query: params))
+  rescue ApiError => e
+    raise unless e.status == 404
+
+    raise CatalogUnavailableError.new('Medelement nomenclatures are unavailable', status: e.status)
   end
 
   def timetable(specialist_code:, starts_on:, ends_on:)
