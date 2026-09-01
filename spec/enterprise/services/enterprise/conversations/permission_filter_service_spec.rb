@@ -177,6 +177,27 @@ RSpec.describe Enterprise::Conversations::PermissionFilterService do
       end
     end
 
+    context 'when a custom role can manage team conversations' do
+      it 'returns conversations assigned to the agent or one of their teams' do
+        inbox.update!(enable_auto_assignment: false)
+        team = create(:team, account: account)
+        other_team = create(:team, account: account)
+        create(:team_member, team: team, user: agent)
+        custom_role = create(:custom_role, account: account, permissions: ['conversation_team_manage'])
+        account.account_users.find_by!(user: agent).update!(custom_role: custom_role)
+        team_conversation = create(:conversation, account: account, inbox: inbox)
+        team_conversation.update_column(:team_id, team.id)
+        mine = create(:conversation, account: account, inbox: inbox, assignee: agent)
+        other = create(:conversation, account: account, inbox: inbox)
+        other.update_column(:team_id, other_team.id)
+
+        result = Conversations::PermissionFilterService.new(account.conversations, agent, account).perform
+
+        expect(result).to include(team_conversation, mine)
+        expect(result).not_to include(other, unassigned_conversation)
+      end
+    end
+
     context 'when a custom role can manage conversations in a Voice inbox' do
       it 'keeps Voice conversations readable without inbox membership' do
         custom_role = create(:custom_role, account: account, permissions: ['conversation_manage'])

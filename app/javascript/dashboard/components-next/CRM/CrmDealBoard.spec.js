@@ -16,7 +16,7 @@ const stages = [
   { color: '#16a34a', id: 2, name: 'Won', pipelineId: 10 },
 ];
 
-const mountBoard = (props = {}) =>
+const mountBoard = (props = {}, stubs = {}) =>
   shallowMount(CrmDealBoard, {
     props: {
       hasMore: false,
@@ -26,6 +26,7 @@ const mountBoard = (props = {}) =>
     global: {
       stubs: {
         Draggable: true,
+        ...stubs,
       },
     },
   });
@@ -44,14 +45,40 @@ describe('CrmDealBoard', () => {
     expect(headers.every(header => header.classes().includes('sticky'))).toBe(
       true
     );
+    expect(
+      columns.every(column => column.classes().includes('w-[18rem]'))
+    ).toBe(true);
+    expect(wrapper.findAll('.crm-deal-board-stage-color')).toHaveLength(2);
   });
 
-  it('emits the selected stage when creating a deal from a column', async () => {
+  it('does not render quick-create buttons above stages', () => {
     const wrapper = mountBoard({ canManage: true });
 
-    await wrapper.findAll('.crm-deal-board-add-button')[1].trigger('click');
+    expect(wrapper.find('.crm-deal-board-add-button').exists()).toBe(false);
+  });
 
-    expect(wrapper.emitted('createDeal')).toEqual([[2]]);
+  it('exposes a native button for opening a deal with the keyboard', async () => {
+    const wrapper = mountBoard(
+      {
+        deals: [{ id: 1, stageId: 1, title: 'First deal' }],
+      },
+      {
+        Draggable: {
+          props: ['list'],
+          template:
+            '<div><slot v-for="element in list" name="item" :element="element" /></div>',
+        },
+      }
+    );
+
+    const openButton = wrapper.find('[data-test="open-deal"]');
+    expect(openButton.element.tagName).toBe('BUTTON');
+
+    await openButton.trigger('click');
+
+    expect(wrapper.emitted('selectDeal')).toEqual([
+      [{ id: 1, stageId: 1, title: 'First deal' }],
+    ]);
   });
 
   it('loads the next page near the vertical scroll boundary without a button', async () => {

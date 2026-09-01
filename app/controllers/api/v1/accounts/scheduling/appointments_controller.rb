@@ -12,6 +12,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     ends_at
     duration_min
     status
+    title
     appointment_type
     client_first_name
     client_last_name

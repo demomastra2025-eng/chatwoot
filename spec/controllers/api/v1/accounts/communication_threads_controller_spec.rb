@@ -180,28 +180,32 @@ RSpec.describe 'Communication Threads API', type: :request do
 
       get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
 
-      thread_ids = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).pluck(:id)
+      payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      thread_ids = payload.pluck(:id)
       expect(thread_ids).to include(voice_thread.display_id)
+      voice_channel = payload.find { |thread| thread[:id] == voice_thread.display_id }.fetch(:channels).first
+      expect(voice_channel).to include(can_call: false, disabled_reason: 'call_not_permitted')
+
+      create(:inbox_member, user: agent, inbox: voice_inbox)
+      get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+
+      member_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload)
+      member_voice_channel = member_payload.find { |thread| thread[:id] == voice_thread.display_id }.fetch(:channels).first
+      expect(member_voice_channel).to include(can_call: true, disabled_reason: nil)
     end
 
-    it 'requires Voice inbox membership for thread mutations' do
+    it 'allows Voice thread routing and read-state mutations without inbox membership' do
       voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
       voice_conversation = create(:conversation, account: account, inbox: voice_inbox, status: :open)
       voice_thread = voice_conversation.reload.communication_thread || voice_conversation.refresh_communication_thread!
       thread_path = "/api/v1/accounts/#{account.id}/communication_threads/#{voice_thread.display_id}"
 
       patch thread_path, params: { status: 'resolved' }, headers: headers, as: :json
-      expect(response).to have_http_status(:not_found)
-      expect(voice_conversation.reload).to be_open
-
-      post "#{thread_path}/update_last_seen", headers: headers, as: :json
-      expect(response).to have_http_status(:not_found)
-
-      create(:inbox_member, user: agent, inbox: voice_inbox)
-      patch thread_path, params: { status: 'resolved' }, headers: headers, as: :json
-
       expect(response).to have_http_status(:success)
       expect(voice_conversation.reload).to be_resolved
+
+      post "#{thread_path}/update_last_seen", headers: headers, as: :json
+      expect(response).to have_http_status(:success)
     end
 
     it 'exposes the latest Meta ads referral metadata across account channel links' do
@@ -1349,7 +1353,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(conversation.messages.outgoing.last).to have_attributes(content: 'Call note', private: true)
     end
 
-    it 'rejects a linked child conversation hidden by the native conversation permission scope' do
+    it 'allows messaging through every projection of a role-visible thread' do
       contact = create(:contact, :with_email, account: account)
       visible_conversation = create(:conversation, account: account, contact: contact, assignee: agent)
       hidden_inbox = create(:inbox, account: account)
@@ -1362,12 +1366,12 @@ RSpec.describe 'Communication Threads API', type: :request do
       thread = visible_conversation.reload.communication_thread
 
       post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/messages",
-           params: { content: 'Do not send', conversation_id: hidden_conversation.display_id },
+           params: { content: 'Send through aggregate thread', conversation_id: hidden_conversation.display_id },
            headers: headers,
            as: :json
 
-      expect(response).to have_http_status(:not_found)
-      expect(hidden_conversation.messages.outgoing).to be_empty
+      expect(response).to have_http_status(:success)
+      expect(hidden_conversation.messages.outgoing.last.content).to eq('Send through aggregate thread')
     end
 
     it 'keeps JSON multipart metadata for attachments and templates', :aggregate_failures do
@@ -1599,6 +1603,24 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(contact.reload.label_list).to contain_exactly('vip', 'paid')
     end
 
+    it 'updates labels when the contact has a stale owner from another account' do
+      contact = create(:contact, :with_email, account: account)
+      stale_owner = create(:user)
+      contact.update_column(:owner_id, stale_owner.id)
+      conversation = create(:conversation, account: account, contact: contact)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      thread = conversation.reload.communication_thread
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/#{thread.display_id}/labels",
+           params: { labels: %w[vip] },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(contact.reload.label_list).to contain_exactly('vip')
+      expect(conversation.reload.label_list).to contain_exactly('vip')
+    end
+
     it 'updates labels on linked child conversations without inbox membership' do
       contact = create(:contact, :with_email, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact)
@@ -1755,7 +1777,7 @@ RSpec.describe 'Communication Threads API', type: :request do
             as: :json
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body['error']).to include('Invalid communication thread assignee_id')
+      expect(response.parsed_body['error']).to include('Invalid communication thread assignee_type: AgentBot')
     end
   end
 end

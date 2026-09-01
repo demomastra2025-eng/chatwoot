@@ -175,6 +175,15 @@ RSpec.describe Captain::ToolRegistry do
       )
     end
 
+    it 'advertises only supported human and team assignment targets' do
+      definition = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).find do |tool|
+        tool[:id] == 'assign_conversation'
+      end
+
+      expect(definition[:description]).to include('contact', 'omnichannel conversation thread', 'agent or team')
+      expect(definition[:description]).not_to match(/agent bot/i)
+    end
+
     it 'keeps deal search and pipeline catalog intent mutually explicit' do
       definitions = described_class.tools_for_scope(Captain::ToolAccess::SCOPE_AGENT).index_by { |tool| tool[:id] }
 

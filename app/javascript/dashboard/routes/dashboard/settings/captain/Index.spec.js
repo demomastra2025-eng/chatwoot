@@ -348,7 +348,7 @@ describe('Captain settings OpenRouter UX', () => {
     expect(embeddingBlock.exists()).toBe(false);
   });
 
-  it('renders OpenRouter usage and budget summary', () => {
+  it('renders OpenRouter expenses and model analytics without budgets', () => {
     const store = useCaptainConfigStore();
     store.applyPayload(
       basePayload({
@@ -369,8 +369,16 @@ describe('Captain settings OpenRouter UX', () => {
       true
     );
     expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.TODAY_SPEND');
+    expect(wrapper.get('base-settings-header-stub').attributes('title')).toBe(
+      'CAPTAIN_SETTINGS.USAGE.TITLE'
+    );
     expect(wrapper.text()).toContain('openai/gpt-5.4');
+    expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.MODEL_COST_SHARE');
+    expect(
+      wrapper.get('[data-test="model-cost-share"]').attributes('style')
+    ).toContain('width: 100%');
     expect(wrapper.text()).toContain('CAPTAIN_SETTINGS.USAGE.NO_RECENT_ERRORS');
+    expect(wrapper.text()).not.toContain('CAPTAIN_SETTINGS.USAGE.BUDGET_TITLE');
   });
 
   it('does not render shared web access controls in account settings', () => {
@@ -392,67 +400,6 @@ describe('Captain settings OpenRouter UX', () => {
       wrapper.find('[data-test="captain-web-access-section"]').exists()
     ).toBe(false);
     expect(wrapper.text()).not.toContain('CAPTAIN_SETTINGS.WEB_ACCESS.TITLE');
-  });
-
-  it('preserves zero budget limits and warning thresholds', () => {
-    const store = useCaptainConfigStore();
-    const payload = basePayload({
-      audioModel: {
-        id: 'openai/gpt-audio-mini',
-        display_name: 'GPT Audio Mini',
-        provider: 'openrouter',
-        provider_configured: true,
-        type: 'chat',
-        capabilities: ['audio_input', 'text_output', 'transcription'],
-      },
-    });
-    payload.usage.budgets.account_policy.warning_threshold = 0;
-    payload.usage.budgets.account_policy.daily.limit = 0;
-    payload.usage.budgets.account_policy.daily_budget = 0;
-    store.applyPayload(payload);
-
-    const wrapper = mountComponent(store);
-
-    expect(wrapper.vm.budgetForm.warningThreshold).toBe(0);
-    expect(wrapper.vm.budgetWindowCards[0].window.limit).toBe(0);
-    expect(wrapper.text()).not.toContain('CAPTAIN_SETTINGS.USAGE.UNLIMITED');
-  });
-
-  it('saves account OpenRouter budget settings', async () => {
-    const store = useCaptainConfigStore();
-    const payload = basePayload({
-      audioModel: {
-        id: 'openai/gpt-audio-mini',
-        display_name: 'GPT Audio Mini',
-        provider: 'openrouter',
-        provider_configured: true,
-        type: 'chat',
-        capabilities: ['audio_input', 'text_output', 'transcription'],
-      },
-    });
-    store.applyPayload(payload);
-    const updateSpy = vi
-      .spyOn(store, 'updatePreferences')
-      .mockResolvedValue({ data: payload });
-
-    const wrapper = mountComponent(store);
-    wrapper.vm.budgetForm.active = true;
-    wrapper.vm.budgetForm.hardStop = true;
-    wrapper.vm.budgetForm.dailyBudget = 2.5;
-    wrapper.vm.budgetForm.monthlyBudget = 50;
-    wrapper.vm.budgetForm.warningThreshold = 75;
-
-    await wrapper.vm.handleBudgetSave();
-
-    expect(updateSpy).toHaveBeenCalledWith({
-      captain_budget: {
-        active: true,
-        hard_stop: true,
-        daily_budget: 2.5,
-        monthly_budget: 50,
-        warning_threshold: 0.75,
-      },
-    });
   });
 
   it('saves runtime guardrail modes for the AI Agent', async () => {

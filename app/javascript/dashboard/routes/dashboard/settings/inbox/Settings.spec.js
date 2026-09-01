@@ -10,6 +10,13 @@ const expiringInbox = {
   provider_config: { token_health: { status: 'expiring' } },
 };
 
+describe('channel conversation policy', () => {
+  it('does not expose a per-inbox conversation policy control', () => {
+    expect(Settings.components.LockToSingleConversationPreview).toBeUndefined();
+    expect(Settings.computed.canLocktoSingleConversation).toBeUndefined();
+  });
+});
+
 describe('WhatsApp reauthorization visibility', () => {
   afterEach(() => {
     window.chatwootConfig = originalChatwootConfig;

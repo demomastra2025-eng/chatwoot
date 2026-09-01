@@ -340,227 +340,6 @@
         }
       }
     },
-    "/platform/api/v1/agent_bots": {
-      "get": {
-        "tags": [
-          "AgentBots"
-        ],
-        "operationId": "list-all-agent-bots",
-        "summary": "List all AgentBots",
-        "description": "List all agent bots available",
-        "security": [
-          {
-            "platformAppApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "description": "Array of agent bots",
-                  "items": {
-                    "$ref": "#/components/schemas/agent_bot"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "AgentBots"
-        ],
-        "operationId": "create-an-agent-bot",
-        "summary": "Create an Agent Bot",
-        "description": "Create an agent bot",
-        "security": [
-          {
-            "platformAppApiKey": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/platform_agent_bot_create_update_payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/agent_bot"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/platform/api/v1/agent_bots/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/agent_bot_id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "AgentBots"
-        ],
-        "operationId": "get-details-of-a-single-agent-bot",
-        "summary": "Get an agent bot details",
-        "description": "Get the details of an agent bot",
-        "security": [
-          {
-            "platformAppApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/agent_bot"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The given agent bot ID does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "AgentBots"
-        ],
-        "operationId": "update-an-agent-bot",
-        "summary": "Update an agent bot",
-        "description": "Update an agent bot's attributes",
-        "security": [
-          {
-            "platformAppApiKey": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/platform_agent_bot_create_update_payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/agent_bot"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "AgentBots"
-        ],
-        "operationId": "delete-an-agent-bot",
-        "summary": "Delete an AgentBot",
-        "description": "Delete an AgentBot",
-        "security": [
-          {
-            "platformAppApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The agent bot does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/platform/api/v1/users": {
       "post": {
         "tags": [
@@ -1352,6 +1131,16 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/bad_request_error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The source_id is already used by another conversation in this inbox",
             "content": {
               "application/json": {
                 "schema": {
@@ -11938,235 +11727,6 @@
         }
       }
     },
-    "/api/v1/accounts/{account_id}/agent_bots": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "Account AgentBots"
-        ],
-        "operationId": "list-all-account-agent-bots",
-        "summary": "List all AgentBots",
-        "description": "List all agent bots available for the current account",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "description": "Array of agent bots",
-                  "items": {
-                    "$ref": "#/components/schemas/agent_bot"
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Account AgentBots"
-        ],
-        "operationId": "create-an-account-agent-bot",
-        "summary": "Create an Agent Bot",
-        "description": "Create an agent bot in the account",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/agent_bot_create_update_payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/agent_bot"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/agent_bots/{id}": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/account_id"
-        },
-        {
-          "$ref": "#/components/parameters/agent_bot_id"
-        }
-      ],
-      "get": {
-        "tags": [
-          "Account AgentBots"
-        ],
-        "operationId": "get-details-of-a-single-account-agent-bot",
-        "summary": "Get an agent bot details",
-        "description": "Get the details of an agent bot in the account",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/agent_bot"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The given agent bot ID does not exist in the account",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "Account AgentBots"
-        ],
-        "operationId": "update-an-account-agent-bot",
-        "summary": "Update an agent bot",
-        "description": "Update an agent bot's attributes",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/agent_bot_create_update_payload"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/agent_bot"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Account AgentBots"
-        ],
-        "operationId": "delete-an-account-agent-bot",
-        "summary": "Delete an AgentBot",
-        "description": "Delete an AgentBot from the account",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The agent bot does not exist in the account",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/accounts/{account_id}/agents": {
       "parameters": [
         {
@@ -14692,9 +14252,6 @@
         "security": [
           {
             "userApiKey": []
-          },
-          {
-            "agentBotApiKey": []
           }
         ],
         "requestBody": {
@@ -14927,9 +14484,6 @@
         "security": [
           {
             "userApiKey": []
-          },
-          {
-            "agentBotApiKey": []
           }
         ],
         "requestBody": {
@@ -15014,9 +14568,6 @@
         "security": [
           {
             "userApiKey": []
-          },
-          {
-            "agentBotApiKey": []
           }
         ],
         "requestBody": {
@@ -15128,9 +14679,6 @@
         "security": [
           {
             "userApiKey": []
-          },
-          {
-            "agentBotApiKey": []
           }
         ],
         "requestBody": {
@@ -15206,9 +14754,6 @@
         "security": [
           {
             "userApiKey": []
-          },
-          {
-            "agentBotApiKey": []
           }
         ],
         "requestBody": {
@@ -15457,9 +15002,6 @@
         "security": [
           {
             "userApiKey": []
-          },
-          {
-            "agentBotApiKey": []
           }
         ],
         "requestBody": {
@@ -15933,141 +15475,6 @@
           },
           "404": {
             "description": "Inbox not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Access denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/inboxes/{id}/agent_bot": {
-      "get": {
-        "tags": [
-          "Inboxes"
-        ],
-        "operationId": "getInboxAgentBot",
-        "summary": "Show Inbox Agent Bot",
-        "description": "See if an agent bot is associated to the Inbox",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/account_id"
-          },
-          {
-            "name": "id",
-            "in": "path",
-            "schema": {
-              "type": "number"
-            },
-            "description": "ID of the inbox",
-            "required": true
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/agent_bot"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Inbox not found, Agent bot not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Access denied",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/bad_request_error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{account_id}/inboxes/{id}/set_agent_bot": {
-      "post": {
-        "tags": [
-          "Inboxes"
-        ],
-        "operationId": "updateAgentBot",
-        "summary": "Add or remove agent bot",
-        "security": [
-          {
-            "userApiKey": []
-          }
-        ],
-        "description": "To add an agent bot pass agent_bot id, to remove agent bot from an inbox pass null",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/account_id"
-          },
-          {
-            "name": "id",
-            "in": "path",
-            "schema": {
-              "type": "number"
-            },
-            "description": "ID of the inbox",
-            "required": true
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "agent_bot"
-                ],
-                "properties": {
-                  "agent_bot": {
-                    "type": "number",
-                    "description": "Agent bot ID",
-                    "example": 1
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "204": {
-            "description": "Success"
-          },
-          "404": {
-            "description": "Inbox not found, Agent bot not found",
             "content": {
               "application/json": {
                 "schema": {
@@ -17176,9 +16583,6 @@
         "security": [
           {
             "userApiKey": []
-          },
-          {
-            "agentBotApiKey": []
           }
         ],
         "requestBody": {
@@ -19485,7 +18889,7 @@
             "userApiKey": []
           }
         ],
-        "description": "Get the count of outgoing messages grouped by a specified entity (agent, team, inbox, or label).\nWhen grouped by agent, messages sent by bots (AgentBot, Captain::Assistant) are excluded.\n\n**Note:** This API endpoint is available only in Onelink version 4.11.0 and above.\n",
+        "description": "Get the count of outgoing messages grouped by a specified entity (agent, team, inbox, or label).\nWhen grouped by agent, messages sent by Captain assistants are excluded.\n\n**Note:** This API endpoint is available only in Onelink version 4.11.0 and above.\n",
         "parameters": [
           {
             "in": "query",
@@ -20417,7 +19821,6 @@
             "enum": [
               "Contact",
               "User",
-              "AgentBot",
               "Captain::Assistant",
               null
             ],
@@ -20468,7 +19871,7 @@
           },
           "sender": {
             "type": "object",
-            "description": "User/Agent/AgentBot object"
+            "description": "User, agent, or Captain assistant object"
           }
         }
       },
@@ -20740,6 +20143,10 @@
             "type": "boolean",
             "description": "The flag which shows whether working hours feature is enabled"
           },
+          "inherit_working_hours_from_account": {
+            "type": "boolean",
+            "description": "Whether the inbox inherits its schedule and timezone from Workspace settings"
+          },
           "enable_email_collect": {
             "type": "boolean",
             "description": "The flag to enable collecting email from contacts"
@@ -20952,47 +20359,6 @@
           "provider": {
             "type": "string",
             "description": "The provider of the inbox"
-          }
-        }
-      },
-      "agent_bot": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "number",
-            "description": "ID of the agent bot"
-          },
-          "name": {
-            "type": "string",
-            "description": "The name of the agent bot"
-          },
-          "description": {
-            "type": "string",
-            "description": "The description about the agent bot"
-          },
-          "thumbnail": {
-            "type": "string",
-            "description": "The thumbnail of the agent bot"
-          },
-          "outgoing_url": {
-            "type": "string",
-            "description": "The webhook URL for the bot"
-          },
-          "bot_type": {
-            "type": "string",
-            "description": "Always `webhook`; incoming calls use the access token and outgoing events use `outgoing_url`."
-          },
-          "account_id": {
-            "type": "number",
-            "description": "Account ID if it's an account specific bot"
-          },
-          "access_token": {
-            "type": "string",
-            "description": "The access token for the bot"
-          },
-          "system_bot": {
-            "type": "boolean",
-            "description": "Whether the bot is a system bot"
           }
         }
       },
@@ -21785,6 +21151,23 @@
             "type": "integer",
             "description": "Display Id of the conversation the message belongs to"
           },
+          "source_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "External source identifier of the message"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "delivered",
+              "read",
+              "failed"
+            ],
+            "description": "Delivery status of the message"
+          },
           "attachments": {
             "type": "array",
             "description": "Attachments if any",
@@ -21912,7 +21295,7 @@
           },
           "avatar_url": {
             "type": "string",
-            "description": "Avatar URL of the sender. Present for senders of type user, agent_bot, and captain_assistant. Not present for contact senders (use thumbnail instead)."
+            "description": "Avatar URL of the sender. Present for user and captain_assistant senders. Not present for contact senders (use thumbnail instead)."
           },
           "thumbnail": {
             "type": "string",
@@ -21923,7 +21306,6 @@
             "enum": [
               "contact",
               "user",
-              "agent_bot",
               "captain_assistant"
             ],
             "description": "Type of the sender"
@@ -22193,71 +21575,6 @@
             "type": "string",
             "description": "whether user is an administrator or agent",
             "example": "administrator"
-          }
-        }
-      },
-      "platform_agent_bot_create_update_payload": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The name of the agent bot",
-            "example": "My Agent Bot"
-          },
-          "description": {
-            "type": "string",
-            "description": "The description of the agent bot",
-            "example": "This is a sample agent bot"
-          },
-          "outgoing_url": {
-            "type": "string",
-            "description": "The webhook URL for the bot",
-            "example": "https://example.com/webhook"
-          },
-          "account_id": {
-            "type": "integer",
-            "description": "The account ID to associate the agent bot with",
-            "example": 1
-          },
-          "avatar": {
-            "type": "string",
-            "format": "binary",
-            "description": "Send the form data with the avatar image binary or use the avatar_url"
-          },
-          "avatar_url": {
-            "type": "string",
-            "description": "The url to a jpeg, png file for the agent bot avatar",
-            "example": "https://example.com/avatar.png"
-          }
-        }
-      },
-      "agent_bot_create_update_payload": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "The name of the agent bot",
-            "example": "My Agent Bot"
-          },
-          "description": {
-            "type": "string",
-            "description": "The description of the agent bot",
-            "example": "This is a sample agent bot"
-          },
-          "outgoing_url": {
-            "type": "string",
-            "description": "The webhook URL for the bot",
-            "example": "https://example.com/webhook"
-          },
-          "avatar": {
-            "type": "string",
-            "format": "binary",
-            "description": "Send the form data with the avatar image binary or use the avatar_url"
-          },
-          "avatar_url": {
-            "type": "string",
-            "description": "The url to a jpeg, png file for the agent bot avatar",
-            "example": "https://example.com/avatar.png"
           }
         }
       },
@@ -23023,6 +22340,11 @@
             "description": "Enable working hours",
             "example": true
           },
+          "inherit_working_hours_from_account": {
+            "type": "boolean",
+            "description": "Inherit the schedule and timezone from Workspace settings",
+            "example": true
+          },
           "out_of_office_message": {
             "type": "string",
             "description": "Out of office message to be displayed on the widget",
@@ -23553,6 +22875,11 @@
       "public_contact_create_update_payload": {
         "type": "object",
         "properties": {
+          "source_id": {
+            "type": "string",
+            "description": "Stable external contact identifier used during creation. Reusing it makes contact creation idempotent.",
+            "example": "salebot-contact-123"
+          },
           "identifier": {
             "type": "string",
             "description": "External identifier of the contact",
@@ -23602,6 +22929,11 @@
             "type": "string",
             "description": "Temporary identifier which will be passed back via websockets",
             "example": "1234567890"
+          },
+          "source_id": {
+            "type": "string",
+            "description": "Stable external message identifier. Reusing it in the same conversation returns the existing message.",
+            "example": "salebot-message-123"
           }
         }
       },
@@ -25435,15 +24767,6 @@
         "required": true,
         "description": "The numeric ID of the account"
       },
-      "agent_bot_id": {
-        "in": "path",
-        "name": "id",
-        "schema": {
-          "type": "integer"
-        },
-        "required": true,
-        "description": "The ID of the agentbot to be updated"
-      },
       "team_id": {
         "in": "path",
         "name": "team_id",
@@ -25631,17 +24954,11 @@
         "name": "api_access_token",
         "description": "This token can be obtained by visiting the profile page or via rails console. Provides access to  endpoints based on the user permissions levels. This token can be saved by an external system when user is created via API, to perform activities on behalf of the user."
       },
-      "agentBotApiKey": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "api_access_token",
-        "description": "This token should be provided by system admin or obtained via rails console. This token can be used to build bot integrations and can only access limited apis."
-      },
       "platformAppApiKey": {
         "type": "apiKey",
         "in": "header",
         "name": "api_access_token",
-        "description": "This token can be obtained by the system admin after creating a platformApp. This token should be used to provision agent bots, accounts, users and their roles."
+        "description": "This token can be obtained by the system admin after creating a platformApp. This token should be used to provision accounts, users and their roles."
       }
     }
   },
@@ -25655,16 +24972,8 @@
       "description": "Account user management APIs"
     },
     {
-      "name": "AgentBots",
-      "description": "Bot integrations"
-    },
-    {
       "name": "Users",
       "description": "User management APIs"
-    },
-    {
-      "name": "Account AgentBots",
-      "description": "Account-specific Agent Bots"
     },
     {
       "name": "Agents",
@@ -25769,14 +25078,12 @@
       "tags": [
         "Accounts",
         "Account Users",
-        "AgentBots",
         "Users"
       ]
     },
     {
       "name": "Application",
       "tags": [
-        "Account AgentBots",
         "Account",
         "Agents",
         "Audit Logs",

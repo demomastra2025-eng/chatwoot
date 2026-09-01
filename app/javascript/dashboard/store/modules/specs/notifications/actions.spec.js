@@ -139,6 +139,20 @@ describe('#actions', () => {
     });
   });
 
+  describe('#archive', () => {
+    it('archives only the selected notification', async () => {
+      axios.patch.mockResolvedValue({});
+      await actions.archive({ commit }, { id: 1, unreadCount: 2 });
+
+      expect(commit.mock.calls).toEqual([
+        [types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: true }],
+        [types.SET_NOTIFICATIONS_UNREAD_COUNT, 1],
+        [types.READ_NOTIFICATION, { id: 1, read_at: expect.any(Date) }],
+        [types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false }],
+      ]);
+    });
+  });
+
   describe('#delete', () => {
     it('sends correct actions if API is success', async () => {
       axios.delete.mockResolvedValue({});

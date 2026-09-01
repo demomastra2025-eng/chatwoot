@@ -54,6 +54,24 @@ RSpec.describe AutomationRules::ExecuteRuleJob do
     expect(AutomationRules::ExecutionService).not_to have_received(:new)
   end
 
+  it 'does not execute a queued event from an older lifecycle generation' do
+    queued_generation = rule.lifecycle_generation
+    rule.update!(active: false)
+    rule.update!(active: true)
+
+    described_class.perform_now(
+      rule.id,
+      rule.execution_signature,
+      conversation.to_global_id.to_s,
+      {},
+      nil,
+      'stale-generation-key',
+      queued_generation
+    )
+
+    expect(AutomationRules::ExecutionService).not_to have_received(:new)
+  end
+
   it 'marks a delayed execution complete only after actions succeed' do
     completed = false
     allow(Redis::Alfred).to receive(:get) { completed ? 'true' : nil }

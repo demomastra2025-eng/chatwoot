@@ -8,6 +8,7 @@
     },
     "FAILED_TO_SEND": "Failed to send",
     "TAB_HEADING": "Conversations",
+    "TOTAL_COUNT": "Conversations: {count}",
     "MENTION_HEADING": "Mentions",
     "UNATTENDED_HEADING": "Unattended",
     "SEARCH": {

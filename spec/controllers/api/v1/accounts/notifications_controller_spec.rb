@@ -32,6 +32,37 @@ RSpec.describe 'Notifications API', type: :request do
         expect(response_json['data']['payload'].first['primary_actor']).not_to be_nil
       end
 
+      it 'exposes the canonical communication thread target for conversation notifications' do
+        account.enable_features!('communication_threads')
+        conversation = create(:conversation, account: account)
+        communication_thread = conversation.communication_thread ||
+                               create(:communication_thread, account: account, contact: conversation.contact)
+        unless conversation.communication_thread
+          create(
+            :communication_thread_conversation,
+            account: account,
+            communication_thread: communication_thread,
+            conversation: conversation
+          )
+        end
+        notification = create(
+          :notification,
+          account: account,
+          user: admin,
+          notification_type: 'conversation_creation',
+          primary_actor: conversation
+        )
+
+        get "/api/v1/accounts/#{account.id}/notifications",
+            headers: admin.create_new_auth_token,
+            as: :json
+
+        payload = response.parsed_body['data']['payload'].detect { |item| item['id'] == notification.id }
+
+        expect(response).to have_http_status(:success)
+        expect(payload['communication_thread_id']).to eq(communication_thread.display_id)
+      end
+
       it 'returns orphaned notifications using the stored snapshot' do
         conversation = create(:conversation, :with_assignee, account: account)
         notification = create(

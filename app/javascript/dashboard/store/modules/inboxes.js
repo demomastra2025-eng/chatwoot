@@ -58,9 +58,6 @@ const runWhatsappWebLifecycleRequest = (
 const telegramPersonalDiagnosticsRequests = new Map();
 const telegramPersonalDiagnosticsCache = new Map();
 const TELEGRAM_PERSONAL_DIAGNOSTICS_COOLDOWN_MS = 3000;
-const linkedinPersonalDiagnosticsRequests = new Map();
-const linkedinPersonalDiagnosticsCache = new Map();
-const LINKEDIN_PERSONAL_DIAGNOSTICS_COOLDOWN_MS = 3000;
 const weixinDiagnosticsRequests = new Map();
 const weixinDiagnosticsCache = new Map();
 const WEIXIN_DIAGNOSTICS_COOLDOWN_MS = 3000;
@@ -169,108 +166,6 @@ const getCachedTelegramPersonalDiagnostics = inboxId => {
 
 const cacheTelegramPersonalDiagnostics = (inboxId, diagnostics) => {
   telegramPersonalDiagnosticsCache.set(String(inboxId), {
-    data: diagnostics,
-    fetchedAt: Date.now(),
-  });
-};
-
-const mergeLinkedinPersonalDiagnostics = (inbox, diagnostics) => {
-  if (!inbox || !diagnostics) {
-    return inbox;
-  }
-
-  const channelState = diagnostics.channel || {};
-  const runtimeState = {
-    ...(inbox.runtime_state || {}),
-    ...(channelState.runtime_state || {}),
-    ...(diagnostics.runtime_state || {}),
-  };
-
-  [
-    'history_sync_state',
-    'history_sync_count',
-    'history_thread_count',
-    'contacts_sync_state',
-    'contacts_sync_count',
-    'last_poll_at',
-    'last_poll_message_count',
-    'last_message_at',
-  ].forEach(key => {
-    const value = pickRuntimeValue(
-      runtimeState,
-      diagnostics,
-      channelState,
-      key
-    );
-    if (value !== undefined) {
-      runtimeState[key] = value;
-    }
-  });
-
-  if (diagnostics.connection_state !== undefined) {
-    runtimeState.connection_state = diagnostics.connection_state;
-  }
-
-  if (diagnostics.lifecycle_state !== undefined) {
-    runtimeState.lifecycle_state = diagnostics.lifecycle_state;
-  }
-
-  return {
-    ...inbox,
-    connection_state:
-      channelState.connection_state ||
-      diagnostics.connection_state ||
-      inbox.connection_state,
-    lifecycle_state:
-      channelState.lifecycle_state ||
-      diagnostics.lifecycle_state ||
-      inbox.lifecycle_state,
-    last_error:
-      channelState.last_error ?? diagnostics.last_error ?? inbox.last_error,
-    runtime_state: runtimeState,
-  };
-};
-
-const normalizeLinkedinPersonalDiagnosticsPayload = payload => {
-  if (typeof payload === 'object' && payload !== null) {
-    return {
-      inboxId: payload.inboxId,
-      force: payload.force === true,
-    };
-  }
-
-  return {
-    inboxId: payload,
-    force: false,
-  };
-};
-
-const clearLinkedinPersonalDiagnosticsCache = inboxId => {
-  linkedinPersonalDiagnosticsCache.delete(String(inboxId));
-};
-
-const getCachedLinkedinPersonalDiagnostics = inboxId => {
-  const cachedDiagnostics = linkedinPersonalDiagnosticsCache.get(
-    String(inboxId)
-  );
-
-  if (!cachedDiagnostics) {
-    return null;
-  }
-
-  if (
-    Date.now() - cachedDiagnostics.fetchedAt >
-    LINKEDIN_PERSONAL_DIAGNOSTICS_COOLDOWN_MS
-  ) {
-    clearLinkedinPersonalDiagnosticsCache(inboxId);
-    return null;
-  }
-
-  return cachedDiagnostics.data;
-};
-
-const cacheLinkedinPersonalDiagnostics = (inboxId, diagnostics) => {
-  linkedinPersonalDiagnosticsCache.set(String(inboxId), {
     data: diagnostics,
     fetchedAt: Date.now(),
   });
@@ -418,10 +313,8 @@ const commitWeixinDiagnostics = (
 
 const removeInboxFromClientState = (commit, inboxId) => {
   clearTelegramPersonalDiagnosticsCache(inboxId);
-  clearLinkedinPersonalDiagnosticsCache(inboxId);
   clearWeixinDiagnosticsCache(inboxId);
   telegramPersonalDiagnosticsRequests.delete(String(inboxId));
-  linkedinPersonalDiagnosticsRequests.delete(String(inboxId));
   weixinDiagnosticsRequests.delete(String(inboxId));
   commit(types.default.DELETE_INBOXES, inboxId);
 };
@@ -436,25 +329,6 @@ const commitTelegramPersonalDiagnostics = (
     ? inboxGetters.getInbox(inboxId)
     : null;
   const mergedInbox = mergeTelegramPersonalDiagnostics(
-    currentInbox,
-    diagnostics
-  );
-
-  if (mergedInbox) {
-    commit(types.default.EDIT_INBOXES, mergedInbox);
-  }
-};
-
-const commitLinkedinPersonalDiagnostics = (
-  commit,
-  inboxGetters,
-  inboxId,
-  diagnostics
-) => {
-  const currentInbox = inboxGetters?.getInbox
-    ? inboxGetters.getInbox(inboxId)
-    : null;
-  const mergedInbox = mergeLinkedinPersonalDiagnostics(
     currentInbox,
     diagnostics
   );
@@ -603,6 +477,10 @@ export const getters = {
       return true;
     });
   },
+  getConversationWhatsAppTemplates: ($state, $getters) => inboxId =>
+    $getters
+      .getFilteredWhatsAppTemplates(inboxId)
+      .filter(template => template.visible_in_conversation_picker !== false),
   getNewConversationInboxes($state) {
     return visibleInboxRecords($state.records).filter(inbox => {
       const { channel_type: channelType, phone_number: phoneNumber = '' } =
@@ -1258,115 +1136,6 @@ export const actions = {
     telegramPersonalDiagnosticsRequests.set(requestKey, request);
     return request;
   },
-  reconnectLinkedinPersonal: async ({ commit }, inboxId) => {
-    try {
-      clearLinkedinPersonalDiagnosticsCache(inboxId);
-      const response = await InboxesAPI.reconnectLinkedinPersonal(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
-      return response.data;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
-  },
-  historySyncLinkedinPersonal: async ({ commit }, payload) => {
-    try {
-      const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
-      const requestPayload =
-        typeof payload === 'object' ? payload.payload || {} : {};
-      clearLinkedinPersonalDiagnosticsCache(inboxId);
-      const response = await InboxesAPI.historySyncLinkedinPersonal(
-        inboxId,
-        requestPayload
-      );
-      commit(types.default.EDIT_INBOXES, response.data);
-      return response.data;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
-  },
-  contactsSyncLinkedinPersonal: async ({ commit }, payload) => {
-    try {
-      const inboxId = typeof payload === 'object' ? payload.inboxId : payload;
-      const requestPayload =
-        typeof payload === 'object' ? payload.payload || {} : {};
-      clearLinkedinPersonalDiagnosticsCache(inboxId);
-      const response = await InboxesAPI.contactsSyncLinkedinPersonal(
-        inboxId,
-        requestPayload
-      );
-      commit(types.default.EDIT_INBOXES, response.data);
-      return response.data;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
-  },
-  disconnectLinkedinPersonal: async ({ commit }, inboxId) => {
-    try {
-      clearLinkedinPersonalDiagnosticsCache(inboxId);
-      const response = await InboxesAPI.disconnectLinkedinPersonal(inboxId);
-      commit(types.default.EDIT_INBOXES, response.data);
-      return response.data;
-    } catch (error) {
-      throw new Error(error?.response?.data?.error || error.message);
-    }
-  },
-  getLinkedinPersonalDiagnostics: async (
-    { commit, getters: inboxGetters },
-    payload
-  ) => {
-    const { inboxId, force } =
-      normalizeLinkedinPersonalDiagnosticsPayload(payload);
-
-    if (!inboxId) {
-      return null;
-    }
-
-    const requestKey = String(inboxId);
-
-    if (!force) {
-      const cachedDiagnostics = getCachedLinkedinPersonalDiagnostics(inboxId);
-
-      if (cachedDiagnostics) {
-        commitLinkedinPersonalDiagnostics(
-          commit,
-          inboxGetters,
-          inboxId,
-          cachedDiagnostics
-        );
-        return cachedDiagnostics;
-      }
-
-      if (linkedinPersonalDiagnosticsRequests.has(requestKey)) {
-        return linkedinPersonalDiagnosticsRequests.get(requestKey);
-      }
-    }
-
-    const request = InboxesAPI.getLinkedinPersonalDiagnostics(inboxId)
-      .then(response => {
-        cacheLinkedinPersonalDiagnostics(inboxId, response.data);
-        commitLinkedinPersonalDiagnostics(
-          commit,
-          inboxGetters,
-          inboxId,
-          response.data
-        );
-        return response.data;
-      })
-      .catch(error => {
-        if ([404, 410].includes(error?.response?.status)) {
-          removeInboxFromClientState(commit, inboxId);
-          return null;
-        }
-
-        throw new Error(error?.response?.data?.error || error.message);
-      })
-      .finally(() => {
-        linkedinPersonalDiagnosticsRequests.delete(requestKey);
-      });
-
-    linkedinPersonalDiagnosticsRequests.set(requestKey, request);
-    return request;
-  },
   requestWeixinQr: async ({ commit }, inboxId) => {
     try {
       clearWeixinDiagnosticsCache(inboxId);
@@ -1466,6 +1235,22 @@ export const actions = {
       const response = await InboxesAPI.deleteWhatsAppTemplate(
         inboxId,
         templateName
+      );
+      commit(types.default.EDIT_INBOXES, response.data);
+      return response.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message);
+    }
+  },
+  updateWhatsAppTemplateVisibility: async (
+    { commit },
+    { inboxId, templateName, visible }
+  ) => {
+    try {
+      const response = await InboxesAPI.updateWhatsAppTemplateVisibility(
+        inboxId,
+        templateName,
+        visible
       );
       commit(types.default.EDIT_INBOXES, response.data);
       return response.data;

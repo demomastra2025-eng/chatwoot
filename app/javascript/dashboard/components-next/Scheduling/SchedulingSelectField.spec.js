@@ -1,16 +1,17 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import SchedulingSelectField from './SchedulingSelectField.vue';
 
-const mountComponent = () =>
+const mountComponent = (props = {}) =>
   mount(SchedulingSelectField, {
     attachTo: document.body,
     props: {
       modelValue: '',
       options: [{ label: 'Contact', value: 1 }],
       searchPlaceholder: 'Search contacts',
+      ...props,
     },
   });
 
@@ -27,6 +28,66 @@ describe('SchedulingSelectField', () => {
     ).not.toBeNull();
 
     wrapper.unmount();
+  });
+
+  it('searches in the visible field without rendering a second search input', async () => {
+    const wrapper = mountComponent({
+      inlineDropdown: true,
+      modelValue: 1,
+      searchInTrigger: true,
+    });
+    const searchInput = wrapper.get('input[placeholder="Search contacts"]');
+
+    expect(searchInput.element.value).toBe('Contact');
+    expect(searchInput.classes()).toContain('rounded-lg');
+    expect(searchInput.element.parentElement.classList).not.toContain(
+      'rounded-lg'
+    );
+    expect(searchInput.classes()).toContain('!pl-3');
+    expect(wrapper.find('.i-lucide-search').exists()).toBe(false);
+
+    await searchInput.trigger('focus');
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted('open')).toHaveLength(1);
+    expect(
+      document.body.querySelectorAll('input[placeholder="Search contacts"]')
+    ).toHaveLength(1);
+
+    await searchInput.setValue('Иванов Иван');
+
+    expect(wrapper.emitted('search').at(-1)).toEqual(['Иванов Иван']);
+    const dropdown = wrapper.get('.dashboard-combobox-dropdown');
+    expect(dropdown.get('ul').exists()).toBe(true);
+    expect(dropdown.classes()).toContain('absolute');
+    expect(dropdown.classes()).not.toContain('fixed');
+    expect(dropdown.classes()).not.toContain('backdrop-blur-[16px]');
+
+    wrapper.unmount();
+  });
+
+  it('debounces API-backed contact search to the completed query', async () => {
+    vi.useFakeTimers();
+    const wrapper = mountComponent({
+      searchDebounceMs: 250,
+      searchInTrigger: true,
+    });
+
+    try {
+      const searchInput = wrapper.get('input[placeholder="Search contacts"]');
+      await searchInput.trigger('focus');
+      await searchInput.setValue('Ас');
+      await searchInput.setValue('Асет');
+
+      expect(wrapper.emitted('search')).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(wrapper.emitted('search')).toEqual([['Асет']]);
+    } finally {
+      wrapper.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it('aligns an end-positioned dropdown to the right edge of its trigger', async () => {

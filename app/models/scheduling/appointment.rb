@@ -33,6 +33,7 @@
 #  source                        :string           default("manual"), not null
 #  starts_at                     :datetime         not null
 #  status                        :string           default("scheduled"), not null
+#  title                         :string
 #  created_at                    :datetime         not null
 #  updated_at                    :datetime         not null
 #  account_id                    :bigint           not null
@@ -111,6 +112,7 @@ class Scheduling::Appointment < ApplicationRecord
   validates :compensation_percent_snapshot, numericality: { greater_than_or_equal_to: 0, only_integer: true }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
+  validates :title, length: { maximum: 255 }, allow_nil: true
   validate :ends_after_starts
   validate :total_received_within_service_amount
   validate :payment_methods_present_for_positive_amounts

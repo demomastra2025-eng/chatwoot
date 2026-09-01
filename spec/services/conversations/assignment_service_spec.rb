@@ -1,23 +1,22 @@
 require 'rails_helper'
 
 describe Conversations::AssignmentService do
-  let(:account) { create(:account) }
+  let(:account) { create(:account).tap { |record| record.enable_features!('communication_threads') } }
   let(:agent) { create(:user, account: account) }
-  let(:agent_bot) { create(:agent_bot, account: account) }
   let(:conversation) { create(:conversation, account: account) }
 
   describe '#perform' do
     context 'when assignee_id is blank' do
       before do
-        conversation.update!(assignee: agent, assignee_agent_bot: agent_bot)
+        conversation.update!(assignee: agent)
       end
 
-      it 'clears both human and bot assignees' do
+      it 'clears the human assignee' do
         described_class.new(conversation: conversation, assignee_id: nil).perform
 
         conversation.reload
         expect(conversation.assignee_id).to be_nil
-        expect(conversation.assignee_agent_bot_id).to be_nil
+        expect(conversation.contact.reload.owner_id).to be_nil
       end
 
       it 'persists an unassignment activity for the acting user' do
@@ -38,16 +37,29 @@ describe Conversations::AssignmentService do
 
     context 'when assigning a user' do
       before do
-        conversation.update!(assignee_agent_bot: agent_bot, assignee: nil)
+        conversation.update!(assignee: nil)
       end
 
-      it 'sets the agent and clears agent bot' do
+      it 'sets the agent' do
         result = described_class.new(conversation: conversation, assignee_id: agent.id).perform
 
         conversation.reload
         expect(result).to eq(agent)
         expect(conversation.assignee_id).to eq(agent.id)
-        expect(conversation.assignee_agent_bot_id).to be_nil
+        expect(conversation.contact.reload.owner).to eq(agent)
+      end
+
+      it 'assigns every channel conversation and communication thread for the contact' do
+        contact = create(:contact, account: account)
+        first_conversation = create(:conversation, account: account, contact: contact, assignee: nil)
+        second_conversation = create(:conversation, account: account, contact: contact, assignee: nil)
+
+        described_class.new(conversation: first_conversation, assignee_id: agent.id).perform
+
+        expect(contact.reload.owner).to eq(agent)
+        expect(contact.conversations.reload.pluck(:assignee_id).uniq).to eq([agent.id])
+        expect(contact.communication_threads.reload.pluck(:assignee_id).uniq).to eq([agent.id])
+        expect(second_conversation.reload.assignee).to eq(agent)
       end
 
       it 'persists an assignment activity for the acting user' do
@@ -70,25 +82,31 @@ describe Conversations::AssignmentService do
       end
     end
 
-    context 'when assigning an agent bot' do
-      let(:service) do
-        described_class.new(
-          conversation: conversation,
-          assignee_id: agent_bot.id,
-          assignee_type: 'AgentBot'
-        )
-      end
+    it 'atomically applies an agent and team to every channel projection' do
+      contact = create(:contact, account: account)
+      team = create(:team, account: account)
+      first_conversation = create(:conversation, account: account, contact: contact, assignee: nil, team: nil)
+      second_conversation = create(:conversation, account: account, contact: contact, assignee: nil, team: nil)
 
-      it 'sets the agent bot and clears human assignee' do
-        conversation.update!(assignee: agent, assignee_agent_bot: nil)
+      described_class.new(
+        conversation: first_conversation,
+        assignee_id: agent.id,
+        team_id: team.id
+      ).perform
 
-        result = service.perform
-
-        conversation.reload
-        expect(result).to eq(agent_bot)
-        expect(conversation.assignee_agent_bot_id).to eq(agent_bot.id)
-        expect(conversation.assignee_id).to be_nil
-      end
+      expect(contact.reload.owner).to eq(agent)
+      expect(contact.conversations.reload.pluck(:assignee_id).uniq).to eq([agent.id])
+      expect(contact.conversations.reload.pluck(:team_id).uniq).to eq([team.id])
+      expect(contact.communication_threads.reload.pluck(:assignee_id).uniq).to eq([agent.id])
+      expect(contact.communication_threads.reload.pluck(:team_id).uniq).to eq([team.id])
+      expect(second_conversation.reload).to have_attributes(assignee_id: agent.id, team_id: team.id)
     end
+
+    it 'rejects retired non-user assignee types' do
+      expect do
+        described_class.new(conversation: conversation, assignee_id: agent.id, assignee_type: 'AgentBot').perform
+      end.to raise_error(ArgumentError, 'assignee_type must be User')
+    end
+
   end
 end

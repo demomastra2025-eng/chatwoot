@@ -64,7 +64,25 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  compactScale: {
+    type: String,
+    default: 'small',
+    validator: value => ['small', 'medium'].includes(value),
+  },
+  compactTrigger: {
+    type: Boolean,
+    default: false,
+  },
   hideTrigger: {
+    type: Boolean,
+    default: false,
+  },
+  popoverAlign: {
+    type: String,
+    default: 'start',
+    validator: value => ['start', 'center'].includes(value),
+  },
+  singleCalendar: {
     type: Boolean,
     default: false,
   },
@@ -452,7 +470,10 @@ const closeDatePicker = () => {
 <template>
   <div
     v-on-click-outside="closeDatePicker"
-    class="relative flex-shrink-0 font-inter"
+    class="relative font-inter"
+    :class="
+      props.compactTrigger ? 'min-w-0 max-w-full flex-shrink' : 'flex-shrink-0'
+    "
   >
     <DatePickerButton
       v-if="!props.hideTrigger"
@@ -464,17 +485,29 @@ const closeDatePicker = () => {
       :selected-range="selectedRange"
       :show-month-navigation="showMonthNavigation"
       :can-navigate-next="canNavigateNext"
+      :compact="props.compactTrigger"
       :navigation-label="navigationLabel"
       @open="toggleDatePicker"
       @navigate-month="navigateMonth"
     />
     <div
       v-if="showDatePicker"
-      class="absolute z-30 flex origin-top-left select-none rounded-2xl border-0 bg-n-alpha-3 shadow-md outline outline-1 outline-n-container backdrop-blur-[100px] ltr:left-0 rtl:right-0"
+      class="absolute z-30 flex select-none rounded-2xl border-0 bg-n-alpha-3 shadow-md outline outline-1 outline-n-container backdrop-blur-[100px]"
       :class="[
+        props.popoverAlign === 'center'
+          ? 'left-1/2 -translate-x-1/2 origin-top'
+          : 'origin-top-left ltr:left-0 rtl:right-0',
         props.hideTrigger ? 'top-1' : 'top-9',
-        props.calendarOnly ? 'w-[340px]' : 'w-[880px]',
-        props.compact ? 'scale-[0.8]' : '',
+        props.calendarOnly
+          ? 'w-[340px]'
+          : props.singleCalendar
+            ? 'w-[540px]'
+            : 'w-[880px]',
+        props.compact
+          ? props.compactScale === 'medium'
+            ? 'scale-[0.9]'
+            : 'scale-[0.8]'
+          : '',
       ]"
     >
       <CalendarDateRange
@@ -488,20 +521,22 @@ const closeDatePicker = () => {
         :class="
           props.calendarOnly
             ? 'w-[340px]'
-            : 'w-[680px] border-n-strong ltr:border-l rtl:border-r'
+            : props.singleCalendar
+              ? 'w-[340px] border-n-strong ltr:border-l rtl:border-r'
+              : 'w-[680px] border-n-strong ltr:border-l rtl:border-r'
         "
       >
         <div class="flex justify-around h-fit">
           <!-- Custom range uses one calendar: first click is start, second is end. -->
           <div
-            v-for="calendar in props.calendarOnly
+            v-for="calendar in props.calendarOnly || props.singleCalendar
               ? [START_CALENDAR]
               : [START_CALENDAR, END_CALENDAR]"
             :key="`${calendar}-calendar`"
             class="flex flex-col items-center"
           >
             <CalendarDateInput
-              v-if="!props.calendarOnly"
+              v-if="!props.calendarOnly && !props.singleCalendar"
               :calendar-type="calendar"
               :date-value="
                 calendar === START_CALENDAR ? manualStartDate : manualEndDate
@@ -523,6 +558,8 @@ const closeDatePicker = () => {
                 class="flex flex-col items-center gap-2 px-5 min-w-[340px] max-h-[352px]"
                 :class="
                   calendar === START_CALENDAR &&
+                  !props.calendarOnly &&
+                  !props.singleCalendar &&
                   'ltr:border-r rtl:border-l border-n-strong'
                 "
               >

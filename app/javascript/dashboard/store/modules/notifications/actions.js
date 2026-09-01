@@ -75,6 +75,20 @@ export const actions = {
       commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false });
     }
   },
+  archive: async ({ commit }, { id, unreadCount }) => {
+    commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: true });
+    try {
+      await NotificationsAPI.archive(id);
+      commit(
+        types.SET_NOTIFICATIONS_UNREAD_COUNT,
+        Math.max(unreadCount - 1, 0)
+      );
+      commit(types.READ_NOTIFICATION, { id, read_at: new Date() });
+      commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false });
+    } catch (error) {
+      commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: false });
+    }
+  },
   readAll: async ({ commit }) => {
     commit(types.SET_NOTIFICATIONS_UI_FLAG, { isUpdating: true });
     try {

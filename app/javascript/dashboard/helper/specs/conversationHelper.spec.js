@@ -60,14 +60,19 @@ describe('conversationHelper', () => {
   });
 
   describe('#lastMessage', () => {
-    it("should return last activity message if both api and store doesn't have other messages", () => {
+    it("should not return an activity message if both api and store don't have other messages", () => {
       const testConversation = {
-        messages: [conversationData.messages[0]],
+        messages: [
+          {
+            id: 438214,
+            content: 'John reopened the conversation',
+            message_type: 2,
+            created_at: lastMessageData.created_at + 60,
+          },
+        ],
         last_non_activity_message: null,
       };
-      expect(getLastMessage(testConversation)).toEqual(
-        testConversation.messages[0]
-      );
+      expect(getLastMessage(testConversation)).toBeNull();
     });
 
     it('should return message from store if store has latest message', () => {
@@ -105,7 +110,7 @@ describe('conversationHelper', () => {
       );
     });
 
-    it('should return the latest activity message when it is newer than the last chat message', () => {
+    it('should keep the latest chat message when a newer activity exists', () => {
       const activityMessage = {
         id: 438214,
         content: 'John reopened the conversation',
@@ -116,7 +121,23 @@ describe('conversationHelper', () => {
         messages: [activityMessage],
         last_non_activity_message: lastMessageData,
       };
-      expect(getLastMessage(testConversation)).toEqual(activityMessage);
+      expect(getLastMessage(testConversation)).toEqual(lastMessageData);
+    });
+
+    it('should reject an activity message from the non-activity API field', () => {
+      const activityMessage = {
+        id: 438214,
+        content: 'John reopened the conversation',
+        message_type: 2,
+        created_at: lastMessageData.created_at + 60,
+      };
+
+      expect(
+        getLastMessage({
+          messages: [],
+          last_non_activity_message: activityMessage,
+        })
+      ).toBeUndefined();
     });
   });
 });

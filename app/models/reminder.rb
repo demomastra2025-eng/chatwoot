@@ -52,6 +52,7 @@
 # Indexes
 #
 #  idx_reminders_on_account_fingerprint        (account_id,fingerprint)
+#  idx_reminders_on_account_idempotency_key    (account_id,idempotency_key) UNIQUE WHERE (idempotency_key IS NOT NULL)
 #  idx_reminders_on_account_owner_scheduled    (account_id,owner_id,scheduled_at)
 #  idx_reminders_on_account_repeat_scheduled   (account_id,repeat_mode,scheduled_at)
 #  idx_reminders_on_account_status_scheduled   (account_id,status,scheduled_at)
@@ -97,6 +98,7 @@ class Reminder < ApplicationRecord
   AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
   AUTOMATION_ACTION_KEY = 'automation_action_key'.freeze
   AUTOMATION_EXECUTION_KEY = 'automation_execution_key'.freeze
+  AUTOMATION_RULE_GENERATION_KEY = 'automation_rule_generation'.freeze
   TRANSIENT_METADATA_KEYS = [
     PROCESSING_CLAIM_KEY,
     DELIVERY_MATERIALIZED_MESSAGE_ID_KEY,
@@ -110,7 +112,8 @@ class Reminder < ApplicationRecord
       POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
       AUTOMATION_ACTION_KEY,
-      AUTOMATION_EXECUTION_KEY
+      AUTOMATION_EXECUTION_KEY,
+      AUTOMATION_RULE_GENERATION_KEY
     ]
   ).freeze
   RELATIVE_TIME_MODE_INHERIT_ANCHOR_TIME = 'inherit_anchor_time'.freeze
@@ -691,7 +694,8 @@ class Reminder < ApplicationRecord
       POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message&.id,
       AUTOMATION_ACTION_KEY => action_key.presence&.to_s,
-      AUTOMATION_EXECUTION_KEY => execution_key.presence&.to_s
+      AUTOMATION_EXECUTION_KEY => execution_key.presence&.to_s,
+      AUTOMATION_RULE_GENERATION_KEY => automation_rule.lifecycle_generation
     }.compact
   end
 

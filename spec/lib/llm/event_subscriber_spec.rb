@@ -37,5 +37,21 @@ RSpec.describe Llm::EventSubscriber do
     ensure
       described_class.uninstall!
     end
+
+    it 'replaces a reload-stable subscription after class state is reset' do
+      allow(Llm::Monitoring::EventRecorder).to receive(:record_notification)
+      allow(Llm::Monitoring::OtelEventExporter).to receive(:export_notification)
+
+      previous_subscriber = described_class.install!
+      described_class.instance_variable_set(:@subscriber, nil)
+      described_class.install!(previous_subscriber: previous_subscriber)
+      Llm::EventBus.publish('chat.complete', feature: 'assistant', model: 'gpt-4.1-mini')
+
+      expect(Llm::Monitoring::EventRecorder).to have_received(:record_notification).once
+      expect(Llm::Monitoring::OtelEventExporter).to have_received(:export_notification).once
+    ensure
+      ActiveSupport::Notifications.unsubscribe(previous_subscriber) if previous_subscriber
+      described_class.uninstall!
+    end
   end
 end

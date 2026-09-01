@@ -767,7 +767,6 @@ RSpec.describe 'Conversations API', type: :request do
     let(:conversation) { create(:conversation, account: account) }
     let(:inbox) { create(:inbox, account: account) }
     let(:pending_conversation) { create(:conversation, inbox: inbox, account: account, status: 'pending') }
-    let(:agent_bot) { create(:agent_bot, account: account) }
 
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
@@ -857,41 +856,7 @@ RSpec.describe 'Conversations API', type: :request do
       end
     end
 
-    context 'when it is an authenticated bot' do
-      # this test will basically ensure that the status actually changes
-      # regardless of the value to be done
-      it 'returns authorized for arbritrary status' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
 
-        conversation.update!(status: 'open')
-        expect(conversation.reload.status).to eq('open')
-        snoozed_until = (DateTime.now.utc + 2.days).to_i
-
-        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_status",
-             headers: { api_access_token: agent_bot.access_token.token },
-             params: { status: 'snoozed', snoozed_until: snoozed_until },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.reload.status).to eq('snoozed')
-      end
-
-      it 'triggers handoff event when moving from pending to open' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        allow(Rails.configuration.dispatcher).to receive(:dispatch)
-
-        post "/api/v1/accounts/#{account.id}/conversations/#{pending_conversation.display_id}/toggle_status",
-             headers: { api_access_token: agent_bot.access_token.token },
-             params: { status: 'open' },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(pending_conversation.reload.status).to eq('open')
-        expect(Rails.configuration.dispatcher).to have_received(:dispatch)
-          .with(Events::Types::CONVERSATION_BOT_HANDOFF, kind_of(Time), conversation: pending_conversation, notifiable_assignee_change: false,
-                                                                        changed_attributes: anything, performed_by: anything)
-      end
-    end
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/toggle_priority' do
@@ -899,7 +864,6 @@ RSpec.describe 'Conversations API', type: :request do
     let(:conversation) { create(:conversation, account: account) }
     let(:pending_conversation) { create(:conversation, inbox: inbox, account: account, status: 'pending') }
     let(:agent) { create(:user, account: account, role: :agent) }
-    let(:agent_bot) { create(:agent_bot, account: account) }
 
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
@@ -942,22 +906,7 @@ RSpec.describe 'Conversations API', type: :request do
       end
     end
 
-    context 'when it is an authenticated bot' do
-      it 'toggle the priority of the bot agent conversation' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
 
-        conversation.update!(priority: 'low')
-        expect(conversation.reload.priority).to eq('low')
-
-        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_priority",
-             headers: { api_access_token: agent_bot.access_token.token },
-             params: { priority: 'high' },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.reload.priority).to eq('high')
-      end
-    end
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/toggle_typing_status' do
@@ -1003,23 +952,6 @@ RSpec.describe 'Conversations API', type: :request do
       end
     end
 
-    context 'when it is an authenticated bot' do
-      let(:agent_bot) { create(:agent_bot, account: account) }
-
-      it 'toggles the conversation typing status' do
-        create(:agent_bot_inbox, inbox: conversation.inbox, agent_bot: agent_bot)
-        allow(Rails.configuration.dispatcher).to receive(:dispatch)
-
-        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_typing_status",
-             headers: { api_access_token: agent_bot.access_token.token },
-             params: { typing_status: 'on', is_private: false },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(Rails.configuration.dispatcher).to have_received(:dispatch)
-          .with(Conversation::CONVERSATION_TYPING_ON, kind_of(Time), { conversation: conversation, user: agent_bot, is_private: false })
-      end
-    end
 
     context 'when it is an authenticated platform app token' do
       let(:platform_app) { create(:platform_app) }
@@ -1611,26 +1543,7 @@ RSpec.describe 'Conversations API', type: :request do
       end
     end
 
-    context 'when it is a bot' do
-      let(:agent_bot) { create(:agent_bot, account: account) }
-      let(:custom_attributes) { { bot_id: 1001, flow_name: 'support_flow', step: 'greeting' } }
-      let(:valid_params) { { custom_attributes: custom_attributes } }
 
-      before do
-        create(:agent_bot_inbox, agent_bot: agent_bot, inbox: conversation.inbox)
-      end
-
-      it 'updates custom attributes' do
-        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/custom_attributes",
-             headers: { api_access_token: agent_bot.access_token.token },
-             params: valid_params,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.reload.custom_attributes).not_to be_nil
-        expect(conversation.reload.custom_attributes.count).to eq 3
-      end
-    end
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:id/destroy_custom_attributes' do
@@ -1674,23 +1587,7 @@ RSpec.describe 'Conversations API', type: :request do
       end
     end
 
-    context 'when it is a bot' do
-      let(:agent_bot) { create(:agent_bot, account: account) }
 
-      before do
-        create(:agent_bot_inbox, agent_bot: agent_bot, inbox: conversation.inbox)
-      end
-
-      it 'destroys custom attributes' do
-        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/destroy_custom_attributes",
-             headers: { api_access_token: agent_bot.access_token.token },
-             params: { custom_attributes: ['removable_key'] },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.reload.custom_attributes).to eq({ 'retained_key' => 'keep me' })
-      end
-    end
   end
 
   describe 'GET /api/v1/accounts/{account.id}/conversations/:id/attachments' do

@@ -237,9 +237,7 @@ const variant = computed(() => {
   const hasExternalSenderName = !!props.additionalAttributes?.senderName;
   const isBot =
     (!props.sender && !hasExternalSenderName) ||
-    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
-      senderType
-    );
+    senderType === SENDER_TYPES.CAPTAIN_ASSISTANT;
   if (isBot && props.messageType === MESSAGE_TYPES.OUTGOING) {
     return MESSAGE_VARIANTS.BOT;
   }
@@ -273,11 +271,7 @@ const isBotOrAgentMessage = computed(() => {
     return true;
   }
 
-  if (
-    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
-      senderType
-    )
-  ) {
+  if (senderType === SENDER_TYPES.CAPTAIN_ASSISTANT) {
     return true;
   }
 
@@ -568,9 +562,7 @@ const avatarInfo = computed(() => {
   if (
     props.messageType === MESSAGE_TYPES.OUTGOING &&
     isAutomationTouchMessage(props.additionalAttributes) &&
-    ![SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
-      props.sender?.type ?? props.senderType
-    )
+    (props.sender?.type ?? props.senderType) !== SENDER_TYPES.CAPTAIN_ASSISTANT
   ) {
     return {
       name: t('CONVERSATION.AUTOMATION_SYSTEM'),
@@ -603,8 +595,7 @@ const avatarInfo = computed(() => {
   const { sender } = props;
   const { name, type, avatarUrl, thumbnail } = sender || {};
 
-  // If sender type is agent bot, use avatarUrl
-  if ([SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(type)) {
+  if (type === SENDER_TYPES.CAPTAIN_ASSISTANT) {
     const shouldUseCaptainIcon = !avatarUrl;
 
     return {

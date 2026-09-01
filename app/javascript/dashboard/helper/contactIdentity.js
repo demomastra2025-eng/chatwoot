@@ -6,7 +6,6 @@ const PROVIDER_CHANNEL_TYPE_MAP = {
   facebook_page: INBOX_TYPES.FB,
   instagram: INBOX_TYPES.INSTAGRAM,
   line: INBOX_TYPES.LINE,
-  linkedin_personal: INBOX_TYPES.LINKEDIN_PERSONAL,
   telegram: INBOX_TYPES.TELEGRAM,
   telegram_personal: INBOX_TYPES.TELEGRAM_PERSONAL,
   tiktok: INBOX_TYPES.TIKTOK,

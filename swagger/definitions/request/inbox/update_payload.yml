@@ -32,6 +32,10 @@ properties:
     type: boolean
     description: Enable working hours
     example: true
+  inherit_working_hours_from_account:
+    type: boolean
+    description: Inherit the schedule and timezone from Workspace settings
+    example: true
   out_of_office_message:
     type: string
     description: Out of office message to be displayed on the widget

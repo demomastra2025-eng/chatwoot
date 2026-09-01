@@ -57,6 +57,23 @@ RSpec.describe 'Super Admin accounts API', type: :request do
 
   describe 'PATCH /super_admin/accounts/{account_id}' do
     context 'when it is an authenticated user' do
+      it 'assigns the account to a billing organization' do
+        organization = create(:billing_organization)
+        sign_in(super_admin, scope: :super_admin)
+
+        patch "/super_admin/accounts/#{account.id}", params: {
+          account: {
+            name: account.name,
+            billing_organization_id: organization.id,
+            locale: account.locale,
+            status: account.status
+          }
+        }
+
+        expect(response).to have_http_status(:redirect)
+        expect(account.reload.billing_organization).to eq(organization)
+      end
+
       it 'normalizes numeric limit overrides and clears blank values' do
         account.update!(limits: { 'agents' => 4, 'captain_tokens' => 500 })
         sign_in(super_admin, scope: :super_admin)

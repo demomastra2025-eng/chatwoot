@@ -22,6 +22,8 @@ import SidebarProfileMenu from './SidebarProfileMenu.vue';
 import SidebarChangelogCard from './SidebarChangelogCard.vue';
 import SidebarChangelogButton from './SidebarChangelogButton.vue';
 import SidebarAccountSwitcher from './SidebarAccountSwitcher.vue';
+import SidebarNotificationBell from './SidebarNotificationBell.vue';
+import NotificationPanel from 'dashboard/components-next/notifications/NotificationPanel.vue';
 import ComposeConversation from 'dashboard/components-next/NewConversation/ComposeConversation.vue';
 import AddLabelForm from 'dashboard/routes/dashboard/settings/labels/AddLabel.vue';
 import {
@@ -66,6 +68,10 @@ import {
   APPOINTMENT_STATUS_VALUES,
 } from 'dashboard/routes/dashboard/scheduling/constants';
 import { conversationListContextState } from 'dashboard/helper/conversationListContext';
+import {
+  resolveRouteConversationAssigneeType,
+  selectExclusiveSidebarChildNames,
+} from './sidebarActiveSelection';
 
 const props = defineProps({
   isMobileSidebarOpen: {
@@ -94,6 +100,9 @@ const searchShortcut = useKbd([`$mod`, 'k']);
 const { t } = useI18n();
 const { uiSettings } = useUISettings();
 const composeConversationRef = ref(null);
+const notificationPanelRef = ref(null);
+
+const openNotificationPanel = () => notificationPanelRef.value?.toggle();
 
 const effectiveSidebarVisibilitySettings = computed(() =>
   buildEffectiveSidebarVisibilitySettings({
@@ -111,6 +120,8 @@ const { width: windowWidth } = useWindowSize();
 const isMobile = computed(() => windowWidth.value < 768);
 const DESKTOP_RAIL_WIDTH = 44;
 const DESKTOP_SECONDARY_COLUMN_WIDTH = 178;
+const NOTIFICATION_PANEL_GAP = 8;
+const NON_ACTIVE_QUERY_KEYS = new Set(['page', 'search']);
 const COMPANY_ACTIVE_ROUTE_NAMES = [
   'companies_dashboard_index',
   'companies_dashboard_show',
@@ -238,6 +249,9 @@ const setExpandedItem = name => {
 const sidebarWidth = computed(() =>
   isMobile.value ? 200 : DESKTOP_RAIL_WIDTH
 );
+const notificationPanelOffset = computed(
+  () => sidebarWidth.value + NOTIFICATION_PANEL_GAP
+);
 const isEffectivelyCollapsed = computed(() => !isMobile.value);
 
 provideSidebarContext({
@@ -260,9 +274,8 @@ const conversationStats = useMapGetter('conversationStats/getStats');
 const sortedInboxes = computed(() =>
   inboxes.value.slice().sort((a, b) => a.name.localeCompare(b.name))
 );
-const selectedConversation = useMapGetter('getSelectedChat');
 
-const conversationStatuses = ['pending', 'open', 'snoozed', 'resolved'];
+const conversationStatuses = ['all', 'pending', 'open', 'snoozed', 'resolved'];
 const conversationAssigneeTypes = [
   wootConstants.ASSIGNEE_TYPE.ALL,
   wootConstants.ASSIGNEE_TYPE.ME,
@@ -298,25 +311,10 @@ const normalizeConversationStatus = status => {
     : '';
 };
 
-const routeHasSelectedConversationContext = computed(() =>
-  Boolean(
-    route.params?.conversation_id ||
-      route.params?.conversationId ||
-      route.params?.communication_thread_id
-  )
-);
-
 const currentConversationStatus = computed(() => {
-  const selectedStatus = normalizeConversationStatus(
-    selectedConversation.value?.status
-  );
-
-  if (routeHasSelectedConversationContext.value && selectedStatus) {
-    return selectedStatus;
-  }
-
   return (
-    normalizeConversationStatus(route.query.status) || selectedStatus || 'open'
+    normalizeConversationStatus(route.query.status) ||
+    conversationListContextState(uiSettings.value, 'assignee:all').status
   );
 });
 
@@ -483,83 +481,6 @@ const conversationSidebarRoute = computed(() => {
   );
 });
 
-const currentConversationScope = computed(() => {
-  switch (route.name) {
-    case 'inbox_conversation': {
-      const selectedConversationInboxId = Number(
-        selectedConversation.value?.inbox_id
-      );
-
-      if (
-        Number.isFinite(selectedConversationInboxId) &&
-        selectedConversationInboxId > 0
-      ) {
-        return {
-          name: 'inbox_dashboard',
-          params: { inbox_id: selectedConversationInboxId },
-        };
-      }
-
-      return {
-        name: 'home',
-        params: {},
-      };
-    }
-    case 'inbox_dashboard':
-    case 'conversation_through_inbox':
-      return {
-        name: 'inbox_dashboard',
-        params: { inbox_id: route.params.inbox_id },
-      };
-    case 'communication_threads_dashboard':
-    case 'communication_thread_conversation':
-      return {
-        name: 'communication_threads_dashboard',
-        params: {},
-      };
-    case 'label_conversations':
-    case 'conversations_through_label':
-      return {
-        name: 'label_conversations',
-        params: { label: route.params.label },
-      };
-    case 'team_conversations':
-    case 'conversations_through_team':
-      return {
-        name: 'team_conversations',
-        params: { teamId: route.params.teamId },
-      };
-    case 'folder_conversations':
-    case 'conversations_through_folders':
-      return {
-        name: 'folder_conversations',
-        params: { id: route.params.id },
-      };
-    case INBOX_FLOW_ROUTE_NAMES.dialog.show: {
-      const selectedInboxId = Number(
-        route.params.inboxId || route.params.inbox_id
-      );
-
-      if (Number.isFinite(selectedInboxId) && selectedInboxId > 0) {
-        return {
-          name: 'inbox_dashboard',
-          params: { inbox_id: selectedInboxId },
-        };
-      }
-
-      return {
-        name: 'home',
-        params: {},
-      };
-    }
-    default:
-      return {
-        name: 'home',
-        params: {},
-      };
-  }
-});
-
 const inboxFlowRouteNames = computed(() =>
   conversationSidebarRoute.value
     ? INBOX_FLOW_ROUTE_NAMES.dialog
@@ -586,21 +507,32 @@ const withConversationStatus = (name, params = {}, queryOverrides = {}) =>
     conversationNavigationQuery(queryOverrides)
   );
 
-const withCurrentConversationScopeAssigneeType = assigneeType =>
+const exclusiveConversationScopeQuery = (overrides = {}) => ({
+  assignee_type: wootConstants.ASSIGNEE_TYPE.ALL,
+  crm_pipeline_id: undefined,
+  crm_stage_id: undefined,
+  appointment_status: undefined,
+  labels_scope: undefined,
+  team_scope: undefined,
+  ...overrides,
+});
+
+const accountWideConversationRouteName = computed(() =>
+  hasCommunicationThreads.value ? 'communication_threads_dashboard' : 'home'
+);
+
+const withAccountWideConversationScope = queryOverrides =>
   accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({
-      assignee_type: assigneeType,
-      crm_pipeline_id: undefined,
-      crm_stage_id: undefined,
-      appointment_status: undefined,
-      status: conversationListContextState(
-        uiSettings.value,
-        `assignee:${assigneeType}`
-      ).status,
-    })
+    accountWideConversationRouteName.value,
+    {},
+    conversationNavigationQuery(exclusiveConversationScopeQuery(queryOverrides))
   );
+
+const withCurrentConversationScopeAssigneeType = assigneeType =>
+  withAccountWideConversationScope({
+    assignee_type: assigneeType,
+    status: currentConversationStatus.value,
+  });
 
 const hasRouteLabelsScopeAny = () => {
   const labelsScope = route.query.labels_scope ?? route.query.labelsScope;
@@ -620,62 +552,31 @@ const hasRouteTeamScopeAny = () => {
 
 const withLabelsScopeToggle = () =>
   hasRouteLabelsScopeAny()
-    ? withConversationStatus('home', {}, { labels_scope: undefined })
-    : withConversationStatus(
-        'home',
-        {},
-        {
-          labels_scope: 'any',
-          team_scope: undefined,
-        }
-      );
+    ? withAccountWideConversationScope()
+    : withAccountWideConversationScope({
+        labels_scope: 'any',
+      });
 
 const withTeamScopeToggle = () =>
   hasRouteTeamScopeAny()
-    ? withConversationStatus('home', {}, { team_scope: undefined })
-    : withConversationStatus(
-        'home',
-        {},
-        {
-          labels_scope: undefined,
-          team_scope: 'any',
-        }
-      );
+    ? withAccountWideConversationScope()
+    : withAccountWideConversationScope({
+        team_scope: 'any',
+      });
 
 const withCurrentConversationScopeCrmStage = (pipelineId, stageId) =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({
-      crm_pipeline_id: pipelineId,
-      crm_stage_id: stageId,
-      appointment_status: undefined,
-      assignee_type: wootConstants.ASSIGNEE_TYPE.ALL,
-      status: conversationListContextState(
-        uiSettings.value,
-        `crm-stage:${stageId}`
-      ).status,
-    })
-  );
+  withAccountWideConversationScope({
+    crm_pipeline_id: pipelineId,
+    crm_stage_id: stageId,
+    status: currentConversationStatus.value,
+  });
 
 const withCurrentConversationScopeAppointmentStatus = status =>
-  accountScopedRoute(
-    resolveConversationRouteName(currentConversationScope.value.name),
-    currentConversationScope.value.params,
-    conversationNavigationQuery({
-      appointment_status:
-        currentAppointmentStatus.value === status ? undefined : status,
-      crm_pipeline_id: undefined,
-      crm_stage_id: undefined,
-      assignee_type: wootConstants.ASSIGNEE_TYPE.ALL,
-      status: conversationListContextState(
-        uiSettings.value,
-        currentAppointmentStatus.value === status
-          ? `assignee:${wootConstants.ASSIGNEE_TYPE.ALL}`
-          : `appointment:${status}`
-      ).status,
-    })
-  );
+  withAccountWideConversationScope({
+    appointment_status:
+      currentAppointmentStatus.value === status ? undefined : status,
+    status: currentConversationStatus.value,
+  });
 
 const appointmentStatusLabels = computed(() => ({
   cancelled: t('SCHEDULING.APPOINTMENT_STATUS.cancelled'),
@@ -1350,13 +1251,7 @@ const buildMyCompanySettingsMenuItems = () => {
           activeOn: ['outbound_whatsapp_templates_index'],
           to: accountScopedRoute('outbound_whatsapp_templates_index'),
         },
-        agentBots: {
-          name: 'Settings Agent Bots',
-          visibilityKey: 'Settings:AgentBots',
-          label: t('SIDEBAR.AGENT_BOTS'),
-          icon: 'i-lucide-webhook',
-          to: accountScopedRoute('agent_bots'),
-        },
+
         macros: {
           name: 'Settings Macros',
           visibilityKey: 'Settings:Macros',
@@ -1406,7 +1301,7 @@ const buildMyCompanySettingsMenuItems = () => {
     administratorItems.whatsAppTemplates,
     itemByName('Lead Forms'),
     administratorItems.integrations,
-    administratorItems.agentBots,
+
     settingsSection('Automation', 'SIDEBAR.SETTINGS_SECTIONS.AUTOMATION'),
     administratorItems.automation,
     settingsSection('Team', 'SIDEBAR.SETTINGS_SECTIONS.TEAM'),
@@ -1461,7 +1356,9 @@ const menuItems = computed(() => {
             ? 'communication_threads_dashboard'
             : 'home',
           {},
-          conversationNavigationQuery({ status: 'open' })
+          conversationNavigationQuery({
+            status: currentConversationStatus.value,
+          })
         ),
         actionItems: conversationSidebarActionItems.value,
         children: [
@@ -1477,9 +1374,11 @@ const menuItems = computed(() => {
             children: conversationCustomViews.value.map(view => ({
               name: `${view.name}-${view.id}`,
               label: view.name,
-              to: withConversationStatus('folder_conversations', {
-                id: view.id,
-              }),
+              to: withConversationStatus(
+                'folder_conversations',
+                { id: view.id },
+                exclusiveConversationScopeQuery()
+              ),
             })),
           },
           {
@@ -1502,8 +1401,7 @@ const menuItems = computed(() => {
                   teamId: team.id,
                 },
                 {
-                  labels_scope: undefined,
-                  team_scope: undefined,
+                  ...exclusiveConversationScopeQuery(),
                 }
               ),
             })),
@@ -1515,6 +1413,7 @@ const menuItems = computed(() => {
                   visibilityKey: 'Conversation:Labels',
                   label: t('SIDEBAR.LABELS'),
                   icon: 'i-lucide-tag',
+                  hideTopSeparator: true,
                   actionItems: labelSidebarActionItems.value,
                   active: hasRouteLabelsScopeAny(),
                   to: withLabelsScopeToggle(),
@@ -1525,15 +1424,11 @@ const menuItems = computed(() => {
                     ...labels.value.map(label => ({
                       name: `${label.title}-${label.id}`,
                       label: labelDisplayTitle(label),
-
-                      compactIconGap: labelMarkerType(label) === 'emoji',
-                      iconClass:
-                        labelMarkerType(label) === 'emoji' ? '!size-5' : '',
                       icon: h('span', {
                         class:
                           labelMarkerType(label) === 'emoji'
-                            ? 'text-xl leading-none'
-                            : 'size-3 rounded-sm',
+                            ? 'inline-flex size-[14px] items-center justify-center overflow-hidden text-sm leading-none'
+                            : 'size-2.5 rounded-sm',
                         style:
                           labelMarkerType(label) === 'emoji'
                             ? undefined
@@ -1549,8 +1444,7 @@ const menuItems = computed(() => {
                           label: label.title,
                         },
                         {
-                          labels_scope: undefined,
-                          team_scope: undefined,
+                          ...exclusiveConversationScopeQuery(),
                         }
                       ),
                     })),
@@ -1575,7 +1469,7 @@ const menuItems = computed(() => {
       {
         name: 'Captain',
         icon: 'i-woot-captain',
-        label: 'AI',
+        label: t('SIDEBAR.CAPTAIN'),
         defaultChildName: 'Profile',
         activeOn: ['captain_assistants_create_index'],
         children: [
@@ -1717,14 +1611,11 @@ const menuItems = computed(() => {
                   children: labels.value.map(label => ({
                     name: `${label.title}-${label.id}`,
                     label: labelDisplayTitle(label),
-                    compactIconGap: labelMarkerType(label) === 'emoji',
-                    iconClass:
-                      labelMarkerType(label) === 'emoji' ? '!size-5' : '',
                     icon: h('span', {
                       class:
                         labelMarkerType(label) === 'emoji'
-                          ? 'text-xl leading-none'
-                          : 'size-3 rounded-sm',
+                          ? 'inline-flex size-[14px] items-center justify-center overflow-hidden text-sm leading-none'
+                          : 'size-2.5 rounded-sm',
                       style:
                         labelMarkerType(label) === 'emoji'
                           ? undefined
@@ -1966,8 +1857,7 @@ const queryMatches = child => {
   const assigneeItemType = child?.name?.startsWith('Assignee:')
     ? child.name.split(':')[1]
     : null;
-  const routeAssigneeType =
-    route.query.assignee_type ?? route.query.assigneeType ?? 'me';
+  const routeAssigneeType = resolveRouteConversationAssigneeType(route.query);
 
   if (
     assigneeItemType &&
@@ -1978,6 +1868,10 @@ const queryMatches = child => {
   }
 
   return Object.entries(childQuery).every(([key, value]) => {
+    if (NON_ACTIVE_QUERY_KEYS.has(key) || typeof value === 'undefined') {
+      return true;
+    }
+
     let routeValue = route.query[key] ?? '';
 
     if (key === 'status') {
@@ -2039,10 +1933,13 @@ const matchesChildRoute = child => {
   return route.path.startsWith(resolvePath(child.to)) && queryMatches(child);
 };
 
-const activeChildNamesFor = item =>
-  navigableChildrenFor(item)
+const activeChildNamesFor = item => {
+  const matchingNames = navigableChildrenFor(item)
     .filter(matchesChildRoute)
     .map(child => child.name);
+
+  return selectExclusiveSidebarChildNames(matchingNames);
+};
 
 const hasSecondaryColumn = item => !!item?.children?.length;
 
@@ -2174,12 +2071,19 @@ const desktopSidebarWidth = computed(() => {
           class="flex flex-col gap-1 m-0 list-none min-w-0"
           :class="{ 'items-center': isEffectivelyCollapsed }"
         >
-          <SidebarGroup
-            v-for="item in primaryMenuItems"
-            :key="item.name"
-            v-bind="item"
-            :show-collapsed-popover="false"
-          />
+          <template v-for="item in primaryMenuItems" :key="item.name">
+            <SidebarNotificationBell
+              v-if="item.name === 'Inbox'"
+              :is-collapsed="false"
+              :label="item.label"
+              @open-notification-panel="openNotificationPanel"
+            />
+            <SidebarGroup
+              v-else
+              v-bind="item"
+              :show-collapsed-popover="false"
+            />
+          </template>
         </ul>
       </nav>
       <section
@@ -2219,9 +2123,9 @@ const desktopSidebarWidth = computed(() => {
             class="flex m-0 list-none"
             :class="{ 'justify-center': isEffectivelyCollapsed }"
           >
-            <SidebarGroup
-              v-bind="notificationMenuItem"
-              :show-collapsed-popover="false"
+            <SidebarNotificationBell
+              :label="notificationMenuItem.label"
+              @open-notification-panel="openNotificationPanel"
             />
           </ul>
         </div>
@@ -2231,6 +2135,10 @@ const desktopSidebarWidth = computed(() => {
       v-if="showDesktopSecondaryColumn"
       v-bind="selectedDesktopSidebarItem"
       :active-child-names="selectedDesktopSidebarActiveChildNames"
+    />
+    <NotificationPanel
+      ref="notificationPanelRef"
+      :sidebar-offset="notificationPanelOffset"
     />
     <Teleport to="body">
       <ComposeConversation

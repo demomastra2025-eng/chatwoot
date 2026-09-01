@@ -12,9 +12,10 @@ class CommunicationThreads::UpdateService
   end
 
   def perform
-    source_conversation = accessible_links.first&.conversation
+    source_conversation = linked_links.first&.conversation
     updated_thread = CommunicationThread.transaction do
-      sync_accessible_conversations!
+      sync_contact_owner!
+      sync_linked_conversations!
       refresh_communication_thread!
       communication_thread.reload
     end
@@ -27,10 +28,20 @@ class CommunicationThreads::UpdateService
 
   attr_reader :communication_thread, :current_account, :params, :accessible_links, :actor, :source
 
-  def sync_accessible_conversations!
-    accessible_links.each do |link|
+  def sync_linked_conversations!
+    linked_links.each do |link|
       sync_conversation!(link.conversation)
     end
+  end
+
+  def sync_contact_owner!
+    return unless params.key?(:assignee_id)
+
+    communication_thread.contact.update!(owner: human_assignee)
+  end
+
+  def linked_links
+    @linked_links ||= communication_thread.communication_thread_conversations.includes(:conversation)
   end
 
   def sync_conversation!(conversation)
@@ -55,7 +66,8 @@ class CommunicationThreads::UpdateService
       conversation: conversation,
       params: status_transition_params,
       actor: actor,
-      source: source
+      source: source,
+      aggregate: false
     ).perform
   end
 
@@ -68,17 +80,7 @@ class CommunicationThreads::UpdateService
   def assign_agent!(conversation)
     return unless params.key?(:assignee_id)
 
-    if agent_bot_assignment?
-      agent_bot = AgentBot.accessible_to(current_account).find_by(id: params[:assignee_id])
-      return if agent_bot.blank?
-
-      conversation.assignee = nil
-      conversation.assignee_agent_bot = agent_bot
-      return
-    end
-
     conversation.assignee = human_assignee
-    conversation.assignee_agent_bot = nil
   end
 
   def assign_team!(conversation)
@@ -113,10 +115,6 @@ class CommunicationThreads::UpdateService
     current_account.account_users.find_by(user_id: params[:assignee_id])&.user
   end
 
-  def agent_bot_assignment?
-    params[:assignee_type].to_s == 'AgentBot'
-  end
-
   def status_transition_params
     params.slice(:status, :status_reason, :snoozed_until)
   end
@@ -137,7 +135,7 @@ class CommunicationThreads::UpdateService
   end
 
   def refresh_communication_thread!
-    seed_conversation = accessible_links.first&.conversation
+    seed_conversation = linked_links.first&.conversation
     return unless seed_conversation
 
     # Resolver#lock! reloads its record. Use a separate instance so the saved

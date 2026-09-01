@@ -61,20 +61,24 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
       )
     end
 
-    it 'creates a task linked to explicit deal, conversation, assignee, team, and status' do
+    it 'inherits the team when creating a task linked to an explicit deal' do
       target_conversation = create(:conversation, account: account)
-      target_deal = create(:crm_deal, account: account, originating_conversation_id: target_conversation.id)
       status = create(:crm_task_status, account: account, name: 'Next', code: 'next', category: 'open')
       assignee = create(:user, account: account)
       team = create(:team, account: account)
+      target_deal = create(
+        :crm_deal,
+        account: account,
+        originating_conversation_id: target_conversation.id,
+        team: team
+      )
 
       service.execute(
         title: 'Prepare proposal',
         deal_id: target_deal.id,
         originating_conversation_id: target_conversation.display_id,
         status_id: status.id,
-        assignee_id: assignee.id,
-        team_id: team.id
+        assignee_id: assignee.id
       )
 
       task = account.crm_tasks.order(:id).last

@@ -529,7 +529,7 @@ RSpec.describe AutoAssignment::AssignmentService do
       it 'routes a known contact to the central contact owner even without sticky policy' do
         known_contact = create(:contact, account: account, owner: agent2)
         owner_conversation = create(:conversation, inbox: inbox, contact: known_contact, status: 'open', assignee: nil)
-        owner_conversation.update_columns(assignee_id: nil, assignee_agent_bot_id: nil) # rubocop:disable Rails/SkipsModelValidations
+        owner_conversation.update_columns(assignee_id: nil) # rubocop:disable Rails/SkipsModelValidations
 
         expect(round_robin_selector).not_to receive(:select_agent)
 
@@ -545,7 +545,7 @@ RSpec.describe AutoAssignment::AssignmentService do
         known_contact = create(:contact, account: account, owner: other_inbox_owner)
         other_conversation = create(:conversation, inbox: other_inbox, contact: known_contact, status: 'open', assignee: nil)
         current_inbox_conversation = create(:conversation, inbox: inbox, contact: known_contact, status: 'open', assignee: nil)
-        current_inbox_conversation.update_columns(assignee_id: nil, assignee_agent_bot_id: nil) # rubocop:disable Rails/SkipsModelValidations
+        current_inbox_conversation.update_columns(assignee_id: nil) # rubocop:disable Rails/SkipsModelValidations
 
         allow(round_robin_selector).to receive(:select_agent).and_return(agent)
 

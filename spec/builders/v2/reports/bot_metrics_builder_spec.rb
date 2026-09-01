@@ -11,7 +11,7 @@ RSpec.describe V2::Reports::BotMetricsBuilder do
   let(:params) { { since: since, until: until_time } }
 
   before do
-    create(:agent_bot_inbox, inbox: inbox)
+    create(:integrations_hook, :dialogflow, inbox: inbox, account: inbox.account)
     create(:message, account: inbox.account, conversation: resolved_conversation, created_at: 2.days.ago, message_type: 'outgoing')
     create(:reporting_event, account_id: inbox.account.id, name: 'conversation_bot_resolved', conversation_id: resolved_conversation.id,
                              created_at: 2.days.ago)

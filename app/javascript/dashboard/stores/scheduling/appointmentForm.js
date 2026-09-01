@@ -150,6 +150,7 @@ const createDefaultForm = () => ({
   source: 'manual',
   startsAt: '',
   status: 'scheduled',
+  title: '',
 });
 
 export const useSchedulingAppointmentFormStore = defineStore(
@@ -172,6 +173,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
       selectedContact: null,
       selectedAppointment: null,
       ui: {
+        contactSearchRequestId: 0,
         error: null,
         isCreatingContact: false,
         isLoadingContacts: false,
@@ -199,6 +201,11 @@ export const useSchedulingAppointmentFormStore = defineStore(
           state.requirements.medelementIdentityRequired &&
           !state.form.clientLastName?.trim()
             ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
+            : '',
+        clientMiddleName:
+          state.requirements.medelementIdentityRequired &&
+          !state.form.clientMiddleName?.trim()
+            ? 'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_MIDDLE_NAME_REQUIRED'
             : '',
         contactId:
           state.requirements.contactRequired && !state.form.contactId
@@ -298,6 +305,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
           source: appointment.source || 'manual',
           startsAt: toDateTimeInputValue(appointment.startsAt),
           status: appointment.status || 'scheduled',
+          title: appointment.title || '',
         };
         this.form = normalizePrepaymentForm(this.form);
       },
@@ -416,6 +424,8 @@ export const useSchedulingAppointmentFormStore = defineStore(
       },
 
       async searchContacts(query) {
+        this.ui.contactSearchRequestId += 1;
+        const requestId = this.ui.contactSearchRequestId;
         this.ui.isLoadingContacts = true;
 
         try {
@@ -423,14 +433,24 @@ export const useSchedulingAppointmentFormStore = defineStore(
             limit: 20,
             search: query,
           });
+          if (requestId !== this.ui.contactSearchRequestId) {
+            return this.contacts;
+          }
+
           this.contacts = normalizePayload(data);
           this.contactsMeta = normalizeMeta(data);
           return this.contacts;
         } catch (error) {
+          if (requestId !== this.ui.contactSearchRequestId) {
+            return this.contacts;
+          }
+
           this.ui.error = extractSchedulingError(error);
           throw error;
         } finally {
-          this.ui.isLoadingContacts = false;
+          if (requestId === this.ui.contactSearchRequestId) {
+            this.ui.isLoadingContacts = false;
+          }
         }
       },
 
@@ -561,6 +581,7 @@ export const useSchedulingAppointmentFormStore = defineStore(
         if (!hasSelectedService) {
           payload.service_ids = [];
         }
+        payload.title = normalizedForm.title?.trim() || null;
         if (normalizedForm.clientNameStructured) {
           payload.client_last_name =
             normalizedForm.clientLastName?.trim() || null;

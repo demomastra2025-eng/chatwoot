@@ -263,20 +263,59 @@ describe('useSchedulingAppointmentFormStore', () => {
     expect(store.validationErrors.clientPhone).toBe('');
   });
 
-  it('requires a last name only for MedElement appointments', () => {
+  it('requires last and middle names only for MedElement appointments', () => {
     const store = useSchedulingAppointmentFormStore();
 
     store.openCreate();
     store.updateField('clientFirstName', 'Айжан');
     expect(store.validationErrors.clientLastName).toBe('');
+    expect(store.validationErrors.clientMiddleName).toBe('');
 
     store.setRequirements({ medelementIdentityRequired: true });
     expect(store.validationErrors.clientLastName).toBe(
       'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_LAST_NAME_REQUIRED'
     );
+    expect(store.validationErrors.clientMiddleName).toBe(
+      'SCHEDULING.APPOINTMENT_FORM.ERRORS.MEDELEMENT_MIDDLE_NAME_REQUIRED'
+    );
 
     store.updateField('clientLastName', 'Касымова');
+    store.updateField('clientMiddleName', 'Ерлановна');
     expect(store.validationErrors.clientLastName).toBe('');
+    expect(store.validationErrors.clientMiddleName).toBe('');
+  });
+
+  it('keeps the latest contact search results when responses arrive out of order', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    let resolveFirstSearch;
+    let resolveSecondSearch;
+    SchedulingContactsAPI.get
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveFirstSearch = resolve;
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveSecondSearch = resolve;
+          })
+      );
+
+    const firstSearch = store.searchContacts('Иван');
+    const secondSearch = store.searchContacts('Иванов Иван');
+    resolveSecondSearch({
+      data: { payload: [{ id: 2, full_name: 'Иван Иванов' }] },
+    });
+    await secondSearch;
+    resolveFirstSearch({
+      data: { payload: [{ id: 1, full_name: 'Старый результат' }] },
+    });
+    await firstSearch;
+
+    expect(store.contacts).toEqual([{ id: 2, fullName: 'Иван Иванов' }]);
+    expect(store.ui.isLoadingContacts).toBe(false);
   });
 
   it('requires a selected service only for MedElement appointments', () => {
@@ -315,6 +354,26 @@ describe('useSchedulingAppointmentFormStore', () => {
       client_middle_name: 'Ерлановна',
       client_name: 'Айжан Касымова Ерлановна',
     });
+  });
+
+  it('preserves an optional appointment title and allows clearing it', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openEdit({
+      clientName: 'Айжан Касымова',
+      endsAt: '2026-03-09T10:30:00.000Z',
+      id: 11,
+      resourceId: 3,
+      startsAt: '2026-03-09T10:00:00.000Z',
+      title: 'Обсуждение договора',
+    });
+
+    expect(store.form.title).toBe('Обсуждение договора');
+    expect(store.buildPayload().title).toBe('Обсуждение договора');
+
+    store.updateField('title', '   ');
+    expect(store.validationErrors).not.toHaveProperty('title');
+    expect(store.buildPayload().title).toBeNull();
   });
 
   it('preserves legacy client names without promoting them to structured provider identity', () => {

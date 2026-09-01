@@ -18,15 +18,11 @@ const mountComponent = props =>
       hasAppliedFilters: false,
       hasActiveFolders: false,
       isOnExpandedLayout: false,
-      conversationStats: { allCount: 12 },
-      isListLoading: false,
       showStatusFilter: false,
       ...props,
     },
     global: {
-      mocks: {
-        $t: key => key,
-      },
+      mocks: { $t: key => key },
       stubs: {
         ConversationBasicFilter: true,
         ConversationLocalSearch: true,

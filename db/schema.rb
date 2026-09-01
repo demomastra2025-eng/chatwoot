@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -30,6 +30,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "updated_at", null: false
     t.index ["owner_type", "owner_id"], name: "index_access_tokens_on_owner_type_and_owner_id"
     t.index ["token"], name: "index_access_tokens_on_token", unique: true
+    t.check_constraint "owner_type::text IS DISTINCT FROM 'AgentBot'::text", name: "access_tokens_agent_bot_owner_retired"
   end
 
   create_table "account_saml_settings", force: :cascade do |t|
@@ -42,6 +43,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_account_saml_settings_on_account_id"
+    t.check_constraint "false", name: "account_saml_settings_retired"
   end
 
   create_table "account_user_lifecycle_snapshots", force: :cascade do |t|
@@ -100,6 +102,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.jsonb "internal_attributes", default: {}, null: false
     t.jsonb "settings", default: {}
     t.jsonb "feature_flags_overflow", default: [], null: false
+    t.bigint "billing_organization_id"
+    t.index ["billing_organization_id"], name: "index_accounts_on_billing_organization_id"
     t.index ["status"], name: "index_accounts_on_status"
   end
 
@@ -120,6 +124,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "created_at", precision: nil, null: false
     t.index ["blob_id"], name: "index_active_storage_attachments_on_blob_id"
     t.index ["record_type", "record_id", "name", "blob_id"], name: "index_active_storage_attachments_uniqueness", unique: true
+    t.check_constraint "record_type::text IS DISTINCT FROM 'AgentBot'::text", name: "attachments_agent_bot_record_retired"
   end
 
   create_table "active_storage_blobs", force: :cascade do |t|
@@ -147,6 +152,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "account_id"
+    t.check_constraint "false", name: "agent_bot_inboxes_retired"
   end
 
   create_table "agent_bots", force: :cascade do |t|
@@ -160,6 +166,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.jsonb "bot_config", default: {}
     t.string "secret"
     t.index ["account_id"], name: "index_agent_bots_on_account_id"
+    t.check_constraint "false", name: "agent_bots_retired"
   end
 
   create_table "agent_capacity_policies", force: :cascade do |t|
@@ -353,7 +360,15 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "updated_at", null: false
     t.boolean "active", default: true, null: false
     t.jsonb "execution_schedule", default: {}, null: false
+    t.bigint "lifecycle_generation", default: 1, null: false
     t.index ["account_id"], name: "index_automation_rules_on_account_id"
+  end
+
+  create_table "billing_organizations", force: :cascade do |t|
+    t.string "name", null: false
+    t.integer "status", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
   end
 
   create_table "bulk_action_runs", force: :cascade do |t|
@@ -874,6 +889,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["account_id", "profile_urn"], name: "index_channel_linkedin_personal_on_account_id_and_profile_urn", unique: true
     t.index ["account_id"], name: "index_channel_linkedin_personal_on_account_id"
     t.index ["webhook_identifier"], name: "index_channel_linkedin_personal_on_webhook_identifier", unique: true
+    t.check_constraint "false", name: "channel_linkedin_personal_retired"
   end
 
   create_table "channel_sms", force: :cascade do |t|
@@ -1097,6 +1113,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "updated_at", null: false
     t.datetime "session_started_at"
     t.index ["account_id", "contact_id", "status"], name: "idx_communication_threads_account_contact_status"
+    t.index ["account_id", "contact_id"], name: "idx_communication_threads_one_per_contact", unique: true
     t.index ["account_id", "display_id"], name: "idx_communication_threads_account_display", unique: true
     t.index ["account_id", "last_activity_at"], name: "idx_communication_threads_account_activity"
     t.index ["account_id"], name: "index_communication_threads_on_account_id"
@@ -1313,6 +1330,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["team_id"], name: "index_conversations_on_team_id"
     t.index ["uuid"], name: "index_conversations_on_uuid", unique: true
     t.index ["waiting_since"], name: "index_conversations_on_waiting_since"
+    t.check_constraint "assignee_agent_bot_id IS NULL", name: "conversations_agent_bot_assignment_retired"
   end
 
   create_table "copilot_messages", force: :cascade do |t|
@@ -1701,10 +1719,12 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.string "business_name"
     t.jsonb "csat_config", default: {}, null: false
     t.datetime "deleting_at"
+    t.boolean "inherit_working_hours_from_account", default: false, null: false
     t.index ["account_id", "deleting_at"], name: "index_inboxes_on_account_id_and_deleting_at"
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["channel_id", "channel_type"], name: "index_inboxes_on_channel_id_and_channel_type"
     t.index ["portal_id"], name: "index_inboxes_on_portal_id"
+    t.check_constraint "channel_type::text IS DISTINCT FROM 'Channel::LinkedinPersonal'::text", name: "inboxes_linkedin_personal_retired"
   end
 
   create_table "installation_configs", force: :cascade do |t|
@@ -1923,7 +1943,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["account_id", "created_at"], name: "index_llm_eval_runs_on_account_id_and_created_at"
     t.index ["account_id", "status"], name: "index_llm_eval_runs_on_account_id_and_status"
     t.index ["account_id"], name: "index_llm_eval_runs_on_account_id"
-    t.index ["account_id"], name: "index_llm_eval_runs_one_active_live_per_account", unique: true, where: "(((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying])::text[])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))"
+    t.index ["account_id"], name: "index_llm_eval_runs_one_active_live_per_account", unique: true, where: "(((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text])) AND ((metadata ->> 'queued_llm_model_run'::text) = 'true'::text))"
     t.index ["user_id"], name: "index_llm_eval_runs_on_user_id"
   end
 
@@ -2126,8 +2146,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "executed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying])::text[])))"
-    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying])::text[])))"
+    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text])))"
+    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY (ARRAY[('create_patient'::character varying)::text, ('update_patient'::character varying)::text])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text])))"
     t.index ["account_id", "idempotency_key"], name: "idx_medelement_commands_account_idempotency", unique: true
     t.index ["account_id"], name: "index_medelement_provider_commands_on_account_id"
     t.index ["appointment_id", "status"], name: "idx_medelement_commands_appointment_status"
@@ -2188,9 +2208,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "status"], name: "idx_medelement_sync_runs_account_status"
     t.index ["account_id"], name: "index_medelement_sync_runs_on_account_id"
-    t.index ["completed_at"], name: "idx_medelement_sync_runs_terminal_completed", where: "((status)::text = ANY ((ARRAY['succeeded'::character varying, 'partial'::character varying, 'failed'::character varying])::text[]))"
+    t.index ["completed_at"], name: "idx_medelement_sync_runs_terminal_completed", where: "((status)::text = ANY (ARRAY[('succeeded'::character varying)::text, ('partial'::character varying)::text, ('failed'::character varying)::text]))"
     t.index ["hook_id", "created_at"], name: "idx_medelement_sync_runs_hook_created"
-    t.index ["hook_id"], name: "idx_medelement_sync_runs_one_active_hook", unique: true, where: "((hook_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'running'::character varying, 'retrying'::character varying])::text[])))"
+    t.index ["hook_id"], name: "idx_medelement_sync_runs_one_active_hook", unique: true, where: "((hook_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('retrying'::character varying)::text])))"
     t.index ["hook_id"], name: "index_medelement_sync_runs_on_hook_id"
     t.index ["requested_by_id"], name: "index_medelement_sync_runs_on_requested_by_id"
   end
@@ -2240,6 +2260,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["inbox_id"], name: "index_messages_on_inbox_id"
     t.index ["sender_type", "sender_id"], name: "index_messages_on_sender_type_and_sender_id"
     t.index ["source_id"], name: "index_messages_on_source_id"
+    t.check_constraint "sender_type::text IS DISTINCT FROM 'AgentBot'::text", name: "messages_agent_bot_sender_retired"
   end
 
   create_table "meta_ad_referrals", force: :cascade do |t|
@@ -2414,6 +2435,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["permissible_type", "permissible_id"], name: "index_platform_app_permissibles_on_permissibles"
     t.index ["platform_app_id", "permissible_id", "permissible_type"], name: "unique_permissibles_index", unique: true
     t.index ["platform_app_id"], name: "index_platform_app_permissibles_on_platform_app_id"
+    t.check_constraint "permissible_type::text IS DISTINCT FROM 'AgentBot'::text", name: "platform_permissions_agent_bot_retired"
   end
 
   create_table "platform_apps", force: :cascade do |t|
@@ -2512,7 +2534,6 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.jsonb "template_params", default: {}, null: false
     t.jsonb "metadata", default: {}, null: false
     t.string "fingerprint"
-    t.string "idempotency_key"
     t.boolean "auto_cancel_on_incoming", default: false, null: false
     t.integer "attempts_count", default: 0, null: false
     t.text "last_error"
@@ -2531,6 +2552,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.string "post_delivery_action"
     t.string "response_action"
     t.integer "response_button_index"
+    t.string "idempotency_key"
     t.index ["account_id", "fingerprint"], name: "idx_reminders_on_account_fingerprint"
     t.index ["account_id", "idempotency_key"], name: "idx_reminders_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "owner_id", "scheduled_at"], name: "idx_reminders_on_account_owner_scheduled"
@@ -2629,6 +2651,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.string "client_first_name"
     t.string "client_last_name"
     t.string "client_middle_name"
+    t.string "title"
     t.index ["account_id", "external_ref"], name: "idx_scheduling_appointments_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "idx_scheduling_appointments_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "resource_id", "starts_at", "ends_at"], name: "idx_scheduling_appointments_on_account_resource_range"
@@ -3226,9 +3249,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.datetime "updated_at", null: false
     t.bigint "automation_rule_id"
     t.string "source_action_id"
-    t.index ["account_id", "automation_rule_id", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action", unique: true, where: "(((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))"
+    t.bigint "source_generation", default: 1
+    t.index ["account_id", "automation_rule_id", "source_generation", "source_action_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_action_generation", unique: true, where: "(((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('completed'::character varying)::text])) AND (automation_rule_id IS NOT NULL))"
     t.index ["account_id", "idempotency_key"], name: "idx_touch_plan_enrollments_on_account_idempotency", unique: true
-    t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))"
+    t.index ["account_id", "reminder_group_id", "remindable_type", "remindable_id"], name: "idx_touch_plan_enrollments_one_open_plan", unique: true, where: "((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text]))"
     t.index ["account_id"], name: "index_touch_plan_enrollments_on_account_id"
     t.index ["automation_rule_id"], name: "index_touch_plan_enrollments_on_automation_rule_id"
     t.index ["remindable_type", "remindable_id", "status"], name: "idx_touch_plan_enrollments_on_remindable_status"
@@ -3281,6 +3305,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["pubsub_token"], name: "index_users_on_pubsub_token", unique: true
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
     t.index ["uid", "provider"], name: "index_users_on_uid_and_provider", unique: true
+    t.check_constraint "provider::text IS DISTINCT FROM 'saml'::text", name: "users_saml_provider_retired"
   end
 
   create_table "webhooks", force: :cascade do |t|
@@ -3441,6 +3466,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.index ["retain_until"], name: "index_whatsapp_webhook_events_on_retain_until"
     t.index ["status", "next_retry_at"], name: "idx_wa_webhook_events_retry"
   end
+
   create_table "whatsapp_webhook_routes", force: :cascade do |t|
     t.string "waba_id", null: false
     t.string "phone_number_id", null: false
@@ -3450,7 +3476,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
     t.string "registration_token", limit: 36
     t.index ["waba_id", "phone_number_id", "destination"], name: "idx_whatsapp_webhook_routes_exact", unique: true
     t.index ["waba_id"], name: "idx_whatsapp_webhook_routes_waba"
-    t.check_constraint "destination::text = ANY (ARRAY['dev'::character varying, 'widget'::character varying]::text[])", name: "chk_whatsapp_webhook_routes_destination"
+    t.check_constraint "destination::text = ANY (ARRAY['dev'::character varying::text, 'widget'::character varying::text])", name: "chk_whatsapp_webhook_routes_destination"
     t.check_constraint "phone_number_id::text ~ '^[0-9]+$'::text", name: "chk_whatsapp_webhook_routes_phone_digits"
     t.check_constraint "waba_id::text ~ '^[0-9]+$'::text", name: "chk_whatsapp_webhook_routes_waba_digits"
   end
@@ -3474,6 +3500,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_08_31_121000) do
   add_foreign_key "account_user_lifecycle_snapshots", "accounts", on_delete: :cascade
   add_foreign_key "account_user_lifecycle_snapshots", "users", column: "deactivated_by_id", on_delete: :nullify
   add_foreign_key "account_user_lifecycle_snapshots", "users", on_delete: :cascade
+  add_foreign_key "accounts", "billing_organizations"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "assignment_client_ownerships", "accounts", name: "fk_rails_assignment_client_ownerships_account"
@@ -3729,6 +3756,17 @@ $function$
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute("CREATE TRIGGER accounts_after_insert_row_tr AFTER INSERT ON \"accounts\" FOR EACH ROW EXECUTE FUNCTION accounts_after_insert_row_tr()")
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute(<<-SQL)
+CREATE OR REPLACE FUNCTION public.bump_automation_rule_lifecycle_generation()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$ BEGIN IF OLD.active = FALSE AND NEW.active = TRUE AND NEW.lifecycle_generation <= OLD.lifecycle_generation THEN NEW.lifecycle_generation := OLD.lifecycle_generation + 1; END IF; RETURN NEW; END; $function$
+  SQL
+
+  # no candidate create_trigger statement could be found, creating an adapter-specific one
+  execute("CREATE TRIGGER bump_automation_rule_lifecycle_generation BEFORE UPDATE ON \"automation_rules\" FOR EACH ROW EXECUTE FUNCTION bump_automation_rule_lifecycle_generation()")
 
   # no candidate create_trigger statement could be found, creating an adapter-specific one
   execute(<<-SQL)

@@ -14,7 +14,7 @@ class Reminders::EnrollmentDefinitionResolver
   def source_available?
     return enrollment.reminder_group.present? if enrollment.reminder_group_id.present?
 
-    automation_rule&.active? && automation_action.present?
+    automation_rule&.active? && source_generation_current? && automation_action.present?
   end
 
   def source_revision
@@ -64,5 +64,9 @@ class Reminders::EnrollmentDefinitionResolver
     @automation_action = Array(automation_rule&.actions).find do |action|
       action['action_id'].to_s == enrollment.source_action_id.to_s && action['action_name'].to_s == 'create_touch'
     end
+  end
+
+  def source_generation_current?
+    enrollment.source_generation == automation_rule&.lifecycle_generation
   end
 end

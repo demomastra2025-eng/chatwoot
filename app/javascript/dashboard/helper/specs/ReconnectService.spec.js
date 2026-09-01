@@ -48,6 +48,10 @@ describe('ReconnectService', () => {
   let reconnectService;
 
   beforeEach(() => {
+    routerMock.currentRoute.value = {
+      name: '',
+      params: { conversation_id: null, communication_thread_id: null },
+    };
     window.addEventListener = vi.fn();
     window.removeEventListener = vi.fn();
     document.addEventListener = vi.fn();
@@ -173,6 +177,19 @@ describe('ReconnectService', () => {
       expect(storeMock.dispatch).toHaveBeenCalledWith('fetchAllConversations');
     });
 
+    it('should refresh communication threads on the thread workspace route', async () => {
+      routerMock.currentRoute.value.name = 'communication_threads_dashboard';
+
+      await reconnectService.fetchConversations();
+
+      expect(storeMock.dispatch).toHaveBeenCalledWith(
+        'fetchCommunicationThreads'
+      );
+      expect(storeMock.dispatch).not.toHaveBeenCalledWith(
+        'fetchAllConversations'
+      );
+    });
+
     it('should dispatch updateChatListFilters and reset updatedWithin', async () => {
       reconnectService.getSecondsSinceDisconnect = vi.fn().mockReturnValue(100);
       await reconnectService.fetchConversations();
@@ -189,6 +206,22 @@ describe('ReconnectService', () => {
       expect(storeMock.dispatch).toHaveBeenCalledWith(
         'fetchFilteredConversations',
         { queryData: payload, page: 1 }
+      );
+    });
+
+    it('should preserve communication thread mode for filtered reconnects', async () => {
+      routerMock.currentRoute.value.name = 'communication_thread_conversation';
+      const payload = { payload: [{ attribute_key: 'status' }] };
+
+      await reconnectService.fetchFilteredOrSavedConversations(payload);
+
+      expect(storeMock.dispatch).toHaveBeenCalledWith(
+        'fetchFilteredConversations',
+        {
+          queryData: payload,
+          page: 1,
+          communicationThreadMode: true,
+        }
       );
     });
   });
@@ -253,6 +286,23 @@ describe('ReconnectService', () => {
       expect(storeMock.dispatch).toHaveBeenCalledWith(
         'syncActiveConversationMessages',
         { conversationId: 1 }
+      );
+    });
+
+    it('should sync the typed communication thread target after reconnect', async () => {
+      routerMock.currentRoute.value = {
+        name: 'communication_thread_conversation',
+        params: { communication_thread_id: '42' },
+      };
+
+      await reconnectService.fetchConversationMessagesOnReconnect();
+
+      expect(storeMock.dispatch).toHaveBeenCalledWith(
+        'syncActiveConversationMessages',
+        {
+          conversationId: 42,
+          conversationType: 'communication_thread',
+        }
       );
     });
 

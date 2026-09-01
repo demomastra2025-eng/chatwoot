@@ -63,8 +63,7 @@ export default {
 
       return (
         !this.isSenderExist(this.sender) ||
-        (['agent_bot', 'captain_assistant'].includes(senderType) &&
-          !this.sender?.avatar_url)
+        (senderType === 'captain_assistant' && !this.sender?.avatar_url)
       );
     },
     displayAvatarUrl() {

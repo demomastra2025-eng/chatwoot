@@ -2,18 +2,19 @@
 #
 # Table name: communication_threads
 #
-#  id               :bigint           not null, primary key
-#  last_activity_at :datetime
-#  priority         :integer
-#  status           :integer          default("open"), not null
-#  unread_count     :integer          default(0), not null
-#  created_at       :datetime         not null
-#  updated_at       :datetime         not null
-#  account_id       :bigint           not null
-#  assignee_id      :bigint
-#  contact_id       :bigint           not null
-#  display_id       :bigint           not null
-#  team_id          :bigint
+#  id                 :bigint           not null, primary key
+#  last_activity_at   :datetime
+#  priority           :integer
+#  session_started_at :datetime
+#  status             :integer          default("open"), not null
+#  unread_count       :integer          default(0), not null
+#  created_at         :datetime         not null
+#  updated_at         :datetime         not null
+#  account_id         :bigint           not null
+#  assignee_id        :bigint
+#  contact_id         :bigint           not null
+#  display_id         :bigint           not null
+#  team_id            :bigint
 #
 # Indexes
 #

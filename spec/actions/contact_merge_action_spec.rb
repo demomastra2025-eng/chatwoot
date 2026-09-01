@@ -65,6 +65,19 @@ describe ContactMergeAction do
       end
     end
 
+    context 'when both contacts have identities in the same inbox' do
+      it 'moves distinct source identities without violating the inbox/source unique index' do
+        shared_inbox = create(:inbox, account: account)
+        target_contact_inbox = create(:contact_inbox, contact: base_contact, inbox: shared_inbox, source_id: 'target-source')
+        source_contact_inbox = create(:contact_inbox, contact: mergee_contact, inbox: shared_inbox, source_id: 'source-source')
+
+        contact_merge
+
+        expect(target_contact_inbox.reload.contact).to eq(base_contact)
+        expect(source_contact_inbox.reload.contact).to eq(base_contact)
+      end
+    end
+
     context 'when mergee contact has communication threads' do
       it 'moves the communication threads to base contact' do
         thread = create(:communication_thread, account: account, contact: mergee_contact)
@@ -73,6 +86,43 @@ describe ContactMergeAction do
 
         expect(thread.reload.contact_id).to eq(base_contact.id)
         expect(CommunicationThread.exists?(thread.id)).to be true
+      end
+
+      it 'keeps the target thread and applies target owner and routing to every projection', :aggregate_failures do
+        owner = create(:user, account: account)
+        source_owner = create(:user, account: account)
+        team = create(:team, account: account)
+        create(:team_member, team: team, user: owner)
+        base_contact.update!(owner: owner)
+        mergee_contact.update!(owner: source_owner)
+        base_thread = create(:communication_thread, account: account, contact: base_contact, team: team, status: :pending, priority: :high)
+        source_thread = create(:communication_thread, account: account, contact: mergee_contact)
+        base_conversation = base_contact.conversations.first
+        source_conversation = mergee_contact.conversations.first
+        create(:communication_thread_conversation, communication_thread: base_thread, conversation: base_conversation, account: account)
+        create(:communication_thread_conversation, communication_thread: source_thread, conversation: source_conversation, account: account)
+
+        contact_merge
+
+        expect(base_contact.reload.owner).to eq(owner)
+        expect(base_contact.communication_threads.reload).to contain_exactly(base_thread)
+        expect(CommunicationThread.exists?(source_thread.id)).to be false
+        expect(base_thread.reload).to have_attributes(assignee_id: owner.id, team_id: team.id, status: 'pending', priority: 'high')
+        expect(base_thread.conversations.reload.count).to eq(base_contact.conversations.reload.count)
+        expect(base_contact.conversations.reload.pluck(:assignee_id).uniq).to eq([owner.id])
+        expect(base_contact.conversations.reload.pluck(:team_id).uniq).to eq([team.id])
+        expect(base_contact.conversations.reload.pluck(:status).uniq).to eq(['pending'])
+        expect(base_contact.conversations.reload.pluck(:priority).uniq).to eq(['high'])
+      end
+
+      it 'inherits the source owner when the target contact is unassigned' do
+        source_owner = create(:user, account: account)
+        mergee_contact.update!(owner: source_owner)
+        create(:communication_thread, account: account, contact: mergee_contact)
+
+        contact_merge
+
+        expect(base_contact.reload.owner).to eq(source_owner)
       end
     end
 

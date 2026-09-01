@@ -474,6 +474,27 @@ RSpec.describe Llm::Monitoring::EventRecorder do
       )
     end
 
+    it 'persists mirrored runtime telemetry without counting it as provider usage' do
+      expect do
+        described_class.record_notification(
+          event_name: 'llm.chat.complete',
+          started_at: Time.current,
+          finished_at: Time.current,
+          payload: {
+            'account_id' => account.id,
+            'feature' => 'assistant',
+            'provider' => 'openrouter',
+            'model' => 'openai/gpt-4o',
+            'prompt_tokens' => 100,
+            'completion_tokens' => 25,
+            'usage_counted' => false
+          }
+        )
+      end.to change(LlmEvent, :count).by(1).and not_change(LlmUsageEvent, :count)
+
+      expect(LlmEvent.order(:id).last.payload).to include('usage_counted' => false)
+    end
+
     it 'persists budget warning events without creating usage ledger rows' do
       expect do
         described_class.record_notification(

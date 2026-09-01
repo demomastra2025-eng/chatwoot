@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { formatNumber } from '@chatwoot/utils';
 import wootConstants from 'dashboard/constants/globals';
 
 import ConversationBasicFilter from './widgets/conversation/ConversationBasicFilter.vue';
@@ -16,13 +15,10 @@ const props = defineProps({
   hasAppliedFilters: { type: Boolean, required: true },
   hasActiveFolders: { type: Boolean, required: true },
   isOnExpandedLayout: { type: Boolean, required: true },
-  conversationStats: { type: Object, required: true },
-  isListLoading: { type: Boolean, required: true },
   activeUnreadOnly: { type: Boolean, default: false },
   activeStatus: { type: String, default: 'open' },
   showStatusFilter: { type: Boolean, default: false },
   showAiStatus: { type: Boolean, default: false },
-  searchResultCount: { type: Number, default: null },
 });
 
 const emit = defineEmits([
@@ -51,8 +47,6 @@ const hasAppliedFiltersOrActiveFolders = computed(() => {
   return props.hasAppliedFilters || props.hasActiveFolders;
 });
 
-const allCount = computed(() => props.conversationStats?.allCount || 0);
-const formattedAllCount = computed(() => formatNumber(allCount.value));
 const unreadFilterTooltip = computed(() =>
   props.activeUnreadOnly
     ? t('CONVERSATION.UNREAD_FILTER.SHOW_ALL')
@@ -89,33 +83,13 @@ const toggleConversationLayout = () => {
         :show-ai="showAiStatus"
         @update:model-value="emit('statusFilterChange', $event)"
       />
-      <template v-else>
-        <h1
-          class="truncate text-base font-medium text-n-slate-12"
-          :title="pageTitle"
-        >
-          {{ pageTitle }}
-        </h1>
-        <span
-          v-if="
-            allCount > 0 && hasAppliedFiltersOrActiveFolders && !isListLoading
-          "
-          class="mx-1 my-0.5 shrink-0 rounded-md bg-n-slate-3 px-2 py-1 text-xxs capitalize text-n-slate-12"
-          :title="allCount"
-        >
-          {{ formattedAllCount }}
-        </span>
-        <span
-          v-if="searchResultCount !== null && !isListLoading"
-          class="mx-1 shrink-0 text-xs text-n-slate-10"
-        >
-          {{
-            $t('CHAT_LIST.LOCAL_SEARCH.RESULT_COUNT', {
-              count: searchResultCount,
-            })
-          }}
-        </span>
-      </template>
+      <h1
+        v-else
+        class="truncate text-base font-medium text-n-slate-12"
+        :title="pageTitle"
+      >
+        {{ pageTitle }}
+      </h1>
     </div>
     <div class="flex shrink-0 items-center gap-1">
       <NextButton

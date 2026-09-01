@@ -27,22 +27,6 @@
   delete:
     $ref: ./platform/account_users/delete.yml
 
-# AgentBots
-
-/platform/api/v1/agent_bots:
-  get:
-    $ref: ./platform/agent_bots/index.yml
-  post:
-    $ref: ./platform/agent_bots/create.yml
-/platform/api/v1/agent_bots/{id}:
-  parameters:
-    - $ref: '#/components/parameters/agent_bot_id'
-  get:
-    $ref: './platform/agent_bots/show.yml'
-  patch:
-    $ref: ./platform/agent_bots/update.yml
-  delete:
-    $ref: ./platform/agent_bots/delete.yml
 
 # Users
 
@@ -2381,24 +2365,6 @@ x-scheduling-expense-schema: &scheduling_expense_schema
   get:
     $ref: ./application/audit_logs/index.yml
 
-# AgentBots
-/api/v1/accounts/{account_id}/agent_bots:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-  get:
-    $ref: ./application/agent_bots/index.yml
-  post:
-    $ref: ./application/agent_bots/create.yml
-/api/v1/accounts/{account_id}/agent_bots/{id}:
-  parameters:
-    - $ref: '#/components/parameters/account_id'
-    - $ref: '#/components/parameters/agent_bot_id'
-  get:
-    $ref: './application/agent_bots/show.yml'
-  patch:
-    $ref: ./application/agent_bots/update.yml
-  delete:
-    $ref: ./application/agent_bots/delete.yml
 
 # Agents
 /api/v1/accounts/{account_id}/agents:
@@ -2621,10 +2587,7 @@ x-scheduling-expense-schema: &scheduling_expense_schema
   $ref: ./application/inboxes/index.yml
 /api/v1/accounts/{account_id}/inboxes/{id}:
   $ref: ./application/inboxes/update.yml
-/api/v1/accounts/{account_id}/inboxes/{id}/agent_bot:
-  $ref: ./application/inboxes/get_agent_bot.yml
-/api/v1/accounts/{account_id}/inboxes/{id}/set_agent_bot:
-  $ref: ./application/inboxes/set_agent_bot.yml
+
 /api/v1/accounts/{account_id}/inboxes/{id}/refresh_whatsapp_web_qr:
   $ref: ./application/inboxes/refresh_whatsapp_web_qr.yml
 /api/v1/accounts/{account_id}/inboxes/{id}/reconnect_whatsapp_web:

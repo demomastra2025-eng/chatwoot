@@ -9,9 +9,14 @@
       "NO_SPECIALIST_SERVICES": "Таңдалған маманға MedElement қызметтері байланыстырылмаған. Маман–қызмет каталогының байланыстарын жаңартыңыз."
     },
     "APPOINTMENT_FORM": {
+      "TITLE": "Кездесу атауы",
+      "TITLE_PLACEHOLDER": "Мысалы, шартты талқылау (міндетті емес)",
+      "CONTACT_SEARCH": "Аты-жөні, телефоны немесе ЖСН бойынша іздеу",
       "ERRORS": {
         "CLIENT_LAST_NAME_REQUIRED": "Тегін көрсетіңіз",
+        "CLIENT_MIDDLE_NAME_REQUIRED": "Әкесінің атын көрсетіңіз",
         "MEDELEMENT_LAST_NAME_REQUIRED": "MedElement жазбасы үшін тегін көрсетіңіз",
+        "MEDELEMENT_MIDDLE_NAME_REQUIRED": "MedElement жазбасы үшін әкесінің атын көрсетіңіз",
         "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз"
       }
     },

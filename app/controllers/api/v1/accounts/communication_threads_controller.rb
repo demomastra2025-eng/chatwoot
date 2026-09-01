@@ -16,7 +16,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     :unread
   ].freeze
   OPERATIONAL_THREAD_ACTIONS = %i[
-    update update_labels destroy_conversations create_message update_last_seen unread
+    destroy_conversations create_message
   ].freeze
 
   rescue_from CommunicationThreadFinder::InvalidParameter, with: :render_communication_thread_parameter_error
@@ -71,7 +71,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     @communication_thread = CommunicationThreads::UpdateService.new(
       communication_thread: @communication_thread,
       params: permitted_update_params,
-      accessible_links: operational_links_for(@communication_thread),
+      accessible_links: accessible_links_for(@communication_thread),
       actor: Current.user,
       source: 'communication_thread'
     ).perform
@@ -326,7 +326,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def validate_assignee_type!
     return if params[:assignee_type].blank?
-    return if %w[User AgentBot].include?(params[:assignee_type].to_s)
+    return if params[:assignee_type].to_s == 'User'
 
     raise ArgumentError, "Invalid communication thread assignee_type: #{params[:assignee_type]}"
   end
@@ -334,11 +334,6 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def validate_assignee!
     return unless params.key?(:assignee_id) && params[:assignee_id].present?
 
-    if params[:assignee_type].to_s == 'AgentBot'
-      return if AgentBot.accessible_to(Current.account).exists?(id: params[:assignee_id])
-
-      raise ArgumentError, "Invalid communication thread assignee_id: #{params[:assignee_id]}"
-    end
     return if Current.account.account_users.exists?(user_id: params[:assignee_id])
 
     raise ArgumentError, "Invalid communication thread assignee_id: #{params[:assignee_id]}"
@@ -354,8 +349,6 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def render_communication_thread_parameter_error(error)
     render_could_not_create_error(error.message)
   end
-
-
 
   def ensure_communication_threads_feature_enabled!
     return if Current.account&.feature_enabled?(FEATURE_NAME)
@@ -376,7 +369,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def ensure_full_thread_accessible_for_update!
-    return if operational_links_for(@communication_thread).count == @communication_thread.communication_thread_conversations.count
+    return if accessible_links_for(@communication_thread).count == @communication_thread.communication_thread_conversations.count
 
     raise ArgumentError, 'Cannot update communication thread without access to all linked channels'
   end
@@ -409,15 +402,25 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
   def preload_channel_capabilities(include_unlinked)
     @channel_capabilities_by_thread_id = @accessible_links_by_thread_id.transform_values do |links|
+      thread_id = links.first.communication_thread_id
       CommunicationThreads::ChannelCapabilitiesBuilder.new(
         links: links,
-        contact: @communication_threads_by_id[links.first.communication_thread_id]&.contact,
+        contact: @communication_threads_by_id[thread_id]&.contact,
         available_inboxes: accessible_inboxes,
+        callable_inbox_ids: operational_inbox_ids_by_thread_id.fetch(thread_id, []),
         include_unlinked: include_unlinked,
         preferred_status: preferred_channel_status,
         unread_counts: @channel_unread_counts_by_conversation_id,
         last_incoming_message_timestamps: @last_incoming_message_timestamps_by_conversation_id
       ).perform
+    end
+  end
+
+  def operational_inbox_ids_by_thread_id
+    @operational_inbox_ids_by_thread_id ||= begin
+      rows = operational_links.where(communication_thread_id: @communication_threads_by_id.keys)
+                              .pluck(:communication_thread_id, :inbox_id)
+      rows.group_by(&:first).transform_values { |group| group.map(&:last).uniq }
     end
   end
 

@@ -351,4 +351,39 @@ RSpec.describe Api::V1::Accounts::InboxWhatsappTemplatesController, type: :reque
       expect(response.parsed_body['message_templates'].first['name']).to eq('keep_template')
     end
   end
+
+  describe 'PATCH /api/v1/accounts/{account.id}/inboxes/{inbox.id}/whatsapp_templates/{template_name}/visibility' do
+    before do
+      whatsapp_channel.update!(
+        message_templates: [
+          {
+            'name' => 'automation_only',
+            'language' => 'en',
+            'status' => 'APPROVED',
+            'components' => [{ 'type' => 'BODY', 'text' => 'Automated message' }]
+          }
+        ]
+      )
+    end
+
+    it 'stores picker visibility and returns the updated inbox' do
+      patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates/automation_only/visibility",
+            headers: admin.create_new_auth_token,
+            params: { visible_in_conversation_picker: false },
+            as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig('message_templates', 0, 'visible_in_conversation_picker')).to be(false)
+      expect(whatsapp_channel.reload.message_templates.first['visible_in_conversation_picker']).to be(false)
+    end
+
+    it 'returns not found for a missing template' do
+      patch "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/whatsapp_templates/missing/visibility",
+            headers: admin.create_new_auth_token,
+            params: { visible_in_conversation_picker: false },
+            as: :json
+
+      expect(response).to have_http_status(:not_found)
+    end
+  end
 end

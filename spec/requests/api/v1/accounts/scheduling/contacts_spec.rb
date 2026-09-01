@@ -22,6 +22,44 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
     response.parsed_body
   end
 
+  it 'searches contacts by unordered name parts, phone, IIN, email and provider code within the account' do
+    contact = create(
+      :contact,
+      account: account,
+      name: 'Иван',
+      last_name: 'Иванов',
+      middle_name: 'Иванович',
+      email: 'patient@example.com',
+      phone_number: '+77771234567',
+      identifier: 'internal-42',
+      custom_attributes: {
+        'iin' => '940720300129',
+        'medelement_iin' => '950101300777',
+        'medelement_middle_name' => 'Серикович',
+        'medelement_birth_date' => '01.01.1995',
+        'medelement_patient_code' => 'patient-42'
+      }
+    )
+    create(:contact, name: 'Иван', last_name: 'Иванов', middle_name: 'Иванович')
+
+    [
+      'Иванов Иван',
+      'Иванович',
+      'Серикович',
+      '8 (777) 123-45-67',
+      '940720300129',
+      '950101300777',
+      '01.01.1995',
+      'patient@example.com',
+      'patient-42'
+    ].each do |query|
+      get path, params: { search: query }, headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response_body['payload'].pluck('id')).to eq([contact.id])
+    end
+  end
+
   it 'creates contacts with a valid IIN and stores it as identifier' do
     post path,
          params: {
@@ -58,6 +96,21 @@ RSpec.describe 'Scheduling Contacts API', type: :request do
 
     expect(response).to have_http_status(:unprocessable_content)
     expect(response_body['code']).to eq('CLIENT_LAST_NAME_REQUIRED')
+  end
+
+  it 'requires a middle name when creating a Medelement contact' do
+    post path,
+         params: {
+           first_name: 'Ivan',
+           last_name: 'Ivanov',
+           iin: '940720300129',
+           resource_id: medelement_resource.id
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('CLIENT_MIDDLE_NAME_REQUIRED')
   end
 
   it 'requires an IIN when creating a contact' do

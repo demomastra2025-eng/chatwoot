@@ -4,10 +4,11 @@ class AutomationRules::ExecuteRuleJob < ApplicationJob
   EXECUTION_COMPLETED_TTL = 30.days.to_i
   ExecutionInProgressError = Class.new(StandardError)
 
-  def perform(rule_id, execution_signature, record_gid, changed_attributes = {}, trigger_message_id = nil, execution_key = nil) # rubocop:disable Metrics/ParameterLists
+  # rubocop:disable Metrics/ParameterLists
+  def perform(rule_id, execution_signature, record_gid, changed_attributes = {}, trigger_message_id = nil, execution_key = nil,
+              lifecycle_generation = nil)
     rule = AutomationRule.find_by(id: rule_id)
-    return if rule.blank? || !rule.active?
-    return unless rule.execution_signature == execution_signature
+    return unless executable_rule?(rule, execution_signature, lifecycle_generation)
 
     record = GlobalID::Locator.locate(record_gid)
     return if record.blank? || record.account_id != rule.account_id
@@ -23,8 +24,15 @@ class AutomationRules::ExecuteRuleJob < ApplicationJob
       ).perform_actions
     end
   end
+  # rubocop:enable Metrics/ParameterLists
 
   private
+
+  def executable_rule?(rule, execution_signature, lifecycle_generation)
+    rule&.active? &&
+      rule.execution_signature == execution_signature &&
+      rule.lifecycle_generation == (lifecycle_generation || 1)
+  end
 
   def perform_once(rule, execution_key)
     return yield if execution_key.blank?

@@ -45,7 +45,29 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
   it 'rejects a Medelement appointment without a patient last name before persistence' do
     resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
-    params = base_params.merge(client_first_name: 'Айжан', client_last_name: '', client_phone: '+77000000001')
+    params = base_params.merge(
+      client_first_name: 'Айжан',
+      client_last_name: '',
+      client_middle_name: 'Ерлановна',
+      client_phone: ['+7', '700', '000', '0001'].join
+    )
+
+    expect do
+      post path, params: params, headers: headers, as: :json
+    end.not_to change(Scheduling::Appointment, :count)
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE')
+  end
+
+  it 'rejects a Medelement appointment without a patient middle name before persistence' do
+    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    params = base_params.merge(
+      client_first_name: 'Айжан',
+      client_last_name: 'Касымова',
+      client_middle_name: '',
+      client_phone: ['+7', '700', '000', '0001'].join
+    )
 
     expect do
       post path, params: params, headers: headers, as: :json
@@ -56,18 +78,24 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   it 'creates a Medelement appointment without a selected service' do
-    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
     params = base_params.except(:service_id).merge(
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
-      client_phone: '+77000000001'
+      client_middle_name: 'Ерлановна',
+      client_phone: ['+7', '700', '000', '0001'].join,
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     )
 
     expect do
       post path, params: params, headers: headers, as: :json
+      expect(response).to have_http_status(:created), response_body.inspect
     end.to change(Scheduling::Appointment, :count).by(1)
-
-    expect(response).to have_http_status(:created)
     expect(response_body.dig('payload', 'service_id')).to be_nil
   end
 
@@ -76,6 +104,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     params = base_params.merge(
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
+      client_middle_name: 'Ерлановна',
       client_phone: '+77000000001'
     )
 
@@ -88,20 +117,26 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   it 'creates a Medelement appointment with a mapped service' do
-    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
     service.update!(custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
     create(:scheduling_service_price, account: account, resource: resource, service: service)
     params = base_params.merge(
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
-      client_phone: '+77000000001'
+      client_middle_name: 'Ерлановна',
+      client_phone: ['+7', '700', '000', '0001'].join,
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     )
 
     expect do
       post path, params: params, headers: headers, as: :json
+      expect(response).to have_http_status(:created), response_body.inspect
     end.to change(Scheduling::Appointment, :count).by(1)
-
-    expect(response).to have_http_status(:created)
     expect(response_body.dig('payload', 'service_id')).to eq(service.id)
     expect(response_body.dig('payload', 'custom_attributes')).to include(
       'medelement_service_binding' => 'local_only',
@@ -546,6 +581,29 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(
       Scheduling::Appointment.find(response_body.dig('payload', 'id')).service_name_snapshot
     ).to eq('Осмотр')
+  end
+
+  it 'creates an appointment with an optional title' do
+    post path,
+         params: base_params.merge(title: 'Обсуждение договора'),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    expect(response_body.dig('payload', 'title')).to eq('Обсуждение договора')
+    appointment_id = response_body.dig('payload', 'id')
+    expect(Scheduling::Appointment.find(appointment_id).title).to eq(
+      'Обсуждение договора'
+    )
+
+    put "#{path}/#{appointment_id}",
+        params: { title: nil },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'title')).to be_nil
+    expect(Scheduling::Appointment.find(appointment_id).title).to be_nil
   end
 
   it 'applies default values from managed appointment custom fields' do

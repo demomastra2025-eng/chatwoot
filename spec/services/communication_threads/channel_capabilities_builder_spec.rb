@@ -119,7 +119,7 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
       conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
       link = conversation.communication_thread_conversation
 
-      payload = described_class.new(links: [link]).perform.first
+      payload = described_class.new(links: [link], callable_inbox_ids: [voice_inbox.id]).perform.first
 
       expect(payload).to include(
         channel: 'Channel::Voice',
@@ -129,6 +129,23 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         can_call: true,
         disabled: false,
         disabled_reason: nil
+      )
+    end
+
+    it 'keeps a visible linked voice channel non-callable without operational permission' do
+      contact = create(:contact, account: account)
+      voice_inbox = create(:channel_voice, :sipuni, account: account).inbox
+      contact_inbox = create(:contact_inbox, contact: contact, inbox: voice_inbox)
+      conversation = create(:conversation, account: account, contact: contact, inbox: voice_inbox, contact_inbox: contact_inbox)
+
+      payload = described_class.new(links: [conversation.communication_thread_conversation]).perform.first
+
+      expect(payload).to include(
+        channel: 'Channel::Voice',
+        can_reply: false,
+        can_call: false,
+        disabled: true,
+        disabled_reason: 'call_not_permitted'
       )
     end
 
@@ -263,6 +280,7 @@ RSpec.describe CommunicationThreads::ChannelCapabilitiesBuilder do
         links: [conversation.communication_thread_conversation],
         contact: contact,
         available_inboxes: [conversation.inbox, voice_inbox],
+        callable_inbox_ids: [voice_inbox.id],
         include_unlinked: true
       ).perform.find { |channel| channel[:inbox_id] == voice_inbox.id }
 

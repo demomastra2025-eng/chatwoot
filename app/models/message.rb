@@ -194,8 +194,7 @@ class Message < ApplicationRecord
 
   def merge_sender_attributes(data)
     data[:sender] = sender.push_event_data(contact_inbox: conversation.contact_inbox) if sender.is_a?(Contact)
-    data[:sender] = sender.push_event_data if sender && !sender.is_a?(AgentBot) && !sender.is_a?(Contact)
-    data[:sender] = sender.push_event_data(inbox) if sender.is_a?(AgentBot)
+    data[:sender] = sender.push_event_data if sender && !sender.is_a?(Contact)
     data
   end
 
@@ -255,7 +254,7 @@ class Message < ApplicationRecord
     return false unless human_response? && !private?
     return false if conversation.first_reply_created_at.present?
     return false if conversation.messages.outgoing
-                                .where.not(sender_type: ['AgentBot', 'Captain::Assistant'])
+                                .where.not(sender_type: 'Captain::Assistant')
                                 .where.not(private: true)
                                 .where("(additional_attributes->'campaign_id') is null").count > 1
 
@@ -444,8 +443,7 @@ class Message < ApplicationRecord
   end
 
   def bot_response?
-    # Check if this is a response from AgentBot or Captain::Assistant
-    outgoing? && sender_type.in?(['AgentBot', 'Captain::Assistant'])
+    sender_type == 'Captain::Assistant' && outgoing?
   end
 
   def dispatch_create_events

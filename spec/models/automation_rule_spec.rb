@@ -2,6 +2,18 @@ require 'rails_helper'
 require Rails.root.join 'spec/models/concerns/reauthorizable_shared.rb'
 
 RSpec.describe AutomationRule do
+  describe 'lifecycle generation' do
+    it 'advances only when a disabled rule is enabled again', :aggregate_failures do
+      rule = create(:automation_rule)
+
+      expect(rule.lifecycle_generation).to eq(1)
+      rule.update!(active: false)
+      expect(rule.reload.lifecycle_generation).to eq(1)
+      rule.update!(active: true)
+      expect(rule.reload.lifecycle_generation).to eq(2)
+    end
+  end
+
   describe 'action identity' do
     it 'preserves omitted action ids on update and deduplicates client-provided ids' do
       rule = create(

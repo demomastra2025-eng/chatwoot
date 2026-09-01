@@ -8,6 +8,7 @@
     },
     "FAILED_TO_SEND": "Не удалось отправить",
     "TAB_HEADING": "Диалоги",
+    "TOTAL_COUNT": "Диалогов: {count}",
     "MENTION_HEADING": "Упоминания",
     "UNATTENDED_HEADING": "Неотвеченные",
     "SEARCH": {

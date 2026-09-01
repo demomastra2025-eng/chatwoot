@@ -16,10 +16,24 @@
     },
     "SIDEBAR_VISIBILITY": {
       "TITLE": "Sidebar settings",
-      "DESCRIPTION": "Choose the primary sections shown in the employee sidebar.",
+      "DESCRIPTION": "Choose and arrange the primary sections shown in the employee sidebar.",
+      "ORDER_HINT": "Drag sections or use the arrow buttons to change their order.",
+      "DRAG": "Drag to reorder",
+      "MOVE_UP": "Move up",
+      "MOVE_DOWN": "Move down",
       "SAVE": "Save settings",
       "UPDATE_SUCCESS": "Sidebar settings updated",
       "UPDATE_ERROR": "Could not update sidebar settings. Please try again."
+    },
+    "WORKING_HOURS": {
+      "TITLE": "Workspace working hours",
+      "DESCRIPTION": "Default schedule for channels that use Workspace settings.",
+      "ENABLE": "Enable Workspace schedule",
+      "ENABLE_HELP": "Changes apply immediately to every channel inheriting Workspace working hours.",
+      "TIMEZONE": "Timezone",
+      "SAVE": "Save working hours",
+      "UPDATE_SUCCESS": "Workspace working hours updated.",
+      "UPDATE_ERROR": "Could not update Workspace working hours."
     },
     "CONVERSATIONS": {
       "TITLE": "Conversations",

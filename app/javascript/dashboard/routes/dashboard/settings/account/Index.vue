@@ -9,8 +9,6 @@ import { useConfig } from 'dashboard/composables/useConfig';
 import { useAccount } from 'dashboard/composables/useAccount';
 import { usePolicy } from 'dashboard/composables/usePolicy';
 import { parseAPIErrorResponse } from 'dashboard/store/utils/api';
-import { INSTALLATION_TYPES } from 'dashboard/constants/installationTypes';
-import { FEATURE_FLAGS } from '../../../../featureFlags';
 import WithLabel from 'v3/components/Form/WithLabel.vue';
 import NextInput from 'next/input/Input.vue';
 import NextSelect from 'dashboard/components-next/select/Select.vue';
@@ -21,8 +19,7 @@ import BuildInfo from './components/BuildInfo.vue';
 import AccountDelete from './components/AccountDelete.vue';
 import SectionLayout from './components/SectionLayout.vue';
 import WorkspaceLogo from './components/WorkspaceLogo.vue';
-import SamlSettings from '../security/components/SamlSettings.vue';
-import SamlPaywall from '../security/components/SamlPaywall.vue';
+import WorkspaceWorkingHours from './components/WorkspaceWorkingHours.vue';
 import { setDashboardLocale } from 'dashboard/i18n';
 
 export default {
@@ -34,31 +31,17 @@ export default {
     AccountDelete,
     SectionLayout,
     WorkspaceLogo,
+    WorkspaceWorkingHours,
     WithLabel,
     NextInput,
     NextSelect,
-    SamlSettings,
-    SamlPaywall,
   },
   setup() {
     const { uiSettings } = useUISettings();
     const { enabledLanguages } = useConfig();
     const { accountId } = useAccount();
-    const { shouldShow, shouldShowPaywall, checkPermissions } = usePolicy();
+    const { checkPermissions } = usePolicy();
     const v$ = useVuelidate({ $scope: false });
-    const allowedLoginMethods = computed(
-      () => window.chatwootConfig?.allowedLoginMethods || ['email']
-    );
-    const shouldShowSaml = computed(() => {
-      const hasPermission = shouldShow(
-        FEATURE_FLAGS.SAML,
-        ['administrator'],
-        [INSTALLATION_TYPES.CLOUD, INSTALLATION_TYPES.ENTERPRISE]
-      );
-
-      return hasPermission && allowedLoginMethods.value.includes('saml');
-    });
-    const showSamlPaywall = computed(() => shouldShowPaywall('saml'));
     const canManageWorkspace = computed(() =>
       checkPermissions(['administrator'])
     );
@@ -68,8 +51,6 @@ export default {
       v$,
       enabledLanguages,
       accountId,
-      shouldShowSaml,
-      showSamlPaywall,
       canManageWorkspace,
     };
   },
@@ -380,17 +361,11 @@ export default {
 
       <woot-loading-state v-if="uiFlags.isFetchingItem" />
     </div>
-    <SamlPaywall v-if="showSamlPaywall" />
-    <SamlSettings v-else-if="shouldShowSaml" />
-    <SectionLayout
-      v-else
-      :title="$t('SECURITY_SETTINGS.SAML.TITLE')"
-      :description="$t('SECURITY_SETTINGS.SAML.NOTE')"
-    >
-      <div class="text-sm text-slate-600">
-        {{ $t('SECURITY_SETTINGS.SAML_DISABLED_MESSAGE') }}
-      </div>
-    </SectionLayout>
+    <WorkspaceWorkingHours
+      v-if="accountRecord?.id"
+      :account="accountRecord"
+      :read-only="isWorkspaceReadOnly"
+    />
     <AccountId />
     <div v-if="!uiFlags.isFetchingItem && isOnChatwootCloud">
       <AccountDelete />

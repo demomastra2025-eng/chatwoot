@@ -7,7 +7,6 @@ class SendReplyJob < ApplicationJob
     'Channel::Line' => ::Line::SendOnLineService,
     'Channel::Telegram' => ::Telegram::SendOnTelegramService,
     'Channel::TelegramPersonal' => ::TelegramPersonal::SendOnTelegramPersonalService,
-    'Channel::LinkedinPersonal' => ::LinkedinPersonal::SendOnLinkedinPersonalService,
     'Channel::Weixin' => ::Weixin::SendOnWeixinService,
     'Channel::Whatsapp' => ::Whatsapp::SendOnWhatsappService,
     'Channel::WhatsappWeb' => ::WhatsappWeb::SendOnWhatsappWebService,

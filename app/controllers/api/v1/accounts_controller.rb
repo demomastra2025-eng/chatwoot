@@ -1,4 +1,20 @@
 class Api::V1::AccountsController < Api::BaseController
+  WORKSPACE_WORKING_HOURS_PARAMS = [
+    :workspace_working_hours_enabled,
+    :workspace_timezone,
+    {
+      workspace_working_hours: [
+        :day_of_week, :closed_all_day, :open_hour, :open_minutes,
+        :close_hour, :close_minutes, :open_all_day
+      ]
+    }
+  ].freeze
+  ACCOUNT_SETTINGS_PARAMS = %i[
+    auto_resolve_after auto_resolve_message auto_resolve_ignore_waiting audio_transcriptions auto_resolve_label
+    scheduling_contact_required scheduling_company_enabled default_appointment_touch_plan_id default_deal_touch_plan_id
+    default_task_touch_plan_id dashboard_sidebar_hidden_items_version
+  ].freeze
+
   include AuthHelper
   include CacheKeysHelper
 
@@ -44,11 +60,14 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def update
-    @account.assign_attributes(account_params.slice(:name, :locale, :domain, :support_email, :logo))
-    @account.custom_attributes.merge!(custom_attributes_params)
-    @account.settings.merge!(settings_params)
-    @account.custom_attributes['onboarding_step'] = 'invite_team' if @account.custom_attributes['onboarding_step'] == 'account_update'
-    @account.save!
+    Account.transaction do
+      @account.assign_attributes(account_params.slice(:name, :locale, :domain, :support_email, :logo))
+      @account.custom_attributes.merge!(custom_attributes_params)
+      @account.settings.merge!(settings_params)
+      @account.custom_attributes['onboarding_step'] = 'invite_team' if @account.custom_attributes['onboarding_step'] == 'account_update'
+      @account.save!
+      @account.sync_workspace_working_hours! if workspace_working_hours_params?
+    end
   end
 
   def logo
@@ -104,17 +123,9 @@ class Api::V1::AccountsController < Api::BaseController
 
   def permitted_settings_attributes
     [
-      :auto_resolve_after,
-      :auto_resolve_message,
-      :auto_resolve_ignore_waiting,
-      :audio_transcriptions,
-      :auto_resolve_label,
-      :scheduling_contact_required,
-      :scheduling_company_enabled,
-      :default_appointment_touch_plan_id,
-      :default_deal_touch_plan_id,
-      :default_task_touch_plan_id,
-      :dashboard_sidebar_hidden_items_version,
+      *ACCOUNT_SETTINGS_PARAMS,
+      *WORKSPACE_WORKING_HOURS_PARAMS,
+      { dashboard_sidebar_item_order: [] },
       { dashboard_sidebar_hidden_items: [] },
       {
         dashboard_conversation_sidebar_pipeline_visibility: [
@@ -123,6 +134,10 @@ class Api::V1::AccountsController < Api::BaseController
         ]
       }
     ]
+  end
+
+  def workspace_working_hours_params?
+    settings_params.keys.intersect?(%w[workspace_working_hours_enabled workspace_timezone workspace_working_hours])
   end
 
   def check_signup_enabled

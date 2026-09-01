@@ -136,7 +136,7 @@ const SUPPORTED_OUTBOUND_CHANNEL_TYPES = [
   'Channel::Line',
   'Channel::Telegram',
   'Channel::TelegramPersonal',
-  'Channel::LinkedinPersonal',
+
   'Channel::Weixin',
   'Channel::Whatsapp',
   'Channel::WhatsappWeb',

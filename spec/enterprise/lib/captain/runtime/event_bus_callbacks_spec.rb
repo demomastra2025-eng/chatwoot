@@ -55,7 +55,13 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
 
     callbacks.on_run_start('assistant_agent', 'Hello', context_wrapper)
     callbacks.on_chat_created(chat, 'assistant_agent', 'gpt-4.1-mini', context_wrapper)
-    callbacks.on_llm_call_complete('assistant_agent', 'gpt-4.1-mini', response, context_wrapper)
+    callbacks.on_llm_call_complete(
+      'assistant_agent',
+      'gpt-4.1-mini',
+      response,
+      context_wrapper,
+      provider_usage_recorded: true
+    )
     callbacks.on_tool_requested('lookup_contact', { contact_id: 123 }, context_wrapper)
     callbacks.on_tool_start('lookup_contact', { contact_id: 123 }, context_wrapper)
     callbacks.on_tool_progress('lookup_contact', { phase: 'querying' }, context_wrapper)
@@ -84,7 +90,8 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
       'conversation_display_id' => 42,
       'schema_name' => 'Captain::ConversationCompletionSchema',
       'model' => 'gpt-4.1-mini',
-      'thinking_tokens' => 2
+      'thinking_tokens' => 2,
+      'usage_counted' => false
     )
 
     run_event = events.find { |event| event.name == 'llm.run.complete' }
@@ -95,6 +102,15 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
       total_tokens: 18,
       thinking_tokens: 2
     )
+  end
+
+  it 'keeps a direct runtime completion billable when no provider usage event was recorded' do
+    response = Struct.new(:content, :input_tokens, :output_tokens, :tool_call?).new('Done', 11, 7, false)
+
+    callbacks.on_llm_call_complete('assistant_agent', 'gpt-4.1-mini', response, context_wrapper)
+
+    chat_event = events.find { |event| event.name == 'llm.chat.complete' }
+    expect(chat_event.payload).not_to have_key('usage_counted')
   end
 
   it 'publishes normalized tool result telemetry for failures' do
@@ -178,7 +194,13 @@ RSpec.describe Captain::Runtime::EventBusCallbacks do
 
     callbacks.on_run_start('assistant_agent', 'Where is my order?', case_context)
     callbacks.on_chat_created(chat, 'assistant_agent', 'gpt-4.1-mini', case_context)
-    callbacks.on_llm_call_complete('assistant_agent', 'gpt-4.1-mini', response, case_context)
+    callbacks.on_llm_call_complete(
+      'assistant_agent',
+      'gpt-4.1-mini',
+      response,
+      case_context,
+      provider_usage_recorded: true
+    )
     callbacks.on_run_complete('assistant_agent', result, case_context)
 
     expected = JSON.parse(Rails.root.join('config/llm_evals/fixtures/captain/event_contract/customer_support_basic_no_tool.json').read)

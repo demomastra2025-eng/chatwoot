@@ -42,41 +42,33 @@ export const filterDuplicateSourceMessages = (messages = []) => {
 };
 
 /**
- * Retrieves the latest previewable message from a conversation.
- * Lists receive the latest public message in `messages`, which can be an activity
- * message. Keep that activity message when it is newer than the last chat message
- * so the preview matches the last row visible in the conversation timeline.
+ * Retrieves the latest non-system message for conversation-list previews.
+ * Activity messages are timeline events and must never replace the actual message
+ * preview or its timestamp in conversation lists.
  * @param {Object} m - The conversation object containing messages.
  * @returns {Object} The last message of the conversation.
  */
 export const getLastMessage = m => {
   const messages = Array.isArray(m?.messages) ? m.messages : [];
-  const lastMessageIncludingActivity = messages[messages.length - 1];
-
   const nonActivityMessages = messages.filter(
-    message => message.message_type !== 2
+    message => Number(message.message_type ?? message.messageType) !== 2
   );
   const lastNonActivityMessageInStore =
     nonActivityMessages[nonActivityMessages.length - 1];
 
   const lastNonActivityMessageFromAPI = m?.last_non_activity_message;
-  const lastNonActivityMessage = getLastNonActivityMessage(
+  const safeLastNonActivityMessageFromAPI =
+    Number(
+      lastNonActivityMessageFromAPI?.message_type ??
+        lastNonActivityMessageFromAPI?.messageType
+    ) === 2
+      ? undefined
+      : lastNonActivityMessageFromAPI;
+
+  return getLastNonActivityMessage(
     lastNonActivityMessageInStore,
-    lastNonActivityMessageFromAPI
+    safeLastNonActivityMessageFromAPI
   );
-
-  if (!lastNonActivityMessage) {
-    return lastMessageIncludingActivity;
-  }
-
-  if (!lastMessageIncludingActivity) {
-    return lastNonActivityMessage;
-  }
-
-  return lastMessageIncludingActivity.created_at >=
-    lastNonActivityMessage.created_at
-    ? lastMessageIncludingActivity
-    : lastNonActivityMessage;
 };
 
 /**

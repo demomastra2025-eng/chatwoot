@@ -8,6 +8,7 @@ json.channel_type resource.display_channel_type
 json.greeting_enabled resource.greeting_enabled
 json.greeting_message resource.greeting_message
 json.working_hours_enabled resource.working_hours_enabled
+json.inherit_working_hours_from_account resource.inherit_working_hours_from_account
 json.enable_email_collect resource.enable_email_collect
 json.csat_survey_enabled resource.csat_survey_enabled
 json.csat_config resource.csat_config
@@ -165,16 +166,6 @@ if resource.telegram_personal?
   json.last_error resource.channel.try(:last_error)
   json.last_synced_at resource.channel.try(:last_synced_at)
   json.runtime_state resource.channel.try(:runtime_state_payload)
-end
-
-if resource.linkedin_personal?
-  json.profile_urn resource.channel.try(:profile_urn)
-  json.display_name resource.channel.try(:display_name)
-  json.connection_state resource.channel.try(:connection_state)
-  json.lifecycle_state resource.channel.try(:lifecycle_state)
-  json.last_error resource.channel.try(:last_error)
-  json.last_synced_at resource.channel.try(:last_synced_at)
-  json.runtime_state resource.channel.try(:runtime_state)
 end
 
 if resource.weixin?

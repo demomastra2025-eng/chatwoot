@@ -226,22 +226,6 @@ describe Contacts::ContactableInboxesService do
       end
     end
 
-    context 'when linkedin personal inbox is available' do
-      it 'returns existing source id if contact inbox exists' do
-        inbox = create(:channel_linkedin_personal, account: account).inbox
-        contact_inbox = create(
-          :contact_inbox,
-          inbox: inbox,
-          contact: contact,
-          source_id: 'urn:li:fsd_profile:lead-1'
-        )
-
-        contactable_inboxes = described_class.new(contact: contact).get
-        expect(contactable_inboxes).to include(
-          { source_id: contact_inbox.source_id, inbox: inbox }
-        )
-      end
-    end
 
     context 'when weixin inbox is available' do
       it 'returns existing source id if contact inbox exists' do

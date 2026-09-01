@@ -156,20 +156,20 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
   def assign_conversation(conversation_id:, assignee_id: nil, assignee_type: nil, team_id: nil)
     with_current_account_context do
       target_conversation = find_permissible_conversation!(conversation_id)
+      assignment_params = {
+        conversation: target_conversation,
+        actor: actor || assistant,
+        source: 'captain'
+      }
 
       if assignee_id.present? || assignee_type.present?
         resolved_assignee_type = validated_assignee_type!(assignee_id: assignee_id, assignee_type: assignee_type)
-        ::Conversations::AssignmentService.new(
-          conversation: target_conversation,
-          assignee_id: assignee_id,
-          assignee_type: resolved_assignee_type
-        ).perform
+        assignment_params[:assignee_id] = assignee_id
+        assignment_params[:assignee_type] = resolved_assignee_type
       end
 
-      unless team_id.nil?
-        team = team_id.present? ? account.teams.find(team_id) : nil
-        target_conversation.update!(team: team)
-      end
+      assignment_params[:team_id] = team_id unless team_id.nil?
+      ::Conversations::AssignmentService.new(**assignment_params).perform if assignment_params.key?(:assignee_id) || assignment_params.key?(:team_id)
 
       target_conversation.reload
     end
@@ -252,14 +252,9 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     raise ArgumentError, 'assignee_id is required when assignee_type is provided' if assignee_id.blank?
 
     resolved_type = assignee_type.to_s.presence || 'User'
-    case resolved_type
-    when 'User'
-      account.users.find(assignee_id)
-    when 'AgentBot'
-      account.agent_bots.find(assignee_id)
-    else
-      raise ArgumentError, 'assignee_type must be User or AgentBot'
-    end
+    raise ArgumentError, 'assignee_type must be User' unless resolved_type == 'User'
+
+    account.users.find(assignee_id)
 
     resolved_type
   end

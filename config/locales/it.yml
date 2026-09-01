@@ -24,14 +24,8 @@ it:
       not_required: 'Riautorizzazione non necessaria per questo canale'
       invalid_channel: 'Canale non valido per riautorizzazione'
   auth:
-    saml:
-      invalid_email: 'Inserisci un indirizzo email valido'
-      authentication_failed: 'Autenticazione fallita. Verifica le credenziali e riprova.'
   messages:
     reset_password: La richiesta di reimpostazione della password è riuscita. Una email con le istruzioni verrà inviata alla tua email se presente nel sistema.
-    reset_password_saml_user: Questo account utilizza autenticazione SAML. Non è possibile resettare la password. Contatta il tuo amministratore.
-    login_saml_user: Questo account utilizza autenticazione SAML. Effettua il login dal portale SAML della tua organizzazione.
-    saml_not_available: Autenticazione SAML non disponibile in questa installazione.
     inbox_deletetion_response: La tua richiesta di cancellazione inbox verrà elaborata.
   errors:
     account:
@@ -52,9 +46,6 @@ it:
       not_found: Policy di assegnazione non trovata
     attachments:
       invalid: Allegato non valido
-    saml:
-      feature_not_enabled: Funzionalità SAML non attiva per questo account
-      sso_not_enabled: SAML SSO non è abilitato per questa installazione
     data_import:
       data_type:
         invalid: Tipo di dato non valido
@@ -134,8 +125,6 @@ it:
     mfa:
       enabled: MFA attivata con successo
       disabled: MFA disattivata con successo
-    account_saml_settings:
-      invalid_certificate: deve essere un certificato X.509 valido in formato PEM
   reports:
     period: Periodo di segnalazione da %{since} a %{until}
     utc_warning: Il report generato è nel fuso orario UTC
@@ -229,8 +218,6 @@ it:
         open: 'La conversazione è stata riaperta da %{user_name}'
         open_with_reason: 'La conversazione è stata aperta da %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'Conversazione aperta automaticamente dopo l’intervento di un operatore'
-      agent_bot:
-        error_moved_to_open: 'La conversazione è stata riaperta dal sistema a causa di un errore con il Bot Agente.'
       status:
         resolved: 'La conversazione è stata contrassegnata come risolta da %{user_name}'
         contact_resolved: 'La conversazione è stata risolta da %{contact_name}'

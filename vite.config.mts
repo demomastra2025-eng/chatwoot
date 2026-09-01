@@ -56,6 +56,11 @@ export default defineConfig({
     host: devServerBindHost,
     port: devServerPort,
     strictPort: true,
+    watch: {
+      // Test-only edits are consumed by Vitest and must not reload an active
+      // DEV browser session.
+      ignored: ['**/*.spec.js', '**/*.spec.ts', '**/spec/**', '**/specs/**'],
+    },
     hmr: {
       host: devServerHost,
       port: devServerPort,

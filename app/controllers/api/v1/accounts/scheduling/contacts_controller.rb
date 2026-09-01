@@ -35,11 +35,44 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   def apply_search(scope)
     return scope if params[:search].blank?
 
-    search = "%#{params[:search].strip}%"
-    scope.where(
-      'contacts.name ILIKE :search OR contacts.email ILIKE :search OR contacts.phone_number ILIKE :search OR contacts.identifier ILIKE :search',
-      search: search
-    )
+    query = params[:search].to_s.strip
+    bindings = {}
+    searchable_text = <<~SQL.squish
+      CONCAT_WS(' ', contacts.name, contacts.last_name, contacts.middle_name,
+        contacts.email, contacts.phone_number, contacts.identifier,
+        contacts.custom_attributes ->> 'iin',
+        contacts.custom_attributes ->> 'medelement_iin',
+        contacts.custom_attributes ->> 'medelement_first_name',
+        contacts.custom_attributes ->> 'medelement_last_name',
+        contacts.custom_attributes ->> 'medelement_middle_name',
+        contacts.custom_attributes ->> 'birth_date',
+        contacts.custom_attributes ->> 'medelement_birth_date',
+        contacts.custom_attributes ->> 'medelement_patient_code')
+    SQL
+    text_conditions = query.split.map.with_index do |token, index|
+      key = "token_#{index}".to_sym
+      bindings[key] = "%#{ActiveRecord::Base.sanitize_sql_like(token)}%"
+      "#{searchable_text} ILIKE :#{key}"
+    end
+    branches = ["(#{text_conditions.join(' AND ')})"]
+
+    phone_variants(query).each_with_index do |digits, index|
+      key = "phone_#{index}".to_sym
+      bindings[key] = "%#{digits}%"
+      branches << "REGEXP_REPLACE(contacts.phone_number, '[^0-9]', '', 'g') LIKE :#{key}"
+    end
+
+    scope.where(branches.join(' OR '), bindings)
+  end
+
+  def phone_variants(query)
+    digits = query.gsub(/\D/, '')
+    return [] if digits.length < 3
+
+    variants = [digits]
+    variants << "7#{digits[1..]}" if digits.length == 11 && digits.start_with?('8')
+    variants << digits.last(10) if digits.length >= 10
+    variants.uniq
   end
 
   def contact_attributes
@@ -102,11 +135,25 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
     )
   end
 
+  def validate_required_middle_name!
+    middle_name = params.key?(:middle_name) ? params[:middle_name] : @contact&.middle_name
+    return if middle_name.present?
+
+    raise Scheduling::Error.new(
+      code: 'CLIENT_MIDDLE_NAME_REQUIRED',
+      message: 'Middle name is required',
+      status: :unprocessable_content
+    )
+  end
+
   def validate_required_contact_fields!
     return if action_name == 'update' && !contact_identity_update?
 
     validate_required_iin!
-    validate_required_last_name! if medelement_identity_required?
+    return unless medelement_identity_required?
+
+    validate_required_last_name!
+    validate_required_middle_name!
   end
 
   def validate_required_iin!
@@ -122,7 +169,8 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
   end
 
   def required_iin_value
-    params[:iin].presence || @contact&.custom_attributes&.dig('iin') || @contact&.identifier
+    params[:iin].presence || @contact&.custom_attributes&.dig('iin') ||
+      @contact&.custom_attributes&.dig('medelement_iin') || @contact&.identifier
   end
 
   def contact_identity_update?

@@ -9,9 +9,11 @@ class Reminders::MaterializeEnrollmentStepService
   end
 
   def perform
-    enrollment.with_lock do
-      enrollment.reload
-      process_locked_enrollment
+    return perform_with_enrollment_lock if enrollment.automation_rule_id.blank?
+
+    AutomationRule.transaction do
+      AutomationRule.lock.find_by(id: enrollment.automation_rule_id, account_id: enrollment.account_id)
+      perform_with_enrollment_lock
     end
   rescue ActiveRecord::RecordNotUnique => e
     duplicate_claim = enrollment.touch_occurrence_claims.find_by(occurrence_key: @occurrence_key)
@@ -21,6 +23,14 @@ class Reminders::MaterializeEnrollmentStepService
   end
 
   private
+
+  def perform_with_enrollment_lock
+    enrollment.with_lock do
+      enrollment.reload
+      @definition_resolver = nil
+      process_locked_enrollment
+    end
+  end
 
   def feature_enabled?
     enrollment.account.feature_enabled?(Reminders::DeferredMaterializationPolicy::FEATURE_NAME)

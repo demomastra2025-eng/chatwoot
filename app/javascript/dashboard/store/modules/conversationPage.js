@@ -22,10 +22,10 @@ const state = {
 
 export const getters = {
   getHasEndReached: $state => filter => {
-    return $state.hasEndReached[filter];
+    return Boolean($state.hasEndReached[filter]);
   },
   getCurrentPageFilter: $state => filter => {
-    return $state.currentPage[filter];
+    return Number($state.currentPage[filter] || 0);
   },
   getCurrentPage: $state => {
     return $state.currentPage;

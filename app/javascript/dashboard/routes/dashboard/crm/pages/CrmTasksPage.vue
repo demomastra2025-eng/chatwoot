@@ -44,8 +44,8 @@ import SchedulingMultiSelectFilter from 'dashboard/components-next/Scheduling/Sc
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
 import SchedulingRecordTable from 'dashboard/components-next/Scheduling/SchedulingRecordTable.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
-import SchedulingToolbar from 'dashboard/components-next/Scheduling/SchedulingToolbar.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
+import DateTimePicker from 'dashboard/components/ui/DateTimePicker.vue';
 
 import {
   buildCalendarRange,
@@ -91,7 +91,6 @@ const MANUAL_BOARD_SORT_KEY = 'position';
 const tasks = ref([]);
 const dealOptions = ref([]);
 const currentPresentation = ref('board');
-const currentTaskScope = ref('mine');
 const currentCalendarView = ref('week');
 const calendarAnchorDate = ref(new Date());
 const drawerOpen = ref(false);
@@ -181,7 +180,6 @@ const form = reactive({
   priority: 'medium',
   startAt: '',
   statusId: '',
-  teamId: '',
   title: '',
 });
 
@@ -226,10 +224,6 @@ const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
   return Number.isFinite(userId) && userId > 0 ? userId : '';
 });
-
-const effectiveTaskAssigneeId = computed(() =>
-  currentTaskScope.value === 'mine' ? currentUserId.value : filters.assigneeId
-);
 
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
@@ -391,25 +385,15 @@ const hasListSearchQuery = computed(() => listQuickFilters.q.trim().length > 0);
 
 const viewOptions = computed(() => [
   {
-    icon: 'i-lucide-list',
-    label: t('CRM.VIEWS.LIST'),
-    value: 'list',
-  },
-  {
     icon: 'i-lucide-columns-3',
     label: t('CRM.VIEWS.BOARD'),
     value: 'board',
   },
   {
-    icon: 'i-lucide-calendar-days',
-    label: t('SCHEDULING.VIEWS.CALENDAR'),
-    value: 'calendar',
+    icon: 'i-lucide-list',
+    label: t('CRM.VIEWS.LIST'),
+    value: 'list',
   },
-]);
-
-const taskScopeOptions = computed(() => [
-  { id: 'crm-tasks-scope-mine', label: t('CRM.TASKS.SCOPE.MY'), value: 'mine' },
-  { id: 'crm-tasks-scope-all', label: t('CRM.TASKS.SCOPE.ALL'), value: 'all' },
 ]);
 
 const boardSortOptions = computed(() => [
@@ -448,9 +432,21 @@ const boardSortOptions = computed(() => [
 ]);
 
 const calendarViewOptions = computed(() => [
-  { label: t('SCHEDULING.VIEWS.DAY'), value: 'day' },
-  { label: t('SCHEDULING.VIEWS.WEEK'), value: 'week' },
-  { label: t('SCHEDULING.VIEWS.MONTH'), value: 'month' },
+  {
+    icon: 'i-lucide-calendar-days',
+    label: t('SCHEDULING.VIEWS.DAY'),
+    value: 'day',
+  },
+  {
+    icon: 'i-lucide-calendar-range',
+    label: t('SCHEDULING.VIEWS.WEEK'),
+    value: 'week',
+  },
+  {
+    icon: 'i-lucide-calendar-fold',
+    label: t('SCHEDULING.VIEWS.MONTH'),
+    value: 'month',
+  },
 ]);
 
 const calendarLabel = computed(() =>
@@ -577,7 +573,6 @@ const defaultTasksPreferences = () => ({
   boardSortDirections: {},
   currentCalendarView: 'week',
   currentPresentation: 'board',
-  currentTaskScope: 'mine',
   filters: {
     activityType: '',
     archived: false,
@@ -631,10 +626,6 @@ const sanitizeTasksPreferences = preferences => {
     next.currentPresentation = defaults.currentPresentation;
   }
 
-  if (!['mine', 'all'].includes(next.currentTaskScope)) {
-    next.currentTaskScope = defaults.currentTaskScope;
-  }
-
   if (!['day', 'week', 'month'].includes(next.currentCalendarView)) {
     next.currentCalendarView = defaults.currentCalendarView;
   }
@@ -665,7 +656,6 @@ const restoreTasksPreferences = () => {
   const preferences = sanitizeTasksPreferences(stored);
 
   currentPresentation.value = preferences.currentPresentation;
-  currentTaskScope.value = preferences.currentTaskScope;
   currentCalendarView.value = preferences.currentCalendarView;
   listSort.value = { ...preferences.listSort };
   boardSort.key = preferences.boardSort.key;
@@ -687,7 +677,6 @@ const persistTasksPreferences = () => {
       boardSortDirections: { ...boardSortDirections },
       currentCalendarView: currentCalendarView.value,
       currentPresentation: currentPresentation.value,
-      currentTaskScope: currentTaskScope.value,
       filters: { ...filters },
       listQuickFilters: { ...listQuickFilters },
       listSort: { ...listSort.value },
@@ -745,7 +734,6 @@ const resetForm = () => {
     priority: 'medium',
     startAt: '',
     statusId: defaultStatus?.id || '',
-    teamId: '',
     title: '',
   });
 };
@@ -874,7 +862,6 @@ const openEditDrawer = async task => {
     priority: task.priority || 'medium',
     startAt: task.startAt ? task.startAt.slice(0, 16) : '',
     statusId: task.statusId,
-    teamId: task.teamId ?? '',
     title: task.title,
   });
   drawerOpen.value = true;
@@ -1046,7 +1033,7 @@ const loadTasks = async () => {
     const query = compactPayload({
       activity_type: filters.activityType || undefined,
       archived: filters.archived,
-      assignee_id: effectiveTaskAssigneeId.value || undefined,
+      assignee_id: filters.assigneeId || undefined,
       custom_attribute_filters: customFieldFilters.value,
       deal_id: filters.dealId || undefined,
       due_from: filters.dateRange.from || undefined,
@@ -1144,7 +1131,6 @@ const consumeTaskPrefillQuery = async () => {
     priority: queryValue('priority') || 'medium',
     startAt: queryValue('startAt') || '',
     statusId: numericQueryValue('statusId') || form.statusId,
-    teamId: numericQueryValue('teamId'),
     title: queryValue('title') || buildPrefillTaskTitle(),
   });
   await clearTaskPrefillQuery();
@@ -1173,22 +1159,28 @@ const consumeTaskOpenQuery = async () => {
 };
 
 const handlePresentationChange = async presentation => {
+  if (currentPresentation.value === presentation) return;
+
   currentPresentation.value = presentation;
   await loadTasks();
 };
 
-const selectTaskScope = async scope => {
-  if (currentTaskScope.value === scope) return;
+const selectCalendarPresentation = async view => {
+  if (
+    currentPresentation.value === 'calendar' &&
+    currentCalendarView.value === view
+  ) {
+    return;
+  }
 
-  currentTaskScope.value = scope;
-  listCurrentPage.value = 1;
+  currentCalendarView.value = view;
+  currentPresentation.value = 'calendar';
   await loadTasks();
 };
 
 watch(
   [
     currentPresentation,
-    currentTaskScope,
     currentCalendarView,
     listSort,
     () => ({ ...boardSort }),
@@ -1272,7 +1264,6 @@ const resetFilters = async () => {
   customFieldFilters.value = {};
   customFieldFilterDraft.value = {};
   listQuickFilters.q = '';
-  currentTaskScope.value = defaults.currentTaskScope;
   listCurrentPage.value = 1;
   syncFilterDraft();
   filterDialogRef.value?.close();
@@ -1531,11 +1522,6 @@ const updateTaskCalendarRange = async ({ task, startsAt, endsAt }) => {
   }
 };
 
-const selectCalendarView = async view => {
-  currentCalendarView.value = view;
-  await loadTasks();
-};
-
 const shiftCalendar = async direction => {
   calendarAnchorDate.value = shiftAnchorDate(
     currentCalendarView.value,
@@ -1609,7 +1595,6 @@ watch(
     route.query?.dealId,
     route.query?.statusId,
     route.query?.assigneeId,
-    route.query?.teamId,
     route.query?.conversationDisplayId,
     route.query?.originatingConversationId,
   ],
@@ -1621,37 +1606,58 @@ watch(
   <section class="flex flex-1 min-h-0 flex-col overflow-hidden bg-n-slate-2">
     <SchedulingPageHeader class="!bg-n-slate-2" :title="$t('CRM.TASKS.TITLE')">
       <template #left>
-        <label
-          v-for="scope in taskScopeOptions"
-          :key="scope.id"
-          class="relative flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-n-weak focus-within:outline-offset-2"
-          :class="
-            currentTaskScope === scope.value
-              ? 'border-n-weak bg-n-solid-1 text-n-slate-12 shadow-[0_1px_2px_rgba(15,23,42,0.04)]'
-              : 'border-transparent bg-transparent text-n-slate-11 hover:bg-n-alpha-black2/60 hover:text-n-slate-12'
-          "
-        >
-          <input
-            :id="scope.id"
-            class="size-3 flex-shrink-0 border-n-slate-6 text-n-slate-12 focus:ring-n-weak focus:ring-offset-0"
-            type="radio"
-            name="crm-tasks-scope"
-            :value="scope.value"
-            :checked="currentTaskScope === scope.value"
-            @change="selectTaskScope(scope.value)"
+        <div class="flex items-center gap-2 whitespace-nowrap">
+          <SchedulingViewSwitcher
+            icon-only
+            :model-value="currentPresentation"
+            :views="viewOptions"
+            @update:model-value="handlePresentationChange"
           />
-          <span class="text-xs font-medium leading-none">
-            {{ scope.label }}
-          </span>
-        </label>
-        <SchedulingViewSwitcher
-          icon-only
-          :model-value="currentPresentation"
-          :views="viewOptions"
-          @update:model-value="handlePresentationChange"
-        />
+          <SchedulingViewSwitcher
+            :model-value="
+              currentPresentation === 'calendar' ? currentCalendarView : ''
+            "
+            :views="calendarViewOptions"
+            @update:model-value="selectCalendarPresentation"
+          />
+        </div>
       </template>
       <template #actions>
+        <div
+          v-if="currentPresentation === 'calendar'"
+          class="flex items-center gap-1 whitespace-nowrap"
+        >
+          <Button
+            size="sm"
+            color="slate"
+            variant="faded"
+            icon="i-lucide-chevron-left"
+            @click="shiftCalendar(-1)"
+          />
+          <Button
+            size="sm"
+            color="slate"
+            variant="faded"
+            icon="i-lucide-chevron-right"
+            @click="shiftCalendar(1)"
+          />
+          <Button
+            size="sm"
+            color="slate"
+            variant="outline"
+            :label="$t('SCHEDULING.GENERAL.TODAY')"
+            @click="jumpCalendarToToday"
+          />
+          <DateTimePicker
+            class="!w-auto"
+            type="date"
+            :value="calendarAnchorDate"
+            :display-label="calendarLabel"
+            hide-icon
+            input-class="!h-8 !w-auto !bg-n-alpha-black2 !px-3 !py-1.5 !text-sm !font-semibold !text-n-slate-12 !outline-n-weak hover:!outline-n-slate-6 focus-visible:!outline-n-brand data-[state=open]:!outline-n-brand"
+            @change="selectCalendarDate"
+          />
+        </div>
         <Input
           v-if="currentPresentation === 'list'"
           size="sm"
@@ -1687,20 +1693,6 @@ watch(
         />
       </template>
     </SchedulingPageHeader>
-
-    <SchedulingToolbar
-      v-if="currentPresentation === 'calendar'"
-      transparent
-      :current-label="calendarLabel"
-      :anchor-date="calendarAnchorDate"
-      :model-value="currentCalendarView"
-      :views="calendarViewOptions"
-      @next="shiftCalendar(1)"
-      @previous="shiftCalendar(-1)"
-      @select-date="selectCalendarDate"
-      @today="jumpCalendarToToday"
-      @update:model-value="selectCalendarView"
-    />
 
     <div
       class="flex-1"

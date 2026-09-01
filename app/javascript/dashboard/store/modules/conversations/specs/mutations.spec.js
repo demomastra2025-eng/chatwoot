@@ -167,6 +167,45 @@ describe('#mutations', () => {
   });
 
   describe('#ADD_MESSAGE', () => {
+    it('does not let a stale creation response overwrite provider confirmation', () => {
+      const state = {
+        selectedChatId: 11,
+        selectedChatType: 'conversation',
+        allConversations: [
+          {
+            id: 11,
+            timestamp: 1710000010,
+            messages: [
+              {
+                id: 501,
+                conversation_id: 11,
+                content: 'Provider-confirmed message',
+                content_attributes: { provider_message_id: 'external-501' },
+                source_id: 'external-501',
+                status: 'sent',
+                created_at: 1710000010,
+              },
+            ],
+          },
+        ],
+      };
+
+      mutations[types.ADD_MESSAGE](state, {
+        id: 501,
+        conversation_id: 11,
+        content: 'Provider-confirmed message',
+        content_attributes: {},
+        status: 'progress',
+        created_at: 1710000010,
+      });
+
+      expect(state.allConversations[0].messages[0]).toMatchObject({
+        source_id: 'external-501',
+        status: 'sent',
+        content_attributes: { provider_message_id: 'external-501' },
+      });
+    });
+
     it('keeps direct conversation messages ordered and deduplicated for mixed id types', () => {
       const state = {
         selectedChatId: null,

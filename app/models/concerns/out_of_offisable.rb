@@ -39,6 +39,16 @@ module OutOfOffisable
     end
   end
 
+  def apply_workspace_working_hours!
+    transaction do
+      update!(
+        working_hours_enabled: account.workspace_working_hours_enabled?,
+        timezone: account.workspace_working_hours_timezone
+      )
+      update_working_hours(account.workspace_working_hours_schedule)
+    end
+  end
+
   private
 
   def create_default_working_hours

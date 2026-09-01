@@ -25,6 +25,7 @@ import {
 } from 'dashboard/helper/voice';
 
 let conversationListRequestGeneration = 0;
+const initialMessageLoadPromises = new Map();
 
 const invalidateConversationListRequest = commit => {
   conversationListRequestGeneration += 1;
@@ -58,6 +59,22 @@ const hasFilterValue = value => {
 const hasSidebarUnreadCountFilters = params =>
   SIDEBAR_UNREAD_COUNT_FILTER_KEYS.some(key => hasFilterValue(params?.[key]));
 
+const SIDEBAR_COUNT_SCOPE_FILTER_KEYS = [
+  'inboxId',
+  'labels',
+  'labelsScope',
+  'teamId',
+  'teamScope',
+  'conversationType',
+  'crmPipelineId',
+  'crmStageId',
+  'appointmentStatus',
+  'unread',
+];
+
+export const hasSidebarCountScopeFilters = params =>
+  SIDEBAR_COUNT_SCOPE_FILTER_KEYS.some(key => hasFilterValue(params?.[key]));
+
 const communicationThreadIdsForMessage = (state, message) => {
   return (state?.allConversations || [])
     .filter(chat => isMessageInCommunicationThread(chat, message))
@@ -83,7 +100,16 @@ const findChatByIdAndType = (state, conversationId, conversationType) =>
       conversationStoreType(chat) === conversationType
   );
 
-const findActiveChatById = (state, conversationId) => {
+const findActiveChatById = (state, conversationId, conversationType) => {
+  if (conversationType) {
+    const typedChat = findChatByIdAndType(
+      state,
+      conversationId,
+      conversationType
+    );
+    if (typedChat) return typedChat;
+  }
+
   if (
     String(state?.selectedChatId) === String(conversationId) &&
     state?.selectedChatType
@@ -114,96 +140,6 @@ const activeChatTypeForPayload = (state, payload) => {
 
 const withConversationType = (payload, conversationType) =>
   conversationType ? { ...payload, conversationType } : payload;
-
-const sortMessagesByTimeline = (leftMessage, rightMessage) => {
-  const createdAtDifference =
-    Number(leftMessage.created_at || 0) - Number(rightMessage.created_at || 0);
-  if (createdAtDifference !== 0) return createdAtDifference;
-
-  const leftId = Number(leftMessage.id || 0);
-  const rightId = Number(rightMessage.id || 0);
-  if (Number.isFinite(leftId) && Number.isFinite(rightId)) {
-    return leftId - rightId;
-  }
-
-  return String(leftMessage.id || '').localeCompare(
-    String(rightMessage.id || '')
-  );
-};
-
-const mergeMessagePayloadsById = (
-  existingMessages = [],
-  incomingMessages = []
-) => {
-  const mergedMessages = [];
-  const indexById = new Map();
-
-  [...existingMessages, ...incomingMessages].forEach(message => {
-    const messageId = message?.id;
-    if (messageId === undefined || messageId === null) {
-      mergedMessages.push(message);
-      return;
-    }
-
-    const key = String(messageId);
-    const existingIndex = indexById.get(key);
-    if (existingIndex === undefined) {
-      indexById.set(key, mergedMessages.length);
-      mergedMessages.push(message);
-      return;
-    }
-
-    mergedMessages[existingIndex] = {
-      ...mergedMessages[existingIndex],
-      ...message,
-    };
-  });
-
-  return mergedMessages.sort(sortMessagesByTimeline);
-};
-
-const messageExistsInPayload = (messages, messageId) =>
-  (messages || []).some(message => String(message?.id) === String(messageId));
-
-const shouldFetchFirstUnreadPage = ({
-  request,
-  selectedChat,
-  meta,
-  payload,
-}) => {
-  const firstUnreadMessageId = meta?.first_unread_message_id;
-  return (
-    !request.after &&
-    !request.before &&
-    Number(selectedChat?.unread_count || 0) > 0 &&
-    firstUnreadMessageId &&
-    payload.length > 0 &&
-    !messageExistsInPayload(payload, firstUnreadMessageId)
-  );
-};
-
-const payloadWithFirstUnreadPage = async ({
-  request,
-  selectedChat,
-  meta,
-  payload,
-  fetchPage,
-}) => {
-  if (!shouldFetchFirstUnreadPage({ request, selectedChat, meta, payload })) {
-    return payload;
-  }
-
-  const firstUnreadMessageId = meta.first_unread_message_id;
-  const beforeMessageId = payload[0]?.id;
-  const {
-    data: { payload: firstUnreadPayload = [] },
-  } = await fetchPage({
-    after: firstUnreadMessageId,
-    before: beforeMessageId,
-  });
-
-  return mergeMessagePayloadsById(firstUnreadPayload, payload);
-};
 
 const getCommunicationThreadById = (state, conversationId) => {
   if (
@@ -362,7 +298,7 @@ const actions = {
         { commit, dispatch },
         params,
         data,
-        params.assigneeType,
+        params.pageFilterKey || params.assigneeType,
         Number(params.page || 1) === 1
       );
     } catch (error) {
@@ -394,9 +330,9 @@ const actions = {
             buildCommunicationThreadConversation
           ),
         },
-        params.assigneeType,
+        params.pageFilterKey || params.assigneeType,
         Number(params.page || 1) === 1,
-        false
+        !hasSidebarCountScopeFilters(params)
       );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
@@ -432,7 +368,10 @@ const actions = {
       const requestParams = params || state.conversationFilters || {};
       let counts = {};
 
-      if (hasSidebarUnreadCountFilters(requestParams)) {
+      if (
+        requestParams.communicationThreadMode ||
+        hasSidebarUnreadCountFilters(requestParams)
+      ) {
         const statsApi = requestParams.communicationThreadMode
           ? CommunicationThreadApi
           : ConversationApi;
@@ -488,7 +427,7 @@ const actions = {
         { commit, dispatch },
         params,
         responseData,
-        'appliedFilters',
+        params.pageFilterKey || 'appliedFilters',
         Number(params.page || 1) === 1,
         !params?.communicationThreadMode
       );
@@ -508,10 +447,29 @@ const actions = {
   },
 
   fetchPreviousMessages: async ({ commit, state }, data) => {
-    try {
-      const selectedChat = findActiveChatById(state, data.conversationId);
-      const conversationType = activeChatTypeForPayload(state, data);
+    const selectedChat = findActiveChatById(state, data.conversationId);
+    const conversationType = activeChatTypeForPayload(state, data);
+    const initialLoad = !data.after && !data.before;
+    const initialLoadKey = initialLoad
+      ? `${conversationType || conversationStoreType(selectedChat)}:${data.conversationId}`
+      : null;
+    const existingInitialLoad = initialLoadKey
+      ? initialMessageLoadPromises.get(initialLoadKey)
+      : null;
+    if (existingInitialLoad) return existingInitialLoad;
 
+    let finishInitialLoad;
+    let loadSucceeded = false;
+    if (initialLoadKey) {
+      initialMessageLoadPromises.set(
+        initialLoadKey,
+        new Promise(resolve => {
+          finishInitialLoad = resolve;
+        })
+      );
+    }
+
+    try {
       if (selectedChat?.is_communication_thread) {
         const {
           data: { meta, payload },
@@ -520,21 +478,13 @@ const actions = {
           before: data.before,
           include_history: true,
         });
-        const messagesPayload = await payloadWithFirstUnreadPage({
-          request: data,
-          selectedChat,
-          meta,
-          payload,
-          fetchPage: params =>
-            CommunicationThreadApi.messages(data.conversationId, {
-              ...params,
-              include_history: true,
-            }),
-        });
         selectedChat.channels = meta.channels || selectedChat.channels || [];
         selectedChat.meta = {
           ...(selectedChat.meta || {}),
           sender: meta.contact || selectedChat.meta?.sender || {},
+          ...(meta.first_unread_message_id
+            ? { first_unread_message_id: meta.first_unread_message_id }
+            : {}),
         };
         commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
           id: data.conversationId,
@@ -545,34 +495,30 @@ const actions = {
           withConversationType(
             {
               id: data.conversationId,
-              data: messagesPayload,
+              data: payload,
             },
             conversationType
           )
         );
-        if (!messagesPayload.length) {
+        if (!payload.length) {
           commit(
             types.SET_ALL_MESSAGES_LOADED,
             withConversationType({ id: data.conversationId }, conversationType)
           );
         }
-        return;
+        loadSucceeded = true;
+        return true;
       }
 
       const {
         data: { meta, payload },
       } = await MessageApi.getPreviousMessages(data);
-      const messagesPayload = await payloadWithFirstUnreadPage({
-        request: data,
-        selectedChat,
-        meta,
-        payload,
-        fetchPage: params =>
-          MessageApi.getPreviousMessages({
-            conversationId: data.conversationId,
-            ...params,
-          }),
-      });
+      if (selectedChat && meta.first_unread_message_id) {
+        selectedChat.meta = {
+          ...(selectedChat.meta || {}),
+          first_unread_message_id: meta.first_unread_message_id,
+        };
+      }
       commit(`conversationMetadata/${types.SET_CONVERSATION_METADATA}`, {
         id: data.conversationId,
         data: meta,
@@ -582,19 +528,26 @@ const actions = {
         withConversationType(
           {
             id: data.conversationId,
-            data: messagesPayload,
+            data: payload,
           },
           conversationType
         )
       );
-      if (!messagesPayload.length) {
+      if (!payload.length) {
         commit(
           types.SET_ALL_MESSAGES_LOADED,
           withConversationType({ id: data.conversationId }, conversationType)
         );
       }
+      loadSucceeded = true;
+      return true;
     } catch (error) {
-      // Handle error
+      return false;
+    } finally {
+      if (initialLoadKey) {
+        finishInitialLoad(loadSucceeded);
+        initialMessageLoadPromises.delete(initialLoadKey);
+      }
     }
   },
 
@@ -630,17 +583,26 @@ const actions = {
 
   syncActiveConversationMessages: async (
     { commit, state, dispatch },
-    { conversationId }
+    { conversationId, conversationType: requestedConversationType }
   ) => {
     const { syncConversationsMessages } = state;
-    const selectedChat = findActiveChatById(state, conversationId);
+    const selectedChat = findActiveChatById(
+      state,
+      conversationId,
+      requestedConversationType
+    );
     if (!selectedChat) return;
     const conversationType =
-      activeChatTypeForPayload(state, { conversationId }) ||
+      activeChatTypeForPayload(state, {
+        conversationId,
+        conversationType: requestedConversationType,
+      }) ||
       (isCommunicationThread(selectedChat) ? 'communication_thread' : null);
     const syncKey = conversationType
       ? `${conversationType}:${conversationId}`
       : conversationId;
+    const initialLoadKey = `${conversationType || conversationStoreType(selectedChat)}:${conversationId}`;
+    if (initialMessageLoadPromises.has(initialLoadKey)) return;
     const lastMessageId =
       syncConversationsMessages[syncKey] ||
       syncConversationsMessages[conversationId];
@@ -701,12 +663,19 @@ const actions = {
 
   setConversationLastMessageId: async (
     { commit, state },
-    { conversationId }
+    { conversationId, conversationType: requestedConversationType }
   ) => {
-    const selectedChat = findActiveChatById(state, conversationId);
+    const selectedChat = findActiveChatById(
+      state,
+      conversationId,
+      requestedConversationType
+    );
     if (!selectedChat) return;
     const conversationType =
-      activeChatTypeForPayload(state, { conversationId }) ||
+      activeChatTypeForPayload(state, {
+        conversationId,
+        conversationType: requestedConversationType,
+      }) ||
       (isCommunicationThread(selectedChat) ? 'communication_thread' : null);
     const { messages } = selectedChat;
     const lastMessage = messages.last();
@@ -737,11 +706,16 @@ const actions = {
           fetchParams.before = data.messages?.[0]?.id;
         }
 
-        await dispatch('fetchPreviousMessages', fetchParams);
-        commit(types.SET_CHAT_DATA_FETCHED, {
-          id: data.id,
-          conversationType,
-        });
+        const messagesLoaded = await dispatch(
+          'fetchPreviousMessages',
+          fetchParams
+        );
+        if (messagesLoaded !== false) {
+          commit(types.SET_CHAT_DATA_FETCHED, {
+            id: data.id,
+            conversationType,
+          });
+        }
       } catch (error) {
         // Ignore error
       }
@@ -772,6 +746,7 @@ const actions = {
       });
       dispatch('setCurrentChatAssignee', {
         conversationId,
+        conversationType: 'conversation',
         assignee: response.data,
       });
     } catch (error) {
@@ -779,18 +754,26 @@ const actions = {
     }
   },
 
-  setCurrentChatAssignee({ commit }, { conversationId, assignee }) {
-    commit(types.ASSIGN_AGENT, { conversationId, assignee });
+  setCurrentChatAssignee(
+    { commit },
+    { conversationId, assignee, conversationType = null }
+  ) {
+    commit(types.ASSIGN_AGENT, {
+      conversationId,
+      conversationType,
+      assignee,
+    });
   },
 
   assignTeam: async (
     { commit, dispatch, state },
-    { conversationId, teamId }
+    { conversationId, teamId, conversationType = null }
   ) => {
     try {
-      const communicationThread = getCommunicationThreadById(
+      const communicationThread = getCommunicationThreadTarget(
         state,
-        conversationId
+        conversationId,
+        conversationType
       );
       if (communicationThread) {
         const response = await CommunicationThreadApi.update(conversationId, {
@@ -804,14 +787,21 @@ const actions = {
         conversationId,
         teamId,
       });
-      dispatch('setCurrentChatTeam', { team: response.data, conversationId });
+      dispatch('setCurrentChatTeam', {
+        team: response.data,
+        conversationId,
+        conversationType: 'conversation',
+      });
     } catch (error) {
       // Handle error
     }
   },
 
-  setCurrentChatTeam({ commit }, { team, conversationId }) {
-    commit(types.ASSIGN_TEAM, { team, conversationId });
+  setCurrentChatTeam(
+    { commit },
+    { team, conversationId, conversationType = null }
+  ) {
+    commit(types.ASSIGN_TEAM, { team, conversationId, conversationType });
   },
 
   toggleStatus: async (
@@ -933,11 +923,11 @@ const actions = {
       }
       addMessage({
         ...response.data,
-        status: MESSAGE_STATUS.SENT,
+        status: MESSAGE_STATUS.PROGRESS,
       });
       commit(types.ADD_CONVERSATION_ATTACHMENTS, {
         ...response.data,
-        status: MESSAGE_STATUS.SENT,
+        status: MESSAGE_STATUS.PROGRESS,
       });
     } catch (error) {
       const errorMessage = error.response
@@ -1271,12 +1261,13 @@ const actions = {
 
   assignPriority: async (
     { commit, dispatch, state },
-    { conversationId, priority }
+    { conversationId, priority, conversationType = null }
   ) => {
     try {
-      const communicationThread = getCommunicationThreadById(
+      const communicationThread = getCommunicationThreadTarget(
         state,
-        conversationId
+        conversationId,
+        conversationType
       );
       if (communicationThread) {
         const response = await CommunicationThreadApi.update(conversationId, {
@@ -1294,14 +1285,22 @@ const actions = {
       dispatch('setCurrentChatPriority', {
         priority,
         conversationId,
+        conversationType: 'conversation',
       });
     } catch (error) {
       // Handle error
     }
   },
 
-  setCurrentChatPriority({ commit }, { priority, conversationId }) {
-    commit(types.ASSIGN_PRIORITY, { priority, conversationId });
+  setCurrentChatPriority(
+    { commit },
+    { priority, conversationId, conversationType = null }
+  ) {
+    commit(types.ASSIGN_PRIORITY, {
+      priority,
+      conversationId,
+      conversationType,
+    });
   },
 
   setContextMenuChatId({ commit }, chatId) {

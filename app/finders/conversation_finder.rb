@@ -536,7 +536,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   def conversations_base_query
     @conversations.includes(
       :taggings, :inbox, { assignee: { avatar_attachment: [:blob] } }, { contact: { avatar_attachment: [:blob] } },
-      :team, :conversation_participants, { contact_inbox: :channel_profile }, :assignee_agent_bot
+      :team, :conversation_participants, { contact_inbox: :channel_profile }
     )
   end
 

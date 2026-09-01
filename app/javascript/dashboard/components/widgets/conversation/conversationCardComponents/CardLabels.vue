@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, nextTick, useSlots } from 'vue';
+import { computed } from 'vue';
 import { useMapGetter } from 'dashboard/composables/store';
 import { labelDisplayTitle, labelMarkerEmoji } from 'dashboard/helper/labels';
 
@@ -10,7 +10,6 @@ const props = defineProps({
   },
 });
 
-const slots = useSlots();
 const accountLabels = useMapGetter('labels/getLabels');
 
 const activeLabels = computed(() => {
@@ -18,53 +17,13 @@ const activeLabels = computed(() => {
     props.conversationLabels.includes(title)
   );
 });
-
-const showAllLabels = ref(false);
-const showExpandLabelButton = ref(false);
-const labelPosition = ref(-1);
-const labelContainer = ref(null);
-
-const computeVisibleLabelPosition = () => {
-  const beforeSlot = slots.before ? 100 : 0;
-  if (!labelContainer.value) {
-    return;
-  }
-
-  const labels = Array.from(labelContainer.value.querySelectorAll('.label'));
-  let labelOffset = 0;
-  showExpandLabelButton.value = false;
-  labels.forEach((label, index) => {
-    labelOffset += label.offsetWidth + 8;
-
-    if (labelOffset < labelContainer.value.clientWidth - beforeSlot) {
-      labelPosition.value = index;
-    } else {
-      showExpandLabelButton.value = labels.length > 1;
-    }
-  });
-};
-
-watch(activeLabels, () => {
-  nextTick(() => computeVisibleLabelPosition());
-});
-
-onMounted(() => {
-  computeVisibleLabelPosition();
-});
-
-const onShowLabels = e => {
-  e.stopPropagation();
-  showAllLabels.value = !showAllLabels.value;
-  nextTick(() => computeVisibleLabelPosition());
-};
 </script>
 
 <template>
-  <div ref="labelContainer" v-resize="computeVisibleLabelPosition">
+  <div>
     <div
       v-if="activeLabels.length || $slots.before"
-      class="flex items-end flex-shrink min-w-0 gap-y-1"
-      :class="{ 'h-auto overflow-visible flex-row flex-wrap': showAllLabels }"
+      class="flex items-end flex-shrink min-w-0 gap-y-1 flex-row flex-wrap"
     >
       <slot name="before" />
       <woot-label
@@ -77,25 +36,7 @@ const onShowLabels = e => {
         variant="smooth"
         class="!mb-0 max-w-[calc(100%-0.5rem)]"
         small
-        :class="{
-          'invisible absolute': !showAllLabels && index > labelPosition,
-        }"
       />
-      <button
-        v-if="showExpandLabelButton"
-        :title="
-          showAllLabels
-            ? $t('CONVERSATION.CARD.HIDE_LABELS')
-            : $t('CONVERSATION.CARD.SHOW_LABELS')
-        "
-        class="h-5 py-0 px-1 flex-shrink-0 mr-6 ml-0 rtl:ml-6 rtl:mr-0 rtl:rotate-180 text-n-slate-11 border-n-strong dark:border-n-strong"
-        @click="onShowLabels"
-      >
-        <fluent-icon
-          :icon="showAllLabels ? 'chevron-left' : 'chevron-right'"
-          size="12"
-        />
-      </button>
     </div>
   </div>
 </template>

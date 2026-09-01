@@ -341,7 +341,8 @@ class Captain::ContextFields
       channels = CommunicationThreads::ChannelCapabilitiesBuilder.new(
         links: visible_links,
         contact: thread.contact,
-        available_inboxes: visible_inboxes || []
+        available_inboxes: visible_inboxes || [],
+        callable_inbox_ids: Array(visible_inboxes).map(&:id)
       ).perform.map do |channel|
         channel.slice(*COMMUNICATION_THREAD_CHANNEL_KEYS)
       end

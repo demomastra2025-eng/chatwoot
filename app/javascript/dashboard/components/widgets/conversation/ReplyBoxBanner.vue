@@ -24,6 +24,11 @@ const { t } = useI18n();
 
 const currentChat = useMapGetter('getSelectedChat');
 const currentUser = useMapGetter('getCurrentUser');
+const conversationType = computed(() =>
+  currentChat.value?.is_communication_thread
+    ? 'communication_thread'
+    : 'conversation'
+);
 
 const assignedAgent = computed({
   get() {
@@ -33,10 +38,12 @@ const assignedAgent = computed({
     const agentId = agent ? agent.id : null;
     store.dispatch('setCurrentChatAssignee', {
       conversationId: currentChat.value?.id,
+      conversationType: conversationType.value,
       assignee: agent,
     });
     store.dispatch('assignAgent', {
       conversationId: currentChat.value?.id,
+      conversationType: conversationType.value,
       agentId,
     });
   },
@@ -89,6 +96,7 @@ const onClickSelfAssign = async () => {
 const reopenConversation = async () => {
   await store.dispatch('toggleStatus', {
     conversationId: currentChat.value?.id,
+    conversationType: conversationType.value,
     status: wootConstants.STATUS_TYPE.OPEN,
   });
 };

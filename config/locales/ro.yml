@@ -7,15 +7,9 @@ ro:
       not_required: Reauthorization is not required for this inbox
       invalid_channel: Invalid channel type for reauthorization
   auth:
-    saml:
-      invalid_email: Vă rugăm să introduceți o adresă de e-mail validă
-      authentication_failed: Authentication failed. Please check your credentials and try again.
   messages:
     reset_password_success: Onelink! Cererea de resetare a parolei a reusit. Verifica emailul pentru instructiuni.
     reset_password_failure: Nu am putut găsi niciun utilizator cu e-mailul specificat.
-    reset_password_saml_user: This account uses SAML authentication. Password reset is not available. Please contact your administrator.
-    login_saml_user: This account uses SAML authentication. Please sign in through your organization's SAML provider.
-    saml_not_available: SAML authentication is not available in this installation.
     inbox_deletetion_response: Solicitarea de ștergere a inboxului va fi procesată într-un anumit timp.
     reset_password: Request for password reset is successful. A email with instructions will be sent to your email if it exists.
   errors:
@@ -34,9 +28,6 @@ ro:
       not_found: Assignment policy not found
     attachments:
       invalid: Invalid attachment
-    saml:
-      feature_not_enabled: SAML feature not enabled for this account
-      sso_not_enabled: SAML SSO is not enabled for this installation
     data_import:
       data_type:
         invalid: Tip de date nevalid
@@ -119,8 +110,6 @@ ro:
     mfa:
       enabled: MFA enabled successfully
       disabled: MFA disabled successfully
-    account_saml_settings:
-      invalid_certificate: must be a valid X.509 certificate in PEM format
   reports:
     period: Perioada de raportare %{since}-%{until}
     utc_warning: Raportul generat este în fusul orar UTC
@@ -214,8 +203,6 @@ ro:
         resolved_by_tool: 'Conversation was marked resolved by %{user_name}: %{reason}'
         open_with_reason: Conversation was marked open by %{user_name} (%{reason})
         auto_opened_after_agent_reply: Conversation was marked open automatically after an agent reply
-      agent_bot:
-        error_moved_to_open: Conversation was marked open by system due to an error with the agent bot.
       status:
         resolved: Conversația a fost marcată de %{user_name}
         contact_resolved: Conversația a fost rezolvată de %{contact_name}

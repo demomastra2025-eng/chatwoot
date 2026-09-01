@@ -15,6 +15,7 @@ class Llm::UsageLedger
     def record_event!(event)
       return if event.blank?
       return unless trackable_event?(event)
+      return if event.payload.to_h.with_indifferent_access[:usage_counted] == false
 
       usage_event = LlmUsageEvent.find_or_initialize_by(llm_event_id: event.id)
       usage_event.assign_attributes(attributes_for(event))

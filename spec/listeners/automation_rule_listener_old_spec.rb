@@ -553,7 +553,7 @@ describe AutomationRuleListener do
           listener.message_created(event)
           conversation.reload
 
-          first_reply = conversation.messages.outgoing.where.not(sender_type: 'AgentBot').where("(additional_attributes->'campaign_id') is null")
+          first_reply = conversation.messages.outgoing.where("(additional_attributes->'campaign_id') is null")
 
           expect(conversation.messages.count).to eq(3)
           expect(conversation.messages.last.content).to eq('Send this message.')

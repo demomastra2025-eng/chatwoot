@@ -395,7 +395,7 @@
     "SCHEDULING_RESOURCES": "Специалисты",
     "SCHEDULING_SERVICES": "Услуги",
     "SCHEDULING_EXCEPTIONS": "Перерывы",
-    "CAPTAIN": "AI-сотрудники",
+    "CAPTAIN": "AI Агенты",
     "CAPTAIN_ASSISTANTS": "AI-сотрудники",
     "CAPTAIN_DOCUMENTS": "Документы",
     "CAPTAIN_RESPONSES": "База знаний",
@@ -406,7 +406,7 @@
     "CAPTAIN_PLAYGROUND": "Площадка",
     "CAPTAIN_INBOXES": "Каналы",
     "CAPTAIN_SETTINGS": "Настройки ИИ",
-    "CAPTAIN_USAGE": "Расходы и бюджет",
+    "CAPTAIN_USAGE": "Расходы",
     "CAPTAIN_PROMPTS": "Инструкции",
     "CAPTAIN_FOLLOW_UPS": "Дожимы",
     "CAPTAIN_RESTRICTIONS": "Ограничения",
@@ -414,7 +414,6 @@
     "CAPTAIN_CHANNELS": "Каналы",
     "HOME": "Главная",
     "AGENTS": "Сотрудники",
-    "AGENT_BOTS": "Вебхуки",
     "AUDIT_LOGS": "Журнал действий",
     "INBOXES": "Каналы",
     "NOTIFICATIONS": "Уведомления",
@@ -703,78 +702,6 @@
         "INSTANT_DEDUCTION_NOTE": "Сохраненная карта будет списана сразу после подтверждения.",
         "GO_BACK": "Вернуться",
         "CONFIRM_PURCHASE": "Подтвердить покупку"
-      }
-    }
-  },
-  "SECURITY_SETTINGS": {
-    "TITLE": "Безопасность",
-    "DESCRIPTION": "Управление настройками безопасности вашего workspace.",
-    "LINK_TEXT": "Узнать больше о SAML SSO",
-    "SAML_DISABLED_MESSAGE": "SAML SSO сейчас отключен. Обратитесь к администратору, чтобы включить эту функцию.",
-    "SAML": {
-      "TITLE": "SAML SSO",
-      "NOTE": "Настройка единого SAML входа для вашей учетной записи. Пользователи будут аутентифицироваться через вашего провайдера идентификации вместо использования электронной почты/пароля.",
-      "ACS_URL": {
-        "LABEL": "ACS URL",
-        "TOOLTIP": "Assertion Consumer Service URL - Настройте этот URL в IdP в качестве назначения для SAML ответов"
-      },
-      "SSO_URL": {
-        "LABEL": "SSO URL",
-        "HELP": "URL, куда будут отправляться запросы аутентификации SAML",
-        "PLACEHOLDER": "https://your-idp.com/saml/sso"
-      },
-      "CERTIFICATE": {
-        "LABEL": "Подписанный сертификат в формате PEM",
-        "HELP": "Публичный сертификат от вашего поставщика сертификатов используемый для проверки SAML ответов",
-        "PLACEHOLDER": "-----BEGIN CERTIFICATE-----\nMIIC..."
-      },
-      "FINGERPRINT": {
-        "LABEL": "Отпечаток",
-        "TOOLTIP": "Отпечаток SHA-1 сертификата. Используется для проверки сертификата в конфигурации IdP"
-      },
-      "COPY_SUCCESS": "Код скопирован в буфер обмена",
-      "SP_ENTITY_ID": {
-        "LABEL": "ID сущности SP",
-        "HELP": "Уникальный идентификатор для этого приложения как поставщика услуг (автосгенерированный).",
-        "TOOLTIP": "Уникальный идентификатор для OneLink как поставщик услуг - Настройте это в настройках IdP"
-      },
-      "IDP_ENTITY_ID": {
-        "LABEL": "ID сущности провайдера идентификации",
-        "HELP": "Уникальный идентификатор для вашего поставщика идентификации (обычно находится в конфигурации IdP)",
-        "PLACEHOLDER": "https://your-idp.com/saml"
-      },
-      "UPDATE_BUTTON": "Обновить настройки SAML",
-      "API": {
-        "SUCCESS": "Настройки SAML успешно обновлены",
-        "ERROR": "Не удалось обновить настройки SAML",
-        "ERROR_LOADING": "Не удалось загрузить настройки SAML",
-        "DISABLED": "SAML настройки успешно отключены"
-      },
-      "VALIDATION": {
-        "REQUIRED_FIELDS": "SSO URL, идентификатор сущности провайдера и сертификат являются обязательными полями",
-        "SSO_URL_ERROR": "Пожалуйста, введите правильный SSO URL",
-        "CERTIFICATE_ERROR": "Сертификат обязателен",
-        "IDP_ENTITY_ID_ERROR": "ID сущности поставщика идентификации обязателен"
-      },
-      "ENTERPRISE_PAYWALL": {
-        "AVAILABLE_ON": "Функция SAML SSO доступна только в Enterprise plan.",
-        "UPGRADE_PROMPT": "Обновитесь до Enterprise plan, чтобы получить доступ к единому входу SAML и другим продвинутым функциям безопасности.",
-        "ASK_ADMIN": "Пожалуйста, обратитесь к вашему администратору для обновления."
-      },
-      "PAYWALL": {
-        "TITLE": "Обновитесь, чтобы включить SAML SSO",
-        "AVAILABLE_ON": "Функция SAML SSO доступна только в Enterprise plan.",
-        "UPGRADE_PROMPT": "Обновите свой тарифный план, чтобы получить доступ к единому входу SAML и другим расширенным функциям.",
-        "UPGRADE_NOW": "Обновить сейчас",
-        "CANCEL_ANYTIME": "Вы можете изменить или отменить ваш тарифный план в любое время"
-      },
-      "ATTRIBUTE_MAPPING": {
-        "TITLE": "Настройки SAML Атрибута",
-        "DESCRIPTION": "Следующие сопоставления атрибутов должны быть настроены в вашем поставщике идентификации"
-      },
-      "INFO_SECTION": {
-        "TITLE": "Информация о поставщике услуг SAML",
-        "TOOLTIP": "Скопируйте эти значения и настройте их в вашем поставщике идентификации для установления соединения SAML"
       }
     }
   },
@@ -1236,8 +1163,8 @@
       }
     },
     "USAGE": {
-      "TITLE": "Расход и бюджет OpenRouter",
-      "DESCRIPTION": "Контролируйте стоимость, токены, ошибки и лимиты OpenRouter для этого workspace.",
+      "TITLE": "Расходы AI",
+      "DESCRIPTION": "Отслеживайте расходы OpenRouter, использование моделей, токены и ошибки этого workspace.",
       "TODAY_SPEND": "Расход сегодня",
       "MONTH_SPEND": "Расход за месяц",
       "MONTH_TOKENS": "Токены за месяц",
@@ -1275,8 +1202,10 @@
       "LAST_EVENT": "Последнее событие: {date}",
       "NEVER": "нет данных",
       "TOP_MODELS": "Топ моделей",
+      "TOP_MODELS_DESCRIPTION": "Распределение расходов за месяц по моделям.",
       "NO_TOP_MODELS": "Расходов по моделям пока нет.",
       "MODEL_USAGE_META": "{requests} запросов · {tokens} токенов",
+      "MODEL_COST_SHARE": "{percent}% расходов",
       "RECENT_ERRORS": "Последние ошибки",
       "NO_RECENT_ERRORS": "Ошибок OpenRouter не было.",
       "STATUS": {

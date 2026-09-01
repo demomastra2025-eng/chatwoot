@@ -24,14 +24,8 @@ tr:
       not_required: 'Bu gelen kutusu için yeniden yetkilendirme gerekmez'
       invalid_channel: 'Yeniden yetkilendirme için geçersiz kanal türü'
   auth:
-    saml:
-      invalid_email: 'Lütfen geçerli bir e-posta adresi girin'
-      authentication_failed: 'Kimlik doğrulama başarısız oldu. Lütfen kimlik bilgilerinizi kontrol edin ve tekrar deneyin.'
   messages:
     reset_password: Request for password reset is successful. A email with instructions will be sent to your email if it exists.
-    reset_password_saml_user: Bu hesap SAML kimlik doğrulaması kullanmaktadır. Şifre sıfırlama mevcut değildir. Lütfen yöneticinizle iletişime geçin.
-    login_saml_user: Bu hesap SAML kimlik doğrulaması kullanmaktadır. Lütfen kuruluşunuzun SAML sağlayıcısı aracılığıyla oturum açın.
-    saml_not_available: SAML kimlik doğrulaması bu kurulumda mevcut değildir.
     inbox_deletetion_response: Gelen kutusu silme isteğiniz bir süre sonra işleme alınacaktır.
   errors:
     account:
@@ -52,9 +46,6 @@ tr:
       not_found: Assignment policy not found
     attachments:
       invalid: Invalid attachment
-    saml:
-      feature_not_enabled: Bu hesap için SAML özelliği etkinleştirilmemiş
-      sso_not_enabled: SAML SSO bu kurulum için etkinleştirilmemiş
     data_import:
       data_type:
         invalid: Hatalı veri türü
@@ -134,8 +125,6 @@ tr:
     mfa:
       enabled: MFA başarıyla etkinleştirildi
       disabled: MFA başarıyla devre dışı bırakıldı
-    account_saml_settings:
-      invalid_certificate: PEM formatında geçerli bir X.509 sertifikası olmalıdır
   reports:
     period: Raporlama aralığı %{since}'dan %{until}'a
     utc_warning: Oluşturulan rapor UTC zaman dilimindedir.
@@ -229,8 +218,6 @@ tr:
         open: 'Konuşma, %{user_name} tarafından açık olarak işaretlendi'
         open_with_reason: 'Conversation was marked open by %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'Conversation was marked open automatically after an agent reply'
-      agent_bot:
-        error_moved_to_open: 'Temsilci botta meydana gelen bir hata nedeniyle konuşma, sistem tarafından açık olarak işaretlendi.'
       status:
         resolved: 'Konuşma %{user_name} tarafından çözümlendi olarak işaretlendi'
         contact_resolved: 'Konuşma %{contact_name} tarafından çözümlendi olarak işaretlendi'

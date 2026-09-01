@@ -88,31 +88,33 @@ const handleHeaderSort = column => {
           column.headerClass,
         ]"
       >
-        <button
-          v-if="column.sortable"
-          type="button"
-          class="inline-flex w-full items-center gap-1 border-0 bg-transparent p-0 text-inherit"
-          :class="[
-            column.align === 'end' ? 'justify-end' : 'justify-start',
-            resolveSortDirection(column.key)
-              ? 'text-n-slate-12'
-              : 'text-inherit',
-          ]"
-          @click="handleHeaderSort(column)"
-        >
-          <span class="truncate">{{ column.label }}</span>
-          <span
-            class="size-3.5 shrink-0 transition-opacity"
+        <slot :name="`header-${column.key}`" :column="column">
+          <button
+            v-if="column.sortable"
+            type="button"
+            class="inline-flex w-full items-center gap-1 border-0 bg-transparent p-0 text-inherit"
             :class="[
-              resolveSortIcon(column.key),
-              resolveSortDirection(column.key) ? 'opacity-100' : 'opacity-55',
+              column.align === 'end' ? 'justify-end' : 'justify-start',
+              resolveSortDirection(column.key)
+                ? 'text-n-slate-12'
+                : 'text-inherit',
             ]"
-            aria-hidden="true"
-          />
-        </button>
-        <span v-else>
-          {{ column.label }}
-        </span>
+            @click="handleHeaderSort(column)"
+          >
+            <span class="truncate">{{ column.label }}</span>
+            <span
+              class="size-3.5 shrink-0 transition-opacity"
+              :class="[
+                resolveSortIcon(column.key),
+                resolveSortDirection(column.key) ? 'opacity-100' : 'opacity-55',
+              ]"
+              aria-hidden="true"
+            />
+          </button>
+          <span v-else>
+            {{ column.label }}
+          </span>
+        </slot>
       </div>
     </div>
 

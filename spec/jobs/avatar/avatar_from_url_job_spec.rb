@@ -12,9 +12,9 @@ RSpec.describe Avatar::AvatarFromUrlJob do
   end
 
   it 'keeps non-contact avatar jobs on the purgable queue' do
-    agent_bot = create(:agent_bot)
+    user = create(:user)
 
-    expect { described_class.perform_later(agent_bot, 'https://example.com/avatar.png') }
+    expect { described_class.perform_later(user, 'https://example.com/avatar.png') }
       .to have_enqueued_job(described_class).on_queue('purgable')
   end
 
@@ -85,7 +85,7 @@ RSpec.describe Avatar::AvatarFromUrlJob do
   end
 
   context 'with regular avatarable' do
-    let(:avatarable) { create(:agent_bot) }
+    let(:avatarable) { create(:user) }
 
     it 'downloads through SafeFetch and attaches avatar' do
       expect(SafeFetch).to receive(:fetch).with(

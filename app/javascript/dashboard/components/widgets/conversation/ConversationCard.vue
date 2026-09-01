@@ -6,6 +6,7 @@ import { useAlert } from 'dashboard/composables';
 import { getLastMessage } from 'dashboard/helper/conversationHelper';
 import {
   CONTENT_TYPES,
+  MESSAGE_STATUS,
   MESSAGE_TYPES,
 } from 'dashboard/components-next/message/constants';
 import { frontendURL, conversationUrl } from 'dashboard/helper/URLHelper';
@@ -13,8 +14,9 @@ import { rememberConversationListReturnPath } from 'dashboard/helper/conversatio
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
 import { useI18n } from 'vue-i18n';
 import Avatar from 'next/avatar/Avatar.vue';
+import ChannelIcon from 'dashboard/components-next/icon/ChannelIcon.vue';
+import MessageStatus from 'dashboard/components-next/message/MessageStatus.vue';
 import MessagePreview from './MessagePreview.vue';
-import InboxName from '../InboxName.vue';
 
 import CardLabels from './conversationCardComponents/CardLabels.vue';
 import CardPriorityIcon from 'dashboard/components-next/Conversation/ConversationCard/CardPriorityIcon.vue';
@@ -31,7 +33,6 @@ import {
 const props = defineProps({
   activeLabel: { type: String, default: '' },
   chat: { type: Object, default: () => ({}) },
-  hideInboxName: { type: Boolean, default: false },
   hideThumbnail: { type: Boolean, default: false },
   teamId: { type: [String, Number], default: 0 },
   foldersId: { type: [String, Number], default: 0 },
@@ -81,7 +82,6 @@ const suppressNextClick = ref(false);
 const suppressClickResetTimer = ref(null);
 const touchStartPoint = ref(null);
 const INLINE_META_MAX_LENGTH = 12;
-const INBOX_NAME_MAX_LENGTH = 15;
 const LONG_PRESS_MS = 550;
 const LONG_PRESS_MOVE_TOLERANCE = 10;
 
@@ -129,7 +129,6 @@ watch(() => props.chat.id, resetState);
 onUnmounted(resetState);
 
 const currentChat = useMapGetter('getSelectedChat');
-const inboxesList = useMapGetter('inboxes/getInboxes');
 const activeInbox = useMapGetter('getSelectedInbox');
 const accountId = useMapGetter('getCurrentAccountId');
 
@@ -158,18 +157,6 @@ const truncateInlineMetaText = value => {
 const contactDisplayName = computed(() =>
   truncateInlineMetaText(currentContact.value.name)
 );
-const crmDealStages = computed(() => {
-  const stages = props.chat.crm_deal_stages || props.chat.crmDealStages || [];
-  return Array.isArray(stages)
-    ? stages
-        .filter(stage => stage?.color)
-        .map(stage => ({
-          id: stage.id,
-          name: stage.name,
-          color: stage.color,
-        }))
-    : [];
-});
 
 const schedulingAppointmentStatuses = computed(() => {
   const statuses =
@@ -185,8 +172,6 @@ const schedulingAppointmentStatuses = computed(() => {
         .filter(statusContext => statusContext.status)
     : [];
 });
-
-const hasCardAccents = computed(() => crmDealStages.value.length);
 
 const cardMatchesListMode = computed(
   () =>
@@ -221,13 +206,24 @@ const lastMessageType = computed(
     lastMessageInChat.value?.messageType
 );
 
+const outgoingMessageStatus = computed(() => {
+  if (Number(lastMessageType.value) !== MESSAGE_TYPES.OUTGOING) return '';
+
+  const status = lastMessageInChat.value?.status;
+  return [
+    MESSAGE_STATUS.PROGRESS,
+    MESSAGE_STATUS.SENT,
+    MESSAGE_STATUS.DELIVERED,
+    MESSAGE_STATUS.READ,
+  ].includes(status)
+    ? status
+    : '';
+});
+
 const lastMessageTimestamp = computed(() =>
   Number(
     lastMessageInChat.value?.created_at ??
       lastMessageInChat.value?.createdAt ??
-      props.chat.last_activity_at ??
-      props.chat.lastActivityAt ??
-      props.chat.timestamp ??
       0
   )
 );
@@ -307,10 +303,6 @@ const appointmentStatusStickerClass = computed(() => {
 
 const appointmentStatusStickerTitle = computed(() =>
   schedulingAppointmentStatuses.value.map(appointmentStatusTitle).join(' / ')
-);
-
-const isLastMessageActivity = computed(
-  () => Number(lastMessageType.value) === MESSAGE_TYPES.ACTIVITY
 );
 
 const isVoiceCallMessage = message => {
@@ -393,23 +385,6 @@ const selectionInboxIds = computed(() => {
   return inbox.value.id ? [inbox.value.id] : [];
 });
 
-const showInboxName = computed(() => {
-  return !props.hideInboxName && inboxesList.value.length > 1;
-});
-
-const lastEventIconClass = computed(() => {
-  if (Number(lastMessageType.value) === MESSAGE_TYPES.OUTGOING) {
-    return 'i-lucide-arrow-left';
-  }
-  if (Number(lastMessageType.value) === MESSAGE_TYPES.INCOMING) {
-    return 'i-lucide-arrow-right';
-  }
-  if (isLastMessageActivity.value) {
-    return 'i-lucide-info';
-  }
-  return '';
-});
-
 const hasSlaPolicyId = computed(() => props.chat?.sla_policy_id);
 
 const showLabelsSection = computed(() => {
@@ -418,16 +393,14 @@ const showLabelsSection = computed(() => {
 
 const messagePreviewClass = computed(() => {
   return [
-    isLastMessageActivity.value || !lastMessageInChat.value
-      ? 'text-n-slate-11'
-      : 'text-n-slate-12',
+    lastMessageInChat.value ? 'text-n-slate-12' : 'text-n-slate-11',
     hasUnread.value ? 'font-semibold' : '',
     !props.compact && hasUnread.value ? 'ltr:pr-4 rtl:pl-4' : '',
     props.compact && hasUnread.value ? 'ltr:pr-6 rtl:pl-6' : '',
   ];
 });
 
-const showPreviewMessageType = computed(() => !isLastMessageActivity.value);
+const showPreviewMessageType = computed(() => Boolean(lastMessageInChat.value));
 
 const isPinned = computed(() => Boolean(props.chat?.custom_attributes?.pinned));
 
@@ -676,26 +649,6 @@ const togglePinnedConversation = async nextPinnedState => {
     @touchend="onTouchEnd"
     @touchcancel="onTouchCancel"
   >
-    <span
-      v-if="hasCardAccents"
-      data-test-id="conversation-card-accents"
-      class="absolute bottom-0 left-0 top-0 z-[1] flex"
-      aria-hidden="true"
-    >
-      <span
-        v-if="crmDealStages.length"
-        data-test-id="conversation-crm-stage-accents"
-        class="flex"
-      >
-        <span
-          v-for="stage in crmDealStages"
-          :key="stage.id"
-          class="my-0.5 w-0.5 rounded-full"
-          :title="stage.name"
-          :style="{ backgroundColor: stage.color }"
-        />
-      </span>
-    </span>
     <div
       class="relative flex w-10 flex-shrink-0 flex-col items-center"
       @mouseenter="onThumbnailHover"
@@ -728,6 +681,7 @@ const togglePinnedConversation = async nextPinnedState => {
       </Avatar>
       <span
         v-if="!hideThumbnail && lastMessageTimeLabel"
+        data-test-id="conversation-card-last-message-time"
         class="mt-1 max-w-10 truncate text-center text-[9px] font-normal leading-3 tabular-nums text-n-slate-10"
       >
         {{ lastMessageTimeLabel }}
@@ -750,9 +704,7 @@ const togglePinnedConversation = async nextPinnedState => {
         <span class="sr-only">{{ appointmentStatusStickerTitle }}</span>
       </span>
     </div>
-    <div
-      class="px-0 py-2 border-b group-hover:border-transparent flex-1 border-n-slate-3 min-w-0"
-    >
+    <div class="min-w-0 flex-1 px-0 py-2">
       <h4
         class="conversation--user text-xs my-0 mx-2 pt-0.5 overflow-hidden whitespace-nowrap flex items-center gap-1 flex-1 min-w-0 text-n-slate-12"
       >
@@ -762,17 +714,12 @@ const togglePinnedConversation = async nextPinnedState => {
         >
           {{ contactDisplayName }}
         </span>
-        <i
-          v-if="lastEventIconClass"
-          class="size-3 flex-shrink-0 text-n-slate-10"
-          :class="lastEventIconClass"
-        />
-        <InboxName
-          v-if="showInboxName"
+        <ChannelIcon
           :inbox="inbox"
-          compact
-          :max-length="INBOX_NAME_MAX_LENGTH"
-          class="max-w-26 flex-shrink min-w-0"
+          fallback-icon="i-lucide-circle-question-mark"
+          fallback-icon-class="!size-2.5"
+          data-test-id="conversation-channel-icon"
+          class="size-3 flex-shrink-0 text-n-slate-11"
         />
         <span
           v-if="showAssignee && assignee.name"
@@ -805,6 +752,17 @@ const togglePinnedConversation = async nextPinnedState => {
         key="voice-status-row"
         class="flex min-w-0 flex-1 items-center gap-1"
       >
+        <MessageStatus
+          v-if="outgoingMessageStatus"
+          data-test-id="conversation-message-status"
+          :status="outgoingMessageStatus"
+          class="shrink-0"
+          :class="
+            outgoingMessageStatus === MESSAGE_STATUS.PROGRESS
+              ? '!size-2.5'
+              : '!size-3'
+          "
+        />
         <VoiceCallStatus
           :status="voiceCallData.status"
           :direction="voiceCallData.direction"
@@ -819,11 +777,23 @@ const togglePinnedConversation = async nextPinnedState => {
         </span>
       </div>
       <div v-else class="mx-2 flex h-6 min-w-0 flex-1 items-center gap-1">
+        <MessageStatus
+          v-if="outgoingMessageStatus"
+          data-test-id="conversation-message-status"
+          :status="outgoingMessageStatus"
+          class="shrink-0"
+          :class="
+            outgoingMessageStatus === MESSAGE_STATUS.PROGRESS
+              ? '!size-2.5'
+              : '!size-3'
+          "
+        />
         <MessagePreview
           v-if="lastMessageInChat"
           key="message-preview"
           :message="lastMessageInChat"
           :show-message-type="showPreviewMessageType"
+          :show-direction-icon="false"
           class="my-0 leading-6 min-w-0 flex-1 text-xs"
           :class="messagePreviewClass"
         />
@@ -860,6 +830,11 @@ const togglePinnedConversation = async nextPinnedState => {
         </template>
       </CardLabels>
     </div>
+    <span
+      data-test-id="conversation-card-separator"
+      class="absolute bottom-0 left-3 right-3 h-px bg-n-slate-3 group-hover:bg-transparent"
+      aria-hidden="true"
+    />
     <ContextMenu
       v-if="showContextMenu"
       :x="contextMenu.x"

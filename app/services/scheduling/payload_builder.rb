@@ -38,6 +38,7 @@ module Scheduling::PayloadBuilder
       ends_at: appointment.ends_at&.iso8601,
       duration_min: appointment.duration_min,
       status: appointment.status,
+      title: appointment.title,
       appointment_type: appointment.appointment_type,
       client_first_name: appointment.client_first_name,
       client_last_name: appointment.client_last_name,
@@ -152,7 +153,8 @@ module Scheduling::PayloadBuilder
       last_name: contact.last_name,
       middle_name: contact.middle_name,
       phone: contact.phone_number,
-      identifier: contact.identifier.presence || contact.custom_attributes['iin'],
+      identifier: contact.identifier.presence || contact.custom_attributes['iin'] ||
+        contact.custom_attributes['medelement_iin'],
       birth_date: contact.custom_attributes['birth_date'],
       gender: contact.custom_attributes['gender'],
       custom_attributes: contact.custom_attributes,

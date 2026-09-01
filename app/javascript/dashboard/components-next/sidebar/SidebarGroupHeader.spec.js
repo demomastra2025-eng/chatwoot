@@ -58,6 +58,14 @@ describe('SidebarGroupHeader', () => {
     showBadge.value = false;
   });
 
+  it('highlights the main icon item when one of its children is active', () => {
+    const wrapper = mountComponent({ hasActiveChild: true });
+    const item = wrapper.find('[title="Tags"]');
+
+    expect(item.classes()).toContain('bg-n-brand-solid');
+    expect(item.classes()).toContain('text-n-brand-contrast');
+  });
+
   it('shows three-digit counts without capping', () => {
     dynamicCount.value = 120;
 

@@ -21,6 +21,7 @@ import {
 
 import { Virtualizer } from 'virtua/vue';
 import ChatListHeader from './ChatListHeader.vue';
+import ChatListCount from './ChatListCount.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import ConversationItem from './ConversationItem.vue';
 import TeleportWithDirection from 'dashboard/components-next/TeleportWithDirection.vue';
@@ -77,6 +78,10 @@ import {
   resolveVisibleConversationPipelines,
 } from 'dashboard/components-next/sidebar/conversationPipelineVisibility';
 import { isConversationAssigneeSelectionLocked } from 'dashboard/components-next/sidebar/sidebarVisibility';
+import {
+  hasExclusiveConversationScope,
+  resolveConversationAssigneeType,
+} from 'dashboard/components-next/sidebar/sidebarActiveSelection';
 import {
   CONVERSATION_LIST_CONTEXT_SETTINGS_KEY,
   conversationListContextKey,
@@ -298,6 +303,15 @@ const isAssigneeSelectionLocked = computed(() =>
   )
 );
 
+const hasExclusivePrimaryScope = computed(() =>
+  hasExclusiveConversationScope({
+    label: props.label,
+    teamId: props.teamId,
+    foldersId: props.foldersId,
+    query: route.query,
+  })
+);
+
 const routeConversationStatus = computed(() => {
   const { status } = route.query;
   const savedStatus = conversationListContextState(
@@ -315,14 +329,14 @@ const routeConversationStatus = computed(() => {
 });
 
 const routeConversationAssigneeType = computed(() => {
-  if (isAssigneeSelectionLocked.value) {
-    return wootConstants.ASSIGNEE_TYPE.ALL;
-  }
-
   const assigneeType = route.query.assignee_type || route.query.assigneeType;
-  return Object.values(wootConstants.ASSIGNEE_TYPE).includes(assigneeType)
-    ? assigneeType
-    : wootConstants.ASSIGNEE_TYPE.ALL;
+  return resolveConversationAssigneeType({
+    requestedType: assigneeType,
+    allowedTypes: Object.values(wootConstants.ASSIGNEE_TYPE),
+    allType: wootConstants.ASSIGNEE_TYPE.ALL,
+    isLocked: isAssigneeSelectionLocked.value,
+    hasExclusiveScope: hasExclusivePrimaryScope.value,
+  });
 });
 
 const truthyQueryValue = value =>
@@ -485,15 +499,37 @@ const showAssigneeInConversationCard = computed(() => {
 });
 
 const currentPageFilterKey = computed(() => {
-  return hasAppliedFiltersOrActiveFolders.value
-    ? 'appliedFilters'
-    : activeAssigneeTab.value;
+  if (hasAppliedFiltersOrActiveFolders.value) return 'appliedFilters';
+
+  const hasScopedFilter =
+    hasExclusivePrimaryScope.value ||
+    props.conversationInbox ||
+    props.conversationType;
+
+  if (!hasScopedFilter) return activeAssigneeTab.value;
+
+  return `scope:${JSON.stringify({
+    status: activeStatus.value,
+    sortBy: activeSortBy.value,
+    inboxId: props.conversationInbox || null,
+    label: props.label || null,
+    teamId: props.teamId || null,
+    conversationType: props.conversationType || null,
+    crmPipelineId:
+      route.query.crm_pipeline_id || route.query.crmPipelineId || null,
+    crmStageId: route.query.crm_stage_id || route.query.crmStageId || null,
+    appointmentStatus:
+      route.query.appointment_status || route.query.appointmentStatus || null,
+    labelsScope: route.query.labels_scope || route.query.labelsScope || null,
+    teamScope: route.query.team_scope || route.query.teamScope || null,
+    unread: truthyQueryValue(route.query.unread),
+  })}`;
 });
 
 const inbox = useFunctionGetter('inboxes/getInbox', activeInbox);
 const currentPage = useFunctionGetter(
   'conversationPage/getCurrentPageFilter',
-  activeAssigneeTab
+  currentPageFilterKey
 );
 const currentFiltersPage = useFunctionGetter(
   'conversationPage/getCurrentPageFilter',
@@ -609,7 +645,7 @@ const conversationListPagination = computed(() => {
     return 1;
   }
 
-  return currentPage.value + 1;
+  return Number(currentPage.value || 0) + 1;
 });
 
 const conversationFilters = computed(() => {
@@ -623,6 +659,7 @@ const conversationFilters = computed(() => {
     teamId: props.teamId || undefined,
     conversationType: props.conversationType || undefined,
     communicationThreadMode: props.communicationThreadMode,
+    pageFilterKey: currentPageFilterKey.value,
     crmPipelineId: activeCrmPipelineId.value || undefined,
     crmStageId: activeCrmStageId.value || undefined,
     appointmentStatus: activeAppointmentStatusFilter.value || undefined,
@@ -711,7 +748,12 @@ function filterByAssigneeTab(conversations) {
 const conversationList = computed(() => {
   let localConversationList = [];
 
-  if (!hasAppliedFiltersOrActiveFolders.value) {
+  if (props.communicationThreadMode) {
+    // Communication thread endpoints already apply the complete server-side
+    // status/scope contract. Reapplying page filters to the normalized channel
+    // summary can hide valid rows while retaining the server's non-zero total.
+    localConversationList = [...allChatList.value({ serverScoped: true })];
+  } else if (!hasAppliedFiltersOrActiveFolders.value) {
     const filters = conversationFilters.value;
     if (
       props.conversationType === wootConstants.CONVERSATION_TYPE.PARTICIPATING
@@ -730,16 +772,18 @@ const conversationList = computed(() => {
     localConversationList = [...chatLists.value];
   }
 
-  if (activeFolder.value) {
+  if (activeFolder.value && !props.communicationThreadMode) {
     const { payload } = activeFolder.value.query;
     localConversationList = localConversationList.filter(conversation => {
       return matchesFilters(conversation, payload);
     });
   }
 
-  localConversationList = localConversationList.filter(conversation =>
-    filterByUnread(true, activeUnreadOnly.value, conversation.unread_count)
-  );
+  if (!props.communicationThreadMode) {
+    localConversationList = localConversationList.filter(conversation =>
+      filterByUnread(true, activeUnreadOnly.value, conversation.unread_count)
+    );
+  }
 
   return filterConversationsByCommunicationThreadMode(
     localConversationList,
@@ -786,25 +830,38 @@ const totalConversationCount = computed(() => {
   }
 
   if (hasAppliedFiltersOrActiveFolders.value) {
-    return conversationList.value.length;
+    return Number(currentListTotal.value || 0);
   }
 
   return activeAssigneeTabCount.value;
 });
-
-const shouldShowListCountLabel = computed(() => {
-  return totalConversationCount.value > 0 && shownConversationCount.value > 0;
-});
-
-const listCountLabel = computed(() => totalConversationCount.value);
 
 const assignmentStatsFilters = computed(() => ({
   communicationThreadMode: true,
   status: activeStatus.value,
 }));
 
-function refreshAssignmentStats() {
+const needsSeparateAssignmentStats = computed(() =>
+  [
+    'inboxId',
+    'labels',
+    'labelsScope',
+    'teamId',
+    'teamScope',
+    'conversationType',
+    'crmPipelineId',
+    'crmStageId',
+    'appointmentStatus',
+    'unread',
+  ].some(key => {
+    const value = conversationFilters.value[key];
+    return Array.isArray(value) ? value.length > 0 : Boolean(value);
+  })
+);
+
+function refreshAssignmentStats({ force = false } = {}) {
   if (!props.communicationThreadMode) return;
+  if (!force && !needsSeparateAssignmentStats.value) return;
   store.dispatch('conversationStats/get', assignmentStatsFilters.value);
 }
 
@@ -977,6 +1034,7 @@ function fetchFilteredConversations(payload) {
       queryData: filterQueryGenerator(payload),
       page,
       communicationThreadMode: props.communicationThreadMode,
+      pageFilterKey: currentPageFilterKey.value,
       crmPipelineId: activeCrmPipelineId.value || undefined,
       crmStageId: activeCrmStageId.value || undefined,
       appointmentStatus: activeAppointmentStatusFilter.value || undefined,
@@ -998,6 +1056,7 @@ function fetchSavedFilteredConversations(payload) {
       queryData: payload,
       page,
       communicationThreadMode: props.communicationThreadMode,
+      pageFilterKey: currentPageFilterKey.value,
       crmPipelineId: activeCrmPipelineId.value || undefined,
       crmStageId: activeCrmStageId.value || undefined,
       appointmentStatus: activeAppointmentStatusFilter.value || undefined,
@@ -1436,6 +1495,7 @@ async function handleAssignAgent(agent, conversationId = null) {
     try {
       await store.dispatch('assignAgent', {
         conversationId: targetConversationId,
+        conversationType: 'communication_thread',
         agentId: agent.id,
       });
       useAlert(
@@ -1459,6 +1519,9 @@ async function handleAssignTeam(team, conversationId = null) {
     try {
       await store.dispatch('assignTeam', {
         conversationId: targetConversationId,
+        conversationType: props.communicationThreadMode
+          ? 'communication_thread'
+          : 'conversation',
         teamId: team.id,
       });
       useAlert(
@@ -1531,22 +1594,32 @@ async function handleRemoveLabels(labelsToRemove, conversationId = null) {
 }
 
 async function assignPriority(priority, conversationId = null) {
+  const conversationType = props.communicationThreadMode
+    ? 'communication_thread'
+    : 'conversation';
   store.dispatch('setCurrentChatPriority', {
     priority,
     conversationId,
+    conversationType,
   });
-  store.dispatch('assignPriority', { conversationId, priority }).then(() => {
-    useTrack(CONVERSATION_EVENTS.CHANGE_PRIORITY, {
-      newValue: priority,
-      from: 'Context menu',
+  store
+    .dispatch('assignPriority', {
+      conversationId,
+      conversationType,
+      priority,
+    })
+    .then(() => {
+      useTrack(CONVERSATION_EVENTS.CHANGE_PRIORITY, {
+        newValue: priority,
+        from: 'Context menu',
+      });
+      useAlert(
+        t('CONVERSATION.PRIORITY.CHANGE_PRIORITY.SUCCESSFUL', {
+          priority,
+          conversationId,
+        })
+      );
     });
-    useAlert(
-      t('CONVERSATION.PRIORITY.CHANGE_PRIORITY.SUCCESSFUL', {
-        priority,
-        conversationId,
-      })
-    );
-  });
 }
 
 async function markAsUnread(conversationId) {
@@ -1675,7 +1748,10 @@ function selectAllMatchingConversations() {
 
   store.dispatch('bulkActions/setServerSelection', {
     mode: 'all_matching',
-    filters: useSnakeCase(conversationFilters.value),
+    filters: useSnakeCase({
+      ...conversationFilters.value,
+      pageFilterKey: undefined,
+    }),
     payload: resolveBulkSelectionPayload({
       appliedFilterPayload,
       activeFolderQuery: activeFolder.value?.query,
@@ -1687,7 +1763,7 @@ function selectAllMatchingConversations() {
 useEmitter('fetch_conversation_stats', () => {
   if (hasAppliedFiltersOrActiveFolders.value) return;
   if (props.communicationThreadMode) {
-    refreshAssignmentStats();
+    refreshAssignmentStats({ force: true });
   } else {
     store.dispatch('conversationStats/get', conversationFilters.value);
   }
@@ -1804,11 +1880,6 @@ provide('assignPriority', assignPriority);
 provide('isConversationSelected', isConversationSelected);
 provide('deleteConversation', handleDelete);
 
-watch(activeTeam, () => {
-  clearLocalSearch();
-  resetAndFetchData();
-});
-
 watch(
   () => routeTargetKey(),
   (newTargetKey, oldTargetKey) => {
@@ -1885,62 +1956,20 @@ watch(currentListContextKey, () => {
   store.dispatch('setChatSortFilter', orderBy);
 });
 
-watch(routeConversationAssigneeType, (newAssigneeType, oldAssigneeType) => {
-  if (newAssigneeType === oldAssigneeType) {
-    return;
-  }
-
-  activeAssigneeTab.value = newAssigneeType;
-  clearLocalSearch();
-  resetAndFetchData();
-});
-
-watch(
-  computed(() => props.conversationInbox),
-  () => {
-    clearLocalSearch();
-    resetAndFetchData();
-  }
-);
-watch(
-  computed(() => props.label),
-  () => {
-    clearLocalSearch();
-    resetAndFetchData();
-  }
-);
-watch(
-  computed(() => props.conversationType),
-  () => {
-    clearLocalSearch();
-    resetAndFetchData();
-  }
-);
-watch(
-  computed(() => props.communicationThreadMode),
-  () => {
-    clearLocalSearch();
-    resetAndFetchData();
-  }
+const conversationFetchScopeKey = computed(() =>
+  JSON.stringify({
+    pageFilterKey: currentPageFilterKey.value,
+    assigneeType: routeConversationAssigneeType.value,
+    communicationThreadMode: props.communicationThreadMode,
+    sortBy: activeSortBy.value,
+    folderId: activeFolder.value?.id || null,
+    folderQuery: activeFolder.value?.query || null,
+  })
 );
 
-watch([activeCrmPipelineId, activeCrmStageId], () => {
+watch(conversationFetchScopeKey, () => {
+  activeAssigneeTab.value = routeConversationAssigneeType.value;
   ensureCrmReferencesLoaded();
-  clearLocalSearch();
-  resetAndFetchData();
-});
-
-watch(activeAppointmentStatusFilter, () => {
-  clearLocalSearch();
-  resetAndFetchData();
-});
-
-watch([activeLabelsScope, activeTeamScope], () => {
-  clearLocalSearch();
-  resetAndFetchData();
-});
-
-watch(activeUnreadOnly, () => {
   clearLocalSearch();
   resetAndFetchData();
 });
@@ -1949,13 +1978,15 @@ watch(activeFolder, (newVal, oldVal) => {
   if (newVal !== oldVal) {
     store.dispatch('customViews/setActiveConversationFolder', newVal || null);
   }
-  clearLocalSearch();
-  resetAndFetchData();
 });
 
-watch(chatLists, () => {
-  chatsOnView.value = conversationList.value;
-});
+watch(
+  conversationList,
+  newConversationList => {
+    chatsOnView.value = newConversationList;
+  },
+  { immediate: true }
+);
 
 watch(conversationFilters, (newVal, oldVal) => {
   if (newVal !== oldVal) {
@@ -1979,13 +2010,10 @@ watch(conversationFilters, (newVal, oldVal) => {
       :has-applied-filters="hasAppliedFilters"
       :has-active-folders="hasActiveFolders"
       :is-on-expanded-layout="isOnExpandedLayout"
-      :conversation-stats="conversationStats"
-      :is-list-loading="chatListLoading && !conversationList.length"
       :active-unread-only="activeUnreadOnly"
       :active-status="activeStatus"
       :show-status-filter="communicationThreadMode"
       :show-ai-status="showAiStatus"
-      :search-result-count="hasLocalSearch ? shownConversationCount : null"
       @add-folders="onClickOpenAddFoldersModal"
       @delete-folders="onClickOpenDeleteFoldersModal"
       @filters-modal="onToggleAdvanceFiltersModal"
@@ -1993,6 +2021,10 @@ watch(conversationFilters, (newVal, oldVal) => {
       @basic-filter-change="onBasicFilterChange"
       @unread-filter-toggle="onUnreadFilterToggle"
       @status-filter-change="updateConversationStatusQuery"
+    />
+    <ChatListCount
+      :conversation-count="totalConversationCount"
+      :is-list-loading="chatListLoading"
     />
 
     <div
@@ -2112,16 +2144,6 @@ watch(conversationFilters, (newVal, oldVal) => {
         :options="intersectionObserverOptions"
         @observed="loadMoreConversations"
       />
-      <div
-        v-if="shouldShowListCountLabel"
-        class="sticky bottom-3 z-20 flex justify-center pointer-events-none"
-      >
-        <span
-          class="rounded-full bg-n-alpha-1 px-2 py-1 text-xs font-medium text-n-slate-11 shadow-sm backdrop-blur"
-        >
-          {{ listCountLabel }}
-        </span>
-      </div>
     </div>
     <Dialog
       ref="deleteConversationDialogRef"

@@ -474,6 +474,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'
@@ -490,6 +491,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'
@@ -506,6 +508,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'
@@ -522,6 +525,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'
@@ -539,6 +543,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'
@@ -569,6 +574,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'
@@ -584,6 +590,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'low'
@@ -600,6 +607,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'low'
@@ -1035,6 +1043,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'low',
@@ -1298,6 +1307,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'high',
@@ -1306,7 +1316,7 @@ class Captain::ToolRegistry
         definition(
           id: 'assign_conversation',
           title: 'Assign Conversation',
-          description: 'Assign a conversation to an agent, agent bot, or team',
+          description: 'Assign a contact and its omnichannel conversation thread to an agent or team',
           group_name: 'Conversations',
           icon: 'user-switch',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
@@ -1315,6 +1325,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'
@@ -1629,6 +1640,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'high',
@@ -1646,6 +1658,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'high',
@@ -1663,6 +1676,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'low'
@@ -2118,6 +2132,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'low',
@@ -2189,6 +2204,7 @@ class Captain::ToolRegistry
           required_permissions: %w[
             conversation_manage
             conversation_unassigned_manage
+            conversation_team_manage
             conversation_participating_manage
           ],
           risk_level: 'medium'

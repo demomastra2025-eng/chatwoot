@@ -50,26 +50,22 @@ class Reminders::MaterializeDueEnrollmentsJob < ApplicationJob
   end
 
   def process_due_step(state, excluded_ids)
-    processed_step = false
-    TouchPlanEnrollment.transaction do
-      enrollment = locked_enrollment(state[:enrollment_id], excluded_ids)
-      next if enrollment.blank?
+    enrollment = candidate_enrollment(state[:enrollment_id], excluded_ids)
+    return false if enrollment.blank?
 
-      state[:enrollment_id] ||= enrollment.id
-      state[:account] ||= enrollment.account
-      Reminders::MaterializeEnrollmentStepService.new(enrollment: enrollment).perform
-      processed_step = true
-    end
-    processed_step
+    state[:enrollment_id] ||= enrollment.id
+    state[:account] ||= enrollment.account
+    Reminders::MaterializeEnrollmentStepService.new(enrollment: enrollment).perform
+    true
   end
 
-  def locked_enrollment(enrollment_id, excluded_ids)
+  def candidate_enrollment(enrollment_id, excluded_ids)
     scope = if enrollment_id.present?
               candidate_enrollments.where(id: enrollment_id)
             else
               ordered_candidate_enrollments.where.not(id: excluded_ids)
             end
-    scope.lock('FOR UPDATE SKIP LOCKED').first
+    scope.first
   end
 
   def warn_if_due_steps_remain(enrollment_id)

@@ -11,7 +11,7 @@ class AutomationRules::TouchActionService
     target_contact_id target_contact_inbox_id target_conversation_id target_inbox_id template_params text_mode timing_mode timezone
   ].freeze
 
-  attr_reader :account, :entity_kind, :execution_key, :record, :rule, :trigger_message
+  attr_reader :account, :entity_kind, :execution_key, :expected_generation, :record, :rule, :trigger_message
 
   def initialize(rule:, account:, record:, entity_kind:, trigger_message: nil, execution_key: nil) # rubocop:disable Metrics/ParameterLists
     @rule = rule
@@ -20,33 +20,38 @@ class AutomationRules::TouchActionService
     @entity_kind = entity_kind
     @trigger_message = trigger_message
     @execution_key = execution_key
+    @expected_generation = rule.lifecycle_generation
   end
 
   def apply_touch_plan(action_params, action_key: nil)
-    reminder_group = load_touch_plan!(action_params)
-    action_key = action_key.presence || 'apply_touch_plan'
+    with_active_rule do
+      reminder_group = load_touch_plan!(action_params)
+      action_key = action_key.presence || 'apply_touch_plan'
 
-    result = find_or_apply_touch_plan(reminder_group, action_key)
-    reminders = result.touches
+      result = find_or_apply_touch_plan(reminder_group, action_key)
+      reminders = result.touches
 
-    reminders.each do |reminder|
-      Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
-    end
+      reminders.each do |reminder|
+        Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
+      end
 
-    reminders
+      reminders
+    end || []
   end
 
   def create_touch(action_params = nil, action_id: nil, action_key: nil, **keyword_params)
-    action_params = keyword_params if action_params.nil? && keyword_params.present?
-    params = normalize_touch_params(action_params)
-    return create_deferred_touch(params, action_id) if deferred_action?(params, action_id)
+    with_active_rule do
+      action_params = keyword_params if action_params.nil? && keyword_params.present?
+      params = normalize_touch_params(action_params)
+      next create_deferred_touch(params, action_id) if deferred_action?(params, action_id)
 
-    action_key = action_key.presence || action_id.presence || 'create_touch'
-    reminder = find_or_create_event_touch(params, action_key)
+      action_key = action_key.presence || action_id.presence || 'create_touch'
+      reminder = find_or_create_event_touch(params, action_key)
 
-    Reminders::StaleAutomationTouchService.new(reminder: reminder, trigger_message: trigger_message).perform
-    Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
-    reminder
+      Reminders::StaleAutomationTouchService.new(reminder: reminder, trigger_message: trigger_message).perform
+      Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
+      reminder
+    end
   end
 
   def send_message(action_params, action_id: nil, action_key: nil)
@@ -65,26 +70,47 @@ class AutomationRules::TouchActionService
   end
 
   def cancel_touches(action_params)
-    params = normalize_cancel_params(action_params)
-    reminder_group = load_optional_touch_plan!(params[:reminder_group_id])
+    with_active_rule do
+      params = normalize_cancel_params(action_params)
+      reminder_group = load_optional_touch_plan!(params[:reminder_group_id])
 
-    Reminders::BulkCancelService.new(
-      account: account,
-      remindable: record,
-      reminder_group: reminder_group,
-      touch_source: reminder_group.present? ? nil : 'automation',
-      actor: nil,
-      reason: params[:reason].presence || AUTOMATION_CANCEL_REASON,
-      metadata: {
-        'automation_rule_id' => rule.id,
-        'touch_source' => 'automation',
-        'cancelled_via' => 'automation_cancel_touches',
-        'cancel_touches_entity_kind' => entity_kind
-      }
-    ).perform
+      Reminders::BulkCancelService.new(**automation_cancel_options(reminder_group, params)).perform
+    end || 0
   end
 
   private
+
+  def automation_cancel_options(reminder_group, params)
+    options = {
+      account: account, remindable: record, reminder_group: reminder_group,
+      touch_source: reminder_group.present? ? nil : 'automation', actor: nil,
+      reason: params[:reason].presence || AUTOMATION_CANCEL_REASON,
+      metadata: automation_cancel_metadata
+    }
+    return options if reminder_group.present?
+
+    options.merge(automation_rule_id: rule.id, automation_rule_generation: expected_generation)
+  end
+
+  def automation_cancel_metadata
+    {
+      'automation_rule_id' => rule.id,
+      'automation_rule_generation' => expected_generation,
+      'touch_source' => 'automation',
+      'cancelled_via' => 'automation_cancel_touches',
+      'cancel_touches_entity_kind' => entity_kind
+    }
+  end
+
+  def with_active_rule
+    AutomationRule.transaction do
+      locked_rule = AutomationRule.lock.find_by(id: rule.id, account_id: account.id)
+      next unless locked_rule&.active? && locked_rule.lifecycle_generation == expected_generation
+
+      @rule = locked_rule
+      yield
+    end
+  end
 
   def find_or_apply_touch_plan(reminder_group, action_key)
     return apply_touch_plan_once(reminder_group, action_key) unless idempotent_event_touch?

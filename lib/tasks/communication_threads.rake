@@ -1,6 +1,13 @@
 # frozen_string_literal: true
 
 namespace :communication_threads do
+  desc 'Print a read-only JSON report of Contact/Thread/Conversation routing conflicts.'
+  task conflict_report: :environment do
+    result = CommunicationThreads::ConflictReportService.new(account_id: ENV['ACCOUNT_ID']).perform
+
+    puts JSON.pretty_generate(result)
+  end
+
   desc 'Backfill communication threads for existing conversations. DRY_RUN=true by default; pass DRY_RUN=false to apply.'
   task backfill: :environment do
     dry_run = ENV.fetch('DRY_RUN', 'true') != 'false'

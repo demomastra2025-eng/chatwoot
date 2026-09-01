@@ -101,6 +101,11 @@ export default {
       labelSuggestions: [],
       isCancellingCaptainResponse: false,
       conversationHistoryGeneration: 0,
+      openedUnreadMessageIds: [],
+      openedUnreadMessageCount: 0,
+      openedFirstUnreadMessageId: null,
+      showUnreadJumpButton: false,
+      isLoadingOpenedUnread: false,
     };
   },
 
@@ -148,6 +153,21 @@ export default {
         user => user.type === 'captain_assistant'
       );
     },
+    captainResponseConversationId() {
+      if (!isCommunicationThread(this.currentChat)) {
+        return this.currentChat?.id;
+      }
+
+      const getTypingUsers =
+        this.$store.getters['conversationTypingStatus/getUserList'];
+      return this.currentChat.channels
+        ?.map(channel => channel.conversation_id)
+        .find(conversationId =>
+          getTypingUsers(conversationId).some(
+            user => user.type === 'captain_assistant'
+          )
+        );
+    },
     typingUserNames() {
       const userList = this.typingUsersList;
       if (this.isAnyoneTyping) {
@@ -178,6 +198,11 @@ export default {
     },
     unreadMessageIds() {
       return this.unReadMessages.map(message => message.id);
+    },
+    visibleUnreadMessageIds() {
+      return this.openedUnreadMessageIds.length
+        ? this.openedUnreadMessageIds
+        : this.unreadMessageIds;
     },
     communicationThreadLastSeenByConversationId() {
       return new Map(
@@ -279,11 +304,16 @@ export default {
     unreadMessageCount() {
       return this.currentChat.unread_count || 0;
     },
+    visibleUnreadMessageCount() {
+      return this.openedUnreadMessageCount || this.unreadMessageCount;
+    },
     unreadMessageLabel() {
       const count =
-        this.unreadMessageCount > 99 ? '99+' : this.unreadMessageCount;
+        this.visibleUnreadMessageCount > 99
+          ? '99+'
+          : this.visibleUnreadMessageCount;
       const label =
-        this.unreadMessageCount > 1
+        this.visibleUnreadMessageCount > 1
           ? 'CONVERSATION.UNREAD_MESSAGES'
           : 'CONVERSATION.UNREAD_MESSAGE';
       return `${count} ${this.$t(label)}`;
@@ -322,9 +352,13 @@ export default {
         return;
       }
       this.conversationHistoryGeneration += 1;
-      this.fetchAllAttachmentsFromCurrentChat();
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
+      this.openedUnreadMessageIds = [];
+      this.openedUnreadMessageCount = 0;
+      this.openedFirstUnreadMessageId = null;
+      this.showUnreadJumpButton = false;
+      this.isLoadingOpenedUnread = false;
       this.resetReplyEditorHeight();
     },
   },
@@ -340,7 +374,6 @@ export default {
 
   mounted() {
     this.addScrollListener();
-    this.fetchAllAttachmentsFromCurrentChat();
     this.fetchSuggestions();
   },
 
@@ -392,14 +425,6 @@ export default {
         this.currentChat.id
       );
     },
-    fetchAllAttachmentsFromCurrentChat() {
-      this.$store.dispatch('fetchAllAttachments', {
-        conversationId: this.currentChat.id,
-        isCommunicationThread: Boolean(
-          this.currentChat.is_communication_thread
-        ),
-      });
-    },
     removeBusListeners() {
       emitter.off(BUS_EVENTS.SCROLL_TO_MESSAGE, this.onScrollToMessage);
     },
@@ -419,12 +444,72 @@ export default {
           (!hasExplicitMessageTarget &&
             (!this.hasUserScrolled || this.isNearConversationBottom()))
         ) {
-          const didScrollToLoadedUnread = this.scrollToBottom();
-          if (didScrollToLoadedUnread !== false) {
-            this.makeMessagesRead();
-          }
+          this.preserveOpenedUnreadMessages();
+          this.scrollToBottom();
+          this.makeMessagesRead();
         }
       });
+    },
+    preserveOpenedUnreadMessages() {
+      if (this.openedUnreadMessageCount) return;
+
+      const firstUnreadMessageId =
+        this.currentChat?.meta?.first_unread_message_id ||
+        this.unreadMessageIds[0];
+      const unreadMessageCount = Math.max(
+        this.unreadMessageCount,
+        this.unreadMessageIds.length
+      );
+      if (!firstUnreadMessageId || !unreadMessageCount) return;
+
+      this.openedUnreadMessageIds = [
+        firstUnreadMessageId,
+        ...this.unreadMessageIds.filter(id => id !== firstUnreadMessageId),
+      ];
+      this.openedFirstUnreadMessageId = firstUnreadMessageId;
+      this.openedUnreadMessageCount = unreadMessageCount;
+      this.showUnreadJumpButton = true;
+    },
+    async scrollToFirstOpenedUnread() {
+      const firstUnreadId =
+        this.openedFirstUnreadMessageId || this.visibleUnreadMessageIds[0];
+      if (!firstUnreadId || !this.conversationPanel) return;
+
+      let firstUnreadMessage = this.conversationPanel.querySelector(
+        `#message${firstUnreadId}`
+      );
+      if (!firstUnreadMessage) {
+        this.isLoadingOpenedUnread = true;
+        try {
+          await this.$store.dispatch('fetchPreviousMessages', {
+            conversationId: this.currentChat.id,
+            conversationType: isCommunicationThread(this.currentChat)
+              ? 'communication_thread'
+              : 'conversation',
+            after: firstUnreadId,
+            before: this.currentChat.messages?.[0]?.id,
+          });
+          await new Promise(resolve => {
+            this.$nextTick(() => {
+              resolve();
+            });
+          });
+          firstUnreadMessage = this.conversationPanel.querySelector(
+            `#message${firstUnreadId}`
+          );
+        } finally {
+          this.isLoadingOpenedUnread = false;
+        }
+      }
+      if (!firstUnreadMessage) return;
+
+      this.isProgrammaticScroll = true;
+      scrollElementIntoConversationPanel(
+        this.conversationPanel,
+        firstUnreadMessage,
+        { block: 'start' }
+      );
+      this.showUnreadJumpButton = false;
     },
     addScrollListener() {
       this.conversationPanel = this.$el.querySelector('.conversation-panel');
@@ -440,31 +525,6 @@ export default {
       if (!this.conversationPanel) return false;
 
       this.isProgrammaticScroll = true;
-
-      // Unread messages have the highest priority: scroll to the first
-      // concrete unread DOM node instead of estimating its position from the
-      // total unread height. This keeps imported/backfilled channels, date
-      // dividers, attachments, call cards, and channel dividers from shifting
-      // the viewport to the wrong part of the timeline.
-      if (this.unreadMessageCount > 0) {
-        const firstUnreadMessage =
-          this.conversationPanel.querySelector('.message--unread');
-
-        if (firstUnreadMessage) {
-          return scrollElementIntoConversationPanel(
-            this.conversationPanel,
-            firstUnreadMessage,
-            { block: 'start' }
-          );
-        }
-
-        // Backend says there is unread content, but it is not mounted in the
-        // current payload yet. Do not mark the conversation read in this state;
-        // keep the viewport at the newest mounted content while the missing
-        // unread page can be fetched/retried.
-        scrollConversationPanelToBottom(this.conversationPanel);
-        return false;
-      }
 
       const labelSuggestions =
         this.conversationPanel.querySelector('.label-suggestion');
@@ -605,12 +665,16 @@ export default {
       await this.$store.dispatch('sendMessageWithData', payload);
     },
     async cancelCaptainResponse() {
-      if (this.isCancellingCaptainResponse || !this.currentChat?.id) return;
+      if (
+        this.isCancellingCaptainResponse ||
+        !this.captainResponseConversationId
+      )
+        return;
 
       this.isCancellingCaptainResponse = true;
       try {
         await ConversationApi.cancelCaptainResponse({
-          conversationId: this.currentChat.id,
+          conversationId: this.captainResponseConversationId,
         });
       } catch (error) {
         useAlert(this.$t('CONVERSATION.CAPTAIN_RESPONSE_CANCEL_FAILED'));
@@ -653,11 +717,11 @@ export default {
       ref="conversationPanelRef"
       class="conversation-panel flex-shrink flex-grow basis-px flex flex-col overflow-y-auto relative h-full m-0 pb-4"
       :current-user-id="currentUserId"
-      :first-unread-id="unReadMessages[0]?.id"
+      :first-unread-id="visibleUnreadMessageIds[0]"
       :is-an-email-channel="isAnEmailChannel"
       :inbox-supports-reply-to="inboxSupportsReplyTo"
       :messages="getMessages"
-      :unread-message-ids="unreadMessageIds"
+      :unread-message-ids="visibleUnreadMessageIds"
       @retry="handleMessageRetry"
     >
       <template #beforeAll>
@@ -677,7 +741,7 @@ export default {
       </template>
       <template #unreadBadge>
         <li
-          v-show="unreadMessageCount != 0"
+          v-show="visibleUnreadMessageCount != 0"
           class="list-none flex justify-center items-center"
         >
           <span
@@ -697,6 +761,24 @@ export default {
       </template>
     </MessageList>
     <div class="flex relative flex-col bg-n-surface-1">
+      <button
+        v-if="showUnreadJumpButton"
+        type="button"
+        class="absolute -top-10 left-1/2 z-20 -translate-x-1/2 rounded-full border border-n-weak bg-n-solid-1 px-3 py-1.5 text-xs font-medium text-n-slate-12 shadow-md hover:bg-n-alpha-2"
+        :disabled="isLoadingOpenedUnread"
+        @click="scrollToFirstOpenedUnread"
+      >
+        <Icon
+          :icon="
+            isLoadingOpenedUnread
+              ? 'i-lucide-loader-circle'
+              : 'i-lucide-arrow-up'
+          "
+          class="mr-1 inline size-3.5"
+          :class="{ 'animate-spin': isLoadingOpenedUnread }"
+        />
+        {{ unreadMessageLabel }}
+      </button>
       <div
         v-if="isAnyoneTyping"
         class="absolute z-10 flex items-center w-full h-0 -top-8"

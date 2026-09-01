@@ -39,6 +39,15 @@ RSpec.describe NotificationFinder do
       end
     end
 
+    context 'with params including archived status' do
+      let(:params) { { includes: ['archived'] } }
+
+      it 'returns only read, unsnoozed notifications' do
+        expect(subject.size).to eq(2)
+        expect(subject.map(&:read_at)).to all(be_present)
+      end
+    end
+
     context 'with params including only snoozed status' do
       let(:params) { { includes: ['snoozed'] } }
 
@@ -91,6 +100,15 @@ RSpec.describe NotificationFinder do
       it 'adjusts counts based on included statuses' do
         expect(subject.unread_count).to eq(4) # 3 unread + 1 snoozed (which is unread)
         expect(subject.count).to eq(6) # all notifications including read and snoozed
+      end
+    end
+
+    context 'with archived notifications only' do
+      let(:params) { { includes: ['archived'] } }
+
+      it 'reports archived count without unread notifications' do
+        expect(subject.unread_count).to eq(0)
+        expect(subject.count).to eq(2)
       end
     end
   end

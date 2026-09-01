@@ -24,14 +24,8 @@ pt:
       not_required: 'Reauthorization is not required for this inbox'
       invalid_channel: 'Invalid channel type for reauthorization'
   auth:
-    saml:
-      invalid_email: 'Por favor, insira um endereço de e-mail válido'
-      authentication_failed: 'Authentication failed. Please check your credentials and try again.'
   messages:
     reset_password: Request for password reset is successful. A email with instructions will be sent to your email if it exists.
-    reset_password_saml_user: This account uses SAML authentication. Password reset is not available. Please contact your administrator.
-    login_saml_user: This account uses SAML authentication. Please sign in through your organization's SAML provider.
-    saml_not_available: SAML authentication is not available in this installation.
     inbox_deletetion_response: O seu pedido de eliminação de caixa de entrada será processado mais tarde.
   errors:
     account:
@@ -52,9 +46,6 @@ pt:
       not_found: Assignment policy not found
     attachments:
       invalid: Invalid attachment
-    saml:
-      feature_not_enabled: SAML feature not enabled for this account
-      sso_not_enabled: SAML SSO is not enabled for this installation
     data_import:
       data_type:
         invalid: Tipo de dados inválido
@@ -134,8 +125,6 @@ pt:
     mfa:
       enabled: MFA enabled successfully
       disabled: MFA disabled successfully
-    account_saml_settings:
-      invalid_certificate: must be a valid X.509 certificate in PEM format
   reports:
     period: Período do relatório de %{since} a %{until}
     utc_warning: O relatório gerado está no fuso horário UTC
@@ -229,8 +218,6 @@ pt:
         open: 'A conversa foi marcada como aberta por %{user_name}'
         open_with_reason: 'Conversation was marked open by %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'Conversation was marked open automatically after an agent reply'
-      agent_bot:
-        error_moved_to_open: 'Conversation was marked open by system due to an error with the agent bot.'
       status:
         resolved: 'Conversa foi marcada como resolvida por %{user_name}'
         contact_resolved: 'Conversa foi resolvida por %{contact_name}'

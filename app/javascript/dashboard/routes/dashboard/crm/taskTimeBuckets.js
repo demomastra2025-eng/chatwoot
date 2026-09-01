@@ -12,20 +12,30 @@ const addDays = (date, days) => {
   return next;
 };
 
-const nextMonday = date => {
-  const day = date.getDay();
-  return addDays(date, day === 0 ? 1 : 8 - day);
+const addMonths = (date, months) => {
+  const next = new Date(date);
+  next.setMonth(next.getMonth() + months);
+  return next;
 };
 
 export const TASK_TIME_BUCKETS = [
   'overdue',
   'today',
   'tomorrow',
-  'thisWeek',
   'nextWeek',
-  'later',
+  'thisMonth',
+  'future',
   'unscheduled',
 ];
+
+const DEFAULT_VISIBLE_TASK_TIME_BUCKETS = ['today', 'tomorrow'];
+
+export const visibleTaskTimeBuckets = groups =>
+  TASK_TIME_BUCKETS.filter(
+    bucket =>
+      DEFAULT_VISIBLE_TASK_TIME_BUCKETS.includes(bucket) ||
+      Boolean(groups?.[bucket]?.length)
+  );
 
 export const taskTimeBucket = (task, now = new Date()) => {
   if (task?.archivedAt || task?.completedAt) return null;
@@ -36,16 +46,16 @@ export const taskTimeBucket = (task, now = new Date()) => {
   const today = startOfLocalDay(now);
   const tomorrow = addDays(today, 1);
   const dayAfterTomorrow = addDays(today, 2);
-  const followingMonday = nextMonday(today);
-  const mondayAfterNext = addDays(followingMonday, 7);
+  const nextWeekBoundary = addDays(today, 8);
+  const nextMonthBoundary = addMonths(today, 1);
 
   if (dueAt < now) return 'overdue';
   if (dueAt < tomorrow) return 'today';
   if (dueAt < dayAfterTomorrow) return 'tomorrow';
-  if (dueAt < followingMonday) return 'thisWeek';
-  if (dueAt < mondayAfterNext) return 'nextWeek';
+  if (dueAt < nextWeekBoundary) return 'nextWeek';
+  if (dueAt < nextMonthBoundary) return 'thisMonth';
 
-  return 'later';
+  return 'future';
 };
 
 export const groupTasksByTime = (tasks, now = new Date()) => {

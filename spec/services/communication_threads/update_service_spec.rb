@@ -65,7 +65,7 @@ RSpec.describe CommunicationThreads::UpdateService do
       Current.user = nil
     end
 
-    it 'keeps inaccessible child conversations unchanged and aggregates the real thread status' do
+    it 'updates every linked channel even when the caller supplied only one link' do
       contact = create(:contact, account: account)
       accessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
       inaccessible_conversation = create(:conversation, account: account, contact: contact, status: :open)
@@ -78,8 +78,8 @@ RSpec.describe CommunicationThreads::UpdateService do
       ).perform
 
       expect(accessible_conversation.reload).to be_resolved
-      expect(inaccessible_conversation.reload).to be_open
-      expect(thread).to be_open
+      expect(inaccessible_conversation.reload).to be_resolved
+      expect(thread).to be_resolved
     end
 
     it 'rolls back conversation changes when the thread refresh fails' do

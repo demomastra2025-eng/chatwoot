@@ -15,6 +15,7 @@ json.data do
       json.primary_actor_type notification.primary_actor_type
       json.primary_actor_id notification.primary_actor_id
       json.primary_actor notification.primary_actor_payload
+      json.communication_thread_id @communication_thread_ids_by_conversation_id[notification.primary_actor_id] if notification.primary_actor_type == 'Conversation'
       json.read_at notification.read_at
       # Secondary actor could be nil for cases like system assigning conversation
       json.secondary_actor notification.secondary_actor_payload

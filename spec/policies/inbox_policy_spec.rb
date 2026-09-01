@@ -13,7 +13,7 @@ RSpec.describe InboxPolicy, type: :policy do
   let(:administrator_context) { { user: administrator, account: account, account_user: account.account_users.first } }
   let(:agent_context) { { user: agent, account: account, account_user: account.account_users.first } }
 
-  permissions :create?, :destroy?, :update?, :set_agent_bot?, :refresh_whatsapp_web_qr?, :reconnect_whatsapp_web?,
+  permissions :create?, :destroy?, :update?, :refresh_whatsapp_web_qr?, :reconnect_whatsapp_web?,
               :disconnect_whatsapp_web?, :repair_whatsapp_web?, :whatsapp_web_diagnostics? do
     context 'when administrator' do
       it { expect(inbox_policy).to permit(administrator_context, inbox) }

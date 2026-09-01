@@ -60,4 +60,26 @@ RSpec.describe Conversations::StatusTransitionService do
       )
     )
   end
+
+  it 'applies the status atomically to every channel projection in the communication thread' do
+    account.enable_features!('communication_threads')
+    contact = create(:contact, account: account)
+    first_conversation = create(:conversation, account: account, contact: contact, status: 'open')
+    second_conversation = create(:conversation, account: account, contact: contact, status: 'pending')
+
+    described_class.new(
+      conversation: first_conversation,
+      params: { status: 'resolved' },
+      actor: agent,
+      source: 'api'
+    ).perform
+
+    expect(contact.conversations.reload.pluck(:status).uniq).to eq(['resolved'])
+    expect(contact.communication_threads.reload.pluck(:status).uniq).to eq(['resolved'])
+    expect(second_conversation.status_transitions.last).to have_attributes(
+      from_status: 'pending',
+      to_status: 'resolved',
+      source: 'api'
+    )
+  end
 end

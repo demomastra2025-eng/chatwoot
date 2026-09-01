@@ -5,9 +5,10 @@ class Llm::EventSubscriber
   INSTALL_MUTEX = Mutex.new
 
   class << self
-    def install!
+    def install!(previous_subscriber: nil)
       INSTALL_MUTEX.synchronize do
-        uninstall!
+        unsubscribe(previous_subscriber)
+        unsubscribe(@subscriber) unless @subscriber.equal?(previous_subscriber)
         @subscriber = ActiveSupport::Notifications.subscribe(PATTERN) do |name, started, finished, _id, payload|
           notification = {
             event_name: name,
@@ -31,8 +32,14 @@ class Llm::EventSubscriber
     def uninstall!
       return unless defined?(@subscriber) && @subscriber.present?
 
-      ActiveSupport::Notifications.unsubscribe(@subscriber)
+      unsubscribe(@subscriber)
       @subscriber = nil
+    end
+
+    private
+
+    def unsubscribe(subscriber)
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber.present?
     end
   end
 end

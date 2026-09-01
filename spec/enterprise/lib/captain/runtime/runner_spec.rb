@@ -125,6 +125,59 @@ RSpec.describe Captain::Runtime::Runner do
     end
   end
 
+  describe '#execute_turn' do
+    let(:response) { RubyLLM::Message.new(role: :assistant, content: 'Done') }
+    let(:chat) { instance_double(RubyLLM::Chat) }
+    let(:current_agent) { instance_double(Captain::Runtime::Agent, name: 'assistant_agent', model: 'gpt-4.1-mini') }
+    let(:context_wrapper) { instance_double(Captain::Runtime::RunContext) }
+    let(:callback_manager) { instance_double(Captain::Runtime::CallbackManager, emit_llm_call_complete: nil) }
+
+    before do
+      allow(runner).to receive(:emit_agent_thinking)
+      allow(runner).to receive(:track_usage)
+      allow(runner).to receive(:callback_manager).and_return(callback_manager)
+    end
+
+    it 'marks the first ask turn as already counted by the provider event' do
+      session = {
+        current_turn: 1,
+        input_already_in_history: false,
+        chat: chat,
+        input: 'Hello',
+        account: nil,
+        current_agent: current_agent,
+        context_wrapper: context_wrapper
+      }
+      allow(runner).to receive(:ask_chat).with(chat, 'Hello', account: nil).and_return(response)
+
+      runner.send(:execute_turn, session)
+
+      expect(callback_manager).to have_received(:emit_llm_call_complete).with(
+        'assistant_agent', 'gpt-4.1-mini', response, context_wrapper, provider_usage_recorded: true
+      )
+    end
+
+    it 'keeps a direct completion turn available for usage accounting' do
+      session = {
+        current_turn: 2,
+        input_already_in_history: false,
+        chat: chat,
+        input: 'Hello',
+        account: nil,
+        current_agent: current_agent,
+        context_wrapper: context_wrapper
+      }
+      allow(Llm::StructuredOutputPolicy).to receive(:execute).with(chat: chat).and_yield
+      allow(chat).to receive(:complete).and_return(response)
+
+      runner.send(:execute_turn, session)
+
+      expect(callback_manager).to have_received(:emit_llm_call_complete).with(
+        'assistant_agent', 'gpt-4.1-mini', response, context_wrapper, provider_usage_recorded: false
+      )
+    end
+  end
+
   describe '#run' do
     let(:llm_context) { instance_double(RubyLLM::Context) }
     let(:account) { instance_double(Account, id: 42) }

@@ -1,3 +1,54 @@
+# == Schema Information
+#
+# Table name: medelement_provider_commands
+#
+#  id                      :bigint           not null, primary key
+#  attempt_count           :integer          default(0), not null
+#  company_cabinet_code    :string
+#  confirmed_at            :datetime
+#  desired_ends_at         :datetime
+#  desired_starts_at       :datetime
+#  executed_at             :datetime
+#  execution_state         :jsonb            not null
+#  idempotency_key         :string           not null
+#  last_error_code         :string
+#  last_error_status       :integer
+#  operation               :string           not null
+#  provider_patient_code   :string
+#  provider_reception_code :string
+#  status                  :string           default("awaiting_confirmation"), not null
+#  created_at              :datetime         not null
+#  updated_at              :datetime         not null
+#  account_id              :bigint           not null
+#  appointment_id          :bigint
+#  confirmation_request_id :bigint
+#  contact_id              :bigint
+#  hook_id                 :bigint
+#  requested_by_id         :bigint
+#
+# Indexes
+#
+#  idx_medelement_commands_account_idempotency                    (account_id,idempotency_key) UNIQUE
+#  idx_medelement_commands_appointment_status                     (appointment_id,status)
+#  idx_medelement_commands_hook_status                            (hook_id,status)
+#  idx_medelement_commands_unfinished_appointment                 (account_id,appointment_id) UNIQUE WHERE ((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying])::text[])))
+#  idx_medelement_commands_unfinished_patient_identity            (account_id,contact_id) UNIQUE WHERE ((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying])::text[])))
+#  index_medelement_provider_commands_on_account_id               (account_id)
+#  index_medelement_provider_commands_on_appointment_id           (appointment_id)
+#  index_medelement_provider_commands_on_confirmation_request_id  (confirmation_request_id)
+#  index_medelement_provider_commands_on_contact_id               (contact_id)
+#  index_medelement_provider_commands_on_hook_id                  (hook_id)
+#  index_medelement_provider_commands_on_requested_by_id          (requested_by_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id) ON DELETE => cascade
+#  fk_rails_...  (appointment_id => scheduling_appointments.id) ON DELETE => nullify
+#  fk_rails_...  (confirmation_request_id => confirmation_requests.id) ON DELETE => nullify
+#  fk_rails_...  (contact_id => contacts.id) ON DELETE => nullify
+#  fk_rails_...  (hook_id => integrations_hooks.id) ON DELETE => nullify
+#  fk_rails_...  (requested_by_id => users.id) ON DELETE => nullify
+#
 class Integrations::Medelement::ProviderCommand < ApplicationRecord
   self.table_name = 'medelement_provider_commands'
 

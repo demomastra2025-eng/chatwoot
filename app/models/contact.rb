@@ -70,7 +70,7 @@ class Contact < ApplicationRecord
   validates :phone_number,
             allow_blank: true, uniqueness: { scope: [:account_id] },
             format: { with: /\+[1-9]\d{1,14}\z/, message: I18n.t('errors.contacts.phone_number.invalid') }
-  validate :owner_belongs_to_account
+  validate :owner_belongs_to_account, if: :owner_or_account_changed?
 
   belongs_to :account
   belongs_to :owner, class_name: 'User', optional: true
@@ -518,6 +518,10 @@ class Contact < ApplicationRecord
     return if account&.users&.exists?(id: owner_id)
 
     errors.add(:owner_id, 'must belong to the current account')
+  end
+
+  def owner_or_account_changed?
+    will_save_change_to_owner_id? || will_save_change_to_account_id?
   end
 
   def dispatch_create_event

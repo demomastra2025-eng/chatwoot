@@ -7,6 +7,12 @@ export const isCommunicationThread = chat => {
   );
 };
 
+export const getNotificationCommunicationThreadId = notification =>
+  notification?.communicationThreadId ||
+  notification?.communication_thread_id ||
+  notification?.primaryActor?.communicationThreadId ||
+  notification?.primary_actor?.communication_thread_id;
+
 export const matchesCommunicationThreadMode = (
   conversation,
   communicationThreadMode = false

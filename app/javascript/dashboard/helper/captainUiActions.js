@@ -250,6 +250,8 @@ const stripMarkup = value =>
     .trim();
 
 const actionTargetId = action =>
+  action.communication_thread_id ??
+  action.communicationThreadId ??
   action.target_id ??
   action.targetId ??
   action.entity_id ??
@@ -320,6 +322,15 @@ const normalizedActionPayload = action => {
   const prefill = actionPrefill(action);
   if (Object.keys(prefill).length) {
     normalized.prefill = prefill;
+  }
+
+  if (
+    action.communication_thread_id ||
+    action.communicationThreadId ||
+    action.entity_type === 'communication_thread' ||
+    action.entityType === 'communication_thread'
+  ) {
+    normalized.entityType = 'communication_thread';
   }
 
   normalized.label = normalized.label || DEFAULT_LABELS[action.type];
@@ -485,6 +496,22 @@ export const routeForCaptainUiAction = (action, accountId) => {
   }
 
   if (TARGET_ROUTE_ACTIONS[action.type]) {
+    if (
+      action.type === 'open_conversation' &&
+      (action.entityType === 'communication_thread' ||
+        action.entity_type === 'communication_thread' ||
+        action.communicationThreadId ||
+        action.communication_thread_id)
+    ) {
+      const targetId = safeString(action.targetId || actionTargetId(action));
+      if (!targetId) return null;
+
+      return {
+        name: 'communication_thread_conversation',
+        params: { accountId, communication_thread_id: targetId },
+      };
+    }
+
     return targetRoute(action, accountId, TARGET_ROUTE_ACTIONS[action.type]);
   }
 

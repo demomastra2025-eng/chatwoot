@@ -9,7 +9,6 @@ export const INBOX_TYPES = {
   EMAIL: 'Channel::Email',
   TELEGRAM: 'Channel::Telegram',
   TELEGRAM_PERSONAL: 'Channel::TelegramPersonal',
-  LINKEDIN_PERSONAL: 'Channel::LinkedinPersonal',
   WEIXIN: 'Channel::Weixin',
   VK: 'Channel::VkCommunity',
   LINE: 'Channel::Line',
@@ -40,7 +39,7 @@ const INBOX_ICON_MAP_FILL = {
   [INBOX_TYPES.EMAIL]: 'i-ri-mail-fill',
   [INBOX_TYPES.TELEGRAM]: 'i-ri-telegram-fill',
   [INBOX_TYPES.TELEGRAM_PERSONAL]: 'i-ri-telegram-fill',
-  [INBOX_TYPES.LINKEDIN_PERSONAL]: 'i-ri-linkedin-box-fill',
+
   [INBOX_TYPES.WEIXIN]: 'i-ri-wechat-fill',
   [INBOX_TYPES.VK]: 'i-ri-vk-fill',
   [INBOX_TYPES.LINE]: 'i-ri-line-fill',
@@ -61,7 +60,7 @@ const INBOX_ICON_MAP_LINE = {
   [INBOX_TYPES.EMAIL]: 'i-woot-mail',
   [INBOX_TYPES.TELEGRAM]: 'i-woot-telegram',
   [INBOX_TYPES.TELEGRAM_PERSONAL]: 'i-woot-telegram',
-  [INBOX_TYPES.LINKEDIN_PERSONAL]: 'i-ri-linkedin-box-line',
+
   [INBOX_TYPES.WEIXIN]: 'i-ri-wechat-line',
   [INBOX_TYPES.VK]: 'i-ri-vk-line',
   [INBOX_TYPES.LINE]: 'i-woot-line',
@@ -121,9 +120,6 @@ export const getReadableInboxByType = (type, phoneNumber) => {
     case INBOX_TYPES.TELEGRAM_PERSONAL:
       return 'telegram_personal';
 
-    case INBOX_TYPES.LINKEDIN_PERSONAL:
-      return 'linkedin_personal';
-
     case INBOX_TYPES.WEIXIN:
       return 'weixin';
 
@@ -170,9 +166,6 @@ export const getInboxClassByType = (type, phoneNumber) => {
     case INBOX_TYPES.TELEGRAM:
     case INBOX_TYPES.TELEGRAM_PERSONAL:
       return 'brand-telegram';
-
-    case INBOX_TYPES.LINKEDIN_PERSONAL:
-      return 'brand-linkedin';
 
     case INBOX_TYPES.WEIXIN:
       return 'brand-wechat';

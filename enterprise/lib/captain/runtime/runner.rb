@@ -71,7 +71,8 @@ class Captain::Runtime::Runner
   def execute_turn(session)
     emit_agent_thinking(session)
 
-    response = if first_turn?(session) && !session[:input_already_in_history]
+    provider_usage_recorded = first_turn?(session) && !session[:input_already_in_history]
+    response = if provider_usage_recorded
                  ask_chat(session[:chat], session[:input], account: session[:account])
                else
                  Llm::StructuredOutputPolicy.execute(chat: session[:chat]) { session[:chat].complete }
@@ -82,7 +83,8 @@ class Captain::Runtime::Runner
       session[:current_agent].name,
       session[:current_agent].model,
       response,
-      session[:context_wrapper]
+      session[:context_wrapper],
+      provider_usage_recorded: provider_usage_recorded
     )
     response
   end

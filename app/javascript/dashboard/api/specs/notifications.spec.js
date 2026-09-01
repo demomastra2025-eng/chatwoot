@@ -92,6 +92,11 @@ describe('#NotificationAPI', () => {
       );
     });
 
+    it('#archive', () => {
+      notificationsAPI.archive(7);
+      expect(axiosMock.patch).toHaveBeenCalledWith('/api/v1/notifications/7');
+    });
+
     it('#snooze', () => {
       notificationsAPI.snooze({ id: 1, snoozedUntil: 12332211 });
       expect(axiosMock.post).toHaveBeenCalledWith(

@@ -77,23 +77,6 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(whatsapp_conversation.messages.outgoing).to be_empty
       end
 
-      it 'creates an outgoing text message with a specific bot sender' do
-        agent_bot = create(:agent_bot)
-        time_stamp = Time.now.utc.to_s
-        params = { content: 'test-message', external_created_at: time_stamp, sender_type: 'AgentBot', sender_id: agent_bot.id }
-
-        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
-             headers: agent.create_new_auth_token,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        response_data = response.parsed_body
-        expect(response_data['content_attributes']['external_created_at']).to eq time_stamp
-        expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.last.sender_id).to eq(agent_bot.id)
-        expect(conversation.messages.last.content_type).to eq('text')
-      end
 
       it 'creates a new outgoing message with attachment' do
         file = fixture_file_upload(Rails.root.join('spec/assets/avatar.png'), 'image/png')
@@ -134,55 +117,6 @@ RSpec.describe 'Conversation Messages API', type: :request do
       end
     end
 
-    context 'when it is an authenticated agent bot' do
-      let!(:agent_bot) { create(:agent_bot) }
-
-      it 'creates a new outgoing message' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        params = { content: 'test-message' }
-
-        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.first.content).to eq(params[:content])
-      end
-
-      it 'creates a new outgoing input select message' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        select_item1 = build(:bot_message_select)
-        select_item2 = build(:bot_message_select)
-        params = { content_type: 'input_select', content_attributes: { items: [select_item1, select_item2] } }
-
-        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.first.content_type).to eq(params[:content_type])
-        expect(conversation.messages.first.content).to be_nil
-      end
-
-      it 'creates a new outgoing cards message' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-        card = build(:bot_message_card)
-        params = { content_type: 'cards', content_attributes: { items: [card] } }
-
-        post api_v1_account_conversation_messages_url(account_id: account.id, conversation_id: conversation.display_id),
-             params: params,
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.messages.count).to eq(1)
-        expect(conversation.messages.first.content_type).to eq(params[:content_type])
-      end
-    end
   end
 
   describe 'GET /api/v1/accounts/{account.id}/conversations/:id/messages' do

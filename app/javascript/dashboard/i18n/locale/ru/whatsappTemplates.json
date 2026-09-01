@@ -82,6 +82,8 @@
       "DELETE_DESCRIPTION": "Удалить шаблон \"{templateName}\" из WhatsApp Cloud? Будут удалены все языковые версии с этим именем.",
       "DELETE_ACTION": "Удалить шаблон",
       "DELETE_SUCCESS": "Шаблон успешно удален.",
+      "SHOW_IN_CONVERSATIONS": "Показывать в диалогах",
+      "VISIBILITY_ERROR": "Не удалось изменить видимость шаблона.",
       "CSAT_BADGE": "Управляется через CSAT",
       "LANGUAGES": "Языки: {languages}",
       "REJECTION_REASON": "Причина отклонения для языка {language}",

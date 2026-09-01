@@ -494,6 +494,32 @@ describe('#actions', () => {
       metaSpy.mockRestore();
     });
 
+    it('uses communication thread meta for unfiltered thread unread counts', async () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      const counts = { all: 4, statuses: { open: 4 } };
+      const metaSpy = vi
+        .spyOn(CommunicationThreadApi, 'meta')
+        .mockResolvedValue({ data: { meta: { unread_counts: counts } } });
+
+      await actions.fetchSidebarUnreadCounts({
+        commit: localCommit,
+        dispatch: localDispatch,
+        state: { conversationFilters: { communicationThreadMode: true } },
+      });
+
+      expect(metaSpy).toHaveBeenCalledWith({
+        communicationThreadMode: true,
+        includeContextCounts: true,
+      });
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        counts
+      );
+
+      metaSpy.mockRestore();
+    });
+
     it('ignores stale sidebar unread count responses', async () => {
       const localCommit = vi.fn();
       let resolveFirst;
@@ -1131,6 +1157,13 @@ describe('#deleteMessage', () => {
             status: 'progress',
           }),
         });
+        expect(localCommit).toHaveBeenCalledWith(types.ADD_MESSAGE_TO_CHAT, {
+          chatId: 99,
+          message: expect.objectContaining({
+            id: 501,
+            status: 'progress',
+          }),
+        });
       } finally {
         threadCreateSpy.mockRestore();
         messageCreateSpy.mockRestore();
@@ -1219,6 +1252,39 @@ describe('#addMentions', () => {
         { conversationId: 1, messageId: null },
       ],
     ]);
+  });
+
+  it('syncs the typed thread when a conversation has the same display id', async () => {
+    const threadMessagesSpy = vi
+      .spyOn(CommunicationThreadApi, 'messages')
+      .mockResolvedValue({ data: { meta: {}, payload: [] } });
+    const directConversation = {
+      id: 7,
+      messages: [],
+      meta: { sender: { id: 1 } },
+    };
+    const communicationThread = {
+      id: 7,
+      is_communication_thread: true,
+      messages: [],
+      meta: { sender: { id: 1 } },
+    };
+
+    await actions.syncActiveConversationMessages(
+      {
+        commit,
+        dispatch,
+        state: {
+          allConversations: [directConversation, communicationThread],
+          selectedChatId: 7,
+          selectedChatType: 'conversation',
+          syncConversationsMessages: {},
+        },
+      },
+      { conversationId: 7, conversationType: 'communication_thread' }
+    );
+
+    expect(threadMessagesSpy).toHaveBeenCalledWith(7, { after: undefined });
   });
 
   describe('#fetchAllAttachments', () => {
@@ -1321,6 +1387,22 @@ describe('#addMentions', () => {
       });
     });
 
+    it('does not mark chat data fetched when the message request fails', async () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn().mockResolvedValue(false);
+      const data = { id: 42, messages: [] };
+
+      await actions.setActiveChat(
+        { commit: localCommit, dispatch: localDispatch },
+        { data }
+      );
+
+      expect(localCommit).not.toHaveBeenCalledWith(
+        types.SET_CHAT_DATA_FETCHED,
+        expect.anything()
+      );
+    });
+
     it('should include before cursor when opening around a target message', async () => {
       const localCommit = vi.fn();
       const localDispatch = vi.fn().mockResolvedValue();
@@ -1411,7 +1493,44 @@ describe('#addMentions', () => {
   });
 
   describe('#fetchPreviousMessages first unread page', () => {
-    it('loads the first unread direct-conversation page when it is outside the latest payload', async () => {
+    it('deduplicates initial and sync message requests while opening a chat', async () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      let resolveRequest;
+      axios.get.mockReset();
+      axios.get.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveRequest = resolve;
+          })
+      );
+      const state = {
+        allConversations: [{ id: 1, messages: [], meta: {} }],
+        selectedChatId: 1,
+        selectedChatType: 'conversation',
+        syncConversationsMessages: {},
+      };
+
+      const initialRequest = actions.fetchPreviousMessages(
+        { commit: localCommit, state },
+        { conversationId: 1, conversationType: 'conversation' }
+      );
+      const duplicateRequest = actions.fetchPreviousMessages(
+        { commit: localCommit, state },
+        { conversationId: 1, conversationType: 'conversation' }
+      );
+      await actions.syncActiveConversationMessages(
+        { commit: localCommit, dispatch: localDispatch, state },
+        { conversationId: 1 }
+      );
+
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      resolveRequest({ data: { meta: {}, payload: [] } });
+      await expect(initialRequest).resolves.toBe(true);
+      await expect(duplicateRequest).resolves.toBe(true);
+    });
+
+    it('defers loading an older first unread direct-conversation page', async () => {
       const localCommit = vi.fn();
       axios.get.mockReset();
       const state = {
@@ -1425,44 +1544,31 @@ describe('#addMentions', () => {
         selectedChatId: 1,
         selectedChatType: 'conversation',
       };
-      axios.get
-        .mockResolvedValueOnce({
-          data: {
-            meta: { first_unread_message_id: 10 },
-            payload: [{ id: 30, created_at: 30 }],
-          },
-        })
-        .mockResolvedValueOnce({
-          data: {
-            meta: {},
-            payload: [
-              { id: 10, created_at: 10 },
-              { id: 20, created_at: 20 },
-            ],
-          },
-        });
+      axios.get.mockResolvedValueOnce({
+        data: {
+          meta: { first_unread_message_id: 10 },
+          payload: [{ id: 30, created_at: 30 }],
+        },
+      });
 
       await actions.fetchPreviousMessages(
         { commit: localCommit, state },
         { conversationId: 1, conversationType: 'conversation' }
       );
 
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(state.allConversations[0].meta.first_unread_message_id).toBe(10);
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_PREVIOUS_CONVERSATIONS,
         {
           id: 1,
           conversationType: 'conversation',
-          data: [
-            { id: 10, created_at: 10 },
-            { id: 20, created_at: 20 },
-            { id: 30, created_at: 30 },
-          ],
+          data: [{ id: 30, created_at: 30 }],
         }
       );
     });
 
-    it('loads the first unread communication-thread page when it is outside the latest payload', async () => {
+    it('defers loading an older first unread communication-thread page', async () => {
       const localCommit = vi.fn();
       axios.get.mockReset();
       const state = {
@@ -1479,47 +1585,33 @@ describe('#addMentions', () => {
         selectedChatId: 7,
         selectedChatType: 'communication_thread',
       };
-      axios.get
-        .mockResolvedValueOnce({
-          data: {
-            meta: {
-              contact: { id: 1 },
-              channels: [],
-              first_unread_message_id: 100,
-            },
-            payload: [{ id: 300, created_at: 300 }],
+      axios.get.mockResolvedValueOnce({
+        data: {
+          meta: {
+            contact: { id: 1 },
+            channels: [],
+            first_unread_message_id: 100,
           },
-        })
-        .mockResolvedValueOnce({
-          data: {
-            meta: {},
-            payload: [{ id: 100, created_at: 100 }],
-          },
-        });
+          payload: [{ id: 300, created_at: 300 }],
+        },
+      });
 
       await actions.fetchPreviousMessages(
         { commit: localCommit, state },
         { conversationId: 7, conversationType: 'communication_thread' }
       );
 
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenCalledTimes(1);
       expect(axios.get.mock.calls[0][1].params).toEqual({
         include_history: true,
       });
-      expect(axios.get.mock.calls[1][1].params).toEqual({
-        after: 100,
-        before: 300,
-        include_history: true,
-      });
+      expect(state.allConversations[0].meta.first_unread_message_id).toBe(100);
       expect(localCommit).toHaveBeenCalledWith(
         types.SET_PREVIOUS_CONVERSATIONS,
         {
           id: 7,
           conversationType: 'communication_thread',
-          data: [
-            { id: 100, created_at: 100 },
-            { id: 300, created_at: 300 },
-          ],
+          data: [{ id: 300, created_at: 300 }],
         }
       );
     });

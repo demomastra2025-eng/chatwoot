@@ -276,8 +276,21 @@ RSpec.describe Llm::ChatRequestRunner do
       'status' => 'success',
       'total_tokens' => 7
     )
+    expect(events.first.payload).not_to have_key('usage_counted')
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  it 'marks the runner event as mirrored when ChatClient has routing observability' do
+    runner = described_class.new(
+      context: context,
+      model: 'gpt-4.1-mini',
+      messages: [{ role: 'user', content: 'Hello' }],
+      observability: { feature: 'assistant', account_id: 1 }
+    )
+    allow(Llm::OpenRouterRequestPolicy).to receive(:observability_metadata).with(chat).and_return(feature: 'assistant')
+
+    expect(runner.send(:observability_payload, chat)).to include(usage_counted: false)
   end
 
   it 'does not fail a successful observed runner response when success observability overflows the stack' do

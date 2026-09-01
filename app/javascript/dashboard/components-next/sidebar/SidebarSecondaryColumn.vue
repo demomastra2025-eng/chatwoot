@@ -200,7 +200,13 @@ const openHeaderAction = async action => {
             {{ child.label }}
           </li>
           <li
-            v-if="child.type !== 'section' && child.children && index > 0"
+            v-if="
+              child.type !== 'section' &&
+              child.children &&
+              index > 0 &&
+              !child.hideTopSeparator
+            "
+            data-test="sidebar-group-separator"
             class="my-1 h-px bg-n-weak"
           />
           <SidebarAssigneeTabs

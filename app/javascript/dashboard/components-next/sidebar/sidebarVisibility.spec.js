@@ -1,4 +1,5 @@
 import {
+  SIDEBAR_ORDER_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
@@ -6,9 +7,11 @@ import {
   buildEffectiveSidebarVisibilitySettings,
   buildSidebarVisibilityState,
   filterSidebarMenuItems,
+  getSidebarItemOrder,
   getSidebarHiddenItems,
   getSidebarHiddenItemsFromState,
   isConversationAssigneeSelectionLocked,
+  normalizeSidebarItemOrder,
 } from './sidebarVisibility';
 
 describe('sidebarVisibility', () => {
@@ -110,6 +113,51 @@ describe('sidebarVisibility', () => {
       { name: 'Reports' },
       { name: 'Settings', children: [{ name: 'Settings:Macros' }] },
     ]);
+  });
+
+  it('normalizes saved order and appends new or missing sections', () => {
+    expect(
+      normalizeSidebarItemOrder(['Contacts', 'Conversation', 'Contacts', 'Old'])
+    ).toEqual([
+      'Contacts',
+      'Conversation',
+      'Inbox',
+      'Campaigns:MassBroadcasts',
+      'Captain',
+      'Companies',
+      'CRM',
+      'CRM Tasks',
+      'Scheduling',
+      'Reports',
+      'Portals',
+      'Settings',
+    ]);
+    expect(getSidebarItemOrder({})).toEqual(
+      SIDEBAR_VISIBILITY_ITEMS.map(item => item.key)
+    );
+  });
+
+  it('applies saved top-level order after filtering visibility', () => {
+    const items = [
+      { name: 'Conversation' },
+      { name: 'Contacts' },
+      { name: 'Reports' },
+      { name: 'Settings' },
+    ];
+
+    expect(
+      filterSidebarMenuItems(items, {
+        [SIDEBAR_ORDER_UI_SETTINGS_KEY]: [
+          'Settings',
+          'Contacts',
+          'Conversation',
+          'Reports',
+        ],
+        [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Reports'],
+        [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
+          SIDEBAR_VISIBILITY_CURRENT_VERSION,
+      }).map(item => item.name)
+    ).toEqual(['Settings', 'Contacts', 'Conversation']);
   });
 
   it('locks hidden primary lists to All while hiding their other filters', () => {

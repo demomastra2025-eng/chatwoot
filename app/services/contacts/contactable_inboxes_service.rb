@@ -6,7 +6,6 @@ class Contacts::ContactableInboxesService
     'Channel::Sms' => :sms_contactable_inbox,
     'Channel::TelegramPersonal' => :telegram_personal_contactable_inbox,
     'Channel::Telegram' => :telegram_contactable_inbox,
-    'Channel::LinkedinPersonal' => :existing_source_contactable_inbox,
     'Channel::Weixin' => :existing_source_contactable_inbox,
     'Channel::VkCommunity' => :existing_source_contactable_inbox,
     'Channel::Line' => :existing_source_contactable_inbox,

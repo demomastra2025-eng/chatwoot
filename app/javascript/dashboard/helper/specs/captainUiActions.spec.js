@@ -70,6 +70,16 @@ describe('captainUiActions helper', () => {
     });
 
     expect(
+      routeForCaptainUiAction(
+        { type: 'open_conversation', communication_thread_id: 78 },
+        1
+      )
+    ).toEqual({
+      name: 'communication_thread_conversation',
+      params: { accountId: 1, communication_thread_id: '78' },
+    });
+
+    expect(
       routeForCaptainUiAction({ type: 'open_contact', targetId: '42' }, 1)
     ).toEqual({
       name: 'contacts_edit',

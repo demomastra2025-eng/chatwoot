@@ -33,6 +33,11 @@
       "DUE_AT_RANGE": "Срок задачи",
       "DESCRIPTION": "Уточняйте рабочие записи, не выходя из основного интерфейса.",
       "INCLUDE_ARCHIVED": "Архивные",
+      "MAIN_FIELDS": "Основные поля",
+      "QUICK_ALL": "Все сделки",
+      "QUICK_ARCHIVED": "С архивными",
+      "QUICK_MINE": "Только мои сделки",
+      "QUICK_TITLE": "Быстрые фильтры",
       "SHOW_INACTIVE": "Показать неактивные",
       "SEARCH": "Поиск",
       "SEARCH_PLACEHOLDER": "Поиск по названию",
@@ -149,7 +154,9 @@
       },
       "LIST": {
         "EMPTY_FILTERED": "Нет сделок, подходящих под текущие быстрые фильтры.",
-        "SEARCH_PLACEHOLDER": "Поиск сделок..."
+        "SEARCH_PLACEHOLDER": "Поиск и фильтр",
+        "SELECT_ALL": "Выбрать все сделки на странице",
+        "SELECT_ROW": "Выбрать сделку «{title}»"
       },
       "FORM": {
         "AMOUNT": "Сумма",
@@ -231,10 +238,12 @@
       "SUCCESS_UNARCHIVED": "Сделка восстановлена",
       "SUCCESS_UPDATED": "Сделка обновлена",
       "TABLE": {
-        "AMOUNT": "Сумма",
+        "AMOUNT": "Бюджет",
+        "COMPANY": "Компания контакта",
         "OWNER": "Владелец",
-        "STAGE": "Этап",
-        "TITLE": "Сделка",
+        "PRIMARY_CONTACT": "Основной контакт",
+        "STAGE": "Этап сделки",
+        "TITLE": "Название сделки",
         "UPDATED": "Обновлено"
       },
       "TITLE": "Сделки",
@@ -284,9 +293,11 @@
         "EMPTY_STATUS_TITLE": "Пока нет статусов задач",
         "OVERDUE_BADGE": "Просрочено",
         "TIME_BUCKETS": {
+          "FUTURE": "На будущее",
           "LATER": "Позже",
           "NEXT_WEEK": "На следующей неделе",
           "OVERDUE": "Просроченные",
+          "THIS_MONTH": "На месяц",
           "THIS_WEEK": "На этой неделе",
           "TODAY": "Сегодня",
           "TOMORROW": "Завтра",

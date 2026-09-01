@@ -54,7 +54,7 @@ properties:
     type:
       - string
       - 'null'
-    enum: ["Contact", "User", "AgentBot", "Captain::Assistant", null]
+    enum: ["Contact", "User", "Captain::Assistant", null]
     description: The type of the sender
   sender_id:
     type:
@@ -89,4 +89,4 @@ properties:
     description: The file object attached to the image
   sender:
     type: object
-    description: User/Agent/AgentBot object
+    description: User, agent, or Captain assistant object

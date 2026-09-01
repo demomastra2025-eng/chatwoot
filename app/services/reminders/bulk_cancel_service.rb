@@ -2,7 +2,8 @@ class Reminders::BulkCancelService
   CANCELLABLE_STATUSES = Reminder::OPEN_STATUSES.freeze
   ACTIVE_STATUSES = Reminder::OPEN_STATUSES.freeze
 
-  attr_reader :account, :remindable, :reminder_group, :actor, :reason, :metadata, :touch_source
+  attr_reader :account, :automation_rule_generation, :automation_rule_id, :remindable, :reminder_group, :actor, :reason, :metadata,
+              :touch_source
 
   def initialize(account:, remindable:, **options)
     @account = account
@@ -12,6 +13,8 @@ class Reminders::BulkCancelService
     @reason = options[:reason].presence || 'отменен автоматизацией'
     @metadata = (options[:metadata] || {}).to_h.stringify_keys
     @touch_source = options[:touch_source].presence
+    @automation_rule_id = options[:automation_rule_id]
+    @automation_rule_generation = options[:automation_rule_generation]
   end
 
   def perform
@@ -81,6 +84,7 @@ class Reminders::BulkCancelService
     scope = account.touch_plan_enrollments.where(remindable: remindable, status: %w[active paused])
     scope = scope.where(reminder_group: reminder_group) if reminder_group.present?
     scope = scope.where("metadata ->> 'touch_source' = ?", touch_source) if touch_source.present?
+    scope = automation_enrollment_scope(scope) if automation_generation_scope?
     scope
   end
 
@@ -114,8 +118,32 @@ class Reminders::BulkCancelService
     scope = scoped_remindable_reminders
     scope = scope.where(reminder_group: reminder_group) if reminder_group.present?
     scope = scope.where("metadata ->> 'touch_source' = ?", touch_source) if touch_source.present?
+    scope = automation_reminder_scope(scope) if automation_generation_scope?
 
     scope
+  end
+
+  def automation_generation_scope?
+    automation_rule_id.present? && automation_rule_generation.present?
+  end
+
+  def automation_enrollment_scope(scope)
+    scope.where(automation_rule_id: automation_rule_id)
+         .where('source_generation IS NULL OR source_generation <= ?', automation_rule_generation)
+  end
+
+  def automation_reminder_scope(scope)
+    scope.where(
+      'metadata @> ?',
+      { Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => automation_rule_id }.to_json
+    ).where(
+      'NOT jsonb_exists(metadata, ?) OR ((metadata ->> ?) ~ ? AND (metadata ->> ?)::bigint <= ?)',
+      Reminder::AUTOMATION_RULE_GENERATION_KEY,
+      Reminder::AUTOMATION_RULE_GENERATION_KEY,
+      '^[0-9]+$',
+      Reminder::AUTOMATION_RULE_GENERATION_KEY,
+      automation_rule_generation
+    )
   end
 
   def scoped_remindable_reminders

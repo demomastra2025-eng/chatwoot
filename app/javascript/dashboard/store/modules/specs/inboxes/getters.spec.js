@@ -540,4 +540,30 @@ describe('#getters', () => {
       expect(result[0].name).toBe('fallback_template');
     });
   });
+
+  describe('#getConversationWhatsAppTemplates', () => {
+    it('excludes templates hidden from the conversation picker only', () => {
+      const filteredTemplates = [
+        { name: 'agent_reply', visible_in_conversation_picker: true },
+        { name: 'default_visible' },
+        { name: 'automation_only', visible_in_conversation_picker: false },
+      ];
+      const getterContext = {
+        getFilteredWhatsAppTemplates: vi.fn(() => filteredTemplates),
+      };
+
+      const result = getters.getConversationWhatsAppTemplates(
+        {},
+        getterContext
+      )(1);
+
+      expect(result.map(template => template.name)).toEqual([
+        'agent_reply',
+        'default_visible',
+      ]);
+      expect(getterContext.getFilteredWhatsAppTemplates).toHaveBeenCalledWith(
+        1
+      );
+    });
+  });
 });

@@ -1,18 +1,9 @@
+# Compatibility tombstone for jobs enqueued before LinkedIn Personal was retired.
+# Remove this class in the contract release after the queue has been verified empty.
 class Channels::LinkedinPersonal::ProcessHistoryWebhookEventJob < ApplicationJob
   queue_as :linkedin_personal_history
 
-  def perform(channel_id, payload)
-    channel = Channel::LinkedinPersonal.find_by(id: channel_id)
-    return if channel.blank?
-
-    Current.with_runtime_events_suppressed do
-      LinkedinPersonal::IncomingEventService.new(
-        channel: channel,
-        payload: payload.deep_symbolize_keys
-      ).perform
-    end
-  rescue StandardError => e
-    Rails.logger.error("[LINKEDIN PERSONAL] Async history webhook processing failed for channel #{channel_id}: #{e.message}")
-    raise
+  def perform(*)
+    Rails.logger.info('[LINKEDIN PERSONAL] discarded retired history webhook job')
   end
 end

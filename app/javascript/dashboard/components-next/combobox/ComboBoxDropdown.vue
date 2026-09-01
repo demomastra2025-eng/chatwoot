@@ -17,6 +17,10 @@ const props = defineProps({
     type: Boolean,
     required: true,
   },
+  inline: {
+    type: Boolean,
+    default: false,
+  },
   options: {
     type: Array,
     required: true,
@@ -24,6 +28,10 @@ const props = defineProps({
   searchPlaceholder: {
     type: String,
     default: '',
+  },
+  showSearchInput: {
+    type: Boolean,
+    default: true,
   },
   emptyState: {
     type: String,
@@ -68,17 +76,22 @@ defineExpose({
 </script>
 
 <template>
-  <Teleport :to="teleportTarget">
+  <Teleport :to="teleportTarget" :disabled="inline">
     <div
       v-show="open"
       data-modal-safe-interaction
-      class="dashboard-combobox-dropdown fixed z-[170] flex flex-col overflow-hidden rounded-lg border border-n-weak bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]"
-      :style="props.dropdownStyle"
+      class="dashboard-combobox-dropdown flex flex-col overflow-hidden border border-n-weak bg-n-solid-2"
+      :class="
+        inline
+          ? 'absolute left-0 top-full z-30 mt-1 max-h-64 w-full rounded-md p-1 shadow-lg'
+          : 'fixed z-[170] rounded-lg bg-n-solid-2/95 p-2 shadow-xl outline outline-1 outline-n-container transition-opacity duration-150 backdrop-blur-[16px]'
+      "
+      :style="inline ? undefined : props.dropdownStyle"
       @mousedown.stop
       @mouseup.stop
       @click.stop
     >
-      <div class="border-b border-n-weak pb-2">
+      <div v-if="showSearchInput" class="border-b border-n-weak pb-2">
         <div class="relative flex items-center">
           <span
             class="pointer-events-none absolute inset-y-0 right-3 left-auto my-auto inline-flex size-4 items-center justify-center i-lucide-search text-n-slate-10 rtl:right-auto rtl:left-3"

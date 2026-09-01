@@ -536,13 +536,23 @@ RSpec.describe AutomationRules::TouchActionService do
   end
 
   describe '#cancel_touches' do
-    it 'cancels only automation-created open touches for the current entity' do
+    it 'cancels only automation-created open touches for the current entity', :aggregate_failures do
       draft_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
-                                      status: :draft, metadata: { touch_source: 'automation' }, body: 'Draft touch')
+                                      status: :draft, metadata: { touch_source: 'automation' }, body: 'Draft touch').tap do |touch|
+        touch.mark_automation_provenance!(rule)
+      end
       pending_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
-                                        status: :pending, metadata: { touch_source: 'automation' }, body: 'Pending touch')
+                                        status: :pending, metadata: { touch_source: 'automation' }, body: 'Pending touch').tap do |touch|
+        touch.mark_automation_provenance!(rule)
+      end
       completed_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
-                                          status: :completed, metadata: { touch_source: 'automation' }, body: 'Completed touch')
+                                          status: :completed, metadata: { touch_source: 'automation' }, body: 'Completed touch').tap do |touch|
+        touch.mark_automation_provenance!(rule)
+      end
+      other_rule_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
+                                           status: :pending, metadata: { touch_source: 'automation' }, body: 'Other rule touch').tap do |touch|
+        touch.mark_automation_provenance!(create(:automation_rule, account: account))
+      end
       manual_touch = create(:reminder, account: account, touch_conversation: conversation, conversation: conversation, remindable: conversation,
                                        status: :pending, body: 'Manual touch')
 
@@ -552,9 +562,27 @@ RSpec.describe AutomationRules::TouchActionService do
       expect(draft_touch.reload).to be_cancelled
       expect(pending_touch.reload).to be_cancelled
       expect(completed_touch.reload).to be_completed
+      expect(other_rule_touch.reload).to be_pending
       expect(manual_touch.reload).to be_pending
       expect(pending_touch.last_error).to eq('отменен автоматизацией')
       expect(pending_touch.metadata).to include('cancelled_via' => 'automation_cancel_touches', 'cancel_touches_entity_kind' => 'conversation')
+    end
+
+    it 'does not let a stale cancellation action affect a newer lifecycle generation' do
+      stale_service = service
+      old_touch = stale_service.create_touch(body: 'Old generation', delay_minutes: 10)
+      rule.update!(active: false)
+      rule.update!(active: true)
+      new_touch = described_class.new(
+        rule: rule.reload,
+        account: account,
+        record: conversation,
+        entity_kind: 'conversation'
+      ).create_touch(body: 'New generation', delay_minutes: 20)
+
+      expect(stale_service.cancel_touches([{}])).to eq(0)
+      expect(old_touch.reload).to be_pending
+      expect(new_touch.reload).to be_pending
     end
 
     it 'preserves legacy plan-scoped cancellation across touch sources' do

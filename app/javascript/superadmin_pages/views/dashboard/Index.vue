@@ -49,7 +49,7 @@ const { accountsCount, usersCount, inboxesCount, conversationsCount } =
       <div class="report--list">
         <div class="report-card">
           <div class="metric">{{ accountsCount }}</div>
-          <div>{{ 'Accounts' }}</div>
+          <div>{{ 'Workspace' }}</div>
         </div>
         <div class="report-card">
           <div class="metric">{{ usersCount }}</div>

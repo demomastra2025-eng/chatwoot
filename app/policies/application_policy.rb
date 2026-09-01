@@ -68,6 +68,7 @@ class ApplicationPolicy
       'conversation_manage',
       'conversation_unassigned_manage',
       'conversation_participating_manage',
+      'conversation_team_manage',
       'contact_manage',
       'crm_deal_view',
       'crm_deal_manage',

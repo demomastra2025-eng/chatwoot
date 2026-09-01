@@ -64,19 +64,20 @@ export const buildConversationList = (
   if (metaData && Object.keys(metaData).length && updateConversationStats) {
     context.dispatch('conversationStats/set', metaData);
   }
-  const totalCountKey = {
-    me: 'mine_count',
-    unassigned: 'unassigned_count',
-    all: 'all_count',
-    appliedFilters: 'all_count',
-  }[filterType];
+  const totalCountKey =
+    {
+      me: 'mine_count',
+      unassigned: 'unassigned_count',
+      all: 'all_count',
+      appliedFilters: 'all_count',
+    }[filterType] || 'all_count';
   if (totalCountKey && metaData?.[totalCountKey] !== undefined) {
     context.dispatch('conversationPage/setTotalCount', {
       filter: filterType,
       count: metaData[totalCountKey],
     });
   }
-  if (metaData?.unread_counts) {
+  if (updateConversationStats && metaData?.unread_counts) {
     context.commit(
       types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
       metaData.unread_counts

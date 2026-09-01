@@ -1,7 +1,44 @@
 import { describe, it, expect } from 'vitest';
-import { applyRoleFilter, findPendingMessageIndex } from '../helpers';
+import {
+  applyPageFilters,
+  applyRoleFilter,
+  findPendingMessageIndex,
+} from '../helpers';
 
 describe('Conversation Helpers', () => {
+  describe('#applyPageFilters', () => {
+    it('does not reapply page filters to a server-scoped response', () => {
+      const normalizedThread = {
+        is_communication_thread: true,
+        status: 'resolved',
+        channels: [{ status: 'resolved', inbox_id: 1 }],
+      };
+
+      expect(
+        applyPageFilters(normalizedThread, {
+          serverScoped: true,
+          status: 'open',
+          inboxId: 2,
+        })
+      ).toBe(true);
+    });
+
+    it('continues to apply page filters to client-scoped responses', () => {
+      const normalizedThread = {
+        is_communication_thread: true,
+        status: 'resolved',
+        channels: [{ status: 'resolved', inbox_id: 1 }],
+      };
+
+      expect(
+        applyPageFilters(normalizedThread, {
+          status: 'open',
+          inboxId: 2,
+        })
+      ).toBe(false);
+    });
+  });
+
   describe('#findPendingMessageIndex', () => {
     it('matches the same server message when its id changes JSON type', () => {
       const chat = { messages: [{ id: 42 }] };

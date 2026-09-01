@@ -14,7 +14,7 @@ module Featurable
     disable_branding
     email_continuity_on_api_channel
     help_center
-    agent_bots
+    retired_agent_bots
     macros
     agent_management
     team_management
@@ -59,7 +59,7 @@ module Featurable
     assignment_v2
     twilio_content_templates
     advanced_search
-    saml
+    retired_feature_54
     advanced_search_indexing
     reply_mailer_migration
     quoted_email_reply

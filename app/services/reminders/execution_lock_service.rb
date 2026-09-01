@@ -1,4 +1,6 @@
 class Reminders::ExecutionLockService
+  STALE_AUTOMATION_GENERATION = 'automation_rule_inactive_or_stale_generation'.freeze
+
   def initialize(reminder:, processing_claim:, execution_updated_at:)
     @reminder = reminder
     @processing_claim = processing_claim
@@ -6,6 +8,25 @@ class Reminders::ExecutionLockService
   end
 
   def perform(&)
+    automation_rule_id = trusted_automation_rule_id
+    return perform_with_execution_locks(&) if automation_rule_id.blank?
+
+    AutomationRule.transaction do
+      rule = AutomationRule.lock.find_by(id: automation_rule_id, account_id: reminder.account_id)
+      unless current_automation_generation?(rule)
+        reminder.cancel!(STALE_AUTOMATION_GENERATION)
+        next
+      end
+
+      perform_with_execution_locks(&)
+    end
+  end
+
+  private
+
+  attr_reader :reminder, :processing_claim, :execution_updated_at
+
+  def perform_with_execution_locks(&)
     result = nil
     lock_scope = -> { result = with_locked_execution(&) }
 
@@ -18,9 +39,18 @@ class Reminders::ExecutionLockService
     result
   end
 
-  private
+  def trusted_automation_rule_id
+    return unless reminder.metadata.to_h[Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY] == 'automation'
 
-  attr_reader :reminder, :processing_claim, :execution_updated_at
+    reminder.metadata.to_h[Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY]
+  end
+
+  def current_automation_generation?(rule)
+    return false unless rule&.active?
+
+    reminder_generation = reminder.metadata.to_h.fetch(Reminder::AUTOMATION_RULE_GENERATION_KEY, 1).to_i
+    reminder_generation == rule.lifecycle_generation
+  end
 
   def with_locked_execution(&)
     result = nil

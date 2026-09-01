@@ -35,6 +35,21 @@ class Api::V1::Accounts::InboxWhatsappTemplatesController < Api::V1::Accounts::B
     render 'api/v1/accounts/inboxes/show', status: :ok
   end
 
+  def visibility
+    unless params.key?(:visible_in_conversation_picker)
+      return render json: { error: 'Template visibility is required' }, status: :unprocessable_content
+    end
+
+    updated = @inbox.channel.update_template_picker_visibility!(
+      params[:template_name],
+      visible: ActiveModel::Type::Boolean.new.cast(params[:visible_in_conversation_picker])
+    )
+    return render json: { error: 'WhatsApp template not found' }, status: :not_found unless updated
+
+    @inbox.reload
+    render 'api/v1/accounts/inboxes/show', status: :ok
+  end
+
   private
 
   def fetch_inbox

@@ -405,21 +405,6 @@ RSpec.describe Api::V2::Accounts::ReportsController, type: :request do
         expect(data.first['name']).to eq('support')
       end
 
-      it 'excludes bot messages when grouped by agent' do
-        bot = create(:agent_bot)
-        bot_conversation = create(:conversation, account: account, inbox: inbox)
-        create(:message, account: account, conversation: bot_conversation, inbox: inbox,
-                         message_type: :outgoing, sender: bot)
-
-        get "/api/v2/accounts/#{account.id}/reports/outgoing_messages_count",
-            params: { group_by: 'agent', since: since_epoch, until: until_epoch },
-            headers: admin.create_new_auth_token, as: :json
-
-        data = response.parsed_body
-        agent_entry = data.find { |e| e['id'] == agent.id }
-        # 3 from before block; bot message excluded (sender_type != 'User')
-        expect(agent_entry['outgoing_messages_count']).to eq(3)
-      end
     end
   end
 end

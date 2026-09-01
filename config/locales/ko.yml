@@ -7,15 +7,9 @@ ko:
       not_required: Reauthorization is not required for this inbox
       invalid_channel: Invalid channel type for reauthorization
   auth:
-    saml:
-      invalid_email: 올바른 전자 메일 주소를 입력하십시오.
-      authentication_failed: Authentication failed. Please check your credentials and try again.
   messages:
     reset_password_success: Onelink! Request for password reset is successful. Check your mail for instructions.
     reset_password_failure: Uh ho! We could not find any user with the specified email.
-    reset_password_saml_user: This account uses SAML authentication. Password reset is not available. Please contact your administrator.
-    login_saml_user: This account uses SAML authentication. Please sign in through your organization's SAML provider.
-    saml_not_available: SAML authentication is not available in this installation.
     inbox_deletetion_response: Your inbox deletion request will be processed in some time.
     reset_password: 비밀번호 재설정 요청이 성공적으로 처리되었습니다. 해당 이메일이 존재하는 경우 안내 이메일이 발송됩니다.
   errors:
@@ -34,9 +28,6 @@ ko:
       not_found: Assignment policy not found
     attachments:
       invalid: Invalid attachment
-    saml:
-      feature_not_enabled: SAML feature not enabled for this account
-      sso_not_enabled: SAML SSO is not enabled for this installation
     data_import:
       data_type:
         invalid: Invalid data type
@@ -119,8 +110,6 @@ ko:
     mfa:
       enabled: MFA enabled successfully
       disabled: MFA disabled successfully
-    account_saml_settings:
-      invalid_certificate: must be a valid X.509 certificate in PEM format
   reports:
     period: 보고 기간 %{since} - %{until}
     utc_warning: The report generated is in UTC timezone
@@ -214,8 +203,6 @@ ko:
         resolved_by_tool: '대화가 %{user_name}에 의해 해결됨으로 표시되었습니다: %{reason}'
         open_with_reason: 대화가 %{user_name}에 의해 열림으로 표시되었습니다 (%{reason})
         auto_opened_after_agent_reply: 상담원 답장 후 대화가 자동으로 열림으로 표시되었습니다
-      agent_bot:
-        error_moved_to_open: Conversation was marked open by system due to an error with the agent bot.
       status:
         resolved: Conversation was marked resolved by %{user_name}
         contact_resolved: Conversation was resolved by %{contact_name}

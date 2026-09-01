@@ -1207,6 +1207,18 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.parsed_body['name']).to eq 'new test inbox'
       end
 
+      it 'does not allow overriding the channel conversation policy' do
+        expect(inbox.lock_to_single_conversation).to be(false)
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: { lock_to_single_conversation: true },
+              as: :json
+        expect(response).to have_http_status(:success)
+
+        expect(inbox.reload.lock_to_single_conversation).to be(false)
+      end
+
       it 'updates api inbox when administrator' do
         api_channel = create(:channel_api, account: account)
         api_inbox = create(:inbox, channel: api_channel, account: account)
@@ -1516,6 +1528,34 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(inbox.reload.weekly_schedule.find { |schedule| schedule['day_of_week'] == 0 }['open_hour']).to eq 9
       end
 
+      it 'inherits Workspace working hours while preserving the channel message' do
+        workspace_schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+        workspace_schedule[1].merge!('open_hour' => 10, 'close_hour' => 18)
+        account.update!(
+          workspace_working_hours_enabled: true,
+          workspace_timezone: 'Asia/Almaty',
+          workspace_working_hours: workspace_schedule
+        )
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
+              params: valid_params.merge(
+                inherit_working_hours_from_account: true,
+                out_of_office_message: 'Channel-specific message'
+              ),
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(inbox.reload).to have_attributes(
+          inherit_working_hours_from_account: true,
+          working_hours_enabled: true,
+          timezone: 'Asia/Almaty',
+          out_of_office_message: 'Channel-specific message'
+        )
+        expect(inbox.weekly_schedule.find { |day| day['day_of_week'] == 1 }['open_hour']).to eq(10)
+        expect(response.parsed_body['inherit_working_hours_from_account']).to be(true)
+      end
+
       it 'updates the webwidget inbox to disallow the messages after conversation is resolved' do
         patch "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}",
               headers: admin.create_new_auth_token,
@@ -1815,103 +1855,6 @@ RSpec.describe 'Inboxes API', type: :request do
     end
   end
 
-  describe 'GET /api/v1/accounts/{account.id}/inboxes/{inbox.id}/agent_bot' do
-    let(:inbox) { create(:inbox, account: account) }
-
-    before do
-      create(:inbox_member, user: agent, inbox: inbox)
-    end
-
-    context 'when it is an unauthenticated user' do
-      it 'returns unauthorized' do
-        get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/agent_bot"
-
-        expect(response).to have_http_status(:unauthorized)
-      end
-    end
-
-    context 'when it is an authenticated user' do
-      it 'returns empty when no agent bot is present' do
-        get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/agent_bot",
-            headers: agent.create_new_auth_token,
-            as: :json
-
-        expect(response).to have_http_status(:success)
-        inbox_data = JSON.parse(response.body, symbolize_names: true)
-        expect(inbox_data[:agent_bot].blank?).to be(true)
-      end
-
-      it 'returns the agent bot attached to the inbox' do
-        agent_bot = create(:agent_bot)
-        create(:agent_bot_inbox, agent_bot: agent_bot, inbox: inbox)
-        get "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/agent_bot",
-            headers: agent.create_new_auth_token,
-            as: :json
-
-        expect(response).to have_http_status(:success)
-        inbox_data = JSON.parse(response.body, symbolize_names: true)
-        expect(inbox_data[:agent_bot][:name]).to eq agent_bot.name
-      end
-    end
-  end
-
-  describe 'POST /api/v1/accounts/{account.id}/inboxes/:id/set_agent_bot' do
-    let(:inbox) { create(:inbox, account: account) }
-    let(:agent_bot) { create(:agent_bot) }
-
-    context 'when it is an unauthenticated user' do
-      it 'returns unauthorized' do
-        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/set_agent_bot"
-
-        expect(response).to have_http_status(:unauthorized)
-      end
-    end
-
-    context 'when it is an authenticated user' do
-      let(:admin) { create(:user, account: account, role: :administrator) }
-      let(:valid_params) { { agent_bot: agent_bot.id } }
-
-      it 'sets the agent bot' do
-        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/set_agent_bot",
-             headers: admin.create_new_auth_token,
-             params: valid_params,
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(inbox.reload.agent_bot.id).to eq agent_bot.id
-      end
-
-      it 'throw error when invalid agent bot id' do
-        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/set_agent_bot",
-             headers: admin.create_new_auth_token,
-             params: { agent_bot: 0 },
-             as: :json
-
-        expect(response).to have_http_status(:not_found)
-      end
-
-      it 'disconnects the agent bot' do
-        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/set_agent_bot",
-             headers: admin.create_new_auth_token,
-             params: { agent_bot: nil },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(inbox.reload.agent_bot).to be_falsey
-      end
-
-      it 'will not update agent bot when its an agent' do
-        agent = create(:user, account: account, role: :agent)
-
-        post "/api/v1/accounts/#{account.id}/inboxes/#{inbox.id}/set_agent_bot",
-             headers: agent.create_new_auth_token,
-             params: valid_params,
-             as: :json
-
-        expect(response).to have_http_status(:unauthorized)
-      end
-    end
-  end
 
   describe 'POST /api/v1/accounts/{account.id}/inboxes/:id/sync_templates' do
     let(:whatsapp_channel) do

@@ -304,9 +304,16 @@ class Llm::ChatRequestRunner
       model: effective_model_name(chat),
       runtime_mode: 'chat_request_runner'
     )
+    payload[:usage_counted] = false if mirrored_chat_client_event?(chat)
     payload[:schema_name] ||= schema_name if schema.present?
     payload[:tool_count] = tools.size if tools.present?
     payload
+  end
+
+  def mirrored_chat_client_event?(chat)
+    Llm::OpenRouterRequestPolicy.observability_metadata(chat).present?
+  rescue StandardError
+    false
   end
 
   def schema_name

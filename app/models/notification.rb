@@ -74,7 +74,8 @@ class Notification < ApplicationRecord
       last_activity_at: last_activity_at.to_i,
       snoozed_until: snoozed_until,
       meta: meta,
-      account_id: account_id
+      account_id: account_id,
+      communication_thread_id: communication_thread_display_id
     }
       .merge(primary_actor_data)
   end
@@ -103,6 +104,12 @@ class Notification < ApplicationRecord
 
   def conversation_display_id
     snapshot_value('conversation', 'display_id') || live_conversation&.display_id || primary_actor_display_id
+  end
+
+  def communication_thread_display_id
+    return unless account.feature_enabled?('communication_threads')
+
+    live_conversation&.communication_thread&.display_id
   end
 
   def primary_actor_payload

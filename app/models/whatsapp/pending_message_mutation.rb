@@ -1,3 +1,41 @@
+# == Schema Information
+#
+# Table name: whatsapp_pending_message_mutations
+#
+#  id                     :bigint           not null, primary key
+#  attempt_count          :integer          default(0), not null
+#  last_attempted_at      :datetime
+#  mutation_type          :string           not null
+#  next_reconciliation_at :datetime
+#  payload                :jsonb            not null
+#  payload_scrubbed_at    :datetime
+#  provider_timestamp     :bigint           default(0), not null
+#  reconciliation_token   :string
+#  status                 :string           default("pending"), not null
+#  terminal_at            :datetime
+#  terminal_reason        :string
+#  created_at             :datetime         not null
+#  updated_at             :datetime         not null
+#  account_id             :integer          not null
+#  actor_id               :string
+#  event_id               :string           not null
+#  inbox_id               :bigint           not null
+#  target_source_id       :string           not null
+#
+# Indexes
+#
+#  idx_wa_pending_mutations_account_inbox                  (account_id,inbox_id,id)
+#  idx_wa_pending_mutations_inbox_event                    (inbox_id,event_id) UNIQUE
+#  idx_wa_pending_mutations_reconciliation                 (status,next_reconciliation_at)
+#  idx_wa_pending_mutations_target_time                    (inbox_id,target_source_id,provider_timestamp)
+#  index_whatsapp_pending_message_mutations_on_account_id  (account_id)
+#  index_whatsapp_pending_message_mutations_on_inbox_id    (inbox_id)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (account_id => accounts.id) ON DELETE => cascade
+#  fk_rails_...  (inbox_id => inboxes.id) ON DELETE => cascade
+#
 class Whatsapp::PendingMessageMutation < ApplicationRecord
   self.table_name = 'whatsapp_pending_message_mutations'
 

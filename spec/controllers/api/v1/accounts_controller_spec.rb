@@ -215,6 +215,7 @@ RSpec.describe 'Accounts API', type: :request do
         auto_resolve_after: 40,
         auto_resolve_message: 'Auto resolved',
         auto_resolve_ignore_waiting: false,
+        dashboard_sidebar_item_order: %w[Contacts Conversation Inbox Settings],
         dashboard_sidebar_hidden_items: ['Conversation:Resolved'],
         dashboard_sidebar_hidden_items_version: 14,
         dashboard_conversation_sidebar_pipeline_visibility: {
@@ -254,6 +255,7 @@ RSpec.describe 'Accounts API', type: :request do
           auto_resolve_after
           auto_resolve_message
           auto_resolve_ignore_waiting
+          dashboard_sidebar_item_order
           dashboard_sidebar_hidden_items
           dashboard_sidebar_hidden_items_version
         ].each do |attribute|
@@ -267,6 +269,31 @@ RSpec.describe 'Accounts API', type: :request do
         %w[timezone industry company_size].each do |attribute|
           expect(account.reload.custom_attributes[attribute]).to eq(params[attribute.to_sym])
         end
+      end
+
+      it 'updates Workspace working hours and synchronizes inheriting inboxes' do
+        inherited_inbox = create(:inbox, account: account, inherit_working_hours_from_account: true)
+        custom_inbox = create(:inbox, account: account, inherit_working_hours_from_account: false, timezone: 'UTC')
+        schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+        schedule[1].merge!('open_hour' => 10, 'close_hour' => 18)
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: {
+                workspace_working_hours_enabled: true,
+                workspace_timezone: 'Asia/Almaty',
+                workspace_working_hours: schedule
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(account.reload.workspace_working_hours_enabled?).to be(true)
+        expect(inherited_inbox.reload).to have_attributes(working_hours_enabled: true, timezone: 'Asia/Almaty')
+        expect(inherited_inbox.weekly_schedule.find { |day| day['day_of_week'] == 1 }['open_hour']).to eq(10)
+        expect(custom_inbox.reload.timezone).to eq('UTC')
+
+        new_inbox = create(:inbox, account: account)
+        expect(new_inbox).to have_attributes(inherit_working_hours_from_account: true, timezone: 'Asia/Almaty')
       end
 
       it 'updates onboarding step to invite_team if onboarding step is present in account custom attributes' do

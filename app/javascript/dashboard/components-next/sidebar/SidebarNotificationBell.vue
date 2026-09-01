@@ -1,33 +1,56 @@
 <script setup>
 import { computed } from 'vue';
-import { useRoute } from 'vue-router';
 import { useMapGetter } from 'dashboard/composables/store';
 import SidebarUnreadBadge from './SidebarUnreadBadge.vue';
+
+const props = defineProps({
+  isCollapsed: {
+    type: Boolean,
+    default: true,
+  },
+  label: {
+    type: String,
+    default: '',
+  },
+});
 
 const emit = defineEmits(['openNotificationPanel']);
 
 const notificationMetadata = useMapGetter('notifications/getMeta');
-const route = useRoute();
 const unreadCount = computed(() => {
   return Number(notificationMetadata.value.unreadCount) || 0;
 });
-
-function openNotificationPanel() {
-  if (route.name !== 'notifications_index') {
-    emit('openNotificationPanel');
-  }
-}
 </script>
 
 <template>
-  <button
-    class="size-8 rounded-lg hover:bg-n-alpha-1 flex-shrink-0 grid place-content-center relative"
-    @click="openNotificationPanel"
-  >
-    <span class="i-lucide-bell size-4" />
-    <SidebarUnreadBadge
-      :value="unreadCount"
-      class="absolute -top-1 -right-1.5 min-w-5 text-center"
-    />
-  </button>
+  <li class="m-0 w-full list-none">
+    <button
+      type="button"
+      data-notification-panel-trigger
+      class="relative flex items-center rounded-lg text-n-slate-11 hover:bg-n-alpha-2 hover:text-n-slate-12"
+      :class="
+        props.isCollapsed
+          ? 'size-9 justify-center'
+          : 'h-8 w-full gap-2 px-2 text-sm'
+      "
+      :title="props.label"
+      @click="emit('openNotificationPanel')"
+    >
+      <span class="i-lucide-bell size-4 shrink-0" />
+      <span
+        v-if="!props.isCollapsed"
+        class="min-w-0 flex-1 truncate text-start"
+      >
+        {{ props.label }}
+      </span>
+      <SidebarUnreadBadge
+        :value="unreadCount"
+        :class="
+          props.isCollapsed
+            ? 'absolute -right-1.5 -top-1 min-w-5 text-center'
+            : 'shrink-0'
+        "
+      />
+    </button>
+  </li>
 </template>

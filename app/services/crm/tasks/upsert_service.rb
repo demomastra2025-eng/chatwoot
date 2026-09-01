@@ -114,10 +114,18 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   end
 
   def resolve_team(deal:)
+    if deal.present?
+      requested_team = resolve_optional_record(:team_id, account.teams, current: deal.team)
+      validation_error!('team_id', 'is inherited from deal') if requested_team != deal.team
+
+      return deal.team
+    end
+
     return resolve_optional_record(:team_id, account.teams, current: task.team) if params.key?(:team_id)
+    return nil if params.key?(:deal_id)
     return task.team if task.persisted?
 
-    deal&.team
+    nil
   end
 
   def resolve_title

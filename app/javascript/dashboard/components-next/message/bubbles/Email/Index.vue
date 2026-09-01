@@ -45,9 +45,7 @@ const isMachineSender = computed(() => {
 
   return (
     !resolvedSenderType.value ||
-    [SENDER_TYPES.AGENT_BOT, SENDER_TYPES.CAPTAIN_ASSISTANT].includes(
-      resolvedSenderType.value
-    )
+    resolvedSenderType.value === SENDER_TYPES.CAPTAIN_ASSISTANT
   );
 });
 

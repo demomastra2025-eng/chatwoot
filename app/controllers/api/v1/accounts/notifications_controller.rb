@@ -10,6 +10,7 @@ class Api::V1::Accounts::NotificationsController < Api::V1::Accounts::BaseContro
     @notifications = notification_finder.notifications
     @unread_count = notification_finder.unread_count
     @count = notification_finder.count
+    @communication_thread_ids_by_conversation_id = communication_thread_ids_by_conversation_id
   end
 
   def read_all
@@ -78,5 +79,20 @@ class Api::V1::Accounts::NotificationsController < Api::V1::Accounts::BaseContro
 
   def notification_finder
     @notification_finder ||= NotificationFinder.new(Current.user, Current.account, params)
+  end
+
+  def communication_thread_ids_by_conversation_id
+    return {} unless current_account.feature_enabled?('communication_threads')
+
+    conversation_ids = @notifications.filter_map do |notification|
+      notification.primary_actor_id if notification.primary_actor_type == 'Conversation'
+    end
+    return {} if conversation_ids.empty?
+
+    CommunicationThreadConversation
+      .joins(:communication_thread)
+      .where(account_id: current_account.id, conversation_id: conversation_ids)
+      .pluck(:conversation_id, 'communication_threads.display_id')
+      .to_h
   end
 end

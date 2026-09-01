@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import CommunicationThreadApi from '../../../../api/inbox/communicationThread';
 import ConversationApi from '../../../../api/inbox/conversation';
 import types from '../../../mutation-types';
-import actions from '../actions';
+import actions, { hasSidebarCountScopeFilters } from '../actions';
 import { mutations } from '../index';
 
 describe('conversation actions', () => {
@@ -709,6 +709,7 @@ describe('conversation actions', () => {
       expect(threadUpdateSpy).not.toHaveBeenCalled();
       expect(dispatch).toHaveBeenCalledWith('setCurrentChatAssignee', {
         conversationId: 7,
+        conversationType: 'conversation',
         assignee: assignment,
       });
       expect(nativeConversation.meta.assignee).toEqual(assignment);
@@ -738,5 +739,84 @@ describe('conversation actions', () => {
         )
       ).rejects.toThrow('assignment failed');
     });
+  });
+
+  describe('#typed routing mutations', () => {
+    const collidingState = () => ({
+      selectedChatId: 7,
+      selectedChatType: 'communication_thread',
+      allConversations: [
+        {
+          id: 7,
+          meta: { team: null },
+          priority: null,
+          is_communication_thread: false,
+        },
+        {
+          id: 7,
+          meta: { team: { id: 3 } },
+          priority: 'high',
+          is_communication_thread: true,
+        },
+      ],
+    });
+
+    it('keeps a native team assignment on the explicitly typed conversation', async () => {
+      const state = collidingState();
+      const team = { id: 9, name: 'Support' };
+      vi.spyOn(ConversationApi, 'assignTeam').mockResolvedValue({ data: team });
+      const threadUpdateSpy = vi.spyOn(CommunicationThreadApi, 'update');
+      const dispatch = vi.fn((type, payload) => {
+        if (type === 'setCurrentChatTeam') {
+          mutations[types.ASSIGN_TEAM](state, payload);
+        }
+      });
+
+      await actions.assignTeam(
+        { commit: vi.fn(), dispatch, state },
+        { conversationId: 7, conversationType: 'conversation', teamId: 9 }
+      );
+
+      expect(threadUpdateSpy).not.toHaveBeenCalled();
+      expect(state.allConversations[0].meta.team).toEqual(team);
+      expect(state.allConversations[1].meta.team).toEqual({ id: 3 });
+    });
+
+    it('keeps a native priority assignment on the explicitly typed conversation', async () => {
+      const state = collidingState();
+      vi.spyOn(ConversationApi, 'togglePriority').mockResolvedValue({});
+      const threadUpdateSpy = vi.spyOn(CommunicationThreadApi, 'update');
+      const dispatch = vi.fn((type, payload) => {
+        if (type === 'setCurrentChatPriority') {
+          mutations[types.ASSIGN_PRIORITY](state, payload);
+        }
+      });
+
+      await actions.assignPriority(
+        { commit: vi.fn(), dispatch, state },
+        { conversationId: 7, conversationType: 'conversation', priority: 'low' }
+      );
+
+      expect(threadUpdateSpy).not.toHaveBeenCalled();
+      expect(state.allConversations[0].priority).toBe('low');
+      expect(state.allConversations[1].priority).toBe('high');
+    });
+  });
+});
+
+describe('#hasSidebarCountScopeFilters', () => {
+  it('keeps base assignee and status requests eligible for global counts', () => {
+    expect(
+      hasSidebarCountScopeFilters({
+        status: 'open',
+        assigneeType: 'me',
+        communicationThreadMode: true,
+      })
+    ).toBe(false);
+  });
+
+  it('isolates tag and CRM stage metadata from global counts', () => {
+    expect(hasSidebarCountScopeFilters({ labels: ['vip'] })).toBe(true);
+    expect(hasSidebarCountScopeFilters({ crmStageId: 42 })).toBe(true);
   });
 });

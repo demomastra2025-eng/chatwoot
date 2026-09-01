@@ -2,6 +2,7 @@ import wootConstants from 'dashboard/constants/globals';
 
 export const CONVERSATION_LIST_CONTEXT_SETTINGS_KEY =
   'conversation_list_context_filters';
+export const CONVERSATION_LIST_GLOBAL_STATUS_KEY = '__global_status__';
 
 const validStatuses = new Set(Object.values(wootConstants.STATUS_TYPE));
 const validSortOrders = new Set(Object.values(wootConstants.SORT_BY_TYPE));
@@ -28,20 +29,20 @@ export const conversationListContextKey = (query = {}, { folderId } = {}) => {
   return `assignee:${assigneeType}`;
 };
 
-export const defaultStatusForConversationListContext = contextKey =>
-  contextKey.startsWith('assignee:')
-    ? wootConstants.STATUS_TYPE.OPEN
-    : wootConstants.STATUS_TYPE.ALL;
+export const defaultStatusForConversationListContext = () =>
+  wootConstants.STATUS_TYPE.OPEN;
 
 export const conversationListContextState = (uiSettings, contextKey) => {
-  const storedState =
-    uiSettings?.[CONVERSATION_LIST_CONTEXT_SETTINGS_KEY]?.[contextKey] || {};
-  const defaultStatus = defaultStatusForConversationListContext(contextKey);
+  const storedSettings =
+    uiSettings?.[CONVERSATION_LIST_CONTEXT_SETTINGS_KEY] || {};
+  const storedState = storedSettings[contextKey] || {};
+  const globalStatus =
+    storedSettings[CONVERSATION_LIST_GLOBAL_STATUS_KEY]?.status;
 
   return {
-    status: validStatuses.has(storedState.status)
-      ? storedState.status
-      : defaultStatus,
+    status: validStatuses.has(globalStatus)
+      ? globalStatus
+      : defaultStatusForConversationListContext(),
     order_by: validSortOrders.has(storedState.order_by)
       ? storedState.order_by
       : wootConstants.SORT_BY_TYPE.LAST_ACTIVITY_AT_DESC,
@@ -52,10 +53,21 @@ export const updatedConversationListContextSettings = (
   uiSettings,
   contextKey,
   updates = {}
-) => ({
-  ...(uiSettings?.[CONVERSATION_LIST_CONTEXT_SETTINGS_KEY] || {}),
-  [contextKey]: {
-    ...conversationListContextState(uiSettings, contextKey),
-    ...updates,
-  },
-});
+) => {
+  const storedSettings =
+    uiSettings?.[CONVERSATION_LIST_CONTEXT_SETTINGS_KEY] || {};
+  const { status, ...contextUpdates } = updates;
+  const nextSettings = {
+    ...storedSettings,
+    [contextKey]: {
+      ...(storedSettings[contextKey] || {}),
+      ...contextUpdates,
+    },
+  };
+
+  if (validStatuses.has(status)) {
+    nextSettings[CONVERSATION_LIST_GLOBAL_STATUS_KEY] = { status };
+  }
+
+  return nextSettings;
+};

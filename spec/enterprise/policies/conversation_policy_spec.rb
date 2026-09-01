@@ -61,5 +61,28 @@ RSpec.describe ConversationPolicy, type: :policy do
         expect(subject).not_to permit(context, conversation)
       end
     end
+
+    context 'when role grants conversation_team_manage' do
+      let(:custom_role) { create(:custom_role, account: account, permissions: ['conversation_team_manage']) }
+      let(:team) { create(:team, account: account) }
+
+      before do
+        inbox.update!(enable_auto_assignment: false)
+        agent_account_user.update!(role: :agent, custom_role: custom_role)
+        create(:team_member, team: team, user: agent)
+      end
+
+      it 'allows access to a conversation assigned to the agent team' do
+        conversation = create(:conversation, account: account, inbox: inbox, team: team)
+
+        expect(subject).to permit(context, conversation)
+      end
+
+      it 'denies access to a conversation assigned to another team' do
+        conversation = create(:conversation, account: account, inbox: inbox, team: create(:team, account: account))
+
+        expect(subject).not_to permit(context, conversation)
+      end
+    end
   end
 end

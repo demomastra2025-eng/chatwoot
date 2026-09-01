@@ -134,6 +134,8 @@ export const filterByUnattended = (
 };
 
 export const applyPageFilters = (conversation, filters) => {
+  if (filters.serverScoped) return true;
+
   const {
     inboxId,
     status,

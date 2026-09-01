@@ -10,11 +10,11 @@ describe('#InboxesAPI', () => {
     expect(inboxesAPI).toHaveProperty('update');
     expect(inboxesAPI).toHaveProperty('delete');
     expect(inboxesAPI).toHaveProperty('getCampaigns');
-    expect(inboxesAPI).toHaveProperty('getAgentBot');
-    expect(inboxesAPI).toHaveProperty('setAgentBot');
+
     expect(inboxesAPI).toHaveProperty('syncTemplates');
     expect(inboxesAPI).toHaveProperty('createWhatsAppTemplate');
     expect(inboxesAPI).toHaveProperty('deleteWhatsAppTemplate');
+    expect(inboxesAPI).toHaveProperty('updateWhatsAppTemplateVisibility');
   });
 
   describe('API calls', () => {
@@ -66,6 +66,14 @@ describe('#InboxesAPI', () => {
       inboxesAPI.deleteWhatsAppTemplate(2, 'order_update');
       expect(axiosMock.delete).toHaveBeenCalledWith(
         '/api/v1/inboxes/2/whatsapp_templates/order_update'
+      );
+    });
+
+    it('#updateWhatsAppTemplateVisibility', () => {
+      inboxesAPI.updateWhatsAppTemplateVisibility(2, 'order update', false);
+      expect(axiosMock.patch).toHaveBeenCalledWith(
+        '/api/v1/inboxes/2/whatsapp_templates/order%20update/visibility',
+        { visible_in_conversation_picker: false }
       );
     });
 

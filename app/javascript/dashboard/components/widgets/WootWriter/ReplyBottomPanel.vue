@@ -869,7 +869,7 @@ export default {
     <div class="right-wrap">
       <div v-on-clickaway="closeReplyChannelDropdown" class="reply-send-group">
         <NextButton
-          v-if="!isNote && !isCommunicationCallReplyAction"
+          v-if="!isNote && !isCallReplyAction"
           v-tooltip.top-end="$t('CONVERSATION.REPLYBOX.CREATE_DELAYED_MESSAGE')"
           type="button"
           icon="i-lucide-clock-plus"

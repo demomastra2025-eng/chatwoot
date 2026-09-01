@@ -24,14 +24,8 @@ pt_BR:
       not_required: 'Reautenticação não é necessária para esta caixa de entrada'
       invalid_channel: 'Tipo de canal inválido para reautenticar'
   auth:
-    saml:
-      invalid_email: 'Por favor, insira um endereço de e-mail válido'
-      authentication_failed: 'Falha na autenticação. Por favor, verifique suas credenciais e tente novamente.'
   messages:
     reset_password: A solicitação de redefinição de senha foi realizada com sucesso. Um e-mail com instruções será enviado para o seu endereço de e-mail, caso ele exista em nosso sistema.
-    reset_password_saml_user: Esta conta usa autenticação SAML. A redefinição de senha não está disponível. Por favor, contate o administrador.
-    login_saml_user: Esta conta usa autenticação SAML. Por favor, faça login através do provedor SAML da sua organização.
-    saml_not_available: A autenticação SAML não está disponível nesta instalação.
     inbox_deletetion_response: Seu pedido de exclusão da caixa de entrada será processado dentro de algum tempo.
   errors:
     account:
@@ -52,9 +46,6 @@ pt_BR:
       not_found: Política de atribuição não encontrada
     attachments:
       invalid: Anexo inválido
-    saml:
-      feature_not_enabled: SAML não está habilitado para esta conta
-      sso_not_enabled: O SSO via SAML não está habilitado para esta instalação
     data_import:
       data_type:
         invalid: Tipo de dado inválido
@@ -134,8 +125,6 @@ pt_BR:
     mfa:
       enabled: MFA habilitado com sucesso
       disabled: MFA desativado com sucesso
-    account_saml_settings:
-      invalid_certificate: deve ser um certificado X.509 válido em formato PEM
   reports:
     period: Reportando o período %{since} a %{until}
     utc_warning: O relatório gerado está em fuso horário UTC
@@ -229,8 +218,6 @@ pt_BR:
         open: 'A conversa foi aberta por %{user_name}'
         open_with_reason: 'A conversa foi marcada como aberta por %{user_name} (%{reason})'
         auto_opened_after_agent_reply: 'A conversa foi marcada como aberta automaticamente após a resposta de um agente'
-      agent_bot:
-        error_moved_to_open: 'A conversa foi marcada como aberta pelo sistema devido a um erro com o robô de atendimento.'
       status:
         resolved: 'Conversa foi marcada como resolvida por %{user_name}'
         contact_resolved: 'A conversa foi resolvida por %{contact_name}'

@@ -17,6 +17,27 @@ module AccountSettingsSchema
         'default_appointment_touch_plan_id': { 'type': %w[integer string null] },
         'default_deal_touch_plan_id': { 'type': %w[integer string null] },
         'default_task_touch_plan_id': { 'type': %w[integer string null] },
+        'workspace_working_hours_enabled': { 'type': %w[boolean null] },
+        'workspace_timezone': { 'type': %w[string null] },
+        'workspace_working_hours': {
+          'type': %w[array null],
+          'items': {
+            'type': 'object',
+            'properties': {
+              'day_of_week': { 'type': 'integer', 'minimum': 0, 'maximum': 6 },
+              'closed_all_day': { 'type': 'boolean' },
+              'open_hour': { 'type': %w[integer string null] },
+              'open_minutes': { 'type': %w[integer string null] },
+              'close_hour': { 'type': %w[integer string null] },
+              'close_minutes': { 'type': %w[integer string null] },
+              'open_all_day': { 'type': 'boolean' }
+            },
+            'required': %w[day_of_week closed_all_day open_all_day],
+            'additionalProperties': false
+          },
+          'minItems': 7,
+          'maxItems': 7
+        },
         'conversation_required_attributes': {
           'type': %w[array null],
           'items': { 'type': 'string' }

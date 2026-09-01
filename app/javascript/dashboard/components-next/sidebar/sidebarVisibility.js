@@ -2,6 +2,7 @@ export const SIDEBAR_VISIBILITY_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items';
 export const SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY =
   'dashboard_sidebar_hidden_items_version';
+export const SIDEBAR_ORDER_UI_SETTINGS_KEY = 'dashboard_sidebar_item_order';
 export const SIDEBAR_VISIBILITY_CURRENT_VERSION = 19;
 
 const CAPTAIN_PROMPTS_VISIBILITY_KEY = 'Captain:Prompts';
@@ -127,6 +128,30 @@ export const SIDEBAR_VISIBILITY_ITEMS = Object.freeze([
   item('Portals', 'SIDEBAR.HELP_CENTER.TITLE'),
   item('Settings', 'SIDEBAR.ADDITIONAL', [], false),
 ]);
+
+const DEFAULT_SIDEBAR_ITEM_ORDER = Object.freeze(
+  SIDEBAR_VISIBILITY_ITEMS.map(sidebarItem => sidebarItem.key)
+);
+
+export const normalizeSidebarItemOrder = order => {
+  const supportedKeys = new Set(DEFAULT_SIDEBAR_ITEM_ORDER);
+  const normalizedOrder = [];
+
+  (Array.isArray(order) ? order : []).forEach(key => {
+    if (supportedKeys.has(key) && !normalizedOrder.includes(key)) {
+      normalizedOrder.push(key);
+    }
+  });
+
+  DEFAULT_SIDEBAR_ITEM_ORDER.forEach(key => {
+    if (!normalizedOrder.includes(key)) normalizedOrder.push(key);
+  });
+
+  return normalizedOrder;
+};
+
+export const getSidebarItemOrder = uiSettings =>
+  normalizeSidebarItemOrder(uiSettings?.[SIDEBAR_ORDER_UI_SETTINGS_KEY]);
 
 const flattenSidebarVisibilityItems = items =>
   items.flatMap(({ key, children = [], configurable = true }) => [
@@ -472,5 +497,22 @@ export const filterSidebarMenuItems = (menuItems, uiSettings) => {
       return [{ ...sidebarItem, children }];
     });
 
-  return filterItems(menuItems);
+  const itemOrder = new Map(
+    getSidebarItemOrder(uiSettings).map((itemKey, index) => [itemKey, index])
+  );
+
+  return filterItems(menuItems).sort((firstItem, secondItem) => {
+    const firstPosition = itemOrder.get(getItemKey(firstItem));
+    const secondPosition = itemOrder.get(getItemKey(secondItem));
+
+    if (
+      typeof firstPosition === 'undefined' &&
+      typeof secondPosition === 'undefined'
+    ) {
+      return 0;
+    }
+    if (typeof firstPosition === 'undefined') return 1;
+    if (typeof secondPosition === 'undefined') return -1;
+    return firstPosition - secondPosition;
+  });
 };

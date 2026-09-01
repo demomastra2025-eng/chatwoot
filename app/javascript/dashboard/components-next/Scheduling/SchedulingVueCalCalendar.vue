@@ -6,7 +6,6 @@ import { VueCal } from 'vue-cal';
 
 import {
   APPOINTMENT_STATUS_ICONS,
-  HOUR_ROW_HEIGHT,
   MINUTE_STEP,
 } from 'dashboard/routes/dashboard/scheduling/constants';
 import { buildCustomFieldSummary } from 'dashboard/stores/crm/customFieldFormatter';
@@ -91,9 +90,10 @@ const emit = defineEmits([
   'selectAppointment',
 ]);
 
-const TIMELINE_ROW_HEIGHT_MULTIPLIER = 1.25;
 const EVENT_CLICK_SUPPRESSION_MS = 900;
+const TIMELINE_DISPLAY_STEP_MIN = 30;
 const TIMELINE_HALF_HOUR_STEP_MIN = 30;
+const TIMELINE_HOUR_HEIGHT = 48;
 const TIMELINE_HOUR_STEP_MIN = 60;
 
 const { t, locale } = useI18n();
@@ -149,26 +149,31 @@ const resourceById = computed(() => {
   }, {});
 });
 
-const timelineStepMin = computed(() => MINUTE_STEP);
+const timelineStepMin = computed(() => TIMELINE_DISPLAY_STEP_MIN);
 const timelineSlotDurationStepMin = computed(() =>
   Math.max(MINUTE_STEP, slotStepMin.value || MINUTE_STEP)
 );
 
 const visibleWindow = computed(() => {
-  return deriveVisibleMinuteWindow({
+  const window = deriveVisibleMinuteWindow({
     appointments: props.appointments,
     columns: columns.value,
     workRules: props.workRules,
     workdayOverrides: props.workdayOverrides,
   });
+
+  return {
+    startMinute:
+      Math.floor(window.startMinute / TIMELINE_DISPLAY_STEP_MIN) *
+      TIMELINE_DISPLAY_STEP_MIN,
+    endMinute:
+      Math.ceil(window.endMinute / TIMELINE_DISPLAY_STEP_MIN) *
+      TIMELINE_DISPLAY_STEP_MIN,
+  };
 });
 
 const timeCellHeight = computed(() => {
-  return (
-    HOUR_ROW_HEIGHT *
-    TIMELINE_ROW_HEIGHT_MULTIPLIER *
-    (timelineStepMin.value / 60)
-  );
+  return TIMELINE_HOUR_HEIGHT * (timelineStepMin.value / 60);
 });
 
 const minutePixelSize = computed(() => {
@@ -211,7 +216,7 @@ const calendarCssVars = computed(() => ({
   '--scheduling-hour-grid-offset': timelineHourGridOffset.value,
   '--scheduling-hour-grid-size': timelineHourGridSize.value,
   '--scheduling-weekday-bar-size': weekdayBarSize.value,
-  '--vuecal-min-schedule-size': '0px',
+  '--vuecal-min-schedule-size': props.view === 'day' ? '7.5rem' : '0px',
 }));
 
 const mergeIntervals = intervals => {
@@ -974,8 +979,10 @@ const timelineBackgroundEvents = computed(() => {
 const appointmentEvents = computed(() => {
   return props.appointments.map(appointment => {
     const resource = resourceById.value[appointment.resourceId];
-    const clientName = appointment.title || appointment.clientName || '—';
+    const appointmentTitle = String(appointment.title || '').trim();
+    const clientName = appointmentTitle || appointment.clientName || '—';
     const subtitle = [
+      appointmentTitle ? appointment.clientName : null,
       appointment.serviceNameSnapshot || appointment.subtitle,
       appointment.resourceName || resource?.name,
     ]
@@ -1547,7 +1554,7 @@ onMounted(() => {
           :schedules="schedules"
           :editable-events="editableEvents"
           events-on-month-view
-          :snap-to-interval="timelineStepMin"
+          :snap-to-interval="MINUTE_STEP"
           :time="view !== 'month'"
           :watch-real-time="isTimelineView"
           :time-cell-height="timeCellHeight"
@@ -1598,6 +1605,8 @@ onMounted(() => {
           <template #schedule-heading="{ schedule }">
             <div
               class="scheduling-vue-cal__schedule-heading"
+              :title="formatScheduleHeadingLabel(schedule)"
+              :aria-label="formatScheduleHeadingLabel(schedule)"
               :style="{
                 '--schedule-accent':
                   resourceById[schedule.id]?.color || '#2563eb',
@@ -1639,11 +1648,9 @@ onMounted(() => {
               class="scheduling-vue-cal__time-label"
               :class="{
                 'scheduling-vue-cal__time-label--hour': minutesSum % 60 === 0,
-                'scheduling-vue-cal__time-label--muted': minutesSum % 30 !== 0,
-                'scheduling-vue-cal__time-label--half': minutesSum % 60 !== 0,
               }"
             >
-              {{ minutesSum % 30 === 0 ? format24 : '' }}
+              {{ minutesSum % 60 === 0 ? format24 : '' }}
             </label>
           </template>
 
@@ -1823,23 +1830,9 @@ onMounted(() => {
 .scheduling-vue-cal :deep(.vuecal) {
   --scheduling-sticky-bg: rgb(var(--slate-2));
   --scheduling-slot-grid-bg: rgb(var(--surface-1));
-  --scheduling-slot-divider: rgb(var(--slate-8) / 0.32);
-  --scheduling-slot-half-hour-divider: rgb(var(--slate-9) / 0.16);
-  --scheduling-slot-hour-divider: rgb(var(--slate-9) / 0.28);
-  --scheduling-slot-dash-size: 8px;
-  --scheduling-slot-dash-pattern: radial-gradient(
-    ellipse 2px 0.4px at 2px 0.5px,
-    var(--scheduling-slot-divider) 98%,
-    transparent 100%
-  );
-  --scheduling-slot-grid: linear-gradient(
-    0deg,
-    var(--scheduling-slot-divider) 0,
-    var(--scheduling-slot-divider) 1px,
-    transparent 1px,
-    transparent var(--vuecal-time-cell-size)
-  );
-  --vuecal-border-color: rgb(var(--slate-7) / 0.88);
+  --scheduling-slot-half-hour-divider: rgb(var(--slate-8) / 0.08);
+  --scheduling-slot-hour-divider: rgb(var(--slate-8) / 0.2);
+  --vuecal-border-color: rgb(var(--slate-7) / 0.7);
   --vuecal-primary-color: rgb(var(--brand-color));
   --vuecal-secondary-color: var(--scheduling-sticky-bg);
   --vuecal-base-color: rgb(var(--slate-12));
@@ -1863,12 +1856,12 @@ onMounted(() => {
 
 .scheduling-vue-cal :deep(.vuecal__schedule--heading) {
   height: 100%;
+  min-width: 0;
   align-items: stretch;
-  overflow: visible;
+  overflow: hidden;
+  border-right: 1px solid var(--vuecal-border-color);
   background: transparent !important;
-  box-shadow:
-    inset 0 -1px 0 0 var(--vuecal-border-color),
-    inset -1px 0 0 0 var(--vuecal-border-color);
+  box-shadow: inset 0 -1px 0 0 var(--vuecal-border-color);
 }
 
 .scheduling-vue-cal :deep(.vuecal__weekdays-headings),
@@ -1990,8 +1983,26 @@ onMounted(() => {
   background: rgb(var(--ruby-9));
 }
 
+.scheduling-vue-cal--day :deep(.vuecal__schedules-headings),
+.scheduling-vue-cal--day :deep(.vuecal__cell--has-schedules) {
+  display: grid;
+  grid-template-columns: repeat(var(--vuecal-schedules-count), minmax(0, 1fr));
+}
+
 .scheduling-vue-cal :deep(.vuecal__schedule--cell) {
+  min-width: 0;
+  border-right: 1px solid var(--vuecal-border-color);
   background: transparent;
+  box-shadow: none;
+}
+
+.scheduling-vue-cal
+  :deep(
+    .vuecal__scrollable--day-view
+      .vuecal__schedule--cell
+      + .vuecal__schedule--cell
+  ) {
+  border-left: 0 !important;
 }
 
 .scheduling-vue-cal :deep(.vuecal__body) {
@@ -2023,28 +2034,16 @@ onMounted(() => {
       var(--scheduling-slot-half-hour-divider)
         calc(var(--scheduling-half-hour-grid-size) - 1px)
         var(--scheduling-half-hour-grid-size)
-    ),
-    repeating-linear-gradient(
-      0deg,
-      transparent 0 calc(var(--scheduling-half-hour-grid-size) - 1px),
-      var(--scheduling-slot-grid-bg)
-        calc(var(--scheduling-half-hour-grid-size) - 1px)
-        var(--scheduling-half-hour-grid-size)
-    ),
-    var(--scheduling-slot-dash-pattern);
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+    );
+  background-repeat: no-repeat, no-repeat, no-repeat;
   background-position:
     right top,
     0 calc(var(--scheduling-hour-grid-offset) + 1px),
-    0 calc(var(--scheduling-half-hour-grid-offset) + 1px),
-    0 calc(var(--scheduling-half-hour-grid-offset) + 1px),
-    0 1px;
+    0 calc(var(--scheduling-half-hour-grid-offset) + 1px);
   background-size:
     1px 100%,
     100% 100%,
-    100% 100%,
-    100% 100%,
-    var(--scheduling-slot-dash-size) var(--vuecal-time-cell-size);
+    100% 100%;
   box-shadow: none;
 }
 
@@ -2203,16 +2202,6 @@ onMounted(() => {
 .scheduling-vue-cal__time-label--hour {
   color: var(--vuecal-base-color);
   font-size: 0.7em;
-  font-weight: 500;
-}
-
-.scheduling-vue-cal__time-label--muted {
-  color: transparent;
-}
-
-.scheduling-vue-cal__time-label--half {
-  color: rgb(var(--slate-9));
-  font-size: 0.55rem;
   font-weight: 500;
 }
 
@@ -2412,11 +2401,15 @@ onMounted(() => {
 .scheduling-vue-cal__schedule-heading {
   display: flex;
   height: 100%;
+  width: 100%;
   min-width: 0;
   align-items: center;
+  overflow: hidden;
 }
 
 .scheduling-vue-cal--day .scheduling-vue-cal__schedule-heading {
+  padding-right: 0.5rem;
+  padding-left: 0.5rem;
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
 }
@@ -2428,6 +2421,7 @@ onMounted(() => {
 .scheduling-vue-cal__schedule-chip {
   display: inline-flex;
   max-width: 100%;
+  min-width: 0;
   align-items: center;
   gap: 0.1875rem;
   margin: auto 0;
@@ -2445,6 +2439,7 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal--day .scheduling-vue-cal__schedule-chip {
+  width: 100%;
   gap: 0.375rem;
   padding: 0;
   border: 0;
@@ -2477,7 +2472,8 @@ onMounted(() => {
 }
 
 .scheduling-vue-cal__schedule-label {
-  display: inline-flex;
+  display: block;
+  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   gap: 0.25rem;
@@ -2488,6 +2484,8 @@ onMounted(() => {
   letter-spacing: 0;
   line-height: 1.1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .scheduling-vue-cal--day .scheduling-vue-cal__schedule-label {

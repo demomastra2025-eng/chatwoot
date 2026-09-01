@@ -129,6 +129,38 @@ describe('DatePicker outside interaction', () => {
     expect(wrapper.find('.w-\\[340px\\]').exists()).toBe(false);
   });
 
+  it('can center a compact calendar under its trigger', async () => {
+    wrapper = mountDatePicker({
+      calendarOnly: true,
+      compact: true,
+      popoverAlign: 'center',
+    });
+
+    await wrapper.get('[data-testid="date-picker-trigger"]').trigger('click');
+
+    const popover = wrapper.get('.w-\\[340px\\]');
+    expect(popover.classes()).toContain('left-1/2');
+    expect(popover.classes()).toContain('-translate-x-1/2');
+    expect(popover.classes()).toContain('scale-[0.8]');
+  });
+
+  it('keeps presets beside a compact single calendar', async () => {
+    wrapper = mountDatePicker({
+      compact: true,
+      compactScale: 'medium',
+      singleCalendar: true,
+    });
+
+    await wrapper.get('[data-testid="date-picker-trigger"]').trigger('click');
+
+    expect(wrapper.find('.w-\\[540px\\]').exists()).toBe(true);
+    expect(wrapper.find('.scale-\\[0\\.9\\]').exists()).toBe(true);
+    expect(wrapper.find('[data-testid="date-range-preset"]').exists()).toBe(
+      true
+    );
+    expect(wrapper.findAllComponents(CalendarWeekStub)).toHaveLength(1);
+  });
+
   it('opens only after the Select click that mounted it has propagated', async () => {
     document.body.addEventListener(
       'click',

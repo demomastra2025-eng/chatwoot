@@ -169,7 +169,7 @@ describe V2::ReportBuilder do
             until: Time.zone.today.end_of_day.to_time.to_i.to_s
           }
 
-          create(:agent_bot_inbox, inbox: account.inboxes.first)
+          create(:integrations_hook, :dialogflow, inbox: account.inboxes.first, account: account)
           conversations = account.conversations.where('created_at < ?', 1.day.ago)
           conversations.each do |conversation|
             conversation.messages.outgoing.all.update(sender: nil)
@@ -203,7 +203,7 @@ describe V2::ReportBuilder do
             until: Time.zone.today.end_of_day.to_time.to_i.to_s
           }
 
-          create(:agent_bot_inbox, inbox: account.inboxes.first)
+          create(:integrations_hook, :dialogflow, inbox: account.inboxes.first, account: account)
           conversations = account.conversations.where('created_at < ?', 1.day.ago)
           conversations.each do |conversation|
             conversation.pending!

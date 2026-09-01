@@ -2,13 +2,6 @@
 # No need to replicate the same values in two places
 
 # ------- Premium Features ------- #
-saml:
-  name: 'SAML SSO'
-  description: 'Configuration for controlling SAML Single Sign-On availability'
-  enabled: <%= ChatwootApp.enterprise? %>
-  icon: 'icon-lock-line'
-  config_key: 'saml'
-  enterprise: true
 custom_branding:
   name: 'Custom Branding'
   description: 'Apply your own branding to this installation.'
@@ -93,12 +86,6 @@ telegram:
   description: 'Manage your Telegram customer interactions from Chatwoot.'
   enabled: true
   icon: 'icon-telegram-line'
-linkedin_personal:
-  name: 'LinkedIn Personal'
-  description: 'Manage LinkedIn direct messages through the OneLink personal gateway.'
-  enabled: true
-  icon: 'brand-linkedin-outline'
-  config_key: 'linkedin_personal'
 line:
   name: 'Line'
   description: 'Manage your Line customer interactions from Chatwoot.'

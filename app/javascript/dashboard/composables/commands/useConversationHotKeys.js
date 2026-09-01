@@ -157,6 +157,11 @@ export function useConversationHotKeys() {
   const getDraftMessage = useMapGetter('draftMessages/get');
 
   const conversationId = computed(() => currentChat.value?.id);
+  const conversationType = computed(() =>
+    currentChat.value?.is_communication_thread
+      ? 'communication_thread'
+      : 'conversation'
+  );
   const draftKey = computed(
     () => `draft-${conversationId.value}-${replyMode.value}`
   );
@@ -175,6 +180,7 @@ export function useConversationHotKeys() {
   const onChangeAssignee = action => {
     store.dispatch('assignAgent', {
       conversationId: currentChat.value.id,
+      conversationType: conversationType.value,
       agentId: action.agentInfo.id,
     });
   };
@@ -182,6 +188,7 @@ export function useConversationHotKeys() {
   const onChangePriority = action => {
     store.dispatch('assignPriority', {
       conversationId: currentChat.value.id,
+      conversationType: conversationType.value,
       priority: action.priority.key,
     });
   };
@@ -189,6 +196,7 @@ export function useConversationHotKeys() {
   const onChangeTeam = action => {
     store.dispatch('assignTeam', {
       conversationId: currentChat.value.id,
+      conversationType: conversationType.value,
       teamId: action.teamInfo.id,
     });
   };

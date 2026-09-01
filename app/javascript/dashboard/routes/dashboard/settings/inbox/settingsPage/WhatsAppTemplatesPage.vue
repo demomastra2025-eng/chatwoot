@@ -8,7 +8,7 @@ import { usePolicy } from 'dashboard/composables/usePolicy';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
-import SettingsFieldSection from 'dashboard/components-next/Settings/SettingsFieldSection.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import CreateWhatsAppTemplateDialog from './components/CreateWhatsAppTemplateDialog.vue';
 import {
   groupWhatsAppTemplates,
@@ -39,6 +39,7 @@ const canManageTemplates = computed(() => checkPermissions(['administrator']));
 const searchQuery = ref('');
 const isSyncingTemplates = ref(false);
 const isDeletingTemplate = ref(false);
+const updatingVisibility = ref(new Set());
 const templatePendingDelete = ref(null);
 const createDialogRef = ref(null);
 const deleteDialogRef = ref(null);
@@ -131,9 +132,31 @@ const canDeleteTemplate = templateGroup =>
   templateGroup?.name &&
   templateGroup.name !== csatTemplateName.value;
 
-const sectionComponent = computed(() =>
-  props.embedded ? 'div' : SettingsFieldSection
-);
+const isVisibleInConversations = templateGroup =>
+  templateGroup.variants.some(
+    variant => variant.visible_in_conversation_picker !== false
+  );
+
+const updateTemplateVisibility = async (templateGroup, visible) => {
+  if (!canManageTemplates.value) return;
+
+  const templateName = templateGroup.name;
+  updatingVisibility.value.add(templateName);
+  try {
+    await store.dispatch('inboxes/updateWhatsAppTemplateVisibility', {
+      inboxId: props.inbox.id,
+      templateName,
+      visible,
+    });
+  } catch (error) {
+    useAlert(
+      error.message || t('WHATSAPP_TEMPLATES.MANAGEMENT.VISIBILITY_ERROR')
+    );
+  } finally {
+    updatingVisibility.value.delete(templateName);
+  }
+};
+
 const containerClass = computed(() =>
   props.embedded ? 'space-y-6' : 'mx-6 max-w-7xl space-y-6'
 );
@@ -149,17 +172,7 @@ defineExpose({
 
 <template>
   <div :class="containerClass">
-    <component
-      :is="sectionComponent"
-      v-bind="
-        embedded
-          ? {}
-          : {
-              label: t('WHATSAPP_TEMPLATES.MANAGEMENT.PAGE_TITLE'),
-              helpText: t('WHATSAPP_TEMPLATES.MANAGEMENT.PAGE_DESCRIPTION'),
-            }
-      "
-    >
+    <div>
       <div class="space-y-5">
         <div
           v-if="!embedded && canManageTemplates"
@@ -221,9 +234,9 @@ defineExpose({
             :key="templateGroup.name"
             class="space-y-4 rounded-2xl border border-n-weak bg-n-surface-1 p-4"
           >
-            <div class="flex items-start justify-between gap-4">
-              <div class="min-w-0 space-y-2">
-                <div class="flex flex-wrap items-center gap-2">
+            <div class="min-w-0 space-y-2">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <p
                     class="mb-0 truncate text-base font-medium text-n-slate-12"
                   >
@@ -242,80 +255,100 @@ defineExpose({
                   </span>
                 </div>
 
-                <p class="mb-0 text-xs text-n-slate-10">
-                  {{
-                    t('WHATSAPP_TEMPLATES.MANAGEMENT.LANGUAGES', {
-                      languages: formatLanguages(templateGroup),
-                    })
-                  }}
-                </p>
-
-                <div class="flex flex-wrap gap-2">
+                <div class="-mt-2 flex shrink-0 items-center gap-3">
                   <div
-                    v-for="variant in templateGroup.variants"
-                    :key="`${templateGroup.name}-${variant.language}`"
-                    class="inline-flex items-center gap-2 rounded-full bg-n-alpha-black2 px-2.5 py-1 text-xs font-medium text-n-slate-11"
+                    v-tooltip.top="
+                      t('WHATSAPP_TEMPLATES.MANAGEMENT.SHOW_IN_CONVERSATIONS')
+                    "
+                    class="flex items-center"
                   >
-                    <span>{{ variant.language || 'en' }}</span>
-                    <span
-                      class="rounded-full px-2 py-0.5"
-                      :class="getStatusClass(variant.status)"
-                    >
-                      {{ variant.status || 'PENDING' }}
-                    </span>
+                    <Switch
+                      :model-value="isVisibleInConversations(templateGroup)"
+                      :aria-label="
+                        t('WHATSAPP_TEMPLATES.MANAGEMENT.SHOW_IN_CONVERSATIONS')
+                      "
+                      :disabled="
+                        !canManageTemplates ||
+                        updatingVisibility.has(templateGroup.name)
+                      "
+                      @change="updateTemplateVisibility(templateGroup, $event)"
+                    />
                   </div>
-                </div>
-
-                <p
-                  v-if="getTemplateHeaderPreview(templateGroup.primaryVariant)"
-                  class="mb-0 text-sm font-medium text-n-slate-12"
-                >
-                  {{ getTemplateHeaderPreview(templateGroup.primaryVariant) }}
-                </p>
-
-                <p class="mb-0 text-sm whitespace-pre-wrap text-n-slate-11">
-                  {{ getTemplateBodyPreview(templateGroup.primaryVariant) }}
-                </p>
-
-                <p
-                  v-if="getTemplateFooterPreview(templateGroup.primaryVariant)"
-                  class="mb-0 text-xs text-n-slate-10"
-                >
-                  {{ getTemplateFooterPreview(templateGroup.primaryVariant) }}
-                </p>
-
-                <div
-                  v-if="
-                    getTemplateParameters(templateGroup.primaryVariant).length
-                  "
-                  class="space-y-2"
-                >
-                  <p
-                    class="mb-0 text-xs font-medium uppercase tracking-wide text-n-slate-10"
-                  >
-                    {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.PARAMETERS_TITLE') }}
-                  </p>
-                  <div class="flex flex-wrap gap-2">
-                    <span
-                      v-for="parameter in getTemplateParameters(
-                        templateGroup.primaryVariant
-                      )"
-                      :key="`${templateGroup.name}-${parameter}`"
-                      class="rounded-full bg-n-slate-3 px-2.5 py-1 text-xs font-medium text-n-slate-11"
-                    >
-                      {{ parameter }}
-                    </span>
-                  </div>
+                  <Button
+                    v-if="canDeleteTemplate(templateGroup)"
+                    variant="ghost"
+                    color="ruby"
+                    icon="i-lucide-trash-2"
+                    @click="openDeleteDialog(templateGroup)"
+                  />
                 </div>
               </div>
 
-              <Button
-                v-if="canDeleteTemplate(templateGroup)"
-                variant="ghost"
-                color="ruby"
-                icon="i-lucide-trash-2"
-                @click="openDeleteDialog(templateGroup)"
-              />
+              <p class="mb-0 text-xs text-n-slate-10">
+                {{
+                  t('WHATSAPP_TEMPLATES.MANAGEMENT.LANGUAGES', {
+                    languages: formatLanguages(templateGroup),
+                  })
+                }}
+              </p>
+
+              <div class="flex flex-wrap gap-2">
+                <div
+                  v-for="variant in templateGroup.variants"
+                  :key="`${templateGroup.name}-${variant.language}`"
+                  class="inline-flex items-center gap-2 rounded-full bg-n-alpha-black2 px-2.5 py-1 text-xs font-medium text-n-slate-11"
+                >
+                  <span>{{ variant.language || 'en' }}</span>
+                  <span
+                    class="rounded-full px-2 py-0.5"
+                    :class="getStatusClass(variant.status)"
+                  >
+                    {{ variant.status || 'PENDING' }}
+                  </span>
+                </div>
+              </div>
+
+              <p
+                v-if="getTemplateHeaderPreview(templateGroup.primaryVariant)"
+                class="mb-0 text-sm font-medium text-n-slate-12"
+              >
+                {{ getTemplateHeaderPreview(templateGroup.primaryVariant) }}
+              </p>
+
+              <p class="mb-0 text-sm whitespace-pre-wrap text-n-slate-11">
+                {{ getTemplateBodyPreview(templateGroup.primaryVariant) }}
+              </p>
+
+              <p
+                v-if="getTemplateFooterPreview(templateGroup.primaryVariant)"
+                class="mb-0 text-xs text-n-slate-10"
+              >
+                {{ getTemplateFooterPreview(templateGroup.primaryVariant) }}
+              </p>
+
+              <div
+                v-if="
+                  getTemplateParameters(templateGroup.primaryVariant).length
+                "
+                class="space-y-2"
+              >
+                <p
+                  class="mb-0 text-xs font-medium uppercase tracking-wide text-n-slate-10"
+                >
+                  {{ t('WHATSAPP_TEMPLATES.MANAGEMENT.PARAMETERS_TITLE') }}
+                </p>
+                <div class="flex flex-wrap gap-2">
+                  <span
+                    v-for="parameter in getTemplateParameters(
+                      templateGroup.primaryVariant
+                    )"
+                    :key="`${templateGroup.name}-${parameter}`"
+                    class="rounded-full bg-n-slate-3 px-2.5 py-1 text-xs font-medium text-n-slate-11"
+                  >
+                    {{ parameter }}
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div
@@ -342,7 +375,7 @@ defineExpose({
           </div>
         </div>
       </div>
-    </component>
+    </div>
 
     <CreateWhatsAppTemplateDialog
       v-if="canManageTemplates"

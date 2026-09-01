@@ -2,7 +2,6 @@ import { frontendURL } from 'dashboard/helper/URLHelper';
 
 import Login from './login/Index.vue';
 
-const SamlLogin = () => import('./login/Saml.vue');
 const Signup = () => import('./auth/signup/Index.vue');
 const ResetPassword = () => import('./auth/reset/password/Index.vue');
 const Confirmation = () => import('./auth/confirmation/Index.vue');
@@ -20,16 +19,6 @@ export default [
       ssoAccountId: route.query.sso_account_id,
       ssoConversationId: route.query.sso_conversation_id,
       authError: route.query.error,
-    }),
-  },
-  {
-    path: frontendURL('login/sso'),
-    name: 'sso_login',
-    component: SamlLogin,
-    meta: { requireEnterprise: true },
-    props: route => ({
-      authError: route.query.error,
-      target: route.query.target,
     }),
   },
   {

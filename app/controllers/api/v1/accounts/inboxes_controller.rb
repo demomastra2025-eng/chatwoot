@@ -7,12 +7,12 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   VOICE_TOP_LEVEL_CHANNEL_ATTRIBUTES = %i[phone_number provider provider_config].freeze
 
   before_action :fetch_inbox, except: [:index, :create]
-  before_action :fetch_agent_bot, only: [:set_agent_bot]
+
   before_action :validate_limit, only: [:create]
   # we are already handling the authorization in fetch inbox
   before_action :check_authorization, except: [:show]
   before_action :render_pending_deletion_response,
-                only: [:update, :avatar, :set_agent_bot, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
+                only: [:update, :avatar, :refresh_whatsapp_web_qr, :reconnect_whatsapp_web,
                        :reauthorize_whatsapp_web, :disconnect_whatsapp_web, :repair_whatsapp_web]
   before_action :render_pending_deletion_diagnostics,
                 only: [:whatsapp_web_diagnostics]
@@ -83,20 +83,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     render json: { error: e.message }, status: :unprocessable_content
   end
 
-  def agent_bot
-    @agent_bot = @inbox.agent_bot
-  end
-
-  def set_agent_bot
-    if @agent_bot
-      agent_bot_inbox = @inbox.agent_bot_inbox || AgentBotInbox.new(inbox: @inbox)
-      agent_bot_inbox.agent_bot = @agent_bot
-      agent_bot_inbox.save!
-    elsif @inbox.agent_bot_inbox.present?
-      @inbox.agent_bot_inbox.destroy!
-    end
-    head :ok
-  end
 
   def reset_secret
     return head :not_found unless @inbox.api?
@@ -194,9 +180,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     authorize @inbox, :show?
   end
 
-  def fetch_agent_bot
-    @agent_bot = AgentBot.accessible_to(Current.account).find(params[:agent_bot]) if params[:agent_bot]
-  end
 
   def create_channel
     return unless allowed_channel_types.include?(permitted_params[:channel][:type])
@@ -244,13 +227,17 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
   end
 
   def allowed_channel_types
-    types = %w[web_widget api email line telegram telegram_personal linkedin_personal weixin whatsapp whatsapp_web sms vk_community]
+    types = %w[web_widget api email line telegram telegram_personal weixin whatsapp whatsapp_web sms vk_community]
     types << 'voice' if defined?(Channel::Voice)
     types
   end
 
   def update_inbox_working_hours
-    @inbox.update_working_hours(params.permit(working_hours: Inbox::OFFISABLE_ATTRS)[:working_hours]) if params[:working_hours]
+    if @inbox.inherit_working_hours_from_account?
+      @inbox.apply_workspace_working_hours!
+    elsif params[:working_hours]
+      @inbox.update_working_hours(params.permit(working_hours: Inbox::OFFISABLE_ATTRS)[:working_hours])
+    end
   end
 
   def update_channel
@@ -432,8 +419,9 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
 
   def inbox_attributes
     [:name, :avatar, :greeting_enabled, :greeting_message, :enable_email_collect, :csat_survey_enabled,
-     :enable_auto_assignment, :working_hours_enabled, :out_of_office_message, :timezone, :allow_messages_after_resolved,
-     :lock_to_single_conversation, :portal_id, :sender_name_type, :business_name,
+     :enable_auto_assignment, :working_hours_enabled, :inherit_working_hours_from_account, :out_of_office_message, :timezone,
+     :allow_messages_after_resolved,
+     :portal_id, :sender_name_type, :business_name,
      { csat_config: [:display_type, :message, :button_text, :language,
                      { survey_rules: [:operator, { values: [] }],
                        template: [:name, :template_id, :friendly_name, :content_sid, :approval_sid, :created_at, :language, :status] }] }]
@@ -470,7 +458,6 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
       'line' => Channel::Line,
       'telegram' => Channel::Telegram,
       'telegram_personal' => Channel::TelegramPersonal,
-      'linkedin_personal' => Channel::LinkedinPersonal,
       'weixin' => Channel::Weixin,
       'whatsapp' => Channel::Whatsapp,
       'whatsapp_web' => Channel::WhatsappWeb,

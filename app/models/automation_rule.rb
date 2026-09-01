@@ -2,16 +2,18 @@
 #
 # Table name: automation_rules
 #
-#  id          :bigint           not null, primary key
-#  actions     :jsonb            not null
-#  active      :boolean          default(TRUE), not null
-#  conditions  :jsonb            not null
-#  description :text
-#  event_name  :string           not null
-#  name        :string           not null
-#  created_at  :datetime         not null
-#  updated_at  :datetime         not null
-#  account_id  :bigint           not null
+#  id                 :bigint           not null, primary key
+#  actions            :jsonb            not null
+#  active             :boolean          default(TRUE), not null
+#  conditions         :jsonb            not null
+#  description        :text
+#  event_name         :string           not null
+#  execution_schedule    :jsonb            not null
+#  lifecycle_generation :bigint           default(1), not null
+#  name               :string           not null
+#  created_at         :datetime         not null
+#  updated_at         :datetime         not null
+#  account_id         :bigint           not null
 #
 # Indexes
 #
@@ -139,6 +141,7 @@ class AutomationRule < ApplicationRecord
   validates :account_id, presence: true
 
   before_validation :normalize_action_ids
+  before_update :advance_lifecycle_generation, if: -> { will_save_change_to_active? && active? }
   before_destroy :cancel_live_touch_enrollments, prepend: true
   after_update_commit :reauthorized!, if: -> { saved_change_to_conditions? }
   after_update_commit :reconcile_live_touch_enrollments, if: -> { saved_change_to_actions? || saved_change_to_active? }
@@ -302,7 +305,12 @@ class AutomationRule < ApplicationRecord
   end
 
   def reconcile_live_touch_enrollments
-    Reminders::ReconcileSourceEnrollmentsJob.perform_later('AutomationRule', id)
+    disabled_generation = lifecycle_generation unless active?
+    Reminders::ReconcileSourceEnrollmentsJob.perform_later('AutomationRule', id, disabled_generation)
+  end
+
+  def advance_lifecycle_generation
+    self.lifecycle_generation = lifecycle_generation.to_i + 1
   end
 
   def backfill_live_appointment_enrollments

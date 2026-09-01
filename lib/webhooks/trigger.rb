@@ -1,6 +1,6 @@
 class Webhooks::Trigger
   SUPPORTED_ERROR_HANDLE_EVENTS = %w[message_created message_updated].freeze
-  RETRYABLE_AGENT_BOT_STATUSES = [429, 500].freeze
+
   RETRYABLE_API_INBOX_STATUSES = [408, 425, 429].freeze
 
   class RetryableError < StandardError
@@ -75,35 +75,7 @@ class Webhooks::Trigger
     return unless SUPPORTED_ERROR_HANDLE_EVENTS.include?(@payload[:event])
     return unless message
 
-    case @webhook_type
-    when :agent_bot_webhook
-      update_conversation_status(message)
-    when :api_inbox_webhook
-      update_message_status(error)
-    end
-  end
-
-  def update_conversation_status(message)
-    conversation = message.conversation
-    return unless conversation&.pending?
-    return if conversation&.account&.keep_pending_on_bot_failure
-
-    conversation.open!
-    create_agent_bot_error_activity(conversation)
-  end
-
-  def create_agent_bot_error_activity(conversation)
-    content = I18n.t('conversations.activity.agent_bot.error_moved_to_open')
-    Conversations::ActivityMessageJob.perform_later(conversation, activity_message_params(conversation, content))
-  end
-
-  def activity_message_params(conversation, content)
-    {
-      account_id: conversation.account_id,
-      inbox_id: conversation.inbox_id,
-      message_type: :activity,
-      content: content
-    }
+    update_message_status(error) if @webhook_type == :api_inbox_webhook
   end
 
   def update_message_status(error)
@@ -143,9 +115,6 @@ class Webhooks::Trigger
        .uniq
   end
 
-  def retryable_agent_bot_error?(error)
-    @webhook_type == :agent_bot_webhook && RETRYABLE_AGENT_BOT_STATUSES.include?(http_status(error))
-  end
 
   def retryable_api_inbox_error?(error)
     return false unless @webhook_type == :api_inbox_webhook
@@ -156,7 +125,7 @@ class Webhooks::Trigger
   end
 
   def retryable_webhook_error?(error)
-    retryable_agent_bot_error?(error) || retryable_api_inbox_error?(error)
+    retryable_api_inbox_error?(error)
   end
 
   def http_status(error)

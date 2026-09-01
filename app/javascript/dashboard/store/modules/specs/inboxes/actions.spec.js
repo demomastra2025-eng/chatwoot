@@ -390,6 +390,27 @@ describe('#actions', () => {
     });
   });
 
+  describe('#updateWhatsAppTemplateVisibility', () => {
+    it('updates the inbox when visibility changes', async () => {
+      axios.patch.mockResolvedValue({ data: inboxList[0] });
+
+      const response = await actions.updateWhatsAppTemplateVisibility(
+        { commit },
+        { inboxId: 123, templateName: 'order_update', visible: false }
+      );
+
+      expect(response).toEqual(inboxList[0]);
+      expect(axios.patch).toHaveBeenCalledWith(
+        '/api/v1/inboxes/123/whatsapp_templates/order_update/visibility',
+        { visible_in_conversation_picker: false }
+      );
+      expect(commit).toHaveBeenCalledWith(
+        types.default.EDIT_INBOXES,
+        inboxList[0]
+      );
+    });
+  });
+
   describe('#refreshWhatsappWebQr', () => {
     it('sends explicit auth artifact type for a QR generation request', async () => {
       axios.post.mockResolvedValue({ data: inboxList[0] });

@@ -53,12 +53,12 @@
 #
 # Foreign Keys
 #
-#  fk_rails_...  (account_id => accounts.id) ON DELETE => cascade
-#  fk_rails_...  (communication_thread_id => communication_threads.id) ON DELETE => nullify
-#  fk_rails_...  (contact_id => contacts.id) ON DELETE => nullify
-#  fk_rails_...  (conversation_id => conversations.id) ON DELETE => nullify
-#  fk_rails_...  (inbox_id => inboxes.id) ON DELETE => cascade
-#  fk_rails_...  (message_id => messages.id) ON DELETE => nullify
+#  fk_rails_...  (account_id => accounts.id)
+#  fk_rails_...  (communication_thread_id => communication_threads.id)
+#  fk_rails_...  (contact_id => contacts.id)
+#  fk_rails_...  (conversation_id => conversations.id)
+#  fk_rails_...  (inbox_id => inboxes.id)
+#  fk_rails_...  (message_id => messages.id)
 #
 class MetaAdReferral < ApplicationRecord
   belongs_to :account

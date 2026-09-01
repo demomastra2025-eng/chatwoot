@@ -19,15 +19,9 @@ ru:
       invalid_channel: Неверный тип канала для повторной авторизации
   auth:
     session_replaced: 'В ваш аккаунт вошли с другого устройства. Войдите снова.'
-    saml:
-      invalid_email: Пожалуйста, введите действительный адрес электронной почты
-      authentication_failed: Ошибка аутентификации. Пожалуйста, проверьте ваши учетные данные и повторите попытку.
   messages:
     reset_password_success: Круто! Запрос на сброс пароля удался. Проверьте почту для получения инструкций.
     reset_password_failure: Ой! Мы не смогли найти пользователя с указанным email.
-    reset_password_saml_user: Эта учетная запись использует SAML-аутентификацию. Сброс пароля недоступен. Пожалуйста, обратитесь к администратору.
-    login_saml_user: Эта учетная запись использует SAML аутентификацию. Пожалуйста, войдите через SAML провайдера вашей организации.
-    saml_not_available: SAML аутентификация не доступна в этой установке.
     inbox_deletetion_response: Ваш запрос на удаление входящих сообщений будет обработан через некоторое время.
     reset_password: Запрос на сброс пароля успешно отправлен. Если такой email существует, на него придет письмо с инструкциями.
   errors:
@@ -52,9 +46,6 @@ ru:
       not_found: Политика назначения не найдена
     attachments:
       invalid: Недопустимое вложение
-    saml:
-      feature_not_enabled: Функция SAML не включена для этой учетной записи
-      sso_not_enabled: SAML SSO не включен для этой установки
     data_import:
       data_type:
         invalid: Недопустимый тип данных
@@ -134,8 +125,6 @@ ru:
     mfa:
       enabled: MFA успешно включен
       disabled: MFA успешно отключен
-    account_saml_settings:
-      invalid_certificate: должен быть действительным сертификатом X.509 в формате PEM
   reports:
     period: Отчётный период с %{since} по %{until}
     utc_warning: Отчёт создан в часовом поясе UTC
@@ -234,8 +223,6 @@ ru:
         resolved_by_tool: 'Диалог был завершен %{user_name} с причиной: %{reason}'
         open_with_reason: Диалог был открыт %{user_name} (%{reason})
         auto_opened_after_agent_reply: Разговор был открыт автоматически после ответа сотрудника
-      agent_bot:
-        error_moved_to_open: Диалог был открыт системой из-за ошибки робота сотрудника.
       status:
         resolved: "%{user_name} завершил диалог"
         contact_resolved: Разговор был закрыт с %{contact_name}

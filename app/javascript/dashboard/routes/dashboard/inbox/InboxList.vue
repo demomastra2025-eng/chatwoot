@@ -7,6 +7,7 @@ import { useAlert, useTrack } from 'dashboard/composables';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import wootConstants from 'dashboard/constants/globals';
 import { INBOX_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
+import { getNotificationCommunicationThreadId } from 'dashboard/helper/communicationThreadHelper';
 
 import InboxCard from 'dashboard/components-next/Inbox/InboxCard.vue';
 import InboxListHeader from './components/InboxListHeader.vue';
@@ -166,6 +167,8 @@ const setSavedFilter = () => {
 };
 
 const openConversation = async notificationItem => {
+  const communicationThreadId =
+    getNotificationCommunicationThreadId(notificationItem);
   const {
     id,
     primaryActorId,
@@ -174,7 +177,8 @@ const openConversation = async notificationItem => {
     notificationType,
   } = notificationItem;
 
-  if (route.params.id === String(conversationId)) return;
+  if (!communicationThreadId && route.params.id === String(conversationId))
+    return;
 
   useTrack(INBOX_EVENTS.OPEN_CONVERSATION_VIA_INBOX, {
     notificationType,
@@ -191,10 +195,20 @@ const openConversation = async notificationItem => {
     // to update the unread count in the store realtime
     store.dispatch('notifications/unReadCount');
 
-    router.push({
-      name: 'inbox_view_conversation',
-      params: { inboxId, type: 'conversation', id: conversationId },
-    });
+    router.push(
+      communicationThreadId
+        ? {
+            name: 'communication_thread_conversation',
+            params: {
+              accountId: route.params.accountId,
+              communication_thread_id: communicationThreadId,
+            },
+          }
+        : {
+            name: 'inbox_view_conversation',
+            params: { inboxId, type: 'conversation', id: conversationId },
+          }
+    );
   } catch {
     // error
   }

@@ -286,7 +286,6 @@ const confirmDeletion = () => {
         v-if="showEditPopup"
         :id="currentAgent.id"
         :name="currentAgent.name"
-        :provider="currentAgent.provider"
         :type="currentAgent.role"
         :email="currentAgent.email"
         :availability="currentAgent.availability_status"

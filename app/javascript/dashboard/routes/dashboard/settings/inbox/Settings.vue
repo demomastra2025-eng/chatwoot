@@ -30,7 +30,6 @@ import AccountHealth from './components/AccountHealth.vue';
 import WebsiteTriggerCampaigns from './components/WebsiteTriggerCampaigns.vue';
 import { FEATURE_FLAGS } from '../../../../featureFlags';
 import SenderNameExamplePreview from './components/SenderNameExamplePreview.vue';
-import LockToSingleConversationPreview from './components/LockToSingleConversationPreview.vue';
 import NextButton from 'dashboard/components-next/button/Button.vue';
 import SpinnerLoader from 'dashboard/components-next/spinner/Spinner.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
@@ -57,7 +56,6 @@ const WHATSAPP_WEB_IGNORE_JIDS_EXAMPLE =
   '15550001111@s.whatsapp.net\\n15550002222@s.whatsapp.net';
 const WHATSAPP_WEB_POLL_INTERVAL_MS = 5000;
 const TELEGRAM_PERSONAL_POLL_INTERVAL_MS = 5000;
-const LINKEDIN_PERSONAL_POLL_INTERVAL_MS = 5000;
 const WEIXIN_POLL_INTERVAL_MS = 5000;
 const WEIXIN_SENSITIVE_FIELD_PATTERN =
   /(?:token|secret|password|api[_-]?key|private[_-]?key|connection[_-]?string|authorization|cookie)/i;
@@ -95,7 +93,6 @@ export default {
     SettingsAccordion,
     WeeklyAvailability,
     SenderNameExamplePreview,
-    LockToSingleConversationPreview,
     MicrosoftReauthorize,
     GoogleReauthorize,
     NextButton,
@@ -127,7 +124,6 @@ export default {
       emailCollectEnabled: false,
       senderNameType: 'friendly',
       businessName: '',
-      locktoSingleConversation: false,
       allowMessagesAfterResolved: true,
       continuityViaEmail: true,
       selectedInboxName: '',
@@ -170,16 +166,6 @@ export default {
       telegramPersonalQrCode: '',
       telegramPersonalIgnoredChatId: '',
       isSavingTelegramPersonalIgnoredChats: false,
-      linkedinPersonalDiagnostics: null,
-      isLoadingLinkedinPersonalDiagnostics: false,
-      isRunningLinkedinPersonalReconnect: false,
-      isRunningLinkedinPersonalHistorySync: false,
-      isRunningLinkedinPersonalContactsSync: false,
-      isRunningLinkedinPersonalDisconnect: false,
-      linkedinPersonalLiAt: '',
-      linkedinPersonalJsessionid: '',
-      linkedinPersonalCsrfToken: '',
-      linkedinPersonalXLiTrack: '',
       weixinDiagnostics: null,
       isLoadingWeixinDiagnostics: false,
       isRunningWeixinRequestQr: false,
@@ -190,10 +176,8 @@ export default {
       whatsappWebPollingInterval: null,
       isWhatsappWebPollingEnabled: false,
       telegramPersonalPollingInterval: null,
-      linkedinPersonalPollingInterval: null,
       weixinPollingInterval: null,
       isTelegramPersonalRawDiagnosticsVisible: false,
-      isLinkedinPersonalRawDiagnosticsVisible: false,
       isWeixinRawDiagnosticsVisible: false,
       isRedirectingMissingInbox: false,
       showDeleteInboxPopup: false,
@@ -310,9 +294,6 @@ export default {
     },
     shouldShowTelegramPersonalLifecycleSection() {
       return this.isATelegramPersonalChannel;
-    },
-    shouldShowLinkedinPersonalLifecycleSection() {
-      return this.isALinkedinPersonalChannel;
     },
     isAWeixinChannel() {
       return this.inbox?.channel_type === INBOX_TYPES.WEIXIN;
@@ -473,87 +454,6 @@ export default {
       }
 
       return 'en';
-    },
-    linkedinPersonalRuntimeState() {
-      return this.inbox?.runtime_state || {};
-    },
-    linkedinPersonalLifecycleState() {
-      return (
-        this.inbox?.lifecycle_state ||
-        this.linkedinPersonalDiagnostics?.lifecycle_state ||
-        this.linkedinPersonalRuntimeState.lifecycle_state ||
-        'pending_auth'
-      );
-    },
-    linkedinPersonalConnectionState() {
-      return (
-        this.inbox?.connection_state ||
-        this.linkedinPersonalDiagnostics?.connection_state ||
-        this.linkedinPersonalRuntimeState.connection_state ||
-        'disconnected'
-      );
-    },
-    linkedinPersonalLastError() {
-      return (
-        this.inbox?.last_error ||
-        this.linkedinPersonalDiagnostics?.last_error ||
-        this.linkedinPersonalRuntimeState.last_error ||
-        ''
-      );
-    },
-    isLinkedinPersonalConnected() {
-      return (
-        this.linkedinPersonalLifecycleState === 'connected' ||
-        this.linkedinPersonalConnectionState === 'connected'
-      );
-    },
-    linkedinPersonalHistorySyncState() {
-      return (
-        this.linkedinPersonalDiagnostics?.history_sync_state ||
-        this.linkedinPersonalRuntimeState.history_sync_state ||
-        ''
-      );
-    },
-    linkedinPersonalHistorySyncCount() {
-      return (
-        this.linkedinPersonalDiagnostics?.history_sync_count ??
-        this.linkedinPersonalRuntimeState.history_sync_count ??
-        0
-      );
-    },
-    linkedinPersonalHistoryThreadCount() {
-      return (
-        this.linkedinPersonalDiagnostics?.history_thread_count ??
-        this.linkedinPersonalRuntimeState.history_thread_count ??
-        0
-      );
-    },
-    linkedinPersonalContactsSyncCount() {
-      return (
-        this.linkedinPersonalDiagnostics?.contacts_sync_count ??
-        this.linkedinPersonalRuntimeState.contacts_sync_count ??
-        0
-      );
-    },
-    linkedinPersonalLastPollAt() {
-      return (
-        this.linkedinPersonalDiagnostics?.last_poll_at ||
-        this.linkedinPersonalRuntimeState.last_poll_at ||
-        ''
-      );
-    },
-    linkedinPersonalDiagnosticsJson() {
-      return this.linkedinPersonalDiagnostics
-        ? JSON.stringify(this.linkedinPersonalDiagnostics, null, 2)
-        : '';
-    },
-    linkedinPersonalHasCredentialUpdate() {
-      return Boolean(
-        this.linkedinPersonalLiAt.trim() ||
-          this.linkedinPersonalJsessionid.trim() ||
-          this.linkedinPersonalCsrfToken.trim() ||
-          this.linkedinPersonalXLiTrack.trim()
-      );
     },
     weixinRuntimeState() {
       return this.inbox?.runtime_state || {};
@@ -861,21 +761,6 @@ export default {
       }
       return this.inbox.name;
     },
-    canLocktoSingleConversation() {
-      return (
-        this.isASmsInbox ||
-        this.isAWhatsAppChannel ||
-        this.isAFacebookInbox ||
-        this.isAPIInbox ||
-        this.isAnInstagramChannel ||
-        this.isALineChannel ||
-        this.isATiktokChannel ||
-        this.isATelegramChannel ||
-        this.isATelegramPersonalChannel ||
-        this.isALinkedinPersonalChannel ||
-        this.isAVkCommunityChannel
-      );
-    },
     inboxNameLabel() {
       if (this.isAWebWidgetInbox) {
         return this.$t('INBOX_MGMT.ADD.WEBSITE_NAME.LABEL');
@@ -1037,9 +922,6 @@ export default {
           if (this.isATelegramPersonalChannel) {
             this.fetchTelegramPersonalDiagnostics();
           }
-          if (this.isALinkedinPersonalChannel) {
-            this.fetchLinkedinPersonalDiagnostics();
-          }
           if (this.isAWeixinChannel) {
             this.fetchWeixinDiagnostics();
           }
@@ -1065,9 +947,6 @@ export default {
             if (this.isATelegramPersonalChannel) {
               this.fetchTelegramPersonalDiagnostics();
             }
-            if (this.isALinkedinPersonalChannel) {
-              this.fetchLinkedinPersonalDiagnostics();
-            }
             if (this.isAWeixinChannel) {
               this.fetchWeixinDiagnostics();
             }
@@ -1079,9 +958,6 @@ export default {
           }
           if (this.isAWeixinChannel) {
             this.syncWeixinPolling();
-          }
-          if (this.isALinkedinPersonalChannel) {
-            this.syncLinkedinPersonalPolling();
           }
         }
       },
@@ -1106,12 +982,6 @@ export default {
       },
       immediate: true,
     },
-    isLinkedinPersonalConnected: {
-      handler() {
-        this.syncLinkedinPersonalPolling();
-      },
-      immediate: true,
-    },
     weixinQrUrl: {
       handler() {
         this.renderWeixinQrCode();
@@ -1129,7 +999,6 @@ export default {
     this.fetchSharedData();
     this.syncWhatsappWebPolling();
     this.syncTelegramPersonalPolling();
-    this.syncLinkedinPersonalPolling();
     this.syncWeixinPolling();
     if (typeof document !== 'undefined') {
       document.addEventListener(
@@ -1141,7 +1010,6 @@ export default {
   beforeUnmount() {
     this.stopWhatsappWebPolling();
     this.stopTelegramPersonalPolling();
-    this.stopLinkedinPersonalPolling();
     this.stopWeixinPolling();
     if (typeof document !== 'undefined') {
       document.removeEventListener(
@@ -1196,7 +1064,6 @@ export default {
 
       this.isRedirectingMissingInbox = true;
       this.stopTelegramPersonalPolling();
-      this.stopLinkedinPersonalPolling();
       this.$router.replace({
         name: getInboxFlowRouteName(this.$route, 'list'),
         params: { accountId: this.$route.params.accountId },
@@ -1254,7 +1121,6 @@ export default {
       this.channelWelcomeTagline = this.inbox.welcome_tagline || '';
       this.selectedFeatureFlags = this.inbox.selected_feature_flags || [];
       this.replyTime = this.inbox.reply_time;
-      this.locktoSingleConversation = this.inbox.lock_to_single_conversation;
       this.whatsappWebConversationPending =
         this.inbox.conversation_pending || false;
       this.whatsappWebHistoryLookbackDays =
@@ -1272,10 +1138,6 @@ export default {
           : true;
       this.whatsappWebSyncLabels =
         this.inbox.sync_labels !== undefined ? this.inbox.sync_labels : true;
-      this.linkedinPersonalLiAt = '';
-      this.linkedinPersonalJsessionid = '';
-      this.linkedinPersonalCsrfToken = '';
-      this.linkedinPersonalXLiTrack = '';
       this.selectedPortalSlug = this.inbox.help_center
         ? this.inbox.help_center.slug
         : '';
@@ -1375,12 +1237,10 @@ export default {
         this.syncWhatsappWebStatus();
         this.fetchWhatsappWebDiagnostics();
         this.fetchTelegramPersonalDiagnostics();
-        this.fetchLinkedinPersonalDiagnostics();
         this.fetchWeixinDiagnostics();
       }
       this.syncWhatsappWebPolling();
       this.syncTelegramPersonalPolling();
-      this.syncLinkedinPersonalPolling();
       this.syncWeixinPolling();
     },
     updateRouteWithoutRefresh(selectedTabIndex) {
@@ -1416,7 +1276,6 @@ export default {
     handleVisibilityChange() {
       this.syncWhatsappWebPolling();
       this.syncTelegramPersonalPolling();
-      this.syncLinkedinPersonalPolling();
       this.syncWeixinPolling();
 
       if (
@@ -1429,7 +1288,6 @@ export default {
       this.syncWhatsappWebStatus();
       this.fetchWhatsappWebDiagnostics();
       this.fetchTelegramPersonalDiagnostics();
-      this.fetchLinkedinPersonalDiagnostics();
       this.fetchWeixinDiagnostics();
     },
     async syncWhatsappWebStatus() {
@@ -1955,159 +1813,6 @@ export default {
 
       return 'text-n-slate-10';
     },
-    async fetchLinkedinPersonalDiagnostics({ force = false } = {}) {
-      if (!this.isALinkedinPersonalChannel || !this.currentInboxId) {
-        this.linkedinPersonalDiagnostics = null;
-        return;
-      }
-
-      try {
-        this.isLoadingLinkedinPersonalDiagnostics = true;
-        this.linkedinPersonalDiagnostics = await this.$store.dispatch(
-          'inboxes/getLinkedinPersonalDiagnostics',
-          { inboxId: this.currentInboxId, force }
-        );
-      } catch (error) {
-        this.linkedinPersonalDiagnostics = null;
-      } finally {
-        this.isLoadingLinkedinPersonalDiagnostics = false;
-      }
-    },
-    refreshLinkedinPersonalDiagnostics() {
-      return this.fetchLinkedinPersonalDiagnostics({ force: true });
-    },
-    stopLinkedinPersonalPolling() {
-      if (this.linkedinPersonalPollingInterval) {
-        window.clearInterval(this.linkedinPersonalPollingInterval);
-        this.linkedinPersonalPollingInterval = null;
-      }
-    },
-    syncLinkedinPersonalPolling() {
-      this.stopLinkedinPersonalPolling();
-
-      if (
-        !this.isALinkedinPersonalChannel ||
-        !this.currentInboxId ||
-        this.selectedTabKey !== 'inbox-settings'
-      ) {
-        return;
-      }
-
-      if (
-        typeof document !== 'undefined' &&
-        document.visibilityState !== 'visible'
-      ) {
-        return;
-      }
-
-      this.linkedinPersonalPollingInterval = window.setInterval(() => {
-        this.fetchLinkedinPersonalDiagnostics();
-      }, LINKEDIN_PERSONAL_POLL_INTERVAL_MS);
-    },
-    async reconnectLinkedinPersonal() {
-      try {
-        this.isRunningLinkedinPersonalReconnect = true;
-        await this.$store.dispatch(
-          'inboxes/reconnectLinkedinPersonal',
-          this.currentInboxId
-        );
-        await this.fetchLinkedinPersonalDiagnostics({ force: true });
-        useAlert(
-          this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.RECONNECT_SUCCESS')
-        );
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.RECONNECT_ERROR')
-        );
-      } finally {
-        this.isRunningLinkedinPersonalReconnect = false;
-      }
-    },
-    async historySyncLinkedinPersonal() {
-      try {
-        this.isRunningLinkedinPersonalHistorySync = true;
-        await this.$store.dispatch(
-          'inboxes/historySyncLinkedinPersonal',
-          this.currentInboxId
-        );
-        await this.fetchLinkedinPersonalDiagnostics({ force: true });
-        useAlert(
-          this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.HISTORY_SYNC_SUCCESS')
-        );
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.HISTORY_SYNC_ERROR')
-        );
-      } finally {
-        this.isRunningLinkedinPersonalHistorySync = false;
-      }
-    },
-    async contactsSyncLinkedinPersonal() {
-      try {
-        this.isRunningLinkedinPersonalContactsSync = true;
-        await this.$store.dispatch(
-          'inboxes/contactsSyncLinkedinPersonal',
-          this.currentInboxId
-        );
-        await this.fetchLinkedinPersonalDiagnostics({ force: true });
-        useAlert(
-          this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.CONTACTS_SYNC_SUCCESS')
-        );
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.CONTACTS_SYNC_ERROR')
-        );
-      } finally {
-        this.isRunningLinkedinPersonalContactsSync = false;
-      }
-    },
-    async disconnectLinkedinPersonal() {
-      try {
-        this.isRunningLinkedinPersonalDisconnect = true;
-        await this.$store.dispatch(
-          'inboxes/disconnectLinkedinPersonal',
-          this.currentInboxId
-        );
-        await this.fetchLinkedinPersonalDiagnostics({ force: true });
-        useAlert(
-          this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.DISCONNECT_SUCCESS')
-        );
-      } catch (error) {
-        useAlert(
-          error.message ||
-            this.$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.DISCONNECT_ERROR')
-        );
-      } finally {
-        this.isRunningLinkedinPersonalDisconnect = false;
-      }
-    },
-    linkedinPersonalSecretChannelPayload() {
-      const payload = {};
-
-      if (this.linkedinPersonalLiAt.trim()) {
-        payload.li_at = this.linkedinPersonalLiAt.trim();
-      }
-      if (this.linkedinPersonalJsessionid.trim()) {
-        payload.jsessionid = this.linkedinPersonalJsessionid.trim();
-      }
-      if (this.linkedinPersonalCsrfToken.trim()) {
-        payload.csrf_token = this.linkedinPersonalCsrfToken.trim();
-      }
-      if (this.linkedinPersonalXLiTrack.trim()) {
-        payload.x_li_track = this.linkedinPersonalXLiTrack.trim();
-      }
-
-      return payload;
-    },
-    resetLinkedinPersonalSecretInputs() {
-      this.linkedinPersonalLiAt = '';
-      this.linkedinPersonalJsessionid = '';
-      this.linkedinPersonalCsrfToken = '';
-      this.linkedinPersonalXLiTrack = '';
-    },
     async fetchWeixinDiagnostics({ force = false } = {}) {
       if (!this.isAWeixinChannel || !this.currentInboxId) {
         this.weixinDiagnostics = null;
@@ -2418,13 +2123,6 @@ export default {
           channelPayload.sync_labels = this.whatsappWebSyncLabels;
         }
 
-        if (this.isALinkedinPersonalChannel) {
-          Object.assign(
-            channelPayload,
-            this.linkedinPersonalSecretChannelPayload()
-          );
-        }
-
         const payload = {
           id: this.currentInboxId,
           name: this.selectedInboxName?.trim(),
@@ -2437,7 +2135,6 @@ export default {
                 portal => portal.slug === this.selectedPortalSlug
               )?.id || null
             : null,
-          lock_to_single_conversation: this.locktoSingleConversation,
           sender_name_type: this.senderNameType,
           business_name: this.businessName || null,
           channel: channelPayload,
@@ -2446,9 +2143,6 @@ export default {
           payload.avatar = this.avatarFile;
         }
         await this.$store.dispatch('inboxes/updateInbox', payload);
-        if (this.isALinkedinPersonalChannel) {
-          this.resetLinkedinPersonalSecretInputs();
-        }
         useAlert(this.$t('INBOX_MGMT.EDIT.API.SUCCESS_MESSAGE'));
         this.showBusinessNameInput = false;
       } catch (error) {
@@ -2526,9 +2220,6 @@ export default {
     },
     hideBusinessNameInput() {
       this.showBusinessNameInput = false;
-    },
-    toggleLockToSingleConversation(value) {
-      this.locktoSingleConversation = value;
     },
   },
   validations: {
@@ -2757,326 +2448,6 @@ export default {
                 ]"
               />
             </SettingsFieldSection>
-
-            <SettingsFieldSection
-              v-if="canLocktoSingleConversation"
-              :label="
-                $t('INBOX_MGMT.SETTINGS_POPUP.LOCK_TO_SINGLE_CONVERSATION')
-              "
-              class="[&>div>div]:justify-end [&>div>div]:flex lg:[&>div:first-child]:h-12 [&>div:first-child]:h-16"
-            >
-              <template #extra>
-                <LockToSingleConversationPreview
-                  :lock-to-single-conversation="locktoSingleConversation"
-                  @update="toggleLockToSingleConversation"
-                />
-              </template>
-            </SettingsFieldSection>
-
-            <SettingsAccordion
-              v-if="shouldShowLinkedinPersonalLifecycleSection"
-              :title="$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.TITLE')"
-              class="mt-6"
-            >
-              <div class="space-y-4">
-                <p class="text-body-main text-n-slate-11">
-                  {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SUBTITLE') }}
-                </p>
-
-                <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                  <div class="rounded-xl border border-n-strong p-4">
-                    <div class="flex items-start justify-between gap-3">
-                      <div>
-                        <p class="text-xs uppercase text-n-slate-10">
-                          {{
-                            $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.PROFILE_URN')
-                          }}
-                        </p>
-                        <p
-                          class="mt-2 break-all text-sm font-medium text-n-slate-12"
-                        >
-                          {{
-                            inbox.profile_urn ||
-                            $t(
-                              'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.NOT_AVAILABLE'
-                            )
-                          }}
-                        </p>
-                      </div>
-                      <Icon
-                        icon="i-ri-linkedin-box-fill"
-                        class="size-5 text-n-blue-9"
-                      />
-                    </div>
-                  </div>
-
-                  <div class="rounded-xl border border-n-strong p-4">
-                    <p class="text-xs uppercase text-n-slate-10">
-                      {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.CONNECTION') }}
-                    </p>
-                    <p class="mt-2 text-sm font-medium text-n-slate-12">
-                      {{
-                        humanizeTelegramPersonalState(
-                          linkedinPersonalConnectionState
-                        )
-                      }}
-                    </p>
-                  </div>
-
-                  <div class="rounded-xl border border-n-strong p-4">
-                    <p class="text-xs uppercase text-n-slate-10">
-                      {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.LIFECYCLE') }}
-                    </p>
-                    <p class="mt-2 text-sm font-medium text-n-slate-12">
-                      {{
-                        humanizeTelegramPersonalState(
-                          linkedinPersonalLifecycleState
-                        )
-                      }}
-                    </p>
-                  </div>
-                </div>
-
-                <div
-                  v-if="linkedinPersonalLastError"
-                  class="rounded-xl border border-n-ruby-8 bg-n-ruby-9/10 p-4"
-                >
-                  <p class="text-sm font-medium text-n-ruby-11">
-                    {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.LAST_ERROR') }}
-                  </p>
-                  <p class="mt-1 text-sm text-n-ruby-11">
-                    {{ linkedinPersonalLastError }}
-                  </p>
-                </div>
-
-                <div class="rounded-xl border border-n-strong p-4">
-                  <p class="text-sm font-medium text-n-slate-12">
-                    {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SESSION_TITLE') }}
-                  </p>
-                  <p class="mt-1 text-sm text-n-slate-10">
-                    {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SESSION_HINT') }}
-                  </p>
-                  <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
-                    <woot-input
-                      v-model="linkedinPersonalLiAt"
-                      class="[&>input]:!mb-0"
-                      type="password"
-                      :label="$t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.LI_AT')"
-                      :placeholder="
-                        $t(
-                          'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SECRET_PLACEHOLDER'
-                        )
-                      "
-                    />
-                    <woot-input
-                      v-model="linkedinPersonalJsessionid"
-                      class="[&>input]:!mb-0"
-                      type="password"
-                      :label="
-                        $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.JSESSIONID')
-                      "
-                      :placeholder="
-                        $t(
-                          'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SECRET_PLACEHOLDER'
-                        )
-                      "
-                    />
-                    <woot-input
-                      v-model="linkedinPersonalCsrfToken"
-                      class="[&>input]:!mb-0"
-                      type="password"
-                      :label="
-                        $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.CSRF_TOKEN')
-                      "
-                      :placeholder="
-                        $t(
-                          'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SECRET_PLACEHOLDER'
-                        )
-                      "
-                    />
-                    <woot-input
-                      v-model="linkedinPersonalXLiTrack"
-                      class="[&>input]:!mb-0"
-                      type="password"
-                      :label="
-                        $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.X_LI_TRACK')
-                      "
-                      :placeholder="
-                        $t(
-                          'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SECRET_PLACEHOLDER'
-                        )
-                      "
-                    />
-                  </div>
-                  <p
-                    v-if="linkedinPersonalHasCredentialUpdate"
-                    class="mt-3 text-sm text-n-amber-11"
-                  >
-                    {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SAVE_HINT') }}
-                  </p>
-                </div>
-
-                <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                  <div class="rounded-xl border border-n-strong p-4">
-                    <p class="text-sm font-medium text-n-slate-12">
-                      {{
-                        $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.SERVICE_CONTROLS')
-                      }}
-                    </p>
-                    <div class="mt-4 flex flex-wrap gap-2">
-                      <NextButton
-                        outline
-                        slate
-                        icon="i-lucide-refresh-cw"
-                        :label="
-                          $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.RECONNECT')
-                        "
-                        :is-loading="isRunningLinkedinPersonalReconnect"
-                        @click="reconnectLinkedinPersonal"
-                      />
-                      <NextButton
-                        outline
-                        ruby
-                        icon="i-lucide-power"
-                        :label="
-                          $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.DISCONNECT')
-                        "
-                        :is-loading="isRunningLinkedinPersonalDisconnect"
-                        @click="disconnectLinkedinPersonal"
-                      />
-                    </div>
-                  </div>
-
-                  <div class="rounded-xl border border-n-strong p-4">
-                    <p class="text-sm font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.IMPORTS') }}
-                    </p>
-                    <div class="mt-4 flex flex-wrap gap-2">
-                      <NextButton
-                        outline
-                        slate
-                        icon="i-lucide-history"
-                        :label="
-                          $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.HISTORY_SYNC')
-                        "
-                        :is-loading="isRunningLinkedinPersonalHistorySync"
-                        @click="historySyncLinkedinPersonal"
-                      />
-                      <NextButton
-                        outline
-                        slate
-                        icon="i-lucide-users"
-                        :label="
-                          $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.CONTACTS_SYNC')
-                        "
-                        :is-loading="isRunningLinkedinPersonalContactsSync"
-                        @click="contactsSyncLinkedinPersonal"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div class="rounded-xl border border-n-strong p-4">
-                  <div
-                    class="flex flex-wrap items-center justify-between gap-3"
-                  >
-                    <p class="text-sm font-medium text-n-slate-12">
-                      {{ $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.DIAGNOSTICS') }}
-                    </p>
-                    <NextButton
-                      outline
-                      slate
-                      xs
-                      icon="i-lucide-refresh-cw"
-                      :label="
-                        $t(
-                          'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.REFRESH_DIAGNOSTICS'
-                        )
-                      "
-                      :is-loading="isLoadingLinkedinPersonalDiagnostics"
-                      @click="refreshLinkedinPersonalDiagnostics"
-                    />
-                  </div>
-                  <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-                    <div class="rounded-lg bg-n-alpha-2 p-3">
-                      <p class="text-xs uppercase text-n-slate-10">
-                        {{
-                          $t(
-                            'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.HISTORY_SYNC_STATE'
-                          )
-                        }}
-                      </p>
-                      <p class="mt-1 text-sm font-semibold text-n-slate-12">
-                        {{
-                          humanizeTelegramPersonalState(
-                            linkedinPersonalHistorySyncState
-                          )
-                        }}
-                      </p>
-                    </div>
-                    <div class="rounded-lg bg-n-alpha-2 p-3">
-                      <p class="text-xs uppercase text-n-slate-10">
-                        {{
-                          $t(
-                            'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.HISTORY_SYNC_COUNT'
-                          )
-                        }}
-                      </p>
-                      <p class="mt-1 text-sm font-semibold text-n-slate-12">
-                        {{ linkedinPersonalHistorySyncCount }}
-                      </p>
-                    </div>
-                    <div class="rounded-lg bg-n-alpha-2 p-3">
-                      <p class="text-xs uppercase text-n-slate-10">
-                        {{
-                          $t(
-                            'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.HISTORY_THREAD_COUNT'
-                          )
-                        }}
-                      </p>
-                      <p class="mt-1 text-sm font-semibold text-n-slate-12">
-                        {{ linkedinPersonalHistoryThreadCount }}
-                      </p>
-                    </div>
-                    <div class="rounded-lg bg-n-alpha-2 p-3">
-                      <p class="text-xs uppercase text-n-slate-10">
-                        {{
-                          $t('INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.LAST_POLL_AT')
-                        }}
-                      </p>
-                      <p class="mt-1 text-sm font-semibold text-n-slate-12">
-                        {{
-                          formatTelegramPersonalDate(linkedinPersonalLastPollAt)
-                        }}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    class="mt-4 text-sm font-medium text-n-blue-10 hover:text-n-blue-11"
-                    @click="
-                      isLinkedinPersonalRawDiagnosticsVisible =
-                        !isLinkedinPersonalRawDiagnosticsVisible
-                    "
-                  >
-                    {{
-                      $t(
-                        'INBOX_MGMT.EDIT.LINKEDIN_PERSONAL.RAW_DIAGNOSTICS_TOGGLE'
-                      )
-                    }}
-                  </button>
-                  <textarea
-                    v-if="
-                      isLinkedinPersonalRawDiagnosticsVisible &&
-                      linkedinPersonalDiagnosticsJson
-                    "
-                    :value="linkedinPersonalDiagnosticsJson"
-                    class="mt-3 min-h-80 w-full resize-y rounded-lg border-0 bg-n-slate-12 p-4 font-mono text-xs text-n-slate-1"
-                    readonly
-                  />
-                </div>
-              </div>
-            </SettingsAccordion>
 
             <SettingsAccordion
               v-if="shouldShowWhatsappWebLifecycleSection"

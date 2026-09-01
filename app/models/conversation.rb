@@ -70,7 +70,7 @@ class Conversation < ApplicationRecord
   validates :contact_id, presence: true
   before_validation :validate_additional_attributes
   before_validation :inherit_contact_owner, on: :create
-  before_validation :reset_agent_bot_when_assignee_present
+
   validates :additional_attributes, jsonb_attributes_length: true
   validates :custom_attributes, jsonb_attributes_length: true
   validates :uuid, uniqueness: true
@@ -104,7 +104,7 @@ class Conversation < ApplicationRecord
   belongs_to :account
   belongs_to :inbox
   belongs_to :assignee, class_name: 'User', optional: true, inverse_of: :assigned_conversations
-  belongs_to :assignee_agent_bot, class_name: 'AgentBot', optional: true
+
   belongs_to :contact
   belongs_to :contact_inbox
   belongs_to :team, optional: true
@@ -214,16 +214,14 @@ class Conversation < ApplicationRecord
     true
   end
 
-  # Virtual attribute till we switch completely to polymorphic assignee
   def assignee_type
-    return 'AgentBot' if assignee_agent_bot_id.present?
     return 'User' if assignee_id.present?
 
     nil
   end
 
   def assigned_entity
-    assignee_agent_bot || assignee
+    assignee
   end
 
   def tweet?
@@ -313,18 +311,10 @@ class Conversation < ApplicationRecord
   end
 
   def inherit_contact_owner
-    return if assignee_id.present? || assignee_agent_bot_id.present?
-    return unless contact_owner_assignable_to_conversation?
+    return if assignee_id.present?
+    return if contact&.owner.blank?
 
     self.assignee = contact.owner
-  end
-
-  def contact_owner_assignable_to_conversation?
-    return false if contact&.owner_id.blank?
-    return false unless inbox&.members&.exists?(id: contact.owner_id)
-    return true if team.blank?
-
-    team.members.exists?(id: contact.owner_id)
   end
 
   def sync_contact_owner_from_assignee
@@ -340,7 +330,6 @@ class Conversation < ApplicationRecord
   end
 
   def contact_owner_sync_allowed?
-    return false if assignee_id.blank? && assignee_agent_bot_id.present?
     return false if auto_assignment_fallback_for_existing_owner?
     return true if assignee_id.blank?
 
@@ -349,12 +338,6 @@ class Conversation < ApplicationRecord
 
   def auto_assignment_fallback_for_existing_owner?
     contact&.owner_id.present? && (Current.executed_by.is_a?(AssignmentPolicy) || Current.executed_by.is_a?(Inbox))
-  end
-
-  def reset_agent_bot_when_assignee_present
-    return if assignee_id.blank?
-
-    self.assignee_agent_bot_id = nil
   end
 
   def determine_conversation_status
@@ -393,7 +376,7 @@ class Conversation < ApplicationRecord
   end
 
   def list_of_keys
-    %w[team_id assignee_id assignee_agent_bot_id status snoozed_until custom_attributes label_list waiting_since
+    %w[team_id assignee_id status snoozed_until custom_attributes label_list waiting_since
        first_reply_created_at priority]
   end
 
@@ -437,29 +420,15 @@ class Conversation < ApplicationRecord
   end
 
   def ai_transfer_state_entered?
-    ai_pending_state_entered? || ai_assignee_state_entered?
+    ai_pending_state_entered?
   end
 
   def ai_pending_state_entered?
-    saved_change_to_status? && pending? && ai_pending_handler_present? && !assigned_to_agent_bot_before_update?
-  end
-
-  def ai_assignee_state_entered?
-    return false unless saved_change_to_assignee_agent_bot_id? && assignee_agent_bot_id.present?
-
-    previous_changes['assignee_agent_bot_id']&.first.blank? && !already_ai_pending_without_agent_bot?
-  end
-
-  def assigned_to_agent_bot_before_update?
-    assignee_agent_bot_id.present? && !saved_change_to_assignee_agent_bot_id?
-  end
-
-  def already_ai_pending_without_agent_bot?
-    pending? && (inbox_active_bot? || inbox_captain_assistant_present?)
+    saved_change_to_status? && pending? && ai_pending_handler_present?
   end
 
   def ai_pending_handler_present?
-    assignee_agent_bot_id.present? || inbox_active_bot? || inbox_captain_assistant_present?
+    inbox_active_bot? || inbox_captain_assistant_present?
   end
 
   def inbox_active_bot?

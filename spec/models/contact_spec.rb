@@ -14,6 +14,15 @@ RSpec.describe Contact do
       expect(contact).not_to be_valid
       expect(contact.errors[:owner_id]).to include('must belong to the current account')
     end
+
+    it 'allows unrelated updates when a legacy owner no longer belongs to the account' do
+      contact = create(:contact)
+      stale_owner = create(:user)
+      contact.update_column(:owner_id, stale_owner.id)
+
+      expect { contact.reload.update_labels(['vip']) }.not_to raise_error
+      expect(contact.reload.label_list).to contain_exactly('vip')
+    end
   end
 
   context 'with associations' do

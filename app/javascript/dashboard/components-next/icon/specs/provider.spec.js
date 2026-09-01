@@ -177,4 +177,13 @@ describe('useChannelIcon', () => {
     const { value: icon } = useChannelIcon(inbox);
     expect(icon).toBe('i-ri-global-fill');
   });
+
+  it('returns a caller-provided fallback for a deleted channel', () => {
+    const inbox = {};
+    const { value: icon } = useChannelIcon(
+      inbox,
+      'i-lucide-message-square-off'
+    );
+    expect(icon).toBe('i-lucide-message-square-off');
+  });
 });

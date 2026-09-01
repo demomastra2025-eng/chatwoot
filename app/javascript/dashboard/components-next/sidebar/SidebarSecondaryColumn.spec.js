@@ -44,7 +44,10 @@ const mountComponent = props =>
     global: {
       stubs: {
         SidebarGroupLeaf: true,
-        SidebarSubGroup: true,
+        SidebarSubGroup: {
+          props: ['label', 'icon', 'children'],
+          template: '<div data-test="sidebar-subgroup-stub" />',
+        },
         SidebarAssigneeTabs: true,
       },
     },
@@ -109,5 +112,25 @@ describe('SidebarSecondaryColumn', () => {
     expect(sectionLabels).toHaveLength(1);
     expect(sectionLabels[0].text()).toBe('Company');
     expect(wrapper.text()).not.toContain('Empty');
+  });
+
+  it('omits a subgroup separator when the child requests a compact transition', () => {
+    const child = name => ({
+      name,
+      label: name,
+      icon: 'i-lucide-folder',
+      children: [{ name: `${name} child`, to: { name } }],
+    });
+    const wrapper = mountComponent({
+      children: [
+        child('Pipelines'),
+        { ...child('Labels'), hideTopSeparator: true },
+        child('Folders'),
+      ],
+    });
+
+    expect(
+      wrapper.findAll('[data-test="sidebar-group-separator"]')
+    ).toHaveLength(1);
   });
 });

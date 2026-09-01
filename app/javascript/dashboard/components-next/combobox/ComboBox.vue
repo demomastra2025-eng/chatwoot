@@ -19,11 +19,13 @@ const props = defineProps({
   modelValue: { type: [String, Number], default: '' },
   disabled: { type: Boolean, default: false },
   searchPlaceholder: { type: String, default: '' },
+  searchInTrigger: { type: Boolean, default: false },
   emptyState: { type: String, default: '' },
   message: { type: String, default: '' },
   hasError: { type: Boolean, default: false },
   useApiResults: { type: Boolean, default: false }, // useApiResults prop to determine if search is handled by API
   inputLike: { type: Boolean, default: false },
+  inlineDropdown: { type: Boolean, default: false },
   id: { type: String, default: '' },
   dropdownPlacement: {
     type: String,
@@ -53,6 +55,7 @@ const selectedValue = ref(props.modelValue);
 const open = ref(false);
 const search = ref('');
 const dropdownRef = ref(null);
+const triggerSearchInputRef = ref(null);
 const comboboxRef = ref(null);
 const dropdownStyle = ref({});
 const teleportTarget = ref('body');
@@ -71,7 +74,7 @@ const resolveDropdownPlacement = ({ availableAbove, availableBelow }) => {
 };
 
 const updateDropdownPosition = () => {
-  if (!open.value || !comboboxRef.value) return;
+  if (props.inlineDropdown || !open.value || !comboboxRef.value) return;
 
   const rect = comboboxRef.value.getBoundingClientRect();
   const viewportPadding = 8;
@@ -137,6 +140,12 @@ const selectedOption = computed(() =>
 const selectedLabel = computed(() => {
   return selectedOption.value?.label ?? selectPlaceholder.value;
 });
+const triggerSearchValue = computed(() => {
+  if (!props.searchInTrigger) return '';
+  if (open.value) return search.value;
+
+  return selectedOption.value?.label || '';
+});
 const selectedIcon = computed(
   () => selectedOption.value?.icon || props.triggerIcon
 );
@@ -189,22 +198,36 @@ const selectOption = option => {
   search.value = '';
 };
 
+const closeDropdown = () => {
+  open.value = false;
+  search.value = '';
+};
+
 const openDropdown = () => {
   if (props.disabled || open.value) return;
 
   open.value = true;
   emit('open');
   resolveTeleportTarget();
-  search.value = '';
+  search.value = props.searchInTrigger ? selectedOption.value?.label || '' : '';
   nextTick(() => {
     updateDropdownPosition();
-    dropdownRef.value?.focus();
+    if (props.searchInTrigger) {
+      triggerSearchInputRef.value?.select();
+    } else {
+      dropdownRef.value?.focus();
+    }
   });
+};
+
+const onTriggerSearchInput = event => {
+  search.value = event.target.value;
+  emit('search', search.value);
 };
 
 const toggleDropdown = () => {
   if (open.value) {
-    open.value = false;
+    closeDropdown();
     return;
   }
 
@@ -253,10 +276,40 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
   >
     <OnClickOutside
       :options="{ ignore: ['.dashboard-combobox-dropdown'] }"
-      @trigger="open = false"
+      @trigger="closeDropdown"
     >
       <div class="relative">
+        <div v-if="searchInTrigger" class="relative">
+          <input
+            :id="triggerId"
+            ref="triggerSearchInputRef"
+            :value="triggerSearchValue"
+            type="text"
+            autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            :aria-expanded="open"
+            :aria-label="attrs['aria-label']"
+            :placeholder="searchPlaceholder || selectPlaceholder"
+            :disabled="disabled"
+            class="reset-base h-10 w-full appearance-none rounded-lg border-none bg-n-alpha-black2 !pl-3 !pr-10 py-2.5 text-sm text-n-slate-12 outline outline-1 outline-n-weak placeholder:text-n-slate-10 hover:outline-n-slate-6 focus:outline-n-brand disabled:cursor-not-allowed disabled:opacity-60 rtl:!pl-10 rtl:!pr-3"
+            :class="{
+              '!outline-n-ruby-9': hasError && !open,
+              'ltr:!pr-[4.25rem] rtl:!pl-[4.25rem]': hasAppendSlot,
+            }"
+            @click.stop
+            @focus="openDropdown"
+            @input="onTriggerSearchInput"
+            @keydown.esc.stop.prevent="closeDropdown"
+          />
+          <span
+            class="pointer-events-none absolute inset-y-0 right-3 my-auto inline-flex size-4 items-center justify-center text-n-slate-10 rtl:left-3 rtl:right-auto"
+            :class="open ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+            aria-hidden="true"
+          />
+        </div>
         <Button
+          v-else
           :id="triggerId"
           :aria-label="attrs['aria-label']"
           variant="outline"
@@ -321,8 +374,10 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         v-model:search-value="search"
         :teleport-target="teleportTarget"
         :open="open"
+        :inline="inlineDropdown"
         :options="filteredOptions"
         :search-placeholder="searchPlaceholder"
+        :show-search-input="!searchInTrigger"
         :empty-state="emptyState"
         :selected-values="selectedValue"
         :dropdown-style="dropdownStyle"

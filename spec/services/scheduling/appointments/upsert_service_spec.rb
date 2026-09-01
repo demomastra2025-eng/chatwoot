@@ -97,6 +97,13 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   end
 
   context 'when the selected resource belongs to Medelement' do
+    def perform(params)
+      if params.key?(:client_first_name) && !params.key?(:client_middle_name)
+        params = { client_middle_name: 'Ерлановна' }.merge(params)
+      end
+      described_class.new(account: account, appointment: appointment, params: params).perform
+    end
+
     let(:service) do
       create(
         :scheduling_service,
@@ -126,7 +133,8 @@ RSpec.describe Scheduling::Appointments::UpsertService do
         phone_number: ['+7', '700', '000', '0001'].join,
         custom_attributes: appointment.contact.custom_attributes.merge(
           'medelement_first_name' => 'Жандаулет',
-          'medelement_last_name' => 'Гусман'
+          'medelement_last_name' => 'Гусман',
+          'medelement_middle_name' => 'Ерланович'
         )
       )
 
@@ -135,8 +143,8 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(appointment.reload).to have_attributes(
         client_first_name: 'Жандаулет',
         client_last_name: 'Гусман',
-        client_middle_name: nil,
-        client_name: 'Жандаулет Гусман'
+        client_middle_name: 'Ерланович',
+        client_name: 'Жандаулет Гусман Ерланович'
       )
     end
 
@@ -199,6 +207,23 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(appointment.reload.client_first_name).to be_nil
     end
 
+    it 'rejects an appointment without a patient middle name before persistence' do
+      request = lambda do
+        perform(
+          client_first_name: 'Айжан',
+          client_last_name: 'Касымова',
+          client_middle_name: '',
+          client_phone: '+770****0001'
+        )
+      end
+
+      expect(&request).to raise_error(Scheduling::Error) do |error|
+        expect(error.code).to eq('MEDELEMENT_PATIENT_NAME_INCOMPLETE')
+      end
+
+      expect(appointment.reload.client_first_name).to be_nil
+    end
+
     it 'rejects an appointment without a valid Kazakhstan phone before persistence' do
       request = -> { perform(client_first_name: 'Айжан', client_last_name: 'Касымова', client_phone: '') }
 
@@ -239,6 +264,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
         service: nil,
         client_first_name: 'Айжан',
         client_last_name: 'Касымова',
+        client_middle_name: 'Ерлановна',
         client_phone: ['+7', '700', '000', '0001'].join,
         custom_attributes: appointment.custom_attributes.except('service_ids', 'services', 'medelement_cabinet_code')
       )

@@ -86,6 +86,7 @@ class Scheduling::Appointments::UpsertService
       ends_at: ends_at,
       duration_min: duration_min,
       status: resolve_string(:status, current: appointment.status.presence || 'scheduled'),
+      title: resolve_optional_text(:title, current: appointment.title),
       appointment_type: resolve_string(:appointment_type, current: appointment.appointment_type.presence || 'primary'),
       client_first_name: client_identity&.fetch(:first_name, nil),
       client_last_name: client_identity&.fetch(:last_name, nil),
@@ -249,10 +250,10 @@ class Scheduling::Appointments::UpsertService
     return unless medelement_resource?
     return if appointment.status == 'cancelled'
 
-    if appointment.client_first_name.blank? || appointment.client_last_name.blank?
+    if [appointment.client_first_name, appointment.client_last_name, appointment.client_middle_name].any?(&:blank?)
       raise Scheduling::Error.new(
         code: 'MEDELEMENT_PATIENT_NAME_INCOMPLETE',
-        message: 'Patient first and last name are required for Medelement',
+        message: 'Patient first, last and middle name are required for Medelement',
         status: :unprocessable_content
       )
     end

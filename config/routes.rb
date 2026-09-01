@@ -143,12 +143,7 @@ Rails.application.routes.draw do
               post :follow_up
             end
           end
-          resource :saml_settings, only: [:show, :create, :update, :destroy]
-          resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
-            delete :avatar, on: :member
-            post :reset_access_token, on: :member
-            post :reset_secret, on: :member
-          end
+
           resources :contact_inboxes, only: [] do
             collection do
               post :filter
@@ -415,8 +410,7 @@ Rails.application.routes.draw do
           resources :inboxes, only: [:index, :show, :create, :update, :destroy] do
             get :assignable_agents, on: :member
             get :campaigns, on: :member
-            get :agent_bot, on: :member
-            post :set_agent_bot, on: :member
+
             delete :avatar, on: :member
             post :sync_templates, on: :member
             get :health, on: :member
@@ -437,11 +431,7 @@ Rails.application.routes.draw do
             post :telegram_personal_contacts_sync, on: :member, to: 'telegram_personal_channels#contacts_sync'
             post :telegram_personal_disconnect, on: :member, to: 'telegram_personal_channels#disconnect'
             get :telegram_personal_diagnostics, on: :member, to: 'telegram_personal_channels#diagnostics'
-            post :linkedin_personal_reconnect, on: :member, to: 'linkedin_personal_channels#reconnect'
-            post :linkedin_personal_history_sync, on: :member, to: 'linkedin_personal_channels#history_sync'
-            post :linkedin_personal_contacts_sync, on: :member, to: 'linkedin_personal_channels#contacts_sync'
-            post :linkedin_personal_disconnect, on: :member, to: 'linkedin_personal_channels#disconnect'
-            get :linkedin_personal_diagnostics, on: :member, to: 'linkedin_personal_channels#diagnostics'
+
             post :weixin_request_qr, on: :member, to: 'weixin_channels#request_qr'
             post :weixin_reconnect, on: :member, to: 'weixin_channels#reconnect'
             post :weixin_disconnect, on: :member, to: 'weixin_channels#disconnect'
@@ -459,7 +449,9 @@ Rails.application.routes.draw do
             resources :whatsapp_templates,
                       only: [:create, :destroy],
                       controller: 'inbox_whatsapp_templates',
-                      param: :template_name
+                      param: :template_name do
+              patch :visibility, on: :member
+            end
           end
 
           namespace :telephony do
@@ -688,9 +680,6 @@ Rails.application.routes.draw do
         resources :webhooks, only: [:create]
       end
 
-      # Frontend API endpoint to trigger SAML authentication flow
-      post 'auth/saml_login', to: 'auth#saml_login'
-
       resource :profile, only: [:show, :update] do
         delete :avatar, on: :collection
         member do
@@ -819,9 +808,7 @@ Rails.application.routes.draw do
             post :token
           end
         end
-        resources :agent_bots, only: [:index, :create, :show, :update, :destroy] do
-          delete :avatar, on: :member
-        end
+
         resources :accounts, only: [:index, :create, :show, :update, :destroy] do
           resources :account_users, only: [:index, :create] do
             collection do
@@ -888,7 +875,7 @@ Rails.application.routes.draw do
   post 'webhooks/telegram/:bot_token', to: 'webhooks/telegram#process_payload'
   post 'webhooks/telegram_notifications/:webhook_secret', to: 'webhooks/telegram_notifications#process_payload'
   post 'webhooks/telegram_personal/:webhook_identifier', to: 'webhooks/telegram_personal#process_payload'
-  post 'webhooks/linkedin_personal/:webhook_identifier', to: 'webhooks/linkedin_personal#process_payload'
+
   post 'webhooks/weixin/:webhook_identifier', to: 'webhooks/weixin#process_payload'
   post 'webhooks/vk/:callback_id', to: 'webhooks/vk#process_payload'
   post 'webhooks/sms/:phone_number', to: 'webhooks/sms#process_payload'
@@ -990,6 +977,7 @@ Rails.application.routes.draw do
       end
 
       # order of resources affect the order of sidebar navigation in super admin
+      resources :billing_organizations
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member
         post :reset_cache, on: :member
@@ -1005,9 +993,7 @@ Rails.application.routes.draw do
 
       resources :access_tokens, only: [:index, :show]
       resources :installation_configs, only: [:index, :new, :create, :show, :edit, :update]
-      resources :agent_bots, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
-        delete :avatar, on: :member, action: :destroy_avatar
-      end
+
       resources :platform_apps, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resources :platform_banners, only: [:index, :new, :create, :show, :edit, :update, :destroy]
       resource :instance_status, only: [:show]

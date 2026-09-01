@@ -77,6 +77,8 @@
       "DELETE_DESCRIPTION": "Delete template \"{templateName}\" from WhatsApp Cloud? This removes every language version that uses the same template name.",
       "DELETE_ACTION": "Delete template",
       "DELETE_SUCCESS": "Template deleted successfully.",
+      "SHOW_IN_CONVERSATIONS": "Диалогтарда көрсету",
+      "VISIBILITY_ERROR": "Үлгінің көрінуін өзгерту мүмкін болмады.",
       "CSAT_BADGE": "Managed by CSAT",
       "LANGUAGES": "Languages: {languages}",
       "REJECTION_REASON": "Rejection reason for {language}",

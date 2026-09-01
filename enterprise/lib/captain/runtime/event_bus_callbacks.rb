@@ -21,7 +21,7 @@ class Captain::Runtime::EventBusCallbacks
     }
   end
 
-  def on_llm_call_complete(agent_name, model, response, context_wrapper)
+  def on_llm_call_complete(agent_name, model, response, context_wrapper, metadata = {})
     publish(
       'chat.complete',
       context_wrapper,
@@ -32,6 +32,7 @@ class Captain::Runtime::EventBusCallbacks
       completion_tokens: response.respond_to?(:output_tokens) ? response.output_tokens : nil,
       thinking_tokens: thinking_tokens(response),
       total_tokens: total_tokens(response),
+      usage_counted: metadata[:provider_usage_recorded] ? false : nil,
       tool_call: response.respond_to?(:tool_call?) ? response.tool_call? : false,
       output_type: response.respond_to?(:content) ? payload_type(response.content) : nil,
       output_size: response.respond_to?(:content) ? payload_size(response.content) : nil

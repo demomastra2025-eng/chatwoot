@@ -59,7 +59,7 @@ class Captain::Runtime::TracingCallbacks
     set_trace_event_context!(context_wrapper, tracing[:current_agent_metadata] || tracing[:root_metadata])
   end
 
-  def on_llm_call_complete(_agent_name, _model, _response, context_wrapper)
+  def on_llm_call_complete(_agent_name, _model, _response, context_wrapper, _metadata = {})
     tracing = tracing_state(context_wrapper)
     return unless tracing
 

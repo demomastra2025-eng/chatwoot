@@ -12,7 +12,7 @@ class WebhookJob < ApplicationJob
     ).handle_failure(error)
   end
 
-  #  There are 3 types of webhooks, account, inbox and agent_bot
+  # There are account, inbox, and API inbox webhooks.
   def perform(url, payload, webhook_type = :account_webhook, secret: nil, delivery_id: nil)
     Webhooks::Trigger.execute(url, payload, webhook_type, secret: secret, delivery_id: delivery_id)
   end

@@ -59,6 +59,12 @@ class ReconnectService {
     return conversationId || threadId;
   };
 
+  isCommunicationThreadRoute = () =>
+    [
+      'communication_threads_dashboard',
+      'communication_thread_conversation',
+    ].includes(this.router.currentRoute.value.name);
+
   // Force reload if the user is disconnected for more than 3 hours
   handleOnlineEvent = () => {
     if (this.getSecondsSinceDisconnect() >= MAX_DISCONNECT_SECONDS) {
@@ -95,6 +101,9 @@ class ReconnectService {
 
     await this.store.dispatch('syncActiveConversationMessages', {
       conversationId: Number(conversationId),
+      ...(this.isCommunicationThreadRoute()
+        ? { conversationType: 'communication_thread' }
+        : {}),
     });
   };
 
@@ -104,7 +113,11 @@ class ReconnectService {
       updatedWithin:
         this.getSecondsSinceDisconnect() + DISCONNECT_DELAY_THRESHOLD,
     });
-    await this.store.dispatch('fetchAllConversations');
+    await this.store.dispatch(
+      this.isCommunicationThreadRoute()
+        ? 'fetchCommunicationThreads'
+        : 'fetchAllConversations'
+    );
     // Reset the updatedWithin in the store chat list filter after fetching conversations when the user is reconnected
     await this.store.dispatch('updateChatListFilters', {
       updatedWithin: null,
@@ -115,6 +128,9 @@ class ReconnectService {
     await this.store.dispatch('fetchFilteredConversations', {
       queryData,
       page: 1,
+      ...(this.isCommunicationThreadRoute()
+        ? { communicationThreadMode: true }
+        : {}),
     });
   };
 
@@ -138,6 +154,9 @@ class ReconnectService {
     if (conversationId) {
       await this.store.dispatch('syncActiveConversationMessages', {
         conversationId: Number(conversationId),
+        ...(this.isCommunicationThreadRoute()
+          ? { conversationType: 'communication_thread' }
+          : {}),
       });
     }
   };

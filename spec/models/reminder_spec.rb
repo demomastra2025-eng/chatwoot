@@ -787,7 +787,8 @@ RSpec.describe Reminder do
 
       expect(reminder.reload.metadata).to include(
         Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
-        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation'
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
+        Reminder::AUTOMATION_RULE_GENERATION_KEY => rule.lifecycle_generation
       )
       expect(reminder.metadata.keys & Reminder::TRANSIENT_METADATA_KEYS).to be_empty
     end

@@ -56,6 +56,9 @@ export default {
     showContactPanel() {
       return this.isContactPanelOpen && this.currentChat.id;
     },
+    currentChatLabelTarget() {
+      return `${this.currentChat.is_communication_thread ? 'communication_thread' : 'conversation'}:${this.currentChat.id || ''}`;
+    },
   },
   watch: {
     'currentChat.inbox_id': {
@@ -66,7 +69,7 @@ export default {
         }
       },
     },
-    'currentChat.id'() {
+    currentChatLabelTarget() {
       this.fetchLabels();
       this.activeIndex = 0;
     },
@@ -85,6 +88,7 @@ export default {
         isCommunicationThread: Boolean(
           this.currentChat.is_communication_thread
         ),
+        labels: this.currentChat.labels,
       });
     },
     onDashboardAppTabChange(index) {

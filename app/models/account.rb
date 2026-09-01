@@ -2,25 +2,31 @@
 #
 # Table name: accounts
 #
-#  id                     :integer          not null, primary key
-#  auto_resolve_duration  :integer
-#  custom_attributes      :jsonb
-#  domain                 :string(100)
-#  feature_flags          :bigint           default(0), not null
-#  feature_flags_overflow :jsonb            not null
-#  internal_attributes    :jsonb            not null
-#  limits                 :jsonb
-#  locale                 :integer          default("en")
-#  name                   :string           not null
-#  settings               :jsonb
-#  status                 :integer          default("active")
-#  support_email          :string(100)
-#  created_at             :datetime         not null
-#  updated_at             :datetime         not null
+#  id                      :integer          not null, primary key
+#  auto_resolve_duration   :integer
+#  custom_attributes       :jsonb
+#  domain                  :string(100)
+#  feature_flags           :bigint           default(0), not null
+#  feature_flags_overflow  :jsonb            not null
+#  internal_attributes     :jsonb            not null
+#  limits                  :jsonb
+#  locale                  :integer          default("en")
+#  name                    :string           not null
+#  settings                :jsonb
+#  status                  :integer          default("active")
+#  support_email           :string(100)
+#  created_at              :datetime         not null
+#  updated_at              :datetime         not null
+#  billing_organization_id :bigint
 #
 # Indexes
 #
-#  index_accounts_on_status  (status)
+#  index_accounts_on_billing_organization_id  (billing_organization_id)
+#  index_accounts_on_status                   (status)
+#
+# Foreign Keys
+#
+#  fk_rails_...  (billing_organization_id => billing_organizations.id)
 #
 
 class Account < ApplicationRecord
@@ -33,6 +39,7 @@ class Account < ApplicationRecord
   include CacheKeys
   include CaptainFeaturable
   include AccountEmailRateLimitable
+  include AccountWorkspaceWorkingHours
 
   include AccountSettingsSchema
 
@@ -65,9 +72,10 @@ class Account < ApplicationRecord
                  :default_task_touch_plan_id
   include AccountCaptainAutoResolve
 
+  belongs_to :billing_organization, optional: true
+
   has_many :account_users, dependent: :destroy_async
-  has_many :agent_bot_inboxes, dependent: :destroy_async
-  has_many :agent_bots, dependent: :destroy_async
+
   has_many :api_channels, dependent: :destroy_async, class_name: '::Channel::Api'
   has_many :articles, dependent: :destroy_async, class_name: '::Article'
   has_many :assignment_policies, dependent: :destroy_async
@@ -111,7 +119,6 @@ class Account < ApplicationRecord
   has_many :lead_submissions, dependent: :destroy_async
   has_many :labels, dependent: :destroy_async
   has_many :line_channels, dependent: :destroy_async, class_name: '::Channel::Line'
-  has_many :linkedin_personal_channels, dependent: :destroy_async, class_name: '::Channel::LinkedinPersonal'
   has_many :llm_events, dependent: :destroy_async
   has_many :llm_event_annotations, dependent: :destroy_async
   has_many :mentions, dependent: :destroy_async

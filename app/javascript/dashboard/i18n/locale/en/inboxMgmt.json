@@ -800,39 +800,6 @@
           "ERROR_MESSAGE": "We were not able to save the Telegram Personal channel"
         }
       },
-      "LINKEDIN_PERSONAL_CHANNEL": {
-        "TITLE": "LinkedIn Channel",
-        "DESC": "Connect LinkedIn direct messages through a personal runtime gateway.",
-        "PROFILE_URN": {
-          "LABEL": "Profile URN",
-          "PLACEHOLDER": "urn:li:fsd_profile:..."
-        },
-        "DISPLAY_NAME": {
-          "LABEL": "Channel name",
-          "PLACEHOLDER": "LinkedIn / Sales"
-        },
-        "LI_AT": {
-          "LABEL": "li_at",
-          "PLACEHOLDER": "LinkedIn li_at cookie"
-        },
-        "JSESSIONID": {
-          "LABEL": "JSESSIONID",
-          "PLACEHOLDER": "LinkedIn JSESSIONID cookie"
-        },
-        "CSRF_TOKEN": {
-          "LABEL": "CSRF token",
-          "PLACEHOLDER": "Captured csrf-token header"
-        },
-        "X_LI_TRACK": {
-          "LABEL": "x-li-track",
-          "PLACEHOLDER": "Captured x-li-track header"
-        },
-        "SUBMIT_BUTTON": "Create LinkedIn Channel",
-        "API": {
-          "ERROR_MESSAGE": "We were not able to save the LinkedIn channel",
-          "RECONNECT_WARNING": "The LinkedIn channel was created, but the first reconnect failed. Check the channel settings and diagnostics."
-        }
-      },
       "VK_COMMUNITY_CHANNEL": {
         "TITLE": "VK Community Channel",
         "DESC": "Connect VK community messages through Callback API and the VK messages API.",
@@ -923,10 +890,6 @@
           "TELEGRAM_PERSONAL": {
             "TITLE": "Telegram Personal",
             "DESCRIPTION": "Connect a personal Telegram account for private chats"
-          },
-          "LINKEDIN_PERSONAL": {
-            "TITLE": "LinkedIn",
-            "DESCRIPTION": "Connect LinkedIn direct messages"
           },
           "VK": {
             "TITLE": "VK",
@@ -1311,44 +1274,6 @@
           "FLOOD_WAIT": "Flood wait",
           "CANCELLED": "Cancelled"
         }
-      },
-      "LINKEDIN_PERSONAL": {
-        "TITLE": "LinkedIn Personal",
-        "SUBTITLE": "Manage connection, session cookies, imports, and diagnostics for the LinkedIn inbox.",
-        "PROFILE_URN": "Profile URN",
-        "CONNECTION": "Connection",
-        "LIFECYCLE": "Lifecycle",
-        "LAST_ERROR": "Last error",
-        "SESSION_TITLE": "LinkedIn session",
-        "SESSION_HINT": "Saved secrets are never shown. Fill only fields that need to be replaced, then save the inbox settings.",
-        "LI_AT": "li_at",
-        "JSESSIONID": "JSESSIONID",
-        "CSRF_TOKEN": "CSRF token",
-        "X_LI_TRACK": "x-li-track",
-        "SECRET_PLACEHOLDER": "Leave blank to keep current value",
-        "SAVE_HINT": "Save inbox settings to apply these LinkedIn session changes.",
-        "SERVICE_CONTROLS": "Service controls",
-        "RECONNECT": "Reconnect",
-        "RECONNECT_SUCCESS": "LinkedIn reconnect completed",
-        "RECONNECT_ERROR": "Unable to reconnect LinkedIn",
-        "DISCONNECT": "Disconnect",
-        "DISCONNECT_SUCCESS": "LinkedIn disconnected",
-        "DISCONNECT_ERROR": "Unable to disconnect LinkedIn",
-        "IMPORTS": "Imports",
-        "HISTORY_SYNC": "Import history",
-        "HISTORY_SYNC_SUCCESS": "LinkedIn history import started",
-        "HISTORY_SYNC_ERROR": "Unable to start LinkedIn history import",
-        "CONTACTS_SYNC": "Import contacts",
-        "CONTACTS_SYNC_SUCCESS": "LinkedIn contacts import started",
-        "CONTACTS_SYNC_ERROR": "Unable to start LinkedIn contacts import",
-        "DIAGNOSTICS": "Diagnostics",
-        "REFRESH_DIAGNOSTICS": "Refresh diagnostics",
-        "RAW_DIAGNOSTICS_TOGGLE": "Show or hide raw diagnostics JSON",
-        "HISTORY_SYNC_STATE": "History state",
-        "HISTORY_SYNC_COUNT": "Messages",
-        "HISTORY_THREAD_COUNT": "Threads",
-        "LAST_POLL_AT": "Last poll",
-        "NOT_AVAILABLE": "Not available"
       },
       "VK_COMMUNITY": {
         "TITLE": "VK Community callback",
@@ -1851,6 +1776,8 @@
       "TIMEZONE_LABEL": "Select timezone",
       "UPDATE": "Update business hours settings",
       "TOGGLE_AVAILABILITY": "Enable business availability for this inbox",
+      "INHERIT_WORKSPACE": "Use Workspace working hours",
+      "INHERIT_WORKSPACE_HELP": "The schedule and timezone are managed in Workspace settings. The unavailable message remains specific to this channel.",
       "UNAVAILABLE_MESSAGE_LABEL": "Unavailable message for visitors",
       "TOGGLE_HELP": "Enabling business availability will show the available hours on live chat widget even if all the agents are offline. Outside available hours visitors can be warned with a message and a pre-chat form.",
       "DAY": {
@@ -2053,7 +1980,6 @@
       "TELEGRAM": "Telegram",
       "TELEGRAM_BOT": "Telegram Bot",
       "TELEGRAM_PERSONAL": "Telegram Personal",
-      "LINKEDIN_PERSONAL": "LinkedIn",
       "VK": "VK",
       "LINE": "Line",
       "API": "API Channel",

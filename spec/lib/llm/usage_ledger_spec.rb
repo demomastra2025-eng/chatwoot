@@ -99,6 +99,20 @@ RSpec.describe Llm::UsageLedger do
 
       expect { described_class.record_event!(event) }.not_to change(LlmUsageEvent, :count)
     end
+
+    it 'does not count runtime telemetry that mirrors a provider completion' do
+      event = create(
+        :llm_event,
+        account: account,
+        event_name: 'llm.chat.complete',
+        provider: 'openrouter',
+        runtime_mode: 'captain_runtime',
+        estimated_cost: 0.001,
+        payload: { usage_counted: false }
+      )
+
+      expect { described_class.record_event!(event) }.not_to change(LlmUsageEvent, :count)
+    end
   end
 
   describe '.summary' do

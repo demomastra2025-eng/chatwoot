@@ -35,6 +35,11 @@ class AccountDashboard < Administrate::BaseDashboard
     updated_at: Field::DateTime,
     users: CountField,
     conversations: CountField,
+    billing_organization: Field::BelongsTo.with_options(
+      searchable: true,
+      searchable_field: 'name',
+      order: 'id DESC'
+    ),
     locale: Field::Select.with_options(collection: ENABLED_LANGUAGES_CONFIG.map { |_x, y| y[:iso_639_1_code] }),
     status: Field::Select.with_options(collection: [%w[Active active], %w[Suspended suspended]]),
     account_users: Field::HasMany,
@@ -77,6 +82,7 @@ class AccountDashboard < Administrate::BaseDashboard
     updated_at
     locale
     status
+    billing_organization
     conversations
     account_users
   ] + enterprise_show_page_attributes).freeze
@@ -98,6 +104,7 @@ class AccountDashboard < Administrate::BaseDashboard
                                end
   FORM_ATTRIBUTES = (%i[
     name
+    billing_organization
     locale
     status
   ] + enterprise_form_attributes).freeze

@@ -48,8 +48,7 @@ inbox:
   $ref: ./resource/inbox.yml
 inbox_contact:
   $ref: ./resource/inbox_contact.yml
-agent_bot:
-  $ref: ./resource/agent_bot.yml
+
 contact_inboxes:
   $ref: ./resource/contact_inboxes.yml
 contactable_inboxes:
@@ -107,11 +106,6 @@ account_update_payload:
 account_user_create_update_payload:
   $ref: ./request/account_user/create_update_payload.yml
 
-platform_agent_bot_create_update_payload:
-  $ref: ./request/platform/agent_bot/create_update_payload.yml
-
-agent_bot_create_update_payload:
-  $ref: ./request/agent_bot/create_update_payload.yml
 
 user_create_update_payload:
   $ref: ./request/user/create_update_payload.yml

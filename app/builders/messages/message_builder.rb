@@ -158,7 +158,7 @@ class Messages::MessageBuilder
   end
 
   def sender
-    message_type == 'outgoing' ? (message_sender || @user) : @conversation.contact
+    message_type == 'outgoing' ? @user : @conversation.contact
   end
 
   def external_created_at
@@ -205,11 +205,6 @@ class Messages::MessageBuilder
     attrs.presence
   end
 
-  def message_sender
-    return if @params[:sender_type] != 'AgentBot'
-
-    AgentBot.where(account_id: [nil, @conversation.account.id]).find_by(id: @params[:sender_id])
-  end
 
   def additional_attributes_payload
     additional_attributes.present? ? { additional_attributes: additional_attributes } : {}

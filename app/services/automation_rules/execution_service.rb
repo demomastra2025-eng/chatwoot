@@ -44,7 +44,8 @@ class AutomationRules::ExecutionService
       record.to_global_id.to_s,
       changed_attributes,
       trigger_message&.id,
-      execution_key || SecureRandom.uuid
+      execution_key || SecureRandom.uuid,
+      rule.lifecycle_generation
     ]
 
     if due_at.present? && due_at > Time.current

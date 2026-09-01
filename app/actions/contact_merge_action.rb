@@ -9,10 +9,11 @@ class ContactMergeAction
 
     ActiveRecord::Base.transaction do
       validate_contacts
+      merge_owner
       merge_conversations
+      merge_contact_inboxes
       merge_communication_threads
       merge_messages
-      merge_contact_inboxes
       merge_contact_channel_profiles
       merge_crm_deal_contacts
       merge_contact_notes
@@ -42,10 +43,51 @@ class ContactMergeAction
   end
 
   def merge_communication_threads
-    bulk_reassign(
-      CommunicationThread.where(contact_id: @mergee_contact.id),
-      contact_id: @base_contact.id
-    )
+    source_threads = CommunicationThread.where(account_id: @account.id, contact_id: @mergee_contact.id).lock.order(:id).to_a
+    target_thread = CommunicationThread.where(account_id: @account.id, contact_id: @base_contact.id).lock.order(:id).first
+    return if source_threads.empty? && target_thread.blank?
+
+    if target_thread.blank?
+      target_thread = source_threads.shift
+      target_thread.update!(contact: @base_contact)
+    end
+
+    source_threads.each do |source_thread|
+      source_thread.communication_thread_conversations.find_each do |link|
+        link.update!(communication_thread: target_thread)
+      end
+      source_thread.destroy!
+    end
+
+    attach_conversations_to_thread!
+    sync_merged_thread_routing!(target_thread)
+  end
+
+  def merge_owner
+    return if @base_contact.owner_id.present? || @mergee_contact.owner_id.blank?
+
+    @base_contact.update!(owner: @mergee_contact.owner)
+  end
+
+  def attach_conversations_to_thread!
+    @base_contact.conversations.find_each do |conversation|
+      Conversations::CommunicationThreadResolver.new(conversation: conversation).perform
+    end
+  end
+
+  def sync_merged_thread_routing!(target_thread)
+    CommunicationThreads::UpdateService.new(
+      communication_thread: target_thread,
+      params: {
+        assignee_id: @base_contact.owner_id,
+        team_id: target_thread.team_id,
+        status: target_thread.status,
+        priority: target_thread.priority
+      }.with_indifferent_access,
+      accessible_links: target_thread.communication_thread_conversations,
+      actor: Current.user,
+      source: 'contact_merge'
+    ).perform
   end
 
   def merge_contact_notes

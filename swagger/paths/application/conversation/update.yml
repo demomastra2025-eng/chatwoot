@@ -5,7 +5,6 @@ summary: Update Conversation
 description: Update Conversation Attributes
 security:
   - userApiKey: []
-  - agentBotApiKey: []
 requestBody:
   required: true
   content:

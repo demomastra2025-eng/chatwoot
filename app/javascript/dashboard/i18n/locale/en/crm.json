@@ -33,6 +33,11 @@
       "DUE_AT_RANGE": "Due date",
       "DESCRIPTION": "Refine runtime records without leaving the native dashboard workflow.",
       "INCLUDE_ARCHIVED": "Include archived",
+      "MAIN_FIELDS": "Main fields",
+      "QUICK_ALL": "All deals",
+      "QUICK_ARCHIVED": "Include archived",
+      "QUICK_MINE": "My deals only",
+      "QUICK_TITLE": "Quick filters",
       "SHOW_INACTIVE": "Show inactive",
       "SEARCH": "Search",
       "SEARCH_PLACEHOLDER": "Search by title",
@@ -149,7 +154,9 @@
       },
       "LIST": {
         "EMPTY_FILTERED": "No deals match the current quick filters.",
-        "SEARCH_PLACEHOLDER": "Filter deals..."
+        "SEARCH_PLACEHOLDER": "Search and filter",
+        "SELECT_ALL": "Select all deals on this page",
+        "SELECT_ROW": "Select deal “{title}”"
       },
       "FORM": {
         "AMOUNT": "Amount",
@@ -231,10 +238,12 @@
       "SUCCESS_UNARCHIVED": "Deal restored",
       "SUCCESS_UPDATED": "Deal updated",
       "TABLE": {
-        "AMOUNT": "Amount",
+        "AMOUNT": "Budget",
+        "COMPANY": "Contact company",
         "OWNER": "Owner",
-        "STAGE": "Stage",
-        "TITLE": "Deal",
+        "PRIMARY_CONTACT": "Primary contact",
+        "STAGE": "Deal stage",
+        "TITLE": "Deal name",
         "UPDATED": "Updated"
       },
       "TITLE": "Deals",
@@ -284,9 +293,11 @@
         "EMPTY_STATUS_TITLE": "No task statuses yet",
         "OVERDUE_BADGE": "Overdue",
         "TIME_BUCKETS": {
+          "FUTURE": "Future",
           "LATER": "Later",
           "NEXT_WEEK": "Next week",
           "OVERDUE": "Overdue",
+          "THIS_MONTH": "Within a month",
           "THIS_WEEK": "This week",
           "TODAY": "Today",
           "TOMORROW": "Tomorrow",

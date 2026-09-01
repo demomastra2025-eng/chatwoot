@@ -1,5 +1,20 @@
 {
   "INBOX": {
+    "NOTIFICATION_MODAL": {
+      "TITLE": "Notifications",
+      "NOTIFICATION": "Notification",
+      "TABS": {
+        "NEW": "New",
+        "ARCHIVE": "Archive",
+        "ALL": "All"
+      },
+      "ARCHIVE": "Archive",
+      "ARCHIVE_ALL": "Archive all",
+      "ARCHIVED": "Notification archived",
+      "ARCHIVED_ALL": "All new notifications archived",
+      "EMPTY": "There are no notifications in this section yet",
+      "LOAD_MORE": "Show more"
+    },
     "LIST": {
       "TITLE": "My Inbox",
       "DISPLAY_DROPDOWN": "Display",

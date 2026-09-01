@@ -85,13 +85,18 @@ export default {
       },
       set(agent) {
         const agentId = agent ? agent.id : null;
+        const conversationType = this.currentChat.is_communication_thread
+          ? 'communication_thread'
+          : 'conversation';
         this.$store.dispatch('setCurrentChatAssignee', {
           conversationId: this.currentChat.id,
+          conversationType,
           assignee: agent,
         });
         this.$store
           .dispatch('assignAgent', {
             conversationId: this.currentChat.id,
+            conversationType,
             agentId,
           })
           .then(() => {
@@ -105,10 +110,17 @@ export default {
       },
       set(team) {
         const conversationId = this.currentChat.id;
+        const conversationType = this.currentChat.is_communication_thread
+          ? 'communication_thread'
+          : 'conversation';
         const teamId = team ? team.id : 0;
-        this.$store.dispatch('setCurrentChatTeam', { team, conversationId });
+        this.$store.dispatch('setCurrentChatTeam', {
+          team,
+          conversationId,
+          conversationType,
+        });
         this.$store
-          .dispatch('assignTeam', { conversationId, teamId })
+          .dispatch('assignTeam', { conversationId, conversationType, teamId })
           .then(() => {
             useAlert(this.$t('CONVERSATION.CHANGE_TEAM'));
           });
@@ -124,15 +136,23 @@ export default {
       },
       set(priorityItem) {
         const conversationId = this.currentChat.id;
+        const conversationType = this.currentChat.is_communication_thread
+          ? 'communication_thread'
+          : 'conversation';
         const oldValue = this.currentChat?.priority;
         const priority = priorityItem ? priorityItem.id : null;
 
         this.$store.dispatch('setCurrentChatPriority', {
           priority,
           conversationId,
+          conversationType,
         });
         this.$store
-          .dispatch('assignPriority', { conversationId, priority })
+          .dispatch('assignPriority', {
+            conversationId,
+            conversationType,
+            priority,
+          })
           .then(() => {
             useTrack(CONVERSATION_EVENTS.CHANGE_PRIORITY, {
               oldValue,

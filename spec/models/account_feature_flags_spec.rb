@@ -39,6 +39,12 @@ RSpec.describe Account, type: :model do
       expect(Featurable::OVERFLOW_FEATURE_NAMES).to include('scheduling', 'scheduling_finance')
     end
 
+    it 'keeps the retired feature slot without exposing it as an active feature' do
+      expect(Featurable::LEGACY_BITMASK_FEATURE_NAMES.fetch(53)).to eq('retired_feature_54')
+      expect(Featurable::FEATURE_NAMES).not_to include('retired_feature_54')
+      expect(Featurable::FEATURE_POSITIONS.fetch('advanced_search_indexing')).to eq(55)
+    end
+
     it 'supports explicit legacy setters used by enterprise extensions' do
       account.feature_advanced_assignment = true
       account.save!

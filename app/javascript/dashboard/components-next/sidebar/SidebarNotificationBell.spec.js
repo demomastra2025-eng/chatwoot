@@ -3,25 +3,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SidebarNotificationBell from './SidebarNotificationBell.vue';
 
-const { notificationMeta, routeState } = vi.hoisted(() => ({
+const { notificationMeta } = vi.hoisted(() => ({
   notificationMeta: { value: { unreadCount: 0 } },
-  routeState: { name: 'dashboard' },
-}));
-
-vi.mock('vue-router', () => ({
-  useRoute: () => routeState,
 }));
 
 vi.mock('dashboard/composables/store', () => ({
   useMapGetter: () => notificationMeta,
 }));
 
-const mountComponent = () => mount(SidebarNotificationBell);
+const mountComponent = (props = {}) =>
+  mount(SidebarNotificationBell, { props });
 
 describe('SidebarNotificationBell', () => {
   beforeEach(() => {
     notificationMeta.value = { unreadCount: 0 };
-    routeState.name = 'dashboard';
   });
 
   it('uses the shared sidebar unread badge visual for notification counts', () => {
@@ -46,20 +41,21 @@ describe('SidebarNotificationBell', () => {
     );
   });
 
-  it('opens the notification panel outside the notifications page', async () => {
+  it('always opens the notification panel instead of navigating', async () => {
     const wrapper = mountComponent();
 
-    await wrapper.trigger('click');
+    await wrapper.get('button').trigger('click');
 
     expect(wrapper.emitted('openNotificationPanel')).toHaveLength(1);
   });
 
-  it('does not reopen the notification panel from the notifications page', async () => {
-    routeState.name = 'notifications_index';
-    const wrapper = mountComponent();
+  it('shows the label in expanded sidebar mode', () => {
+    const wrapper = mountComponent({
+      isCollapsed: false,
+      label: 'Notifications',
+    });
 
-    await wrapper.trigger('click');
-
-    expect(wrapper.emitted('openNotificationPanel')).toBeUndefined();
+    expect(wrapper.text()).toContain('Notifications');
+    expect(wrapper.get('button').classes()).toContain('w-full');
   });
 });

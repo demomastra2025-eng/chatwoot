@@ -28,6 +28,7 @@ class Reminders::EnrollAutomationActionService
   def enrollment_attributes(activated_at)
     {
       automation_rule: rule,
+      source_generation: rule.lifecycle_generation,
       source_action_id: action_id,
       remindable: remindable,
       plan_snapshot: [definition],
@@ -46,6 +47,7 @@ class Reminders::EnrollAutomationActionService
   def open_enrollment
     account.touch_plan_enrollments.find_by(
       automation_rule: rule,
+      source_generation: rule.lifecycle_generation,
       source_action_id: action_id,
       remindable: remindable,
       status: %w[active paused completed]

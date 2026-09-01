@@ -101,7 +101,6 @@ const route = useRoute();
 const router = useRouter();
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
-const contactSelectorFieldRef = ref(null);
 const inlineContactDraftInitialized = ref(false);
 const customFieldFilters = ref({});
 const filterDialogRef = ref(null);
@@ -504,9 +503,26 @@ const contactSelectionRequired = computed(
   () => currentAccount.value?.settings?.scheduling_contact_required !== false
 );
 
+const contactOptionLabel = contact => {
+  const iin =
+    contact.identifier ||
+    contact.customAttributes?.iin ||
+    contact.customAttributes?.medelementIin ||
+    contact.custom_attributes?.iin ||
+    contact.custom_attributes?.medelement_iin;
+
+  return [
+    contact.fullName,
+    contact.phone,
+    iin ? `${t('SCHEDULING.CONTACT.IIN')}: ${iin}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+};
+
 const contactOptions = computed(() => {
   const options = formStore.contacts.map(contact => ({
-    label: [contact.fullName, contact.phone].filter(Boolean).join(' '),
+    label: contactOptionLabel(contact),
     value: contact.id,
   }));
 
@@ -522,12 +538,12 @@ const contactOptions = computed(() => {
     return options;
   }
 
-  const fallbackLabel = [
-    formStore.selectedContact?.fullName || appointmentClientName(),
-    formStore.selectedContact?.phone || formStore.form.clientPhone,
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const fallbackLabel = contactOptionLabel({
+    fullName: formStore.selectedContact?.fullName || appointmentClientName(),
+    identifier:
+      formStore.selectedContact?.identifier || formStore.form.clientIdentifier,
+    phone: formStore.selectedContact?.phone || formStore.form.clientPhone,
+  });
 
   if (!fallbackLabel) {
     return options;
@@ -835,10 +851,21 @@ const inlineContactLastNameMessage = computed(() => {
 
   return validationErrorMessage(formStore.validationErrors.clientLastName);
 });
+const inlineContactMiddleNameMessage = computed(() => {
+  if (
+    isInlineContactMedelementContext.value &&
+    !String(formStore.form.clientMiddleName || '').trim()
+  ) {
+    return t('SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_MIDDLE_NAME_REQUIRED');
+  }
+
+  return validationErrorMessage(formStore.validationErrors.clientMiddleName);
+});
 const isInlineContactSaveDisabled = computed(
   () =>
     !String(formStore.form.clientFirstName || '').trim() ||
     Boolean(inlineContactLastNameMessage.value) ||
+    Boolean(inlineContactMiddleNameMessage.value) ||
     Boolean(inlineContactIinMessage.value)
 );
 
@@ -1267,7 +1294,12 @@ const openEditAppointment = appointment => {
 
 const handleInlineContactSave = async () => {
   if (isInlineContactSaveDisabled.value) {
-    useAlert(inlineContactIinMessage.value);
+    useAlert(
+      inlineContactLastNameMessage.value ||
+        inlineContactMiddleNameMessage.value ||
+        inlineContactIinMessage.value ||
+        t('SCHEDULING.APPOINTMENT_FORM.ERRORS.CLIENT_NAME_REQUIRED')
+    );
     return;
   }
 
@@ -1414,8 +1446,6 @@ const handleContactDropdownOpen = async () => {
     // Surface API errors through the existing form store error state.
   }
 };
-
-const openContactSelector = () => contactSelectorFieldRef.value?.open();
 
 const resetAppointmentFilters = async () => {
   calendarStore.resetFilters();
@@ -1995,18 +2025,12 @@ onMounted(async () => {
             <header
               class="flex items-center gap-2 border-b border-n-weak bg-n-surface-1 px-4 py-2"
             >
-              <input
+              <h2
                 id="scheduling-appointment-drawer-title"
-                class="reset-base min-w-0 flex-1 border-none bg-transparent text-base font-semibold text-n-slate-12 outline-none placeholder:text-n-slate-10"
-                :aria-label="
-                  $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_FIRST_NAME')
-                "
-                :placeholder="drawerTitle"
-                :value="formStore.form.clientFirstName"
-                @input="
-                  formStore.updateField('clientFirstName', $event.target.value)
-                "
-              />
+                class="mb-0 min-w-0 flex-1 truncate text-base font-semibold text-n-slate-12"
+              >
+                {{ drawerTitle }}
+              </h2>
 
               <Button
                 v-if="
@@ -2055,36 +2079,33 @@ onMounted(async () => {
                     <h3 class="mb-0 text-sm font-semibold text-n-slate-12">
                       {{ $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_TITLE') }}
                     </h3>
-                    <div class="relative ltr:ml-auto rtl:mr-auto">
-                      <Button
-                        size="sm"
-                        variant="link"
-                        color="blue"
-                        :label="$t('SCHEDULING.CONTACT.SELECT_ACTION')"
-                        @click.stop="openContactSelector"
-                      />
-                      <SchedulingSelectField
-                        ref="contactSelectorFieldRef"
-                        class="pointer-events-none absolute right-0 top-full h-px w-px opacity-0"
-                        :model-value="formStore.form.contactId"
-                        :options="contactOptions"
-                        use-api-results
-                        dropdown-align="end"
-                        :dropdown-min-width="405"
-                        placeholder=" "
-                        :aria-label="$t('SCHEDULING.CONTACT.SELECT_ACTION')"
-                        :search-placeholder="
-                          $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
-                        "
-                        :empty-state="
-                          $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_EMPTY')
-                        "
-                        @open="handleContactDropdownOpen"
-                        @search="formStore.searchContacts($event)"
-                        @update:model-value="handleContactSelect"
-                      />
-                    </div>
                   </div>
+
+                  <SchedulingSelectField
+                    :model-value="formStore.form.contactId"
+                    :options="contactOptions"
+                    use-api-results
+                    search-in-trigger
+                    :search-debounce-ms="250"
+                    inline-dropdown
+                    dropdown-align="start"
+                    :dropdown-min-width="405"
+                    :placeholder="
+                      $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
+                    "
+                    :aria-label="
+                      $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
+                    "
+                    :search-placeholder="
+                      $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_SEARCH')
+                    "
+                    :empty-state="
+                      $t('SCHEDULING.APPOINTMENT_FORM.CONTACT_EMPTY')
+                    "
+                    @open="handleContactDropdownOpen"
+                    @search="formStore.searchContacts($event)"
+                    @update:model-value="handleContactSelect"
+                  />
 
                   <div class="appointment-contact-accordion">
                     <div
@@ -2146,7 +2167,19 @@ onMounted(async () => {
                         <Input
                           :model-value="formStore.form.clientMiddleName"
                           :label="
-                            $t('SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME')
+                            isInlineContactMedelementContext
+                              ? requiredContactLabel(
+                                  $t(
+                                    'SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME'
+                                  )
+                                )
+                              : $t(
+                                  'SCHEDULING.APPOINTMENT_FORM.CLIENT_MIDDLE_NAME'
+                                )
+                          "
+                          :message="inlineContactMiddleNameMessage"
+                          :message-type="
+                            inlineContactMiddleNameMessage ? 'error' : 'info'
                           "
                           @update:model-value="
                             formStore.updateField('clientMiddleName', $event)
@@ -2238,6 +2271,17 @@ onMounted(async () => {
                   "
                 >
                   <div class="grid gap-4 md:grid-cols-2">
+                    <Input
+                      class="md:col-span-2"
+                      :model-value="formStore.form.title"
+                      :label="$t('SCHEDULING.APPOINTMENT_FORM.TITLE')"
+                      :placeholder="
+                        $t('SCHEDULING.APPOINTMENT_FORM.TITLE_PLACEHOLDER')
+                      "
+                      @update:model-value="
+                        formStore.updateField('title', $event)
+                      "
+                    />
                     <SchedulingSelectField
                       class="appointment-drawer-select-control"
                       :model-value="formStore.form.resourceId"

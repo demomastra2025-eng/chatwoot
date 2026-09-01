@@ -36,16 +36,19 @@ describe('Switch', () => {
     expect(thumb.attributes('class')).not.toContain('shadow-sm');
   });
 
-  it('centers the thumb and keeps the brighter active track', () => {
+  it('centers the thumb vertically and keeps the brighter active track', () => {
     const wrapper = mount(Switch);
     const root = wrapper.find('button');
+    const thumb = wrapper.find('[data-testid="switch-thumb"]');
 
     expect(root.attributes('class')).toContain('h-4');
     expect(root.attributes('class')).toContain('w-8');
-    expect(root.attributes('class')).toContain('items-center');
-    expect(root.attributes('class')).toContain('p-px');
+    expect(root.attributes('class')).toContain('relative');
+    expect(thumb.attributes('class')).toContain('absolute');
+    expect(thumb.attributes('class')).toContain('top-1/2');
+    expect(thumb.attributes('class')).toContain('-translate-y-1/2');
     expect(root.attributes('class')).toContain(
-      'data-[state=checked]:bg-n-blue-9'
+      'data-[state=checked]:bg-n-violet-9'
     );
     expect(root.attributes('class')).not.toContain(
       'data-[state=checked]:ring-2'

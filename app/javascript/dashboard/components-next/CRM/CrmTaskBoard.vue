@@ -5,8 +5,8 @@ import { useI18n } from 'vue-i18n';
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
 import CrmTaskAssigneeMenu from './CrmTaskAssigneeMenu.vue';
 import {
-  TASK_TIME_BUCKETS,
   groupTasksByTime,
+  visibleTaskTimeBuckets,
 } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 
 const props = defineProps({
@@ -41,38 +41,38 @@ const localeCode = computed(
 const groupedTasks = computed(() => groupTasksByTime(props.tasks));
 
 const bucketMeta = computed(() => ({
-  later: {
-    color: '#64748B',
-    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.LATER'),
+  future: {
+    color: '#E7E8EA',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.FUTURE'),
   },
   nextWeek: {
-    color: '#7C3AED',
+    color: '#E7E8EA',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.NEXT_WEEK'),
   },
   overdue: {
-    color: '#DC2626',
+    color: '#FF8F93',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.OVERDUE'),
   },
-  thisWeek: {
-    color: '#2563EB',
-    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.THIS_WEEK'),
-  },
   today: {
-    color: '#059669',
+    color: '#87F1C0',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.TODAY'),
   },
   tomorrow: {
-    color: '#D97706',
+    color: '#E7E8EA',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.TOMORROW'),
   },
+  thisMonth: {
+    color: '#E7E8EA',
+    label: t('CRM.TASKS.BOARD.TIME_BUCKETS.THIS_MONTH'),
+  },
   unscheduled: {
-    color: '#94A3B8',
+    color: '#F2F3F5',
     label: t('CRM.TASKS.BOARD.TIME_BUCKETS.UNSCHEDULED'),
   },
 }));
 
 const boardColumns = computed(() =>
-  TASK_TIME_BUCKETS.map(key => ({
+  visibleTaskTimeBuckets(groupedTasks.value).map(key => ({
     ...bucketMeta.value[key],
     key,
     tasks: groupedTasks.value[key],
@@ -127,14 +127,14 @@ const handleAssigneeChange = (task, assigneeId) => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2">
-    <div class="mx-auto flex w-max min-h-full items-start gap-2 py-1">
+    <div class="mx-auto flex w-max min-h-full items-stretch gap-0 py-1">
       <section
         v-for="column in boardColumns"
         :key="column.key"
-        class="crm-task-board-column group/crm-column flex min-h-full w-[17rem] shrink-0 self-start flex-col overflow-visible"
+        class="crm-task-board-column flex min-h-full w-[18rem] shrink-0 self-stretch flex-col overflow-visible"
       >
         <header
-          class="sticky top-0 z-10 rounded-t-xl bg-n-slate-2/95 px-4 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
+          class="sticky top-0 z-10 bg-n-slate-2/95 px-3 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
         >
           <div class="flex items-center justify-between gap-3">
             <h3 class="mb-0 truncate text-sm font-semibold text-n-slate-12">
@@ -146,12 +146,10 @@ const handleAssigneeChange = (task, assigneeId) => {
               {{ column.tasks.length }}
             </span>
           </div>
-          <div class="mt-3 h-1 overflow-hidden rounded-full bg-n-alpha-black2">
-            <div
-              class="h-full w-full rounded-full"
-              :style="{ backgroundColor: column.color }"
-            />
-          </div>
+          <div
+            class="crm-task-board-bucket-color mt-3 h-1 overflow-hidden rounded-full"
+            :style="{ backgroundColor: column.color }"
+          />
         </header>
 
         <div class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5">
@@ -162,7 +160,11 @@ const handleAssigneeChange = (task, assigneeId) => {
             @click="emit('selectTask', task)"
           >
             <div class="flex items-start justify-between gap-2">
-              <div class="min-w-0">
+              <button
+                type="button"
+                data-test="open-task"
+                class="min-w-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+              >
                 <h4 class="mb-0 truncate text-xs font-semibold text-n-slate-12">
                   {{ task.title }}
                 </h4>
@@ -172,7 +174,7 @@ const handleAssigneeChange = (task, assigneeId) => {
                 >
                   {{ dealNames[task.dealId] }}
                 </p>
-              </div>
+              </button>
 
               <CrmTaskAssigneeMenu
                 :assignees="assignees"
@@ -215,14 +217,3 @@ const handleAssigneeChange = (task, assigneeId) => {
     </div>
   </div>
 </template>
-
-<style scoped lang="scss">
-.crm-task-board-column {
-  @apply relative;
-}
-
-.crm-task-board-column + .crm-task-board-column::before {
-  content: '';
-  @apply absolute -left-1 top-1/2 h-1/3 w-px -translate-y-1/2 bg-n-weak;
-}
-</style>

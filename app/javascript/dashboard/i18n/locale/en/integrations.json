@@ -1565,7 +1565,7 @@
             },
             "assign_conversation": {
               "TITLE": "Assign conversation",
-              "DESCRIPTION": "Assign a conversation to an agent, agent bot, or team."
+              "DESCRIPTION": "Assign a contact and its omnichannel conversation thread to an agent or team."
             },
             "retry_failed_message": {
               "TITLE": "Retry failed message",

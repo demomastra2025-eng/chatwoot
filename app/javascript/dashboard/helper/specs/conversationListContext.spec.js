@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CONVERSATION_LIST_GLOBAL_STATUS_KEY,
   CONVERSATION_LIST_CONTEXT_SETTINGS_KEY,
   conversationListContextKey,
   conversationListContextState,
@@ -34,18 +35,18 @@ describe('conversationListContext', () => {
     ).toBe('folder:9');
   });
 
-  it('uses open defaults for assignment and all-status defaults for object contexts', () => {
+  it('uses the same open status default for every left context', () => {
     expect(conversationListContextState({}, 'assignee:all')).toEqual({
       status: 'open',
       order_by: 'last_activity_at_desc',
     });
     expect(conversationListContextState({}, 'crm-stage:42')).toEqual({
-      status: 'all',
+      status: 'open',
       order_by: 'last_activity_at_desc',
     });
   });
 
-  it('stores status and sort independently for each left context', () => {
+  it('stores status globally while keeping sort independent per context', () => {
     const firstSettings = {
       [CONVERSATION_LIST_CONTEXT_SETTINGS_KEY]:
         updatedConversationListContextSettings({}, 'assignee:all', {
@@ -63,7 +64,7 @@ describe('conversationListContext', () => {
     expect(
       conversationListContextState(secondSettings, 'assignee:all')
     ).toEqual({
-      status: 'resolved',
+      status: 'snoozed',
       order_by: 'created_at_asc',
     });
     expect(conversationListContextState(secondSettings, 'assignee:me')).toEqual(
@@ -72,12 +73,18 @@ describe('conversationListContext', () => {
         order_by: 'last_activity_at_desc',
       }
     );
+    expect(
+      secondSettings[CONVERSATION_LIST_CONTEXT_SETTINGS_KEY][
+        CONVERSATION_LIST_GLOBAL_STATUS_KEY
+      ]
+    ).toEqual({ status: 'snoozed' });
   });
 
   it('falls back from stale stored status and sort values', () => {
     const settings = {
       [CONVERSATION_LIST_CONTEXT_SETTINGS_KEY]: {
-        'assignee:all': { status: 'deleted', order_by: 'unknown' },
+        [CONVERSATION_LIST_GLOBAL_STATUS_KEY]: { status: 'deleted' },
+        'assignee:all': { order_by: 'unknown' },
       },
     };
 

@@ -1,5 +1,6 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { useStore } from 'vuex';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter } from 'dashboard/composables/store';
 import { useAlert } from 'dashboard/composables';
@@ -25,9 +26,24 @@ const MEDIA_PEEK_LIMIT = 6;
 const FILES_PEEK_LIMIT = 3;
 
 const { t } = useI18n();
+const store = useStore();
 
 const allAttachments = useMapGetter('getSelectedChatAttachments');
 const attachmentsLoaded = useMapGetter('getSelectedChatAttachmentsLoaded');
+const selectedChat = useMapGetter('getSelectedChat');
+
+watch(
+  () => [selectedChat.value.id, selectedChat.value.is_communication_thread],
+  ([conversationId, isCommunicationThread]) => {
+    if (!conversationId) return;
+
+    store.dispatch('fetchAllAttachments', {
+      conversationId,
+      isCommunicationThread: Boolean(isCommunicationThread),
+    });
+  },
+  { immediate: true }
+);
 
 const sortedAttachments = computed(() =>
   [...allAttachments.value].sort(

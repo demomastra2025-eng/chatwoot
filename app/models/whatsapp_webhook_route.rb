@@ -1,3 +1,20 @@
+# == Schema Information
+#
+# Table name: whatsapp_webhook_routes
+#
+#  id                 :bigint           not null, primary key
+#  destination        :string           not null
+#  registration_token :string(36)
+#  created_at         :datetime         not null
+#  updated_at         :datetime         not null
+#  phone_number_id    :string           not null
+#  waba_id            :string           not null
+#
+# Indexes
+#
+#  idx_whatsapp_webhook_routes_exact  (waba_id,phone_number_id,destination) UNIQUE
+#  idx_whatsapp_webhook_routes_waba   (waba_id)
+#
 class WhatsappWebhookRoute < ApplicationRecord
   DESTINATIONS = %w[dev widget].freeze
   DIGITS = /\A\d+\z/

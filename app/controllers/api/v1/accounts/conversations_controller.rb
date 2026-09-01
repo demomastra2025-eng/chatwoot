@@ -3,7 +3,6 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   include DateRangeHelper
   include HmacConcern
 
-
   before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :create, :filter]
   before_action :inbox, :contact, :contact_inbox, only: [:create]
 
@@ -71,7 +70,11 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def update
-    @conversation.update!(permitted_update_params)
+    if permitted_update_params.key?(:priority)
+      update_aggregate_priority!(permitted_update_params[:priority])
+    else
+      @conversation.update!(permitted_update_params)
+    end
     preload_crm_deal_stages([@conversation])
     preload_scheduling_appointment_statuses([@conversation])
     preload_directional_message_timestamps([@conversation])
@@ -112,20 +115,8 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def toggle_status
-    # FIXME: move this logic into a service object
-    if pending_to_open_by_bot?
-      @conversation.bot_handoff!
-      @status = true
-    else
-      @status = transition_conversation_status!
-    end
+    @status = transition_conversation_status!
     assign_conversation if should_assign_conversation?
-  end
-
-  def pending_to_open_by_bot?
-    return false unless Current.user.is_a?(AgentBot)
-
-    @conversation.status == 'pending' && params[:status] == 'open'
   end
 
   def should_assign_conversation?
@@ -133,7 +124,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def toggle_priority
-    @conversation.toggle_priority(params[:priority])
+    update_aggregate_priority!(params[:priority])
     head :ok
   end
 
@@ -217,11 +208,25 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     params.permit(:status, :snoozed_until)
   end
 
-
-
   def assign_conversation
-    @conversation.assignee = current_user
-    @conversation.save!
+    Conversations::AssignmentService.new(
+      conversation: @conversation,
+      assignee_id: current_user.id,
+      assignee_type: 'User'
+    ).perform
+  end
+
+  def update_aggregate_priority!(priority)
+    thread = @conversation.communication_thread
+    return @conversation.toggle_priority(priority) if thread.blank?
+
+    CommunicationThreads::UpdateService.new(
+      communication_thread: thread,
+      params: ActionController::Parameters.new(priority: priority.presence).permit!,
+      accessible_links: thread.communication_thread_conversations,
+      actor: Current.user,
+      source: 'conversation_priority_redirect'
+    ).perform
   end
 
   def conversation

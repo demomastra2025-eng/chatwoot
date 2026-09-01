@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import SidebarGroupLeaf from './SidebarGroupLeaf.vue';
 import SidebarGroupSeparator from './SidebarGroupSeparator.vue';
@@ -7,7 +7,6 @@ import Icon from 'next/icon/Icon.vue';
 import { getSidebarChildDisplayLabel } from './sidebarDisplayLabels';
 
 import { useSidebarContext } from './provider';
-import { useEventListener } from '@vueuse/core';
 
 const props = defineProps({
   isExpanded: { type: Boolean, default: false },
@@ -30,7 +29,6 @@ const props = defineProps({
 
 const { isAllowed } = useSidebarContext();
 const router = useRouter();
-const scrollableContainer = ref(null);
 
 const accessibleItems = computed(() =>
   props.children.filter(child => {
@@ -46,8 +44,6 @@ const isScrollable = computed(() => {
   return accessibleItems.value.length > 7;
 });
 
-const scrollEnd = ref(false);
-
 const getChildDisplayLabel = child =>
   getSidebarChildDisplayLabel(child, props.isExpanded);
 
@@ -61,12 +57,6 @@ const handleFooterActionClick = async action => {
     await router.push(action.to);
   }
 };
-
-// set scrollEnd to true when the scroll reaches the end
-useEventListener(scrollableContainer, 'scroll', () => {
-  const { scrollHeight, scrollTop, clientHeight } = scrollableContainer.value;
-  scrollEnd.value = scrollHeight - scrollTop === clientHeight;
-});
 </script>
 
 <template>
@@ -87,13 +77,9 @@ useEventListener(scrollableContainer, 'scroll', () => {
     :compact-label="compactHeader"
     class="my-1"
   />
-  <ul
-    v-if="children.length"
-    class="m-0 list-none reset-base relative group min-w-0"
-  >
+  <ul v-if="children.length" class="m-0 list-none reset-base min-w-0">
     <!-- Each element has h-8, which is 32px. We show roughly a third more than the previous 14rem + 16px limit. -->
     <div
-      ref="scrollableContainer"
       class="min-w-0"
       :class="{
         'max-h-[20rem] overflow-y-scroll no-scrollbar': isScrollable,
@@ -119,44 +105,6 @@ useEventListener(scrollableContainer, 'scroll', () => {
         <Icon v-if="action.icon" :icon="action.icon" class="size-3.5" />
         <span class="min-w-0 truncate">{{ action.title }}</span>
       </button>
-    </div>
-    <div
-      v-if="isScrollable && isExpanded"
-      v-show="!scrollEnd"
-      class="absolute bg-gradient-to-t from-n-background w-full h-12 to-transparent -bottom-1 pointer-events-none flex items-end justify-end px-2 animate-fade-in-up"
-    >
-      <svg
-        width="16"
-        height="24"
-        viewBox="0 0 16 24"
-        fill="none"
-        class="text-n-slate-9 opacity-50 group-hover:opacity-100"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M4 4L8 8L12 4"
-          stroke="currentColor"
-          opacity="0.5"
-          stroke-width="1.33333"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-        <path
-          d="M4 10L8 14L12 10"
-          stroke="currentColor"
-          opacity="0.75"
-          stroke-width="1.33333"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-        <path
-          d="M4 16L8 20L12 16"
-          stroke="currentColor"
-          stroke-width="1.33333"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
     </div>
   </ul>
 </template>

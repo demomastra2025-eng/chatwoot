@@ -16,6 +16,10 @@ export default {
       type: Boolean,
       default: true,
     },
+    showDirectionIcon: {
+      type: Boolean,
+      default: true,
+    },
     defaultEmptyMessage: {
       type: String,
       default: '',
@@ -100,7 +104,7 @@ export default {
         icon="lock-closed"
       />
       <fluent-icon
-        v-else-if="messageByAgent"
+        v-else-if="messageByAgent && showDirectionIcon"
         size="14"
         class="-mt-0.5 align-middle text-n-slate-11 inline-block"
         icon="arrow-reply"

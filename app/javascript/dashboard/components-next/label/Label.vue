@@ -59,7 +59,7 @@ const colorClasses = computed(() => COLOR_CLASSES[props.color]);
 <template>
   <div
     :title="labelDescription"
-    class="rounded-lg -outline-offset-1 outline outline-1 inline-flex items-center flex-shrink-0"
+    class="rounded-lg -outline-offset-1 outline outline-1 inline-flex items-center flex-shrink-0 overflow-hidden"
     :class="[
       colorClasses,
       compact ? 'px-1.5 h-6 gap-1 rounded-md' : 'px-2.5 h-8 gap-1.5 rounded-lg',
@@ -70,7 +70,10 @@ const colorClasses = computed(() => COLOR_CLASSES[props.color]);
       class="rounded-sm flex-shrink-0 size-2"
       :style="{ background: labelColor }"
     />
-    <span v-else-if="labelEmoji" class="flex-shrink-0 leading-none text-xl">
+    <span
+      v-else-if="labelEmoji"
+      class="inline-flex items-center justify-center size-3 flex-shrink-0 overflow-hidden text-xs leading-none"
+    >
       {{ labelEmoji }}
     </span>
     <slot v-else name="icon" />

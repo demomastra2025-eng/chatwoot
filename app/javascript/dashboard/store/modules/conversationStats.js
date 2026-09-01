@@ -60,6 +60,10 @@ export const actions = {
       params,
       requestGeneration: metaRequestGeneration,
     };
+    if ($state.allCount === 0) {
+      await fetchMetaData(context, payload);
+      return;
+    }
     if ($state.allCount > 2000) {
       superLongDebouncedFetchMetaData(context, payload);
     } else if ($state.allCount > 100) {

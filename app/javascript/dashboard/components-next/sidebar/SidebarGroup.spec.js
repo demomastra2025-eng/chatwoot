@@ -198,6 +198,39 @@ describe('SidebarGroup', () => {
     expect(subGroup.attributes('data-active-child-names')).toBe('Channels');
   });
 
+  it('highlights Contacts when its navigation target clears an optional query', () => {
+    sidebarCollapsed.value = true;
+    Object.assign(routeState, {
+      name: 'contacts_dashboard_index',
+      path: '/contacts',
+      query: {},
+      params: {},
+    });
+
+    const wrapper = mountComponent({
+      name: 'Contacts',
+      label: 'Contacts',
+      to: null,
+      defaultChildName: 'All Contacts',
+      children: [
+        {
+          name: 'All Contacts',
+          label: 'All Contacts',
+          to: {
+            name: 'contacts_dashboard_index',
+            path: '/contacts',
+            query: { page: 1, search: undefined },
+          },
+          activeOn: ['contacts_dashboard_index', 'contacts_edit'],
+        },
+      ],
+    });
+    const link = wrapper.find('[title="Contacts"]');
+
+    expect(link.classes()).toContain('bg-n-brand-solid');
+    expect(link.classes()).toContain('text-n-brand-contrast');
+  });
+
   it('does not highlight the Tags subgroup on the unfiltered all-tags route', async () => {
     const wrapper = mountComponent();
 
@@ -709,6 +742,16 @@ describe('SidebarGroup', () => {
 
     expect(link.element.tagName).toBe('A');
     expect(link.attributes('data-route-name')).toBe('home');
+  });
+
+  it('highlights the active main icon with the bright brand color', () => {
+    sidebarCollapsed.value = true;
+    const wrapper = mountComponent();
+    const link = wrapper.find('[title="Conversations"]');
+
+    expect(link.classes()).toContain('bg-n-brand-solid');
+    expect(link.classes()).toContain('text-n-brand-contrast');
+    expect(link.classes()).not.toContain('bg-n-alpha-2');
   });
 
   it('keeps a non-navigating collapsed group as a button', () => {

@@ -3,7 +3,9 @@ import { ref } from 'vue';
 
 import SidebarVisibilitySettings from './SidebarVisibilitySettings.vue';
 import {
+  SIDEBAR_ORDER_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_CURRENT_VERSION,
+  SIDEBAR_VISIBILITY_ITEMS,
   SIDEBAR_VISIBILITY_UI_SETTINGS_KEY,
   SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY,
 } from 'dashboard/components-next/sidebar/sidebarVisibility';
@@ -11,6 +13,7 @@ import {
 const currentAccount = ref({ settings: {} });
 const updateAccount = vi.fn();
 const useAlert = vi.fn();
+const defaultItemOrder = SIDEBAR_VISIBILITY_ITEMS.map(item => item.key);
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: key => key }),
@@ -45,6 +48,12 @@ const mountComponent = () =>
           emits: ['update:modelValue'],
           template:
             '<input data-test="visibility-checkbox" type="checkbox" :id="id" :checked="modelValue" :disabled="disabled" @change="$emit(\'update:modelValue\', $event.target.checked)" />',
+        },
+        Draggable: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template:
+            '<div data-test="sidebar-order-list"><slot v-for="(element, index) in modelValue" name="item" :element="element" :index="index" /></div>',
         },
         Button: true,
       },
@@ -82,6 +91,7 @@ describe('SidebarVisibilitySettings', () => {
     await wrapper.vm.saveSidebarVisibility();
 
     expect(updateAccount).toHaveBeenCalledWith({
+      [SIDEBAR_ORDER_UI_SETTINGS_KEY]: defaultItemOrder,
       [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: expect.arrayContaining([
         'Conversation:Pipelines',
         'Reports',
@@ -97,6 +107,7 @@ describe('SidebarVisibilitySettings', () => {
   it('hydrates the draft from workspace settings', () => {
     currentAccount.value = {
       settings: {
+        [SIDEBAR_ORDER_UI_SETTINGS_KEY]: ['Contacts', 'Conversation'],
         [SIDEBAR_VISIBILITY_UI_SETTINGS_KEY]: ['Campaigns:MassBroadcasts'],
         [SIDEBAR_VISIBILITY_VERSION_UI_SETTINGS_KEY]:
           SIDEBAR_VISIBILITY_CURRENT_VERSION,
@@ -107,6 +118,38 @@ describe('SidebarVisibilitySettings', () => {
 
     expect(wrapper.vm.visibilityDraft['Campaigns:MassBroadcasts']).toBe(false);
     expect(wrapper.vm.visibilityDraft.Reports).toBe(true);
+    expect(wrapper.vm.draftItemOrder.slice(0, 3)).toEqual([
+      'Contacts',
+      'Conversation',
+      'Inbox',
+    ]);
+  });
+
+  it('moves a section and saves the new menu order', async () => {
+    const wrapper = mountComponent();
+
+    await wrapper
+      .findAll('[data-test="sidebar-order-down"]')[3]
+      .trigger('click');
+
+    expect(wrapper.vm.draftItemOrder.slice(3, 5)).toEqual([
+      'Contacts',
+      'Captain',
+    ]);
+    expect(wrapper.vm.hasChanges).toBe(true);
+
+    await wrapper.vm.saveSidebarVisibility();
+
+    expect(updateAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [SIDEBAR_ORDER_UI_SETTINGS_KEY]: [
+          ...defaultItemOrder.slice(0, 3),
+          'Contacts',
+          'Captain',
+          ...defaultItemOrder.slice(5),
+        ],
+      })
+    );
   });
 
   it('keeps Settings visible and leaves conversation details to their own page', () => {

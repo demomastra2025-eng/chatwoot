@@ -46,23 +46,13 @@ RSpec.describe Contacts::OwnerSyncService do
       expect(other_contact_deal.reload.owner).to eq(other_agent)
     end
 
-    it 'replaces an agent bot assignment with the human contact owner' do
-      agent_bot = create(:agent_bot, account: account)
-      conversation = create(:conversation, account: account, contact: contact, assignee: nil, assignee_agent_bot: agent_bot)
-      create(:inbox_member, inbox: conversation.inbox, user: owner)
+
+    it 'assigns every channel conversation without requiring inbox membership' do
+      channel_conversation = create(:conversation, account: account, contact: contact, assignee: other_agent)
 
       contact.update!(owner: owner)
 
-      expect(conversation.reload.assignee).to eq(owner)
-      expect(conversation.assignee_agent_bot).to be_nil
-    end
-
-    it 'does not assign a conversation to the contact owner when that owner cannot access the inbox' do
-      inaccessible_owner_conversation = create(:conversation, account: account, contact: contact, assignee: other_agent)
-
-      contact.update!(owner: owner)
-
-      expect(inaccessible_owner_conversation.reload.assignee).to eq(other_agent)
+      expect(channel_conversation.reload.assignee).to eq(owner)
       expect(contact.reload.owner).to eq(owner)
     end
 
@@ -93,16 +83,6 @@ RSpec.describe Contacts::OwnerSyncService do
       expect(reminder.reload.owner).to be_nil
     end
 
-    it 'preserves agent bot assignment when clearing the human contact owner' do
-      agent_bot = create(:agent_bot, account: account)
-      contact.update!(owner: owner)
-      conversation = create(:conversation, account: account, contact: contact, assignee: nil, assignee_agent_bot: agent_bot)
-
-      contact.update!(owner: nil)
-
-      expect(conversation.reload.assignee).to be_nil
-      expect(conversation.assignee_agent_bot).to eq(agent_bot)
-    end
 
     it 'does not sync deals where the contact is not primary' do
       non_primary_deal = create(:crm_deal, account: account, owner: other_agent)

@@ -12,7 +12,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   SUPPORTED_UNLINKED_CHANNELS = (CONTACT_TARGET_REQUIREMENTS.keys + Inbox::API_CHANNEL_TYPES + ['Channel::WebWidget']).freeze
   INITIALIZE_OPTION_KEYS = %i[
     contact available_inboxes include_unlinked deduplicate_linked preferred_status
-    unread_counts last_incoming_message_timestamps
+    unread_counts last_incoming_message_timestamps callable_inbox_ids
   ].freeze
 
   def initialize(links:, **options)
@@ -25,6 +25,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     @preferred_status = options.fetch(:preferred_status, nil).to_s.presence
     @unread_counts = options[:unread_counts]
     @last_incoming_message_timestamps = options[:last_incoming_message_timestamps]
+    @callable_inbox_ids = Array(options.fetch(:callable_inbox_ids, [])).to_set(&:to_i)
   end
 
   def perform
@@ -34,7 +35,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   private
 
   attr_reader :links, :contact, :available_inboxes, :include_unlinked, :deduplicate_linked, :preferred_status,
-              :unread_counts, :last_incoming_message_timestamps
+              :unread_counts, :last_incoming_message_timestamps, :callable_inbox_ids
 
   def validate_options!(options)
     unknown_options = options.keys - INITIALIZE_OPTION_KEYS
@@ -76,13 +77,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     conversation = link.conversation
     inbox = link.inbox
     policy = delivery_policy(conversation: conversation, inbox: inbox)
-    reply_window_open = linked_reply_window_open(conversation, policy)
-    capabilities = CommunicationThreads::ChannelReplyCapabilityBuilder.linked(
-      conversation: conversation,
-      inbox: inbox,
-      policy: policy,
-      reply_window_open: reply_window_open
-    )
+    capabilities = linked_capabilities(conversation, inbox, policy)
 
     channel_payload({
       conversation_id: conversation.display_id,
@@ -93,6 +88,16 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
       primary: link.primary?,
       last_activity_at: conversation.last_activity_at.to_i
     }.merge(read_state_payload(conversation), capabilities))
+  end
+
+  def linked_capabilities(conversation, inbox, policy)
+    CommunicationThreads::ChannelReplyCapabilityBuilder.linked(
+      conversation: conversation,
+      inbox: inbox,
+      policy: policy,
+      reply_window_open: linked_reply_window_open(conversation, policy),
+      voice_call_allowed: callable_inbox_ids.include?(inbox.id)
+    )
   end
 
   def read_state_payload(conversation)
@@ -110,7 +115,8 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     capabilities = CommunicationThreads::ChannelReplyCapabilityBuilder.unlinked(
       inbox: inbox,
       policy: policy,
-      target_error: target_error
+      target_error: target_error,
+      voice_call_allowed: callable_inbox_ids.include?(inbox.id)
     )
 
     channel_payload({

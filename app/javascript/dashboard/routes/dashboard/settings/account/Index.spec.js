@@ -3,9 +3,6 @@ import { shallowMount } from '@vue/test-utils';
 import { createStore } from 'vuex';
 import { nextTick } from 'vue';
 
-import { useVuelidate } from '@vuelidate/core';
-import { required } from '@vuelidate/validators';
-
 import AccountSettings from './Index.vue';
 import { useAlert } from 'dashboard/composables';
 
@@ -31,12 +28,8 @@ vi.mock('dashboard/composables/useAccount', () => ({
   useAccount: () => ({ accountId: 530 }),
 }));
 
-let shouldShowSamlFeature = false;
-
 vi.mock('dashboard/composables/usePolicy', () => ({
   usePolicy: () => ({
-    shouldShow: vi.fn(() => shouldShowSamlFeature),
-    shouldShowPaywall: vi.fn(() => false),
     checkPermissions: vi.fn(() => true),
   }),
 }));
@@ -53,19 +46,6 @@ const account = {
   support_email: 'dev@example.com',
   features: {},
   logo_url: '',
-};
-
-const InvalidNestedSettings = {
-  setup() {
-    return { v$: useVuelidate() };
-  },
-  data() {
-    return { samlUrl: '' };
-  },
-  validations: {
-    samlUrl: { required },
-  },
-  template: '<div />',
 };
 
 const buildWrapper = ({
@@ -107,8 +87,6 @@ const buildWrapper = ({
         AccountId: true,
         BuildInfo: true,
         AccountDelete: true,
-        SamlSettings: InvalidNestedSettings,
-        SamlPaywall: true,
         NextInput: true,
         NextSelect: true,
         NextButton: true,
@@ -123,7 +101,6 @@ const buildWrapper = ({
 
 describe('Account settings', () => {
   beforeEach(() => {
-    shouldShowSamlFeature = false;
     vi.clearAllMocks();
   });
 
@@ -161,26 +138,6 @@ describe('Account settings', () => {
         name: 'Acme Inc',
         locale: 'en',
         logo,
-      })
-    );
-    expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
-  });
-
-  it('does not let nested settings validations block workspace general settings save', async () => {
-    shouldShowSamlFeature = true;
-    const { wrapper, updateAction } = buildWrapper();
-    await wrapper.vm.hydrateAccountForm();
-    await wrapper.setData({ name: 'Renamed workspace', locale: 'ru' });
-    await nextTick();
-
-    await wrapper.vm.updateAccount();
-
-    expect(updateAction).toHaveBeenCalledWith(
-      expect.any(Object),
-      expect.objectContaining({
-        id: 530,
-        name: 'Renamed workspace',
-        locale: 'ru',
       })
     );
     expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { VueCal } from 'vue-cal';
 
 import SchedulingVueCalCalendar from './SchedulingVueCalCalendar.vue';
 
@@ -186,6 +187,34 @@ describe('SchedulingVueCalCalendar', () => {
     expect(subtitle.text()).toContain('Dr. Sam');
   });
 
+  it('uses an optional appointment title while retaining the client in the subtitle', async () => {
+    const wrapper = mountCalendar({
+      appointments: [
+        {
+          id: 46,
+          clientName: 'Alex Doe',
+          durationMin: 30,
+          endsAt: '2026-03-09T12:30:00.000Z',
+          resourceId: 12,
+          serviceNameSnapshot: 'Consultation',
+          startsAt: '2026-03-09T12:00:00.000Z',
+          status: 'scheduled',
+          title: 'Contract review',
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    expect(wrapper.find('.scheduling-vue-cal__event-summary').text()).toContain(
+      'Contract review'
+    );
+    expect(
+      wrapper.find('.scheduling-vue-cal__event-subtitle').text()
+    ).toContain('Alex Doe');
+  });
+
   it('includes managed custom field summary in appointment tooltips', async () => {
     const wrapper = mountCalendar({
       appointments: [
@@ -236,6 +265,41 @@ describe('SchedulingVueCalCalendar', () => {
 
     expect(wrapper.find('.vuecal__time-cell--hour').exists()).toBe(true);
     expect(wrapper.find('.vuecal__time-cell--half-hour').exists()).toBe(true);
+  });
+
+  it('renders a clean 30-minute timeline while keeping five-minute snapping', async () => {
+    const wrapper = mountCalendar({ view: 'day' });
+
+    await nextTick();
+    await nextTick();
+
+    const vueCal = wrapper.findComponent(VueCal);
+
+    expect(vueCal.props('timeStep')).toBe(30);
+    expect(vueCal.props('snapToInterval')).toBe(5);
+    expect(vueCal.props('timeCellHeight')).toBe(24);
+    expect(wrapper.findAll('.vuecal__time-cell')).toHaveLength(30);
+    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('07:05');
+    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('07:30');
+  });
+
+  it('keeps long specialist names inside their day columns', async () => {
+    const longName = 'Dr. Alexandra Very Long Specialist Name';
+    const wrapper = mountCalendar({
+      view: 'day',
+      resources: [{ ...baseProps.resources[0], name: longName }],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const heading = wrapper.find('.scheduling-vue-cal__schedule-heading');
+
+    expect(heading.attributes('title')).toBe(longName);
+    expect(heading.attributes('aria-label')).toBe(longName);
+    expect(heading.find('.scheduling-vue-cal__schedule-label').text()).toBe(
+      longName
+    );
   });
 
   it('shows the selected resource count in weekly header labels', async () => {

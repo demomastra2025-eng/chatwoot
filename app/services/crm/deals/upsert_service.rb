@@ -69,6 +69,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       deal.position = requested_position if requested_position.present?
       deal.closed_at = resolve_closed_at(stage: stage, stage_changing: stage_changing)
       deal.save!
+      sync_incomplete_task_teams! if deal.saved_change_to_team_id?
       auto_apply_default_touch_plan! if new_record
       reposition_deal!(requested_position) if requested_position.present?
 
@@ -245,6 +246,27 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     return if primary_contact.owner_id == deal.owner_id
 
     primary_contact.update!(owner_id: deal.owner_id)
+  end
+
+  def sync_incomplete_task_teams!
+    tasks = deal.tasks
+                .kept
+                .joins(:status)
+                .where(crm_task_statuses: { category: %w[open in_progress] })
+    tasks = if deal.team_id.present?
+              tasks.where.not(team_id: deal.team_id).or(tasks.where(team_id: nil))
+            else
+              tasks.where.not(team_id: nil)
+            end
+
+    tasks.find_each do |task|
+      ::Crm::Tasks::UpsertService.new(
+        account: account,
+        actor: actor,
+        params: { lock_version: task.lock_version },
+        task: task
+      ).perform
+    end
   end
 
   def resolve_originating_conversation

@@ -8,6 +8,7 @@ import { useAccount } from 'dashboard/composables/useAccount';
 import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { INBOX_EVENTS } from 'dashboard/helper/AnalyticsHelper/events';
 import { emitter } from 'shared/helpers/mitt';
+import { getNotificationCommunicationThreadId } from 'dashboard/helper/communicationThreadHelper';
 import SidepanelSwitch from 'dashboard/components-next/Conversation/SidepanelSwitch.vue';
 
 import InboxItemHeader from './components/InboxItemHeader.vue';
@@ -111,6 +112,8 @@ const findConversation = () => {
 };
 
 const openNotification = async notificationItem => {
+  const communicationThreadId =
+    getNotificationCommunicationThreadId(notificationItem);
   const {
     id,
     primary_actor_id: primaryActorId,
@@ -134,10 +137,23 @@ const openNotification = async notificationItem => {
       unreadCount,
     });
 
-    router.push({
-      name: 'inbox_view_conversation',
-      params: { type: 'conversation', id: conversationIdFromNotification },
-    });
+    router.push(
+      communicationThreadId
+        ? {
+            name: 'communication_thread_conversation',
+            params: {
+              accountId: route.params.accountId,
+              communication_thread_id: communicationThreadId,
+            },
+          }
+        : {
+            name: 'inbox_view_conversation',
+            params: {
+              type: 'conversation',
+              id: conversationIdFromNotification,
+            },
+          }
+    );
   } catch {
     // error
   }

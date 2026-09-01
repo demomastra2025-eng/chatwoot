@@ -146,6 +146,37 @@ const messageTimestamp = message => {
   return normalizedTimelineTimestamp(message?.created_at);
 };
 
+const providerConfirmedStatuses = new Set([
+  MESSAGE_STATUS.SENT,
+  MESSAGE_STATUS.DELIVERED,
+  MESSAGE_STATUS.READ,
+]);
+
+const preserveProviderConfirmedMessage = (currentMessage, incomingMessage) => {
+  const currentSourceId =
+    currentMessage?.source_id ?? currentMessage?.sourceId ?? null;
+  const incomingSourceId =
+    incomingMessage?.source_id ?? incomingMessage?.sourceId ?? null;
+  const hasConfirmedCurrentState =
+    currentSourceId && providerConfirmedStatuses.has(currentMessage?.status);
+  const incomingIsStaleCreationResponse =
+    !incomingSourceId && incomingMessage?.status === MESSAGE_STATUS.PROGRESS;
+
+  if (!hasConfirmedCurrentState || !incomingIsStaleCreationResponse) {
+    return incomingMessage;
+  }
+
+  return {
+    ...incomingMessage,
+    status: currentMessage.status,
+    source_id: currentSourceId,
+    content_attributes: {
+      ...(incomingMessage.content_attributes || {}),
+      ...(currentMessage.content_attributes || {}),
+    },
+  };
+};
+
 const updateDirectionalMessageTimestamp = (chat, message) => {
   if (!chat || message?.private) return;
 
@@ -472,15 +503,33 @@ export const mutations = {
     }
   },
 
-  [types.ASSIGN_AGENT](_state, { conversationId, assignee }) {
-    const chat = getConversationById(_state)(conversationId, 'conversation');
+  [types.ASSIGN_AGENT](
+    _state,
+    { conversationId, assignee, conversationType = null }
+  ) {
+    const targetType =
+      conversationType ||
+      (String(_state.selectedChatId) === String(conversationId)
+        ? _state.selectedChatType
+        : null) ||
+      'conversation';
+    const chat = getConversationById(_state)(conversationId, targetType);
     if (chat) {
       chat.meta.assignee = assignee;
     }
   },
 
-  [types.ASSIGN_TEAM](_state, { team, conversationId }) {
-    const chat = getConversationById(_state)(conversationId, 'conversation');
+  [types.ASSIGN_TEAM](
+    _state,
+    { team, conversationId, conversationType = null }
+  ) {
+    const targetType =
+      conversationType ||
+      (String(_state.selectedChatId) === String(conversationId)
+        ? _state.selectedChatType
+        : null) ||
+      'conversation';
+    const chat = getConversationById(_state)(conversationId, targetType);
     if (chat) {
       chat.meta.team = team;
     }
@@ -495,8 +544,17 @@ export const mutations = {
       chat.last_activity_at = lastActivityAt;
     }
   },
-  [types.ASSIGN_PRIORITY](_state, { priority, conversationId }) {
-    const chat = getConversationById(_state)(conversationId, 'conversation');
+  [types.ASSIGN_PRIORITY](
+    _state,
+    { priority, conversationId, conversationType = null }
+  ) {
+    const targetType =
+      conversationType ||
+      (String(_state.selectedChatId) === String(conversationId)
+        ? _state.selectedChatType
+        : null) ||
+      'conversation';
+    const chat = getConversationById(_state)(conversationId, targetType);
     if (chat) {
       chat.priority = priority;
     }
@@ -573,7 +631,10 @@ export const mutations = {
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
     updateDirectionalMessageTimestamp(chat, message);
     if (pendingMessageIndex !== -1) {
-      chat.messages[pendingMessageIndex] = message;
+      chat.messages[pendingMessageIndex] = preserveProviderConfirmedMessage(
+        chat.messages[pendingMessageIndex],
+        message
+      );
     } else {
       chat.messages.push(message);
       const { conversation: { unread_count: unreadCount = 0 } = {} } = message;
@@ -601,7 +662,10 @@ export const mutations = {
     const pendingMessageIndex = findPendingMessageIndex(chat, message);
     updateDirectionalMessageTimestamp(chat, message);
     if (pendingMessageIndex !== -1) {
-      chat.messages[pendingMessageIndex] = message;
+      chat.messages[pendingMessageIndex] = preserveProviderConfirmedMessage(
+        chat.messages[pendingMessageIndex],
+        message
+      );
     } else if (!chat.messages.some(item => item.id === message.id)) {
       chat.messages.push(message);
     }
@@ -846,7 +910,13 @@ export const mutations = {
 
   // Update assignee on action cable message
   [types.UPDATE_ASSIGNEE](_state, payload) {
-    const chat = getConversationById(_state)(payload.id, 'conversation');
+    const conversationType =
+      payload.conversationType ||
+      payload.conversation_type ||
+      (payload.is_communication_thread
+        ? 'communication_thread'
+        : 'conversation');
+    const chat = getConversationById(_state)(payload.id, conversationType);
     if (chat) {
       chat.meta.assignee = payload.assignee;
     }

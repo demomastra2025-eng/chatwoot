@@ -800,39 +800,6 @@
           "ERROR_MESSAGE": "Не удалось сохранить канал Telegram Personal"
         }
       },
-      "LINKEDIN_PERSONAL_CHANNEL": {
-        "TITLE": "LinkedIn канал",
-        "DESC": "Подключите личные сообщения LinkedIn через runtime gateway.",
-        "PROFILE_URN": {
-          "LABEL": "Profile URN",
-          "PLACEHOLDER": "urn:li:fsd_profile:..."
-        },
-        "DISPLAY_NAME": {
-          "LABEL": "Название канала",
-          "PLACEHOLDER": "LinkedIn / Sales"
-        },
-        "LI_AT": {
-          "LABEL": "li_at",
-          "PLACEHOLDER": "LinkedIn li_at cookie"
-        },
-        "JSESSIONID": {
-          "LABEL": "JSESSIONID",
-          "PLACEHOLDER": "LinkedIn JSESSIONID cookie"
-        },
-        "CSRF_TOKEN": {
-          "LABEL": "CSRF token",
-          "PLACEHOLDER": "Значение header csrf-token"
-        },
-        "X_LI_TRACK": {
-          "LABEL": "x-li-track",
-          "PLACEHOLDER": "Значение header x-li-track"
-        },
-        "SUBMIT_BUTTON": "Создать канал LinkedIn",
-        "API": {
-          "ERROR_MESSAGE": "Не удалось сохранить канал LinkedIn",
-          "RECONNECT_WARNING": "Канал LinkedIn создан, но первое переподключение не удалось. Проверьте настройки и диагностику канала."
-        }
-      },
       "VK_COMMUNITY_CHANNEL": {
         "TITLE": "VK Community канал",
         "DESC": "Подключите сообщения сообщества VK через Callback API и VK messages API.",
@@ -923,10 +890,6 @@
           "TELEGRAM_PERSONAL": {
             "TITLE": "Telegram Personal",
             "DESCRIPTION": "Подключить личный Telegram-аккаунт для приватных чатов"
-          },
-          "LINKEDIN_PERSONAL": {
-            "TITLE": "LinkedIn",
-            "DESCRIPTION": "Подключить личные сообщения LinkedIn"
           },
           "VK": {
             "TITLE": "VK",
@@ -1311,44 +1274,6 @@
           "FLOOD_WAIT": "Ожидание Telegram",
           "CANCELLED": "Отменен"
         }
-      },
-      "LINKEDIN_PERSONAL": {
-        "TITLE": "LinkedIn Personal",
-        "SUBTITLE": "Управление подключением, session cookies, импортом и диагностикой LinkedIn-канала.",
-        "PROFILE_URN": "Profile URN",
-        "CONNECTION": "Подключение",
-        "LIFECYCLE": "Состояние",
-        "LAST_ERROR": "Последняя ошибка",
-        "SESSION_TITLE": "LinkedIn-сессия",
-        "SESSION_HINT": "Сохранённые секреты не показываются. Заполняйте только поля, которые нужно заменить, затем сохраните настройки канала.",
-        "LI_AT": "li_at",
-        "JSESSIONID": "JSESSIONID",
-        "CSRF_TOKEN": "CSRF token",
-        "X_LI_TRACK": "x-li-track",
-        "SECRET_PLACEHOLDER": "Оставьте пустым, чтобы сохранить текущее значение",
-        "SAVE_HINT": "Сохраните настройки inbox, чтобы применить изменения LinkedIn-сессии.",
-        "SERVICE_CONTROLS": "Управление сервисом",
-        "RECONNECT": "Переподключить",
-        "RECONNECT_SUCCESS": "LinkedIn переподключён",
-        "RECONNECT_ERROR": "Не удалось переподключить LinkedIn",
-        "DISCONNECT": "Отключить",
-        "DISCONNECT_SUCCESS": "LinkedIn отключён",
-        "DISCONNECT_ERROR": "Не удалось отключить LinkedIn",
-        "IMPORTS": "Импорт",
-        "HISTORY_SYNC": "Импортировать историю",
-        "HISTORY_SYNC_SUCCESS": "Импорт истории LinkedIn запущен",
-        "HISTORY_SYNC_ERROR": "Не удалось запустить импорт истории LinkedIn",
-        "CONTACTS_SYNC": "Импортировать контакты",
-        "CONTACTS_SYNC_SUCCESS": "Импорт контактов LinkedIn запущен",
-        "CONTACTS_SYNC_ERROR": "Не удалось запустить импорт контактов LinkedIn",
-        "DIAGNOSTICS": "Диагностика",
-        "REFRESH_DIAGNOSTICS": "Обновить диагностику",
-        "RAW_DIAGNOSTICS_TOGGLE": "Показать или скрыть raw diagnostics JSON",
-        "HISTORY_SYNC_STATE": "История",
-        "HISTORY_SYNC_COUNT": "Сообщения",
-        "HISTORY_THREAD_COUNT": "Треды",
-        "LAST_POLL_AT": "Последний poll",
-        "NOT_AVAILABLE": "Недоступно"
       },
       "VK_COMMUNITY": {
         "TITLE": "Callback VK Community",
@@ -1804,6 +1729,8 @@
       "TIMEZONE_LABEL": "Выберите часовой пояс",
       "UPDATE": "Обновить настройки часов работы",
       "TOGGLE_AVAILABILITY": "Включить доступность бизнеса для этого входящего канала",
+      "INHERIT_WORKSPACE": "Использовать время работы Workspace",
+      "INHERIT_WORKSPACE_HELP": "Расписание и часовой пояс управляются в общих настройках Workspace. Сообщение о недоступности остаётся индивидуальным для этого канала.",
       "UNAVAILABLE_MESSAGE_LABEL": "Сообщение для посетителей о недоступности",
       "TOGGLE_HELP": "Включение доступности для бизнеса покажет часы работы в виджете онлайн общения, даже если все менеджеры не в сети. Вне доступных часов работы - посетители могут быть предупреждены сообщением и формой предварительного чата.",
       "DAY": {
@@ -2006,7 +1933,6 @@
       "TELEGRAM": "Telegram",
       "TELEGRAM_BOT": "Telegram Bot",
       "TELEGRAM_PERSONAL": "Telegram Personal",
-      "LINKEDIN_PERSONAL": "LinkedIn",
       "VK": "VK",
       "LINE": "Line",
       "API": "Источник API",

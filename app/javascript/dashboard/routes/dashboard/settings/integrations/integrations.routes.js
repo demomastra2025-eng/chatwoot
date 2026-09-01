@@ -34,16 +34,6 @@ export default {
             permissions: ['administrator'],
           },
         },
-        {
-          path: 'webhook',
-          name: 'settings_integrations_webhook',
-          redirect: to => ({
-            name: 'agent_bots',
-            params: to.params,
-            query: to.query,
-            hash: to.hash,
-          }),
-        },
       ],
     },
     {

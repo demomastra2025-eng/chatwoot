@@ -15,6 +15,8 @@ class NotificationFinder
   end
 
   def unread_count
+    return 0 if type_included?('archived')
+
     if type_included?('read')
       # If we're including read notifications, filter to unread
       @notifications.where(read_at: nil).count
@@ -58,7 +60,11 @@ class NotificationFinder
   end
 
   def filter_read_notifications
-    @notifications = @notifications.where(read_at: nil) unless type_included?('read')
+    if type_included?('archived')
+      @notifications = @notifications.where.not(read_at: nil)
+    elsif !type_included?('read')
+      @notifications = @notifications.where(read_at: nil)
+    end
   end
 
   def type_included?(type)

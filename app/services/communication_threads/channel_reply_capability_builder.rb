@@ -3,24 +3,31 @@
 class CommunicationThreads::ChannelReplyCapabilityBuilder
   REPLY_WINDOW_OPEN_UNSET = Object.new.freeze
 
-  def self.linked(conversation:, inbox:, policy:, reply_window_open: REPLY_WINDOW_OPEN_UNSET)
-    new(conversation: conversation, inbox: inbox, policy: policy, reply_window_open: reply_window_open).linked
+  def self.linked(conversation:, inbox:, policy:, reply_window_open: REPLY_WINDOW_OPEN_UNSET, voice_call_allowed: false)
+    new(
+      conversation: conversation,
+      inbox: inbox,
+      policy: policy,
+      reply_window_open: reply_window_open,
+      voice_call_allowed: voice_call_allowed
+    ).linked
   end
 
-  def self.unlinked(inbox:, policy:, target_error:)
-    new(inbox: inbox, policy: policy, target_error: target_error).unlinked
+  def self.unlinked(inbox:, policy:, target_error:, voice_call_allowed: false)
+    new(inbox: inbox, policy: policy, target_error: target_error, voice_call_allowed: voice_call_allowed).unlinked
   end
 
-  def initialize(inbox:, policy:, conversation: nil, target_error: nil, reply_window_open: REPLY_WINDOW_OPEN_UNSET)
+  def initialize(inbox:, policy:, conversation: nil, **options)
     @inbox = inbox
     @policy = policy
     @conversation = conversation
-    @target_error = target_error
-    @provided_reply_window_open = reply_window_open
+    @target_error = options[:target_error]
+    @provided_reply_window_open = options.fetch(:reply_window_open, REPLY_WINDOW_OPEN_UNSET)
+    @voice_call_allowed = options.fetch(:voice_call_allowed, false)
   end
 
   def linked
-    return voice_capability_payload if voice_channel?
+    return voice_capability_payload_for if voice_channel?
 
     can_send_text = linked_reply_window_open? && free_text_allowed?
     capability_payload(
@@ -32,7 +39,7 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
   end
 
   def unlinked
-    return voice_capability_payload(target_error, can_reply: target_error.blank?, can_call: target_error.blank?) if voice_channel?
+    return voice_capability_payload_for(target_error) if voice_channel?
 
     reply_window_open = unlinked_reply_window_open?
     can_send_text = target_error.blank? && free_text_allowed?
@@ -45,7 +52,16 @@ class CommunicationThreads::ChannelReplyCapabilityBuilder
 
   private
 
-  attr_reader :conversation, :inbox, :policy, :target_error, :provided_reply_window_open
+  attr_reader :conversation, :inbox, :policy, :target_error, :provided_reply_window_open, :voice_call_allowed
+
+  def voice_capability_payload_for(target_reason = nil)
+    allowed = voice_call_allowed && target_reason.blank?
+    voice_capability_payload(
+      target_reason || ('call_not_permitted' unless allowed),
+      can_reply: allowed,
+      can_call: allowed
+    )
+  end
 
   def voice_capability_payload(disabled_reason = nil, can_reply: true, can_call: true)
     capability_payload(

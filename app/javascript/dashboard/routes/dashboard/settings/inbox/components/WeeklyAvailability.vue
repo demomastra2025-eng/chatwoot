@@ -39,6 +39,7 @@ export default {
   data() {
     return {
       isBusinessHoursEnabled: false,
+      inheritWorkingHoursFromWorkspace: false,
       unavailableMessage: '',
       timeZone: defaultTimeZoneOption(),
       dayNames: {
@@ -93,6 +94,7 @@ export default {
     setDefaults() {
       const {
         working_hours_enabled: isEnabled = false,
+        inherit_working_hours_from_account: inheritFromWorkspace = false,
         out_of_office_message: unavailableMessage,
         working_hours: timeSlots = [],
         timezone: timeZone,
@@ -101,6 +103,7 @@ export default {
         ? timeSlotParse(timeSlots)
         : defaultTimeSlot;
       this.isBusinessHoursEnabled = isEnabled;
+      this.inheritWorkingHoursFromWorkspace = inheritFromWorkspace;
       this.unavailableMessage = unavailableMessage || '';
       this.timeSlots = slots;
       this.timeZone =
@@ -118,6 +121,8 @@ export default {
           id: this.inbox.id,
           formData: false,
           working_hours_enabled: this.isBusinessHoursEnabled,
+          inherit_working_hours_from_account:
+            this.inheritWorkingHoursFromWorkspace,
           out_of_office_message: this.unavailableMessage,
           working_hours: timeSlotTransform(this.timeSlots),
           timezone: this.timeZone.value,
@@ -136,6 +141,27 @@ export default {
 <template>
   <div class="mx-6">
     <SettingsToggleSection
+      v-model="inheritWorkingHoursFromWorkspace"
+      :header="$t('INBOX_MGMT.BUSINESS_HOURS.INHERIT_WORKSPACE')"
+      :description="$t('INBOX_MGMT.BUSINESS_HOURS.INHERIT_WORKSPACE_HELP')"
+    >
+      <template v-if="inheritWorkingHoursFromWorkspace" #editor>
+        <WootMessageEditor
+          v-if="isRichEditorEnabled"
+          v-model="unavailableMessage"
+          enable-variables
+          is-format-mode
+          :placeholder="
+            $t('INBOX_MGMT.BUSINESS_HOURS.UNAVAILABLE_MESSAGE_LABEL')
+          "
+          :min-height="4"
+        />
+        <textarea v-else v-model="unavailableMessage" type="text" />
+      </template>
+    </SettingsToggleSection>
+
+    <SettingsToggleSection
+      v-if="!inheritWorkingHoursFromWorkspace"
       v-model="isBusinessHoursEnabled"
       :header="$t('INBOX_MGMT.BUSINESS_HOURS.TOGGLE_AVAILABILITY')"
       :description="$t('INBOX_MGMT.BUSINESS_HOURS.TOGGLE_HELP')"
@@ -157,7 +183,10 @@ export default {
       </template>
     </SettingsToggleSection>
 
-    <div v-if="isBusinessHoursEnabled" class="flex items-center my-8 py-1">
+    <div
+      v-if="isBusinessHoursEnabled && !inheritWorkingHoursFromWorkspace"
+      class="flex items-center my-8 py-1"
+    >
       <div class="flex-1 h-px bg-n-weak" />
       <span class="text-body-main text-n-slate-11 px-2">
         {{ $t('INBOX_MGMT.BUSINESS_HOURS.WEEKLY_TITLE') }}
@@ -166,7 +195,7 @@ export default {
     </div>
 
     <SettingsFieldSection
-      v-if="isBusinessHoursEnabled"
+      v-if="isBusinessHoursEnabled && !inheritWorkingHoursFromWorkspace"
       :label="$t('INBOX_MGMT.BUSINESS_HOURS.TIMEZONE_LABEL')"
     >
       <ComboBox
@@ -178,7 +207,10 @@ export default {
     </SettingsFieldSection>
 
     <form class="flex flex-col" @submit.prevent="updateInbox">
-      <div v-if="isBusinessHoursEnabled" class="mt-2">
+      <div
+        v-if="isBusinessHoursEnabled && !inheritWorkingHoursFromWorkspace"
+        class="mt-2"
+      >
         <div class="w-full">
           <table
             class="min-w-full table-auto outline outline-1 -outline-offset-1 outline-n-weak rounded-xl"

@@ -17,7 +17,8 @@ RSpec.describe AutomationRules::ExecutionService do
         conversation.to_global_id.to_s,
         {},
         nil,
-        'immediate-event-key'
+        'immediate-event-key',
+        rule.lifecycle_generation
       )
     end
 
@@ -58,7 +59,8 @@ RSpec.describe AutomationRules::ExecutionService do
         conversation.to_global_id.to_s,
         {},
         nil,
-        'stable-event-key'
+        'stable-event-key',
+        rule.lifecycle_generation
       )
     end
 

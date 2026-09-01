@@ -33,7 +33,7 @@
       </p>
       <% if @user.accounts.any? %>
         <p class="text-xs text-slate-500 mt-1">
-          Accounts:
+          Workspaces:
           <% @user.accounts.each_with_index do |account, index| %>
             <%= ', ' if index.positive? %>
             <%= account.name %> (ID <%= account.id %>)

@@ -12,7 +12,7 @@ describe Webhooks::Trigger do
 
   let(:webhook_type) { :api_inbox_webhook }
   let(:url) { 'https://webhook.example.com/events' }
-  let(:agent_bot_error_content) { I18n.t('conversations.activity.agent_bot.error_moved_to_open') }
+
   let(:default_timeout) { 5 }
   let(:webhook_timeout) { default_timeout }
 
@@ -69,15 +69,6 @@ describe Webhooks::Trigger do
       end
     end
 
-    it 'does not pass private-network allowlist for agent bot webhooks' do
-      payload = { hello: :hello }
-
-      with_modified_env API_INBOX_WEBHOOK_PRIVATE_NETWORK_ALLOWED_HOSTS: 'internal-webhook.example.com' do
-        expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' })
-
-        trigger.execute(url, payload, :agent_bot_webhook)
-      end
-    end
 
     it 'raises retryable API inbox errors without failing a message immediately' do
       payload = { event: 'message_created', conversation: { id: conversation.id }, id: message.id }
@@ -101,78 +92,6 @@ describe Webhooks::Trigger do
       expect(message.reload.status).to eq('sent')
     end
 
-    context 'when webhook type is agent bot' do
-      let(:webhook_type) { :agent_bot_webhook }
-      let!(:pending_conversation) { create(:conversation, inbox: inbox, status: :pending, account: account) }
-      let!(:pending_message) { create(:message, account: account, inbox: inbox, conversation: pending_conversation) }
-
-      it 'raises retryable 500 errors and does not reopen conversation immediately' do
-        payload = { event: 'message_created', id: pending_message.id }
-        error = SafeFetch::HttpError.new('500 Internal Server Error')
-        expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
-
-        expect { trigger.execute(url, payload, webhook_type) }.to raise_error(Webhooks::Trigger::RetryableError) do |raised|
-          expect(raised.status).to eq(500)
-        end
-        expect(pending_conversation.reload.status).to eq('pending')
-        expect(Conversations::ActivityMessageJob).not_to have_been_enqueued
-      end
-
-      it 'raises retryable 429 errors and does not reopen conversation immediately' do
-        payload = { event: 'message_created', id: pending_message.id }
-        error = SafeFetch::HttpError.new('429 Too Many Requests')
-        expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
-
-        expect { trigger.execute(url, payload, webhook_type) }.to raise_error(Webhooks::Trigger::RetryableError) do |raised|
-          expect(raised.status).to eq(429)
-        end
-        expect(pending_conversation.reload.status).to eq('pending')
-        expect(Conversations::ActivityMessageJob).not_to have_been_enqueued
-      end
-
-      it 'reopens conversation and enqueues activity message for non-retryable failures when pending' do
-        payload = { event: 'message_created', id: pending_message.id }
-        error = SafeFetch::FetchError.new('network failure')
-        expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
-
-        expect do
-          perform_enqueued_jobs do
-            trigger.execute(url, payload, webhook_type)
-          end
-        end.not_to(change { pending_message.reload.status })
-
-        expect(pending_conversation.reload.status).to eq('open')
-
-        activity_message = pending_conversation.reload.messages.order(:created_at).last
-        expect(activity_message.message_type).to eq('activity')
-        expect(activity_message.content).to eq(agent_bot_error_content)
-      end
-
-      it 'does not change message status or enqueue activity when conversation is not pending' do
-        payload = { event: 'message_created', conversation: { id: conversation.id }, id: message.id }
-        error = SafeFetch::FetchError.new('network failure')
-        expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
-
-        expect do
-          trigger.execute(url, payload, webhook_type)
-        end.not_to(change { message.reload.status })
-
-        expect(Conversations::ActivityMessageJob).not_to have_been_enqueued
-        expect(conversation.reload.status).to eq('open')
-      end
-
-      it 'keeps conversation pending when keep_pending_on_bot_failure setting is enabled' do
-        account.update(keep_pending_on_bot_failure: true)
-        payload = { event: 'message_created', id: pending_message.id }
-        error = SafeFetch::FetchError.new('network failure')
-        expect_safe_fetch(payload: payload, headers: { 'Content-Type' => 'application/json', 'Accept' => 'application/json' }, error: error)
-
-        trigger.execute(url, payload, webhook_type)
-
-        expect(Conversations::ActivityMessageJob).not_to have_been_enqueued
-        expect(pending_conversation.reload.status).to eq('pending')
-      end
-    end
 
     it 'fails fast for non-retryable API inbox errors' do
       payload = { event: 'message_created', conversation: { id: conversation.id }, id: message.id }

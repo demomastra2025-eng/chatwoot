@@ -1,7 +1,11 @@
 class ConvertCsmlBotsToWebhookBots < ActiveRecord::Migration[7.0]
+  class MigrationAgentBot < ActiveRecord::Base
+    self.table_name = 'agent_bots'
+  end
+
   def up
     # Find all CSML bots (bot_type = 1) and convert them to webhook (bot_type = 0)
-    AgentBot.where(bot_type: 1).find_each do |bot|
+    MigrationAgentBot.where(bot_type: 1).find_each do |bot|
       bot.update(bot_type: 0, bot_config: {})
     end
   end

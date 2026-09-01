@@ -13,7 +13,6 @@ const inboxChannelI18nMap = {
   'Channel::Email': 'EMAIL',
   'Channel::Telegram': 'TELEGRAM_BOT',
   'Channel::TelegramPersonal': 'TELEGRAM_PERSONAL',
-  'Channel::LinkedinPersonal': 'LINKEDIN_PERSONAL',
   'Channel::VkCommunity': 'VK',
   'Channel::Line': 'LINE',
   'Channel::Api': 'API',

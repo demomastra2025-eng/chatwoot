@@ -55,7 +55,6 @@ description: |
   ```
 security:
   - userApiKey: []
-  - agentBotApiKey: []
 requestBody:
   required: true
   content:

@@ -20,6 +20,7 @@
 # - 'conversation_manage': Can manage all conversations.
 # - 'conversation_unassigned_manage': Can manage unassigned conversations and assign to self.
 # - 'conversation_participating_manage': Can manage conversations they are participating in (assigned to or a participant).
+# - 'conversation_team_manage': Can manage conversations assigned to one of their teams.
 # - 'contact_manage': Can manage contacts.
 # - 'report_manage': Can manage reports.
 # - 'knowledge_base_manage': Can manage knowledge base portals.
@@ -33,6 +34,7 @@ class CustomRole < ApplicationRecord
     conversation_manage
     conversation_unassigned_manage
     conversation_participating_manage
+    conversation_team_manage
     contact_manage
     crm_deal_view
     crm_deal_manage

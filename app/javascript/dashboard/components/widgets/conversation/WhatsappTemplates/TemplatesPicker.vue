@@ -30,7 +30,7 @@ const isRefreshing = ref(false);
 const expandedTemplateName = ref('');
 
 const whatsAppTemplateMessages = useFunctionGetter(
-  'inboxes/getFilteredWhatsAppTemplates',
+  'inboxes/getConversationWhatsAppTemplates',
   toRef(props, 'inboxId')
 );
 

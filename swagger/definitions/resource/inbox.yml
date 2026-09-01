@@ -51,6 +51,9 @@ properties:
   working_hours_enabled:
     type: boolean
     description: The flag which shows whether working hours feature is enabled
+  inherit_working_hours_from_account:
+    type: boolean
+    description: Whether the inbox inherits its schedule and timezone from Workspace settings
   enable_email_collect:
     type: boolean
     description: The flag to enable collecting email from contacts

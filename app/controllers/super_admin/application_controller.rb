@@ -9,6 +9,7 @@ class SuperAdmin::ApplicationController < Administrate::ApplicationController
   include ActionView::Context
   include SuperAdmin::NavigationHelper
 
+  helper ApplicationHelper
   helper SuperAdmin::NavigationHelper
   helper_method :render_vue_component, :settings_open?, :settings_pages, :super_admin_resource_label
   # authenticiation done via devise : SuperAdmin Model

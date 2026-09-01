@@ -27,7 +27,7 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     )
   end
   let(:enrollment) do
-    account.enable_features!('deferred_touch_materialization')
+    account.enable_features!('deferred_touch_materialization', 'scheduling')
     Reminders::EnrollGroupService.new(
       account: account,
       reminder_group: reminder_group,
@@ -42,6 +42,74 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
     expect(claim).to be_materialized
     expect(claim.reminder).to be_present
     expect(claim.reminder.metadata).to include('touch_plan_enrollment_id' => enrollment.id)
+  end
+
+  it 'rechecks a locked automation rule before materializing a deferred reminder', :aggregate_failures do
+    account.enable_features!('deferred_touch_materialization', 'scheduling')
+    action_id = SecureRandom.uuid
+    definition = reminder_group.touches.first
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'appointment_created',
+      actions: [
+        {
+          'action_id' => action_id,
+          'action_name' => 'create_touch',
+          'action_params' => [definition]
+        }
+      ]
+    )
+    automation_enrollment = Reminders::EnrollAutomationActionService.new(
+      account: account,
+      rule: rule,
+      action_id: action_id,
+      remindable: appointment,
+      definition: definition
+    ).perform
+    service = described_class.new(enrollment: automation_enrollment, now: automation_enrollment.next_due_at + 1.minute)
+    expect(service.send(:definition_resolver)).to be_source_available
+
+    rule.update!(active: false)
+    service.perform
+
+    expect(automation_enrollment.reload).to be_cancelled
+    expect(account.reminders.where(remindable: appointment)).to be_empty
+  end
+
+  it 'locks the automation rule before the enrollment during materialization' do
+    account.enable_features!('deferred_touch_materialization', 'scheduling')
+    action_id = SecureRandom.uuid
+    definition = reminder_group.touches.first
+    rule = create(
+      :automation_rule,
+      account: account,
+      event_name: 'appointment_created',
+      actions: [{ 'action_id' => action_id, 'action_name' => 'create_touch', 'action_params' => [definition] }]
+    )
+    automation_enrollment = Reminders::EnrollAutomationActionService.new(
+      account: account,
+      rule: rule,
+      action_id: action_id,
+      remindable: appointment,
+      definition: definition
+    ).perform
+    lock_order = []
+    allow(AutomationRule).to receive(:lock).and_wrap_original do |method, *args|
+      lock_order << :automation_rule
+      method.call(*args)
+    end
+    allow(automation_enrollment).to receive(:with_lock) do |&block|
+      lock_order << :enrollment
+      block.call
+    end
+
+    described_class.new(
+      enrollment: automation_enrollment,
+      now: automation_enrollment.next_due_at + 1.minute
+    ).perform
+
+    expect(lock_order).to eq(%i[automation_rule enrollment])
   end
 
   it 'reraises a unique violation that did not create an occurrence claim' do

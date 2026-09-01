@@ -2,14 +2,11 @@ class ConvertDocumentToPolymorphicAssociation < ActiveRecord::Migration[7.0]
   def up
     add_column :captain_assistant_responses, :documentable_type, :string
 
-    # rubocop:disable Rails/SkipsModelValidations
-    if ChatwootApp.enterprise?
-      Captain::AssistantResponse
-        .where
-        .not(document_id: nil)
-        .update_all(documentable_type: 'Captain::Document')
-    end
-    # rubocop:enable Rails/SkipsModelValidations
+    execute <<~SQL.squish
+      UPDATE captain_assistant_responses
+      SET documentable_type = 'Captain::Document'
+      WHERE document_id IS NOT NULL
+    SQL
     remove_index :captain_assistant_responses, :document_id if index_exists?(
       :captain_assistant_responses, :document_id
     )

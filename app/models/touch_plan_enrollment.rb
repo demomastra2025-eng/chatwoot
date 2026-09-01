@@ -18,13 +18,14 @@
 #  remindable_id      :bigint
 #  reminder_group_id  :bigint
 #  source_action_id   :string
+#  source_generation  :bigint
 #
 # Indexes
 #
 #  idx_touch_plan_enrollments_due                      (status,next_due_at)
 #  idx_touch_plan_enrollments_on_account_idempotency   (account_id,idempotency_key) UNIQUE
 #  idx_touch_plan_enrollments_on_remindable_status     (remindable_type,remindable_id,status)
-#  idx_touch_plan_enrollments_one_open_action          (account_id,automation_rule_id,source_action_id,remindable_type,remindable_id) UNIQUE WHERE (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))
+#  idx_touch_plan_enrollments_one_open_action_generation  (account_id,automation_rule_id,source_generation,source_action_id,remindable_type,remindable_id) UNIQUE WHERE (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))
 #  idx_touch_plan_enrollments_one_open_plan            (account_id,reminder_group_id,remindable_type,remindable_id) UNIQUE WHERE ((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))
 #  index_touch_plan_enrollments_on_account_id          (account_id)
 #  index_touch_plan_enrollments_on_automation_rule_id  (automation_rule_id)
@@ -53,6 +54,7 @@ class TouchPlanEnrollment < ApplicationRecord
   validates :plan_snapshot, presence: true
   validates :plan_digest, :activated_at, :idempotency_key, presence: true
   validates :idempotency_key, uniqueness: { scope: :account_id }
+  validates :source_generation, presence: true, if: :automation_rule_id?
   validate :validate_live_source
   validate :validate_account_boundaries
   validate :validate_remindable_type

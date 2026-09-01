@@ -30,8 +30,6 @@ class InboxPolicy < ApplicationPolicy
   end
 
   def show?
-    # FIXME: for agent bots, lets bring this validation to policies as well in future
-    return true if @user.is_a?(AgentBot)
     return false unless account_user.present? && record.account_id == account&.id
     return true if account_user.administrator?
     return true unless record.channel_type == 'Channel::Voice'
@@ -43,9 +41,6 @@ class InboxPolicy < ApplicationPolicy
     true
   end
 
-  def agent_bot?
-    true
-  end
 
   def campaigns?
     @account_user.administrator?
@@ -63,9 +58,6 @@ class InboxPolicy < ApplicationPolicy
     @account_user.administrator?
   end
 
-  def set_agent_bot?
-    @account_user.administrator?
-  end
 
   def avatar?
     @account_user.administrator?
@@ -144,26 +136,6 @@ class InboxPolicy < ApplicationPolicy
   end
 
   def telegram_personal_diagnostics?
-    @account_user.administrator?
-  end
-
-  def linkedin_personal_reconnect?
-    @account_user.administrator?
-  end
-
-  def linkedin_personal_history_sync?
-    @account_user.administrator?
-  end
-
-  def linkedin_personal_contacts_sync?
-    @account_user.administrator?
-  end
-
-  def linkedin_personal_disconnect?
-    @account_user.administrator?
-  end
-
-  def linkedin_personal_diagnostics?
     @account_user.administrator?
   end
 

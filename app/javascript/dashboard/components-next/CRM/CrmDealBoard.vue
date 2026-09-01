@@ -80,7 +80,6 @@ const props = defineProps({
 const emit = defineEmits([
   'changeOwner',
   'changeStage',
-  'createDeal',
   'loadMore',
   'selectDeal',
   'toggleSortDirection',
@@ -292,14 +291,14 @@ const handleOwnerChange = (deal, ownerId) => {
     class="flex h-full min-h-0 flex-col overflow-auto px-1 pb-2"
     @scroll.passive="handleBoardScroll"
   >
-    <div class="mx-auto flex w-max min-h-full items-stretch gap-2 py-1">
+    <div class="mx-auto flex w-max min-h-full items-stretch gap-0 py-1">
       <section
         v-for="column in kanbanColumns"
         :key="column.stageId"
-        class="crm-deal-board-column flex min-h-full w-[17rem] shrink-0 self-stretch flex-col overflow-visible"
+        class="crm-deal-board-column flex min-h-full w-[18rem] shrink-0 self-stretch flex-col overflow-visible"
       >
         <header
-          class="sticky top-0 z-10 rounded-t-xl bg-n-slate-2/95 px-4 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
+          class="sticky top-0 z-10 bg-n-slate-2/95 px-3 pt-3 pb-1.5 backdrop-blur supports-[backdrop-filter]:bg-n-slate-2/80"
         >
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -313,20 +312,6 @@ const handleOwnerChange = (deal, ownerId) => {
               >
                 {{ columnDealCount(column) }}
               </span>
-              <button
-                v-if="canManage"
-                type="button"
-                class="crm-deal-board-add-button flex size-8 shrink-0 items-center justify-center rounded-md border border-transparent bg-transparent text-n-slate-11 transition-colors hover:bg-n-alpha-black2 hover:text-n-brand"
-                :aria-label="
-                  $t('CRM.DEALS.BOARD.ADD_TO_STAGE', { stage: column.label })
-                "
-                :title="
-                  $t('CRM.DEALS.BOARD.ADD_TO_STAGE', { stage: column.label })
-                "
-                @click.stop="emit('createDeal', column.stageId)"
-              >
-                <i class="i-lucide-plus size-4" aria-hidden="true" />
-              </button>
               <button
                 v-if="showSortToggle"
                 type="button"
@@ -343,14 +328,12 @@ const handleOwnerChange = (deal, ownerId) => {
               </button>
             </div>
           </div>
-          <div class="mt-3 h-1 overflow-hidden rounded-full bg-n-alpha-black2">
-            <div
-              class="h-full rounded-full"
-              :style="{
-                backgroundColor: column.color || DEFAULT_STAGE_COLOR,
-              }"
-            />
-          </div>
+          <div
+            class="crm-deal-board-stage-color mt-3 h-1 overflow-hidden rounded-full"
+            :style="{
+              backgroundColor: column.color || DEFAULT_STAGE_COLOR,
+            }"
+          />
         </header>
 
         <Draggable
@@ -370,7 +353,11 @@ const handleOwnerChange = (deal, ownerId) => {
               @click="emit('selectDeal', element)"
             >
               <div class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
+                <button
+                  type="button"
+                  data-test="open-deal"
+                  class="min-w-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                >
                   <div class="flex min-w-0 items-center gap-1.5">
                     <h4
                       class="mb-0 min-w-0 truncate text-xs font-semibold text-n-slate-12"
@@ -387,7 +374,7 @@ const handleOwnerChange = (deal, ownerId) => {
                   <p class="mb-0 mt-0.5 text-[10px] text-n-slate-11">
                     {{ dealSubtitle(element) || $t('CRM.GENERAL.EMPTY_VALUE') }}
                   </p>
-                </div>
+                </button>
 
                 <span
                   class="shrink-0 text-right text-[10px] font-medium tabular-nums text-n-slate-10"

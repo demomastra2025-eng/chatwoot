@@ -133,6 +133,16 @@ RSpec.describe 'Captain native ops tools' do
   end
 
   describe Captain::Tools::Copilot::AssignConversationService do
+    it 'is available to an agent with team-scoped conversation access' do
+      team_agent = create(:user, account: account)
+      custom_role = create(:custom_role, account: account, permissions: %w[conversation_team_manage])
+      team_agent.account_users.find_by!(account: account).update!(custom_role: custom_role)
+
+      service = described_class.new(assistant, user: team_agent, conversation: conversation)
+
+      expect(service).to be_active
+    end
+
     it 'assigns the conversation team and assignee' do
       service = described_class.new(assistant, user: user, conversation: conversation)
       team = create(:team, account: account)

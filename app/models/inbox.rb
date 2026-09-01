@@ -4,30 +4,31 @@
 #
 # Table name: inboxes
 #
-#  id                            :integer          not null, primary key
-#  allow_messages_after_resolved :boolean          default(TRUE)
-#  auto_assignment_config        :jsonb
-#  business_name                 :string
-#  channel_type                  :string
-#  csat_config                   :jsonb            not null
-#  csat_survey_enabled           :boolean          default(FALSE)
-#  deleting_at                   :datetime
-#  email_address                 :string
-#  enable_auto_assignment        :boolean          default(TRUE)
-#  enable_email_collect          :boolean          default(TRUE)
-#  greeting_enabled              :boolean          default(FALSE)
-#  greeting_message              :string
-#  lock_to_single_conversation   :boolean          default(FALSE), not null
-#  name                          :string           not null
-#  out_of_office_message         :string
-#  sender_name_type              :integer          default("friendly"), not null
-#  timezone                      :string           default("Asia/Almaty")
-#  working_hours_enabled         :boolean          default(FALSE)
-#  created_at                    :datetime         not null
-#  updated_at                    :datetime         not null
-#  account_id                    :integer          not null
-#  channel_id                    :integer          not null
-#  portal_id                     :bigint
+#  id                                 :integer          not null, primary key
+#  allow_messages_after_resolved      :boolean          default(TRUE)
+#  auto_assignment_config             :jsonb
+#  business_name                      :string
+#  channel_type                       :string
+#  csat_config                        :jsonb            not null
+#  csat_survey_enabled                :boolean          default(FALSE)
+#  deleting_at                        :datetime
+#  email_address                      :string
+#  enable_auto_assignment             :boolean          default(TRUE)
+#  enable_email_collect               :boolean          default(TRUE)
+#  greeting_enabled                   :boolean          default(FALSE)
+#  greeting_message                   :string
+#  inherit_working_hours_from_account :boolean          default(FALSE), not null
+#  lock_to_single_conversation        :boolean          default(FALSE), not null
+#  name                               :string           not null
+#  out_of_office_message              :string
+#  sender_name_type                   :integer          default("friendly"), not null
+#  timezone                           :string           default("Asia/Almaty")
+#  working_hours_enabled              :boolean          default(FALSE)
+#  created_at                         :datetime         not null
+#  updated_at                         :datetime         not null
+#  account_id                         :integer          not null
+#  channel_id                         :integer          not null
+#  portal_id                          :bigint
 #
 # Indexes
 #
@@ -53,9 +54,9 @@ class Inbox < ApplicationRecord
     Channel::FacebookPage
     Channel::Instagram
     Channel::Line
-    Channel::LinkedinPersonal
     Channel::Telegram
     Channel::TelegramPersonal
+    Channel::TwitterProfile
     Channel::Weixin
     Channel::Tiktok
     Channel::VkCommunity
@@ -94,14 +95,14 @@ class Inbox < ApplicationRecord
 
   has_one :inbox_assignment_policy, dependent: :destroy
   has_one :assignment_policy, through: :inbox_assignment_policy
-  has_one :agent_bot_inbox, dependent: :destroy_async
-  has_one :agent_bot, through: :agent_bot_inbox
+
   has_many :webhooks, dependent: :destroy_async
   has_many :hooks, dependent: :destroy_async, class_name: 'Integrations::Hook'
 
   enum sender_name_type: { friendly: 0, professional: 1 }
 
   before_validation :apply_single_conversation_default, on: :create
+  after_create :inherit_workspace_working_hours, if: -> { account.workspace_working_hours_configured? }
   after_destroy :delete_round_robin_agents
 
   after_create_commit :dispatch_create_event
@@ -192,10 +193,6 @@ class Inbox < ApplicationRecord
     channel_type == 'Channel::TelegramPersonal'
   end
 
-  def linkedin_personal?
-    channel_type == 'Channel::LinkedinPersonal'
-  end
-
   def weixin?
     channel_type == 'Channel::Weixin'
   end
@@ -212,9 +209,12 @@ class Inbox < ApplicationRecord
     channel_type == 'Channel::TwilioSms' && channel.medium == 'whatsapp'
   end
 
-  def lock_to_single_conversation=(value)
-    @lock_to_single_conversation_explicitly_set = true
-    super
+  def lock_to_single_conversation
+    default_single_conversation_for_channel?
+  end
+
+  def lock_to_single_conversation?
+    default_single_conversation_for_channel?
   end
 
   def assignable_agents
@@ -222,8 +222,7 @@ class Inbox < ApplicationRecord
   end
 
   def active_bot?
-    agent_bot_inbox&.active? || hooks.where(app_id: %w[dialogflow],
-                                            status: 'enabled').count.positive?
+    hooks.where(app_id: %w[dialogflow], status: 'enabled').count.positive?
   end
 
   def deleting?
@@ -283,6 +282,11 @@ class Inbox < ApplicationRecord
 
   private
 
+  def inherit_workspace_working_hours
+    update!(inherit_working_hours_from_account: true)
+    apply_workspace_working_hours!
+  end
+
   def default_name_for_blank_name
     email? ? display_name_from_email : ''
   end
@@ -318,16 +322,13 @@ class Inbox < ApplicationRecord
   end
 
   def apply_single_conversation_default
-    return if @lock_to_single_conversation_explicitly_set
-
-    self.lock_to_single_conversation = default_single_conversation_for_channel?
+    self[:lock_to_single_conversation] = default_single_conversation_for_channel?
   end
 
   def default_single_conversation_for_channel?
     return true if DEFAULT_SINGLE_CONVERSATION_CHANNEL_TYPES.include?(resolved_channel_type)
-    return true if channel.is_a?(Channel::TwilioSms) && channel.whatsapp?
 
-    false
+    twilio_whatsapp?
   end
 
   def resolved_channel_type

@@ -12,8 +12,7 @@ info:
 servers:
   - url: https://one-link.kz/
 tags:
-  - name: Account AgentBots
-    description: Manage agent bots within accounts
+
   - name: Agents
     description: Manage agents
   - name: Canned Responses

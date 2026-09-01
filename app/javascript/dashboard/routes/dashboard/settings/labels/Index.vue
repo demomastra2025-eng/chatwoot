@@ -160,25 +160,19 @@ onBeforeMount(() => {
                 </span>
               </BaseTableCell>
 
-              <BaseTableCell>
-                <div class="flex items-center">
+              <BaseTableCell class="align-middle">
+                <div class="flex min-h-3 items-center">
                   <span
                     v-if="labelMarkerType(label) === 'emoji'"
-                    class="ltr:mr-2 rtl:ml-2 text-xl leading-none"
+                    class="inline-flex items-center justify-center size-3 overflow-hidden text-xs leading-none"
                   >
                     {{ labelMarkerEmoji(label) }}
                   </span>
                   <span
                     v-else
-                    class="size-2 ltr:mr-2 rtl:ml-2 rounded-sm"
+                    class="size-2 rounded-sm"
                     :style="{ backgroundColor: labelMarkerColor(label) }"
                   />
-                  <span
-                    v-if="labelMarkerType(label) === 'color'"
-                    class="text-body-main text-n-slate-12"
-                  >
-                    {{ label.color }}
-                  </span>
                 </div>
               </BaseTableCell>
 

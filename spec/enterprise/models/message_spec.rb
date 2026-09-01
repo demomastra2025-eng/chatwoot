@@ -14,7 +14,7 @@ RSpec.describe Message do
 
     create(:message, message_type: :outgoing, conversation: conversation, sender: captain_assistant)
 
-    # Captain::Assistant responses clear waiting_since (like AgentBot)
+    # Captain::Assistant responses clear waiting_since without counting as a human reply.
     expect(conversation.first_reply_created_at).to be_nil
     expect(conversation.waiting_since).to be_nil
 
@@ -102,13 +102,6 @@ RSpec.describe Message do
 
     it 'does not mark the conversation open for private outgoing messages' do
       create(:message, message_type: :outgoing, conversation: conversation, private: true)
-
-      expect(conversation.reload.pending?).to be true
-    end
-
-    it 'does not mark the conversation open for bot outgoing messages' do
-      agent_bot = create(:agent_bot, account: conversation.account)
-      create(:message, message_type: :outgoing, conversation: conversation, sender: agent_bot)
 
       expect(conversation.reload.pending?).to be true
     end

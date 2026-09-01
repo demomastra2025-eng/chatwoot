@@ -24,22 +24,6 @@ class DeviseOverrides::OmniauthCallbacksController < DeviseTokenAuth::OmniauthCa
     redirect_to login_page_url(email: encoded_email, sso_auth_token: @resource.generate_sso_auth_token)
   end
 
-  def sign_in_user_on_mobile
-    # See comment in sign_in_user for why this is captured before skip_confirmation!
-    needs_password_reset = oauth_user_needs_password_reset?
-    @resource.skip_confirmation! if confirmable_enabled?
-    set_random_password_if_oauth_user if needs_password_reset
-
-    # once the resource is found and verified
-    # we can just send them to the login page again with the SSO params
-    # that will log them in
-    encoded_email = ERB::Util.url_encode(@resource.email)
-    params = { email: encoded_email, sso_auth_token: @resource.generate_sso_auth_token }.to_query
-
-    mobile_deep_link_base = GlobalConfigService.load('MOBILE_DEEP_LINK_BASE', 'chatwootapp')
-    redirect_to "#{mobile_deep_link_base}://auth/saml?#{params}", allow_other_host: true
-  end
-
   def sign_up_user
     return redirect_to login_page_url(error: 'no-account-found') unless account_signup_allowed?
     return redirect_to login_page_url(error: 'business-account-only') unless validate_signup_email_is_business_domain?

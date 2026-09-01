@@ -210,6 +210,7 @@ class CommunicationThreads::MessageCreateService
       links: accessible_links.includes(:conversation, :contact_inbox, inbox: :channel),
       contact: communication_thread.contact,
       available_inboxes: accessible_inboxes,
+      callable_inbox_ids: accessible_inboxes.map(&:id),
       include_unlinked: true,
       deduplicate_linked: false
     ).perform

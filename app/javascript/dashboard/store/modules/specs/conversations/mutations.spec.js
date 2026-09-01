@@ -1273,6 +1273,25 @@ describe('#mutations', () => {
       expect(state.allConversations[0].meta.assignee).toEqual(assignee);
       expect(state.allConversations[1].meta.assignee).toBeUndefined();
     });
+
+    it('assigns the selected communication thread when ids collide', () => {
+      const assignee = { id: 1, name: 'Agent' };
+      const conversation = { id: 1, meta: {} };
+      const thread = { id: 1, is_communication_thread: true, meta: {} };
+      const state = {
+        allConversations: [conversation, thread],
+        selectedChatId: 1,
+        selectedChatType: 'communication_thread',
+      };
+
+      mutations[types.ASSIGN_AGENT](state, {
+        conversationId: 1,
+        assignee,
+      });
+
+      expect(thread.meta.assignee).toEqual(assignee);
+      expect(conversation.meta.assignee).toBeUndefined();
+    });
   });
 
   describe('#ASSIGN_PRIORITY', () => {
@@ -1939,6 +1958,30 @@ describe('#mutations', () => {
 
       mutations[types.UPDATE_ASSIGNEE](state, payload);
       expect(state.allConversations[0].meta.assignee).toEqual(payload.assignee);
+    });
+
+    it('updates only the explicitly typed target when ids collide', () => {
+      const directAssignee = { id: 1, name: 'Direct Agent' };
+      const threadAssignee = { id: 2, name: 'Thread Agent' };
+      const state = {
+        allConversations: [
+          { id: 7, meta: { assignee: directAssignee } },
+          {
+            id: 7,
+            is_communication_thread: true,
+            meta: { assignee: null },
+          },
+        ],
+      };
+
+      mutations[types.UPDATE_ASSIGNEE](state, {
+        id: 7,
+        conversationType: 'communication_thread',
+        assignee: threadAssignee,
+      });
+
+      expect(state.allConversations[0].meta.assignee).toEqual(directAssignee);
+      expect(state.allConversations[1].meta.assignee).toEqual(threadAssignee);
     });
   });
 

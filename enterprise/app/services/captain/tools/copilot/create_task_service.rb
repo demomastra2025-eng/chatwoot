@@ -19,7 +19,10 @@ class Captain::Tools::Copilot::CreateTaskService < Captain::Tools::Copilot::Base
         required: false
   param :status_id, type: :integer, desc: 'Optional positive account CRM task status ID. Omit when unknown.', required: false
   param :assignee_id, type: :integer, desc: 'Optional positive account user ID to assign. Omit when unknown.', required: false
-  param :team_id, type: :integer, desc: 'Optional positive account team ID to assign. Omit when unknown.', required: false
+  param :team_id,
+        type: :integer,
+        desc: 'Optional positive account team ID for a standalone task. Tasks linked to a deal inherit its team.',
+        required: false
   param :custom_attributes,
         type: :string,
         desc: 'JSON object string for CRM custom attributes. Use the matching list_*_custom_fields tool first; ' \

@@ -252,4 +252,55 @@ RSpec.describe Crm::Deals::UpsertService do
 
     expect(reopened_deal.closed_at).to be_nil
   end
+
+  it 'syncs the new deal team to incomplete linked tasks only' do
+    original_team = create(:team, account: account)
+    new_team = create(:team, account: account)
+    open_status = create(:crm_task_status, account: account, category: 'open')
+    in_progress_status = create(:crm_task_status, account: account, category: 'in_progress')
+    done_status = create(:crm_task_status, account: account, category: 'done')
+    deal = create(:crm_deal, account: account, pipeline: pipeline, team: original_team)
+    open_task = create(:crm_task, account: account, deal: deal, status: open_status, team: nil)
+    active_task = create(:crm_task, account: account, deal: deal, status: in_progress_status, team: original_team)
+    completed_task = create(:crm_task, account: account, deal: deal, status: done_status, team: original_team)
+    archived_task = create(
+      :crm_task,
+      account: account,
+      archived_at: Time.current,
+      deal: deal,
+      status: open_status,
+      team: original_team
+    )
+    updated_deal = nil
+
+    expect do
+      updated_deal = described_class.new(
+        account: account,
+        deal: deal,
+        params: {
+          lock_version: deal.lock_version,
+          team_id: new_team.id
+        }
+      ).perform
+    end.to change {
+      Crm::Event.where(account: account, eventable_type: 'Crm::Task', event_type: 'task_updated').count
+    }.by(2)
+
+    expect(open_task.reload.team).to eq(new_team)
+    expect(active_task.reload.team).to eq(new_team)
+    expect(completed_task.reload.team).to eq(original_team)
+    expect(archived_task.reload.team).to eq(original_team)
+
+    described_class.new(
+      account: account,
+      deal: updated_deal,
+      params: {
+        lock_version: updated_deal.lock_version,
+        team_id: nil
+      }
+    ).perform
+
+    expect(open_task.reload.team).to be_nil
+    expect(active_task.reload.team).to be_nil
+  end
 end

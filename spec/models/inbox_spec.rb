@@ -31,8 +31,6 @@ RSpec.describe Inbox do
 
     it { is_expected.to have_many(:meta_ad_referrals).dependent(:delete_all) }
 
-    it { is_expected.to have_one(:agent_bot_inbox) }
-
     it { is_expected.to have_many(:webhooks).dependent(:destroy_async) }
 
     it { is_expected.to have_many(:reporting_events) }
@@ -71,8 +69,10 @@ RSpec.describe Inbox do
         Channel::Line.new(account: account),
         Channel::Telegram.new(account: account),
         Channel::TelegramPersonal.new(account: account),
+        Channel::TwitterProfile.new(account: account),
         Channel::Tiktok.new(account: account),
         Channel::VkCommunity.new(account: account),
+        Channel::Weixin.new(account: account),
         Channel::Whatsapp.new(account: account),
         Channel::WhatsappWeb.new(account: account),
         build_twilio_channel(medium: :whatsapp)
@@ -105,7 +105,7 @@ RSpec.describe Inbox do
       end
     end
 
-    it 'respects an explicit false value for messenger channels' do
+    it 'ignores an explicit false value for messenger channels' do
       inbox = build_inbox(
         channel: Channel::TelegramPersonal.new(account: account),
         lock_to_single_conversation: false
@@ -113,7 +113,20 @@ RSpec.describe Inbox do
 
       inbox.valid?
 
+      expect(inbox.lock_to_single_conversation).to be(true)
+      expect(inbox[:lock_to_single_conversation]).to be(true)
+    end
+
+    it 'ignores an explicit true value for non-messenger channels' do
+      inbox = build_inbox(
+        channel: Channel::Email.new(account: account),
+        lock_to_single_conversation: true
+      )
+
+      inbox.valid?
+
       expect(inbox.lock_to_single_conversation).to be(false)
+      expect(inbox[:lock_to_single_conversation]).to be(false)
     end
   end
 

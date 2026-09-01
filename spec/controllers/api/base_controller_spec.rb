@@ -66,35 +66,7 @@ RSpec.describe 'API Base', type: :request do
     end
   end
 
-  describe 'request with api_access_token for bot' do
-    let!(:agent_bot) { create(:agent_bot) }
-    let!(:inbox) { create(:inbox, account: account) }
-    let!(:conversation) { create(:conversation, account: account, inbox: inbox, assignee: user, status: 'pending') }
-
-    context 'when it is an unauthorized url' do
-      it 'returns unauthorized' do
-        get '/api/v1/profile',
-            headers: { api_access_token: agent_bot.access_token.token },
-            as: :json
-
-        expect(response).to have_http_status(:unauthorized)
-      end
-    end
-
-    context 'when it is a accessible url' do
-      it 'returns success' do
-        create(:agent_bot_inbox, inbox: inbox, agent_bot: agent_bot)
-
-        post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/toggle_status",
-             headers: { api_access_token: agent_bot.access_token.token },
-             as: :json
-
-        expect(response).to have_http_status(:success)
-        expect(conversation.reload.status).to eq('open')
-      end
-    end
-
-    context 'when the account is suspended' do
+  describe 'when the account is suspended' do
       it 'returns 401 unauthorized' do
         account.update!(status: :suspended)
 
@@ -116,6 +88,5 @@ RSpec.describe 'API Base', type: :request do
 
         expect(response).to have_http_status(:unauthorized)
       end
-    end
   end
 end

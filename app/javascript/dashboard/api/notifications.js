@@ -41,6 +41,10 @@ class NotificationsAPI extends ApiClient {
     return axios.post(`${this.url}/read_all`);
   }
 
+  archive(id) {
+    return axios.patch(`${this.url}/${id}`);
+  }
+
   delete(id) {
     return axios.delete(`${this.url}/${id}`);
   }

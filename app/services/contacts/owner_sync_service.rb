@@ -40,30 +40,14 @@ class Contacts::OwnerSyncService
 
   def sync_conversations!
     conversations_requiring_owner_sync.find_each do |conversation|
-      next unless owner_assignable_to_conversation?(conversation)
-
-      attributes = { assignee_id: owner_id }
-      attributes[:assignee_agent_bot_id] = nil if owner_id.present?
-
-      conversation.assign_attributes(attributes)
+      conversation.assignee_id = owner_id
       conversation.save! if conversation.changed?
     end
   end
 
   def conversations_requiring_owner_sync
     scope = contact.conversations.where(account_id: contact.account_id)
-    assignee_scope = records_with_owner_mismatch(scope, :assignee_id)
-    return assignee_scope if owner_id.blank?
-
-    assignee_scope.or(scope.where.not(assignee_agent_bot_id: nil))
-  end
-
-  def owner_assignable_to_conversation?(conversation)
-    return true if owner_id.blank?
-    return false unless conversation.inbox.members.exists?(id: owner_id)
-    return true if conversation.team.blank?
-
-    conversation.team.members.exists?(id: owner_id)
+    records_with_owner_mismatch(scope, :assignee_id)
   end
 
   def sync_communication_threads!

@@ -28,7 +28,5 @@ module Enterprise::Concerns::Account
     has_many :telephony_events, dependent: :destroy_async, class_name: '::Telephony::Event'
     has_many :voice_channels, dependent: :destroy_async, class_name: '::Channel::Voice'
     has_many :calls, dependent: :destroy_async
-
-    has_one :saml_settings, dependent: :destroy_async, class_name: 'AccountSamlSettings'
   end
 end

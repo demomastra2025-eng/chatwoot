@@ -27,6 +27,16 @@ describe('#getters', () => {
     expect(getters.getCurrentPageFilter(state)('all')).toEqual(3);
   });
 
+  it('defaults a new dynamic scope to the first page', () => {
+    const state = { currentPage: {} };
+
+    expect(
+      getters.getCurrentPageFilter(state)(
+        'scope:{"crmPipelineId":"2","crmStageId":"3"}'
+      )
+    ).toEqual(0);
+  });
+
   it('getHasEndReached', () => {
     const state = {
       hasEndReached: {
@@ -38,6 +48,12 @@ describe('#getters', () => {
     expect(getters.getHasEndReached(state)('me')).toEqual(false);
     expect(getters.getHasEndReached(state)('unassigned')).toEqual(true);
     expect(getters.getHasEndReached(state)('all')).toEqual(false);
+  });
+
+  it('defaults a new dynamic scope to not having reached the end', () => {
+    const state = { hasEndReached: {} };
+
+    expect(getters.getHasEndReached(state)('scope:new')).toEqual(false);
   });
 
   it('getTotalCount', () => {

@@ -2,13 +2,13 @@
 import {
   computed,
   defineAsyncComponent,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
   ref,
   watch,
 } from 'vue';
-import { format } from 'date-fns';
 import { useDebounceFn, useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
@@ -28,17 +28,13 @@ import {
 } from 'dashboard/constants/permissions';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
-import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
-import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
-import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
-import CrmDealOwnerMenu from 'dashboard/components-next/CRM/CrmDealOwnerMenu.vue';
 import CrmDealStageMenu from 'dashboard/components-next/CRM/CrmDealStageMenu.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -76,7 +72,10 @@ import {
   normalizeCustomFieldFilters,
 } from 'dashboard/stores/crm/customFieldFilters';
 import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
-import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
+import {
+  DEFAULT_STAGE_COLOR,
+  resolveStageDisplayColor,
+} from 'dashboard/stores/crm/stageColors';
 import {
   compactPayload,
   formatCrmErrorMessage,
@@ -102,6 +101,10 @@ import {
   buildContactableInboxesList,
   fetchContactableInboxes,
 } from 'dashboard/components-next/NewConversation/helpers/composeConversationHelper.js';
+import {
+  createLatestRequestGuard,
+  runLatestRequestRetries,
+} from 'dashboard/routes/dashboard/crm/helpers/latestRequestGuard';
 
 const CrmDealConversationPanel = defineAsyncComponent(
   () => import('dashboard/components-next/CRM/CrmDealConversationPanel.vue')
@@ -133,8 +136,11 @@ const drawerOpen = ref(false);
 const closingReasonDialogRef = ref(null);
 const dealActivityTab = ref('history');
 const hasVisitedDealTasksTab = ref(false);
-const filterDialogRef = ref(null);
+const filterSearchTriggerRef = ref(null);
+const filterPopoverOpen = ref(false);
+const filterPopoverStyle = ref({});
 const listCurrentPage = ref(1);
+const selectedDealIds = ref([]);
 const timelineItems = ref([]);
 const contactOptions = ref([]);
 const companyOptions = ref([]);
@@ -389,7 +395,7 @@ const stageOptions = computed(() =>
     )?.stages || []
   ).map(stage => ({
     label: stageDisplayName(stage),
-    stageColor: stage.color || DEFAULT_STAGE_COLOR,
+    stageColor: resolveStageDisplayColor(stage.color),
     value: stage.id,
   }))
 );
@@ -448,7 +454,7 @@ const filterStageOptions = computed(() => {
 
   return (pipeline?.stages || []).map(stage => ({
     label: stageDisplayName(stage),
-    stageColor: stage.color || DEFAULT_STAGE_COLOR,
+    stageColor: resolveStageDisplayColor(stage.color),
     value: stage.id,
   }));
 });
@@ -462,7 +468,7 @@ const boardStages = computed(() => {
 
   return pipelines.flatMap(pipeline =>
     (pipeline.stages || []).map(stage => ({
-      color: stage.color,
+      color: resolveStageDisplayColor(stage.color),
       code: stage.code,
       id: stage.id,
       label: stageDisplayName(stage),
@@ -609,18 +615,26 @@ const boardSortDirectionLabels = computed(() => ({
 
 const tableColumns = computed(() => [
   {
-    key: 'id',
-    label: t('CRM.GENERAL.ID'),
-    width: '72px',
-    sortable: true,
-    defaultSortDirection: 'asc',
+    key: 'select',
+    label: '',
+    width: '24px',
   },
   {
     key: 'title',
     label: t('CRM.DEALS.TABLE.TITLE'),
-    width: '2.4fr',
+    width: '2fr',
     sortable: true,
     defaultSortDirection: 'asc',
+  },
+  {
+    key: 'primaryContact',
+    label: t('CRM.DEALS.TABLE.PRIMARY_CONTACT'),
+    width: '1.35fr',
+  },
+  {
+    key: 'company',
+    label: t('CRM.DEALS.TABLE.COMPANY'),
+    width: '1.35fr',
   },
   {
     key: 'stage',
@@ -639,21 +653,6 @@ const tableColumns = computed(() => [
     headerClass: 'ltr:pr-4 rtl:pl-4',
     cellClass: 'ltr:pr-4 rtl:pl-4',
   },
-  {
-    key: 'owner',
-    label: t('CRM.DEALS.TABLE.OWNER'),
-    width: '1fr',
-    sortable: true,
-    defaultSortDirection: 'asc',
-  },
-  {
-    key: 'updatedAt',
-    label: t('CRM.DEALS.TABLE.UPDATED'),
-    width: '0.95fr',
-    sortable: true,
-    defaultSortDirection: 'asc',
-  },
-  { key: 'actions', label: '', width: '112px', align: 'end' },
 ]);
 
 const dealFieldDefinitions = computed(
@@ -683,7 +682,7 @@ const stageNameById = computed(() =>
 const stageColorById = computed(() =>
   referencesStore.pipelines.reduce((result, pipeline) => {
     (pipeline.stages || []).forEach(stage => {
-      result[stage.id] = stage.color || DEFAULT_STAGE_COLOR;
+      result[stage.id] = resolveStageDisplayColor(stage.color);
     });
     return result;
   }, {})
@@ -916,6 +915,37 @@ const paginatedListDeals = computed(() => {
   const startIndex = (listCurrentPage.value - 1) * LIST_PAGE_SIZE;
   return sortedListDeals.value.slice(startIndex, startIndex + LIST_PAGE_SIZE);
 });
+
+const pageDealIds = computed(() =>
+  paginatedListDeals.value.map(deal => Number(deal.id))
+);
+const selectedDealIdSet = computed(
+  () => new Set(selectedDealIds.value.map(Number))
+);
+const allPageDealsSelected = computed(
+  () =>
+    pageDealIds.value.length > 0 &&
+    pageDealIds.value.every(id => selectedDealIdSet.value.has(id))
+);
+const somePageDealsSelected = computed(
+  () =>
+    !allPageDealsSelected.value &&
+    pageDealIds.value.some(id => selectedDealIdSet.value.has(id))
+);
+
+const togglePageDealSelection = event => {
+  const nextSelectedIds = new Set(selectedDealIdSet.value);
+
+  pageDealIds.value.forEach(id => {
+    if (event.target.checked) {
+      nextSelectedIds.add(id);
+    } else {
+      nextSelectedIds.delete(id);
+    }
+  });
+
+  selectedDealIds.value = [...nextSelectedIds];
+};
 
 const stripedDealRowIds = computed(
   () =>
@@ -1247,11 +1277,6 @@ const formatDealAmountLabel = deal =>
     locale: localeCode.value,
   });
 
-const formatDate = value => {
-  if (!value) return t('CRM.GENERAL.EMPTY_VALUE');
-  return format(new Date(value), 'MMM d, yyyy');
-};
-
 const crmPrefillKeys = [
   'action',
   'amount',
@@ -1465,6 +1490,12 @@ const waitForDealConversationThread = () =>
     window.setTimeout(resolve, 250);
   });
 
+const dealConversationRequestGuard = createLatestRequestGuard();
+
+const isCurrentDealConversationRequest = (contactId, requestId) =>
+  dealConversationRequestGuard.isCurrent(requestId) &&
+  Number(dealConversationDraft.contactId) === Number(contactId);
+
 const setDealConversationContact = contactId => {
   const normalizedContactId = Number(contactId);
 
@@ -1474,17 +1505,25 @@ const setDealConversationContact = contactId => {
       : '';
   dealConversationDraft.contactableInboxes = [];
   dealConversationDraft.communicationThreadDisplayId = '';
+  dealConversationDraft.isLoadingCommunicationThread = false;
+  dealConversationDraft.isLoadingInboxes = false;
+
+  return dealConversationRequestGuard.start();
 };
 
-const loadDealContactCommunicationThreads = async contactId => {
+const loadDealContactCommunicationThreads = async (contactId, requestId) => {
   const cachedThreads = communicationThreadsByContactId.value[contactId];
   if (cachedThreads) {
-    dealConversationDraft.communicationThreadDisplayId =
-      cachedThreads[0]?.id || '';
+    if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.communicationThreadDisplayId =
+        cachedThreads[0]?.id || '';
+    }
     return cachedThreads;
   }
 
-  dealConversationDraft.isLoadingCommunicationThread = true;
+  if (isCurrentDealConversationRequest(contactId, requestId)) {
+    dealConversationDraft.isLoadingCommunicationThread = true;
+  }
 
   try {
     const response = await ContactAPI.getCommunicationThreads(contactId);
@@ -1498,25 +1537,32 @@ const loadDealContactCommunicationThreads = async contactId => {
         [contactId]: communicationThreads,
       };
     }
-    dealConversationDraft.communicationThreadDisplayId =
-      communicationThreads[0]?.id || '';
+    if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.communicationThreadDisplayId =
+        communicationThreads[0]?.id || '';
+    }
     return communicationThreads;
   } catch {
-    dealConversationDraft.communicationThreadDisplayId = '';
-    useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.THREADS_LOAD_ERROR'));
+    if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.communicationThreadDisplayId = '';
+      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.THREADS_LOAD_ERROR'));
+    }
     return [];
   } finally {
-    dealConversationDraft.isLoadingCommunicationThread = false;
+    if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.isLoadingCommunicationThread = false;
+    }
   }
 };
 
-const loadDealConversationInboxes = async () => {
+const loadDealConversationInboxes = async (contactId, requestId) => {
+  if (!contactId || !isCurrentDealConversationRequest(contactId, requestId)) {
+    return;
+  }
+
   dealConversationDraft.contactableInboxes = [];
 
-  if (!dealConversationDraft.contactId) return;
-
-  const cachedInboxes =
-    contactableInboxesByContactId.value[dealConversationDraft.contactId];
+  const cachedInboxes = contactableInboxesByContactId.value[contactId];
   if (cachedInboxes) {
     dealConversationDraft.contactableInboxes = cachedInboxes;
     return;
@@ -1526,49 +1572,73 @@ const loadDealConversationInboxes = async () => {
 
   try {
     const contactableInboxes = buildContactableInboxesList(
-      await fetchContactableInboxes(dealConversationDraft.contactId)
+      await fetchContactableInboxes(contactId)
     );
     contactableInboxesByContactId.value = {
       ...contactableInboxesByContactId.value,
-      [dealConversationDraft.contactId]: contactableInboxes,
+      [contactId]: contactableInboxes,
     };
-    dealConversationDraft.contactableInboxes = contactableInboxes;
+    if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.contactableInboxes = contactableInboxes;
+    }
   } catch {
-    dealConversationDraft.contactableInboxes = [];
-    useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'));
+    if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.contactableInboxes = [];
+      useAlert(t('CRM.DEALS.CONVERSATION_PLACEHOLDER.INBOXES_LOAD_ERROR'));
+    }
   } finally {
-    dealConversationDraft.isLoadingInboxes = false;
+    if (isCurrentDealConversationRequest(contactId, requestId)) {
+      dealConversationDraft.isLoadingInboxes = false;
+    }
   }
 };
 
-const loadDealConversationContext = async contactId => {
-  setDealConversationContact(contactId);
-
-  if (!dealConversationDraft.contactId) return [];
-
+const loadDealConversationContextForRequest = async (
+  activeContactId,
+  requestId
+) => {
   const communicationThreads = await loadDealContactCommunicationThreads(
-    dealConversationDraft.contactId
+    activeContactId,
+    requestId
   );
 
-  if (!communicationThreads.length) {
-    await loadDealConversationInboxes();
+  if (
+    !communicationThreads.length &&
+    isCurrentDealConversationRequest(activeContactId, requestId)
+  ) {
+    await loadDealConversationInboxes(activeContactId, requestId);
   }
 
   return communicationThreads;
+};
+
+const loadDealConversationContext = async contactId => {
+  const requestId = setDealConversationContact(contactId);
+  const activeContactId = dealConversationDraft.contactId;
+
+  if (!activeContactId) return [];
+
+  return loadDealConversationContextForRequest(activeContactId, requestId);
 };
 
 const loadDealConversationContextWithRetry = async (
   contactId,
   attempts = 3
 ) => {
-  await loadDealConversationContext(contactId);
+  const requestId = setDealConversationContact(contactId);
+  const activeContactId = dealConversationDraft.contactId;
 
-  if (dealConversationDraft.communicationThreadDisplayId || attempts <= 1) {
-    return;
-  }
+  if (!activeContactId) return;
 
-  await waitForDealConversationThread();
-  await loadDealConversationContextWithRetry(contactId, attempts - 1);
+  await runLatestRequestRetries({
+    attempts,
+    isCurrent: () =>
+      isCurrentDealConversationRequest(activeContactId, requestId),
+    load: () =>
+      loadDealConversationContextForRequest(activeContactId, requestId),
+    shouldRetry: () => !dealConversationDraft.communicationThreadDisplayId,
+    wait: waitForDealConversationThread,
+  });
 };
 
 const resolveStageFilterId = (stageId, pipelineId) => {
@@ -2259,12 +2329,6 @@ const openDealSettings = () => {
   });
 };
 
-const handleAiOnlyFilterChange = async value => {
-  filters.aiOnly = Boolean(value);
-  listCurrentPage.value = 1;
-  await loadDeals();
-};
-
 const customFieldFilterOptions = definition =>
   buildCustomFieldFilterOptions(definition, customFieldFilterLabels.value);
 
@@ -2303,10 +2367,41 @@ const syncFilterDraft = () => {
   customFieldFilterDraft.value = { ...customFieldFilters.value };
 };
 
+const updateFilterPopoverPosition = () => {
+  const trigger = filterSearchTriggerRef.value;
+  if (!trigger) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const viewportPadding = 16;
+  const width = Math.min(rect.width, window.innerWidth - viewportPadding * 2);
+  const left = Math.min(
+    Math.max(rect.left, viewportPadding),
+    window.innerWidth - width - viewportPadding
+  );
+
+  filterPopoverStyle.value = {
+    left: `${left}px`,
+    maxHeight: `calc(100vh - ${rect.bottom + 24}px)`,
+    top: `${rect.bottom + 8}px`,
+    width: `${width}px`,
+  };
+};
+
+const closeFilterPopover = () => {
+  filterPopoverOpen.value = false;
+};
+
 const openFilterDialog = async () => {
+  if (filterPopoverOpen.value) {
+    updateFilterPopoverPosition();
+    return;
+  }
+
   syncFilterDraft();
+  filterPopoverOpen.value = true;
+  await nextTick();
+  updateFilterPopoverPosition();
   await ensureSelectedFilterLookups();
-  filterDialogRef.value?.open();
 };
 
 const applyFilters = async () => {
@@ -2330,7 +2425,7 @@ const applyFilters = async () => {
     customFieldFilterDraft.value,
     customFieldFilterLabels.value
   );
-  filterDialogRef.value?.close();
+  closeFilterPopover();
   await loadDeals();
 };
 
@@ -2346,8 +2441,29 @@ const resetFilters = async () => {
   listQuickFilters.q = '';
   listCurrentPage.value = 1;
   syncFilterDraft();
-  filterDialogRef.value?.close();
+  closeFilterPopover();
   await loadDeals();
+};
+
+const applyQuickDealFilter = async preset => {
+  const defaults = defaultDealsPreferences();
+  Object.assign(filterDraft, {
+    ...defaults.filters,
+    dateRange: { ...defaults.filters.dateRange },
+    pipelineId: filters.pipelineId,
+  });
+  customFieldFilterDraft.value = {};
+  listQuickFilters.q = '';
+
+  if (preset === 'mine') {
+    filterDraft.ownerId = currentUserId.value;
+  }
+
+  if (preset === 'archived') {
+    filterDraft.archived = true;
+  }
+
+  await applyFilters();
 };
 
 watch(dealActivityTab, tab => {
@@ -2773,7 +2889,7 @@ const toggleBoardSortDirection = async stageId => {
 
 onBeforeRouteLeave(() => {
   showLinkedConversationPanel.value = false;
-  filterDialogRef.value?.close?.();
+  closeFilterPopover();
 
   if (drawerOpen.value) {
     closeDrawer();
@@ -2873,6 +2989,9 @@ watch(
     <div class="flex min-w-0 flex-1 flex-col overflow-hidden md:order-last">
       <SchedulingPageHeader
         class="!bg-n-slate-2"
+        center-class="flex-1 md:min-w-80"
+        content-class="md:!items-center"
+        title-class="!flex-none"
         :title="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
       >
         <template #title>
@@ -2899,35 +3018,30 @@ watch(
             @update:model-value="handlePresentationChange"
           />
         </template>
-        <template #actions>
-          <div
-            class="flex h-8 items-center gap-2 rounded-lg border border-n-weak px-2.5 text-xs font-medium text-n-slate-11"
-          >
-            <Switch
-              :model-value="filters.aiOnly"
-              :aria-label="$t('CRM.DEALS.AI_ONLY')"
-              @change="handleAiOnlyFilterChange"
-            />
-            <span class="whitespace-nowrap text-n-slate-12">
-              {{ $t('CRM.DEALS.AI_ONLY') }}
-            </span>
+        <template #center>
+          <div ref="filterSearchTriggerRef" class="min-w-64 flex-1">
+            <Input
+              size="sm"
+              type="search"
+              :model-value="listQuickFilters.q"
+              :placeholder="$t('CRM.DEALS.LIST.SEARCH_PLACEHOLDER')"
+              class="w-full"
+              custom-input-class="ltr:!pr-8 rtl:!pl-8"
+              @focus="openFilterDialog"
+              @click="updateFilterPopoverPosition"
+              @keydown.esc="closeFilterPopover"
+              @update:model-value="listQuickFilters.q = $event"
+            >
+              <template #suffix>
+                <Icon
+                  icon="i-lucide-search"
+                  class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
+                />
+              </template>
+            </Input>
           </div>
-          <Input
-            size="sm"
-            type="search"
-            :model-value="listQuickFilters.q"
-            :placeholder="$t('CRM.DEALS.LIST.SEARCH_PLACEHOLDER')"
-            class="w-full sm:w-36"
-            custom-input-class="ltr:!pr-8 rtl:!pl-8"
-            @update:model-value="listQuickFilters.q = $event"
-          >
-            <template #suffix>
-              <Icon
-                icon="i-lucide-search"
-                class="absolute top-1/2 size-4 -translate-y-1/2 text-n-slate-11 ltr:right-2 rtl:left-2"
-              />
-            </template>
-          </Input>
+        </template>
+        <template #actions>
           <SelectMenu
             v-if="currentPresentation === 'board'"
             icon="i-lucide-arrow-down-up"
@@ -2937,15 +3051,6 @@ watch(
             sub-menu-position="bottom"
             @update:model-value="handleBoardSortChange"
           />
-          <Button
-            size="sm"
-            color="slate"
-            variant="ghost"
-            icon="i-lucide-filter"
-            class="!text-n-slate-11 hover:!text-n-slate-12"
-            @click="openFilterDialog"
-          />
-
           <Button
             v-if="canManageDeals"
             size="sm"
@@ -3023,7 +3128,6 @@ watch(
             :sort-key="boardSort.key"
             @change-owner="handleDealOwnerChange"
             @change-stage="handleDealStageChange"
-            @create-deal="stageId => openCreateDrawer({ stageId })"
             @load-more="loadMoreDeals"
             @select-deal="openEditDrawer"
             @toggle-sort-direction="toggleBoardSortDirection"
@@ -3051,6 +3155,15 @@ watch(
               :sort-state="listSort"
               @sort="handleListSortChange"
             >
+              <template #header-select>
+                <Checkbox
+                  :model-value="allPageDealsSelected"
+                  :indeterminate="somePageDealsSelected"
+                  :aria-label="$t('CRM.DEALS.LIST.SELECT_ALL')"
+                  @change="togglePageDealSelection"
+                />
+              </template>
+
               <template #empty>
                 {{
                   hasListSearchQuery
@@ -3059,10 +3172,14 @@ watch(
                 }}
               </template>
 
-              <template #cell-id="{ row }">
-                <span class="text-xs font-medium tabular-nums text-n-slate-11">
-                  {{ `#${row.id}` }}
-                </span>
+              <template #cell-select="{ row }">
+                <Checkbox
+                  v-model="selectedDealIds"
+                  :value="Number(row.id)"
+                  :aria-label="
+                    $t('CRM.DEALS.LIST.SELECT_ROW', { title: row.title })
+                  "
+                />
               </template>
 
               <template #cell-title="{ row }">
@@ -3087,28 +3204,22 @@ watch(
                       v-else
                       type="button"
                       class="min-w-0 max-w-full border-0 bg-transparent p-0 text-left"
-                      @click="
-                        canManageDeals
-                          ? startEditingDealTitle(row)
-                          : openEditDrawer(row)
-                      "
+                      @click="openEditDrawer(row)"
                     >
                       <span class="font-medium text-n-slate-12">
                         {{ row.title }}
                       </span>
                     </button>
-                    <span
-                      v-if="row.company?.name"
-                      class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
-                    >
-                      {{ row.company.name }}
-                    </span>
-                    <span
-                      v-if="row.primaryContact?.name"
-                      class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
-                    >
-                      {{ row.primaryContact.name }}
-                    </span>
+                    <Button
+                      v-if="canManageDeals"
+                      v-tooltip.top="$t('CRM.DEALS.EDIT_TITLE')"
+                      size="sm"
+                      color="slate"
+                      variant="ghost"
+                      icon="i-lucide-pen-line"
+                      class="!size-6"
+                      @click.stop="startEditingDealTitle(row)"
+                    />
                     <span
                       v-if="row.archivedAt"
                       class="rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
@@ -3116,16 +3227,27 @@ watch(
                       {{ $t('CRM.GENERAL.ARCHIVED') }}
                     </span>
                   </span>
-                  <CrmCustomFieldsSummary
-                    :definitions="dealFieldDefinitions"
-                    :values="row.customAttributes"
-                  />
                 </div>
+              </template>
+
+              <template #cell-primaryContact="{ row }">
+                <span class="text-sm text-n-slate-12">
+                  {{
+                    row.primaryContact?.name || $t('CRM.GENERAL.EMPTY_VALUE')
+                  }}
+                </span>
+              </template>
+
+              <template #cell-company="{ row }">
+                <span class="text-sm text-n-slate-12">
+                  {{ row.company?.name || $t('CRM.GENERAL.EMPTY_VALUE') }}
+                </span>
               </template>
 
               <template #cell-stage="{ row }">
                 <CrmDealStageMenu
                   v-if="canManageDeals"
+                  display-variant="list"
                   :model-value="row.stageId"
                   :stages="listStageOptionsForDeal(row)"
                   @update:model-value="
@@ -3134,33 +3256,15 @@ watch(
                 />
                 <span
                   v-else
-                  class="inline-flex items-center gap-2 text-sm text-n-slate-12"
+                  class="inline-flex min-h-7 items-center rounded-md border-l-[3px] px-2 text-xs font-medium"
+                  :style="{
+                    backgroundColor:
+                      stageColorById[row.stageId] || DEFAULT_STAGE_COLOR,
+                    borderLeftColor: `color-mix(in srgb, ${stageColorById[row.stageId] || DEFAULT_STAGE_COLOR} 70%, #64748b)`,
+                  }"
                 >
-                  <span
-                    class="size-2.5 shrink-0 rounded-full outline outline-1 outline-black/10 dark:outline-white/10"
-                    :style="{
-                      backgroundColor:
-                        stageColorById[row.stageId] || DEFAULT_STAGE_COLOR,
-                    }"
-                  />
                   {{
                     stageNameById[row.stageId] || $t('CRM.GENERAL.EMPTY_VALUE')
-                  }}
-                </span>
-              </template>
-
-              <template #cell-owner="{ row }">
-                <CrmDealOwnerMenu
-                  v-if="canManageDeals"
-                  :model-value="row.ownerId"
-                  :owners="ownerOptions"
-                  @update:model-value="
-                    handleDealOwnerChange({ deal: row, ownerId: $event })
-                  "
-                />
-                <span v-else class="text-sm text-n-slate-12">
-                  {{
-                    ownerNameById[row.ownerId] || $t('CRM.GENERAL.EMPTY_VALUE')
                   }}
                 </span>
               </template>
@@ -3171,36 +3275,6 @@ watch(
                 >
                   {{ formatDealAmountLabel(row) }}
                 </span>
-              </template>
-
-              <template #cell-updatedAt="{ row }">
-                <span class="text-sm text-n-slate-12">
-                  {{ formatDate(row.updatedAt) }}
-                </span>
-              </template>
-
-              <template #cell-actions="{ row }">
-                <div class="flex justify-end gap-1">
-                  <Button
-                    size="sm"
-                    color="slate"
-                    variant="ghost"
-                    icon="i-lucide-pen-line"
-                    @click="openEditDrawer(row)"
-                  />
-                  <Button
-                    v-if="canManageDeals"
-                    size="sm"
-                    color="slate"
-                    variant="ghost"
-                    :icon="
-                      row.archivedAt
-                        ? 'i-lucide-archive-restore'
-                        : 'i-lucide-archive'
-                    "
-                    @click="toggleArchived(row)"
-                  />
-                </div>
               </template>
             </SchedulingRecordTable>
 
@@ -3638,154 +3712,217 @@ watch(
     />
     <CreateCompanyDialog ref="createCompanyDialogRef" @create="createCompany" />
 
-    <Dialog
-      ref="filterDialogRef"
-      width="5xl"
-      :title="$t('CRM.FILTERS.TITLE')"
-      :description="$t('CRM.FILTERS.DESCRIPTION')"
-      :confirm-button-label="$t('CRM.FILTERS.APPLY')"
-      @confirm="applyFilters"
+    <Transition
+      enter-active-class="transition duration-150 ease-out"
+      enter-from-class="translate-y-1 opacity-0"
+      enter-to-class="translate-y-0 opacity-100"
+      leave-active-class="transition duration-100 ease-in"
+      leave-from-class="translate-y-0 opacity-100"
+      leave-to-class="translate-y-1 opacity-0"
     >
-      <div class="grid gap-4">
-        <div class="w-full">
-          <SchedulingEntityDateRangeFilter
-            v-model="filterDraft.dateRange"
-            :label="$t('CRM.FILTERS.CREATED_AT_RANGE')"
-          />
+      <div
+        v-if="filterPopoverOpen"
+        class="fixed z-40 grid grid-rows-[minmax(0,1fr)_auto] overflow-hidden rounded-xl border border-n-weak bg-n-solid-2 shadow-xl"
+        :style="filterPopoverStyle"
+      >
+        <div
+          class="grid min-h-0 gap-4 overflow-y-auto p-4 md:grid-cols-[11rem_minmax(0,1fr)]"
+        >
+          <aside
+            class="grid content-start gap-1 border-n-weak md:border-r md:pr-4"
+          >
+            <p class="mb-2 text-xs font-medium uppercase text-n-slate-10">
+              {{ $t('CRM.FILTERS.QUICK_TITLE') }}
+            </p>
+            <button
+              type="button"
+              class="rounded-lg px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+              @click="applyQuickDealFilter('all')"
+            >
+              {{ $t('CRM.FILTERS.QUICK_ALL') }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+              @click="applyQuickDealFilter('mine')"
+            >
+              {{ $t('CRM.FILTERS.QUICK_MINE') }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg px-3 py-2 text-left text-sm text-n-slate-12 hover:bg-n-alpha-2"
+              @click="applyQuickDealFilter('archived')"
+            >
+              {{ $t('CRM.FILTERS.QUICK_ARCHIVED') }}
+            </button>
+          </aside>
+
+          <div
+            class="grid min-w-0 content-start grid-cols-[repeat(auto-fit,minmax(min(16rem,100%),1fr))] gap-6"
+          >
+            <div class="grid min-w-0 content-start gap-3">
+              <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
+                {{ $t('CRM.FILTERS.MAIN_FIELDS') }}
+              </p>
+
+              <div class="w-full">
+                <SchedulingEntityDateRangeFilter
+                  v-model="filterDraft.dateRange"
+                  compact
+                  :label="$t('CRM.FILTERS.CREATED_AT_RANGE')"
+                />
+              </div>
+
+              <div class="grid gap-3">
+                <SchedulingSelectField
+                  compact
+                  :label="$t('CRM.DEALS.FORM.OWNER')"
+                  :model-value="filterDraft.ownerId"
+                  :options="ownerOptions"
+                  :placeholder="$t('CRM.DEALS.FORM.OWNER')"
+                  @update:model-value="filterDraft.ownerId = $event"
+                />
+
+                <SchedulingSelectField
+                  compact
+                  :label="$t('CRM.DEALS.FORM.STAGE')"
+                  :model-value="filterDraft.stageId"
+                  :options="filterStageOptions"
+                  :placeholder="$t('CRM.DEALS.FORM.STAGE')"
+                  @update:model-value="filterDraft.stageId = $event"
+                />
+
+                <SchedulingSelectField
+                  compact
+                  :label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+                  :model-value="filterDraft.contactId"
+                  :options="contactOptions"
+                  use-api-results
+                  :placeholder="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
+                  :search-placeholder="
+                    $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
+                  "
+                  :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
+                  @open="loadContacts('')"
+                  @search="loadContacts"
+                  @update:model-value="filterDraft.contactId = $event"
+                />
+
+                <SchedulingSelectField
+                  v-if="companiesEnabled"
+                  compact
+                  :label="$t('CRM.DEALS.FORM.COMPANY')"
+                  :model-value="filterDraft.companyId"
+                  :options="companyOptions"
+                  use-api-results
+                  :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
+                  @open="loadCompanies('')"
+                  @search="loadCompanies"
+                  @update:model-value="filterDraft.companyId = $event"
+                />
+              </div>
+
+              <div class="grid gap-3">
+                <SchedulingSelectField
+                  v-if="shouldShowTeamField"
+                  compact
+                  :label="$t('CRM.DEALS.FORM.TEAM')"
+                  :model-value="filterDraft.teamId"
+                  :options="teamOptions"
+                  :placeholder="$t('CRM.DEALS.FORM.TEAM')"
+                  @update:model-value="filterDraft.teamId = $event"
+                />
+              </div>
+
+              <div class="grid gap-2">
+                <label class="flex items-center gap-2">
+                  <Checkbox
+                    :model-value="filterDraft.archived"
+                    @update:model-value="filterDraft.archived = $event"
+                  />
+                  <span class="text-sm text-n-slate-12">
+                    {{ $t('CRM.FILTERS.INCLUDE_ARCHIVED') }}
+                  </span>
+                </label>
+                <label class="flex items-center gap-2">
+                  <Checkbox
+                    :model-value="filterDraft.showInactive"
+                    @update:model-value="filterDraft.showInactive = $event"
+                  />
+                  <span class="text-sm text-n-slate-12">
+                    {{ $t('CRM.FILTERS.SHOW_INACTIVE') }}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div
+              class="grid min-w-0 content-start gap-3 border-l border-n-weak pl-6"
+            >
+              <p class="mb-0 text-xs font-medium uppercase text-n-slate-10">
+                {{ $t('CRM.CUSTOM_FIELDS.TITLE') }}
+              </p>
+
+              <SchedulingMultiSelectFilter
+                v-for="definition in discreteDealFieldDefinitions"
+                :key="definition.key"
+                :model-value="customFieldFilterDraft[definition.key] || []"
+                :options="customFieldFilterOptions(definition)"
+                :placeholder="definition.label"
+                :show-trigger-icon="false"
+                @update:model-value="
+                  updateDealCustomFieldFilterDraft(definition.key, $event)
+                "
+              />
+
+              <SchedulingCustomFieldAdvancedFilter
+                v-for="definition in advancedDealFieldDefinitions"
+                :key="definition.key"
+                :definition="definition"
+                :model-value="customFieldFilterDraft[definition.key] || null"
+                :operator-options="
+                  customFieldAdvancedOperatorOptions(definition)
+                "
+                :placeholder="definition.label"
+                :summary-label="customFieldAdvancedFilterSummary(definition)"
+                :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
+                :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
+                :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
+                @update:model-value="
+                  updateDealCustomFieldFilterDraft(definition.key, $event)
+                "
+              />
+            </div>
+          </div>
         </div>
-
-        <div class="grid gap-4 md:grid-cols-4">
-          <SchedulingSelectField
-            :label="$t('CRM.DEALS.FORM.OWNER')"
-            :model-value="filterDraft.ownerId"
-            :options="ownerOptions"
-            :placeholder="$t('CRM.DEALS.FORM.OWNER')"
-            @update:model-value="filterDraft.ownerId = $event"
-          />
-
-          <SchedulingSelectField
-            :label="$t('CRM.DEALS.FORM.STAGE')"
-            :model-value="filterDraft.stageId"
-            :options="filterStageOptions"
-            :placeholder="$t('CRM.DEALS.FORM.STAGE')"
-            @update:model-value="filterDraft.stageId = $event"
-          />
-
-          <SchedulingSelectField
-            :label="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
-            :model-value="filterDraft.contactId"
-            :options="contactOptions"
-            use-api-results
-            :placeholder="$t('CRM.DEALS.FORM.PRIMARY_CONTACT')"
-            :search-placeholder="
-              $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
-            "
-            :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
-            @open="loadContacts('')"
-            @search="loadContacts"
-            @update:model-value="filterDraft.contactId = $event"
-          />
-
-          <SchedulingSelectField
-            v-if="companiesEnabled"
-            :label="$t('CRM.DEALS.FORM.COMPANY')"
-            :model-value="filterDraft.companyId"
-            :options="companyOptions"
-            use-api-results
-            :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
-            @open="loadCompanies('')"
-            @search="loadCompanies"
-            @update:model-value="filterDraft.companyId = $event"
-          />
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-3">
-          <SchedulingSelectField
-            v-if="shouldShowTeamField"
-            :label="$t('CRM.DEALS.FORM.TEAM')"
-            :model-value="filterDraft.teamId"
-            :options="teamOptions"
-            :placeholder="$t('CRM.DEALS.FORM.TEAM')"
-            @update:model-value="filterDraft.teamId = $event"
-          />
-
-          <SchedulingMultiSelectFilter
-            v-for="definition in discreteDealFieldDefinitions"
-            :key="definition.key"
-            :model-value="customFieldFilterDraft[definition.key] || []"
-            :options="customFieldFilterOptions(definition)"
-            :placeholder="definition.label"
-            :show-trigger-icon="false"
-            @update:model-value="
-              updateDealCustomFieldFilterDraft(definition.key, $event)
-            "
-          />
-
-          <SchedulingCustomFieldAdvancedFilter
-            v-for="definition in advancedDealFieldDefinitions"
-            :key="definition.key"
-            :definition="definition"
-            :model-value="customFieldFilterDraft[definition.key] || null"
-            :operator-options="customFieldAdvancedOperatorOptions(definition)"
-            :placeholder="definition.label"
-            :summary-label="customFieldAdvancedFilterSummary(definition)"
-            :apply-label="$t('SCHEDULING.GENERAL.APPLY')"
-            :clear-label="$t('SCHEDULING.GENERAL.CLEAR')"
-            :value-placeholder="$t('SCHEDULING.GENERAL.VALUE')"
-            @update:model-value="
-              updateDealCustomFieldFilterDraft(definition.key, $event)
-            "
-          />
-        </div>
-
-        <div class="flex items-center gap-4">
-          <label class="flex items-center gap-2">
-            <Checkbox
-              :model-value="filterDraft.archived"
-              @update:model-value="filterDraft.archived = $event"
-            />
-            <span class="text-sm text-n-slate-12">
-              {{ $t('CRM.FILTERS.INCLUDE_ARCHIVED') }}
-            </span>
-          </label>
-          <label class="flex items-center gap-2">
-            <Checkbox
-              :model-value="filterDraft.showInactive"
-              @update:model-value="filterDraft.showInactive = $event"
-            />
-            <span class="text-sm text-n-slate-12">
-              {{ $t('CRM.FILTERS.SHOW_INACTIVE') }}
-            </span>
-          </label>
-        </div>
-      </div>
-      <template #footer>
-        <div class="flex w-full flex-wrap items-center justify-between gap-3">
-          <Button
-            type="button"
-            color="slate"
-            variant="ghost"
-            :label="$t('CRM.FILTERS.RESET')"
-            @click="resetFilters"
-          />
-          <div class="flex items-center gap-3">
+        <div class="border-t border-n-weak bg-n-solid-2 p-4">
+          <div class="flex w-full flex-wrap items-center justify-between gap-3">
             <Button
               type="button"
               color="slate"
-              variant="faded"
-              :label="$t('CRM.GENERAL.CANCEL')"
-              @click="filterDialogRef?.close()"
+              variant="ghost"
+              :label="$t('CRM.FILTERS.RESET')"
+              @click="resetFilters"
             />
-            <Button
-              type="button"
-              :is-loading="ui.isLoading"
-              :label="$t('CRM.FILTERS.APPLY')"
-              @click="applyFilters"
-            />
+            <div class="flex items-center gap-3">
+              <Button
+                type="button"
+                color="slate"
+                variant="faded"
+                :label="$t('CRM.GENERAL.CANCEL')"
+                @click="closeFilterPopover"
+              />
+              <Button
+                type="button"
+                :is-loading="ui.isLoading"
+                :label="$t('CRM.FILTERS.APPLY')"
+                @click="applyFilters"
+              />
+            </div>
           </div>
         </div>
-      </template>
-    </Dialog>
+      </div>
+    </Transition>
   </section>
 </template>
 
@@ -3965,8 +4102,12 @@ watch(
 }
 
 .crm-deal-list-table :deep(.divide-y > .grid) {
-  gap: 0.5rem;
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  gap: 0.375rem;
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+
+.crm-deal-list-table :deep(.divide-y > :not([hidden]) ~ :not([hidden])) {
+  border-top-width: 0;
 }
 </style>

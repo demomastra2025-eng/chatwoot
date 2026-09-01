@@ -120,7 +120,7 @@ export default {
 
 <style scoped lang="scss">
 .label {
-  @apply items-center font-medium text-xs rounded-[4px] gap-1 p-1 bg-n-slate-3 text-n-slate-12 border border-solid border-n-strong h-6;
+  @apply items-center overflow-hidden font-medium text-xs rounded-[4px] gap-1 p-1 bg-n-slate-3 text-n-slate-12 border border-solid border-n-strong h-6;
 
   &.small {
     @apply text-xs py-0.5 px-1 leading-tight h-5;
@@ -219,9 +219,9 @@ export default {
 }
 
 .label-emoji {
-  @apply text-xl leading-none;
+  @apply inline-flex items-center justify-center flex-shrink-0 overflow-hidden w-3 h-3 text-xs leading-none;
 }
 .label.small .label-emoji {
-  @apply text-xl;
+  @apply text-xs;
 }
 </style>
