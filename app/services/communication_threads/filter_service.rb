@@ -21,7 +21,7 @@ class CommunicationThreads::FilterService < FilterService
     )
 
     {
-      communication_threads: communication_threads,
+      communication_threads: meta_only? ? CommunicationThread.none : communication_threads,
       count: include_meta? ? thread_counts : {}
     }
   end
@@ -40,6 +40,10 @@ class CommunicationThreads::FilterService < FilterService
 
   def include_meta?
     !@params.key?(:include_meta) || ActiveModel::Type::Boolean.new.cast(@params[:include_meta])
+  end
+
+  def meta_only?
+    ActiveModel::Type::Boolean.new.cast(@params[:meta_only])
   end
 
   def filter_config

@@ -742,6 +742,23 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
     end
 
+    it 'returns exact filtered counts without list payload in meta-only mode' do
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter?include_meta=true&meta_only=true",
+           params: {
+             payload: advanced_filter_payload
+           },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      body = JSON.parse(response.body, symbolize_names: true)
+      expect(body.dig(:data, :payload)).to be_empty
+      expect(body.dig(:data, :meta)).to include(
+        all_count: 1,
+        unassigned_count: 1
+      )
+    end
+
     it 'keeps unread CRM stage counts switchable when sidebar CRM context is combined with advanced filters' do
       [matching_conversation, wrong_stage_conversation, wrong_status_conversation].each do |conversation|
         conversation.reload.communication_thread.update!(unread_count: 1)

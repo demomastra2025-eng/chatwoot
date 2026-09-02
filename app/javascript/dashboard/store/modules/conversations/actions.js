@@ -25,13 +25,18 @@ import {
 } from 'dashboard/helper/voice';
 
 let conversationListRequestGeneration = 0;
+let sidebarUnreadCountsRequestId = 0;
 
-const invalidateConversationListRequest = commit => {
+const startConversationListRequest = () => {
   conversationListRequestGeneration += 1;
-  commit(types.CLEAR_LIST_LOADING_STATUS);
+  sidebarUnreadCountsRequestId += 1;
+  return conversationListRequestGeneration;
 };
 
-let sidebarUnreadCountsRequestId = 0;
+const invalidateConversationListRequest = commit => {
+  startConversationListRequest();
+  commit(types.CLEAR_LIST_LOADING_STATUS);
+};
 
 const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
   'inboxId',
@@ -349,8 +354,7 @@ const actions = {
   },
 
   fetchAllConversations: async ({ commit, state, dispatch }) => {
-    conversationListRequestGeneration += 1;
-    const requestGeneration = conversationListRequestGeneration;
+    const requestGeneration = startConversationListRequest();
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
@@ -373,16 +377,16 @@ const actions = {
   },
 
   fetchCommunicationThreads: async ({ commit, state, dispatch }) => {
-    conversationListRequestGeneration += 1;
-    const requestGeneration = conversationListRequestGeneration;
+    const requestGeneration = startConversationListRequest();
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
+      const isFirstPage = Number(params.page || 1) === 1;
       const {
         data: { data },
       } = await CommunicationThreadApi.get({
         ...params,
-        includeMeta: Number(params.page || 1) === 1,
+        includeMeta: false,
       });
       if (requestGeneration !== conversationListRequestGeneration) return;
       buildConversationList(
@@ -395,8 +399,9 @@ const actions = {
           ),
         },
         params.assigneeType,
-        Number(params.page || 1) === 1
+        isFirstPage
       );
+      if (isFirstPage) dispatch('fetchSidebarUnreadCounts', params);
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
         commit(types.CLEAR_LIST_LOADING_STATUS);
@@ -421,20 +426,31 @@ const actions = {
     }
   },
 
-  fetchSidebarUnreadCounts: async ({ commit, state = {} }, params = null) => {
+  fetchSidebarUnreadCounts: async (
+    { commit, dispatch, state = {} },
+    params = null
+  ) => {
     sidebarUnreadCountsRequestId += 1;
     const requestId = sidebarUnreadCountsRequestId;
     try {
       const requestParams = params || state.conversationFilters || {};
       let counts = {};
+      let metaData;
 
       if (hasSidebarUnreadCountFilters(requestParams)) {
-        const statsApi = requestParams.communicationThreadMode
-          ? CommunicationThreadApi
-          : ConversationApi;
-        const {
-          data: { meta },
-        } = await statsApi.meta(requestParams);
+        let meta;
+        if (requestParams.communicationThreadMode && requestParams.queryData) {
+          const response =
+            await CommunicationThreadApi.filterMeta(requestParams);
+          meta = response.data?.data?.meta;
+        } else {
+          const statsApi = requestParams.communicationThreadMode
+            ? CommunicationThreadApi
+            : ConversationApi;
+          const response = await statsApi.meta(requestParams);
+          meta = response.data?.meta;
+        }
+        metaData = meta;
         counts = meta?.unread_counts || {};
       } else {
         const {
@@ -445,6 +461,9 @@ const actions = {
 
       if (requestId !== sidebarUnreadCountsRequestId) return undefined;
 
+      if (requestParams.communicationThreadMode && metaData) {
+        dispatch('conversationStats/set', metaData);
+      }
       commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});
       return counts || {};
     } catch (error) {
@@ -454,10 +473,10 @@ const actions = {
   },
 
   fetchFilteredConversations: async ({ commit, dispatch }, params) => {
-    conversationListRequestGeneration += 1;
-    const requestGeneration = conversationListRequestGeneration;
+    const requestGeneration = startConversationListRequest();
     commit(types.SET_LIST_LOADING_STATUS);
     try {
+      const isFirstPage = Number(params.page || 1) === 1;
       const filterApi = params?.communicationThreadMode
         ? CommunicationThreadApi
         : ConversationApi;
@@ -476,8 +495,11 @@ const actions = {
         params,
         responseData,
         'appliedFilters',
-        Number(params.page || 1) === 1
+        isFirstPage
       );
+      if (params?.communicationThreadMode && isFirstPage) {
+        dispatch('fetchSidebarUnreadCounts', params);
+      }
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
         commit(types.CLEAR_LIST_LOADING_STATUS);

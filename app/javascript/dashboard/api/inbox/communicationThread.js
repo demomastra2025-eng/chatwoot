@@ -88,7 +88,7 @@ class CommunicationThreadApi extends ApiClient {
     return request;
   }
 
-  filter(payload) {
+  filter(payload, { includeMeta = false, metaOnly = false } = {}) {
     return axios.post(`${this.url}/filter`, payload.queryData, {
       params: {
         page: payload.page,
@@ -100,9 +100,14 @@ class CommunicationThreadApi extends ApiClient {
         team_scope: payload.teamScope || payload.team_scope,
         unread: payload.unread,
         sort_by: payload.sortBy || payload.sort_by,
-        include_meta: Number(payload.page || 1) === 1,
+        include_meta: includeMeta,
+        meta_only: metaOnly,
       },
     });
+  }
+
+  filterMeta(payload) {
+    return this.filter(payload, { includeMeta: true, metaOnly: true });
   }
 
   channels(id) {

@@ -19,18 +19,24 @@ const state = {
   allUnreadCount: 0,
 };
 
+let conversationStatsRequestGeneration = 0;
+
 export const getters = {
   getStats: $state => $state,
 };
 
 // Create a debounced version of the actual API call function
-const fetchMetaData = async (context, params) => {
+const fetchMetaData = async (context, params, requestGeneration) => {
   try {
+    if (requestGeneration !== conversationStatsRequestGeneration) return;
+
     const { commit } = context;
     const statsApi = params?.communicationThreadMode
       ? CommunicationThreadApi
       : ConversationApi;
     const response = await statsApi.meta(params);
+    if (requestGeneration !== conversationStatsRequestGeneration) return;
+
     const {
       data: { meta },
     } = response;
@@ -57,15 +63,18 @@ const superLongDebouncedFetchMetaData = debounce(
 export const actions = {
   get: async (context, params) => {
     const { state: $state } = context;
+    conversationStatsRequestGeneration += 1;
+    const requestGeneration = conversationStatsRequestGeneration;
     if ($state.allCount > 2000) {
-      superLongDebouncedFetchMetaData(context, params);
+      superLongDebouncedFetchMetaData(context, params, requestGeneration);
     } else if ($state.allCount > 100) {
-      longDebouncedFetchMetaData(context, params);
+      longDebouncedFetchMetaData(context, params, requestGeneration);
     } else {
-      debouncedFetchMetaData(context, params);
+      debouncedFetchMetaData(context, params, requestGeneration);
     }
   },
   set({ commit }, meta) {
+    conversationStatsRequestGeneration += 1;
     commit(types.SET_CONV_TAB_META, meta);
   },
 };

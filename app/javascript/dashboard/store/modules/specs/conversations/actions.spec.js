@@ -224,6 +224,72 @@ describe('#actions', () => {
     });
   });
 
+  describe('#fetchCommunicationThreads', () => {
+    it('loads the first page without waiting for communication thread meta', async () => {
+      const getSpy = vi.spyOn(CommunicationThreadApi, 'get').mockResolvedValue({
+        data: { data: { payload: [] } },
+      });
+      const pendingMetaRequest = new Promise(() => {});
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn(action => {
+        if (action === 'fetchSidebarUnreadCounts') return pendingMetaRequest;
+        return undefined;
+      });
+      const conversationFilters = {
+        page: 1,
+        status: 'open',
+        communicationThreadMode: true,
+      };
+
+      await actions.fetchCommunicationThreads({
+        commit: localCommit,
+        dispatch: localDispatch,
+        state: { conversationFilters },
+      });
+
+      expect(getSpy).toHaveBeenCalledWith({
+        ...conversationFilters,
+        includeMeta: false,
+      });
+      expect(localCommit).toHaveBeenCalledWith(types.CLEAR_LIST_LOADING_STATUS);
+      expect(localDispatch).toHaveBeenCalledWith(
+        'fetchSidebarUnreadCounts',
+        conversationFilters
+      );
+
+      getSpy.mockRestore();
+    });
+
+    it('does not refresh communication thread meta for later pages', async () => {
+      const getSpy = vi.spyOn(CommunicationThreadApi, 'get').mockResolvedValue({
+        data: { data: { payload: [] } },
+      });
+      const localDispatch = vi.fn();
+      const conversationFilters = {
+        page: 2,
+        status: 'open',
+        communicationThreadMode: true,
+      };
+
+      await actions.fetchCommunicationThreads({
+        commit: vi.fn(),
+        dispatch: localDispatch,
+        state: { conversationFilters },
+      });
+
+      expect(getSpy).toHaveBeenCalledWith({
+        ...conversationFilters,
+        includeMeta: false,
+      });
+      expect(localDispatch).not.toHaveBeenCalledWith(
+        'fetchSidebarUnreadCounts',
+        expect.anything()
+      );
+
+      getSpy.mockRestore();
+    });
+  });
+
   describe('#addConversation', () => {
     it('doesnot send mutation if conversation is from a different inbox', () => {
       const conversation = {
@@ -459,13 +525,16 @@ describe('#actions', () => {
 
     it('uses communication thread meta for filtered thread unread counts', async () => {
       const localCommit = vi.fn();
+      const localDispatch = vi.fn();
       const counts = { all: 2, inboxes: { 1: 2 } };
+      const meta = { all_count: 7, unread_counts: counts };
       const metaSpy = vi
         .spyOn(CommunicationThreadApi, 'meta')
-        .mockResolvedValue({ data: { meta: { unread_counts: counts } } });
+        .mockResolvedValue({ data: { meta } });
 
       await actions.fetchSidebarUnreadCounts({
         commit: localCommit,
+        dispatch: localDispatch,
         state: {
           conversationFilters: {
             status: 'open',
@@ -484,8 +553,39 @@ describe('#actions', () => {
         types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
         counts
       );
+      expect(localDispatch).toHaveBeenCalledWith('conversationStats/set', meta);
 
       metaSpy.mockRestore();
+    });
+
+    it('uses exact advanced-filter thread meta for counters', async () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      const counts = { all: 1, inboxes: { 1: 1 } };
+      const meta = { all_count: 1, unread_counts: counts };
+      const filterMetaSpy = vi
+        .spyOn(CommunicationThreadApi, 'filterMeta')
+        .mockResolvedValue({ data: { data: { meta } } });
+      const conversationFilters = {
+        page: 1,
+        status: 'open',
+        communicationThreadMode: true,
+        queryData: { payload: [{ attribute_key: 'status' }] },
+      };
+
+      await actions.fetchSidebarUnreadCounts(
+        { commit: localCommit, dispatch: localDispatch, state: {} },
+        conversationFilters
+      );
+
+      expect(filterMetaSpy).toHaveBeenCalledWith(conversationFilters);
+      expect(localDispatch).toHaveBeenCalledWith('conversationStats/set', meta);
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        counts
+      );
+
+      filterMetaSpy.mockRestore();
     });
 
     it('ignores stale sidebar unread count responses', async () => {
@@ -523,6 +623,50 @@ describe('#actions', () => {
       resolveFirst({ data: { counts: { all: 1 } } });
       await firstRequest;
       expect(localCommit).toHaveBeenCalledTimes(1);
+    });
+
+    it('invalidates a pending thread meta response when another list starts', async () => {
+      let resolveMeta;
+      const staleCommit = vi.fn();
+      const staleDispatch = vi.fn();
+      const metaSpy = vi
+        .spyOn(CommunicationThreadApi, 'meta')
+        .mockImplementation(
+          () =>
+            new Promise(resolve => {
+              resolveMeta = resolve;
+            })
+        );
+
+      const pendingMeta = actions.fetchSidebarUnreadCounts({
+        commit: staleCommit,
+        dispatch: staleDispatch,
+        state: {
+          conversationFilters: {
+            status: 'open',
+            communicationThreadMode: true,
+          },
+        },
+      });
+      await vi.waitFor(() => expect(metaSpy).toHaveBeenCalledOnce());
+
+      axios.get.mockResolvedValue({
+        data: { data: { meta: {}, payload: [] } },
+      });
+      await actions.fetchAllConversations({
+        commit: vi.fn(),
+        dispatch: vi.fn(),
+        state: { conversationFilters: { page: 1, status: 'open' } },
+      });
+
+      resolveMeta({
+        data: { meta: { all_count: 4, unread_counts: { all: 4 } } },
+      });
+      await pendingMeta;
+
+      expect(staleDispatch).not.toHaveBeenCalled();
+      expect(staleCommit).not.toHaveBeenCalled();
+      metaSpy.mockRestore();
     });
   });
 
@@ -804,6 +948,61 @@ describe('#actions', () => {
         ['REPLACE_ALL_CONVERSATION', dataReceived.payload],
         ['CLEAR_LIST_LOADING_STATUS'],
       ]);
+    });
+
+    it('loads the first filtered thread page without waiting for meta', async () => {
+      const filterSpy = vi
+        .spyOn(CommunicationThreadApi, 'filter')
+        .mockResolvedValue({ data: { data: { payload: [] } } });
+      const pendingMetaRequest = new Promise(() => {});
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn(action => {
+        if (action === 'fetchSidebarUnreadCounts') return pendingMetaRequest;
+        return undefined;
+      });
+      const params = {
+        page: 1,
+        communicationThreadMode: true,
+        queryData: { payload: [] },
+      };
+
+      await actions.fetchFilteredConversations(
+        { commit: localCommit, dispatch: localDispatch },
+        params
+      );
+
+      expect(filterSpy).toHaveBeenCalledWith(params);
+      expect(localCommit).toHaveBeenCalledWith(types.CLEAR_LIST_LOADING_STATUS);
+      expect(localDispatch).toHaveBeenCalledWith(
+        'fetchSidebarUnreadCounts',
+        params
+      );
+
+      filterSpy.mockRestore();
+    });
+
+    it('does not refresh communication thread meta for later filtered pages', async () => {
+      const filterSpy = vi
+        .spyOn(CommunicationThreadApi, 'filter')
+        .mockResolvedValue({ data: { data: { payload: [] } } });
+      const localDispatch = vi.fn();
+      const params = {
+        page: 2,
+        communicationThreadMode: true,
+        queryData: { payload: [] },
+      };
+
+      await actions.fetchFilteredConversations(
+        { commit: vi.fn(), dispatch: localDispatch },
+        params
+      );
+
+      expect(localDispatch).not.toHaveBeenCalledWith(
+        'fetchSidebarUnreadCounts',
+        expect.anything()
+      );
+
+      filterSpy.mockRestore();
     });
   });
 
