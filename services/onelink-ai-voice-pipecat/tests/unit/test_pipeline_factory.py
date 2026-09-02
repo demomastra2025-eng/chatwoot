@@ -14,6 +14,7 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.elevenlabs.stt import CommitStrategy
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
+from pipecat.services.google.gemini_live.stt import GeminiSTTService
 from pipecat.services.openai.realtime.events import ResponseCreateEvent
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
@@ -225,6 +226,27 @@ def test_builds_fish_batch_asr_pipeline():
     assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
     assert assembly.tts._settings.model == "s2.1-pro-free"
     assert assembly.tts._settings.voice == "fish-voice-ref"
+
+
+def test_builds_fish_gemini_transcribe_pipeline():
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.4-mini",
+            voice="fish-voice-ref",
+            stt_provider="gemini",
+        ),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(elevenlabs_api_key=""),
+    )
+
+    assert isinstance(assembly.stt, GeminiSTTService)
+    assert assembly.stt._settings.model == "gemini-3.5-transcribe-live"
+    assert assembly.stt._settings.languages == ["ru-RU"]
+    assert isinstance(assembly.llm, OpenRouterLLMService)
+    assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
 
 
 def test_non_gpt_openrouter_model_does_not_receive_gpt_reasoning_contract():

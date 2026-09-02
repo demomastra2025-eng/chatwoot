@@ -275,9 +275,12 @@ RSpec.describe Telephony::AiVoice::VoiceSettingsDefaults do
       )
     end
 
-    it 'preserves Fish ASR selection and rejects unknown Fish STT providers' do
+    it 'preserves supported Fish STT selections and rejects unknown providers' do
       expect(described_class.normalize(provider: 'fish', stt_provider: 'fish')).to include(
         'stt_provider' => 'fish'
+      )
+      expect(described_class.normalize(provider: 'fish', stt_provider: 'gemini')).to include(
+        'stt_provider' => 'gemini'
       )
       expect(described_class.normalize(provider: 'fish', stt_provider: 'unknown')).to include(
         'stt_provider' => 'elevenlabs'

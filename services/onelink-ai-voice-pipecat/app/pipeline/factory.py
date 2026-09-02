@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
-from google.genai.types import ProactivityConfig, ThinkingConfig
+from google.genai.types import ProactivityConfig, ThinkingConfig, ThinkingLevel
 from pipecat.adapters.schemas.direct_function import tool_options
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
@@ -30,6 +30,7 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMUserAggregatorParams,
     UserTurnMessageAddedMessage,
 )
+from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.services.cartesia.stt import CartesiaSTTService
 from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.elevenlabs.stt import CommitStrategy
@@ -39,6 +40,7 @@ from pipecat.services.google.gemini_live.llm import (
     GeminiVADParams,
     HttpOptions,
 )
+from pipecat.services.google.gemini_live.stt import GeminiSTTService
 from pipecat.services.llm_service import FunctionCallParams
 from pipecat.services.openai.realtime.events import (
     AudioConfiguration,
@@ -131,6 +133,10 @@ GEMINI_AUTO_LANGUAGE_MODELS = frozenset(
 )
 GEMINI_THINKING_LEVEL_MODELS = frozenset({"gemini-3.1-flash-live-preview"})
 GEMINI_PROACTIVE_AUDIO_MODELS = frozenset({"gemini-2.5-flash-native-audio-preview-12-2025"})
+GEMINI_STT_LANGUAGE_ALIASES = {
+    # Gemini 3.5 Transcribe supports Russian as ru-RU, not OneLink's ru-KZ locale.
+    "ru-KZ": "ru-RU",
+}
 
 
 @dataclass(slots=True)
@@ -388,8 +394,10 @@ def build_pipeline(
     credentials = settings.provider_credentials(
         context.ai.provider, stt_provider=context.ai.stt_provider
     )
-    stt = None
-    tts = None
+    stt: FrameProcessor | None = None
+    tts: FrameProcessor | None = None
+    llm: FrameProcessor
+    processors: list[FrameProcessor]
     input_resampler = None
     output_resampler = None
     caller_command = (
@@ -410,7 +418,7 @@ def build_pipeline(
         proactive_audio_enabled = (
             context.ai.proactive_audio_enabled and context.ai.model in GEMINI_PROACTIVE_AUDIO_MODELS
         )
-        llm_context = LLMContext(messages=initial_messages)
+        llm_context = LLMContext(messages=cast(Any, initial_messages))
         aggregators = _aggregators(
             llm_context,
             state,
@@ -427,21 +435,27 @@ def build_pipeline(
                 model=context.ai.model,
                 system_instruction=_provider_system_prompt(context),
                 voice=context.ai.voice,
-                language=_gemini_language(context),
+                language=cast(Any, _gemini_language(context)),
                 temperature=context.ai.temperature,
                 max_tokens=context.ai.max_output_tokens,
                 vad=_gemini_vad_params(context),
                 context_window_compression=ContextWindowCompressionParams(
                     enabled=context.ai.context_window_compression_enabled
                 ),
-                thinking=(
-                    ThinkingConfig(thinking_level=context.ai.thinking_level)
+                thinking=cast(
+                    Any,
+                    ThinkingConfig(
+                        thinking_level=ThinkingLevel(context.ai.thinking_level.upper())
+                    )
                     if context.ai.model in GEMINI_THINKING_LEVEL_MODELS
-                    else None
+                    else None,
                 ),
                 enable_affective_dialog=affective_dialog_enabled,
-                proactivity=(
-                    ProactivityConfig(proactive_audio=True) if proactive_audio_enabled else None
+                proactivity=cast(
+                    Any,
+                    ProactivityConfig(proactive_audio=True)
+                    if proactive_audio_enabled
+                    else None,
                 ),
             ),
             inference_on_context_initialization=True,
@@ -466,7 +480,7 @@ def build_pipeline(
         )
         start_on_connect = True
     elif context.ai.provider == "openai-realtime":
-        llm_context = LLMContext(messages=initial_messages, tools=tools)
+        llm_context = LLMContext(messages=cast(Any, initial_messages), tools=tools)
         aggregators = _aggregators(
             llm_context,
             state,
@@ -523,7 +537,7 @@ def build_pipeline(
     else:
         direct_initial_greeting = (context.ai.first_message or "").strip() or None
         cascaded_initial_messages = [] if direct_initial_greeting else initial_messages
-        llm_context = LLMContext(messages=cascaded_initial_messages, tools=tools)
+        llm_context = LLMContext(messages=cast(Any, cascaded_initial_messages), tools=tools)
         aggregators = _aggregators(
             llm_context,
             state,
@@ -541,6 +555,29 @@ def build_pipeline(
                 settings=CartesiaSTTService.Settings(
                     model=settings.cartesia_stt_model,
                     language=language,
+                ),
+            )
+        elif context.ai.provider == "fish" and context.ai.stt_provider == "gemini":
+            raw_language_hints = (
+                list(dict.fromkeys(context.ai.input_language_priorities))
+                if context.ai.language == "auto"
+                else [context.ai.language]
+            )
+            language_hints = list(
+                dict.fromkeys(
+                    GEMINI_STT_LANGUAGE_ALIASES.get(language, language)
+                    for language in raw_language_hints
+                )
+            )
+            stt = GeminiSTTService(
+                api_key=credentials["gemini_api_key"],
+                sample_rate=16_000,
+                settings=GeminiSTTService.Settings(
+                    model=settings.gemini_stt_model,
+                    language=None,
+                    # GeminiSTTService explicitly accepts BCP-47 strings here.
+                    languages=cast(list[Language], language_hints),
+                    language_auto=None,
                 ),
             )
         elif context.ai.provider == "fish" and context.ai.stt_provider == "fish":
@@ -644,6 +681,8 @@ def build_pipeline(
                     language=language,
                 ),
             )
+        assert stt is not None
+        assert tts is not None
         processors = [
             transport.input(),
             InputRecordingProcessor(recorder),

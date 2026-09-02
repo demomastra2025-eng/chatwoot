@@ -929,11 +929,15 @@ async def test_terminal_control_timeout_is_bounded_and_keeps_cleanup_eligible(mo
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("stt_provider", "elevenlabs_api_key"),
-    [("fish", ""), ("elevenlabs", "elevenlabs-secret")],
+    ("stt_provider", "elevenlabs_api_key", "gemini_api_key"),
+    [
+        ("fish", "", ""),
+        ("elevenlabs", "elevenlabs-secret", ""),
+        ("gemini", "", "gemini-secret"),
+    ],
 )
-async def test_fish_preflight_accepts_both_stt_variants(
-    monkeypatch, tmp_path, stt_provider, elevenlabs_api_key
+async def test_fish_preflight_accepts_all_stt_variants(
+    monkeypatch, tmp_path, stt_provider, elevenlabs_api_key, gemini_api_key
 ):
     raw_context = {
         "call_ref": "sipuni:janus-ai:fish-preflight",
@@ -957,6 +961,7 @@ async def test_fish_preflight_accepts_both_stt_variants(
                 "fish_api_key": "fish-secret",
                 "openrouter_api_key": "openrouter-secret",
                 "elevenlabs_api_key": elevenlabs_api_key,
+                "gemini_api_key": gemini_api_key,
                 "recording_root": tmp_path,
             }
         )

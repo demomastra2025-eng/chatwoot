@@ -118,12 +118,25 @@ class ConfirmedUserTurnStartStrategy(BaseUserTurnStartStrategy):
             and time.monotonic() - self._last_transcript <= self._confirmation_window_seconds
         )
 
-    async def trigger_user_turn_started(self) -> None:
+    async def trigger_user_turn_started(
+        self,
+        *,
+        enable_interruptions: bool | None = None,
+        enable_user_speaking_frames: bool | None = None,
+    ) -> None:
         self._last_transcript = 0.0
         await self._call_event_handler(
             "on_user_turn_started",
             UserTurnStartedParams(
-                enable_interruptions=self._enable_interruptions,
-                enable_user_speaking_frames=self._enable_user_speaking_frames,
+                enable_interruptions=(
+                    self._enable_interruptions
+                    if enable_interruptions is None
+                    else enable_interruptions
+                ),
+                enable_user_speaking_frames=(
+                    self._enable_user_speaking_frames
+                    if enable_user_speaking_frames is None
+                    else enable_user_speaking_frames
+                ),
             ),
         )
