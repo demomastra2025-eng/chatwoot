@@ -170,3 +170,18 @@ async def test_vad_confirmed_mode_interrupts_without_waiting_for_stt():
 
     assert await strategy.process_frame(VADUserStartedSpeakingFrame()) is ProcessFrameResult.STOP
     assert len(starts) == 1
+
+
+@pytest.mark.asyncio
+async def test_upstream_turn_start_flags_override_strategy_defaults():
+    strategy = ConfirmedUserTurnStartStrategy(mode="transcript_confirmed")
+    starts = capture_starts(strategy)
+
+    await strategy.trigger_user_turn_started(
+        enable_interruptions=False,
+        enable_user_speaking_frames=False,
+    )
+
+    assert len(starts) == 1
+    assert starts[0].enable_interruptions is False
+    assert starts[0].enable_user_speaking_frames is False

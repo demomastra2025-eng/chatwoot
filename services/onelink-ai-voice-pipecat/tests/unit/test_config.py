@@ -110,6 +110,10 @@ def test_fish_tts_uses_the_qualified_free_model_by_default():
     assert valid_settings().fish_tts_model == "s2.1-pro-free"
 
 
+def test_gemini_stt_uses_the_official_live_transcribe_model_by_default():
+    assert valid_settings().gemini_stt_model == "gemini-3.5-transcribe-live"
+
+
 def test_fish_elevenlabs_provider_requires_all_three_credentials():
     credentials = valid_settings().provider_credentials("fish", stt_provider="elevenlabs")
 
@@ -117,6 +121,18 @@ def test_fish_elevenlabs_provider_requires_all_three_credentials():
         "fish_api_key": "fish-secret",
         "openrouter_api_key": "openrouter-secret",
         "elevenlabs_api_key": "elevenlabs-secret",
+    }
+
+
+def test_fish_gemini_provider_requires_gemini_instead_of_elevenlabs():
+    credentials = valid_settings(elevenlabs_api_key="").provider_credentials(
+        "fish", stt_provider="gemini"
+    )
+
+    assert credentials == {
+        "fish_api_key": "fish-secret",
+        "openrouter_api_key": "openrouter-secret",
+        "gemini_api_key": "gemini-secret",
     }
 
 

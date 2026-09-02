@@ -296,6 +296,10 @@ const voiceSttProviderOptions = computed(() => [
     value: 'fish',
     label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.STT_FISH_BATCH'),
   },
+  {
+    value: 'gemini',
+    label: t('CAPTAIN.ASSISTANTS.FORM.VOICE_SETTINGS.STT_GEMINI_TRANSCRIBE'),
+  },
 ]);
 const voiceProviderPreset = computed(
   () =>
