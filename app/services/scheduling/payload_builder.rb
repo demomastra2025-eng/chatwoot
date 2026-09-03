@@ -69,7 +69,7 @@ module Scheduling::PayloadBuilder
                end,
       created_at: appointment.created_at&.iso8601,
       updated_at: appointment.updated_at&.iso8601
-    }
+    }.merge(Integrations::Medelement::AppointmentProviderStatus.payload(appointment))
   end
 
   def available_conversation(conversation)

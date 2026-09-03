@@ -95,6 +95,31 @@ RSpec.describe Integrations::Medelement::ProviderCommand, type: :model do
     # rubocop:enable Rails/SkipsModelValidations
   end
 
+  it 'keeps unknown provider outcomes inside the unfinished database barrier' do
+    command = described_class.create!(
+      account: account,
+      hook: hook,
+      contact: contact,
+      operation: 'create_patient',
+      status: 'provider_status_unknown',
+      idempotency_key: 'unknown-provider-outcome'
+    )
+    duplicate_attributes = command.attributes.except('id').merge(
+      'status' => 'queued',
+      'idempotency_key' => 'duplicate-after-unknown-outcome',
+      'created_at' => Time.current,
+      'updated_at' => Time.current
+    )
+
+    expect(command).to be_reconcilable
+    expect(command).not_to be_terminal
+    expect(described_class.unfinished).to include(command)
+    # Bypassing validations is intentional: this verifies the database race barrier itself.
+    # rubocop:disable Rails/SkipsModelValidations
+    expect { described_class.insert_all!([duplicate_attributes]) }.to raise_error(ActiveRecord::RecordNotUnique)
+    # rubocop:enable Rails/SkipsModelValidations
+  end
+
   it 'keeps versioned statuses logical to current code and invisible to legacy exact scopes' do
     command = described_class.create!(
       account: account,

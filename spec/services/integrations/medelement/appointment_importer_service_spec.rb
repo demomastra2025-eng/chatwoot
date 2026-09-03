@@ -147,6 +147,207 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(result.custom_attributes['source_mode']).to eq('outbound')
   end
 
+  # rubocop:disable RSpec/ExampleLength
+  it 'adopts a late provider reception into the original unknown outbound appointment' do
+    account.enable_features!('scheduling')
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    starts_at = zone.local(2026, 3, 21, 9, 0, 0)
+    ends_at = zone.local(2026, 3, 21, 9, 20, 0)
+    contact = create(
+      :contact,
+      account: account,
+      phone_number: ['+7', '700', '000', '0001'].join,
+      custom_attributes: { 'medelement_patient_code' => reception['PATIENT_CODE'] }
+    )
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => import_context[:specialist_code],
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      resource: resource,
+      source: 'manual',
+      starts_at: starts_at,
+      ends_at: ends_at,
+      custom_attributes: {
+        'medelement_cabinet_code' => 'cabinet-1',
+        'medelement_provider_sync_status' => 'provider_status_unknown'
+      }
+    )
+    command = create_unknown_outbound_command(
+      appointment: appointment,
+      contact: contact,
+      starts_at: starts_at,
+      ends_at: ends_at
+    )
+    provider_reception = reception.merge(
+      'SPECIALIST_CODE' => import_context[:specialist_code],
+      'COMPANY_CABINET_CODE' => 'cabinet-1',
+      'STARTTIME' => starts_at.in_time_zone(zone).strftime('%d.%m.%Y %H:%M:%S'),
+      'ENDTIME' => ends_at.in_time_zone(zone).strftime('%d.%m.%Y %H:%M:%S'),
+      'REMOVED' => 0,
+      'SERVICES' => []
+    )
+
+    expect do
+      result = service.upsert!(
+        resource: resource,
+        contact: nil,
+        reception: provider_reception,
+        import_context: import_context.merge(starts_at: starts_at, ends_at: ends_at)
+      )
+
+      expect(result.id).to eq(appointment.id)
+    end.not_to change(account.scheduling_appointments, :count)
+
+    expect(appointment.reload).to have_attributes(
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE']),
+      source: 'manual',
+      contact_id: contact.id
+    )
+    expect(appointment.custom_attributes).to include(
+      'medelement_reception_code' => reception['RECEPTION_CODE'],
+      'medelement_provider_sync_status' => 'succeeded',
+      'source_mode' => 'outbound'
+    )
+    expect(command.reload).to have_attributes(
+      status: 'succeeded',
+      provider_reception_code: reception['RECEPTION_CODE']
+    )
+  end
+
+  it 'requires manual resolution when the local appointment changed after the provider write' do
+    account.enable_features!('scheduling')
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    starts_at = zone.local(2026, 3, 21, 9, 0, 0)
+    ends_at = zone.local(2026, 3, 21, 9, 20, 0)
+    contact = create(
+      :contact,
+      account: account,
+      phone_number: ['+7', '700', '000', '0003'].join,
+      custom_attributes: { 'medelement_patient_code' => reception['PATIENT_CODE'] }
+    )
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => import_context[:specialist_code],
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      contact: contact,
+      resource: resource,
+      source: 'manual',
+      starts_at: starts_at,
+      ends_at: ends_at,
+      custom_attributes: {
+        'medelement_cabinet_code' => 'cabinet-1',
+        'medelement_provider_sync_status' => 'provider_status_unknown'
+      }
+    )
+    command = create_unknown_outbound_command(
+      appointment: appointment,
+      contact: contact,
+      starts_at: starts_at,
+      ends_at: ends_at
+    )
+    provider_reception = reception.merge(
+      'SPECIALIST_CODE' => import_context[:specialist_code],
+      'COMPANY_CABINET_CODE' => 'cabinet-1',
+      'STARTTIME' => starts_at.in_time_zone(zone).strftime('%d.%m.%Y %H:%M:%S'),
+      'ENDTIME' => ends_at.in_time_zone(zone).strftime('%d.%m.%Y %H:%M:%S'),
+      'REMOVED' => 0,
+      'SERVICES' => []
+    )
+    appointment.update!(starts_at: starts_at + 1.hour, ends_at: ends_at + 1.hour)
+
+    expect do
+      service.upsert!(
+        resource: resource,
+        contact: contact,
+        reception: provider_reception,
+        import_context: import_context.merge(starts_at: starts_at, ends_at: ends_at)
+      )
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_RECEPTION_COMMAND_STALE_LOCAL') }
+
+    expect(appointment.reload).to have_attributes(starts_at: starts_at + 1.hour, external_ref: nil)
+    expect(command.reload).to be_provider_status_unknown
+    expect(
+      account.scheduling_appointments.where(external_ref: "medelement:reception:#{reception['RECEPTION_CODE']}")
+    ).to be_empty
+  end
+
+  it 'does not create an imported appointment when a reception matches multiple unfinished commands' do
+    account.enable_features!('scheduling')
+    zone = ActiveSupport::TimeZone['Asia/Almaty']
+    starts_at = zone.local(2026, 3, 21, 9, 0, 0)
+    ends_at = zone.local(2026, 3, 21, 9, 20, 0)
+    late_reception = reception.merge(
+      'SPECIALIST_CODE' => '27492901726817790',
+      'COMPANY_CABINET_CODE' => '5001',
+      'STARTTIME' => starts_at.strftime('%d.%m.%Y %H:%M:%S'),
+      'ENDTIME' => ends_at.strftime('%d.%m.%Y %H:%M:%S'),
+      'REMOVED' => 0,
+      'SERVICES' => []
+    )
+    contact = create(
+      :contact,
+      account: account,
+      phone_number: ['+7', '700', '000', '0002'].join,
+      custom_attributes: { 'medelement_patient_code' => reception['PATIENT_CODE'] }
+    )
+    resource.update!(
+      custom_attributes: resource.custom_attributes.merge(
+        'medelement_specialist_code' => late_reception['SPECIALIST_CODE'],
+        'medelement_company_cabinet_code' => late_reception['COMPANY_CABINET_CODE']
+      )
+    )
+    appointments = Array.new(2) do
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        resource: resource,
+        contact: contact,
+        starts_at: starts_at,
+        ends_at: ends_at,
+        external_ref: nil
+      )
+      create_unknown_outbound_command(
+        appointment: appointment,
+        contact: contact,
+        starts_at: starts_at,
+        ends_at: ends_at,
+        provider_reception: late_reception
+      )
+      appointment
+    end
+
+    expect do
+      service.upsert!(
+        resource: resource,
+        contact: contact,
+        reception: late_reception,
+        import_context: {
+          remote_updated_at: Time.zone.parse('2025-01-01 09:00:00'),
+          source_version: 2,
+          starts_at: starts_at,
+          ends_at: ends_at,
+          removed: false
+        }
+      )
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_RECEPTION_COMMAND_AMBIGUOUS') }
+    expect(appointments.map { |appointment| appointment.reload.external_ref }).to all(be_nil)
+    expect(
+      account.scheduling_appointments.where(external_ref: "medelement:reception:#{late_reception['RECEPTION_CODE']}")
+    ).to be_empty
+  end
+  # rubocop:enable RSpec/ExampleLength
+
   it 'rejects a provider snapshot captured before a newer local mutation' do
     mutation_at = Time.zone.parse('2026-03-20 10:00:01')
     appointment = create(
@@ -553,4 +754,58 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
       desired_ends_at: appointment.ends_at
     )
   end
+
+  # rubocop:disable Metrics/MethodLength
+  def create_unknown_outbound_command(appointment:, contact:, starts_at:, ends_at:, provider_reception: reception)
+    hook = account.hooks.find_by(app_id: 'medelement') || create(:integrations_hook, :medelement, account: account)
+    snapshot = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      contact: contact,
+      operation: 'create_reception',
+      company_cabinet_code: provider_reception['COMPANY_CABINET_CODE'] || 'cabinet-1',
+      desired_starts_at: starts_at,
+      desired_ends_at: ends_at
+    ).build
+    fingerprint = Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder.fingerprint(snapshot)
+    command = Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      contact: contact,
+      operation: 'create_reception',
+      status: 'provider_status_unknown',
+      provider_patient_code: provider_reception['PATIENT_CODE'],
+      idempotency_key: SecureRandom.uuid,
+      company_cabinet_code: provider_reception['COMPANY_CABINET_CODE'] || 'cabinet-1',
+      desired_starts_at: starts_at,
+      desired_ends_at: ends_at,
+      execution_state: {
+        'write_phase' => 'reception_create',
+        'write_provider_patient_code' => provider_reception['PATIENT_CODE'],
+        'preflight_reception_codes' => [],
+        'request_snapshot' => snapshot,
+        'request_fingerprint' => fingerprint
+      }
+    )
+    confirmation = create(
+      :confirmation_request,
+      account: account,
+      contact: contact,
+      status: 'confirmed',
+      resolved_at: Time.current,
+      metadata: {
+        'medelement_provider_command_id' => command.id,
+        'operation' => command.operation,
+        'request_fingerprint' => fingerprint
+      }
+    )
+    command.update!(
+      confirmation_request: confirmation,
+      execution_state: command.execution_state.merge('confirmation_request_id' => confirmation.id)
+    )
+    command
+  end
+  # rubocop:enable Metrics/MethodLength
 end

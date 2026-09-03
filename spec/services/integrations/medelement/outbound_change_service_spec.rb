@@ -57,6 +57,32 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(command.confirmation_request).to have_attributes(status: 'confirmed', resolution_source: 'system')
     expect(command.confirmation_request.resolution_metadata).to include('medelement_auto_sync' => true)
     expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.with(command.confirmation_request_id)
+    expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('pending')
+  end
+
+  it 'does not regress the provider status when execution finishes before status projection' do
+    allow(Integrations::Medelement::ProviderCommandConfirmationJob).to receive(:perform_later) do |confirmation_request_id|
+      completed_command = Integrations::Medelement::ProviderCommand.find_by!(
+        confirmation_request_id: confirmation_request_id
+      )
+      completed_command.update!(status: completed_command.status_for_transition('succeeded'))
+      Integrations::Medelement::AppointmentProviderStatus.persist!(
+        completed_command.appointment,
+        Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED
+      )
+    end
+
+    command = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment_created',
+      account_id: account.id,
+      actor_id: actor.id,
+      event_key: 'appointment:created:provider-race'
+    ).perform
+
+    expect(command.reload).to be_succeeded
+    expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('succeeded')
   end
 
   it 'creates and system-confirms a Captain reception command without a user requester' do

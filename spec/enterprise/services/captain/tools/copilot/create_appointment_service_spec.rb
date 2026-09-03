@@ -81,6 +81,8 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
     end
 
     it 'creates a Medelement appointment from structured contact custom names' do
+      hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+      create(:integrations_hook, :medelement, account: account, settings: hook_settings)
       resource.update!(
         custom_attributes: {
           'medelement_specialist_code' => 'specialist-1',
@@ -98,20 +100,34 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
         )
       )
 
-      execute_confirmed(
-        resource_id: resource.id,
-        starts_at: starts_at.iso8601,
-        duration_min: 30,
-        appointment_type: 'primary',
-        custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }
+      payload = JSON.parse(
+        execute_confirmed(
+          resource_id: resource.id,
+          starts_at: starts_at.iso8601,
+          duration_min: 30,
+          appointment_type: 'primary',
+          custom_attributes: { 'medelement_cabinet_code' => 'cabinet-1' }
+        )
       )
 
-      expect(account.scheduling_appointments.order(:id).last).to have_attributes(
+      appointment = account.scheduling_appointments.order(:id).last
+
+      expect(payload).to include(
+        'status' => 'pending_provider_confirmation',
+        'provider_confirmation_status' => 'pending',
+        'provider_confirmed' => false
+      )
+      expect(payload['appointment']).to include(
+        'provider_confirmation_status' => 'pending',
+        'provider_confirmed' => false
+      )
+      expect(appointment).to have_attributes(
         client_first_name: 'Жандаулет',
         client_last_name: 'Гусман',
         client_identifier: '940720300129',
         appointment_type: 'primary'
       )
+      expect(appointment.custom_attributes).to include('medelement_provider_sync_status' => 'pending')
     end
   end
 

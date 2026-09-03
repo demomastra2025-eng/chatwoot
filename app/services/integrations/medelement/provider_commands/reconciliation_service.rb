@@ -14,7 +14,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   end
 
   def perform
-    return unless command.reconciliation_required?
+    return unless command.reconcilable?
     return unless valid_for_reconciliation?
 
     @reconciliation_claim_token = lifecycle.claim_attempt!
@@ -28,7 +28,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
       )
     end
   rescue Integrations::Medelement::ProviderScope::MismatchError
-    lifecycle.fail!('provider_scope_mismatch', claim_token: reconciliation_claim_token) if reconciliation_claim_token.present?
+    lifecycle.defer_unknown!('provider_scope_mismatch', claim_token: reconciliation_claim_token) if reconciliation_claim_token.present?
   rescue StandardError => e
     Rails.logger.warn("[MEDELEMENT::RECONCILIATION] command_id=#{command.id} error=#{e.class}")
     lifecycle.retry_unresolved!('reconciliation_internal_error', claim_token: reconciliation_claim_token) if reconciliation_claim_token.present?
@@ -45,7 +45,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
   def reconcile_write!
     initialize_provider!
     handler = PHASE_HANDLERS[write_phase]
-    return lifecycle.fail!('reconciliation_unknown_write_phase', claim_token: reconciliation_claim_token) if handler.blank?
+    return lifecycle.defer_unknown!('reconciliation_unknown_write_phase', claim_token: reconciliation_claim_token) if handler.blank?
 
     send(handler)
     lifecycle.retry_unresolved!('reconciliation_no_match', claim_token: reconciliation_claim_token)
@@ -59,7 +59,7 @@ class Integrations::Medelement::ProviderCommands::ReconciliationService
                  else
                    'reconciliation_invalid_confirmation'
                  end
-    lifecycle.fail!(error_code)
+    lifecycle.defer_unknown!(error_code)
     false
   end
 
