@@ -40,7 +40,6 @@ from pipecat.services.google.gemini_live.llm import (
     GeminiVADParams,
     HttpOptions,
 )
-from pipecat.services.google.gemini_live.stt import GeminiSTTService
 from pipecat.services.llm_service import FunctionCallParams
 from pipecat.services.openai.realtime.events import (
     AudioConfiguration,
@@ -84,6 +83,7 @@ from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTSer
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
 from app.services.gemini_live import OneLinkGeminiLiveLLMService, OneLinkInternalTextFrame
+from app.services.gemini_stt import OneLinkGeminiSTTService
 from app.sessions.state import SessionState
 
 logger = logging.getLogger(__name__)
@@ -569,10 +569,10 @@ def build_pipeline(
                     for language in raw_language_hints
                 )
             )
-            stt = GeminiSTTService(
+            stt = OneLinkGeminiSTTService(
                 api_key=credentials["gemini_api_key"],
                 sample_rate=16_000,
-                settings=GeminiSTTService.Settings(
+                settings=OneLinkGeminiSTTService.Settings(
                     model=settings.gemini_stt_model,
                     language=None,
                     # GeminiSTTService explicitly accepts BCP-47 strings here.

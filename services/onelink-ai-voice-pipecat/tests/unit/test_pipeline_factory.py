@@ -14,7 +14,6 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.elevenlabs.stt import CommitStrategy
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService
-from pipecat.services.google.gemini_live.stt import GeminiSTTService
 from pipecat.services.openai.realtime.events import ResponseCreateEvent
 from pipecat.services.openai.realtime.llm import OpenAIRealtimeLLMService
 from pipecat.services.openrouter.llm import OpenRouterLLMService
@@ -38,6 +37,7 @@ from app.pipeline.processors import DomainTranscriptNormalizationProcessor, Mode
 from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
+from app.services.gemini_stt import OneLinkGeminiSTTService
 
 
 def _settings(**overrides) -> Settings:
@@ -242,9 +242,12 @@ def test_builds_fish_gemini_transcribe_pipeline():
         settings=_settings(elevenlabs_api_key=""),
     )
 
-    assert isinstance(assembly.stt, GeminiSTTService)
+    assert isinstance(assembly.stt, OneLinkGeminiSTTService)
     assert assembly.stt._settings.model == "gemini-3.5-transcribe-live"
     assert assembly.stt._settings.languages == ["ru-RU"]
+    live_config = assembly.stt._build_live_config()
+    assert live_config.input_audio_transcription.language_codes == ["ru-RU"]
+    assert live_config.input_audio_transcription.language_hints is None
     assert isinstance(assembly.llm, OpenRouterLLMService)
     assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
 
