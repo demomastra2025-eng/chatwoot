@@ -46,18 +46,31 @@ class CommunicationThreads::RealtimeUpdateService
 
   def broadcast_dashboard_updates(communication_thread, links, source_conversation, message)
     account = communication_thread.account
-    payloads_by_visible_link_ids = {}
+    broadcasts_by_visible_link_ids = {}
 
     dashboard_users(account, links).each do |user|
-      visible_links = visible_links_for(account, user, links)
+      visible_links = visible_source_links(account, user, links, source_conversation)
       next if visible_links.blank?
-      next unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
 
       visible_link_ids = visible_links.map(&:id).sort
-      payload = payloads_by_visible_link_ids[visible_link_ids] ||=
-        realtime_payload(communication_thread, visible_links, source_conversation, message)
-      broadcast(account, user, payload)
+      broadcast_group = broadcasts_by_visible_link_ids[visible_link_ids] ||= {
+        members: [],
+        payload: realtime_payload(communication_thread, visible_links, source_conversation, message)
+      }
+      broadcast_group[:members] << user.pubsub_token
     end
+
+    broadcasts_by_visible_link_ids.each_value do |broadcast_group|
+      broadcast(account, broadcast_group[:members], broadcast_group[:payload])
+    end
+  end
+
+  def visible_source_links(account, user, links, source_conversation)
+    visible_links = visible_links_for(account, user, links)
+    return if visible_links.blank?
+    return unless visible_links.any? { |link| link.conversation_id == source_conversation.id }
+
+    visible_links
   end
 
   def dashboard_users(account, links)
@@ -177,11 +190,11 @@ class CommunicationThreads::RealtimeUpdateService
     links.flat_map { |link| link.conversation&.label_list }.compact.uniq
   end
 
-  def broadcast(account, user, data)
+  def broadcast(account, members, data)
     payload = data.merge(account_id: account.id)
     payload[:performer] = performer(account).push_event_data if performer(account).present?
 
-    ActionCableBroadcastJob.perform_later([user.pubsub_token], EVENT_NAME, payload)
+    ActionCableBroadcastJob.perform_later(members.uniq, EVENT_NAME, payload)
   end
 
   def performer(account)
