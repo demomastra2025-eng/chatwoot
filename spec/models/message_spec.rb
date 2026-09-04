@@ -716,6 +716,57 @@ RSpec.describe Message do
     end
   end
 
+  context 'with communication thread callbacks' do
+    let(:account) do
+      create(:account).tap { |record| record.enable_features!('communication_threads') }
+    end
+    let(:conversation) { create(:conversation, account: account) }
+
+    it 'finishes the thread refresh before enqueueing an outgoing reply' do
+      conversation.refresh_communication_thread!
+      message = build(
+        :message,
+        account: account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :outgoing
+      )
+
+      expect(message).to receive(:refresh_communication_thread).ordered.and_call_original
+      expect(SendReplyJob).to receive(:perform_later).with(kind_of(Integer)).ordered
+
+      message.save!
+    end
+
+    it 'does not refresh the thread for provider delivery metadata updates' do
+      message = create(
+        :message,
+        account: account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :incoming
+      )
+
+      expect(message).not_to receive(:refresh_communication_thread)
+
+      message.update!(source_id: 'provider-message-id', status: :sent)
+    end
+
+    it 'refreshes the thread when unread message context changes' do
+      message = create(
+        :message,
+        account: account,
+        inbox: conversation.inbox,
+        conversation: conversation,
+        message_type: :incoming
+      )
+
+      expect(message).to receive(:refresh_communication_thread).once.and_call_original
+
+      message.update!(private: !message.private?)
+    end
+  end
+
   context 'when content_type is blank' do
     let(:message) { build(:message, content_type: nil, account: create(:account)) }
 

@@ -142,7 +142,7 @@ class Message < ApplicationRecord
   after_create_commit :execute_after_create_commit_callbacks
 
   after_update_commit :dispatch_update_event
-  after_commit :refresh_communication_thread, on: [:update, :destroy], if: :communication_threads_enabled?
+  after_commit :refresh_communication_thread, on: [:update, :destroy], if: :communication_thread_refresh_required?
   after_commit :reindex_for_search, if: :should_index?, on: [:create, :update]
 
   def channel_token
@@ -389,10 +389,10 @@ class Message < ApplicationRecord
     ensure_communication_thread_for_create_event
     dispatch_create_events
     sync_related_touches
-    send_reply
     execute_message_template_hooks
     update_contact_activity(runtime_events: true)
     refresh_communication_thread
+    send_reply
   end
 
   def update_contact_activity(runtime_events: true)
@@ -591,6 +591,16 @@ class Message < ApplicationRecord
 
   def communication_threads_enabled?
     account&.feature_enabled?('communication_threads')
+  end
+
+  def communication_thread_refresh_required?
+    communication_threads_enabled? && (
+      destroyed? ||
+      saved_change_to_conversation_id? ||
+      saved_change_to_created_at? ||
+      saved_change_to_message_type? ||
+      saved_change_to_private?
+    )
   end
 
   def reindex_for_search

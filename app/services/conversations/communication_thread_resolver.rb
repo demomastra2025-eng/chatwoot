@@ -12,12 +12,12 @@ class Conversations::CommunicationThreadResolver
   def perform
     return unless linkable_conversation?
 
-    locked_account_id = conversation.account_id
-    locked_contact_id = conversation.contact_id
     CommunicationThread.transaction do
-      lock_contact_thread!(locked_account_id, locked_contact_id)
       conversation.lock!
-      return unless linkable_conversation?
+      return unless linkable_conversation? # rubocop:disable Layout/EmptyLineAfterGuardClause
+      locked_account_id = conversation.account_id
+      locked_contact_id = conversation.contact_id
+      lock_contact_thread!(locked_account_id, locked_contact_id)
       return unless conversation.account_id == locked_account_id && conversation.contact_id == locked_contact_id
 
       previous_thread = raw_communication_thread

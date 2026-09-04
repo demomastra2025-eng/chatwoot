@@ -76,6 +76,23 @@ RSpec.describe Conversations::CommunicationThreadResolver do
       expect(CommunicationThread.where(account: account, contact: contact).count).to eq(1)
     end
 
+    it 'locks the conversation row before taking the contact advisory lock' do
+      conversation = create(:conversation, account: account)
+      lock_queries = []
+      callback = lambda do |_name, _started, _finished, _id, payload|
+        sql = payload[:sql].to_s
+        lock_queries << :conversation if sql.end_with?('FOR UPDATE')
+        lock_queries << :contact if sql.include?('pg_advisory_xact_lock')
+      end
+
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        described_class.new(conversation: conversation).perform
+      end
+
+      expect(lock_queries).to include(:conversation, :contact)
+      expect(lock_queries.index(:conversation)).to be < lock_queries.index(:contact)
+    end
+
     it 'is idempotent for the same conversation' do
       conversation = create(:conversation, account: account)
 
