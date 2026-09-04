@@ -27,9 +27,9 @@ import {
 
 let audioNotificationHelperPromise;
 const SIDEBAR_UNREAD_COUNTS_REFRESH_DELAY = 1000;
-const SIDEBAR_UNREAD_COUNTS_MIN_INTERVAL = 5000;
+const SIDEBAR_UNREAD_COUNTS_MIN_INTERVAL = 30000;
 const SIDEBAR_UNREAD_COUNTS_LOCK_TTL = 15000;
-const SIDEBAR_UNREAD_COUNTS_CACHE_TTL = 15000;
+const SIDEBAR_UNREAD_COUNTS_CACHE_TTL = 30000;
 const SIDEBAR_UNREAD_COUNTS_STORAGE_PREFIX = 'chatwoot:sidebar-unread-counts';
 const SIDEBAR_UNREAD_COUNTS_CONTEXT_KEYS = [
   'inboxId',
@@ -334,7 +334,13 @@ class ActionCableConnector extends BaseActionCableConnector {
   };
 
   fetchConversationStats = () => {
-    emitter.emit('fetch_conversation_stats');
+    const communicationThreadMode = Boolean(
+      this.app.$store.state?.conversations?.conversationFilters
+        ?.communicationThreadMode
+    );
+    if (!communicationThreadMode) {
+      emitter.emit('fetch_conversation_stats');
+    }
     this.fetchSidebarUnreadCounts();
   };
 
