@@ -65,6 +65,7 @@ from app.api.models import RuntimeStream
 from app.config import Settings
 from app.media.transport import create_media_transport
 from app.pipeline.context import AiSettings, ToolDefinition, VoiceContext
+from app.pipeline.language import CascadeLanguageState, CascadeLanguageStateProcessor
 from app.pipeline.processors import (
     AssistantLifecycleProcessor,
     AudioResampleProcessor,
@@ -546,6 +547,11 @@ def build_pipeline(
             ai=context.ai,
             realtime_service_mode=False,
         )
+        cascade_language_state = CascadeLanguageState.from_settings(
+            context.ai.language,
+            context.ai.input_language_priorities,
+        )
+        cascade_base_system_instruction = _provider_system_prompt(context)
         language = _provider_language(context.ai.language)
         stt_language, secondary_languages = _cascade_stt_languages(context.ai)
         if context.ai.provider == "cartesia":
@@ -639,7 +645,9 @@ def build_pipeline(
             openrouter_extra_body["reasoning"] = {"effort": "none", "exclude": True}
         openrouter_settings = {
             "model": context.ai.model,
-            "system_instruction": _provider_system_prompt(context),
+            "system_instruction": cascade_language_state.system_instruction(
+                cascade_base_system_instruction
+            ),
             "max_tokens": context.ai.max_output_tokens,
             "extra": {"extra_body": openrouter_extra_body},
         }
@@ -649,6 +657,7 @@ def build_pipeline(
             api_key=credentials["openrouter_api_key"],
             settings=OpenRouterLLMService.Settings(**openrouter_settings),
         )
+        tts_language = language or cascade_language_state.tts_language
         if context.ai.provider == "cartesia":
             tts = CartesiaTTSService(
                 api_key=credentials["cartesia_api_key"],
@@ -656,7 +665,7 @@ def build_pipeline(
                 settings=CartesiaTTSService.Settings(
                     model=settings.cartesia_tts_model,
                     voice=context.ai.voice,
-                    language=language,
+                    language=tts_language,
                 ),
             )
         elif context.ai.provider == "fish":
@@ -667,7 +676,7 @@ def build_pipeline(
                 settings=OneLinkFishAudioTTSService.Settings(
                     model=settings.fish_tts_model,
                     voice=context.ai.voice,
-                    language=language,
+                    language=tts_language,
                     latency=settings.fish_tts_latency,
                 ),
             )
@@ -678,16 +687,23 @@ def build_pipeline(
                 settings=ElevenLabsTTSService.Settings(
                     model=settings.elevenlabs_tts_model,
                     voice=context.ai.voice,
-                    language=language,
+                    language=tts_language,
                 ),
             )
         assert stt is not None
         assert tts is not None
+        cascade_language_processor = CascadeLanguageStateProcessor(
+            state=cascade_language_state,
+            base_system_instruction=cascade_base_system_instruction,
+            llm=llm,
+            tts=tts,
+        )
         processors = [
             transport.input(),
             InputRecordingProcessor(recorder),
             stt,
             transcript_normalizer,
+            cascade_language_processor,
             PreAggregatorSTTEvidenceProcessor(),
         ]
         # The universal user aggregator intentionally consumes final

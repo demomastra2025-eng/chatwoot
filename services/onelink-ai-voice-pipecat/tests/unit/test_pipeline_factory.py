@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal, cast
+from typing import Any, Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -33,6 +33,7 @@ from app.pipeline.factory import (
     _user_turn_strategies,
     build_pipeline,
 )
+from app.pipeline.language import CascadeLanguageStateProcessor
 from app.pipeline.processors import DomainTranscriptNormalizationProcessor, ModelLifecycleProcessor
 from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
 from app.services.fish_asr import FishAudioASRService
@@ -492,6 +493,41 @@ def test_cascade_auto_language_uses_configured_primary_and_secondary_hints(provi
     assert stt._settings.language is Language.RU
     assert stt._secondary_languages == ["kk", "en"]
     assert stt._settings.keyterms == list(ELEVENLABS_STT_KEYTERMS)
+
+
+@pytest.mark.parametrize("provider", ["elevenlabs", "cartesia", "fish"])
+def test_cascade_auto_language_locks_llm_and_tts_to_primary_until_stt_switch(provider):
+    context = _context(provider, model="openai/gpt-5.4-mini", voice="voice-ref")
+    context.ai.language = "auto"
+    context.ai.input_language_priorities = ["kk-KZ", "ru-KZ", "en-US"]
+
+    assembly = build_pipeline(
+        context=context,
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(),
+    )
+
+    processors = assembly.worker._pipeline._processors[1]._processors
+    language_index = next(
+        index
+        for index, processor in enumerate(processors)
+        if isinstance(processor, CascadeLanguageStateProcessor)
+    )
+    stt_index = processors.index(assembly.stt)
+    user_aggregator_index = next(
+        index
+        for index, processor in enumerate(processors)
+        if type(processor).__name__ == "LLMUserAggregator"
+    )
+
+    assert stt_index < language_index < user_aggregator_index
+    assert processors[language_index].state.active_code == "kk-KZ"
+    assert "Активный язык ответа: казахском языке (kk-KZ)" in str(
+        cast(Any, assembly.llm)._settings.system_instruction
+    )
+    assert cast(Any, assembly.tts)._settings.language == "kk"
 
 
 @pytest.mark.parametrize(
