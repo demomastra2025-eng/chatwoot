@@ -373,6 +373,80 @@ RSpec.describe Scheduling::Appointments::UpsertService do
       expect(appointment.reload.service_id).to eq(linked_service.id)
     end
 
+    it 'fails closed at the mutation boundary when provider availability is unavailable' do
+      original_starts_at = appointment.starts_at
+      moved_starts_at = original_starts_at + 1.hour
+      appointment.update!(
+        service: nil,
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        external_ref: 'medelement:reception:reception-1',
+        custom_attributes: appointment.custom_attributes.except('service_ids', 'services', 'medelement_reception_code')
+      )
+      local_result = instance_double(Scheduling::AvailabilityService::Result, available?: true)
+      local_service = instance_double(Scheduling::AvailabilityService, availability_result: local_result)
+      allow(Scheduling::AvailabilityService).to receive(:new).and_return(local_service)
+      provider_result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+        status: 'unavailable',
+        checked_at: Time.current,
+        slots: [],
+        reason: 'provider_unavailable'
+      )
+      provider_service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: provider_result)
+      expect(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).with(
+        hash_including(cabinet_code: 'cabinet-1', exclude_reception_code: 'reception-1')
+      ).and_return(provider_service)
+
+      expect do
+        perform(
+          starts_at: moved_starts_at,
+          ends_at: appointment.ends_at + 1.hour,
+          client_phone: '+77001234567'
+        )
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_AVAILABILITY_UNVERIFIED') }
+
+      expect(appointment.reload.starts_at).to eq(original_starts_at)
+    end
+
+    it 'revalidates Medelement availability when only the selected cabinet changes' do
+      appointment.update!(
+        service: nil,
+        client_first_name: 'Айжан',
+        client_last_name: 'Касымова',
+        custom_attributes: appointment.custom_attributes.except('service_ids', 'services').merge(
+          'medelement_reception_code' => 'reception-1',
+          'medelement_cabinet_code' => 'cabinet-1'
+        )
+      )
+      resource.update!(
+        custom_attributes: resource.custom_attributes.merge(
+          'medelement_cabinets' => [
+            { 'companyCabinetCode' => 'cabinet-1' },
+            { 'companyCabinetCode' => 'cabinet-2' }
+          ]
+        )
+      )
+      local_result = instance_double(Scheduling::AvailabilityService::Result, available?: true)
+      allow(Scheduling::AvailabilityService).to receive(:new).and_return(
+        instance_double(Scheduling::AvailabilityService, availability_result: local_result)
+      )
+      provider_result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+        status: 'fresh', checked_at: Time.current, slots: [], reason: nil
+      )
+      expect(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).with(
+        hash_including(cabinet_code: 'cabinet-2', exclude_reception_code: 'reception-1')
+      ).and_return(instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: provider_result))
+
+      expect do
+        perform(
+          custom_attributes: appointment.custom_attributes.merge('medelement_cabinet_code' => 'cabinet-2'),
+          client_phone: '+77001234567'
+        )
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('APPOINTMENT_SLOT_UNAVAILABLE') }
+
+      expect(appointment.reload.custom_attributes['medelement_cabinet_code']).to eq('cabinet-1')
+    end
+
     it 'allows cancellation of a legacy incomplete appointment' do
       perform(status: 'cancelled')
 

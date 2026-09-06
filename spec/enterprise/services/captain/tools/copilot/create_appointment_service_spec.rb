@@ -81,6 +81,11 @@ RSpec.describe Captain::Tools::Copilot::CreateAppointmentService do
     end
 
     it 'creates a Medelement appointment from structured contact custom names' do
+      availability = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+        status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
+      )
+      availability_service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: availability)
+      allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(availability_service)
       hook_settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
       create(:integrations_hook, :medelement, account: account, settings: hook_settings)
       resource.update!(

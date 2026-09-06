@@ -10,6 +10,7 @@ class Reminders::ExecuteService
     reload_reminder
     return reminder if execution_ineligible?
     return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
+    return reminder if appointment_provider_blocked?(:materialization)
     return finish_execution if reminder.delivery_materialized?
 
     execute_action
@@ -35,6 +36,11 @@ class Reminders::ExecuteService
     else
       raise ArgumentError, "Unsupported touch action: #{reminder.action_type}"
     end
+  end
+
+  def appointment_provider_blocked?(phase)
+    Reminders::AppointmentProviderGuard.new(reminder: reminder, phase: phase).perform ==
+      Reminders::AppointmentProviderGuard::STOP
   end
 
   def execute_send_message

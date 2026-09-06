@@ -51,7 +51,12 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def create
     existing_appointment = idempotent_appointment
-    return render_payload(Scheduling::PayloadBuilder.appointment(existing_appointment), status: :ok) if existing_appointment.present?
+    if existing_appointment.present?
+      Integrations::Medelement::AppointmentProviderCommandReceiptLookupService.new(
+        account: Current.account, appointment: existing_appointment, operation: 'create_reception'
+      ).perform
+      return render_payload(Scheduling::PayloadBuilder.appointment(existing_appointment), status: :ok)
+    end
 
     appointment = Scheduling::Appointments::UpsertService.new(
       account: Current.account,

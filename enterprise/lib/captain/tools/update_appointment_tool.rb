@@ -40,7 +40,8 @@ class Captain::Tools::UpdateAppointmentTool < Captain::Tools::BasePublicTool
   def operations(state)
     Captain::Tools::Operations::AppointmentOperations.new(
       assistant: assistant,
-      conversation: current_conversation(state)
+      conversation: current_conversation(state),
+      actor: assistant
     )
   end
 end

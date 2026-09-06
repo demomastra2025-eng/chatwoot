@@ -998,6 +998,13 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     post path, params: params, headers: headers, as: :json
     created_id = response_body.dig('payload', 'id')
 
+    lookup = instance_double(Integrations::Medelement::AppointmentProviderCommandReceiptLookupService, perform: nil)
+    expect(Integrations::Medelement::AppointmentProviderCommandReceiptLookupService).to receive(:new).with(
+      account: account,
+      appointment: have_attributes(id: created_id),
+      operation: 'create_reception'
+    ).and_return(lookup)
+
     post path, params: params, headers: headers, as: :json
 
     expect(response).to have_http_status(:ok)

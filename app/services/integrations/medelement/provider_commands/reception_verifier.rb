@@ -80,11 +80,18 @@ class Integrations::Medelement::ProviderCommands::ReceptionVerifier
   end
 
   def active?(reception)
-    reception.is_a?(Hash) && reception.key?('REMOVED') && reception['REMOVED'].to_i.zero?
+    removed_state(reception)&.zero? || false
   end
 
   def removed?(reception)
-    reception.is_a?(Hash) && reception.key?('REMOVED') && reception['REMOVED'].to_i == 1
+    removed_state(reception) == 1
+  end
+
+  def removed_state(reception)
+    return unless reception.is_a?(Hash)
+
+    value = Integer(reception['REMOVED'], exception: false)
+    value if value.in?([0, 1])
   end
 
   def source_reception_code

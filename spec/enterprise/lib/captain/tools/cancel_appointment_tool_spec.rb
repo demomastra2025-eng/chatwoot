@@ -53,4 +53,35 @@ RSpec.describe Captain::Tools::CancelAppointmentTool, type: :model do
     expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
     expect(appointment.reload.status).to eq('scheduled')
   end
+
+  it 'returns the exact remove command receipt for a provider-backed appointment' do
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    resource = create(:scheduling_resource, account: account, custom_attributes: {
+                        'medelement_specialist_code' => 'specialist-1',
+                        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+                      })
+    contact = create(:contact, account: account, name: 'Aruzhan', last_name: 'Testova', phone_number: '+77011234567')
+    conversation = create(:conversation, account: account, contact: contact)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      contact: contact,
+      conversation: conversation,
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' }
+    )
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
+
+    result = tool.perform(tool_context)
+    raise result if result.start_with?('ERROR:')
+
+    payload = JSON.parse(result)
+
+    expect(payload.dig('provider_command_receipt', 'command')).to include(
+      'operation' => 'remove_reception',
+      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
+    )
+  end
 end

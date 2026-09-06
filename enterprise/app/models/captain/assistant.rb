@@ -66,6 +66,8 @@ class Captain::Assistant < ApplicationRecord
   CRM_DEAL_READ_COMPANION_TOOL_IDS = %w[get_deal search_deals].freeze
   CRM_DEAL_PIPELINE_AWARE_TOOL_IDS = %w[get_deal search_deals create_deal update_deal transition_deal_stage].freeze
   CRM_DEAL_WRITE_TOOL_IDS = %w[create_deal update_deal transition_deal_stage].freeze
+  APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS = %w[get_appointment_provider_status].freeze
+  APPOINTMENT_PROVIDER_MUTATION_TOOL_IDS = %w[create_appointment update_appointment cancel_appointment].freeze
   CRM_CUSTOM_FIELD_COMPANION_TOOL_IDS_BY_ENTITY = {
     deal: 'list_deal_custom_fields',
     task: 'list_task_custom_fields',
@@ -1244,6 +1246,8 @@ class Captain::Assistant < ApplicationRecord
     end
 
     expanded_tool_ids.concat(DOCUMENT_ATTACHMENT_COMPANION_TOOL_IDS) if normalized_tool_ids.intersect?(DOCUMENT_ATTACHMENT_AWARE_TOOL_IDS)
+    expanded_tool_ids.concat(APPOINTMENT_PROVIDER_STATUS_COMPANION_TOOL_IDS) if
+      normalized_tool_ids.intersect?(APPOINTMENT_PROVIDER_MUTATION_TOOL_IDS)
 
     expanded_tool_ids.uniq
   end

@@ -478,7 +478,8 @@ RSpec.describe Captain::Assistant, type: :model do
         'create_task',
         'list_task_custom_fields',
         'create_appointment',
-        'list_appointment_custom_fields'
+        'list_appointment_custom_fields',
+        'get_appointment_provider_status'
       )
     end
 

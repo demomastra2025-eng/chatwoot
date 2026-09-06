@@ -72,6 +72,8 @@
 #
 
 class Scheduling::Appointment < ApplicationRecord
+  attr_accessor :medelement_provider_command_receipt
+
   include LlmFormattable
 
   belongs_to :account
@@ -210,6 +212,7 @@ class Scheduling::Appointment < ApplicationRecord
       Time.zone.now,
       appointment: self,
       performed_by: Current.executed_by,
+      medelement_source_updated_at: medelement_source_updated_at,
       medelement_outbound_snapshot: medelement_outbound_snapshot
     )
   end
@@ -224,6 +227,7 @@ class Scheduling::Appointment < ApplicationRecord
       appointment: self,
       performed_by: Current.executed_by,
       changed_attributes: changed_attributes,
+      medelement_source_updated_at: medelement_source_updated_at,
       medelement_provider_reconciled: medelement_provider_reconciled?,
       medelement_outbound_snapshot: medelement_outbound_snapshot
     )
@@ -251,6 +255,7 @@ class Scheduling::Appointment < ApplicationRecord
       appointment: self,
       performed_by: Current.executed_by,
       changed_attributes: changed_attributes,
+      medelement_source_updated_at: medelement_source_updated_at,
       medelement_provider_reconciled: medelement_provider_reconciled?,
       medelement_outbound_snapshot: medelement_outbound_snapshot
     )
@@ -258,6 +263,10 @@ class Scheduling::Appointment < ApplicationRecord
 
   def medelement_provider_reconciled?
     @medelement_provider_reconciled == true
+  end
+
+  def medelement_source_updated_at
+    updated_at&.utc&.iso8601(6)
   end
 
   def medelement_outbound_snapshot

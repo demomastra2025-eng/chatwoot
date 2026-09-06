@@ -2,6 +2,27 @@ require 'rails_helper'
 
 RSpec.describe Reminders::ExecuteService do
   describe '#perform' do
+    it 'runs the appointment provider guard before message materialization' do
+      conversation = create(:conversation)
+      appointment = create(:scheduling_appointment, account: conversation.account, conversation: conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        remindable: appointment,
+        status: :processing,
+        body: 'Provider-guarded reminder'
+      )
+      guard = instance_double(Reminders::AppointmentProviderGuard, perform: Reminders::AppointmentProviderGuard::STOP)
+      allow(Reminders::AppointmentProviderGuard).to receive(:new)
+        .with(reminder: touch, phase: :materialization)
+        .and_return(guard)
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+    end
+
     it 'cancels a missed MedElement appointment reminder before creating a WhatsApp route' do
       zone = Time.find_zone!('Asia/Almaty')
 

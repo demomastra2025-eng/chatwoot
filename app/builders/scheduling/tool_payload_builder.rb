@@ -3,6 +3,9 @@ module Scheduling::ToolPayloadBuilder
 
   def appointment_payload(action:, appointment:)
     appointment_data = Scheduling::PayloadBuilder.appointment(appointment)
+    provider_command_receipt = Integrations::Medelement::ProviderCommandReceiptBuilder.build(
+      command: appointment.medelement_provider_command_receipt
+    )
 
     {
       action: action,
@@ -16,6 +19,7 @@ module Scheduling::ToolPayloadBuilder
       service_id: appointment_data[:service_id],
       starts_at: appointment_data[:starts_at],
       ends_at: appointment_data[:ends_at],
+      provider_command_receipt: provider_command_receipt,
       appointment: appointment_data
     }.compact
   end

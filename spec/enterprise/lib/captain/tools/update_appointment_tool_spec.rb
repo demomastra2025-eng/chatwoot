@@ -9,6 +9,14 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
     account.enable_features!('scheduling')
   end
 
+  def stub_provider_availability
+    result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+      status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
+    )
+    service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result)
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
+  end
+
   it 'returns normalized update_appointment payload' do
     resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 30)
     new_resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', slot_duration_min: 20)
@@ -65,5 +73,55 @@ RSpec.describe Captain::Tools::UpdateAppointmentTool, type: :model do
 
     expect(result).to include('ERROR: Scheduling::Error: Imported Medelement appointments are read-only')
     expect(appointment.reload.client_comment).to be_nil
+  end
+
+  it 'returns the exact move command receipt for a provider-backed appointment' do
+    stub_provider_availability
+    settings = attributes_for(:integrations_hook, :medelement)[:settings].merge('write_enabled' => true)
+    create(:integrations_hook, :medelement, account: account, settings: settings)
+    resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty', custom_attributes: {
+                        'medelement_specialist_code' => 'specialist-1',
+                        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+                      })
+    contact = create(
+      :contact,
+      account: account,
+      name: 'Aruzhan',
+      last_name: 'Testova',
+      phone_number: '+77011234567',
+      custom_attributes: { 'medelement_patient_code' => 'patient-1' }
+    )
+    conversation = create(:conversation, account: account, contact: contact)
+    service = create(
+      :scheduling_service,
+      account: account,
+      duration_min: 30,
+      custom_attributes: { 'medelement_nomenclature_code' => 'service-1' }
+    )
+    create(:scheduling_service_price, account: account, service: service, resource: resource, active: true)
+    create(:scheduling_work_rule, resource: resource, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      contact: contact,
+      conversation: conversation,
+      service: service,
+      external_ref: 'medelement:reception:reception-1',
+      starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500'),
+      ends_at: Time.zone.parse('2026-04-20 09:30:00 +0500'),
+      custom_attributes: { 'medelement_reception_code' => 'reception-1', 'medelement_cabinet_code' => 'cabinet-1' }
+    )
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, appointment: { id: appointment.id } })
+
+    result = tool.perform(tool_context, starts_at: Time.zone.parse('2026-04-20 10:00:00 +0500').iso8601)
+    raise result if result.start_with?('ERROR:')
+
+    payload = JSON.parse(result)
+
+    expect(payload.dig('provider_command_receipt', 'command')).to include(
+      'operation' => 'move_reception',
+      'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
+    )
   end
 end

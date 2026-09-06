@@ -1,6 +1,6 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::OutboundChangeService
-  APPOINTMENT_MOVE_KEYS = %w[starts_at ends_at].freeze
+  APPOINTMENT_MOVE_KEYS = %w[starts_at ends_at resource_id service_id duration_min custom_attributes].freeze
   APPOINTMENT_SNAPSHOT_KEYS = %w[
     status starts_at ends_at client_phone client_name client_first_name client_last_name client_middle_name
     client_birth_date client_gender client_identifier client_comment service_amount duration_min custom_attributes
@@ -46,7 +46,7 @@ class Integrations::Medelement::OutboundChangeService
   end
 
   # rubocop:disable Metrics/ParameterLists
-  def initialize(entity_type:, entity_id:, event_name:, change: {}, account_id: nil, actor_id: nil, event_key: nil)
+  def initialize(entity_type:, entity_id:, event_name:, change: {}, account_id: nil, actor_id: nil, actor_descriptor: nil, event_key: nil)
     @account_id = account_id
     @entity_type = entity_type.to_s
     @entity_id = entity_id
@@ -54,6 +54,7 @@ class Integrations::Medelement::OutboundChangeService
     @changed_attributes = change.to_h.fetch(:changed_attributes, change.to_h['changed_attributes']).to_h.deep_stringify_keys
     @desired_attributes = change.to_h.fetch(:desired_attributes, change.to_h['desired_attributes']).to_h.deep_stringify_keys
     @actor_id = actor_id
+    @actor_descriptor = actor_descriptor
     @event_key = event_key.to_s.presence
   end
   # rubocop:enable Metrics/ParameterLists
@@ -71,7 +72,7 @@ class Integrations::Medelement::OutboundChangeService
 
   private
 
-  attr_reader :account, :account_id, :actor_id, :changed_attributes, :desired_attributes, :entity_id, :entity_type, :event_key,
+  attr_reader :account, :account_id, :actor_id, :actor_descriptor, :changed_attributes, :desired_attributes, :entity_id, :entity_type, :event_key,
               :event_name, :hook
 
   def sync_appointment
@@ -215,6 +216,7 @@ class Integrations::Medelement::OutboundChangeService
       idempotency_key: idempotency_key,
       company_cabinet_code: company_cabinet_code,
       actor: actor,
+      actor_descriptor: actor_descriptor,
       desired_starts_at: desired_starts_at,
       desired_ends_at: desired_ends_at,
       desired_attributes: desired_attributes
@@ -256,6 +258,7 @@ class Integrations::Medelement::OutboundChangeService
       appointment: appointment,
       contact: contact,
       actor: actor,
+      actor_descriptor: actor_descriptor,
       operation: operation,
       company_cabinet_code: company_cabinet_code,
       desired_starts_at: desired_starts_at,

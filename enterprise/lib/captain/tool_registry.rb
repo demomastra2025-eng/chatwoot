@@ -1250,6 +1250,19 @@ class Captain::ToolRegistry
           risk_level: 'high'
         ),
         definition(
+          id: 'get_appointment_provider_status',
+          title: 'Get Appointment Provider Status',
+          description: 'Get the concrete MedElement command and terminal outcome for a prior appointment operation',
+          group_name: 'Scheduling',
+          icon: 'calendar-check',
+          allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,
+          agent_tool_class: Captain::Tools::Agent::AccountToolAdapter,
+          assistant_tool_class: Captain::Tools::Copilot::GetAppointmentProviderStatusService,
+          required_features: %w[scheduling],
+          risk_level: 'low',
+          idempotent: true
+        ),
+        definition(
           id: 'get_article',
           title: 'Get Article',
           description: 'Get details of an article including its content and metadata',
