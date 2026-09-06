@@ -25,9 +25,26 @@ import {
 } from 'dashboard/helper/voice';
 
 let conversationListRequestGeneration = 0;
+const communicationThreadListUpdates = new Map();
+
+const replayCommunicationThreadListUpdates = (generation, context, apply) => {
+  const updates = communicationThreadListUpdates.get(generation) || [];
+  communicationThreadListUpdates.delete(generation);
+  updates.forEach(payload => {
+    const threadId = payload.communication_thread_id || payload.id;
+    const current = context.state?.allConversations?.find(
+      chat =>
+        String(chat.id) === String(threadId) && isCommunicationThread(chat)
+    );
+    // The HTTP snapshot can itself be newer than an event received in flight.
+    if (payload.updated_at < current?.updated_at) return;
+    apply(context, payload);
+  });
+};
 
 const invalidateConversationListRequest = commit => {
   conversationListRequestGeneration += 1;
+  CommunicationThreadApi.invalidateListRequests();
   commit(types.CLEAR_LIST_LOADING_STATUS);
 };
 
@@ -367,7 +384,7 @@ const actions = {
       );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
     }
   },
@@ -375,6 +392,7 @@ const actions = {
   fetchCommunicationThreads: async ({ commit, state, dispatch }) => {
     conversationListRequestGeneration += 1;
     const requestGeneration = conversationListRequestGeneration;
+    communicationThreadListUpdates.set(requestGeneration, []);
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
@@ -397,10 +415,17 @@ const actions = {
         params.assigneeType,
         Number(params.page || 1) === 1
       );
+      replayCommunicationThreadListUpdates(
+        requestGeneration,
+        { commit, state, dispatch },
+        actions.updateCommunicationThreadRealtime
+      );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
+    } finally {
+      communicationThreadListUpdates.delete(requestGeneration);
     }
   },
 
@@ -453,9 +478,12 @@ const actions = {
     }
   },
 
-  fetchFilteredConversations: async ({ commit, dispatch }, params) => {
+  fetchFilteredConversations: async ({ commit, state, dispatch }, params) => {
     conversationListRequestGeneration += 1;
     const requestGeneration = conversationListRequestGeneration;
+    if (params?.communicationThreadMode) {
+      communicationThreadListUpdates.set(requestGeneration, []);
+    }
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const filterApi = params?.communicationThreadMode
@@ -478,10 +506,17 @@ const actions = {
         'appliedFilters',
         Number(params.page || 1) === 1
       );
+      replayCommunicationThreadListUpdates(
+        requestGeneration,
+        { commit, state, dispatch },
+        actions.updateCommunicationThreadRealtime
+      );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
+    } finally {
+      communicationThreadListUpdates.delete(requestGeneration);
     }
   },
 
@@ -1079,6 +1114,12 @@ const actions = {
   },
 
   updateCommunicationThreadRealtime({ commit, dispatch }, payload) {
+    // Keep realtime patches received during this list request. Replay them
+    // after its snapshot rather than dropping the page or starting more GETs.
+    communicationThreadListUpdates
+      .get(conversationListRequestGeneration)
+      ?.push(payload);
+    CommunicationThreadApi.invalidateListRequests();
     const communicationThread = commitCommunicationThreadUpdate(
       commit,
       payload,

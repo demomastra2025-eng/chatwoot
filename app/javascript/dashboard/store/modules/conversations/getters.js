@@ -192,6 +192,7 @@ const getters = {
     return sortConversations(filteredConversations, _state.chatSortFilter);
   },
   getChatListLoadingStatus: ({ listLoadingStatus }) => listLoadingStatus,
+  getChatListLoadingError: ({ listLoadingError }) => Boolean(listLoadingError),
   getAllMessagesLoaded(_state) {
     const [chat] = getSelectedChatConversation(_state);
     return !chat || chat.allMessagesLoaded === undefined

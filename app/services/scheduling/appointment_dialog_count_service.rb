@@ -12,7 +12,7 @@ class Scheduling::AppointmentDialogCountService
   end
 
   def conversation_status_counts
-    return {} if conversation_scope.blank?
+    return {} if conversation_scope.nil?
 
     status_counts(
       context_rows_sql: conversation_context_rows_sql,
@@ -23,7 +23,7 @@ class Scheduling::AppointmentDialogCountService
   end
 
   def communication_thread_status_counts
-    return {} if communication_thread_scope.blank?
+    return {} if communication_thread_scope.nil?
 
     status_counts(
       context_rows_sql: communication_thread_context_rows_sql,

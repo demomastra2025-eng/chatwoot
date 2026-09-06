@@ -3,10 +3,29 @@ import ApiClient from '../ApiClient';
 import { buildCreatePayload } from './message';
 
 const inFlightMetaRequests = new Map();
+const inFlightListRequests = new Map();
+
+const fetchListOnce = (key, fetch) => {
+  const currentRequest = inFlightListRequests.get(key);
+  if (currentRequest) return currentRequest;
+
+  const request = fetch().finally(() => {
+    if (inFlightListRequests.get(key) === request) {
+      inFlightListRequests.delete(key);
+    }
+  });
+  inFlightListRequests.set(key, request);
+  return request;
+};
 
 class CommunicationThreadApi extends ApiClient {
   constructor() {
     super('communication_threads', { accountScoped: true });
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  invalidateListRequests() {
+    inFlightListRequests.clear();
   }
 
   get({
@@ -25,7 +44,8 @@ class CommunicationThreadApi extends ApiClient {
     unread,
     includeMeta = true,
   } = {}) {
-    return axios.get(this.url, {
+    const url = this.url;
+    const options = {
       params: {
         inbox_id: inboxId,
         status,
@@ -42,7 +62,10 @@ class CommunicationThreadApi extends ApiClient {
         unread,
         include_meta: includeMeta,
       },
-    });
+    };
+    return fetchListOnce(JSON.stringify([url, options]), () =>
+      axios.get(url, options)
+    );
   }
 
   meta({
@@ -89,7 +112,8 @@ class CommunicationThreadApi extends ApiClient {
   }
 
   filter(payload) {
-    return axios.post(`${this.url}/filter`, payload.queryData, {
+    const url = `${this.url}/filter`;
+    const options = {
       params: {
         page: payload.page,
         crm_pipeline_id: payload.crmPipelineId || payload.crm_pipeline_id,
@@ -102,7 +126,11 @@ class CommunicationThreadApi extends ApiClient {
         sort_by: payload.sortBy || payload.sort_by,
         include_meta: Number(payload.page || 1) === 1,
       },
-    });
+    };
+    return fetchListOnce(
+      JSON.stringify([url, payload.queryData, options]),
+      () => axios.post(url, payload.queryData, options)
+    );
   }
 
   channels(id) {

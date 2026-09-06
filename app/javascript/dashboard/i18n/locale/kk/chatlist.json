@@ -1,6 +1,8 @@
 {
   "CHAT_LIST": {
     "LOADING": "Fetching conversations",
+    "LOAD_ERROR": "Диалогтарды жүктеу мүмкін болмады. Жүктелген диалогтар қолжетімді болып қалады.",
+    "RETRY": "Қайталау",
     "LOAD_MORE_CONVERSATIONS": "Load more conversations",
     "EOF": "All conversations loaded 🎉",
     "LIST": {
