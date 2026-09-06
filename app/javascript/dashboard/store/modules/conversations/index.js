@@ -23,6 +23,7 @@ const state = {
   allConversations: [],
   attachments: {},
   listLoadingStatus: true,
+  listLoadingError: false,
   chatStatusFilter: wootConstants.STATUS_TYPE.OPEN,
   chatSortFilter: wootConstants.SORT_BY_TYPE.LATEST,
   currentInbox: null,
@@ -793,10 +794,12 @@ export const mutations = {
 
   [types.SET_LIST_LOADING_STATUS](_state) {
     _state.listLoadingStatus = true;
+    _state.listLoadingError = false;
   },
 
-  [types.CLEAR_LIST_LOADING_STATUS](_state) {
+  [types.CLEAR_LIST_LOADING_STATUS](_state, { error = false } = {}) {
     _state.listLoadingStatus = false;
+    _state.listLoadingError = error;
   },
 
   [types.UPDATE_MESSAGE_UNREAD_COUNT](

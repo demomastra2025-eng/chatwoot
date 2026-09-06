@@ -26,6 +26,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   before_action :ensure_thread_accessible!, only: MEMBER_THREAD_ACTIONS
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
   before_action :validate_update_params!, only: [:update]
+  around_action :with_list_presence_cache, only: [:index, :filter]
 
   def index
     result = CommunicationThreadFinder.new(Current.user, params).perform
@@ -385,6 +386,26 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     preload_thread_labels(communication_threads)
     preload_directional_message_timestamps_by_thread
     preload_scheduling_appointment_statuses(communication_threads)
+    preload_list_presence(communication_threads) if OnlineStatusTracker.presence_cache
+  end
+
+  def with_list_presence_cache(&)
+    OnlineStatusTracker.with_presence_cache(&)
+  end
+
+  def preload_list_presence(communication_threads)
+    messages = [@last_public_messages_by_thread_id, @last_non_activity_messages_by_thread_id].flat_map(&:values).compact
+    senders = messages.filter_map(&:sender).group_by(&:class)
+    preload_contact_and_user_presence(communication_threads, senders)
+  end
+
+  def preload_contact_and_user_presence(communication_threads, senders)
+    contacts = communication_threads.map(&:contact) + senders.fetch(Contact, [])
+    users = communication_threads.filter_map(&:assignee) + contacts.filter_map(&:owner) +
+            senders.fetch(User, [])
+
+    OnlineStatusTracker.preload_presence(Current.account.id, 'Contact', contacts.map(&:id))
+    OnlineStatusTracker.preload_presence(Current.account.id, 'User', users.map(&:id))
   end
 
   def preloaded_accessible_links(thread_ids)

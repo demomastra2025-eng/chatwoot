@@ -25,6 +25,22 @@ import {
 } from 'dashboard/helper/voice';
 
 let conversationListRequestGeneration = 0;
+const communicationThreadListUpdates = new Map();
+
+const replayCommunicationThreadListUpdates = (generation, context, apply) => {
+  const updates = communicationThreadListUpdates.get(generation) || [];
+  communicationThreadListUpdates.delete(generation);
+  updates.forEach(payload => {
+    const threadId = payload.communication_thread_id || payload.id;
+    const current = context.state?.allConversations?.find(
+      chat =>
+        String(chat.id) === String(threadId) && isCommunicationThread(chat)
+    );
+    // The HTTP snapshot can itself be newer than an event received in flight.
+    if (payload.updated_at < current?.updated_at) return;
+    apply(context, payload);
+  });
+};
 let sidebarUnreadCountsRequestId = 0;
 
 const startConversationListRequest = () => {
@@ -35,6 +51,7 @@ const startConversationListRequest = () => {
 
 const invalidateConversationListRequest = commit => {
   startConversationListRequest();
+  CommunicationThreadApi.invalidateListRequests();
   commit(types.CLEAR_LIST_LOADING_STATUS);
 };
 
@@ -371,13 +388,14 @@ const actions = {
       );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
     }
   },
 
   fetchCommunicationThreads: async ({ commit, state, dispatch }) => {
     const requestGeneration = startConversationListRequest();
+    communicationThreadListUpdates.set(requestGeneration, []);
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
@@ -401,11 +419,18 @@ const actions = {
         params.assigneeType,
         isFirstPage
       );
+      replayCommunicationThreadListUpdates(
+        requestGeneration,
+        { commit, state, dispatch },
+        actions.updateCommunicationThreadRealtime
+      );
       if (isFirstPage) dispatch('fetchSidebarUnreadCounts', params);
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
+    } finally {
+      communicationThreadListUpdates.delete(requestGeneration);
     }
   },
 
@@ -472,8 +497,11 @@ const actions = {
     }
   },
 
-  fetchFilteredConversations: async ({ commit, dispatch }, params) => {
+  fetchFilteredConversations: async ({ commit, state, dispatch }, params) => {
     const requestGeneration = startConversationListRequest();
+    if (params?.communicationThreadMode) {
+      communicationThreadListUpdates.set(requestGeneration, []);
+    }
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const isFirstPage = Number(params.page || 1) === 1;
@@ -497,13 +525,20 @@ const actions = {
         'appliedFilters',
         isFirstPage
       );
+      replayCommunicationThreadListUpdates(
+        requestGeneration,
+        { commit, state, dispatch },
+        actions.updateCommunicationThreadRealtime
+      );
       if (params?.communicationThreadMode && isFirstPage) {
         dispatch('fetchSidebarUnreadCounts', params);
       }
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
+    } finally {
+      communicationThreadListUpdates.delete(requestGeneration);
     }
   },
 
@@ -1101,6 +1136,12 @@ const actions = {
   },
 
   updateCommunicationThreadRealtime({ commit, dispatch }, payload) {
+    // Keep realtime patches received during this list request. Replay them
+    // after its snapshot rather than dropping the page or starting more GETs.
+    communicationThreadListUpdates
+      .get(conversationListRequestGeneration)
+      ?.push(payload);
+    CommunicationThreadApi.invalidateListRequests();
     const communicationThread = commitCommunicationThreadUpdate(
       commit,
       payload,

@@ -124,6 +124,12 @@ module Redis::Alfred
       $alfred.with { |conn| conn.zscore(key, value) }
     end
 
+    def zscores(key, values)
+      $alfred.with do |conn|
+        conn.pipelined { |pipeline| values.each { |value| pipeline.zscore(key, value) } }
+      end
+    end
+
     # remove a value from a sorted set
     def zrem(key, value)
       $alfred.with { |conn| conn.zrem(key, value) }

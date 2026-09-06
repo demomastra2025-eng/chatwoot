@@ -941,12 +941,19 @@ describe('#actions', () => {
       axios.post.mockResolvedValue({
         data: dataReceived,
       });
-      await actions.fetchFilteredConversations({ commit }, dataToSend);
-      expect(commit).toHaveBeenCalledTimes(3);
+      await actions.fetchFilteredConversations(
+        { commit, dispatch },
+        dataToSend
+      );
+      expect(commit).toHaveBeenCalledTimes(4);
       expect(commit.mock.calls).toEqual([
         ['SET_LIST_LOADING_STATUS'],
         ['REPLACE_ALL_CONVERSATION', dataReceived.payload],
         ['CLEAR_LIST_LOADING_STATUS'],
+        [
+          'contacts/SET_CONTACTS',
+          dataReceived.payload.map(chat => chat.meta.sender),
+        ],
       ]);
     });
 
@@ -1053,7 +1060,7 @@ describe('#actions', () => {
 
     expect(commit.mock.calls).toEqual([
       ['SET_LIST_LOADING_STATUS'],
-      ['CLEAR_LIST_LOADING_STATUS'],
+      ['CLEAR_LIST_LOADING_STATUS', { error: true }],
     ]);
   });
 
@@ -1091,7 +1098,7 @@ describe('#actions', () => {
       commit.mock.calls.filter(
         ([mutation]) => mutation === 'CLEAR_LIST_LOADING_STATUS'
       )
-    ).toEqual([['CLEAR_LIST_LOADING_STATUS']]);
+    ).toEqual([['CLEAR_LIST_LOADING_STATUS', { error: true }]]);
   });
 
   it('invalidates an in-flight list response when status is mutated', async () => {

@@ -1,4 +1,27 @@
 class OnlineStatusTracker
+  thread_mattr_accessor :presence_cache
+
+  # A snapshot only for the enclosing list response, never a cross-request cache.
+  def self.with_presence_cache
+    previous_cache = presence_cache
+    self.presence_cache = {}
+    yield
+  ensure
+    self.presence_cache = previous_cache
+  end
+
+  def self.preload_presence(account_id, obj_type, obj_ids)
+    return unless presence_cache
+
+    ids = obj_ids.compact.map(&:to_s).uniq
+    return if ids.empty?
+
+    scores = ::Redis::Alfred.zscores(presence_key(account_id, obj_type), ids)
+    ids.zip(scores).each do |id, score|
+      presence_cache[[account_id.to_s, obj_type, id]] = score
+    end
+  end
+
   # NOTE: You can customise the environment variable to keep your agents/contacts as online for longer
   PRESENCE_DURATION = ENV.fetch('PRESENCE_DURATION', 20).to_i.seconds
   # Widget pings every 60s, so contacts need a longer presence window
@@ -9,10 +32,18 @@ class OnlineStatusTracker
   # obj_type: Contact | User
   def self.update_presence(account_id, obj_type, obj_id)
     ::Redis::Alfred.zadd(presence_key(account_id, obj_type), Time.now.to_i, obj_id)
+    presence_cache&.delete([account_id.to_s, obj_type, obj_id.to_s])
   end
 
   def self.get_presence(account_id, obj_type, obj_id)
-    connected_time = ::Redis::Alfred.zscore(presence_key(account_id, obj_type), obj_id)
+    key = [account_id.to_s, obj_type, obj_id.to_s]
+    connected_time = if presence_cache&.key?(key)
+                       presence_cache[key]
+                     else
+                       score = ::Redis::Alfred.zscore(presence_key(account_id, obj_type), obj_id)
+                       presence_cache[key] = score if presence_cache
+                       score
+                     end
     duration = obj_type == 'Contact' ? CONTACT_PRESENCE_DURATION : PRESENCE_DURATION
     connected_time && connected_time > (Time.zone.now - duration).to_i
   end
