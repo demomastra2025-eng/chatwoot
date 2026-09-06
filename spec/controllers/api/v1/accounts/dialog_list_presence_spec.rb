@@ -47,7 +47,7 @@ RSpec.describe 'Dialog list presence', type: :request do
     url = "/api/v1/accounts/#{account.id}/#{endpoint}"
     if action == :filter
       post "#{url}/filter", headers: headers, as: :json,
-                            params: { payload: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], query_operator: nil }] }
+                           params: { payload: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['open'], query_operator: nil }] }
     else
       get url, headers: headers, as: :json, params: { status: 'open', assignee_type: 'all' }
     end
