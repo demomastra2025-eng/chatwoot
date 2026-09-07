@@ -23,6 +23,35 @@ RSpec.describe Reminders::ExecuteService do
       end.not_to(change { conversation.messages.outgoing.count })
     end
 
+    it 'rechecks provider freshness immediately before materialization' do
+      conversation = create(:conversation, status: :open)
+      appointment = create(:scheduling_appointment, account: conversation.account, conversation: conversation)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        touch_conversation: conversation,
+        conversation: conversation,
+        remindable: appointment,
+        timing_mode: :absolute,
+        status: :processing,
+        body: 'Provider-guarded reminder'
+      )
+      early_guard = instance_double(Reminders::AppointmentProviderGuard)
+      final_guard = instance_double(Reminders::AppointmentProviderGuard)
+      conversation_resolver = instance_double(Reminders::ConversationResolver, perform: conversation)
+      allow(Reminders::ConversationResolver).to receive(:new).with(reminder: touch).and_return(conversation_resolver)
+      allow(Reminders::AppointmentProviderGuard).to receive(:new).and_return(early_guard, final_guard)
+      allow(early_guard).to receive(:perform).and_return(Reminders::AppointmentProviderGuard::CONTINUE)
+      allow(final_guard).to receive(:perform).and_return(Reminders::AppointmentProviderGuard::STOP)
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.not_to(change { conversation.messages.outgoing.count })
+
+      expect(early_guard).to have_received(:perform).once
+      expect(final_guard).to have_received(:perform).once
+    end
+
     it 'cancels a missed MedElement appointment reminder before creating a WhatsApp route' do
       zone = Time.find_zone!('Asia/Almaty')
 

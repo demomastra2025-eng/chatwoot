@@ -33,13 +33,14 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       custom_attributes: parsed_hash(custom_attributes, field_name: 'custom_attributes')
     }.compact
 
-    with_idempotent_creation('create_appointment', create_params) do
+    appointment = with_idempotent_creation('create_appointment', create_params) do
       ::Scheduling::Appointments::UpsertService.new(
         account: account,
         params: create_params,
         actor: actor
       ).perform
     end
+    attach_provider_command_receipt(appointment)
   end
 
   def update_current_appointment(resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
@@ -78,5 +79,19 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       amount: amount,
       payment_method: payment_method
     )
+  end
+
+  private
+
+  def attach_provider_command_receipt(appointment)
+    return appointment if appointment.medelement_provider_command_receipt.present?
+    return appointment if appointment.resource&.custom_attributes.to_h['medelement_specialist_code'].blank?
+
+    Integrations::Medelement::AppointmentProviderCommandReceiptLookupService.new(
+      account: account,
+      appointment: appointment,
+      operation: 'create_reception'
+    ).perform
+    appointment
   end
 end

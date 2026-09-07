@@ -78,17 +78,20 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
     create(:scheduling_service_price, account: account, service: scheduling_service, resource: resource, active: true, price: 20_000)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
 
-    payload = JSON.parse(tool.perform(
-                           tool_context,
-                           resource_id: resource.id,
-                           service_id: scheduling_service.id,
-                           starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
-                           duration_min: 30,
-                           custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
-                         ))
+    arguments = {
+      resource_id: resource.id,
+      service_id: scheduling_service.id,
+      starts_at: Time.zone.parse('2026-04-20 09:00:00 +0500').iso8601,
+      duration_min: 30,
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
+    }
+    payload = JSON.parse(tool.perform(tool_context, **arguments))
 
     command_id = payload.dig('provider_command_receipt', 'command', 'id')
     command = Integrations::Medelement::ProviderCommand.find(command_id)
+    appointment = account.scheduling_appointments.find(payload.fetch('appointment_id'))
+    allow(Captain::ToolExecutionIdempotency).to receive(:fetch_record).and_return(appointment.reload)
+    replay_payload = JSON.parse(tool.perform(tool_context, **arguments))
     expect(payload.fetch('provider_command_receipt')).to include(
       'appointment_id' => payload.fetch('appointment_id'),
       'expected_operation' => 'create_reception',
@@ -98,6 +101,8 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
       'operation' => 'create_reception',
       'requested_by' => { 'type' => 'Captain::Assistant', 'id' => assistant.id }
     )
+    expect(replay_payload.fetch('provider_command_receipt')).to eq(payload.fetch('provider_command_receipt'))
+    expect(Integrations::Medelement::ProviderCommand.where(account_id: account.id, operation: 'create_reception').count).to eq(1)
     expect(command.request_snapshot.fetch('actor')).to eq('type' => 'Captain::Assistant', 'id' => assistant.id)
   end
 end
