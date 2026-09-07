@@ -413,7 +413,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
     accessible_links.where(communication_thread_id: thread_ids)
                     .includes(
-                      { contact_inbox: :channel_profile },
+                      { contact_inbox: { channel_profile: { avatar_attachment: :blob } } },
                       { conversation: { inbox: :channel } },
                       { inbox: [:members, :channel] }
                     )
@@ -515,7 +515,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
         { attachments: { file_attachment: :blob } },
         :sender,
         { inbox: :channel },
-        { conversation: [{ contact_inbox: :channel_profile }, :communication_thread, :campaign] }
+        { conversation: [{ contact_inbox: { channel_profile: { avatar_attachment: :blob } } }, :communication_thread, :campaign] }
       ]
     ).call
     preload_list_message_senders(messages)
@@ -527,7 +527,9 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     if contact_senders.any?
       ActiveRecord::Associations::Preloader.new(
         records: contact_senders,
-        associations: [:contact_channel_profiles, { avatar_attachment: :blob }, { owner: { avatar_attachment: :blob } }]
+        associations: [
+          { contact_channel_profiles: { avatar_attachment: :blob } }, { avatar_attachment: :blob }, { owner: { avatar_attachment: :blob } }
+        ]
       ).call
     end
     return unless user_senders.any?

@@ -152,12 +152,7 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def with_last_message_activity_sort(relation)
-    sort_sql = CommunicationThreadFinder.last_message_activity_sort_sql(base_relation)
-
-    relation
-      .select(
-        Arel.sql("communication_threads.*, #{sort_sql} AS last_message_activity_sort_at")
-      )
+    CommunicationThreadFinder.with_last_message_activity_sort(relation, base_relation)
   end
 
   def with_waiting_since_sort(relation)
@@ -172,7 +167,7 @@ class CommunicationThreads::FilterService < FilterService
     [
       {
         contact: [
-          :contact_channel_profiles,
+          { contact_channel_profiles: { avatar_attachment: :blob } },
           { avatar_attachment: :blob },
           { owner: [:account_users, { avatar_attachment: :blob }] }
         ]
