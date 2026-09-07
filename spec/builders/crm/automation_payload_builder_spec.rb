@@ -60,7 +60,12 @@ RSpec.describe Crm::AutomationPayloadBuilder do
     let(:task) do
       instance_double(
         Crm::Task,
-        attributes: { 'id' => 8, 'title' => 'Call buyer', 'internal_only' => true },
+        attributes: {
+          'id' => 8,
+          'title' => 'Call buyer',
+          'context_kind' => 'sales',
+          'internal_only' => true
+        },
         account: account,
         status: status,
         assignee: assignee,
@@ -74,7 +79,7 @@ RSpec.describe Crm::AutomationPayloadBuilder do
     it 'serializes allowlisted attributes and related domain records' do
       expect(described_class.task(task)).to eq(
         account: { id: 1, name: 'Acme' },
-        task: { id: 8, title: 'Call buyer' },
+        task: { id: 8, title: 'Call buyer', context_kind: 'sales' },
         status: { id: 2, name: 'Open', category: 'open' },
         assignee: { id: 3, name: 'Assignee' },
         creator: { id: 4, name: 'Creator' },

@@ -2,6 +2,10 @@ import { flushPromises, shallowMount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
+const { taskFieldDefinitions } = vi.hoisted(() => ({
+  taskFieldDefinitions: [],
+}));
+
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: key => key }) }));
 vi.mock('vue-router', () => ({
   useRoute: () => ({ query: {}, params: { accountId: 1 } }),
@@ -44,7 +48,7 @@ vi.mock('dashboard/stores/crm/references', () => ({
     taskTypes: [
       { id: 10, code: 'task', name: 'Task', active: true, default: true },
     ],
-    taskFieldDefinitions: [],
+    taskFieldDefinitions,
     loadTaskStatuses: vi.fn(),
     loadTaskTypes: vi.fn(),
     loadFieldDefinitions: vi.fn(),
@@ -62,6 +66,7 @@ import CrmTasksPage from './pages/CrmTasksPage.vue';
 const initialTask = {
   id: 7,
   accountId: 1,
+  contextKind: 'sales',
   dealId: 4,
   lockVersion: 1,
   activityType: 'task',
@@ -88,7 +93,7 @@ const deferred = () => {
 const publish = task =>
   emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, { account_id: 1, task });
 const wrappers = [];
-const mountEditor = async kind => {
+const mountEditor = async (kind, extraProps = {}) => {
   const wrapper = shallowMount(
     kind === 'panel' ? CrmDealTasksPanel : CrmTasksPage,
     {
@@ -101,8 +106,9 @@ const mountEditor = async kind => {
                 { id: 1, code: 'todo', category: 'open', default: true },
               ],
               taskTypes: [{ id: 10, code: 'task', active: true }],
+              ...extraProps,
             }
-          : {},
+          : extraProps,
       global: {
         mocks: { $t: key => key },
         stubs: {
@@ -127,6 +133,7 @@ const open = (kind, state) =>
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  taskFieldDefinitions.splice(0);
   CrmTasksAPI.get
     .mockReset()
     .mockResolvedValue(response([structuredClone(initialTask)]));
@@ -422,6 +429,64 @@ describe('page async drawer scope', () => {
     expect(state.dealOptions).toEqual([]);
   });
 });
+
+it('reclassifies a sales task as standalone personal in one form save', async () => {
+  const { state } = await mountEditor('page');
+  await open('page', state);
+  state.form.contextKind = 'personal';
+  state.form.dealId = '';
+
+  await state.saveTask();
+
+  expect(CrmTasksAPI.saveForm).toHaveBeenCalledExactlyOnceWith(7, {
+    context_kind: 'personal',
+    deal_id: null,
+    lock_version: 1,
+    idempotency_key: expect.any(String),
+  });
+});
+
+it.each(['page', 'panel'])(
+  '%s edit reconciles custom fields against the persisted context',
+  async kind => {
+    const definitions = [
+      { key: 'shared_note', defaultValue: 'shared default', rules: {} },
+      {
+        key: 'sales_note',
+        defaultValue: 'sales default',
+        rules: { contexts: ['deal_task'] },
+      },
+      {
+        key: 'personal_note',
+        defaultValue: 'personal default',
+        rules: { contexts: ['standalone_task'] },
+      },
+    ];
+    taskFieldDefinitions.push(...definitions);
+    CrmTasksAPI.get.mockResolvedValueOnce(
+      response([
+        {
+          ...initialTask,
+          customAttributes: {
+            shared_note: 'keep me',
+            personal_note: 'remove me',
+          },
+        },
+      ])
+    );
+
+    const { state } = await mountEditor(
+      kind,
+      kind === 'panel' ? { taskFieldDefinitions: definitions } : {}
+    );
+    await open(kind, state);
+
+    expect(state.form.customAttributes).toEqual({
+      shared_note: 'keep me',
+      sales_note: 'sales default',
+    });
+  }
+);
 
 it('round-trips the cancelled preference through storage and page remount', async () => {
   const first = await mountEditor('page');

@@ -857,6 +857,7 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(wake_up_task.due_at).to be_within(1.second).of(waiting_until)
     expect(wake_up_task.assignee_id).to eq(administrator.id)
+    expect(wake_up_task.context_kind).to eq('sales')
   end
 
   it 'rejects waiting without a future date and reason' do

@@ -16,7 +16,7 @@ class Captain::ContextFields
     team_name company_name custom_attributes
   ].freeze
   TASK_STATE_ATTRIBUTES = %i[
-    id title description activity_type outcome all_day due_at due_on schedule_timezone start_at priority completed_at external_ref
+    id title description context_kind activity_type outcome all_day due_at due_on schedule_timezone start_at priority completed_at external_ref
     status_id assignee_id creator_id team_id deal_id originating_conversation_id
     status_name assignee_name creator_name team_name deal_title custom_attributes
   ].freeze
@@ -83,6 +83,7 @@ class Captain::ContextFields
     { key: 'id', title: 'Task ID', description: 'task.id' },
     { key: 'title', title: 'Title', description: 'task.title' },
     { key: 'description', title: 'Description', description: 'task.description' },
+    { key: 'context_kind', title: 'Context', description: 'task.context_kind (sales or personal)' },
     { key: 'activity_type', title: 'Task Type', description: 'task.activity_type' },
     { key: 'outcome', title: 'Outcome', description: 'task.outcome' },
     { key: 'all_day', title: 'All Day', description: 'task.all_day' },

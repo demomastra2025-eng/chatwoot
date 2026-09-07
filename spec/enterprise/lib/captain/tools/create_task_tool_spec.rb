@@ -29,6 +29,7 @@ RSpec.describe Captain::Tools::CreateTaskTool, type: :model do
     expect(payload).to include(
       'action' => 'create_task',
       'activity_type' => 'meeting',
+      'context_kind' => 'personal',
       'outcome' => 'not_done',
       'outcome_note' => 'Client did not join; retry tomorrow',
       'task_id' => payload.dig('task', 'id')
@@ -36,6 +37,7 @@ RSpec.describe Captain::Tools::CreateTaskTool, type: :model do
     expect(payload['task']).to include(
       'activity_type' => 'meeting',
       'all_day' => true,
+      'context_kind' => 'personal',
       'due_at' => nil,
       'due_on' => '2026-09-04',
       'originating_conversation_id' => conversation.id,
@@ -62,7 +64,21 @@ RSpec.describe Captain::Tools::CreateTaskTool, type: :model do
     )
 
     task = account.crm_tasks.find(payload.dig('task', 'id'))
+    expect(task.context_kind).to eq('sales')
     expect(task.deal_id).to eq(deal.id)
     expect(task.originating_conversation_id).to eq(linked_conversation.id)
+  end
+
+  it 'creates an explicit personal task without inheriting the current deal' do
+    conversation = create(:conversation, account: account)
+    create(:crm_deal, account: account, originating_conversation: conversation)
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id } })
+
+    payload = JSON.parse(
+      tool.perform(tool_context, title: 'Private reminder', context_kind: 'personal')
+    )
+
+    task = account.crm_tasks.find(payload.dig('task', 'id'))
+    expect(task).to have_attributes(context_kind: 'personal', deal_id: nil)
   end
 end

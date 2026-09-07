@@ -430,6 +430,7 @@ RSpec.describe Captain::ContextFields do
       state = described_class.task_state_for(account: account, conversation: conversation_record)
 
       expect(state[:id]).to eq(latest_open_task.id)
+      expect(state[:context_kind]).to eq('personal')
       expect(state[:status_name]).to eq(latest_open_task.status.name)
     end
   end

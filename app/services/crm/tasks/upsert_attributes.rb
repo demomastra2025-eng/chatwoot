@@ -1,8 +1,8 @@
 module Crm::Tasks::UpsertAttributes
   private
 
-  def field_catalog(deal:)
-    context = deal.present? ? 'deal_task' : 'standalone_task'
+  def field_catalog(context_kind:)
+    context = ::Crm::Task.custom_field_context_for(context_kind)
     ::Crm::FieldCatalog.new(account: account, entity_kind: 'task', context: context)
   end
 

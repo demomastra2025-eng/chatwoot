@@ -4,12 +4,16 @@ class Captain::Tools::Copilot::ListTaskCustomFieldsService < Captain::Tools::Cop
   end
 
   description 'List active allowed CRM custom fields for task custom_attributes, including key, label, type, required flag, and select options.'
+  param :context_kind,
+        type: :string,
+        desc: 'Optional task context: sales or personal. Defaults to the current task or deal context.',
+        required: false
 
-  def execute
+  def execute(context_kind: nil)
     fields = Captain::Tools::CrmCustomFieldCatalog.new(
       account: account,
       entity_kind: 'task',
-      context: task_field_context
+      context: task_field_context(context_kind)
     ).fields
 
     formatted_payload(
@@ -28,10 +32,11 @@ class Captain::Tools::Copilot::ListTaskCustomFieldsService < Captain::Tools::Cop
 
   private
 
-  def task_field_context
-    deal = current_task&.deal || current_deal
+  def task_field_context(context_kind)
+    return ::Crm::Task.custom_field_context_for(context_kind) if context_kind.present?
+    return current_task.custom_field_context if current_task.present?
 
-    deal.present? ? 'deal_task' : 'standalone_task'
+    current_deal.present? ? 'deal_task' : 'standalone_task'
   end
 
   def readable_or_manageable?

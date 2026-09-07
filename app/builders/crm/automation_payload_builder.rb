@@ -6,7 +6,7 @@ module Crm::AutomationPayloadBuilder
     originating_communication_thread_id archived_at custom_attributes
   ].freeze
   TASK_ATTRIBUTES = %i[
-    id title description activity_type outcome outcome_note priority all_day start_at due_at due_on
+    id title description context_kind activity_type outcome outcome_note priority all_day start_at due_at due_on
     schedule_timezone completed_at external_ref status_id assignee_id creator_id team_id deal_id
     originating_conversation_id archived_at custom_attributes
   ].freeze

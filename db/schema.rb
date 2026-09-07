@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_07_030000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_07_040000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1658,6 +1658,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_07_030000) do
     t.bigint "cancelled_by_id"
     t.text "cancellation_reason"
     t.integer "reschedule_count", default: 0, null: false
+    t.string "context_kind", null: false
     t.index ["account_id", "activity_type", "due_at"], name: "index_crm_tasks_on_account_activity_type_due_at"
     t.index ["account_id", "deal_id", "activity_type"], name: "index_crm_tasks_on_account_deal_activity_type"
     t.index ["account_id", "deal_id"], name: "index_crm_tasks_on_account_deal"
@@ -1684,6 +1685,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_07_030000) do
     t.index ["team_id"], name: "index_crm_tasks_on_team_id"
     t.check_constraint "all_day = true AND due_on IS NOT NULL AND due_at IS NULL AND start_at IS NULL OR all_day = false AND due_on IS NULL", name: "crm_tasks_deadline_shape"
     t.check_constraint "cancelled_at IS NULL AND cancellation_reason IS NULL OR cancelled_at IS NOT NULL AND length(btrim(cancellation_reason)) > 0", name: "crm_tasks_cancellation_state_complete"
+    t.check_constraint "context_kind::text <> 'sales'::text OR deal_id IS NOT NULL", name: "crm_tasks_sales_context_requires_deal"
+    t.check_constraint "context_kind::text = ANY (ARRAY['sales'::character varying::text, 'personal'::character varying::text])", name: "crm_tasks_context_kind_allowed"
     t.check_constraint "reschedule_count >= 0", name: "crm_tasks_reschedule_count_non_negative"
   end
 

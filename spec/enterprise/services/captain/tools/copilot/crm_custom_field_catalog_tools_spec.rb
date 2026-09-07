@@ -117,6 +117,42 @@ RSpec.describe 'Captain CRM custom field catalog tools' do
     expect(public_result.fetch('fields')).not_to include(include('key' => 'standalone_channel'))
   end
 
+  it 'uses an explicit personal task context even when a current deal exists' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    deal = create(:crm_deal, account: account, originating_conversation_id: conversation.id)
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'task',
+      key: 'personal_channel',
+      rules: { 'contexts' => ['standalone_task'] }
+    )
+    create(
+      :crm_field_definition,
+      account: account,
+      entity_kind: 'task',
+      key: 'sales_channel',
+      rules: { 'contexts' => ['deal_task'] }
+    )
+
+    copilot_result = JSON.parse(
+      Captain::Tools::Copilot::ListTaskCustomFieldsService
+        .new(assistant, user: user, conversation: conversation)
+        .execute(context_kind: 'personal')
+    )
+    public_result = JSON.parse(
+      Captain::Tools::ListTaskCustomFieldsTool
+        .new(assistant)
+        .perform(Struct.new(:state).new({ deal: { id: deal.id } }), context_kind: 'personal')
+    )
+
+    expect(copilot_result.fetch('fields')).to include(include('key' => 'personal_channel'))
+    expect(copilot_result.fetch('fields')).not_to include(include('key' => 'sales_channel'))
+    expect(public_result.fetch('fields')).to include(include('key' => 'personal_channel'))
+    expect(public_result.fetch('fields')).not_to include(include('key' => 'sales_channel'))
+  end
+
   it 'lists appointment custom fields for the booking_intake write context' do
     create(
       :crm_field_definition,

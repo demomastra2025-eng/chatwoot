@@ -238,6 +238,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.dig('payload', 'assignee_id')).to eq(owner.id)
+    expect(response.parsed_body.dig('payload', 'context_kind')).to eq('sales')
     expect(response.parsed_body.dig('payload', 'team_id')).to eq(team.id)
     expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
     expect(response.parsed_body.dig('payload', 'custom_attributes', 'follow_up_reason')).to eq('documents')
@@ -255,7 +256,30 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
          as: :json
 
     expect(response).to have_http_status(:created)
+    expect(response.parsed_body.dig('payload', 'context_kind')).to eq('personal')
     expect(response.parsed_body.dig('payload', 'originating_conversation_id')).to eq(conversation.id)
+  end
+
+  it 'rejects a sales task without a deal' do
+    post path,
+         params: { context_kind: 'sales', title: 'Orphan sales task' },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body).to include('code' => 'VALIDATION_ERROR')
+    expect(response.parsed_body.dig('details', 'deal_id')).to eq(['is required for sales tasks'])
+  end
+
+  it 'filters tasks by their explicit context kind' do
+    deal = create(:crm_deal, account: account)
+    personal_task = create(:crm_task, account: account, context_kind: 'personal', deal: deal)
+    create(:crm_task, account: account, context_kind: 'sales', deal: deal)
+
+    get path, params: { context_kind: 'personal' }, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].pluck('id')).to eq([personal_task.id])
   end
 
   it 'does not auto-assign an inactive default status to new tasks' do

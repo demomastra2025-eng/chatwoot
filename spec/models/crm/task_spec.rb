@@ -7,6 +7,48 @@ RSpec.describe Crm::Task do
     expect(default.to_i).to eq(1)
   end
 
+  describe 'task context' do
+    let(:account) { create(:account) }
+    let(:deal) { create(:crm_deal, account: account) }
+
+    it 'infers a persisted context for legacy callers that omit it' do
+      personal_task = build(:crm_task, account: account)
+      sales_task = build(:crm_task, account: account, deal: deal)
+
+      expect(personal_task).to be_valid
+      expect(personal_task.context_kind).to eq('personal')
+      expect(personal_task.custom_field_context).to eq('standalone_task')
+      expect(sales_task).to be_valid
+      expect(sales_task.context_kind).to eq('sales')
+      expect(sales_task.custom_field_context).to eq('deal_task')
+    end
+
+    it 'allows an explicitly personal task to remain linked to a deal' do
+      task = build(:crm_task, account: account, context_kind: 'personal', deal: deal)
+
+      expect(task).to be_valid
+      expect(task.context_kind).to eq('personal')
+      expect(task.custom_field_context).to eq('standalone_task')
+    end
+
+    it 'requires a deal for a sales task' do
+      task = build(:crm_task, account: account, context_kind: 'sales', deal: nil)
+
+      expect(task).not_to be_valid
+      expect(task.errors[:deal_id]).to include('is required for sales tasks')
+    end
+
+    it 'enforces the sales deal invariant at the database boundary' do
+      task = create(:crm_task, account: account, context_kind: 'personal')
+
+      # rubocop:disable Rails/SkipsModelValidations -- This spec exercises the database constraint directly.
+      expect do
+        task.update_columns(context_kind: 'sales', deal_id: nil)
+      end.to raise_error(ActiveRecord::StatementInvalid)
+      # rubocop:enable Rails/SkipsModelValidations
+    end
+  end
+
   describe 'activity type and outcome' do
     let(:account) { create(:account) }
 

@@ -37,11 +37,13 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
       expect(payload).to include('action' => 'create_task', 'task_id' => task.id)
       expect(payload).to include(
         'activity_type' => 'call',
+        'context_kind' => 'sales',
         'outcome' => 'answered',
         'outcome_note' => 'Customer confirmed they can talk tomorrow'
       )
       expect(payload['task']).to include(
         'activity_type' => 'call',
+        'context_kind' => 'sales',
         'id' => task.id,
         'outcome' => 'answered',
         'outcome_note' => 'Customer confirmed they can talk tomorrow',
@@ -59,6 +61,13 @@ RSpec.describe Captain::Tools::Copilot::CreateTaskService do
         'source' => 'captain',
         'channel' => 'telegram'
       )
+    end
+
+    it 'creates an explicit personal task without inheriting the current deal' do
+      payload = JSON.parse(execute_confirmed(title: 'Private reminder', context_kind: 'personal'))
+
+      task = account.crm_tasks.find(payload.dig('task', 'id'))
+      expect(task).to have_attributes(context_kind: 'personal', deal_id: nil)
     end
 
     it 'inherits the team when creating a task linked to an explicit deal' do

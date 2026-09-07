@@ -1,5 +1,6 @@
 class Crm::Tasks::UpsertService < Crm::BaseWriteService
   include Crm::Tasks::UpsertAttributes
+  include Crm::Tasks::ContextResolver
   include Crm::Tasks::UpsertRelations
 
   def initialize(account:, params:, task: nil, actor: nil, **publication_options)
@@ -40,6 +41,7 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   def resolve_task_context!
     @requested_position = resolve_requested_position
     @deal = resolve_optional_record(:deal_id, account.crm_deals, current: task.deal)
+    @context_kind = resolve_context_kind(deal: @deal)
     @status = resolve_status!
     @task_type = resolve_task_type!
     @task_outcome = resolve_task_outcome(@task_type)
@@ -68,6 +70,7 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   def relationship_attributes
     {
       account: account,
+      context_kind: @context_kind,
       deal: @deal,
       status: @status,
       task_type: @task_type,
@@ -106,7 +109,7 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   end
 
   def resolved_custom_attributes(new_record)
-    field_catalog(deal: @deal).resolve_custom_attributes(
+    field_catalog(context_kind: @context_kind).resolve_custom_attributes(
       current_attributes: task.custom_attributes,
       incoming_attributes: params[:custom_attributes],
       apply_defaults: new_record

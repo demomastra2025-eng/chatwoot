@@ -42,7 +42,7 @@ class Crm::Tasks::CompleteService < Crm::Tasks::CommandService
       account: account,
       entity_kind: 'task',
       custom_attributes: task.custom_attributes,
-      context: task.deal_id.present? ? 'deal_task' : 'standalone_task'
+      context: task.custom_field_context
     )
     return if inspector.complete?
 

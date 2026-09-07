@@ -41,6 +41,7 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     due_at: nil,
     due_on: nil,
     schedule_timezone: nil,
+    context_kind: nil,
     deal_id: nil,
     originating_conversation_id: nil,
     status_id: nil,
@@ -55,6 +56,7 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     status_id = optional_positive_id(status_id)
     assignee_id = optional_positive_id(assignee_id)
     team_id = optional_positive_id(team_id)
+    context_kind = context_kind.to_s.strip.downcase.presence
 
     create_params = {
       title: title,
@@ -68,7 +70,8 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
       due_at: due_at,
       due_on: due_on,
       schedule_timezone: schedule_timezone,
-      deal_id: deal_id.presence || current_deal&.id,
+      context_kind: context_kind,
+      deal_id: resolved_create_task_deal_id(deal_id, context_kind),
       originating_conversation_id: resolved_originating_conversation_id(originating_conversation_id) || conversation&.id,
       status_id: status_id,
       assignee_id: assignee_id,
@@ -118,6 +121,13 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
   end
 
   private
+
+  def resolved_create_task_deal_id(deal_id, context_kind)
+    return deal_id if deal_id.present?
+    return if context_kind == 'personal'
+
+    current_deal&.id
+  end
 
   def task_update_params(task, attributes)
     params = { lock_version: task.lock_version }

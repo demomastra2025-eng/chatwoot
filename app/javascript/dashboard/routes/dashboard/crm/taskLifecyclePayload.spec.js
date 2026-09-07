@@ -16,6 +16,7 @@ const task = {
   activityType: 'call',
   allDay: false,
   assigneeId: 7,
+  contextKind: 'sales',
   customAttributes: { source: 'web' },
   dealId: 4,
   description: 'Call back',
@@ -32,6 +33,7 @@ const form = {
   activityType: 'call',
   allDay: false,
   assigneeId: 7,
+  contextKind: 'sales',
   customAttributes: { source: 'web' },
   dealId: 4,
   description: 'Call back',
@@ -124,6 +126,9 @@ describe('task lifecycle payload helpers', () => {
     expect(taskDetailsChanged(task, { ...form, title: 'New title' }, 2)).toBe(
       true
     );
+    expect(
+      taskDetailsChanged(task, { ...form, contextKind: 'personal' }, 2)
+    ).toBe(true);
   });
 
   it('builds an explicit all-day reschedule command and clears timed fields', () => {

@@ -1,5 +1,6 @@
 module Crm::Tasks::RequestParams
   CREATE_KEYS = %i[
+    context_kind
     deal_id
     status_id
     assignee_id
@@ -25,6 +26,7 @@ module Crm::Tasks::RequestParams
   ].freeze
 
   UPDATE_KEYS = %i[
+    context_kind
     deal_id
     assignee_id
     creator_id

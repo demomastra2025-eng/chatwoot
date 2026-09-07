@@ -108,6 +108,7 @@ export const taskScheduleChanged = (task, form) => {
 export const taskDetailsChanged = (task, form, taskTypeId) => {
   const current = {
     activityType: normalizedText(task?.activityType || 'task'),
+    contextKind: normalizedText(task?.contextKind),
     customAttributes: task?.customAttributes || {},
     dealId: normalizedId(task?.dealId),
     description: normalizedText(task?.description),
@@ -118,6 +119,7 @@ export const taskDetailsChanged = (task, form, taskTypeId) => {
   };
   const requested = {
     activityType: normalizedText(form.activityType || 'task'),
+    contextKind: normalizedText(form.contextKind),
     customAttributes: form.customAttributes || {},
     dealId: normalizedId(form.dealId),
     description: normalizedText(form.description),

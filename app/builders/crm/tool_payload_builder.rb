@@ -29,6 +29,7 @@ module Crm::ToolPayloadBuilder
     {
       action: action,
       task_id: task_data[:id],
+      context_kind: task_data[:context_kind],
       status_id: task_data[:status_id],
       title: task_data[:title],
       activity_type: task_data[:activity_type],

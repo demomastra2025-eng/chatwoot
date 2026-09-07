@@ -11,6 +11,10 @@ class Captain::Tools::CreateTaskTool < Captain::Tools::BasePublicTool
   param :due_at, type: 'string', desc: 'Task due datetime', required: false
   param :due_on, type: 'string', desc: 'Task due date (YYYY-MM-DD) when all_day is true', required: false
   param :schedule_timezone, type: 'string', desc: 'IANA timezone for task scheduling', required: false
+  param :context_kind,
+        type: 'string',
+        desc: 'Task context: sales or personal. Sales requires a deal; personal may be standalone.',
+        required: false
   param :deal_id, type: 'integer', desc: 'Optional positive account CRM deal ID to link. Omit when unknown.', required: false
   param :originating_conversation_id,
         type: 'integer',
@@ -35,6 +39,7 @@ class Captain::Tools::CreateTaskTool < Captain::Tools::BasePublicTool
     due_at: nil,
     due_on: nil,
     schedule_timezone: nil,
+    context_kind: nil,
     deal_id: nil,
     originating_conversation_id: nil,
     custom_attributes: nil
@@ -51,7 +56,7 @@ class Captain::Tools::CreateTaskTool < Captain::Tools::BasePublicTool
       due_at: due_at,
       due_on: due_on,
       schedule_timezone: schedule_timezone,
-      deal_id: deal_id,
+      context_kind: context_kind, deal_id: deal_id,
       originating_conversation_id: originating_conversation_id,
       custom_attributes: custom_attributes
     )

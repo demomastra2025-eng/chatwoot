@@ -1,6 +1,6 @@
 class Crm::Tasks::FilterService
   EXACT_FIELDS = %i[
-    status_id activity_type task_type_id task_outcome_id outcome assignee_id team_id priority deal_id
+    status_id activity_type task_type_id task_outcome_id outcome assignee_id team_id priority deal_id context_kind
   ].freeze
 
   def initialize(account:, scope:, params:, custom_attribute_filters:)

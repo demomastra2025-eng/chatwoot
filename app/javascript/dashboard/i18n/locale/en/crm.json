@@ -420,6 +420,7 @@
         "ASSIGNEE": "Assignee",
         "BASICS": "Task details",
         "BASICS_DESCRIPTION": "Define ownership, schedule, and linkage to an optional deal.",
+        "CONTEXT_KIND": "Task context",
         "DEAL": "Linked deal",
         "DESCRIPTION": "Description",
         "DUE_AT": "Due at",
@@ -427,10 +428,15 @@
         "OUTCOME": "Result",
         "OUTCOME_NOTE": "Result details",
         "PRIORITY": "Priority",
+        "SALES_DEAL_REQUIRED": "Select a deal for a sales task.",
         "START_AT": "Start at",
         "STATUS": "Status",
         "TEAM": "Team",
         "TITLE": "Title"
+      },
+      "CONTEXT_KIND": {
+        "personal": "Personal",
+        "sales": "Sales"
       },
       "NEW_TASK": "New task",
       "PREFILL": {

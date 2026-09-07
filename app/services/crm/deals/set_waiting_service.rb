@@ -95,6 +95,7 @@ class Crm::Deals::SetWaitingService < Crm::BaseWriteService
 
   def wake_up_task_params(waiting_until, title)
     {
+      context_kind: 'sales',
       deal_id: deal.id,
       title: title,
       due_at: waiting_until.iso8601,

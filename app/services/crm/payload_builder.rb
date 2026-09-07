@@ -392,6 +392,7 @@ module Crm::PayloadBuilder
     {
       id: task.id,
       account_id: task.account_id,
+      context_kind: task.context_kind,
       deal_id: task.deal_id,
       status_id: task.status_id,
       task_type_id: task.task_type_id,

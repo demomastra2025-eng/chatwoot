@@ -2,7 +2,7 @@
 # Child operations keep their audit facts but never publish intermediate UI state.
 class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
   DETAIL_KEYS = %i[
-    deal_id creator_id team_id originating_conversation_id title description
+    context_kind deal_id creator_id team_id originating_conversation_id title description
     task_type_id task_outcome_id activity_type outcome outcome_note priority
     position external_ref custom_attributes
   ].freeze

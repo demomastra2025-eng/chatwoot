@@ -7,6 +7,7 @@
 #  all_day                     :boolean          default(FALSE), not null
 #  archived_at                 :datetime
 #  completed_at                :datetime
+#  context_kind                :string           not null
 #  custom_attributes           :jsonb            not null
 #  description                 :text
 #  due_at                      :datetime
@@ -73,6 +74,11 @@ class Crm::Task < ApplicationRecord
     completed held cancelled no_show rescheduled answered no_answer not_done busy sent failed
   ].freeze
   PRIORITIES = %w[low medium high urgent].freeze
+  CONTEXT_KINDS = %w[sales personal].freeze
+  CUSTOM_FIELD_CONTEXT_BY_KIND = {
+    'sales' => 'deal_task',
+    'personal' => 'standalone_task'
+  }.freeze
 
   belongs_to :account, class_name: '::Account'
   belongs_to :deal, class_name: '::Crm::Deal', optional: true, inverse_of: :tasks
@@ -96,6 +102,7 @@ class Crm::Task < ApplicationRecord
   validates :activity_type, presence: true
   validates :outcome_note, presence: true, if: :outcome_note_required?
   validates :priority, inclusion: { in: PRIORITIES }
+  validates :context_kind, inclusion: { in: CONTEXT_KINDS }
   validates :external_ref, uniqueness: { scope: :account_id }, allow_blank: true
   validates :idempotency_key, uniqueness: { scope: :account_id }, allow_blank: true
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
@@ -103,6 +110,7 @@ class Crm::Task < ApplicationRecord
   validates :schedule_timezone, inclusion: { in: TZInfo::Timezone.all_identifiers }
   validates :due_on, presence: true, if: :all_day?
   validates :custom_attributes, jsonb_attributes_length: true
+  validate :sales_context_requires_deal
   validate :related_records_belong_to_account
 
   scope :ordered, lambda {
@@ -113,6 +121,7 @@ class Crm::Task < ApplicationRecord
   scope :archived, -> { where.not(archived_at: nil) }
 
   before_validation :normalize_activity_type
+  before_validation :normalize_context_kind
   before_validation :normalize_outcome
   before_validation :normalize_outcome_note
   before_validation :sync_catalog_snapshots
@@ -122,6 +131,10 @@ class Crm::Task < ApplicationRecord
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
   after_commit :sync_contact_owner_from_assignee, if: :saved_change_to_assignee_id?
+
+  def self.custom_field_context_for(context_kind)
+    CUSTOM_FIELD_CONTEXT_BY_KIND.fetch(context_kind.to_s.strip.downcase)
+  end
 
   def automation_webhook_data
     Crm::AutomationPayloadBuilder.task(self)
@@ -141,6 +154,10 @@ class Crm::Task < ApplicationRecord
 
   def cancelled?
     cancelled_at.present?
+  end
+
+  def custom_field_context
+    self.class.custom_field_context_for(context_kind)
   end
 
   private
@@ -165,6 +182,14 @@ class Crm::Task < ApplicationRecord
 
   def normalize_activity_type
     self.activity_type = activity_type.to_s.strip.downcase.presence || 'task'
+  end
+
+  def normalize_context_kind
+    self.context_kind = context_kind.to_s.strip.downcase.presence || inferred_context_kind
+  end
+
+  def inferred_context_kind
+    deal_id.present? ? 'sales' : 'personal'
   end
 
   def sync_catalog_snapshots
@@ -201,6 +226,12 @@ class Crm::Task < ApplicationRecord
     return if position.present? && position.to_i.positive?
 
     self.position = status.tasks.kept.maximum(:position).to_i + 1
+  end
+
+  def sales_context_requires_deal
+    return unless context_kind == 'sales' && deal.blank?
+
+    errors.add(:deal_id, 'is required for sales tasks')
   end
 
   def related_records_belong_to_account

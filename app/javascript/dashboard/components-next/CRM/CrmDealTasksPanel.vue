@@ -31,7 +31,7 @@ import {
 import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 import {
   buildDefaultCustomAttributes,
-  mergeMissingDefaultCustomAttributes,
+  reconcileCustomAttributesForDefinitions,
 } from 'dashboard/stores/crm/customFieldDefaults';
 import {
   compactPayload,
@@ -96,6 +96,7 @@ const ui = reactive({
 const form = reactive({
   activityType: 'task',
   assigneeId: '',
+  contextKind: 'sales',
   customAttributes: {},
   description: '',
   dueAt: '',
@@ -208,12 +209,26 @@ const doneStatus = computed(() =>
   props.statuses.find(status => status.category === 'done')
 );
 
-const applicableTaskFieldDefinitions = computed(() =>
+const taskFieldDefinitionsForContext = contextKind =>
   props.taskFieldDefinitions.filter(definition => {
     const contexts = definition.rules?.contexts || [];
-    return contexts.length === 0 || contexts.includes('deal_task');
-  })
+    const context = contextKind === 'sales' ? 'deal_task' : 'standalone_task';
+    return contexts.length === 0 || contexts.includes(context);
+  });
+
+const applicableTaskFieldDefinitions = computed(() =>
+  taskFieldDefinitionsForContext(form.contextKind)
 );
+
+const taskCustomAttributesForContext = (customAttributes, contextKind) => {
+  const draft = cloneTaskDraft(customAttributes || {});
+  if (!props.taskFieldDefinitions.length) return draft;
+
+  return reconcileCustomAttributesForDefinitions(
+    draft,
+    taskFieldDefinitionsForContext(contextKind)
+  );
+};
 
 const taskStatusById = computed(() =>
   props.statuses.reduce((result, status) => {
@@ -344,8 +359,9 @@ const resetForm = () => {
   Object.assign(form, {
     activityType: 'task',
     assigneeId: props.deal?.ownerId || '',
+    contextKind: 'sales',
     customAttributes: buildDefaultCustomAttributes(
-      applicableTaskFieldDefinitions.value
+      taskFieldDefinitionsForContext('sales')
     ),
     description: '',
     dueAt: '',
@@ -495,6 +511,7 @@ const buildPayload = () => {
     activity_type: form.activityType || 'task',
     task_type_id: taskType?.id ? Number(taskType.id) : undefined,
     assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
+    context_kind: form.contextKind,
     custom_attributes: form.customAttributes,
     deal_id: Number(props.deal.id),
     description: form.description || undefined,
@@ -582,10 +599,15 @@ const clearWaiting = async () => {
 };
 
 const fillFormFromTask = task => {
+  const contextKind = task.contextKind || (task.dealId ? 'sales' : 'personal');
   Object.assign(form, {
     activityType: task.activityType || 'task',
     assigneeId: task.assigneeId ?? '',
-    customAttributes: cloneTaskDraft(task.customAttributes || {}),
+    contextKind,
+    customAttributes: taskCustomAttributesForContext(
+      task.customAttributes,
+      contextKind
+    ),
     description: task.description || '',
     dueAt: task.dueAt ? task.dueAt.slice(0, 16) : '',
     outcome: task.outcome || '',
@@ -731,7 +753,7 @@ watch(
 watch(applicableTaskFieldDefinitions, definitions => {
   if (!definitions.length) return;
 
-  form.customAttributes = mergeMissingDefaultCustomAttributes(
+  form.customAttributes = reconcileCustomAttributesForDefinitions(
     form.customAttributes,
     definitions
   );

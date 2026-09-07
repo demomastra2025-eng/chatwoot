@@ -15,6 +15,10 @@ class Captain::Tools::Copilot::CreateTaskService < Captain::Tools::Copilot::Base
   param :due_at, type: :string, desc: 'Task due datetime', required: false
   param :due_on, type: :string, desc: 'Task due date (YYYY-MM-DD) when all_day is true', required: false
   param :schedule_timezone, type: :string, desc: 'IANA timezone for task scheduling', required: false
+  param :context_kind,
+        type: :string,
+        desc: 'Task context: sales or personal. Sales requires a deal; personal may be standalone.',
+        required: false
   param :deal_id, type: :integer, desc: 'Optional positive account CRM deal ID to link. Omit when unknown.', required: false
   param :originating_conversation_id,
         type: :integer,

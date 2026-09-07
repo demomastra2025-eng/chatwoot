@@ -63,6 +63,7 @@ import { useCrmReferencesStore } from 'dashboard/stores/crm/references';
 import {
   buildDefaultCustomAttributes,
   mergeMissingDefaultCustomAttributes,
+  reconcileCustomAttributesForDefinitions,
 } from 'dashboard/stores/crm/customFieldDefaults';
 import {
   buildAdvancedCustomFieldOperatorOptions,
@@ -176,6 +177,7 @@ const form = reactive({
   activityType: 'task',
   allDay: false,
   assigneeId: '',
+  contextKind: 'personal',
   customAttributes: {},
   dealId: '',
   description: '',
@@ -217,7 +219,13 @@ const canViewTasks = computed(() =>
 const doneStatus = computed(() =>
   referencesStore.taskStatuses.find(status => status.category === 'done')
 );
-const isTaskFormDisabled = computed(() => !form.title.trim() || !form.statusId);
+const isTaskFormDisabled = computed(
+  () =>
+    !form.title.trim() ||
+    !form.statusId ||
+    !form.contextKind ||
+    (form.contextKind === 'sales' && !form.dealId)
+);
 
 const shouldRenderBoard = computed(() => currentPresentation.value === 'board');
 
@@ -230,6 +238,17 @@ const assigneeOptions = computed(() =>
     value: agent.id,
   }))
 );
+
+const taskContextOptions = computed(() => [
+  {
+    label: t('CRM.TASKS.CONTEXT_KIND.personal'),
+    value: 'personal',
+  },
+  {
+    label: t('CRM.TASKS.CONTEXT_KIND.sales'),
+    value: 'sales',
+  },
+]);
 
 const currentUserId = computed(() => {
   const userId = Number(currentUser.value?.id);
@@ -244,14 +263,28 @@ const taskFieldDefinitions = computed(
   () => referencesStore.taskFieldDefinitions
 );
 
-const applicableTaskFieldDefinitions = computed(() => {
-  const context = form.dealId ? 'deal_task' : 'standalone_task';
+const taskFieldDefinitionsForContext = contextKind => {
+  const context = contextKind === 'sales' ? 'deal_task' : 'standalone_task';
 
   return taskFieldDefinitions.value.filter(definition => {
     const contexts = definition.rules?.contexts || [];
     return contexts.length === 0 || contexts.includes(context);
   });
-});
+};
+
+const applicableTaskFieldDefinitions = computed(() =>
+  taskFieldDefinitionsForContext(form.contextKind)
+);
+
+const taskCustomAttributesForContext = (customAttributes, contextKind) => {
+  const draft = cloneTaskDraft(customAttributes || {});
+  if (!taskFieldDefinitions.value.length) return draft;
+
+  return reconcileCustomAttributesForDefinitions(
+    draft,
+    taskFieldDefinitionsForContext(contextKind)
+  );
+};
 
 const customFieldFilterLabels = computed(() => ({
   noLabel: t('CHOICE_TOGGLE.NO'),
@@ -787,8 +820,9 @@ const resetForm = () => {
     activityType: defaultTaskType?.code || 'task',
     allDay: false,
     assigneeId: currentUserId.value,
+    contextKind: 'personal',
     customAttributes: buildDefaultCustomAttributes(
-      referencesStore.taskFieldDefinitions
+      taskFieldDefinitionsForContext('personal')
     ),
     dealId: '',
     description: '',
@@ -818,6 +852,7 @@ const crmPrefillKeys = [
   'assigneeId',
   'contactName',
   'conversationDisplayId',
+  'contextKind',
   'dealId',
   'description',
   'dueAt',
@@ -937,6 +972,7 @@ const openCreateDrawer = async prefill => {
 
   if (prefill) {
     Object.assign(form, prefill);
+    if (prefill.dealId && !prefill.contextKind) form.contextKind = 'sales';
   }
   await loadDealOptions();
 };
@@ -966,8 +1002,9 @@ const buildPayload = () => {
     task_type_id: taskType?.id ? Number(taskType.id) : undefined,
     all_day: form.allDay,
     assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
+    context_kind: form.contextKind,
     custom_attributes: form.customAttributes,
-    deal_id: form.dealId ? Number(form.dealId) : undefined,
+    deal_id: form.dealId ? Number(form.dealId) : null,
     description: form.description || undefined,
     due_at: form.allDay ? undefined : form.dueAt || undefined,
     due_on: form.allDay ? form.dueAt || undefined : undefined,
@@ -1004,11 +1041,16 @@ const openEditDrawer = async task => {
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedTask.value = task;
   resetTimeline();
+  const contextKind = task.contextKind || (task.dealId ? 'sales' : 'personal');
   Object.assign(form, {
     activityType: normalizeActivityType(task.activityType || 'task'),
     allDay: Boolean(task.allDay),
     assigneeId: task.assigneeId ?? '',
-    customAttributes: cloneTaskDraft(task.customAttributes || {}),
+    contextKind,
+    customAttributes: taskCustomAttributesForContext(
+      task.customAttributes,
+      contextKind
+    ),
     dealId: task.dealId ?? '',
     description: task.description || '',
     dueAt: taskDueInputValue(task),
@@ -1473,6 +1515,9 @@ const consumeTaskPrefillQuery = async () => {
   await openCreateDrawer({
     activityType: normalizeActivityType(queryValue('activityType') || 'task'),
     assigneeId: numericQueryValue('assigneeId'),
+    contextKind:
+      queryValue('contextKind') ||
+      (numericQueryValue('dealId') ? 'sales' : 'personal'),
     dealId: numericQueryValue('dealId'),
     description: queryValue('description') || '',
     dueAt: queryValue('dueAt') || '',
@@ -1644,14 +1689,17 @@ watch(
 watch(
   applicableTaskFieldDefinitions,
   definitions => {
-    if (
-      !drawerOpen.value ||
-      selectedTask.value ||
-      !pendingCreateCustomFieldDefaultsHydration.value ||
-      !definitions.length
-    ) {
+    if (!drawerOpen.value || !definitions.length) return;
+
+    if (selectedTask.value) {
+      form.customAttributes = reconcileCustomAttributesForDefinitions(
+        form.customAttributes,
+        definitions
+      );
       return;
     }
+
+    if (!pendingCreateCustomFieldDefaultsHydration.value) return;
 
     form.customAttributes = mergeMissingDefaultCustomAttributes(
       form.customAttributes,
@@ -1660,6 +1708,24 @@ watch(
     pendingCreateCustomFieldDefaultsHydration.value = false;
   },
   { immediate: true }
+);
+
+watch(
+  () => form.contextKind,
+  (contextKind, previousContextKind) => {
+    if (
+      !drawerOpen.value ||
+      contextKind === previousContextKind ||
+      !taskFieldDefinitions.value.length
+    ) {
+      return;
+    }
+
+    form.customAttributes = reconcileCustomAttributesForDefinitions(
+      form.customAttributes,
+      taskFieldDefinitionsForContext(contextKind)
+    );
+  }
 );
 
 watch(
@@ -2385,11 +2451,25 @@ watch(
             />
 
             <SchedulingSelectField
+              :label="$t('CRM.TASKS.FORM.CONTEXT_KIND')"
+              :model-value="form.contextKind"
+              :options="taskContextOptions"
+              @update:model-value="form.contextKind = $event"
+            />
+
+            <SchedulingSelectField
               :label="$t('CRM.TASKS.FORM.DEAL')"
               :model-value="form.dealId"
               :options="dealOptions"
               @update:model-value="form.dealId = $event"
             />
+
+            <p
+              v-if="form.contextKind === 'sales' && !form.dealId"
+              class="mb-0 text-xs text-n-ruby-11 md:col-span-2"
+            >
+              {{ $t('CRM.TASKS.FORM.SALES_DEAL_REQUIRED') }}
+            </p>
 
             <div class="flex items-center gap-3 md:col-span-2">
               <Switch
