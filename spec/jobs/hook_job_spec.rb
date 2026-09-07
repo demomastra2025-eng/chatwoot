@@ -200,21 +200,21 @@ RSpec.describe HookJob do
       account.enable_features!('scheduling')
       schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true)
       allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
-      allow(Integrations::Medelement::PatientEnrichmentJob).to receive(:perform_later)
+      allow(Integrations::Medelement::PatientEnrichmentJob).to receive(:enqueue)
     end
 
     it 'enqueues enrichment for a contact event' do
       described_class.perform_now(medelement_hook, 'contact.updated', contact: contact)
 
       expect(Integrations::Medelement::PatientEnrichmentJob)
-        .to have_received(:perform_later)
+        .to have_received(:enqueue)
         .with(medelement_hook.id, contact.id)
     end
 
     it 'ignores unrelated events' do
       described_class.perform_now(medelement_hook, 'conversation.created', contact: contact)
 
-      expect(Integrations::Medelement::PatientEnrichmentJob).not_to have_received(:perform_later)
+      expect(Integrations::Medelement::PatientEnrichmentJob).not_to have_received(:enqueue)
     end
   end
 end

@@ -12,6 +12,60 @@ RSpec.describe Integrations::Medelement::PatientEnrichmentJob do
     allow(Integrations::Medelement::PatientEnrichmentService).to receive(:new).and_return(service)
   end
 
+  describe '.enqueue' do
+    let(:queued_job) { instance_double(described_class, successfully_enqueued?: true) }
+
+    before do
+      allow(SecureRandom).to receive(:uuid).and_return('dedup-token')
+      allow(Redis::Alfred).to receive(:set).and_return(true)
+      allow(described_class).to receive(:perform_later).and_return(queued_job)
+    end
+
+    it 'claims a contact-scoped lease before enqueueing' do
+      expect(described_class.enqueue(13, 42)).to be(true)
+
+      expect(Redis::Alfred).to have_received(:set).with(
+        format(Redis::Alfred::MEDELEMENT_PATIENT_ENRICHMENT_QUEUED, hook_id: 13, contact_id: 42),
+        'dedup-token',
+        nx: true,
+        ex: described_class::QUEUED_LEASE_TTL
+      )
+      expect(described_class).to have_received(:perform_later).with(13, 42, 'dedup-token')
+    end
+
+    it 'suppresses duplicate queued enrichment work' do
+      allow(Redis::Alfred).to receive(:set).and_return(false)
+
+      expect(described_class.enqueue(13, 42)).to be(false)
+      expect(described_class).not_to have_received(:perform_later)
+    end
+
+    it 'releases the lease when enqueueing fails' do
+      allow(Redis::Alfred).to receive(:delete_if_value)
+      allow(described_class).to receive(:perform_later).and_return(false)
+
+      expect { described_class.enqueue(13, 42) }.to raise_error(ActiveJob::EnqueueError)
+      expect(Redis::Alfred).to have_received(:delete_if_value).with(
+        format(Redis::Alfred::MEDELEMENT_PATIENT_ENRICHMENT_QUEUED, hook_id: 13, contact_id: 42),
+        'dedup-token'
+      )
+    end
+  end
+
+  it 'releases its queued lease before processing' do
+    hook = create(:integrations_hook, :medelement, account: account)
+    job = described_class.new
+    allow(job).to receive(:with_lock).and_yield
+    allow(Redis::Alfred).to receive(:delete_if_value)
+
+    job.perform(hook.id, contact.id, 'dedup-token')
+
+    expect(Redis::Alfred).to have_received(:delete_if_value).with(
+      format(Redis::Alfred::MEDELEMENT_PATIENT_ENRICHMENT_QUEUED, hook_id: hook.id, contact_id: contact.id),
+      'dedup-token'
+    )
+  end
+
   it 'enriches an account-scoped contact under a contact-scoped lock' do
     hook = create(:integrations_hook, :medelement, account: account)
     job = described_class.new

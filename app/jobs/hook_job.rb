@@ -98,6 +98,6 @@ class HookJob < MutexApplicationJob
     contact = event_data[:contact]
     return if contact.blank?
 
-    Integrations::Medelement::PatientEnrichmentJob.perform_later(hook.id, contact.id)
+    Integrations::Medelement::PatientEnrichmentJob.enqueue(hook.id, contact.id)
   end
 end
