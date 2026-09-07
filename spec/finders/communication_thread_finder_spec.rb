@@ -188,6 +188,34 @@ RSpec.describe CommunicationThreadFinder do
         'scheduled' => 1
       )
     end
+
+    it 'counts unread thread and linked conversation statuses in one query' do
+      thread, first_conversation = create_thread_with_conversation(unread_count: 1)
+      second_conversation = create(:conversation, account: account, inbox: inbox, contact: first_conversation.contact, status: :pending)
+      create(
+        :communication_thread_conversation,
+        account: account,
+        communication_thread: thread,
+        conversation: second_conversation,
+        inbox: inbox,
+        contact_inbox: second_conversation.contact_inbox
+      )
+      first_conversation.update!(status: :resolved)
+      thread.update!(status: :open, unread_count: 1)
+      sql = []
+      subscriber = lambda do |_name, _start, _finish, _id, payload|
+        sql << payload[:sql] unless payload[:cached] || payload[:name] == 'SCHEMA'
+      end
+      status_finder = described_class.new(user, status: 'all', assignee_type: 'all')
+
+      counts = ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+        status_finder.send(:set_up)
+        status_finder.send(:status_unread_counts)
+      end
+
+      expect(counts).to include('open' => 1, 'pending' => 1, 'resolved' => 1, 'snoozed' => 0)
+      expect(sql.grep(/thread_status_memberships/).size).to eq(1)
+    end
   end
 
   def create_thread_for(contact:, unread_count: 0)

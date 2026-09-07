@@ -280,25 +280,11 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   end
 
   def unread_conversation_scope(scope)
-    scope.joins(:messages)
-         .merge(Message.without_imported_history.reorder(nil))
-         .where(messages: unread_message_filters)
-         .where(
-           'messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)',
-           Time.zone.at(0)
-         )
+    Conversations::UnreadScopeBuilder.new(scope: scope, account: current_account).perform
   end
 
   def unread_dialog_count(scope)
     unread_conversation_scope(scope).distinct.count('conversations.id')
-  end
-
-  def unread_message_filters
-    {
-      account_id: current_account.id,
-      message_type: Message.message_types[:incoming],
-      private: false
-    }
   end
 
   def label_counts(scope)

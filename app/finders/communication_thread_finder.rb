@@ -51,8 +51,6 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   }.with_indifferent_access
   MESSAGE_SORT_KEYS = %w[last_activity_at_asc last_activity_at_desc latest].freeze
   WAITING_SORT_KEYS = %w[waiting_since_asc waiting_since_desc].freeze
-  STATUS_COUNT_KEYS = %w[open pending snoozed resolved].freeze
-
   def self.message_sort?(sort_key)
     MESSAGE_SORT_KEYS.include?(sort_key.to_s)
   end
@@ -69,19 +67,30 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def self.last_message_activity_subquery_sql(conversation_scope)
-    activity_message_type = Message.message_types[:activity]
     conversation_ids_sql = conversation_scope.reselect('conversations.id', 'conversations.account_id').to_sql
 
     <<~SQL.squish
-      SELECT sort_thread_links.account_id, sort_thread_links.communication_thread_id, MAX(messages.created_at) AS last_message_at
+      SELECT sort_thread_links.account_id, sort_thread_links.communication_thread_id,
+             MAX(sort_latest_messages.created_at) AS last_message_at
       FROM communication_thread_conversations sort_thread_links
       INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
         ON sort_accessible_conversations.id = sort_thread_links.conversation_id
        AND sort_accessible_conversations.account_id = sort_thread_links.account_id
-      INNER JOIN messages ON messages.conversation_id = sort_thread_links.conversation_id
-        AND messages.account_id = sort_thread_links.account_id
-      WHERE messages.private = FALSE AND messages.message_type != #{activity_message_type}
+      INNER JOIN LATERAL (#{latest_public_message_sql}) sort_latest_messages ON TRUE
       GROUP BY sort_thread_links.account_id, sort_thread_links.communication_thread_id
+    SQL
+  end
+
+  def self.latest_public_message_sql
+    <<~SQL.squish
+      SELECT messages.created_at
+      FROM messages
+      WHERE messages.conversation_id = sort_thread_links.conversation_id
+        AND messages.account_id = sort_thread_links.account_id
+        AND messages.private = FALSE
+        AND messages.message_type != #{Message.message_types[:activity]}
+      ORDER BY messages.created_at DESC
+      LIMIT 1
     SQL
   end
 
@@ -159,30 +168,15 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def find_accessible_threads
-    @communication_threads = CommunicationThread
-                             .where(account_id: current_account.id)
-                             .joins(:communication_thread_conversations)
-                             .where(communication_thread_conversations: { conversation_id: accessible_conversations.select(:id) })
-                             .distinct
+    @communication_threads = base_thread_scope
   end
 
   def filter_by_status
-    return if params[:status] == 'all'
-
-    status = params[:status].presence || DEFAULT_STATUS
-    @communication_threads = @communication_threads.where(
-      'communication_threads.status = :thread_status OR communication_thread_conversations.conversation_id IN (:matching_conversation_ids)',
-      thread_status: CommunicationThread.statuses.fetch(status),
-      matching_conversation_ids: accessible_conversations
-        .where(status: Conversation.statuses.fetch(status))
-        .select(:id)
-    )
+    @communication_threads = apply_status_filter(@communication_threads)
   end
 
   def filter_by_inbox
-    return if params[:inbox_id].blank?
-
-    @communication_threads = @communication_threads.where(communication_thread_conversations: { inbox_id: params[:inbox_id] })
+    @communication_threads = apply_inbox_filter(@communication_threads)
   end
 
   def filter_by_team
@@ -195,11 +189,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def filter_by_labels
-    return if params[:labels].blank? && !labels_scope_any?
-
-    @communication_threads = @communication_threads.where(
-      communication_thread_conversations: { conversation_id: labeled_conversation_ids }
-    )
+    @communication_threads = apply_labels_filter(@communication_threads)
   end
 
   def filter_by_crm_deal_context
@@ -330,9 +320,11 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   def status_unread_counts
     scope = scoped_thread_relation(include_status: false, include_assignee: true, include_unread: false)
 
-    STATUS_COUNT_KEYS.index_with do |status|
-      unread_thread_count(apply_status_filter(scope, status))
-    end
+    CommunicationThreads::UnreadStatusCountService.new(
+      account: current_account,
+      thread_scope: unread_thread_scope(scope),
+      conversation_scope: accessible_conversations
+    ).perform
   end
 
   def channel_unread_counts
@@ -504,10 +496,6 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     else
       scope
     end
-  end
-
-  def unread_thread_count(scope)
-    unread_thread_scope(scope).count
   end
 
   def communication_threads

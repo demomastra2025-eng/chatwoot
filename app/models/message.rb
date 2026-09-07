@@ -41,14 +41,19 @@
 
 class Message < ApplicationRecord
   CONVERSATION_UNREAD_COUNT_UNSET = Object.new.freeze
-  NOT_IMPORTED_HISTORY_SQL = <<~'SQL'.squish.freeze
-    NOT CASE json_typeof(messages.content_attributes)
-    WHEN 'object' THEN LOWER(COALESCE(messages.content_attributes ->> 'imported_history', 'false')) = 'true'
-    WHEN 'string' THEN COALESCE(messages.content_attributes #>> '{}', '') ~*
+  NOT_IMPORTED_HISTORY_SQL_TEMPLATE = <<~'SQL'.squish.freeze
+    NOT CASE json_typeof(%<table>s.content_attributes)
+    WHEN 'object' THEN LOWER(COALESCE(%<table>s.content_attributes ->> 'imported_history', 'false')) = 'true'
+    WHEN 'string' THEN COALESCE(%<table>s.content_attributes #>> '{}', '') ~*
       '"imported_history"\s*:\s*(true|"true")'
     ELSE false
     END
   SQL
+
+  def self.not_imported_history_sql(table_alias = table_name)
+    format(NOT_IMPORTED_HISTORY_SQL_TEMPLATE, table: connection.quote_table_name(table_alias))
+  end
+
   searchkick callbacks: false if ChatwootApp.advanced_search_allowed?
 
   include MessageFilterHelpers
@@ -131,7 +136,7 @@ class Message < ApplicationRecord
   scope :non_activity_messages, -> { where.not(message_type: :activity).reorder('created_at desc') }
   scope :today, -> { where("date_trunc('day', created_at) = ?", Date.current) }
   scope :voice_calls, -> { where(content_type: :voice_call) }
-  scope :without_imported_history, -> { where(NOT_IMPORTED_HISTORY_SQL) }
+  scope :without_imported_history, -> { where(not_imported_history_sql) }
 
   # TODO: Get rid of default scope
   # https://stackoverflow.com/a/1834250/939299
