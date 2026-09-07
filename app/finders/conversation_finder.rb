@@ -140,7 +140,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       conversation_ids = current_account.mentions.where(user: current_user).pluck(:conversation_id)
       @conversations = @conversations.where(id: conversation_ids)
     when 'participating'
-      @conversations = current_user.participating_conversations.where(account_id: current_account.id)
+      @conversations = @conversations.where(id: current_user.participating_conversations.select(:id))
     when 'unattended'
       @conversations = @conversations.unattended
     end
@@ -361,7 +361,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
       conversation_ids = current_account.mentions.where(user: current_user).pluck(:conversation_id)
       scope.where(id: conversation_ids)
     when 'participating'
-      current_user.participating_conversations.where(account_id: current_account.id)
+      scope.where(id: current_user.participating_conversations.select(:id))
     when 'unattended'
       scope.unattended
     else
