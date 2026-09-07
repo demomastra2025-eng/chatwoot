@@ -140,7 +140,7 @@ RSpec.describe 'CRM Pipelines API', type: :request do
           as: :json
 
     expect(response).to have_http_status(:ok)
-    expect(pipeline.reload).to be_inactive
+    expect(pipeline.reload).not_to be_active
     expect(replacement.reload.default).to be(true)
   end
 

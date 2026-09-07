@@ -4,8 +4,8 @@ import store from '../../../../store';
 const SettingsTabsWrapper = () =>
   import('../components/SettingsTabsWrapper.vue');
 const Index = () => import('./Index.vue');
-
-const AttributesHome = () => import('../attributes/Index.vue');
+export const TaskCatalogSettingsPage = () =>
+  import('./TaskCatalogSettingsPage.vue');
 
 const hasCrmDealsEnabled = accountId =>
   store.getters['accounts/isFeatureEnabledonAccount'](
@@ -33,7 +33,7 @@ const dealSettingsTabs = [
 
 const taskSettingsTabs = [
   {
-    labelKey: 'ATTRIBUTES_MGMT.HEADER',
+    labelKey: 'CRM.SETTINGS.TASK_SETTINGS.TITLE',
     routeName: 'crm_task_settings_index',
     activeOn: ['crm_task_settings_index', 'crm_task_fields_settings_index'],
   },
@@ -92,12 +92,7 @@ export default {
         {
           path: '',
           name: 'crm_task_settings_index',
-          component: AttributesHome,
-          props: {
-            initialTab: 'task',
-            showEntityTabs: false,
-            tabs: ['task'],
-          },
+          component: TaskCatalogSettingsPage,
           meta: crmSettingsMeta,
           beforeEnter: requireCrmTasks,
         },

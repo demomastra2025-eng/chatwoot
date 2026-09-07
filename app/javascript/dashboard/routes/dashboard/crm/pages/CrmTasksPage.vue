@@ -1,5 +1,12 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { format } from 'date-fns';
 import { useLocalStorage } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
@@ -19,18 +26,17 @@ import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
-import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
+import Switch from 'dashboard/components-next/switch/Switch.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
-import CrmTaskAssigneeMenu from 'dashboard/components-next/CRM/CrmTaskAssigneeMenu.vue';
 import CrmCustomFieldsSummary from 'dashboard/components-next/CRM/CrmCustomFieldsSummary.vue';
+import CrmPageSkeleton from 'dashboard/components-next/CRM/CrmPageSkeleton.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskBoard from 'dashboard/components-next/CRM/CrmTaskBoard.vue';
+import { buildTaskTypeResolver } from 'dashboard/components-next/CRM/taskTypeMetadata';
 import CrmTaskCalendar from 'dashboard/components-next/CRM/CrmTaskCalendar.vue';
+import CrmTaskCancelDialog from 'dashboard/components-next/CRM/CrmTaskCancelDialog.vue';
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
-import {
-  completionOutcomeForTask,
-  taskMatchesStateFilter,
-} from 'dashboard/components-next/CRM/taskCompletion';
+import { taskMatchesStateFilter } from 'dashboard/components-next/CRM/taskCompletion';
 import CrmTimelineFeed from 'dashboard/components-next/CRM/CrmTimelineFeed.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
@@ -66,6 +72,7 @@ import {
   isDiscreteFilterableCustomFieldDefinition,
   isFilterableCustomFieldDefinition,
   normalizeCustomFieldFilters,
+  recordMatchesCustomFieldFilters,
 } from 'dashboard/stores/crm/customFieldFilters';
 import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
 import {
@@ -77,6 +84,18 @@ import {
   createTaskListSortValueResolver,
   sortListRecords,
 } from 'dashboard/routes/dashboard/crm/listSort';
+import {
+  taskDeadlineForBucket,
+  taskDueDate,
+} from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
+import {
+  assertTaskEditCurrent,
+  buildTaskFormSavePayload,
+  cloneTaskDraft,
+  rememberTaskSnapshot,
+} from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 const referencesStore = useCrmReferencesStore();
 const store = useStore();
@@ -96,8 +115,11 @@ const calendarAnchorDate = ref(new Date());
 const drawerOpen = ref(false);
 const filterDialogRef = ref(null);
 const completionDialogRef = ref(null);
+const cancelDialogRef = ref(null);
 const listCurrentPage = ref(1);
 const selectedTask = ref(null);
+const taskEditSnapshot = ref(null);
+const taskTitleEditSnapshot = ref(null);
 const timelineItems = ref([]);
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const editingTaskTitleId = ref(null);
@@ -120,28 +142,13 @@ const persistedPreferencesByAccount = useLocalStorage(
 );
 
 const LIST_PAGE_SIZE = 25;
-const TASK_ACTIVITY_TYPES = ['task', 'call', 'meeting', 'message', 'touch'];
-
-const TASK_OUTCOME_VALUES = [
-  'completed',
-  'held',
-  'cancelled',
-  'no_show',
-  'rescheduled',
-  'answered',
-  'no_answer',
-  'not_done',
-  'busy',
-  'sent',
-  'failed',
+const LEGACY_TASK_ACTIVITY_TYPES = [
+  'task',
+  'call',
+  'meeting',
+  'message',
+  'touch',
 ];
-const TASK_OUTCOMES_BY_ACTIVITY_TYPE = {
-  call: ['answered', 'no_answer', 'busy', 'cancelled', 'not_done'],
-  meeting: ['held', 'cancelled', 'no_show', 'rescheduled', 'not_done'],
-  message: ['sent', 'failed', 'not_done'],
-  task: ['completed', 'not_done', 'cancelled'],
-  touch: ['completed', 'no_answer', 'cancelled', 'not_done'],
-};
 
 const filters = reactive({
   activityType: '',
@@ -167,6 +174,7 @@ const listQuickFilters = reactive({
 
 const form = reactive({
   activityType: 'task',
+  allDay: false,
   assigneeId: '',
   customAttributes: {},
   dealId: '',
@@ -191,6 +199,9 @@ const ui = reactive({
   isTimelineLoading: false,
 });
 const taskUiActionQueryInFlight = ref(false);
+const taskLoadGeneration = ref(0);
+let taskRealtimeSequence = 0;
+const pendingTaskRealtimeUpdates = new Map();
 
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
@@ -295,7 +306,7 @@ const dealNameById = computed(() =>
   }, {})
 );
 
-const activityTypeMetaByValue = computed(() => ({
+const legacyActivityTypeMetaByValue = computed(() => ({
   call: {
     icon: 'i-lucide-phone',
     label: t('CRM.TASKS.ACTIVITY_TYPE.call'),
@@ -318,22 +329,48 @@ const activityTypeMetaByValue = computed(() => ({
   },
 }));
 
+const availableTaskTypes = computed(() => {
+  const configured = referencesStore.taskTypes.filter(
+    taskType => taskType.active !== false || taskType.code === form.activityType
+  );
+  if (configured.length) return configured;
+
+  return LEGACY_TASK_ACTIVITY_TYPES.map((code, index) => ({
+    active: true,
+    code,
+    icon: legacyActivityTypeMetaByValue.value[code]?.icon,
+    id: null,
+    name: legacyActivityTypeMetaByValue.value[code]?.label || code,
+    outcomes: [],
+    position: index + 1,
+  }));
+});
+
+const taskTypeResolver = computed(() =>
+  buildTaskTypeResolver(referencesStore.taskTypes, t)
+);
+
+const taskTypeByCode = computed(() =>
+  referencesStore.taskTypes.reduce((result, taskType) => {
+    result[taskType.code] = taskType;
+    return result;
+  }, {})
+);
+
 const activityTypeOptions = computed(() =>
-  TASK_ACTIVITY_TYPES.map(value => ({
-    icon: activityTypeMetaByValue.value[value]?.icon,
-    label: activityTypeMetaByValue.value[value]?.label || value,
-    value,
+  availableTaskTypes.value.map(taskType => ({
+    icon:
+      taskType.icon || legacyActivityTypeMetaByValue.value[taskType.code]?.icon,
+    label: taskType.name,
+    value: taskType.code,
   }))
 );
 
 const activityTypeLabelByValue = computed(() =>
-  Object.entries(activityTypeMetaByValue.value).reduce(
-    (result, [value, meta]) => {
-      result[value] = meta.label;
-      return result;
-    },
-    {}
-  )
+  availableTaskTypes.value.reduce((result, taskType) => {
+    result[taskType.code] = taskType.name;
+    return result;
+  }, {})
 );
 
 const outcomeLabelByValue = computed(() => ({
@@ -346,23 +383,30 @@ const outcomeLabelByValue = computed(() => ({
   no_answer: t('CRM.TASKS.OUTCOME.no_answer'),
   no_show: t('CRM.TASKS.OUTCOME.no_show'),
   not_done: t('CRM.TASKS.OUTCOME.not_done'),
+  other: t('CRM.TASKS.OUTCOME.other'),
   rescheduled: t('CRM.TASKS.OUTCOME.rescheduled'),
   sent: t('CRM.TASKS.OUTCOME.sent'),
 }));
 
 const buildOutcomeOptions = (activityType, currentOutcome = '') => {
-  const values = new Set(
-    TASK_OUTCOMES_BY_ACTIVITY_TYPE[activityType] || TASK_OUTCOME_VALUES
-  );
+  const configuredOutcomes = taskTypeByCode.value[activityType]?.outcomes || [];
+  const options = configuredOutcomes
+    .filter(
+      outcome => outcome.active !== false || outcome.code === currentOutcome
+    )
+    .map(outcome => ({ label: outcome.name, value: outcome.code }));
 
-  if (currentOutcome) {
-    values.add(currentOutcome);
+  if (
+    currentOutcome &&
+    !options.some(option => option.value === currentOutcome)
+  ) {
+    options.push({
+      label: outcomeLabelByValue.value[currentOutcome] || currentOutcome,
+      value: currentOutcome,
+    });
   }
 
-  return [...values].map(value => ({
-    label: outcomeLabelByValue.value[value] || value,
-    value,
-  }));
+  return options;
 };
 
 const filterOutcomeOptions = computed(() =>
@@ -371,11 +415,20 @@ const filterOutcomeOptions = computed(() =>
 const taskStateOptions = computed(() => [
   { label: t('CRM.TASKS.STATE_FILTER.active'), value: 'active' },
   { label: t('CRM.TASKS.STATE_FILTER.completed'), value: 'completed' },
+  { label: t('CRM.TASKS.STATE_FILTER.cancelled'), value: 'cancelled' },
   { label: t('CRM.TASKS.STATE_FILTER.all'), value: 'all' },
 ]);
 
-const normalizeActivityType = value =>
-  TASK_ACTIVITY_TYPES.includes(value) ? value : 'task';
+const normalizeActivityType = value => {
+  if (availableTaskTypes.value.some(taskType => taskType.code === value))
+    return value;
+
+  return (
+    availableTaskTypes.value.find(taskType => taskType.default)?.code ||
+    availableTaskTypes.value[0]?.code ||
+    'task'
+  );
+};
 
 const updateFormActivityType = value => {
   form.activityType = normalizeActivityType(value);
@@ -503,10 +556,15 @@ const normalizeFilterText = value =>
     .toLowerCase();
 
 const isTaskOverdue = task => {
-  if (!task?.dueAt || task.archivedAt || task.completedAt) return false;
+  if (task.archivedAt || task.completedAt) return false;
 
-  const dueAt = new Date(task.dueAt);
-  return !Number.isNaN(dueAt.getTime()) && dueAt < new Date();
+  const dueDate = taskDueDate(task);
+  if (!dueDate) return false;
+  if (!task.allDay) return dueDate < new Date();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dueDate < today;
 };
 
 const taskCustomFieldEntries = task =>
@@ -630,7 +688,11 @@ const sanitizeTasksPreferences = preferences => {
     next.currentCalendarView = defaults.currentCalendarView;
   }
 
-  if (!['active', 'completed', 'all'].includes(next.filters.taskState)) {
+  if (
+    !['active', 'completed', 'cancelled', 'all'].includes(
+      next.filters.taskState
+    )
+  ) {
     next.filters.taskState = defaults.filters.taskState;
   }
 
@@ -716,9 +778,14 @@ const resetForm = () => {
   const defaultStatus =
     referencesStore.taskStatuses.find(status => status.default) ||
     referencesStore.taskStatuses[0];
+  const defaultTaskType =
+    referencesStore.taskTypes.find(
+      taskType => taskType.default && taskType.active
+    ) || referencesStore.taskTypes.find(taskType => taskType.active);
 
   Object.assign(form, {
-    activityType: 'task',
+    activityType: defaultTaskType?.code || 'task',
+    allDay: false,
     assigneeId: currentUserId.value,
     customAttributes: buildDefaultCustomAttributes(
       referencesStore.taskFieldDefinitions
@@ -795,40 +862,83 @@ const buildPrefillTaskTitle = () => {
   return '';
 };
 
+let dealOptionsLoadGeneration = 0;
+let timelineLoadGeneration = 0;
+let isComponentUnmounted = false;
+
+const resetTimeline = () => {
+  timelineLoadGeneration += 1;
+  timelineItems.value = [];
+  ui.isTimelineLoading = false;
+};
+
 const loadDealOptions = async () => {
-  const { data } = await CrmDealsAPI.get({
-    archived: false,
-    page: 1,
-    per_page: 100,
-  });
-  dealOptions.value = normalizePayload(data).map(deal => ({
-    label: deal.title,
-    value: deal.id,
-  }));
+  if (isComponentUnmounted) return;
+  dealOptionsLoadGeneration += 1;
+  const generation = dealOptionsLoadGeneration;
+  const requestAccountId = accountId.value;
+  const isCurrent = () =>
+    generation === dealOptionsLoadGeneration &&
+    requestAccountId === accountId.value;
+
+  try {
+    const { data } = await CrmDealsAPI.get({
+      archived: false,
+      page: 1,
+      per_page: 100,
+    });
+    if (!isCurrent()) return;
+    dealOptions.value = normalizePayload(data).map(deal => ({
+      label: deal.title,
+      value: deal.id,
+    }));
+  } catch (error) {
+    if (isCurrent()) throw error;
+  }
 };
 
 const loadTimeline = async taskId => {
+  if (isComponentUnmounted) return;
+  timelineLoadGeneration += 1;
+  const generation = timelineLoadGeneration;
+  const requestAccountId = accountId.value;
+  const isCurrent = () =>
+    generation === timelineLoadGeneration &&
+    requestAccountId === accountId.value &&
+    drawerOpen.value &&
+    Number(selectedTask.value?.id) === Number(taskId);
+  if (!isCurrent()) return;
   ui.isTimelineLoading = true;
 
   try {
     const { data } = await CrmTasksAPI.timeline(taskId, { limit: 50 });
-    timelineItems.value = normalizePayload(data);
+    if (isCurrent()) timelineItems.value = normalizePayload(data);
+  } catch (error) {
+    if (isCurrent()) throw error;
   } finally {
-    ui.isTimelineLoading = false;
+    if (isCurrent()) ui.isTimelineLoading = false;
   }
+};
+
+const openTaskSettings = () => {
+  router.push({
+    name: 'crm_task_settings_index',
+    params: { accountId: accountId.value },
+  });
 };
 
 const openCreateDrawer = async prefill => {
   selectedTask.value = null;
+  taskEditSnapshot.value = null;
   pendingCreateCustomFieldDefaultsHydration.value = true;
   resetForm();
-  timelineItems.value = [];
+  resetTimeline();
   drawerOpen.value = true;
-  await loadDealOptions();
 
   if (prefill) {
     Object.assign(form, prefill);
   }
+  await loadDealOptions();
 };
 
 const openCalendarCreateDrawer = async payload => {
@@ -842,16 +952,66 @@ const openCalendarCreateDrawer = async payload => {
   });
 };
 
+const taskDueInputValue = task => {
+  if (task.allDay) return task.dueOn || '';
+  if (!task.dueAt) return '';
+
+  return task.dueAt.slice(0, 16);
+};
+
+const buildPayload = () => {
+  const taskType = taskTypeByCode.value[form.activityType];
+  const payload = compactPayload({
+    activity_type: form.activityType || 'task',
+    task_type_id: taskType?.id ? Number(taskType.id) : undefined,
+    all_day: form.allDay,
+    assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
+    custom_attributes: form.customAttributes,
+    deal_id: form.dealId ? Number(form.dealId) : undefined,
+    description: form.description || undefined,
+    due_at: form.allDay ? undefined : form.dueAt || undefined,
+    due_on: form.allDay ? form.dueAt || undefined : undefined,
+    external_ref: form.externalRef || undefined,
+    lock_version: selectedTask.value?.lockVersion,
+    originating_conversation_id: form.originatingConversationId
+      ? Number(form.originatingConversationId)
+      : undefined,
+    start_at: form.startAt || undefined,
+    status_id: form.statusId ? Number(form.statusId) : undefined,
+    title: form.title.trim(),
+  });
+
+  if (form.allDay) {
+    payload.due_at = null;
+    payload.start_at = null;
+  } else {
+    payload.due_on = null;
+  }
+
+  if (selectedTask.value) {
+    payload.deal_id = form.dealId ? Number(form.dealId) : null;
+    payload.description = form.description || null;
+    payload.external_ref = form.externalRef || null;
+    payload.originating_conversation_id = form.originatingConversationId
+      ? Number(form.originatingConversationId)
+      : null;
+  }
+
+  return payload;
+};
+
 const openEditDrawer = async task => {
   pendingCreateCustomFieldDefaultsHydration.value = false;
   selectedTask.value = task;
+  resetTimeline();
   Object.assign(form, {
     activityType: normalizeActivityType(task.activityType || 'task'),
+    allDay: Boolean(task.allDay),
     assigneeId: task.assigneeId ?? '',
-    customAttributes: { ...(task.customAttributes || {}) },
+    customAttributes: cloneTaskDraft(task.customAttributes || {}),
     dealId: task.dealId ?? '',
     description: task.description || '',
-    dueAt: task.dueAt ? task.dueAt.slice(0, 16) : '',
+    dueAt: taskDueInputValue(task),
     externalRef: task.externalRef || '',
     originatingConversationDisplayId: task.originatingConversationId
       ? `#${task.originatingConversationId}`
@@ -864,21 +1024,23 @@ const openEditDrawer = async task => {
     statusId: task.statusId,
     title: task.title,
   });
+  taskEditSnapshot.value = cloneTaskDraft({ task, payload: buildPayload() });
   drawerOpen.value = true;
-  await loadDealOptions();
-  await loadTimeline(task.id);
+  await Promise.all([loadDealOptions(), loadTimeline(task.id)]);
 };
 
 const closeDrawer = () => {
   pendingCreateCustomFieldDefaultsHydration.value = false;
   drawerOpen.value = false;
   selectedTask.value = null;
-  timelineItems.value = [];
+  taskEditSnapshot.value = null;
+  resetTimeline();
   resetForm();
 };
 
 const closeTaskTitleEditor = () => {
   editingTaskTitleId.value = null;
+  taskTitleEditSnapshot.value = null;
   taskTitleDraft.value = '';
 };
 
@@ -891,11 +1053,13 @@ const syncTaskRangeInDrawer = task => {
   }
 
   selectedTask.value = task;
+  form.allDay = Boolean(task.allDay);
   form.startAt = task.startAt ? task.startAt.slice(0, 16) : '';
-  form.dueAt = task.dueAt ? task.dueAt.slice(0, 16) : '';
+  form.dueAt = taskDueInputValue(task);
 };
 
 const upsertTask = task => {
+  if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
   const existingIndex = tasks.value.findIndex(item => item.id === task.id);
 
   if (existingIndex === -1) {
@@ -906,6 +1070,100 @@ const upsertTask = task => {
   const nextTasks = [...tasks.value];
   nextTasks.splice(existingIndex, 1, task);
   tasks.value = nextTasks;
+};
+
+const removeTask = taskId => {
+  tasks.value = tasks.value.filter(task => Number(task.id) !== Number(taskId));
+};
+
+const taskMatchesRealtimeFilters = task => {
+  if (!taskMatchesStateFilter(task, filters.taskState)) return false;
+  if (filters.activityType && task.activityType !== filters.activityType) {
+    return false;
+  }
+  if (Boolean(task.archivedAt) !== Boolean(filters.archived)) return false;
+  if (
+    filters.assigneeId &&
+    Number(task.assigneeId) !== Number(filters.assigneeId)
+  ) {
+    return false;
+  }
+  if (filters.dealId && Number(task.dealId) !== Number(filters.dealId)) {
+    return false;
+  }
+  if (filters.outcome && task.outcome !== filters.outcome) return false;
+
+  const dueDate = taskDueDate(task);
+  if (filters.dateRange.from) {
+    const dueFrom = new Date(filters.dateRange.from);
+    if (!dueDate || dueDate < dueFrom) return false;
+  }
+  if (filters.dateRange.to) {
+    const dueTo = new Date(filters.dateRange.to);
+    dueTo.setHours(23, 59, 59, 999);
+    if (!dueDate || dueDate > dueTo) return false;
+  }
+
+  return recordMatchesCustomFieldFilters(
+    task,
+    taskFieldDefinitions.value,
+    customFieldFilters.value
+  );
+};
+
+const applyTaskRealtimeState = task => {
+  if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
+  if (taskMatchesRealtimeFilters(task)) {
+    upsertTask(task);
+  } else {
+    removeTask(task.id);
+  }
+};
+
+const runTaskMutation = async (request, expectedTask) => {
+  const accountAtStart = accountId.value;
+  if (expectedTask) {
+    assertTaskEditCurrent(
+      expectedTask,
+      pendingTaskRealtimeUpdates.get(Number(expectedTask.id))?.task ||
+        expectedTask
+    );
+  }
+  const response = await request();
+  if (accountAtStart !== accountId.value) assertTaskEditCurrent(null, null);
+  const responseTask = normalizePayload(response.data);
+  taskRealtimeSequence += 1;
+  const newest = rememberTaskSnapshot(
+    pendingTaskRealtimeUpdates,
+    responseTask,
+    taskRealtimeSequence
+  );
+  applyTaskRealtimeState(newest);
+  if (Number(selectedTask.value?.id) === Number(newest.id))
+    selectedTask.value = newest;
+  if (expectedTask) assertTaskEditCurrent(responseTask, newest);
+  return newest;
+};
+
+const handleCrmTaskRealtimeEvent = payload => {
+  if (
+    Number(payload?.account_id) !== Number(accountId.value) ||
+    !payload?.task
+  ) {
+    return;
+  }
+
+  taskRealtimeSequence += 1;
+  const task = rememberTaskSnapshot(
+    pendingTaskRealtimeUpdates,
+    normalizePayload({ payload: payload.task }),
+    taskRealtimeSequence
+  );
+  applyTaskRealtimeState(task);
+
+  if (Number(selectedTask.value?.id) === Number(task.id)) {
+    selectedTask.value = task;
+  }
 };
 
 const syncSelectedTask = records => {
@@ -920,49 +1178,45 @@ const syncSelectedTask = records => {
   }
 };
 
-const buildPayload = () => {
-  const payload = compactPayload({
-    activity_type: form.activityType || 'task',
-    assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
-    custom_attributes: form.customAttributes,
-    deal_id: form.dealId ? Number(form.dealId) : undefined,
-    description: form.description || undefined,
-    due_at: form.dueAt || undefined,
-    external_ref: form.externalRef || undefined,
-    lock_version: selectedTask.value?.lockVersion,
-    originating_conversation_id: form.originatingConversationId
-      ? Number(form.originatingConversationId)
-      : undefined,
-    start_at: form.startAt || undefined,
-    status_id: form.statusId ? Number(form.statusId) : undefined,
-    title: form.title.trim(),
-  });
+const updateAllDay = enabled => {
+  form.allDay = enabled;
 
-  return payload;
+  if (enabled) {
+    const dueDate = form.dueAt ? new Date(form.dueAt) : new Date();
+    form.dueAt = format(dueDate, 'yyyy-MM-dd');
+    form.startAt = '';
+    return;
+  }
+
+  if (form.dueAt) form.dueAt = `${form.dueAt.slice(0, 10)}T12:00`;
 };
 
 const saveTask = async () => {
-  if (!canManageTasks.value) return;
+  if (!canManageTasks.value || ui.isSaving) return;
 
   ui.isSaving = true;
 
   try {
     const payload = buildPayload();
+    const draft = cloneTaskDraft(form);
     let task;
 
     if (selectedTask.value) {
-      const { status_id: _statusId, ...updatePayload } = payload;
-      const response = await CrmTasksAPI.update(
-        selectedTask.value.id,
-        updatePayload
+      const currentTask = taskEditSnapshot.value?.task;
+      const savePayload = buildTaskFormSavePayload({
+        snapshot: taskEditSnapshot.value,
+        currentTask: selectedTask.value,
+        requested: payload,
+        form: draft,
+      });
+      task = await runTaskMutation(() =>
+        CrmTasksAPI.saveForm(currentTask.id, savePayload)
       );
-      task = normalizePayload(response.data);
     } else {
-      const response = await CrmTasksAPI.create(payload);
-      task = normalizePayload(response.data);
+      task = await runTaskMutation(() => CrmTasksAPI.create(payload));
     }
 
-    upsertTask(task);
+    applyTaskRealtimeState(task);
     useAlert(
       selectedTask.value
         ? t('CRM.TASKS.SUCCESS_UPDATED')
@@ -982,21 +1236,22 @@ const openTaskCompletionDialog = task => {
   completionDialogRef.value?.open(task);
 };
 
-const saveTaskCompletion = async ({ task, note }) => {
+const saveTaskCompletion = async ({ task, note, taskOutcomeId }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
 
   ui.isSaving = true;
 
   try {
-    const response = await CrmTasksAPI.changeStatus(currentTask.id, {
-      lock_version: currentTask.lockVersion,
-      outcome: completionOutcomeForTask(currentTask),
-      outcome_note: note,
-      status_id: Number(doneStatus.value.id),
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.complete(currentTask.id, {
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+        outcome_note: note,
+        task_outcome_id: Number(taskOutcomeId),
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
     completionDialogRef.value?.close();
     closeDrawer();
     useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
@@ -1007,13 +1262,74 @@ const saveTaskCompletion = async ({ task, note }) => {
   }
 };
 
+const openTaskCancelDialog = task => {
+  if (
+    !canManageTasks.value ||
+    task?.archivedAt ||
+    task?.completedAt ||
+    task?.cancelledAt
+  ) {
+    return;
+  }
+
+  cancelDialogRef.value?.open(task);
+};
+
+const saveTaskCancellation = async ({ task, reason }) => {
+  const currentTask =
+    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  ui.isSaving = true;
+
+  try {
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.cancel(currentTask.id, {
+        cancellation_reason: reason,
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
+    cancelDialogRef.value?.close();
+    closeDrawer();
+    useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    ui.isSaving = false;
+  }
+};
+
+const reopenTask = async task => {
+  if (!canManageTasks.value || (!task?.completedAt && !task?.cancelledAt)) {
+    return;
+  }
+
+  ui.isSaving = true;
+  try {
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.reopen(task.id, {
+        idempotency_key: crypto.randomUUID(),
+        lock_version: task.lockVersion,
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
+    selectedTask.value = updatedTask;
+    useAlert(t('CRM.TASKS.LIFECYCLE.REOPENED'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    ui.isSaving = false;
+  }
+};
+
 const toggleArchived = async task => {
   try {
-    const response = task.archivedAt
-      ? await CrmTasksAPI.unarchive(task.id, { lock_version: task.lockVersion })
-      : await CrmTasksAPI.archive(task.id, { lock_version: task.lockVersion });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(() =>
+      task.archivedAt
+        ? CrmTasksAPI.unarchive(task.id, { lock_version: task.lockVersion })
+        : CrmTasksAPI.archive(task.id, { lock_version: task.lockVersion })
+    );
+    applyTaskRealtimeState(updatedTask);
     syncSelectedTask(tasks.value);
     useAlert(
       task.archivedAt
@@ -1026,6 +1342,9 @@ const toggleArchived = async task => {
 };
 
 const loadTasks = async () => {
+  taskLoadGeneration.value += 1;
+  const loadGeneration = taskLoadGeneration.value;
+  const realtimeSequenceAtStart = taskRealtimeSequence;
   ui.isLoading = true;
   ui.error = null;
 
@@ -1062,12 +1381,47 @@ const loadTasks = async () => {
     }
 
     const { data } = await CrmTasksAPI.get(query);
-    tasks.value = normalizePayload(data);
+    if (loadGeneration !== taskLoadGeneration.value) return;
+
+    tasks.value = normalizePayload(data)
+      .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
+      .filter(taskMatchesRealtimeFilters);
+    pendingTaskRealtimeUpdates.forEach(update => {
+      if (update.sequence <= realtimeSequenceAtStart) return;
+
+      applyTaskRealtimeState(update.task);
+    });
     syncSelectedTask(tasks.value);
   } catch (error) {
+    if (loadGeneration !== taskLoadGeneration.value) return;
     ui.error = error;
   } finally {
-    ui.isLoading = false;
+    if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
+  }
+};
+
+const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
+  if (!canManageTasks.value || !task) return;
+
+  const deadline = taskDeadlineForBucket(bucket);
+
+  try {
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.reschedule(task.id, {
+        all_day: deadline.allDay,
+        due_at: deadline.dueAt,
+        due_on: deadline.dueOn,
+        idempotency_key: crypto.randomUUID(),
+        lock_version: task.lockVersion,
+        start_at: deadline.startAt,
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
+    syncTaskRangeInDrawer(updatedTask);
+    useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+    await loadTasks();
   }
 };
 
@@ -1335,12 +1689,20 @@ const startEditingTaskTitle = task => {
   }
 
   editingTaskTitleId.value = task.id;
+  taskTitleEditSnapshot.value = cloneTaskDraft(task);
   taskTitleDraft.value = task.title || '';
 };
 
 const saveTaskTitle = async task => {
-  const currentTask =
+  const latestTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
+  const currentTask = taskTitleEditSnapshot.value || task;
+  try {
+    assertTaskEditCurrent(currentTask, latestTask);
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+    return;
+  }
   const nextTitle = String(taskTitleDraft.value || '').trim();
   const currentTitle = String(currentTask.title || '').trim();
 
@@ -1362,24 +1724,26 @@ const saveTaskTitle = async task => {
     Number(selectedTask.value.id) === optimisticTask.id
   ) {
     selectedTask.value = optimisticTask;
-    form.title = nextTitle;
   }
 
   try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      lock_version: currentTask.lockVersion,
-      title: nextTitle,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(
+      () =>
+        CrmTasksAPI.update(currentTask.id, {
+          lock_version: currentTask.lockVersion,
+          title: nextTitle,
+        }),
+      currentTask
+    );
+    applyTaskRealtimeState(updatedTask);
 
     if (
       selectedTask.value &&
       Number(selectedTask.value.id) === updatedTask.id
     ) {
       selectedTask.value = updatedTask;
-      form.title = updatedTask.title;
     }
+    closeTaskTitleEditor();
   } catch (error) {
     try {
       await loadTasks();
@@ -1390,7 +1754,6 @@ const saveTaskTitle = async task => {
     useAlert(formatErrorMessage(error));
   } finally {
     savingTaskTitleId.value = null;
-    closeTaskTitleEditor();
   }
 };
 
@@ -1398,24 +1761,33 @@ const handleTaskDueAtChange = async ({ task, dueAt }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
   const nextDueAt = dueAt || '';
-  const currentDueAt = toDateTimeInputValue(currentTask.dueAt);
+  const currentDueAt = currentTask.allDay
+    ? currentTask.dueOn || ''
+    : toDateTimeInputValue(currentTask.dueAt);
 
   if (nextDueAt === currentDueAt) {
     return;
   }
 
   const previousTask = { ...currentTask };
-  const optimisticTask = { ...currentTask, dueAt: nextDueAt || null };
+  const optimisticTask = {
+    ...currentTask,
+    dueAt: currentTask.allDay ? null : nextDueAt || null,
+    dueOn: currentTask.allDay ? nextDueAt.slice(0, 10) || null : null,
+  };
   upsertTask(optimisticTask);
   syncTaskRangeInDrawer(optimisticTask);
 
   try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      due_at: nextDueAt || null,
-      lock_version: currentTask.lockVersion,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.reschedule(currentTask.id, {
+        due_at: currentTask.allDay ? null : nextDueAt || null,
+        due_on: currentTask.allDay ? nextDueAt.slice(0, 10) || null : null,
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
     syncTaskRangeInDrawer(updatedTask);
   } catch (error) {
     upsertTask(previousTask);
@@ -1431,53 +1803,7 @@ const handleTaskDueAtChange = async ({ task, dueAt }) => {
   }
 };
 
-const handleTaskAssigneeChange = async ({ task, assigneeId }) => {
-  const currentTask =
-    tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
-  const nextAssigneeId = Number(assigneeId);
-
-  if (!nextAssigneeId || Number(currentTask.assigneeId) === nextAssigneeId) {
-    return;
-  }
-
-  const optimisticTask = { ...currentTask, assigneeId: nextAssigneeId };
-  upsertTask(optimisticTask);
-
-  if (
-    selectedTask.value &&
-    Number(selectedTask.value.id) === optimisticTask.id
-  ) {
-    selectedTask.value = optimisticTask;
-    form.assigneeId = nextAssigneeId;
-  }
-
-  try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      assignee_id: nextAssigneeId,
-      lock_version: currentTask.lockVersion,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
-
-    if (
-      selectedTask.value &&
-      Number(selectedTask.value.id) === updatedTask.id
-    ) {
-      selectedTask.value = updatedTask;
-      form.assigneeId = updatedTask.assigneeId;
-    }
-  } catch (error) {
-    try {
-      await loadTasks();
-    } catch {
-      // Keep the original API error as the surfaced failure.
-    }
-
-    useAlert(formatErrorMessage(error));
-  }
-};
-
-const updateTaskCalendarRange = async ({ task, startsAt, endsAt }) => {
+const updateTaskCalendarRange = async ({ allDay, task, startsAt, endsAt }) => {
   if (!canManageTasks.value) {
     return;
   }
@@ -1489,24 +1815,39 @@ const updateTaskCalendarRange = async ({ task, startsAt, endsAt }) => {
     return;
   }
 
+  let dueAt = endsAt;
+  let dueOn = null;
+  let startAt = startsAt;
+  if (allDay) {
+    dueOn = format(new Date(startsAt), 'yyyy-MM-dd');
+    dueAt = null;
+    startAt = null;
+  }
+
   const previousTask = { ...currentTask };
   const optimisticTask = {
     ...currentTask,
-    dueAt: endsAt,
-    startAt: startsAt,
+    allDay: Boolean(allDay),
+    dueAt,
+    dueOn,
+    startAt,
   };
 
   upsertTask(optimisticTask);
   syncTaskRangeInDrawer(optimisticTask);
 
   try {
-    const response = await CrmTasksAPI.update(currentTask.id, {
-      due_at: endsAt,
-      lock_version: currentTask.lockVersion,
-      start_at: startsAt,
-    });
-    const updatedTask = normalizePayload(response.data);
-    upsertTask(updatedTask);
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.reschedule(currentTask.id, {
+        all_day: Boolean(allDay),
+        due_at: dueAt,
+        due_on: dueOn,
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+        start_at: startAt,
+      })
+    );
+    applyTaskRealtimeState(updatedTask);
     syncTaskRangeInDrawer(updatedTask);
   } catch (error) {
     upsertTask(previousTask);
@@ -1558,6 +1899,7 @@ onMounted(async () => {
   if (!canViewTasks.value) return;
 
   try {
+    emitter.on(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
     restoreTasksPreferences();
 
     if (!agents.value.length) {
@@ -1566,6 +1908,7 @@ onMounted(async () => {
 
     await Promise.all([
       referencesStore.loadTaskStatuses(),
+      referencesStore.loadTaskTypes(),
       referencesStore.loadFieldDefinitions('task'),
       loadDealOptions(),
     ]);
@@ -1578,6 +1921,27 @@ onMounted(async () => {
     ui.error = error;
     useAlert(formatErrorMessage(error));
   }
+});
+
+onBeforeUnmount(() => {
+  emitter.off(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
+  isComponentUnmounted = true;
+  dealOptionsLoadGeneration += 1;
+  timelineLoadGeneration += 1;
+  taskLoadGeneration.value += 1;
+  pendingTaskRealtimeUpdates.clear();
+});
+
+watch(accountId, () => {
+  dealOptionsLoadGeneration += 1;
+  dealOptions.value = [];
+  taskLoadGeneration.value += 1;
+  pendingTaskRealtimeUpdates.clear();
+  taskRealtimeSequence = 0;
+  tasks.value = [];
+  closeDrawer();
+  closeTaskTitleEditor();
+  if (canViewTasks.value) loadTasks();
 });
 
 watch(
@@ -1687,6 +2051,18 @@ watch(
         <Button
           v-if="canManageTasks"
           size="sm"
+          color="slate"
+          variant="ghost"
+          icon="i-lucide-settings"
+          class="!size-8 !text-n-slate-11 hover:!text-n-slate-12"
+          :aria-label="$t('SIDEBAR.SETTINGS')"
+          :title="$t('SIDEBAR.SETTINGS')"
+          @click="openTaskSettings"
+        />
+
+        <Button
+          v-if="canManageTasks"
+          size="sm"
           icon="i-lucide-plus"
           :label="$t('CRM.TASKS.NEW_TASK')"
           @click="openCreateDrawer"
@@ -1713,9 +2089,10 @@ watch(
             : 'flex flex-col gap-4 px-5 pb-5 pt-3'
         "
       >
-        <div v-if="ui.isLoading" class="flex justify-center py-16">
-          <Spinner class="!h-8 !w-8" />
-        </div>
+        <CrmPageSkeleton
+          v-if="ui.isLoading"
+          :presentation="currentPresentation"
+        />
 
         <SchedulingErrorState
           v-else-if="ui.error"
@@ -1761,8 +2138,8 @@ watch(
             </template>
 
             <template #cell-title="{ row }">
-              <div class="grid w-full gap-0.5">
-                <span class="flex flex-wrap items-center gap-2">
+              <div class="grid min-w-0 w-full gap-0.5">
+                <span class="flex min-w-0 items-center gap-2 overflow-hidden">
                   <Input
                     v-if="
                       canManageTasks &&
@@ -1770,7 +2147,7 @@ watch(
                     "
                     autofocus
                     size="sm"
-                    class="min-w-[14rem] flex-1"
+                    class="min-w-0 flex-1"
                     :disabled="savingTaskTitleId === row.id"
                     :model-value="taskTitleDraft"
                     custom-input-class="font-medium shadow-none !bg-n-surface-1"
@@ -1781,20 +2158,22 @@ watch(
                   <button
                     v-else
                     type="button"
-                    class="min-w-0 max-w-full border-0 bg-transparent p-0 text-left"
+                    class="min-w-0 flex-1 overflow-hidden border-0 bg-transparent p-0 text-left"
+                    :title="row.title"
                     @click="
                       canManageTasks
                         ? startEditingTaskTitle(row)
                         : openEditDrawer(row)
                     "
                   >
-                    <span class="font-medium text-n-slate-12">
+                    <span class="block truncate font-medium text-n-slate-12">
                       {{ row.title }}
                     </span>
                   </button>
                   <span
                     v-if="row.dealId"
-                    class="rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                    class="min-w-0 max-w-[40%] shrink truncate rounded-md border border-n-weak bg-n-surface-1 px-1.5 py-0.5 text-[10px] font-medium text-n-slate-11"
+                    :title="dealNameById[row.dealId]"
                   >
                     {{
                       dealNameById[row.dealId] || $t('CRM.GENERAL.EMPTY_VALUE')
@@ -1802,7 +2181,7 @@ watch(
                   </span>
                   <span
                     v-if="row.archivedAt"
-                    class="rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
+                    class="shrink-0 rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
                   >
                     {{ $t('CRM.GENERAL.ARCHIVED') }}
                   </span>
@@ -1827,17 +2206,10 @@ watch(
                 >
                   <span
                     class="size-3"
-                    :class="
-                      activityTypeMetaByValue[row.activityType || 'task']
-                        ?.icon || 'i-lucide-list-todo'
-                    "
+                    :class="taskTypeResolver(row).icon"
                     aria-hidden="true"
                   />
-                  {{
-                    activityTypeLabelByValue[row.activityType || 'task'] ||
-                    row.activityType ||
-                    $t('CRM.TASKS.ACTIVITY_TYPE.task')
-                  }}
+                  {{ taskTypeResolver(row).label }}
                 </span>
                 <span
                   v-if="row.outcome"
@@ -1849,15 +2221,10 @@ watch(
             </template>
 
             <template #cell-assignee="{ row }">
-              <CrmTaskAssigneeMenu
-                v-if="canManageTasks"
-                :assignees="assigneeOptions"
-                :model-value="row.assigneeId"
-                @update:model-value="
-                  handleTaskAssigneeChange({ task: row, assigneeId: $event })
-                "
-              />
-              <span v-else class="text-sm text-n-slate-12">
+              <span
+                class="block truncate text-sm text-n-slate-12"
+                :title="assigneeNameById[row.assigneeId]"
+              >
                 {{
                   assigneeNameById[row.assigneeId] ||
                   $t('CRM.GENERAL.EMPTY_VALUE')
@@ -1870,9 +2237,9 @@ watch(
                 <SchedulingDateTimeField
                   v-if="canManageTasks"
                   class="!w-auto"
-                  type="datetime"
-                  :display-label="formatDate(row.dueAt)"
-                  :model-value="toDateTimeInputValue(row.dueAt)"
+                  :type="row.allDay ? 'date' : 'datetime'"
+                  :display-label="formatDate(taskDueDate(row))"
+                  :model-value="taskDueInputValue(row)"
                   hide-icon
                   input-class="!h-auto !w-auto !justify-start !gap-1 !rounded-none !bg-transparent !px-0 !py-0 !text-sm !font-normal !text-n-slate-12 !outline-transparent hover:!outline-transparent focus-visible:!outline-transparent data-[state=open]:!outline-transparent"
                   time-picker-variant="field"
@@ -1881,7 +2248,7 @@ watch(
                   "
                 />
                 <span v-else class="text-sm text-n-slate-12">
-                  {{ formatDate(row.dueAt) }}
+                  {{ formatDate(taskDueDate(row)) }}
                 </span>
                 <span
                   v-if="isTaskOverdue(row)"
@@ -1946,12 +2313,13 @@ watch(
         <CrmTaskBoard
           v-else
           class="min-h-0 flex-1"
+          :task-type-resolver="taskTypeResolver"
           :assignees="assigneeOptions"
           :can-manage="canManageTasks"
           :deal-names="dealNameById"
           :field-definitions="taskFieldDefinitions"
           :tasks="tasks"
-          @change-assignee="handleTaskAssigneeChange"
+          @change-due-date="updateTaskDeadlineFromBoard"
           @select-task="openEditDrawer"
         />
       </div>
@@ -2023,7 +2391,18 @@ watch(
               @update:model-value="form.dealId = $event"
             />
 
+            <div class="flex items-center gap-3 md:col-span-2">
+              <Switch
+                :model-value="form.allDay"
+                @update:model-value="updateAllDay"
+              />
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ $t('CRM.TASKS.FORM.ALL_DAY') }}
+              </span>
+            </div>
+
             <SchedulingDateTimeField
+              v-if="!form.allDay"
               :label="$t('CRM.TASKS.FORM.START_AT')"
               :model-value="form.startAt"
               type="datetime"
@@ -2032,7 +2411,7 @@ watch(
             <SchedulingDateTimeField
               :label="$t('CRM.TASKS.FORM.DUE_AT')"
               :model-value="form.dueAt"
-              type="datetime"
+              :type="form.allDay ? 'date' : 'datetime'"
               @update:model-value="form.dueAt = $event"
             />
             <TextArea
@@ -2075,7 +2454,11 @@ watch(
           />
           <div class="flex items-center gap-2">
             <Button
-              v-if="doneStatus && !selectedTask.archivedAt"
+              v-if="
+                doneStatus &&
+                !selectedTask.archivedAt &&
+                !selectedTask.cancelledAt
+              "
               size="sm"
               color="teal"
               variant="faded"
@@ -2086,6 +2469,28 @@ watch(
                   : $t('CRM.TASKS.RESULT_DIALOG.ACTION')
               "
               @click="openTaskCompletionDialog(selectedTask)"
+            />
+            <Button
+              v-if="
+                !selectedTask.archivedAt &&
+                !selectedTask.completedAt &&
+                !selectedTask.cancelledAt
+              "
+              size="sm"
+              color="ruby"
+              variant="faded"
+              icon="i-lucide-ban"
+              :label="$t('CRM.TASKS.LIFECYCLE.CANCEL_ACTION')"
+              @click="openTaskCancelDialog(selectedTask)"
+            />
+            <Button
+              v-if="selectedTask.completedAt || selectedTask.cancelledAt"
+              size="sm"
+              color="slate"
+              variant="faded"
+              icon="i-lucide-rotate-ccw"
+              :label="$t('CRM.TASKS.LIFECYCLE.REOPEN_ACTION')"
+              @click="reopenTask(selectedTask)"
             />
             <Button
               size="sm"
@@ -2113,7 +2518,14 @@ watch(
     <CrmTaskCompletionDialog
       ref="completionDialogRef"
       :is-loading="ui.isSaving"
+      :task-types="referencesStore.taskTypes"
       @confirm="saveTaskCompletion"
+    />
+
+    <CrmTaskCancelDialog
+      ref="cancelDialogRef"
+      :is-loading="ui.isSaving"
+      @confirm="saveTaskCancellation"
     />
 
     <Dialog

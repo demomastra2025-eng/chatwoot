@@ -5,45 +5,9 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
   end
 
   def perform
-    target_stage = account.crm_stages.find(params[:stage_id])
-    requested_position = resolve_requested_position
-    stage_changing = deal.stage_id != target_stage.id
-    closing_reasons_requested = params.key?(:closing_reasons)
-    transition_reason_requested = params.key?(:transition_reason)
-    return deal if !stage_changing && requested_position.blank? && !closing_reasons_requested && !transition_reason_requested
-
-    realtime_event_name = if stage_changing
-                            Events::Types::CRM_DEAL_STAGE_CHANGED
-                          else
-                            Events::Types::CRM_DEAL_UPDATED
-                          end
-    saved_deal = ApplicationRecord.transaction do
-      deal.lock!
-      assert_lock_version!
-
-      closing_reasons = resolve_closing_reasons!(
-        target_stage: target_stage,
-        current_reasons: deal.closing_reasons,
-        require_input: stage_changing
-      )
-      transition_reason = resolve_transition_reason!(
-        target_stage: target_stage,
-        require_input: stage_changing
-      )
-      ensure_required_fields_for_closed_stage!(target_stage)
-      transition_to_stage!(target_stage, closing_reasons: closing_reasons, transition_reason: transition_reason)
-    end
-
-    event_type = if realtime_event_name == Events::Types::CRM_DEAL_STAGE_CHANGED
-                   'deal_stage_changed'
-                 else
-                   'deal_updated'
-                 end
-    dispatch_crm_deal_realtime_event!(
-      realtime_event_name,
-      saved_deal,
-      meta: { event_type: event_type }
-    )
+    prepare_transition!
+    saved_deal = ApplicationRecord.transaction { persist_transition! }
+    publish_transition(saved_deal) if @realtime_event_name.present?
     saved_deal
   end
 
@@ -51,67 +15,138 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
 
   attr_reader :deal
 
-  def transition_to_stage!(target_stage, closing_reasons:, transition_reason: nil)
-    from_stage_id = deal.stage_id
-    from_pipeline_id = deal.pipeline_id
-    from_closing_reasons = deal.closing_reasons
-    requested_position = resolve_requested_position
+  def prepare_transition!
+    @correlation_id = SecureRandom.uuid
+    @target_stage = account.crm_stages.find(params[:stage_id])
+    @requested_position = resolve_requested_position
+    @command_fingerprint = command_fingerprint(@target_stage)
+  end
 
-    deal.stage = target_stage
-    deal.pipeline = target_stage.pipeline
-    deal.position = requested_position if requested_position.present?
-    deal.closed_at = target_stage.outcome_open? ? nil : Time.zone.now
-    deal.closing_reasons = closing_reasons
-    deal.save!
+  def persist_transition!
+    deal.lock!
+    idempotent_deal = find_idempotent_deal(@command_fingerprint)
+    return idempotent_deal if idempotent_deal
 
-    ::Crm::BoardPositioner.place!(
-      scope: account.crm_deals.kept.where(stage_id: target_stage.id),
-      record: deal,
-      target_position: requested_position
-    )
-    if from_stage_id != target_stage.id
-      ::Crm::BoardPositioner.normalize!(
-        scope: account.crm_deals.kept.where(stage_id: from_stage_id)
-      )
-    end
+    assert_lock_version!
+    @stage_changing = deal.stage_id != @target_stage.id
+    return deal unless transition_requested?
 
-    ::Crm::Events::Writer.record!(
-      account: account,
-      eventable: deal,
-      actor: actor,
-      event_type: 'deal_stage_changed',
-      meta: {
-        from_stage_id: from_stage_id,
-        to_stage_id: target_stage.id,
-        from_pipeline_id: from_pipeline_id,
-        to_pipeline_id: target_stage.pipeline_id,
-        transition_reason: transition_reason,
-        from_closing_reasons: from_closing_reasons,
-        closing_reasons: deal.closing_reasons
-      }.compact
-    )
-
+    prepare_stage_change! if @stage_changing
+    apply_transition!
+    cancel_open_tasks!(@correlation_id) if closing_command?
+    @realtime_event_name = realtime_event_name
     deal.reload
   end
 
-  def ensure_required_fields_for_closed_stage!(target_stage)
-    return if target_stage.outcome_open?
+  def transition_requested?
+    @stage_changing || @requested_position.present? || params.key?(:closing_reasons)
+  end
 
-    inspector = Crm::RequiredFieldsInspector.new(
-      account: account,
-      entity_kind: 'deal',
-      custom_attributes: deal.custom_attributes
+  def prepare_stage_change!
+    ensure_stage_entry_rules!(@target_stage)
+    ::Crm::StageVisits::Tracker.ensure_initial!(
+      deal: deal,
+      correlation_id: @correlation_id,
+      estimated: true
     )
-    return if inspector.complete?
+  end
+
+  def apply_transition!
+    closing_reasons = resolve_closing_reasons!(
+      target_stage: @target_stage,
+      current_reasons: deal.closing_reasons,
+      require_input: @stage_changing
+    )
+    ensure_closing_reason_present!(@target_stage, closing_reasons)
+    Crm::Deals::StageTransition.new(stage_transition_context).perform(closing_reasons)
+  end
+
+  def stage_transition_context
+    Crm::Deals::StageTransition::Context.new(
+      account: account,
+      actor: actor,
+      correlation_id: @correlation_id,
+      deal: deal,
+      params: params.to_h.symbolize_keys.merge(
+        command_fingerprint: @command_fingerprint,
+        stage_rule_override: @stage_rule_override
+      ),
+      requested_position: @requested_position,
+      target_stage: @target_stage
+    )
+  end
+
+  def closing_command?
+    params[:command_type].in?(%w[close_won close_lost])
+  end
+
+  def realtime_event_name
+    @stage_changing ? Events::Types::CRM_DEAL_STAGE_CHANGED : Events::Types::CRM_DEAL_UPDATED
+  end
+
+  def publish_transition(saved_deal)
+    event_type = @stage_changing ? 'deal_stage_changed' : 'deal_updated'
+    Crm::AfterCommit.run do
+      dispatch_crm_deal_realtime_event!(@realtime_event_name, saved_deal.reload, meta: { event_type: event_type })
+    end
+  end
+
+  def ensure_stage_entry_rules!(target_stage)
+    @stage_rule_override = Crm::Deals::StageEntryPolicy.new(
+      deal: deal,
+      target_stage: target_stage,
+      account: account,
+      actor: actor,
+      override_requested: params[:override],
+      override_reason: params[:override_reason]
+    ).enforce!
+  end
+
+  def command_fingerprint(target_stage)
+    payload = {
+      command_type: params[:command_type].presence || 'transition',
+      stage_id: target_stage.id,
+      position: resolve_requested_position,
+      closing_reasons: Array(params[:closing_reasons]).map(&:to_s).sort,
+      override_reason: params[:override_reason].to_s.strip.presence
+    }
+    Digest::SHA256.hexdigest(payload.to_json)
+  end
+
+  def find_idempotent_deal(fingerprint)
+    return if params[:idempotency_key].blank?
+
+    event = deal.events.find_by(command_key: params[:idempotency_key])
+    return unless event
+    return deal.reload if event.meta['command_fingerprint'] == fingerprint
 
     raise ::Crm::Error.new(
-      code: 'DEAL_STAGE_REQUIRES_FIELDS',
-      message: "Complete required fields before moving the deal to a closed stage: #{inspector.missing_field_labels.join(', ')}",
-      status: :unprocessable_content,
-      details: {
-        missing_fields: inspector.missing_field_details
-      }
+      code: 'IDEMPOTENCY_KEY_REUSED',
+      message: 'Idempotency key was already used with different command parameters',
+      status: :conflict,
+      details: { idempotency_key: params[:idempotency_key] }
     )
+  end
+
+  def ensure_closing_reason_present!(target_stage, closing_reasons)
+    return unless params[:command_type] == 'close_lost'
+    return unless target_stage.closing_reason_required?
+    return if closing_reasons.present?
+
+    validation_error!('closing_reasons', 'must be selected for this Lost stage')
+  end
+
+  def cancel_open_tasks!(correlation_id)
+    deal.tasks.kept.joins(:status).where(crm_task_statuses: { category: %w[open in_progress] }).find_each do |task|
+      task.with_lock do
+        next if task.archived_at.present? || task.completed? || task.cancelled?
+
+        Crm::Tasks::CancelService.new(
+          account: account, task: task, actor: actor, correlation_id: correlation_id,
+          params: { lock_version: task.lock_version, cancellation_reason: 'deal_closed' }
+        ).perform
+      end
+    end
   end
 
   def resolve_requested_position

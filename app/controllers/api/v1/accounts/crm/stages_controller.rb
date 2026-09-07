@@ -95,18 +95,28 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
       :color,
       :default,
       :closing_reason_required,
-      :transition_reason_required,
-      closing_reason_options: [],
-      transition_reason_options: []
+      closing_reason_options: []
     )
   end
 
   def batch_update_params
     params.permit(
       deleted_stage_ids: [],
-      stages: [:id, :name, :color, :active],
+      stages: [
+        :id,
+        :name,
+        :color,
+        :active,
+        { field_requirements: [:field_key, :required, { validation: {}, role_exemptions: [] }] }
+      ],
       technical_stage: [:id, :active],
-      terminal_stages: [:id, :name, { closing_reason_options: [] }]
+      terminal_stages: [
+        :id,
+        :name,
+        { closing_reason_options: [],
+          field_requirements: [:field_key, :required, { validation: {}, role_exemptions: [] }] }
+      ],
+      pipeline_rules: [:restrict_stage_skipping, :restrict_backward_move, :allow_stage_rule_override]
     )
   end
 
@@ -115,7 +125,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   end
 
   def technical_stage_params
-    params.permit(:active, :color, :transition_reason_required, transition_reason_options: [])
+    params.permit(:active, :color)
   end
 
   def insert_stage_at!(stage, requested_position)
@@ -135,30 +145,30 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   end
 
   def ensure_stage_default_before_deactivation!
-    return unless @stage.outcome_open?
-    return unless params.key?(:active)
-    return if ActiveModel::Type::Boolean.new.cast(params[:active])
+    return unless open_stage_deactivation_requested?
+    return unless default_stage_replacement_required?
 
-    active_default_stage = @stage.pipeline.stages.active.find_by(default: true)
-    return unless @stage.default? || active_default_stage.blank?
+    fallback_stage = required_default_stage_fallback!
+    @stage.update!(active: false, default: false)
+    fallback_stage.update!(default: true)
+  end
 
-    fallback_stage = default_stage_fallback
+  def open_stage_deactivation_requested?
+    @stage.outcome_open? && params.key?(:active) && !ActiveModel::Type::Boolean.new.cast(params[:active])
+  end
 
-    if fallback_stage.blank?
-      error_code = if @stage.technical_stage?
-                     'UNSORTED_STAGE_REQUIRES_FALLBACK'
-                   else
-                     'DEFAULT_STAGE_REQUIRES_FALLBACK'
-                   end
-      raise ::Crm::Error.new(
-        code: error_code,
+  def default_stage_replacement_required?
+    @stage.default? || @stage.pipeline.stages.active.find_by(default: true).blank?
+  end
+
+  def required_default_stage_fallback!
+    default_stage_fallback || raise(
+      ::Crm::Error.new(
+        code: @stage.technical_stage? ? 'UNSORTED_STAGE_REQUIRES_FALLBACK' : 'DEFAULT_STAGE_REQUIRES_FALLBACK',
         message: 'Create another active open stage before disabling the default stage.',
         status: :unprocessable_content
       )
-    end
-
-    @stage.update!(active: false, default: false)
-    fallback_stage.update!(default: true)
+    )
   end
 
   def ensure_mutable_stage!

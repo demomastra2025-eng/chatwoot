@@ -10,6 +10,14 @@ vi.mock('vue-i18n', () => ({
 }));
 
 import CrmTaskBoard from './CrmTaskBoard.vue';
+import { buildTaskTypeResolver } from './taskTypeMetadata';
+
+const DraggableStub = {
+  name: 'Draggable',
+  props: ['list'],
+  template:
+    '<div><slot v-for="item in list" name="item" :element="item" /></div>',
+};
 
 const mountBoard = (props = {}) =>
   shallowMount(CrmTaskBoard, {
@@ -18,10 +26,36 @@ const mountBoard = (props = {}) =>
       mocks: {
         $t: key => key,
       },
+      stubs: { Draggable: DraggableStub },
     },
   });
 
 describe('CrmTaskBoard', () => {
+  it('renders the same indexed catalogue metadata as the list and accepts refreshed metadata', async () => {
+    const resolve = name =>
+      buildTaskTypeResolver(
+        [{ id: 7, code: 'custom', name, icon: 'i-lucide-star', active: false }],
+        key => key
+      );
+    const wrapper = mountBoard({
+      taskTypeResolver: resolve('Custom label'),
+      tasks: [
+        {
+          id: 1,
+          taskTypeId: 7,
+          activityType: 'custom',
+          dueAt: new Date().toISOString(),
+          title: 'Task',
+        },
+      ],
+    });
+    expect(wrapper.text()).toContain('Custom label');
+    expect(wrapper.find('.i-lucide-star').exists()).toBe(true);
+    await wrapper.setProps({ taskTypeResolver: resolve('Renamed label') });
+    expect(wrapper.text()).toContain('Renamed label');
+    expect(wrapper.text()).not.toContain('Custom label');
+  });
+
   it('keeps only today and tomorrow visible without optional tasks', () => {
     const wrapper = mountBoard();
     const columns = wrapper.findAll('.crm-task-board-column');
@@ -74,5 +108,58 @@ describe('CrmTaskBoard', () => {
     await openButton.trigger('click');
 
     expect(wrapper.emitted('selectTask')).toEqual([[task]]);
+  });
+
+  it('renders the task assignee as read-only text', () => {
+    const wrapper = mountBoard({
+      assignees: [{ label: 'Alex Assignee', value: 7 }],
+      tasks: [
+        {
+          assigneeId: 7,
+          dueAt: new Date().toISOString(),
+          id: 1,
+          title: 'Follow up',
+        },
+      ],
+    });
+
+    expect(wrapper.text()).toContain('Alex Assignee');
+    expect(wrapper.emitted('changeAssignee')).toBeUndefined();
+  });
+
+  it('emits the target time bucket when a task is dropped', async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0);
+    const task = { id: 9, dueAt: tomorrow.toISOString() };
+    const wrapper = mountBoard({ canManage: true, tasks: [task] });
+    const draggable = wrapper
+      .findAllComponents({ name: 'Draggable' })
+      .find(component =>
+        component.props('list').some(item => item.id === task.id)
+      );
+
+    await draggable.vm.$emit('change', { added: { newIndex: 0 } });
+
+    expect(wrapper.emitted('changeDueDate')).toEqual([
+      [{ bucket: 'tomorrow', task }],
+    ]);
+  });
+
+  it('keeps an emptied optional source column mounted until the drag finishes', async () => {
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 5);
+    const task = { id: 10, dueAt: nextWeek.toISOString() };
+    const wrapper = mountBoard({ canManage: true, tasks: [task] });
+    const source = wrapper
+      .findAllComponents({ name: 'Draggable' })
+      .find(component =>
+        component.props('list').some(item => item.id === task.id)
+      );
+
+    source.props('list').splice(0, 1);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.findAll('.crm-task-board-column')).toHaveLength(3);
   });
 });

@@ -9,7 +9,7 @@ import {
   ref,
   watch,
 } from 'vue';
-import { useDebounceFn, useLocalStorage } from '@vueuse/core';
+import { useDebounceFn, useLocalStorage, useNow } from '@vueuse/core';
 import { useI18n } from 'vue-i18n';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
@@ -30,12 +30,13 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Icon from 'dashboard/components-next/icon/Icon.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
-import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmClosingReasonDialog from 'dashboard/components-next/CRM/CrmClosingReasonDialog.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmDealBoard from 'dashboard/components-next/CRM/CrmDealBoard.vue';
+import CrmDealLifecycleActions from 'dashboard/components-next/CRM/CrmDealLifecycleActions.vue';
 import CrmDealStageMenu from 'dashboard/components-next/CRM/CrmDealStageMenu.vue';
+import CrmPageSkeleton from 'dashboard/components-next/CRM/CrmPageSkeleton.vue';
 import PaginationFooter from 'dashboard/components-next/pagination/PaginationFooter.vue';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingCurrencyAmountInput from 'dashboard/components-next/Scheduling/SchedulingCurrencyAmountInput.vue';
@@ -70,6 +71,7 @@ import {
   isDiscreteFilterableCustomFieldDefinition,
   isFilterableCustomFieldDefinition,
   normalizeCustomFieldFilters,
+  recordMatchesCustomFieldFilters,
 } from 'dashboard/stores/crm/customFieldFilters';
 import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
 import {
@@ -78,6 +80,7 @@ import {
 } from 'dashboard/stores/crm/stageColors';
 import {
   compactPayload,
+  extractCrmError,
   formatCrmErrorMessage,
   normalizeMeta,
   normalizePayload,
@@ -89,8 +92,14 @@ import {
 import {
   filterVisibleBoardDeals,
   filterVisibleBoardStages,
-  isTerminalStage,
 } from 'dashboard/routes/dashboard/crm/boardVisibility';
+import {
+  canRollbackOptimisticDeal,
+  dealMatchesCreatedRange,
+  isDealVersionNewer,
+  sortDealsForBoard,
+  stageCountsAfterDealMove,
+} from 'dashboard/routes/dashboard/crm/dealBoardState';
 import {
   DuplicateContactException,
   ExceptionWithMessage,
@@ -133,6 +142,8 @@ const deals = ref([]);
 const dealsMeta = ref({});
 const currentPresentation = ref('board');
 const drawerOpen = ref(false);
+const pendingStageEntry = ref(null);
+const stageRuleOverrideReason = ref('');
 const closingReasonDialogRef = ref(null);
 const dealActivityTab = ref('history');
 const hasVisitedDealTasksTab = ref(false);
@@ -144,9 +155,12 @@ const selectedDealIds = ref([]);
 const timelineItems = ref([]);
 const contactOptions = ref([]);
 const companyOptions = ref([]);
+const contactSearchQuery = ref('');
+const companySearchQuery = ref('');
 const createCompanyDialogRef = ref(null);
 const createNewContactDialogRef = ref(null);
 const selectedDeal = ref(null);
+const lifecycleClock = useNow({ interval: 30000 });
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const editingDealTitleId = ref(null);
 const dealTitleDraft = ref('');
@@ -154,6 +168,7 @@ const savingDealTitleId = ref(null);
 const formBaselineSnapshot = ref('');
 const customFieldFilters = ref({});
 const customFieldFilterDraft = ref({});
+const dealStageMutationTokens = new Map();
 const listSort = ref({
   direction: '',
   key: '',
@@ -189,6 +204,7 @@ const filters = reactive({
   companyId: '',
   contactId: '',
   dateRange: { from: '', to: '', type: '' },
+  nextAction: '',
   ownerId: '',
   pipelineId: '',
   stageId: '',
@@ -200,6 +216,7 @@ const filterDraft = reactive({
   companyId: '',
   contactId: '',
   dateRange: { from: '', to: '', type: '' },
+  nextAction: '',
   ownerId: '',
   pipelineId: '',
   stageId: '',
@@ -243,6 +260,8 @@ const ui = reactive({
   isTimelineLoading: false,
 });
 let dealsRequestGeneration = 0;
+let contactSearchGeneration = 0;
+let companySearchGeneration = 0;
 
 const closeDealTitleEditor = () => {
   editingDealTitleId.value = null;
@@ -284,6 +303,18 @@ const canViewDeals = computed(() =>
 const companiesEnabled = computed(() =>
   isFeatureEnabledonAccount.value(accountId.value, FEATURE_FLAGS.COMPANIES)
 );
+const contactCreateOptionLabel = computed(() => {
+  const name = contactSearchQuery.value.trim();
+  if (!name) return '';
+
+  return t('CRM.DEALS.FORM.CREATE_CONTACT_FROM_SEARCH');
+});
+const companyCreateOptionLabel = computed(() => {
+  const name = companySearchQuery.value.trim();
+  if (!name) return '';
+
+  return t('CRM.DEALS.FORM.CREATE_COMPANY_FROM_SEARCH');
+});
 const linkedConversationId = computed(() => {
   const conversationId = Number(form.originatingConversationId);
   return Number.isFinite(conversationId) && conversationId > 0
@@ -357,6 +388,15 @@ const selectedPipeline = computed(
     defaultPipeline.value ||
     null
 );
+const isPipelineSelectionPending = ref(true);
+
+const loadPipelineReferences = async () => {
+  try {
+    return await referencesStore.loadPipelines();
+  } finally {
+    isPipelineSelectionPending.value = false;
+  }
+};
 
 const stageDisplayName = stage =>
   stage?.code === 'new'
@@ -502,16 +542,43 @@ const normalizedTextValues = values => [
 ];
 const closingReasonOptionsForStage = stage =>
   normalizedTextValues(stage?.closingReasonOptions);
-const transitionReasonOptionsForStage = stage =>
-  normalizedTextValues(stage?.transitionReasonOptions);
 const findStageById = stageId =>
   activePipelines.value
     .flatMap(pipeline => pipeline.stages || [])
     .find(stage => Number(stage.id) === Number(stageId));
+const selectedDealStage = computed(() =>
+  findStageById(selectedDeal.value?.stageId)
+);
+const selectedDealOutcome = computed(
+  () => selectedDealStage.value?.outcome || 'open'
+);
+const latestUndoableTransition = computed(() => {
+  if (!selectedDeal.value) return null;
+
+  const latestTransition = timelineItems.value.find(item => {
+    const event = item?.payload || {};
+    return (
+      item?.itemType === 'event' &&
+      event.eventType === 'deal_stage_changed' &&
+      event.meta?.commandType !== 'undo_transition'
+    );
+  });
+  if (!latestTransition) return null;
+
+  const event = latestTransition.payload;
+  const occurredAt = new Date(latestTransition.occurredAt).getTime();
+  const transitionAge = lifecycleClock.value.getTime() - occurredAt;
+  const isCurrentStage =
+    Number(event.afterData?.stageId) === Number(selectedDeal.value.stageId);
+  const isRecent =
+    Number.isFinite(occurredAt) &&
+    transitionAge >= 0 &&
+    transitionAge <= 15 * 60 * 1000;
+
+  return isCurrentStage && isRecent ? event : null;
+});
 const shouldPromptForClosingReasons = stage =>
-  isTerminalStage(stage) && closingReasonOptionsForStage(stage).length > 0;
-const shouldPromptForTransitionReason = stage =>
-  !isTerminalStage(stage) && transitionReasonOptionsForStage(stage).length > 0;
+  stage?.outcome === 'lost' && closingReasonOptionsForStage(stage).length > 0;
 
 const collectClosingReasonsForStage = async ({ targetStage, deal = null }) => {
   if (!targetStage) return [];
@@ -525,18 +592,6 @@ const collectClosingReasonsForStage = async ({ targetStage, deal = null }) => {
       kind: 'closing',
       targetStage,
     }) ?? []
-  );
-};
-
-const collectTransitionReasonForStage = async ({ targetStage }) => {
-  if (!targetStage) return '';
-  if (!shouldPromptForTransitionReason(targetStage)) return '';
-
-  return (
-    closingReasonDialogRef.value?.open({
-      kind: 'transition',
-      targetStage,
-    }) ?? ''
   );
 };
 
@@ -658,10 +713,24 @@ const tableColumns = computed(() => [
 const dealFieldDefinitions = computed(
   () => referencesStore.dealFieldDefinitions
 );
+const pendingStageEntryFieldKeys = computed(
+  () =>
+    new Set(
+      (pendingStageEntry.value?.missingFields || []).map(field => field.key)
+    )
+);
+const pendingStageEntryCustomDefinitions = computed(() =>
+  dealFieldDefinitions.value.filter(definition =>
+    pendingStageEntryFieldKeys.value.has(definition.key)
+  )
+);
+const stageEntryRequires = key =>
+  !pendingStageEntry.value || pendingStageEntryFieldKeys.value.has(key);
 const taskFieldDefinitions = computed(
   () => referencesStore.taskFieldDefinitions
 );
 const taskStatuses = computed(() => referencesStore.taskStatuses);
+const taskTypes = computed(() => referencesStore.taskTypes);
 
 const pipelineNameById = computed(() =>
   referencesStore.pipelines.reduce((result, pipeline) => {
@@ -813,6 +882,7 @@ const defaultDealsPreferences = () => ({
     companyId: '',
     contactId: '',
     dateRange: { from: '', to: '', type: '' },
+    nextAction: '',
     ownerId: '',
     pipelineId: '',
     stageId: '',
@@ -1277,6 +1347,46 @@ const formatDealAmountLabel = deal =>
     locale: localeCode.value,
   });
 
+const taskNextActionLabel = nextAction => {
+  const params = { title: nextAction.task?.title };
+  if (nextAction.state === 'overdue') {
+    return t('CRM.DEALS.NEXT_ACTION.OVERDUE', params);
+  }
+  if (nextAction.state === 'today') {
+    return t('CRM.DEALS.NEXT_ACTION.TODAY', params);
+  }
+  if (nextAction.state === 'unscheduled') {
+    return t('CRM.DEALS.NEXT_ACTION.UNSCHEDULED', params);
+  }
+
+  return t('CRM.DEALS.NEXT_ACTION.FUTURE', params);
+};
+
+const formatDealNextAction = deal => {
+  const nextAction = deal.nextAction || {};
+  if (nextAction.kind === 'waiting') {
+    return t('CRM.DEALS.NEXT_ACTION.WAITING_SHORT');
+  }
+  if (nextAction.kind === 'waitingExpired') {
+    return t('CRM.DEALS.NEXT_ACTION.WAITING_EXPIRED');
+  }
+  if (nextAction.kind === 'task') {
+    return taskNextActionLabel(nextAction);
+  }
+
+  return t('CRM.DEALS.NEXT_ACTION.NONE');
+};
+
+const nextActionFilterOptions = computed(() => [
+  { label: t('CRM.FILTERS.NEXT_ACTION_ALL'), value: '' },
+  { label: t('CRM.FILTERS.NEXT_ACTION_OVERDUE'), value: 'overdue' },
+  { label: t('CRM.FILTERS.NEXT_ACTION_NONE'), value: 'no_action' },
+  {
+    label: t('CRM.FILTERS.NEXT_ACTION_WAITING_EXPIRED'),
+    value: 'waiting_expired',
+  },
+]);
+
 const crmPrefillKeys = [
   'action',
   'amount',
@@ -1353,15 +1463,29 @@ const buildPrefillDealTitle = () => {
 
 const upsertDeal = deal => {
   const existingIndex = deals.value.findIndex(item => item.id === deal.id);
+  const existingDeal = existingIndex === -1 ? null : deals.value[existingIndex];
+  const nextDeals =
+    existingIndex === -1 ? [deal, ...deals.value] : [...deals.value];
+  if (existingIndex !== -1) nextDeals.splice(existingIndex, 1, deal);
+  deals.value =
+    currentPresentation.value === 'board'
+      ? sortDealsForBoard(nextDeals, {
+          directions: boardSortDirections,
+          key: boardSort.key,
+        })
+      : nextDeals;
 
-  if (existingIndex === -1) {
-    deals.value = [deal, ...deals.value];
-    return;
+  const nextStageCounts = stageCountsAfterDealMove(
+    dealsMeta.value.stageCounts,
+    existingDeal,
+    deal
+  );
+  if (nextStageCounts !== dealsMeta.value.stageCounts) {
+    dealsMeta.value = {
+      ...dealsMeta.value,
+      stageCounts: nextStageCounts,
+    };
   }
-
-  const nextDeals = [...deals.value];
-  nextDeals.splice(existingIndex, 1, deal);
-  deals.value = nextDeals;
 };
 
 const mergeDealsById = (currentDeals, nextDeals) => {
@@ -1378,14 +1502,10 @@ const removeDeal = dealId => {
   deals.value = deals.value.filter(item => Number(item.id) !== Number(dealId));
 };
 
-const hasCustomFieldFilters = () =>
-  Object.keys(customFieldFilters.value || {}).length > 0;
-
 const dealMatchesCurrentFilters = deal => {
-  if (hasCustomFieldFilters()) return null;
-
   const archived = Boolean(deal.archivedAt);
   if (archived !== Boolean(filters.archived)) return false;
+  if (!dealMatchesCreatedRange(deal, filters.dateRange)) return false;
   if (filters.aiOnly && deal.dialogStatus !== 'pending') return false;
   if (
     filters.companyId &&
@@ -1409,35 +1529,52 @@ const dealMatchesCurrentFilters = deal => {
     return false;
   }
   if (filters.contactId) {
-    return (deal.dealContacts || []).some(
+    const hasMatchingContact = (deal.dealContacts || []).some(
       contact => Number(contact.contactId) === Number(filters.contactId)
     );
+    if (!hasMatchingContact) return false;
   }
 
-  return true;
-};
-
-const loadContacts = async query => {
-  const response = query
-    ? await ContactAPI.search(query, 1)
-    : await ContactAPI.get(1);
-  contactOptions.value = mergeContactOptions(
-    normalizePayload(response.data).map(buildContactOption)
+  return recordMatchesCustomFieldFilters(
+    deal,
+    filterableDealFieldDefinitions.value,
+    customFieldFilters.value
   );
 };
 
+const loadContacts = async query => {
+  const normalizedQuery = String(query || '').trim();
+  contactSearchGeneration += 1;
+  const generation = contactSearchGeneration;
+  contactSearchQuery.value = normalizedQuery;
+
+  const response = normalizedQuery
+    ? await ContactAPI.search(normalizedQuery, 1)
+    : await ContactAPI.get(1);
+  if (generation !== contactSearchGeneration) return;
+
+  const records = normalizePayload(response.data);
+  contactOptions.value = mergeContactOptions(records.map(buildContactOption));
+};
+
 const loadCompanies = async query => {
+  const normalizedQuery = String(query || '').trim();
+  companySearchGeneration += 1;
+  const generation = companySearchGeneration;
+  companySearchQuery.value = normalizedQuery;
+
   if (!companiesEnabled.value) {
     companyOptions.value = [];
     return;
   }
 
-  const response = query
-    ? await CompanyAPI.search(query, 1)
+  const response = normalizedQuery
+    ? await CompanyAPI.search(normalizedQuery, 1)
     : await CompanyAPI.get();
-  companyOptions.value = mergeCompanyOptions(
-    normalizePayload(response.data).map(buildCompanyOption)
-  );
+  if (generation !== companySearchGeneration) return;
+
+  const records = normalizePayload(response.data);
+  companyOptions.value = mergeCompanyOptions(records.map(buildCompanyOption));
 };
 
 const ensureSelectedLookups = async deal => {
@@ -1766,6 +1903,8 @@ const openEditDrawer = async deal => {
 
 const closeDrawer = () => {
   closeDealTitleEditor();
+  pendingStageEntry.value = null;
+  stageRuleOverrideReason.value = '';
   pendingCreateCustomFieldDefaultsHydration.value = false;
   drawerOpen.value = false;
   showLinkedConversationPanel.value = false;
@@ -1778,11 +1917,23 @@ const closeDrawer = () => {
   captureFormBaseline();
 };
 
-const openCreateNewContactDialog = () => {
+const openCreateNewContactDialog = name => {
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  if (normalizedName) {
+    createNewContactDialogRef.value?.openWithPrefill({ name: normalizedName });
+    return;
+  }
+
   createNewContactDialogRef.value?.dialogRef.open();
 };
 
-const openCreateCompanyDialog = () => {
+const openCreateCompanyDialog = name => {
+  const normalizedName = typeof name === 'string' ? name.trim() : '';
+  if (normalizedName) {
+    createCompanyDialogRef.value?.openWithPrefill({ name: normalizedName });
+    return;
+  }
+
   createCompanyDialogRef.value?.dialogRef?.open();
 };
 
@@ -1965,8 +2116,6 @@ const saveDeal = async () => {
     !selectedDeal.value ||
     Number(form.stageId) !== Number(selectedDeal.value.stageId);
 
-  let transitionReason = '';
-
   if (stageChanging) {
     const closingReasons = await collectClosingReasonsForStage({
       deal: selectedDeal.value,
@@ -1974,12 +2123,6 @@ const saveDeal = async () => {
     });
 
     if (isStageReasonSelectionCancelled(closingReasons)) return;
-
-    transitionReason = selectedDeal.value
-      ? await collectTransitionReasonForStage({ targetStage })
-      : '';
-
-    if (isStageReasonSelectionCancelled(transitionReason)) return;
 
     form.closingReasons = closingReasons;
   }
@@ -2009,7 +2152,6 @@ const saveDeal = async () => {
           closing_reasons: form.closingReasons,
           lock_version: deal.lockVersion,
           stage_id: Number(form.stageId),
-          transition_reason: transitionReason || undefined,
         });
         deal = normalizePayload(transitionResponse.data);
       }
@@ -2041,6 +2183,8 @@ const saveDeal = async () => {
         ? t('CRM.DEALS.SUCCESS_UPDATED')
         : t('CRM.DEALS.SUCCESS_CREATED')
     );
+    pendingStageEntry.value = null;
+    stageRuleOverrideReason.value = '';
   } catch (error) {
     if (currentPresentation.value === 'board') {
       try {
@@ -2100,6 +2244,7 @@ const buildDealsFetchParams = page => {
     created_from: filters.dateRange.from || undefined,
     created_to: filters.dateRange.to || undefined,
     custom_attribute_filters: customFieldFilters.value,
+    next_action: filters.nextAction || undefined,
     owner_id: filters.ownerId || undefined,
     page,
     per_page: isBoard ? BOARD_DEALS_PER_STAGE : DEALS_PAGE_SIZE,
@@ -2157,14 +2302,15 @@ async function loadDeals({ append = false, page = null } = {}) {
 
 const loadMoreDeals = () => loadDeals({ append: true });
 
-async function applyDealMutation(deal) {
-  if (currentPresentation.value === 'board') {
-    await loadDeals();
-    return;
-  }
-
+function applyDealMutation(deal) {
   upsertDeal(deal);
 }
+
+const handleDealWaitingUpdated = deal => {
+  applyDealMutation(deal);
+  selectedDeal.value = deal;
+  loadTimeline(deal.id);
+};
 
 const handlePresentationChange = async presentation => {
   if (currentPresentation.value === presentation) return;
@@ -2195,16 +2341,12 @@ const handleCrmDealRealtimeEvent = payload => {
     selectedDeal.value = realtimeDeal;
   }
 
-  if (currentPresentation.value === 'board') {
+  if (filters.nextAction) {
     scheduleDealsReload();
     return;
   }
 
   const filterMatch = dealMatchesCurrentFilters(realtimeDeal);
-  if (filterMatch === null) {
-    scheduleDealsReload();
-    return;
-  }
 
   if (filterMatch) {
     upsertDeal(realtimeDeal);
@@ -2358,6 +2500,7 @@ const syncFilterDraft = () => {
     companyId: filters.companyId,
     contactId: filters.contactId,
     dateRange: { ...filters.dateRange },
+    nextAction: filters.nextAction,
     ownerId: filters.ownerId,
     pipelineId: filters.pipelineId,
     showInactive: filters.showInactive,
@@ -2411,6 +2554,7 @@ const applyFilters = async () => {
     companyId: filterDraft.companyId,
     contactId: filterDraft.contactId,
     dateRange: { ...filterDraft.dateRange },
+    nextAction: filterDraft.nextAction,
     ownerId: filterDraft.ownerId,
     pipelineId: resolvePipelineFilterId(filterDraft.pipelineId),
     showInactive: filterDraft.showInactive,
@@ -2533,31 +2677,25 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
     : [];
 
   if (isStageReasonSelectionCancelled(closingReasons)) {
-    await loadDeals();
+    deals.value = [...deals.value];
     return;
   }
 
-  const transitionReason = stageChanging
-    ? await collectTransitionReasonForStage({ targetStage })
-    : '';
-
-  if (isStageReasonSelectionCancelled(transitionReason)) {
-    await loadDeals();
-    return;
-  }
+  const optimisticDeal = {
+    ...currentDeal,
+    closingReasons: stageChanging ? closingReasons : currentDeal.closingReasons,
+    position: nextPosition || currentDeal.position,
+    stageId: nextStageId,
+  };
+  const mutationToken = Symbol(`deal-stage-mutation-${currentDeal.id}`);
+  dealStageMutationTokens.set(currentDeal.id, mutationToken);
+  upsertDeal(optimisticDeal);
 
   if (
     selectedDeal.value &&
     Number(selectedDeal.value.id) === Number(currentDeal.id)
   ) {
-    selectedDeal.value = {
-      ...selectedDeal.value,
-      closingReasons: stageChanging
-        ? closingReasons
-        : selectedDeal.value.closingReasons,
-      position: nextPosition || selectedDeal.value.position,
-      stageId: nextStageId,
-    };
+    selectedDeal.value = optimisticDeal;
     form.stageId = nextStageId;
   }
 
@@ -2573,10 +2711,16 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
             lock_version: currentDeal.lockVersion,
             position: nextPosition || undefined,
             stage_id: nextStageId,
-            transition_reason: transitionReason || undefined,
           });
     const updatedDeal = normalizePayload(response.data);
-    await applyDealMutation(updatedDeal);
+    if (dealStageMutationTokens.get(currentDeal.id) !== mutationToken) {
+      return;
+    }
+    const displayedDeal = deals.value.find(
+      item => Number(item.id) === Number(currentDeal.id)
+    );
+    if (isDealVersionNewer(displayedDeal, updatedDeal)) return;
+    applyDealMutation(updatedDeal);
 
     if (
       selectedDeal.value &&
@@ -2586,66 +2730,165 @@ const handleDealStageChange = async ({ deal, stageId, position }) => {
       form.stageId = updatedDeal.stageId;
     }
   } catch (error) {
-    try {
-      await loadDeals();
+    const isLatestMutation =
+      dealStageMutationTokens.get(currentDeal.id) === mutationToken;
+    if (!isLatestMutation) return;
 
-      if (selectedDeal.value) {
-        selectedDeal.value =
-          deals.value.find(
-            item => Number(item.id) === Number(currentDeal.id)
-          ) || selectedDeal.value;
-      }
-    } catch {
-      // Keep the original API error as the surfaced failure.
+    const displayedDeal = deals.value.find(
+      item => Number(item.id) === Number(currentDeal.id)
+    );
+    const shouldRollback = canRollbackOptimisticDeal(
+      displayedDeal,
+      optimisticDeal
+    );
+    if (shouldRollback) {
+      upsertDeal(currentDeal);
+    }
+
+    if (
+      shouldRollback &&
+      selectedDeal.value &&
+      Number(selectedDeal.value.id) === Number(currentDeal.id)
+    ) {
+      selectedDeal.value = currentDeal;
+      form.stageId = currentDeal.stageId;
+    }
+
+    const crmError = extractCrmError(error);
+    if (
+      stageChanging &&
+      ['DEAL_STAGE_REQUIRES_FIELDS', 'DEAL_STAGE_ENTRY_RESTRICTED'].includes(
+        crmError.code
+      ) &&
+      ((crmError.details?.missingFields || []).length > 0 ||
+        crmError.details?.canOverride)
+    ) {
+      pendingStageEntry.value = {
+        canOverride: Boolean(crmError.details?.canOverride),
+        missingFields: crmError.details?.missingFields || [],
+        position: nextPosition || undefined,
+        ruleViolations: crmError.details?.ruleViolations || [],
+        stageId: nextStageId,
+      };
+      stageRuleOverrideReason.value = '';
+      await openEditDrawer(currentDeal);
+      form.stageId = nextStageId;
+      return;
     }
 
     useAlert(formatErrorMessage(error));
+  } finally {
+    if (dealStageMutationTokens.get(currentDeal.id) === mutationToken) {
+      dealStageMutationTokens.delete(currentDeal.id);
+    }
   }
 };
 
-const handleDealOwnerChange = async ({ deal, ownerId }) => {
-  const currentDeal =
-    deals.value.find(item => Number(item.id) === Number(deal.id)) || deal;
-  const nextOwnerId = Number(ownerId);
-
-  if (!nextOwnerId || Number(currentDeal.ownerId) === nextOwnerId) {
+const overridePendingStageEntry = async () => {
+  if (
+    !selectedDeal.value ||
+    !pendingStageEntry.value?.canOverride ||
+    !stageRuleOverrideReason.value.trim()
+  ) {
     return;
   }
 
-  const optimisticDeal = { ...currentDeal, ownerId: nextOwnerId };
-  upsertDeal(optimisticDeal);
-
-  if (
-    selectedDeal.value &&
-    Number(selectedDeal.value.id) === optimisticDeal.id
-  ) {
-    selectedDeal.value = optimisticDeal;
-    form.ownerId = nextOwnerId;
-  }
-
+  ui.isSaving = true;
   try {
-    const response = await CrmDealsAPI.update(currentDeal.id, {
-      lock_version: currentDeal.lockVersion,
-      owner_id: nextOwnerId,
+    const response = await CrmDealsAPI.transitionStage(selectedDeal.value.id, {
+      lock_version: selectedDeal.value.lockVersion,
+      override: true,
+      override_reason: stageRuleOverrideReason.value.trim(),
+      position: pendingStageEntry.value.position,
+      stage_id: pendingStageEntry.value.stageId,
     });
     const updatedDeal = normalizePayload(response.data);
     await applyDealMutation(updatedDeal);
-
-    if (
-      selectedDeal.value &&
-      Number(selectedDeal.value.id) === updatedDeal.id
-    ) {
-      selectedDeal.value = updatedDeal;
-      form.ownerId = updatedDeal.ownerId;
-    }
+    selectedDeal.value = updatedDeal;
+    populateFormFromDeal(updatedDeal);
+    captureFormBaseline();
+    pendingStageEntry.value = null;
+    stageRuleOverrideReason.value = '';
+    useAlert(t('CRM.DEALS.STAGE_ENTRY.OVERRIDE_SUCCESS'));
   } catch (error) {
-    try {
-      await loadDeals();
-    } catch {
-      // Keep the original API error as the surfaced failure.
-    }
-
     useAlert(formatErrorMessage(error));
+  } finally {
+    ui.isSaving = false;
+  }
+};
+
+const lifecycleSuccessMessage = action => {
+  if (action === 'closeWon') {
+    return t('CRM.DEALS.LIFECYCLE.CLOSE_WON.SUCCESS');
+  }
+  if (action === 'closeLost') {
+    return t('CRM.DEALS.LIFECYCLE.CLOSE_LOST.SUCCESS');
+  }
+  if (action === 'reopen') {
+    return t('CRM.DEALS.LIFECYCLE.REOPEN.SUCCESS');
+  }
+
+  return t('CRM.DEALS.LIFECYCLE.UNDO.SUCCESS');
+};
+
+const lifecycleIdempotencyKey = (action, dealId) => {
+  const nonce =
+    window.crypto?.randomUUID?.() ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `deal-${action}-${dealId}-${nonce}`;
+};
+
+const lifecycleStageByOutcome = outcome =>
+  activePipelines.value
+    .find(
+      pipeline => Number(pipeline.id) === Number(selectedDeal.value?.pipelineId)
+    )
+    ?.stages?.find(
+      stage => stage.active !== false && stage.outcome === outcome
+    );
+
+const callDealLifecycleApi = (action, dealId, payload) => {
+  if (action === 'closeWon') return CrmDealsAPI.closeWon(dealId, payload);
+  if (action === 'closeLost') return CrmDealsAPI.closeLost(dealId, payload);
+  if (action === 'reopen') return CrmDealsAPI.reopen(dealId, payload);
+
+  return CrmDealsAPI.undoTransition(dealId, payload);
+};
+
+const performDealLifecycleAction = async action => {
+  if (!canManageDeals.value || !selectedDeal.value || isDealFormDirty.value) {
+    return;
+  }
+
+  const deal = selectedDeal.value;
+  let closingReasons = [];
+  if (action === 'closeLost') {
+    const targetStage = lifecycleStageByOutcome('lost');
+    closingReasons = await collectClosingReasonsForStage({ deal, targetStage });
+    if (isStageReasonSelectionCancelled(closingReasons)) return;
+  }
+
+  const payload = {
+    idempotency_key: lifecycleIdempotencyKey(action, deal.id),
+    lock_version: deal.lockVersion,
+  };
+  if (action === 'closeLost') payload.closing_reasons = closingReasons;
+  if (action === 'undo') payload.event_id = latestUndoableTransition.value?.id;
+
+  ui.isSaving = true;
+  try {
+    const response = await callDealLifecycleApi(action, deal.id, payload);
+    const updatedDeal = normalizePayload(response.data);
+    await applyDealMutation(updatedDeal);
+    selectedDeal.value = updatedDeal;
+    populateFormFromDeal(updatedDeal);
+    captureFormBaseline();
+    await loadTimeline(updatedDeal.id);
+    useAlert(lifecycleSuccessMessage(action));
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    ui.isSaving = false;
   }
 };
 
@@ -2930,8 +3173,9 @@ onMounted(async () => {
     }
 
     await Promise.all([
-      referencesStore.loadPipelines(),
+      loadPipelineReferences(),
       referencesStore.loadTaskStatuses(),
+      referencesStore.loadTaskTypes(),
       referencesStore.loadFieldDefinitions('deal'),
       referencesStore.loadFieldDefinitions('task'),
     ]);
@@ -2996,6 +3240,7 @@ watch(
       >
         <template #title>
           <SelectMenu
+            v-if="!isPipelineSelectionPending"
             :model-value="
               String(filters.pipelineId || selectedPipeline?.id || '')
             "
@@ -3003,11 +3248,16 @@ watch(
             :label="selectedPipeline?.name || $t('CRM.DEALS.FORM.PIPELINE')"
             size="lg"
             variant="ghost"
-            trigger-class="!max-w-[28rem] !px-0 !text-lg !font-semibold !text-n-slate-12 hover:!bg-transparent"
+            trigger-class="!min-w-28 !max-w-[28rem] !px-0 !text-lg !font-semibold !text-n-slate-12 hover:!bg-transparent"
             :highlight-trigger="false"
             sub-menu-align="start"
             sub-menu-position="bottom"
             @update:model-value="selectPipelineFilter"
+          />
+          <span
+            v-else
+            data-test="pipeline-title-loading"
+            class="h-6 w-28 animate-pulse rounded-md bg-n-alpha-2"
           />
         </template>
         <template #left>
@@ -3087,9 +3337,11 @@ watch(
               : 'flex flex-col gap-4 px-5 pb-5 pt-3'
           "
         >
-          <div v-if="ui.isLoading" class="flex justify-center py-16">
-            <Spinner class="!h-8 !w-8" />
-          </div>
+          <CrmPageSkeleton
+            v-if="ui.isLoading"
+            :presentation="currentPresentation"
+            :column-count="visibleBoardStages.length"
+          />
 
           <SchedulingErrorState
             v-else-if="ui.error"
@@ -3126,7 +3378,6 @@ watch(
             :sort-direction-labels="boardSortDirectionLabels"
             :sort-directions="boardSortDirections"
             :sort-key="boardSort.key"
-            @change-owner="handleDealOwnerChange"
             @change-stage="handleDealStageChange"
             @load-more="loadMoreDeals"
             @select-deal="openEditDrawer"
@@ -3183,8 +3434,8 @@ watch(
               </template>
 
               <template #cell-title="{ row }">
-                <div class="grid w-full gap-0.5">
-                  <span class="flex flex-wrap items-center gap-2">
+                <div class="grid min-w-0 w-full gap-0.5">
+                  <span class="flex min-w-0 items-center gap-2 overflow-hidden">
                     <Input
                       v-if="
                         canManageDeals &&
@@ -3192,7 +3443,7 @@ watch(
                       "
                       autofocus
                       size="sm"
-                      class="min-w-[14rem] flex-1"
+                      class="min-w-0 flex-1"
                       :disabled="savingDealTitleId === row.id"
                       :model-value="dealTitleDraft"
                       custom-input-class="font-medium shadow-none !bg-n-surface-1"
@@ -3203,10 +3454,11 @@ watch(
                     <button
                       v-else
                       type="button"
-                      class="min-w-0 max-w-full border-0 bg-transparent p-0 text-left"
+                      class="min-w-0 flex-1 overflow-hidden border-0 bg-transparent p-0 text-left"
+                      :title="row.title"
                       @click="openEditDrawer(row)"
                     >
-                      <span class="font-medium text-n-slate-12">
+                      <span class="block truncate font-medium text-n-slate-12">
                         {{ row.title }}
                       </span>
                     </button>
@@ -3217,21 +3469,27 @@ watch(
                       color="slate"
                       variant="ghost"
                       icon="i-lucide-pen-line"
-                      class="!size-6"
+                      class="!size-6 shrink-0"
                       @click.stop="startEditingDealTitle(row)"
                     />
                     <span
                       v-if="row.archivedAt"
-                      class="rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
+                      class="shrink-0 rounded-md bg-n-amber-9/10 px-1.5 py-0.5 text-[10px] font-medium text-n-amber-11"
                     >
                       {{ $t('CRM.GENERAL.ARCHIVED') }}
                     </span>
+                  </span>
+                  <span class="block truncate text-[11px] text-n-slate-10">
+                    {{ formatDealNextAction(row) }}
                   </span>
                 </div>
               </template>
 
               <template #cell-primaryContact="{ row }">
-                <span class="text-sm text-n-slate-12">
+                <span
+                  class="block truncate text-sm text-n-slate-12"
+                  :title="row.primaryContact?.name"
+                >
                   {{
                     row.primaryContact?.name || $t('CRM.GENERAL.EMPTY_VALUE')
                   }}
@@ -3239,7 +3497,10 @@ watch(
               </template>
 
               <template #cell-company="{ row }">
-                <span class="text-sm text-n-slate-12">
+                <span
+                  class="block truncate text-sm text-n-slate-12"
+                  :title="row.company?.name"
+                >
                   {{ row.company?.name || $t('CRM.GENERAL.EMPTY_VALUE') }}
                 </span>
               </template>
@@ -3375,13 +3636,76 @@ watch(
               />
             </header>
 
+            <CrmDealLifecycleActions
+              v-if="
+                selectedDeal &&
+                canManageDeals &&
+                !selectedDeal.archivedAt &&
+                !pendingStageEntry
+              "
+              :can-undo="Boolean(latestUndoableTransition)"
+              :disabled="isDealFormDirty"
+              :disabled-reason="
+                isDealFormDirty
+                  ? $t('CRM.DEALS.LIFECYCLE.SAVE_CHANGES_FIRST')
+                  : ''
+              "
+              :is-loading="ui.isSaving"
+              :outcome="selectedDealOutcome"
+              @close-lost="performDealLifecycleAction('closeLost')"
+              @close-won="performDealLifecycleAction('closeWon')"
+              @reopen="performDealLifecycleAction('reopen')"
+              @undo="performDealLifecycleAction('undo')"
+            />
+
             <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
               <div class="crm-deal-drawer-form">
+                <div
+                  v-if="pendingStageEntry"
+                  class="grid gap-2 rounded-xl border border-n-amber-6 bg-n-amber-2 p-3 text-sm text-n-slate-12"
+                >
+                  <strong>{{ $t('CRM.DEALS.STAGE_ENTRY.TITLE') }}</strong>
+                  <p
+                    v-if="pendingStageEntry.missingFields.length"
+                    class="mb-0 text-n-slate-11"
+                  >
+                    {{
+                      $t('CRM.DEALS.STAGE_ENTRY.MISSING_FIELDS', {
+                        fields: pendingStageEntry.missingFields
+                          .map(field => field.label)
+                          .join(', '),
+                      })
+                    }}
+                  </p>
+                  <p
+                    v-if="pendingStageEntry.ruleViolations.length"
+                    class="mb-0 text-n-slate-11"
+                  >
+                    {{ $t('CRM.DEALS.STAGE_ENTRY.MOVEMENT_BLOCKED') }}
+                  </p>
+                  <template v-if="pendingStageEntry.canOverride">
+                    <TextArea
+                      :model-value="stageRuleOverrideReason"
+                      :placeholder="$t('CRM.DEALS.STAGE_ENTRY.OVERRIDE_REASON')"
+                      min-height="3rem"
+                      @update:model-value="stageRuleOverrideReason = $event"
+                    />
+                    <Button
+                      color="amber"
+                      variant="faded"
+                      :disabled="!stageRuleOverrideReason.trim()"
+                      :is-loading="ui.isSaving"
+                      :label="$t('CRM.DEALS.STAGE_ENTRY.OVERRIDE_ACTION')"
+                      @click="overridePendingStageEntry"
+                    />
+                  </template>
+                </div>
                 <div
                   class="crm-deal-drawer-section crm-deal-drawer-section--top"
                 >
                   <div class="crm-deal-drawer-status-grid">
                     <SchedulingSelectField
+                      v-if="!pendingStageEntry"
                       id="crm-deal-drawer-pipeline"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.PIPELINE')"
@@ -3393,6 +3717,7 @@ watch(
                       @update:model-value="form.pipelineId = $event"
                     />
                     <SchedulingSelectField
+                      v-if="!pendingStageEntry"
                       id="crm-deal-drawer-stage"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.STAGE')"
@@ -3404,6 +3729,7 @@ watch(
                       @update:model-value="form.stageId = $event"
                     />
                     <SchedulingSelectField
+                      v-if="stageEntryRequires('owner_id')"
                       id="crm-deal-drawer-owner"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
                       :aria-label="$t('CRM.DEALS.FORM.OWNER')"
@@ -3416,7 +3742,10 @@ watch(
                     />
                   </div>
 
-                  <div v-if="shouldShowTeamField" class="crm-deal-drawer-row">
+                  <div
+                    v-if="shouldShowTeamField && stageEntryRequires('team_id')"
+                    class="crm-deal-drawer-row"
+                  >
                     <label
                       class="crm-deal-drawer-label"
                       for="crm-deal-drawer-team"
@@ -3436,8 +3765,18 @@ watch(
                     />
                   </div>
 
-                  <div class="crm-deal-drawer-inline-row">
-                    <div class="crm-deal-drawer-inline-field">
+                  <div
+                    v-if="
+                      stageEntryRequires('expected_close_on') ||
+                      stageEntryRequires('amount_minor') ||
+                      stageEntryRequires('currency')
+                    "
+                    class="crm-deal-drawer-inline-row"
+                  >
+                    <div
+                      v-if="stageEntryRequires('expected_close_on')"
+                      class="crm-deal-drawer-inline-field"
+                    >
                       <span class="crm-deal-drawer-label">
                         {{ $t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON') }}
                       </span>
@@ -3451,7 +3790,13 @@ watch(
                       />
                     </div>
 
-                    <div class="crm-deal-drawer-inline-field">
+                    <div
+                      v-if="
+                        stageEntryRequires('amount_minor') ||
+                        stageEntryRequires('currency')
+                      "
+                      class="crm-deal-drawer-inline-field"
+                    >
                       <label
                         class="crm-deal-drawer-label"
                         for="crm-deal-drawer-amount"
@@ -3476,25 +3821,23 @@ watch(
                   </div>
                 </div>
 
-                <div class="crm-deal-drawer-section">
-                  <div class="crm-deal-drawer-row crm-deal-drawer-row--start">
-                    <div
-                      class="crm-deal-drawer-label crm-deal-drawer-label-action"
+                <div
+                  v-if="
+                    stageEntryRequires('primary_contact_id') ||
+                    stageEntryRequires('company_id')
+                  "
+                  class="crm-deal-drawer-section"
+                >
+                  <div
+                    v-if="stageEntryRequires('primary_contact_id')"
+                    class="crm-deal-drawer-row crm-deal-drawer-row--start"
+                  >
+                    <label
+                      class="crm-deal-drawer-label"
+                      for="crm-deal-drawer-contacts"
                     >
-                      <label for="crm-deal-drawer-contacts">
-                        {{ $t('CRM.DEALS.FORM.CONTACTS') }}
-                      </label>
-                      <Button
-                        v-if="canManageDeals"
-                        v-tooltip.top="$t('CRM.DEALS.FORM.CREATE_CONTACT')"
-                        class="crm-deal-drawer-label-button"
-                        size="sm"
-                        color="slate"
-                        variant="ghost"
-                        icon="i-lucide-plus"
-                        @click="openCreateNewContactDialog"
-                      />
-                    </div>
+                      {{ $t('CRM.DEALS.FORM.CONTACTS') }}
+                    </label>
                     <TagMultiSelectComboBox
                       id="crm-deal-drawer-contacts"
                       class="crm-deal-drawer-control crm-deal-drawer-multi-control"
@@ -3509,14 +3852,19 @@ watch(
                         $t('CRM.DEALS.FORM.CONTACTS_SEARCH_PLACEHOLDER')
                       "
                       :empty-state="$t('CRM.DEALS.FORM.CONTACTS_EMPTY_STATE')"
+                      :create-option-label="contactCreateOptionLabel"
                       @open="loadContacts('')"
+                      @create="openCreateNewContactDialog"
                       @search="loadContacts"
                       @update:model-value="form.contactIds = $event"
                     />
                   </div>
 
                   <div
-                    v-if="shouldShowPrimaryContactSelect"
+                    v-if="
+                      shouldShowPrimaryContactSelect &&
+                      stageEntryRequires('primary_contact_id')
+                    "
                     class="crm-deal-drawer-row"
                   >
                     <label
@@ -3540,24 +3888,16 @@ watch(
                     />
                   </div>
 
-                  <div v-if="companiesEnabled" class="crm-deal-drawer-row">
-                    <div
-                      class="crm-deal-drawer-label crm-deal-drawer-label-action"
+                  <div
+                    v-if="companiesEnabled && stageEntryRequires('company_id')"
+                    class="crm-deal-drawer-row"
+                  >
+                    <label
+                      class="crm-deal-drawer-label"
+                      for="crm-deal-drawer-company"
                     >
-                      <label for="crm-deal-drawer-company">
-                        {{ $t('CRM.DEALS.FORM.COMPANY') }}
-                      </label>
-                      <Button
-                        v-if="canManageDeals"
-                        v-tooltip.top="$t('CRM.DEALS.FORM.CREATE_COMPANY')"
-                        class="crm-deal-drawer-label-button"
-                        size="sm"
-                        color="slate"
-                        variant="ghost"
-                        icon="i-lucide-plus"
-                        @click="openCreateCompanyDialog"
-                      />
-                    </div>
+                      {{ $t('CRM.DEALS.FORM.COMPANY') }}
+                    </label>
                     <SchedulingSelectField
                       id="crm-deal-drawer-company"
                       class="crm-deal-drawer-control crm-deal-drawer-select-control"
@@ -3567,8 +3907,10 @@ watch(
                       dropdown-placement="auto"
                       :options="companyOptions"
                       :placeholder="$t('CRM.DEALS.FORM.COMPANY')"
+                      :create-option-label="companyCreateOptionLabel"
                       use-api-results
                       @open="loadCompanies('')"
+                      @create="openCreateCompanyDialog"
                       @search="loadCompanies"
                       @update:model-value="form.companyId = $event"
                     />
@@ -3576,14 +3918,25 @@ watch(
                 </div>
 
                 <CrmCustomFieldsSection
-                  :definitions="dealFieldDefinitions"
+                  v-if="
+                    !pendingStageEntry ||
+                    pendingStageEntryCustomDefinitions.length
+                  "
+                  :definitions="
+                    pendingStageEntry
+                      ? pendingStageEntryCustomDefinitions
+                      : dealFieldDefinitions
+                  "
                   :framed="false"
                   layout="rows"
                   :model-value="form.customAttributes"
                   @update:model-value="form.customAttributes = $event"
                 />
 
-                <div class="crm-deal-drawer-section">
+                <div
+                  v-if="stageEntryRequires('description')"
+                  class="crm-deal-drawer-section"
+                >
                   <div class="crm-deal-drawer-row crm-deal-drawer-row--start">
                     <label
                       class="crm-deal-drawer-label"
@@ -3605,7 +3958,10 @@ watch(
                   </div>
                 </div>
 
-                <div v-if="selectedDeal" class="crm-deal-drawer-section">
+                <div
+                  v-if="selectedDeal && !pendingStageEntry"
+                  class="crm-deal-drawer-section"
+                >
                   <div
                     class="grid grid-cols-2 rounded-xl bg-n-alpha-black2 p-1"
                     role="tablist"
@@ -3664,10 +4020,13 @@ watch(
                   >
                     <CrmDealTasksPanel
                       :assignees="ownerOptions"
+                      :can-manage-deals="canManageDeals"
                       :can-manage-tasks="canManageTasks"
                       :deal="selectedDeal"
                       :statuses="taskStatuses"
                       :task-field-definitions="taskFieldDefinitions"
+                      :task-types="taskTypes"
+                      @deal-updated="handleDealWaitingUpdated"
                       @created="loadTimeline(selectedDeal.id)"
                       @updated="loadTimeline(selectedDeal.id)"
                     />
@@ -3696,7 +4055,7 @@ watch(
             "
             visible
             @add-contact="openCreateNewContactDialog"
-            @close="showLinkedConversationPanel = false"
+            @close="closeDrawer"
             @create-conversation="createDealConversation"
             @select-contact="loadDealConversationContext"
           />
@@ -3774,6 +4133,15 @@ watch(
               </div>
 
               <div class="grid gap-3">
+                <SchedulingSelectField
+                  compact
+                  :label="$t('CRM.FILTERS.NEXT_ACTION')"
+                  :model-value="filterDraft.nextAction"
+                  :options="nextActionFilterOptions"
+                  :placeholder="$t('CRM.FILTERS.NEXT_ACTION')"
+                  @update:model-value="filterDraft.nextAction = $event"
+                />
+
                 <SchedulingSelectField
                   compact
                   :label="$t('CRM.DEALS.FORM.OWNER')"
@@ -3965,16 +4333,6 @@ watch(
   @apply mb-0 min-w-0 text-[13px] font-medium leading-4 text-n-slate-12;
 }
 
-.crm-deal-drawer-label-action {
-  @apply flex items-center justify-between gap-2;
-}
-
-.crm-deal-drawer-label-button {
-  flex-shrink: 0;
-  height: 1.75rem !important;
-  width: 1.75rem !important;
-}
-
 .crm-deal-drawer-control,
 .crm-deal-drawer-form :deep(.crm-deal-drawer-control) {
   width: 100%;
@@ -4085,13 +4443,8 @@ watch(
     @apply text-left;
   }
 
-  .crm-deal-drawer-row--start > .crm-deal-drawer-label,
-  .crm-deal-drawer-row--start > .crm-deal-drawer-label-action {
+  .crm-deal-drawer-row--start > .crm-deal-drawer-label {
     padding-top: 0.5rem;
-  }
-
-  .crm-deal-drawer-label-action {
-    @apply justify-start;
   }
 }
 

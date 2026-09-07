@@ -89,16 +89,8 @@ RSpec.describe AutomationRules::CrmActionService do
   end
 
   describe 'task actions' do
-    let(:open_status) { create(:crm_task_status, account: account, code: 'todo', category: 'open') }
-    let(:done_status) do
-      create(
-        :crm_task_status,
-        account: account,
-        code: 'done',
-        category: 'done',
-        color: Crm::TaskStatus::STANDARD_COLORS.second
-      )
-    end
+    let(:open_status) { account.crm_task_statuses.find_by!(code: 'todo') }
+    let(:done_status) { account.crm_task_statuses.find_by!(code: 'done') }
     let(:assignee) do
       user = create(:user)
       create(:account_user, account: account, user: user)
@@ -108,6 +100,7 @@ RSpec.describe AutomationRules::CrmActionService do
 
     before do
       account.enable_features!('crm_tasks')
+      Crm::Bootstrap::AccountService.new(account: account).perform
     end
 
     it 'updates task status through the native transition path' do
@@ -123,6 +116,8 @@ RSpec.describe AutomationRules::CrmActionService do
 
       expect(task.reload.status_id).to eq(done_status.id)
       expect(task.completed_at).to be_present
+      expect(task.outcome).to eq('completed')
+      expect(task.events.where(event_type: 'task_completed')).to exist
     end
 
     it 'assigns task assignee through the native upsert path' do

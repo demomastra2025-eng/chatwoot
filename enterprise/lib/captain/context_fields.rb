@@ -16,7 +16,7 @@ class Captain::ContextFields
     team_name company_name custom_attributes
   ].freeze
   TASK_STATE_ATTRIBUTES = %i[
-    id title description activity_type outcome due_at start_at priority completed_at external_ref
+    id title description activity_type outcome all_day due_at due_on schedule_timezone start_at priority completed_at external_ref
     status_id assignee_id creator_id team_id deal_id originating_conversation_id
     status_name assignee_name creator_name team_name deal_title custom_attributes
   ].freeze
@@ -85,7 +85,10 @@ class Captain::ContextFields
     { key: 'description', title: 'Description', description: 'task.description' },
     { key: 'activity_type', title: 'Task Type', description: 'task.activity_type' },
     { key: 'outcome', title: 'Outcome', description: 'task.outcome' },
+    { key: 'all_day', title: 'All Day', description: 'task.all_day' },
     { key: 'due_at', title: 'Due At', description: 'task.due_at' },
+    { key: 'due_on', title: 'Due Date', description: 'task.due_on (YYYY-MM-DD for all-day tasks)' },
+    { key: 'schedule_timezone', title: 'Schedule Timezone', description: 'task.schedule_timezone' },
     { key: 'start_at', title: 'Start At', description: 'task.start_at' },
     { key: 'priority', title: 'Priority', description: 'task.priority' },
     { key: 'completed_at', title: 'Completed At', description: 'task.completed_at' },
@@ -204,7 +207,7 @@ class Captain::ContextFields
     end
 
     def field_ids_for(account)
-      definitions_for(account).map { |field| field[:id] }
+      definitions_for(account).pluck(:id)
     end
 
     def appointment_state_for(account:, conversation: nil, appointment: nil)
@@ -385,7 +388,7 @@ class Captain::ContextFields
     end
 
     def allowed_field_ids_for(assistant)
-      allowed_definitions_for(assistant).map { |field| field[:id] }
+      allowed_definitions_for(assistant).pluck(:id)
     end
 
     def normalized_access_for(assistant, definitions = definitions_for(assistant.account))
@@ -498,7 +501,7 @@ class Captain::ContextFields
     end
 
     def core_field_keys(scope)
-      field_definitions_for(scope).map { |definition| definition[:key] }
+      field_definitions_for(scope).pluck(:key)
     end
 
     private
@@ -557,7 +560,7 @@ class Captain::ContextFields
     end
 
     def sanitize_field_ids(field_ids, definitions)
-      available_field_ids = definitions.map { |field| field[:id] }
+      available_field_ids = definitions.pluck(:id)
 
       Array(field_ids).map { |field_id| normalize_field_id(field_id) }
                       .uniq
@@ -575,7 +578,7 @@ class Captain::ContextFields
 
       definitions
         .select { |field| field[:table_name].to_sym == scope.to_sym }
-        .map { |field| field[:id] }
+        .pluck(:id)
     end
 
     def contact_fields

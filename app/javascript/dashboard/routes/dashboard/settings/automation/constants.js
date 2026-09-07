@@ -535,6 +535,14 @@ export const AUTOMATIONS = {
     conditions: DEAL_AUTOMATION_CONDITIONS,
     actions: DEAL_AUTOMATION_ACTIONS,
   },
+  deal_waiting_set: {
+    conditions: DEAL_AUTOMATION_CONDITIONS,
+    actions: DEAL_AUTOMATION_ACTIONS,
+  },
+  deal_waiting_cleared: {
+    conditions: DEAL_AUTOMATION_CONDITIONS,
+    actions: DEAL_AUTOMATION_ACTIONS,
+  },
   deal_archived: {
     conditions: DEAL_AUTOMATION_CONDITIONS,
     actions: DEAL_AUTOMATION_ACTIONS,
@@ -552,6 +560,30 @@ export const AUTOMATIONS = {
     actions: TASK_AUTOMATION_ACTIONS,
   },
   task_status_changed: {
+    conditions: TASK_AUTOMATION_CONDITIONS,
+    actions: TASK_AUTOMATION_ACTIONS,
+  },
+  task_assigned: {
+    conditions: TASK_AUTOMATION_CONDITIONS,
+    actions: TASK_AUTOMATION_ACTIONS,
+  },
+  task_rescheduled: {
+    conditions: TASK_AUTOMATION_CONDITIONS,
+    actions: TASK_AUTOMATION_ACTIONS,
+  },
+  task_completed: {
+    conditions: TASK_AUTOMATION_CONDITIONS,
+    actions: TASK_AUTOMATION_ACTIONS,
+  },
+  task_cancelled: {
+    conditions: TASK_AUTOMATION_CONDITIONS,
+    actions: TASK_AUTOMATION_ACTIONS,
+  },
+  task_reopened: {
+    conditions: TASK_AUTOMATION_CONDITIONS,
+    actions: TASK_AUTOMATION_ACTIONS,
+  },
+  task_waiting_changed: {
     conditions: TASK_AUTOMATION_CONDITIONS,
     actions: TASK_AUTOMATION_ACTIONS,
   },
@@ -623,6 +655,14 @@ export const AUTOMATION_RULE_EVENTS = [
     value: 'DEAL_STAGE_CHANGED',
   },
   {
+    key: 'deal_waiting_set',
+    value: 'DEAL_WAITING_SET',
+  },
+  {
+    key: 'deal_waiting_cleared',
+    value: 'DEAL_WAITING_CLEARED',
+  },
+  {
     key: 'deal_archived',
     value: 'DEAL_ARCHIVED',
   },
@@ -641,6 +681,30 @@ export const AUTOMATION_RULE_EVENTS = [
   {
     key: 'task_status_changed',
     value: 'TASK_STATUS_CHANGED',
+  },
+  {
+    key: 'task_assigned',
+    value: 'TASK_ASSIGNED',
+  },
+  {
+    key: 'task_rescheduled',
+    value: 'TASK_RESCHEDULED',
+  },
+  {
+    key: 'task_completed',
+    value: 'TASK_COMPLETED',
+  },
+  {
+    key: 'task_cancelled',
+    value: 'TASK_CANCELLED',
+  },
+  {
+    key: 'task_reopened',
+    value: 'TASK_REOPENED',
+  },
+  {
+    key: 'task_waiting_changed',
+    value: 'TASK_WAITING_CHANGED',
   },
   {
     key: 'task_archived',

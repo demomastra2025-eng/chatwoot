@@ -148,5 +148,18 @@ RSpec.describe Crm::Bootstrap::AccountService do
       expect(source_field.options).to include(hash_including('label' => 'partner_referral', 'value' => 'partner_referral'))
       expect(source_field.options.count { |option| option['value'] == 'partner_referral' }).to eq(1)
     end
+
+    it 'creates a note-required other outcome for every default task type' do
+      account.enable_features!('crm_tasks')
+      described_class.new(account: account).perform
+
+      account.crm_task_types.find_each do |task_type|
+        outcome = task_type.outcomes.find_by(code: 'other')
+
+        expect(outcome).to be_present
+        expect(outcome).to be_active
+        expect(outcome).to be_requires_note
+      end
+    end
   end
 end

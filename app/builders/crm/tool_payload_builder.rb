@@ -35,7 +35,10 @@ module Crm::ToolPayloadBuilder
       outcome: task_data[:outcome],
       outcome_note: task_data[:outcome_note],
       priority: task_data[:priority],
+      all_day: task_data[:all_day],
       due_at: task_data[:due_at],
+      due_on: task_data[:due_on],
+      schedule_timezone: task_data[:schedule_timezone],
       completed_at: task_data[:completed_at],
       task: task_data
     }.compact

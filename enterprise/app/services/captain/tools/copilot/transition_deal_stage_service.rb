@@ -4,8 +4,8 @@ class Captain::Tools::Copilot::TransitionDealStageService < Captain::Tools::Copi
   end
 
   description 'Move the CRM deal linked to the current conversation. Use list_deal_stages first and prefer stage_id; ' \
-              'stage_action next/previous follows current pipeline position. For Won/Lost stages pass configured ' \
-              'closing_reasons when required or known. For open stages pass configured transition_reason when required or known.'
+              'stage_action next/previous follows current pipeline position. For Lost stages pass configured ' \
+              'closing_reasons when required or known.'
   param :stage_id, type: :integer, desc: 'Positive target stage ID from list_deal_stages/list_deal_pipelines. Omit when unknown.', required: false
   param :stage_name, type: :string, desc: 'Target stage name; scoped to the current deal pipeline unless pipeline_id/pipeline_code is provided',
                      required: false
@@ -20,19 +20,13 @@ class Captain::Tools::Copilot::TransitionDealStageService < Captain::Tools::Copi
   param :stage_action, type: :string, desc: 'Relative stage action: next or previous by position in the current pipeline', required: false
   param :closing_reasons,
         type: :array,
-        desc: 'One or more configured closing reason labels from list_deal_stages for Won/Lost target stages',
+        desc: 'One or more configured closing reason labels from list_deal_stages for Lost target stages',
         required: false
-  param :transition_reason,
-        type: :string,
-        desc: 'Configured transition reason label from list_deal_stages for open target stages',
-        required: false
-
   def execute(stage_id: nil, stage_name: nil, stage_code: nil, pipeline_id: nil, pipeline_code: nil, stage_action: nil,
-              closing_reasons: nil, transition_reason: nil)
+              closing_reasons: nil)
     formatted_payload(transition_deal_stage_payload(
                         stage_id: stage_id, stage_name: stage_name, stage_code: stage_code, pipeline_id: pipeline_id,
-                        pipeline_code: pipeline_code, stage_action: stage_action, closing_reasons: closing_reasons,
-                        transition_reason: transition_reason
+                        pipeline_code: pipeline_code, stage_action: stage_action, closing_reasons: closing_reasons
                       ))
   rescue StandardError => e
     tool_failure(e)

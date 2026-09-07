@@ -1,0 +1,51 @@
+module Crm::Tasks::RequestParams
+  CREATE_KEYS = %i[
+    deal_id
+    status_id
+    assignee_id
+    creator_id
+    team_id
+    originating_conversation_id
+    title
+    description
+    task_type_id
+    task_outcome_id
+    activity_type
+    outcome
+    outcome_note
+    priority
+    all_day
+    due_on
+    schedule_timezone
+    start_at
+    due_at
+    position
+    external_ref
+    idempotency_key
+  ].freeze
+
+  UPDATE_KEYS = %i[
+    deal_id
+    assignee_id
+    creator_id
+    team_id
+    originating_conversation_id
+    title
+    description
+    task_type_id
+    task_outcome_id
+    activity_type
+    outcome
+    outcome_note
+    priority
+    all_day
+    due_on
+    schedule_timezone
+    start_at
+    due_at
+    position
+    external_ref
+    idempotency_key
+    lock_version
+  ].freeze
+end

@@ -76,12 +76,12 @@ export const defaultRedirectPage = (
     { permissions: [PORTAL_PERMISSIONS], path: 'portals' },
     {
       permissions: CRM_DEAL_VIEW_PERMISSIONS,
-      path: 'crm/deals',
+      path: 'deals',
       enabled: isFeatureEnabled(currentAccount, FEATURE_FLAGS.CRM_DEALS),
     },
     {
       permissions: CRM_TASK_VIEW_PERMISSIONS,
-      path: 'crm/tasks',
+      path: 'tasks',
       enabled: isFeatureEnabled(currentAccount, FEATURE_FLAGS.CRM_TASKS),
     },
     {

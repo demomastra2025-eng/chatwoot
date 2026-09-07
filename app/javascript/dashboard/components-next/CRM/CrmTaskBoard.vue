@@ -1,15 +1,21 @@
 <script setup>
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import Draggable from 'vuedraggable';
 
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
-import CrmTaskAssigneeMenu from './CrmTaskAssigneeMenu.vue';
+import { buildTaskTypeResolver } from './taskTypeMetadata';
 import {
   groupTasksByTime,
+  taskDueDate,
   visibleTaskTimeBuckets,
 } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 
 const props = defineProps({
+  taskTypeResolver: {
+    type: Function,
+    default: null,
+  },
   assignees: {
     type: Array,
     default: () => [],
@@ -32,13 +38,29 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['changeAssignee', 'selectTask']);
+const emit = defineEmits(['changeDueDate', 'selectTask']);
 const { locale, t } = useI18n();
+const assigneeNameById = computed(() =>
+  props.assignees.reduce((result, assignee) => {
+    result[Number(assignee.value)] = assignee.label;
+    return result;
+  }, {})
+);
 
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
 );
-const groupedTasks = computed(() => groupTasksByTime(props.tasks));
+const groupedTasks = ref(groupTasksByTime(props.tasks));
+const visibleBucketKeys = ref(visibleTaskTimeBuckets(groupedTasks.value));
+
+watch(
+  () => props.tasks,
+  tasks => {
+    groupedTasks.value = groupTasksByTime(tasks);
+    visibleBucketKeys.value = visibleTaskTimeBuckets(groupedTasks.value);
+  },
+  { deep: true }
+);
 
 const bucketMeta = computed(() => ({
   future: {
@@ -72,57 +94,40 @@ const bucketMeta = computed(() => ({
 }));
 
 const boardColumns = computed(() =>
-  visibleTaskTimeBuckets(groupedTasks.value).map(key => ({
+  visibleBucketKeys.value.map(key => ({
     ...bucketMeta.value[key],
     key,
     tasks: groupedTasks.value[key],
   }))
 );
 
-const activityTypeMetaByValue = computed(() => ({
-  call: {
-    icon: 'i-lucide-phone',
-    label: t('CRM.TASKS.ACTIVITY_TYPE.call'),
-  },
-  meeting: {
-    icon: 'i-lucide-users',
-    label: t('CRM.TASKS.ACTIVITY_TYPE.meeting'),
-  },
-  message: {
-    icon: 'i-lucide-message-square',
-    label: t('CRM.TASKS.ACTIVITY_TYPE.message'),
-  },
-  task: {
-    icon: 'i-lucide-list-todo',
-    label: t('CRM.TASKS.ACTIVITY_TYPE.task'),
-  },
-  touch: {
-    icon: 'i-lucide-handshake',
-    label: t('CRM.TASKS.ACTIVITY_TYPE.touch'),
-  },
-}));
+const handleColumnChange = (event, bucket) => {
+  if (!event.added || !props.canManage) return;
 
-const formatDateLabel = value => {
+  const task = groupedTasks.value[bucket][event.added.newIndex];
+  emit('changeDueDate', { bucket, task });
+};
+
+const fallbackTaskTypeResolver = computed(() => buildTaskTypeResolver([], t));
+
+const formatDateLabel = task => {
+  const value = taskDueDate(task);
   if (!value) return t('CRM.TASKS.BOARD.TIME_BUCKETS.UNSCHEDULED');
 
-  return new Intl.DateTimeFormat(localeCode.value, {
+  const options = {
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
     month: 'short',
-  }).format(new Date(value));
+  };
+  if (!task.allDay) {
+    options.hour = '2-digit';
+    options.minute = '2-digit';
+  }
+
+  return new Intl.DateTimeFormat(localeCode.value, options).format(value);
 };
 
 const activityTypeMeta = task =>
-  activityTypeMetaByValue.value[task.activityType || 'task'] ||
-  activityTypeMetaByValue.value.task;
-
-const handleAssigneeChange = (task, assigneeId) => {
-  const nextAssigneeId = Number(assigneeId);
-  if (!nextAssigneeId || Number(task.assigneeId) === nextAssigneeId) return;
-
-  emit('changeAssignee', { assigneeId: nextAssigneeId, task });
-};
+  (props.taskTypeResolver || fallbackTaskTypeResolver.value)(task);
 </script>
 
 <template>
@@ -152,67 +157,80 @@ const handleAssigneeChange = (task, assigneeId) => {
           />
         </header>
 
-        <div class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5">
-          <article
-            v-for="task in column.tasks"
-            :key="task.id"
-            class="rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md"
-            @click="emit('selectTask', task)"
-          >
-            <div class="flex items-start justify-between gap-2">
-              <button
-                type="button"
-                data-test="open-task"
-                class="min-w-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
-              >
-                <h4 class="mb-0 truncate text-xs font-semibold text-n-slate-12">
-                  {{ task.title }}
-                </h4>
-                <p
-                  v-if="dealNames[task.dealId]"
-                  class="mb-0 mt-0.5 text-[10px] text-n-slate-11"
+        <Draggable
+          :list="groupedTasks[column.key]"
+          :disabled="!canManage"
+          animation="180"
+          class="flex min-h-[5rem] flex-col gap-3 px-3 pb-3 pt-1.5"
+          ghost-class="crm-task-board-card-ghost"
+          group="crm-task-time-buckets"
+          item-key="id"
+          @change="handleColumnChange($event, column.key)"
+        >
+          <template #item="{ element: task }">
+            <article
+              class="cursor-grab rounded-md border border-n-weak bg-n-surface-1 px-2.5 py-2 shadow-sm transition-shadow hover:shadow-md active:cursor-grabbing"
+              @click="emit('selectTask', task)"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  data-test="open-task"
+                  class="min-w-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
                 >
-                  {{ dealNames[task.dealId] }}
-                </p>
-              </button>
+                  <h4
+                    class="mb-0 truncate text-xs font-semibold text-n-slate-12"
+                  >
+                    {{ task.title }}
+                  </h4>
+                  <p
+                    v-if="dealNames[task.dealId]"
+                    class="mb-0 mt-0.5 text-[10px] text-n-slate-11"
+                  >
+                    {{ dealNames[task.dealId] }}
+                  </p>
+                </button>
 
-              <CrmTaskAssigneeMenu
-                :assignees="assignees"
-                :disabled="!canManage"
-                :model-value="task.assigneeId"
-                @update:model-value="handleAssigneeChange(task, $event)"
-              />
-            </div>
-
-            <div class="mt-2 flex items-center justify-between gap-2">
-              <span
-                class="inline-flex items-center gap-1 rounded-full border border-n-weak bg-n-surface-1 px-2 py-0.5 text-[10px] font-medium text-n-slate-11"
-              >
                 <span
-                  class="size-3"
-                  :class="activityTypeMeta(task).icon"
-                  aria-hidden="true"
-                />
-                {{ activityTypeMeta(task).label }}
-              </span>
-              <span
-                v-if="column.key === 'overdue'"
-                class="rounded-full bg-n-ruby-9/10 px-2 py-0.5 text-[10px] font-semibold text-n-ruby-11"
-              >
-                {{ $t('CRM.TASKS.BOARD.OVERDUE_BADGE') }}
-              </span>
-              <span v-else class="text-[9px] text-n-slate-10/90">
-                {{ formatDateLabel(task.dueAt) }}
-              </span>
-            </div>
+                  class="max-w-[8.5rem] truncate rounded-md bg-n-alpha-black2 px-1.5 py-1 text-[9px] font-medium text-n-slate-12"
+                >
+                  {{
+                    assigneeNameById[task.assigneeId] ||
+                    $t('CRM.GENERAL.EMPTY_VALUE')
+                  }}
+                </span>
+              </div>
 
-            <CrmCustomFieldsSummary
-              class="mt-2"
-              :definitions="fieldDefinitions"
-              :values="task.customAttributes"
-            />
-          </article>
-        </div>
+              <div class="mt-2 flex items-center justify-between gap-2">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full border border-n-weak bg-n-surface-1 px-2 py-0.5 text-[10px] font-medium text-n-slate-11"
+                >
+                  <span
+                    class="size-3"
+                    :class="activityTypeMeta(task).icon"
+                    aria-hidden="true"
+                  />
+                  {{ activityTypeMeta(task).label }}
+                </span>
+                <span
+                  v-if="column.key === 'overdue'"
+                  class="rounded-full bg-n-ruby-9/10 px-2 py-0.5 text-[10px] font-semibold text-n-ruby-11"
+                >
+                  {{ $t('CRM.TASKS.BOARD.OVERDUE_BADGE') }}
+                </span>
+                <span v-else class="text-[9px] text-n-slate-10/90">
+                  {{ formatDateLabel(task) }}
+                </span>
+              </div>
+
+              <CrmCustomFieldsSummary
+                class="mt-2"
+                :definitions="fieldDefinitions"
+                :values="task.customAttributes"
+              />
+            </article>
+          </template>
+        </Draggable>
       </section>
     </div>
   </div>

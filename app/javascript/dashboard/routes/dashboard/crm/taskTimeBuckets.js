@@ -18,6 +18,36 @@ const addMonths = (date, months) => {
   return next;
 };
 
+const formatLocalDate = date => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+export const taskDueDate = task => {
+  if (task?.allDay && task?.dueOn) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(task.dueOn);
+    if (!match) return null;
+
+    const [, year, month, day] = match;
+    const date = new Date(Number(year), Number(month) - 1, Number(day));
+    if (
+      Number.isNaN(date.getTime()) ||
+      date.getFullYear() !== Number(year) ||
+      date.getMonth() !== Number(month) - 1 ||
+      date.getDate() !== Number(day)
+    ) {
+      return null;
+    }
+
+    return date;
+  }
+
+  const date = task?.dueAt ? new Date(task.dueAt) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+};
+
 export const TASK_TIME_BUCKETS = [
   'overdue',
   'today',
@@ -37,11 +67,36 @@ export const visibleTaskTimeBuckets = groups =>
       Boolean(groups?.[bucket]?.length)
   );
 
-export const taskTimeBucket = (task, now = new Date()) => {
-  if (task?.archivedAt || task?.completedAt) return null;
+export const taskDeadlineForBucket = (bucket, now = new Date()) => {
+  if (bucket === 'unscheduled') {
+    return { allDay: false, dueAt: null, dueOn: null, startAt: null };
+  }
 
-  const dueAt = task?.dueAt ? new Date(task.dueAt) : null;
-  if (!dueAt || Number.isNaN(dueAt.getTime())) return 'unscheduled';
+  const today = startOfLocalDay(now);
+  const dayOffsets = {
+    overdue: -1,
+    today: 0,
+    tomorrow: 1,
+    nextWeek: 2,
+    thisMonth: 8,
+  };
+  const targetDate =
+    bucket === 'future'
+      ? addMonths(today, 1)
+      : addDays(today, dayOffsets[bucket] ?? 0);
+  return {
+    allDay: true,
+    dueAt: null,
+    dueOn: formatLocalDate(targetDate),
+    startAt: null,
+  };
+};
+
+export const taskTimeBucket = (task, now = new Date()) => {
+  if (task?.archivedAt || task?.completedAt || task?.cancelledAt) return null;
+
+  const dueDate = taskDueDate(task);
+  if (!dueDate) return 'unscheduled';
 
   const today = startOfLocalDay(now);
   const tomorrow = addDays(today, 1);
@@ -49,11 +104,11 @@ export const taskTimeBucket = (task, now = new Date()) => {
   const nextWeekBoundary = addDays(today, 8);
   const nextMonthBoundary = addMonths(today, 1);
 
-  if (dueAt < now) return 'overdue';
-  if (dueAt < tomorrow) return 'today';
-  if (dueAt < dayAfterTomorrow) return 'tomorrow';
-  if (dueAt < nextWeekBoundary) return 'nextWeek';
-  if (dueAt < nextMonthBoundary) return 'thisMonth';
+  if (dueDate < (task.allDay ? today : now)) return 'overdue';
+  if (dueDate < tomorrow) return 'today';
+  if (dueDate < dayAfterTomorrow) return 'tomorrow';
+  if (dueDate < nextWeekBoundary) return 'nextWeek';
+  if (dueDate < nextMonthBoundary) return 'thisMonth';
 
   return 'future';
 };
@@ -70,10 +125,8 @@ export const groupTasksByTime = (tasks, now = new Date()) => {
 
   Object.values(groups).forEach(items => {
     items.sort((left, right) => {
-      const leftDueAt = left.dueAt ? new Date(left.dueAt).getTime() : Infinity;
-      const rightDueAt = right.dueAt
-        ? new Date(right.dueAt).getTime()
-        : Infinity;
+      const leftDueAt = taskDueDate(left)?.getTime() ?? Infinity;
+      const rightDueAt = taskDueDate(right)?.getTime() ?? Infinity;
       return leftDueAt - rightDueAt || Number(left.id) - Number(right.id);
     });
   });

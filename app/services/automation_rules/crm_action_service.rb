@@ -152,10 +152,13 @@ class AutomationRules::CrmActionService
   def transition_deal!(params)
     ensure_entity_kind!('deal')
 
-    @record = ::Crm::Deals::TransitionService.new(
+    @record = ::Crm::Deals::StageCommandService.new(
       account: account,
       deal: record,
-      params: params.merge(lock_version: record.lock_version),
+      params: params.merge(
+        lock_version: record.lock_version,
+        idempotency_key: [@execution_key, @current_action_key, 'deal-stage'].compact.join(':').presence
+      ),
       actor: nil
     ).perform
   end

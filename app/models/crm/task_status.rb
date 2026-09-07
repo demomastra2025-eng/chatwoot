@@ -27,7 +27,7 @@
 class Crm::TaskStatus < ApplicationRecord
   self.table_name = 'crm_task_statuses'
 
-  CATEGORIES = %w[open in_progress done archived].freeze
+  CATEGORIES = %w[open in_progress done cancelled archived].freeze
   STANDARD_COLORS = [
     '#F0F0F3',
     '#E8E8EC',
@@ -52,6 +52,7 @@ class Crm::TaskStatus < ApplicationRecord
     open: 'open',
     in_progress: 'in_progress',
     done: 'done',
+    cancelled: 'cancelled',
     archived: 'archived'
   }, prefix: true
 
@@ -129,6 +130,6 @@ class Crm::TaskStatus < ApplicationRecord
       value.to_s.strip.upcase
     end
 
-    STANDARD_COLORS.find { |candidate| !used_colors.include?(candidate) } || DEFAULT_COLOR
+    STANDARD_COLORS.find { |candidate| used_colors.exclude?(candidate) } || DEFAULT_COLOR
   end
 end

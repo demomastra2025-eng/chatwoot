@@ -3,6 +3,9 @@ import { defineStore } from 'pinia';
 import CrmFieldDefinitionsAPI from 'dashboard/api/crm/fieldDefinitions';
 import CrmPipelinesAPI from 'dashboard/api/crm/pipelines';
 import CrmTaskStatusesAPI from 'dashboard/api/crm/taskStatuses';
+import CrmTaskTypesAPI from 'dashboard/api/crm/taskTypes';
+import CrmTaskOutcomesAPI from 'dashboard/api/crm/taskOutcomes';
+import { loadTaskCatalog, mutateTaskCatalog } from './taskCatalog';
 import {
   extractCrmError,
   normalizePayload,
@@ -36,6 +39,9 @@ const defaultUi = () => ({
   isLoadingFieldDefinitions: false,
   isLoadingPipelines: false,
   isLoadingTaskStatuses: false,
+  isLoadingTaskTypes: false,
+  isSavingTaskCatalog: false,
+  taskCatalogError: null,
   isSaving: false,
 });
 
@@ -146,6 +152,7 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
     },
     pipelines: [],
     taskStatuses: [],
+    taskTypes: [],
     ui: defaultUi(),
   }),
 
@@ -355,6 +362,43 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
       } finally {
         this.ui.isLoadingTaskStatuses = false;
       }
+    },
+
+    loadTaskTypes() {
+      return loadTaskCatalog(this);
+    },
+
+    saveTaskType(payload) {
+      return mutateTaskCatalog(
+        this,
+        () =>
+          payload.id
+            ? CrmTaskTypesAPI.update(payload.id, payload)
+            : CrmTaskTypesAPI.create(payload),
+        upsertTaskStatusInList
+      );
+    },
+
+    saveTaskOutcome(payload) {
+      return mutateTaskCatalog(
+        this,
+        () =>
+          payload.id
+            ? CrmTaskOutcomesAPI.update(payload.id, payload)
+            : CrmTaskOutcomesAPI.create(payload),
+        (types, outcome) =>
+          types.map(taskType =>
+            Number(taskType.id) === Number(outcome.taskTypeId)
+              ? {
+                  ...taskType,
+                  outcomes: upsertTaskStatusInList(
+                    taskType.outcomes || [],
+                    outcome
+                  ),
+                }
+              : taskType
+          )
+      );
     },
 
     async saveTaskStatus(payload) {

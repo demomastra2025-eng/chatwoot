@@ -71,18 +71,16 @@ RSpec.describe Captain::Tools::Copilot::UpdateDealService do
         name: 'В работе',
         code: 'work',
         position: 2,
-        transition_reason_options: ['Needs docs', 'Waiting payment'],
-        transition_reason_required: true,
         color: '#222222'
       )
 
-      payload = JSON.parse(execute_confirmed(title: 'Reasoned renewal', stage_code: 'Work', transition_reason: 'waiting payment'))
+      payload = JSON.parse(execute_confirmed(title: 'Moved renewal', stage_code: 'Work'))
       event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
-      expect(deal.title).to eq('Reasoned renewal')
+      expect(deal.title).to eq('Moved renewal')
       expect(deal.stage_id).to eq(target_stage.id)
-      expect(payload['deal']).to include('id' => deal.id, 'title' => 'Reasoned renewal', 'stage_id' => target_stage.id)
-      expect(event.meta['transition_reason']).to eq('Waiting payment')
+      expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved renewal', 'stage_id' => target_stage.id)
+      expect(event.meta).not_to have_key('transition_reason')
     end
 
     it 'updates an explicit deal_id instead of the current conversation deal' do

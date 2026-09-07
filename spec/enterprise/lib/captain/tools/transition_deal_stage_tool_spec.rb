@@ -62,7 +62,7 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
     expect(deal.reload.closing_reasons).to eq(['Competitor'])
   end
 
-  it 'passes transition reason when transitioning to configured open stages' do
+  it 'transitions between open stages without a transition reason' do
     pipeline = create(:crm_pipeline, account: account)
     current_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'new', position: 1, color: '#111111')
     target_stage = create(
@@ -71,19 +71,17 @@ RSpec.describe Captain::Tools::TransitionDealStageTool, type: :model do
       pipeline: pipeline,
       code: 'work',
       position: 2,
-      transition_reason_options: ['Needs docs', 'Waiting payment'],
-      transition_reason_required: true,
       color: '#222222'
     )
     conversation = create(:conversation, account: account)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id } })
 
-    payload = JSON.parse(tool.perform(tool_context, stage_code: 'work', transition_reason: 'waiting payment'))
+    payload = JSON.parse(tool.perform(tool_context, stage_code: 'work'))
     event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
     expect(payload['deal']).to include('id' => deal.id, 'stage_id' => target_stage.id)
-    expect(event.meta['transition_reason']).to eq('Waiting payment')
+    expect(event.meta).not_to have_key('transition_reason')
   end
 
   it 'returns a validation error instead of looking up zero ID placeholders' do

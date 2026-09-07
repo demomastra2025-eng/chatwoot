@@ -273,13 +273,12 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(deal.reload.events.where(event_type: 'deal_stage_changed')).to exist
   end
 
-  it 'allows no closing reason when moving a deal to a terminal stage' do
+  it 'requires a closing reason when the Lost stage toggle is enabled' do
     Crm::Bootstrap::AccountService.new(account: account).perform
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     open_stage = pipeline.stages.find_by!(code: 'new')
     lost_stage = pipeline.stages.find_by!(code: 'lost')
-    lost_stage.update!(closing_reason_options: ['Too expensive', 'Competitor'])
-    lost_stage.update_column(:closing_reason_required, true)
+    lost_stage.update!(closing_reason_options: ['Too expensive', 'Competitor'], closing_reason_required: true)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
 
     post "#{path}/#{deal.id}/transition_stage",
@@ -287,9 +286,9 @@ RSpec.describe 'CRM Deals API', type: :request do
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'closing_reasons')).to eq([])
-    expect(deal.reload.stage_id).to eq(lost_stage.id)
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
+    expect(deal.reload.stage_id).to eq(open_stage.id)
   end
 
   it 'stores selected closing reasons on the deal and stage-change event' do
@@ -321,14 +320,14 @@ RSpec.describe 'CRM Deals API', type: :request do
     Crm::Bootstrap::AccountService.new(account: account).perform
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     open_stage = pipeline.stages.find_by!(code: 'new')
-    won_stage = pipeline.stages.find_by!(code: 'won')
-    won_stage.update!(closing_reason_options: ['Paid'], closing_reason_required: false)
+    lost_stage = pipeline.stages.find_by!(code: 'lost')
+    lost_stage.update!(closing_reason_options: ['Too expensive'], closing_reason_required: false)
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
 
     post "#{path}/#{deal.id}/transition_stage",
          params: {
            closing_reasons: ['Other'],
-           stage_id: won_stage.id,
+           stage_id: lost_stage.id,
            lock_version: deal.lock_version
          },
          headers: headers,
@@ -340,56 +339,12 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(deal.reload.stage_id).to eq(open_stage.id)
   end
 
-  it 'requires configured transition reason when moving a deal to a required open stage' do
+  it 'ignores retired transition reason configuration when moving between open stages' do
     Crm::Bootstrap::AccountService.new(account: account).perform
     pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
     open_stage = pipeline.stages.find_by!(code: 'new')
     proposal_stage = pipeline.stages.find_by!(code: 'proposal')
     proposal_stage.update!(transition_reason_options: ['Needs docs'], transition_reason_required: true)
-    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
-
-    post "#{path}/#{deal.id}/transition_stage",
-         params: { stage_id: proposal_stage.id, lock_version: deal.lock_version },
-         headers: headers,
-         as: :json
-
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('DEAL_STAGE_REQUIRES_TRANSITION_REASON')
-    expect(response.parsed_body.dig('details', 'transition_reason_options')).to eq(['Needs docs'])
-    expect(deal.reload.stage_id).to eq(open_stage.id)
-  end
-
-  it 'stores selected transition reason on the stage-change event' do
-    Crm::Bootstrap::AccountService.new(account: account).perform
-    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
-    open_stage = pipeline.stages.find_by!(code: 'new')
-    proposal_stage = pipeline.stages.find_by!(code: 'proposal')
-    proposal_stage.update!(transition_reason_options: ['Needs docs', 'Waiting payment'])
-    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
-
-    post "#{path}/#{deal.id}/transition_stage",
-         params: {
-           stage_id: proposal_stage.id,
-           lock_version: deal.lock_version,
-           transition_reason: 'waiting payment'
-         },
-         headers: headers,
-         as: :json
-
-    event = deal.reload.events.where(event_type: 'deal_stage_changed').last
-
-    expect(response).to have_http_status(:ok)
-    expect(deal.stage_id).to eq(proposal_stage.id)
-    expect(event.meta['transition_reason']).to eq('Waiting payment')
-    expect(event.meta['closing_reasons']).to eq([])
-  end
-
-  it 'rejects transition reason that is not configured for the open stage' do
-    Crm::Bootstrap::AccountService.new(account: account).perform
-    pipeline = account.crm_pipelines.find_by!(code: 'sales_pipeline')
-    open_stage = pipeline.stages.find_by!(code: 'new')
-    proposal_stage = pipeline.stages.find_by!(code: 'proposal')
-    proposal_stage.update!(transition_reason_options: ['Needs docs'])
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: open_stage)
 
     post "#{path}/#{deal.id}/transition_stage",
@@ -401,10 +356,11 @@ RSpec.describe 'CRM Deals API', type: :request do
          headers: headers,
          as: :json
 
-    expect(response).to have_http_status(:unprocessable_content)
-    expect(response.parsed_body['code']).to eq('DEAL_STAGE_INVALID_TRANSITION_REASON')
-    expect(response.parsed_body.dig('details', 'invalid_reasons')).to eq(['Waiting payment'])
-    expect(deal.reload.stage_id).to eq(open_stage.id)
+    event = deal.reload.events.where(event_type: 'deal_stage_changed').last
+
+    expect(response).to have_http_status(:ok)
+    expect(deal.stage_id).to eq(proposal_stage.id)
+    expect(event.meta).not_to have_key('transition_reason')
   end
 
   it 'reorders deals inside a stage using board position' do
@@ -458,6 +414,94 @@ RSpec.describe 'CRM Deals API', type: :request do
     )
     expect(deal.reload.stage_id).to eq(open_stage.id)
     expect(deal.closed_at).to be_nil
+  end
+
+  it 'blocks entry to an open stage when one of its required fields is missing' do
+    pipeline = create(:crm_pipeline, account: account)
+    source_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 1)
+    target_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 2)
+    create(:crm_stage_field_requirement, stage: target_stage, field_key: 'description')
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: source_stage, description: nil)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: { stage_id: target_stage.id, lock_version: deal.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('DEAL_STAGE_REQUIRES_FIELDS')
+    expect(response.parsed_body.dig('details', 'missing_fields')).to include(
+      hash_including('key' => 'description', 'scope' => 'stage')
+    )
+    expect(deal.reload.stage_id).to eq(source_stage.id)
+  end
+
+  it 'allows entry after the stage required field is completed' do
+    pipeline = create(:crm_pipeline, account: account)
+    source_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 1)
+    target_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 2)
+    create(:crm_stage_field_requirement, stage: target_stage, field_key: 'description')
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: source_stage, description: 'Qualified')
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: { stage_id: target_stage.id, lock_version: deal.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(deal.reload.stage_id).to eq(target_stage.id)
+  end
+
+  it 'blocks stage skipping when the pipeline rule is enabled' do
+    pipeline = create(:crm_pipeline, account: account, restrict_stage_skipping: true)
+    source_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 1)
+    create(:crm_stage, account: account, pipeline: pipeline, position: 2)
+    target_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 3)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: source_stage)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: { stage_id: target_stage.id, lock_version: deal.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('DEAL_STAGE_ENTRY_RESTRICTED')
+    expect(response.parsed_body.dig('details', 'rule_violations')).to include(
+      a_hash_including('code' => 'STAGE_SKIPPING_RESTRICTED')
+    )
+    expect(deal.reload.stage_id).to eq(source_stage.id)
+  end
+
+  it 'records an administrator override reason when the pipeline allows it' do
+    pipeline = create(
+      :crm_pipeline,
+      account: account,
+      allow_stage_rule_override: true,
+      restrict_stage_skipping: true
+    )
+    source_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 1)
+    create(:crm_stage, account: account, pipeline: pipeline, position: 2)
+    target_stage = create(:crm_stage, account: account, pipeline: pipeline, position: 3)
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: source_stage)
+
+    post "#{path}/#{deal.id}/transition_stage",
+         params: {
+           stage_id: target_stage.id,
+           lock_version: deal.lock_version,
+           override: true,
+           override_reason: 'Customer requested immediate approval'
+         },
+         headers: headers,
+         as: :json
+
+    override = deal.reload.events.where(event_type: 'deal_stage_changed').last.meta.fetch('stage_rule_override')
+    expect(response).to have_http_status(:ok)
+    expect(deal.stage_id).to eq(target_stage.id)
+    expect(override).to include(
+      'actor_id' => administrator.id,
+      'reason' => 'Customer requested immediate approval',
+      'rule_codes' => ['STAGE_SKIPPING_RESTRICTED']
+    )
   end
 
   it 'allows custom-role users with crm_deal_view to list deals' do
@@ -541,7 +585,7 @@ RSpec.describe 'CRM Deals API', type: :request do
   it 'paginates each board stage using the selected sort and direction' do
     pipeline = create(:crm_pipeline, account: account)
     stage = create(:crm_stage, account: account, pipeline: pipeline)
-    deals = 10.times.map do |index|
+    deals = Array.new(10) do |index|
       create(
         :crm_deal,
         account: account,
@@ -761,5 +805,125 @@ RSpec.describe 'CRM Deals API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('meta', 'count')).to eq(1)
     expect(response.parsed_body.dig('payload', 0, 'id')).to eq(matching_deal.id)
+  end
+
+  it 'sets and clears waiting with a structured next action' do
+    deal = create(:crm_deal, account: account)
+    waiting_until = 2.days.from_now.change(usec: 0)
+
+    post "#{path}/#{deal.id}/set_waiting",
+         params: {
+           waiting_until: waiting_until.iso8601,
+           waiting_reason: 'Waiting for customer approval',
+           lock_version: deal.lock_version
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'next_action')).to include(
+      'kind' => 'waiting',
+      'waiting_reason' => 'Waiting for customer approval'
+    )
+
+    deal.reload
+    post "#{path}/#{deal.id}/clear_waiting",
+         params: { lock_version: deal.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'next_action', 'kind')).to eq('none')
+    expect(deal.reload.waiting_until).to be_nil
+  end
+
+  it 'creates an optional wake-up task when waiting is set' do
+    account.enable_features!('crm_tasks')
+    deal = create(:crm_deal, account: account, owner: administrator)
+    waiting_until = 1.day.from_now.change(usec: 0)
+
+    post "#{path}/#{deal.id}/set_waiting",
+         params: {
+           waiting_until: waiting_until.iso8601,
+           waiting_reason: 'Call after review',
+           create_wake_up_task: true,
+           wake_up_task_title: 'Return to customer',
+           lock_version: deal.lock_version
+         },
+         headers: headers,
+         as: :json
+
+    wake_up_task = deal.tasks.find_by!(title: 'Return to customer')
+    expect(response).to have_http_status(:ok)
+    expect(wake_up_task.due_at).to be_within(1.second).of(waiting_until)
+    expect(wake_up_task.assignee_id).to eq(administrator.id)
+  end
+
+  it 'rejects waiting without a future date and reason' do
+    deal = create(:crm_deal, account: account)
+
+    post "#{path}/#{deal.id}/set_waiting",
+         params: { waiting_until: 1.hour.ago.iso8601, waiting_reason: '', lock_version: deal.lock_version },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('VALIDATION_ERROR')
+    expect(deal.reload).not_to be_waiting
+  end
+
+  it 'filters deals by overdue, missing and expired next actions' do
+    account.enable_features!('crm_tasks')
+    status = create(:crm_task_status, account: account, category: 'open')
+    overdue_deal = create(:crm_deal, account: account)
+    no_action_deal = create(:crm_deal, account: account)
+    expired_waiting_deal = create(
+      :crm_deal,
+      account: account,
+      waiting_until: 1.hour.ago,
+      waiting_reason: 'No reply',
+      waiting_started_at: 1.day.ago
+    )
+    create(:crm_task, account: account, deal: overdue_deal, status: status, due_at: 1.day.ago)
+
+    expected_ids = {
+      'overdue' => overdue_deal.id,
+      'no_action' => no_action_deal.id,
+      'waiting_expired' => expired_waiting_deal.id
+    }
+    expected_ids.each do |filter, expected_id|
+      get path, params: { next_action: filter }, headers: headers, as: :json
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body['payload'].pluck('id')).to include(expected_id)
+    end
+  end
+
+  it 'replays a waiting command idempotently without creating a second wake-up task' do
+    account.enable_features!('crm_tasks')
+    deal = create(:crm_deal, account: account)
+    command = {
+      waiting_until: 1.day.from_now.change(usec: 0).iso8601,
+      waiting_reason: 'Awaiting approval',
+      create_wake_up_task: true,
+      wake_up_task_title: 'Return to approval',
+      lock_version: deal.lock_version,
+      idempotency_key: SecureRandom.uuid
+    }
+
+    2.times do
+      post "#{path}/#{deal.id}/set_waiting", params: command, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+    end
+
+    expect(deal.tasks.where(title: 'Return to approval').count).to eq(1)
+
+    post "#{path}/#{deal.id}/set_waiting",
+         params: command.merge(waiting_reason: 'Different reason'),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response.parsed_body['code']).to eq('IDEMPOTENCY_KEY_REUSED')
   end
 end

@@ -25,6 +25,10 @@ import {
 import { useSchedulingCalendarIndexes } from 'dashboard/routes/dashboard/scheduling/composables/useSchedulingCalendarIndexes';
 
 const props = defineProps({
+  allDayEvents: {
+    type: Boolean,
+    default: false,
+  },
   anchorDate: {
     type: [Date, String],
     required: true,
@@ -1549,6 +1553,7 @@ onMounted(() => {
         <VueCal
           ref="vueCalRef"
           class="scheduling-vue-cal__calendar bg-transparent"
+          :all-day-events="allDayEvents"
           :locale="localeCode"
           :events="calendarEvents"
           :schedules="schedules"

@@ -36,6 +36,9 @@ module Crm::PayloadBuilder
       active: pipeline.active,
       default: pipeline.default,
       auto_create_deal_on_channel_contact: pipeline.auto_create_deal_on_channel_contact,
+      restrict_stage_skipping: pipeline.restrict_stage_skipping,
+      restrict_backward_move: pipeline.restrict_backward_move,
+      allow_stage_rule_override: pipeline.allow_stage_rule_override,
       created_at: pipeline.created_at&.iso8601,
       updated_at: pipeline.updated_at&.iso8601
     }
@@ -55,8 +58,15 @@ module Crm::PayloadBuilder
       position_locked: stage.position_locked?,
       closing_reason_options: stage.closing_reason_options,
       closing_reason_required: stage.closing_reason_required,
-      transition_reason_options: stage.transition_reason_options,
-      transition_reason_required: stage.transition_reason_required,
+      field_requirements: stage.field_requirements.map do |requirement|
+        {
+          id: requirement.id,
+          field_key: requirement.field_key,
+          required: requirement.required,
+          validation: requirement.validation,
+          role_exemptions: requirement.role_exemptions
+        }
+      end,
       active: stage.active,
       default: stage.default,
       created_at: stage.created_at&.iso8601,
@@ -77,6 +87,43 @@ module Crm::PayloadBuilder
       default: task_status.default,
       created_at: task_status.created_at&.iso8601,
       updated_at: task_status.updated_at&.iso8601
+    }
+  end
+
+  def task_type(task_type)
+    task_type_summary(task_type).merge(
+      outcomes: task_type.outcomes.map { |outcome| task_outcome(outcome) },
+      created_at: task_type.created_at&.iso8601,
+      updated_at: task_type.updated_at&.iso8601
+    )
+  end
+
+  def task_type_summary(task_type)
+    {
+      id: task_type.id,
+      account_id: task_type.account_id,
+      name: task_type.name,
+      code: task_type.code,
+      icon: task_type.icon,
+      position: task_type.position,
+      active: task_type.active,
+      default: task_type.default
+    }
+  end
+
+  def task_outcome(task_outcome)
+    {
+      id: task_outcome.id,
+      account_id: task_outcome.account_id,
+      task_type_id: task_outcome.task_type_id,
+      name: task_outcome.name,
+      code: task_outcome.code,
+      position: task_outcome.position,
+      active: task_outcome.active,
+      default: task_outcome.default,
+      requires_note: task_outcome.requires_note,
+      created_at: task_outcome.created_at&.iso8601,
+      updated_at: task_outcome.updated_at&.iso8601
     }
   end
 
@@ -131,6 +178,11 @@ module Crm::PayloadBuilder
       currency: deal.currency,
       expected_close_on: deal.expected_close_on&.iso8601,
       closed_at: deal.closed_at&.iso8601,
+      waiting_until: deal.waiting_until&.iso8601,
+      waiting_reason: deal.waiting_reason,
+      waiting_started_at: deal.waiting_started_at&.iso8601,
+      waiting_set_by_id: deal.waiting_set_by_id,
+      next_action: Crm::Deals::NextActionService.new(deal: deal).perform,
       closing_reasons: deal.closing_reasons,
       position: deal.position,
       win_probability: deal.win_probability,
@@ -322,7 +374,14 @@ module Crm::PayloadBuilder
       eventable_type: event.eventable_type,
       eventable_id: event.eventable_id,
       actor_id: event.actor_id,
+      actor_kind: event.actor_kind,
       event_type: event.event_type,
+      source: event.source,
+      before_data: event.before_data,
+      after_data: event.after_data,
+      correlation_id: event.correlation_id,
+      causation_id: event.causation_id,
+      schema_version: event.schema_version,
       meta: event.meta,
       created_at: event.created_at&.iso8601
     }
@@ -335,8 +394,12 @@ module Crm::PayloadBuilder
       account_id: task.account_id,
       deal_id: task.deal_id,
       status_id: task.status_id,
+      task_type_id: task.task_type_id,
+      task_outcome_id: task.task_outcome_id,
       assignee_id: task.assignee_id,
       creator_id: task.creator_id,
+      completed_by_id: task.completed_by_id,
+      cancelled_by_id: task.cancelled_by_id,
       team_id: task.team_id,
       originating_conversation_id: task.originating_conversation_id,
       title: task.title,
@@ -345,17 +408,25 @@ module Crm::PayloadBuilder
       outcome: task.outcome,
       outcome_note: task.outcome_note,
       priority: task.priority,
-      start_at: task.start_at&.iso8601,
-      due_at: task.due_at&.iso8601,
-      completed_at: task.completed_at&.iso8601,
+      all_day: task.all_day,
+      start_at: iso8601(task.start_at),
+      due_at: iso8601(task.due_at),
+      due_on: iso8601(task.due_on),
+      schedule_timezone: task.schedule_timezone,
+      completed_at: iso8601(task.completed_at),
+      cancelled_at: iso8601(task.cancelled_at),
+      cancellation_reason: task.cancellation_reason,
+      reschedule_count: task.reschedule_count,
+      task_type: task_type_summary(task.task_type),
+      task_outcome: task_outcome_summary(task.task_outcome),
       position: task.position,
       external_ref: task.external_ref,
       idempotency_key: task.idempotency_key,
       lock_version: task.lock_version,
       custom_attributes: task.custom_attributes,
-      archived_at: task.archived_at&.iso8601,
-      created_at: task.created_at&.iso8601,
-      updated_at: task.updated_at&.iso8601
+      archived_at: iso8601(task.archived_at),
+      created_at: iso8601(task.created_at),
+      updated_at: iso8601(task.updated_at)
     }
   end
   # rubocop:enable Metrics/AbcSize, Metrics/MethodLength
@@ -366,6 +437,14 @@ module Crm::PayloadBuilder
       occurred_at: occurred_at&.iso8601,
       payload: payload
     }
+  end
+
+  def task_outcome_summary(outcome)
+    task_outcome(outcome) if outcome.present?
+  end
+
+  def iso8601(value)
+    value&.iso8601
   end
 end
 # rubocop:enable Metrics/ModuleLength

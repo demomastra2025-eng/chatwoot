@@ -16,6 +16,9 @@
 #  lock_version                        :integer          default(0), not null
 #  position                            :integer          default(0), not null
 #  title                               :string           not null
+#  waiting_reason                      :text
+#  waiting_started_at                  :datetime
+#  waiting_until                       :datetime
 #  win_probability                     :integer
 #  created_at                          :datetime         not null
 #  updated_at                          :datetime         not null
@@ -28,6 +31,7 @@
 #  pipeline_id                         :bigint           not null
 #  stage_id                            :bigint           not null
 #  team_id                             :bigint
+#  waiting_set_by_id                   :bigint
 #
 # Indexes
 #
@@ -41,6 +45,7 @@
 #  index_crm_deals_on_account_team                         (account_id,team_id)
 #  index_crm_deals_on_active_list_dimensions               (account_id,pipeline_id,stage_id,owner_id,expected_close_on) WHERE (archived_at IS NULL)
 #  index_crm_deals_on_active_ordering                      (account_id,expected_close_on,updated_at DESC,id DESC) WHERE (archived_at IS NULL)
+#  index_crm_deals_on_active_waiting_until                 (account_id,waiting_until) WHERE ((waiting_until IS NOT NULL) AND (archived_at IS NULL))
 #  index_crm_deals_on_company_id                           (company_id)
 #  index_crm_deals_on_creator_id                           (creator_id)
 #  index_crm_deals_on_custom_attributes                    (custom_attributes) USING gin
@@ -50,6 +55,7 @@
 #  index_crm_deals_on_pipeline_id                          (pipeline_id)
 #  index_crm_deals_on_stage_id                             (stage_id)
 #  index_crm_deals_on_team_id                              (team_id)
+#  index_crm_deals_on_waiting_set_by_id                    (waiting_set_by_id)
 #
 # Foreign Keys
 #
@@ -62,6 +68,7 @@
 #  fk_rails_...  (pipeline_id => crm_pipelines.id)
 #  fk_rails_...  (stage_id => crm_stages.id)
 #  fk_rails_...  (team_id => teams.id)
+#  fk_rails_...  (waiting_set_by_id => users.id) ON DELETE => nullify
 #
 class Crm::Deal < ApplicationRecord
   self.table_name = 'crm_deals'
@@ -75,6 +82,7 @@ class Crm::Deal < ApplicationRecord
   belongs_to :creator, class_name: '::User', optional: true
   belongs_to :team, class_name: '::Team', optional: true
   belongs_to :company, class_name: '::Company', optional: true
+  belongs_to :waiting_set_by, class_name: '::User', optional: true
   belongs_to :originating_conversation, class_name: '::Conversation', optional: true
   belongs_to :originating_communication_thread, class_name: '::CommunicationThread', optional: true
 
@@ -85,7 +93,8 @@ class Crm::Deal < ApplicationRecord
            inverse_of: :deal
   has_many :contacts, through: :deal_contacts
   has_many :tasks, class_name: '::Crm::Task', dependent: :nullify, inverse_of: :deal
-  has_many :events, as: :eventable, class_name: '::Crm::Event', dependent: :destroy_async
+  has_many :events, as: :eventable, class_name: '::Crm::Event', dependent: :restrict_with_error
+  has_many :stage_visits, class_name: '::Crm::StageVisit', dependent: :restrict_with_error, inverse_of: :deal
   has_many :comments, as: :commentable, class_name: '::Crm::Comment', dependent: :destroy_async
   has_many :reminders, as: :remindable, dependent: :nullify
   has_many :touch_plan_enrollments, as: :remindable, dependent: :nullify
@@ -97,6 +106,8 @@ class Crm::Deal < ApplicationRecord
   validates :position, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :win_probability, numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }, allow_nil: true
   validates :custom_attributes, jsonb_attributes_length: true
+  validates :waiting_reason, presence: true, if: :waiting?
+  validates :waiting_started_at, presence: true, if: :waiting?
   validate :stage_belongs_to_pipeline
   validate :related_records_belong_to_account
   validate :currency_required_when_amount_present
@@ -127,59 +138,16 @@ class Crm::Deal < ApplicationRecord
     closed_at.present?
   end
 
+  def waiting?
+    waiting_until.present?
+  end
+
+  def waiting_expired?(at: Time.zone.now)
+    waiting? && waiting_until <= at
+  end
+
   def automation_webhook_data
-    payload = {
-      account: account.webhook_data,
-      deal: {
-        id: id,
-        title: title,
-        description: description,
-        amount_minor: amount_minor,
-        currency: currency,
-        expected_close_on: expected_close_on,
-        win_probability: win_probability,
-        closed_at: closed_at,
-        closing_reasons: closing_reasons,
-        external_ref: external_ref,
-        pipeline_id: pipeline_id,
-        stage_id: stage_id,
-        owner_id: owner_id,
-        creator_id: creator_id,
-        team_id: team_id,
-        company_id: company_id,
-        originating_conversation_id: originating_conversation_id,
-        originating_communication_thread_id: originating_communication_thread_id,
-        primary_contact_id: primary_contact_id,
-        archived_at: archived_at,
-        custom_attributes: custom_attributes
-      },
-      pipeline: {
-        id: pipeline.id,
-        name: pipeline.name
-      },
-      stage: {
-        id: stage.id,
-        name: stage.name,
-        outcome: stage.outcome
-      }
-    }
-
-    payload[:owner] = owner.webhook_data if owner.present?
-    payload[:creator] = creator.webhook_data if creator.present?
-    payload[:team] = { id: team.id, name: team.name } if team.present?
-    payload[:company] = { id: company.id, name: company.name, domain: company.domain } if company.present?
-    payload[:conversation] = originating_conversation.webhook_data if originating_conversation.present?
-    if originating_communication_thread.present?
-      payload[:communication_thread] = {
-        id: originating_communication_thread.id,
-        display_id: originating_communication_thread.display_id,
-        contact_id: originating_communication_thread.contact_id,
-        status: originating_communication_thread.status
-      }
-    end
-    payload[:contacts] = contacts.map(&:webhook_data) if contacts.exists?
-
-    payload
+    Crm::AutomationPayloadBuilder.deal(self)
   end
 
   private
@@ -239,6 +207,7 @@ class Crm::Deal < ApplicationRecord
     validate_account_match(:creator, creator)
     validate_account_match(:team, team)
     validate_account_match(:company, company)
+    validate_account_match(:waiting_set_by, waiting_set_by)
     validate_account_match(:originating_conversation, originating_conversation)
     validate_account_match(:originating_communication_thread, originating_communication_thread)
   end

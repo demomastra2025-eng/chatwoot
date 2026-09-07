@@ -3,6 +3,8 @@ class CrmAutomationRuleListener < BaseListener
     deal_created
     deal_updated
     deal_stage_changed
+    deal_waiting_set
+    deal_waiting_cleared
     deal_archived
     deal_unarchived
   ].freeze
@@ -10,6 +12,12 @@ class CrmAutomationRuleListener < BaseListener
     task_created
     task_updated
     task_status_changed
+    task_assigned
+    task_rescheduled
+    task_completed
+    task_cancelled
+    task_reopened
+    task_waiting_changed
     task_archived
     task_unarchived
   ].freeze

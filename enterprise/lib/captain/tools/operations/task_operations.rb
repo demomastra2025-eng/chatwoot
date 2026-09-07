@@ -1,7 +1,7 @@
 class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::BaseOperation
   TASK_ID_UNSET = Object.new.freeze
   UPDATE_FIELDS = %i[
-    title description activity_type outcome outcome_note priority start_at due_at custom_attributes
+    title description activity_type outcome outcome_note priority all_day start_at due_at due_on schedule_timezone custom_attributes
   ].freeze
 
   def add_current_task_comment(body:)
@@ -36,8 +36,11 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
     outcome: nil,
     outcome_note: nil,
     priority: nil,
+    all_day: nil,
     start_at: nil,
     due_at: nil,
+    due_on: nil,
+    schedule_timezone: nil,
     deal_id: nil,
     originating_conversation_id: nil,
     status_id: nil,
@@ -60,8 +63,11 @@ class Captain::Tools::Operations::TaskOperations < Captain::Tools::Operations::B
       outcome: outcome,
       outcome_note: outcome_note,
       priority: priority,
+      all_day: all_day,
       start_at: start_at,
       due_at: due_at,
+      due_on: due_on,
+      schedule_timezone: schedule_timezone,
       deal_id: deal_id.presence || current_deal&.id,
       originating_conversation_id: resolved_originating_conversation_id(originating_conversation_id) || conversation&.id,
       status_id: status_id,

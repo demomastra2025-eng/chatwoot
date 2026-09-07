@@ -82,6 +82,10 @@ class Crm::FieldDefinition < ApplicationRecord
   }.freeze
 
   belongs_to :account, class_name: '::Account'
+  has_many :stage_field_requirements,
+           class_name: '::Crm::StageFieldRequirement',
+           dependent: :destroy,
+           inverse_of: :field_definition
 
   enum :entity_kind, {
     deal: 'deal',

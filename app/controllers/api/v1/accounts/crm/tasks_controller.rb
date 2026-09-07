@@ -1,46 +1,9 @@
 class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseController
-  CREATE_PARAM_KEYS = %i[
-    deal_id
-    status_id
-    assignee_id
-    creator_id
-    team_id
-    originating_conversation_id
-    title
-    description
-    activity_type
-    outcome
-    outcome_note
-    priority
-    start_at
-    due_at
-    position
-    external_ref
-    idempotency_key
-  ].freeze
-  UPDATE_PARAM_KEYS = %i[
-    deal_id
-    assignee_id
-    creator_id
-    team_id
-    originating_conversation_id
-    title
-    description
-    activity_type
-    outcome
-    outcome_note
-    priority
-    start_at
-    due_at
-    position
-    external_ref
-    idempotency_key
-    lock_version
-  ].freeze
-
   before_action :ensure_crm_tasks_enabled!
-  before_action :bootstrap_defaults!, only: [:index, :create]
-  before_action :set_task, only: [:show, :update, :timeline, :change_status, :archive, :unarchive]
+  before_action :bootstrap_defaults!, only: [:index, :create, :complete, :cancel, :reopen]
+  before_action :set_task,
+                only: [:show, :update, :save_form, :timeline, :change_status, :complete, :cancel, :reopen, :reschedule, :assign,
+                       :archive, :unarchive]
 
   def index
     authorize ::Crm::Task
@@ -98,17 +61,53 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     render_payload(timeline[:items], meta: timeline[:meta])
   end
 
+  def save_form
+    run_task_command!(
+      ::Crm::Tasks::SaveFormService,
+      params.permit(*::Crm::Tasks::RequestParams::UPDATE_KEYS, :status_id, :cancellation_reason, custom_attributes: {})
+    )
+  end
+
   def change_status
     authorize @task, :change_status?
 
     task = ::Crm::Tasks::StatusTransitionService.new(
       account: Current.account,
       task: @task,
-      params: params.permit(:status_id, :position, :lock_version, :outcome, :outcome_note),
+      params: params.permit(:status_id, :position, :lock_version, :idempotency_key, :task_outcome_id, :outcome, :outcome_note, :cancellation_reason),
       actor: Current.user
     ).perform
 
     render_payload(::Crm::PayloadBuilder.task(task))
+  end
+
+  def complete
+    run_task_command!(
+      ::Crm::Tasks::CompleteService,
+      params.permit(:task_outcome_id, :outcome, :outcome_note, :lock_version, :idempotency_key)
+    )
+  end
+
+  def cancel
+    run_task_command!(
+      ::Crm::Tasks::CancelService,
+      params.permit(:cancellation_reason, :lock_version, :idempotency_key)
+    )
+  end
+
+  def reopen
+    run_task_command!(::Crm::Tasks::ReopenService, params.permit(:lock_version, :idempotency_key))
+  end
+
+  def reschedule
+    run_task_command!(
+      ::Crm::Tasks::RescheduleService,
+      params.permit(:all_day, :due_on, :due_at, :start_at, :schedule_timezone, :lock_version, :idempotency_key)
+    )
+  end
+
+  def assign
+    run_task_command!(::Crm::Tasks::AssignService, params.permit(:assignee_id, :lock_version, :idempotency_key))
   end
 
   def archive
@@ -146,51 +145,16 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def create_task_params
-    params.permit(*CREATE_PARAM_KEYS, custom_attributes: {})
-  end
-
-  def filter_by_due_range(scope)
-    from = parse_datetime_param!(params[:due_from], field_name: 'due_from', required: false)
-    to = parse_datetime_param!(params[:due_to], field_name: 'due_to', required: false)
-    return scope if from.blank? && to.blank?
-
-    scoped = scope
-    scoped = scoped.where('crm_tasks.due_at >= ?', from) if from.present?
-    scoped = scoped.where('crm_tasks.due_at < ?', to) if to.present?
-    scoped
-  end
-
-  def filter_by_exact(scope, field_name)
-    return scope if params[field_name].blank?
-
-    scope.where(field_name => params[field_name])
-  end
-
-  def filter_by_query(scope)
-    return scope if params[:q].blank?
-
-    query = "%#{params[:q].to_s.strip}%"
-    scope.where('crm_tasks.title ILIKE :query OR crm_tasks.external_ref ILIKE :query', query: query)
+    params.permit(*::Crm::Tasks::RequestParams::CREATE_KEYS, custom_attributes: {})
   end
 
   def filtered_tasks
-    scope = policy_scope(::Crm::Task).ordered
-    scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
-    scope = filter_by_exact(scope, :status_id)
-    scope = filter_by_exact(scope, :activity_type)
-    scope = filter_by_exact(scope, :outcome)
-    scope = filter_by_exact(scope, :assignee_id)
-    scope = filter_by_exact(scope, :team_id)
-    scope = filter_by_exact(scope, :priority)
-    scope = filter_by_exact(scope, :deal_id)
-    scope = filter_by_due_range(scope)
-    scope = filter_by_query(scope)
-
-    ::Crm::CustomFieldFilterSet.new(
+    ::Crm::Tasks::FilterService.new(
       account: Current.account,
-      entity_kind: 'task',
-      raw_filters: custom_attribute_filters_param
-    ).apply(scope)
+      scope: policy_scope(::Crm::Task).includes(:task_type, :task_outcome).ordered,
+      params: params,
+      custom_attribute_filters: custom_attribute_filters_param
+    ).perform
   end
 
   def idempotent_task
@@ -204,6 +168,17 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def update_task_params
-    params.permit(*UPDATE_PARAM_KEYS, custom_attributes: {})
+    params.permit(*::Crm::Tasks::RequestParams::UPDATE_KEYS, custom_attributes: {})
+  end
+
+  def run_task_command!(service_class, command_params)
+    authorize @task, :"#{action_name}?"
+    task = service_class.new(
+      account: Current.account,
+      task: @task,
+      params: command_params,
+      actor: Current.user
+    ).perform
+    render_payload(::Crm::PayloadBuilder.task(task))
   end
 end

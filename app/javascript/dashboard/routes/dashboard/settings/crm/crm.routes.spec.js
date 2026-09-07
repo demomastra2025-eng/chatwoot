@@ -1,4 +1,4 @@
-import crmRoutes from './crm.routes';
+import crmRoutes, { TaskCatalogSettingsPage } from './crm.routes';
 
 describe('CRM settings routes', () => {
   const parentByPath = suffix =>
@@ -6,7 +6,7 @@ describe('CRM settings routes', () => {
   const childByName = (parent, name) =>
     parent.children.find(route => route.name === name);
 
-  it('keeps deal pipelines and task statuses local but redirects their fields', () => {
+  it('keeps deal pipelines and task settings local but redirects their fields', () => {
     const dealParent = parentByPath('/settings/crm');
     const taskParent = parentByPath('/settings/crm/tasks');
 
@@ -18,6 +18,11 @@ describe('CRM settings routes', () => {
     ]);
     expect(dealParent.props.keepAlive).toBe(false);
     expect(taskParent.props.keepAlive).toBe(false);
+    const taskSettingsRoute = childByName(
+      taskParent,
+      'crm_task_settings_index'
+    );
+    expect(taskSettingsRoute.component).toBe(TaskCatalogSettingsPage);
 
     expect(
       childByName(dealParent, 'crm_deal_fields_settings_index').redirect({

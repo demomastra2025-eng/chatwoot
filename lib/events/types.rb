@@ -65,6 +65,12 @@ module Events::Types
   CRM_DEAL_ARCHIVED = 'crm.deal.archived'
   CRM_DEAL_UNARCHIVED = 'crm.deal.unarchived'
 
+  # CRM task events
+  CRM_TASK_CREATED = 'crm.task.created'
+  CRM_TASK_UPDATED = 'crm.task.updated'
+  CRM_TASK_ARCHIVED = 'crm.task.archived'
+  CRM_TASK_UNARCHIVED = 'crm.task.unarchived'
+
   # contact events
   INBOX_CREATED = 'inbox.created'
   INBOX_UPDATED = 'inbox.updated'

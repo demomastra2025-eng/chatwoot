@@ -18,6 +18,9 @@ RSpec.describe Captain::Tools::CreateTaskTool, type: :model do
         tool_context,
         title: 'Call client',
         activity_type: 'meeting',
+        all_day: true,
+        due_on: '2026-09-04',
+        schedule_timezone: 'Asia/Almaty',
         outcome: 'not_done',
         outcome_note: 'Client did not join; retry tomorrow'
       )
@@ -32,9 +35,13 @@ RSpec.describe Captain::Tools::CreateTaskTool, type: :model do
     )
     expect(payload['task']).to include(
       'activity_type' => 'meeting',
+      'all_day' => true,
+      'due_at' => nil,
+      'due_on' => '2026-09-04',
       'originating_conversation_id' => conversation.id,
       'outcome' => 'not_done',
       'outcome_note' => 'Client did not join; retry tomorrow',
+      'schedule_timezone' => 'Asia/Almaty',
       'title' => 'Call client'
     )
   end

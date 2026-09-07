@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 
 import SchedulingVueCalCalendar from 'dashboard/components-next/Scheduling/SchedulingVueCalCalendar.vue';
+import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 
 const props = defineProps({
   anchorDate: {
@@ -57,6 +58,17 @@ const activityTypeLabel = task =>
   task.activityType;
 
 const resolveTaskRange = task => {
+  if (task.allDay) {
+    const dueDate = taskDueDate(task);
+    if (!dueDate) return null;
+
+    const startsAt = new Date(dueDate);
+    const endsAt = new Date(dueDate);
+    startsAt.setHours(0, 0, 0, 0);
+    endsAt.setHours(23, 59, 59, 999);
+    return { endsAt, startsAt };
+  }
+
   const startValue = task.startAt || task.dueAt;
   const endValue = task.dueAt || task.startAt;
 
@@ -88,15 +100,18 @@ const buildTaskSubtitle = task => {
 };
 
 const isOverdue = task => {
-  if (!task?.dueAt) return false;
+  const dueDate = taskDueDate(task);
+  if (!dueDate) return false;
+  if (!task.allDay) return dueDate < new Date();
 
-  const dueAt = new Date(task.dueAt);
-  return !Number.isNaN(dueAt.getTime()) && dueAt < new Date();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return dueDate < today;
 };
 
 const calendarTasks = computed(() =>
   props.tasks
-    .filter(task => !task.archivedAt && !task.completedAt)
+    .filter(task => !task.archivedAt && !task.completedAt && !task.cancelledAt)
     .map(task => {
       const range = resolveTaskRange(task);
       if (!range) {
@@ -106,6 +121,7 @@ const calendarTasks = computed(() =>
       const overdue = isOverdue(task);
 
       return {
+        allDay: Boolean(task.allDay),
         id: task.id,
         startsAt: range.startsAt.toISOString(),
         endsAt: range.endsAt.toISOString(),
@@ -153,6 +169,7 @@ const handleResizeTask = payload => {
 
 <template>
   <SchedulingVueCalCalendar
+    all-day-events
     class="min-h-0 flex-1"
     :anchor-date="anchorDate"
     :appointments="calendarTasks"

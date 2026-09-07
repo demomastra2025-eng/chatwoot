@@ -822,7 +822,7 @@ class Captain::ToolRegistry
         definition(
           id: 'transition_deal_stage',
           title: 'Transition Deal Stage',
-          description: 'Move current conversation deal by stage_id or stage_action next/previous; supports closing_reasons for Won/Lost stages and transition_reason for open stages',
+          description: 'Move current conversation deal by stage_id or stage_action next/previous; supports closing_reasons for Lost stages',
           group_name: 'CRM Deals',
           icon: 'arrow-right',
           allowed_scopes: Captain::ToolAccess::SCOPE_ORDER,

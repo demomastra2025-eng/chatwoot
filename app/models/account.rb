@@ -98,11 +98,17 @@ class Account < ApplicationRecord
   has_many :crm_pipelines, dependent: :destroy_async, class_name: '::Crm::Pipeline'
   has_many :crm_stages, dependent: :destroy_async, class_name: '::Crm::Stage'
   has_many :crm_task_statuses, dependent: :destroy_async, class_name: '::Crm::TaskStatus'
+  has_many :crm_task_types, dependent: :destroy_async, class_name: '::Crm::TaskType'
+  has_many :crm_task_outcomes, dependent: :destroy_async, class_name: '::Crm::TaskOutcome'
   has_many :crm_field_definitions, dependent: :destroy_async, class_name: '::Crm::FieldDefinition'
   has_many :crm_deals, dependent: :destroy_async, class_name: '::Crm::Deal'
   has_many :crm_deal_contacts, dependent: :destroy_async, class_name: '::Crm::DealContact'
   has_many :crm_tasks, dependent: :destroy_async, class_name: '::Crm::Task'
-  has_many :crm_events, dependent: :destroy_async, class_name: '::Crm::Event'
+  has_many :crm_events, dependent: :delete_all, class_name: '::Crm::Event'
+  has_many :crm_stage_visits, dependent: :delete_all, class_name: '::Crm::StageVisit'
+  has_many :crm_stage_field_requirements,
+           dependent: :delete_all,
+           class_name: '::Crm::StageFieldRequirement'
   has_many :crm_comments, dependent: :destroy_async, class_name: '::Crm::Comment'
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :custom_attribute_definitions, dependent: :destroy_async

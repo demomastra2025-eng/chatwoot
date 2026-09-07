@@ -243,11 +243,16 @@ Rails.application.routes.draw do
               end
             end
             resources :stages, only: [:update, :destroy] do
+              resource :field_requirements,
+                       only: [:update],
+                       controller: 'stage_field_requirements'
               member do
                 get :deletion_check
               end
             end
             resources :task_statuses, only: [:index, :create, :update, :destroy]
+            resources :task_types, only: [:index, :create, :update, :destroy]
+            resources :task_outcomes, only: [:index, :create, :update, :destroy]
             resources :field_definitions, only: [:index, :create, :update, :destroy]
             resources :reports, only: [] do
               collection do
@@ -263,6 +268,13 @@ Rails.application.routes.draw do
               member do
                 get :timeline
                 post :transition_stage
+                post :close_won
+                post :close_lost
+                post :reopen
+                post :reorder
+                post :undo_transition
+                post :set_waiting
+                post :clear_waiting
                 post :archive
                 post :unarchive
               end
@@ -274,6 +286,12 @@ Rails.application.routes.draw do
               member do
                 get :timeline
                 post :change_status
+                post :complete
+                post :cancel
+                post :reopen
+                post :reschedule
+                post :assign
+                post :save_form
                 post :archive
                 post :unarchive
               end

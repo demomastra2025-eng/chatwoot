@@ -41,7 +41,7 @@ const configuredReasons = computed(() =>
 const reasonRequired = computed(() =>
   isTransitionReason.value
     ? Boolean(stage.value?.transitionReasonRequired)
-    : false
+    : Boolean(stage.value?.closingReasonRequired)
 );
 
 const stageName = computed(() => {
@@ -187,7 +187,8 @@ const open = ({
     const candidate = normalizeReasons(currentReasons).find(reason =>
       reasonOptionValues.value.has(reason)
     );
-    selectedReason.value = candidate || NO_REASON_VALUE;
+    selectedReason.value =
+      candidate || (reasonRequired.value ? '' : NO_REASON_VALUE);
   }
 
   return new Promise(resolve => {

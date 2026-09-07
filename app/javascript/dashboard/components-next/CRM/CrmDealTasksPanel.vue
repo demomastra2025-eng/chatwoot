@@ -1,9 +1,17 @@
 <script setup>
-import { computed, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { format } from 'date-fns';
 import { useI18n } from 'vue-i18n';
 
 import CrmTasksAPI from 'dashboard/api/crm/tasks';
+import CrmDealsAPI from 'dashboard/api/crm/deals';
 import { useAlert } from 'dashboard/composables';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -12,9 +20,15 @@ import Input from 'dashboard/components-next/input/Input.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
 import CrmCustomFieldsSection from 'dashboard/components-next/CRM/CrmCustomFieldsSection.vue';
 import CrmTaskCompletionDialog from 'dashboard/components-next/CRM/CrmTaskCompletionDialog.vue';
-import { completionOutcomeForTask } from 'dashboard/components-next/CRM/taskCompletion';
 import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/SchedulingDateTimeField.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
+import {
+  assertTaskEditCurrent,
+  buildTaskFormSavePayload,
+  cloneTaskDraft,
+  rememberTaskSnapshot,
+} from 'dashboard/routes/dashboard/crm/taskLifecyclePayload';
+import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 import {
   buildDefaultCustomAttributes,
   mergeMissingDefaultCustomAttributes,
@@ -24,6 +38,8 @@ import {
   formatCrmErrorMessage,
   normalizePayload,
 } from 'dashboard/stores/crm/shared';
+import { BUS_EVENTS } from 'shared/constants/busEvents';
+import { emitter } from 'shared/helpers/mitt';
 
 const props = defineProps({
   assignees: {
@@ -31,6 +47,10 @@ const props = defineProps({
     default: () => [],
   },
   canManageTasks: {
+    type: Boolean,
+    default: false,
+  },
+  canManageDeals: {
     type: Boolean,
     default: false,
   },
@@ -54,14 +74,20 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  taskTypes: {
+    type: Array,
+    default: () => [],
+  },
 });
 
-const emit = defineEmits(['created', 'updated']);
+const emit = defineEmits(['created', 'dealUpdated', 'updated']);
 const { t } = useI18n();
 
 const taskDialogRef = ref(null);
 const resultDialogRef = ref(null);
+const waitingDialogRef = ref(null);
 const selectedTask = ref(null);
+const taskEditSnapshot = ref(null);
 const tasks = ref([]);
 const ui = reactive({
   isLoading: false,
@@ -80,6 +106,11 @@ const form = reactive({
   statusId: '',
   teamId: '',
   title: '',
+});
+const waitingForm = reactive({
+  createWakeUpTask: true,
+  reason: '',
+  until: '',
 });
 const TASK_ACTIVITY_TYPES = ['task', 'call', 'meeting', 'message', 'touch'];
 const NOT_DONE_OUTCOME = 'not_done';
@@ -108,10 +139,16 @@ const activityTypeMetaByValue = computed(() => ({
 }));
 
 const activityTypeOptions = computed(() =>
-  TASK_ACTIVITY_TYPES.map(value => ({
-    icon: activityTypeMetaByValue.value[value]?.icon,
-    label: activityTypeMetaByValue.value[value]?.label || value,
-    value,
+  (props.taskTypes.filter(taskType => taskType.active !== false).length
+    ? props.taskTypes.filter(taskType => taskType.active !== false)
+    : TASK_ACTIVITY_TYPES.map(value => ({ code: value }))
+  ).map(taskType => ({
+    icon: taskType.icon || activityTypeMetaByValue.value[taskType.code]?.icon,
+    label:
+      taskType.name ||
+      activityTypeMetaByValue.value[taskType.code]?.label ||
+      taskType.code,
+    value: taskType.code,
   }))
 );
 
@@ -125,20 +162,39 @@ const outcomeLabelByValue = computed(() => ({
   no_answer: t('CRM.TASKS.OUTCOME.no_answer'),
   no_show: t('CRM.TASKS.OUTCOME.no_show'),
   not_done: t('CRM.TASKS.OUTCOME.not_done'),
+  other: t('CRM.TASKS.OUTCOME.other'),
   rescheduled: t('CRM.TASKS.OUTCOME.rescheduled'),
   sent: t('CRM.TASKS.OUTCOME.sent'),
 }));
 
+const taskTypeByCode = computed(() =>
+  props.taskTypes.reduce((result, taskType) => {
+    result[taskType.code] = taskType;
+    return result;
+  }, {})
+);
+
 const activityTypeLabel = task =>
+  task.taskType?.name ||
+  taskTypeByCode.value[task.activityType]?.name ||
   activityTypeMetaByValue.value[task.activityType || 'task']?.label ||
   task.activityType;
 
 const activityTypeIcon = task =>
+  task.taskType?.icon ||
+  taskTypeByCode.value[task.activityType]?.icon ||
   activityTypeMetaByValue.value[task.activityType || 'task']?.icon ||
   'i-lucide-list-todo';
 
 const updateFormActivityType = value => {
-  form.activityType = TASK_ACTIVITY_TYPES.includes(value) ? value : 'task';
+  const available = activityTypeOptions.value.some(
+    option => option.value === value
+  );
+  form.activityType = available
+    ? value
+    : activityTypeOptions.value[0]?.value || 'task';
+  form.outcome = '';
+  form.outcomeNote = '';
 };
 
 const defaultStatus = computed(
@@ -228,12 +284,10 @@ const sortedTasks = computed(() =>
 
     if (leftDone !== rightDone) return leftDone - rightDone;
 
-    const leftDate = new Date(
-      left.dueAt || left.updatedAt || left.createdAt || 0
-    );
-    const rightDate = new Date(
-      right.dueAt || right.updatedAt || right.createdAt || 0
-    );
+    const leftDate =
+      taskDueDate(left) || new Date(left.updatedAt || left.createdAt || 0);
+    const rightDate =
+      taskDueDate(right) || new Date(right.updatedAt || right.createdAt || 0);
 
     return leftDate - rightDate;
   })
@@ -241,8 +295,15 @@ const sortedTasks = computed(() =>
 
 const hasDeal = computed(() => !!props.deal?.id);
 const canCreateTask = computed(() => props.canManageTasks && hasDeal.value);
+const isDealWaiting = computed(() =>
+  ['waiting', 'waitingExpired'].includes(props.deal?.nextAction?.kind)
+);
+const waitingKind = computed(() => props.deal?.nextAction?.kind || 'none');
 const shouldShowCreateActions = computed(
   () => props.showCreateActions && props.canManageTasks
+);
+const shouldShowWaitingAction = computed(
+  () => props.showCreateActions && props.canManageDeals
 );
 const isEditingTask = computed(() => !!selectedTask.value);
 const isTaskReadOnly = computed(
@@ -298,7 +359,12 @@ const resetForm = () => {
   });
 };
 
+const taskLoadGeneration = ref(0);
+let taskRealtimeSequence = 0;
+const pendingTaskRealtimeUpdates = new Map();
+
 const upsertTask = task => {
+  if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
   const index = tasks.value.findIndex(
     item => Number(item.id) === Number(task.id)
   );
@@ -313,12 +379,84 @@ const upsertTask = task => {
   tasks.value = nextTasks;
 };
 
+const applyTaskRealtimeUpdate = task => {
+  if (rememberTaskSnapshot(pendingTaskRealtimeUpdates, task) !== task) return;
+  if (Number(selectedTask.value?.id) === Number(task.id))
+    selectedTask.value = task;
+  if (Number(task.dealId) !== Number(props.deal?.id)) {
+    tasks.value = tasks.value.filter(
+      item => Number(item.id) !== Number(task.id)
+    );
+    return;
+  }
+
+  if (task.archivedAt || task.cancelledAt) {
+    tasks.value = tasks.value.filter(
+      item => Number(item.id) !== Number(task.id)
+    );
+  } else {
+    upsertTask(task);
+  }
+
+  if (Number(selectedTask.value?.id) === Number(task.id)) {
+    selectedTask.value = task;
+  }
+};
+
+const runTaskMutation = async (request, expectedTask) => {
+  const dealAtStart = props.deal?.id;
+  if (expectedTask) {
+    assertTaskEditCurrent(
+      expectedTask,
+      pendingTaskRealtimeUpdates.get(Number(expectedTask.id))?.task ||
+        expectedTask
+    );
+  }
+  const response = await request();
+  if (dealAtStart !== props.deal?.id) assertTaskEditCurrent(null, null);
+  const responseTask = normalizePayload(response.data);
+  taskRealtimeSequence += 1;
+  const newest = rememberTaskSnapshot(
+    pendingTaskRealtimeUpdates,
+    responseTask,
+    taskRealtimeSequence
+  );
+  applyTaskRealtimeUpdate(newest);
+  if (expectedTask) assertTaskEditCurrent(responseTask, newest);
+  return newest;
+};
+
+const handleCrmTaskRealtimeEvent = payload => {
+  if (!payload?.task) return;
+
+  taskRealtimeSequence += 1;
+  const task = rememberTaskSnapshot(
+    pendingTaskRealtimeUpdates,
+    normalizePayload({ payload: payload.task }),
+    taskRealtimeSequence
+  );
+  applyTaskRealtimeUpdate(task);
+};
+
+onMounted(() => {
+  emitter.on(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
+});
+
+onBeforeUnmount(() => {
+  emitter.off(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
+  taskLoadGeneration.value += 1;
+  pendingTaskRealtimeUpdates.clear();
+});
+
 const loadTasks = async () => {
   if (!hasDeal.value) {
     tasks.value = [];
     return;
   }
 
+  taskLoadGeneration.value += 1;
+  const loadGeneration = taskLoadGeneration.value;
+  const realtimeSequenceAtStart = taskRealtimeSequence;
   ui.isLoading = true;
 
   try {
@@ -326,17 +464,36 @@ const loadTasks = async () => {
       archived: false,
       deal_id: props.deal.id,
     });
-    tasks.value = normalizePayload(data);
+    if (loadGeneration !== taskLoadGeneration.value) return;
+
+    tasks.value = normalizePayload(data)
+      .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
+      .filter(
+        task =>
+          Number(task.dealId) === Number(props.deal?.id) &&
+          !task.archivedAt &&
+          !task.cancelledAt
+      );
+    pendingTaskRealtimeUpdates.forEach(update => {
+      if (update.sequence <= realtimeSequenceAtStart) return;
+
+      applyTaskRealtimeUpdate(update.task);
+    });
   } catch (error) {
+    if (loadGeneration !== taskLoadGeneration.value) return;
     useAlert(formatCrmErrorMessage(error, t));
   } finally {
-    ui.isLoading = false;
+    if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
   }
 };
 
 const buildPayload = () => {
+  const taskType = props.taskTypes.find(
+    candidate => candidate.code === form.activityType
+  );
   const payload = compactPayload({
     activity_type: form.activityType || 'task',
+    task_type_id: taskType?.id ? Number(taskType.id) : undefined,
     assignee_id: form.assigneeId ? Number(form.assigneeId) : undefined,
     custom_attributes: form.customAttributes,
     deal_id: Number(props.deal.id),
@@ -353,6 +510,7 @@ const buildPayload = () => {
   });
 
   if (selectedTask.value) {
+    payload.description = form.description || null;
     if (!form.outcome) payload.outcome = '';
     if (!form.outcomeNote) payload.outcome_note = '';
   }
@@ -364,15 +522,70 @@ const openCreateTaskDialog = () => {
   if (!canCreateTask.value) return;
 
   selectedTask.value = null;
+  taskEditSnapshot.value = null;
   resetForm();
   taskDialogRef.value?.open();
+};
+
+const openWaitingDialog = () => {
+  if (!props.canManageDeals || !hasDeal.value) return;
+
+  Object.assign(waitingForm, {
+    createWakeUpTask: !isDealWaiting.value,
+    reason: props.deal?.waitingReason || '',
+    until: props.deal?.waitingUntil?.slice(0, 16) || '',
+  });
+  waitingDialogRef.value?.open();
+};
+
+const saveWaiting = async () => {
+  if (!waitingForm.until || !waitingForm.reason.trim()) return;
+
+  ui.isSaving = true;
+  try {
+    const response = await CrmDealsAPI.setWaiting(props.deal.id, {
+      create_wake_up_task: props.canManageTasks && waitingForm.createWakeUpTask,
+      lock_version: props.deal.lockVersion,
+      waiting_reason: waitingForm.reason.trim(),
+      waiting_until: new Date(waitingForm.until).toISOString(),
+      wake_up_task_title:
+        props.canManageTasks && waitingForm.createWakeUpTask
+          ? t('CRM.DEALS.WAITING.WAKE_UP_TASK', { title: props.deal.title })
+          : undefined,
+    });
+    emit('dealUpdated', normalizePayload(response.data));
+    waitingDialogRef.value?.close();
+    await loadTasks();
+    useAlert(t('CRM.DEALS.WAITING.SAVED'));
+  } catch (error) {
+    useAlert(formatCrmErrorMessage(error, t));
+  } finally {
+    ui.isSaving = false;
+  }
+};
+
+const clearWaiting = async () => {
+  if (!isDealWaiting.value) return;
+
+  ui.isSaving = true;
+  try {
+    const response = await CrmDealsAPI.clearWaiting(props.deal.id, {
+      lock_version: props.deal.lockVersion,
+    });
+    emit('dealUpdated', normalizePayload(response.data));
+    useAlert(t('CRM.DEALS.WAITING.CLEARED'));
+  } catch (error) {
+    useAlert(formatCrmErrorMessage(error, t));
+  } finally {
+    ui.isSaving = false;
+  }
 };
 
 const fillFormFromTask = task => {
   Object.assign(form, {
     activityType: task.activityType || 'task',
     assigneeId: task.assigneeId ?? '',
-    customAttributes: { ...(task.customAttributes || {}) },
+    customAttributes: cloneTaskDraft(task.customAttributes || {}),
     description: task.description || '',
     dueAt: task.dueAt ? task.dueAt.slice(0, 16) : '',
     outcome: task.outcome || '',
@@ -390,50 +603,47 @@ const openTaskDialog = task => {
 
   selectedTask.value = task;
   fillFormFromTask(task);
+  taskEditSnapshot.value = cloneTaskDraft({ task, payload: buildPayload() });
   taskDialogRef.value?.open();
 };
 
 const closeTaskDialog = () => {
   taskDialogRef.value?.close();
   selectedTask.value = null;
+  taskEditSnapshot.value = null;
   resetForm();
 };
 
 const saveTask = async () => {
-  if (isTaskReadOnly.value || isTaskFormDisabled.value) return;
+  if (isTaskReadOnly.value || isTaskFormDisabled.value || ui.isSaving) return;
 
   ui.isSaving = true;
 
   try {
     const payload = buildPayload();
+    const draft = cloneTaskDraft(form);
     const wasEditing = !!selectedTask.value;
     let task;
 
     if (wasEditing) {
-      const currentStatusId = selectedTask.value.statusId;
-      const updatePayload = { ...payload };
-      delete updatePayload.status_id;
-
-      const response = await CrmTasksAPI.update(
-        selectedTask.value.id,
-        updatePayload
+      const currentTask = taskEditSnapshot.value?.task;
+      const savePayload = buildTaskFormSavePayload({
+        snapshot: taskEditSnapshot.value,
+        currentTask: selectedTask.value,
+        requested: payload,
+        form: { ...draft, allDay: false },
+        includeStatus: true,
+        preserveAllDay: true,
+      });
+      task = await runTaskMutation(() =>
+        CrmTasksAPI.saveForm(currentTask.id, savePayload)
       );
-      task = normalizePayload(response.data);
-
-      if (Number(form.statusId) !== Number(currentStatusId) && form.statusId) {
-        const transitionResponse = await CrmTasksAPI.changeStatus(task.id, {
-          lock_version: task.lockVersion,
-          status_id: Number(form.statusId),
-        });
-        task = normalizePayload(transitionResponse.data);
-      }
     } else {
-      const { data } = await CrmTasksAPI.create(payload);
-      task = normalizePayload(data);
+      task = await runTaskMutation(() => CrmTasksAPI.create(payload));
       emit('created', task);
     }
 
-    upsertTask(task);
+    applyTaskRealtimeUpdate(task);
     if (wasEditing) {
       emit('updated', task);
     }
@@ -460,22 +670,23 @@ const closeTaskResultDialog = () => {
   resultDialogRef.value?.close();
 };
 
-const saveTaskResult = async ({ task, note }) => {
+const saveTaskResult = async ({ task, note, taskOutcomeId }) => {
   const currentTask =
     tasks.value.find(item => Number(item.id) === Number(task.id)) || task;
 
   ui.isSaving = true;
 
   try {
-    const transitionResponse = await CrmTasksAPI.changeStatus(currentTask.id, {
-      lock_version: currentTask.lockVersion,
-      outcome: completionOutcomeForTask(currentTask),
-      outcome_note: note,
-      status_id: Number(doneStatus.value.id),
-    });
-    const updatedTask = normalizePayload(transitionResponse.data);
+    const updatedTask = await runTaskMutation(() =>
+      CrmTasksAPI.complete(currentTask.id, {
+        idempotency_key: crypto.randomUUID(),
+        lock_version: currentTask.lockVersion,
+        outcome_note: note,
+        task_outcome_id: Number(taskOutcomeId),
+      })
+    );
 
-    upsertTask(updatedTask);
+    applyTaskRealtimeUpdate(updatedTask);
     emit('updated', updatedTask);
     useAlert(t('CRM.TASKS.SUCCESS_UPDATED'));
     closeTaskResultDialog();
@@ -492,8 +703,9 @@ const formatDate = value => {
 };
 
 const taskDateSummary = task => {
-  if (task.dueAt) {
-    return t('CRM.DEALS.TASKS.DUE_AT', { date: formatDate(task.dueAt) });
+  const dueDate = taskDueDate(task);
+  if (dueDate) {
+    return t('CRM.DEALS.TASKS.DUE_AT', { date: formatDate(dueDate) });
   }
 
   if (task.startAt) {
@@ -506,6 +718,11 @@ const taskDateSummary = task => {
 watch(
   () => props.deal?.id,
   () => {
+    taskLoadGeneration.value += 1;
+    pendingTaskRealtimeUpdates.clear();
+    taskRealtimeSequence = 0;
+    tasks.value = [];
+    closeTaskDialog();
     loadTasks();
   },
   { immediate: true }
@@ -537,20 +754,66 @@ defineExpose({ openCreateTaskDialog, loadTasks });
         </p>
       </div>
 
-      <Button
-        v-if="shouldShowCreateActions"
-        v-tooltip.top="
-          createActionIconOnly ? $t('CRM.DEALS.TASKS.ADD') : undefined
-        "
-        size="sm"
-        color="slate"
-        variant="ghost"
-        icon="i-lucide-plus"
-        :label="createActionIconOnly ? '' : $t('CRM.DEALS.TASKS.ADD')"
-        :disabled="!hasDeal"
-        @click="openCreateTaskDialog"
-      />
+      <div
+        v-if="shouldShowWaitingAction || shouldShowCreateActions"
+        class="flex items-center gap-1"
+      >
+        <Button
+          v-if="shouldShowWaitingAction"
+          size="sm"
+          color="slate"
+          variant="ghost"
+          :icon="isDealWaiting ? 'i-lucide-play' : 'i-lucide-pause'"
+          :label="
+            createActionIconOnly
+              ? ''
+              : isDealWaiting
+                ? $t('CRM.DEALS.WAITING.CLEAR_ACTION')
+                : $t('CRM.DEALS.WAITING.SET_ACTION')
+          "
+          :disabled="!hasDeal || ui.isSaving"
+          @click="isDealWaiting ? clearWaiting() : openWaitingDialog()"
+        />
+        <Button
+          v-tooltip.top="
+            createActionIconOnly ? $t('CRM.DEALS.TASKS.ADD') : undefined
+          "
+          size="sm"
+          color="slate"
+          variant="ghost"
+          icon="i-lucide-plus"
+          :label="createActionIconOnly ? '' : $t('CRM.DEALS.TASKS.ADD')"
+          :disabled="!hasDeal"
+          @click="openCreateTaskDialog"
+        />
+      </div>
     </header>
+
+    <div
+      v-if="isDealWaiting"
+      class="flex items-start gap-2 border-b border-n-weak px-4 py-3"
+      :class="
+        waitingKind === 'waitingExpired'
+          ? 'bg-n-ruby-3 text-n-ruby-11'
+          : 'bg-n-amber-3 text-n-amber-11'
+      "
+    >
+      <Icon icon="i-lucide-clock-3" class="mt-0.5 size-4 shrink-0" />
+      <div class="min-w-0">
+        <p class="mb-0 text-xs font-medium">
+          {{
+            waitingKind === 'waitingExpired'
+              ? $t('CRM.DEALS.WAITING.EXPIRED', {
+                  date: formatDate(deal.waitingUntil),
+                })
+              : $t('CRM.DEALS.WAITING.ACTIVE', {
+                  date: formatDate(deal.waitingUntil),
+                })
+          }}
+        </p>
+        <p class="mb-0 truncate text-[11px]">{{ deal.waitingReason }}</p>
+      </div>
+    </div>
 
     <div
       v-if="ui.isLoading"
@@ -760,9 +1023,47 @@ defineExpose({ openCreateTaskDialog, loadTasks });
     </div>
   </Dialog>
 
+  <Dialog
+    ref="waitingDialogRef"
+    width="md"
+    :title="$t('CRM.DEALS.WAITING.TITLE')"
+    :description="$t('CRM.DEALS.WAITING.DESCRIPTION')"
+    :confirm-button-label="$t('CRM.DEALS.WAITING.CONFIRM')"
+    :disable-confirm-button="!waitingForm.until || !waitingForm.reason.trim()"
+    :is-loading="ui.isSaving"
+    @confirm="saveWaiting"
+  >
+    <div class="grid gap-4">
+      <SchedulingDateTimeField
+        :label="$t('CRM.DEALS.WAITING.UNTIL')"
+        :model-value="waitingForm.until"
+        type="datetime"
+        @update:model-value="waitingForm.until = $event"
+      />
+      <TextArea
+        :label="$t('CRM.DEALS.WAITING.REASON')"
+        :model-value="waitingForm.reason"
+        auto-height
+        @update:model-value="waitingForm.reason = $event"
+      />
+      <label
+        v-if="canManageTasks"
+        class="flex items-center gap-2 text-sm text-n-slate-12"
+      >
+        <input
+          v-model="waitingForm.createWakeUpTask"
+          type="checkbox"
+          class="size-4 rounded border-n-strong text-n-brand focus:ring-n-brand"
+        />
+        <span>{{ $t('CRM.DEALS.WAITING.CREATE_WAKE_UP_TASK') }}</span>
+      </label>
+    </div>
+  </Dialog>
+
   <CrmTaskCompletionDialog
     ref="resultDialogRef"
     :is-loading="ui.isSaving"
+    :task-types="taskTypes"
     @confirm="saveTaskResult"
   />
 </template>

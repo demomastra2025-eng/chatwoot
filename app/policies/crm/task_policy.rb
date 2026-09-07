@@ -23,6 +23,13 @@ class Crm::TaskPolicy < Crm::BasePolicy
     task_manage_access?
   end
 
+  alias save_form? update?
+  alias complete? change_status?
+  alias cancel? change_status?
+  alias reopen? change_status?
+  alias reschedule? change_status?
+  alias assign? change_status?
+
   def archive?
     task_manage_access?
   end

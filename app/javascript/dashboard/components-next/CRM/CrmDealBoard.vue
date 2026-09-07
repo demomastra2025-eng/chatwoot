@@ -11,7 +11,6 @@ import { useI18n } from 'vue-i18n';
 import Draggable from 'vuedraggable';
 
 import CrmCustomFieldsSummary from './CrmCustomFieldsSummary.vue';
-import CrmDealOwnerMenu from './CrmDealOwnerMenu.vue';
 import { formatDealAmount, resolveDealAmountMajor } from './dealAmount';
 import { DEFAULT_STAGE_COLOR } from 'dashboard/stores/crm/stageColors';
 
@@ -78,7 +77,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
-  'changeOwner',
   'changeStage',
   'loadMore',
   'selectDeal',
@@ -89,6 +87,12 @@ const { locale, t } = useI18n();
 const boardColumns = ref({});
 const boardScrollContainer = ref(null);
 const canDragDeals = computed(() => props.canManage && props.canReorder);
+const ownerNameById = computed(() =>
+  props.owners.reduce((result, owner) => {
+    result[Number(owner.value)] = owner.label;
+    return result;
+  }, {})
+);
 const localeCode = computed(
   () => locale.value?.replace(/_/g, '-') || undefined
 );
@@ -242,6 +246,51 @@ const dealSubtitle = deal => {
   return deal.primaryContact?.name || '';
 };
 
+const taskNextActionLabel = nextAction => {
+  const params = { title: nextAction.task?.title };
+  if (nextAction.state === 'overdue') {
+    return t('CRM.DEALS.NEXT_ACTION.OVERDUE', params);
+  }
+  if (nextAction.state === 'today') {
+    return t('CRM.DEALS.NEXT_ACTION.TODAY', params);
+  }
+  if (nextAction.state === 'unscheduled') {
+    return t('CRM.DEALS.NEXT_ACTION.UNSCHEDULED', params);
+  }
+
+  return t('CRM.DEALS.NEXT_ACTION.FUTURE', params);
+};
+
+const nextActionLabel = deal => {
+  const nextAction = deal.nextAction || {};
+  if (nextAction.kind === 'waiting') {
+    return t('CRM.DEALS.NEXT_ACTION.WAITING', {
+      date: formatDateLabel(deal.waitingUntil),
+    });
+  }
+  if (nextAction.kind === 'waitingExpired') {
+    return t('CRM.DEALS.NEXT_ACTION.WAITING_EXPIRED');
+  }
+  if (nextAction.kind === 'task') {
+    return taskNextActionLabel(nextAction);
+  }
+
+  return t('CRM.DEALS.NEXT_ACTION.NONE');
+};
+
+const nextActionClass = deal => {
+  const { kind, state } = deal.nextAction || {};
+  if (kind === 'waitingExpired' || state === 'overdue') {
+    return 'bg-n-ruby-3 text-n-ruby-11';
+  }
+  if (kind === 'waiting' || state === 'today') {
+    return 'bg-n-amber-3 text-n-amber-11';
+  }
+  if (kind === 'task') return 'bg-n-blue-3 text-n-blue-11';
+
+  return 'bg-n-alpha-black2 text-n-slate-10';
+};
+
 const emitStageChange = (deal, stageId, position) => {
   const nextStageId = Number(stageId);
   const nextPosition = Number(position);
@@ -272,16 +321,6 @@ const handleColumnChange = (event, stageId) => {
 
   const deal = boardColumns.value[Number(stageId)][event.added.newIndex];
   emitStageChange(deal, stageId, resolveBoardPosition(event.added.newIndex));
-};
-
-const handleOwnerChange = (deal, ownerId) => {
-  const nextOwnerId = Number(ownerId);
-
-  if (!nextOwnerId || Number(deal.ownerId) === nextOwnerId) {
-    return;
-  }
-
-  emit('changeOwner', { deal, ownerId: nextOwnerId });
 };
 </script>
 
@@ -356,7 +395,7 @@ const handleOwnerChange = (deal, ownerId) => {
                 <button
                   type="button"
                   data-test="open-deal"
-                  class="min-w-0 text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
+                  class="min-w-0 flex-1 overflow-hidden text-left focus-visible:rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-n-brand"
                 >
                   <div class="flex min-w-0 items-center gap-1.5">
                     <h4
@@ -371,7 +410,7 @@ const handleOwnerChange = (deal, ownerId) => {
                       {{ $t('CRM.DEALS.AI_BADGE') }}
                     </span>
                   </div>
-                  <p class="mb-0 mt-0.5 text-[10px] text-n-slate-11">
+                  <p class="mb-0 mt-0.5 truncate text-[10px] text-n-slate-11">
                     {{ dealSubtitle(element) || $t('CRM.GENERAL.EMPTY_VALUE') }}
                   </p>
                 </button>
@@ -385,12 +424,14 @@ const handleOwnerChange = (deal, ownerId) => {
 
               <div class="mt-2 flex items-start justify-between gap-2">
                 <div class="flex min-w-0 items-center gap-2">
-                  <CrmDealOwnerMenu
-                    :disabled="!canManage"
-                    :model-value="element.ownerId"
-                    :owners="owners"
-                    @update:model-value="handleOwnerChange(element, $event)"
-                  />
+                  <span
+                    class="max-w-[8.5rem] truncate rounded-md bg-n-alpha-black2 px-1.5 py-1 text-[9px] font-medium text-n-slate-12"
+                  >
+                    {{
+                      ownerNameById[element.ownerId] ||
+                      $t('CRM.GENERAL.EMPTY_VALUE')
+                    }}
+                  </span>
                   <span
                     v-if="element.archivedAt"
                     class="rounded-full bg-n-amber-9/10 px-2 py-1 text-[10px] font-medium text-n-amber-11"
@@ -406,6 +447,13 @@ const handleOwnerChange = (deal, ownerId) => {
                   }}
                 </span>
               </div>
+
+              <p
+                class="mb-0 mt-2 truncate rounded-md px-1.5 py-1 text-[9px] font-medium"
+                :class="nextActionClass(element)"
+              >
+                {{ nextActionLabel(element) }}
+              </p>
 
               <CrmCustomFieldsSummary
                 class="mt-2"

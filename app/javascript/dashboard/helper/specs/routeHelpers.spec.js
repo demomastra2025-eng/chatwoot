@@ -100,9 +100,7 @@ describe('#defaultRedirectPage', () => {
         },
       ],
     };
-    expect(defaultRedirectPage(to, permissions, user)).toBe(
-      'accounts/2/crm/deals'
-    );
+    expect(defaultRedirectPage(to, permissions, user)).toBe('accounts/2/deals');
   });
 
   it('should return crm settings route for crm settings users when crm runtime is enabled', () => {

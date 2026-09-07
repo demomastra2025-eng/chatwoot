@@ -10,8 +10,11 @@ class Captain::Tools::Copilot::CreateTaskService < Captain::Tools::Copilot::Base
   param :outcome, type: :string, desc: 'Task outcome/result, for example held, no_show, answered, sent, or not_done', required: false
   param :outcome_note, type: :string, desc: 'Task result details: what was done or why it was not done', required: false
   param :priority, type: :string, desc: 'Task priority: low, medium, high, or urgent', required: false
+  param :all_day, type: :boolean, desc: 'Use a date-only all-day deadline', required: false
   param :start_at, type: :string, desc: 'Task start datetime', required: false
   param :due_at, type: :string, desc: 'Task due datetime', required: false
+  param :due_on, type: :string, desc: 'Task due date (YYYY-MM-DD) when all_day is true', required: false
+  param :schedule_timezone, type: :string, desc: 'IANA timezone for task scheduling', required: false
   param :deal_id, type: :integer, desc: 'Optional positive account CRM deal ID to link. Omit when unknown.', required: false
   param :originating_conversation_id,
         type: :integer,
@@ -29,38 +32,8 @@ class Captain::Tools::Copilot::CreateTaskService < Captain::Tools::Copilot::Base
               'only returned keys are accepted, and select/multiselect values must match option.value exactly.',
         required: false
 
-  def execute(
-    title:,
-    description: nil,
-    activity_type: nil,
-    outcome: nil,
-    outcome_note: nil,
-    priority: nil,
-    start_at: nil,
-    due_at: nil,
-    deal_id: nil,
-    originating_conversation_id: nil,
-    status_id: nil,
-    assignee_id: nil,
-    team_id: nil,
-    custom_attributes: nil
-  )
-    task = task_operations.create_task(
-      title: title,
-      description: description,
-      activity_type: activity_type,
-      outcome: outcome,
-      outcome_note: outcome_note,
-      priority: priority,
-      start_at: start_at,
-      due_at: due_at,
-      deal_id: deal_id,
-      originating_conversation_id: originating_conversation_id,
-      status_id: status_id,
-      assignee_id: assignee_id,
-      team_id: team_id,
-      custom_attributes: custom_attributes
-    )
+  def execute(title:, **attributes)
+    task = task_operations.create_task(title: title, **attributes)
     formatted_payload(::Crm::ToolPayloadBuilder.task_payload(action: 'create_task', task: task))
   rescue StandardError => e
     tool_failure(e)

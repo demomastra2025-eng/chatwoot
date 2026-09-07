@@ -1,144 +1,138 @@
 class Crm::Tasks::UpsertService < Crm::BaseWriteService
-  def initialize(account:, params:, task: nil, actor: nil)
+  include Crm::Tasks::UpsertAttributes
+  include Crm::Tasks::UpsertRelations
+
+  def initialize(account:, params:, task: nil, actor: nil, **publication_options)
     @task = task || account.crm_tasks.new
+    @broadcast_linked_deal = publication_options.fetch(:broadcast_linked_deal, true)
+    @broadcast = publication_options.fetch(:broadcast, true)
+    assert_known_publication_options!(publication_options)
     super(account: account, params: params, record: @task, actor: actor)
   end
 
   def perform
-    ApplicationRecord.transaction do
-      bootstrap_defaults!
-      assert_lock_version!
-
-      new_record = task.new_record?
-      requested_position = resolve_requested_position
-      deal = resolve_optional_record(:deal_id, account.crm_deals, current: task.deal)
-      status = resolve_status!
-      originating_conversation = resolve_originating_conversation(deal: deal)
-      assignee = resolve_assignee(deal: deal, originating_conversation: originating_conversation)
-      creator = resolve_optional_record(:creator_id, account.users, current: task.creator || actor)
-      team = resolve_team(deal: deal)
-      external_ref = resolve_optional_text(:external_ref, current: task.external_ref)
-      idempotency_key = resolve_optional_text(:idempotency_key, current: task.idempotency_key)
-
-      ensure_unique_reference!(scope: account.crm_tasks, attribute: :external_ref, value: external_ref, code: 'DUPLICATE_EXTERNAL_REF')
-      ensure_unique_reference!(scope: account.crm_tasks, attribute: :idempotency_key, value: idempotency_key, code: 'DUPLICATE_IDEMPOTENCY_KEY')
-
-      custom_attributes = field_catalog(deal: deal).resolve_custom_attributes(
-        current_attributes: task.custom_attributes,
-        incoming_attributes: params[:custom_attributes],
-        apply_defaults: new_record
-      )
-
-      task.assign_attributes(
-        account: account,
-        deal: deal,
-        status: status,
-        assignee: assignee,
-        creator: creator,
-        team: team,
-        originating_conversation: originating_conversation,
-        title: resolve_title,
-        description: resolve_optional_text(:description, current: task.description),
-        activity_type: resolve_optional_text(:activity_type, current: task.activity_type || 'task'),
-        outcome: resolve_optional_text(:outcome, current: task.outcome),
-        outcome_note: resolve_optional_text(:outcome_note, current: task.outcome_note),
-        priority: resolve_optional_text(:priority, current: task.priority || 'medium'),
-        start_at: resolve_datetime(:start_at, current: task.start_at),
-        due_at: resolve_datetime(:due_at, current: task.due_at),
-        completed_at: resolve_completed_at(status: status),
-        external_ref: external_ref,
-        idempotency_key: idempotency_key,
-        custom_attributes: custom_attributes
-      )
-      task.position = requested_position if requested_position.present?
-      task.save!
-      auto_apply_default_touch_plan! if new_record
-      sync_related_touches!
-      reposition_task!(requested_position) if requested_position.present?
-
-      write_event!(new_record: new_record)
-      notify_assignment!(new_record: new_record)
-
-      task.reload
-    end
+    new_record = task.new_record?
+    saved_task = ApplicationRecord.transaction { persist_task!(new_record) }
+    Crm::AfterCommit.run { publish_saved_task!(saved_task, new_record: new_record) } if @broadcast
+    saved_task
   end
 
   private
 
-  attr_reader :task
+  attr_reader :task, :broadcast_linked_deal
+
+  def assert_known_publication_options!(options)
+    unknown_options = options.keys - %i[broadcast broadcast_linked_deal]
+    raise ArgumentError, "Unknown publication options: #{unknown_options.join(', ')}" if unknown_options.present?
+  end
+
+  def persist_task!(new_record)
+    bootstrap_defaults!
+    assert_lock_version!
+    resolve_task_context!
+    validate_task_references!
+    task.assign_attributes(task_attributes(new_record))
+    task.position = @requested_position if @requested_position.present?
+    task.save!
+    finalize_task!(new_record)
+  end
+
+  def resolve_task_context!
+    @requested_position = resolve_requested_position
+    @deal = resolve_optional_record(:deal_id, account.crm_deals, current: task.deal)
+    @status = resolve_status!
+    @task_type = resolve_task_type!
+    @task_outcome = resolve_task_outcome(@task_type)
+    @originating_conversation = resolve_originating_conversation(deal: @deal)
+    @external_ref = resolve_optional_text(:external_ref, current: task.external_ref)
+    @idempotency_key = resolve_optional_text(:idempotency_key, current: task.idempotency_key)
+  end
+
+  def validate_task_references!
+    ensure_unique_reference!(
+      scope: account.crm_tasks, attribute: :external_ref, value: @external_ref, code: 'DUPLICATE_EXTERNAL_REF'
+    )
+    ensure_unique_reference!(
+      scope: account.crm_tasks, attribute: :idempotency_key, value: @idempotency_key, code: 'DUPLICATE_IDEMPOTENCY_KEY'
+    )
+  end
+
+  def task_attributes(new_record)
+    relationship_attributes
+      .merge(content_attributes)
+      .merge(schedule_attributes)
+      .merge(reference_attributes)
+      .merge(custom_attributes: resolved_custom_attributes(new_record))
+  end
+
+  def relationship_attributes
+    {
+      account: account,
+      deal: @deal,
+      status: @status,
+      task_type: @task_type,
+      task_outcome: @task_outcome,
+      assignee: resolve_assignee(deal: @deal, originating_conversation: @originating_conversation),
+      creator: resolve_optional_record(:creator_id, account.users, current: task.creator || actor),
+      team: resolve_team(deal: @deal),
+      originating_conversation: @originating_conversation
+    }
+  end
+
+  def content_attributes
+    {
+      title: resolve_title,
+      description: resolve_optional_text(:description, current: task.description),
+      activity_type: @task_type.code,
+      outcome: @task_outcome&.code,
+      outcome_note: resolve_optional_text(:outcome_note, current: task.outcome_note),
+      priority: resolve_optional_text(:priority, current: task.priority || 'medium')
+    }
+  end
+
+  def schedule_attributes
+    {
+      all_day: resolve_all_day,
+      due_on: resolve_due_on,
+      schedule_timezone: resolve_schedule_timezone,
+      start_at: resolve_datetime(:start_at, current: task.start_at),
+      due_at: resolve_datetime(:due_at, current: task.due_at),
+      completed_at: resolve_completed_at(status: @status)
+    }
+  end
+
+  def reference_attributes
+    { external_ref: @external_ref, idempotency_key: @idempotency_key }
+  end
+
+  def resolved_custom_attributes(new_record)
+    field_catalog(deal: @deal).resolve_custom_attributes(
+      current_attributes: task.custom_attributes,
+      incoming_attributes: params[:custom_attributes],
+      apply_defaults: new_record
+    )
+  end
+
+  def finalize_task!(new_record)
+    auto_apply_default_touch_plan! if new_record
+    sync_related_touches!
+    reposition_task!(@requested_position) if @requested_position.present?
+    write_event!(new_record: new_record)
+    notify_assignment!(new_record: new_record)
+    task.reload
+  end
+
+  def publish_saved_task!(saved_task, new_record:)
+    dispatch_crm_task_realtime_event!(
+      new_record ? Events::Types::CRM_TASK_CREATED : Events::Types::CRM_TASK_UPDATED,
+      saved_task,
+      meta: { event_type: new_record ? 'task_created' : 'task_updated' }
+    )
+    dispatch_linked_deal_update!(saved_task, event_type: 'task_changed') if broadcast_linked_deal
+  end
 
   def bootstrap_defaults!
     ::Crm::Bootstrap::AccountService.new(account: account).perform if account.feature_enabled?('crm_tasks')
-  end
-
-  def field_catalog(deal:)
-    context = deal.present? ? 'deal_task' : 'standalone_task'
-    ::Crm::FieldCatalog.new(account: account, entity_kind: 'task', context: context)
-  end
-
-  def resolve_assignee(deal:, originating_conversation:)
-    return resolve_optional_record(:assignee_id, account.users, current: task.assignee) if params.key?(:assignee_id)
-    return task.assignee if task.persisted?
-
-    deal&.owner || originating_conversation&.contact&.owner || originating_conversation&.assignee
-  end
-
-  def resolve_originating_conversation(deal:)
-    if params.key?(:originating_conversation_id)
-      return resolve_optional_record(
-        :originating_conversation_id,
-        account.conversations,
-        current: task.originating_conversation
-      )
-    end
-
-    return task.originating_conversation if task.persisted?
-
-    deal&.originating_conversation
-  end
-
-  def resolve_completed_at(status:)
-    return task.completed_at unless task.new_record? || params.key?(:status_id)
-
-    status.category_done? ? Time.zone.now : nil
-  end
-
-  def resolve_status!
-    return account.crm_task_statuses.find(params[:status_id]) if params.key?(:status_id) && params[:status_id].present?
-    return task.status if task.persisted?
-
-    account.crm_task_statuses.active.find_by(default: true) ||
-      account.crm_task_statuses.active.where(category: 'open').ordered.first ||
-      account.crm_task_statuses.active.ordered.first ||
-      validation_error!('status_id', 'must reference an active status')
-  end
-
-  def resolve_team(deal:)
-    if deal.present?
-      requested_team = resolve_optional_record(:team_id, account.teams, current: deal.team)
-      validation_error!('team_id', 'is inherited from deal') if requested_team != deal.team
-
-      return deal.team
-    end
-
-    return resolve_optional_record(:team_id, account.teams, current: task.team) if params.key?(:team_id)
-    return nil if params.key?(:deal_id)
-    return task.team if task.persisted?
-
-    nil
-  end
-
-  def resolve_title
-    title = resolve_optional_text(:title, current: task.title)
-    validation_error!('title', 'is required') if title.blank?
-
-    title
-  end
-
-  def resolve_requested_position
-    return unless params.key?(:position)
-
-    resolve_integer(:position, current: task.position, allow_nil: true)
   end
 
   def reposition_task!(requested_position)
@@ -157,7 +151,8 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       eventable: task,
       actor: actor,
       event_type: new_record ? 'task_created' : 'task_updated',
-      meta: { changes: filtered_previous_changes }
+      meta: { changes: filtered_previous_changes },
+      command_key: new_record ? params[:idempotency_key] : nil
     )
   end
 

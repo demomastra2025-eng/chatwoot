@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_07_030000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1411,6 +1411,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.integer "position", default: 0, null: false
     t.bigint "originating_communication_thread_id"
     t.jsonb "closing_reasons", default: [], null: false
+    t.datetime "waiting_until"
+    t.text "waiting_reason"
+    t.datetime "waiting_started_at"
+    t.bigint "waiting_set_by_id"
     t.index ["account_id", "company_id"], name: "index_crm_deals_on_account_company"
     t.index ["account_id", "expected_close_on", "updated_at", "id"], name: "index_crm_deals_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
     t.index ["account_id", "external_ref"], name: "index_crm_deals_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
@@ -1420,6 +1424,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.index ["account_id", "pipeline_id", "stage_id", "owner_id", "expected_close_on"], name: "index_crm_deals_on_active_list_dimensions", where: "(archived_at IS NULL)"
     t.index ["account_id", "stage_id", "position", "id"], name: "index_crm_deals_on_account_stage_position"
     t.index ["account_id", "team_id"], name: "index_crm_deals_on_account_team"
+    t.index ["account_id", "waiting_until"], name: "index_crm_deals_on_active_waiting_until", where: "((waiting_until IS NOT NULL) AND (archived_at IS NULL))"
     t.index ["account_id"], name: "index_crm_deals_on_account_id"
     t.index ["company_id"], name: "index_crm_deals_on_company_id"
     t.index ["creator_id"], name: "index_crm_deals_on_creator_id"
@@ -1430,6 +1435,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.index ["pipeline_id"], name: "index_crm_deals_on_pipeline_id"
     t.index ["stage_id"], name: "index_crm_deals_on_stage_id"
     t.index ["team_id"], name: "index_crm_deals_on_team_id"
+    t.index ["waiting_set_by_id"], name: "index_crm_deals_on_waiting_set_by_id"
+    t.check_constraint "waiting_until IS NULL AND waiting_reason IS NULL AND waiting_started_at IS NULL OR waiting_until IS NOT NULL AND length(btrim(waiting_reason)) > 0 AND waiting_started_at IS NOT NULL", name: "crm_deals_waiting_state_complete"
   end
 
   create_table "crm_events", force: :cascade do |t|
@@ -1440,9 +1447,27 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.string "event_type", null: false
     t.jsonb "meta", default: {}, null: false
     t.datetime "created_at", null: false
+    t.string "source", default: "system", null: false
+    t.string "actor_kind"
+    t.jsonb "before_data", default: {}, null: false
+    t.jsonb "after_data", default: {}, null: false
+    t.uuid "correlation_id", null: false
+    t.uuid "causation_id"
+    t.integer "schema_version", default: 1, null: false
+    t.string "command_key"
+    t.string "performed_by_type"
+    t.bigint "performed_by_id"
+    t.datetime "published_at"
+    t.integer "publication_attempts", default: 0, null: false
+    t.text "publication_error"
+    t.datetime "publication_next_attempt_at", default: -> { "CURRENT_TIMESTAMP" }, null: false
+    t.index ["account_id", "correlation_id"], name: "index_crm_events_on_account_id_and_correlation_id"
     t.index ["account_id", "eventable_type", "eventable_id", "created_at"], name: "index_crm_events_on_account_eventable_created_at"
+    t.index ["account_id", "eventable_type", "eventable_id", "event_type", "command_key"], name: "index_crm_events_on_command_dedupe", unique: true, where: "(command_key IS NOT NULL)"
     t.index ["account_id"], name: "index_crm_events_on_account_id"
     t.index ["actor_id"], name: "index_crm_events_on_actor_id"
+    t.index ["publication_next_attempt_at", "id"], name: "idx_crm_events_ready_for_publication", where: "(published_at IS NULL)"
+    t.index ["published_at", "id"], name: "index_crm_events_on_unpublished", where: "(published_at IS NULL)"
   end
 
   create_table "crm_field_definitions", force: :cascade do |t|
@@ -1475,9 +1500,54 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.boolean "auto_create_deal_on_channel_contact", default: false, null: false
+    t.boolean "restrict_stage_skipping", default: false, null: false
+    t.boolean "restrict_backward_move", default: false, null: false
+    t.boolean "allow_stage_rule_override", default: false, null: false
     t.index ["account_id", "code"], name: "index_crm_pipelines_on_account_id_and_code", unique: true
     t.index ["account_id"], name: "index_crm_pipelines_on_account_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["account_id"], name: "index_crm_pipelines_on_account_id"
+  end
+
+  create_table "crm_stage_field_requirements", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "stage_id", null: false
+    t.bigint "field_definition_id"
+    t.string "field_key", null: false
+    t.boolean "required", default: true, null: false
+    t.jsonb "validation", default: {}, null: false
+    t.jsonb "role_exemptions", default: [], null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "stage_id"], name: "index_crm_stage_requirements_on_account_and_stage"
+    t.index ["account_id"], name: "index_crm_stage_field_requirements_on_account_id"
+    t.index ["field_definition_id"], name: "index_crm_stage_field_requirements_on_field_definition_id"
+    t.index ["stage_id", "field_key"], name: "index_crm_stage_requirements_on_stage_and_field", unique: true
+    t.index ["stage_id"], name: "index_crm_stage_field_requirements_on_stage_id"
+  end
+
+  create_table "crm_stage_visits", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "deal_id", null: false
+    t.bigint "pipeline_id", null: false
+    t.bigint "stage_id", null: false
+    t.datetime "entered_at", null: false
+    t.datetime "exited_at"
+    t.boolean "estimated", default: false, null: false
+    t.datetime "reliable_since", null: false
+    t.string "pipeline_name", null: false
+    t.string "stage_name", null: false
+    t.string "stage_outcome", null: false
+    t.uuid "correlation_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "entered_at"], name: "index_crm_stage_visits_on_account_id_and_entered_at"
+    t.index ["account_id"], name: "index_crm_stage_visits_on_account_id"
+    t.index ["correlation_id"], name: "index_crm_stage_visits_on_correlation_id"
+    t.index ["deal_id"], name: "index_crm_stage_visits_on_active_deal", unique: true, where: "(exited_at IS NULL)"
+    t.index ["deal_id"], name: "index_crm_stage_visits_on_deal_id"
+    t.index ["pipeline_id"], name: "index_crm_stage_visits_on_pipeline_id"
+    t.index ["stage_id"], name: "index_crm_stage_visits_on_stage_id"
+    t.check_constraint "exited_at IS NULL OR exited_at >= entered_at", name: "crm_stage_visits_valid_interval"
   end
 
   create_table "crm_stages", force: :cascade do |t|
@@ -1499,8 +1569,27 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
+    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY ((ARRAY['won'::character varying, 'lost'::character varying])::text[])))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
+  end
+
+  create_table "crm_task_outcomes", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "task_type_id", null: false
+    t.string "name", null: false
+    t.string "code", null: false
+    t.integer "position", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.boolean "default", default: false, null: false
+    t.boolean "requires_note", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "task_type_id"], name: "index_crm_task_outcomes_on_account_id_and_task_type_id"
+    t.index ["account_id"], name: "index_crm_task_outcomes_on_account_id"
+    t.index ["task_type_id", "code"], name: "index_crm_task_outcomes_on_task_type_id_and_code", unique: true
+    t.index ["task_type_id"], name: "index_crm_task_outcomes_on_task_type_id"
+    t.index ["task_type_id"], name: "index_crm_task_outcomes_on_type_default", unique: true, where: "((\"default\" = true) AND (active = true))"
   end
 
   create_table "crm_task_statuses", force: :cascade do |t|
@@ -1517,6 +1606,21 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.index ["account_id", "code"], name: "index_crm_task_statuses_on_account_id_and_code", unique: true
     t.index ["account_id"], name: "index_crm_task_statuses_on_account_default_open", unique: true, where: "((\"default\" = true) AND ((category)::text = 'open'::text))"
     t.index ["account_id"], name: "index_crm_task_statuses_on_account_id"
+  end
+
+  create_table "crm_task_types", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.string "code", null: false
+    t.string "icon", default: "i-lucide-list-todo", null: false
+    t.integer "position", default: 0, null: false
+    t.boolean "active", default: true, null: false
+    t.boolean "default", default: false, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "code"], name: "index_crm_task_types_on_account_id_and_code", unique: true
+    t.index ["account_id"], name: "index_crm_task_types_on_account_default", unique: true, where: "((\"default\" = true) AND (active = true))"
+    t.index ["account_id"], name: "index_crm_task_types_on_account_id"
   end
 
   create_table "crm_tasks", force: :cascade do |t|
@@ -1540,28 +1644,47 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "originating_conversation_id"
-    t.integer "position", default: 0, null: false
+    t.integer "position", default: 1, null: false
     t.string "activity_type", default: "task", null: false
     t.string "outcome"
     t.text "outcome_note"
+    t.boolean "all_day", default: false, null: false
+    t.date "due_on"
+    t.string "schedule_timezone", default: "Asia/Almaty", null: false
+    t.bigint "task_type_id", null: false
+    t.bigint "task_outcome_id"
+    t.bigint "completed_by_id"
+    t.datetime "cancelled_at"
+    t.bigint "cancelled_by_id"
+    t.text "cancellation_reason"
+    t.integer "reschedule_count", default: 0, null: false
     t.index ["account_id", "activity_type", "due_at"], name: "index_crm_tasks_on_account_activity_type_due_at"
     t.index ["account_id", "deal_id", "activity_type"], name: "index_crm_tasks_on_account_deal_activity_type"
     t.index ["account_id", "deal_id"], name: "index_crm_tasks_on_account_deal"
     t.index ["account_id", "due_at", "updated_at", "id"], name: "index_crm_tasks_on_active_ordering", order: { updated_at: :desc, id: :desc }, where: "(archived_at IS NULL)"
+    t.index ["account_id", "due_on"], name: "index_crm_tasks_on_active_due_on", where: "(archived_at IS NULL)"
     t.index ["account_id", "external_ref"], name: "index_crm_tasks_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "index_crm_tasks_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "originating_conversation_id"], name: "index_crm_tasks_on_account_originating_conversation"
     t.index ["account_id", "status_id", "assignee_id", "due_at"], name: "index_crm_tasks_on_active_list_dimensions", where: "(archived_at IS NULL)"
     t.index ["account_id", "status_id", "position", "id"], name: "index_crm_tasks_on_account_status_position"
+    t.index ["account_id", "task_type_id", "due_at"], name: "index_crm_tasks_on_account_type_due_at"
     t.index ["account_id", "team_id"], name: "index_crm_tasks_on_account_team"
     t.index ["account_id"], name: "index_crm_tasks_on_account_id"
     t.index ["assignee_id"], name: "index_crm_tasks_on_assignee_id"
+    t.index ["cancelled_by_id"], name: "index_crm_tasks_on_cancelled_by_id"
+    t.index ["completed_by_id"], name: "index_crm_tasks_on_completed_by_id"
     t.index ["creator_id"], name: "index_crm_tasks_on_creator_id"
     t.index ["custom_attributes"], name: "index_crm_tasks_on_custom_attributes", using: :gin
     t.index ["deal_id"], name: "index_crm_tasks_on_deal_id"
     t.index ["originating_conversation_id"], name: "index_crm_tasks_on_originating_conversation_id"
     t.index ["status_id"], name: "index_crm_tasks_on_status_id"
+    t.index ["task_outcome_id"], name: "index_crm_tasks_on_task_outcome_id"
+    t.index ["task_type_id"], name: "index_crm_tasks_on_task_type_id"
     t.index ["team_id"], name: "index_crm_tasks_on_team_id"
+    t.check_constraint "all_day = true AND due_on IS NOT NULL AND due_at IS NULL AND start_at IS NULL OR all_day = false AND due_on IS NULL", name: "crm_tasks_deadline_shape"
+    t.check_constraint "cancelled_at IS NULL AND cancellation_reason IS NULL OR cancelled_at IS NOT NULL AND length(btrim(cancellation_reason)) > 0", name: "crm_tasks_cancellation_state_complete"
+    t.check_constraint "reschedule_count >= 0", name: "crm_tasks_reschedule_count_non_negative"
   end
 
   create_table "csat_survey_responses", force: :cascade do |t|
@@ -3586,19 +3709,34 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_01_150000) do
   add_foreign_key "crm_deals", "teams"
   add_foreign_key "crm_deals", "users", column: "creator_id"
   add_foreign_key "crm_deals", "users", column: "owner_id"
+  add_foreign_key "crm_deals", "users", column: "waiting_set_by_id", on_delete: :nullify
   add_foreign_key "crm_events", "accounts"
   add_foreign_key "crm_events", "users", column: "actor_id"
   add_foreign_key "crm_field_definitions", "accounts"
   add_foreign_key "crm_pipelines", "accounts"
+  add_foreign_key "crm_stage_field_requirements", "accounts"
+  add_foreign_key "crm_stage_field_requirements", "crm_field_definitions", column: "field_definition_id"
+  add_foreign_key "crm_stage_field_requirements", "crm_stages", column: "stage_id"
+  add_foreign_key "crm_stage_visits", "accounts"
+  add_foreign_key "crm_stage_visits", "crm_deals", column: "deal_id"
+  add_foreign_key "crm_stage_visits", "crm_pipelines", column: "pipeline_id"
+  add_foreign_key "crm_stage_visits", "crm_stages", column: "stage_id"
   add_foreign_key "crm_stages", "accounts"
   add_foreign_key "crm_stages", "crm_pipelines", column: "pipeline_id"
+  add_foreign_key "crm_task_outcomes", "accounts"
+  add_foreign_key "crm_task_outcomes", "crm_task_types", column: "task_type_id"
   add_foreign_key "crm_task_statuses", "accounts"
+  add_foreign_key "crm_task_types", "accounts"
   add_foreign_key "crm_tasks", "accounts"
   add_foreign_key "crm_tasks", "conversations", column: "originating_conversation_id"
   add_foreign_key "crm_tasks", "crm_deals", column: "deal_id"
+  add_foreign_key "crm_tasks", "crm_task_outcomes", column: "task_outcome_id"
   add_foreign_key "crm_tasks", "crm_task_statuses", column: "status_id"
+  add_foreign_key "crm_tasks", "crm_task_types", column: "task_type_id"
   add_foreign_key "crm_tasks", "teams"
   add_foreign_key "crm_tasks", "users", column: "assignee_id"
+  add_foreign_key "crm_tasks", "users", column: "cancelled_by_id", on_delete: :nullify
+  add_foreign_key "crm_tasks", "users", column: "completed_by_id", on_delete: :nullify
   add_foreign_key "crm_tasks", "users", column: "creator_id"
   add_foreign_key "inboxes", "portals"
   add_foreign_key "kaspi_pay_payments", "accounts"

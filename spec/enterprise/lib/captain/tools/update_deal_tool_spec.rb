@@ -39,7 +39,7 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
     expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved deal', 'pipeline_id' => target_pipeline.id, 'stage_id' => target_stage.id)
   end
 
-  it 'updates and moves the deal with a configured transition reason' do
+  it 'updates and moves the deal without a transition reason' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)
     pipeline = create(:crm_pipeline, account: account)
@@ -50,18 +50,16 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
       pipeline: pipeline,
       code: 'work',
       position: 2,
-      transition_reason_options: ['Needs docs', 'Waiting payment'],
-      transition_reason_required: true,
       color: '#222222'
     )
     deal = create(:crm_deal, account: account, pipeline: pipeline, stage: current_stage, originating_conversation_id: conversation.id)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: deal.id }, contact: { id: contact.id } })
 
-    payload = JSON.parse(tool.perform(tool_context, title: 'Moved with reason', stage_code: 'work', transition_reason: 'waiting payment'))
+    payload = JSON.parse(tool.perform(tool_context, title: 'Moved deal', stage_code: 'work'))
     event = deal.reload.events.where(event_type: 'deal_stage_changed').last
 
-    expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved with reason', 'stage_id' => target_stage.id)
-    expect(event.meta['transition_reason']).to eq('Waiting payment')
+    expect(payload['deal']).to include('id' => deal.id, 'title' => 'Moved deal', 'stage_id' => target_stage.id)
+    expect(event.meta).not_to have_key('transition_reason')
   end
 
   it 'updates an explicit deal_id instead of the current conversation deal' do
