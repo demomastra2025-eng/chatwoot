@@ -619,6 +619,37 @@ describe ConversationFinder do
       end
     end
 
+    context 'with participating conversation type' do
+      let(:params) { { status: 'all', assignee_type: 'all', conversation_type: 'participating' } }
+      let!(:participating_conversation) { create(:conversation, account: account, inbox: inbox) }
+      let(:custom_role) { create(:custom_role, account: account, permissions: ['crm_deal_view']) }
+
+      before do
+        account.account_users.find_by!(user: user_1).update!(role: :agent, custom_role: custom_role)
+        create(:conversation_participant, account: account, conversation: participating_conversation, user: user_1)
+      end
+
+      it 'does not bypass a custom role without conversation permissions' do
+        result = conversation_finder.perform
+
+        expect(result[:conversations]).to be_empty
+      end
+
+      it 'uses the same authorized scope for meta counts' do
+        result = conversation_finder.perform_meta_only
+
+        expect(result[:count][:all_count]).to eq(0)
+      end
+
+      it 'returns participating conversations when the custom role permits them' do
+        custom_role.update!(permissions: ['conversation_participating_manage'])
+
+        result = conversation_finder.perform
+
+        expect(result[:conversations].map(&:id)).to include(participating_conversation.id)
+      end
+    end
+
     context 'with pagination' do
       let(:params) { { status: 'open', assignee_type: 'me', page: 1 } }
 
