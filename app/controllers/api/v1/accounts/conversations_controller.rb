@@ -199,6 +199,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   def preload_list_presence
+    @conversation_list_preloader = Conversations::ListPreloader.new(account: Current.account, conversations: @conversations).perform
     ActiveRecord::Associations::Preloader.new(records: @conversations, associations: [:assignee, { contact: :owner }]).call
     contacts = @conversations.map(&:contact)
     users = @conversations.filter_map(&:assignee) + contacts.filter_map(&:owner)
