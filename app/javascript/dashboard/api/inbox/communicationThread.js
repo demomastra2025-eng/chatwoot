@@ -3,10 +3,29 @@ import ApiClient from '../ApiClient';
 import { buildCreatePayload } from './message';
 
 const inFlightMetaRequests = new Map();
+const inFlightListRequests = new Map();
+
+const singleFlightListRequest = (key, fetch) => {
+  const currentRequest = inFlightListRequests.get(key);
+  if (currentRequest) return currentRequest;
+
+  const request = fetch().finally(() => {
+    if (inFlightListRequests.get(key) === request) {
+      inFlightListRequests.delete(key);
+    }
+  });
+  inFlightListRequests.set(key, request);
+  return request;
+};
 
 class CommunicationThreadApi extends ApiClient {
   constructor() {
     super('communication_threads', { accountScoped: true });
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  invalidateListRequests() {
+    inFlightListRequests.clear();
   }
 
   get({
@@ -25,7 +44,8 @@ class CommunicationThreadApi extends ApiClient {
     unread,
     includeMeta = true,
   } = {}) {
-    return axios.get(this.url, {
+    const url = this.url;
+    const config = {
       params: {
         inbox_id: inboxId,
         status,
@@ -42,7 +62,10 @@ class CommunicationThreadApi extends ApiClient {
         unread,
         include_meta: includeMeta,
       },
-    });
+    };
+    return singleFlightListRequest(JSON.stringify(['get', url, config]), () =>
+      axios.get(url, config)
+    );
   }
 
   meta({
@@ -58,6 +81,7 @@ class CommunicationThreadApi extends ApiClient {
     labelsScope,
     teamScope,
     unread,
+    includeContextCounts,
   } = {}) {
     const url = `${this.url}/meta`;
     const params = {
@@ -73,6 +97,9 @@ class CommunicationThreadApi extends ApiClient {
       labels_scope: labelsScope,
       team_scope: teamScope,
       unread,
+      ...(includeContextCounts !== undefined
+        ? { include_context_counts: includeContextCounts }
+        : {}),
     };
     const requestKey = JSON.stringify([url, params]);
     const currentRequest = inFlightMetaRequests.get(requestKey);
@@ -88,8 +115,9 @@ class CommunicationThreadApi extends ApiClient {
     return request;
   }
 
-  filter(payload) {
-    return axios.post(`${this.url}/filter`, payload.queryData, {
+  filter(payload, { includeMeta = false, metaOnly = false } = {}) {
+    const url = `${this.url}/filter`;
+    const config = {
       params: {
         page: payload.page,
         crm_pipeline_id: payload.crmPipelineId || payload.crm_pipeline_id,
@@ -100,9 +128,25 @@ class CommunicationThreadApi extends ApiClient {
         team_scope: payload.teamScope || payload.team_scope,
         unread: payload.unread,
         sort_by: payload.sortBy || payload.sort_by,
-        include_meta: Number(payload.page || 1) === 1,
+        include_meta: includeMeta,
+        meta_only: metaOnly,
+        ...((payload.includeContextCounts ?? payload.include_context_counts) !==
+        undefined
+          ? {
+              include_context_counts:
+                payload.includeContextCounts ?? payload.include_context_counts,
+            }
+          : {}),
       },
-    });
+    };
+    return singleFlightListRequest(
+      JSON.stringify(['post', url, payload.queryData, config]),
+      () => axios.post(url, payload.queryData, config)
+    );
+  }
+
+  filterMeta(payload) {
+    return this.filter(payload, { includeMeta: true, metaOnly: true });
   }
 
   channels(id) {

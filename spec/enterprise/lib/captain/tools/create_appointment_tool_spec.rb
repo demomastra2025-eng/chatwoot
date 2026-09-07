@@ -39,4 +39,8 @@ RSpec.describe Captain::Tools::CreateAppointmentTool, type: :model do
   it 'exposes custom_attributes as an object parameter' do
     expect(described_class.parameters[:custom_attributes].type).to eq('object')
   end
+
+  it 'forbids claiming a provider-backed booking before provider confirmation' do
+    expect(tool.description).to include('pending_provider_confirmation', 'provider_confirmed is true')
+  end
 end

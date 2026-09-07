@@ -150,7 +150,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
 
         resolveRefresh();
         await Promise.resolve();
-        await vi.advanceTimersByTimeAsync(5000);
+        await vi.advanceTimersByTimeAsync(30000);
 
         expect(sidebarUnreadRefreshCalls()).toHaveLength(2);
       } finally {
@@ -351,6 +351,22 @@ describe('ActionCableConnector - Copilot Tests', () => {
         payload
       );
       expect(emitter.emit).toHaveBeenCalledWith('fetch_conversation_stats');
+    });
+
+    it('avoids the duplicate legacy stats refresh in communication thread mode', () => {
+      store.$store.state.conversations.conversationFilters = {
+        communicationThreadMode: true,
+      };
+      const sidebarRefresh = vi.spyOn(actionCable, 'fetchSidebarUnreadCounts');
+
+      actionCable.onCommunicationThreadUpdated({
+        id: 7,
+        communication_thread_id: 7,
+        account_id: 1,
+      });
+
+      expect(emitter.emit).not.toHaveBeenCalledWith('fetch_conversation_stats');
+      expect(sidebarRefresh).toHaveBeenCalledTimes(1);
     });
 
     it('updates cached conversation/thread contact identities from contact updates', () => {

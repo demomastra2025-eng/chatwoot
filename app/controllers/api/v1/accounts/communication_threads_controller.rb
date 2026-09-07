@@ -30,6 +30,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   before_action :ensure_thread_operationally_accessible!, only: OPERATIONAL_THREAD_ACTIONS
   before_action :ensure_full_thread_accessible_for_update!, only: [:update]
   before_action :validate_update_params!, only: [:update]
+  around_action :with_list_presence_cache, only: [:index, :filter]
 
   def index
     result = CommunicationThreadFinder.new(Current.user, params).perform
@@ -386,6 +387,26 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     preload_thread_labels(communication_threads)
     preload_directional_message_timestamps_by_thread
     preload_scheduling_appointment_statuses(communication_threads)
+    preload_list_presence(communication_threads) if OnlineStatusTracker.presence_cache
+  end
+
+  def with_list_presence_cache(&)
+    OnlineStatusTracker.with_presence_cache(&)
+  end
+
+  def preload_list_presence(communication_threads)
+    messages = [@last_public_messages_by_thread_id, @last_non_activity_messages_by_thread_id].flat_map(&:values).compact
+    senders = messages.filter_map(&:sender).group_by(&:class)
+    preload_contact_and_user_presence(communication_threads, senders)
+  end
+
+  def preload_contact_and_user_presence(communication_threads, senders)
+    contacts = communication_threads.map(&:contact) + senders.fetch(Contact, [])
+    users = communication_threads.filter_map(&:assignee) + contacts.filter_map(&:owner) +
+            senders.fetch(User, [])
+
+    OnlineStatusTracker.preload_presence(Current.account.id, 'Contact', contacts.map(&:id))
+    OnlineStatusTracker.preload_presence(Current.account.id, 'User', users.map(&:id))
   end
 
   def preloaded_accessible_links(thread_ids)
@@ -393,7 +414,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
     accessible_links.where(communication_thread_id: thread_ids)
                     .includes(
-                      { contact_inbox: :channel_profile },
+                      { contact_inbox: { channel_profile: { avatar_attachment: :blob } } },
                       { conversation: { inbox: :channel } },
                       { inbox: [:members, :channel] }
                     )
@@ -505,7 +526,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
         { attachments: { file_attachment: :blob } },
         :sender,
         { inbox: :channel },
-        { conversation: [{ contact_inbox: :channel_profile }, :communication_thread, :campaign] }
+        { conversation: [{ contact_inbox: { channel_profile: { avatar_attachment: :blob } } }, :communication_thread, :campaign] }
       ]
     ).call
     preload_list_message_senders(messages)
@@ -517,7 +538,9 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     if contact_senders.any?
       ActiveRecord::Associations::Preloader.new(
         records: contact_senders,
-        associations: [:contact_channel_profiles, { avatar_attachment: :blob }, { owner: { avatar_attachment: :blob } }]
+        associations: [
+          { contact_channel_profiles: { avatar_attachment: :blob } }, { avatar_attachment: :blob }, { owner: { avatar_attachment: :blob } }
+        ]
       ).call
     end
     return unless user_senders.any?

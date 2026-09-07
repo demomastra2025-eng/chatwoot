@@ -26,18 +26,14 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
 
   def reception_created!(reception_code:, patient_code:)
     with_owned_command do
-      appointment.update!(
-        starts_at: snapshot_time('destination_starts_at'),
-        ends_at: snapshot_time('destination_ends_at'),
-        external_ref: "medelement:reception:#{reception_code}",
-        custom_attributes: appointment.custom_attributes.to_h.except('medelement_patient_code').merge(
-          'medelement_reception_code' => reception_code,
-          'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
-          'medelement_provider_sync_status' => 'succeeded'
-        ).merge(local_service_binding_attributes)
-      )
-      link_contact_patient_ref!(patient_code)
-      complete_command!(provider_reception_code: reception_code, provider_patient_code: patient_code)
+      apply_reception_created!(reception_code: reception_code, patient_code: patient_code)
+    end
+  end
+
+  def reception_discovered!(reception_code:, patient_code:)
+    with_reconcilable_command do
+      Integrations::Medelement::ProviderCommands::ReceptionDiscoveryGuard.new(command: command).validate!
+      apply_reception_created!(reception_code: reception_code, patient_code: patient_code)
     end
   end
 
@@ -79,6 +75,32 @@ class Integrations::Medelement::ProviderCommands::SuccessApplier
       yield
       true
     end
+  end
+
+  def with_reconcilable_command
+    command.with_lock do
+      command.reload
+      next false unless command.processing? || command.reconcilable?
+
+      yield
+      true
+    end
+  end
+
+  def apply_reception_created!(reception_code:, patient_code:)
+    appointment.mark_medelement_provider_reconciled!
+    appointment.update!(
+      starts_at: snapshot_time('destination_starts_at'),
+      ends_at: snapshot_time('destination_ends_at'),
+      external_ref: "medelement:reception:#{reception_code}",
+      custom_attributes: appointment.custom_attributes.to_h.except('medelement_patient_code').merge(
+        'medelement_reception_code' => reception_code,
+        'medelement_cabinet_code' => command.request_snapshot.fetch('company_cabinet_code'),
+        'medelement_provider_sync_status' => 'succeeded'
+      ).merge(local_service_binding_attributes)
+    )
+    link_contact_patient_ref!(patient_code)
+    complete_command!(provider_reception_code: reception_code, provider_patient_code: patient_code)
   end
 
   def reconciliation_claim_owned?

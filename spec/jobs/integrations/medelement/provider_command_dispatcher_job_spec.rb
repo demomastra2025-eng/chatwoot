@@ -52,9 +52,28 @@ RSpec.describe Integrations::Medelement::ProviderCommandDispatcherJob do
       .not_to have_received(:perform_later).with(exhausted_reconciliation.id)
     expect(stale.reload).to have_attributes(status: 'reconciliation_required', last_error_code: 'executor_stale')
     expect(exhausted_reconciliation.reload).to have_attributes(
-      status: 'failed',
-      last_error_code: 'reconciliation_exhausted'
+      status: 'provider_status_unknown',
+      last_error_code: 'provider_status_unknown'
     )
+    expect(exhausted_reconciliation.reconciliation_next_at).to be > 23.hours.from_now
+  end
+
+  it 'reserves unknown reconciliation before enqueueing it' do
+    unknown_reconciliation = create_command(
+      status: 'provider_status_unknown',
+      execution_state: {
+        'write_phase' => 'patient_create',
+        'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS,
+        'reconciliation_next_at' => 1.minute.ago.iso8601
+      }
+    )
+
+    described_class.perform_now
+    described_class.perform_now
+
+    expect(Integrations::Medelement::ProviderCommandReconciliationJob)
+      .to have_received(:perform_later).with(unknown_reconciliation.id).once
+    expect(unknown_reconciliation.reload.reconciliation_next_at).to be > 23.hours.from_now
   end
 
   it 'requeues stale processing that crashed before recording a write phase' do

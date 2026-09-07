@@ -19,6 +19,7 @@ class Scheduling::Appointments::UpsertService
 
     ApplicationRecord.transaction do
       apply_attributes!
+      mark_medelement_provider_confirmation_pending!
       validate_medelement_patient!
       validate_medelement_cabinet!
       validate_availability!
@@ -346,6 +347,45 @@ class Scheduling::Appointments::UpsertService
 
   def medelement_resource?(resource = appointment.resource)
     resource&.custom_attributes.to_h['medelement_specialist_code'].present?
+  end
+
+  def mark_medelement_provider_confirmation_pending!
+    return unless medelement_provider_write_required?
+
+    Integrations::Medelement::AppointmentProviderStatus.assign_pending!(appointment)
+  end
+
+  def medelement_provider_write_required?
+    return false unless medelement_provider_write_context?
+    return appointment.status != 'cancelled' if appointment.new_record?
+
+    medelement_existing_appointment_write_required?
+  end
+
+  def medelement_provider_write_context?
+    medelement_resource? && medelement_outbound_actor? && writable_medelement_hook?
+  end
+
+  def medelement_existing_appointment_write_required?
+    return appointment.status != 'cancelled' if medelement_reception_code.blank?
+    return appointment.will_save_change_to_status? if appointment.status == 'cancelled'
+
+    appointment.will_save_change_to_starts_at? || appointment.will_save_change_to_ends_at?
+  end
+
+  def medelement_reception_code
+    appointment.custom_attributes.to_h['medelement_reception_code'].presence ||
+      appointment.external_ref.to_s.delete_prefix('medelement:reception:').presence
+  end
+
+  def medelement_outbound_actor?
+    actor.is_a?(User) ||
+      (defined?(Captain::Assistant) && actor.is_a?(Captain::Assistant) && actor.account_id == account.id)
+  end
+
+  def writable_medelement_hook?
+    hook = account.hooks.enabled.find_by(app_id: 'medelement')
+    hook&.feature_allowed? && Integrations::Medelement::Configuration.new(hook: hook).write_enabled?
   end
 
   def resolve_company(contact)

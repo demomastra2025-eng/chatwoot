@@ -20,6 +20,7 @@ import {
 } from 'dashboard/composables/store.js';
 
 import { Virtualizer } from 'virtua/vue';
+import ConversationListLoadError from './ConversationListLoadError.vue';
 import ChatListHeader from './ChatListHeader.vue';
 import ChatListCount from './ChatListCount.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
@@ -209,6 +210,7 @@ const allChatList = useMapGetter('getAllStatusChats');
 const unAssignedChatsList = useMapGetter('getUnAssignedChats');
 const participatingChatsList = useMapGetter('getParticipatingChats');
 const chatListLoading = useMapGetter('getChatListLoadingStatus');
+const chatListLoadingError = useMapGetter('getChatListLoadingError');
 const activeInbox = useMapGetter('getSelectedInbox');
 const conversationStats = useMapGetter('conversationStats/getStats');
 const bulkServerSelection = useMapGetter('bulkActions/getServerSelection');
@@ -1374,8 +1376,12 @@ async function onToggleAdvanceFiltersModal() {
   showAdvancedFilters.value = true;
 }
 
-function loadMoreConversations() {
-  if (hasCurrentPageEndReached.value || chatListLoading.value) {
+function loadMoreConversations({ retry = false } = {}) {
+  if (
+    hasCurrentPageEndReached.value ||
+    chatListLoading.value ||
+    (chatListLoadingError.value && !retry)
+  ) {
     return;
   }
 
@@ -2063,7 +2069,12 @@ watch(conversationFilters, (newVal, oldVal) => {
     />
 
     <p
-      v-if="!chatListLoading && !conversationList.length && !hasLocalSearch"
+      v-if="
+        !chatListLoading &&
+        !chatListLoadingError &&
+        !conversationList.length &&
+        !hasLocalSearch
+      "
       class="flex overflow-auto justify-center items-center p-4"
     >
       {{ $t('CHAT_LIST.LIST.404') }}
@@ -2133,6 +2144,10 @@ watch(conversationFilters, (newVal, oldVal) => {
       <div v-if="chatListLoading" class="flex justify-center my-4">
         <Spinner class="text-n-brand" />
       </div>
+      <ConversationListLoadError
+        v-else-if="chatListLoadingError"
+        @retry="loadMoreConversations({ retry: true })"
+      />
       <p
         v-else-if="showEndOfListMessage"
         class="p-4 text-center text-n-slate-11"

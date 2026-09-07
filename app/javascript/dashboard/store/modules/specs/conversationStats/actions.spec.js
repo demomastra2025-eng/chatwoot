@@ -100,6 +100,32 @@ describe('#actions', () => {
         all_count: 2,
       });
     });
+
+    it('does not overwrite explicit stats with an older in-flight response', async () => {
+      let resolveRequest;
+      axios.get.mockImplementationOnce(
+        () =>
+          new Promise(resolve => {
+            resolveRequest = resolve;
+          })
+      );
+
+      actions.get(
+        { commit, state: { allCount: 0 } },
+        { communicationThreadMode: true, status: 'open' }
+      );
+      await vi.waitFor(() => expect(axios.get).toHaveBeenCalledOnce());
+
+      const exactMeta = { mine_count: 1, all_count: 2 };
+      actions.set({ commit }, exactMeta);
+      resolveRequest({ data: { meta: { mine_count: 9, all_count: 10 } } });
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(commit.mock.calls).toEqual([
+        [types.default.SET_CONV_TAB_META, exactMeta],
+      ]);
+    });
   });
 
   describe('#set', () => {

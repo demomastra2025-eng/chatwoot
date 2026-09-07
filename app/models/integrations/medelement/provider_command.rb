@@ -55,7 +55,7 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   OPERATIONS = %w[create_patient update_patient create_reception move_reception remove_reception].freeze
   LOGICAL_UNFINISHED_STATUSES = %w[
     awaiting_confirmation awaiting_patient_selection awaiting_patient_creation awaiting_phone_refresh
-    queued processing reconciliation_required
+    queued processing reconciliation_required provider_status_unknown
   ].freeze
   TERMINAL_STATUSES = %w[succeeded failed declined cancelled].freeze
   EXECUTION_STATUS_PREFIX = 'v2_'.freeze
@@ -64,6 +64,7 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
   UNFINISHED_STATUSES = (LOGICAL_UNFINISHED_STATUSES + VERSIONED_UNFINISHED_STATUSES).freeze
   RECONCILIATION_MAX_ATTEMPTS = 6
   RECONCILIATION_BACKOFFS = [1.minute, 5.minutes, 15.minutes, 1.hour, 4.hours].freeze
+  PROVIDER_STATUS_UNKNOWN_BACKOFF = 24.hours
   PATIENT_IDENTITY_WRITE_PREDICATE = <<~SQL.squish.freeze
     contact_id IS NOT NULL AND (
       operation IN ('create_patient', 'update_patient') OR
@@ -100,6 +101,10 @@ class Integrations::Medelement::ProviderCommand < ApplicationRecord
 
   def terminal?
     status.in?(TERMINAL_STATUSES)
+  end
+
+  def reconcilable?
+    reconciliation_required? || provider_status_unknown?
   end
 
   def self.execution_statuses(logical_status)

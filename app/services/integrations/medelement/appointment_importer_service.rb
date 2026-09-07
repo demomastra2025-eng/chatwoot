@@ -21,7 +21,13 @@ class Integrations::Medelement::AppointmentImporterService
   end
 
   def upsert!(resource:, contact:, reception:, import_context:)
-    appointment = find_or_initialize_appointment(reception)
+    appointment, late_materialization = find_or_initialize_appointment(
+      reception,
+      resource: resource,
+      import_context: import_context
+    )
+    import_context = import_context.except(:snapshot_version) if late_materialization
+    contact = appointment.contact if late_materialization
     unless appointment.persisted?
       return persist_appointment!(
         appointment,
@@ -202,10 +208,19 @@ class Integrations::Medelement::AppointmentImporterService
     Integrations::Medelement::AppointmentProviderBinding.new(appointment: appointment, reception: reception)
   end
 
-  def find_or_initialize_appointment(reception)
-    account.scheduling_appointments.find_or_initialize_by(
-      external_ref: external_ref_for(reception['RECEPTION_CODE'])
+  def find_or_initialize_appointment(reception, resource:, import_context:)
+    external_ref = external_ref_for(reception['RECEPTION_CODE'])
+    appointment = account.scheduling_appointments.find_or_initialize_by(external_ref: external_ref)
+    return [appointment, false] if appointment.persisted?
+
+    pending = Integrations::Medelement::ProviderCommands::PendingReceptionResolver.new(account: account).resolve(
+      reception: reception,
+      resource: resource,
+      import_context: import_context
     )
+    return [pending, true] if pending
+
+    [appointment, false]
   end
 end
 # rubocop:enable Metrics/ClassLength

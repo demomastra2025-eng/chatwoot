@@ -86,6 +86,12 @@ class Integrations::Medelement::OutboundChangeService
     operation = appointment_operation(appointment)
     return unless operation
 
+    command = create_appointment_command(appointment, operation)
+    project_appointment_provider_status!(appointment, command)
+    command
+  end
+
+  def create_appointment_command(appointment, operation)
     create_and_confirm(
       appointment: appointment,
       contact: appointment.contact,
@@ -94,6 +100,22 @@ class Integrations::Medelement::OutboundChangeService
       desired_starts_at: reception_write?(operation) ? desired_time('starts_at', appointment.starts_at) : nil,
       desired_ends_at: reception_write?(operation) ? desired_time('ends_at', appointment.ends_at) : nil
     )
+  end
+
+  def project_appointment_provider_status!(appointment, command)
+    command.with_lock do
+      provider_status = case command.logical_status
+                        when 'succeeded'
+                          Integrations::Medelement::AppointmentProviderStatus::SUCCEEDED
+                        when 'provider_status_unknown'
+                          Integrations::Medelement::AppointmentProviderStatus::UNKNOWN
+                        when 'failed', 'declined', 'cancelled'
+                          Integrations::Medelement::AppointmentProviderStatus::FAILED
+                        else
+                          Integrations::Medelement::AppointmentProviderStatus::PENDING
+                        end
+      Integrations::Medelement::AppointmentProviderStatus.persist!(appointment, provider_status)
+    end
   end
 
   def sync_contact

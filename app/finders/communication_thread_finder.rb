@@ -57,31 +57,31 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     MESSAGE_SORT_KEYS.include?(sort_key.to_s)
   end
 
-  def self.last_message_activity_sort_sql(conversation_scope)
-    <<~SQL.squish
-      COALESCE(
-        (#{last_message_activity_subquery_sql(conversation_scope)}),
-        communication_threads.created_at
-      )
+  def self.with_last_message_activity_sort(relation, conversation_scope)
+    relation.joins(<<~SQL.squish).select(Arel.sql(<<~SELECT.squish))
+      LEFT JOIN (#{last_message_activity_subquery_sql(conversation_scope)}) sort_thread_messages
+        ON sort_thread_messages.communication_thread_id = communication_threads.id
+       AND sort_thread_messages.account_id = communication_threads.account_id
     SQL
+      communication_threads.*,
+      COALESCE(sort_thread_messages.last_message_at, communication_threads.created_at) AS last_message_activity_sort_at
+    SELECT
   end
 
   def self.last_message_activity_subquery_sql(conversation_scope)
     activity_message_type = Message.message_types[:activity]
-    conversation_ids_sql = conversation_scope.reselect('conversations.id').to_sql
+    conversation_ids_sql = conversation_scope.reselect('conversations.id', 'conversations.account_id').to_sql
 
     <<~SQL.squish
-      SELECT MAX(messages.created_at)
-      FROM messages
-      INNER JOIN communication_thread_conversations sort_thread_links
-        ON sort_thread_links.conversation_id = messages.conversation_id
-       AND sort_thread_links.communication_thread_id = communication_threads.id
+      SELECT sort_thread_links.account_id, sort_thread_links.communication_thread_id, MAX(messages.created_at) AS last_message_at
+      FROM communication_thread_conversations sort_thread_links
       INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
         ON sort_accessible_conversations.id = sort_thread_links.conversation_id
-      WHERE sort_thread_links.account_id = communication_threads.account_id
-        AND messages.account_id = communication_threads.account_id
-        AND messages.private = FALSE
-        AND messages.message_type != #{activity_message_type}
+       AND sort_accessible_conversations.account_id = sort_thread_links.account_id
+      INNER JOIN messages ON messages.conversation_id = sort_thread_links.conversation_id
+        AND messages.account_id = sort_thread_links.account_id
+      WHERE messages.private = FALSE AND messages.message_type != #{activity_message_type}
+      GROUP BY sort_thread_links.account_id, sort_thread_links.communication_thread_id
     SQL
   end
 
@@ -575,12 +575,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def with_last_message_activity_sort(relation)
-    sort_sql = self.class.last_message_activity_sort_sql(accessible_conversations)
-
-    relation
-      .select(
-        Arel.sql("communication_threads.*, #{sort_sql} AS last_message_activity_sort_at")
-      )
+    self.class.with_last_message_activity_sort(relation, accessible_conversations)
   end
 
   def with_waiting_since_sort(relation)
@@ -603,7 +598,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     [
       {
         contact: [
-          :contact_channel_profiles,
+          { contact_channel_profiles: { avatar_attachment: :blob } },
           { avatar_attachment: :blob },
           { owner: [:account_users, { avatar_attachment: :blob }] }
         ]

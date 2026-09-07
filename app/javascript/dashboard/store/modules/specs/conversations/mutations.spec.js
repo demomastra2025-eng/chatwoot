@@ -310,6 +310,7 @@ describe('#mutations', () => {
             id: 1,
             messages: [
               {
+                id: 10,
                 conversation_id: 1,
                 content: 'Test message',
                 created_at: 1602256198,
@@ -320,6 +321,7 @@ describe('#mutations', () => {
         selectedChatId: 1,
       };
       mutations[types.ADD_MESSAGE](state, {
+        id: 10,
         conversation_id: 1,
         content: 'Test message 1',
         created_at: 1602256198,
@@ -329,11 +331,13 @@ describe('#mutations', () => {
           id: 1,
           messages: [
             {
+              id: 10,
               conversation_id: 1,
               content: 'Test message 1',
               created_at: 1602256198,
             },
           ],
+          timestamp: 1602256198,
         },
       ]);
       expect(emitter.emit).not.toHaveBeenCalled();
@@ -1924,6 +1928,19 @@ describe('#mutations', () => {
   });
 
   describe('#CLEAR_LIST_LOADING_STATUS', () => {
+    it('preserves loaded chats on failure and clears the error on retry or invalidation', () => {
+      const chats = [{ id: 7, messages: [{ id: 42 }] }];
+      const state = { allConversations: chats, listLoadingStatus: true };
+      mutations[types.CLEAR_LIST_LOADING_STATUS](state, { error: true });
+      expect(state.listLoadingError).toBe(true);
+      expect(state.allConversations).toBe(chats);
+      mutations[types.SET_LIST_LOADING_STATUS](state);
+      expect(state.listLoadingError).toBe(false);
+      mutations[types.CLEAR_LIST_LOADING_STATUS](state, { error: true });
+      mutations[types.CLEAR_LIST_LOADING_STATUS](state);
+      expect(state.listLoadingError).toBe(false);
+    });
+
     it('should set listLoadingStatus to false', () => {
       const state = {
         listLoadingStatus: true,

@@ -93,9 +93,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
 
       expect(Integrations::Medelement::Client).not_to have_received(:new)
       expect(command.reload).to have_attributes(
-        status: 'failed',
-        last_error_code: 'reconciliation_invalid_confirmation'
+        status: 'provider_status_unknown',
+        last_error_code: 'provider_status_unknown'
       )
+      expect(command.execution_state['provider_status_unknown_reason']).to eq('reconciliation_invalid_confirmation')
     end
 
     it 'does not construct a provider client after the request snapshot changes' do
@@ -107,9 +108,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
 
       expect(Integrations::Medelement::Client).not_to have_received(:new)
       expect(command.reload).to have_attributes(
-        status: 'failed',
-        last_error_code: 'reconciliation_invalid_request_snapshot'
+        status: 'provider_status_unknown',
+        last_error_code: 'provider_status_unknown'
       )
+      expect(command.execution_state['provider_status_unknown_reason']).to eq('reconciliation_invalid_request_snapshot')
     end
   end
 
@@ -181,9 +183,10 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       perform
 
       expect(command.reload).to have_attributes(
-        status: 'failed',
-        last_error_code: 'provider_scope_mismatch'
+        status: 'provider_status_unknown',
+        last_error_code: 'provider_status_unknown'
       )
+      expect(command.execution_state['provider_status_unknown_reason']).to eq('provider_scope_mismatch')
     end
 
     it 'does not consume another attempt when a duplicate job runs before the backoff is due' do
@@ -198,7 +201,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       expect(command.reconciliation_next_at).to eq(first_next_at)
     end
 
-    it 'fails terminally after the final unresolved attempt' do
+    it 'keeps provider status unknown after the final bounded reconciliation attempt' do
       command.update!(
         execution_state: command.execution_state.merge(
           'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS - 1
@@ -209,12 +212,37 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       perform
 
       expect(command.reload).to have_attributes(
-        status: 'failed',
-        last_error_code: 'reconciliation_exhausted'
+        status: 'provider_status_unknown',
+        last_error_code: 'provider_status_unknown'
       )
       expect(command.reconciliation_attempts).to eq(
         Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
       )
+      expect(command.reconciliation_next_at).to be > 23.hours.from_now
+    end
+
+    it 'continues low-frequency read reconciliation for an unknown provider outcome' do
+      command.update!(
+        status: 'provider_status_unknown',
+        execution_state: command.execution_state.merge(
+          'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS,
+          'reconciliation_dispatch_reserved_at' => Time.current.iso8601,
+          'reconciliation_next_at' => 24.hours.from_now.iso8601
+        )
+      )
+      allow(client).to receive(:search_patients_by_phone).and_return([])
+
+      perform
+
+      expect(command.reload).to have_attributes(
+        status: 'provider_status_unknown',
+        last_error_code: 'provider_status_unknown'
+      )
+      expect(command.reconciliation_attempts).to eq(
+        Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS + 1
+      )
+      expect(command.execution_state['reconciliation_dispatch_reserved_at']).to be_nil
+      expect(command.reconciliation_next_at).to be > 23.hours.from_now
     end
   end
 
@@ -285,7 +313,8 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
 
       perform
 
-      expect(command.reload).to have_attributes(status: 'failed', last_error_code: 'provider_scope_mismatch')
+      expect(command.reload).to have_attributes(status: 'provider_status_unknown', last_error_code: 'provider_status_unknown')
+      expect(command.execution_state['provider_status_unknown_reason']).to eq('provider_scope_mismatch')
     end
 
     it 'keeps reconciliation pending when the remote snapshot differs' do
@@ -316,6 +345,20 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
       }
     end
 
+    it 'keeps the appointment provider status unknown after bounded read reconciliation' do
+      command.update!(
+        execution_state: command.execution_state.merge(
+          'reconciliation_attempts' => Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS - 1
+        )
+      )
+      allow(client).to receive(:get_receptions).and_return([])
+
+      perform
+
+      expect(command.reload).to be_provider_status_unknown
+      expect(appointment.reload.custom_attributes['medelement_provider_sync_status']).to eq('provider_status_unknown')
+    end
+
     it 'adopts the exact reception returned by the write before falling back to timetable search' do
       command.update!(
         provider_reception_code: 'created-1',
@@ -333,6 +376,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::ReconciliationService
         external_ref: 'medelement:reception:created-1',
         source: 'manual'
       )
+      expect(appointment.custom_attributes['medelement_provider_sync_status']).to eq('succeeded')
       expect(client).not_to have_received(:get_receptions)
     end
 

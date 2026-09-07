@@ -58,6 +58,7 @@ module Redis::RedisKeys
   MACROCRM_MANAGER_CHANGED_MUTEX = 'MACROCRM_MANAGER_CHANGED_MUTEX::%<hook_id>s::%<estate_id>s'.freeze
   MEDELEMENT_SYNC_MUTEX = 'MEDELEMENT_SYNC_MUTEX::%<account_id>s'.freeze
   MEDELEMENT_PATIENT_ENRICHMENT_MUTEX = 'MEDELEMENT_PATIENT_ENRICHMENT_MUTEX::%<hook_id>s::%<contact_id>s'.freeze
+  MEDELEMENT_PATIENT_ENRICHMENT_QUEUED = 'MEDELEMENT_PATIENT_ENRICHMENT_QUEUED::%<hook_id>s::%<contact_id>s'.freeze
   MEDELEMENT_PROVIDER_COMMAND_MUTEX = 'MEDELEMENT_PROVIDER_COMMAND_MUTEX::%<hook_id>s::%<target_id>s'.freeze
 
   ## Auto Assignment Keys

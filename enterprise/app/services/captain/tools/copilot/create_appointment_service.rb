@@ -3,7 +3,9 @@ class Captain::Tools::Copilot::CreateAppointmentService < Captain::Tools::Copilo
     'create_appointment'
   end
 
-  description 'Create an appointment for the current conversation contact using a selected specialist and confirmed time details'
+  description 'Create an appointment for the current conversation contact using a selected specialist and confirmed time details. ' \
+              'For provider-backed appointments, pending_provider_confirmation is not a confirmed booking; do not tell the patient ' \
+              'they are booked until provider_confirmed is true.'
   param :resource_id, type: :number, desc: 'Specialist resource ID', required: true
   param :starts_at, type: :string, desc: 'Appointment start datetime in ISO 8601 format', required: true
   param :ends_at, type: :string, desc: 'Optional appointment end datetime in ISO 8601 format', required: false

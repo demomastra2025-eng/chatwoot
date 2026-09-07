@@ -7,7 +7,9 @@ module Scheduling::ToolPayloadBuilder
     {
       action: action,
       appointment_id: appointment_data[:id],
-      status: appointment_data[:status],
+      status: Integrations::Medelement::AppointmentProviderStatus.public_status(appointment),
+      provider_confirmation_status: appointment_data[:provider_confirmation_status],
+      provider_confirmed: appointment_data[:provider_confirmed],
       resource_id: appointment_data[:resource_id],
       resource_name: appointment_data[:resource_name],
       contact_id: appointment_data[:contact_id],

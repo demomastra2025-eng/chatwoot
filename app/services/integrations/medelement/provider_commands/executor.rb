@@ -421,6 +421,12 @@ class Integrations::Medelement::ProviderCommands::Executor
         last_error_status: status,
         executed_at: Time.current
       )
+      unless reconciliation
+        Integrations::Medelement::AppointmentProviderStatus.persist!(
+          command.appointment,
+          Integrations::Medelement::AppointmentProviderStatus::FAILED
+        )
+      end
       reconciliation_enqueued = reconciliation
     end
     Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(command.id) if reconciliation_enqueued

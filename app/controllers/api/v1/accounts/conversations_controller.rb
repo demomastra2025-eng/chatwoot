@@ -5,6 +5,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
 
   before_action :conversation, except: [:index, :meta, :sidebar_unread_counts, :search, :create, :filter]
   before_action :inbox, :contact, :contact_inbox, only: [:create]
+  around_action :with_list_presence_cache, only: [:index, :filter]
 
   ATTACHMENT_RESULTS_PER_PAGE = 100
 
@@ -12,6 +13,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     result = conversation_finder.perform
     @conversations = result[:conversations]
     @conversations_count = result[:count]
+    preload_list_presence
     preload_crm_deal_stages(@conversations)
     preload_scheduling_appointment_statuses(@conversations)
     preload_directional_message_timestamps(@conversations)
@@ -84,6 +86,7 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
     result = ::Conversations::FilterService.new(params.permit!, current_user, current_account).perform
     @conversations = result[:conversations]
     @conversations_count = result[:count]
+    preload_list_presence
     preload_crm_deal_stages(@conversations)
     preload_scheduling_appointment_statuses(@conversations)
     preload_directional_message_timestamps(@conversations)
@@ -180,6 +183,19 @@ class Api::V1::Accounts::ConversationsController < Api::V1::Accounts::BaseContro
   end
 
   private
+
+  def with_list_presence_cache(&)
+    OnlineStatusTracker.with_presence_cache(&)
+  end
+
+  def preload_list_presence
+    @conversation_list_preloader = Conversations::ListPreloader.new(account: Current.account, conversations: @conversations).perform
+    ActiveRecord::Associations::Preloader.new(records: @conversations, associations: [:assignee, { contact: :owner }]).call
+    contacts = @conversations.map(&:contact)
+    users = @conversations.filter_map(&:assignee) + contacts.filter_map(&:owner)
+    OnlineStatusTracker.preload_presence(Current.account.id, 'Contact', contacts.map(&:id))
+    OnlineStatusTracker.preload_presence(Current.account.id, 'User', users.map(&:id))
+  end
 
   def permitted_update_params
     # TODO: Move the other conversation attributes to this method and remove specific endpoints for each attribute

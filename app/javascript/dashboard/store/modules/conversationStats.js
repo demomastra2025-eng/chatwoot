@@ -19,24 +19,27 @@ const state = {
   allUnreadCount: 0,
 };
 
+let conversationStatsRequestGeneration = 0;
+
 export const getters = {
   getStats: $state => $state,
 };
 
 // Create a debounced version of the actual API call function
-let metaRequestGeneration = 0;
-
-const fetchMetaData = async (context, { params, requestGeneration }) => {
+const fetchMetaData = async (context, params, requestGeneration) => {
   try {
+    if (requestGeneration !== conversationStatsRequestGeneration) return;
+
     const { commit } = context;
     const statsApi = params?.communicationThreadMode
       ? CommunicationThreadApi
       : ConversationApi;
     const response = await statsApi.meta(params);
+    if (requestGeneration !== conversationStatsRequestGeneration) return;
+
     const {
       data: { meta },
     } = response;
-    if (requestGeneration !== metaRequestGeneration) return;
     commit(types.SET_CONV_TAB_META, meta);
   } catch (error) {
     // ignore
@@ -55,24 +58,18 @@ const superLongDebouncedFetchMetaData = debounce(
 export const actions = {
   get: async (context, params) => {
     const { state: $state } = context;
-    metaRequestGeneration += 1;
-    const payload = {
-      params,
-      requestGeneration: metaRequestGeneration,
-    };
-    if ($state.allCount === 0) {
-      await fetchMetaData(context, payload);
-      return;
-    }
+    conversationStatsRequestGeneration += 1;
+    const requestGeneration = conversationStatsRequestGeneration;
     if ($state.allCount > 2000) {
-      superLongDebouncedFetchMetaData(context, payload);
+      superLongDebouncedFetchMetaData(context, params, requestGeneration);
     } else if ($state.allCount > 100) {
-      longDebouncedFetchMetaData(context, payload);
+      longDebouncedFetchMetaData(context, params, requestGeneration);
     } else {
-      debouncedFetchMetaData(context, payload);
+      debouncedFetchMetaData(context, params, requestGeneration);
     }
   },
   set({ commit }, meta) {
+    conversationStatsRequestGeneration += 1;
     commit(types.SET_CONV_TAB_META, meta);
   },
 };

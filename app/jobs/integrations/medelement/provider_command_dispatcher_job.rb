@@ -6,7 +6,7 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
 
   def perform
     mark_stale_processing_commands!
-    mark_exhausted_reconciliation_commands!
+    mark_exhausted_reconciliation_commands_unknown!
     dispatch_resolved_confirmations
     dispatch_queued_commands
     dispatch_reconciliation_commands
@@ -57,36 +57,43 @@ class Integrations::Medelement::ProviderCommandDispatcherJob < ApplicationJob
   end
 
   def dispatch_reconciliation_commands
+    reconciliation_ids = due_reconciliation_scope('reconciliation_required').limit(BATCH_SIZE).pluck(:id)
+    reconciliation_ids.each { |id| Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(id) }
+
+    remaining = BATCH_SIZE - reconciliation_ids.size
+    return if remaining.zero?
+
+    due_reconciliation_scope('provider_status_unknown').limit(remaining).pluck(:id).each do |id|
+      command = Integrations::Medelement::ProviderCommand.find_by(id: id)
+      next if command.blank?
+      next unless Integrations::Medelement::ProviderCommands::ReconciliationLifecycle.new(
+        command: command
+      ).reserve_unknown_dispatch!
+
+      Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(id)
+    end
+  end
+
+  def due_reconciliation_scope(logical_status)
     Integrations::Medelement::ProviderCommand
-      .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('reconciliation_required'))
-      .where(
-        "COALESCE((execution_state ->> 'reconciliation_attempts')::integer, 0) < ?",
-        Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
-      )
+      .where(status: Integrations::Medelement::ProviderCommand.execution_statuses(logical_status))
       .where(
         "NULLIF(execution_state ->> 'reconciliation_next_at', '') IS NULL OR " \
         "(execution_state ->> 'reconciliation_next_at')::timestamptz <= ?",
         Time.current
       )
-      .limit(BATCH_SIZE)
-      .pluck(:id)
-      .each { |id| Integrations::Medelement::ProviderCommandReconciliationJob.perform_later(id) }
   end
 
-  def mark_exhausted_reconciliation_commands!
-    # rubocop:disable Rails/SkipsModelValidations
+  def mark_exhausted_reconciliation_commands_unknown!
     Integrations::Medelement::ProviderCommand
       .where(status: Integrations::Medelement::ProviderCommand.execution_statuses('reconciliation_required'))
       .where(
         "COALESCE((execution_state ->> 'reconciliation_attempts')::integer, 0) >= ?",
         Integrations::Medelement::ProviderCommand::RECONCILIATION_MAX_ATTEMPTS
       )
-      .update_all(
-        status: 'failed',
-        last_error_code: 'reconciliation_exhausted',
-        updated_at: Time.current
-      )
-    # rubocop:enable Rails/SkipsModelValidations
+      .find_each do |command|
+        Integrations::Medelement::ProviderCommands::ReconciliationLifecycle.new(command: command).mark_unknown_if_exhausted!
+      end
   end
 
   def transition_stale_commands!(commands, to:, error_code:)

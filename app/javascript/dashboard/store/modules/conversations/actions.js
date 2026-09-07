@@ -26,13 +26,35 @@ import {
 
 let conversationListRequestGeneration = 0;
 const initialMessageLoadPromises = new Map();
+const communicationThreadListUpdates = new Map();
 
-const invalidateConversationListRequest = commit => {
+const replayCommunicationThreadListUpdates = (generation, context, apply) => {
+  const updates = communicationThreadListUpdates.get(generation) || [];
+  communicationThreadListUpdates.delete(generation);
+  updates.forEach(payload => {
+    const threadId = payload.communication_thread_id || payload.id;
+    const current = context.state?.allConversations?.find(
+      chat =>
+        String(chat.id) === String(threadId) && isCommunicationThread(chat)
+    );
+    // The HTTP snapshot can itself be newer than an event received in flight.
+    if (payload.updated_at < current?.updated_at) return;
+    apply(context, payload);
+  });
+};
+let sidebarUnreadCountsRequestId = 0;
+
+const startConversationListRequest = () => {
   conversationListRequestGeneration += 1;
-  commit(types.CLEAR_LIST_LOADING_STATUS);
+  sidebarUnreadCountsRequestId += 1;
+  return conversationListRequestGeneration;
 };
 
-let sidebarUnreadCountsRequestId = 0;
+const invalidateConversationListRequest = commit => {
+  startConversationListRequest();
+  CommunicationThreadApi.invalidateListRequests();
+  commit(types.CLEAR_LIST_LOADING_STATUS);
+};
 
 const SIDEBAR_UNREAD_COUNT_FILTER_KEYS = [
   'inboxId',
@@ -285,8 +307,7 @@ const actions = {
   },
 
   fetchAllConversations: async ({ commit, state, dispatch }) => {
-    conversationListRequestGeneration += 1;
-    const requestGeneration = conversationListRequestGeneration;
+    const requestGeneration = startConversationListRequest();
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
@@ -303,22 +324,23 @@ const actions = {
       );
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
     }
   },
 
   fetchCommunicationThreads: async ({ commit, state, dispatch }) => {
-    conversationListRequestGeneration += 1;
-    const requestGeneration = conversationListRequestGeneration;
+    const requestGeneration = startConversationListRequest();
+    communicationThreadListUpdates.set(requestGeneration, []);
     commit(types.SET_LIST_LOADING_STATUS);
     try {
       const params = state.conversationFilters;
+      const isFirstPage = Number(params.page || 1) === 1;
       const {
         data: { data },
       } = await CommunicationThreadApi.get({
         ...params,
-        includeMeta: Number(params.page || 1) === 1,
+        includeMeta: false,
       });
       if (requestGeneration !== conversationListRequestGeneration) return;
       buildConversationList(
@@ -331,13 +353,21 @@ const actions = {
           ),
         },
         params.pageFilterKey || params.assigneeType,
-        Number(params.page || 1) === 1,
+        isFirstPage,
         !hasSidebarCountScopeFilters(params)
       );
+      replayCommunicationThreadListUpdates(
+        requestGeneration,
+        { commit, state, dispatch },
+        actions.updateCommunicationThreadRealtime
+      );
+      if (isFirstPage) dispatch('fetchSidebarUnreadCounts', params);
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
+    } finally {
+      communicationThreadListUpdates.delete(requestGeneration);
     }
   },
 
@@ -367,27 +397,30 @@ const actions = {
     try {
       const requestParams = params || state.conversationFilters || {};
       let counts = {};
+      let metaData;
 
-      if (
-        requestParams.communicationThreadMode ||
-        hasSidebarUnreadCountFilters(requestParams)
-      ) {
-        const statsApi = requestParams.communicationThreadMode
-          ? CommunicationThreadApi
-          : ConversationApi;
-        const {
-          data: { meta },
-        } = await statsApi.meta({
-          ...requestParams,
-          ...(requestParams.communicationThreadMode
-            ? { includeContextCounts: true }
-            : {}),
-        });
-        if (requestId !== sidebarUnreadCountsRequestId) return undefined;
-        counts = meta?.unread_counts || {};
-        if (requestParams.communicationThreadMode && meta) {
-          dispatch('conversationStats/set', meta);
+      if (hasSidebarUnreadCountFilters(requestParams)) {
+        let meta;
+        if (requestParams.communicationThreadMode && requestParams.queryData) {
+          const response = await CommunicationThreadApi.filterMeta({
+            ...requestParams,
+            includeContextCounts: true,
+          });
+          meta = response.data?.data?.meta;
+        } else {
+          const statsApi = requestParams.communicationThreadMode
+            ? CommunicationThreadApi
+            : ConversationApi;
+          const response = await statsApi.meta({
+            ...requestParams,
+            ...(requestParams.communicationThreadMode
+              ? { includeContextCounts: true }
+              : {}),
+          });
+          meta = response.data?.meta;
         }
+        metaData = meta;
+        counts = meta?.unread_counts || {};
       } else {
         const {
           data: { counts: globalCounts },
@@ -397,6 +430,9 @@ const actions = {
 
       if (requestId !== sidebarUnreadCountsRequestId) return undefined;
 
+      if (requestParams.communicationThreadMode && metaData) {
+        dispatch('conversationStats/set', metaData);
+      }
       commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});
       return counts || {};
     } catch (error) {
@@ -405,11 +441,14 @@ const actions = {
     }
   },
 
-  fetchFilteredConversations: async ({ commit, dispatch }, params) => {
-    conversationListRequestGeneration += 1;
-    const requestGeneration = conversationListRequestGeneration;
+  fetchFilteredConversations: async ({ commit, state, dispatch }, params) => {
+    const requestGeneration = startConversationListRequest();
+    if (params?.communicationThreadMode) {
+      communicationThreadListUpdates.set(requestGeneration, []);
+    }
     commit(types.SET_LIST_LOADING_STATUS);
     try {
+      const isFirstPage = Number(params.page || 1) === 1;
       const filterApi = params?.communicationThreadMode
         ? CommunicationThreadApi
         : ConversationApi;
@@ -428,13 +467,23 @@ const actions = {
         params,
         responseData,
         params.pageFilterKey || 'appliedFilters',
-        Number(params.page || 1) === 1,
+        isFirstPage,
         !params?.communicationThreadMode
       );
+      replayCommunicationThreadListUpdates(
+        requestGeneration,
+        { commit, state, dispatch },
+        actions.updateCommunicationThreadRealtime
+      );
+      if (params?.communicationThreadMode && isFirstPage) {
+        dispatch('fetchSidebarUnreadCounts', params);
+      }
     } catch (error) {
       if (requestGeneration === conversationListRequestGeneration) {
-        commit(types.CLEAR_LIST_LOADING_STATUS);
+        commit(types.CLEAR_LIST_LOADING_STATUS, { error: true });
       }
+    } finally {
+      communicationThreadListUpdates.delete(requestGeneration);
     }
   },
 
@@ -760,7 +809,7 @@ const actions = {
   ) {
     commit(types.ASSIGN_AGENT, {
       conversationId,
-      conversationType,
+      ...(conversationType ? { conversationType } : {}),
       assignee,
     });
   },
@@ -801,7 +850,11 @@ const actions = {
     { commit },
     { team, conversationId, conversationType = null }
   ) {
-    commit(types.ASSIGN_TEAM, { team, conversationId, conversationType });
+    commit(types.ASSIGN_TEAM, {
+      team,
+      conversationId,
+      ...(conversationType ? { conversationType } : {}),
+    });
   },
 
   toggleStatus: async (
@@ -1083,6 +1136,12 @@ const actions = {
   },
 
   updateCommunicationThreadRealtime({ commit, dispatch }, payload) {
+    // Keep realtime patches received during this list request. Replay them
+    // after its snapshot rather than dropping the page or starting more GETs.
+    communicationThreadListUpdates
+      .get(conversationListRequestGeneration)
+      ?.push(payload);
+    CommunicationThreadApi.invalidateListRequests();
     const communicationThread = commitCommunicationThreadUpdate(
       commit,
       payload,

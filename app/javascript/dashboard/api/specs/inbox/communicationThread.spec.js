@@ -76,6 +76,7 @@ describe('#CommunicationThreadAPI', () => {
         assigneeType: 'all',
         labelsScope: 'any',
         teamScope: 'any',
+        includeContextCounts: true,
       });
 
       expect(axiosMock.get).toHaveBeenCalledWith(
@@ -94,6 +95,7 @@ describe('#CommunicationThreadAPI', () => {
             team_scope: 'any',
             appointment_status: undefined,
             unread: undefined,
+            include_context_counts: true,
           },
         }
       );
@@ -101,7 +103,7 @@ describe('#CommunicationThreadAPI', () => {
 
     it('#filter', () => {
       const payload = {
-        page: 2,
+        page: 1,
         communicationThreadMode: true,
         crmPipelineId: 12,
         crmStageId: 34,
@@ -135,7 +137,32 @@ describe('#CommunicationThreadAPI', () => {
             unread: undefined,
             sort_by: undefined,
             include_meta: false,
+            meta_only: false,
           },
+        }
+      );
+    });
+
+    it('#filterMeta', () => {
+      const payload = {
+        page: 1,
+        communicationThreadMode: true,
+        includeContextCounts: true,
+        queryData: { payload: [] },
+      };
+
+      communicationThreadAPI.filterMeta(payload);
+
+      expect(axiosMock.post).toHaveBeenCalledWith(
+        '/api/v1/communication_threads/filter',
+        payload.queryData,
+        {
+          params: expect.objectContaining({
+            page: 1,
+            include_meta: true,
+            meta_only: true,
+            include_context_counts: true,
+          }),
         }
       );
     });
