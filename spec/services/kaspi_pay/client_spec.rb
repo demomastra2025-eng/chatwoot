@@ -18,6 +18,47 @@ RSpec.describe KaspiPay::Client do
     allow(Time).to receive(:current).and_return(timestamp)
   end
 
+  describe 'authentication requests' do
+    it 'binds init to the account in the HMAC-signed body' do
+      expected_body = { accountId: 530, authFlowVersion: 2 }.to_json
+      request = stub_request(:post, 'http://kaspi-adapter.test/internal/kaspi/auth/init')
+                .with(body: expected_body, headers: internal_headers('POST', '/internal/kaspi/auth/init', expected_body))
+                .to_return(status: 200, body: { success: true, processId: 'flow-1' }.to_json)
+
+      client.init(account_id: 530, auth_flow_version: 2)
+
+      expect(request).to have_been_requested
+    end
+
+    it 'sends the password only in the HMAC-signed adapter request body' do
+      expected_body = { processId: 'flow-1', password: 'cashier-password', accountId: 530 }.to_json
+      request = stub_request(:post, 'http://kaspi-adapter.test/internal/kaspi/auth/send-password')
+                .with(
+                  body: expected_body,
+                  headers: internal_headers('POST', '/internal/kaspi/auth/send-password', expected_body)
+                )
+                .to_return(status: 200, body: { success: true, nextStep: 'otp' }.to_json)
+
+      client.send_password(process_id: 'flow-1', password: 'cashier-password', account_id: 530)
+
+      expect(request).to have_been_requested
+    end
+
+    it 'preserves a typed auth flow error and HTTP status from the adapter' do
+      stub_request(:post, 'http://kaspi-adapter.test/internal/kaspi/auth/send-password')
+        .to_return(
+          status: 410,
+          body: { success: false, error: 'Authentication expired', code: 'AUTH_FLOW_EXPIRED' }.to_json
+        )
+
+      expect { client.send_password(process_id: 'flow-1', password: 'cashier-password', account_id: 530) }
+        .to raise_error(KaspiPay::Error) do |error|
+          expect(error.code).to eq('AUTH_FLOW_EXPIRED')
+          expect(error.status).to eq(410)
+        end
+    end
+  end
+
   describe '#create_qr' do
     it 'sends Kaspi session credentials as internal headers, not request body fields' do
       expected_body = { amount: 15_000, latitude: 43.238949, longitude: 76.889709 }.to_json

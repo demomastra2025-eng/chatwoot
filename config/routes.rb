@@ -642,6 +642,7 @@ Rails.application.routes.draw do
               collection do
                 post 'auth/init', action: :init
                 post 'auth/send_phone', action: :send_phone
+                post 'auth/send_password', action: :send_password
                 post 'auth/verify_otp', action: :verify_otp
                 post 'auth/refresh', action: :refresh
               end

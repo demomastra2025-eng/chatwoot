@@ -17,16 +17,19 @@
       "HEADER": "Shopify"
     },
     "KASPI_PAY": {
+      "CONTINUE": "Continue",
       "SEND_OTP": "Send SMS code",
       "CONNECT": "Connect Kaspi Pay",
       "PHONE_LABEL": "Kaspi cashier phone",
+      "PASSWORD_LABEL": "Kaspi Pay password",
       "OTP_LABEL": "SMS code",
       "LATITUDE_LABEL": "POS latitude",
       "LONGITUDE_LABEL": "POS longitude",
-      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. You can enter the number with +7/7/8; OneLink sends the local 10 digits to Kaspi. The session secrets are stored only on the server and are not returned to the browser.",
+      "CONNECT_HELP": "Enter the cashier phone. If Kaspi requests a password, enter it and then the SMS code. OneLink does not store the password; session secrets remain server-side.",
       "PHONE_REQUIRED": "Enter the phone number",
+      "PASSWORD_REQUIRED": "Enter the Kaspi Pay password",
       "OTP_REQUIRED": "Enter the SMS code",
-      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the code and try again.",
+      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the details and try again.",
       "CONNECT_SUCCESS": "Kaspi Pay connected successfully",
       "CONNECTED_TITLE": "Connected merchant",
       "DELETE": {

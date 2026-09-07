@@ -6,13 +6,20 @@ class Api::V1::Accounts::Integrations::KaspiPayController < Api::V1::Accounts::B
   rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
 
   def init
-    render json: KaspiPay::AuthService.new(account: Current.account).init
+    render json: KaspiPay::AuthService.new(account: Current.account).init(auth_flow_version: params[:auth_flow_version])
   end
 
   def send_phone
     render json: KaspiPay::AuthService.new(account: Current.account).send_phone(
       process_id: params.require(:process_id),
       phone_number: params.require(:phone_number)
+    )
+  end
+
+  def send_password
+    render json: KaspiPay::AuthService.new(account: Current.account).send_password(
+      process_id: params.require(:process_id),
+      password: params.require(:password)
     )
   end
 

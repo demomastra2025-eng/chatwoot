@@ -11,12 +11,14 @@ Source assessed/copied from: `tapter-dev/kaspi-pos-automation` at `579ee8b`.
   - `X-OneLink-Timestamp`
   - `X-OneLink-Internal-Signature = HMAC_SHA256(KASPI_PAY_INTERNAL_SECRET, "{METHOD}\n{path_with_query}\n{timestamp}\n{rawBody}")`
 - Rails owns payment records, idempotency and polling. The adapter must not persist payment state in JSON files.
-- Do not log request bodies, Kaspi responses, `tokenSN`, `vtokenSecret`, `user_token`, signatures or OTP values.
+- Do not log request bodies, Kaspi responses, passwords, `tokenSN`, `vtokenSecret`, `user_token`, signatures or OTP values.
+- Authentication flows are account-bound, expire after 10 minutes, accept at most 5 password/OTP attempts, and expose an opaque flow ID instead of the Kaspi process ID.
 
 ## Endpoint contract used by Rails
 
-- `POST /internal/kaspi/auth/init`
-- `POST /internal/kaspi/auth/send-phone`
+- `POST /internal/kaspi/auth/init` (`accountId` is required)
+- `POST /internal/kaspi/auth/send-phone` (`accountId` must match the flow owner)
+- `POST /internal/kaspi/auth/send-password` (only when `send-phone` returns `nextStep=password`)
 - `POST /internal/kaspi/auth/verify-otp`
 - `POST /internal/kaspi/qr/create`
 - `GET /internal/kaspi/qr/status`
@@ -29,6 +31,12 @@ Source assessed/copied from: `tapter-dev/kaspi-pos-automation` at `579ee8b`.
 - `POST /internal/kaspi/history/operations`
 - `POST /internal/kaspi/history/details`
 - `POST /internal/kaspi/refund/create`
+
+## Password-auth rollout
+
+Deploy the Rails/frontend contract before the adapter. The old adapter ignores the additional `accountId`, so the existing direct phone-to-OTP flow remains available while password-first authentication remains unavailable as before. Then deploy the adapter and require `/health` to report both `password-auth-v1` and `account-bound-auth-v1` before considering the new flow ready. Do not deploy the account-bound adapter before every Rails web instance sends `accountId`.
+
+The current browser sends `auth_flow_version=2` when it initializes a flow. If a browser tab loaded the old bundle before rollout, the adapter rejects a password-first response with `AUTH_CLIENT_REFRESH_REQUIRED` and deletes that flow instead of silently moving the old UI to an invalid OTP step. Reload OneLink and start a new flow.
 
 ## Runtime fingerprint overrides
 

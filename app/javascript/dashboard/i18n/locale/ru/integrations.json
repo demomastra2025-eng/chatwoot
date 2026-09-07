@@ -17,16 +17,19 @@
       "HEADER": "Shopify"
     },
     "KASPI_PAY": {
+      "CONTINUE": "Продолжить",
       "SEND_OTP": "Отправить SMS-код",
       "CONNECT": "Подключить Kaspi Pay",
       "PHONE_LABEL": "Телефон кассира Kaspi",
+      "PASSWORD_LABEL": "Пароль Kaspi Pay",
       "OTP_LABEL": "SMS-код",
       "LATITUDE_LABEL": "Широта POS",
       "LONGITUDE_LABEL": "Долгота POS",
-      "CONNECT_HELP": "Kaspi Pay подключается через SMS-вход кассира. Можно вводить номер с +7/7/8 — OneLink отправит в Kaspi локальные 10 цифр. Секреты сессии хранятся только на сервере и не возвращаются в браузер.",
+      "CONNECT_HELP": "Укажите телефон кассира. Если Kaspi запросит пароль, введите его, а затем SMS-код. Пароль не сохраняется в OneLink, секреты сессии хранятся только на сервере.",
       "PHONE_REQUIRED": "Укажите телефон",
+      "PASSWORD_REQUIRED": "Укажите пароль Kaspi Pay",
       "OTP_REQUIRED": "Укажите SMS-код",
-      "CONNECT_ERROR": "Не удалось подключить Kaspi Pay. Проверьте код и повторите попытку.",
+      "CONNECT_ERROR": "Не удалось подключить Kaspi Pay. Проверьте данные и повторите попытку.",
       "CONNECT_SUCCESS": "Kaspi Pay успешно подключён",
       "CONNECTED_TITLE": "Подключенный мерчант",
       "DELETE": {

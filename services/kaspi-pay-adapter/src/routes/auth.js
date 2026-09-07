@@ -13,11 +13,55 @@ import {
   decryptSecret,
 } from '../crypto.js';
 import { loggedFetch, extractUserToken, entranceCookie, generateUUID, nowISO } from '../helpers.js';
+import {
+  AUTH_STEPS,
+  AuthFlowError,
+  AuthFlowStore,
+  buildOtpStepPayload,
+  buildPasswordStepPayload,
+  buildPhoneStepPayload,
+  isOtpVerified,
+  nextStepAfterPassword,
+  nextStepAfterPhone,
+  providerView,
+  supportsPasswordAuth,
+} from '../auth-flow.js';
 
 const router = Router();
 
-// In-flight auth sessions keyed by processId (temporary, cleared after finish)
-const authSessions = new Map();
+const authFlows = new AuthFlowStore();
+
+const providerDescription = body =>
+  typeof body?.data?.desc === 'string' ? body.data.desc : undefined;
+
+const providerError = body => {
+  const error = body?.error?.code || body?.error?.type || body?.error?.name || body?.error;
+  if (typeof error === 'string' || typeof error === 'number') return String(error).slice(0, 80);
+  const statusCode = body?.StatusCode ?? body?.statusCode;
+  return statusCode == null ? undefined : String(statusCode);
+};
+
+const authStepResponse = ({ body, processId, nextStep, success }) => ({
+  success,
+  processId,
+  nextStep,
+  view: providerView(body),
+  description: providerDescription(body),
+  error: success ? undefined : providerError(body) || 'AUTH_STEP_REJECTED',
+});
+
+const respondAuthError = (res, error) => {
+  if (error instanceof AuthFlowError) {
+    return res.status(error.status).json({ success: false, error: error.message, code: error.code });
+  }
+
+  console.error('[kaspi-adapter] authentication request failed', error?.name || 'Error');
+  return res.status(500).json({
+    success: false,
+    error: 'Kaspi Pay authentication request failed',
+    code: 'AUTH_REQUEST_FAILED',
+  });
+};
 
 // ═══════════════════════════════════════════════════
 //  Step 1 — Init entrance (get processId)
@@ -27,6 +71,10 @@ router.post('/init', async (req, res) => {
   const session = createEmptySession();
 
   try {
+    const { accountId, authFlowVersion } = req.body || {};
+    if (accountId == null || String(accountId).trim() === '') {
+      return res.status(400).json({ success: false, error: 'accountId required', code: 'ACCOUNT_ID_REQUIRED' });
+    }
     const resp = await loggedFetch(`${KASPI_ENTRANCE_URL}/api/v1/entrance/step`, {
       method: 'POST',
       headers: {
@@ -55,18 +103,32 @@ router.post('/init', async (req, res) => {
       }),
     });
 
-    const ut = extractUserToken(resp);
-    if (ut) session.userToken = ut;
+    const userToken = extractUserToken(resp);
+    if (userToken) session.userToken = userToken;
 
     const body = await resp.json();
-    if (body.meta?.pId) {
-      session.processId = body.meta.pId;
-      authSessions.set(session.processId, session);
+    const providerProcessId = body.meta?.pId;
+    if (!resp.ok || body.isClosed || !providerProcessId) {
+      return res.status(resp.ok ? 422 : resp.status).json({
+        success: false,
+        error: providerError(body) || 'AUTH_INIT_FAILED',
+        view: providerView(body),
+        description: providerDescription(body),
+      });
     }
 
-    res.status(resp.ok ? 200 : resp.status).json({ success: !!session.processId, processId: session.processId, view: body.view?.code });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    session.processId = providerProcessId;
+    const flowId = generateUUID();
+    authFlows.create({ flowId, accountId, authFlowVersion, session });
+
+    return res.json({
+      success: true,
+      processId: flowId,
+      nextStep: AUTH_STEPS.PHONE,
+      view: providerView(body),
+    });
+  } catch (error) {
+    return respondAuthError(res, error);
   }
 });
 
@@ -75,16 +137,19 @@ router.post('/init', async (req, res) => {
 // ═══════════════════════════════════════════════════
 
 router.post('/send-phone', async (req, res) => {
-  const { phoneNumber, processId } = req.body;
-  if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required (e.g. 7XXXXXXXXX)' });
-  if (!processId) return res.status(400).json({ error: 'processId required (from /api/auth/init)' });
-
-  const session = authSessions.get(processId);
-  if (!session) return res.status(400).json({ error: 'Unknown processId. Call /api/auth/init first' });
-
-  session.phoneNumber = phoneNumber;
-
+  let session;
   try {
+    const { phoneNumber, processId, accountId } = req.body || {};
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, error: 'phoneNumber required (e.g. 7XXXXXXXXX)', code: 'PHONE_REQUIRED' });
+    }
+    if (!processId) {
+      return res.status(400).json({ success: false, error: 'processId required', code: 'PROCESS_ID_REQUIRED' });
+    }
+
+    session = authFlows.beginStep(processId, { accountId, expectedStep: AUTH_STEPS.PHONE });
+    session.phoneNumber = phoneNumber;
+
     const resp = await loggedFetch(`${KASPI_ENTRANCE_URL}/api/v1/entrance/step`, {
       method: 'POST',
       headers: {
@@ -92,34 +157,83 @@ router.post('/send-phone', async (req, res) => {
         Referer: `${KASPI_ENTRANCE_URL}/process/universal-enter-phone-number?pId=${session.processId}&firstPage=KPUniversalEnterPhoneNumber`,
         Cookie: entranceCookie(session.userToken),
       },
-      body: JSON.stringify({
-        meta: { pId: session.processId, sn: 'EnterPhoneNumber' },
-        data: { phoneNumber },
-        actType: 'Success',
-      }),
+      body: JSON.stringify(buildPhoneStepPayload(session.processId, phoneNumber)),
     });
 
-    const ut = extractUserToken(resp);
-    if (ut) session.userToken = ut;
+    const userToken = extractUserToken(resp);
+    if (userToken) session.userToken = userToken;
 
     const body = await resp.json();
-    const smsSent = body.view?.code === 'EnterOtp';
-    const bodyKeys = Object.keys(body || {}).slice(0, 12).join(',') || 'none';
-    const dataKeys = Object.keys(body.data || {}).slice(0, 12).join(',') || 'none';
-    const errorCode = body.error?.code || body.error?.type || body.error?.name || body.error || 'none';
-    console.log(
-      `Kaspi auth send-phone result success=${smsSent} view=${body.view?.code || 'unknown'} type=${body.type || 'unknown'} actType=${body.actType || 'unknown'} isClosed=${body.isClosed ?? 'unknown'} error=${String(errorCode).slice(0, 80)} hasDescription=${Boolean(body.data?.desc)} bodyKeys=${bodyKeys} dataKeys=${dataKeys}`
-    );
+    const nextStep = resp.ok ? nextStepAfterPhone(body) : null;
+    if (nextStep === AUTH_STEPS.PASSWORD && !supportsPasswordAuth(session)) {
+      authFlows.delete(processId);
+      return res.status(409).json({
+        success: false,
+        error: 'Refresh OneLink before starting Kaspi Pay password authentication.',
+        code: 'AUTH_CLIENT_REFRESH_REQUIRED',
+      });
+    }
+    if (nextStep) {
+      session.otpInputType = nextStep === AUTH_STEPS.OTP ? 'auto' : null;
+      authFlows.transition(session, nextStep, body.meta);
+    }
 
-    res.status(resp.ok ? 200 : resp.status).json({
-      success: smsSent,
-      processId: session.processId,
-      desc: body.data?.desc,
-      view: body.view?.code,
-      ...(errorCode !== 'none' && { error: errorCode }),
+    return res.status(resp.ok ? 200 : resp.status).json(
+      authStepResponse({ body, processId, nextStep, success: Boolean(nextStep) })
+    );
+  } catch (error) {
+    return respondAuthError(res, error);
+  } finally {
+    authFlows.endStep(session);
+  }
+});
+
+// Step 2b — Submit the login password only when Kaspi requests it.
+router.post('/send-password', async (req, res) => {
+  let session;
+  try {
+    const { password, processId, accountId } = req.body || {};
+    if (typeof password !== 'string' || password.length === 0 || password.length > 256) {
+      return res.status(400).json({ success: false, error: 'password required', code: 'PASSWORD_REQUIRED' });
+    }
+    if (!processId) {
+      return res.status(400).json({ success: false, error: 'processId required', code: 'PROCESS_ID_REQUIRED' });
+    }
+
+    session = authFlows.beginStep(processId, {
+      accountId,
+      expectedStep: AUTH_STEPS.PASSWORD,
+      attemptKind: AUTH_STEPS.PASSWORD,
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+
+    const resp = await loggedFetch(`${KASPI_ENTRANCE_URL}/api/v1/entrance/step`, {
+      method: 'POST',
+      headers: {
+        ...ENTRANCE_HEADERS_BASE,
+        Referer: `${KASPI_ENTRANCE_URL}/process/enter-login-password?pId=${session.processId}&firstPage=KPEnterLoginPassword`,
+        Cookie: entranceCookie(session.userToken),
+      },
+      body: JSON.stringify(buildPasswordStepPayload(session.processId, password)),
+    });
+
+    const userToken = extractUserToken(resp);
+    if (userToken) session.userToken = userToken;
+
+    const body = await resp.json();
+    const nextStep = resp.ok ? nextStepAfterPassword(body) : null;
+    const success = nextStep === AUTH_STEPS.OTP;
+    if (success) {
+      session.otpInputType = 'Manual';
+      authFlows.transition(session, AUTH_STEPS.OTP, body.meta);
+    }
+
+    return res.status(resp.ok ? 200 : resp.status).json(
+      authStepResponse({ body, processId, nextStep, success })
+    );
+  } catch (error) {
+    return respondAuthError(res, error);
+  } finally {
+    authFlows.endStep(session);
   }
 });
 
@@ -128,14 +242,20 @@ router.post('/send-phone', async (req, res) => {
 // ═══════════════════════════════════════════════════
 
 router.post('/verify-otp', async (req, res) => {
-  const { otp, processId } = req.body;
-  if (!otp) return res.status(400).json({ error: 'otp required' });
-  if (!processId) return res.status(400).json({ error: 'processId required' });
-
-  const session = authSessions.get(processId);
-  if (!session) return res.status(400).json({ error: 'Unknown processId' });
-
+  let session;
   try {
+    const { otp, processId, accountId } = req.body || {};
+    if (!otp) return res.status(400).json({ success: false, error: 'otp required', code: 'OTP_REQUIRED' });
+    if (!processId) {
+      return res.status(400).json({ success: false, error: 'processId required', code: 'PROCESS_ID_REQUIRED' });
+    }
+
+    session = authFlows.beginStep(processId, {
+      accountId,
+      expectedStep: AUTH_STEPS.OTP,
+      attemptKind: AUTH_STEPS.OTP,
+    });
+
     const resp = await loggedFetch(`${KASPI_ENTRANCE_URL}/api/v1/entrance/step`, {
       method: 'POST',
       headers: {
@@ -143,34 +263,37 @@ router.post('/verify-otp', async (req, res) => {
         Referer: `${KASPI_ENTRANCE_URL}/process/universal-enter-phone-number?pId=${session.processId}&firstPage=KPUniversalEnterPhoneNumber`,
         Cookie: entranceCookie(session.userToken),
       },
-      body: JSON.stringify({
-        meta: { pId: session.processId, sn: 'ViewEnterOtp' },
-        data: { userOtp: otp, inputType: 'auto' },
-        actType: 'Success',
-      }),
+      body: JSON.stringify(buildOtpStepPayload(session, otp)),
     });
 
-    const ut = extractUserToken(resp);
-    if (ut) session.userToken = ut;
+    const userToken = extractUserToken(resp);
+    if (userToken) session.userToken = userToken;
 
     const body = await resp.json();
-
-    if (body.data?.type === 'kpDeviceRegistration' || body.view?.code === 'KPMobileCall') {
-      // OTP verified — automatically call finish
-      const finishResult = await doFinish(session);
-      authSessions.delete(processId);
-      res.status(resp.ok ? 200 : resp.status).json({
-        success: true,
-        processId: session.processId,
-        step: 'finished',
-        message: 'OTP verified and finish completed',
-        ...finishResult,
+    if (!resp.ok || !isOtpVerified(body)) {
+      return res.status(resp.ok ? 422 : resp.status).json({
+        success: false,
+        processId,
+        nextStep: AUTH_STEPS.OTP,
+        view: providerView(body),
+        description: providerDescription(body),
+        error: providerError(body) || 'OTP_VERIFICATION_FAILED',
       });
-    } else {
-      res.status(resp.ok ? 200 : resp.status).json({ success: false, processId: session.processId, step: 'otp_response', view: body.view?.code });
     }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+
+    const finishResult = await doFinish(session);
+    authFlows.delete(processId);
+    return res.json({
+      success: true,
+      processId,
+      step: 'finished',
+      message: 'OTP verified and finish completed',
+      ...finishResult,
+    });
+  } catch (error) {
+    return respondAuthError(res, error);
+  } finally {
+    authFlows.endStep(session);
   }
 });
 

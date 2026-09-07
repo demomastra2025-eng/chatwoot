@@ -107,6 +107,15 @@ describe('#integrationAPI', () => {
       expect(formData.get('file')).toBe(file);
     });
 
+    it('#initKaspiPayAuth declares password-flow capability', () => {
+      integrationAPI.initKaspiPayAuth();
+
+      expect(axiosMock.post).toHaveBeenCalledWith(
+        '/api/v1/integrations/kaspi_pay/auth/init',
+        { auth_flow_version: 2 }
+      );
+    });
+
     it('#sendKaspiPayPhone normalizes cashier phone to local 10 digits', () => {
       integrationAPI.sendKaspiPayPhone({
         processId: 'process-1',
@@ -118,6 +127,21 @@ describe('#integrationAPI', () => {
         {
           process_id: 'process-1',
           phone_number: '7012114000',
+        }
+      );
+    });
+
+    it('#sendKaspiPayPassword sends the password only to the dedicated auth endpoint', () => {
+      integrationAPI.sendKaspiPayPassword({
+        processId: 'process-1',
+        password: 'kaspi-password',
+      });
+
+      expect(axiosMock.post).toHaveBeenCalledWith(
+        '/api/v1/integrations/kaspi_pay/auth/send_password',
+        {
+          process_id: 'process-1',
+          password: 'kaspi-password',
         }
       );
     });

@@ -16,21 +16,24 @@
       "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
     },
     "KASPI_PAY": {
-      "SEND_OTP": "Send SMS code",
-      "CONNECT": "Connect Kaspi Pay",
-      "PHONE_LABEL": "Kaspi cashier phone",
-      "OTP_LABEL": "SMS code",
-      "LATITUDE_LABEL": "POS latitude",
-      "LONGITUDE_LABEL": "POS longitude",
-      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. You can enter the number with +7/7/8; OneLink sends the local 10 digits to Kaspi. The session secrets are stored only on the server and are not returned to the browser.",
-      "PHONE_REQUIRED": "Enter the phone number",
-      "OTP_REQUIRED": "Enter the SMS code",
-      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the code and try again.",
-      "CONNECT_SUCCESS": "Kaspi Pay connected successfully",
-      "CONNECTED_TITLE": "Connected merchant",
+      "CONTINUE": "Жалғастыру",
+      "SEND_OTP": "SMS-кодты жіберу",
+      "CONNECT": "Kaspi Pay-ді қосу",
+      "PHONE_LABEL": "Kaspi кассирінің телефоны",
+      "PASSWORD_LABEL": "Kaspi Pay құпиясөзі",
+      "OTP_LABEL": "SMS-код",
+      "LATITUDE_LABEL": "POS ендігі",
+      "LONGITUDE_LABEL": "POS бойлығы",
+      "CONNECT_HELP": "Кассирдің телефонын көрсетіңіз. Kaspi құпиясөзді сұраса, оны, содан кейін SMS-кодты енгізіңіз. OneLink құпиясөзді сақтамайды, сессия құпиялары тек серверде сақталады.",
+      "PHONE_REQUIRED": "Телефонды енгізіңіз",
+      "PASSWORD_REQUIRED": "Kaspi Pay құпиясөзін енгізіңіз",
+      "OTP_REQUIRED": "SMS-кодты енгізіңіз",
+      "CONNECT_ERROR": "Kaspi Pay қосылмады. Деректерді тексеріп, қайталап көріңіз.",
+      "CONNECT_SUCCESS": "Kaspi Pay сәтті қосылды",
+      "CONNECTED_TITLE": "Қосылған мерчант",
       "DELETE": {
-        "TITLE": "Delete Kaspi Pay integration",
-        "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
+        "TITLE": "Kaspi Pay интеграциясын жою",
+        "MESSAGE": "Kaspi Pay-ді өшіргіңіз келетініне сенімдісіз бе? Жаңа Kaspi төлемдері жұмысын тоқтатады."
       }
     },
     "HEADER": "Интеграциялар",

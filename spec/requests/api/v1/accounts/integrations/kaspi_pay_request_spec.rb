@@ -14,14 +14,33 @@ RSpec.describe 'Kaspi Pay integration API', type: :request do
 
     it 'returns the provider process id' do
       allow(KaspiPay::AuthService).to receive(:new).with(account: account).and_return(auth_service)
-      allow(auth_service).to receive(:init).and_return({ process_id: 'process-1', view: 'EnterPhoneNumber' })
+      allow(auth_service).to receive(:init).with(auth_flow_version: 2).and_return({ process_id: 'process-1', view: 'EnterPhoneNumber' })
 
       post "/api/v1/accounts/#{account.id}/integrations/kaspi_pay/auth/init",
+           params: { auth_flow_version: 2 },
            headers: admin.create_new_auth_token,
            as: :json
 
       expect(response).to have_http_status(:success)
       expect(response.parsed_body).to include('process_id' => 'process-1', 'view' => 'EnterPhoneNumber')
+    end
+  end
+
+  describe 'POST /api/v1/accounts/:account_id/integrations/kaspi_pay/auth/send_password' do
+    it 'submits the password through the account-scoped service without returning it' do
+      allow(KaspiPay::AuthService).to receive(:new).with(account: account).and_return(auth_service)
+      expect(auth_service).to receive(:send_password)
+        .with(process_id: 'flow-1', password: 'cashier-password')
+        .and_return({ success: true, process_id: 'flow-1', next_step: 'otp' })
+
+      post "/api/v1/accounts/#{account.id}/integrations/kaspi_pay/auth/send_password",
+           params: { process_id: 'flow-1', password: 'cashier-password' },
+           headers: admin.create_new_auth_token,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body).to include('success' => true, 'process_id' => 'flow-1', 'next_step' => 'otp')
+      expect(response.parsed_body).not_to have_key('password')
     end
   end
 

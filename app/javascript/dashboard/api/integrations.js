@@ -96,7 +96,9 @@ class IntegrationsAPI extends ApiClient {
   }
 
   initKaspiPayAuth() {
-    return axios.post(`${this.baseUrl()}/integrations/kaspi_pay/auth/init`);
+    return axios.post(`${this.baseUrl()}/integrations/kaspi_pay/auth/init`, {
+      auth_flow_version: 2,
+    });
   }
 
   sendKaspiPayPhone({ processId, phoneNumber }) {
@@ -105,6 +107,16 @@ class IntegrationsAPI extends ApiClient {
       {
         process_id: processId,
         phone_number: normalizeKaspiPayCashierPhone(phoneNumber),
+      }
+    );
+  }
+
+  sendKaspiPayPassword({ processId, password }) {
+    return axios.post(
+      `${this.baseUrl()}/integrations/kaspi_pay/auth/send_password`,
+      {
+        process_id: processId,
+        password,
       }
     );
   }

@@ -20,7 +20,11 @@ app.use(
 );
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'kaspi-pay-adapter' });
+  res.json({
+    status: 'ok',
+    service: 'kaspi-pay-adapter',
+    capabilities: ['password-auth-v1', 'account-bound-auth-v1'],
+  });
 });
 
 app.use('/internal/kaspi', requireInternalSignature);

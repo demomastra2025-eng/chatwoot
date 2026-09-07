@@ -10,28 +10,51 @@ class KaspiPay::AuthService
     @client = client
   end
 
-  def init
-    body = client.init
+  def init(auth_flow_version: nil)
+    body = client.init(account_id: account.id, auth_flow_version: auth_flow_version)
+    raise_auth_error!(body, fallback_code: 'AUTH_INIT_FAILED') unless body['success']
+
     {
       process_id: body['processId'] || body[:process_id],
+      next_step: body['nextStep'],
       view: body['view']
     }.compact
   end
 
   def send_phone(process_id:, phone_number:)
-    body = client.send_phone(process_id: process_id, phone_number: normalize_cashier_phone(phone_number))
-    {
-      process_id: body['processId'] || process_id,
-      view: body['view'],
-      description: body['desc'],
-      error: body['error'],
-      success: body['success']
-    }.compact
+    body = client.send_phone(
+      process_id: process_id,
+      phone_number: normalize_cashier_phone(phone_number),
+      account_id: account.id
+    )
+    auth_step_payload(body, process_id: process_id)
+  end
+
+  def send_password(process_id:, password:)
+    body = client.send_password(process_id: process_id, password: password, account_id: account.id)
+    auth_step_payload(body, process_id: process_id)
   end
 
   def verify_otp(process_id:, otp:, phone_number: nil)
     normalized_phone = normalize_cashier_phone(phone_number)
-    normalize_session(client.verify_otp(process_id: process_id, otp: otp, phone_number: normalized_phone), normalized_phone)
+    body = client.verify_otp(
+      process_id: process_id,
+      otp: otp,
+      phone_number: normalized_phone,
+      account_id: account.id
+    )
+    raise_auth_error!(body, fallback_code: 'OTP_VERIFICATION_FAILED') unless body['success']
+
+    session = normalize_session(body, normalized_phone)
+    unless session.values_at(:token_sn, :vtoken_secret, :profile_id).all?(&:present?)
+      raise KaspiPay::Error.new(
+        'Kaspi Pay authentication returned incomplete credentials',
+        code: 'SESSION_AUTH_INVALID',
+        details: safe_auth_details(body)
+      )
+    end
+
+    session
   end
 
   def connect!(session:, settings: {})
@@ -50,6 +73,30 @@ class KaspiPay::AuthService
   private
 
   attr_reader :account, :client
+
+  def auth_step_payload(body, process_id:)
+    {
+      process_id: body['processId'] || process_id,
+      next_step: body['nextStep'],
+      view: body['view'],
+      description: body['description'] || body['desc'],
+      error: body['error'],
+      code: body['code'],
+      success: body['success']
+    }.compact
+  end
+
+  def raise_auth_error!(body, fallback_code:)
+    raise KaspiPay::Error.new(
+      body['description'].presence || body['error'].presence || 'Kaspi Pay authentication failed',
+      code: body['code'].presence || fallback_code,
+      details: safe_auth_details(body)
+    )
+  end
+
+  def safe_auth_details(body)
+    body.slice('success', 'processId', 'nextStep', 'view', 'description', 'error', 'code')
+  end
 
   def refresh_without_lock!(hook)
     body = client.refresh(hook: hook)

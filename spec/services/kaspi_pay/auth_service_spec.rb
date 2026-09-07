@@ -1,24 +1,37 @@
 require 'rails_helper'
 
 RSpec.describe KaspiPay::AuthService do
-  let(:account) { instance_double(Account) }
+  let(:account) { instance_double(Account, id: 530) }
   let(:client) { instance_double(KaspiPay::Client) }
   let(:service) { described_class.new(account: account, client: client) }
+
+  describe '#init' do
+    it 'binds the adapter auth flow to the current account' do
+      allow(client).to receive(:init).with(account_id: 530, auth_flow_version: 2).and_return(
+        'success' => true,
+        'processId' => 'flow-1',
+        'nextStep' => 'phone',
+        'view' => 'KPUniversalEnterPhoneNumber'
+      )
+
+      expect(service.init(auth_flow_version: 2)).to include(process_id: 'flow-1', next_step: 'phone')
+    end
+  end
 
   describe '#send_phone' do
     it 'sends Kaspi the local 10-digit cashier phone when the UI passes a +7 phone' do
       allow(client).to receive(:send_phone)
-        .with(process_id: 'process-1', phone_number: '7012114000')
-        .and_return('processId' => 'process-1', 'success' => true, 'view' => 'EnterOtp')
+        .with(process_id: 'process-1', phone_number: '7012114000', account_id: 530)
+        .and_return('processId' => 'process-1', 'success' => true, 'nextStep' => 'otp', 'view' => 'EnterOtp')
 
       result = service.send_phone(process_id: 'process-1', phone_number: '+7 701 211 40 00')
 
-      expect(result).to include(success: true, process_id: 'process-1', view: 'EnterOtp')
+      expect(result).to include(success: true, process_id: 'process-1', next_step: 'otp', view: 'EnterOtp')
     end
 
     it 'passes provider error details back to the controller for UI display' do
       allow(client).to receive(:send_phone)
-        .with(process_id: 'process-1', phone_number: '7012114000')
+        .with(process_id: 'process-1', phone_number: '7012114000', account_id: 530)
         .and_return('processId' => 'process-1', 'success' => false, 'error' => 'UserPhoneNumberDoesNotBelongToAnyOperator')
 
       result = service.send_phone(process_id: 'process-1', phone_number: '77012114000')
@@ -27,15 +40,60 @@ RSpec.describe KaspiPay::AuthService do
     end
   end
 
+  describe '#send_password' do
+    it 'forwards the password to the adapter and returns only the next auth step' do
+      allow(client).to receive(:send_password)
+        .with(process_id: 'process-1', password: 'cashier-password', account_id: 530)
+        .and_return(
+          'processId' => 'process-1',
+          'success' => true,
+          'nextStep' => 'otp',
+          'view' => 'KPEnterLoginPassword',
+          'description' => 'SMS sent'
+        )
+
+      result = service.send_password(process_id: 'process-1', password: 'cashier-password')
+
+      expect(result).to include(success: true, process_id: 'process-1', next_step: 'otp')
+      expect(result).not_to have_key(:password)
+    end
+  end
+
   describe '#verify_otp' do
     it 'stores the normalized cashier phone when Kaspi does not return one' do
       allow(client).to receive(:verify_otp)
-        .with(process_id: 'process-1', otp: '1234', phone_number: '7012114000')
-        .and_return('tokenSN' => 'token-sn', 'vtokenSecret' => 'secret', 'profileId' => 'profile-1')
+        .with(process_id: 'process-1', otp: '1234', phone_number: '7012114000', account_id: 530)
+        .and_return('success' => true, 'tokenSN' => 'token-sn', 'vtokenSecret' => 'secret', 'profileId' => 'profile-1')
 
       result = service.verify_otp(process_id: 'process-1', otp: '1234', phone_number: '87012114000')
 
       expect(result).to include(phone_number: '7012114000')
+    end
+
+    it 'rejects a successful adapter response with incomplete credentials' do
+      allow(client).to receive(:verify_otp)
+        .with(process_id: 'process-1', otp: '1234', phone_number: '', account_id: 530)
+        .and_return('success' => true, 'profileId' => 'profile-1')
+
+      expect { service.verify_otp(process_id: 'process-1', otp: '1234') }
+        .to raise_error(KaspiPay::Error) { |error| expect(error.code).to eq('SESSION_AUTH_INVALID') }
+    end
+
+    it 'raises a typed error for a rejected OTP without exposing session secrets' do
+      allow(client).to receive(:verify_otp)
+        .with(process_id: 'process-1', otp: '0000', phone_number: '', account_id: 530)
+        .and_return(
+          'success' => false,
+          'code' => 'OTP_VERIFICATION_FAILED',
+          'description' => 'Incorrect code',
+          'vtokenSecret' => 'must-not-leak'
+        )
+
+      expect { service.verify_otp(process_id: 'process-1', otp: '0000') }
+        .to raise_error(KaspiPay::Error) do |error|
+          expect(error.code).to eq('OTP_VERIFICATION_FAILED')
+          expect(error.details).not_to have_key('vtokenSecret')
+        end
     end
   end
 

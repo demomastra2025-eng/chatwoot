@@ -1,7 +1,7 @@
 require 'net/http'
 require 'openssl'
 
-class KaspiPay::Client
+class KaspiPay::Client # rubocop:disable Metrics/ClassLength
   DEFAULT_TIMEOUT = 15
   MAX_QR_PNG_BYTES = 2 * 1024 * 1024
   PNG_SIGNATURE = "\x89PNG\r\n\x1A\n".b.freeze
@@ -12,16 +12,23 @@ class KaspiPay::Client
     @internal_secret = internal_secret.to_s
   end
 
-  def init
-    post('/internal/kaspi/auth/init')
+  def init(account_id: nil, auth_flow_version: nil)
+    post('/internal/kaspi/auth/init', { accountId: account_id, authFlowVersion: auth_flow_version }.compact)
   end
 
-  def send_phone(process_id:, phone_number:)
-    post('/internal/kaspi/auth/send-phone', processId: process_id, phoneNumber: phone_number)
+  def send_phone(process_id:, phone_number:, account_id: nil)
+    post('/internal/kaspi/auth/send-phone', { processId: process_id, phoneNumber: phone_number, accountId: account_id }.compact)
   end
 
-  def verify_otp(process_id:, otp:, phone_number: nil)
-    post('/internal/kaspi/auth/verify-otp', processId: process_id, otp: otp, phoneNumber: phone_number)
+  def send_password(process_id:, password:, account_id: nil)
+    post('/internal/kaspi/auth/send-password', { processId: process_id, password: password, accountId: account_id }.compact)
+  end
+
+  def verify_otp(process_id:, otp:, phone_number: nil, account_id: nil)
+    post(
+      '/internal/kaspi/auth/verify-otp',
+      { processId: process_id, otp: otp, phoneNumber: phone_number, accountId: account_id }.compact
+    )
   end
 
   def refresh(hook: self.hook)
@@ -160,7 +167,12 @@ class KaspiPay::Client
     parsed = JSON.parse(response.body.presence || '{}')
     return parsed if response.is_a?(Net::HTTPSuccess)
 
-    raise KaspiPay::Error.new(parsed['error'].presence || 'Kaspi Pay adapter request failed', code: 'ADAPTER_REQUEST_FAILED', details: parsed)
+    raise KaspiPay::Error.new(
+      parsed['error'].presence || 'Kaspi Pay adapter request failed',
+      code: parsed['code'].presence || 'ADAPTER_REQUEST_FAILED',
+      status: response.code.to_i,
+      details: parsed
+    )
   rescue JSON::ParserError
     raise KaspiPay::Error.new('Kaspi Pay adapter returned invalid JSON', code: 'ADAPTER_INVALID_RESPONSE')
   end

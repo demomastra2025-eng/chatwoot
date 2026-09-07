@@ -18,6 +18,7 @@ const isSubmitting = ref(false);
 const step = ref('phone');
 const processId = ref('');
 const phoneNumber = ref('');
+const password = ref('');
 const otp = ref('');
 const formError = ref('');
 const latitude = ref('43.238949');
@@ -37,9 +38,13 @@ const hookMetadata = computed(
 
 const connectButtonLabel = computed(() => {
   if (isSubmitting.value) return '...';
-  return step.value === 'phone'
-    ? t('INTEGRATION_SETTINGS.KASPI_PAY.SEND_OTP')
-    : t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT');
+  if (step.value === 'phone') {
+    return t('INTEGRATION_SETTINGS.KASPI_PAY.CONTINUE');
+  }
+  if (step.value === 'password') {
+    return t('INTEGRATION_SETTINGS.KASPI_PAY.SEND_OTP');
+  }
+  return t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT');
 });
 
 const KASPI_CASHIER_PHONE_PATTERN = /^7\d{9}$/;
@@ -55,8 +60,32 @@ const isCashierPhoneComplete = computed(() =>
 const connectButtonDisabled = computed(() => {
   if (isSubmitting.value) return true;
   if (step.value === 'phone') return !isCashierPhoneComplete.value;
+  if (step.value === 'password') return !password.value;
   return !otp.value;
 });
+
+const resetAuthFlow = () => {
+  step.value = 'phone';
+  processId.value = '';
+  password.value = '';
+  otp.value = '';
+};
+
+const nextAuthStep = data => {
+  const nextStep = data?.next_step || data?.nextStep;
+  if (['password', 'otp'].includes(nextStep)) return nextStep;
+
+  // Keep a rolling deploy compatible with the previous adapter response.
+  return data?.success ? 'otp' : null;
+};
+
+const authErrorMessage = (error, fallback) => {
+  const data = error?.response?.data;
+  if (['AUTH_FLOW_EXPIRED', 'AUTH_FLOW_NOT_FOUND'].includes(data?.code)) {
+    resetAuthFlow();
+  }
+  return data?.description || data?.error || fallback;
+};
 
 const normalizePhoneInput = event => {
   phoneNumber.value = normalizeKaspiPayCashierPhone(event.target.value).slice(
@@ -70,7 +99,7 @@ const initializeKaspiPayIntegration = async () => {
   integrationLoaded.value = true;
 };
 
-const sendOtp = async () => {
+const startAuth = async () => {
   if (!isCashierPhoneComplete.value) {
     formError.value = t('INTEGRATION_SETTINGS.KASPI_PAY.PHONE_REQUIRED');
     return;
@@ -86,7 +115,8 @@ const sendOtp = async () => {
       phoneNumber: cashierPhoneDigits.value,
     });
 
-    if (!phoneResponse.data.success) {
+    const nextStep = nextAuthStep(phoneResponse.data);
+    if (!phoneResponse.data.success || !nextStep) {
       formError.value =
         phoneResponse.data.description ||
         phoneResponse.data.error ||
@@ -94,10 +124,47 @@ const sendOtp = async () => {
       return;
     }
 
+    step.value = nextStep;
+  } catch (error) {
+    formError.value = authErrorMessage(
+      error,
+      t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_ERROR')
+    );
+  } finally {
+    isSubmitting.value = false;
+  }
+};
+
+const sendPassword = async () => {
+  if (!password.value) {
+    formError.value = t('INTEGRATION_SETTINGS.KASPI_PAY.PASSWORD_REQUIRED');
+    return;
+  }
+
+  isSubmitting.value = true;
+  formError.value = '';
+  try {
+    const passwordResponse = await integrationAPI.sendKaspiPayPassword({
+      processId: processId.value,
+      password: password.value,
+    });
+    const nextStep = nextAuthStep(passwordResponse.data);
+    if (!passwordResponse.data.success || nextStep !== 'otp') {
+      formError.value =
+        passwordResponse.data.description ||
+        passwordResponse.data.error ||
+        t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_ERROR');
+      return;
+    }
+
     step.value = 'otp';
   } catch (error) {
-    formError.value = t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_ERROR');
+    formError.value = authErrorMessage(
+      error,
+      t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_ERROR')
+    );
   } finally {
+    password.value = '';
     isSubmitting.value = false;
   }
 };
@@ -124,7 +191,10 @@ const verifyOtp = async () => {
     await initializeKaspiPayIntegration();
     useAlert(t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_SUCCESS'));
   } catch (error) {
-    formError.value = t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_ERROR');
+    formError.value = authErrorMessage(
+      error,
+      t('INTEGRATION_SETTINGS.KASPI_PAY.CONNECT_ERROR')
+    );
   } finally {
     isSubmitting.value = false;
   }
@@ -132,7 +202,11 @@ const verifyOtp = async () => {
 
 const submit = () => {
   if (step.value === 'phone') {
-    sendOtp();
+    startAuth();
+    return;
+  }
+  if (step.value === 'password') {
+    sendPassword();
     return;
   }
   verifyOtp();
@@ -182,14 +256,23 @@ onMounted(() => {
             inputmode="numeric"
             pattern="[0-9]*"
             maxlength="16"
-            :disabled="step === 'otp'"
+            :disabled="step !== 'phone'"
             @input="normalizePhoneInput"
+          />
+          <Input
+            v-if="step === 'password'"
+            v-model="password"
+            :label="$t('INTEGRATION_SETTINGS.KASPI_PAY.PASSWORD_LABEL')"
+            type="password"
+            autocomplete="off"
           />
           <Input
             v-if="step === 'otp'"
             v-model="otp"
             :label="$t('INTEGRATION_SETTINGS.KASPI_PAY.OTP_LABEL')"
             placeholder="1234"
+            inputmode="numeric"
+            autocomplete="one-time-code"
           />
           <Input
             v-model="latitude"

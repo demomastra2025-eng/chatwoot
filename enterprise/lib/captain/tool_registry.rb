@@ -1775,7 +1775,7 @@ class Captain::ToolRegistry
         definition(
           id: 'send_kaspi_pay_phone',
           title: 'Send Kaspi Pay Phone',
-          description: 'Send a Kaspi Pay cashier/POS operator phone number during administrator-only connection flow',
+          description: 'Send a Kaspi cashier phone and return the next auth step; enter any requested password in integration settings, never in chat.',
           group_name: 'Payments',
           icon: 'phone',
           allowed_scopes: [Captain::ToolAccess::SCOPE_ASSISTANT],
