@@ -37,6 +37,7 @@ from app.pipeline.processors import DomainTranscriptNormalizationProcessor, Mode
 from app.services.elevenlabs_realtime_stt import OneLinkElevenLabsRealtimeSTTService
 from app.services.fish_asr import FishAudioASRService
 from app.services.fish_tts import OneLinkFishAudioTTSService
+from app.services.gemini_stt import OneLinkGeminiSTTService
 
 
 def _settings(**overrides) -> Settings:
@@ -225,6 +226,30 @@ def test_builds_fish_batch_asr_pipeline():
     assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
     assert assembly.tts._settings.model == "s2.1-pro-free"
     assert assembly.tts._settings.voice == "fish-voice-ref"
+
+
+def test_builds_fish_gemini_transcribe_pipeline():
+    assembly = build_pipeline(
+        context=_context(
+            "fish",
+            model="openai/gpt-5.4-mini",
+            voice="fish-voice-ref",
+            stt_provider="gemini",
+        ),
+        state=MagicMock(),
+        recorder=None,
+        runtime_stream=_runtime_stream(),
+        settings=_settings(elevenlabs_api_key=""),
+    )
+
+    assert isinstance(assembly.stt, OneLinkGeminiSTTService)
+    assert assembly.stt._settings.model == "gemini-3.5-transcribe-live"
+    assert assembly.stt._settings.languages == ["ru-RU"]
+    live_config = assembly.stt._build_live_config()
+    assert live_config.input_audio_transcription.language_codes == ["ru-RU"]
+    assert live_config.input_audio_transcription.language_hints is None
+    assert isinstance(assembly.llm, OpenRouterLLMService)
+    assert isinstance(assembly.tts, OneLinkFishAudioTTSService)
 
 
 def test_non_gpt_openrouter_model_does_not_receive_gpt_reasoning_contract():

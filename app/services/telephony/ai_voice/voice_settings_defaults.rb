@@ -118,7 +118,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
   GEMINI_AFFECTIVE_DIALOG_MODELS = %w[gemini-2.5-flash-native-audio-preview-12-2025].freeze
   GEMINI_PROACTIVE_AUDIO_MODELS = GEMINI_AFFECTIVE_DIALOG_MODELS
   THINKING_LEVELS = %w[minimal low medium high].freeze
-  FISH_STT_PROVIDERS = %w[elevenlabs fish].freeze
+  FISH_STT_PROVIDERS = %w[elevenlabs fish gemini].freeze
   MAX_DURATION_SEC_RANGE = (1..7200)
   ORDINARY_ANSWER_CONTINUATION_MS_RANGE = (500..120_000)
 

@@ -661,6 +661,7 @@
           "STT_PROVIDER": "Сөйлеуді тану",
           "STT_ELEVENLABS_REALTIME": "ElevenLabs — ағындық",
           "STT_FISH_BATCH": "Fish Audio — сөйлем аяқталғаннан кейін",
+          "STT_GEMINI_TRANSCRIBE": "Gemini 3.5 Transcribe — ағындық",
           "FISH_VOICE_PLACEHOLDER": "Fish Audio дауыс ID-і",
           "FISH_VOICE_DESCRIPTION": "Тіркелгіңізге қолжетімді Fish Audio дауысының reference_id мәнін енгізіңіз.",
           "FISH_VOICES": {

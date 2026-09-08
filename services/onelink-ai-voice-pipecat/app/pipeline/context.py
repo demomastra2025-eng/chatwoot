@@ -19,7 +19,7 @@ class AiSettings(ContextModel):
     provider: Literal["gemini-live", "openai-realtime", "elevenlabs", "cartesia", "fish"] = (
         "gemini-live"
     )
-    stt_provider: Literal["elevenlabs", "fish"] = "elevenlabs"
+    stt_provider: Literal["elevenlabs", "fish", "gemini"] = "elevenlabs"
     model: str = Field(min_length=1, max_length=200)
     voice: str = Field(min_length=1, max_length=100)
     language: str = Field(default="ru-KZ", min_length=2, max_length=20)

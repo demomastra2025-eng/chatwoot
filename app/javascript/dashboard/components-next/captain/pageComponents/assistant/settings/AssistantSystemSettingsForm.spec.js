@@ -382,7 +382,7 @@ describe('AssistantSystemSettingsForm', () => {
     }
   );
 
-  it('requires a Fish voice id and persists either Fish STT variant', async () => {
+  it('requires a Fish voice id and persists every supported STT variant', async () => {
     const wrapper = buildWrapper({ assistant: { id: 58, config: {} } });
 
     wrapper.vm.updateVoiceProvider('fish');
@@ -397,17 +397,20 @@ describe('AssistantSystemSettingsForm', () => {
     expect(wrapper.vm.state.voiceSettings.voice).toBe(
       '31f936a9333f4f5a99dcaaf6df091b84'
     );
+    expect(
+      wrapper.vm.voiceSttProviderOptions.map(option => option.value)
+    ).toEqual(['elevenlabs', 'fish', 'gemini']);
     wrapper.vm.state.voiceSettings.voice = '';
     expect(await wrapper.vm.buildPayload()).toBeNull();
 
     wrapper.vm.state.voiceSettings.voice = 'fish-voice-ref';
-    wrapper.vm.state.voiceSettings.sttProvider = 'fish';
+    wrapper.vm.state.voiceSettings.sttProvider = 'gemini';
     const payload = await wrapper.vm.buildPayload();
 
     expect(payload.assistant.config.voice_settings).toEqual(
       expect.objectContaining({
         provider: 'fish',
-        stt_provider: 'fish',
+        stt_provider: 'gemini',
         model: 'openai/gpt-5.6-luna',
         voice: 'fish-voice-ref',
         language: 'auto',
