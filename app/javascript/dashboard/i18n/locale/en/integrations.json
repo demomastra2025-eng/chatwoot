@@ -982,6 +982,8 @@
           "ALLOW_FAQ_LOOKUP": "Use FAQ lookup to search for relevant answers",
           "ALLOW_HUMAN_HANDOFF": "Hand off to a human when the AI agent cannot help",
           "ALLOW_WEB_ACCESS": "Allow web search",
+          "USE_AUDIO_TRANSCRIPTIONS": "Use voice message transcripts",
+          "USE_AUDIO_TRANSCRIPTIONS_DISABLED": "Use voice message transcripts (enable workspace transcription first)",
           "ALLOW_CONTACT_ATTRIBUTES": "Allow access to contact information"
         },
         "ACCESS_MODES": {

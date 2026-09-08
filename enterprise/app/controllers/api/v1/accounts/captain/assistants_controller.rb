@@ -7,6 +7,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :resolution_message_enabled, :resolution_message_mode,
     :temperature,
     :auto_reply_on_last_incoming,
+    :use_audio_transcriptions,
     :message_collapse_window_seconds, :history_message_limit
   ].freeze
   VOICE_SETTINGS_ARRAY_FIELDS = Telephony::AiVoice::VoiceSettingsDefaults::ARRAY_KEYS.index_with { [] }.freeze

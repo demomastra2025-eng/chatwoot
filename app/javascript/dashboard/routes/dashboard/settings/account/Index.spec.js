@@ -70,6 +70,7 @@ const InvalidNestedSettings = {
 
 const buildWrapper = ({
   updateAction = vi.fn(() => Promise.resolve()),
+  isOnChatwootCloud = false,
 } = {}) => {
   const store = createStore({
     modules: {
@@ -86,7 +87,7 @@ const buildWrapper = ({
       globalConfig: {
         namespaced: true,
         getters: {
-          isOnChatwootCloud: () => false,
+          isOnChatwootCloud: () => isOnChatwootCloud,
         },
       },
     },
@@ -104,6 +105,7 @@ const buildWrapper = ({
           template: '<section><slot /><slot name="headerActions" /></section>',
         },
         WorkspaceLogo: true,
+        MediaTranscription: true,
         AccountId: true,
         BuildInfo: true,
         AccountDelete: true,
@@ -196,5 +198,95 @@ describe('Account settings', () => {
     expect(updateAction).not.toHaveBeenCalled();
     expect(useAlert).toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.NAME.ERROR');
     expect(useAlert).not.toHaveBeenCalledWith('GENERAL_SETTINGS.FORM.ERROR');
+  });
+
+  it('shows compact workspace sections and isolates the cloud danger zone', async () => {
+    const { wrapper } = buildWrapper({ isOnChatwootCloud: true });
+    await wrapper.vm.hydrateAccountForm();
+
+    expect(wrapper.vm.workspaceSections.map(section => section.id)).toEqual([
+      'general',
+      'communications',
+      'security',
+      'technical',
+      'danger',
+    ]);
+    expect(wrapper.vm.workspaceSections.at(-1)).toMatchObject({ danger: true });
+  });
+
+  it('detects normalized workspace changes and restores persisted values', async () => {
+    const { wrapper } = buildWrapper();
+    await wrapper.vm.hydrateAccountForm();
+
+    expect(wrapper.vm.hasWorkspaceChanges).toBe(false);
+    await wrapper.setData({ name: 'Renamed workspace' });
+    expect(wrapper.vm.hasWorkspaceChanges).toBe(true);
+
+    await wrapper.vm.discardWorkspaceChanges();
+
+    expect(wrapper.vm.name).toBe(account.name);
+    expect(wrapper.vm.hasWorkspaceChanges).toBe(false);
+  });
+
+  it('protects browser navigation while changes are unsaved', async () => {
+    const { wrapper } = buildWrapper();
+    await wrapper.vm.hydrateAccountForm();
+    await wrapper.setData({ name: 'Renamed workspace' });
+    const event = { preventDefault: vi.fn(), returnValue: undefined };
+
+    wrapper.vm.handleBeforeUnload(event);
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    expect(event.returnValue).toBe('');
+  });
+
+  it('does not overwrite a draft when the same account refreshes', async () => {
+    const { wrapper } = buildWrapper();
+    await wrapper.vm.hydrateAccountForm();
+    await wrapper.setData({ name: 'Unsaved workspace name' });
+
+    await wrapper.vm.hydrateAccountForm();
+
+    expect(wrapper.vm.name).toBe('Unsaved workspace name');
+  });
+
+  it('protects workspace changes when the route account changes', () => {
+    const next = vi.fn();
+    const context = {
+      confirmWorkspaceNavigation: vi.fn(() => false),
+    };
+
+    AccountSettings.beforeRouteUpdate.call(
+      context,
+      { params: { accountId: '531' } },
+      { params: { accountId: '530' } },
+      next
+    );
+
+    expect(context.confirmWorkspaceNavigation).toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(false);
+  });
+
+  it('does not expose the danger zone in read-only mode', () => {
+    const context = {
+      isOnChatwootCloud: true,
+      isWorkspaceReadOnly: true,
+      $t: key => key,
+    };
+
+    const sections = AccountSettings.computed.workspaceSections.call(context);
+
+    expect(sections.map(section => section.id)).not.toContain('danger');
+  });
+
+  it('returns to the general section when the active section becomes unavailable', () => {
+    const context = {
+      activeWorkspaceSection: 'danger',
+      workspaceSections: [{ id: 'general' }],
+    };
+
+    AccountSettings.methods.ensureActiveWorkspaceSection.call(context);
+
+    expect(context.activeWorkspaceSection).toBe('general');
   });
 });

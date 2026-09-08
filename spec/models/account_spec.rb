@@ -206,6 +206,8 @@ RSpec.describe Account do
       it 'defaults audio_transcriptions to false when settings are empty' do
         expect(account.audio_transcriptions).to eq(false)
         expect(account.settings['audio_transcriptions']).to eq(false)
+        expect(account.call_transcriptions).to be_nil
+        expect(account.call_transcriptions_enabled?).to be(false)
       end
 
       it 'normalizes nil audio_transcriptions to false' do
@@ -213,6 +215,21 @@ RSpec.describe Account do
 
         expect(account.reload.audio_transcriptions).to eq(false)
         expect(account.settings['audio_transcriptions']).to eq(false)
+      end
+
+      it 'preserves legacy call transcription behavior until the dedicated setting is saved' do
+        account.update_column(:settings, account.settings.except('call_transcriptions').merge('audio_transcriptions' => true))
+
+        expect(account.reload.call_transcriptions_enabled?).to be(true)
+      end
+
+      it 'does not materialize the legacy call transcription fallback during unrelated saves' do
+        account.update_column(:settings, account.settings.except('call_transcriptions').merge('audio_transcriptions' => true))
+
+        account.update!(name: 'Renamed account')
+
+        expect(account.reload.settings).not_to have_key('call_transcriptions')
+        expect(account.call_transcriptions_enabled?).to be(true)
       end
 
       it 'keeps legacy audio_transcriptions as captain audio transcription fallback' do

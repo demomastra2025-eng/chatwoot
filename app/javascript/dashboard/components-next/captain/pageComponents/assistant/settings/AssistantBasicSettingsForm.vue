@@ -70,6 +70,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  audioTranscriptionsAvailable: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['submit', 'update:usageMode']);
@@ -85,6 +89,7 @@ const initialState = {
     memories: false,
     citations: false,
     web: false,
+    useAudioTranscriptions: true,
   },
   contextAccess: {},
   toolAccess: buildDefaultToolAccessForUsageMode(),
@@ -218,6 +223,12 @@ const webAccessEnabled = computed({
   },
 });
 
+const audioTranscriptionsLabel = computed(() =>
+  props.audioTranscriptionsAvailable
+    ? t('CAPTAIN.ASSISTANTS.FORM.FEATURES.USE_AUDIO_TRANSCRIPTIONS')
+    : t('CAPTAIN.ASSISTANTS.FORM.FEATURES.USE_AUDIO_TRANSCRIPTIONS_DISABLED')
+);
+
 const notesEnabled = computed({
   get: () => {
     const scopeName = activeToolScope.value;
@@ -263,6 +274,7 @@ const updateStateFromAssistant = assistant => {
     memories: config.feature_memory || false,
     citations: config.feature_citation || false,
     web: config.feature_web || false,
+    useAudioTranscriptions: config.use_audio_transcriptions !== false,
   };
   state.contextAccess = {};
   state.toolAccess = resolveToolAccessForUsageMode(
@@ -315,6 +327,11 @@ const buildPayload = async () => {
       feature_web: webAccessEnabled.value,
       tool_access: state.toolAccess,
     };
+
+    if (props.audioTranscriptionsAvailable) {
+      assistantPayload.config.use_audio_transcriptions =
+        state.features.useAudioTranscriptions;
+    }
   }
 
   return {
@@ -462,6 +479,13 @@ defineExpose({
         <label v-if="isExternalAgent" class="flex items-center gap-2">
           <Checkbox v-model="webAccessEnabled" />
           {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.ALLOW_WEB_ACCESS') }}
+        </label>
+        <label v-if="isExternalAgent" class="flex items-center gap-2">
+          <Checkbox
+            v-model="state.features.useAudioTranscriptions"
+            :disabled="!audioTranscriptionsAvailable"
+          />
+          <span>{{ audioTranscriptionsLabel }}</span>
         </label>
         <label v-if="isExternalAgent" class="flex items-center gap-2">
           <Checkbox v-model="faqLookupEnabled" />

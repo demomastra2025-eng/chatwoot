@@ -161,7 +161,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def prepare_multimodal_message_content(message, previous_assistant_message: nil)
-    content = Captain::OpenAiMessageBuilderService.new(message: message).generate_content
+    message_builder = Captain::OpenAiMessageBuilderService.new(message: message, assistant: @assistant)
+    content = message_builder.generate_content
     return content unless receipt_image_after_request?(message, previous_assistant_message)
 
     append_receipt_attachment_context(content)
@@ -186,7 +187,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def wait_for_audio_transcriptions
-    return unless account.captain_audio_transcription_enabled?
+    return unless account.audio_transcriptions_enabled?
+    return unless @assistant.use_audio_transcriptions?
     return unless pending_audio_transcription?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + AUDIO_TRANSCRIPTION_WAIT_TIMEOUT.to_f

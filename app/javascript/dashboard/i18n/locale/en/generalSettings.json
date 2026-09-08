@@ -8,6 +8,20 @@
     },
     "TITLE": "Profile",
     "SUBMIT": "Save changes",
+    "READ_ONLY": "You have view-only access. Only an administrator can edit the workspace.",
+    "SECTIONS": {
+      "NAVIGATION": "Workspace sections",
+      "GENERAL": "General",
+      "COMMUNICATIONS": "Communications",
+      "SECURITY": "Security",
+      "TECHNICAL": "Technical",
+      "DANGER": "Danger zone"
+    },
+    "UNSAVED": {
+      "MESSAGE": "You have unsaved changes",
+      "DISCARD": "Discard",
+      "CONFIRM_LEAVE": "Your workspace changes are not saved. Leave this page?"
+    },
     "BACK": "Back",
     "DISMISS": "Dismiss",
     "UPDATE": {
@@ -107,6 +121,22 @@
         "API": {
           "SUCCESS": "Audio transcription setting updated successfully",
           "ERROR": "Failed to update audio transcription setting"
+        }
+      },
+      "MEDIA_TRANSCRIPTION": {
+        "TITLE": "Transcription",
+        "NOTE": "Configure automatic media transcription for agents, search, and history independently of AI agents.",
+        "AUDIO": {
+          "TITLE": "Transcribe voice messages",
+          "NOTE": "Store text alongside incoming and outgoing voice messages."
+        },
+        "CALLS": {
+          "TITLE": "Transcribe call recordings",
+          "NOTE": "Store a call transcript when a recording is available."
+        },
+        "API": {
+          "SUCCESS": "Transcription settings updated",
+          "ERROR": "Failed to update transcription settings"
         }
       },
       "AUTO_RESOLVE_DURATION": {

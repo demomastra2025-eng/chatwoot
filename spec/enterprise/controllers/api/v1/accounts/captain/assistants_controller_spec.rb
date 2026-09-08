@@ -724,6 +724,18 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
         expect(json_response[:config][:feature_citation]).to be(false)
       end
 
+      it 'updates the audio transcript capability without replacing unrelated config' do
+        assistant.update!(config: { 'feature_faq' => true, 'use_audio_transcriptions' => true })
+
+        patch "/api/v1/accounts/#{account.id}/captain/assistants/#{assistant.id}",
+              params: { assistant: { config: { use_audio_transcriptions: false } } },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(assistant.reload.config).to include('feature_faq' => true, 'use_audio_transcriptions' => false)
+      end
+
       it 'updates voice settings without replacing unrelated config sections' do
         assistant.update!(
           config: {

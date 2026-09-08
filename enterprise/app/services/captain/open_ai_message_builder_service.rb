@@ -1,4 +1,6 @@
 class Captain::OpenAiMessageBuilderService
+  attr_writer :assistant
+
   META_AD_REFERRAL_CONTEXT_FIELDS = [
     ['channel', [:provider]],
     ['attribution', %i[attribution_type attributionType]],
@@ -18,7 +20,10 @@ class Captain::OpenAiMessageBuilderService
     ['received at', %i[received_at receivedAt]]
   ].freeze
 
-  pattr_initialize [:message!]
+  def initialize(message:, assistant: nil)
+    @message = message
+    @assistant = assistant
+  end
 
   # Extracts text and image URLs from multimodal content array (reverse of generate_content)
   def self.extract_text_and_attachments(content)
@@ -134,7 +139,8 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def extract_audio_transcriptions(attachments)
-    return '' unless @message.account.captain_audio_transcription_enabled?
+    return '' unless @message.account.audio_transcriptions_enabled?
+    return '' if @assistant.present? && !@assistant.use_audio_transcriptions?
 
     audio_attachments = attachments.where(file_type: :audio)
     return '' if audio_attachments.blank?

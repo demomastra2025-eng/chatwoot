@@ -108,6 +108,7 @@ class Api::V1::AccountsController < Api::BaseController
       :auto_resolve_message,
       :auto_resolve_ignore_waiting,
       :audio_transcriptions,
+      :call_transcriptions,
       :auto_resolve_label,
       :scheduling_contact_required,
       :scheduling_company_enabled,

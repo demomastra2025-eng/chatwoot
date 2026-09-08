@@ -753,6 +753,8 @@ class Api::V1::Accounts::WhatsappCallsController < Api::V1::Accounts::BaseContro
   def attach_recording_and_enqueue_transcription
     @call.recording.attach(params[:recording])
     Whatsapp::CallMessageBuilder.update_recording_url!(call: @call)
+    return unless @call.account.call_transcriptions_enabled?
+
     Whatsapp::CallTranscriptionJob.perform_later(@call.id)
   end
 

@@ -39,9 +39,7 @@ class Telephony::CallRecordingTranscriptionService < Llm::BaseAiService
   private
 
   def can_transcribe?
-    account.feature_enabled?('captain_integration') &&
-      account.captain_audio_transcription_enabled? &&
-      account.captain_quota_available?
+    account.call_transcriptions_enabled? && account.captain_quota_available?
   end
 
   def cached_transcript

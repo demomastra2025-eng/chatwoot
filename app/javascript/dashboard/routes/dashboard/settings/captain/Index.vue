@@ -435,9 +435,6 @@ const selectedAudioTranscriptionModel = computed(() => {
 const showAudioTranscriptionPrompt = computed(() =>
   shouldShowAudioTranscriptionPrompt(selectedAudioTranscriptionModel.value)
 );
-const isAudioTranscriptionEnabled = computed(
-  () => features.value.audio_transcription?.enabled === true
-);
 const isHelpCenterSearchEnabled = computed(
   () => features.value.help_center_search?.enabled === true
 );
@@ -1862,46 +1859,7 @@ onMounted(() => {
                   v-else-if="feature.key === 'audio_transcription'"
                   class="grid gap-4 border-t border-n-weak pt-4"
                 >
-                  <div class="flex min-w-0 items-center justify-between gap-4">
-                    <div class="flex min-w-0 items-start gap-4">
-                      <Icon
-                        icon="i-lucide-audio-lines"
-                        class="mt-0.5 size-4 shrink-0 text-n-slate-11"
-                      />
-                      <div class="min-w-0">
-                        <div class="text-xs font-medium text-n-slate-12">
-                          {{
-                            t(
-                              'CAPTAIN_SETTINGS.MODEL_CONFIG.AUDIO_TRANSCRIPTION.ENABLE_TITLE'
-                            )
-                          }}
-                        </div>
-                        <div class="mt-0.5 text-xs text-n-slate-11">
-                          {{
-                            t(
-                              'CAPTAIN_SETTINGS.MODEL_CONFIG.AUDIO_TRANSCRIPTION.ENABLE_DESCRIPTION'
-                            )
-                          }}
-                        </div>
-                      </div>
-                    </div>
-                    <Switch
-                      :model-value="isAudioTranscriptionEnabled"
-                      :disabled="!isFeatureAccessible(feature)"
-                      @change="
-                        enabled =>
-                          handleFeatureToggle({
-                            feature: 'audio_transcription',
-                            enabled,
-                          })
-                      "
-                    />
-                  </div>
-
-                  <div
-                    v-if="showAudioTranscriptionPrompt"
-                    class="grid gap-3 border-t border-n-weak pt-4"
-                  >
+                  <div v-if="showAudioTranscriptionPrompt" class="grid gap-3">
                     <div class="flex min-w-0 items-start gap-4">
                       <Icon
                         icon="i-lucide-message-square-text"

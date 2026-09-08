@@ -998,7 +998,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       before do
-        account.update!(captain_features: { 'audio_transcription' => true })
+        account.update!(audio_transcriptions: true)
         audio_attachment
         conversation.messages.where.not(id: audio_message.id).destroy_all
         stub_const('Captain::Conversation::ResponseBuilderJob::AUDIO_TRANSCRIPTION_WAIT_TIMEOUT', 0.05)
@@ -1029,8 +1029,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
       end
 
-      it 'does not wait or include transcription when captain audio transcription feature is disabled' do
-        account.update!(captain_features: { 'audio_transcription' => false })
+      it 'does not wait or include transcription when the AI agent capability is disabled' do
+        assistant.update!(config: assistant.config.merge('use_audio_transcriptions' => false))
         audio_attachment.update!(meta: { 'transcribed_text' => 'Hidden transcript' })
 
         expect_any_instance_of(described_class).not_to receive(:sleep)
@@ -1109,7 +1109,9 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       create(:captain_inbox, captain_assistant: assistant, inbox: inbox)
       create(:message, conversation: conversation, content: 'Hello with image', message_type: :incoming)
       allow(Captain::Assistant::AgentRunnerService).to receive(:new).and_return(agent_runner_service)
-      allow(Captain::OpenAiMessageBuilderService).to receive(:new).with(message: anything).and_return(mock_message_builder)
+      allow(Captain::OpenAiMessageBuilderService).to receive(:new)
+        .with(message: anything, assistant: assistant)
+        .and_return(mock_message_builder)
       allow(mock_message_builder).to receive(:generate_content).and_return('Hello with image')
       allow(agent_runner_service).to receive(:generate_response).and_return({ 'response' => 'Test response' })
     end

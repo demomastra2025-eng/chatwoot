@@ -37,7 +37,9 @@ class Whatsapp::CallRecordingFetchJob < ApplicationJob
 
   def finalize_attached_recording!(call)
     Whatsapp::CallMessageBuilder.update_recording_url!(call: call)
-    Whatsapp::CallTranscriptionJob.perform_later(call.id) if call.transcript.blank?
+    if call.transcript.blank? && call.account.call_transcriptions_enabled?
+      Whatsapp::CallTranscriptionJob.perform_later(call.id)
+    end
   end
 
   def safe_terminate(client, session_id)

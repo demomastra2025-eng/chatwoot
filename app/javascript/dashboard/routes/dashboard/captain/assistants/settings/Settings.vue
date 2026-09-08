@@ -42,6 +42,14 @@ const isInternalAssistant = computed(
 );
 const isExternalAgent = computed(() => !isInternalAssistant.value);
 const assistantConfig = computed(() => assistant.value?.config || {});
+const workspaceAudioTranscriptionsEnabled = computed(() => {
+  const getAccount = store.getters['accounts/getAccount'];
+  const account =
+    typeof getAccount === 'function'
+      ? getAccount(route.params.accountId)
+      : null;
+  return account?.settings?.audio_transcriptions === true;
+});
 const settingsTabs = computed(() => [
   {
     key: 'profile',
@@ -64,6 +72,7 @@ const BASIC_SETTINGS_CONFIG_KEYS = Object.freeze([
   'feature_memory',
   'feature_citation',
   'feature_web',
+  'use_audio_transcriptions',
   'context_access',
   'tool_access',
 ]);
@@ -268,6 +277,9 @@ const handleDeleteSuccess = () => {
               <AssistantBasicSettingsForm
                 ref="generalBasicFormRef"
                 :assistant="assistant"
+                :audio-transcriptions-available="
+                  workspaceAudioTranscriptionsEnabled
+                "
                 :show-description-field="false"
                 :show-submit-button="false"
                 @update:usage-mode="handleUsageModeUpdate"

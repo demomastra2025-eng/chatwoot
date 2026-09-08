@@ -51,7 +51,7 @@ class Account < ApplicationRecord
 
   store_accessor :settings, :auto_resolve_after, :auto_resolve_message, :auto_resolve_ignore_waiting
 
-  store_accessor :settings, :audio_transcriptions, :auto_resolve_label
+  store_accessor :settings, :audio_transcriptions, :call_transcriptions, :auto_resolve_label
   store_accessor :settings, :captain_models, :captain_features, :captain_runtime
   store_accessor :settings, :captain_observability, :mcp_access
   store_accessor :settings, :reporting_timezone
@@ -225,6 +225,16 @@ class Account < ApplicationRecord
 
     value = settings['scheduling_company_enabled']
     value.nil? || ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def audio_transcriptions_enabled?
+    ActiveModel::Type::Boolean.new.cast(settings.to_h['audio_transcriptions'])
+  end
+
+  def call_transcriptions_enabled?
+    value = settings.to_h['call_transcriptions']
+    value = settings.to_h['audio_transcriptions'] if value.nil?
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def usage_limits

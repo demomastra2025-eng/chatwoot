@@ -368,7 +368,8 @@ class Captain::Assistant < ApplicationRecord
 
   store_accessor :config, :temperature, :feature_faq, :feature_memory,
                  :message_collapse_window_seconds, :history_message_limit,
-                 :auto_reply_on_last_incoming, :context_access, :tool_access
+                 :auto_reply_on_last_incoming, :use_audio_transcriptions,
+                 :context_access, :tool_access
 
   before_validation :initialize_context_access_config, on: :create
   before_validation :ensure_usage_mode
@@ -726,6 +727,13 @@ class Captain::Assistant < ApplicationRecord
 
   def auto_reply_on_last_incoming_enabled?
     config['auto_reply_on_last_incoming'] == true
+  end
+
+  def use_audio_transcriptions?
+    value = config['use_audio_transcriptions']
+    return true if value.nil?
+
+    ActiveModel::Type::Boolean.new.cast(value)
   end
 
   def handoff_message_enabled?

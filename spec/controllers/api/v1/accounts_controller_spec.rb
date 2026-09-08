@@ -215,6 +215,8 @@ RSpec.describe 'Accounts API', type: :request do
         auto_resolve_after: 40,
         auto_resolve_message: 'Auto resolved',
         auto_resolve_ignore_waiting: false,
+        audio_transcriptions: true,
+        call_transcriptions: true,
         dashboard_sidebar_hidden_items: ['Conversation:Resolved'],
         dashboard_sidebar_hidden_items_version: 14,
         timezone: 'Asia/Kolkata',
@@ -247,6 +249,8 @@ RSpec.describe 'Accounts API', type: :request do
           auto_resolve_after
           auto_resolve_message
           auto_resolve_ignore_waiting
+          audio_transcriptions
+          call_transcriptions
           dashboard_sidebar_hidden_items
           dashboard_sidebar_hidden_items_version
         ].each do |attribute|
