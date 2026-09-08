@@ -22,6 +22,14 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  allowOutsideWorkingHours: {
+    type: Boolean,
+    default: false,
+  },
+  allowOverlappingAppointments: {
+    type: Boolean,
+    default: false,
+  },
   breakRules: {
     type: Array,
     default: () => [],
@@ -184,6 +192,8 @@ const handleStatusChange = payload => {
 
     <template v-else-if="isCalendarView">
       <SchedulingVueCalCalendar
+        :allow-outside-working-hours="allowOutsideWorkingHours"
+        :allow-overlapping-appointments="allowOverlappingAppointments"
         class="min-h-0 flex-1"
         :anchor-date="anchorDate"
         :appointments="appointments"

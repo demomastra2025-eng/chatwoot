@@ -41,6 +41,13 @@ if resource.portal.present?
   end
 end
 
+## Preserve the inbox identity/settings even if its polymorphic channel was removed.
+## A missing channel must not break the entire list or advertise usable capabilities.
+unless resource.channel
+  json.campaign_capabilities Campaigns::ChannelCapabilities.for(inbox: resource)
+  return
+end
+
 ## Channel specific settings
 ## TODO : Clean up and move the attributes into channel sub section
 

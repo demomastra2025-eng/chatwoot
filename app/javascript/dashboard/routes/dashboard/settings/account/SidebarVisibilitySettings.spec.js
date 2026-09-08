@@ -71,9 +71,9 @@ describe('SidebarVisibilitySettings', () => {
   it('shows only top-level workspace navigation sections', () => {
     const wrapper = mountComponent();
 
-    expect(wrapper.text()).toContain('SIDEBAR.INBOX');
     expect(wrapper.text()).toContain('SIDEBAR.CONVERSATIONS');
     expect(wrapper.text()).toContain('SIDEBAR.ADDITIONAL');
+    expect(wrapper.text()).not.toContain('SIDEBAR.INBOX');
 
     expect(wrapper.text()).not.toContain(
       'CONVERSATION_WORKFLOW.VISIBILITY.SECTIONS.PIPELINE'
@@ -121,7 +121,7 @@ describe('SidebarVisibilitySettings', () => {
     expect(wrapper.vm.draftItemOrder.slice(0, 3)).toEqual([
       'Contacts',
       'Conversation',
-      'Inbox',
+      'Campaigns:MassBroadcasts',
     ]);
   });
 
@@ -129,10 +129,10 @@ describe('SidebarVisibilitySettings', () => {
     const wrapper = mountComponent();
 
     await wrapper
-      .findAll('[data-test="sidebar-order-down"]')[3]
+      .findAll('[data-test="sidebar-order-down"]')[2]
       .trigger('click');
 
-    expect(wrapper.vm.draftItemOrder.slice(3, 5)).toEqual([
+    expect(wrapper.vm.draftItemOrder.slice(2, 4)).toEqual([
       'Contacts',
       'Captain',
     ]);
@@ -143,10 +143,10 @@ describe('SidebarVisibilitySettings', () => {
     expect(updateAccount).toHaveBeenCalledWith(
       expect.objectContaining({
         [SIDEBAR_ORDER_UI_SETTINGS_KEY]: [
-          ...defaultItemOrder.slice(0, 3),
+          ...defaultItemOrder.slice(0, 2),
           'Contacts',
           'Captain',
-          ...defaultItemOrder.slice(5),
+          ...defaultItemOrder.slice(4),
         ],
       })
     );

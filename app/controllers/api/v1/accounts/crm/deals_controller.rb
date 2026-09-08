@@ -5,7 +5,8 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     :company,
     :originating_conversation,
     :originating_communication_thread,
-    { deal_contacts: :contact }
+    { deal_contacts: :contact },
+    { tasks: :status }
   ].freeze
   BOARD_SORT_COLUMNS = {
     'amount' => 'COALESCE(crm_deals.amount_minor, 0)',
@@ -54,12 +55,14 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     idempotency_key
     primary_contact_id
     lock_version
-    transition_reason
   ].freeze
 
   before_action :ensure_crm_deals_enabled!
   before_action :bootstrap_defaults!, only: [:index, :create]
-  before_action :set_deal, only: [:show, :update, :timeline, :transition_stage, :archive, :unarchive]
+  before_action :set_deal, only: [
+    :show, :update, :timeline, :transition_stage, :close_won, :close_lost, :reopen, :reorder, :undo_transition,
+    :set_waiting, :clear_waiting, :archive, :unarchive
+  ]
 
   def index
     authorize ::Crm::Deal
@@ -122,14 +125,42 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   def transition_stage
     authorize @deal, :transition_stage?
 
-    deal = ::Crm::Deals::TransitionService.new(
+    deal = ::Crm::Deals::StageCommandService.new(
       account: Current.account,
       deal: @deal,
-      params: params.permit(:stage_id, :position, :lock_version, :transition_reason, closing_reasons: []),
+      params: lifecycle_params,
       actor: Current.user
     ).perform
 
     render_payload(::Crm::PayloadBuilder.deal(deal))
+  end
+
+  def close_won
+    perform_lifecycle_command(::Crm::Deals::CloseWonService)
+  end
+
+  def close_lost
+    perform_lifecycle_command(::Crm::Deals::CloseLostService)
+  end
+
+  def reopen
+    perform_lifecycle_command(::Crm::Deals::ReopenService)
+  end
+
+  def reorder
+    perform_lifecycle_command(::Crm::Deals::ReorderService)
+  end
+
+  def undo_transition
+    perform_lifecycle_command(::Crm::Deals::UndoTransitionService)
+  end
+
+  def set_waiting
+    perform_waiting_command(::Crm::Deals::SetWaitingService, waiting_params)
+  end
+
+  def clear_waiting
+    perform_waiting_command(::Crm::Deals::ClearWaitingService, params.permit(:lock_version, :idempotency_key))
   end
 
   def archive
@@ -161,6 +192,52 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   private
+
+  def perform_waiting_command(service_class, command_params)
+    authorize @deal, :transition_stage?
+    deal = service_class.new(
+      account: Current.account,
+      deal: @deal,
+      params: command_params,
+      actor: Current.user
+    ).perform
+    render_payload(::Crm::PayloadBuilder.deal(deal))
+  end
+
+  def perform_lifecycle_command(service_class)
+    authorize @deal, :transition_stage?
+    deal = service_class.new(
+      account: Current.account,
+      deal: @deal,
+      params: lifecycle_params,
+      actor: Current.user
+    ).perform
+    render_payload(::Crm::PayloadBuilder.deal(deal))
+  end
+
+  def lifecycle_params
+    params.permit(
+      :stage_id,
+      :position,
+      :lock_version,
+      :idempotency_key,
+      :event_id,
+      :override,
+      :override_reason,
+      closing_reasons: []
+    )
+  end
+
+  def waiting_params
+    params.permit(
+      :waiting_until,
+      :waiting_reason,
+      :create_wake_up_task,
+      :wake_up_task_title,
+      :lock_version,
+      :idempotency_key
+    )
+  end
 
   def bootstrap_defaults!
     ::Crm::Bootstrap::AccountService.new(account: Current.account).perform
@@ -242,6 +319,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
     scope = filter_by_originating_conversation(scope)
     scope = filter_by_ai_only(filter_by_originating_communication_thread(scope))
     scope = filter_by_contact(scope)
+    scope = filter_by_next_action(scope)
     scope = filter_by_query(filter_by_created_range(scope))
 
     ::Crm::CustomFieldFilterSet.new(
@@ -249,6 +327,38 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
       entity_kind: 'deal',
       raw_filters: custom_attribute_filters_param
     ).apply(scope)
+  end
+
+  def filter_by_next_action(scope)
+    case params[:next_action].to_s
+    when '' then scope
+    when 'overdue' then scope.where(waiting_until: nil, closed_at: nil).where(id: overdue_task_deal_ids)
+    when 'no_action' then scope.where(waiting_until: nil, closed_at: nil).where.not(id: open_task_deal_ids)
+    when 'waiting_expired' then scope.where(closed_at: nil).where(waiting_until: ..Time.zone.now)
+    else
+      raise Crm::Error.new(
+        code: 'VALIDATION_ERROR',
+        message: 'next_action is invalid',
+        status: :unprocessable_content,
+        details: { next_action: ['is invalid'] }
+      )
+    end
+  end
+
+  def open_task_deal_ids
+    Current.account.crm_tasks.kept
+           .joins(:status)
+           .where(crm_task_statuses: { category: %w[open in_progress] })
+           .where.not(deal_id: nil)
+           .select(:deal_id)
+  end
+
+  def overdue_task_deal_ids
+    open_task_deal_ids.where(
+      'crm_tasks.due_at < :now OR crm_tasks.due_on < :today',
+      now: Time.zone.now,
+      today: Time.zone.today
+    )
   end
 
   def page_param

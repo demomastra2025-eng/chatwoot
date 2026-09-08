@@ -11,8 +11,11 @@ const {
   getFieldDefinitionsMock,
   getPipelinesMock,
   getTaskStatusesMock,
+  getTaskTypesMock,
+  saveTaskOutcomeMock,
   savePipelineMock,
   saveTaskStatusMock,
+  saveTaskTypeMock,
   updateStageMock,
 } = vi.hoisted(() => ({
   currentAccount: { id: '1' },
@@ -22,8 +25,11 @@ const {
   getFieldDefinitionsMock: vi.fn(),
   getPipelinesMock: vi.fn(),
   getTaskStatusesMock: vi.fn(),
+  getTaskTypesMock: vi.fn(),
+  saveTaskOutcomeMock: vi.fn(),
   savePipelineMock: vi.fn(),
   saveTaskStatusMock: vi.fn(),
+  saveTaskTypeMock: vi.fn(),
   updateStageMock: vi.fn(),
 }));
 
@@ -59,6 +65,21 @@ vi.mock('dashboard/api/crm/taskStatuses', () => ({
   },
 }));
 
+vi.mock('dashboard/api/crm/taskTypes', () => ({
+  default: {
+    create: saveTaskTypeMock,
+    get: getTaskTypesMock,
+    update: saveTaskTypeMock,
+  },
+}));
+
+vi.mock('dashboard/api/crm/taskOutcomes', () => ({
+  default: {
+    create: saveTaskOutcomeMock,
+    update: saveTaskOutcomeMock,
+  },
+}));
+
 vi.mock('dashboard/store/utils/api', () => ({
   parseAPIErrorResponse: vi.fn(() => 'Request failed'),
 }));
@@ -68,6 +89,38 @@ describe('useCrmReferencesStore', () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     currentAccount.id = '1';
+  });
+
+  it('loads task types with nested outcomes and updates an outcome in place', async () => {
+    const store = useCrmReferencesStore();
+    getTaskTypesMock.mockResolvedValue({
+      data: {
+        payload: [
+          {
+            id: 7,
+            code: 'call',
+            outcomes: [{ id: 11, code: 'answered', name: 'Answered' }],
+          },
+        ],
+      },
+    });
+    saveTaskOutcomeMock.mockResolvedValue({
+      data: {
+        payload: {
+          id: 11,
+          task_type_id: 7,
+          code: 'answered',
+          name: 'Reached',
+        },
+      },
+    });
+
+    await store.loadTaskTypes();
+    await store.saveTaskOutcome({ id: 11, taskTypeId: 7, name: 'Reached' });
+
+    expect(store.taskTypes[0].outcomes).toEqual([
+      expect.objectContaining({ id: 11, name: 'Reached', taskTypeId: 7 }),
+    ]);
   });
 
   it('keeps won and lost stages last when a new open stage is inserted before them', async () => {

@@ -20,6 +20,9 @@ RSpec.describe Captain::Tools::UpdateTaskTool, type: :model do
         tool_context,
         title: 'New task',
         activity_type: 'call',
+        all_day: true,
+        due_on: '2026-09-04',
+        schedule_timezone: 'Asia/Almaty',
         outcome: 'not_done',
         outcome_note: 'Client was unavailable; retry tomorrow'
       )
@@ -28,6 +31,8 @@ RSpec.describe Captain::Tools::UpdateTaskTool, type: :model do
     expect(payload).to include(
       'action' => 'update_task',
       'activity_type' => 'call',
+      'all_day' => true,
+      'due_on' => '2026-09-04',
       'outcome' => 'not_done',
       'outcome_note' => 'Client was unavailable; retry tomorrow',
       'task_id' => task.id,
@@ -35,9 +40,13 @@ RSpec.describe Captain::Tools::UpdateTaskTool, type: :model do
     )
     expect(payload['task']).to include(
       'activity_type' => 'call',
+      'all_day' => true,
+      'due_at' => nil,
+      'due_on' => '2026-09-04',
       'id' => task.id,
       'outcome' => 'not_done',
       'outcome_note' => 'Client was unavailable; retry tomorrow',
+      'schedule_timezone' => 'Asia/Almaty',
       'title' => 'New task'
     )
   end

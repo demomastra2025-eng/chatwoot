@@ -2,7 +2,6 @@
 import Button from 'dashboard/components-next/button/Button.vue';
 import ButtonGroup from 'dashboard/components-next/buttonGroup/ButtonGroup.vue';
 import { useUISettings } from 'dashboard/composables/useUISettings';
-import { useAccount } from 'dashboard/composables/useAccount';
 import { computed } from 'vue';
 import { FEATURE_FLAGS } from 'dashboard/featureFlags';
 import { useMapGetter } from 'dashboard/composables/store';
@@ -12,15 +11,8 @@ import {
   SCHEDULING_ACCESS_PERMISSIONS,
 } from 'dashboard/constants/permissions';
 import { hasPermissions } from 'dashboard/helper/permissionsHelper';
-import {
-  buildEffectiveSidebarVisibilitySettings,
-  buildSidebarVisibilityState,
-  CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY,
-  CONVERSATION_PIPELINES_VISIBILITY_KEY,
-} from 'dashboard/components-next/sidebar/sidebarVisibility';
 
 const { uiSettings, updateUISettings } = useUISettings();
-const { currentAccount: activeAccount } = useAccount();
 
 const currentAccountId = useMapGetter('getCurrentAccountId');
 const currentUser = useMapGetter('getCurrentUser');
@@ -35,28 +27,8 @@ const currentAccountPermissions = computed(() => {
 
   return currentAccount?.permissions || [];
 });
-const effectiveSidebarVisibilitySettings = computed(() =>
-  buildEffectiveSidebarVisibilitySettings({
-    accountId: currentAccountId.value,
-    accountSettings: activeAccount.value?.settings || {},
-    uiSettings: uiSettings.value,
-  })
-);
-const conversationVisibility = computed(() =>
-  buildSidebarVisibilityState(effectiveSidebarVisibilitySettings.value)
-);
-const isDealPanelVisible = computed(
-  () => conversationVisibility.value[CONVERSATION_PIPELINES_VISIBILITY_KEY]
-);
-const isAppointmentPanelVisible = computed(
-  () =>
-    conversationVisibility.value[
-      CONVERSATION_APPOINTMENT_STATUSES_VISIBILITY_KEY
-    ]
-);
 const showDealAction = computed(
   () =>
-    isDealPanelVisible.value &&
     isFeatureEnabledonAccount.value(
       currentAccountId.value,
       FEATURE_FLAGS.CRM_DEALS
@@ -71,7 +43,6 @@ const showTouchAction = computed(() =>
 );
 const showAppointmentAction = computed(
   () =>
-    isAppointmentPanelVisible.value &&
     isFeatureEnabledonAccount.value(
       currentAccountId.value,
       FEATURE_FLAGS.SCHEDULING

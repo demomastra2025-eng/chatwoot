@@ -1768,8 +1768,6 @@ export default {
         @select-reply-channel="selectReplyChannel"
         @select-direct-reply-action="selectDirectReplyAction"
         @schedule-message="openScheduledMessages"
-        @replace-text="addIntoEditor"
-        @attach-file="onFileUpload"
       />
     </Transition>
 

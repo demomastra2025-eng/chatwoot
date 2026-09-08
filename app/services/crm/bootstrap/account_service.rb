@@ -3,8 +3,23 @@ class Crm::Bootstrap::AccountService
   DEFAULT_TASK_STATUS_DEFINITIONS = [
     { code: 'todo', name: 'To do', category: 'open', default: true },
     { code: 'in_progress', name: 'In progress', category: 'in_progress', default: false },
-    { code: 'done', name: 'Done', category: 'done', default: false }
+    { code: 'done', name: 'Done', category: 'done', default: false },
+    { code: 'cancelled', name: 'Cancelled', category: 'cancelled', default: false }
   ].freeze
+  DEFAULT_TASK_TYPE_DEFINITIONS = [
+    { code: 'task', name: 'Task', icon: 'i-lucide-list-todo', default: true },
+    { code: 'call', name: 'Call', icon: 'i-lucide-phone' },
+    { code: 'meeting', name: 'Meeting', icon: 'i-lucide-users' },
+    { code: 'message', name: 'Message', icon: 'i-lucide-message-square' },
+    { code: 'touch', name: 'Touch', icon: 'i-lucide-handshake' }
+  ].freeze
+  DEFAULT_TASK_OUTCOMES = {
+    'task' => %w[completed not_done cancelled other],
+    'call' => %w[answered no_answer busy cancelled not_done other],
+    'meeting' => %w[held cancelled no_show rescheduled not_done other],
+    'message' => %w[sent failed not_done other],
+    'touch' => %w[completed no_answer cancelled not_done other]
+  }.freeze
 
   attr_reader :account
 
@@ -46,18 +61,51 @@ class Crm::Bootstrap::AccountService
   end
 
   def bootstrap_task_settings
-    return if account.crm_task_statuses.exists?
+    ensure_default_task_statuses
+    ensure_default_task_catalogs
+  end
 
+  def ensure_default_task_statuses
     DEFAULT_TASK_STATUS_DEFINITIONS.each_with_index do |definition, index|
-      account.crm_task_statuses.create!(
-        name: definition[:name],
-        code: definition[:code],
-        category: definition[:category],
-        color: Crm::TaskStatus::STANDARD_COLORS[index] || Crm::TaskStatus::DEFAULT_COLOR,
+      status = account.crm_task_statuses.find_or_initialize_by(code: definition[:code])
+      next unless status.new_record?
+
+      status.assign_attributes(
+        definition.merge(
+          color: Crm::TaskStatus::STANDARD_COLORS[index] || Crm::TaskStatus::DEFAULT_COLOR,
+          position: index + 1,
+          active: true
+        )
+      )
+      status.save!
+    end
+  end
+
+  def ensure_default_task_catalogs
+    DEFAULT_TASK_TYPE_DEFINITIONS.each_with_index do |definition, index|
+      task_type = account.crm_task_types.find_or_initialize_by(code: definition[:code])
+      if task_type.new_record?
+        task_type.assign_attributes(definition.merge(position: index + 1, active: true))
+        task_type.save!
+      end
+      ensure_default_task_outcomes(task_type)
+    end
+  end
+
+  def ensure_default_task_outcomes(task_type)
+    DEFAULT_TASK_OUTCOMES.fetch(task_type.code, []).each_with_index do |code, index|
+      outcome = task_type.outcomes.find_or_initialize_by(code: code)
+      next unless outcome.new_record?
+
+      outcome.assign_attributes(
+        account: account,
+        name: code.humanize,
         position: index + 1,
         active: true,
-        default: definition[:default]
+        default: index.zero?,
+        requires_note: %w[not_done other].include?(code)
       )
+      outcome.save!
     end
   end
 

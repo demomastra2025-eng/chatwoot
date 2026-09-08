@@ -11,10 +11,7 @@ class AccountDashboard < Administrate::BaseDashboard
   enterprise_attribute_types = if ChatwootApp.enterprise?
                                  attributes = {
                                    limits: AccountLimitsField,
-                                   account_usage_overview: AccountUsageField,
-                                   limit_counter_excluded_user_ids_raw: CommaSeparatedIdsField.with_options(
-                                     label: 'Limit counter excluded user IDs'
-                                   )
+                                   account_usage_overview: AccountUsageField
                                  }
 
                                  # Only show manually managed features in Chatwoot Cloud deployment
@@ -65,7 +62,6 @@ class AccountDashboard < Administrate::BaseDashboard
   enterprise_show_page_attributes = if ChatwootApp.enterprise?
                                       attrs = %i[
                                         custom_attributes
-                                        limit_counter_excluded_user_ids_raw
                                         limits
                                         account_usage_overview
                                       ]
@@ -92,7 +88,6 @@ class AccountDashboard < Administrate::BaseDashboard
   # on the model's form (`new` and `edit`) pages.
   enterprise_form_attributes = if ChatwootApp.enterprise?
                                  attrs = %i[
-                                   limit_counter_excluded_user_ids_raw
                                    limits
                                    account_usage_overview
                                  ]
@@ -138,8 +133,6 @@ class AccountDashboard < Administrate::BaseDashboard
   # Reference: https://github.com/thoughtbot/administrate/pull/2356/files#diff-4e220b661b88f9a19ac527c50d6f1577ef6ab7b0bed2bfdf048e22e6bfa74a05R204
   def permitted_attributes(action)
     attrs = super + [limits: {}]
-    attrs << :limit_counter_excluded_user_ids_raw if ChatwootApp.enterprise?
-
     # Add manually_managed_features to permitted attributes only for Chatwoot Cloud
     attrs << { manually_managed_features: [] } if ChatwootApp.chatwoot_cloud?
 

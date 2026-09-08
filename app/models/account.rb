@@ -58,7 +58,7 @@ class Account < ApplicationRecord
 
   store_accessor :settings, :auto_resolve_after, :auto_resolve_message, :auto_resolve_ignore_waiting
 
-  store_accessor :settings, :audio_transcriptions, :auto_resolve_label
+  store_accessor :settings, :audio_transcriptions, :call_transcriptions, :auto_resolve_label
   store_accessor :settings, :captain_models, :captain_features, :captain_runtime
   store_accessor :settings, :captain_observability, :mcp_access
   store_accessor :settings, :reporting_timezone
@@ -98,11 +98,17 @@ class Account < ApplicationRecord
   has_many :crm_pipelines, dependent: :destroy_async, class_name: '::Crm::Pipeline'
   has_many :crm_stages, dependent: :destroy_async, class_name: '::Crm::Stage'
   has_many :crm_task_statuses, dependent: :destroy_async, class_name: '::Crm::TaskStatus'
+  has_many :crm_task_types, dependent: :destroy_async, class_name: '::Crm::TaskType'
+  has_many :crm_task_outcomes, dependent: :destroy_async, class_name: '::Crm::TaskOutcome'
   has_many :crm_field_definitions, dependent: :destroy_async, class_name: '::Crm::FieldDefinition'
   has_many :crm_deals, dependent: :destroy_async, class_name: '::Crm::Deal'
   has_many :crm_deal_contacts, dependent: :destroy_async, class_name: '::Crm::DealContact'
   has_many :crm_tasks, dependent: :destroy_async, class_name: '::Crm::Task'
-  has_many :crm_events, dependent: :destroy_async, class_name: '::Crm::Event'
+  has_many :crm_events, dependent: :delete_all, class_name: '::Crm::Event'
+  has_many :crm_stage_visits, dependent: :delete_all, class_name: '::Crm::StageVisit'
+  has_many :crm_stage_field_requirements,
+           dependent: :delete_all,
+           class_name: '::Crm::StageFieldRequirement'
   has_many :crm_comments, dependent: :destroy_async, class_name: '::Crm::Comment'
   has_many :csat_survey_responses, dependent: :destroy_async
   has_many :custom_attribute_definitions, dependent: :destroy_async
@@ -133,7 +139,6 @@ class Account < ApplicationRecord
   has_many :scheduling_expenses, dependent: :destroy_async, class_name: 'Scheduling::Expense'
   has_many :scheduling_holidays, dependent: :destroy_async, class_name: 'Scheduling::Holiday'
   has_many :scheduling_payments, dependent: :destroy_async, class_name: 'Scheduling::Payment'
-  has_many :kaspi_pay_payments, dependent: :destroy_async, class_name: 'KaspiPay::Payment'
   has_many :scheduling_resources, dependent: :destroy_async, class_name: 'Scheduling::Resource'
   has_many :scheduling_service_prices, dependent: :destroy_async, class_name: 'Scheduling::ServicePrice'
   has_many :scheduling_services, dependent: :destroy_async, class_name: 'Scheduling::Service'
@@ -170,6 +175,10 @@ class Account < ApplicationRecord
 
   def agents
     users.where(account_users: { role: :agent })
+  end
+
+  def countable_users_for_limits
+    users.where.not(id: SuperAdmin.select(:id))
   end
 
   def default_touch_plan_id_for(entity_kind)
@@ -233,6 +242,24 @@ class Account < ApplicationRecord
     value.nil? || ActiveModel::Type::Boolean.new.cast(value)
   end
 
+  def audio_transcriptions_enabled?
+    ActiveModel::Type::Boolean.new.cast(settings.to_h['audio_transcriptions'])
+  end
+
+  def call_transcriptions_enabled?
+    value = settings.to_h['call_transcriptions']
+    value = settings.to_h['audio_transcriptions'] if value.nil?
+    ActiveModel::Type::Boolean.new.cast(value)
+  end
+
+  def scheduling_allow_outside_working_hours?
+    ActiveModel::Type::Boolean.new.cast(settings.to_h['scheduling_allow_outside_working_hours'])
+  end
+
+  def scheduling_allow_overlapping_appointments?
+    ActiveModel::Type::Boolean.new.cast(settings.to_h['scheduling_allow_overlapping_appointments'])
+  end
+
   def usage_limits
     {
       agents: ChatwootApp.max_limit.to_i,
@@ -273,6 +300,7 @@ class Account < ApplicationRecord
   def normalize_default_settings
     self.settings = (settings || {}).dup
     settings['audio_transcriptions'] = false if settings['audio_transcriptions'].nil?
+    settings['call_transcriptions'] = settings['audio_transcriptions'] if settings['call_transcriptions'].nil?
   end
 
   def validate_reporting_timezone

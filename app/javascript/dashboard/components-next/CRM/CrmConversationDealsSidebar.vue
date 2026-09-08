@@ -167,6 +167,7 @@ const taskFieldDefinitions = computed(
   () => referencesStore.taskFieldDefinitions
 );
 const taskStatuses = computed(() => referencesStore.taskStatuses);
+const taskTypes = computed(() => referencesStore.taskTypes);
 const dealKey = deal => `deal-${deal.id}`;
 const accordionItems = computed(() => {
   const items = deals.value.map(deal => ({
@@ -271,15 +272,10 @@ const normalizedTextValues = values => [
   ),
 ];
 
-const isTerminalStage = stage => ['won', 'lost'].includes(stage?.outcome);
 const closingReasonOptionsForStage = stage =>
   normalizedTextValues(stage?.closingReasonOptions);
-const transitionReasonOptionsForStage = stage =>
-  normalizedTextValues(stage?.transitionReasonOptions);
 const shouldPromptForClosingReasons = stage =>
-  isTerminalStage(stage) && closingReasonOptionsForStage(stage).length > 0;
-const shouldPromptForTransitionReason = stage =>
-  !isTerminalStage(stage) && transitionReasonOptionsForStage(stage).length > 0;
+  stage?.outcome === 'lost' && closingReasonOptionsForStage(stage).length > 0;
 const isStageReasonCancelled = value =>
   value === closingReasonDialogRef.value?.CANCELLED;
 
@@ -299,18 +295,6 @@ const collectClosingReasonsForStage = async ({
       kind: 'closing',
       targetStage,
     }) ?? []
-  );
-};
-
-const collectTransitionReasonForStage = async ({ targetStage }) => {
-  if (!targetStage) return '';
-  if (!shouldPromptForTransitionReason(targetStage)) return '';
-
-  return (
-    closingReasonDialogRef.value?.open({
-      kind: 'transition',
-      targetStage,
-    }) ?? ''
   );
 };
 
@@ -487,6 +471,7 @@ const initializeSidebar = async () => {
     await Promise.all([
       referencesStore.loadPipelines(),
       referencesStore.loadTaskStatuses(),
+      referencesStore.loadTaskTypes(),
       referencesStore.loadFieldDefinitions('deal'),
       referencesStore.loadFieldDefinitions('task'),
       loadCompanies(),
@@ -661,8 +646,6 @@ const saveDeal = async item => {
   const stageChanging =
     !item.deal?.id || Number(form.stageId) !== Number(item.deal.stageId);
 
-  let transitionReason = '';
-
   if (stageChanging) {
     const closingReasons = await collectClosingReasonsForStage({
       deal: item.deal,
@@ -671,12 +654,6 @@ const saveDeal = async item => {
     });
 
     if (isStageReasonCancelled(closingReasons)) return;
-
-    transitionReason = item.deal?.id
-      ? await collectTransitionReasonForStage({ targetStage })
-      : '';
-
-    if (isStageReasonCancelled(transitionReason)) return;
 
     form.closingReasons = closingReasons;
   }
@@ -707,7 +684,6 @@ const saveDeal = async item => {
             closing_reasons: form.closingReasons,
             lock_version: savedDeal.lockVersion,
             stage_id: Number(form.stageId),
-            transition_reason: transitionReason || undefined,
           }
         );
         savedDeal = normalizePayload(transitionResponse.data);
@@ -1099,6 +1075,7 @@ watch(dealFieldDefinitions, definitions => {
                 :deal="item.deal"
                 :statuses="taskStatuses"
                 :task-field-definitions="taskFieldDefinitions"
+                :task-types="taskTypes"
               />
 
               <div class="flex items-center justify-end gap-2">

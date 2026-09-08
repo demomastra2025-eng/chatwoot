@@ -8,6 +8,7 @@ import SchedulingDateTimeField from 'dashboard/components-next/Scheduling/Schedu
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import CrmCustomFieldDescriptionHint from './CrmCustomFieldDescriptionHint.vue';
 
 const props = defineProps({
   description: {
@@ -121,12 +122,11 @@ const updateValue = (key, value) => {
             <span class="crm-custom-fields-section-label">
               {{ definition.label }}
             </span>
-            <span
+            <CrmCustomFieldDescriptionHint
               v-if="definition.description"
-              class="crm-custom-fields-section-description"
-            >
-              {{ definition.description }}
-            </span>
+              :description="definition.description"
+              :label="definition.label"
+            />
           </div>
           <div
             class="crm-custom-fields-section-control crm-custom-fields-section-checkbox-control"
@@ -147,12 +147,11 @@ const updateValue = (key, value) => {
             <span class="crm-custom-fields-section-label">
               {{ definition.label }}
             </span>
-            <span
+            <CrmCustomFieldDescriptionHint
               v-if="definition.description"
-              class="crm-custom-fields-section-description"
-            >
-              {{ definition.description }}
-            </span>
+              :description="definition.description"
+              :label="definition.label"
+            />
           </div>
           <TextArea
             :model-value="resolvedValue(definition)"
@@ -173,12 +172,11 @@ const updateValue = (key, value) => {
             <span class="crm-custom-fields-section-label">
               {{ definition.label }}
             </span>
-            <span
+            <CrmCustomFieldDescriptionHint
               v-if="definition.description"
-              class="crm-custom-fields-section-description"
-            >
-              {{ definition.description }}
-            </span>
+              :description="definition.description"
+              :label="definition.label"
+            />
           </div>
           <SchedulingDateTimeField
             class="crm-custom-fields-section-control crm-custom-fields-section-date-control"
@@ -197,12 +195,11 @@ const updateValue = (key, value) => {
             <span class="crm-custom-fields-section-label">
               {{ definition.label }}
             </span>
-            <span
+            <CrmCustomFieldDescriptionHint
               v-if="definition.description"
-              class="crm-custom-fields-section-description"
-            >
-              {{ definition.description }}
-            </span>
+              :description="definition.description"
+              :label="definition.label"
+            />
           </div>
           <SchedulingDateTimeField
             class="crm-custom-fields-section-control crm-custom-fields-section-date-control"
@@ -221,12 +218,11 @@ const updateValue = (key, value) => {
             <span class="crm-custom-fields-section-label">
               {{ definition.label }}
             </span>
-            <span
+            <CrmCustomFieldDescriptionHint
               v-if="definition.description"
-              class="crm-custom-fields-section-description"
-            >
-              {{ definition.description }}
-            </span>
+              :description="definition.description"
+              :label="definition.label"
+            />
           </div>
           <SchedulingSelectField
             class="crm-custom-fields-section-control crm-custom-fields-section-select-control"
@@ -247,12 +243,11 @@ const updateValue = (key, value) => {
             <span class="crm-custom-fields-section-label">
               {{ definition.label }}
             </span>
-            <span
+            <CrmCustomFieldDescriptionHint
               v-if="definition.description"
-              class="crm-custom-fields-section-description"
-            >
-              {{ definition.description }}
-            </span>
+              :description="definition.description"
+              :label="definition.label"
+            />
           </div>
           <TagMultiSelectComboBox
             class="crm-custom-fields-section-control crm-custom-fields-section-multi-control"
@@ -268,12 +263,11 @@ const updateValue = (key, value) => {
             <span class="crm-custom-fields-section-label">
               {{ definition.label }}
             </span>
-            <span
+            <CrmCustomFieldDescriptionHint
               v-if="definition.description"
-              class="crm-custom-fields-section-description"
-            >
-              {{ definition.description }}
-            </span>
+              :description="definition.description"
+              :label="definition.label"
+            />
           </div>
           <Input
             class="crm-custom-fields-section-control crm-custom-fields-section-input-control"
@@ -402,15 +396,11 @@ const updateValue = (key, value) => {
 }
 
 .crm-custom-fields-section-label-block {
-  @apply grid min-w-0 gap-0;
+  @apply flex min-w-0 items-center gap-1;
 }
 
 .crm-custom-fields-section-label {
   @apply mb-0 min-w-0 text-[13px] font-medium leading-4 text-n-slate-12;
-}
-
-.crm-custom-fields-section-description {
-  @apply text-[10px] leading-3 text-n-slate-10;
 }
 
 .crm-custom-fields-section-control {

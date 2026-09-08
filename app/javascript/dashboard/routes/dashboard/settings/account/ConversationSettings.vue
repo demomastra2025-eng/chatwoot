@@ -8,6 +8,7 @@ import { useCaptainConfigStore } from 'dashboard/store/captain/preferences';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
+import MediaTranscription from './components/MediaTranscription.vue';
 
 const { t } = useI18n();
 const configStore = useCaptainConfigStore();
@@ -64,6 +65,8 @@ onMounted(() => configStore.fetch());
           />
         </div>
       </div>
+
+      <MediaTranscription />
     </template>
   </SettingsLayout>
 </template>

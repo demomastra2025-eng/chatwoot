@@ -2,7 +2,7 @@ require 'rails_helper'
 
 RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
   let(:account) { create(:account) }
-  let(:inbox) { create(:inbox, account: account) }
+  let(:inbox) { create(:channel_telegram, account: account).inbox }
   let(:assistant) do
     create(
       :captain_assistant,
@@ -27,6 +27,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
       inbox: inbox,
       sender: assistant,
       message_type: :outgoing,
+      source_id: 'initial-provider-id',
       content: 'Initial AI response'
     )
   end
@@ -71,7 +72,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
     end.not_to change(conversation.messages, :count)
   end
 
-  it 'sends the configured message and schedules the next step when the conversation is incomplete' do
+  it 'sends the configured message and waits for provider acknowledgement before scheduling the next step' do
     allow(completion_evaluator).to receive(:perform).and_return(
       complete: false,
       evaluated: true,
@@ -80,15 +81,67 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
 
     expect do
       described_class.perform_now(conversation.id, assistant.id, anchor_message.id, 0)
-    end.to change { Reminder.captain_follow_up.count }.by(1)
+    end.not_to change { Reminder.captain_follow_up.count }
 
     follow_up = conversation.messages.order(:id).last
     expect(follow_up.content).to eq('Still interested?')
     expect(follow_up.additional_attributes.dig('captain_follow_up', 'step_index')).to eq(0)
     expect(follow_up.additional_attributes.dig('captain_follow_up', 'mode')).to eq('static')
+    follow_up.update_column(:source_id, 'provider-message-id')
+    expect do
+      Captain::FollowUpDeliveryConfirmation.new(message: follow_up).perform
+    end.to change { Reminder.captain_follow_up.count }.by(1)
+
     scheduled_touch = Reminder.captain_follow_up.last
     expect(scheduled_touch).to be_pending
     expect(scheduled_touch.metadata.dig('captain_follow_up', 'step_index')).to eq(1)
+  end
+
+  it 'keeps an hour between overdue absolute steps after a delayed delivery' do
+    assistant.update!(
+      config: {
+        'follow_up_settings' => {
+          'enabled' => true,
+          'timing_mode' => 'absolute_from_last_incoming',
+          'steps' => [
+            { 'delay_seconds' => 3600, 'message' => 'First touch' },
+            { 'delay_seconds' => 7200, 'message' => 'Second touch' }
+          ]
+        }
+      }
+    )
+    create(
+      :message,
+      conversation: conversation,
+      account: account,
+      inbox: inbox,
+      message_type: :incoming,
+      created_at: 1.day.ago
+    )
+    root_anchor = create(
+      :message,
+      conversation: conversation,
+      account: account,
+      inbox: inbox,
+      sender: assistant,
+      message_type: :outgoing,
+      source_id: 'root-provider-id',
+      content: 'Initial answer after incoming message'
+    )
+    allow(completion_evaluator).to receive(:perform).and_return(
+      complete: false,
+      evaluated: true,
+      reason: 'Customer has not replied'
+    )
+
+    described_class.perform_now(conversation.id, assistant.id, root_anchor.id, 0)
+
+    follow_up = conversation.messages.outgoing.order(:id).last
+    follow_up.update_column(:source_id, 'provider-message-id')
+    Captain::FollowUpDeliveryConfirmation.new(message: follow_up).perform
+    scheduled_touch = Reminder.captain_follow_up.order(:id).last
+    expect(scheduled_touch.scheduled_at).to eq(follow_up.created_at + 1.hour)
+    expect(scheduled_touch.metadata.dig('captain_follow_up', 'anchor_message_id')).to eq(root_anchor.id)
   end
 
   it 'generates an AI step from current conversation context before sending it' do
@@ -212,7 +265,7 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
     end.not_to change(conversation.messages, :count)
   end
 
-  it 'creates and schedules a follow-up only once when the same job is delivered repeatedly' do
+  it 'creates one follow-up and schedules the next step once after provider acknowledgement' do
     allow(completion_evaluator).to receive(:perform).and_return(
       complete: false,
       evaluated: true,
@@ -222,7 +275,13 @@ RSpec.describe Captain::Conversation::FollowUpJob, type: :job do
     expect do
       2.times { described_class.perform_now(conversation.id, assistant.id, anchor_message.id, 0) }
     end.to change(conversation.messages, :count).by(1)
-    expect(Reminder.captain_follow_up.count).to eq(1)
+    expect(Reminder.captain_follow_up.count).to eq(0)
+
+    follow_up = conversation.messages.outgoing.order(:id).last
+    follow_up.update_column(:source_id, 'provider-message-id')
+    expect do
+      2.times { Captain::FollowUpDeliveryConfirmation.new(message: follow_up).perform }
+    end.to change { Reminder.captain_follow_up.count }.by(1)
   end
 
   it 'does not repeat paid AI work when a delivery crashes after generation' do

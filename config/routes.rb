@@ -58,6 +58,7 @@ Rails.application.routes.draw do
         scope module: :accounts do
           match :mcp, to: 'mcp#handle', via: [:get, :post]
           resource :mcp_settings, only: [:show, :update], controller: 'mcp_settings'
+          resource :billing_overview, only: [:show], controller: 'billing_overview'
 
           namespace :actions do
             resource :contact_merge, only: [:create]
@@ -243,11 +244,16 @@ Rails.application.routes.draw do
               end
             end
             resources :stages, only: [:update, :destroy] do
+              resource :field_requirements,
+                       only: [:update],
+                       controller: 'stage_field_requirements'
               member do
                 get :deletion_check
               end
             end
             resources :task_statuses, only: [:index, :create, :update, :destroy]
+            resources :task_types, only: [:index, :create, :update, :destroy]
+            resources :task_outcomes, only: [:index, :create, :update, :destroy]
             resources :field_definitions, only: [:index, :create, :update, :destroy]
             resources :reports, only: [] do
               collection do
@@ -263,6 +269,13 @@ Rails.application.routes.draw do
               member do
                 get :timeline
                 post :transition_stage
+                post :close_won
+                post :close_lost
+                post :reopen
+                post :reorder
+                post :undo_transition
+                post :set_waiting
+                post :clear_waiting
                 post :archive
                 post :unarchive
               end
@@ -274,6 +287,11 @@ Rails.application.routes.draw do
               member do
                 get :timeline
                 post :change_status
+                post :complete
+                post :cancel
+                post :reopen
+                post :reschedule
+                post :assign
                 post :archive
                 post :unarchive
               end
@@ -635,23 +653,6 @@ Rails.application.routes.draw do
                 delete :destroy
               end
             end
-            resource :kaspi_pay, controller: 'kaspi_pay', only: [:destroy] do
-              collection do
-                post 'auth/init', action: :init
-                post 'auth/send_phone', action: :send_phone
-                post 'auth/verify_otp', action: :verify_otp
-                post 'auth/refresh', action: :refresh
-              end
-            end
-          end
-          namespace :kaspi_pay do
-            resources :payments, only: [:create, :show] do
-              post :refund, on: :member
-              post :cancel, on: :member
-              post :history, on: :collection
-              post :history_details, on: :collection
-              post :invoice_history, on: :collection
-            end
           end
           resources :working_hours, only: [:update]
 
@@ -977,6 +978,14 @@ Rails.application.routes.draw do
       end
 
       # order of resources affect the order of sidebar navigation in super admin
+      resources :billing_accounts, only: [:index, :new, :create, :show, :edit, :update] do
+        post :attach_workspace, on: :member
+        post :detach_workspace, on: :member
+        post :upsert_membership, on: :member
+        post :deactivate_membership, on: :member
+        post :assign_subscription, on: :member
+        post :update_allocation, on: :member
+      end
       resources :billing_organizations
       resources :accounts, only: [:index, :new, :create, :show, :edit, :update, :destroy] do
         post :seed, on: :member

@@ -43,8 +43,7 @@ class Messages::AudioTranscriptionService < Llm::BaseAiService
   private
 
   def can_transcribe?
-    return false unless account.feature_enabled?('captain_integration')
-    return false unless account.captain_audio_transcription_enabled?
+    return false unless account.audio_transcriptions_enabled?
 
     account.captain_quota_available?
   end

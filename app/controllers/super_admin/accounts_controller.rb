@@ -39,7 +39,6 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     permitted_params = super
     permitted_params[:limits] = normalize_limits(permitted_params[:limits])
     merge_selected_feature_flags!(permitted_params)
-    merge_limit_counter_user_exclusions!(permitted_params)
     permitted_params
   end
 
@@ -60,17 +59,17 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
 
   def reset_captain_responses_usage
     if requested_resource.reset_response_usage
-      redirect_to_account(notice: 'Captain responses usage reset')
+      redirect_to_account(notice: 'AI Agent responses usage reset')
     else
-      redirect_to_account(alert: 'Unable to reset Captain responses usage')
+      redirect_to_account(alert: 'Unable to reset AI Agent responses usage')
     end
   end
 
   def reset_captain_tokens_usage
     if requested_resource.reset_token_usage
-      redirect_to_account(notice: 'Captain tokens usage reset')
+      redirect_to_account(notice: 'AI Agent tokens usage reset')
     else
-      redirect_to_account(alert: 'Unable to reset Captain tokens usage')
+      redirect_to_account(alert: 'Unable to reset AI Agent tokens usage')
     end
   end
 
@@ -110,28 +109,6 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     (BigDecimal(value.to_s) * STORAGE_GB_IN_BYTES).round(0).to_i
   end
 
-  def merge_limit_counter_user_exclusions!(permitted_params)
-    return unless params[:account]&.key?(:limit_counter_excluded_user_ids_raw)
-
-    normalized_ids = normalize_limit_counter_excluded_user_ids(
-      params[:account][:limit_counter_excluded_user_ids_raw]
-    )
-    updated_custom_attributes = (requested_resource.custom_attributes || {}).deep_dup
-
-    if normalized_ids.present?
-      updated_custom_attributes[
-        Enterprise::Account::LIMIT_COUNTER_EXCLUDED_USER_IDS_KEY
-      ] = normalized_ids
-    else
-      updated_custom_attributes.delete(
-        Enterprise::Account::LIMIT_COUNTER_EXCLUDED_USER_IDS_KEY
-      )
-    end
-
-    permitted_params.delete(:limit_counter_excluded_user_ids_raw)
-    permitted_params[:custom_attributes] = updated_custom_attributes
-  end
-
   def merge_selected_feature_flags!(permitted_params)
     submitted_features = submitted_feature_states
     return if submitted_features.empty?
@@ -164,20 +141,6 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     requested_resource.selected_feature_flags.map(&:to_s).reject do |feature_name|
       submitted_names.include?(feature_name)
     end
-  end
-
-  def normalize_limit_counter_excluded_user_ids(value)
-    raw_values = value.is_a?(String) ? value.split(/[,\s]+/) : value
-
-    Array(raw_values)
-      .filter_map do |candidate|
-        Integer(candidate.to_s.strip, 10)
-      rescue ArgumentError, TypeError
-        nil
-      end
-      .select(&:positive?)
-      .uniq
-      .sort
   end
 
   def redirect_to_account(notice: nil, alert: nil)

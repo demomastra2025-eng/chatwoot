@@ -21,6 +21,7 @@
 #  idx_communication_threads_account_activity        (account_id,last_activity_at)
 #  idx_communication_threads_account_contact_status  (account_id,contact_id,status)
 #  idx_communication_threads_account_display         (account_id,display_id) UNIQUE
+#  idx_communication_threads_one_per_contact         (account_id,contact_id) UNIQUE
 #  index_communication_threads_on_account_id         (account_id)
 #  index_communication_threads_on_assignee_id        (assignee_id)
 #  index_communication_threads_on_contact_id         (contact_id)

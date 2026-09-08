@@ -284,6 +284,9 @@
                               "slot_duration_min": {
                                 "type": "integer"
                               },
+                              "inherit_working_hours_from_account": {
+                                "type": "boolean"
+                              },
                               "compensation_type": {
                                 "type": "string",
                                 "nullable": true
@@ -832,6 +835,9 @@
                           "slot_duration_min": {
                             "type": "integer"
                           },
+                          "inherit_working_hours_from_account": {
+                            "type": "boolean"
+                          },
                           "compensation_type": {
                             "type": "string",
                             "nullable": true
@@ -954,6 +960,9 @@
                   "slot_duration_min": {
                     "type": "integer"
                   },
+                  "inherit_working_hours_from_account": {
+                    "type": "boolean"
+                  },
                   "compensation_type": {
                     "type": "string"
                   },
@@ -1011,6 +1020,9 @@
                         },
                         "slot_duration_min": {
                           "type": "integer"
+                        },
+                        "inherit_working_hours_from_account": {
+                          "type": "boolean"
                         },
                         "compensation_type": {
                           "type": "string",
@@ -1186,6 +1198,9 @@
                         "slot_duration_min": {
                           "type": "integer"
                         },
+                        "inherit_working_hours_from_account": {
+                          "type": "boolean"
+                        },
                         "compensation_type": {
                           "type": "string",
                           "nullable": true
@@ -1339,6 +1354,9 @@
                   "slot_duration_min": {
                     "type": "integer"
                   },
+                  "inherit_working_hours_from_account": {
+                    "type": "boolean"
+                  },
                   "compensation_type": {
                     "type": "string"
                   },
@@ -1396,6 +1414,9 @@
                         },
                         "slot_duration_min": {
                           "type": "integer"
+                        },
+                        "inherit_working_hours_from_account": {
+                          "type": "boolean"
                         },
                         "compensation_type": {
                           "type": "string",
@@ -4247,6 +4268,14 @@
                   "payment_status": {
                     "type": "string"
                   },
+                  "confirm_outside_working_hours": {
+                    "type": "boolean",
+                    "description": "Explicitly confirm an outside-hours appointment mutation. Honored only when enabled in account scheduling settings."
+                  },
+                  "confirm_slot_conflict": {
+                    "type": "boolean",
+                    "description": "Explicitly confirm an overlapping appointment mutation. Honored only when enabled in account scheduling settings."
+                  },
                   "custom_attributes": {
                     "type": "object",
                     "additionalProperties": true,
@@ -5013,6 +5042,14 @@
                   },
                   "payment_status": {
                     "type": "string"
+                  },
+                  "confirm_outside_working_hours": {
+                    "type": "boolean",
+                    "description": "Explicitly confirm an outside-hours appointment mutation. Honored only when enabled in account scheduling settings."
+                  },
+                  "confirm_slot_conflict": {
+                    "type": "boolean",
+                    "description": "Explicitly confirm an overlapping appointment mutation. Honored only when enabled in account scheduling settings."
                   },
                   "custom_attributes": {
                     "type": "object",

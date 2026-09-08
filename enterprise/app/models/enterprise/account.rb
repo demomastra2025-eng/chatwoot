@@ -1,39 +1,7 @@
 module Enterprise::Account
-  LIMIT_COUNTER_EXCLUDED_USER_IDS_KEY = 'limit_counter_excluded_user_ids'.freeze
-
   # TODO: Remove this when we upgrade administrate gem to the latest version
   # this is a temporary method since current administrate doesn't support virtual attributes
   def manually_managed_features; end
-
-  def limit_counter_excluded_user_ids
-    normalize_limit_counter_excluded_user_ids(
-      (custom_attributes || {})[LIMIT_COUNTER_EXCLUDED_USER_IDS_KEY]
-    )
-  end
-
-  def limit_counter_excluded_user_ids=(value)
-    updated_custom_attributes = (custom_attributes || {}).dup
-    normalized_ids = normalize_limit_counter_excluded_user_ids(value)
-
-    if normalized_ids.present?
-      updated_custom_attributes[LIMIT_COUNTER_EXCLUDED_USER_IDS_KEY] = normalized_ids
-    else
-      updated_custom_attributes.delete(LIMIT_COUNTER_EXCLUDED_USER_IDS_KEY)
-    end
-
-    self.custom_attributes = updated_custom_attributes
-  end
-
-  def limit_counter_excluded_user_ids_raw
-    limit_counter_excluded_user_ids.join(', ')
-  end
-
-  def countable_users_for_limits
-    excluded_ids = limit_counter_excluded_user_ids
-    return users unless excluded_ids.present?
-
-    users.where.not(id: excluded_ids)
-  end
 
   def billing_limits_overview
     usage_overview = account_usage_overview
@@ -42,7 +10,7 @@ module Enterprise::Account
       agents: usage_overview[:agents],
       inboxes: usage_overview[:inboxes],
       conversation: usage_overview[:conversations],
-      non_web_inboxes: usage_overview[:non_web_inboxes],
+      call_inboxes: usage_overview[:call_inboxes],
       storage: usage_overview[:storage],
       captain: usage_overview[:captain]
     }.with_indifferent_access
@@ -51,9 +19,9 @@ module Enterprise::Account
   def account_usage_overview
     {
       agents: agent_usage_summary(consumed: countable_users_for_limits.count),
-      inboxes: usage_limit_summary(:inboxes, consumed: inboxes.count),
+      inboxes: usage_limit_summary(:inboxes, consumed: text_channels_count),
       conversations: usage_limit_summary(:conversations, consumed: conversations_this_month_count),
-      non_web_inboxes: usage_limit_summary(:non_web_inboxes, consumed: main_channels_count),
+      call_inboxes: usage_limit_summary(:call_inboxes, consumed: call_channels_count),
       emails: email_usage_summary(consumed: emails_sent_today),
       storage: usage_limits[:storage],
       captain: usage_limits[:captain]
@@ -106,19 +74,5 @@ module Enterprise::Account
   def business_or_enterprise_plan?
     plan_name = custom_attributes['plan_name']
     %w[Business Enterprise].include?(plan_name)
-  end
-
-  def normalize_limit_counter_excluded_user_ids(value)
-    raw_values = value.is_a?(String) ? value.split(/[,\s]+/) : value
-
-    Array(raw_values)
-      .filter_map do |candidate|
-        Integer(candidate.to_s.strip, 10)
-      rescue ArgumentError, TypeError
-        nil
-      end
-      .select(&:positive?)
-      .uniq
-      .sort
   end
 end

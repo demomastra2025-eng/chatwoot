@@ -56,10 +56,7 @@ describe('ReconnectService', () => {
     window.removeEventListener = vi.fn();
     document.addEventListener = vi.fn();
     document.removeEventListener = vi.fn();
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { reload: vi.fn() },
-    });
+
     Object.defineProperty(document, 'hidden', {
       configurable: true,
       writable: true,
@@ -77,10 +74,6 @@ describe('ReconnectService', () => {
     it('should initialize with store, router, and setup event listeners', () => {
       expect(reconnectService.store).toBe(storeMock);
       expect(reconnectService.router).toBe(routerMock);
-      expect(window.addEventListener).toHaveBeenCalledWith(
-        'online',
-        reconnectService.handleOnlineEvent
-      );
       expect(window.addEventListener).toHaveBeenCalledWith(
         'focus',
         reconnectService.handleWindowFocus
@@ -103,10 +96,6 @@ describe('ReconnectService', () => {
   describe('disconnect', () => {
     it('should remove event listeners', () => {
       reconnectService.disconnect();
-      expect(window.removeEventListener).toHaveBeenCalledWith(
-        'online',
-        reconnectService.handleOnlineEvent
-      );
       expect(window.removeEventListener).toHaveBeenCalledWith(
         'focus',
         reconnectService.handleWindowFocus
@@ -136,24 +125,6 @@ describe('ReconnectService', () => {
       reconnectService.disconnectTime = new Date();
       differenceInSeconds.mockReturnValue(100);
       expect(reconnectService.getSecondsSinceDisconnect()).toBe(100);
-    });
-  });
-
-  describe('handleOnlineEvent', () => {
-    it('should reload the page if disconnected for more than 3 hours', () => {
-      reconnectService.getSecondsSinceDisconnect = vi
-        .fn()
-        .mockReturnValue(10801);
-      reconnectService.handleOnlineEvent();
-      expect(window.location.reload).toHaveBeenCalled();
-    });
-
-    it('should not reload the page if disconnected for less than 3 hours', () => {
-      reconnectService.getSecondsSinceDisconnect = vi
-        .fn()
-        .mockReturnValue(10799);
-      reconnectService.handleOnlineEvent();
-      expect(window.location.reload).not.toHaveBeenCalled();
     });
   });
 

@@ -6,7 +6,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
     authorize ::Crm::Pipeline
     bootstrap_defaults!
 
-    pipelines = policy_scope(::Crm::Pipeline).includes(:stages).ordered
+    pipelines = policy_scope(::Crm::Pipeline).includes(stages: :field_requirements).ordered
     render_payload(
       pipelines.map do |pipeline|
         ::Crm::PayloadBuilder.pipeline(pipeline, include_inactive_stages: include_inactive_stages?)
@@ -88,7 +88,17 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
   end
 
   def pipeline_params
-    params.permit(:name, :code, :position, :active, :default, :auto_create_deal_on_channel_contact)
+    params.permit(
+      :name,
+      :code,
+      :position,
+      :active,
+      :default,
+      :auto_create_deal_on_channel_contact,
+      :restrict_stage_skipping,
+      :restrict_backward_move,
+      :allow_stage_rule_override
+    )
   end
 
   def set_auto_create_default_stage!
@@ -114,7 +124,7 @@ class Api::V1::Accounts::Crm::PipelinesController < Api::V1::Accounts::Crm::Base
   end
 
   def set_pipeline
-    @pipeline = policy_scope(::Crm::Pipeline).includes(:stages).find(params[:id])
+    @pipeline = policy_scope(::Crm::Pipeline).includes(stages: :field_requirements).find(params[:id])
   end
 
   def ensure_destroyable_pipeline!

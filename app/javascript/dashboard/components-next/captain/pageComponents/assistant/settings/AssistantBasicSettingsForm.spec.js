@@ -85,6 +85,7 @@ describe('AssistantBasicSettingsForm', () => {
       feature_web: false,
       feature_document_reading: false,
       feature_image_understanding: false,
+      use_audio_transcriptions: true,
       handoff_enabled: true,
       tool_access: {
         [AGENT_TOOL_SCOPE]: {
@@ -230,6 +231,29 @@ describe('AssistantBasicSettingsForm', () => {
     await flushPromises();
 
     expect(payload.assistant.config.feature_web).toBe(true);
+  });
+
+  it('persists the voice transcript capability independently', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        name: 'Мөлдір',
+        description: 'Поприветствуй клиента.',
+        usage_mode: 'external_agent',
+        config: {
+          use_audio_transcriptions: false,
+          tool_access: {},
+        },
+      },
+      audioTranscriptionsAvailable: true,
+    });
+
+    expect(wrapper.vm.state.features.useAudioTranscriptions).toBe(false);
+
+    wrapper.vm.state.features.useAudioTranscriptions = true;
+    const payload = await wrapper.vm.buildPayload();
+
+    expect(payload.assistant.config.use_audio_transcriptions).toBe(true);
   });
 
   it('persists web search, page reading, and document reading independently', async () => {

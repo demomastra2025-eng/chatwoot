@@ -422,7 +422,7 @@
     "PROFILE_SETTINGS": "Настройки профиля",
     "ACCOUNT_SETTINGS": "Профиль компании",
     "VISIBILITY": "Навигация",
-    "CONVERSATION_SETTINGS": "Редактор сообщений",
+    "CONVERSATION_SETTINGS": "Диалоги",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Приложения",
     "LABELS": "Теги",
@@ -644,6 +644,37 @@
     }
   },
   "BILLING_SETTINGS": {
+    "PLATFORM": {
+      "TITLE": "Тариф и использование",
+      "LOADING": "Загружаем данные платёжной организации…",
+      "ERROR": "Не удалось загрузить данные тарифа.",
+      "RETRY": "Повторить",
+      "NOT_CONFIGURED": "Workspace пока использует прежнюю систему лимитов. Платёжная организация ещё не подключена.",
+      "ORGANIZATION": "Платёжная организация",
+      "ORGANIZATION_DESCRIPTION": "Общий плательщик и ресурсы связанных Workspace.",
+      "NAME": "Название",
+      "WORKSPACES": "Workspace",
+      "UNIQUE_USERS": "Уникальные сотрудники",
+      "SUBSCRIPTION": "Подписка",
+      "READ_ONLY": "Информация доступна только для просмотра. Оплата и изменение тарифа будут подключены позже.",
+      "STATUS": "Статус",
+      "STATUSES": {
+        "INCOMPLETE": "Не завершена",
+        "TRIALING": "Пробный период",
+        "ACTIVE": "Активна",
+        "PAST_DUE": "Есть задолженность",
+        "GRACE_PERIOD": "Льготный период",
+        "SUSPENDED": "Приостановлена",
+        "CANCELED": "Отменена"
+      },
+      "USAGE": "Использование Workspace",
+      "USAGE_DESCRIPTION": "Текущая квота Workspace и фактическое использование.",
+      "LIMITS": { "AGENTS": "Сотрудники", "STORAGE_BYTES": "Хранилище" },
+      "SOURCE": {
+        "BILLING_ALLOCATION": "Источник: квота платёжной организации",
+        "LEGACY": "Источник: прежний лимит Workspace"
+      }
+    },
     "TITLE": "Платёж",
     "DESCRIPTION": "Управляйте подпиской здесь, обновите тарифный план и получите больше возможностей для вашей команды.",
     "UNLIMITED": "Без лимита",

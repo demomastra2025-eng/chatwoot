@@ -4,11 +4,14 @@
 #
 #  id                                  :bigint           not null, primary key
 #  active                              :boolean          default(TRUE), not null
+#  allow_stage_rule_override           :boolean          default(FALSE), not null
 #  auto_create_deal_on_channel_contact :boolean          default(FALSE), not null
 #  code                                :string           not null
 #  default                             :boolean          default(FALSE), not null
 #  name                                :string           not null
 #  position                            :integer          default(0), not null
+#  restrict_backward_move              :boolean          default(FALSE), not null
+#  restrict_stage_skipping             :boolean          default(FALSE), not null
 #  created_at                          :datetime         not null
 #  updated_at                          :datetime         not null
 #  account_id                          :bigint           not null
@@ -29,6 +32,7 @@ class Crm::Pipeline < ApplicationRecord
   belongs_to :account, class_name: '::Account'
   has_many :stages, -> { ordered }, class_name: '::Crm::Stage', dependent: :destroy, inverse_of: :pipeline
   has_many :deals, class_name: '::Crm::Deal', inverse_of: :pipeline # rubocop:disable Rails/HasManyOrHasOneDependent
+  has_many :stage_visits, class_name: '::Crm::StageVisit', dependent: :restrict_with_error, inverse_of: :pipeline
 
   validates :name, presence: true
   validates :code, presence: true, uniqueness: { scope: :account_id }

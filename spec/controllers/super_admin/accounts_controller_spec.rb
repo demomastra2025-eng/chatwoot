@@ -25,6 +25,25 @@ RSpec.describe 'Super Admin accounts API', type: :request do
     end
   end
 
+  describe 'GET /super_admin/accounts/{account_id}/edit' do
+    it 'renders grouped workspace limits and the super admin navigation', :aggregate_failures do
+      account.update!(limits: { 'agents' => 12, 'conversations' => 0 })
+      sign_in(super_admin, scope: :super_admin)
+
+      get "/super_admin/accounts/#{account.id}/edit"
+
+      expect(response).to have_http_status(:success)
+      expect(response.body).to include('Workspace capacity', 'AI Agents')
+      expect(response.body).to include('Default', 'Custom', 'Blocked')
+      expect(response.body).to include('data-limit-action="default"', 'data-limit-action="block"')
+      expect(response.body).to include('Channels', 'Call channels', 'AI Agent responses')
+      expect(response.body).not_to include('Main channels', 'System emails', 'Reset Email Usage Counter', 'Limit counter excluded user IDs')
+      expect(response.body).to include('id="icon-bank-card-line"')
+      expect(response.body).to include('>Billing Organization</span>')
+      expect(response.body).to include('>Workspace</span>')
+    end
+  end
+
   describe 'POST /super_admin/accounts/{account_id}/reset_cache' do
     before do
       create(:label, account: account)
@@ -93,24 +112,6 @@ RSpec.describe 'Super Admin accounts API', type: :request do
 
         expect(response).to have_http_status(:redirect)
         expect(account.reload.limits).to eq({ 'agents' => 12, 'conversations' => 0 })
-      end
-
-      it 'stores excluded user ids for limit counters as normalized integers' do
-        sign_in(super_admin, scope: :super_admin)
-
-        patch "/super_admin/accounts/#{account.id}", params: {
-          account: {
-            name: account.name,
-            locale: account.locale,
-            status: account.status,
-            limit_counter_excluded_user_ids_raw: "12, 15\nabc 19"
-          }
-        }
-
-        expect(response).to have_http_status(:redirect)
-        expect(
-          account.reload.custom_attributes['limit_counter_excluded_user_ids']
-        ).to eq([12, 15, 19])
       end
 
       it 'persists checked and unchecked account features from the form' do
@@ -202,7 +203,7 @@ RSpec.describe 'Super Admin accounts API', type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_responses_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Captain responses usage reset')
+        expect(flash[:notice]).to eq('AI Agent responses usage reset')
         expect(account.reload.custom_attributes['captain_responses_usage']).to eq(0)
       end
     end
@@ -217,7 +218,7 @@ RSpec.describe 'Super Admin accounts API', type: :request do
         post "/super_admin/accounts/#{account.id}/reset_captain_tokens_usage"
 
         expect(response).to have_http_status(:redirect)
-        expect(flash[:notice]).to eq('Captain tokens usage reset')
+        expect(flash[:notice]).to eq('AI Agent tokens usage reset')
         expect(account.reload.custom_attributes['captain_tokens_usage']).to eq(0)
       end
     end

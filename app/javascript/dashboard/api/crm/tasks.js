@@ -18,6 +18,26 @@ class CrmTasksAPI extends ApiClient {
     return axios.post(`${this.url}/${id}/change_status`, data);
   }
 
+  complete(id, data) {
+    return axios.post(`${this.url}/${id}/complete`, data);
+  }
+
+  cancel(id, data) {
+    return axios.post(`${this.url}/${id}/cancel`, data);
+  }
+
+  reopen(id, data) {
+    return axios.post(`${this.url}/${id}/reopen`, data);
+  }
+
+  reschedule(id, data) {
+    return axios.post(`${this.url}/${id}/reschedule`, data);
+  }
+
+  assign(id, data) {
+    return axios.post(`${this.url}/${id}/assign`, data);
+  }
+
   archive(id, data = {}) {
     return axios.post(`${this.url}/${id}/archive`, data);
   }

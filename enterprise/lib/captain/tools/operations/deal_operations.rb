@@ -54,7 +54,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
   end
 
   def transition_current_deal_stage(stage_id: nil, stage_name: nil, stage_code: nil, pipeline_id: nil, pipeline_code: nil,
-                                    stage_action: nil, closing_reasons: nil, transition_reason: nil)
+                                    stage_action: nil, closing_reasons: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     raise ArgumentError, 'Current deal is not available' if current_deal.blank?
 
@@ -82,13 +82,12 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
               )
             end
 
-    transition_deal_to_stage(current_deal, stage, closing_reasons: closing_reasons, transition_reason: transition_reason)
+    transition_deal_to_stage(current_deal, stage, closing_reasons: closing_reasons)
   end
 
   def update_current_deal(deal_id: nil, title: nil, description: nil, amount: nil, currency: nil, expected_close_on: nil,
                           win_probability: nil, custom_attributes: nil, pipeline_id: nil,
-                          pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil, closing_reasons: nil,
-                          transition_reason: nil)
+                          pipeline_code: nil, stage_id: nil, stage_name: nil, stage_code: nil, closing_reasons: nil)
     ensure_feature_enabled!('crm_deals', 'CRM deals are not enabled for this account')
     explicit_deal_id = optional_positive_id(deal_id).present?
     deal = deal_for_update(deal_id)
@@ -99,7 +98,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
       explicit_deal_id: explicit_deal_id,
       requested_values: [
         title, description, amount, currency, expected_close_on, win_probability,
-        pipeline_code, stage_name, stage_code, closing_reasons, transition_reason
+        pipeline_code, stage_name, stage_code, closing_reasons
       ]
     )
 
@@ -144,8 +143,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
         deal = transition_deal_to_stage(
           deal,
           target_stage,
-          closing_reasons: closing_reasons,
-          transition_reason: transition_reason
+          closing_reasons: closing_reasons
         )
       end
       deal
@@ -271,15 +269,14 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     target_stage
   end
 
-  def transition_deal_to_stage(deal, stage, closing_reasons: nil, transition_reason: nil)
-    ::Crm::Deals::TransitionService.new(
+  def transition_deal_to_stage(deal, stage, closing_reasons: nil)
+    ::Crm::Deals::StageCommandService.new(
       account: account,
       deal: deal,
       params: {
         closing_reasons: closing_reasons,
         stage_id: stage.id,
-        lock_version: deal.lock_version,
-        transition_reason: transition_reason
+        lock_version: deal.lock_version
       }.compact,
       actor: actor
     ).perform

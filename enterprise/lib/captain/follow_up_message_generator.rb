@@ -15,6 +15,7 @@ class Captain::FollowUpMessageGenerator < Captain::BaseTaskService
     { conversation_display_id: nil },
     { scenario: nil },
     { step_index: 0 },
+    { temporal_context: {} },
     { model: nil }
   ]
 
@@ -84,6 +85,7 @@ class Captain::FollowUpMessageGenerator < Captain::BaseTaskService
     [
       "Follow-up step: #{step_index.to_i + 1}",
       "Current time: #{Time.current.iso8601}",
+      "Delivery context (JSON):\n#{JSON.generate(temporal_context.to_h)}",
       "Allowed business context (JSON):\n#{JSON.generate(prompt_context)}",
       "Conversation history:\n#{formatted_history}"
     ].join("\n\n")

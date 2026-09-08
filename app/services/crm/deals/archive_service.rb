@@ -22,7 +22,9 @@ class Crm::Deals::ArchiveService < Crm::BaseWriteService
         eventable: deal,
         actor: actor,
         event_type: archived ? 'deal_archived' : 'deal_unarchived',
-        meta: {}
+        meta: {},
+        before_data: { archived_at: deal.archived_at_before_last_save },
+        after_data: { archived_at: deal.archived_at }
       )
 
       deal.reload

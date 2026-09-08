@@ -1894,8 +1894,7 @@ class Telephony::EventsIngestionService
   end
 
   def enqueue_call_recording_transcription(call_session)
-    return unless call_session.account.feature_enabled?('captain_integration')
-    return unless call_session.account.captain_audio_transcription_enabled?
+    return unless call_session.account.call_transcriptions_enabled?
     return if call_recording_metadata(call_session)['storage_key'].blank?
     return if outbound_without_customer_answer?(call_session)
 

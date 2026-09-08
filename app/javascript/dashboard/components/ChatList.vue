@@ -2130,20 +2130,17 @@ watch(conversationFilters, (newVal, oldVal) => {
       >
         {{ $t('CHAT_LIST.LOCAL_SEARCH.EMPTY') }}
       </p>
-      <div v-if="chatListLoading" class="flex justify-center my-4">
-        <Spinner class="text-n-brand" />
-      </div>
-      <p
-        v-else-if="showEndOfListMessage"
-        class="p-4 text-center text-n-slate-11"
-      >
-        {{ $t('CHAT_LIST.EOF') }}
-      </p>
       <IntersectionObserver
-        v-else
+        v-if="displayedConversationList.length && !hasCurrentPageEndReached"
         :options="intersectionObserverOptions"
         @observed="loadMoreConversations"
       />
+      <div v-if="chatListLoading" class="flex justify-center my-4">
+        <Spinner class="text-n-brand" />
+      </div>
+      <p v-if="showEndOfListMessage" class="p-4 text-center text-n-slate-11">
+        {{ $t('CHAT_LIST.EOF') }}
+      </p>
     </div>
     <Dialog
       ref="deleteConversationDialogRef"

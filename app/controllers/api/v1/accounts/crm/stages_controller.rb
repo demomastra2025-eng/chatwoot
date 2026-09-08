@@ -95,18 +95,28 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
       :color,
       :default,
       :closing_reason_required,
-      :transition_reason_required,
-      closing_reason_options: [],
-      transition_reason_options: []
+      closing_reason_options: []
     )
   end
 
   def batch_update_params
     params.permit(
       deleted_stage_ids: [],
-      stages: [:id, :name, :color, :active],
+      stages: [
+        :id,
+        :name,
+        :color,
+        :active,
+        { field_requirements: [:field_key, :required, { validation: {}, role_exemptions: [] }] }
+      ],
       technical_stage: [:id, :active],
-      terminal_stages: [:id, :name, { closing_reason_options: [] }]
+      terminal_stages: [
+        :id,
+        :name,
+        { closing_reason_options: [],
+          field_requirements: [:field_key, :required, { validation: {}, role_exemptions: [] }] }
+      ],
+      pipeline_rules: [:restrict_stage_skipping, :restrict_backward_move, :allow_stage_rule_override]
     )
   end
 
@@ -115,7 +125,7 @@ class Api::V1::Accounts::Crm::StagesController < Api::V1::Accounts::Crm::BaseCon
   end
 
   def technical_stage_params
-    params.permit(:active, :color, :transition_reason_required, transition_reason_options: [])
+    params.permit(:active, :color)
   end
 
   def insert_stage_at!(stage, requested_position)

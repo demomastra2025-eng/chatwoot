@@ -2,20 +2,88 @@
   <%= f.label field.attribute %>
 </div>
 <div class="field-unit__field">
-  <p class="text-xs text-gray-500 mb-4">
-    Leave a field blank to inherit the global or plan value. Use <code>0</code> to block that capability for the account.
-  </p>
+  <div class="mb-5 rounded-lg border border-n-container bg-slate-25 p-4">
+    <div class="text-sm font-medium text-n-slate-12">How overrides work</div>
+    <p class="mt-1 text-xs leading-5 text-n-slate-10">
+      <strong>Default</strong> uses the plan or system-wide value; if neither is configured, the resource is unlimited.
+      <strong>Custom</strong> sets a workspace-specific value. <strong>Blocked</strong> sets only this resource limit to zero.
+    </p>
+  </div>
 
-  <div class="space-y-4">
-    <% field.rows.each do |row| %>
-      <div>
-        <label class="block font-medium mb-1" for="<%= row[:input_id] %>"><%= row[:label] %></label>
-        <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: row[:step] || 1, class: "w-full" %>
-        <p class="mt-1 text-xs text-gray-500"><%= row[:hint] %></p>
-        <% if row[:bytes] && row[:value].present? %>
-          <p class="mt-1 text-xs text-gray-500">Current override: <%= number_with_precision(row[:value], precision: 2, strip_insignificant_zeros: true) %> GB</p>
-        <% end %>
-      </div>
+  <div class="space-y-6" data-account-limits>
+    <% field.groups.each do |group| %>
+      <section>
+        <div class="mb-3">
+          <h3 class="text-sm font-semibold text-n-slate-12"><%= group[:label] %></h3>
+          <p class="mt-1 text-xs text-n-slate-10"><%= group[:hint] %></p>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          <% group[:rows].each do |row| %>
+            <div class="rounded-lg border border-n-container bg-white p-4" data-limit-card>
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <label class="block text-sm font-medium text-n-slate-12" for="<%= row[:input_id] %>"><%= row[:label] %></label>
+                  <p class="mt-1 text-xs leading-5 text-n-slate-10"><%= row[:hint] %></p>
+                </div>
+                <% status_classes = row[:status] == :blocked ? 'bg-n-ruby-3 text-n-ruby-11' : row[:status] == :custom ? 'bg-n-blue-3 text-n-blue-11' : 'bg-n-slate-3 text-n-slate-11' %>
+                <span class="shrink-0 rounded-full px-2 py-1 text-xs font-medium <%= status_classes %>" data-limit-status>
+                  <%= row[:status].to_s.titleize %>
+                </span>
+              </div>
+
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <%= number_field_tag "account[limits][#{row[:key]}]", row[:value], id: row[:input_id], min: 0, step: row[:step] || 1, placeholder: "Default", class: "min-w-40 flex-1", data: { limit_input: true } %>
+                <button type="button" class="whitespace-nowrap rounded-md border border-n-container bg-white px-3 py-2 text-xs font-medium text-n-slate-11 hover:border-woot-500 hover:text-woot-500" data-limit-action="default">Use default</button>
+                <button type="button" class="whitespace-nowrap rounded-md border border-n-container bg-white px-3 py-2 text-xs font-medium text-n-slate-11 hover:border-n-ruby-8 hover:text-n-ruby-11" data-limit-action="block">Block</button>
+              </div>
+            </div>
+          <% end %>
+        </div>
+      </section>
     <% end %>
   </div>
 </div>
+
+<% content_for :javascript do %>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const limitsContainer = document.querySelector('[data-account-limits]');
+      if (!limitsContainer) return;
+
+      const updateStatus = (card, input) => {
+        const status = card.querySelector('[data-limit-status]');
+        if (!status) return;
+
+        const isDefault = input.value === '';
+        const isBlocked = input.value.trim() !== '' && Number(input.value) === 0;
+        status.textContent = isDefault ? 'Default' : isBlocked ? 'Blocked' : 'Custom';
+        status.className = `shrink-0 rounded-full px-2 py-1 text-xs font-medium ${
+          isBlocked
+            ? 'bg-n-ruby-3 text-n-ruby-11'
+            : isDefault
+              ? 'bg-n-slate-3 text-n-slate-11'
+              : 'bg-n-blue-3 text-n-blue-11'
+        }`;
+      };
+
+      limitsContainer.addEventListener('click', event => {
+        const action = event.target.closest('[data-limit-action]');
+        if (!action) return;
+
+        const card = action.closest('[data-limit-card]');
+        const input = card?.querySelector('[data-limit-input]');
+        if (!input) return;
+
+        input.value = action.dataset.limitAction === 'block' ? '0' : '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.focus();
+      });
+
+      limitsContainer.addEventListener('input', event => {
+        if (!event.target.matches('[data-limit-input]')) return;
+        updateStatus(event.target.closest('[data-limit-card]'), event.target);
+      });
+    });
+  </script>
+<% end %>

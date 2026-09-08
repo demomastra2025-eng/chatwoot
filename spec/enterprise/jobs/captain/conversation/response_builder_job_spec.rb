@@ -2,7 +2,9 @@ require 'rails_helper'
 
 RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
   let(:account) { create(:account, custom_attributes: { plan_name: 'startups' }) }
-  let(:inbox) { create(:inbox, account: account) }
+  let(:inbox) do |example|
+    example.metadata[:provider_follow_up] ? create(:channel_telegram, account: account).inbox : create(:inbox, account: account)
+  end
   let(:assistant) { create(:captain_assistant, account: account) }
 
   describe '#perform' do
@@ -166,7 +168,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect(conversation.messages.last.content).to eq('Hey, welcome to Captain V2')
     end
 
-    it 'schedules an AI follow-up step after creating the assistant response' do
+    it 'schedules an AI follow-up step after the assistant response is acknowledged', :provider_follow_up do
       assistant.update!(
         config: {
           'follow_up_settings' => {
@@ -184,6 +186,12 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
       expect do
         described_class.perform_now(conversation, assistant)
+      end.not_to change { Reminder.captain_follow_up.count }
+
+      outgoing = conversation.messages.outgoing.order(:id).last
+      outgoing.update!(source_id: 'provider-ack')
+      expect do
+        Captain::FollowUpDeliveryConfirmation.new(message: outgoing).perform
       end.to change { Reminder.captain_follow_up.count }.by(1)
 
       scheduled_touch = Reminder.captain_follow_up.last
@@ -206,7 +214,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end.not_to(change { Reminder.captain_follow_up.count })
     end
 
-    it 'rolls back the assistant response when the first persisted follow-up cannot be created' do
+    it 'keeps the assistant response and retries when its acknowledged follow-up cannot be created', :provider_follow_up do
       assistant.update!(
         config: {
           'follow_up_settings' => {
@@ -219,8 +227,17 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       expect do
         described_class.perform_now(conversation, assistant)
+      end.to change(conversation.messages, :count).by(1)
+      outgoing = conversation.messages.outgoing.order(:id).last
+      outgoing.update!(source_id: 'provider-ack')
+      expect do
+        Captain::FollowUpDeliveryConfirmation.new(message: outgoing).perform
       end.to raise_error(ActiveRecord::RecordInvalid)
-        .and not_change(conversation.messages, :count)
+      expect(outgoing.reload.additional_attributes.dig('captain_follow_up_origin', 'next_step_scheduled')).to be_nil
+      allow(Captain::Conversation::FollowUpJob).to receive(:schedule!).and_call_original
+      expect do
+        Captain::FollowUpDeliveryConfirmation.new(message: outgoing).perform
+      end.to change { Reminder.captain_follow_up.count }.by(1)
     end
 
     it 'increments usage response' do
@@ -1200,7 +1217,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       end
 
       before do
-        account.update!(captain_features: { 'audio_transcription' => true })
+        account.update!(audio_transcriptions: true)
         audio_attachment
         conversation.messages.where.not(id: audio_message.id).destroy_all
         stub_const('Captain::Conversation::ResponseBuilderJob::AUDIO_TRANSCRIPTION_WAIT_TIMEOUT', 0.05)
@@ -1231,8 +1248,8 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant)
       end
 
-      it 'does not wait or include transcription when captain audio transcription feature is disabled' do
-        account.update!(captain_features: { 'audio_transcription' => false })
+      it 'does not wait or include transcription when the AI agent capability is disabled' do
+        assistant.update!(config: assistant.config.merge('use_audio_transcriptions' => false))
         audio_attachment.update!(meta: { 'transcribed_text' => 'Hidden transcript' })
 
         expect_any_instance_of(described_class).not_to receive(:sleep)

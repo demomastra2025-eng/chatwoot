@@ -22,7 +22,7 @@ class Scheduling::AvailabilityService
     availability_result(starts_at: starts_at, ends_at: ends_at).available?
   end
 
-  def availability_result(starts_at:, ends_at:)
+  def availability_result(starts_at:, ends_at:, ignored_codes: [])
     return Result.new(available: false, code: 'VALIDATION_ERROR', message: 'End date must be greater than start date') if ends_at <= starts_at
 
     local_date = local_booking_date(starts_at, ends_at)
@@ -34,11 +34,11 @@ class Scheduling::AvailabilityService
     end
 
     working_intervals = working_intervals_for_date(local_date, override)
-    if working_intervals.empty?
+    if working_intervals.empty? && ignored_codes.exclude?('OUTSIDE_WORKING_HOURS')
       return Result.new(available: false, code: 'OUTSIDE_WORKING_HOURS', message: 'No working rules configured for this day')
     end
 
-    unless inside_intervals?(working_intervals, starts_at: starts_at, ends_at: ends_at)
+    unless ignored_codes.include?('OUTSIDE_WORKING_HOURS') || inside_intervals?(working_intervals, starts_at: starts_at, ends_at: ends_at)
       return Result.new(available: false, code: 'OUTSIDE_WORKING_HOURS', message: 'Appointment is outside working hours')
     end
 
@@ -50,7 +50,8 @@ class Scheduling::AvailabilityService
       return Result.new(available: false, code: 'BLOCKED_BY_VACATION', message: 'Appointment overlaps blocked time')
     end
 
-    if overlaps_intervals?(appointment_intervals_for_date(local_date), starts_at: starts_at, ends_at: ends_at)
+    if ignored_codes.exclude?('SLOT_CONFLICT') &&
+       overlaps_intervals?(appointment_intervals_for_date(local_date), starts_at: starts_at, ends_at: ends_at)
       return Result.new(available: false, code: 'SLOT_CONFLICT', message: 'Slot is already occupied')
     end
 
@@ -127,6 +128,8 @@ class Scheduling::AvailabilityService
 
   def day_intervals(date)
     override = workday_overrides.find { |item| item.date == date }
+    return [] if holiday_blocks_date?(date) && override.blank?
+
     base_intervals = working_intervals_for_date(date, override)
     return [] if base_intervals.empty?
 
@@ -140,6 +143,8 @@ class Scheduling::AvailabilityService
   end
 
   def holiday_blocks_date?(date)
+    return true if resource.inherit_working_hours_from_account? && resource.account.workspace_day_off?(date)
+
     matching_holidays = holidays.select { |holiday| holiday_matches_date?(holiday, date) }
     return false if matching_holidays.blank?
     return false if matching_holidays.any?(&:working_day_override?)

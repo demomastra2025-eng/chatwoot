@@ -28,6 +28,30 @@ describe('useSchedulingAppointmentFormStore', () => {
     vi.clearAllMocks();
   });
 
+  it('passes explicit availability confirmations only for the retried save', async () => {
+    const store = useSchedulingAppointmentFormStore();
+    const calendarStore = {
+      currentView: 'day',
+      syncAppointment: vi.fn(),
+    };
+    store.openCreate({}, { resourceId: 3 });
+    SchedulingAppointmentsAPI.create.mockResolvedValue({
+      data: { payload: { id: 17, resource_id: 3 } },
+    });
+
+    await store.submit(calendarStore, {
+      confirm_outside_working_hours: true,
+      confirm_slot_conflict: true,
+    });
+
+    expect(SchedulingAppointmentsAPI.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        confirm_outside_working_hours: true,
+        confirm_slot_conflict: true,
+      })
+    );
+  });
+
   it('keeps the saved price when editing an appointment without changing service/resource', () => {
     const store = useSchedulingAppointmentFormStore();
 
@@ -123,7 +147,7 @@ describe('useSchedulingAppointmentFormStore', () => {
       endsAt: '2026-03-09T10:30:00.000Z',
       id: 11,
       prepaidAmount: 5000,
-      prepaidPaymentMethod: 'kaspi_qr',
+      prepaidPaymentMethod: 'bank_transfer',
       resourceId: 3,
       serviceAmount: 20000,
       serviceId: 5,
@@ -131,7 +155,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
 
     expect(store.form.prepaidAmount).toBe(5000);
-    expect(store.form.prepaidPaymentMethod).toBe('kaspi_qr');
+    expect(store.form.prepaidPaymentMethod).toBe('bank_transfer');
   });
 
   it('persists the selected Medelement cabinet in appointment custom attributes', () => {

@@ -8,10 +8,15 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     originating_conversation_id
     title
     description
+    task_type_id
+    task_outcome_id
     activity_type
     outcome
     outcome_note
     priority
+    all_day
+    due_on
+    schedule_timezone
     start_at
     due_at
     position
@@ -26,10 +31,15 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     originating_conversation_id
     title
     description
+    task_type_id
+    task_outcome_id
     activity_type
     outcome
     outcome_note
     priority
+    all_day
+    due_on
+    schedule_timezone
     start_at
     due_at
     position
@@ -39,8 +49,10 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   ].freeze
 
   before_action :ensure_crm_tasks_enabled!
-  before_action :bootstrap_defaults!, only: [:index, :create]
-  before_action :set_task, only: [:show, :update, :timeline, :change_status, :archive, :unarchive]
+  before_action :bootstrap_defaults!, only: [:index, :create, :complete, :cancel, :reopen]
+  before_action :set_task,
+                only: [:show, :update, :timeline, :change_status, :complete, :cancel, :reopen, :reschedule, :assign,
+                       :archive, :unarchive]
 
   def index
     authorize ::Crm::Task
@@ -104,11 +116,40 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     task = ::Crm::Tasks::StatusTransitionService.new(
       account: Current.account,
       task: @task,
-      params: params.permit(:status_id, :position, :lock_version, :outcome, :outcome_note),
+      params: params.permit(:status_id, :position, :lock_version, :idempotency_key, :task_outcome_id, :outcome, :outcome_note, :cancellation_reason),
       actor: Current.user
     ).perform
 
     render_payload(::Crm::PayloadBuilder.task(task))
+  end
+
+  def complete
+    run_task_command!(
+      ::Crm::Tasks::CompleteService,
+      params.permit(:task_outcome_id, :outcome, :outcome_note, :lock_version, :idempotency_key)
+    )
+  end
+
+  def cancel
+    run_task_command!(
+      ::Crm::Tasks::CancelService,
+      params.permit(:cancellation_reason, :lock_version, :idempotency_key)
+    )
+  end
+
+  def reopen
+    run_task_command!(::Crm::Tasks::ReopenService, params.permit(:lock_version, :idempotency_key))
+  end
+
+  def reschedule
+    run_task_command!(
+      ::Crm::Tasks::RescheduleService,
+      params.permit(:all_day, :due_on, :due_at, :start_at, :schedule_timezone, :lock_version, :idempotency_key)
+    )
+  end
+
+  def assign
+    run_task_command!(::Crm::Tasks::AssignService, params.permit(:assignee_id, :lock_version, :idempotency_key))
   end
 
   def archive
@@ -154,10 +195,20 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     to = parse_datetime_param!(params[:due_to], field_name: 'due_to', required: false)
     return scope if from.blank? && to.blank?
 
-    scoped = scope
-    scoped = scoped.where('crm_tasks.due_at >= ?', from) if from.present?
-    scoped = scoped.where('crm_tasks.due_at < ?', to) if to.present?
-    scoped
+    timezone = Current.account.workspace_working_hours_timezone
+    from_date = from&.in_time_zone(timezone)&.to_date
+    to_date = to&.in_time_zone(timezone)&.to_date
+    scope.where(due_range_clause(from: from, to: to), from: from, to: to, from_date: from_date, to_date: to_date)
+  end
+
+  def due_range_clause(from:, to:)
+    return <<~SQL.squish if from.present? && to.present?
+      (crm_tasks.due_at >= :from AND crm_tasks.due_at < :to) OR
+      (crm_tasks.due_on >= :from_date AND crm_tasks.due_on < :to_date)
+    SQL
+    return 'crm_tasks.due_at >= :from OR crm_tasks.due_on >= :from_date' if from.present?
+
+    'crm_tasks.due_at < :to OR crm_tasks.due_on < :to_date'
   end
 
   def filter_by_exact(scope, field_name)
@@ -174,10 +225,12 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def filtered_tasks
-    scope = policy_scope(::Crm::Task).ordered
+    scope = policy_scope(::Crm::Task).includes(:task_type, :task_outcome).ordered
     scope = parse_boolean(params[:archived]) ? scope.archived : scope.kept
     scope = filter_by_exact(scope, :status_id)
     scope = filter_by_exact(scope, :activity_type)
+    scope = filter_by_exact(scope, :task_type_id)
+    scope = filter_by_exact(scope, :task_outcome_id)
     scope = filter_by_exact(scope, :outcome)
     scope = filter_by_exact(scope, :assignee_id)
     scope = filter_by_exact(scope, :team_id)
@@ -205,5 +258,16 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
 
   def update_task_params
     params.permit(*UPDATE_PARAM_KEYS, custom_attributes: {})
+  end
+
+  def run_task_command!(service_class, command_params)
+    authorize @task, :"#{action_name}?"
+    task = service_class.new(
+      account: Current.account,
+      task: @task,
+      params: command_params,
+      actor: Current.user
+    ).perform
+    render_payload(::Crm::PayloadBuilder.task(task))
   end
 end

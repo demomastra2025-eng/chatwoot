@@ -15,11 +15,15 @@ module BillingHelper
     account.conversations.where('created_at > ?', 30.days.ago).count
   end
 
-  def non_web_inboxes(account)
-    account.main_channels_count
+  def inboxes(account)
+    account.text_channels_count
+  end
+
+  def call_inboxes(account)
+    account.call_channels_count
   end
 
   def agents(account)
-    account.users.count
+    account.countable_users_for_limits.count
   end
 end

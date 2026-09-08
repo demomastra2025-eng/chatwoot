@@ -26,14 +26,33 @@
       "UPDATE_ERROR": "Could not update sidebar settings. Please try again."
     },
     "WORKING_HOURS": {
-      "TITLE": "Workspace working hours",
-      "DESCRIPTION": "Default schedule for channels that use Workspace settings.",
-      "ENABLE": "Enable Workspace schedule",
-      "ENABLE_HELP": "Changes apply immediately to every channel inheriting Workspace working hours.",
+      "TITLE": "Company working hours",
+      "DESCRIPTION": "The main company schedule. New channels and specialists inherit it by default, and AI uses it for working-hours rules.",
       "TIMEZONE": "Timezone",
+      "START": "Start",
+      "END": "End",
+      "DATE": "Date",
+      "WEEKLY_TITLE": "Weekly schedule",
+      "WEEKLY_DESCRIPTION": "Disable a day to mark it as a regular day off.",
+      "BREAKS": {
+        "TITLE": "Breaks",
+        "DESCRIPTION": "Recurring periods when the company is unavailable during an otherwise working day.",
+        "ADD": "Add break",
+        "EMPTY": "No shared breaks yet.",
+        "NAME": "Name, for example Lunch"
+      },
+      "DAYS_OFF": {
+        "TITLE": "Days off and holidays",
+        "DESCRIPTION": "Dates when the company is closed regardless of the weekly schedule.",
+        "ADD": "Add day off",
+        "EMPTY": "No additional days off yet.",
+        "NAME": "Name, for example Holiday",
+        "YEARLY": "Repeat yearly"
+      },
+      "REMOVE": "Remove",
       "SAVE": "Save working hours",
-      "UPDATE_SUCCESS": "Workspace working hours updated.",
-      "UPDATE_ERROR": "Could not update Workspace working hours."
+      "UPDATE_SUCCESS": "Company working hours updated.",
+      "UPDATE_ERROR": "Could not update company working hours."
     },
     "CONVERSATIONS": {
       "TITLE": "Conversations",
@@ -138,6 +157,22 @@
           "ERROR": "Failed to update audio transcription setting"
         }
       },
+      "MEDIA_TRANSCRIPTION": {
+        "TITLE": "Transcription",
+        "NOTE": "Configure automatic media transcription for agents, search, and history independently of AI agents.",
+        "AUDIO": {
+          "TITLE": "Transcribe voice messages",
+          "NOTE": "Store text alongside incoming and outgoing voice messages."
+        },
+        "CALLS": {
+          "TITLE": "Transcribe call recordings",
+          "NOTE": "Store a call transcript when a recording is available."
+        },
+        "API": {
+          "SUCCESS": "Transcription settings updated",
+          "ERROR": "Failed to update transcription settings"
+        }
+      },
       "AUTO_RESOLVE_DURATION": {
         "LABEL": "Inactivity duration for resolution",
         "HELP": "Duration after a conversation should auto resolve if there is no activity",
@@ -170,6 +205,14 @@
         "COMPANY_ENABLED": {
           "LABEL": "Allow company attachment in appointments",
           "NOTE": "Show the company field in appointment forms and allow linking visits to a company."
+        },
+        "ALLOW_OUTSIDE_WORKING_HOURS": {
+          "LABEL": "Allow appointments outside working hours",
+          "NOTE": "Staff can confirm and save an appointment outside the specialist's working hours."
+        },
+        "ALLOW_OVERLAPPING_APPOINTMENTS": {
+          "LABEL": "Allow multiple appointments at the same time",
+          "NOTE": "Staff can confirm and add another patient to an occupied time slot."
         },
         "TOUCH_PLAN": {
           "LABEL": "Default touch plan",

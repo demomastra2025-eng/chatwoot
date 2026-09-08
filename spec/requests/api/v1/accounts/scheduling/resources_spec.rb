@@ -111,6 +111,78 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response_body.dig('payload', 0, 'weekday')).to eq(1)
   end
 
+  it 'rejects more than one working interval for the same weekday' do
+    existing_rule = resource.work_rules.create!(weekday: 2, start_minute: 9 * 60, end_minute: 18 * 60, active: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/work_rules",
+          params: {
+            work_rules: [
+              { weekday: 1, start_minute: 9 * 60, end_minute: 13 * 60, active: true },
+              { weekday: 1, start_minute: 14 * 60, end_minute: 18 * 60, active: true }
+            ]
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('DUPLICATE_WORKDAY')
+    expect(resource.work_rules.reload).to contain_exactly(existing_rule)
+  end
+
+  it 'inherits company working hours and exposes the inheritance flag' do
+    schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+    schedule[1].merge!('open_hour' => 10, 'close_hour' => 18)
+    account.update!(
+      workspace_working_hours_enabled: true,
+      workspace_timezone: 'Asia/Almaty',
+      workspace_working_hours: schedule
+    )
+    resource.work_rules.create!(weekday: 1, start_minute: 540, end_minute: 600, active: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+          params: { inherit_working_hours_from_account: true },
+          headers: headers,
+          as: :json
+
+    inherited_rule = resource.reload.work_rules.find_by!(weekday: 1)
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'inherit_working_hours_from_account')).to be(true)
+    expect(resource.timezone).to eq('Asia/Almaty')
+    expect(inherited_rule).to have_attributes(start_minute: 600, end_minute: 1080, active: true)
+  end
+
+  it 'rejects custom work rules while company hours are inherited' do
+    resource.update!(inherit_working_hours_from_account: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/work_rules",
+          params: {
+            work_rules: [
+              { weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60, active: true }
+            ]
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('WORK_RULES_INHERITED')
+  end
+
+  it 'allows an imported specialist to change only company hours inheritance' do
+    imported_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
+    )
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}",
+          params: { inherit_working_hours_from_account: true },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(imported_resource.reload.inherit_working_hours_from_account).to be(true)
+  end
+
   it 'updates break rules without auth header crashes' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/break_rules",
           params: {

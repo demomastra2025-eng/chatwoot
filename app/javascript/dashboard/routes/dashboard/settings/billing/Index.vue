@@ -1,6 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useMapGetter, useStore } from 'dashboard/composables/store.js';
 import { useAccount } from 'dashboard/composables/useAccount';
@@ -14,13 +13,13 @@ import { formatBytes } from 'shared/helpers/FileHelper';
 import BillingMeter from './components/BillingMeter.vue';
 import BillingCard from './components/BillingCard.vue';
 import BillingHeader from './components/BillingHeader.vue';
+import BillingPlatformOverview from './components/BillingPlatformOverview.vue';
 import DetailItem from './components/DetailItem.vue';
 import PurchaseCreditsModal from './components/PurchaseCreditsModal.vue';
 import BaseSettingsHeader from '../components/BaseSettingsHeader.vue';
 import SettingsLayout from '../SettingsLayout.vue';
 import ButtonV4 from 'next/button/Button.vue';
 
-const router = useRouter();
 const { t } = useI18n();
 const { currentAccount, isOnChatwootCloud } = useAccount();
 const {
@@ -41,6 +40,21 @@ const BILLING_REFRESH_ATTEMPTED = 'billing_refresh_attempted';
 // State for handling refresh attempts and loading
 const isWaitingForBilling = ref(false);
 const purchaseCreditsModalRef = ref(null);
+const billingOverviewReady = ref(false);
+const hasBillingPlatform = ref(false);
+const pageTitle = computed(() =>
+  hasBillingPlatform.value
+    ? t('BILLING_SETTINGS.PLATFORM.TITLE')
+    : t('BILLING_SETTINGS.TITLE')
+);
+const pageDescription = computed(() =>
+  hasBillingPlatform.value
+    ? t('BILLING_SETTINGS.PLATFORM.READ_ONLY')
+    : t('BILLING_SETTINGS.DESCRIPTION')
+);
+const pricingLinkText = computed(() =>
+  hasBillingPlatform.value ? '' : t('BILLING_SETTINGS.VIEW_PRICING')
+);
 
 const customAttributes = computed(() => {
   return currentAccount.value.custom_attributes || {};
@@ -141,11 +155,7 @@ const fetchAccountDetails = async () => {
 };
 
 const handleBillingPageLogic = async () => {
-  // If self-hosted, redirect to dashboard
-  if (!isOnChatwootCloud.value) {
-    router.push({ name: 'home' });
-    return;
-  }
+  if (!isOnChatwootCloud.value) return;
 
   // Check if we've already attempted a refresh for billing setup
   const billingRefreshAttempted = sessionStorage.get(BILLING_REFRESH_ATTEMPTED);
@@ -161,7 +171,12 @@ const handleBillingPageLogic = async () => {
       sessionStorage.set(BILLING_REFRESH_ATTEMPTED, true);
 
       setTimeout(() => {
-        window.location.reload();
+        fetchAccountDetails()
+          .catch(() => undefined)
+          .finally(() => {
+            isWaitingForBilling.value = false;
+            sessionStorage.remove(BILLING_REFRESH_ATTEMPTED);
+          });
       }, 5000);
     } else {
       // We've already tried refreshing, so just show the no billing message
@@ -197,30 +212,48 @@ const handleTopupSuccess = () => {
   refreshLimits();
 };
 
-onMounted(handleBillingPageLogic);
+const onBillingOverviewLoaded = configured => {
+  billingOverviewReady.value = true;
+  hasBillingPlatform.value = configured;
+  if (!configured) handleBillingPageLogic();
+};
 </script>
 
 <template>
   <SettingsLayout
-    :is-loading="uiFlags.isFetchingItem || isWaitingForBilling"
+    :is-loading="
+      !hasBillingPlatform && (uiFlags.isFetchingItem || isWaitingForBilling)
+    "
     :loading-message="
       isWaitingForBilling
         ? $t('BILLING_SETTINGS.NO_BILLING_USER')
         : $t('ATTRIBUTES_MGMT.LOADING')
     "
-    :no-records-found="!hasABillingPlan && !isWaitingForBilling"
+    :no-records-found="
+      billingOverviewReady &&
+      isOnChatwootCloud &&
+      !hasBillingPlatform &&
+      !hasABillingPlan &&
+      !isWaitingForBilling
+    "
     :no-records-message="$t('BILLING_SETTINGS.NO_BILLING_USER')"
   >
     <template #header>
       <BaseSettingsHeader
-        :title="$t('BILLING_SETTINGS.TITLE')"
-        :description="$t('BILLING_SETTINGS.DESCRIPTION')"
-        :link-text="$t('BILLING_SETTINGS.VIEW_PRICING')"
+        :title="pageTitle"
+        :description="pageDescription"
+        :link-text="pricingLinkText"
         feature-name="billing"
       />
     </template>
+    <template #preBody>
+      <BillingPlatformOverview @loaded="onBillingOverviewLoaded" />
+    </template>
     <template #body>
-      <section class="grid gap-4">
+      <section
+        v-if="billingOverviewReady && isOnChatwootCloud && !hasBillingPlatform"
+        class="grid gap-4"
+      >
         <BillingCard
           :title="$t('BILLING_SETTINGS.MANAGE_SUBSCRIPTION.TITLE')"
           :description="$t('BILLING_SETTINGS.MANAGE_SUBSCRIPTION.DESCRIPTION')"
@@ -380,6 +413,7 @@ onMounted(handleBillingPageLogic);
         </BillingHeader>
       </section>
       <PurchaseCreditsModal
+        v-if="billingOverviewReady && isOnChatwootCloud && !hasBillingPlatform"
         ref="purchaseCreditsModalRef"
         @success="handleTopupSuccess"
       />

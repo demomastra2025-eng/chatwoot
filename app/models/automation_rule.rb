@@ -2,18 +2,18 @@
 #
 # Table name: automation_rules
 #
-#  id                 :bigint           not null, primary key
-#  actions            :jsonb            not null
-#  active             :boolean          default(TRUE), not null
-#  conditions         :jsonb            not null
-#  description        :text
-#  event_name         :string           not null
-#  execution_schedule    :jsonb            not null
+#  id                   :bigint           not null, primary key
+#  actions              :jsonb            not null
+#  active               :boolean          default(TRUE), not null
+#  conditions           :jsonb            not null
+#  description          :text
+#  event_name           :string           not null
+#  execution_schedule   :jsonb            not null
 #  lifecycle_generation :bigint           default(1), not null
-#  name               :string           not null
-#  created_at         :datetime         not null
-#  updated_at         :datetime         not null
-#  account_id         :bigint           not null
+#  name                 :string           not null
+#  created_at           :datetime         not null
+#  updated_at           :datetime         not null
+#  account_id           :bigint           not null
 #
 # Indexes
 #
@@ -43,6 +43,12 @@ class AutomationRule < ApplicationRecord
     task_created
     task_updated
     task_status_changed
+    task_assigned
+    task_rescheduled
+    task_completed
+    task_cancelled
+    task_reopened
+    task_waiting_changed
     task_archived
     task_unarchived
   ].freeze

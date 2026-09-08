@@ -23,12 +23,21 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def create
-    resource = Current.account.scheduling_resources.create!(resource_params)
+    resource = Scheduling::Resource.transaction do
+      attributes = resource_params
+      attributes[:inherit_working_hours_from_account] = true unless attributes.key?(:inherit_working_hours_from_account)
+      created_resource = Current.account.scheduling_resources.create!(attributes)
+      created_resource.apply_workspace_working_hours! if created_resource.inherit_working_hours_from_account?
+      created_resource
+    end
     render_payload(Scheduling::PayloadBuilder.resource(resource), status: :created)
   end
 
   def update
-    @scheduling_resource.update!(resource_params)
+    Scheduling::Resource.transaction do
+      @scheduling_resource.update!(resource_params)
+      @scheduling_resource.apply_workspace_working_hours! if @scheduling_resource.inherit_working_hours_from_account?
+    end
     render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
@@ -53,6 +62,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         :compensation_type,
         :compensation_value,
         :compensation_percent,
+        :inherit_working_hours_from_account,
         :active,
         :user_id,
         custom_attributes: {}
@@ -77,6 +87,7 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
 
   def ensure_provider_writable_resource!
     return if @scheduling_resource.custom_attributes['medelement_specialist_code'].blank?
+    return if resource_params.keys == ['inherit_working_hours_from_account']
 
     raise Scheduling::Error.new(
       code: 'RESOURCE_READ_ONLY',

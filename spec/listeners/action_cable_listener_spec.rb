@@ -775,6 +775,34 @@ describe ActionCableListener do
     end
   end
 
+  describe '#crm_task_updated' do
+    let(:task_status) { create(:crm_task_status, account: account) }
+    let(:task) { create(:crm_task, account: account, status: task_status) }
+    let(:event) do
+      Events::Base.new(
+        :'crm.task.updated',
+        Time.zone.now,
+        account: account,
+        task: task,
+        meta: { event_type: 'task_rescheduled' }
+      )
+    end
+
+    it 'broadcasts the task payload to the account stream' do
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        ["account_#{account.id}"],
+        'crm.task.updated',
+        hash_including(
+          account_id: account.id,
+          task: hash_including(id: task.id, title: task.title),
+          meta: { event_type: 'task_rescheduled' }
+        )
+      )
+
+      listener.crm_task_updated(event)
+    end
+  end
+
   def perform_communication_thread_realtime(&)
     perform_enqueued_jobs(only: CommunicationThreads::RealtimeUpdateJob, &)
   end

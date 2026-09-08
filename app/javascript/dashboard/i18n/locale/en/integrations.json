@@ -16,24 +16,6 @@
       "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
       "HEADER": "Shopify"
     },
-    "KASPI_PAY": {
-      "SEND_OTP": "Send SMS code",
-      "CONNECT": "Connect Kaspi Pay",
-      "PHONE_LABEL": "Kaspi cashier phone",
-      "OTP_LABEL": "SMS code",
-      "LATITUDE_LABEL": "POS latitude",
-      "LONGITUDE_LABEL": "POS longitude",
-      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. You can enter the number with +7/7/8; OneLink sends the local 10 digits to Kaspi. The session secrets are stored only on the server and are not returned to the browser.",
-      "PHONE_REQUIRED": "Enter the phone number",
-      "OTP_REQUIRED": "Enter the SMS code",
-      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the code and try again.",
-      "CONNECT_SUCCESS": "Kaspi Pay connected successfully",
-      "CONNECTED_TITLE": "Connected merchant",
-      "DELETE": {
-        "TITLE": "Delete Kaspi Pay integration",
-        "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
-      }
-    },
     "HEADER": "Integrations",
     "DESCRIPTION": "Integrations connect OneLink to external services and modules. Configure the integrations you need below.",
     "LEARN_MORE": "Learn more about integrations",
@@ -763,7 +745,20 @@
         "PROMPT_VALIDATION": "Add an instruction for AI follow-ups.",
         "DEFAULT_OBJECTIVE_1": "Gently remind the customer about the unfinished topic without pressure.",
         "DEFAULT_OBJECTIVE_2": "Ask whether the customer needs more information to make a decision.",
-        "DEFAULT_OBJECTIVE_3": "Make a polite final touch and leave an easy way to return to the conversation."
+        "DEFAULT_OBJECTIVE_3": "Make the last touch within the platform window and offer one simple next step.",
+        "DEFAULT_OBJECTIVE_4": "Bring the customer back to the previously discussed topic without pressure.",
+        "DEFAULT_OBJECTIVE_5": "Politely finish the follow-up sequence and leave an easy way to return.",
+        "QUIET_HOURS": "Quiet hours",
+        "QUIET_HOURS_DESCRIPTION": "Proactive messages are moved to the next allowed time. Replies to incoming messages are not blocked.",
+        "QUIET_START": "Do not send from",
+        "QUIET_END": "Sending resumes at",
+        "TIMEZONE": "Timezone",
+        "TIMEZONE_PLACEHOLDER": "Automatic: channel or workspace timezone",
+        "WHATSAPP_TEMPLATES": "WhatsApp templates outside the 24-hour window",
+        "WHATSAPP_TEMPLATES_DESCRIPTION": "Select approved templates for each connected WhatsApp channel and fill every required parameter. If the required language is missing, the step is blocked.",
+        "WHATSAPP_TEMPLATES_EMPTY": "This AI agent has no connected WhatsApp channel with approved templates.",
+        "TEMPLATE_VALIDATION": "Fill every required parameter of the selected WhatsApp templates.",
+        "QUIET_HOURS_VALIDATION": "Check the quiet-hours start, end, and IANA timezone. Start and end must be different."
       },
       "OUTCOMES": {
         "HEADER": "Outcomes and handoffs",
@@ -872,6 +867,7 @@
           "STT_PROVIDER": "Speech recognition",
           "STT_ELEVENLABS_REALTIME": "ElevenLabs — streaming",
           "STT_FISH_BATCH": "Fish Audio — after the utterance ends",
+          "STT_GEMINI_TRANSCRIBE": "Gemini 3.5 Transcribe — streaming",
           "FISH_VOICE_PLACEHOLDER": "Fish Audio voice ID",
           "FISH_VOICE_DESCRIPTION": "Enter the reference_id of a Fish Audio voice available to your account.",
           "FISH_VOICES": {
@@ -1067,6 +1063,9 @@
           "ALLOW_FAQ_LOOKUP": "Use FAQ lookup to search for relevant answers",
           "ALLOW_HUMAN_HANDOFF": "Hand off to a human when the AI agent cannot help",
           "ALLOW_WEB_ACCESS": "Allow web search",
+          "AUDIO_TRANSCRIPTIONS": "Use voice message transcripts",
+          "AUDIO_TRANSCRIPTIONS_DESCRIPTION": "Allow this AI agent to use saved voice message transcripts in its context.",
+          "AUDIO_TRANSCRIPTIONS_DISABLED_DESCRIPTION": "Enable voice message transcription in workspace settings first.",
           "WEB_SEARCH": "Web search",
           "WEB_SEARCH_DESCRIPTION": "Find current information on the public web.",
           "WEB_PAGE_READING": "Read web pages",

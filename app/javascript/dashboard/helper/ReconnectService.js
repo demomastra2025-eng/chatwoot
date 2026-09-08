@@ -7,7 +7,6 @@ import {
   isNotificationRoute,
 } from 'dashboard/helper/routeHelpers';
 
-const MAX_DISCONNECT_SECONDS = 10800;
 const ACTIVE_CONVERSATION_RESYNC_DEBOUNCE = 3000;
 
 // The disconnect delay threshold is added to account for delays in identifying
@@ -28,7 +27,6 @@ class ReconnectService {
   disconnect = () => this.removeEventListeners();
 
   setupEventListeners = () => {
-    window.addEventListener('online', this.handleOnlineEvent);
     window.addEventListener('focus', this.handleWindowFocus);
     document.addEventListener('visibilitychange', this.handleVisibilityChange);
     emitter.on(BUS_EVENTS.WEBSOCKET_RECONNECT, this.onReconnect);
@@ -36,7 +34,6 @@ class ReconnectService {
   };
 
   removeEventListeners = () => {
-    window.removeEventListener('online', this.handleOnlineEvent);
     window.removeEventListener('focus', this.handleWindowFocus);
     document.removeEventListener(
       'visibilitychange',
@@ -64,13 +61,6 @@ class ReconnectService {
       'communication_threads_dashboard',
       'communication_thread_conversation',
     ].includes(this.router.currentRoute.value.name);
-
-  // Force reload if the user is disconnected for more than 3 hours
-  handleOnlineEvent = () => {
-    if (this.getSecondsSinceDisconnect() >= MAX_DISCONNECT_SECONDS) {
-      window.location.reload();
-    }
-  };
 
   handleWindowFocus = async () => {
     await this.syncActiveConversationMessagesIfNeeded();

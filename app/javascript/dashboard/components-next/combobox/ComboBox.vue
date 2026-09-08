@@ -21,6 +21,7 @@ const props = defineProps({
   searchPlaceholder: { type: String, default: '' },
   searchInTrigger: { type: Boolean, default: false },
   emptyState: { type: String, default: '' },
+  createOptionLabel: { type: String, default: '' },
   message: { type: String, default: '' },
   hasError: { type: Boolean, default: false },
   useApiResults: { type: Boolean, default: false }, // useApiResults prop to determine if search is handled by API
@@ -41,7 +42,7 @@ const props = defineProps({
   triggerIcon: { type: String, default: '' },
 });
 
-const emit = defineEmits(['open', 'update:modelValue', 'search']);
+const emit = defineEmits(['create', 'open', 'update:modelValue', 'search']);
 
 const { t } = useI18n();
 const slots = useSlots();
@@ -201,6 +202,11 @@ const selectOption = option => {
 const closeDropdown = () => {
   open.value = false;
   search.value = '';
+};
+
+const createOption = value => {
+  closeDropdown();
+  emit('create', value);
 };
 
 const openDropdown = () => {
@@ -379,8 +385,10 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
         :search-placeholder="searchPlaceholder"
         :show-search-input="!searchInTrigger"
         :empty-state="emptyState"
+        :create-option-label="createOptionLabel"
         :selected-values="selectedValue"
         :dropdown-style="dropdownStyle"
+        @create="createOption"
         @search="emit('search', $event)"
         @select="selectOption"
       />

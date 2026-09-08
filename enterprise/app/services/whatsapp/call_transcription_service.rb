@@ -27,9 +27,7 @@ class Whatsapp::CallTranscriptionService < Llm::BaseAiService
   private
 
   def can_transcribe?
-    account.feature_enabled?('captain_integration') &&
-      account.captain_audio_transcription_enabled? &&
-      account.captain_quota_available?
+    account.call_transcriptions_enabled? && account.captain_quota_available?
   end
 
   # Transcribe per-direction recordings separately when possible so lines can

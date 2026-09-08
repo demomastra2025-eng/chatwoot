@@ -6,7 +6,7 @@ class Api::V1::Accounts::Captain::AssistantsController < Api::V1::Accounts::Base
     :handoff_message_enabled, :handoff_message_mode,
     :resolution_message_enabled, :resolution_message_mode,
     :temperature,
-    :model, :feature_image_understanding,
+    :model, :feature_image_understanding, :use_audio_transcriptions,
     :auto_reply_on_last_incoming,
     :handoff_enabled, :auto_completion_enabled,
     :message_collapse_window_seconds, :history_message_limit

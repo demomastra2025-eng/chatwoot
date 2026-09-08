@@ -143,7 +143,8 @@ class Captain::OpenAiMessageBuilderService
   end
 
   def extract_audio_transcriptions(attachments)
-    return '' unless @message.account.captain_audio_transcription_enabled?
+    return '' unless @message.account.audio_transcriptions_enabled?
+    return '' unless use_audio_transcriptions?
 
     audio_attachments = attachments.where(file_type: :audio)
     return '' if audio_attachments.blank?
@@ -151,6 +152,12 @@ class Captain::OpenAiMessageBuilderService
     audio_attachments.filter_map do |attachment|
       attachment.meta.to_h['transcribed_text'].presence
     end.join
+  end
+
+  def use_audio_transcriptions?
+    return true unless @assistant
+
+    @assistant.use_audio_transcriptions?
   end
 
   def extract_document_texts(attachments)

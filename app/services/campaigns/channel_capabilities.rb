@@ -25,6 +25,8 @@ class Campaigns::ChannelCapabilities
   end
 
   def as_json
+    return base_payload.merge(notes: ['Channel configuration is missing.']) unless inbox.channel
+
     base_payload.merge(channel_payload)
   end
 

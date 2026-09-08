@@ -55,6 +55,8 @@ export const formatCrmErrorMessage = (error, t) => {
       return t('CRM.ERRORS.DUPLICATE_EXTERNAL_REF');
     case 'DUPLICATE_IDEMPOTENCY_KEY':
       return t('CRM.ERRORS.DUPLICATE_IDEMPOTENCY_KEY');
+    case 'IDEMPOTENCY_KEY_REUSED':
+      return t('CRM.ERRORS.IDEMPOTENCY_KEY_REUSED');
     case 'DEAL_STAGE_INVALID_CLOSING_REASONS':
       return t('CRM.ERRORS.DEAL_STAGE_INVALID_CLOSING_REASONS');
     case 'DEAL_STAGE_INVALID_TRANSITION_REASON':
@@ -70,6 +72,14 @@ export const formatCrmErrorMessage = (error, t) => {
         payload.message,
         { fields: missingFields }
       );
+    case 'DEAL_STAGE_ENTRY_RESTRICTED':
+      return t('CRM.ERRORS.DEAL_STAGE_ENTRY_RESTRICTED');
+    case 'STAGE_RULE_OVERRIDE_FORBIDDEN':
+      return t('CRM.ERRORS.STAGE_RULE_OVERRIDE_FORBIDDEN');
+    case 'STAGE_RULE_OVERRIDE_REASON_REQUIRED':
+      return t('CRM.ERRORS.STAGE_RULE_OVERRIDE_REASON_REQUIRED');
+    case 'DEAL_TRANSITION_NOT_UNDOABLE':
+      return t('CRM.ERRORS.DEAL_TRANSITION_NOT_UNDOABLE');
     case 'FEATURE_DISABLED':
       return t('CRM.ERRORS.FEATURE_DISABLED');
     case 'NOT_FOUND':

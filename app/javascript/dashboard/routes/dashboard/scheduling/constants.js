@@ -74,8 +74,6 @@ export const PAYMENT_STATUS_VALUES = [
 ];
 
 export const PAYMENT_METHOD_VALUES = [
-  'kaspi_transfer',
-  'kaspi_qr',
   'cash',
   'bank_transfer',
   'card',

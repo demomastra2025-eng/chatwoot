@@ -3376,8 +3376,7 @@ RSpec.describe Telephony::EventsIngestionService do
         content_attributes: { 'data' => { 'status' => 'completed' } }
       )
 
-      account.update!(captain_features: { 'audio_transcription' => true }, audio_transcriptions: false)
-      account.enable_features!('captain_integration')
+      account.update!(call_transcriptions: true)
 
       result = nil
 
@@ -3590,8 +3589,7 @@ RSpec.describe Telephony::EventsIngestionService do
         source_id: 'voice_call:call-retry-1',
         content_attributes: { 'data' => { 'status' => 'no_answer' } }
       )
-      account.update!(captain_features: { 'audio_transcription' => true }, audio_transcriptions: true)
-      account.enable_features!('captain_integration')
+      account.update!(call_transcriptions: true)
 
       result = nil
 

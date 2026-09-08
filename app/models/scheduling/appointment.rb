@@ -73,6 +73,8 @@
 #
 
 class Scheduling::Appointment < ApplicationRecord
+  attr_accessor :medelement_provider_command_receipt
+
   include LlmFormattable
 
   belongs_to :account

@@ -120,7 +120,6 @@ class Crm::Reports::ManagerEffectivenessService
       payments_amount_minor: 0,
       cash_amount_minor: 0,
       non_cash_amount_minor: 0,
-      kaspi_amount_minor: 0,
       trade_in_amount_minor: 0,
       other_amount_minor: 0
     }
@@ -291,8 +290,6 @@ class Crm::Reports::ManagerEffectivenessService
     case method.to_s
     when 'cash'
       :cash
-    when 'kaspi_transfer', 'kaspi_qr'
-      :kaspi
     when 'bank_transfer', 'card'
       :non_cash
     else

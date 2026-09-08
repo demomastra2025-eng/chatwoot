@@ -7,6 +7,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
   def perform
     realtime_event_name = nil
     realtime_meta = {}
+    correlation_id = SecureRandom.uuid
     saved_deal = ApplicationRecord.transaction do
       bootstrap_defaults!
       assert_lock_version!
@@ -40,10 +41,13 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         current_reasons: deal.closing_reasons,
         require_input: stage_changing
       )
-      transition_reason = resolve_transition_reason!(
-        target_stage: stage,
-        require_input: !new_record && stage_changing
-      )
+      if stage_changing && deal.persisted?
+        ::Crm::StageVisits::Tracker.ensure_initial!(
+          deal: deal,
+          correlation_id: correlation_id,
+          estimated: true
+        )
+      end
 
       deal.assign_attributes(
         account: account,
@@ -69,6 +73,7 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       deal.position = requested_position if requested_position.present?
       deal.closed_at = resolve_closed_at(stage: stage, stage_changing: stage_changing)
       deal.save!
+      track_stage_visit!(new_record: new_record, correlation_id: correlation_id) if stage_changing
       sync_incomplete_task_teams! if deal.saved_change_to_team_id?
       auto_apply_default_touch_plan! if new_record
       reposition_deal!(requested_position) if requested_position.present?
@@ -84,7 +89,11 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
         new_record: new_record,
         contacts_changed: contacts_changed
       )
-      write_event!(new_record: new_record, contacts_changed: contacts_changed, transition_reason: transition_reason)
+      write_event!(
+        new_record: new_record,
+        contacts_changed: contacts_changed,
+        correlation_id: correlation_id
+      )
       notify_assignment!(new_record: new_record)
 
       deal.reload
@@ -307,7 +316,19 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     )
   end
 
-  def write_event!(new_record:, contacts_changed:, transition_reason: nil)
+  def track_stage_visit!(new_record:, correlation_id:)
+    if new_record
+      ::Crm::StageVisits::Tracker.ensure_initial!(deal: deal, correlation_id: correlation_id)
+    else
+      ::Crm::StageVisits::Tracker.transition!(
+        deal: deal,
+        from_stage_id: deal.stage_id_before_last_save,
+        correlation_id: correlation_id
+      )
+    end
+  end
+
+  def write_event!(new_record:, contacts_changed:, correlation_id:)
     return unless new_record || contacts_changed || filtered_previous_changes.present?
 
     meta = {
@@ -315,14 +336,14 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
       contact_ids: deal.deal_contacts.ordered.pluck(:contact_id),
       primary_contact_id: deal.primary_contact_id
     }
-    meta[:transition_reason] = transition_reason if transition_reason.present?
-
     ::Crm::Events::Writer.record!(
       account: account,
       eventable: deal,
       actor: actor,
       event_type: new_record ? 'deal_created' : 'deal_updated',
-      meta: meta
+      meta: meta,
+      correlation_id: correlation_id,
+      command_key: new_record ? params[:idempotency_key] : nil
     )
   end
 

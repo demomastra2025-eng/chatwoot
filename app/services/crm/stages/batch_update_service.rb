@@ -10,6 +10,7 @@ class Crm::Stages::BatchUpdateService
       ordered_stage_ids = upsert_movable_stages!
       update_technical_stage!
       update_terminal_stages!
+      update_pipeline_rules!
       ensure_complete_stage_order!(ordered_stage_ids)
       persist_stage_order!(ordered_stage_ids)
       ensure_active_default_stage!
@@ -50,6 +51,7 @@ class Crm::Stages::BatchUpdateService
       )
       stage.default = false unless stage.active?
       stage.save!
+      replace_field_requirements!(stage, row) if row.key?(:field_requirements)
       stage.id
     end
   end
@@ -75,7 +77,22 @@ class Crm::Stages::BatchUpdateService
         closing_reason_options: row[:closing_reason_options],
         closing_reason_required: false
       )
+      replace_field_requirements!(stage, row) if row.key?(:field_requirements)
     end
+  end
+
+  def update_pipeline_rules!
+    rules = attributes[:pipeline_rules].to_h
+    return if rules.blank?
+
+    pipeline.update!(rules.slice(:restrict_stage_skipping, :restrict_backward_move, :allow_stage_rule_override))
+  end
+
+  def replace_field_requirements!(stage, row)
+    Crm::Stages::ReplaceFieldRequirementsService.new(
+      stage: stage,
+      requirements: row[:field_requirements]
+    ).perform
   end
 
   def ensure_complete_stage_order!(ordered_stage_ids)

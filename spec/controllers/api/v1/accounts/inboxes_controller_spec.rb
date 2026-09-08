@@ -753,8 +753,8 @@ RSpec.describe 'Inboxes API', type: :request do
         )
       end
 
-      it 'does not create a main channel inbox when the account main channel limit is reached' do
-        account.update!(limits: { non_web_inboxes: 1 })
+      it 'does not create a messaging inbox when the channel limit is reached' do
+        account.update!(limits: { inboxes: 1 })
         create(:channel_api, account: account)
 
         post "/api/v1/accounts/#{account.id}/inboxes",
@@ -763,28 +763,32 @@ RSpec.describe 'Inboxes API', type: :request do
              as: :json
 
         expect(response).to have_http_status(:payment_required)
-        expect(response.parsed_body['error']).to include('Account main channel limit exceeded')
+        expect(response.parsed_body['error']).to include('Account channel limit exceeded')
       end
 
-      it 'does not create a telegram personal inbox when the account main channel limit is reached' do
-        account.update!(limits: { non_web_inboxes: 1 })
-        create(:channel_api, account: account)
+      it 'does not count call channels against the messaging channel limit' do
+        account.update!(limits: { inboxes: 1, call_inboxes: 1 })
+        create(:channel_voice, :sipuni, account: account)
 
         post "/api/v1/accounts/#{account.id}/inboxes",
              headers: admin.create_new_auth_token,
-             params: {
-               name: 'Telegram Personal Inbox',
-               channel: {
-                 type: 'telegram_personal',
-                 api_id: 123_456,
-                 api_hash: SecureRandom.hex(16),
-                 phone_number: '+77066318623'
-               }
-             },
+             params: { name: 'API Inbox', channel: { type: 'api', webhook_url: 'http://test.com' } },
+             as: :json
+
+        expect(response).to have_http_status(:success)
+      end
+
+      it 'does not create a voice inbox when the call channel limit is reached' do
+        account.update!(limits: { inboxes: 1, call_inboxes: 1 })
+        create(:channel_voice, :sipuni, account: account)
+
+        post "/api/v1/accounts/#{account.id}/inboxes",
+             headers: admin.create_new_auth_token,
+             params: { name: 'Voice Inbox 2', channel: { type: 'voice' } },
              as: :json
 
         expect(response).to have_http_status(:payment_required)
-        expect(response.parsed_body['error']).to include('Account main channel limit exceeded')
+        expect(response.parsed_body['error']).to include('Account call channel limit exceeded')
       end
 
       it 'creates a whatsapp web inbox when administrator' do

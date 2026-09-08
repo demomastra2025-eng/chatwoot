@@ -10,7 +10,9 @@ class Reminders::ExecuteService
     reload_reminder
     return reminder if execution_ineligible?
     return reminder if Reminders::MissedAutomationTouchPolicy.new(reminder: reminder).cancel_if_missed!
+    return reminder if appointment_provider_blocked?(:materialization)
     return finish_execution if reminder.delivery_materialized?
+    return reminder if reschedule_captain_follow_up_for_quiet_hours!
 
     execute_action
   rescue Reminders::RetryableExecutionError
@@ -43,6 +45,11 @@ class Reminders::ExecuteService
     else
       raise ArgumentError, "Unsupported touch action: #{reminder.action_type}"
     end
+  end
+
+  def appointment_provider_blocked?(phase)
+    Reminders::AppointmentProviderGuard.new(reminder: reminder, phase: phase).perform ==
+      Reminders::AppointmentProviderGuard::STOP
   end
 
   def execute_send_message
@@ -129,8 +136,49 @@ class Reminders::ExecuteService
     if outcome == :in_progress
       raise Reminders::RetryableExecutionError, 'Captain follow-up attempt is still processing'
     end
+    if outcome.is_a?(Hash) && outcome[:status].to_s == 'deferred'
+      reschedule_captain_follow_up!(outcome[:scheduled_at], outcome[:timezone])
+      return reminder
+    end
+    return fail_reminder!(outcome[:reason]) if outcome.is_a?(Hash) && outcome[:status].to_s == 'blocked'
 
     complete_without_materialized_delivery
+  end
+
+  def reschedule_captain_follow_up_for_quiet_hours!
+    return false unless reminder.captain_follow_up?
+
+    metadata = reminder.metadata.to_h.fetch('captain_follow_up', {})
+    assistant = Captain::Assistant.find_by(id: metadata['assistant_id'], account_id: reminder.account_id)
+    conversation = reminder.target_conversation || reminder.conversation
+    return false if assistant.blank? || conversation.blank?
+
+    result = Captain::FollowUpQuietHoursPolicy.new(assistant: assistant, conversation: conversation).call
+    return false unless result.quiet?
+
+    reschedule_captain_follow_up!(result.next_allowed_at, result.timezone)
+    true
+  end
+
+  def reschedule_captain_follow_up!(scheduled_at, timezone)
+    reminder.with_lock do
+      reminder.reload
+      next if execution_ineligible?
+      next if stale_execution? || reminder.delivery_materialized?
+
+      reminder.release_processing_claim!(@processing_claim)
+      reminder.update!(
+        status: :pending,
+        scheduled_at: scheduled_at,
+        processing_started_at: nil,
+        last_error: nil,
+        metadata: reminder.metadata.to_h.except(Reminder::PROCESSING_CLAIM_KEY).merge(
+          'quiet_hours_rescheduled_at' => Time.current.iso8601,
+          'quiet_hours_next_allowed_at' => scheduled_at.iso8601,
+          'quiet_hours_timezone' => timezone
+        )
+      )
+    end
   end
 
   def complete_without_materialized_delivery

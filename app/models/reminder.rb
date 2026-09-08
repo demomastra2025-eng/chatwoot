@@ -345,7 +345,10 @@ class Reminder < ApplicationRecord
 
   def mark_delivery_dispatched!(message_id)
     with_internal_metadata_write do
-      update!(metadata: metadata.to_h.merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id))
+      update!(
+        processing_started_at: nil,
+        metadata: metadata.to_h.except(PROCESSING_CLAIM_KEY).merge(DELIVERY_DISPATCHED_MESSAGE_ID_KEY => message_id)
+      )
     end
   end
 
@@ -663,7 +666,7 @@ class Reminder < ApplicationRecord
     when 'appointment.ends_at'
       remindable.try(:ends_at)
     when 'task.due_at'
-      remindable.try(:due_at)
+      remindable.try(:effective_due_at) || remindable.try(:due_at)
     when 'deal.expected_close_on'
       remindable.try(:expected_close_on)&.in_time_zone
     when 'conversation.created_at'

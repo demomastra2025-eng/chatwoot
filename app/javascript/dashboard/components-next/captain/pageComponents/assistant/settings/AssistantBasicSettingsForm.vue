@@ -76,6 +76,10 @@ const props = defineProps({
     type: Boolean,
     default: true,
   },
+  audioTranscriptionsAvailable: {
+    type: Boolean,
+    default: true,
+  },
 });
 
 const emit = defineEmits(['submit', 'handoffCapabilityChange']);
@@ -100,6 +104,7 @@ const initialState = {
     web: false,
     documentReading: false,
     imageUnderstanding: false,
+    useAudioTranscriptions: true,
   },
   contextAccess: {},
   toolAccess: buildDefaultToolAccessForUsageMode(),
@@ -230,6 +235,13 @@ const webPageReadingEnabled = computed({
 const isFirecrawlConfigured = computed(
   () => runtimeMetadata.value?.web_access?.configured === true
 );
+const audioTranscriptionDescription = computed(() =>
+  props.audioTranscriptionsAvailable
+    ? t('CAPTAIN.ASSISTANTS.FORM.FEATURES.AUDIO_TRANSCRIPTIONS_DESCRIPTION')
+    : t(
+        'CAPTAIN.ASSISTANTS.FORM.FEATURES.AUDIO_TRANSCRIPTIONS_DISABLED_DESCRIPTION'
+      )
+);
 
 const assistantModelOptions = computed(() =>
   captainConfigStore.getModelsForFeature('assistant').map(model => ({
@@ -301,6 +313,7 @@ const updateStateFromAssistant = assistant => {
     web: config.feature_web || false,
     documentReading: config.feature_document_reading || false,
     imageUnderstanding: config.feature_image_understanding || false,
+    useAudioTranscriptions: config.use_audio_transcriptions !== false,
   };
   state.contextAccess = {};
   state.toolAccess = resolveToolAccessForUsageMode(
@@ -370,6 +383,7 @@ const buildPayload = async () => {
       feature_web: webSearchEnabled.value && webPageReadingEnabled.value,
       feature_document_reading: state.features.documentReading,
       feature_image_understanding: state.features.imageUnderstanding,
+      use_audio_transcriptions: state.features.useAudioTranscriptions,
       handoff_enabled: handoffToHumanEnabled.value,
       tool_access: state.toolAccess,
     };
@@ -664,6 +678,18 @@ defineExpose({
             </span>
           </span>
           <Switch v-model="state.features.imageUnderstanding" />
+        </label>
+        <label class="flex items-center justify-between gap-3">
+          <span>
+            {{ t('CAPTAIN.ASSISTANTS.FORM.FEATURES.AUDIO_TRANSCRIPTIONS') }}
+            <span class="block text-xs text-n-slate-11">
+              {{ audioTranscriptionDescription }}
+            </span>
+          </span>
+          <Switch
+            v-model="state.features.useAudioTranscriptions"
+            :disabled="!audioTranscriptionsAvailable"
+          />
         </label>
         <label class="flex items-center justify-between gap-3">
           <span>

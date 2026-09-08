@@ -89,17 +89,15 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
     expect(payload['ignored_filters']).to include('pipeline_code' => 'other', 'pipeline_id' => conflicting_pipeline.id)
   end
 
-  it 'exposes configured transition and closing reasons for stage selection' do
+  it 'exposes closing reasons only for lost stage selection' do
     pipeline = create(:crm_pipeline, account: account, code: 'reasons')
-    open_stage = create(
+    create(
       :crm_stage,
       account: account,
       pipeline: pipeline,
       name: 'В работе',
       code: 'work',
       position: 1,
-      transition_reason_options: ['Needs docs', 'Waiting payment'],
-      transition_reason_required: true,
       color: '#111111'
     )
     lost_stage = create(
@@ -118,11 +116,6 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
     payload = JSON.parse(service.execute(pipeline_code: 'Reasons'))
 
     expect(payload['stages']).to include(
-      include(
-        'id' => open_stage.id,
-        'transition_reason_options' => ['Needs docs', 'Waiting payment'],
-        'transition_reason_required' => true
-      ),
       include(
         'id' => lost_stage.id,
         'closing_reason_options' => ['Too expensive', 'Competitor'],

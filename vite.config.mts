@@ -56,10 +56,30 @@ export default defineConfig({
     host: devServerBindHost,
     port: devServerPort,
     strictPort: true,
+    fs: {
+      deny: [
+        '**/.git/**',
+        '**/.env',
+        '**/.env.*',
+        '**/*.{crt,pem,key,pfx,p12}',
+        '**/.npmrc',
+        '**/.netrc',
+        '**/.yarnrc*',
+        '**/config/credentials*.yml.enc',
+      ],
+    },
     watch: {
       // Test-only edits are consumed by Vitest and must not reload an active
       // DEV browser session.
-      ignored: ['**/*.spec.js', '**/*.spec.ts', '**/spec/**', '**/specs/**'],
+      ignored: [
+        '**/*.spec.js',
+        '**/*.spec.ts',
+        '**/spec/**',
+        '**/specs/**',
+        // Locale JSON modules are eagerly imported and Vite cannot hot-replace
+        // them, so each edit otherwise forces every open DEV page to reload.
+        '**/app/javascript/dashboard/i18n/locale/**/*.json',
+      ],
     },
     hmr: {
       host: devServerHost,

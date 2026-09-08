@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   TASK_TIME_BUCKETS,
   groupTasksByTime,
+  taskDeadlineForBucket,
   taskTimeBucket,
   visibleTaskTimeBuckets,
 } from './taskTimeBuckets';
@@ -25,13 +26,57 @@ describe('taskTimeBucket', () => {
     expect(taskTimeBucket(task, now)).toBe(expectedBucket);
   });
 
-  it('does not put completed or archived tasks on the planning board', () => {
+  it('rejects impossible date-only deadlines instead of rolling them forward', () => {
+    expect(taskTimeBucket({ allDay: true, dueOn: '2026-02-31' })).toBe(
+      'unscheduled'
+    );
+  });
+
+  it('does not put terminal or archived tasks on the planning board', () => {
     expect(
       taskTimeBucket({ completedAt: at(26), dueAt: at(26) }, now)
     ).toBeNull();
     expect(
       taskTimeBucket({ archivedAt: at(26), dueAt: at(26) }, now)
     ).toBeNull();
+    expect(
+      taskTimeBucket({ cancelledAt: at(26), dueAt: at(26) }, now)
+    ).toBeNull();
+  });
+
+  it('keeps a date-only all-day task in today after noon has passed', () => {
+    expect(
+      taskTimeBucket(
+        { allDay: true, dueOn: '2026-08-26' },
+        new Date(2026, 7, 26, 18, 0, 0)
+      )
+    ).toBe('today');
+  });
+});
+
+describe('taskDeadlineForBucket', () => {
+  it.each([
+    ['today', 26],
+    ['tomorrow', 27],
+    ['nextWeek', 28],
+  ])('builds an all-day deadline for %s', (bucket, expectedDay) => {
+    const deadline = taskDeadlineForBucket(bucket, now);
+
+    expect(deadline).toEqual({
+      allDay: true,
+      dueAt: null,
+      dueOn: `2026-08-${expectedDay}`,
+      startAt: null,
+    });
+  });
+
+  it('clears the deadline when moved to unscheduled', () => {
+    expect(taskDeadlineForBucket('unscheduled', now)).toEqual({
+      allDay: false,
+      dueAt: null,
+      dueOn: null,
+      startAt: null,
+    });
   });
 });
 

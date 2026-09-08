@@ -10,6 +10,7 @@ import Button from 'dashboard/components-next/button/Button.vue';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import Input from 'dashboard/components-next/input/Input.vue';
+import CrmTaskCatalogSettings from 'dashboard/components-next/CRM/CrmTaskCatalogSettings.vue';
 
 import Spinner from 'dashboard/components-next/spinner/Spinner.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
@@ -96,6 +97,10 @@ const taskStatusCategoryOptions = computed(() => [
   {
     label: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.done'),
     value: 'done',
+  },
+  {
+    label: t('CRM.SETTINGS.TASK_STATUSES.CATEGORIES.cancelled'),
+    value: 'cancelled',
   },
 ]);
 
@@ -346,9 +351,16 @@ const consumeRouteAction = async () => {
   }
 };
 
-onMounted(async () => {
-  await referencesStore.loadTaskStatuses();
+const loadTaskSettings = async () => {
+  await Promise.all([
+    referencesStore.loadTaskStatuses(),
+    referencesStore.loadTaskTypes({ include_inactive: true }),
+  ]);
   resetTaskStatusForm();
+};
+
+onMounted(async () => {
+  await loadTaskSettings();
   await consumeRouteAction();
 });
 </script>
@@ -377,7 +389,7 @@ onMounted(async () => {
           v-if="referencesStore.ui.error"
           :title="$t('CRM.ERRORS.LOAD_TITLE')"
           :description="formatErrorMessage(referencesStore.ui.error)"
-          @retry="$router.go(0)"
+          @retry="loadTaskSettings"
         />
 
         <SchedulingFormFieldGroup
@@ -518,6 +530,8 @@ onMounted(async () => {
             />
           </template>
         </SchedulingFormFieldGroup>
+
+        <CrmTaskCatalogSettings :can-manage="canManage" />
       </div>
     </template>
 

@@ -6,6 +6,7 @@ import { flushPromises, mount } from '@vue/test-utils';
 const updateMock = vi.fn();
 const dispatchMock = vi.fn();
 const useAlertMock = vi.fn();
+const inboxRecords = reactive([]);
 const assistantRecord = reactive({
   id: 58,
   config: { follow_up_settings: { enabled: false, steps: [] } },
@@ -28,6 +29,59 @@ vi.mock('dashboard/composables/store', () => ({
     dispatch: dispatchMock,
     getters: {
       'captainAssistants/getRecord': () => assistantRecord,
+      'inboxes/getInboxes': inboxRecords,
+      'inboxes/getFilteredWhatsAppTemplates': inboxId =>
+        inboxRecords.find(inbox => inbox.id === Number(inboxId))
+          ?.message_templates || [],
+    },
+  }),
+}));
+
+vi.mock('./WhatsAppTemplateVariantField.vue', () => ({
+  default: defineComponent({
+    name: 'WhatsAppTemplateVariantFieldStub',
+    props: {
+      language: { type: String, default: '' },
+      modelValue: { type: Object, default: () => ({}) },
+      templates: { type: Array, default: () => [] },
+    },
+    emits: ['update:modelValue', 'validityChange'],
+    setup(props, { emit }) {
+      return () =>
+        h(
+          'select',
+          {
+            'data-testid': `follow-up-template-${props.language}`,
+            value: props.modelValue?.name || '',
+            onChange: event => {
+              const template = props.templates.find(
+                item => item.name === event.target.value
+              );
+              emit(
+                'update:modelValue',
+                template
+                  ? {
+                      name: template.name,
+                      namespace: template.namespace || '',
+                      category: template.category || 'UTILITY',
+                      language: template.language,
+                      processed_params: {},
+                    }
+                  : {}
+              );
+              emit('validityChange', true);
+            },
+          },
+          [h('option', { value: '' }, '')].concat(
+            props.templates
+              .filter(template =>
+                String(template.language || '').startsWith(props.language)
+              )
+              .map(template =>
+                h('option', { value: template.name }, template.name)
+              )
+          )
+        );
     },
   }),
 }));
@@ -99,6 +153,7 @@ describe('Captain follow-ups page', () => {
     assistantRecord.config = {
       follow_up_settings: { enabled: false, steps: [] },
     };
+    inboxRecords.splice(0);
     updateMock.mockReset();
     updateMock.mockResolvedValue({});
     dispatchMock.mockReset();
@@ -141,6 +196,12 @@ describe('Captain follow-ups page', () => {
         follow_up_settings: {
           enabled: true,
           prompt: 'CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_PROMPT',
+          timing_mode: 'absolute_from_last_incoming',
+          quiet_hours: {
+            enabled: false,
+            start_time: '23:00',
+            end_time: '08:00',
+          },
           steps: [
             {
               delay_seconds: 3600,
@@ -182,6 +243,12 @@ describe('Captain follow-ups page', () => {
         follow_up_settings: {
           enabled: true,
           prompt: 'Do not pressure the customer.',
+          timing_mode: 'absolute_from_last_incoming',
+          quiet_hours: {
+            enabled: false,
+            start_time: '23:00',
+            end_time: '08:00',
+          },
           steps: [
             {
               delay_seconds: 10_800,
@@ -221,6 +288,91 @@ describe('Captain follow-ups page', () => {
     expect(
       wrapper.findAll('[data-testid="follow-up-step-details"]')
     ).toHaveLength(1);
+  });
+
+  it('saves explicitly enabled quiet hours and excludes authentication templates', async () => {
+    inboxRecords.push({
+      id: 7,
+      name: 'WhatsApp Sales',
+      channel_type: 'Channel::Whatsapp',
+      captain_assistant: { id: 58 },
+      message_templates: [
+        {
+          name: 'follow_up_soft_ru',
+          namespace: 'business',
+          category: 'UTILITY',
+          language: 'ru',
+          status: 'approved',
+          components: [{ type: 'BODY', text: 'Здравствуйте' }],
+        },
+      ],
+    });
+    assistantRecord.config = {
+      follow_up_settings: {
+        enabled: true,
+        steps: [
+          {
+            delay_seconds: 3600,
+            mode: 'ai',
+            objective: 'Follow up',
+            template_variants_by_inbox: {
+              999: { ru: { name: 'stale_template', language: 'ru' } },
+            },
+          },
+        ],
+      },
+    };
+    assistantRecord.config.follow_up_settings.quiet_hours = { enabled: true };
+    inboxRecords[0].message_templates.push({
+      name: 'auth_only',
+      category: 'AUTHENTICATION',
+      language: 'ru',
+      status: 'approved',
+    });
+    const wrapper = mountComponent();
+    expect(wrapper.find('option[value="auth_only"]').exists()).toBe(false);
+
+    await wrapper.get('[data-testid="quiet-hours-start"]').setValue('22:30');
+    await wrapper.get('[data-testid="quiet-hours-end"]').setValue('09:15');
+    await wrapper
+      .get('[data-testid="quiet-hours-timezone"]')
+      .setValue('Asia/Almaty');
+    await wrapper
+      .get('[data-testid="follow-up-template-ru"]')
+      .setValue('follow_up_soft_ru');
+    await clickSave(wrapper);
+
+    expect(updateMock).toHaveBeenCalledWith(58, {
+      config: {
+        follow_up_settings: expect.objectContaining({
+          timing_mode: 'absolute_from_last_incoming',
+          quiet_hours: {
+            enabled: true,
+            start_time: '22:30',
+            end_time: '09:15',
+            timezone: 'Asia/Almaty',
+          },
+          steps: [
+            {
+              delay_seconds: 3600,
+              mode: 'ai',
+              objective: 'Follow up',
+              template_variants_by_inbox: {
+                7: {
+                  ru: {
+                    name: 'follow_up_soft_ru',
+                    namespace: 'business',
+                    category: 'UTILITY',
+                    language: 'ru',
+                    processed_params: {},
+                  },
+                },
+              },
+            },
+          ],
+        }),
+      },
+    });
   });
 
   it('preserves an unsaved prompt during a background assistant refresh', async () => {

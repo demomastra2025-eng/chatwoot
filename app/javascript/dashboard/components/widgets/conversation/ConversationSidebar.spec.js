@@ -112,7 +112,7 @@ describe('ConversationSidebar', () => {
     expect(wrapper.classes()).not.toContain('xl:w-[30rem]');
   });
 
-  it('does not render hidden deals or appointments panels from account visibility settings', () => {
+  it('renders the deals panel independently from navigation visibility', () => {
     mocks.currentAccount.value = {
       settings: {
         dashboard_sidebar_hidden_items: [
@@ -125,22 +125,41 @@ describe('ConversationSidebar', () => {
     mocks.uiSettings = ref({
       is_contact_sidebar_open: false,
       is_crm_deal_panel_open: true,
+      is_scheduling_appointments_panel_open: false,
+      is_touch_sidebar_open: false,
+    });
+
+    const wrapper = mountComponent();
+
+    expect(
+      wrapper.findComponent({ name: 'CrmConversationDealsSidebar' }).exists()
+    ).toBe(true);
+  });
+
+  it('renders the appointments panel independently from navigation visibility', () => {
+    mocks.currentAccount.value = {
+      settings: {
+        dashboard_sidebar_hidden_items: [
+          'Conversation:Pipelines',
+          'Conversation:AppointmentStatuses',
+        ],
+        dashboard_sidebar_hidden_items_version: 13,
+      },
+    };
+    mocks.uiSettings = ref({
+      is_contact_sidebar_open: false,
+      is_crm_deal_panel_open: false,
       is_scheduling_appointments_panel_open: true,
       is_touch_sidebar_open: false,
     });
 
     const wrapper = mountComponent();
 
-    expect(wrapper.classes()).toContain('ltr:translate-x-full');
-    expect(wrapper.classes()).toContain('pointer-events-none');
-    expect(
-      wrapper.findComponent({ name: 'CrmConversationDealsSidebar' }).exists()
-    ).toBe(false);
     expect(
       wrapper
         .findComponent({ name: 'SchedulingConversationAppointmentsSidebar' })
         .exists()
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('uses the active reply conversation for communication thread contact sidebar', async () => {

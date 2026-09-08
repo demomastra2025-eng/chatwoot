@@ -29,7 +29,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
       contact_id: current_contact&.id,
       company_id: current_company&.id,
       conversation_id: conversation&.id,
-      created_by_id: actor&.id,
+      created_by_id: (actor.id if actor.is_a?(User)),
       custom_attributes: parsed_hash(custom_attributes, field_name: 'custom_attributes')
     }.compact
 

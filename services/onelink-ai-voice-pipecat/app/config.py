@@ -27,6 +27,7 @@ class Settings(BaseModel):
         "gemini-live", "openai-realtime", "elevenlabs", "cartesia", "fish"
     ] = "gemini-live"
     elevenlabs_stt_model: str = "scribe_v2_realtime"
+    gemini_stt_model: str = "gemini-3.5-transcribe-live"
     elevenlabs_tts_model: str = "eleven_flash_v2_5"
     cartesia_stt_model: str = "ink-whisper"
     cartesia_tts_model: str = "sonic-3.5"
@@ -89,6 +90,9 @@ class Settings(BaseModel):
             ),
             elevenlabs_stt_model=os.getenv(
                 "ONELINK_AI_VOICE_PIPECAT_ELEVENLABS_STT_MODEL", "scribe_v2_realtime"
+            ),
+            gemini_stt_model=os.getenv(
+                "ONELINK_AI_VOICE_PIPECAT_GEMINI_STT_MODEL", "gemini-3.5-transcribe-live"
             ),
             elevenlabs_tts_model=os.getenv(
                 "ONELINK_AI_VOICE_PIPECAT_ELEVENLABS_TTS_MODEL", "eleven_flash_v2_5"
@@ -159,7 +163,7 @@ class Settings(BaseModel):
             },
         }.get(provider)
         if provider == "fish":
-            if stt_provider not in {"elevenlabs", "fish"}:
+            if stt_provider not in {"elevenlabs", "fish", "gemini"}:
                 raise ValueError("unsupported Fish STT provider")
             credentials = {
                 "fish_api_key": self.fish_api_key.get_secret_value().strip(),
@@ -169,6 +173,8 @@ class Settings(BaseModel):
                 credentials["elevenlabs_api_key"] = (
                     self.elevenlabs_api_key.get_secret_value().strip()
                 )
+            elif stt_provider == "gemini":
+                credentials["gemini_api_key"] = self.gemini_api_key.get_secret_value().strip()
         if credentials is None:
             raise ValueError("unsupported Pipecat provider")
         missing = [name for name, value in credentials.items() if not value]

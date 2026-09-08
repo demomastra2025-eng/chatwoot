@@ -56,4 +56,49 @@ describe('CrmTaskCalendar', () => {
     expect(appointments).toHaveLength(1);
     expect(appointments[0].customAttributes).toEqual({ task_type: 'call' });
   });
+
+  it('places an all-day task in the fixed calendar strip above the timeline', () => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2026-09-04T00:00:00.000Z',
+        tasks: [
+          {
+            allDay: true,
+            dueOn: '2026-09-04',
+            id: 42,
+            title: 'Tomorrow report',
+          },
+        ],
+        view: 'week',
+      },
+    });
+
+    const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
+    const [appointment] = calendar.props('appointments');
+
+    expect(calendar.props('allDayEvents')).toBe(true);
+    expect(appointment.allDay).toBe(true);
+    expect(new Date(appointment.startsAt).getHours()).toBe(0);
+    expect(new Date(appointment.endsAt).getHours()).toBe(23);
+  });
+
+  it('does not render cancelled tasks as calendar appointments', () => {
+    const wrapper = shallowMount(CrmTaskCalendar, {
+      props: {
+        anchorDate: '2026-09-04T00:00:00.000Z',
+        tasks: [
+          {
+            cancelledAt: '2026-09-04T09:00:00.000Z',
+            dueAt: '2026-09-04T11:00:00.000Z',
+            id: 43,
+            title: 'Cancelled call',
+          },
+        ],
+        view: 'week',
+      },
+    });
+
+    const calendar = wrapper.findComponent(SchedulingVueCalCalendar);
+    expect(calendar.props('appointments')).toEqual([]);
+  });
 });

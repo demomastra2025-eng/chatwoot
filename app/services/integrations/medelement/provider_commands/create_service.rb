@@ -1,3 +1,4 @@
+# rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::CreateService
   CONFIRMATION_TTL = 30.minutes
 
@@ -5,7 +6,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   # rubocop:disable Metrics/ParameterLists
   def initialize(
     account:, hook:, operation:, idempotency_key:, appointment: nil, contact: nil, company_cabinet_code: nil,
-    actor: nil, desired_starts_at: nil, desired_ends_at: nil, desired_attributes: {}
+    actor: nil, actor_descriptor: nil, desired_starts_at: nil, desired_ends_at: nil, desired_attributes: {}
   )
     @account = account
     @hook = hook
@@ -15,6 +16,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
     @idempotency_key = idempotency_key.to_s
     @company_cabinet_code = company_cabinet_code.to_s
     @actor = actor
+    @actor_descriptor = actor_descriptor
     @desired_starts_at = desired_starts_at
     @desired_ends_at = desired_ends_at
     @desired_attributes = desired_attributes.to_h.deep_stringify_keys
@@ -105,6 +107,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
       appointment: appointment,
       contact: contact,
       actor: actor,
+      actor_descriptor: @actor_descriptor,
       operation: operation,
       company_cabinet_code: company_cabinet_code,
       desired_starts_at: desired_starts_at,
@@ -203,3 +206,4 @@ class Integrations::Medelement::ProviderCommands::CreateService
     ).build
   end
 end
+# rubocop:enable Metrics/ClassLength

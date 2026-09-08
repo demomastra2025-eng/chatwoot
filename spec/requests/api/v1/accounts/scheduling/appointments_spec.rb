@@ -997,6 +997,41 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body['code']).to eq('OUTSIDE_WORKING_HOURS')
   end
 
+  it 'creates an appointment outside working hours only after an enabled explicit confirmation' do
+    account.settings['scheduling_allow_outside_working_hours'] = true
+    account.save!
+    outside_params = base_params.merge(
+      starts_at: booking_day.change(hour: 8).iso8601,
+      ends_at: booking_day.change(hour: 8, min: 30).iso8601
+    )
+
+    post path, params: outside_params, headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('OUTSIDE_WORKING_HOURS')
+
+    expect do
+      post path,
+           params: outside_params.merge(confirm_outside_working_hours: true),
+           headers: headers,
+           as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+    expect(response).to have_http_status(:created)
+  end
+
+  it 'does not accept an outside-hours confirmation while the account setting is disabled' do
+    post path,
+         params: base_params.merge(
+           starts_at: booking_day.change(hour: 8).iso8601,
+           ends_at: booking_day.change(hour: 8, min: 30).iso8601,
+           confirm_outside_working_hours: true
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('OUTSIDE_WORKING_HOURS')
+  end
+
   it 'rejects holiday conflicts' do
     create(:scheduling_holiday, account: account, date: booking_day.to_date)
 
@@ -1039,6 +1074,91 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:conflict)
     expect(response_body['code']).to eq('SLOT_CONFLICT')
+  end
+
+  it 'creates an overlapping appointment only after an enabled explicit confirmation' do
+    account.settings['scheduling_allow_overlapping_appointments'] = true
+    account.save!
+    create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day,
+      ends_at: booking_day + 1.hour
+    )
+
+    post path, params: base_params, headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+
+    expect do
+      post path,
+           params: base_params.merge(confirm_slot_conflict: true),
+           headers: headers,
+           as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+    expect(response).to have_http_status(:created)
+  end
+
+  it 'does not accept an overlap confirmation while the account setting is disabled' do
+    create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day,
+      ends_at: booking_day + 1.hour
+    )
+
+    post path,
+         params: base_params.merge(confirm_slot_conflict: true),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+  end
+
+  it 'requires a separate confirmation for each enabled availability conflict' do
+    account.settings.merge!(
+      'scheduling_allow_outside_working_hours' => true,
+      'scheduling_allow_overlapping_appointments' => true
+    )
+    account.save!
+    outside_params = base_params.merge(
+      starts_at: booking_day.change(hour: 8).iso8601,
+      ends_at: booking_day.change(hour: 8, min: 30).iso8601
+    )
+    create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day.change(hour: 8),
+      ends_at: booking_day.change(hour: 8, min: 30)
+    )
+
+    post path,
+         params: outside_params.merge(confirm_outside_working_hours: true),
+         headers: headers,
+         as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+
+    expect do
+      post path,
+           params: outside_params.merge(
+             confirm_outside_working_hours: true,
+             confirm_slot_conflict: true
+           ),
+           headers: headers,
+           as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+    expect(response).to have_http_status(:created)
   end
 
   it 'rejects inactive service-resource combinations' do
@@ -1254,7 +1374,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       contact: contact,
       service: service,
       prepaid_amount: 5_000,
-      prepaid_payment_method: 'kaspi_qr',
+      prepaid_payment_method: 'bank_transfer',
       payment_status: 'prepaid',
       starts_at: booking_day,
       ends_at: booking_day + 30.minutes
@@ -1264,7 +1384,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       appointment: appointment,
       account: account,
       amount: 5_000,
-      payment_method: 'kaspi_qr',
+      payment_method: 'bank_transfer',
       payment_kind: 'prepaid'
     )
 

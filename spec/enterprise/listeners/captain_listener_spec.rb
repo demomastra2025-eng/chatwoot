@@ -53,4 +53,29 @@ describe CaptainListener do
       end
     end
   end
+
+  describe 'follow-up delivery events' do
+    let(:message) { instance_double(Message) }
+    let(:confirmation) { instance_double(Captain::FollowUpDeliveryConfirmation, perform: true) }
+
+    before do
+      allow(Captain::FollowUpDeliveryConfirmation).to receive(:new).with(message: message).and_return(confirmation)
+    end
+
+    it 'checks a newly created message for an immediate provider acknowledgement' do
+      event = Events::Base.new(:message_created, Time.zone.now, message: message)
+
+      listener.message_created(event)
+
+      expect(confirmation).to have_received(:perform)
+    end
+
+    it 'checks provider status updates' do
+      event = Events::Base.new(:message_updated, Time.zone.now, message: message)
+
+      listener.message_updated(event)
+
+      expect(confirmation).to have_received(:perform)
+    end
+  end
 end

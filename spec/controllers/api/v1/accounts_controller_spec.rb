@@ -215,6 +215,10 @@ RSpec.describe 'Accounts API', type: :request do
         auto_resolve_after: 40,
         auto_resolve_message: 'Auto resolved',
         auto_resolve_ignore_waiting: false,
+        audio_transcriptions: true,
+        call_transcriptions: true,
+        scheduling_allow_outside_working_hours: true,
+        scheduling_allow_overlapping_appointments: true,
         dashboard_sidebar_item_order: %w[Contacts Conversation Inbox Settings],
         dashboard_sidebar_hidden_items: ['Conversation:Resolved'],
         dashboard_sidebar_hidden_items_version: 14,
@@ -255,6 +259,10 @@ RSpec.describe 'Accounts API', type: :request do
           auto_resolve_after
           auto_resolve_message
           auto_resolve_ignore_waiting
+          audio_transcriptions
+          call_transcriptions
+          scheduling_allow_outside_working_hours
+          scheduling_allow_overlapping_appointments
           dashboard_sidebar_item_order
           dashboard_sidebar_hidden_items
           dashboard_sidebar_hidden_items_version
@@ -294,6 +302,34 @@ RSpec.describe 'Accounts API', type: :request do
 
         new_inbox = create(:inbox, account: account)
         expect(new_inbox).to have_attributes(inherit_working_hours_from_account: true, timezone: 'Asia/Almaty')
+      end
+
+      it 'synchronizes specialists that inherit Workspace working hours' do
+        inherited_resource = create(
+          :scheduling_resource,
+          account: account,
+          inherit_working_hours_from_account: true,
+          timezone: 'UTC'
+        )
+        schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+        schedule[1].merge!('open_hour' => 10, 'close_hour' => 18)
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: {
+                workspace_working_hours_enabled: true,
+                workspace_timezone: 'Asia/Almaty',
+                workspace_working_hours: schedule
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(inherited_resource.reload).to have_attributes(timezone: 'Asia/Almaty')
+        expect(inherited_resource.work_rules.find_by!(weekday: 1)).to have_attributes(
+          start_minute: 600,
+          end_minute: 1080,
+          active: true
+        )
       end
 
       it 'updates onboarding step to invite_team if onboarding step is present in account custom attributes' do

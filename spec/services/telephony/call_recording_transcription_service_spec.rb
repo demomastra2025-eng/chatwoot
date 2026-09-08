@@ -4,9 +4,9 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
   let(:account) do
     create(
       :account,
-      captain_features: { 'audio_transcription' => true },
-      audio_transcriptions: false
-    ).tap { |record| record.enable_features!('captain_integration') }
+      audio_transcriptions: false,
+      call_transcriptions: true
+    )
   end
   let(:conversation) { create(:conversation, account: account) }
   let(:voice_message) do
@@ -82,6 +82,13 @@ RSpec.describe Telephony::CallRecordingTranscriptionService, type: :service do
     expect(data['transcript_ref']).to eq('call_recording_transcript:operator-call-1')
     expect(data['transcript']).to eq(transcript)
     expect(data['recording']).to include('storage_key' => 'voice-recordings/1/operator-call-1/recording.wav')
+  end
+
+  it 'does not transcribe when workspace call transcription is disabled' do
+    account.update!(call_transcriptions: false)
+
+    expect(described_class.new(call_session).perform).to eq(error: 'Transcription not available')
+    expect(Llm::Runtime).not_to have_received(:transcribe)
   end
 
   it 'persists a completed transcription status from the canonical AI voice runtime transcript without another LLM call' do

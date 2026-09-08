@@ -1067,13 +1067,13 @@ const buildUngroupedMyCompanySettingsMenuItems = () => [
   {
     name: 'Visibility',
     label: t('SIDEBAR.VISIBILITY'),
-    icon: 'i-lucide-eye',
+    icon: 'i-lucide-layout-panel-left',
     activeOn: ['workspace_sidebar_visibility_settings_index'],
     to: accountScopedRoute('workspace_sidebar_visibility_settings_index'),
   },
   {
     name: 'Conversation Settings',
-    label: t('SIDEBAR.CONVERSATION_SETTINGS'),
+    label: t('GENERAL_SETTINGS.CONVERSATIONS.TITLE'),
     icon: 'i-lucide-messages-square',
     activeOn: ['workspace_conversation_settings_index'],
     to: accountScopedRoute('workspace_conversation_settings_index'),

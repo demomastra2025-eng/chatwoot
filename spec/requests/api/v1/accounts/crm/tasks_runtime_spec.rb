@@ -53,6 +53,97 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(task.reload.outcome_note).to eq('Customer asked to postpone until next week')
   end
 
+  it 'creates a date-only all-day task deadline' do
+    post path,
+         params: {
+           all_day: true,
+           due_on: '2026-09-04',
+           schedule_timezone: 'Asia/Almaty',
+           start_at: '2026-09-04T09:00:00+02:00',
+           title: 'Prepare tomorrow report'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    payload = response.parsed_body.fetch('payload')
+    task = account.crm_tasks.find(response.parsed_body.dig('payload', 'id'))
+    expect(payload.slice('all_day', 'due_at', 'due_on', 'schedule_timezone')).to eq(
+      'all_day' => true,
+      'due_at' => nil,
+      'due_on' => '2026-09-04',
+      'schedule_timezone' => 'Asia/Almaty'
+    )
+    expect(task.attributes.slice('all_day', 'due_at', 'due_on', 'start_at')).to eq(
+      'all_day' => true,
+      'due_at' => nil,
+      'due_on' => Date.new(2026, 9, 4),
+      'start_at' => nil
+    )
+  end
+
+  it 'converts an all-day task into a timed task deadline' do
+    task = create(
+      :crm_task,
+      account: account,
+      all_day: true,
+      due_on: Date.new(2026, 9, 4),
+      schedule_timezone: 'Asia/Almaty'
+    )
+
+    patch "#{path}/#{task.id}",
+          params: {
+            all_day: false,
+            due_at: '2026-09-04T15:30:00+02:00',
+            lock_version: task.lock_version
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'all_day')).to be(false)
+    expect(task.reload).not_to be_all_day
+    expect(task.due_on).to be_nil
+    expect(task.due_at).to eq(Time.iso8601('2026-09-04T13:30:00Z'))
+  end
+
+  it 'converts legacy all-day due_at input without storing a synthetic timestamp' do
+    post path,
+         params: {
+           all_day: true,
+           due_at: '2026-09-03T23:30:00Z',
+           schedule_timezone: 'Asia/Almaty',
+           title: 'Legacy all-day request'
+         },
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:created)
+    task = account.crm_tasks.find(response.parsed_body.dig('payload', 'id'))
+    expect(task.due_on).to eq(Date.new(2026, 9, 4))
+    expect(task.due_at).to be_nil
+  end
+
+  it 'updates a deadline when a legacy creator no longer belongs to the account' do
+    creator = create(:user, account: account)
+    task = create(:crm_task, account: account, creator: creator)
+    account.account_users.find_by!(user: creator).destroy!
+
+    patch "#{path}/#{task.id}",
+          params: {
+            all_day: true,
+            due_on: '2026-09-04',
+            lock_version: task.lock_version,
+            start_at: nil
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'all_day')).to be(true)
+    expect(task.reload.start_at).to be_nil
+  end
+
   it 'filters tasks by activity type and outcome' do
     status = account.crm_task_statuses.find_by!(code: 'todo')
     matching_task = create(
@@ -77,6 +168,35 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body['payload'].map { |task| task['id'] }).to eq([matching_task.id])
+  end
+
+  it 'filters timed and date-only deadlines through the same due range' do
+    status = account.crm_task_statuses.find_by!(code: 'todo')
+    date_only_task = create(
+      :crm_task,
+      account: account,
+      status: status,
+      all_day: true,
+      due_on: Date.new(2026, 9, 4)
+    )
+    timed_task = create(
+      :crm_task,
+      account: account,
+      status: status,
+      due_at: Time.iso8601('2026-09-04T08:00:00Z')
+    )
+    create(:crm_task, account: account, status: status, all_day: true, due_on: Date.new(2026, 9, 5))
+
+    get path,
+        params: {
+          due_from: '2026-09-04T00:00:00+05:00',
+          due_to: '2026-09-05T00:00:00+05:00'
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body['payload'].pluck('id')).to contain_exactly(date_only_task.id, timed_task.id)
   end
 
   it 'creates a deal task and defaults assignee/team from the deal' do
@@ -265,8 +385,8 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response.parsed_body.dig('payload', 'outcome')).to eq('not_done')
     expect(response.parsed_body.dig('payload', 'outcome_note')).to eq('Client was unavailable; retry tomorrow')
     expect(response.parsed_body.dig('payload', 'completed_at')).to be_present
-    expect(task.reload.events.where(event_type: 'task_status_changed')).to exist
-    expect(task.outcome_note).to eq('Client was unavailable; retry tomorrow')
+    expect(task.reload.events.where(event_type: 'task_completed')).to exist
+    expect(task).to have_attributes(completed_by_id: administrator.id, outcome_note: 'Client was unavailable; retry tomorrow')
   end
 
   it 'reorders tasks inside a status using board position' do

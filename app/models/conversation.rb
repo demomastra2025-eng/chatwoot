@@ -20,7 +20,6 @@
 #  created_at             :datetime         not null
 #  updated_at             :datetime         not null
 #  account_id             :integer          not null
-#  assignee_agent_bot_id  :bigint
 #  assignee_id            :integer
 #  campaign_id            :bigint
 #  contact_id             :bigint

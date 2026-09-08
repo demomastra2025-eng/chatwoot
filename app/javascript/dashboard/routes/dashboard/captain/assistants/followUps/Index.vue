@@ -9,6 +9,8 @@ import PageLayout from 'dashboard/components-next/captain/PageLayout.vue';
 import SettingsHeader from 'dashboard/components-next/captain/pageComponents/settings/SettingsHeader.vue';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Switch from 'dashboard/components-next/switch/Switch.vue';
+import { isWhatsAppTemplateCapableChannel } from 'dashboard/components-next/Outbound/touchContentModes';
+import WhatsAppTemplateVariantField from './WhatsAppTemplateVariantField.vue';
 
 const route = useRoute();
 const store = useStore();
@@ -18,15 +20,42 @@ const assistantId = computed(() => Number(route.params.assistantId));
 const assistant = computed(() =>
   store.getters['captainAssistants/getRecord'](assistantId.value)
 );
+const inboxes = computed(() => store.getters['inboxes/getInboxes'] || []);
+const connectedWhatsAppInboxes = computed(() =>
+  inboxes.value.filter(
+    inbox =>
+      inbox?.captain_assistant?.id === assistantId.value &&
+      isWhatsAppTemplateCapableChannel({
+        channelType: inbox.channel_type,
+        medium: inbox.medium || inbox.channel?.medium,
+      })
+  )
+);
+const approvedTemplatesForInbox = inboxId => {
+  const getter = store.getters['inboxes/getFilteredWhatsAppTemplates'];
+  const templates =
+    typeof getter === 'function' ? getter(Number(inboxId)) || [] : [];
+  return templates.filter(
+    template =>
+      String(template.category || '').toUpperCase() !== 'AUTHENTICATION'
+  );
+};
 const state = reactive({
   enabled: false,
   prompt: '',
   steps: [],
+  quietHours: {
+    enabled: false,
+    startTime: '23:00',
+    endTime: '08:00',
+    timezone: '',
+  },
   isSaving: false,
 });
 const expandedStepIndex = ref(null);
 const draftBaseline = ref(null);
 const loadedAssistantId = ref(null);
+const templateValidity = reactive({});
 
 const defaultSteps = () => [
   {
@@ -37,22 +66,52 @@ const defaultSteps = () => [
     message: '',
   },
   {
-    delay: 3,
+    delay: 6,
     unit: 'hours',
     mode: 'ai',
     objective: t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_OBJECTIVE_2'),
     message: '',
   },
   {
-    delay: 4,
-    unit: 'days',
+    delay: 22,
+    unit: 'hours',
     mode: 'ai',
     objective: t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_OBJECTIVE_3'),
+    message: '',
+  },
+  {
+    delay: 3,
+    unit: 'days',
+    mode: 'ai',
+    objective: t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_OBJECTIVE_4'),
+    message: '',
+  },
+  {
+    delay: 7,
+    unit: 'days',
+    mode: 'ai',
+    objective: t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_OBJECTIVE_5'),
     message: '',
   },
 ];
 
 const secondsByUnit = { minutes: 60, hours: 3600, days: 86400 };
+const defaultTemplateVariants = () => ({
+  ru: { name: '', language: 'ru' },
+  kk: { name: '', language: 'kk' },
+  en: { name: '', language: 'en_US' },
+});
+
+const editableTemplateVariants = value => {
+  const defaults = defaultTemplateVariants();
+  Object.keys(defaults).forEach(language => {
+    defaults[language] = {
+      ...defaults[language],
+      ...(value?.[language] || {}),
+    };
+  });
+  return defaults;
+};
 
 const editableStep = step => {
   const seconds = Number(step.delay_seconds || 3600);
@@ -67,6 +126,10 @@ const editableStep = step => {
     mode,
     objective: String(step.objective || ''),
     message: String(step.message || ''),
+    templateVariants: editableTemplateVariants(step.template_variants),
+    templateVariantsByInbox: JSON.parse(
+      JSON.stringify(step.template_variants_by_inbox || {})
+    ),
   };
 };
 
@@ -77,6 +140,12 @@ const incomingDraft = value => {
     prompt: String(
       settings.prompt || t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.DEFAULT_PROMPT')
     ),
+    quietHours: {
+      enabled: settings.quiet_hours?.enabled === true,
+      startTime: String(settings.quiet_hours?.start_time || '23:00'),
+      endTime: String(settings.quiet_hours?.end_time || '08:00'),
+      timezone: String(settings.quiet_hours?.timezone || ''),
+    },
     steps:
       Array.isArray(settings.steps) && settings.steps.length
         ? settings.steps.slice(0, 5).map(editableStep)
@@ -90,6 +159,7 @@ const currentDraftSnapshot = () =>
     enabled: state.enabled,
     prompt: state.prompt,
     steps: state.steps,
+    quietHours: state.quietHours,
   });
 
 watch(
@@ -125,12 +195,15 @@ const addStep = () => {
     mode: 'ai',
     objective: '',
     message: '',
+    templateVariants: defaultTemplateVariants(),
+    templateVariantsByInbox: {},
   });
   expandedStepIndex.value = state.steps.length - 1;
 };
 
 const removeStep = index => {
   state.steps.splice(index, 1);
+  Object.keys(templateValidity).forEach(key => delete templateValidity[key]);
   if (expandedStepIndex.value === index) {
     expandedStepIndex.value = Math.min(index, state.steps.length - 1);
   } else if (expandedStepIndex.value > index) {
@@ -140,6 +213,27 @@ const removeStep = index => {
 
 const toggleStep = index => {
   expandedStepIndex.value = expandedStepIndex.value === index ? null : index;
+};
+
+const updateTemplateVariant = (step, inboxId, language, value) => {
+  const inboxKey = String(inboxId);
+  const nextInboxVariants = {
+    ...(step.templateVariantsByInbox?.[inboxKey] || {}),
+  };
+  if (value?.name) nextInboxVariants[language] = value;
+  else delete nextInboxVariants[language];
+
+  step.templateVariantsByInbox = {
+    ...(step.templateVariantsByInbox || {}),
+    [inboxKey]: nextInboxVariants,
+  };
+  if (!Object.keys(nextInboxVariants).length) {
+    delete step.templateVariantsByInbox[inboxKey];
+  }
+};
+
+const setTemplateValidity = (stepIndex, inboxId, language, valid) => {
+  templateValidity[`${stepIndex}:${inboxId}:${language}`] = valid;
 };
 
 const stepSummary = step =>
@@ -174,17 +268,67 @@ const serializedStep = step => {
   );
   if (!Number.isFinite(delaySeconds) || delaySeconds <= 0) return null;
 
+  const templateVariants = Object.fromEntries(
+    Object.entries(step.templateVariants || {})
+      .filter(([, variant]) => variant?.name?.trim())
+      .map(([language, variant]) => [
+        language,
+        { ...variant, name: variant.name.trim() },
+      ])
+  );
+  const deliveryConfig = Object.keys(templateVariants).length
+    ? { template_variants: templateVariants }
+    : {};
+  const templateVariantsByInbox = Object.fromEntries(
+    Object.entries(step.templateVariantsByInbox || {}).filter(
+      ([inboxId, variants]) =>
+        connectedWhatsAppInboxes.value.some(
+          inbox => inbox.id === Number(inboxId)
+        ) && Object.keys(variants || {}).length
+    )
+  );
+  if (Object.keys(templateVariantsByInbox).length) {
+    deliveryConfig.template_variants_by_inbox = templateVariantsByInbox;
+  }
+
   if (step.mode === 'static') {
     const message = step.message.trim();
     return message
-      ? { delay_seconds: delaySeconds, mode: 'static', message }
+      ? {
+          delay_seconds: delaySeconds,
+          mode: 'static',
+          message,
+          ...deliveryConfig,
+        }
       : null;
   }
 
   const objective = step.objective.trim();
   return objective
-    ? { delay_seconds: delaySeconds, mode: 'ai', objective }
+    ? { delay_seconds: delaySeconds, mode: 'ai', objective, ...deliveryConfig }
     : null;
+};
+
+const quietHoursValid = () => {
+  if (!state.quietHours.enabled) return true;
+  if (
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(state.quietHours.startTime) ||
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(state.quietHours.endTime) ||
+    state.quietHours.startTime === state.quietHours.endTime
+  ) {
+    return false;
+  }
+
+  if (!state.quietHours.timezone.trim()) return true;
+
+  try {
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: state.quietHours.timezone,
+    }).format();
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 const save = async () => {
@@ -200,13 +344,34 @@ const save = async () => {
     useAlert(t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.PROMPT_VALIDATION'));
     return;
   }
+  if (state.enabled && !quietHoursValid()) {
+    useAlert(t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.QUIET_HOURS_VALIDATION'));
+    return;
+  }
+  if (state.enabled && Object.values(templateValidity).includes(false)) {
+    useAlert(t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.TEMPLATE_VALIDATION'));
+    return;
+  }
 
   const submittedSnapshot = currentDraftSnapshot();
   state.isSaving = true;
   try {
     await CaptainAssistantAPI.update(assistantId.value, {
       config: {
-        follow_up_settings: { enabled: state.enabled, prompt, steps },
+        follow_up_settings: {
+          enabled: state.enabled,
+          prompt,
+          timing_mode: 'absolute_from_last_incoming',
+          quiet_hours: {
+            enabled: state.quietHours.enabled,
+            start_time: state.quietHours.startTime,
+            end_time: state.quietHours.endTime,
+            ...(state.quietHours.timezone.trim()
+              ? { timezone: state.quietHours.timezone.trim() }
+              : {}),
+          },
+          steps,
+        },
       },
     });
     draftBaseline.value = submittedSnapshot;
@@ -218,6 +383,8 @@ const save = async () => {
     state.isSaving = false;
   }
 };
+
+store.dispatch('inboxes/get');
 </script>
 
 <template>
@@ -266,6 +433,63 @@ const save = async () => {
                   t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.PROMPT_PLACEHOLDER')
                 "
               />
+            </div>
+
+            <div class="mt-6 rounded-xl border border-n-weak bg-n-alpha-1 p-4">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-sm font-medium text-n-slate-12">
+                    {{ t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.QUIET_HOURS') }}
+                  </p>
+                  <p class="mt-1 text-xs text-n-slate-11">
+                    {{
+                      t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.QUIET_HOURS_DESCRIPTION')
+                    }}
+                  </p>
+                </div>
+                <Switch v-model="state.quietHours.enabled" />
+              </div>
+              <div class="mt-4 grid gap-3 md:grid-cols-3">
+                <label
+                  class="flex flex-col gap-2 text-xs font-medium text-n-slate-11"
+                >
+                  {{ t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.QUIET_START') }}
+                  <input
+                    v-model="state.quietHours.startTime"
+                    type="time"
+                    :disabled="!state.enabled || !state.quietHours.enabled"
+                    data-testid="quiet-hours-start"
+                    class="h-10 rounded-lg border border-n-weak bg-n-alpha-1 px-3 text-sm font-normal text-n-slate-12 outline-none focus:border-n-brand"
+                  />
+                </label>
+                <label
+                  class="flex flex-col gap-2 text-xs font-medium text-n-slate-11"
+                >
+                  {{ t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.QUIET_END') }}
+                  <input
+                    v-model="state.quietHours.endTime"
+                    type="time"
+                    :disabled="!state.enabled || !state.quietHours.enabled"
+                    data-testid="quiet-hours-end"
+                    class="h-10 rounded-lg border border-n-weak bg-n-alpha-1 px-3 text-sm font-normal text-n-slate-12 outline-none focus:border-n-brand"
+                  />
+                </label>
+                <label
+                  class="flex flex-col gap-2 text-xs font-medium text-n-slate-11"
+                >
+                  {{ t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.TIMEZONE') }}
+                  <input
+                    v-model.trim="state.quietHours.timezone"
+                    type="text"
+                    :disabled="!state.enabled || !state.quietHours.enabled"
+                    data-testid="quiet-hours-timezone"
+                    :placeholder="
+                      t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.TIMEZONE_PLACEHOLDER')
+                    "
+                    class="h-10 rounded-lg border border-n-weak bg-n-alpha-1 px-3 text-sm font-normal text-n-slate-12 outline-none focus:border-n-brand"
+                  />
+                </label>
+              </div>
             </div>
 
             <div class="mt-6 flex flex-col">
@@ -441,6 +665,70 @@ const save = async () => {
                           t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.MESSAGE_PLACEHOLDER')
                         "
                       />
+                    </div>
+                    <div class="mt-4 rounded-lg border border-n-weak p-3">
+                      <p class="text-xs font-medium text-n-slate-11">
+                        {{
+                          t('CAPTAIN.ASSISTANTS.FOLLOW_UPS.WHATSAPP_TEMPLATES')
+                        }}
+                      </p>
+                      <p class="mt-1 text-xs text-n-slate-10">
+                        {{
+                          t(
+                            'CAPTAIN.ASSISTANTS.FOLLOW_UPS.WHATSAPP_TEMPLATES_DESCRIPTION'
+                          )
+                        }}
+                      </p>
+                      <div
+                        v-if="connectedWhatsAppInboxes.length"
+                        class="mt-3 grid gap-4"
+                      >
+                        <div
+                          v-for="inbox in connectedWhatsAppInboxes"
+                          :key="inbox.id"
+                          class="rounded-lg border border-n-weak p-3"
+                        >
+                          <p class="mb-3 text-sm font-medium text-n-slate-12">
+                            {{ inbox.name }}
+                          </p>
+                          <div class="grid gap-3 md:grid-cols-3">
+                            <WhatsAppTemplateVariantField
+                              v-for="language in ['ru', 'kk', 'en']"
+                              :key="`${inbox.id}-${language}`"
+                              :language="language"
+                              :templates="approvedTemplatesForInbox(inbox.id)"
+                              :model-value="
+                                step.templateVariantsByInbox?.[
+                                  String(inbox.id)
+                                ]?.[language] || {}
+                              "
+                              @update:model-value="
+                                updateTemplateVariant(
+                                  step,
+                                  inbox.id,
+                                  language,
+                                  $event
+                                )
+                              "
+                              @validity-change="
+                                setTemplateValidity(
+                                  index,
+                                  inbox.id,
+                                  language,
+                                  $event
+                                )
+                              "
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <p v-else class="mt-3 text-xs text-n-slate-10">
+                        {{
+                          t(
+                            'CAPTAIN.ASSISTANTS.FOLLOW_UPS.WHATSAPP_TEMPLATES_EMPTY'
+                          )
+                        }}
+                      </p>
                     </div>
                   </div>
                 </div>

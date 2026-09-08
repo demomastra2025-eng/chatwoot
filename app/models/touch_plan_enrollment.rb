@@ -10,6 +10,7 @@
 #  plan_digest        :string           not null
 #  plan_snapshot      :jsonb            not null
 #  remindable_type    :string
+#  source_generation  :bigint           default(1)
 #  status             :string           default("active"), not null
 #  created_at         :datetime         not null
 #  updated_at         :datetime         not null
@@ -18,19 +19,18 @@
 #  remindable_id      :bigint
 #  reminder_group_id  :bigint
 #  source_action_id   :string
-#  source_generation  :bigint
 #
 # Indexes
 #
-#  idx_touch_plan_enrollments_due                      (status,next_due_at)
-#  idx_touch_plan_enrollments_on_account_idempotency   (account_id,idempotency_key) UNIQUE
-#  idx_touch_plan_enrollments_on_remindable_status     (remindable_type,remindable_id,status)
-#  idx_touch_plan_enrollments_one_open_action_generation  (account_id,automation_rule_id,source_generation,source_action_id,remindable_type,remindable_id) UNIQUE WHERE (((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying, 'completed'::character varying])::text[])) AND (automation_rule_id IS NOT NULL))
-#  idx_touch_plan_enrollments_one_open_plan            (account_id,reminder_group_id,remindable_type,remindable_id) UNIQUE WHERE ((status)::text = ANY ((ARRAY['active'::character varying, 'paused'::character varying])::text[]))
-#  index_touch_plan_enrollments_on_account_id          (account_id)
-#  index_touch_plan_enrollments_on_automation_rule_id  (automation_rule_id)
-#  index_touch_plan_enrollments_on_remindable          (remindable_type,remindable_id)
-#  index_touch_plan_enrollments_on_reminder_group_id   (reminder_group_id)
+#  idx_touch_plan_enrollments_due                         (status,next_due_at)
+#  idx_touch_plan_enrollments_on_account_idempotency      (account_id,idempotency_key) UNIQUE
+#  idx_touch_plan_enrollments_on_remindable_status        (remindable_type,remindable_id,status)
+#  idx_touch_plan_enrollments_one_open_action_generation  (account_id,automation_rule_id,source_generation,source_action_id,remindable_type,remindable_id) UNIQUE WHERE (((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text, ('completed'::character varying)::text])) AND (automation_rule_id IS NOT NULL))
+#  idx_touch_plan_enrollments_one_open_plan               (account_id,reminder_group_id,remindable_type,remindable_id) UNIQUE WHERE ((status)::text = ANY (ARRAY[('active'::character varying)::text, ('paused'::character varying)::text]))
+#  index_touch_plan_enrollments_on_account_id             (account_id)
+#  index_touch_plan_enrollments_on_automation_rule_id     (automation_rule_id)
+#  index_touch_plan_enrollments_on_remindable             (remindable_type,remindable_id)
+#  index_touch_plan_enrollments_on_reminder_group_id      (reminder_group_id)
 #
 # Foreign Keys
 #

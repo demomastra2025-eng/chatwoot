@@ -102,18 +102,15 @@ module Api::V1::InboxesHelper
   end
 
   def validate_limit
-    if Current.account.inboxes.count >= Current.account.usage_limits[:inboxes]
-      render_payment_required('Account limit exceeded. Upgrade to a higher plan')
-      return
-    end
+    limit_key = creating_call_channel_inbox? ? :call_inboxes : :inboxes
+    consumed = creating_call_channel_inbox? ? Current.account.call_channels_count : Current.account.text_channels_count
+    return if consumed < Current.account.usage_limits.fetch(limit_key, ChatwootApp.max_limit).to_i
 
-    return unless creating_main_channel_inbox?
-    return if Current.account.main_channels_count < Current.account.usage_limits.fetch(:non_web_inboxes, ChatwootApp.max_limit).to_i
-
-    render_payment_required('Account main channel limit exceeded. Upgrade to a higher plan')
+    label = creating_call_channel_inbox? ? 'call channel' : 'channel'
+    render_payment_required("Account #{label} limit exceeded. Upgrade to a higher plan")
   end
 
-  def creating_main_channel_inbox?
-    %w[api whatsapp whatsapp_web telegram telegram_personal weixin vk_community].include?(permitted_params[:channel][:type])
+  def creating_call_channel_inbox?
+    permitted_params[:channel][:type] == 'voice'
   end
 end

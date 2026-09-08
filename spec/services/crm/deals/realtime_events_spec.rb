@@ -34,6 +34,9 @@ RSpec.describe 'CRM deal realtime events' do
     expect(created_event).to be_present
     expect(created_event.last).to include(account: account, deal: deal)
     expect(created_event.last[:meta]).to include(event_type: 'deal_created')
+    active_visit = deal.stage_visits.active.first!
+    domain_event = deal.events.find_by!(event_type: 'deal_created')
+    expect(active_visit.correlation_id).to eq(domain_event.correlation_id)
   end
 
   it 'dispatches crm.deal.updated when a deal is updated' do
@@ -71,6 +74,12 @@ RSpec.describe 'CRM deal realtime events' do
     expect(stage_event).to be_present
     expect(stage_event.last).to include(account: account, deal: moved_deal)
     expect(stage_event.last[:meta]).to include(event_type: 'deal_stage_changed')
+    expect(deal.stage_visits.count).to eq(2)
+    expect(deal.stage_visits.where.not(exited_at: nil).count).to eq(1)
+    active_visit = deal.stage_visits.active.first!
+    domain_event = deal.events.find_by!(event_type: 'deal_stage_changed')
+    expect(active_visit.stage_id).to eq(target_stage.id)
+    expect(active_visit.correlation_id).to eq(domain_event.correlation_id)
   end
 
   it 'dispatches crm.deal.archived when a deal is archived' do
@@ -90,5 +99,46 @@ RSpec.describe 'CRM deal realtime events' do
     expect(archived_event).to be_present
     expect(archived_event.last).to include(account: account, deal: archived_deal)
     expect(archived_event.last[:meta]).to include(event_type: 'deal_archived')
+  end
+
+  it 'dispatches crm.deal.updated when a linked task changes' do
+    account.enable_features!('crm_tasks')
+    pipeline = bootstrap_pipeline
+    deal = create(:crm_deal, account: account, pipeline: pipeline, stage: pipeline.stages.find_by!(code: 'new'))
+    captured_events = capture_dispatches
+
+    task = Crm::Tasks::UpsertService.new(
+      account: account,
+      actor: actor,
+      params: { deal_id: deal.id, title: 'Call customer', due_at: 1.day.from_now.iso8601 }
+    ).perform
+
+    task_event = captured_events.find { |event_name, _data| event_name == Events::Types::CRM_TASK_CREATED }
+    expect(task_event).to be_present
+    expect(task_event.last).to include(account: account, task: task)
+    expect(task_event.last[:meta]).to include(event_type: 'task_created')
+
+    updated_event = captured_events.find { |event_name, _data| event_name == Events::Types::CRM_DEAL_UPDATED }
+    expect(updated_event).to be_present
+    expect(updated_event.last).to include(account: account, deal: deal)
+    expect(updated_event.last[:meta]).to include(event_type: 'task_changed', task_id: task.id)
+  end
+
+  it 'dispatches crm.task.created for a standalone task' do
+    account.enable_features!('crm_tasks')
+    bootstrap_pipeline
+    captured_events = capture_dispatches
+
+    task = Crm::Tasks::UpsertService.new(
+      account: account,
+      actor: actor,
+      params: { title: 'Standalone follow-up', due_at: 1.day.from_now.iso8601 }
+    ).perform
+
+    created_event = captured_events.find { |event_name, _data| event_name == Events::Types::CRM_TASK_CREATED }
+    expect(created_event).to be_present
+    expect(created_event.last).to include(account: account, task: task)
+    expect(created_event.last[:meta]).to include(event_type: 'task_created')
+    expect(captured_events.none? { |event_name, _data| event_name == Events::Types::CRM_DEAL_UPDATED }).to be(true)
   end
 end

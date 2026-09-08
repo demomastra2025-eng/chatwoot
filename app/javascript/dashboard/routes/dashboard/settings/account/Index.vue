@@ -59,9 +59,6 @@ export default {
       id: '',
       name: '',
       locale: 'ru',
-      domain: '',
-      supportEmail: '',
-      features: {},
       logoFile: null,
       logoUrl: '',
     };
@@ -89,19 +86,7 @@ export default {
     isUpdating() {
       return this.uiFlags.isUpdating;
     },
-    featureInboundEmailEnabled() {
-      return !!this.features?.inbound_emails;
-    },
-    featureCustomReplyDomainEnabled() {
-      return (
-        this.featureInboundEmailEnabled && !!this.features.custom_reply_domain
-      );
-    },
-    featureCustomReplyEmailEnabled() {
-      return (
-        this.featureInboundEmailEnabled && !!this.features.custom_reply_email
-      );
-    },
+
     accountRecord() {
       return this.getAccount(this.accountId);
     },
@@ -129,8 +114,6 @@ export default {
         id: this.id,
         locale: this.locale,
         name: this.normalizeTextField(this.name),
-        domain: this.normalizeTextField(this.domain),
-        support_email: this.normalizeTextField(this.supportEmail),
         logo: this.logoFile,
       };
     },
@@ -142,16 +125,13 @@ export default {
       }
     },
     async applyAccountToForm(account) {
-      const { name, locale, id, domain, support_email, features, logo_url } =
-        account;
+      const { name, locale, id, logo_url } = account;
 
       await this.applySelectedLocale(this.uiSettings?.locale || locale);
       this.name = name || '';
       this.locale = locale;
       this.id = id;
-      this.domain = domain || '';
-      this.supportEmail = support_email || '';
-      this.features = features;
+
       this.logoFile = null;
       this.logoUrl = logo_url || '';
     },
@@ -204,8 +184,6 @@ export default {
 
       const payload = this.normalizedFormPayload();
       this.name = payload.name;
-      this.domain = payload.domain;
-      this.supportEmail = payload.support_email;
       this.v$.$touch();
       if (!(await this.validateWorkspaceForm())) {
         return;
@@ -307,45 +285,7 @@ export default {
               </option>
             </NextSelect>
           </WithLabel>
-          <WithLabel
-            v-if="featureCustomReplyDomainEnabled"
-            name="custom-domain"
-            :label="$t('GENERAL_SETTINGS.FORM.DOMAIN.LABEL')"
-          >
-            <NextInput
-              v-model="domain"
-              type="text"
-              class="w-full"
-              :disabled="isWorkspaceReadOnly"
-              :placeholder="$t('GENERAL_SETTINGS.FORM.DOMAIN.PLACEHOLDER')"
-            />
-            <template #help>
-              {{
-                featureInboundEmailEnabled &&
-                $t('GENERAL_SETTINGS.FORM.FEATURES.INBOUND_EMAIL_ENABLED')
-              }}
 
-              {{
-                featureCustomReplyDomainEnabled &&
-                $t('GENERAL_SETTINGS.FORM.FEATURES.CUSTOM_EMAIL_DOMAIN_ENABLED')
-              }}
-            </template>
-          </WithLabel>
-          <WithLabel
-            v-if="featureCustomReplyEmailEnabled"
-            name="support-email"
-            :label="$t('GENERAL_SETTINGS.FORM.SUPPORT_EMAIL.LABEL')"
-          >
-            <NextInput
-              v-model="supportEmail"
-              type="text"
-              class="w-full"
-              :disabled="isWorkspaceReadOnly"
-              :placeholder="
-                $t('GENERAL_SETTINGS.FORM.SUPPORT_EMAIL.PLACEHOLDER')
-              "
-            />
-          </WithLabel>
           <div>
             <NextButton
               blue

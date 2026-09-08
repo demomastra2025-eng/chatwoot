@@ -132,7 +132,6 @@ class ActionCableConnector extends BaseActionCableConnector {
       'conversation.created': this.onConversationCreated,
       'conversation.status_changed': this.onStatusChange,
       'user:logout': this.onLogout,
-      'page:reload': this.onReload,
       'assignee.changed': this.onAssigneeChanged,
       'conversation.typing_on': this.onTypingOn,
       'conversation.typing_off': this.onTypingOff,
@@ -173,6 +172,14 @@ class ActionCableConnector extends BaseActionCableConnector {
         this.onCrmDealRealtimeEvent('crm.deal.archived', data),
       'crm.deal.unarchived': data =>
         this.onCrmDealRealtimeEvent('crm.deal.unarchived', data),
+      'crm.task.created': data =>
+        this.onCrmTaskRealtimeEvent('crm.task.created', data),
+      'crm.task.updated': data =>
+        this.onCrmTaskRealtimeEvent('crm.task.updated', data),
+      'crm.task.archived': data =>
+        this.onCrmTaskRealtimeEvent('crm.task.archived', data),
+      'crm.task.unarchived': data =>
+        this.onCrmTaskRealtimeEvent('crm.task.unarchived', data),
     };
   }
 
@@ -193,7 +200,7 @@ class ActionCableConnector extends BaseActionCableConnector {
     }
 
     const eventData = data || {};
-    const globalEvents = ['user:logout', 'page:reload'];
+    const globalEvents = ['user:logout'];
     if (globalEvents.includes(event)) return true;
     if (eventData.account_id === undefined || eventData.account_id === null)
       return false;
@@ -213,6 +220,11 @@ class ActionCableConnector extends BaseActionCableConnector {
     emitter.emit(BUS_EVENTS.CRM_DEAL_REALTIME_EVENT, { event, ...data });
     this.fetchSidebarUnreadCounts();
     this.fetchCrmPipelines();
+  };
+
+  // eslint-disable-next-line class-methods-use-this
+  onCrmTaskRealtimeEvent = (event, data) => {
+    emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, { event, ...data });
   };
 
   onMessageUpdated = data => {
@@ -271,9 +283,6 @@ class ActionCableConnector extends BaseActionCableConnector {
     });
     this.fetchSidebarUnreadCounts();
   };
-
-  // eslint-disable-next-line class-methods-use-this
-  onReload = () => window.location.reload();
 
   onStatusChange = data => {
     this.app.$store.dispatch('updateConversation', data);

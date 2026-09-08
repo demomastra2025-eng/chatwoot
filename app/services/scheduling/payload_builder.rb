@@ -218,6 +218,7 @@ module Scheduling::PayloadBuilder
       color: resource.color,
       timezone: resource.timezone,
       slot_duration_min: resource.slot_duration_min,
+      inherit_working_hours_from_account: resource.inherit_working_hours_from_account,
       compensation_type: resource.compensation_type,
       compensation_value: resource.compensation_value,
       compensation_percent: resource.compensation_percent,

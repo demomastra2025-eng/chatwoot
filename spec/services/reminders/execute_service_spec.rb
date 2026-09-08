@@ -552,6 +552,83 @@ RSpec.describe Reminders::ExecuteService do
       expect(touch.reload).to be_completed
     end
 
+    it 'reschedules a Captain follow-up to the end of the configured local quiet hours' do
+      account = create(:account)
+      inbox = create(:inbox, account: account, timezone: 'Asia/Almaty')
+      conversation = create(:conversation, account: account, inbox: inbox, status: :open)
+      assistant = create(
+        :captain_assistant,
+        account: account,
+        config: {
+          'follow_up_settings' => {
+            'quiet_hours' => {
+              'enabled' => true,
+              'start_time' => '23:00',
+              'end_time' => '08:00',
+              'timezone' => 'Asia/Almaty'
+            }
+          }
+        }
+      )
+      anchor_message = create(:message, conversation: conversation, account: account, message_type: :outgoing)
+      touch = create(
+        :reminder,
+        account: account,
+        conversation: conversation,
+        target_conversation: conversation,
+        status: :processing,
+        action_type: :captain_follow_up,
+        metadata: {
+          'captain_follow_up' => {
+            'assistant_id' => assistant.id,
+            'anchor_message_id' => anchor_message.id,
+            'step_index' => 0
+          }
+        }
+      )
+      almaty = Time.find_zone!('Asia/Almaty')
+
+      travel_to(almaty.local(2026, 9, 5, 2, 0)) do
+        expect(Captain::Conversation::FollowUpJob).not_to receive(:perform_now)
+
+        described_class.new(reminder: touch).perform
+
+        expect(touch.reload).to be_pending
+        expect(touch.scheduled_at).to eq(almaty.local(2026, 9, 5, 8, 0).utc)
+        expect(touch.metadata['quiet_hours_timezone']).to eq('Asia/Almaty')
+      end
+    end
+
+    it 'fails a Captain follow-up with the non-retryable delivery-policy reason' do
+      conversation = create(:conversation, status: :open)
+      assistant = create(:captain_assistant, account: conversation.account)
+      anchor_message = create(:message, conversation: conversation, account: conversation.account, message_type: :outgoing)
+      touch = create(
+        :reminder,
+        account: conversation.account,
+        conversation: conversation,
+        target_conversation: conversation,
+        status: :processing,
+        action_type: :captain_follow_up,
+        metadata: {
+          'captain_follow_up' => {
+            'assistant_id' => assistant.id,
+            'anchor_message_id' => anchor_message.id,
+            'step_index' => 0
+          }
+        }
+      )
+      allow(Captain::Conversation::FollowUpJob).to receive(:perform_now).and_return(
+        status: :blocked,
+        reason: 'template_language_missing:kk'
+      )
+
+      described_class.new(reminder: touch).perform
+
+      expect(touch.reload).to be_failed
+      expect(touch.last_error).to eq('template_language_missing:kk')
+    end
+
     it 'keeps a failed Captain follow-up claim processing for the job retry' do
       conversation = create(:conversation, status: :open)
       assistant = create(:captain_assistant, account: conversation.account)

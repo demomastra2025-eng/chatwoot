@@ -21,11 +21,12 @@
 #
 # Indexes
 #
-#  index_crm_stages_on_account_id                 (account_id)
-#  index_crm_stages_on_account_pipeline_position  (account_id,pipeline_id,position)
-#  index_crm_stages_on_pipeline_default_active    (pipeline_id) UNIQUE WHERE (("default" = true) AND (active = true))
-#  index_crm_stages_on_pipeline_id                (pipeline_id)
-#  index_crm_stages_on_pipeline_id_and_code       (pipeline_id,code) UNIQUE
+#  index_crm_stages_on_account_id                       (account_id)
+#  index_crm_stages_on_account_pipeline_position        (account_id,pipeline_id,position)
+#  index_crm_stages_on_pipeline_default_active          (pipeline_id) UNIQUE WHERE (("default" = true) AND (active = true))
+#  index_crm_stages_on_pipeline_id                      (pipeline_id)
+#  index_crm_stages_on_pipeline_id_and_code             (pipeline_id,code) UNIQUE
+#  index_crm_stages_on_pipeline_unique_active_terminal  (pipeline_id,outcome) UNIQUE WHERE ((active = true) AND ((outcome)::text = ANY ((ARRAY['won'::character varying, 'lost'::character varying])::text[])))
 #
 # Foreign Keys
 #
@@ -79,6 +80,11 @@ class Crm::Stage < ApplicationRecord
   belongs_to :account, class_name: '::Account'
   belongs_to :pipeline, class_name: '::Crm::Pipeline', inverse_of: :stages
   has_many :deals, class_name: '::Crm::Deal', dependent: :restrict_with_error, inverse_of: :stage
+  has_many :stage_visits, class_name: '::Crm::StageVisit', dependent: :restrict_with_error, inverse_of: :stage
+  has_many :field_requirements,
+           class_name: '::Crm::StageFieldRequirement',
+           dependent: :destroy,
+           inverse_of: :stage
 
   enum :outcome, {
     open: 'open',
@@ -223,10 +229,7 @@ class Crm::Stage < ApplicationRecord
   def normalize_closing_reason_config
     self.closing_reason_options = self.class.normalize_closing_reason_values(closing_reason_options)
 
-    if terminal_outcome?
-      self.closing_reason_required = false
-      return
-    end
+    return if outcome_lost?
 
     self.closing_reason_options = []
     self.closing_reason_required = false
@@ -242,7 +245,7 @@ class Crm::Stage < ApplicationRecord
   end
 
   def closing_reason_required_requires_options
-    return unless terminal_outcome?
+    return unless outcome_lost?
     return unless closing_reason_required?
     return if closing_reason_options.present?
 

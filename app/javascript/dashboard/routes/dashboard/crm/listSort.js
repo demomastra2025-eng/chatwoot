@@ -1,4 +1,5 @@
 import { resolveDealAmountMajor } from 'dashboard/components-next/CRM/dealAmount';
+import { taskDueDate } from 'dashboard/routes/dashboard/crm/taskTimeBuckets';
 
 const stringCollator = new Intl.Collator(undefined, {
   numeric: true,
@@ -84,7 +85,7 @@ export const createTaskListSortValueResolver = ({
       case 'assignee':
         return normalizeSortText(assigneeNameById[task.assigneeId]);
       case 'dueAt':
-        return timestampOrNull(task.dueAt);
+        return taskDueDate(task)?.getTime() ?? null;
       case 'id':
         return Number(task.id);
       case 'priority':

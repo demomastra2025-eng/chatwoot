@@ -15,24 +15,6 @@
       },
       "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists."
     },
-    "KASPI_PAY": {
-      "SEND_OTP": "Send SMS code",
-      "CONNECT": "Connect Kaspi Pay",
-      "PHONE_LABEL": "Kaspi cashier phone",
-      "OTP_LABEL": "SMS code",
-      "LATITUDE_LABEL": "POS latitude",
-      "LONGITUDE_LABEL": "POS longitude",
-      "CONNECT_HELP": "Kaspi Pay uses the cashier SMS login flow. You can enter the number with +7/7/8; OneLink sends the local 10 digits to Kaspi. The session secrets are stored only on the server and are not returned to the browser.",
-      "PHONE_REQUIRED": "Enter the phone number",
-      "OTP_REQUIRED": "Enter the SMS code",
-      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the code and try again.",
-      "CONNECT_SUCCESS": "Kaspi Pay connected successfully",
-      "CONNECTED_TITLE": "Connected merchant",
-      "DELETE": {
-        "TITLE": "Delete Kaspi Pay integration",
-        "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
-      }
-    },
     "HEADER": "Интеграциялар",
     "DESCRIPTION": "Интеграциялар OneLink-ті сыртқы сервистермен және модульдермен байланыстырады. Қажетті интеграцияларды төменде баптаңыз.",
     "LEARN_MORE": "Интеграциялар туралы толығырақ",
@@ -661,6 +643,7 @@
           "STT_PROVIDER": "Сөйлеуді тану",
           "STT_ELEVENLABS_REALTIME": "ElevenLabs — ағындық",
           "STT_FISH_BATCH": "Fish Audio — сөйлем аяқталғаннан кейін",
+          "STT_GEMINI_TRANSCRIBE": "Gemini 3.5 Transcribe — ағындық",
           "FISH_VOICE_PLACEHOLDER": "Fish Audio дауыс ID-і",
           "FISH_VOICE_DESCRIPTION": "Тіркелгіңізге қолжетімді Fish Audio дауысының reference_id мәнін енгізіңіз.",
           "FISH_VOICES": {
@@ -832,6 +815,9 @@
           "ALLOW_FAQ_LOOKUP": "Сәйкес жауаптарды табу үшін FAQ іздеуді пайдалану",
           "ALLOW_HUMAN_HANDOFF": "AI-агент көмектесе алмаса, адамға беру",
           "ALLOW_WEB_ACCESS": "Веб-іздеуге рұқсат ету",
+          "AUDIO_TRANSCRIPTIONS": "Дауыстық хабарлама транскрипттерін пайдалану",
+          "AUDIO_TRANSCRIPTIONS_DESCRIPTION": "Осы AI-агентке сақталған дауыстық хабарлама транскрипттерін контексте пайдалануға рұқсат ету.",
+          "AUDIO_TRANSCRIPTIONS_DISABLED_DESCRIPTION": "Алдымен компания параметрлерінде дауыстық хабарламаларды транскрибациялауды қосыңыз.",
           "WEB_SEARCH": "Веб-іздеу",
           "WEB_SEARCH_DESCRIPTION": "Ашық интернеттен өзекті ақпаратты іздеу.",
           "WEB_PAGE_READING": "Веб-беттерді оқу",

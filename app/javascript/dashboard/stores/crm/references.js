@@ -3,6 +3,8 @@ import { defineStore } from 'pinia';
 import CrmFieldDefinitionsAPI from 'dashboard/api/crm/fieldDefinitions';
 import CrmPipelinesAPI from 'dashboard/api/crm/pipelines';
 import CrmTaskStatusesAPI from 'dashboard/api/crm/taskStatuses';
+import CrmTaskTypesAPI from 'dashboard/api/crm/taskTypes';
+import CrmTaskOutcomesAPI from 'dashboard/api/crm/taskOutcomes';
 import {
   extractCrmError,
   normalizePayload,
@@ -36,6 +38,7 @@ const defaultUi = () => ({
   isLoadingFieldDefinitions: false,
   isLoadingPipelines: false,
   isLoadingTaskStatuses: false,
+  isLoadingTaskTypes: false,
   isSaving: false,
 });
 
@@ -146,6 +149,7 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
     },
     pipelines: [],
     taskStatuses: [],
+    taskTypes: [],
     ui: defaultUi(),
   }),
 
@@ -354,6 +358,70 @@ export const useCrmReferencesStore = defineStore('crmReferences', {
         throw error;
       } finally {
         this.ui.isLoadingTaskStatuses = false;
+      }
+    },
+
+    async loadTaskTypes(params = {}) {
+      this.ui.isLoadingTaskTypes = true;
+      this.ui.error = null;
+
+      try {
+        const { data } = await CrmTaskTypesAPI.get(params);
+        this.taskTypes = normalizePayload(data);
+        return this.taskTypes;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isLoadingTaskTypes = false;
+      }
+    },
+
+    async saveTaskType(payload) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = payload.id
+          ? await CrmTaskTypesAPI.update(payload.id, payload)
+          : await CrmTaskTypesAPI.create(payload);
+        const taskType = normalizePayload(response.data);
+        this.taskTypes = upsertTaskStatusInList(this.taskTypes, taskType);
+        return taskType;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
+      }
+    },
+
+    async saveTaskOutcome(payload) {
+      this.ui.isSaving = true;
+      this.ui.error = null;
+
+      try {
+        const response = payload.id
+          ? await CrmTaskOutcomesAPI.update(payload.id, payload)
+          : await CrmTaskOutcomesAPI.create(payload);
+        const outcome = normalizePayload(response.data);
+        this.taskTypes = this.taskTypes.map(taskType =>
+          Number(taskType.id) === Number(outcome.taskTypeId)
+            ? {
+                ...taskType,
+                outcomes: upsertTaskStatusInList(
+                  taskType.outcomes || [],
+                  outcome
+                ),
+              }
+            : taskType
+        );
+        return outcome;
+      } catch (error) {
+        this.ui.error = extractCrmError(error);
+        throw error;
+      } finally {
+        this.ui.isSaving = false;
       }
     },
 

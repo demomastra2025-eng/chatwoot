@@ -103,11 +103,21 @@ RSpec.describe 'CRM Stages API', type: :request do
           params: {
             deleted_stage_ids: [],
             stages: [
-              { id: proposal.id, name: 'Proposal review', color: '#A855F7' },
+              {
+                id: proposal.id,
+                name: 'Proposal review',
+                color: '#A855F7',
+                field_requirements: [{ field_key: 'description', required: true }]
+              },
               { name: 'Negotiation', color: '#14B8A6' },
               { id: qualified.id, name: qualified.name, color: qualified.color }
             ],
             technical_stage: { id: unsorted.id, active: false },
+            pipeline_rules: {
+              restrict_stage_skipping: true,
+              restrict_backward_move: true,
+              allow_stage_rule_override: true
+            },
             terminal_stages: [
               { id: won.id, name: 'Won', closing_reason_options: [] },
               { id: lost.id, name: 'Lost', closing_reason_options: ['Too expensive'] }
@@ -122,6 +132,12 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(qualified.reload.position).to eq(3)
     expect(unsorted.reload).not_to be_active
     expect(lost.reload.closing_reason_options).to eq(['Too expensive'])
+    expect(proposal.field_requirements.reload.pluck(:field_key)).to eq(['description'])
+    expect(pipeline.reload).to have_attributes(
+      restrict_stage_skipping: true,
+      restrict_backward_move: true,
+      allow_stage_rule_override: true
+    )
     expect(pipeline.stages.active.where(outcome: 'open', default: true).count).to eq(1)
   end
 
@@ -282,7 +298,7 @@ RSpec.describe 'CRM Stages API', type: :request do
     expect(stage.closing_reason_required).to be(false)
   end
 
-  it 'configures transition reasons on open stages' do
+  it 'ignores retired transition reason configuration on open stages' do
     stage = account.crm_stages.find_by!(code: 'proposal')
 
     patch "/api/v1/accounts/#{account.id}/crm/stages/#{stage.id}",
@@ -296,10 +312,10 @@ RSpec.describe 'CRM Stages API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'name')).to eq('Proposal sent')
-    expect(response.parsed_body.dig('payload', 'transition_reason_options')).to eq(['Needs approval', 'Waiting payment'])
-    expect(response.parsed_body.dig('payload', 'transition_reason_required')).to be(true)
-    expect(stage.reload.transition_reason_options).to eq(['Needs approval', 'Waiting payment'])
-    expect(stage.transition_reason_required).to be(true)
+    expect(response.parsed_body['payload']).not_to have_key('transition_reason_options')
+    expect(response.parsed_body['payload']).not_to have_key('transition_reason_required')
+    expect(stage.reload.transition_reason_options).to eq([])
+    expect(stage.transition_reason_required).to be(false)
   end
 
   it 'rejects deleting standard won and lost stages' do

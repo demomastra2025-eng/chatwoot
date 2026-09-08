@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 
-from pipecat.frames.frames import Frame, InterruptionFrame
+from pipecat.frames.frames import Frame, InputAudioRawFrame, InterruptionFrame, StartFrame
 from pipecat.processors.frame_processor import FrameDirection
 from pipecat.transports.websocket.client import (
     WebsocketClientCallbacks,
+    WebsocketClientInputTransport,
     WebsocketClientOutputTransport,
     WebsocketClientParams,
     WebsocketClientSession,
@@ -28,6 +30,27 @@ class _SingleConnectionWebsocketClientSession(WebsocketClientSession):
     async def connect(self) -> None:
         async with self._connect_lock:
             await super().connect()
+
+
+class _OneLinkWebsocketClientInputTransport(WebsocketClientInputTransport):
+    """Hold early media until Pipecat has created its input audio queue."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._accepting_audio = False
+        self._pending_audio: deque[InputAudioRawFrame] = deque(maxlen=500)
+
+    async def push_audio_frame(self, frame: InputAudioRawFrame) -> None:
+        if not self._accepting_audio:
+            self._pending_audio.append(frame)
+            return
+        await super().push_audio_frame(frame)
+
+    async def start(self, frame: StartFrame) -> None:
+        await super().start(frame)
+        self._accepting_audio = True
+        while self._pending_audio:
+            await super().push_audio_frame(self._pending_audio.popleft())
 
 
 class _OneLinkWebsocketClientOutputTransport(WebsocketClientOutputTransport):
@@ -78,6 +101,15 @@ class OneLinkMediaTransport(WebsocketClientTransport):
             callbacks,
             self.name,
         )
+
+    def input(self) -> WebsocketClientInputTransport:
+        if not self._input:
+            self._input = _OneLinkWebsocketClientInputTransport(
+                self,
+                self._session,
+                self._params,
+            )
+        return self._input
 
     def output(self) -> WebsocketClientOutputTransport:
         if not self._output:

@@ -50,16 +50,18 @@ const limitExceededMessage = computed(() => {
   const {
     conversation,
     inboxes,
+    call_inboxes: callInboxes,
     non_web_inboxes: nonWebInboxes,
     agents,
   } = account.limits;
+  const callChannelLimit = callInboxes ?? nonWebInboxes;
 
   let message = '';
 
   if (isAccountLimitExceeded(conversation)) {
     message = t('GENERAL_SETTINGS.LIMIT_MESSAGES.CONVERSATION');
   } else if (
-    isAccountLimitExceeded(nonWebInboxes) ||
+    isAccountLimitExceeded(callChannelLimit) ||
     isAccountLimitExceeded(inboxes)
   ) {
     message = t('GENERAL_SETTINGS.LIMIT_MESSAGES.INBOXES');
@@ -80,14 +82,16 @@ const isLimitExceeded = computed(() => {
   const {
     conversation,
     inboxes,
+    call_inboxes: callInboxes,
     non_web_inboxes: nonWebInboxes,
     agents,
   } = account.limits;
+  const callChannelLimit = callInboxes ?? nonWebInboxes;
 
   return (
     isAccountLimitExceeded(conversation) ||
     isAccountLimitExceeded(inboxes) ||
-    isAccountLimitExceeded(nonWebInboxes) ||
+    isAccountLimitExceeded(callChannelLimit) ||
     isAccountLimitExceeded(agents)
   );
 });

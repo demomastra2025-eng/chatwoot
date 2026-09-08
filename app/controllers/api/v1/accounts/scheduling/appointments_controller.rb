@@ -32,6 +32,8 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     settlement_amount
     settlement_payment_method
     payment_status
+    confirm_outside_working_hours
+    confirm_slot_conflict
   ].freeze
 
   before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]

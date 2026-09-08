@@ -6,12 +6,14 @@ class Crm::Tasks::ArchiveService < Crm::BaseWriteService
   end
 
   def perform
-    ApplicationRecord.transaction do
+    changed = false
+    saved_task = ApplicationRecord.transaction do
       task.lock!
       assert_lock_version!
 
-      return task if archived == task.archived_at.present?
+      next task if archived == task.archived_at.present?
 
+      changed = true
       archived_at = archived ? Time.zone.now : nil
       task.update!(archived_at: archived_at)
 
@@ -20,11 +22,22 @@ class Crm::Tasks::ArchiveService < Crm::BaseWriteService
         eventable: task,
         actor: actor,
         event_type: archived ? 'task_archived' : 'task_unarchived',
-        meta: {}
+        meta: {},
+        before_data: { archived_at: task.archived_at_before_last_save },
+        after_data: { archived_at: task.archived_at }
       )
 
       task.reload
     end
+    if changed
+      dispatch_crm_task_realtime_event!(
+        archived ? Events::Types::CRM_TASK_ARCHIVED : Events::Types::CRM_TASK_UNARCHIVED,
+        saved_task,
+        meta: { event_type: archived ? 'task_archived' : 'task_unarchived' }
+      )
+      dispatch_linked_deal_update!(saved_task, event_type: archived ? 'task_archived' : 'task_unarchived')
+    end
+    saved_task
   end
 
   private

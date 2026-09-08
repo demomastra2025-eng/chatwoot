@@ -177,6 +177,19 @@ RSpec.describe 'Agents API', type: :request do
         expect(response.parsed_body['email']).to eq(params[:email])
         expect(account.users.last.name).to eq('NewUser')
       end
+
+      it 'does not consume an agent license for a super admin workspace membership' do
+        account.update!(limits: { agents: 3 })
+        super_admin = create(:super_admin)
+        create(:account_user, account: account, user: super_admin, role: :administrator)
+
+        post "/api/v1/accounts/#{account.id}/agents",
+             params: params.merge(email: Faker::Internet.unique.email),
+             headers: admin.create_new_auth_token,
+             as: :json
+
+        expect(response).to have_http_status(:success)
+      end
     end
   end
 

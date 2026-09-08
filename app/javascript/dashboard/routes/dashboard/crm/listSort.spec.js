@@ -137,4 +137,13 @@ describe('createTaskListSortValueResolver', () => {
       new Date('2026-03-04T10:00:00Z').getTime()
     );
   });
+
+  it('sorts an all-day task by its local date-only deadline', () => {
+    const resolveTaskValue = createTaskListSortValueResolver();
+    const task = { allDay: true, dueAt: null, dueOn: '2026-03-04' };
+
+    expect(resolveTaskValue(task, 'dueAt')).toBe(
+      new Date(2026, 2, 4).getTime()
+    );
+  });
 });

@@ -81,6 +81,69 @@ describe('CrmDealBoard', () => {
     ]);
   });
 
+  it('truncates long company names and renders the owner as read-only text', () => {
+    const wrapper = mountBoard(
+      {
+        deals: [
+          {
+            id: 1,
+            ownerId: 7,
+            primaryContact: {
+              name: 'A company name that is much wider than the card',
+            },
+            stageId: 1,
+            title: 'First deal',
+          },
+        ],
+        owners: [{ label: 'Alex Owner', value: 7 }],
+      },
+      {
+        Draggable: {
+          props: ['list'],
+          template:
+            '<div><slot v-for="element in list" name="item" :element="element" /></div>',
+        },
+      }
+    );
+
+    const openButton = wrapper.find('[data-test="open-deal"]');
+    const company = openButton.find('p');
+
+    expect(openButton.classes()).toContain('overflow-hidden');
+    expect(company.classes()).toContain('truncate');
+    expect(company.text()).toContain('A company name');
+    expect(wrapper.text()).toContain('Alex Owner');
+    expect(wrapper.emitted('changeOwner')).toBeUndefined();
+  });
+
+  it('renders the canonical next action returned by the deal API', () => {
+    const wrapper = mountBoard(
+      {
+        deals: [
+          {
+            id: 1,
+            nextAction: {
+              kind: 'task',
+              state: 'overdue',
+              task: { title: 'Call customer' },
+            },
+            stageId: 1,
+            title: 'First deal',
+          },
+        ],
+      },
+      {
+        Draggable: {
+          props: ['list'],
+          template:
+            '<div><slot v-for="element in list" name="item" :element="element" /></div>',
+        },
+      }
+    );
+
+    expect(wrapper.text()).toContain('CRM.DEALS.NEXT_ACTION.OVERDUE');
+  });
+
   it('loads the next page near the vertical scroll boundary without a button', async () => {
     const wrapper = mountBoard({ hasMore: true });
     const scrollContainer = wrapper.element;

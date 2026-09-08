@@ -29,18 +29,14 @@ RSpec.describe BillingHelper do
       expect(helper.send(:conversations_this_month, account)).to eq(5)
     end
 
-    it 'counts only main channels' do
+    it 'counts messaging and call channels separately' do
       create(:channel_email, account: account)
-      expect(account.inboxes.count).to eq(1)
-      expect(helper.send(:non_web_inboxes, account)).to eq(0)
-
       create(:channel_api, account: account)
-      expect(account.inboxes.count).to eq(2)
-      expect(helper.send(:non_web_inboxes, account)).to eq(1)
-
       create(:channel_telegram_personal, account: account)
-      expect(account.inboxes.count).to eq(3)
-      expect(helper.send(:non_web_inboxes, account)).to eq(2)
+      create(:channel_voice, :sipuni, account: account)
+
+      expect(helper.send(:inboxes, account)).to eq(3)
+      expect(helper.send(:call_inboxes, account)).to eq(1)
     end
 
     it 'returns true for the default plan name' do

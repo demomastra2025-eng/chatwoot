@@ -422,7 +422,7 @@
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Company profile",
     "VISIBILITY": "Navigation",
-    "CONVERSATION_SETTINGS": "Message editor",
+    "CONVERSATION_SETTINGS": "Conversations",
     "MY_COMPANY": "Company",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -1040,6 +1040,37 @@
     }
   },
   "BILLING_SETTINGS": {
+    "PLATFORM": {
+      "TITLE": "Plan and usage",
+      "LOADING": "Loading billing organization data…",
+      "ERROR": "Could not load plan data.",
+      "RETRY": "Retry",
+      "NOT_CONFIGURED": "This workspace still uses legacy limits. A billing organization has not been connected yet.",
+      "ORGANIZATION": "Billing organization",
+      "ORGANIZATION_DESCRIPTION": "Shared payer and resources for connected workspaces.",
+      "NAME": "Name",
+      "WORKSPACES": "Workspaces",
+      "UNIQUE_USERS": "Unique employees",
+      "SUBSCRIPTION": "Subscription",
+      "READ_ONLY": "This information is read-only. Payments and plan changes will be added later.",
+      "STATUS": "Status",
+      "STATUSES": {
+        "INCOMPLETE": "Incomplete",
+        "TRIALING": "Trial",
+        "ACTIVE": "Active",
+        "PAST_DUE": "Past due",
+        "GRACE_PERIOD": "Grace period",
+        "SUSPENDED": "Suspended",
+        "CANCELED": "Canceled"
+      },
+      "USAGE": "Workspace usage",
+      "USAGE_DESCRIPTION": "Current workspace allocation and actual usage.",
+      "LIMITS": { "AGENTS": "Employees", "STORAGE_BYTES": "Storage" },
+      "SOURCE": {
+        "BILLING_ALLOCATION": "Source: billing organization allocation",
+        "LEGACY": "Source: legacy workspace limit"
+      }
+    },
     "TITLE": "Billing",
     "DESCRIPTION": "Manage your subscription here, upgrade your plan and get more for your team.",
     "UNLIMITED": "Unlimited",

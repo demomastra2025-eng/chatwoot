@@ -24,7 +24,8 @@ class Scheduling::AvailableSlotSearchService
       duration_min: top_level_duration_min,
       resources: resources.map { |resource| Scheduling::PayloadBuilder.resource(resource) },
       slots: normalized_slots,
-      total_slots: normalized_slots.length
+      total_slots: normalized_slots.length,
+      availability: availability_payload
     }.compact
   end
 
@@ -61,23 +62,71 @@ class Scheduling::AvailableSlotSearchService
   end
 
   def normalized_slots
-    @normalized_slots ||= resources.flat_map do |resource|
-      payload = Scheduling::ResourceAvailabilityQueryService.new(
-        resource: resource,
-        from: @from,
-        to: @to,
-        service: service,
-        duration_min: @requested_duration_min,
-        limit: @limit
-      ).perform
-
-      payload.fetch(:slots, []).map do |slot|
-        slot.merge(
-          resource_name: resource.name,
-          timezone: resource.timezone
-        )
+    @normalized_slots ||= begin
+      slots = resources.flat_map do |resource|
+        provider_checked_slots(resource, local_slots(resource))
       end
-    end.sort_by { |slot| Time.zone.parse(slot[:starts_at]) }.first(@limit)
+      slots.sort_by { |slot| Time.zone.parse(slot[:starts_at]) }.first(@limit)
+    end
+  end
+
+  def local_slots(resource)
+    payload = Scheduling::ResourceAvailabilityQueryService.new(
+      resource: resource,
+      from: @from,
+      to: @to,
+      service: service,
+      duration_min: @requested_duration_min,
+      limit: @limit
+    ).perform
+    payload.fetch(:slots, []).map do |slot|
+      slot.merge(resource_name: resource.name, timezone: resource.timezone, availability_source: 'local')
+    end
+  end
+
+  def provider_checked_slots(resource, local_slots)
+    return local_slots.tap { record_availability(resource_id: resource.id, status: 'local_only') } unless medelement_resource?(resource)
+
+    result = Integrations::Medelement::ResourceAvailabilityService.new(
+      resource: resource,
+      from: @from,
+      to: @to,
+      slots: local_slots
+    ).perform
+    record_availability(
+      resource_id: resource.id,
+      provider: 'medelement',
+      status: result.status,
+      checked_at: result.checked_at.iso8601(6),
+      reason: result.reason
+    )
+    result.slots
+  end
+
+  def record_availability(attributes)
+    availability_resources << attributes.compact
+  end
+
+  def availability_payload
+    normalized_slots
+    statuses = availability_resources.pluck(:status)
+    status = if statuses.include?('unavailable')
+               'degraded'
+             elsif statuses.include?('fresh')
+               'fresh'
+             else
+               'local_only'
+             end
+
+    { status: status, resources: availability_resources }
+  end
+
+  def availability_resources
+    @availability_resources ||= []
+  end
+
+  def medelement_resource?(resource)
+    resource.custom_attributes.to_h['medelement_specialist_code'].present?
   end
 
   def top_level_duration_min

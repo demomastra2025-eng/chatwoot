@@ -39,13 +39,14 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   # rubocop:disable Metrics/ParameterLists
   def initialize(
     account:, hook:, operation:, appointment: nil, contact: nil, actor: nil, company_cabinet_code: nil,
-    desired_starts_at: nil, desired_ends_at: nil, desired_attributes: {}
+    desired_starts_at: nil, desired_ends_at: nil, desired_attributes: {}, actor_descriptor: nil
   )
     @account = account
     @hook = hook
     @appointment = appointment
     @contact = contact || appointment&.contact
     @actor = actor
+    @actor_descriptor = actor_descriptor.to_h.deep_stringify_keys.presence || build_actor_descriptor(actor)
     @operation = operation.to_s
     @company_cabinet_code = company_cabinet_code.to_s.presence ||
                             appointment&.custom_attributes&.to_h&.dig('medelement_cabinet_code').to_s.presence
@@ -55,7 +56,6 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
   end
   # rubocop:enable Metrics/ParameterLists
 
-  # rubocop:disable Metrics/AbcSize
   def build
     {
       'version' => VERSION,
@@ -64,7 +64,7 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'organization_id' => configuration.organization_id,
       'appointment_id' => appointment&.id,
       'contact_id' => contact&.id,
-      'requested_by_id' => actor&.id,
+      **requester_snapshot,
       'operation' => operation,
       'provider_patient_code' => patient_code,
       'patient_phone_numbers' => patient_phone_numbers.presence,
@@ -77,12 +77,21 @@ class Integrations::Medelement::ProviderCommands::RequestSnapshotBuilder
       'confirmation' => confirmation_snapshot
     }.compact
   end
-  # rubocop:enable Metrics/AbcSize
 
   private
 
-  attr_reader :account, :hook, :appointment, :contact, :actor, :operation, :company_cabinet_code,
+  def requester_snapshot
+    { 'requested_by_id' => actor&.id, 'actor' => actor_descriptor }
+  end
+
+  attr_reader :account, :hook, :appointment, :contact, :actor, :actor_descriptor, :operation, :company_cabinet_code,
               :desired_starts_at, :desired_ends_at, :desired_attributes
+
+  def build_actor_descriptor(value)
+    return if value.blank?
+
+    { 'type' => value.class.base_class.name, 'id' => value.id }
+  end
 
   def patient_snapshot
     return unless patient_payload_required?

@@ -594,10 +594,6 @@ const effectivenessMoneyColumns = computed(() => [
     label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.NON_CASH'),
   },
   {
-    key: 'kaspiAmountMinor',
-    label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.KASPI'),
-  },
-  {
     key: 'tradeInAmountMinor',
     label: t('CRM_DEAL_REPORTS.MANAGER_EFFECTIVENESS.COLUMNS.TRADE_IN'),
   },

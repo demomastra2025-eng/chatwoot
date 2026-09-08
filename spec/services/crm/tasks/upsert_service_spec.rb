@@ -6,6 +6,8 @@ RSpec.describe Crm::Tasks::UpsertService do
   let(:deal_team) { create(:team, account: account) }
   let(:deal) { create(:crm_deal, account: account, team: deal_team) }
 
+  before { account.enable_features!('crm_tasks') }
+
   it 'inherits the team from its deal' do
     task = described_class.new(
       account: account,

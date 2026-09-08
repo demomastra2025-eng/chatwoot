@@ -5,12 +5,11 @@ class AccountUsageField < Administrate::Field::Base
     agents: 'Users',
     inboxes: 'Channels',
     conversations: 'Conversations',
-    non_web_inboxes: 'Main channels',
-    emails: 'Outbound emails today',
+    call_inboxes: 'Call channels',
     storage: 'Storage',
-    captain_documents: 'Captain documents',
-    captain_responses: 'Captain responses',
-    captain_tokens: 'Captain tokens'
+    captain_documents: 'AI Agent documents',
+    captain_responses: 'AI Agent responses',
+    captain_tokens: 'AI Agent tokens'
   }.freeze
 
   def rows
@@ -20,8 +19,7 @@ class AccountUsageField < Administrate::Field::Base
       build_row(:agents, payload[:agents]),
       build_row(:inboxes, payload[:inboxes]),
       build_row(:conversations, payload[:conversations]),
-      build_row(:non_web_inboxes, payload[:non_web_inboxes]),
-      build_row(:emails, payload[:emails]),
+      build_row(:call_inboxes, payload[:call_inboxes]),
       build_row(:storage, payload[:storage], bytes: true),
       build_row(:captain_documents, payload.dig(:captain, :documents)),
       build_row(:captain_responses, payload.dig(:captain, :responses)),

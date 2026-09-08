@@ -9,6 +9,26 @@ RSpec.describe Inbox do
     allow(GlobalConfigService).to receive(:load).with('WHATSAPP_API_VERSION', 'v25.0').and_return('v22.0')
   end
 
+  describe 'workspace channel limits' do
+    let(:account) { create(:account, limits: { call_inboxes: 1 }) }
+
+    it 'applies the call-channel limit without counting messaging channels' do
+      create(:inbox, account: account)
+
+      expect(build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))).to be_valid
+      create(:channel_voice, :sipuni, account: account)
+      expect(build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))).not_to be_valid
+    end
+
+    it 'enforces the messaging-channel limit for direct model creation' do
+      account.update!(limits: { inboxes: 1, call_inboxes: 1 })
+      create(:inbox, account: account)
+
+      expect(build(:inbox, account: account)).not_to be_valid
+      expect(build(:inbox, account: account, channel: build(:channel_voice, :sipuni, account: account))).to be_valid
+    end
+  end
+
   describe 'member_ids_with_assignment_capacity' do
     let!(:inbox_member_1) { create(:inbox_member, inbox: inbox) }
     let!(:inbox_member_2) { create(:inbox_member, inbox: inbox) }

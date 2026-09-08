@@ -9,7 +9,19 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
   GENERATED_CONTENT_TTL = 7.days
   TERMINAL_RETENTION = 30.days
 
-  def self.schedule!(conversation:, assistant:, anchor_message:, step_index:, delay_seconds:)
+  class DeliveryBlocked < StandardError; end
+
+  class QuietHoursDeferred < StandardError
+    attr_reader :result
+
+    def initialize(result)
+      @result = result
+      super('Captain follow-up deferred for quiet hours')
+    end
+  end
+
+
+  def self.schedule!(conversation:, assistant:, anchor_message:, step_index:, delay_seconds:, scheduled_at: nil)
     idempotency_key = "captain_follow_up:#{assistant.id}:#{anchor_message.id}:#{step_index}"
     existing_reminder = Reminder.find_by(account: conversation.account, idempotency_key: idempotency_key)
     return existing_reminder if existing_reminder
@@ -21,7 +33,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       target_conversation: conversation,
       action_type: :captain_follow_up,
       status: :pending,
-      scheduled_at: Time.current + delay_seconds.seconds,
+      scheduled_at: scheduled_at || Time.current + delay_seconds.seconds,
       metadata: {
         'captain_follow_up' => {
           'assistant_id' => assistant.id,
@@ -41,8 +53,15 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     @step_index = step_index.to_i
 
     return :skipped unless eligible?
+    return :in_progress unless Captain::FollowUpDeliveryConfirmation.acknowledged?(@anchor_message)
 
     process_follow_up
+  rescue DeliveryBlocked => e
+    mark_processing_attempt_completed!
+    { status: :blocked, reason: e.message }
+  rescue QuietHoursDeferred => e
+    mark_processing_attempt_failed!
+    { status: :deferred, scheduled_at: e.result.next_allowed_at, timezone: e.result.timezone }
   rescue StandardError
     mark_processing_attempt_failed!
     raise
@@ -56,7 +75,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
 
     existing_message = existing_follow_up_message
     if existing_message
-      schedule_next_step(existing_message)
+      confirm_delivery(existing_message)
       return :completed
     end
 
@@ -64,10 +83,14 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     return :in_progress if cached_content == :in_progress
 
     if cached_content
-      claim_current, message = materialize_claimed_follow_up(cached_content)
+      blocked = resolve_delivery
+      return blocked if blocked
+
+      content = @delivery.template? ? @delivery.content : cached_content
+      claim_current, message = materialize_claimed_follow_up(content)
       return :in_progress unless claim_current
 
-      schedule_next_step(message) if message
+      confirm_delivery(message) if message
       return message ? :completed : :skipped
     end
 
@@ -77,6 +100,9 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       mark_processing_attempt_completed!
       return :skipped
     end
+
+    blocked = resolve_delivery
+    return blocked if blocked
 
     content = follow_up_content
     if content.blank?
@@ -89,8 +115,18 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     return :in_progress unless claim_current
     return :skipped unless message
 
-    schedule_next_step(message)
+    confirm_delivery(message)
     :completed
+  end
+
+  def resolve_delivery
+    @delivery = Captain::FollowUpDeliveryResolver.new(
+      conversation: @conversation, assistant: @assistant, step: current_step
+    ).call
+    return if @delivery.allowed?
+
+    mark_processing_attempt_completed!
+    { status: :blocked, reason: @delivery.reason }
   end
 
   def eligible?
@@ -346,6 +382,7 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
   end
 
   def follow_up_content
+    return @delivery.content if @delivery&.template?
     return current_step['message'].to_s.strip if static_step?
 
     generated_content(follow_up_generator.perform)
@@ -365,7 +402,8 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       settings: settings,
       step: current_step,
       scenario: active_scenario,
-      step_index: @step_index
+      step_index: @step_index,
+      temporal_context: temporal_context
     )
   end
 
@@ -394,7 +432,13 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
       next if customer_replied? || human_intervened? || !conversation_followable?
       next if duplicate_content?(content)
 
-      create_follow_up_message!(content)
+      quiet_hours = Captain::FollowUpQuietHoursPolicy.new(assistant: @assistant, conversation: @conversation).call
+      raise QuietHoursDeferred, quiet_hours if quiet_hours.quiet?
+
+      blocked = resolve_delivery
+      raise DeliveryBlocked, blocked[:reason] if blocked
+
+      create_follow_up_message!(@delivery.template? ? @delivery.content : content)
     end
   end
 
@@ -428,13 +472,27 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
         'anchor_message_id' => @anchor_message.id,
         'mode' => static_step? ? 'static' : 'ai',
         'objective' => current_step['objective'].to_s.strip.presence,
+        'language' => temporal_context[:language],
+        'timezone' => temporal_context[:timezone],
+        'day_period' => temporal_context[:day_period],
+        'relative_day' => temporal_context[:relative_day],
+        'delivery_mode' => @delivery&.mode,
         'generator_version' => static_step? ? nil : 'v1',
         'prompt_fingerprint' => static_step? ? nil : follow_up_prompt_fingerprint
       }
     }
     agent_name = @anchor_message.additional_attributes.to_h['agent_name'].to_s.presence
     attributes['agent_name'] = agent_name if agent_name
+    attributes['template_params'] = @delivery.template_params if @delivery&.template?
+    attributes['delivery_policy'] = @delivery.policy.as_json if @delivery&.policy
     attributes
+  end
+
+  def temporal_context
+    @temporal_context ||= Captain::FollowUpTemporalContext.new(
+      conversation: @conversation,
+      assistant: @assistant
+    ).as_json
   end
 
   def follow_up_prompt_fingerprint
@@ -450,39 +508,8 @@ class Captain::Conversation::FollowUpJob < ApplicationJob
     end
   end
 
-  def schedule_next_step(message)
-    next_step = steps[@step_index + 1]
-    return if next_step.blank?
-
-    delay_seconds = next_step['delay_seconds'].to_i
-    return unless delay_seconds.positive?
-
-    persist_next_step_schedule(message, delay_seconds)
-  end
-
-  def persist_next_step_schedule(message, delay_seconds)
-    message.with_lock do
-      marker = message.additional_attributes.to_h['captain_follow_up'].to_h
-      next if marker['next_step_scheduled'] == true
-
-      self.class.schedule!(
-        conversation: @conversation,
-        assistant: @assistant,
-        anchor_message: message,
-        step_index: @step_index + 1,
-        delay_seconds: delay_seconds
-      )
-      mark_next_step_scheduled!(message)
-    end
-  end
-
-  def mark_next_step_scheduled!(message)
-    attributes = message.additional_attributes.to_h.deep_dup
-    attributes['captain_follow_up']['next_step_scheduled'] = true
-    message.update_columns( # rubocop:disable Rails/SkipsModelValidations
-      additional_attributes: attributes,
-      updated_at: Time.current
-    )
+  def confirm_delivery(message)
+    Captain::FollowUpDeliveryConfirmation.new(message: message).perform
   end
 end
 # rubocop:enable Metrics/ClassLength

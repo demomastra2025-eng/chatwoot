@@ -10,6 +10,12 @@ class CrmAutomationRuleListener < BaseListener
     task_created
     task_updated
     task_status_changed
+    task_assigned
+    task_rescheduled
+    task_completed
+    task_cancelled
+    task_reopened
+    task_waiting_changed
     task_archived
     task_unarchived
   ].freeze

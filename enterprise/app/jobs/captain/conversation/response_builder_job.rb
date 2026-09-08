@@ -136,13 +136,14 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return unless settings['enabled'] == true && outgoing_message.present? && delay_seconds.positive?
     return unless follow_up_step_configured?(settings, first_step)
 
-    Captain::Conversation::FollowUpJob.schedule!(
-      conversation: @conversation,
-      assistant: @assistant,
-      anchor_message: outgoing_message,
-      step_index: 0,
-      delay_seconds: delay_seconds
-    )
+    attributes = outgoing_message.additional_attributes.to_h.deep_dup
+    attributes['captain_follow_up_origin'] = {
+      'assistant_id' => @assistant.id,
+      'anchor_message_id' => outgoing_message.id,
+      'step_index' => -1
+    }
+    outgoing_message.update_columns(additional_attributes: attributes) # rubocop:disable Rails/SkipsModelValidations
+    Captain::FollowUpDeliveryConfirmation.new(message: outgoing_message).perform
   end
 
   def follow_up_step_configured?(settings, step)
@@ -223,7 +224,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def wait_for_audio_transcriptions
-    return unless account.captain_audio_transcription_enabled?
+    return unless account.audio_transcriptions_enabled?
+    return unless @assistant.use_audio_transcriptions?
     return unless pending_audio_transcription?
 
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + AUDIO_TRANSCRIPTION_WAIT_TIMEOUT.to_f

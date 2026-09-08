@@ -71,6 +71,12 @@ const unsortedActiveDraft = ref(true);
 const deletedStageIds = ref([]);
 const stageDraftBaseline = ref('');
 const stageNameDrafts = reactive({});
+const stageFieldRequirementDrafts = reactive({});
+const stageRequirementsDrawerOpen = ref(false);
+const stageRequirementsTarget = ref(null);
+const restrictStageSkippingDraft = ref(false);
+const restrictBackwardMoveDraft = ref(false);
+const allowStageRuleOverrideDraft = ref(false);
 const pipelineNameDraft = ref('');
 const isLeaving = ref(false);
 let temporaryStageSequence = 0;
@@ -105,6 +111,27 @@ const selectedPipeline = computed(
 const selectedStages = computed(() =>
   sortStages(selectedPipeline.value?.stages || [])
 );
+const dealFieldDefinitions = computed(
+  () => referencesStore.dealFieldDefinitions
+);
+const stageRequirementFieldOptions = computed(() => [
+  { key: 'title', label: t('CRM.DEALS.FORM.TITLE') },
+  { key: 'description', label: t('CRM.DEALS.FORM.DESCRIPTION') },
+  { key: 'owner_id', label: t('CRM.DEALS.FORM.OWNER') },
+  { key: 'team_id', label: t('CRM.DEALS.FORM.TEAM') },
+  { key: 'company_id', label: t('CRM.DEALS.FORM.COMPANY') },
+  { key: 'primary_contact_id', label: t('CRM.DEALS.FORM.PRIMARY_CONTACT') },
+  { key: 'amount_minor', label: t('CRM.DEALS.FORM.AMOUNT') },
+  { key: 'currency', label: t('CRM.DEALS.FORM.CURRENCY') },
+  {
+    key: 'expected_close_on',
+    label: t('CRM.DEALS.FORM.EXPECTED_CLOSE_ON'),
+  },
+  { key: 'win_probability', label: t('CRM.DEALS.FORM.WIN_PROBABILITY') },
+  ...dealFieldDefinitions.value
+    .filter(definition => definition.active !== false)
+    .map(definition => ({ key: definition.key, label: definition.label })),
+]);
 const autoCreateStageOptions = computed(() =>
   sortStages(selectedPipeline.value?.stages || [])
     .filter(
@@ -169,10 +196,17 @@ const normalizedClosingReasonDraft = computed(() =>
 const stageDraftName = stage =>
   String(stageNameDrafts[stage?.id] ?? stage?.name ?? '').trim();
 const buildStageDraftState = () => ({
+  allowStageRuleOverride: allowStageRuleOverrideDraft.value,
   closingReasons: lossReasonsEnabled.value
     ? normalizedClosingReasonDraft.value
     : [],
   lostName: lostStage.value ? stageDraftName(lostStage.value) : '',
+  requirements: selectedStages.value.map(stage => ({
+    id: String(stage.id),
+    keys: [...(stageFieldRequirementDrafts[stage.id] || [])].sort(),
+  })),
+  restrictBackwardMove: restrictBackwardMoveDraft.value,
+  restrictStageSkipping: restrictStageSkippingDraft.value,
   regularStages: movableStageRows.value.map((stage, index) => ({
     color: String(stage.color || '').toUpperCase(),
     id: String(stage.id),
@@ -213,7 +247,19 @@ const syncSelectedPipelineState = () => {
   pipelineNameDraft.value = selectedPipeline.value?.name || '';
   selectedStages.value.forEach(stage => {
     stageNameDrafts[stage.id] = stage.name;
+    stageFieldRequirementDrafts[stage.id] = (stage.fieldRequirements || [])
+      .filter(requirement => requirement.required !== false)
+      .map(requirement => requirement.fieldKey);
   });
+  restrictStageSkippingDraft.value = Boolean(
+    selectedPipeline.value?.restrictStageSkipping
+  );
+  restrictBackwardMoveDraft.value = Boolean(
+    selectedPipeline.value?.restrictBackwardMove
+  );
+  allowStageRuleOverrideDraft.value = Boolean(
+    selectedPipeline.value?.allowStageRuleOverride
+  );
   closingReasonDraft.value = [...(lostStage.value?.closingReasonOptions || [])];
   lossReasonsEnabled.value = normalizedClosingReasonDraft.value.length > 0;
   unsortedActiveDraft.value = unsortedStage.value?.active !== false;
@@ -222,9 +268,32 @@ const syncSelectedPipelineState = () => {
 };
 
 const loadSettings = async () => {
-  await referencesStore.loadPipelines({ include_inactive_stages: true });
+  await Promise.all([
+    referencesStore.loadPipelines({ include_inactive_stages: true }),
+    referencesStore.loadFieldDefinitions('deal'),
+  ]);
   await syncSelectedPipelineRoute();
   syncSelectedPipelineState();
+};
+
+const openStageRequirements = stage => {
+  stageRequirementsTarget.value = stage;
+  stageRequirementsDrawerOpen.value = true;
+};
+
+const stageRequirementSelected = key =>
+  (
+    stageFieldRequirementDrafts[stageRequirementsTarget.value?.id] || []
+  ).includes(key);
+
+const toggleStageRequirement = (key, selected) => {
+  const stageId = stageRequirementsTarget.value?.id;
+  if (!stageId) return;
+
+  const current = new Set(stageFieldRequirementDrafts[stageId] || []);
+  if (selected) current.add(key);
+  else current.delete(key);
+  stageFieldRequirementDrafts[stageId] = [...current];
 };
 
 watch(routePipelineId, syncSelectedPipelineState);
@@ -440,7 +509,15 @@ const saveSettings = async () => {
         name: stage.name,
         color: stage.color,
         active: stage.draft ? true : stage.active !== false,
+        field_requirements: (stageFieldRequirementDrafts[stage.id] || []).map(
+          fieldKey => ({ field_key: fieldKey, required: true })
+        ),
       })),
+      pipeline_rules: {
+        restrict_stage_skipping: restrictStageSkippingDraft.value,
+        restrict_backward_move: restrictBackwardMoveDraft.value,
+        allow_stage_rule_override: allowStageRuleOverrideDraft.value,
+      },
       technical_stage: originalUnsortedStage
         ? {
             id: originalUnsortedStage.id,
@@ -450,6 +527,9 @@ const saveSettings = async () => {
       terminal_stages: terminalStages.map(stage => ({
         id: stage.id,
         name: stageDraftName(stage),
+        field_requirements: (stageFieldRequirementDrafts[stage.id] || []).map(
+          fieldKey => ({ field_key: fieldKey, required: true })
+        ),
         closing_reason_options:
           stage.id === lostStage.value?.id
             ? closingReasons
@@ -560,6 +640,7 @@ const createStageAt = async insertIndex => {
 
   movableStageRows.value.splice(targetIndex, 0, draftStage);
   stageNameDrafts[temporaryId] = newStageName;
+  stageFieldRequirementDrafts[temporaryId] = [];
   await focusStageName(temporaryId);
 };
 
@@ -816,6 +897,52 @@ onMounted(async () => {
                     </p>
                   </div>
 
+                  <div class="grid gap-4 px-5 py-4">
+                    <div class="text-sm font-semibold text-n-slate-12">
+                      {{ $t('CRM.SETTINGS.STAGE_RULES.TITLE') }}
+                    </div>
+                    <label
+                      class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                    >
+                      <span>
+                        {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_SKIPPING') }}
+                      </span>
+                      <Switch
+                        :model-value="restrictStageSkippingDraft"
+                        :disabled="!canManage || settingsSaving"
+                        @update:model-value="
+                          restrictStageSkippingDraft = $event
+                        "
+                      />
+                    </label>
+                    <label
+                      class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                    >
+                      <span>
+                        {{ $t('CRM.SETTINGS.STAGE_RULES.RESTRICT_BACKWARD') }}
+                      </span>
+                      <Switch
+                        :model-value="restrictBackwardMoveDraft"
+                        :disabled="!canManage || settingsSaving"
+                        @update:model-value="restrictBackwardMoveDraft = $event"
+                      />
+                    </label>
+                    <label
+                      class="flex items-center justify-between gap-3 text-sm text-n-slate-11"
+                    >
+                      <span>
+                        {{ $t('CRM.SETTINGS.STAGE_RULES.ALLOW_OVERRIDE') }}
+                      </span>
+                      <Switch
+                        :model-value="allowStageRuleOverrideDraft"
+                        :disabled="!canManage || settingsSaving"
+                        @update:model-value="
+                          allowStageRuleOverrideDraft = $event
+                        "
+                      />
+                    </label>
+                  </div>
+
                   <button
                     type="button"
                     class="group grid gap-3 px-5 py-4 text-left transition-colors hover:bg-n-alpha-black2"
@@ -926,6 +1053,21 @@ onMounted(async () => {
                               <Button
                                 v-if="canManage"
                                 size="xs"
+                                color="slate"
+                                variant="ghost"
+                                icon="i-lucide-list-checks"
+                                :aria-label="
+                                  $t('CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS')
+                                "
+                                :title="
+                                  $t('CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS')
+                                "
+                                :disabled="settingsSaving"
+                                @click="openStageRequirements(stage)"
+                              />
+                              <Button
+                                v-if="canManage"
+                                size="xs"
                                 color="ruby"
                                 variant="ghost"
                                 icon="i-lucide-trash-2"
@@ -983,6 +1125,17 @@ onMounted(async () => {
                         <span class="text-xs text-n-slate-9">
                           {{ $t('CRM.SETTINGS.STAGES.WON_HELP') }}
                         </span>
+                        <Button
+                          v-if="canManage"
+                          size="xs"
+                          color="slate"
+                          variant="ghost"
+                          icon="i-lucide-list-checks"
+                          :label="
+                            $t('CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS')
+                          "
+                          @click="openStageRequirements(wonStage)"
+                        />
                       </div>
                     </article>
 
@@ -1030,6 +1183,17 @@ onMounted(async () => {
                             "
                           />
                         </template>
+                        <Button
+                          v-if="canManage"
+                          size="xs"
+                          color="slate"
+                          variant="ghost"
+                          icon="i-lucide-list-checks"
+                          :label="
+                            $t('CRM.SETTINGS.STAGE_RULES.REQUIRED_FIELDS')
+                          "
+                          @click="openStageRequirements(lostStage)"
+                        />
                       </div>
                     </article>
                   </div>
@@ -1066,6 +1230,39 @@ onMounted(async () => {
         <p v-if="!pipelineForm.id" class="mb-0 text-xs text-n-slate-10">
           {{ $t('CRM.SETTINGS.PIPELINES.NEW_PIPELINE_HELP') }}
         </p>
+      </div>
+    </SchedulingDrawer>
+
+    <SchedulingDrawer
+      v-model="stageRequirementsDrawerOpen"
+      placement="center"
+      width="sm"
+      :title="
+        $t('CRM.SETTINGS.STAGE_RULES.DRAWER_TITLE', {
+          name: stageRequirementsTarget?.name || '',
+        })
+      "
+      :confirm-label="$t('CRM.GENERAL.SAVE')"
+      @confirm="stageRequirementsDrawerOpen = false"
+    >
+      <div class="grid gap-2">
+        <p class="mb-2 text-sm text-n-slate-10">
+          {{ $t('CRM.SETTINGS.STAGE_RULES.DRAWER_DESCRIPTION') }}
+        </p>
+        <label
+          v-for="field in stageRequirementFieldOptions"
+          :key="field.key"
+          class="flex cursor-pointer items-center gap-3 rounded-lg border border-n-weak px-3 py-2 text-sm text-n-slate-12 hover:bg-n-alpha-black2"
+        >
+          <input
+            type="checkbox"
+            class="size-4 rounded border-n-strong text-n-brand focus:ring-n-brand"
+            :checked="stageRequirementSelected(field.key)"
+            :disabled="!canManage || settingsSaving"
+            @change="toggleStageRequirement(field.key, $event.target.checked)"
+          />
+          <span>{{ field.label }}</span>
+        </label>
       </div>
     </SchedulingDrawer>
 

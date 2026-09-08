@@ -214,6 +214,22 @@ class ActionCableListener < BaseListener
     broadcast_crm_deal_event(event, CRM_DEAL_UNARCHIVED)
   end
 
+  def crm_task_created(event)
+    broadcast_crm_task_event(event, CRM_TASK_CREATED)
+  end
+
+  def crm_task_updated(event)
+    broadcast_crm_task_event(event, CRM_TASK_UPDATED)
+  end
+
+  def crm_task_archived(event)
+    broadcast_crm_task_event(event, CRM_TASK_ARCHIVED)
+  end
+
+  def crm_task_unarchived(event)
+    broadcast_crm_task_event(event, CRM_TASK_UNARCHIVED)
+  end
+
   def conversation_mentioned(event)
     conversation, account = extract_conversation_and_account(event)
     user = event.data[:user]
@@ -356,6 +372,22 @@ class ActionCableListener < BaseListener
       event_name,
       {
         deal: ::Crm::PayloadBuilder.deal(deal),
+        meta: event.data[:meta] || {}
+      }
+    )
+  end
+
+  def broadcast_crm_task_event(event, event_name)
+    task = event.data[:task]
+    account = event.data[:account] || task&.account
+    return if account.blank? || task.blank?
+
+    broadcast(
+      account,
+      [account_token(account)],
+      event_name,
+      {
+        task: ::Crm::PayloadBuilder.task(task),
         meta: event.data[:meta] || {}
       }
     )

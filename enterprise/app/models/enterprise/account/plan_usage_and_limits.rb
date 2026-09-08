@@ -5,19 +5,14 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
   CAPTAIN_RESPONSES_USAGE = 'captain_responses_usage'.freeze
   CAPTAIN_DOCUMENTS_USAGE = 'captain_documents_usage'.freeze
   CAPTAIN_TOKENS_USAGE = 'captain_tokens_usage'.freeze
-  MAIN_CHANNEL_TYPES = %w[
-    Channel::Api
-    Channel::TelegramPersonal
-    Channel::Whatsapp
-    Channel::WhatsappWeb
-  ].freeze
+  CALL_CHANNEL_TYPE = 'Channel::Voice'.freeze
 
   def usage_limits
     {
       agents: agent_limit_metadata[:value].to_i,
       inboxes: usage_limit_metadata(:inboxes)[:value].to_i,
       conversations: usage_limit_metadata(:conversations)[:value].to_i,
-      non_web_inboxes: usage_limit_metadata(:non_web_inboxes)[:value].to_i,
+      call_inboxes: usage_limit_metadata(:call_inboxes)[:value].to_i,
       storage: AccountLimits::StorageUsageService.new(account: self).summary,
       captain: {
         documents: get_captain_limits(:documents),
@@ -94,8 +89,12 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
     conversations.where('created_at > ?', 30.days.ago).count
   end
 
-  def main_channels_count
-    inboxes.where(channel_type: MAIN_CHANNEL_TYPES).count
+  def text_channels_count
+    inboxes.where.not(channel_type: CALL_CHANNEL_TYPE).count
+  end
+
+  def call_channels_count
+    inboxes.where(channel_type: CALL_CHANNEL_TYPE).count
   end
 
   def storage_usage_bytes
@@ -233,6 +232,8 @@ module Enterprise::Account::PlanUsageAndLimits # rubocop:disable Metrics/ModuleL
         'inboxes' => { 'type': 'number', 'minimum': 0 },
         'agents' => { 'type': 'number', 'minimum': 0 },
         'conversations' => { 'type': 'number', 'minimum': 0 },
+        'call_inboxes' => { 'type': 'number', 'minimum': 0 },
+        # Retained so existing account payloads remain valid while this legacy limit is phased out.
         'non_web_inboxes' => { 'type': 'number', 'minimum': 0 },
         'storage_bytes' => { 'type': 'number', 'minimum': 0 },
         'captain_responses' => { 'type': 'number', 'minimum': 0 },

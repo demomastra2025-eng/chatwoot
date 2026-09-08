@@ -17,6 +17,30 @@ class Scheduling::Appointments::UpsertService
     Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
     Scheduling::Appointments::MutationGuard.ensure_assignable!(params)
 
+    with_actor_context { persist_appointment! }
+
+    appointment.reload
+    @provider_receipt_service&.perform
+    appointment
+  end
+
+  private
+
+  attr_reader :account, :actor, :appointment, :params
+
+  def user_actor
+    actor if actor.is_a?(User)
+  end
+
+  def with_actor_context
+    previous_actor = Current.executed_by
+    Current.executed_by = actor if actor.present?
+    yield
+  ensure
+    Current.executed_by = previous_actor
+  end
+
+  def persist_appointment!
     ApplicationRecord.transaction do
       apply_attributes!
       validate_medelement_patient!
@@ -24,18 +48,21 @@ class Scheduling::Appointments::UpsertService
       validate_availability!
       new_record = appointment.new_record?
       appointment.save!
+      capture_provider_receipt_service!(new_record)
       notify_assignment!(new_record: new_record)
       auto_apply_default_touch_plan! if new_record
       sync_or_cancel_related_touches!
-      Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: actor).sync!
+      Scheduling::Appointments::FinanceSyncService.new(appointment: appointment, actor: user_actor).sync!
     end
-
-    appointment.reload
   end
 
-  private
-
-  attr_reader :account, :actor, :appointment, :params
+  def capture_provider_receipt_service!(new_record)
+    @provider_receipt_service = Integrations::Medelement::AppointmentProviderCommandReceiptService.new(
+      appointment: appointment,
+      actor: actor,
+      new_record: new_record
+    )
+  end
 
   def apply_attributes!
     resource = resolve_resource!
@@ -46,7 +73,7 @@ class Scheduling::Appointments::UpsertService
     company = resolve_company(contact)
     conversation = resolve_conversation
     ensure_conversation_belongs_to_contact!(conversation, contact)
-    created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || actor)
+    created_by = resolve_optional_record(:created_by_id, account.users, current: appointment.created_by || user_actor)
     owner = resolve_owner(contact: contact, resource: resource)
 
     starts_at = resolve_datetime(:starts_at, current: appointment.starts_at)
@@ -348,6 +375,11 @@ class Scheduling::Appointments::UpsertService
     resource&.custom_attributes.to_h['medelement_specialist_code'].present?
   end
 
+  def medelement_reception_code
+    appointment.custom_attributes.to_h['medelement_reception_code'].presence ||
+      appointment.external_ref.to_s.delete_prefix('medelement:reception:').presence
+  end
+
   def resolve_company(contact)
     return appointment.company if appointment.persisted? && !company_attachment_enabled? && !params.key?(:company_id)
     return nil unless company_attachment_enabled?
@@ -359,7 +391,7 @@ class Scheduling::Appointments::UpsertService
     return resolve_optional_record(:owner_id, account.users, current: appointment.owner) if params.key?(:owner_id)
     return appointment.owner if appointment.persisted?
 
-    contact&.owner || resource&.user || actor
+    contact&.owner || resource&.user || user_actor
   end
 
   def resolve_custom_attributes(resource:, services:)
@@ -881,8 +913,15 @@ class Scheduling::Appointments::UpsertService
     return if appointment.status == 'cancelled'
     return unless availability_validation_required?
 
-    result = availability_service.availability_result(starts_at: appointment.starts_at, ends_at: appointment.ends_at)
-    return if result.available?
+    result = availability_service.availability_result(
+      starts_at: appointment.starts_at,
+      ends_at: appointment.ends_at,
+      ignored_codes: confirmed_availability_override_codes
+    )
+    if result.available?
+      validate_provider_availability!
+      return
+    end
 
     raise Scheduling::Error.new(
       code: result.code,
@@ -891,13 +930,66 @@ class Scheduling::Appointments::UpsertService
     )
   end
 
+  def confirmed_availability_override_codes
+    codes = []
+    if account.scheduling_allow_outside_working_hours? && ActiveModel::Type::Boolean.new.cast(params[:confirm_outside_working_hours])
+      codes << 'OUTSIDE_WORKING_HOURS'
+    end
+    if account.scheduling_allow_overlapping_appointments? && ActiveModel::Type::Boolean.new.cast(params[:confirm_slot_conflict])
+      codes << 'SLOT_CONFLICT'
+    end
+    codes
+  end
+
+  def validate_provider_availability!
+    return unless medelement_resource?
+
+    result = Integrations::Medelement::ResourceAvailabilityService.new(
+      resource: appointment.resource,
+      from: appointment.starts_at,
+      to: appointment.ends_at,
+      slots: [provider_candidate_slot],
+      cabinet_code: appointment.custom_attributes.to_h['medelement_cabinet_code'],
+      exclude_reception_code: medelement_reception_code
+    ).perform
+    return if result.status == 'fresh' && result.slots.one?
+
+    raise provider_availability_error(result)
+  end
+
+  def provider_candidate_slot
+    {
+      resource_id: appointment.resource_id,
+      starts_at: appointment.starts_at.iso8601,
+      ends_at: appointment.ends_at.iso8601
+    }
+  end
+
+  def provider_availability_error(result)
+    provider_unavailable = result.status != 'fresh'
+    Scheduling::Error.new(
+      code: provider_unavailable ? 'MEDELEMENT_AVAILABILITY_UNVERIFIED' : 'APPOINTMENT_SLOT_UNAVAILABLE',
+      message: provider_unavailable ? 'Medelement availability could not be verified' : 'Appointment slot is unavailable in Medelement',
+      status: provider_unavailable ? :service_unavailable : :conflict,
+      details: { provider_reason: result.reason, provider_checked_at: result.checked_at.iso8601(6) }.compact
+    )
+  end
+
   def availability_validation_required?
     return true if appointment.new_record?
     return true if appointment.will_save_change_to_resource_id?
     return true if appointment.will_save_change_to_starts_at?
     return true if appointment.will_save_change_to_ends_at?
+    return true if medelement_cabinet_change?
 
     appointment.will_save_change_to_status? &&
       appointment.attribute_in_database('status') == 'cancelled'
+  end
+
+  def medelement_cabinet_change?
+    previous, current = appointment.changes_to_save['custom_attributes']
+    return false if previous.blank? && current.blank?
+
+    previous.to_h['medelement_cabinet_code'] != current.to_h['medelement_cabinet_code']
   end
 end

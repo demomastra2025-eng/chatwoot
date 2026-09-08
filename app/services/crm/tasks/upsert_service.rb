@@ -1,18 +1,21 @@
 class Crm::Tasks::UpsertService < Crm::BaseWriteService
-  def initialize(account:, params:, task: nil, actor: nil)
+  def initialize(account:, params:, task: nil, actor: nil, broadcast_linked_deal: true)
     @task = task || account.crm_tasks.new
+    @broadcast_linked_deal = broadcast_linked_deal
     super(account: account, params: params, record: @task, actor: actor)
   end
 
   def perform
-    ApplicationRecord.transaction do
+    new_record = task.new_record?
+    saved_task = ApplicationRecord.transaction do
       bootstrap_defaults!
       assert_lock_version!
 
-      new_record = task.new_record?
       requested_position = resolve_requested_position
       deal = resolve_optional_record(:deal_id, account.crm_deals, current: task.deal)
       status = resolve_status!
+      task_type = resolve_task_type!
+      task_outcome = resolve_task_outcome(task_type)
       originating_conversation = resolve_originating_conversation(deal: deal)
       assignee = resolve_assignee(deal: deal, originating_conversation: originating_conversation)
       creator = resolve_optional_record(:creator_id, account.users, current: task.creator || actor)
@@ -33,16 +36,21 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
         account: account,
         deal: deal,
         status: status,
+        task_type: task_type,
+        task_outcome: task_outcome,
         assignee: assignee,
         creator: creator,
         team: team,
         originating_conversation: originating_conversation,
         title: resolve_title,
         description: resolve_optional_text(:description, current: task.description),
-        activity_type: resolve_optional_text(:activity_type, current: task.activity_type || 'task'),
-        outcome: resolve_optional_text(:outcome, current: task.outcome),
+        activity_type: task_type.code,
+        outcome: task_outcome&.code,
         outcome_note: resolve_optional_text(:outcome_note, current: task.outcome_note),
         priority: resolve_optional_text(:priority, current: task.priority || 'medium'),
+        all_day: resolve_all_day,
+        due_on: resolve_due_on,
+        schedule_timezone: resolve_schedule_timezone,
         start_at: resolve_datetime(:start_at, current: task.start_at),
         due_at: resolve_datetime(:due_at, current: task.due_at),
         completed_at: resolve_completed_at(status: status),
@@ -61,11 +69,18 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
 
       task.reload
     end
+    dispatch_crm_task_realtime_event!(
+      new_record ? Events::Types::CRM_TASK_CREATED : Events::Types::CRM_TASK_UPDATED,
+      saved_task,
+      meta: { event_type: new_record ? 'task_created' : 'task_updated' }
+    )
+    dispatch_linked_deal_update!(saved_task, event_type: 'task_changed') if broadcast_linked_deal
+    saved_task
   end
 
   private
 
-  attr_reader :task
+  attr_reader :task, :broadcast_linked_deal
 
   def bootstrap_defaults!
     ::Crm::Bootstrap::AccountService.new(account: account).perform if account.feature_enabled?('crm_tasks')
@@ -113,6 +128,44 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       validation_error!('status_id', 'must reference an active status')
   end
 
+  def resolve_task_type!
+    if params.key?(:task_type_id) && params[:task_type_id].present?
+      return account.crm_task_types.find(params[:task_type_id])
+    end
+    if params.key?(:activity_type)
+      code = params[:activity_type].to_s.strip.downcase
+      return account.crm_task_types.find_by(code: code) || validation_error!('activity_type', 'is not configured')
+    end
+    return task.task_type if task.persisted?
+
+    account.crm_task_types.active.find_by(default: true) ||
+      account.crm_task_types.active.ordered.first ||
+      validation_error!('task_type_id', 'must reference an active task type')
+  end
+
+  def resolve_task_outcome(task_type)
+    return resolve_outcome_by_id(task_type) if params.key?(:task_outcome_id)
+    return resolve_outcome_by_code(task_type) if params.key?(:outcome)
+    return nil if task.task_type_id.present? && task.task_type_id != task_type.id
+
+    task.task_outcome
+  end
+
+  def resolve_outcome_by_id(task_type)
+    return if params[:task_outcome_id].blank?
+
+    outcome = account.crm_task_outcomes.find(params[:task_outcome_id])
+    validation_error!('task_outcome_id', 'does not belong to the selected task type') if outcome.task_type_id != task_type.id
+    outcome
+  end
+
+  def resolve_outcome_by_code(task_type)
+    code = params[:outcome].to_s.strip.downcase
+    return if code.blank?
+
+    task_type.outcomes.find_by(code: code) || validation_error!('outcome', 'is not configured for the selected task type')
+  end
+
   def resolve_team(deal:)
     if deal.present?
       requested_team = resolve_optional_record(:team_id, account.teams, current: deal.team)
@@ -133,6 +186,26 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     validation_error!('title', 'is required') if title.blank?
 
     title
+  end
+
+  def resolve_all_day
+    return task.all_day unless params.key?(:all_day)
+
+    ActiveModel::Type::Boolean.new.cast(params[:all_day])
+  end
+
+  def resolve_due_on
+    return resolve_date(:due_on, current: task.due_on) if params.key?(:due_on)
+    return if resolve_all_day && params.key?(:due_at)
+
+    task.due_on
+  end
+
+  def resolve_schedule_timezone
+    resolve_optional_text(
+      :schedule_timezone,
+      current: task.schedule_timezone || account.workspace_working_hours_timezone
+    )
   end
 
   def resolve_requested_position
@@ -157,7 +230,8 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       eventable: task,
       actor: actor,
       event_type: new_record ? 'task_created' : 'task_updated',
-      meta: { changes: filtered_previous_changes }
+      meta: { changes: filtered_previous_changes },
+      command_key: new_record ? params[:idempotency_key] : nil
     )
   end
 

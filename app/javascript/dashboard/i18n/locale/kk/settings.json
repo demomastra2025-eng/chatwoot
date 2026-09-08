@@ -405,7 +405,7 @@
     "PROFILE_SETTINGS": "Profile Settings",
     "ACCOUNT_SETTINGS": "Компания профилі",
     "VISIBILITY": "Навигация",
-    "CONVERSATION_SETTINGS": "Хабарлама редакторы",
+    "CONVERSATION_SETTINGS": "Диалогтар",
     "MY_COMPANY": "Компания",
     "APPLICATIONS": "Applications",
     "LABELS": "Tags",
@@ -995,6 +995,37 @@
     }
   },
   "BILLING_SETTINGS": {
+    "PLATFORM": {
+      "TITLE": "Тариф және пайдалану",
+      "LOADING": "Төлем ұйымының деректерін жүктеп жатырмыз…",
+      "ERROR": "Тариф деректерін жүктеу мүмкін болмады.",
+      "RETRY": "Қайталау",
+      "NOT_CONFIGURED": "Бұл Workspace әзірше бұрынғы лимиттерді пайдаланады. Төлем ұйымы әлі қосылмаған.",
+      "ORGANIZATION": "Төлем ұйымы",
+      "ORGANIZATION_DESCRIPTION": "Байланыстырылған Workspace үшін ортақ төлеуші және ресурстар.",
+      "NAME": "Атауы",
+      "WORKSPACES": "Workspace",
+      "UNIQUE_USERS": "Бірегей қызметкерлер",
+      "SUBSCRIPTION": "Жазылым",
+      "READ_ONLY": "Ақпарат тек көру үшін қолжетімді. Төлем және тарифті өзгерту кейін қосылады.",
+      "STATUS": "Күйі",
+      "STATUSES": {
+        "INCOMPLETE": "Аяқталмаған",
+        "TRIALING": "Сынақ кезеңі",
+        "ACTIVE": "Белсенді",
+        "PAST_DUE": "Берешек бар",
+        "GRACE_PERIOD": "Жеңілдік кезеңі",
+        "SUSPENDED": "Тоқтатылған",
+        "CANCELED": "Бас тартылған"
+      },
+      "USAGE": "Workspace пайдалануы",
+      "USAGE_DESCRIPTION": "Workspace-ке бөлінген ағымдағы квота және нақты пайдалану.",
+      "LIMITS": { "AGENTS": "Қызметкерлер", "STORAGE_BYTES": "Қойма" },
+      "SOURCE": {
+        "BILLING_ALLOCATION": "Дереккөз: төлем ұйымының квотасы",
+        "LEGACY": "Дереккөз: Workspace бұрынғы лимиті"
+      }
+    },
     "TITLE": "Billing",
     "DESCRIPTION": "Manage your subscription here, upgrade your plan and get more for your team.",
     "UNLIMITED": "Unlimited",

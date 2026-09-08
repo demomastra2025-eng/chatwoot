@@ -119,7 +119,7 @@ describe('SidepanelSwitch', () => {
     });
   });
 
-  it('hides the CRM deals switch when conversation pipelines are hidden by account policy', () => {
+  it('keeps the CRM deals switch independent from navigation visibility', () => {
     testState.currentAccount.value = {
       settings: {
         dashboard_sidebar_hidden_items: ['Conversation:Pipelines'],
@@ -131,10 +131,10 @@ describe('SidepanelSwitch', () => {
 
     expect(
       wrapper.find('[data-icon="i-lucide-briefcase-business"]').exists()
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it('hides the scheduling switch when appointment statuses are hidden by account policy', () => {
+  it('keeps the scheduling switch independent from navigation visibility', () => {
     testState.currentUser.value = {
       accounts: [{ id: 530, permissions: ['agent'] }],
     };
@@ -148,7 +148,7 @@ describe('SidepanelSwitch', () => {
     const wrapper = mountComponent();
 
     expect(wrapper.find('[data-icon="i-lucide-calendar-clock"]').exists()).toBe(
-      false
+      true
     );
   });
 });

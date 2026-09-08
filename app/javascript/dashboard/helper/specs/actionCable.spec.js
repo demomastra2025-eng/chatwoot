@@ -111,6 +111,10 @@ describe('ActionCableConnector - Copilot Tests', () => {
       ([actionName]) => actionName === 'fetchSidebarUnreadCounts'
     );
 
+  it('does not register a server-driven full page reload handler', () => {
+    expect(actionCable.events['page:reload']).toBeUndefined();
+  });
+
   describe('sidebar unread count refreshes', () => {
     it('debounces repeated refreshes from realtime events', async () => {
       vi.useFakeTimers();
@@ -954,6 +958,27 @@ describe('ActionCableConnector - Copilot Tests', () => {
         {
           event: 'crm.deal.created',
           ...dealPayload,
+        }
+      );
+    });
+
+    it('should emit dashboard bus events for CRM task ActionCable events', () => {
+      const taskPayload = {
+        account_id: 1,
+        task: { id: 73, title: 'Realtime task' },
+        meta: { event_type: 'task_rescheduled' },
+      };
+
+      actionCable.onReceived({
+        event: 'crm.task.updated',
+        data: taskPayload,
+      });
+
+      expect(emitter.emit).toHaveBeenCalledWith(
+        BUS_EVENTS.CRM_TASK_REALTIME_EVENT,
+        {
+          event: 'crm.task.updated',
+          ...taskPayload,
         }
       );
     });

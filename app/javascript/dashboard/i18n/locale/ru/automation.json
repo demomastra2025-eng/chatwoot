@@ -200,6 +200,12 @@
       "TASK_CREATED": "Задача создана",
       "TASK_UPDATED": "Задача обновлена",
       "TASK_STATUS_CHANGED": "Статус задачи изменён",
+      "TASK_ASSIGNED": "Назначен ответственный по задаче",
+      "TASK_RESCHEDULED": "Срок задачи перенесён",
+      "TASK_COMPLETED": "Задача завершена",
+      "TASK_CANCELLED": "Задача отменена",
+      "TASK_REOPENED": "Задача открыта повторно",
+      "TASK_WAITING_CHANGED": "Ожидание по задаче изменено",
       "TASK_ARCHIVED": "Задача архивирована",
       "TASK_UNARCHIVED": "Задача восстановлена из архива"
     },

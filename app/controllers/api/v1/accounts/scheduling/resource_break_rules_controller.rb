@@ -8,6 +8,14 @@ class Api::V1::Accounts::Scheduling::ResourceBreakRulesController < Api::V1::Acc
   end
 
   def update
+    if @scheduling_resource.inherit_working_hours_from_account?
+      raise Scheduling::Error.new(
+        code: 'BREAK_RULES_INHERITED',
+        message: 'Disable company working hours inheritance before editing specialist break rules',
+        status: :unprocessable_content
+      )
+    end
+
     rules_payload = params.permit(break_rules: [:weekday, :start_minute, :end_minute, :title, :active])[:break_rules] || []
 
     ApplicationRecord.transaction do

@@ -5,12 +5,17 @@ import { useI18n } from 'vue-i18n';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Dialog from 'dashboard/components-next/dialog/Dialog.vue';
 import TextArea from 'dashboard/components-next/textarea/TextArea.vue';
+import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
 import { canConfirmTaskCompletion } from './taskCompletion';
 
 const props = defineProps({
   isLoading: {
     type: Boolean,
     default: false,
+  },
+  taskTypes: {
+    type: Array,
+    default: () => [],
   },
 });
 
@@ -20,14 +25,38 @@ const { t } = useI18n();
 const dialogRef = ref(null);
 const selectedTask = ref(null);
 const note = ref('');
+const outcomeId = ref('');
 const confirmedWithoutNote = ref(false);
 
+const selectedTaskType = computed(() =>
+  props.taskTypes.find(
+    taskType =>
+      Number(taskType.id) === Number(selectedTask.value?.taskTypeId) ||
+      taskType.code === selectedTask.value?.activityType
+  )
+);
+const outcomeOptions = computed(() =>
+  (selectedTaskType.value?.outcomes || [])
+    .filter(
+      outcome =>
+        outcome.active !== false ||
+        Number(outcome.id) === Number(outcomeId.value)
+    )
+    .map(outcome => ({ label: outcome.name, value: outcome.id }))
+);
+const selectedOutcome = computed(() =>
+  (selectedTaskType.value?.outcomes || []).find(
+    outcome => Number(outcome.id) === Number(outcomeId.value)
+  )
+);
 const isDisabled = computed(
   () =>
     !selectedTask.value ||
     !canConfirmTaskCompletion({
       confirmedWithoutNote: confirmedWithoutNote.value,
       note: note.value,
+      outcomeId: outcomeId.value,
+      requiresNote: selectedOutcome.value?.requiresNote,
     })
 );
 const isCompleted = computed(() => Boolean(selectedTask.value?.completedAt));
@@ -44,6 +73,13 @@ const confirmLabel = computed(() =>
 
 const open = task => {
   selectedTask.value = task;
+  outcomeId.value =
+    task?.taskOutcomeId ||
+    selectedTaskType.value?.outcomes?.find(
+      outcome => outcome.default && outcome.active
+    )?.id ||
+    selectedTaskType.value?.outcomes?.find(outcome => outcome.active)?.id ||
+    '';
   note.value = task?.outcomeNote || '';
   confirmedWithoutNote.value = Boolean(task?.completedAt && !note.value.trim());
   dialogRef.value?.open();
@@ -53,6 +89,7 @@ const close = () => {
   dialogRef.value?.close();
   selectedTask.value = null;
   note.value = '';
+  outcomeId.value = '';
   confirmedWithoutNote.value = false;
 };
 
@@ -61,6 +98,7 @@ const confirm = () => {
 
   emit('confirm', {
     note: note.value.trim(),
+    taskOutcomeId: outcomeId.value,
     task: selectedTask.value,
   });
 };
@@ -80,6 +118,13 @@ defineExpose({ close, open });
     @confirm="confirm"
   >
     <div class="grid gap-4">
+      <SchedulingSelectField
+        :label="$t('CRM.TASKS.FORM.OUTCOME')"
+        :model-value="outcomeId"
+        :options="outcomeOptions"
+        @update:model-value="outcomeId = $event"
+      />
+
       <TextArea
         :label="$t('CRM.TASKS.RESULT_DIALOG.OPTIONAL_NOTE_LABEL')"
         :model-value="note"
@@ -91,6 +136,7 @@ defineExpose({ close, open });
       />
 
       <label
+        v-if="!selectedOutcome?.requiresNote"
         class="flex cursor-pointer items-start gap-3 rounded-xl border border-n-weak bg-n-alpha-black2 px-3 py-3"
       >
         <Checkbox v-model="confirmedWithoutNote" />
