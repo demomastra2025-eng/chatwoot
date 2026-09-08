@@ -40,7 +40,23 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     )
   end
 
-  it 'creates default work rules for imported specialists so they can accept manual bookings' do
+  it 'keeps imported specialists on provider-owned schedules in the workspace timezone' do
+    workspace_schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+    workspace_schedule[0]['close_hour'] = 15
+    workspace_schedule[1..5].each { |day| day.merge!('close_hour' => 18) }
+    workspace_schedule[6].merge!(
+      'closed_all_day' => false,
+      'open_hour' => 9,
+      'open_minutes' => 0,
+      'close_hour' => 15,
+      'close_minutes' => 0
+    )
+    account.update!(
+      workspace_timezone: 'Asia/Almaty',
+      workspace_working_hours: workspace_schedule,
+      workspace_breaks: [{ days: [1], start_time: '13:00', end_time: '14:00', title: 'Lunch' }]
+    )
+
     expect do
       described_class.new(account: account, client: client, configuration: configuration).perform
     end.to change(account.scheduling_resources, :count).by(1)
@@ -49,7 +65,8 @@ RSpec.describe Integrations::Medelement::SpecialistsSyncService do
     resource = account.scheduling_resources.last
 
     expect(resource.work_rules.order(:weekday).pluck(:weekday, :start_minute, :end_minute, :active)).to eq(expected_default_rules)
-    expect(resource.custom_attributes['medelement_default_work_rules_seeded_at']).to be_present
+    expect(resource.inherit_working_hours_from_account).to be(false)
+    expect(resource.break_rules).to be_empty
     expect(resource.timezone).to eq('Asia/Almaty')
     expect(client).to have_received(:specialists).twice
   end

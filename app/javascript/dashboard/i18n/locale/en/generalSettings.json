@@ -33,7 +33,26 @@
       "TIMEZONE": "Timezone",
       "SAVE": "Save working hours",
       "UPDATE_SUCCESS": "Workspace working hours updated.",
-      "UPDATE_ERROR": "Could not update Workspace working hours."
+      "UPDATE_ERROR": "Could not update Workspace working hours.",
+      "START": "Start",
+      "END": "End",
+      "REMOVE": "Remove",
+      "DATE": "Date",
+      "BREAKS": {
+        "TITLE": "Breaks",
+        "DESCRIPTION": "Shared breaks applied to specialists who inherit the Workspace schedule.",
+        "ADD": "Add break",
+        "EMPTY": "No breaks configured.",
+        "NAME": "Break name"
+      },
+      "DAYS_OFF": {
+        "TITLE": "Days off and holidays",
+        "DESCRIPTION": "Dates when the organization is closed for all specialists.",
+        "ADD": "Add day off",
+        "EMPTY": "No days off configured.",
+        "NAME": "Day off name",
+        "YEARLY": "Repeat yearly"
+      }
     },
     "CONVERSATIONS": {
       "TITLE": "Conversations",

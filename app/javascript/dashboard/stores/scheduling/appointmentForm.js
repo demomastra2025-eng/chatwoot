@@ -660,12 +660,15 @@ export const useSchedulingAppointmentFormStore = defineStore(
         return appointment;
       },
 
-      async submit(calendarStore) {
+      async submit(calendarStore, availabilityOverrides = {}) {
         this.ui.isSaving = true;
         this.ui.error = null;
 
         try {
-          const payload = this.buildPayload();
+          const payload = {
+            ...this.buildPayload(),
+            ...availabilityOverrides,
+          };
           const response =
             this.mode === 'edit' && this.recordId
               ? await SchedulingAppointmentsAPI.update(this.recordId, payload)

@@ -75,6 +75,8 @@
 class Scheduling::Appointment < ApplicationRecord
   include LlmFormattable
 
+  audited associated_with: :account
+
   belongs_to :account
   belongs_to :company, optional: true
   belongs_to :contact, optional: true

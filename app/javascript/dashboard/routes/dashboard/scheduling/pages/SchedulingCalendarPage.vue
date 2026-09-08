@@ -9,6 +9,7 @@ import {
 } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import { useStore } from 'vuex';
 
 import { useAccount } from 'dashboard/composables/useAccount';
 import { useAlert } from 'dashboard/composables';
@@ -97,8 +98,12 @@ const referencesStore = useSchedulingReferencesStore();
 const formStore = useSchedulingAppointmentFormStore();
 const providerCommandsStore = useSchedulingProviderCommandsStore();
 const { currentAccount } = useAccount();
+const store = useStore();
 const route = useRoute();
 const router = useRouter();
+const workspaceTimezone = computed(
+  () => currentAccount.value?.settings?.workspace_timezone || 'Asia/Almaty'
+);
 const currentPresentation = ref('calendar');
 const contactEditorMode = ref(null);
 const inlineContactDraftInitialized = ref(false);
@@ -112,6 +117,9 @@ const appointmentFilterDraft = reactive({
 });
 const pendingCreateCustomFieldDefaultsHydration = ref(false);
 const appointmentDeleteDialogRef = ref(null);
+const availabilityOverrideDialogRef = ref(null);
+const pendingAvailabilityOverride = ref(null);
+const availabilityOverrideReason = ref('');
 const providerCommandDialogRef = ref(null);
 const pendingProviderAction = ref(null);
 const patientCandidates = ref([]);
@@ -231,6 +239,7 @@ const calendarTypeViews = computed(() =>
 
 const presentationOptions = computed(() =>
   ['calendar', 'list'].map(value => ({
+    icon: value === 'calendar' ? 'i-lucide-calendar-days' : 'i-lucide-list',
     label: presentationLabels.value[value],
     value,
   }))
@@ -502,6 +511,70 @@ const companySelectionEnabled = computed(
 const contactSelectionRequired = computed(
   () => currentAccount.value?.settings?.scheduling_contact_required !== false
 );
+const allowOutsideWorkingHours = computed(
+  () =>
+    currentAccount.value?.settings?.scheduling_allow_outside_working_hours ===
+    true
+);
+const allowOverlappingAppointments = computed(
+  () =>
+    currentAccount.value?.settings
+      ?.scheduling_allow_overlapping_appointments === true
+);
+
+const canOverrideAvailability = computed(() => {
+  if (selectedFormResource.value?.availabilityOverrideSupported !== true) {
+    return false;
+  }
+
+  const accountId = Number(store.getters.getCurrentAccountId);
+  const membership = store.getters.getCurrentUser?.accounts?.find(
+    account => Number(account.id) === accountId
+  );
+  return (membership?.permissions || []).some(permission =>
+    ['administrator', 'scheduling_override'].includes(permission)
+  );
+});
+
+const availabilityOverrideCopy = computed(() => {
+  switch (pendingAvailabilityOverride.value?.code) {
+    case 'BLOCKED_BY_BREAK':
+      return {
+        title: t('SCHEDULING.AVAILABILITY_OVERRIDE.BREAK_TITLE'),
+        description: t('SCHEDULING.AVAILABILITY_OVERRIDE.BREAK_DESCRIPTION'),
+      };
+    case 'BLOCKED_BY_HOLIDAY':
+      return {
+        title: t('SCHEDULING.AVAILABILITY_OVERRIDE.GLOBAL_CLOSURE_TITLE'),
+        description: t(
+          'SCHEDULING.AVAILABILITY_OVERRIDE.GLOBAL_CLOSURE_DESCRIPTION'
+        ),
+      };
+    case 'SLOT_CONFLICT':
+      return {
+        title: t('SCHEDULING.AVAILABILITY_OVERRIDE.SLOT_CONFLICT_TITLE'),
+        description: t(
+          'SCHEDULING.AVAILABILITY_OVERRIDE.SLOT_CONFLICT_DESCRIPTION'
+        ),
+      };
+    default:
+      return {
+        title: t(
+          'SCHEDULING.AVAILABILITY_OVERRIDE.OUTSIDE_WORKING_HOURS_TITLE'
+        ),
+        description: t(
+          'SCHEDULING.AVAILABILITY_OVERRIDE.OUTSIDE_WORKING_HOURS_DESCRIPTION'
+        ),
+      };
+  }
+});
+
+const availabilityOverrideTitle = computed(
+  () => availabilityOverrideCopy.value.title
+);
+const availabilityOverrideDescription = computed(
+  () => availabilityOverrideCopy.value.description
+);
 
 const contactOptionLabel = contact => {
   const iin =
@@ -634,6 +707,7 @@ const visibleAppointments = computed(() => {
 });
 
 function fetchCalendar() {
+  calendarStore.setWorkspaceTimezone(workspaceTimezone.value);
   return calendarStore.fetchCalendar();
 }
 
@@ -1655,7 +1729,43 @@ const handleProviderCommandDialogClose = () => {
   }
 };
 
-const handleAppointmentSubmit = async () => {
+const openAvailabilityOverrideDialog = (error, confirmedOverrides, retry) => {
+  const code = error?.response?.data?.code;
+  if (!canOverrideAvailability.value) return false;
+
+  const canOverrideOutside =
+    code === 'OUTSIDE_WORKING_HOURS' && allowOutsideWorkingHours.value;
+  const canOverrideConflict =
+    code === 'SLOT_CONFLICT' && allowOverlappingAppointments.value;
+  const confirmationKeys = {
+    BLOCKED_BY_BREAK: 'confirm_break_conflict',
+    BLOCKED_BY_HOLIDAY: 'confirm_global_closure',
+    OUTSIDE_WORKING_HOURS: 'confirm_outside_working_hours',
+    SLOT_CONFLICT: 'confirm_slot_conflict',
+  };
+  const confirmationKey = confirmationKeys[code];
+  if (
+    !confirmationKey ||
+    (code === 'OUTSIDE_WORKING_HOURS' && !canOverrideOutside) ||
+    (code === 'SLOT_CONFLICT' && !canOverrideConflict)
+  ) {
+    return false;
+  }
+
+  availabilityOverrideReason.value = '';
+  pendingAvailabilityOverride.value = {
+    code,
+    confirmedOverrides: {
+      ...confirmedOverrides,
+      [confirmationKey]: true,
+    },
+    retry,
+  };
+  availabilityOverrideDialogRef.value?.open();
+  return true;
+};
+
+const submitAppointment = async (availabilityOverrides = {}) => {
   if (isSelectedAppointmentProviderOwned.value) return;
 
   if (isMedelementCabinetMissing.value) {
@@ -1672,7 +1782,10 @@ const handleAppointmentSubmit = async () => {
       isSelectedFormResourceMedelement.value &&
       !isSelectedAppointmentProviderOwned.value;
     const companyCabinetCode = formStore.form.medelementCabinetCode;
-    const appointment = await formStore.submit(calendarStore);
+    const appointment = await formStore.submit(
+      calendarStore,
+      availabilityOverrides
+    );
     useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_SAVE'));
     handleDrawerClose();
 
@@ -1687,8 +1800,32 @@ const handleAppointmentSubmit = async () => {
       });
     }
   } catch (error) {
+    if (
+      openAvailabilityOverrideDialog(
+        error,
+        availabilityOverrides,
+        submitAppointment
+      )
+    ) {
+      return;
+    }
+
     useAlert(formatErrorMessage(error));
   }
+};
+
+const handleAppointmentSubmit = () => submitAppointment();
+
+const handleAvailabilityOverrideConfirm = async () => {
+  const confirmedOverrides =
+    pendingAvailabilityOverride.value?.confirmedOverrides;
+  const retry = pendingAvailabilityOverride.value?.retry;
+  const reason = availabilityOverrideReason.value.trim();
+  if (!confirmedOverrides || !retry || !reason || formStore.ui.isSaving) return;
+
+  availabilityOverrideDialogRef.value?.close();
+  pendingAvailabilityOverride.value = null;
+  await retry({ ...confirmedOverrides, override_reason: reason });
 };
 
 const handleAppointmentCancel = async () => {
@@ -1735,7 +1872,8 @@ const handleAppointmentDelete = async () => {
 const updateAppointmentMutation = async (
   appointment,
   patch,
-  { refresh = false } = {}
+  { refresh = false } = {},
+  availabilityOverrides = {}
 ) => {
   if (isAppointmentProviderOwned(appointment)) {
     const requestedResourceId = Number(
@@ -1771,10 +1909,10 @@ const updateAppointmentMutation = async (
   }
 
   try {
-    const { data } = await SchedulingAppointmentsAPI.update(
-      appointment.id,
-      patch
-    );
+    const { data } = await SchedulingAppointmentsAPI.update(appointment.id, {
+      ...patch,
+      ...availabilityOverrides,
+    });
     const updatedAppointment = normalizePayload(data);
     calendarStore.syncAppointment(updatedAppointment);
 
@@ -1782,6 +1920,22 @@ const updateAppointmentMutation = async (
       await calendarStore.refresh();
     }
   } catch (error) {
+    if (
+      openAvailabilityOverrideDialog(
+        error,
+        availabilityOverrides,
+        confirmedOverrides =>
+          updateAppointmentMutation(
+            appointment,
+            patch,
+            { refresh },
+            confirmedOverrides
+          )
+      )
+    ) {
+      return;
+    }
+
     try {
       await calendarStore.refresh();
     } catch {
@@ -1898,6 +2052,13 @@ onMounted(async () => {
       "
       @select-date="handleAnchorDateSelect"
     >
+      <template #leading>
+        <SchedulingViewSwitcher
+          v-model="currentPresentation"
+          :views="presentationOptions"
+          icon-only
+        />
+      </template>
       <template #actions>
         <SchedulingResourceFilter
           compact
@@ -1915,10 +2076,6 @@ onMounted(async () => {
           icon="i-lucide-filter"
           :aria-label="$t('SCHEDULING.TOOLBAR.FILTERS')"
           @click="openAppointmentFilterDialog"
-        />
-        <SchedulingViewSwitcher
-          v-model="currentPresentation"
-          :views="presentationOptions"
         />
         <Button
           size="sm"
@@ -1967,6 +2124,8 @@ onMounted(async () => {
           class="min-h-0 flex-1"
           :anchor-date="calendarStore.anchorDate"
           :appointments="visibleAppointments"
+          :allow-outside-working-hours="allowOutsideWorkingHours"
+          :allow-overlapping-appointments="allowOverlappingAppointments"
           :break-rules="calendarStore.breakRules"
           :custom-field-definitions="appointmentFieldDefinitions"
           :empty-message="calendarEmptyMessage"
@@ -1978,6 +2137,7 @@ onMounted(async () => {
           :view="calendarStore.currentView"
           :work-rules="calendarStore.workRules"
           :workday-overrides="calendarStore.workdayOverrides"
+          :workspace-timezone="workspaceTimezone"
           @change-status="
             updateAppointmentMutation($event.appointment, {
               status: $event.status,
@@ -2666,6 +2826,28 @@ onMounted(async () => {
           </div>
         </div>
       </template>
+    </Dialog>
+
+    <Dialog
+      ref="availabilityOverrideDialogRef"
+      width="md"
+      type="alert"
+      :title="availabilityOverrideTitle"
+      :description="availabilityOverrideDescription"
+      :confirm-button-label="
+        $t('SCHEDULING.AVAILABILITY_OVERRIDE.CONFIRM_ACTION')
+      "
+      :disable-confirm-button="!availabilityOverrideReason.trim()"
+      :is-loading="formStore.ui.isSaving"
+      @close="pendingAvailabilityOverride = null"
+      @confirm="handleAvailabilityOverrideConfirm"
+    >
+      <TextArea
+        v-model="availabilityOverrideReason"
+        auto-height
+        :label="$t('SCHEDULING.AVAILABILITY_OVERRIDE.REASON_LABEL')"
+        :placeholder="$t('SCHEDULING.AVAILABILITY_OVERRIDE.REASON_PLACEHOLDER')"
+      />
     </Dialog>
 
     <Dialog

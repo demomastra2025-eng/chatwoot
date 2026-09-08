@@ -22,27 +22,34 @@ class Scheduling::AvailabilityService
     availability_result(starts_at: starts_at, ends_at: ends_at).available?
   end
 
-  def availability_result(starts_at:, ends_at:)
+  def availability_result(starts_at:, ends_at:, ignored_codes: [])
     return Result.new(available: false, code: 'VALIDATION_ERROR', message: 'End date must be greater than start date') if ends_at <= starts_at
 
     local_date = local_booking_date(starts_at, ends_at)
     return Result.new(available: false, code: 'OUTSIDE_WORKING_HOURS', message: 'Appointment must fit into one local day') if local_date.nil?
 
     override = workday_overrides.find { |item| item.date == local_date }
-    if holiday_blocks_date?(local_date) && override.blank?
+    holiday_blocked = resource.account.workspace_day_off?(local_date) ||
+                      (holiday_blocks_date?(local_date) && override.blank?)
+    if holiday_blocked && ignored_codes.exclude?('BLOCKED_BY_HOLIDAY')
       return Result.new(available: false, code: 'BLOCKED_BY_HOLIDAY', message: 'Date is blocked by holiday')
     end
 
-    working_intervals = working_intervals_for_date(local_date, override)
-    if working_intervals.empty?
+    working_intervals = working_intervals_for_date(
+      local_date,
+      override,
+      ignore_holiday: ignored_codes.include?('BLOCKED_BY_HOLIDAY')
+    )
+    if working_intervals.empty? && ignored_codes.exclude?('OUTSIDE_WORKING_HOURS')
       return Result.new(available: false, code: 'OUTSIDE_WORKING_HOURS', message: 'No working rules configured for this day')
     end
 
-    unless inside_intervals?(working_intervals, starts_at: starts_at, ends_at: ends_at)
+    unless ignored_codes.include?('OUTSIDE_WORKING_HOURS') || inside_intervals?(working_intervals, starts_at: starts_at, ends_at: ends_at)
       return Result.new(available: false, code: 'OUTSIDE_WORKING_HOURS', message: 'Appointment is outside working hours')
     end
 
-    if overlaps_intervals?(breaks_for_date(local_date, override), starts_at: starts_at, ends_at: ends_at)
+    if ignored_codes.exclude?('BLOCKED_BY_BREAK') &&
+       overlaps_intervals?(breaks_for_date(local_date, override), starts_at: starts_at, ends_at: ends_at)
       return Result.new(available: false, code: 'BLOCKED_BY_BREAK', message: 'Appointment overlaps resource break')
     end
 
@@ -50,7 +57,8 @@ class Scheduling::AvailabilityService
       return Result.new(available: false, code: 'BLOCKED_BY_VACATION', message: 'Appointment overlaps blocked time')
     end
 
-    if overlaps_intervals?(appointment_intervals_for_date(local_date), starts_at: starts_at, ends_at: ends_at)
+    if ignored_codes.exclude?('SLOT_CONFLICT') &&
+       overlaps_intervals?(appointment_intervals_for_date(local_date), starts_at: starts_at, ends_at: ends_at)
       return Result.new(available: false, code: 'SLOT_CONFLICT', message: 'Slot is already occupied')
     end
 
@@ -127,6 +135,9 @@ class Scheduling::AvailabilityService
 
   def day_intervals(date)
     override = workday_overrides.find { |item| item.date == date }
+    return [] if resource.account.workspace_day_off?(date)
+    return [] if holiday_blocks_date?(date) && override.blank?
+
     base_intervals = working_intervals_for_date(date, override)
     return [] if base_intervals.empty?
 
@@ -192,12 +203,13 @@ class Scheduling::AvailabilityService
   end
 
   def time_zone
-    @time_zone ||= ActiveSupport::TimeZone[resource.timezone] || Time.zone
+    @time_zone ||= ActiveSupport::TimeZone[resource.account.workspace_working_hours_timezone] || Time.zone
   end
 
-  def working_intervals_for_date(date, override)
+  def working_intervals_for_date(date, override, ignore_holiday: false)
+    return [] if !ignore_holiday && resource.account.workspace_day_off?(date)
     return [[local_time(date, override.start_minute), local_time(date, override.end_minute)]] if override.present?
-    return [] if holiday_blocks_date?(date)
+    return [] if !ignore_holiday && holiday_blocks_date?(date)
 
     resource.work_rules.active.select { |rule| rule.weekday == date.wday }.map do |rule|
       [local_time(date, rule.start_minute), local_time(date, rule.end_minute)]

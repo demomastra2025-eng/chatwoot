@@ -34,8 +34,6 @@ class Scheduling::WorkRule < ApplicationRecord
   before_validation :sync_account_id
 
   validates :weekday, presence: true, inclusion: { in: 0..6 }
-  validates :resource_id, uniqueness: { scope: [:weekday, :start_minute, :end_minute] }
-
   scope :ordered, -> { order(:weekday, :start_minute, :id) }
   scope :active, -> { where(active: true) }
 

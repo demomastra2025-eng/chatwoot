@@ -9,15 +9,17 @@ module AccountSettingsSchema
         'auto_resolve_message': { 'type': %w[string null] },
         'auto_resolve_ignore_waiting': { 'type': %w[boolean null] },
         'audio_transcriptions': { 'type': %w[boolean null] },
+        'call_transcriptions': { 'type': %w[boolean null] },
         'auto_resolve_label': { 'type': %w[string null] },
         'keep_pending_on_bot_failure': { 'type': %w[boolean null] },
         'captain_auto_resolve_mode': { 'type': %w[string null], 'enum': ['evaluated', 'legacy', 'disabled', nil] },
         'scheduling_contact_required': { 'type': %w[boolean null] },
         'scheduling_company_enabled': { 'type': %w[boolean null] },
+        'scheduling_allow_outside_working_hours': { 'type': %w[boolean null] },
+        'scheduling_allow_overlapping_appointments': { 'type': %w[boolean null] },
         'default_appointment_touch_plan_id': { 'type': %w[integer string null] },
         'default_deal_touch_plan_id': { 'type': %w[integer string null] },
         'default_task_touch_plan_id': { 'type': %w[integer string null] },
-        'workspace_working_hours_enabled': { 'type': %w[boolean null] },
         'workspace_timezone': { 'type': %w[string null] },
         'workspace_working_hours': {
           'type': %w[array null],
@@ -37,6 +39,38 @@ module AccountSettingsSchema
           },
           'minItems': 7,
           'maxItems': 7
+        },
+        'workspace_breaks': {
+          'type': %w[array null],
+          'items': {
+            'type': 'object',
+            'properties': {
+              'title': { 'type': %w[string null], 'maxLength': 80 },
+              'start_time': { 'type': 'string', 'pattern': '^([01]\\d|2[0-3]):[0-5]\\d$' },
+              'end_time': { 'type': 'string', 'pattern': '^([01]\\d|2[0-3]):[0-5]\\d$' },
+              'days': {
+                'type': 'array',
+                'items': { 'type': 'integer', 'minimum': 0, 'maximum': 6 },
+                'minItems': 1,
+                'uniqueItems': true
+              }
+            },
+            'required': %w[start_time end_time days],
+            'additionalProperties': false
+          }
+        },
+        'workspace_days_off': {
+          'type': %w[array null],
+          'items': {
+            'type': 'object',
+            'properties': {
+              'date': { 'type': 'string', 'pattern': '^\\d{4}-\\d{2}-\\d{2}$' },
+              'title': { 'type': %w[string null], 'maxLength': 80 },
+              'recurring_yearly': { 'type': %w[boolean null] }
+            },
+            'required': %w[date],
+            'additionalProperties': false
+          }
         },
         'conversation_required_attributes': {
           'type': %w[array null],

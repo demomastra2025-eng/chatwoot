@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_07_040000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_07_220000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -2873,6 +2873,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_07_040000) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.integer "compensation_percent", default: 0, null: false
+    t.boolean "inherit_working_hours_from_account", default: false, null: false
     t.index "account_id, ((custom_attributes ->> 'medelement_specialist_code'::text))", name: "idx_scheduling_resources_account_medelement_specialist_code", unique: true, where: "((custom_attributes ->> 'medelement_specialist_code'::text) IS NOT NULL)"
     t.index ["account_id", "active", "name"], name: "idx_scheduling_resources_on_account_active_name"
     t.index ["account_id"], name: "index_scheduling_resources_on_account_id"

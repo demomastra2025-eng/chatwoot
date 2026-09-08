@@ -1,13 +1,6 @@
 require 'rails_helper'
 
 RSpec.describe Scheduling::AvailabilityService do
-  let(:account) { create(:account) }
-  let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
-  let(:booking_day) { ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 9, 10, 0, 0) }
-  let!(:work_rule) do
-    create(:scheduling_work_rule, resource: resource, account: account, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
-  end
-
   subject(:service) do
     described_class.new(
       resource: resource,
@@ -20,13 +13,48 @@ RSpec.describe Scheduling::AvailabilityService do
     )
   end
 
+  let(:account) { create(:account) }
   let(:holidays) { [] }
   let(:workday_overrides) { [] }
   let(:time_offs) { [] }
   let(:appointments) { [] }
+  let(:resource) { create(:scheduling_resource, account: account, timezone: 'Asia/Almaty') }
+  let(:booking_day) { ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 9, 10, 0, 0) }
+  let!(:work_rule) do
+    create(:scheduling_work_rule, resource: resource, account: account, weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60)
+  end
 
   it 'returns BLOCKED_BY_HOLIDAY when the day is blocked' do
     holidays << create(:scheduling_holiday, account: account, date: booking_day.to_date)
+
+    result = service.availability_result(starts_at: booking_day, ends_at: booking_day + 30.minutes)
+
+    expect(result.available?).to be(false)
+    expect(result.code).to eq('BLOCKED_BY_HOLIDAY')
+  end
+
+  it 'blocks availability and generated slots on a company day off for an own-schedule resource' do
+    account.update!(workspace_days_off: [{ date: booking_day.to_date.iso8601, title: 'Company holiday' }])
+    resource.update!(inherit_working_hours_from_account: false)
+    workday_overrides << create(
+      :scheduling_workday_override,
+      account: account,
+      resource: resource,
+      date: booking_day.to_date,
+      start_minute: 9 * 60,
+      end_minute: 18 * 60
+    )
+
+    result = service.availability_result(starts_at: booking_day, ends_at: booking_day + 30.minutes)
+
+    expect(result.available?).to be(false)
+    expect(result.code).to eq('BLOCKED_BY_HOLIDAY')
+    expect(service.slots(duration_min: 30)).to be_empty
+  end
+
+  it 'blocks recurring company days off in later years for every resource' do
+    account.update!(workspace_days_off: [{ date: '2025-03-09', recurring_yearly: true }])
+    resource.update!(inherit_working_hours_from_account: false)
 
     result = service.availability_result(starts_at: booking_day, ends_at: booking_day + 30.minutes)
 

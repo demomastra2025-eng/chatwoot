@@ -239,6 +239,14 @@ class Account < ApplicationRecord
     value.nil? || ActiveModel::Type::Boolean.new.cast(value)
   end
 
+  def scheduling_allow_outside_working_hours?
+    settings.is_a?(Hash) && ActiveModel::Type::Boolean.new.cast(settings['scheduling_allow_outside_working_hours'])
+  end
+
+  def scheduling_allow_overlapping_appointments?
+    settings.is_a?(Hash) && ActiveModel::Type::Boolean.new.cast(settings['scheduling_allow_overlapping_appointments'])
+  end
+
   def usage_limits
     {
       agents: ChatwootApp.max_limit.to_i,

@@ -78,6 +78,83 @@ export const useSchedulingReferencesStore = defineStore(
         }
       },
 
+      async saveResourceSchedule(resourceId, schedule) {
+        const resource = this.resources.find(
+          item => Number(item.id) === Number(resourceId)
+        );
+
+        if (resource?.scheduleUpdateSupported === true) {
+          const { data } = await SchedulingResourcesAPI.updateSchedule(
+            resourceId,
+            schedule
+          );
+          return normalizePayload(data);
+        }
+
+        const workResponse = await SchedulingResourcesAPI.updateWorkRules(
+          resourceId,
+          schedule.work_rules
+        );
+        let breakResponse;
+        try {
+          breakResponse = await SchedulingResourcesAPI.updateBreakRules(
+            resourceId,
+            schedule.break_rules
+          );
+        } catch (error) {
+          const [persistedWorkRules, persistedBreakRules] = await Promise.all([
+            SchedulingResourcesAPI.getWorkRules(resourceId),
+            SchedulingResourcesAPI.getBreakRules(resourceId),
+          ]);
+          error.persistedSchedule = {
+            resource,
+            workRules: normalizePayload(persistedWorkRules.data),
+            breakRules: normalizePayload(persistedBreakRules.data),
+          };
+          throw error;
+        }
+
+        return {
+          resource,
+          workRules: normalizePayload(workResponse.data),
+          breakRules: normalizePayload(breakResponse.data),
+          scheduleRevision: null,
+        };
+      },
+
+      async loadResourceSchedule(resourceId) {
+        const resource = this.resources.find(
+          item => Number(item.id) === Number(resourceId)
+        );
+        if (resource?.scheduleUpdateSupported !== true) {
+          const [workResponse, breakResponse] = await Promise.all([
+            SchedulingResourcesAPI.getWorkRules(resourceId),
+            SchedulingResourcesAPI.getBreakRules(resourceId),
+          ]);
+          return {
+            resource,
+            workRules: normalizePayload(workResponse.data),
+            breakRules: normalizePayload(breakResponse.data),
+            scheduleRevision: null,
+          };
+        }
+
+        const { data } = await SchedulingResourcesAPI.getSchedule(resourceId);
+        return normalizePayload(data);
+      },
+
+      commitResourceSchedule(resourceId, payload) {
+        this.resources = upsertRecord(this.resources, payload.resource);
+        this.workRulesByResource = {
+          ...this.workRulesByResource,
+          [resourceId]: payload.workRules,
+        };
+        this.breakRulesByResource = {
+          ...this.breakRulesByResource,
+          [resourceId]: payload.breakRules,
+        };
+      },
+
       async deleteResource(resourceId) {
         this.ui.isSaving = true;
         this.ui.error = null;

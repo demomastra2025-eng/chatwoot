@@ -17,6 +17,10 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  createOptionLabel: {
+    type: String,
+    default: '',
+  },
   hasError: {
     type: Boolean,
     default: false,
@@ -63,7 +67,7 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['open', 'search', 'update:modelValue']);
+const emit = defineEmits(['create', 'open', 'search', 'update:modelValue']);
 const comboBoxRef = ref(null);
 const debouncedSearch = useDebounceFn(
   value => emit('search', value),
@@ -111,11 +115,13 @@ defineOptions({
       :search-placeholder="searchPlaceholder"
       :search-in-trigger="searchInTrigger"
       :empty-state="emptyState"
+      :create-option-label="createOptionLabel"
       :message="message"
       :has-error="hasError"
       :disabled="disabled"
       :use-api-results="useApiResults"
       input-like
+      @create="emit('create', $event)"
       @open="emit('open')"
       @search="handleSearch"
       @update:model-value="emit('update:modelValue', $event)"

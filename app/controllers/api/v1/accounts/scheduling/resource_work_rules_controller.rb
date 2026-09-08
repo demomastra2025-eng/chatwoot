@@ -1,6 +1,7 @@
 class Api::V1::Accounts::Scheduling::ResourceWorkRulesController < Api::V1::Accounts::Scheduling::BaseController
   before_action :check_admin_authorization?, only: [:update]
   before_action :set_resource
+  before_action :ensure_locally_managed_resource!, only: [:update]
 
   def show
     rules = @scheduling_resource.work_rules.ordered
@@ -8,9 +9,18 @@ class Api::V1::Accounts::Scheduling::ResourceWorkRulesController < Api::V1::Acco
   end
 
   def update
-    rules_payload = params.permit(work_rules: [:weekday, :start_minute, :end_minute, :active])[:work_rules] || []
+    rules_payload = schedule_rules_payload(:work_rules, permitted: [:weekday, :start_minute, :end_minute, :active])
 
-    ApplicationRecord.transaction do
+    @scheduling_resource.with_lock do
+      @scheduling_resource.reload
+      if @scheduling_resource.inherit_working_hours_from_account?
+        raise Scheduling::Error.new(
+          code: 'WORK_RULES_INHERITED',
+          message: 'Disable company working hours inheritance before editing specialist work rules',
+          status: :unprocessable_content
+        )
+      end
+
       @scheduling_resource.work_rules.destroy_all
       rules_payload.each do |item|
         @scheduling_resource.work_rules.create!(item.to_h)

@@ -30,6 +30,14 @@ const mountGrid = props =>
     },
     global: {
       stubs: {
+        SchedulingVueCalCalendar: {
+          name: 'SchedulingVueCalCalendar',
+          props: {
+            allowOutsideWorkingHours: Boolean,
+            allowOverlappingAppointments: Boolean,
+          },
+          template: '<div class="calendar-stub" />',
+        },
         SchedulingStatusMenu: {
           template: '<div class="status-menu-stub" />',
         },
@@ -50,6 +58,20 @@ describe('SchedulingCalendarGrid', () => {
         return labels[key] || key;
       }),
     });
+  });
+
+  it('forwards account availability policies to the interactive calendar', () => {
+    const wrapper = mountGrid({
+      allowOutsideWorkingHours: true,
+      allowOverlappingAppointments: true,
+      presentation: 'calendar',
+    });
+    const calendar = wrapper.findComponent({
+      name: 'SchedulingVueCalCalendar',
+    });
+
+    expect(calendar.props('allowOutsideWorkingHours')).toBe(true);
+    expect(calendar.props('allowOverlappingAppointments')).toBe(true);
   });
 
   it('renders appointment custom field summaries in list view', () => {

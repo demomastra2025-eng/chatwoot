@@ -11,6 +11,7 @@ const {
   getBreakRulesMock,
   getHolidaysMock,
   getResourcesMock,
+  getScheduleMock,
   getServicesMock,
   getTimeOffsMock,
   getWorkRulesMock,
@@ -18,6 +19,7 @@ const {
   updateBreakRulesMock,
   updateHolidayMock,
   updateResourceMock,
+  updateScheduleMock,
   updateServiceMock,
   updateTimeOffMock,
   updateWorkRulesMock,
@@ -38,6 +40,7 @@ const {
   getBreakRulesMock: vi.fn(),
   getHolidaysMock: vi.fn(),
   getResourcesMock: vi.fn(),
+  getScheduleMock: vi.fn(),
   getServicesMock: vi.fn(),
   getTimeOffsMock: vi.fn(),
   getWorkRulesMock: vi.fn(),
@@ -45,6 +48,7 @@ const {
   updateBreakRulesMock: vi.fn(),
   updateHolidayMock: vi.fn(),
   updateResourceMock: vi.fn(),
+  updateScheduleMock: vi.fn(),
   updateServiceMock: vi.fn(),
   updateTimeOffMock: vi.fn(),
   updateWorkRulesMock: vi.fn(),
@@ -57,8 +61,10 @@ vi.mock('dashboard/api/scheduling/resources', () => ({
     delete: deleteResourceMock,
     get: getResourcesMock,
     getBreakRules: getBreakRulesMock,
+    getSchedule: getScheduleMock,
     getWorkRules: getWorkRulesMock,
     update: updateResourceMock,
+    updateSchedule: updateScheduleMock,
     updateBreakRules: updateBreakRulesMock,
     updateWorkRules: updateWorkRulesMock,
   },
@@ -116,6 +122,84 @@ describe('useSchedulingReferencesStore', () => {
     expect(resource).toMatchObject({ id: 12, name: 'Dr. Sam' });
     expect(store.resources).toMatchObject([{ id: 12, name: 'Dr. Sam' }]);
     expect(store.ui.error).toBe(null);
+  });
+
+  it('uses the atomic schedule endpoint when the API capability is present', async () => {
+    const store = useSchedulingReferencesStore();
+    store.resources = [{ id: 12, scheduleUpdateSupported: true }];
+    const schedule = {
+      inherit_working_hours_from_account: false,
+      work_rules: [],
+      break_rules: [],
+    };
+    updateScheduleMock.mockResolvedValue({
+      data: {
+        payload: {
+          resource: { id: 12, schedule_update_supported: true },
+          work_rules: [],
+          break_rules: [],
+        },
+      },
+    });
+
+    const savedSchedule = await store.saveResourceSchedule(12, schedule);
+
+    expect(updateScheduleMock).toHaveBeenCalledWith(12, schedule);
+    expect(updateWorkRulesMock).not.toHaveBeenCalled();
+    expect(savedSchedule.resource.id).toBe(12);
+    expect(store.resources).toEqual([
+      { id: 12, scheduleUpdateSupported: true },
+    ]);
+    expect(store.ui.isSaving).toBe(false);
+  });
+
+  it('loads an atomic schedule and its revision when the capability is present', async () => {
+    const store = useSchedulingReferencesStore();
+    store.resources = [{ id: 12, scheduleUpdateSupported: true }];
+    getScheduleMock.mockResolvedValue({
+      data: {
+        payload: {
+          resource: { id: 12, schedule_update_supported: true },
+          schedule_revision: 'revision-1',
+          work_rules: [{ weekday: 1 }],
+          break_rules: [{ weekday: 1 }],
+        },
+      },
+    });
+
+    const schedule = await store.loadResourceSchedule(12);
+
+    expect(getScheduleMock).toHaveBeenCalledWith(12);
+    expect(schedule.scheduleRevision).toBe('revision-1');
+    expect(store.workRulesByResource).toEqual({});
+    expect(store.breakRulesByResource).toEqual({});
+
+    store.commitResourceSchedule(12, schedule);
+
+    expect(store.workRulesByResource[12]).toEqual([{ weekday: 1 }]);
+    expect(store.breakRulesByResource[12]).toEqual([{ weekday: 1 }]);
+  });
+
+  it('falls back to legacy schedule endpoints when the capability is absent', async () => {
+    const store = useSchedulingReferencesStore();
+    store.resources = [{ id: 12 }];
+    const schedule = {
+      inherit_working_hours_from_account: false,
+      work_rules: [{ weekday: 1 }],
+      break_rules: [{ weekday: 1 }],
+    };
+    updateWorkRulesMock.mockResolvedValue({
+      data: { payload: schedule.work_rules },
+    });
+    updateBreakRulesMock.mockResolvedValue({
+      data: { payload: schedule.break_rules },
+    });
+
+    await store.saveResourceSchedule(12, schedule);
+
+    expect(updateScheduleMock).not.toHaveBeenCalled();
+    expect(updateWorkRulesMock).toHaveBeenCalledWith(12, schedule.work_rules);
+    expect(updateBreakRulesMock).toHaveBeenCalledWith(12, schedule.break_rules);
   });
 
   it('removes a deleted service from the local store state', async () => {

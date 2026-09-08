@@ -1,5 +1,11 @@
 {
   "SCHEDULING": {
+    "CALENDAR": {
+      "ALL_RESOURCES_UNAVAILABLE": "Барлық мамандар қолжетімсіз",
+      "RESOURCES_UNAVAILABLE": "Қолжетімсіз: {names}",
+      "UNAVAILABLE": "Қолжетімсіз",
+      "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
+    },
     "TOOLBAR": {
       "SHOW_INACTIVE_APPOINTMENTS": "Өзекті емес жазбаларды көрсету"
     },
@@ -7,6 +13,19 @@
       "APPOINTMENT_UNBOOKABLE": "Жазба аяқталған, болдырылмаған немесе келмеді деп белгіленген. Оны MedElement жүйесінде жасау бұғатталды.",
       "AUTHENTICATION_FAILED": "MedElement авторизациядан бас тартты (HTTP 401). Компания логинін, құпиясөзін және интеграторға қолжетімділігін тексеріңіз.",
       "NO_SPECIALIST_SERVICES": "Таңдалған маманға MedElement қызметтері байланыстырылмаған. Маман–қызмет каталогының байланыстарын жаңартыңыз."
+    },
+    "AVAILABILITY_OVERRIDE": {
+      "CONFIRM_ACTION": "Сонда да жасау",
+      "OUTSIDE_WORKING_HOURS_TITLE": "Жұмыс кестесінен тыс",
+      "OUTSIDE_WORKING_HOURS_DESCRIPTION": "Таңдалған уақыт маманның жұмыс кестесінен тыс. Жазбаны сонда да жасау керек пе?",
+      "SLOT_CONFLICT_TITLE": "Уақыт бос емес",
+      "SLOT_CONFLICT_DESCRIPTION": "Бұл уақытта маманда басқа жазба бар. Тағы бір пациентті сонда да қосу керек пе?",
+      "BREAK_TITLE": "Үзіліс уақыты",
+      "BREAK_DESCRIPTION": "Таңдалған уақыт маманның үзілісімен қиылысады. Жазбаны бәрібір жасау керек пе?",
+      "GLOBAL_CLOSURE_TITLE": "Ұйым жабық",
+      "GLOBAL_CLOSURE_DESCRIPTION": "Бұл уақытта ұйым жабық. Маман мен бөлменің қолжетімді екенін растаңыз.",
+      "REASON_LABEL": "Ерекшеліктің себебі",
+      "REASON_PLACEHOLDER": "Кесте ережесін неге бұзу қажет екенін көрсетіңіз"
     },
     "APPOINTMENT_FORM": {
       "TITLE": "Кездесу атауы",
@@ -29,7 +48,14 @@
       "MEDELEMENT_APPOINTMENT_UNBOOKABLE": "MedElement жүйесінде тек жоспарланған немесе расталған жазбаны жасауға болады.",
       "MEDELEMENT_SERVICE_NOT_AVAILABLE_FOR_SPECIALIST": "Таңдалған қызмет бұл MedElement маманы үшін қолжетімсіз.",
       "MEDELEMENT_SERVICE_REQUIRED": "MedElement каталогынан қызметті таңдаңыз.",
-      "MEDELEMENT_SERVICE_UNMAPPED": "Таңдалған қызмет MedElement жүйесімен байланыстырылмаған."
+      "MEDELEMENT_SERVICE_UNMAPPED": "Таңдалған қызмет MedElement жүйесімен байланыстырылмаған.",
+      "SCHEDULE_VERSION_CONFLICT": "Кестені басқа пайдаланушы өзгерткен. Өзгерістерді сақтамас бұрын кестені жаңартыңыз."
+    },
+    "RESOURCES": {
+      "INHERIT_COMPANY_HOURS": "Компанияның жұмыс уақытын пайдалану",
+      "INHERIT_COMPANY_HOURS_DESCRIPTION": "Компания кестесі өзгерген кезде маманның жұмыс уақыты, уақыт белдеуі және ортақ үзілістері автоматты түрде жаңартылады.",
+      "LEGACY_INTERVAL_GAP": "Көшірілген ауысымдар арасындағы үзіліс",
+      "MANAGED_BY_MEDELEMENT": "MedElement жүйесінде басқарылады"
     }
   }
 }

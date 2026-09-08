@@ -47,6 +47,7 @@ class CustomRole < ApplicationRecord
     report_manage
     knowledge_base_manage
     captain_manage
+    scheduling_override
   ].freeze
 
   validates :name, presence: true

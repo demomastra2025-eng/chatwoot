@@ -18,6 +18,14 @@ class SchedulingResourcesAPI extends ApiClient {
     return axios.patch(`${this.url}/${id}`, data);
   }
 
+  updateSchedule(resourceId, schedule) {
+    return axios.patch(`${this.url}/${resourceId}/schedule`, schedule);
+  }
+
+  getSchedule(resourceId) {
+    return axios.get(`${this.url}/${resourceId}/schedule`);
+  }
+
   delete(id) {
     return axios.delete(`${this.url}/${id}`);
   }

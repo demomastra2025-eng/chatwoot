@@ -23,12 +23,21 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
   end
 
   def create
-    resource = Current.account.scheduling_resources.create!(resource_params)
+    resource = Scheduling::Resource.transaction do
+      attributes = resource_params
+      created_resource = Current.account.scheduling_resources.create!(attributes)
+      created_resource.apply_workspace_working_hours! if created_resource.inherit_working_hours_from_account?
+      created_resource
+    end
     render_payload(Scheduling::PayloadBuilder.resource(resource), status: :created)
   end
 
   def update
-    @scheduling_resource.update!(resource_params)
+    @scheduling_resource.with_lock do
+      @scheduling_resource.reload
+      @scheduling_resource.update!(resource_params)
+      @scheduling_resource.apply_workspace_working_hours! if @scheduling_resource.inherit_working_hours_from_account?
+    end
     render_payload(Scheduling::PayloadBuilder.resource(@scheduling_resource))
   end
 
@@ -48,11 +57,11 @@ class Api::V1::Accounts::Scheduling::ResourcesController < Api::V1::Accounts::Sc
         :photo_url,
         :description,
         :color,
-        :timezone,
         :slot_duration_min,
         :compensation_type,
         :compensation_value,
         :compensation_percent,
+        :inherit_working_hours_from_account,
         :active,
         :user_id,
         custom_attributes: {}

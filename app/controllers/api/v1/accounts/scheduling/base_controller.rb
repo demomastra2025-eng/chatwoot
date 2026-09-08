@@ -40,6 +40,16 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     )
   end
 
+  def ensure_locally_managed_resource!
+    return if @scheduling_resource.custom_attributes.to_h['medelement_specialist_code'].blank?
+
+    raise Scheduling::Error.new(
+      code: 'RESOURCE_READ_ONLY',
+      message: 'Imported Medelement specialist schedules are managed by the provider',
+      status: :unprocessable_content
+    )
+  end
+
   def parse_boolean(value, default: false)
     return default if value.nil?
 
@@ -109,6 +119,10 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
     body = { payload: payload }
     body[:meta] = meta if meta.present?
     render json: body, status: status
+  end
+
+  def schedule_rules_payload(field, permitted:)
+    Scheduling::ResourceScheduleRulesContract.parse!(params, field: field, permitted: permitted)
   end
 
   def render_record_invalid(error)

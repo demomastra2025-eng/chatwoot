@@ -58,18 +58,23 @@ class Integrations::Medelement::SpecialistsSyncService
     return log_skipped_specialist('missing_specialist_code', payload: payload) if specialist_code.blank?
     return log_skipped_specialist('missing_name', specialist_code, payload: payload) if specialist_name.blank?
 
-    resource = find_resource(specialist_code) || account.scheduling_resources.new
+    resource = find_resource(specialist_code) || account.scheduling_resources.new(inherit_working_hours_from_account: false)
     resource.assign_attributes(specialist_attributes(resource, payload, specialist_code, specialist_name))
     resource.save!
-    work_rules_sync_service.perform(resource)
+    if resource.inherit_working_hours_from_account?
+      resource.apply_workspace_working_hours!
+    else
+      work_rules_sync_service.perform(resource)
+    end
     specialist_code
   end
 
   def specialist_attributes(resource, payload, specialist_code, specialist_name)
     attributes = {
       account: resource.account || account,
+      inherit_working_hours_from_account: false,
       name: specialist_name,
-      timezone: payload['timezone'].presence || configuration.time_zone,
+      timezone: account.workspace_working_hours_timezone,
       slot_duration_min: slot_duration(payload, resource),
       active: resource.deleted_from_scheduling? ? false : specialist_active?(payload),
       custom_attributes: resource.custom_attributes.merge(resource_custom_attributes(resource, payload, specialist_code))
