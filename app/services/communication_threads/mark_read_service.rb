@@ -54,7 +54,8 @@ class CommunicationThreads::MarkReadService
     conversation_ids = conversations.map(&:id)
     return false if conversation_ids.blank?
 
-    Message.joins(:conversation)
+    Message.without_imported_history
+           .joins(:conversation)
            .where(
              account_id: current_account.id,
              conversation_id: conversation_ids,

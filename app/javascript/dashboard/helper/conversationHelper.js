@@ -106,10 +106,29 @@ export const getUnreadMessages = (messages, agentLastSeenAt) => {
 export const isPublicIncomingMessage = message =>
   message?.message_type === 0 && message?.private !== true;
 
+export const isImportedHistoryMessage = message => {
+  let contentAttributes = message?.content_attributes;
+  if (typeof contentAttributes === 'string') {
+    try {
+      contentAttributes = JSON.parse(contentAttributes);
+    } catch {
+      return false;
+    }
+  }
+
+  const importedHistory = contentAttributes?.imported_history;
+  return (
+    importedHistory === true ||
+    (typeof importedHistory === 'string' &&
+      importedHistory.toLowerCase() === 'true')
+  );
+};
+
 export const getUnreadIncomingMessages = (messages, agentLastSeenAt) => {
   return messages.filter(
     message =>
       isPublicIncomingMessage(message) &&
+      !isImportedHistoryMessage(message) &&
       message.created_at * 1000 > Number(agentLastSeenAt || 0) * 1000
   );
 };

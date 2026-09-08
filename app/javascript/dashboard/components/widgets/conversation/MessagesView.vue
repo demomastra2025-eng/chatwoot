@@ -34,6 +34,7 @@ import { LocalStorage } from 'shared/helpers/localStorage';
 import {
   filterDuplicateSourceMessages,
   getUnreadIncomingMessages,
+  isImportedHistoryMessage,
   isPublicIncomingMessage,
 } from 'dashboard/helper/conversationHelper';
 
@@ -165,14 +166,17 @@ export default {
       return messages;
     },
     unReadMessages() {
+      const unreadCandidates = this.getMessages.filter(
+        message => !this.isImportedHistoryMessage(message)
+      );
       if (!isCommunicationThread(this.currentChat)) {
         return getUnreadIncomingMessages(
-          this.getMessages,
+          unreadCandidates,
           this.currentChat.agent_last_seen_at
         );
       }
 
-      return this.getMessages.filter(message =>
+      return unreadCandidates.filter(message =>
         this.isUnreadCommunicationThreadMessage(message)
       );
     },
@@ -419,10 +423,8 @@ export default {
           (!hasExplicitMessageTarget &&
             (!this.hasUserScrolled || this.isNearConversationBottom()))
         ) {
-          const didScrollToLoadedUnread = this.scrollToBottom();
-          if (didScrollToLoadedUnread !== false) {
-            this.makeMessagesRead();
-          }
+          this.scrollToBottom();
+          this.makeMessagesRead();
         }
       });
     },
@@ -458,10 +460,9 @@ export default {
           );
         }
 
-        // Backend says there is unread content, but it is not mounted in the
-        // current payload yet. Do not mark the conversation read in this state;
-        // keep the viewport at the newest mounted content while the missing
-        // unread page can be fetched/retried.
+        // A stale aggregate can outlive its unread message. Keep the viewport
+        // at the newest mounted content; the caller still sends mark-read so
+        // the backend can reconcile the aggregate instead of deadlocking here.
         scrollConversationPanelToBottom(this.conversationPanel);
         return false;
       }
@@ -490,6 +491,7 @@ export default {
 
       return this.currentChat.agent_last_seen_at || 0;
     },
+    isImportedHistoryMessage,
     isUnreadCommunicationThreadMessage(message) {
       if (!isPublicIncomingMessage(message)) return false;
 

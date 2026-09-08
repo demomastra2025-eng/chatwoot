@@ -75,6 +75,17 @@ RSpec.describe Whatsapp::CoexistenceHistoryService do
     end.not_to change(Message, :count)
   end
 
+  it 'marks history as imported before the first unread aggregate refresh', :aggregate_failures do
+    channel.account.enable_features!('communication_threads')
+
+    described_class.new(channel: channel, value: value).perform
+
+    conversation = channel.inbox.conversations.last
+    expect(conversation.messages).to all(satisfy { |message| message.content_attributes['imported_history'] == true })
+    expect(conversation.unread_incoming_messages_count).to eq(0)
+    expect(conversation.reload.communication_thread.reload.unread_count).to eq(0)
+  end
+
   it 'normalizes millisecond timestamps before persisting history metadata' do
     millisecond_value = value.deep_dup
     millisecond_value[:history][0][:threads][0][:messages].first[:timestamp] = '1700000000000'

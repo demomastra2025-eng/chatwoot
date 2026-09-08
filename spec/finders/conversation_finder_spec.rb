@@ -124,7 +124,6 @@ describe ConversationFinder do
           inbox: inbox,
           agent_last_seen_at: 1.hour.ago
         )
-
         create(:message, account: account, conversation: unread_conversation, created_at: 10.minutes.ago)
         create(:message, account: account, conversation: read_conversation, created_at: 10.minutes.ago)
         create(
@@ -141,10 +140,23 @@ describe ConversationFinder do
           message_type: :outgoing,
           created_at: 10.minutes.ago
         )
-
         result = conversation_finder.perform
 
         expect(result[:conversations].map(&:id)).to contain_exactly(unread_conversation.id)
+      end
+
+      it 'excludes imported history from unread conversations' do
+        imported_history_conversation = create(:conversation, account: account, inbox: inbox, agent_last_seen_at: nil)
+        create(
+          :message,
+          account: account,
+          conversation: imported_history_conversation,
+          content_attributes: { imported_history: true }
+        )
+
+        result = conversation_finder.perform
+
+        expect(result[:conversations].map(&:id)).not_to include(imported_history_conversation.id)
       end
 
       it 'intersects unread with status, assignee, inbox, team, label, CRM, and appointment filters' do

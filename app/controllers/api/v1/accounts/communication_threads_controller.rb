@@ -186,7 +186,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   def first_unread_message_id_for(communication_thread)
     conversation_ids = accessible_links_for(communication_thread).select(:conversation_id)
 
-    messages = Message.joins(:conversation)
+    messages = Message.without_imported_history
+                      .joins(:conversation)
                       .where(
                         account_id: Current.account.id,
                         conversation_id: conversation_ids,
@@ -489,7 +490,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def unread_channel_message_counts(incoming_messages)
-    incoming_messages.where(private: false)
+    incoming_messages.without_imported_history
+                     .where(private: false)
                      .joins(:conversation)
                      .where(
                        'messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)',

@@ -101,7 +101,7 @@ describe('MessagesView', () => {
       expect(context.makeMessagesRead).toHaveBeenCalled();
     });
 
-    it('does not mark messages read when unread messages are not mounted yet', () => {
+    it('marks messages read when a stale unread count has no mounted message', () => {
       const context = buildContext({
         isNearConversationBottom: vi.fn(() => true),
         scrollToBottom: vi.fn(() => false),
@@ -110,7 +110,7 @@ describe('MessagesView', () => {
       MessagesView.methods.onScrollToMessage.call(context);
 
       expect(context.scrollToBottom).toHaveBeenCalled();
-      expect(context.makeMessagesRead).not.toHaveBeenCalled();
+      expect(context.makeMessagesRead).toHaveBeenCalled();
     });
   });
 
@@ -515,12 +515,20 @@ describe('MessagesView', () => {
     it('only treats public incoming direct-conversation messages as unread', () => {
       const context = {
         currentChat: { agent_last_seen_at: 100 },
+        isImportedHistoryMessage: MessagesView.methods.isImportedHistoryMessage,
         getMessages: [
           { id: 1, message_type: 2, private: false, created_at: 120 },
           { id: 2, message_type: 1, private: false, created_at: 120 },
           { id: 3, message_type: 0, private: true, created_at: 120 },
           { id: 4, message_type: 0, private: false, created_at: 90 },
           { id: 5, message_type: 0, private: false, created_at: 120 },
+          {
+            id: 6,
+            message_type: 0,
+            private: false,
+            created_at: 120,
+            content_attributes: { imported_history: true },
+          },
         ],
       };
 
@@ -560,8 +568,18 @@ describe('MessagesView', () => {
             private: false,
             created_at: 150,
           },
+          {
+            id: 4,
+            conversation_id: 12,
+            message_type: 0,
+            private: false,
+            created_at: 250,
+            content_attributes: { imported_history: true },
+          },
         ],
       };
+      context.isImportedHistoryMessage =
+        MessagesView.methods.isImportedHistoryMessage;
       context.communicationThreadLastSeenByConversationId =
         MessagesView.computed.communicationThreadLastSeenByConversationId.call(
           context

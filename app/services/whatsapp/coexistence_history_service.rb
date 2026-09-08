@@ -100,19 +100,22 @@ class Whatsapp::CoexistenceHistoryService
 
     outgoing = outgoing_message?(message)
     payload = build_message_payload(thread_id, message, outgoing, metadata)
-    suppress_runtime_events do
-      Whatsapp::IncomingMessageWhatsappCloudService.new(
-        inbox: @channel.inbox,
-        params: payload,
-        outgoing_echo: outgoing
-      ).perform
-    end
+    suppress_runtime_events { history_message_service(payload, outgoing).perform }
     return if non_message_event?(message)
 
     imported_messages_for(message).each do |imported_message|
       validate_media_hydration!(imported_message, source_id) if media_hydration_required
       apply_history_metadata(imported_message, message, outgoing, history_timestamp)
     end
+  end
+
+  def history_message_service(payload, outgoing)
+    Whatsapp::IncomingMessageWhatsappCloudService.new(
+      inbox: @channel.inbox,
+      params: payload,
+      outgoing_echo: outgoing,
+      history_import: true
+    )
   end
 
   def import_identity(message)

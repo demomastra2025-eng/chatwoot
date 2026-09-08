@@ -985,6 +985,15 @@ RSpec.describe 'Communication Threads API', type: :request do
       )
       thread = conversation.reload.communication_thread
       thread.update!(session_started_at: 1.day.ago)
+      imported_message = create(
+        :message,
+        account: account,
+        conversation: conversation,
+        inbox: conversation.inbox,
+        message_type: :incoming,
+        content_attributes: { imported_history: true },
+        created_at: 2.hours.ago
+      )
       current_message = create(
         :message,
         account: account,
@@ -999,6 +1008,7 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(response).to have_http_status(:success)
       expect(response.parsed_body.dig('meta', 'first_unread_message_id')).to eq(current_message.id)
       expect(response.parsed_body['payload'].pluck('id')).to include(current_message.id)
+      expect(response.parsed_body['payload'].pluck('id')).to include(imported_message.id)
       expect(response.parsed_body['payload'].pluck('id')).not_to include(historical_message.id)
     end
   end

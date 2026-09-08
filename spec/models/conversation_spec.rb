@@ -810,6 +810,19 @@ RSpec.describe Conversation do
 
       expect(unread_incoming_messages).to contain_exactly(message)
     end
+
+    it 'excludes imported history while preserving genuine unread messages' do
+      imported_message = create(
+        :message,
+        message_type: :incoming,
+        content_attributes: { imported_history: true },
+        **message_params
+      )
+
+      expect(unread_incoming_messages).to contain_exactly(message)
+      expect(conversation.unread_incoming_messages_count).to eq(1)
+      expect(unread_incoming_messages).not_to include(imported_message)
+    end
   end
 
   describe '#push_event_data' do

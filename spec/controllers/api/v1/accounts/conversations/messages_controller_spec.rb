@@ -212,6 +212,26 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response).to conform_schema(200)
         expect(JSON.parse(response.body, symbolize_names: true)[:meta][:contact][:id]).to eq(conversation.contact_id)
       end
+
+      it 'uses the first genuine unread message for the initial cursor' do
+        conversation.update!(agent_last_seen_at: 1.day.ago)
+        imported_message = create(
+          :message,
+          account: account,
+          conversation: conversation,
+          content_attributes: { imported_history: true },
+          created_at: 10.minutes.ago
+        )
+        live_message = create(:message, account: account, conversation: conversation, created_at: 5.minutes.ago)
+
+        get "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/messages",
+            headers: agent.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.parsed_body.dig('meta', 'first_unread_message_id')).to eq(live_message.id)
+        expect(response.parsed_body.dig('meta', 'first_unread_message_id')).not_to eq(imported_message.id)
+      end
     end
   end
 

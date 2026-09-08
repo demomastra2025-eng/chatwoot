@@ -8,6 +8,7 @@ import {
 } from '../../../helper/permissionsHelper';
 import camelcaseKeys from 'camelcase-keys';
 import { isCommunicationThread } from 'dashboard/helper/communicationThreadHelper';
+import { getUnreadIncomingMessages } from 'dashboard/helper/conversationHelper';
 
 const conversationStoreType = conversation =>
   isCommunicationThread(conversation) ? 'communication_thread' : 'conversation';
@@ -202,12 +203,8 @@ const getters = {
   getUnreadCount(_state) {
     const [chat] = getSelectedChatConversation(_state);
     if (!chat) return [];
-    return chat.messages.filter(
-      chatMessage =>
-        chatMessage.created_at * 1000 > chat.agent_last_seen_at * 1000 &&
-        chatMessage.message_type === 0 &&
-        chatMessage.private !== true
-    ).length;
+    return getUnreadIncomingMessages(chat.messages, chat.agent_last_seen_at)
+      .length;
   },
   getChatStatusFilter: ({ chatStatusFilter }) => chatStatusFilter,
   getChatSortFilter: ({ chatSortFilter }) => chatSortFilter,

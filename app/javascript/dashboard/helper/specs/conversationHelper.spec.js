@@ -2,7 +2,9 @@ import {
   filterDuplicateSourceMessages,
   getLastMessage,
   getReadMessages,
+  getUnreadIncomingMessages,
   getUnreadMessages,
+  isImportedHistoryMessage,
 } from '../conversationHelper';
 import {
   conversationData,
@@ -56,6 +58,49 @@ describe('conversationHelper', () => {
           conversationData.agent_last_seen_at
         )
       ).toEqual(unReadMessagesData);
+    });
+  });
+
+  describe('#isImportedHistoryMessage', () => {
+    it.each([
+      [{ imported_history: true }, true],
+      [{ imported_history: 'TRUE' }, true],
+      ['{"imported_history":true}', true],
+      ['{"imported_history":"true"}', true],
+      ['{legacy opaque value', false],
+      [{ imported_history: false }, false],
+      [undefined, false],
+    ])(
+      'normalizes object and string content attributes',
+      (contentAttributes, expected) => {
+        expect(
+          isImportedHistoryMessage({ content_attributes: contentAttributes })
+        ).toBe(expected);
+      }
+    );
+  });
+
+  describe('#getUnreadIncomingMessages', () => {
+    it('excludes imported history in object and JSON-string representations', () => {
+      const messages = [
+        { id: 1, message_type: 0, private: false, created_at: 2 },
+        {
+          id: 2,
+          message_type: 0,
+          private: false,
+          created_at: 2,
+          content_attributes: { imported_history: true },
+        },
+        {
+          id: 3,
+          message_type: 0,
+          private: false,
+          created_at: 2,
+          content_attributes: '{"imported_history":"true"}',
+        },
+      ];
+
+      expect(getUnreadIncomingMessages(messages, 1)).toEqual([messages[0]]);
     });
   });
 

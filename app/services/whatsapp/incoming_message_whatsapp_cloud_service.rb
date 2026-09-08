@@ -12,11 +12,21 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
 
   attr_reader :prepared_attachment
 
-  def initialize(inbox:, params:, outgoing_echo: nil, prepared_attachment: nil, require_prepared_attachment: false)
+  # rubocop:disable Metrics/ParameterLists
+  def initialize(
+    inbox:,
+    params:,
+    outgoing_echo: nil,
+    prepared_attachment: nil,
+    require_prepared_attachment: false,
+    history_import: false
+  )
     @prepared_attachment = prepared_attachment
     @require_prepared_attachment = require_prepared_attachment
+    @history_import = history_import == true
     super(inbox: inbox, params: params, outgoing_echo: outgoing_echo)
   end
+  # rubocop:enable Metrics/ParameterLists
 
   def perform
     super
@@ -25,6 +35,19 @@ class Whatsapp::IncomingMessageWhatsappCloudService < Whatsapp::IncomingMessageB
   end
 
   private
+
+  def message_content_attributes(message)
+    attributes = super
+    return attributes unless @history_import
+
+    history_status = message.dig(:history_context, :status).presence || message[:status]
+    attributes.merge(
+      imported_history: true,
+      whatsapp_history_import: true,
+      whatsapp_history_status: history_status,
+      whatsapp_history_original_type: message[:type]
+    ).compact
+  end
 
   def process_statuses
     status_payload = @processed_params[:statuses]&.first

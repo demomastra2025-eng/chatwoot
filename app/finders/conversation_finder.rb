@@ -281,6 +281,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
 
   def unread_conversation_scope(scope)
     scope.joins(:messages)
+         .merge(Message.without_imported_history.reorder(nil))
          .where(messages: unread_message_filters)
          .where(
            'messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)',

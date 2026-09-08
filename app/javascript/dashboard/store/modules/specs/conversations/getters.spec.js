@@ -204,6 +204,39 @@ describe('#getters', () => {
     });
   });
 
+  describe('#getUnreadCount', () => {
+    it('excludes imported history from object and JSON-string messages', () => {
+      const state = {
+        selectedChatId: 1,
+        allConversations: [
+          {
+            id: 1,
+            agent_last_seen_at: 1,
+            messages: [
+              { id: 1, message_type: 0, private: false, created_at: 2 },
+              {
+                id: 2,
+                message_type: 0,
+                private: false,
+                created_at: 2,
+                content_attributes: { imported_history: true },
+              },
+              {
+                id: 3,
+                message_type: 0,
+                private: false,
+                created_at: 2,
+                content_attributes: '{"imported_history":true}',
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(getters.getUnreadCount(state)).toBe(1);
+    });
+  });
+
   describe('#getUnAssignedChats', () => {
     it('order returns only chats assigned to user', () => {
       const conversationList = [

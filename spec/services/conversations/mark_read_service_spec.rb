@@ -110,14 +110,29 @@ RSpec.describe Conversations::MarkReadService do
           created_at: 5.minutes.ago
         )
       end
+      let!(:imported_message) do
+        create(
+          :message,
+          account: channel.account,
+          inbox: channel.inbox,
+          conversation: conversation,
+          sender: contact,
+          message_type: :incoming,
+          source_id: 'wamid.cloud-history-1',
+          content_attributes: { imported_history: true, whatsapp_history_import: true },
+          created_at: 10.minutes.ago
+        )
+      end
 
       it 'passes provider ids and timestamps to the Cloud sync service' do
         sync_service = instance_double(Whatsapp::MarkMessagesReadService, perform: true)
         projected_message = nil
+        projected_message_ids = nil
         expected_conversation = conversation
 
         expect(Whatsapp::MarkMessagesReadService).to receive(:new) do |conversation:, messages:|
           expect(conversation).to eq(expected_conversation)
+          projected_message_ids = messages.map(&:id)
           projected_message = messages.find { |message| message.id == incoming_message.id }
           sync_service
         end
@@ -129,6 +144,8 @@ RSpec.describe Conversations::MarkReadService do
           source_id: 'wamid.cloud-incoming-1',
           created_at: incoming_message.reload.created_at
         )
+        expect(projected_message_ids).to contain_exactly(incoming_message.id)
+        expect(projected_message_ids).not_to include(imported_message.id)
       end
     end
 

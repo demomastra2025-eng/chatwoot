@@ -186,11 +186,13 @@ class Conversation < ApplicationRecord
   end
 
   def unread_messages
-    agent_last_seen_at.present? ? messages.created_since(agent_last_seen_at) : messages
+    scope = agent_last_seen_at.present? ? messages.created_since(agent_last_seen_at) : messages
+    scope.without_imported_history
   end
 
   def assignee_unread_messages
-    assignee_last_seen_at.present? ? messages.created_since(assignee_last_seen_at) : messages
+    scope = assignee_last_seen_at.present? ? messages.created_since(assignee_last_seen_at) : messages
+    scope.without_imported_history
   end
 
   def unread_incoming_messages
