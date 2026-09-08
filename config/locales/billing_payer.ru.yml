@@ -1,0 +1,16 @@
+ru:
+  activerecord:
+    attributes:
+      billing_account:
+        payer_type: "Тип плательщика"
+        legal_name: "Юридическое наименование / ФИО"
+        tax_id: "БИН / ИИН / налоговый номер"
+        billing_contact_name: "Контактное лицо"
+        billing_email: "Email для биллинга"
+        billing_phone: "Телефон для биллинга"
+        billing_address: "Адрес плательщика"
+        billing_country: "Страна (двухбуквенный код)"
+  super_admin:
+    billing_accounts:
+      payer_details: "Реквизиты плательщика и контакты"
+      payer_details_help: "Необязательные реквизиты. Страна указывается двухбуквенным кодом; формат налогового номера зависит от страны."

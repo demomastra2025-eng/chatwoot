@@ -1,0 +1,16 @@
+kk:
+  activerecord:
+    attributes:
+      billing_account:
+        payer_type: "Төлеуші түрі"
+        legal_name: "Заңды атауы / аты-жөні"
+        tax_id: "БСН / ЖСН / салық нөмірі"
+        billing_contact_name: "Байланыс тұлғасы"
+        billing_email: "Биллингке арналған email"
+        billing_phone: "Биллингке арналған телефон"
+        billing_address: "Төлеуші мекенжайы"
+        billing_country: "Ел (екі әріпті код)"
+  super_admin:
+    billing_accounts:
+      payer_details: "Төлеуші деректемелері және байланыс ақпараты"
+      payer_details_help: "Міндетті емес деректемелер. Ел екі әріпті кодпен көрсетіледі; салық нөмірінің форматы елге байланысты."

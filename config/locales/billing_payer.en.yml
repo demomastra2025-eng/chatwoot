@@ -1,0 +1,16 @@
+en:
+  activerecord:
+    attributes:
+      billing_account:
+        payer_type: "Payer type"
+        legal_name: "Legal name / full name"
+        tax_id: "Tax ID"
+        billing_contact_name: "Billing contact"
+        billing_email: "Billing email"
+        billing_phone: "Billing phone"
+        billing_address: "Billing address"
+        billing_country: "Country (two-letter code)"
+  super_admin:
+    billing_accounts:
+      payer_details: "Payer and billing contact"
+      payer_details_help: "Optional billing details. Country uses a two-letter code; tax ID format depends on the country."

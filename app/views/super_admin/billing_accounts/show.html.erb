@@ -1,0 +1,155 @@
+<% billing_account = page.resource %>
+<% content_for(:title) { "Billing organization ##{billing_account.id}" } %>
+
+<header class="main-content__header">
+  <div>
+    <h1 class="main-content__page-title"><%= billing_account.name %></h1>
+    <p class="text-sm text-slate-500 mt-1">Provider-neutral billing ownership, subscription and Workspace allocations.</p>
+  </div>
+  <%= link_to 'Edit organization', edit_super_admin_billing_account_path(billing_account), class: 'button' %>
+</header>
+
+<section class="main-content__body space-y-4">
+  <p class="text-sm text-slate-600">Billing accounts are closed by changing their status. Permanent deletion is disabled to preserve commercial history.</p>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div><div class="text-xs text-slate-500">Status</div><div class="font-medium"><%= billing_account.status %></div></div>
+    <div><div class="text-xs text-slate-500">Currency</div><div class="font-medium"><%= billing_account.default_currency %></div></div>
+    <div><div class="text-xs text-slate-500">Locale</div><div class="font-medium"><%= billing_account.default_locale %></div></div>
+    <div><div class="text-xs text-slate-500">Active Workspaces</div><div class="font-medium"><%= billing_account.workspaces.count %></div></div>
+  </div>
+
+  <section class="rounded-lg border border-slate-200 p-5">
+    <h2 class="text-lg font-semibold mb-4"><%= t('super_admin.billing_accounts.payer_details') %></h2>
+    <p class="text-sm text-slate-500 mb-4"><%= t('super_admin.billing_accounts.payer_details_help') %></p>
+    <dl class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <% BillingAccount::PAYER_ATTRIBUTES.each do |field| %>
+        <div>
+          <dt class="text-xs text-slate-500"><%= BillingAccount.human_attribute_name(field) %></dt>
+          <dd class="font-medium whitespace-pre-wrap"><%= billing_account.public_send(field).presence || '—' %></dd>
+        </div>
+      <% end %>
+    </dl>
+  </section>
+
+  <section class="rounded-lg border border-slate-200 p-5">
+    <h2 class="text-lg font-semibold mb-4">Workspaces</h2>
+    <table class="w-full mb-5">
+      <thead><tr><th>ID</th><th>Name</th><th>Status</th><th>Detached at</th><th></th></tr></thead>
+      <tbody>
+        <% billing_account.workspace_links.includes(:account).order(:id).each do |link| %>
+          <tr>
+            <td><%= link.account_id %></td><td><%= link.account.name %></td><td><%= link.status %></td>
+            <td><%= link.detached_at&.to_fs(:long) || '—' %></td>
+            <td>
+              <% if link.active? %>
+                <%= button_to 'Detach', detach_workspace_super_admin_billing_account_path(billing_account), method: :post,
+                              params: { link_id: link.id }, data: { confirm: 'Detach this Workspace from billing?' },
+                              class: 'text-red-600' %>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <%= form_with url: attach_workspace_super_admin_billing_account_path(billing_account), method: :post,
+                  class: 'flex items-end gap-3' do |form| %>
+      <div><%= form.label :account_id, 'Workspace ID' %><%= form.number_field :account_id, min: 1, required: true %></div>
+      <%= form.submit 'Attach Workspace', class: 'button' %>
+    <% end %>
+  </section>
+
+  <section class="rounded-lg border border-slate-200 p-5">
+    <h2 class="text-lg font-semibold mb-4">Billing access</h2>
+    <table class="w-full mb-5">
+      <thead><tr><th>User</th><th>Role</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <% billing_account.memberships.includes(:user).order(:id).each do |membership| %>
+          <tr>
+            <td>#<%= membership.user_id %> <%= membership.user.name %></td>
+            <td><%= membership.role %></td><td><%= membership.status %></td>
+            <td>
+              <% if membership.active? && !membership.owner? %>
+                <%= button_to 'Deactivate', deactivate_membership_super_admin_billing_account_path(billing_account), method: :post,
+                              params: { membership_id: membership.id }, data: { confirm: 'Deactivate this billing membership?' },
+                              class: 'text-red-600' %>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    <%= form_with url: upsert_membership_super_admin_billing_account_path(billing_account), method: :post,
+                  scope: :membership, class: 'flex items-end gap-3' do |form| %>
+      <div><%= form.label :user_id, 'User ID' %><%= form.number_field :user_id, min: 1, required: true %></div>
+      <div><%= form.label :role %><%= form.select :role, BillingAccountMembership::ROLES, {}, required: true %></div>
+      <%= form.submit 'Save membership', class: 'button' %>
+    <% end %>
+  </section>
+
+  <section class="rounded-lg border border-slate-200 p-5">
+    <h2 class="text-lg font-semibold mb-4">Subscription</h2>
+    <% if @current_subscription %>
+      <p class="mb-4">
+        <strong><%= @current_subscription.billing_plan.name %></strong>
+        · <%= @current_subscription.status %>
+        · <%= @current_subscription.current_period_starts_at&.to_fs(:short) || '—' %>
+        → <%= @current_subscription.current_period_ends_at&.to_fs(:short) || '—' %>
+      </p>
+    <% else %>
+      <p class="text-slate-500 mb-4">No subscription has been assigned.</p>
+    <% end %>
+
+    <% if @active_plans.any? %>
+      <%= form_with url: assign_subscription_super_admin_billing_account_path(billing_account), method: :post,
+                    scope: :subscription, class: 'grid grid-cols-1 md:grid-cols-3 gap-3 items-end' do |form| %>
+        <div><%= form.label :plan_id, 'Active plan (public or private)' %><%= form.select :plan_id, @active_plans.map { |plan| ["#{plan.name} v#{plan.version}", plan.id] }, { selected: @current_subscription&.billing_plan_id }, required: true %></div>
+        <div><%= form.label :price_id, 'Price (optional)' %><%= form.select :price_id, @active_plans.flat_map { |plan| plan.prices.map { |price| ["#{plan.name}: #{price.amount_cents} #{price.currency} / #{price.interval}", price.id] } }, { include_blank: true, selected: @current_subscription&.billing_plan_price_id } %></div>
+        <div><%= form.label :status %><%= form.select :status, BillingSubscription::STATUSES, { selected: @current_subscription&.status || 'active' }, required: true %></div>
+        <div><%= form.label :current_period_starts_at, 'Period starts' %><%= form.datetime_local_field :current_period_starts_at, value: @current_subscription&.current_period_starts_at&.strftime('%Y-%m-%dT%H:%M') %></div>
+        <div><%= form.label :current_period_ends_at, 'Period ends' %><%= form.datetime_local_field :current_period_ends_at, value: @current_subscription&.current_period_ends_at&.strftime('%Y-%m-%dT%H:%M') %></div>
+        <%= form.submit 'Save subscription', class: 'button' %>
+      <% end %>
+    <% else %>
+      <p class="text-amber-700">Create and publish a BillingPlan before assigning a subscription.</p>
+    <% end %>
+  </section>
+
+  <section class="rounded-lg border border-slate-200 p-5">
+    <h2 class="text-lg font-semibold mb-4">Workspace allocations</h2>
+    <% if @current_subscription&.entitling? %>
+      <div class="space-y-4">
+        <% billing_account.workspaces.order(:id).each do |account| %>
+          <% allocation = @current_subscription.entitlement_allocations.find_by(account: account) %>
+          <% storage_bytes = allocation&.limits&.dig('storage_bytes') %>
+          <%= form_with url: update_allocation_super_admin_billing_account_path(billing_account), method: :post,
+                        scope: :allocation, class: 'grid grid-cols-1 md:grid-cols-4 gap-3 items-end border-b border-slate-100 pb-4' do |form| %>
+            <%= form.hidden_field :account_id, value: account.id %>
+            <div><div class="text-xs text-slate-500">Workspace</div><div class="font-medium">#<%= account.id %> <%= account.name %></div></div>
+            <div><%= form.label :agents, 'Employees' %><%= form.number_field :agents, min: 0, value: allocation&.limits&.dig('agents') %></div>
+            <div><%= form.label :storage_gb, 'Storage, GB' %><%= form.number_field :storage_gb, min: 0, step: 0.01, value: storage_bytes && storage_bytes / 1.gigabyte.to_f %></div>
+            <%= form.submit 'Save allocation', class: 'button' %>
+          <% end %>
+        <% end %>
+      </div>
+    <% else %>
+      <p class="text-slate-500">Assign an entitling subscription before allocating limits.</p>
+    <% end %>
+  </section>
+
+  <section class="rounded-lg border border-slate-200 p-5">
+    <h2 class="text-lg font-semibold mb-4">Change history</h2>
+    <table class="w-full">
+      <thead><tr><th>Time</th><th>Super admin</th><th>Action</th><th>Details</th></tr></thead>
+      <tbody>
+        <% @audit_events.each do |event| %>
+          <tr>
+            <td><%= event.occurred_at.to_fs(:short) %></td>
+            <td><%= event.super_admin_id || 'system' %></td>
+            <td><%= event.action %></td>
+            <td><code class="text-xs"><%= event.details.to_json %></code></td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+  </section>
+</section>
