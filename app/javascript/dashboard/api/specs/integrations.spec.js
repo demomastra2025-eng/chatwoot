@@ -1,4 +1,4 @@
-import integrationAPI, { normalizeKaspiPayCashierPhone } from '../integrations';
+import integrationAPI from '../integrations';
 import ApiClient from '../ApiClient';
 
 describe('#integrationAPI', () => {
@@ -105,75 +105,6 @@ describe('#integrationAPI', () => {
       expect(url).toBe('/api/v1/integrations/hooks/2/import_catalog');
       expect(formData).toBeInstanceOf(FormData);
       expect(formData.get('file')).toBe(file);
-    });
-
-    it('#initKaspiPayAuth declares password-flow capability', () => {
-      integrationAPI.initKaspiPayAuth();
-
-      expect(axiosMock.post).toHaveBeenCalledWith(
-        '/api/v1/integrations/kaspi_pay/auth/init',
-        { auth_flow_version: 2 }
-      );
-    });
-
-    it('#sendKaspiPayPhone normalizes cashier phone to local 10 digits', () => {
-      integrationAPI.sendKaspiPayPhone({
-        processId: 'process-1',
-        phoneNumber: '+7 701 211 40 00',
-      });
-
-      expect(axiosMock.post).toHaveBeenCalledWith(
-        '/api/v1/integrations/kaspi_pay/auth/send_phone',
-        {
-          process_id: 'process-1',
-          phone_number: '7012114000',
-        }
-      );
-    });
-
-    it('#sendKaspiPayPassword sends the password only to the dedicated auth endpoint', () => {
-      integrationAPI.sendKaspiPayPassword({
-        processId: 'process-1',
-        password: 'kaspi-password',
-      });
-
-      expect(axiosMock.post).toHaveBeenCalledWith(
-        '/api/v1/integrations/kaspi_pay/auth/send_password',
-        {
-          process_id: 'process-1',
-          password: 'kaspi-password',
-        }
-      );
-    });
-
-    it('#verifyKaspiPayOtp normalizes cashier phone to local 10 digits', () => {
-      integrationAPI.verifyKaspiPayOtp({
-        processId: 'process-1',
-        phoneNumber: '87012114000',
-        otp: '1234',
-        settings: { default_payment_type: 'qr' },
-      });
-
-      expect(axiosMock.post).toHaveBeenCalledWith(
-        '/api/v1/integrations/kaspi_pay/auth/verify_otp',
-        {
-          process_id: 'process-1',
-          phone_number: '7012114000',
-          otp: '1234',
-          settings: { default_payment_type: 'qr' },
-        }
-      );
-    });
-  });
-
-  describe('#normalizeKaspiPayCashierPhone', () => {
-    it.each([
-      ['+7 701 211 40 00', '7012114000'],
-      ['77012114000', '7012114000'],
-      ['87012114000', '7012114000'],
-      ['7012114000', '7012114000'],
-    ])('normalizes %s to %s', (input, output) => {
-      expect(normalizeKaspiPayCashierPhone(input)).toBe(output);
     });
   });
 });

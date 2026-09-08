@@ -73,14 +73,7 @@ export const PAYMENT_STATUS_VALUES = [
   'cancelled',
 ];
 
-export const PAYMENT_METHOD_VALUES = [
-  'kaspi_transfer',
-  'kaspi_qr',
-  'cash',
-  'bank_transfer',
-  'card',
-  'other',
-];
+export const PAYMENT_METHOD_VALUES = ['cash', 'bank_transfer', 'card', 'other'];
 
 export const PAYMENT_KIND_VALUES = ['prepaid', 'payment', 'adjustment'];
 

@@ -35,7 +35,6 @@ import SchedulingSelectField from 'dashboard/components-next/Scheduling/Scheduli
 import SchedulingToolbar from 'dashboard/components-next/Scheduling/SchedulingToolbar.vue';
 import SchedulingViewSwitcher from 'dashboard/components-next/Scheduling/SchedulingViewSwitcher.vue';
 
-import PaymentActionButton from 'dashboard/components/widgets/PaymentActionButton.vue';
 import {
   APPOINTMENT_STATUS_ICONS,
   APPOINTMENT_STATUS_ICON_CLASSES,
@@ -245,20 +244,6 @@ const pageTitle = computed(() =>
   )
 );
 
-const appointmentRemainingAmount = appointment => {
-  if (!appointment) return Number(formStore.form.serviceAmount || 0);
-
-  return Math.max(
-    Number(appointment.serviceAmount || 0) -
-      Number(appointment.prepaidAmount || 0) -
-      Number(appointment.settlementAmount || 0),
-    0
-  );
-};
-
-const appointmentPaymentAmount = computed(() =>
-  appointmentRemainingAmount(formStore.selectedAppointment)
-);
 const isSelectedAppointmentProviderOwned = computed(
   () =>
     formStore.mode === 'edit' &&
@@ -2468,15 +2453,7 @@ onMounted(async () => {
                       "
                       @click="handleAppointmentCancel"
                     />
-                    <PaymentActionButton
-                      :appointment-id="formStore.recordId"
-                      :default-amount="appointmentPaymentAmount"
-                      :require-amount-input="false"
-                      delivery-mode="copy"
-                      :label="
-                        $t('SCHEDULING.APPOINTMENT_FORM.KASPI_PAYMENT_LINK')
-                      "
-                    />
+
                     <Button
                       v-if="
                         !isSelectedAppointmentProviderOwned &&

@@ -174,7 +174,7 @@ const mountComponent = (props, storeOptions) =>
       stubs: {
         FileUpload: { template: '<div><slot /></div>' },
         NextButton: NextButtonStub,
-        PaymentActionButton: true,
+
         VideoCallButton: true,
         VoiceCallButton: true,
         'fluent-icon': true,

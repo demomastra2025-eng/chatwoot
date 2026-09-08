@@ -123,7 +123,7 @@ describe('useSchedulingAppointmentFormStore', () => {
       endsAt: '2026-03-09T10:30:00.000Z',
       id: 11,
       prepaidAmount: 5000,
-      prepaidPaymentMethod: 'kaspi_qr',
+      prepaidPaymentMethod: 'bank_transfer',
       resourceId: 3,
       serviceAmount: 20000,
       serviceId: 5,
@@ -131,7 +131,7 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
 
     expect(store.form.prepaidAmount).toBe(5000);
-    expect(store.form.prepaidPaymentMethod).toBe('kaspi_qr');
+    expect(store.form.prepaidPaymentMethod).toBe('bank_transfer');
   });
 
   it('persists the selected Medelement cabinet in appointment custom attributes', () => {

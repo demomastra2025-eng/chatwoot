@@ -70,25 +70,6 @@ RSpec.describe Integrations::Hook do
       end
     end
 
-    it 'requires Kaspi Pay session secrets for enabled hooks' do
-      hook = build(:integrations_hook,
-                   :kaspi_pay,
-                   account: create(:account),
-                   access_token: { token_sn: 'token-sn' }.to_json)
-
-      expect(hook).not_to be_valid
-      expect(hook.errors[:access_token]).to include('is missing required Kaspi Pay credentials: vtoken_secret, profile_id')
-    end
-
-    it 'allows disabled Kaspi Pay hooks without retained session secrets' do
-      hook = build(:integrations_hook,
-                   :kaspi_pay,
-                   account: create(:account),
-                   status: 'disabled',
-                   access_token: nil)
-
-      expect(hook).to be_valid
-    end
 
     it 'generates a webhook key for macrocrm hooks' do
       hook = create(:integrations_hook,

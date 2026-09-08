@@ -62,8 +62,7 @@ coverage
 # ignore packages
 node_modules
 package-lock.json
-!/services/kaspi-pay-adapter/package-lock.json
-/services/kaspi-pay-adapter/.state
+
 
 *.dump
 

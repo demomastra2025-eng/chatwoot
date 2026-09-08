@@ -16,27 +16,7 @@
       "ERROR": "Произошла ошибка при подключении к Shopify. Попробуйте еще раз или свяжитесь с поддержкой, если проблема повторится.",
       "HEADER": "Shopify"
     },
-    "KASPI_PAY": {
-      "CONTINUE": "Продолжить",
-      "SEND_OTP": "Отправить SMS-код",
-      "CONNECT": "Подключить Kaspi Pay",
-      "PHONE_LABEL": "Телефон кассира Kaspi",
-      "PASSWORD_LABEL": "Пароль Kaspi Pay",
-      "OTP_LABEL": "SMS-код",
-      "LATITUDE_LABEL": "Широта POS",
-      "LONGITUDE_LABEL": "Долгота POS",
-      "CONNECT_HELP": "Укажите телефон кассира. Если Kaspi запросит пароль, введите его, а затем SMS-код. Пароль не сохраняется в OneLink, секреты сессии хранятся только на сервере.",
-      "PHONE_REQUIRED": "Укажите телефон",
-      "PASSWORD_REQUIRED": "Укажите пароль Kaspi Pay",
-      "OTP_REQUIRED": "Укажите SMS-код",
-      "CONNECT_ERROR": "Не удалось подключить Kaspi Pay. Проверьте данные и повторите попытку.",
-      "CONNECT_SUCCESS": "Kaspi Pay успешно подключён",
-      "CONNECTED_TITLE": "Подключенный мерчант",
-      "DELETE": {
-        "TITLE": "Удалить интеграцию Kaspi Pay",
-        "MESSAGE": "Вы уверены, что хотите отключить Kaspi Pay? Новые оплаты Kaspi перестанут работать."
-      }
-    },
+
     "HEADER": "Интеграции",
     "DESCRIPTION": "Интеграции подключают OneLink к внешним сервисам и модулям. Настройте нужные подключения ниже.",
     "LEARN_MORE": "Узнать больше об интеграциях",

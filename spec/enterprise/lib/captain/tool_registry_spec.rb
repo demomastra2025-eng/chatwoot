@@ -68,21 +68,7 @@ RSpec.describe Captain::ToolRegistry do
         'complete_task',
         'merge_contacts',
         'add_appointment_payment',
-        'get_kaspi_pay_integration_status',
-        'start_kaspi_pay_connection',
-        'send_kaspi_pay_phone',
-        'verify_kaspi_pay_otp',
-        'disconnect_kaspi_pay',
-        'create_kaspi_pay_payment',
-        'get_kaspi_pay_payment_status',
-        'get_kaspi_pay_client_info',
-        'get_kaspi_pay_provider_history',
-        'search_kaspi_pay_payments',
-        'get_kaspi_pay_payment',
-        'sync_kaspi_pay_payment_status',
-        'refund_kaspi_pay_payment',
-        'cancel_kaspi_pay_invoice',
-        'reconcile_kaspi_pay_payment',
+
         'list_macros',
         'get_macro',
         'create_macro',
@@ -270,19 +256,7 @@ RSpec.describe Captain::ToolRegistry do
       set_captain_custom_tool_status
       delete_captain_custom_tool
       add_appointment_payment
-      get_kaspi_pay_integration_status
-      start_kaspi_pay_connection
-      send_kaspi_pay_phone
-      verify_kaspi_pay_otp
-      disconnect_kaspi_pay
-      get_kaspi_pay_client_info
-      get_kaspi_pay_provider_history
-      search_kaspi_pay_payments
-      get_kaspi_pay_payment
-      sync_kaspi_pay_payment_status
-      refund_kaspi_pay_payment
-      cancel_kaspi_pay_invoice
-      reconcile_kaspi_pay_payment
+
       create_canned_response
       get_canned_response
       update_canned_response

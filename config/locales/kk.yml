@@ -256,14 +256,7 @@ kk:
         busy_video_call: 'Telegram video call with %{contact_name} was busy'
         completed_voice_call: 'Telegram call with %{contact_name} ended'
         completed_video_call: 'Telegram video call with %{contact_name} ended'
-      kaspi_pay:
-        created: 'Kaspi Pay payment link created for %{amount} %{currency}'
-        paid: 'Kaspi Pay payment received: %{amount} %{currency}'
-        expired: 'Kaspi Pay payment link expired: %{amount} %{currency}'
-        failed: 'Kaspi Pay payment failed: %{amount} %{currency}'
-        cancelled: 'Kaspi Pay payment cancelled: %{amount} %{currency}'
-        delivery_link: '%{amount} %{currency} төлеу үшін Kaspi Pay сілтемесін ашыңыз: %{payment_url}'
-        delivery_qr_image: '%{amount} %{currency} төлеу үшін Kaspi.kz қолданбасында QR-кодты сканерлеңіз. Сурет ашылмаса: %{payment_url}'
+
       csat:
         not_sent_due_to_messaging_window: CSAT survey not sent due to outgoing message restrictions
       auto_resolve:
@@ -335,10 +328,7 @@ kk:
       name: Shopify
       short_description: Access order details and customer data from your Shopify store.
       description: Connect your Shopify store to access order details, customer information, and product data directly within your conversations and helps your support team provide faster, more contextual assistance to your customers.
-    kaspi_pay:
-      name: Kaspi Pay
-      short_description: Create Kaspi QR payments directly from OneLink.
-      description: Connect Kaspi Pay to generate QR payment links from OneLink and record successful payments in scheduling finance automatically.
+
     leadsquared:
       name: LeadSquared
       short_description: Sync your contacts and conversations with LeadSquared CRM.
@@ -503,7 +493,7 @@ kk:
           title: 3. Тарифтер, төлем және жазылым
           paragraphs:
             - '3.1. Сервис ай сайынғы немесе жылдық жазылым шарттарымен ұсынылады. Өзекті тарифтік жоспарлар one-link.kz/pricing сайтында жарияланады.'
-            - '3.2. Төлем алдын ала (prepaid) жүзеге асырылады. Төлем тәсілдері: банктік аударым, Kaspi Pay, банктік карта және Платформада қолжетімді өзге де тәсілдер.'
+            - '3.2. Төлем алдын ала (prepaid) жүзеге асырылады. Төлем тәсілдері: банктік аударым, банктік карта және Платформада қолжетімді өзге де тәсілдер.'
             - '3.3. Барлық бағалар теңгемен (KZT) көрсетіледі. Орындаушы оңайлатылған салық режимін қолданады және ҚҚС төлеуші болып табылмайды (ҚР Салық кодексінің 722-бабы 4-тармағы 2) тармақшасы).'
             - '3.4. Бағалар өзгерген жағдайда 30 күн бұрын хабарланады. Өзгеріс алдын ала төленген кезеңге қолданылмайды.'
             - '3.5. Сынақ кезеңі (Trial) берілуі мүмкін. Оның мерзімі аяқталғаннан кейін қолжетімділік шектеледі.'

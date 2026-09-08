@@ -271,16 +271,6 @@ describe('captainUiActions helper', () => {
       name: 'automation_list',
       params: { accountId: 1 },
     });
-
-    expect(
-      routeForCaptainUiAction(
-        { type: 'open_kaspi_pay_settings', targetId: '' },
-        1
-      )
-    ).toEqual({
-      name: 'settings_integrations_kaspi_pay',
-      params: { accountId: 1 },
-    });
   });
 
   it('builds typed Captain admin UI action routes without DOM selectors', () => {

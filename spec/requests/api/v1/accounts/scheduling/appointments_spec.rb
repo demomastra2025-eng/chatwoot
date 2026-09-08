@@ -1203,7 +1203,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       contact: contact,
       service: service,
       prepaid_amount: 5_000,
-      prepaid_payment_method: 'kaspi_qr',
+      prepaid_payment_method: 'bank_transfer',
       payment_status: 'prepaid',
       starts_at: booking_day,
       ends_at: booking_day + 30.minutes
@@ -1213,7 +1213,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       appointment: appointment,
       account: account,
       amount: 5_000,
-      payment_method: 'kaspi_qr',
+      payment_method: 'bank_transfer',
       payment_kind: 'prepaid'
     )
 

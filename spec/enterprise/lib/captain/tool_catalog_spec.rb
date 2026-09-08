@@ -80,29 +80,6 @@ RSpec.describe Captain::ToolCatalog do
       expect(agent_tool_ids).not_to include(*restricted_tool_ids)
     end
 
-    it 'keeps Kaspi Pay provider reads assistant-only and confirms invoice cancellation' do
-      create(:integrations_hook, :kaspi_pay, account: account)
-
-      assistant_tools = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT)
-      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
-
-      %w[get_kaspi_pay_client_info get_kaspi_pay_provider_history].each do |tool_id|
-        expect(assistant_tools.find { |tool| tool[:id] == tool_id }).to include(risk_level: 'low')
-      end
-      expect(assistant_tools.find { |tool| tool[:id] == 'get_kaspi_pay_integration_status' }).to include(
-        risk_level: 'medium',
-        requires_confirmation: true
-      )
-      expect(assistant_tools.find { |tool| tool[:id] == 'cancel_kaspi_pay_invoice' }).to include(
-        risk_level: 'high',
-        requires_confirmation: true
-      )
-      expect(agent_tool_ids).not_to include(
-        'get_kaspi_pay_client_info',
-        'get_kaspi_pay_provider_history',
-        'cancel_kaspi_pay_invoice'
-      )
-    end
 
     it 'includes enabled custom tools for the requested scope' do
       custom_tool = create(:captain_custom_tool, account: account)
@@ -131,36 +108,6 @@ RSpec.describe Captain::ToolCatalog do
       expect(assistant_tool_ids).not_to include(other_tool.slug)
     end
 
-    it 'hides Kaspi Pay payment tools until this account has an enabled Kaspi Pay integration' do
-      create(:integrations_hook, :kaspi_pay, account: create(:account))
-      create(:integrations_hook, :kaspi_pay, account: account, status: 'disabled')
-
-      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
-      assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
-
-      expect(agent_tool_ids).not_to include(*kaspi_pay_agent_payment_tool_ids)
-      expect(assistant_tool_ids).not_to include(*kaspi_pay_connected_tool_ids)
-      expect(assistant_tool_ids).to include(
-        'get_kaspi_pay_integration_status',
-        'start_kaspi_pay_connection',
-        'send_kaspi_pay_phone',
-        'verify_kaspi_pay_otp'
-      )
-    end
-
-    it 'exposes Kaspi Pay payment tools only for the account with an enabled Kaspi Pay integration' do
-      other_account = create(:account)
-      other_assistant = create(:captain_assistant, account: other_account)
-      create(:integrations_hook, :kaspi_pay, account: account)
-
-      agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
-      assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
-      other_assistant_tool_ids = described_class.available_tools_for(other_assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
-
-      expect(agent_tool_ids).to include(*kaspi_pay_agent_payment_tool_ids)
-      expect(assistant_tool_ids).to include(*kaspi_pay_connected_tool_ids)
-      expect(other_assistant_tool_ids).not_to include(*kaspi_pay_connected_tool_ids)
-    end
 
     it 'includes discovered MCP tools for the requested scope' do
       create(:captain_mcp_server, account: account)
@@ -458,24 +405,5 @@ RSpec.describe Captain::ToolCatalog do
     end
   end
 
-  def kaspi_pay_agent_payment_tool_ids
-    %w[
-      create_kaspi_pay_payment
-      get_kaspi_pay_payment_status
-    ]
-  end
 
-  def kaspi_pay_connected_tool_ids
-    kaspi_pay_agent_payment_tool_ids + %w[
-      disconnect_kaspi_pay
-      get_kaspi_pay_client_info
-      get_kaspi_pay_provider_history
-      search_kaspi_pay_payments
-      get_kaspi_pay_payment
-      sync_kaspi_pay_payment_status
-      refund_kaspi_pay_payment
-      cancel_kaspi_pay_invoice
-      reconcile_kaspi_pay_payment
-    ]
-  end
 end

@@ -21,7 +21,7 @@ const SIMPLE_ROUTE_ACTIONS = {
   open_assignment_policies: 'assignment_policy_index',
   open_integrations: 'settings_applications',
   open_webhooks: 'settings_integrations_webhook',
-  open_kaspi_pay_settings: 'settings_integrations_kaspi_pay',
+
   open_reports: 'account_overview_reports',
   open_conversation_reports: 'conversation_reports',
   open_sla_reports: 'sla_reports',
@@ -210,7 +210,7 @@ const DEFAULT_LABELS = {
   open_assignment_policies: 'Open assignment policies',
   open_integrations: 'Open integrations',
   open_webhooks: 'Open webhooks',
-  open_kaspi_pay_settings: 'Open Kaspi Pay settings',
+
   open_reports: 'Open reports',
   open_conversation_reports: 'Open conversation reports',
   open_sla_reports: 'Open SLA reports',

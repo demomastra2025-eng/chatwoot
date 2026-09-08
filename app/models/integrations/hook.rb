@@ -77,9 +77,6 @@ class Integrations::Hook < ApplicationRecord
     app_id == 'macrocrm'
   end
 
-  def kaspi_pay?
-    app_id == 'kaspi_pay'
-  end
 
   def macrocrm_manager_changed_webhook_url
     frontend_url = ENV.fetch('FRONTEND_URL', nil)
@@ -97,9 +94,6 @@ class Integrations::Hook < ApplicationRecord
     {}
   end
 
-  def kaspi_pay_metadata
-    secret_settings.slice('organization_id', 'org_name', 'phone_number', 'profile_id')
-  end
 
   def disable
     update(status: 'disabled')
@@ -139,12 +133,6 @@ class Integrations::Hook < ApplicationRecord
   def ensure_required_access_token
     return unless app.present? && app.params[:access_token_required]
 
-    if kaspi_pay?
-      return if disabled?
-
-      ensure_kaspi_pay_access_token
-      return
-    end
 
     return if access_token.present?
 
@@ -162,12 +150,6 @@ class Integrations::Hook < ApplicationRecord
     errors.add(:access_token, "is missing required Medelement credentials: #{missing_keys.join(', ')}")
   end
 
-  def ensure_kaspi_pay_access_token
-    missing_keys = %w[token_sn vtoken_secret profile_id].reject { |key| secret_settings[key].present? }
-    return if missing_keys.blank?
-
-    errors.add(:access_token, "is missing required Kaspi Pay credentials: #{missing_keys.join(', ')}")
-  end
 
   def ensure_reference_id
     return unless macrocrm?

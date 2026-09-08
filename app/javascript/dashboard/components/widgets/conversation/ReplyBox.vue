@@ -1735,8 +1735,6 @@ export default {
         @toggle-quoted-reply="toggleQuotedReply"
         @select-reply-channel="selectReplyChannel"
         @select-direct-reply-action="selectDirectReplyAction"
-        @replace-text="addIntoEditor"
-        @attach-file="onFileUpload"
       />
     </Transition>
 

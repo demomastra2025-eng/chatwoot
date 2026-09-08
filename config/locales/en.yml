@@ -306,14 +306,7 @@ en:
         busy_video_call: 'Telegram video call with %{contact_name} was busy'
         completed_voice_call: 'Telegram call with %{contact_name} ended'
         completed_video_call: 'Telegram video call with %{contact_name} ended'
-      kaspi_pay:
-        created: 'Kaspi Pay payment link created for %{amount} %{currency}'
-        paid: 'Kaspi Pay payment received: %{amount} %{currency}'
-        expired: 'Kaspi Pay payment link expired: %{amount} %{currency}'
-        failed: 'Kaspi Pay payment failed: %{amount} %{currency}'
-        cancelled: 'Kaspi Pay payment cancelled: %{amount} %{currency}'
-        delivery_link: 'To pay %{amount} %{currency}, open this Kaspi Pay link: %{payment_url}'
-        delivery_qr_image: 'To pay %{amount} %{currency}, scan the QR code in the Kaspi.kz app. If the image does not open: %{payment_url}'
+
       csat:
         not_sent_due_to_messaging_window: 'CSAT survey not sent due to outgoing message restrictions'
       auto_resolve:
@@ -386,10 +379,7 @@ en:
       name: 'Shopify'
       short_description: 'Access order details and customer data from your Shopify store.'
       description: 'Connect your Shopify store to access order details, customer information, and product data directly within your conversations and helps your support team provide faster, more contextual assistance to your customers.'
-    kaspi_pay:
-      name: 'Kaspi Pay'
-      short_description: 'Create Kaspi QR payments directly from OneLink.'
-      description: 'Connect Kaspi Pay to generate QR payment links from OneLink and record successful payments in scheduling finance automatically.'
+
     leadsquared:
       name: 'LeadSquared'
       short_description: 'Sync your contacts and conversations with LeadSquared CRM.'
@@ -594,7 +584,7 @@ en:
           title: '3. Pricing, Payment, and Subscription'
           paragraphs:
             - '3.1. The Service is provided on a monthly or annual subscription basis. Current tariff plans are published at one-link.kz/pricing.'
-            - '3.2. Payment is made in advance (prepaid). Payment methods include bank transfer, Kaspi Pay, bank card, and other methods available on the Platform.'
+            - '3.2. Payment is made in advance (prepaid). Payment methods include bank transfer, bank card, and other methods available on the Platform.'
             - '3.3. All prices are stated in Kazakhstani tenge (KZT). The Provider applies the simplified tax regime and is not a VAT payer (Article 722(4)(2) of the Tax Code of the Republic of Kazakhstan).'
             - '3.4. Price changes are announced 30 days in advance. Changes do not affect the prepaid period.'
             - '3.5. A trial period may be provided. After it expires, access may be restricted.'

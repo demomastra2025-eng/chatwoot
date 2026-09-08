@@ -277,14 +277,6 @@ ru:
         busy_video_call: Видеозвонок в Telegram с %{contact_name} был занят
         completed_voice_call: Звонок в Telegram с %{contact_name} завершен
         completed_video_call: Видеозвонок в Telegram с %{contact_name} завершен
-      kaspi_pay:
-        created: "Создана ссылка Kaspi Pay на %{amount} %{currency}"
-        paid: "Оплата Kaspi Pay получена: %{amount} %{currency}"
-        expired: "Ссылка Kaspi Pay истекла: %{amount} %{currency}"
-        failed: "Оплата Kaspi Pay не прошла: %{amount} %{currency}"
-        cancelled: "Оплата Kaspi Pay отменена: %{amount} %{currency}"
-        delivery_link: "Для оплаты %{amount} %{currency} откройте ссылку Kaspi Pay: %{payment_url}"
-        delivery_qr_image: "Для оплаты %{amount} %{currency} отсканируйте QR-код в приложении Kaspi.kz. Если изображение не открылось: %{payment_url}"
       csat:
         not_sent_due_to_messaging_window: Опрос CSAT не отправлен из-за ограничений исходящих сообщений
       auto_resolve:
@@ -356,10 +348,6 @@ ru:
       name: Shopify
       short_description: Доступ к информации о заказе и данным о клиентах из магазина Shopify.
       description: Подключите ваш магазин Shopify, чтобы видеть детали заказов, информацию о клиентах и данные о товарах прямо внутри диалогов. Это поможет вашей команде поддержки отвечать быстрее и с большим контекстом.
-    kaspi_pay:
-      name: Kaspi Pay
-      short_description: Создание QR-оплат Kaspi прямо из OneLink.
-      description: Подключите Kaspi Pay, чтобы создавать QR-ссылки на оплату из OneLink и автоматически фиксировать успешные платежи в финансах расписания.
     leadsquared:
       name: LeadSquared
       short_description: Синхронизация контактов и диалогов с LeadSquared CRM.
@@ -569,7 +557,7 @@ ru:
           title: 3. Тарифы, оплата и подписка
           paragraphs:
           - 3.1. Сервис предоставляется на условиях ежемесячной или годовой подписки. Актуальные тарифные планы публикуются на one-link.kz/pricing.
-          - '3.2. Оплата производится предварительно (prepaid). Способы оплаты: банковский перевод, Kaspi Pay, банковская карта и иные способы, доступные на Платформе.'
+          - '3.2. Оплата производится предварительно (prepaid). Способы оплаты: банковский перевод, банковская карта и иные способы, доступные на Платформе.'
           - 3.3. Все цены в тенге (KZT). Исполнитель применяет упрощённый налоговый режим и не является плательщиком НДС (статья 722 п.4 пп.2 Налогового кодекса РК).
           - 3.4. Изменение цен — уведомление за 30 дней. Изменение не затрагивает оплаченный период.
           - 3.5. Пробный период (Trial) может быть предоставлен. По истечении — доступ ограничивается.

@@ -16,27 +16,7 @@
       "ERROR": "There was an error connecting to Shopify. Please try again or contact support if the issue persists.",
       "HEADER": "Shopify"
     },
-    "KASPI_PAY": {
-      "CONTINUE": "Continue",
-      "SEND_OTP": "Send SMS code",
-      "CONNECT": "Connect Kaspi Pay",
-      "PHONE_LABEL": "Kaspi cashier phone",
-      "PASSWORD_LABEL": "Kaspi Pay password",
-      "OTP_LABEL": "SMS code",
-      "LATITUDE_LABEL": "POS latitude",
-      "LONGITUDE_LABEL": "POS longitude",
-      "CONNECT_HELP": "Enter the cashier phone. If Kaspi requests a password, enter it and then the SMS code. OneLink does not store the password; session secrets remain server-side.",
-      "PHONE_REQUIRED": "Enter the phone number",
-      "PASSWORD_REQUIRED": "Enter the Kaspi Pay password",
-      "OTP_REQUIRED": "Enter the SMS code",
-      "CONNECT_ERROR": "Could not connect Kaspi Pay. Check the details and try again.",
-      "CONNECT_SUCCESS": "Kaspi Pay connected successfully",
-      "CONNECTED_TITLE": "Connected merchant",
-      "DELETE": {
-        "TITLE": "Delete Kaspi Pay integration",
-        "MESSAGE": "Are you sure you want to disconnect Kaspi Pay? New Kaspi payments will stop working."
-      }
-    },
+
     "HEADER": "Integrations",
     "DESCRIPTION": "Integrations connect OneLink to external services and modules. Configure the integrations you need below.",
     "LEARN_MORE": "Learn more about integrations",
