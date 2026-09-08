@@ -12,18 +12,18 @@ RSpec.describe Crm::Deal do
     it { is_expected.to have_many(:contacts).through(:deal_contacts) }
   end
 
-  describe 'contact owner sync' do
-    it 'syncs owner changes to the primary contact' do
+  describe 'relationship ownership' do
+    it 'allows explicitly transferring a deal without transferring the contact' do
       contact = create(:contact, account: account, owner: owner)
       deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, owner: owner)
       create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
 
       deal.update!(owner: new_owner)
 
-      expect(contact.reload.owner).to eq(new_owner)
+      expect(contact.reload.owner).to eq(owner)
     end
 
-    it 'does not sync owner changes to non-primary contacts' do
+    it 'does not transfer non-primary contacts' do
       contact = create(:contact, account: account, owner: owner)
       deal = create(:crm_deal, account: account, pipeline: pipeline, stage: stage, owner: owner)
       create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: false)

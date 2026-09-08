@@ -121,6 +121,33 @@ RSpec.describe Reminders::SyncRemindableService do
       expect(touch.last_materialized_anchor_at).to be_nil
     end
 
+    it 'moves an appointment touch to the current contact relationship manager' do
+      account = create(:account)
+      previous_manager = create(:user, account: account)
+      current_manager = create(:user, account: account)
+      creator = create(:user, account: account)
+      contact = create(:contact, account: account, owner: previous_manager)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, created_by: creator)
+      touch = create(:reminder, account: account, remindable: appointment, owner: previous_manager)
+
+      contact.update!(owner: current_manager)
+      described_class.new(remindable: appointment.reload).perform_for(touch)
+
+      expect(touch.reload.owner).to eq(current_manager)
+    end
+
+    it 'falls back to the appointment creator when the contact has no relationship manager' do
+      account = create(:account)
+      creator = create(:user, account: account)
+      contact = create(:contact, account: account, owner: nil)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, created_by: creator)
+      touch = create(:reminder, account: account, remindable: appointment, owner: nil)
+
+      described_class.new(remindable: appointment).perform_for(touch)
+
+      expect(touch.reload.owner).to eq(creator)
+    end
+
     it 'drops a stale appointment conversation and routes to the current contact' do
       account = create(:account)
       inbox = create(:inbox, account: account)

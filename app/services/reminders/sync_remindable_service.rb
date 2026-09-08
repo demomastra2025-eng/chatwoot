@@ -114,14 +114,7 @@ class Reminders::SyncRemindableService
   end
 
   def desired_owner
-    case remindable
-    when Conversation, Crm::Task
-      remindable.assignee
-    when Crm::Deal
-      remindable.owner
-    when Scheduling::Appointment
-      remindable.created_by
-    end
+    Reminder.owner_for_remindable(remindable)
   end
 
   def desired_contact

@@ -37,10 +37,15 @@ RSpec.describe Reminders::MaterializeEnrollmentStepService do
   end
 
   it 'creates one occurrence claim and one normal reminder when due' do
+    relationship_manager = create(:user, account: account)
+    appointment.contact.update!(owner: relationship_manager)
+    expect_any_instance_of(Contact).to receive(:with_lock).and_call_original
+
     claim = described_class.new(enrollment: enrollment, now: enrollment.next_due_at + 1.minute).perform
 
     expect(claim).to be_materialized
     expect(claim.reminder).to be_present
+    expect(claim.reminder.owner).to eq(relationship_manager)
     expect(claim.reminder.metadata).to include('touch_plan_enrollment_id' => enrollment.id)
   end
 

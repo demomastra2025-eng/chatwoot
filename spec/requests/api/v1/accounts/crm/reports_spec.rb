@@ -148,7 +148,8 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
       create(:telephony_call_session, account: account, agent_binding: binding, direction: 'inbound',
                                       status: 'completed', started_at: 1.day.ago, duration_seconds: 80)
 
-      appointment = create(:scheduling_appointment, account: account, owner: owner, status: 'completed',
+      appointment_contact = create(:contact, account: account, owner: owner)
+      appointment = create(:scheduling_appointment, account: account, contact: appointment_contact, status: 'completed',
                                                     starts_at: 1.day.ago, ends_at: 1.day.ago + 30.minutes)
       create(:scheduling_payment, account: account, appointment: appointment, amount: 5_000, payment_method: 'cash')
       create(:scheduling_payment, account: account, appointment: appointment, amount: 7_000, payment_method: 'kaspi_qr')

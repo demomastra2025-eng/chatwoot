@@ -148,7 +148,6 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     apply_post_save_updates!
     @contacts_changed = sync_contacts!(contacts: @contacts, primary_contact: @primary_contact)
     sync_related_touches!
-    sync_owner_to_primary_contact!(@primary_contact)
     capture_realtime_event!
     write_event!(new_record: @new_record, contacts_changed: @contacts_changed, correlation_id: @correlation_id)
     notify_assignment!(new_record: @new_record)

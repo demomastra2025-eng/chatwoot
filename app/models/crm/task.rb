@@ -130,7 +130,6 @@ class Crm::Task < ApplicationRecord
   before_validation :normalize_schedule
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
-  after_commit :sync_contact_owner_from_assignee, if: :saved_change_to_assignee_id?
 
   def self.custom_field_context_for(context_kind)
     CUSTOM_FIELD_CONTEXT_BY_KIND.fetch(context_kind.to_s.strip.downcase)
@@ -260,17 +259,5 @@ class Crm::Task < ApplicationRecord
     return false unless record.respond_to?(:account_id)
 
     record.account_id == account_id
-  end
-
-  def sync_contact_owner_from_assignee
-    contact = owner_sync_contact
-    return if contact.blank? || contact.owner_id == assignee_id
-    return if assignee_id.present? && !account.users.exists?(id: assignee_id)
-
-    contact.update!(owner_id: assignee_id)
-  end
-
-  def owner_sync_contact
-    deal&.primary_contact || originating_conversation&.contact
   end
 end

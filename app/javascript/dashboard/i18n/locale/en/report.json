@@ -788,8 +788,8 @@
       "NOTES": {
         "LEADS": "Leads are CRM deals created in the selected period and linked to an originating dialog; bad leads are those dialog-linked deals on lost stages.",
         "CALLS": "Calls are outbound telephony sessions by manager; long calls use the ≥ {seconds}s threshold.",
-        "MEETINGS": "Meetings use Scheduling appointments by owner; CRM meeting tasks are used only as a fallback when a manager has no appointments.",
-        "PAYMENTS": "Payments are Scheduling payment records by appointment owner. Trade-in is shown as zero until a CRM payment ledger or custom field is configured."
+        "MEETINGS": "Meetings use Scheduling appointments by the contact relationship manager; CRM meeting tasks are used only as a fallback when a manager has no appointments.",
+        "PAYMENTS": "Payments are attributed to the contact relationship manager, or to the payment recorder when the contact has no manager. Trade-in is shown as zero until a CRM payment ledger or custom field is configured."
       }
     },
     "LABELS": {

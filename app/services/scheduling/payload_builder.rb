@@ -30,7 +30,6 @@ module Scheduling::PayloadBuilder
       chat_conversation_id: legacy_chat_conversation&.id,
       chat_conversation_display_id: legacy_chat_conversation&.display_id,
       created_by_id: appointment.created_by_id,
-      owner_id: appointment.owner_id,
       service_name_snapshot: appointment.service_name_snapshot,
       service_type_snapshot: appointment.service_type_snapshot,
       service_duration_min_snapshot: appointment.service_duration_min_snapshot,

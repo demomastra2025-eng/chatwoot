@@ -7,7 +7,6 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
     conversation_id
     conversation_display_id
     created_by_id
-    owner_id
     starts_at
     ends_at
     duration_min

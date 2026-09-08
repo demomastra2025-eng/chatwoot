@@ -115,7 +115,6 @@ RSpec.describe Reminder do
         company: company,
         conversation: conversation,
         created_by: creator,
-        owner: owner,
         service: service,
         starts_at: Time.zone.parse('2026-07-22 10:00'),
         ends_at: Time.zone.parse('2026-07-22 10:45'),
@@ -653,7 +652,8 @@ RSpec.describe Reminder do
       target_contact = create(:contact, account: account, phone_number: '+77001112233')
       other_contact = create(:contact, account: account, phone_number: '+77004445566')
       target_contact_inbox = create(:contact_inbox, contact: target_contact, inbox: whatsapp_inbox)
-      target_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: target_contact, contact_inbox: target_contact_inbox)
+      target_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: target_contact,
+                                                  contact_inbox: target_contact_inbox)
       reminder = described_class.new(
         account: account,
         creator: creator,
@@ -891,6 +891,39 @@ RSpec.describe Reminder do
       expect(reminder).to be_valid
       reminder.save!
       expect(reminder.reload.post_delivery_action).to be_nil
+    end
+  end
+
+  describe 'appointment owner defaults' do
+    it 'uses the contact relationship manager instead of the specialist user' do
+      account = create(:account)
+      relationship_manager = create(:user, account: account)
+      specialist_user = create(:user, account: account)
+      creator = create(:user, account: account)
+      contact = create(:contact, account: account, owner: relationship_manager)
+      resource = create(:scheduling_resource, account: account, user: specialist_user)
+      appointment = create(
+        :scheduling_appointment,
+        account: account,
+        contact: contact,
+        resource: resource,
+        created_by: creator
+      )
+
+      reminder = create(:reminder, account: account, remindable: appointment, owner: nil)
+
+      expect(reminder.owner).to eq(relationship_manager)
+    end
+
+    it 'falls back to the appointment creator when the contact has no relationship manager' do
+      account = create(:account)
+      creator = create(:user, account: account)
+      contact = create(:contact, account: account, owner: nil)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, created_by: creator)
+
+      reminder = create(:reminder, account: account, remindable: appointment, owner: nil)
+
+      expect(reminder.owner).to eq(creator)
     end
   end
 

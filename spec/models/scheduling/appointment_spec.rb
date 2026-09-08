@@ -1,43 +1,40 @@
 require 'rails_helper'
 
 RSpec.describe Scheduling::Appointment do
-  describe 'contact owner sync' do
+  describe 'specialist identity' do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account, role: :agent) }
-    let(:new_owner) { create(:user, account: account, role: :agent) }
     let(:contact) { create(:contact, account: account, owner: owner) }
 
-    it 'inherits the contact owner on create' do
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: nil)
+    it 'supports a specialist without a user account' do
+      resource = create(:scheduling_resource, account: account, user: nil)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, resource: resource)
 
-      expect(appointment.owner).to eq(owner)
+      expect(appointment.resource).to eq(resource)
+      expect(appointment.resource.user).to be_nil
+      expect(contact.reload.owner).to eq(owner)
     end
 
-    it 'inherits the linked resource user when the contact has no owner' do
-      resource_owner = create(:user, account: account, role: :agent)
-      resource = create(:scheduling_resource, account: account, user: resource_owner)
+    it 'does not make a linked specialist user the contact relationship owner' do
+      specialist_user = create(:user, account: account, role: :agent)
+      resource = create(:scheduling_resource, account: account, user: specialist_user)
       unowned_contact = create(:contact, account: account, owner: nil)
 
-      appointment = create(:scheduling_appointment, account: account, contact: unowned_contact, resource: resource, owner: nil)
+      appointment = create(:scheduling_appointment, account: account, contact: unowned_contact, resource: resource)
 
-      expect(appointment.owner).to eq(resource_owner)
-      expect(unowned_contact.reload.owner).to eq(resource_owner)
+      expect(appointment.resource.user).to eq(specialist_user)
+      expect(unowned_contact.reload.owner).to be_nil
     end
 
-    it 'syncs owner changes back to the contact' do
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: owner)
+    it 'allows changing the specialist without transferring the contact' do
+      original_resource = create(:scheduling_resource, account: account)
+      new_resource = create(:scheduling_resource, account: account)
+      appointment = create(:scheduling_appointment, account: account, contact: contact, resource: original_resource)
 
-      appointment.update!(owner: new_owner)
+      appointment.update!(resource: new_resource)
 
-      expect(contact.reload.owner).to eq(new_owner)
-    end
-
-    it 'allows clearing the owner and clears the contact owner' do
-      appointment = create(:scheduling_appointment, account: account, contact: contact, owner: owner)
-
-      appointment.update!(owner: nil)
-
-      expect(contact.reload.owner).to be_nil
+      expect(appointment.reload.resource).to eq(new_resource)
+      expect(contact.reload.owner).to eq(owner)
     end
   end
 

@@ -115,9 +115,9 @@ RSpec.describe Integrations::Medelement::ReceptionsSyncService do
   it 'backs off unchanged detail after a persistent local validation rejection' do
     service.perform
     appointment = account.scheduling_appointments.first
-    foreign_owner = create(:user, account: create(:account))
+    foreign_creator = create(:user, account: create(:account))
     # rubocop:disable Rails/SkipsModelValidations
-    appointment.update_column(:owner_id, foreign_owner.id)
+    appointment.update_column(:created_by_id, foreign_creator.id)
     appointment.update_column(
       :custom_attributes,
       appointment.custom_attributes.except('medelement_detail_synced_at').merge('concurrent_marker' => 'preserve-me')

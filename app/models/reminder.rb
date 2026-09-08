@@ -228,6 +228,17 @@ class Reminder < ApplicationRecord
   scope :open_statuses, -> { where(status: OPEN_STATUSES) }
   scope :due, -> { where('scheduled_at <= ?', Time.current) }
 
+  def self.owner_for_remindable(remindable)
+    case remindable
+    when Conversation, Crm::Task
+      remindable.assignee
+    when Crm::Deal
+      remindable.owner
+    when Scheduling::Appointment
+      remindable.contact&.owner || remindable.created_by
+    end
+  end
+
   def ready_for_pending?
     scheduled_at.present? && route_resolved? && content_ready?
   end
@@ -519,14 +530,7 @@ class Reminder < ApplicationRecord
   def assign_owner_default
     return if owner.present?
 
-    self.owner = case remindable
-                 when Conversation, Crm::Task
-                   remindable.assignee
-                 when Crm::Deal
-                   remindable.owner
-                 when Scheduling::Appointment
-                   remindable.owner || remindable.created_by
-                 end
+    self.owner = self.class.owner_for_remindable(remindable)
   end
 
   def content_ready?

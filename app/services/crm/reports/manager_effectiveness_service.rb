@@ -71,8 +71,8 @@ class Crm::Reports::ManagerEffectivenessService
       leads: 'dialog-linked crm_deals.created_at',
       bad_leads: 'dialog-linked crm_stages.outcome=lost',
       calls: 'telephony_call_sessions.agent_binding_id',
-      meetings: 'scheduling_appointments.owner_id + crm_tasks.activity_type=meeting fallback',
-      payments: 'scheduling_payments by appointment owner',
+      meetings: 'contact relationship owner + crm_tasks.activity_type=meeting fallback',
+      payments: 'scheduling_payments by contact relationship owner or recorder',
       trade_in: 'not_configured'
     }
   end
@@ -165,7 +165,7 @@ class Crm::Reports::ManagerEffectivenessService
   end
 
   def merge_appointment_stats!(stats)
-    appointment_scope.group(:owner_id, :status).count.each do |(owner_id, status), count|
+    appointment_scope.group('contacts.owner_id', :status).count.each do |(owner_id, status), count|
       row = stats[owner_id]
       row[:appointments_count] += count.to_i
 
@@ -222,7 +222,9 @@ class Crm::Reports::ManagerEffectivenessService
   end
 
   def appointment_scope
-    Scheduling::Appointment.where(account_id: account.id, starts_at: since_time..until_time)
+    Scheduling::Appointment
+      .left_joins(:contact)
+      .where(account_id: account.id, starts_at: since_time..until_time)
   end
 
   def crm_task_meeting_scope
@@ -234,13 +236,13 @@ class Crm::Reports::ManagerEffectivenessService
 
   def payment_scope
     Scheduling::Payment
-      .joins(:appointment)
+      .left_joins(appointment: :contact)
       .where(account_id: account.id, created_at: since_time..until_time)
       .where(scheduling_appointments: { account_id: account.id })
   end
 
   def payment_owner_sql
-    Arel.sql('COALESCE(scheduling_appointments.owner_id, scheduling_payments.recorded_by_id)')
+    Arel.sql('COALESCE(contacts.owner_id, scheduling_payments.recorded_by_id)')
   end
 
   def crm_task_meeting_source_available?

@@ -12,6 +12,15 @@ class Reminders::CreateService
   end
 
   def perform
+    contact = remindable.contact if remindable.is_a?(Scheduling::Appointment)
+    return persist_reminder! if contact.blank?
+
+    contact.with_lock { persist_reminder! }
+  end
+
+  private
+
+  def persist_reminder!
     reminder = account.reminders.new(
       reminder_attributes.merge(
         remindable: remindable,
@@ -23,8 +32,6 @@ class Reminders::CreateService
     reminder.approve! if reminder.draft? && reminder.ready_for_pending?
     reminder
   end
-
-  private
 
   def normalize_attributes(value)
     raw = if value.is_a?(ActionController::Parameters)

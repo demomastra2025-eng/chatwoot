@@ -205,7 +205,7 @@ RSpec.describe Crm::Deals::UpsertService do
     expect(updated_deal.owner).to be_nil
   end
 
-  it 'syncs the deal owner to the primary contact when an explicit owner is provided' do
+  it 'keeps an explicit deal owner independent from the primary contact owner' do
     create(:crm_stage, account: account, pipeline: pipeline, default: true)
     owner = create(:user, account: account, role: :agent)
     contact = create(:contact, account: account, owner: nil)
@@ -222,7 +222,7 @@ RSpec.describe Crm::Deals::UpsertService do
     ).perform
 
     expect(deal.owner).to eq(owner)
-    expect(contact.reload.owner).to eq(owner)
+    expect(contact.reload.owner).to be_nil
   end
 
   it 'updates closed_at when an existing deal changes between open and closed stages' do

@@ -82,7 +82,6 @@ class Scheduling::Appointment < ApplicationRecord
   belongs_to :contact, optional: true
   belongs_to :conversation, optional: true
   belongs_to :created_by, class_name: 'User', optional: true
-  belongs_to :owner, class_name: 'User', optional: true
   belongs_to :resource, class_name: 'Scheduling::Resource', inverse_of: :appointments
   belongs_to :service, class_name: 'Scheduling::Service', optional: true, inverse_of: :appointments
 
@@ -92,7 +91,6 @@ class Scheduling::Appointment < ApplicationRecord
   has_many :touch_plan_enrollments, as: :remindable, dependent: :nullify
 
   before_validation :sync_account_id
-  before_validation :inherit_contact_owner
   before_validation :assign_duration_min
   before_validation :mark_local_medelement_cancellation, on: :update
   after_update :capture_updated_changes_for_commit
@@ -100,7 +98,6 @@ class Scheduling::Appointment < ApplicationRecord
   after_create_commit :dispatch_created_event
   after_update_commit :dispatch_updated_events
   after_update_commit :sync_deferred_touch_enrollments
-  after_commit :sync_contact_owner_from_owner, if: :saved_change_to_owner_id?
 
   validates :client_name, :starts_at, :ends_at, :source, presence: true
   validates :status, inclusion: { in: Scheduling::Constants::APPOINTMENT_STATUSES }
@@ -152,7 +149,6 @@ class Scheduling::Appointment < ApplicationRecord
         conversation_id: conversation_id,
         resource_id: resource_id,
         resource_name: resource.name,
-        owner_id: owner_id,
         service_id: service_id,
         custom_attributes: custom_attributes
       },
@@ -167,7 +163,6 @@ class Scheduling::Appointment < ApplicationRecord
     payload[:conversation] = conversation.webhook_data if conversation.present?
     payload[:service] = { id: service.id, name: service.name } if service.present?
     payload[:created_by] = created_by.webhook_data if created_by.present?
-    payload[:owner] = owner.webhook_data if owner.present?
 
     payload
   end
@@ -287,7 +282,6 @@ class Scheduling::Appointment < ApplicationRecord
       contact: contact,
       conversation: conversation,
       created_by: created_by,
-      owner: owner,
       service: service
     }.each do |name, record|
       next if record.blank?
@@ -302,20 +296,6 @@ class Scheduling::Appointment < ApplicationRecord
     return false unless record.respond_to?(:account_id)
 
     record.account_id == account_id
-  end
-
-  def inherit_contact_owner
-    return unless new_record?
-    return if owner_id.present?
-
-    self.owner = contact&.owner || resource&.user
-  end
-
-  def sync_contact_owner_from_owner
-    return if contact.blank? || contact.owner_id == owner_id
-    return if owner_id.present? && !account.users.exists?(id: owner_id)
-
-    contact.update!(owner_id: owner_id)
   end
 
   def compensation_snapshot_percent_within_range
