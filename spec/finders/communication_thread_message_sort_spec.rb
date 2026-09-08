@@ -70,14 +70,18 @@ RSpec.describe CommunicationThreadFinder do # rubocop:disable RSpec/SpecFilePath
     end
   end
 
-  it 'looks up only the latest indexed public message for each accessible conversation' do
+  it 'looks up indexed public messages only for threads that survive the outer filters' do
     thread = conversation.reload.communication_thread
     relation = described_class.with_last_message_activity_sort(
       CommunicationThread.where(account_id: account.id, id: thread.id), account.conversations
     )
 
-    expect(relation.to_sql).to include('INNER JOIN LATERAL')
-    expect(relation.to_sql).to match(/ORDER BY messages\.created_at DESC LIMIT 1/)
+    sql = relation.to_sql
+    expect(sql).to include('LEFT JOIN LATERAL')
+    expect(sql).to include('sort_thread_links.communication_thread_id = communication_threads.id')
+    expect(sql).to include('INNER JOIN LATERAL')
+    expect(sql).to match(/ORDER BY messages\.created_at DESC LIMIT 1/)
+    expect(sql).not_to include('GROUP BY sort_thread_links.account_id')
   end
 
   it 'does not multiply the outer thread scope by linked conversations' do

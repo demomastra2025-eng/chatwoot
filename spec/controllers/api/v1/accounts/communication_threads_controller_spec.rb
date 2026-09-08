@@ -679,6 +679,36 @@ RSpec.describe 'Communication Threads API', type: :request do
     end
   end
 
+  describe 'GET /api/v1/accounts/:account_id/communication_threads/sidebar_unread_counts' do
+    it 'returns unread facets scoped to the current user without full list metadata' do
+      accessible_conversation = create(:conversation, account: account, status: :pending)
+      create(:inbox_member, user: agent, inbox: accessible_conversation.inbox)
+      accessible_thread = accessible_conversation.reload.communication_thread
+      accessible_thread.update!(status: :pending, unread_count: 1)
+
+      inaccessible_conversation = create(:conversation, account: account, status: :open)
+      inaccessible_conversation.reload.communication_thread.update!(unread_count: 1)
+
+      get "/api/v1/accounts/#{account.id}/communication_threads/sidebar_unread_counts",
+          params: { status: 'all', assignee_type: 'all' },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.fetch('counts')).to include(
+        'all' => 1,
+        'statuses' => include('pending' => 1),
+        'inboxes' => include(accessible_conversation.inbox_id.to_s => 1)
+      )
+    end
+
+    it 'returns unauthorized without auth' do
+      get "/api/v1/accounts/#{account.id}/communication_threads/sidebar_unread_counts", as: :json
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
+
   describe 'POST /api/v1/accounts/:account_id/communication_threads/filter' do
     let(:pipeline) { create(:crm_pipeline, account: account) }
     let(:matching_stage) { create(:crm_stage, account: account, pipeline: pipeline) }
@@ -756,6 +786,22 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(body.dig(:data, :meta)).to include(
         all_count: 1,
         unassigned_count: 1
+      )
+    end
+
+    it 'returns only unread facets for lightweight advanced-filter refreshes' do
+      matching_conversation.reload.communication_thread.update!(unread_count: 1)
+      wrong_stage_conversation.reload.communication_thread.update!(unread_count: 1)
+
+      post "/api/v1/accounts/#{account.id}/communication_threads/filter_sidebar_unread_counts?crm_stage_id=#{matching_stage.id}",
+           params: { payload: [advanced_filter_payload.first.merge(query_operator: nil)] },
+           headers: headers,
+           as: :json
+
+      expect(response).to have_http_status(:success)
+      expect(response.parsed_body.fetch('counts')).to include(
+        'all' => 1,
+        'stages' => include(matching_stage.id.to_s => 1, other_stage.id.to_s => 1)
       )
     end
 

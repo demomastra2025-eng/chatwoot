@@ -10,6 +10,30 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def perform
+    set_up
+
+    {
+      communication_threads: meta_only? ? CommunicationThread.none : communication_threads,
+      count: include_meta? ? thread_counts : {}
+    }
+  end
+
+  def perform_sidebar_unread_counts
+    set_up
+    unread_counts
+  end
+
+  def base_relation
+    Conversations::PermissionFilterService.new(
+      @account.conversations,
+      @user,
+      @account
+    ).perform
+  end
+
+  private
+
+  def set_up
     validate_query_operator
     validate_sort_by!
     @base_matching_conversations = apply_conversation_scopes(query_builder(@filters['conversations']))
@@ -19,19 +43,6 @@ class CommunicationThreads::FilterService < FilterService
         apply_crm_deal_context(@base_thread_scope)
       )
     )
-
-    {
-      communication_threads: meta_only? ? CommunicationThread.none : communication_threads,
-      count: include_meta? ? thread_counts : {}
-    }
-  end
-
-  def base_relation
-    Conversations::PermissionFilterService.new(
-      @account.conversations,
-      @user,
-      @account
-    ).perform
   end
 
   def current_page
@@ -64,8 +75,6 @@ class CommunicationThreads::FilterService < FilterService
       .page(current_page)
       .per(CommunicationThreadFinder::RESULTS_PER_PAGE)
   end
-
-  private
 
   def validate_sort_by!
     return if CommunicationThreadFinder::SORT_OPTIONS.key?(sort_key)

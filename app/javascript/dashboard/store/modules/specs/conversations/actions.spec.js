@@ -670,6 +670,129 @@ describe('#actions', () => {
     });
   });
 
+  describe('#fetchRealtimeSidebarUnreadCounts', () => {
+    it('uses the lightweight communication thread endpoint without replacing full stats', async () => {
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      const counts = { all: 2, statuses: { open: 2 } };
+      const sidebarSpy = vi
+        .spyOn(CommunicationThreadApi, 'sidebarUnreadCounts')
+        .mockResolvedValue({ data: { counts } });
+      const requestParams = {
+        status: 'open',
+        assigneeType: 'me',
+        communicationThreadMode: true,
+      };
+
+      const result = await actions.fetchRealtimeSidebarUnreadCounts({
+        commit: localCommit,
+        dispatch: localDispatch,
+        state: { conversationFilters: requestParams },
+      });
+
+      expect(sidebarSpy).toHaveBeenCalledWith(requestParams);
+      expect(localDispatch).not.toHaveBeenCalledWith(
+        'conversationStats/set',
+        expect.anything()
+      );
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        counts
+      );
+      expect(result).toEqual(counts);
+      sidebarSpy.mockRestore();
+    });
+
+    it('uses lightweight advanced-filter counts for communication threads', async () => {
+      const localCommit = vi.fn();
+      const counts = { all: 1 };
+      const sidebarSpy = vi
+        .spyOn(CommunicationThreadApi, 'filterSidebarUnreadCounts')
+        .mockResolvedValue({ data: { counts } });
+      const requestParams = {
+        communicationThreadMode: true,
+        queryData: { payload: [{ attribute_key: 'status' }] },
+      };
+
+      await actions.fetchRealtimeSidebarUnreadCounts({
+        commit: localCommit,
+        dispatch: vi.fn(),
+        state: { conversationFilters: requestParams },
+      });
+
+      expect(sidebarSpy).toHaveBeenCalledWith(requestParams);
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        counts
+      );
+      sidebarSpy.mockRestore();
+    });
+
+    it('keeps native conversation refresh behavior outside thread mode', async () => {
+      const localDispatch = vi.fn();
+      const requestParams = { status: 'open' };
+
+      await actions.fetchRealtimeSidebarUnreadCounts({
+        commit: vi.fn(),
+        dispatch: localDispatch,
+        state: { conversationFilters: requestParams },
+      });
+
+      expect(localDispatch).toHaveBeenCalledWith(
+        'fetchSidebarUnreadCounts',
+        requestParams
+      );
+    });
+
+    it('keeps full thread stats from an older request without overwriting fresher unread counts', async () => {
+      let resolveMeta;
+      const localCommit = vi.fn();
+      const localDispatch = vi.fn();
+      const requestParams = { communicationThreadMode: true };
+      const metaSpy = vi.spyOn(CommunicationThreadApi, 'meta').mockReturnValue(
+        new Promise(resolve => {
+          resolveMeta = resolve;
+        })
+      );
+      const realtimeSpy = vi
+        .spyOn(CommunicationThreadApi, 'sidebarUnreadCounts')
+        .mockResolvedValue({ data: { counts: { all: 3 } } });
+
+      const fullRefresh = actions.fetchSidebarUnreadCounts(
+        {
+          commit: localCommit,
+          dispatch: localDispatch,
+          state: { conversationFilters: requestParams },
+        },
+        requestParams
+      );
+      await actions.fetchRealtimeSidebarUnreadCounts(
+        {
+          commit: localCommit,
+          dispatch: localDispatch,
+          state: { conversationFilters: requestParams },
+        },
+        requestParams
+      );
+      resolveMeta({
+        data: { meta: { all_count: 4, unread_counts: { all: 2 } } },
+      });
+      await fullRefresh;
+
+      expect(localDispatch).toHaveBeenCalledWith('conversationStats/set', {
+        all_count: 4,
+        unread_counts: { all: 2 },
+      });
+      expect(localCommit).toHaveBeenCalledTimes(1);
+      expect(localCommit).toHaveBeenCalledWith(
+        types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS,
+        { all: 3 }
+      );
+      metaSpy.mockRestore();
+      realtimeSpy.mockRestore();
+    });
+  });
+
   describe('#markMessagesRead', () => {
     it('sends correct mutations if api is successful', async () => {
       const lastSeen = new Date().getTime() / 1000;

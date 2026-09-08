@@ -43,6 +43,10 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     render json: { meta: result[:count] }
   end
 
+  def sidebar_unread_counts
+    @sidebar_unread_counts = CommunicationThreadFinder.new(Current.user, params).perform_sidebar_unread_counts
+  end
+
   def filter
     result = CommunicationThreads::FilterService.new(params.permit!, Current.user, Current.account).perform
     @communication_threads = result[:communication_threads]
@@ -51,6 +55,18 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
     preload_crm_deal_stages(@communication_threads)
     preload_meta_ad_referrals(@communication_threads)
     render :index
+  rescue CustomExceptions::CustomFilter::InvalidAttribute,
+         CustomExceptions::CustomFilter::InvalidOperator,
+         CustomExceptions::CustomFilter::InvalidQueryOperator,
+         CustomExceptions::CustomFilter::InvalidValue => e
+    render_could_not_create_error(e.message)
+  end
+
+  def filter_sidebar_unread_counts
+    @sidebar_unread_counts = CommunicationThreads::FilterService
+                             .new(params.permit!, Current.user, Current.account)
+                             .perform_sidebar_unread_counts
+    render :sidebar_unread_counts
   rescue CustomExceptions::CustomFilter::InvalidAttribute,
          CustomExceptions::CustomFilter::InvalidOperator,
          CustomExceptions::CustomFilter::InvalidQueryOperator,

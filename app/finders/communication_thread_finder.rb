@@ -57,9 +57,7 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   def self.with_last_message_activity_sort(relation, conversation_scope)
     relation.joins(<<~SQL.squish).select(Arel.sql(<<~SELECT.squish))
-      LEFT JOIN (#{last_message_activity_subquery_sql(conversation_scope)}) sort_thread_messages
-        ON sort_thread_messages.communication_thread_id = communication_threads.id
-       AND sort_thread_messages.account_id = communication_threads.account_id
+      LEFT JOIN LATERAL (#{last_message_activity_subquery_sql(conversation_scope)}) sort_thread_messages ON TRUE
     SQL
       communication_threads.*,
       COALESCE(sort_thread_messages.last_message_at, communication_threads.created_at) AS last_message_activity_sort_at
@@ -70,14 +68,14 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     conversation_ids_sql = conversation_scope.reselect('conversations.id', 'conversations.account_id').to_sql
 
     <<~SQL.squish
-      SELECT sort_thread_links.account_id, sort_thread_links.communication_thread_id,
-             MAX(sort_latest_messages.created_at) AS last_message_at
+      SELECT MAX(sort_latest_messages.created_at) AS last_message_at
       FROM communication_thread_conversations sort_thread_links
       INNER JOIN (#{conversation_ids_sql}) sort_accessible_conversations
         ON sort_accessible_conversations.id = sort_thread_links.conversation_id
        AND sort_accessible_conversations.account_id = sort_thread_links.account_id
       INNER JOIN LATERAL (#{latest_public_message_sql}) sort_latest_messages ON TRUE
-      GROUP BY sort_thread_links.account_id, sort_thread_links.communication_thread_id
+      WHERE sort_thread_links.communication_thread_id = communication_threads.id
+        AND sort_thread_links.account_id = communication_threads.account_id
     SQL
   end
 
@@ -131,6 +129,11 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
     set_up
 
     { count: thread_counts }
+  end
+
+  def perform_sidebar_unread_counts
+    validate_params!
+    unread_counts
   end
 
   private

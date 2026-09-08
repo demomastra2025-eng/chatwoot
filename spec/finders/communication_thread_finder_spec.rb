@@ -216,6 +216,19 @@ RSpec.describe CommunicationThreadFinder do
       expect(counts).to include('open' => 1, 'pending' => 1, 'resolved' => 1, 'snoozed' => 0)
       expect(sql.grep(/thread_status_memberships/).size).to eq(1)
     end
+
+    it 'returns only faceted unread counts for lightweight sidebar refreshes' do
+      thread, = create_thread_with_conversation(unread_count: 1)
+      thread.update!(status: :pending)
+
+      counts = described_class.new(user, status: 'all', assignee_type: 'all').perform_sidebar_unread_counts
+
+      expect(counts).to include(
+        all: 1,
+        statuses: include('pending' => 1),
+        inboxes: include(inbox.id.to_s => 1)
+      )
+    end
   end
 
   def create_thread_for(contact:, unread_count: 0)

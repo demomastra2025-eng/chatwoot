@@ -44,6 +44,8 @@ const SIDEBAR_UNREAD_COUNTS_CONTEXT_KEYS = [
   'crmPipelineId',
   'crmStageId',
   'appointmentStatus',
+  'unread',
+  'queryData',
 ];
 const CRM_PIPELINES_REFRESH_DELAY = 500;
 
@@ -569,7 +571,7 @@ class ActionCableConnector extends BaseActionCableConnector {
         if (this.isDisconnected) return;
 
         const counts = await this.app.$store.dispatch(
-          'fetchSidebarUnreadCounts',
+          'fetchRealtimeSidebarUnreadCounts',
           filters
         );
         if (this.isDisconnected || (isLockOwned && !isLockOwned())) return;

@@ -285,7 +285,9 @@ Rails.application.routes.draw do
           resources :communication_threads, only: [:index, :show, :update] do
             collection do
               get :meta
+              get :sidebar_unread_counts
               post :filter
+              post :filter_sidebar_unread_counts
             end
 
             member do

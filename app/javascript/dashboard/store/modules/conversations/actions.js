@@ -457,6 +457,7 @@ const actions = {
   ) => {
     sidebarUnreadCountsRequestId += 1;
     const requestId = sidebarUnreadCountsRequestId;
+    const requestGeneration = conversationListRequestGeneration;
     try {
       const requestParams = params || state.conversationFilters || {};
       let counts = {};
@@ -484,15 +485,51 @@ const actions = {
         counts = globalCounts;
       }
 
-      if (requestId !== sidebarUnreadCountsRequestId) return undefined;
+      if (requestGeneration !== conversationListRequestGeneration) {
+        return undefined;
+      }
 
       if (requestParams.communicationThreadMode && metaData) {
         dispatch('conversationStats/set', metaData);
       }
+      if (requestId !== sidebarUnreadCountsRequestId) return undefined;
+
       commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts || {});
       return counts || {};
     } catch (error) {
       // Keep the last known sidebar counts if the refresh fails.
+      return undefined;
+    }
+  },
+
+  fetchRealtimeSidebarUnreadCounts: async (
+    { commit, dispatch, state = {} },
+    params = null
+  ) => {
+    const requestParams = params || state.conversationFilters || {};
+    if (!requestParams.communicationThreadMode) {
+      return dispatch('fetchSidebarUnreadCounts', requestParams);
+    }
+
+    sidebarUnreadCountsRequestId += 1;
+    const requestId = sidebarUnreadCountsRequestId;
+    const requestGeneration = conversationListRequestGeneration;
+    try {
+      const response = requestParams.queryData
+        ? await CommunicationThreadApi.filterSidebarUnreadCounts(requestParams)
+        : await CommunicationThreadApi.sidebarUnreadCounts(requestParams);
+      if (
+        requestGeneration !== conversationListRequestGeneration ||
+        requestId !== sidebarUnreadCountsRequestId
+      ) {
+        return undefined;
+      }
+
+      const counts = response.data?.counts || {};
+      commit(types.SET_CONVERSATION_SIDEBAR_UNREAD_COUNTS, counts);
+      return counts;
+    } catch (error) {
+      // Keep the last known sidebar counts if the lightweight refresh fails.
       return undefined;
     }
   },

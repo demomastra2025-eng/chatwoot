@@ -111,6 +111,54 @@ class CommunicationThreadApi extends ApiClient {
     return request;
   }
 
+  sidebarUnreadCounts({
+    inboxId,
+    status,
+    assigneeType,
+    labels,
+    teamId,
+    crmPipelineId,
+    crmStageId,
+    appointmentStatus,
+    labelsScope,
+    teamScope,
+    unread,
+  } = {}) {
+    return axios.get(`${this.url}/sidebar_unread_counts`, {
+      params: {
+        inbox_id: inboxId,
+        status,
+        assignee_type: assigneeType,
+        labels,
+        team_id: teamId,
+        crm_pipeline_id: crmPipelineId,
+        crm_stage_id: crmStageId,
+        appointment_status: appointmentStatus,
+        labels_scope: labelsScope,
+        team_scope: teamScope,
+        unread,
+      },
+    });
+  }
+
+  filterSidebarUnreadCounts(payload) {
+    return axios.post(
+      `${this.url}/filter_sidebar_unread_counts`,
+      payload.queryData,
+      {
+        params: {
+          crm_pipeline_id: payload.crmPipelineId || payload.crm_pipeline_id,
+          crm_stage_id: payload.crmStageId || payload.crm_stage_id,
+          appointment_status:
+            payload.appointmentStatus || payload.appointment_status,
+          labels_scope: payload.labelsScope || payload.labels_scope,
+          team_scope: payload.teamScope || payload.team_scope,
+          unread: payload.unread,
+        },
+      }
+    );
+  }
+
   filter(payload, { includeMeta = false, metaOnly = false } = {}) {
     const url = `${this.url}/filter`;
     const config = {
