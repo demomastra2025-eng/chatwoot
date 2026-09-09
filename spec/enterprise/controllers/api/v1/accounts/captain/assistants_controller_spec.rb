@@ -489,8 +489,8 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY',
           'silence_prompt_enabled' => true,
           'tool_start_phrases' => ['Секунду, проверю.'],
-          'tool_start_after_ms' => 1800,
-          'tool_foreground_wait_ms' => 900,
+          'tool_start_after_ms' => 600,
+          'tool_foreground_wait_ms' => 1500,
           'emotional_style' => 'warm_professional',
           'nonverbal_cues_enabled' => true,
           'ambient_noise_enabled' => false
@@ -844,10 +844,10 @@ RSpec.describe 'Api::V1::Accounts::Captain::Assistants', type: :request do
           'voice' => 'sulafat',
           'language' => 'ru-KZ',
           'interruptions_enabled' => false,
-          'first_message' => 'Здравствуйте! Чем могу помочь?',
+          'first_message' => 'Здравствуйте! Я голосовой помощник OneLink. Чем могу помочь?',
           'clear_audio_on_interrupt' => true,
           'interruption_mode' => 'transcript_confirmed',
-          'tool_foreground_wait_ms' => 900,
+          'tool_foreground_wait_ms' => 1500,
           'turn_coverage' => 'TURN_INCLUDES_ONLY_ACTIVITY'
         )
       end

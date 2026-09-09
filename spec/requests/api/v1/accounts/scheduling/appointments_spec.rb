@@ -22,7 +22,11 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   let(:service) { create(:scheduling_service, account: account, base_price: 20_000) }
   let(:contact) { create(:contact, account: account, name: 'Test Patient', phone_number: '+77015554433') }
   let(:headers) { agent.create_new_auth_token }
-  let(:booking_day) { ActiveSupport::TimeZone['Asia/Almaty'].local(2026, 3, 9, 10, 0, 0) }
+  let(:booking_day) do
+    timezone = ActiveSupport::TimeZone['Asia/Almaty']
+    date = timezone.today.next_occurring(:monday)
+    timezone.local(date.year, date.month, date.day, 10, 0, 0)
+  end
   let(:path) { "/api/v1/accounts/#{account.id}/scheduling/appointments" }
 
   before do
@@ -32,6 +36,14 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
   def response_body
     response.parsed_body
+  end
+
+  def stub_medelement_availability
+    result = Integrations::Medelement::ResourceAvailabilityService::Result.new(
+      status: 'fresh', checked_at: Time.current, slots: [{}], reason: nil
+    )
+    service = instance_double(Integrations::Medelement::ResourceAvailabilityService, perform: result)
+    allow(Integrations::Medelement::ResourceAvailabilityService).to receive(:new).and_return(service)
   end
 
   it 'creates an appointment inside a valid slot' do
@@ -56,11 +68,18 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   it 'creates a Medelement appointment without a selected service' do
-    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    stub_medelement_availability
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
     params = base_params.except(:service_id).merge(
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
-      client_phone: '+77000000001'
+      client_phone: '+77000000001',
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     )
 
     expect do
@@ -88,13 +107,20 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
   end
 
   it 'creates a Medelement appointment with a mapped service' do
-    resource.update!(custom_attributes: { 'medelement_specialist_code' => 'specialist-1' })
+    stub_medelement_availability
+    resource.update!(
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-1',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
     service.update!(custom_attributes: { 'medelement_nomenclature_code' => 'service-1' })
     create(:scheduling_service_price, account: account, resource: resource, service: service)
     params = base_params.merge(
       client_first_name: 'Айжан',
       client_last_name: 'Касымова',
-      client_phone: '+77000000001'
+      client_phone: '+77000000001',
+      custom_attributes: { medelement_cabinet_code: 'cabinet-1' }
     )
 
     expect do

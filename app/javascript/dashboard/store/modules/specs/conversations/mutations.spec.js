@@ -310,6 +310,7 @@ describe('#mutations', () => {
             id: 1,
             messages: [
               {
+                id: 10,
                 conversation_id: 1,
                 content: 'Test message',
                 created_at: 1602256198,
@@ -320,6 +321,7 @@ describe('#mutations', () => {
         selectedChatId: 1,
       };
       mutations[types.ADD_MESSAGE](state, {
+        id: 10,
         conversation_id: 1,
         content: 'Test message 1',
         created_at: 1602256198,
@@ -329,11 +331,13 @@ describe('#mutations', () => {
           id: 1,
           messages: [
             {
+              id: 10,
               conversation_id: 1,
               content: 'Test message 1',
               created_at: 1602256198,
             },
           ],
+          timestamp: 1602256198,
         },
       ]);
       expect(emitter.emit).not.toHaveBeenCalled();

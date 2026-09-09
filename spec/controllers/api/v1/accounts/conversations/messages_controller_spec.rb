@@ -399,6 +399,8 @@ RSpec.describe 'Conversation Messages API', type: :request do
         source_id: '778',
         content: 'old text'
       )
+      # This endpoint must handle legacy rows that predate the required association.
+      telegram_conversation.update_column(:contact_inbox_id, nil) # rubocop:disable Rails/SkipsModelValidations
       create(:inbox_member, inbox: telegram_inbox, user: agent)
 
       patch "/api/v1/accounts/#{account.id}/conversations/#{telegram_conversation.display_id}/messages/#{telegram_message.id}",
@@ -552,6 +554,16 @@ RSpec.describe 'Conversation Messages API', type: :request do
       end
 
       context 'when agent edits a WhatsApp Web message' do
+        around do |example|
+          with_modified_env(
+            'EVOLUTION_API_URL' => 'https://evolution.example.com',
+            'EVOLUTION_API_KEY' => 'test-api-key',
+            'FRONTEND_URL' => 'https://app.example.com'
+          ) do
+            example.run
+          end
+        end
+
         let(:channel) { create(:channel_whatsapp_web, account: account) }
         let(:inbox) { create(:inbox, channel: channel, account: account) }
         let!(:conversation) { create(:conversation, inbox: inbox, account: account) }
