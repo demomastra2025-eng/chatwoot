@@ -10,6 +10,7 @@
 #  compensation_value   :integer          default(0), not null
 #  custom_attributes    :jsonb            not null
 #  description          :text
+#  inherit_working_hours_from_account :boolean default(FALSE), not null
 #  name                 :string           not null
 #  photo_url            :string
 #  slot_duration_min    :integer          default(30), not null
@@ -46,6 +47,8 @@ class Scheduling::Resource < ApplicationRecord
   has_many :work_rules, class_name: 'Scheduling::WorkRule', dependent: :destroy_async, inverse_of: :resource
   has_many :workday_overrides, class_name: 'Scheduling::WorkdayOverride', dependent: :destroy_async, inverse_of: :resource
 
+  before_validation :sync_timezone_from_account
+
   validates :name, :timezone, presence: true
   validates :slot_duration_min, inclusion: { in: 5..720 }
   validates :compensation_type, inclusion: { in: Scheduling::Constants::COMPENSATION_TYPES }
@@ -73,7 +76,103 @@ class Scheduling::Resource < ApplicationRecord
     )
   end
 
+  def apply_workspace_working_hours!
+    with_lock do
+      reload
+      return unless inherit_working_hours_from_account?
+
+      replace_with_workspace_schedule!
+    end
+  end
+
+  def sync_workspace_schedule!
+    with_lock do
+      reload
+      if inherit_working_hours_from_account?
+        replace_with_workspace_schedule!
+      else
+        update!(timezone: account.workspace_working_hours_timezone)
+      end
+    end
+  end
+
+  def replace_schedule!(inherit:, work_rules:, break_rules:, expected_revision:)
+    with_lock do
+      reload
+      current_revision = Scheduling::ResourceScheduleRevision.generate(self)
+      if current_revision != expected_revision
+        raise Scheduling::Error.new(
+          code: 'SCHEDULE_VERSION_CONFLICT',
+          message: 'The specialist schedule was changed after it was opened',
+          status: :conflict,
+          details: { current_schedule_revision: current_revision }
+        )
+      end
+
+      update!(inherit_working_hours_from_account: inherit)
+      inherit ? replace_with_workspace_schedule! : replace_with_personal_schedule!(work_rules, break_rules)
+      block_given? ? yield(self) : self
+    end
+  end
+
   private
+
+  def replace_with_personal_schedule!(work_rules, break_rules)
+    self.work_rules.destroy_all
+    self.break_rules.destroy_all
+    work_rules.each { |rule| self.work_rules.create!(rule) }
+    break_rules.each { |rule| self.break_rules.create!(rule) }
+  end
+
+  def replace_with_workspace_schedule!
+    inherited_rules = account.workspace_working_hours_schedule.map { |day| inherited_work_rule(day) }
+
+    update!(timezone: account.workspace_working_hours_timezone)
+    work_rules.destroy_all
+    break_rules.destroy_all
+    inherited_rules.each { |rule| work_rules.create!(account: account, **rule) }
+    inherited_break_rules.each { |rule| break_rules.create!(account: account, **rule) }
+  end
+
+  def sync_timezone_from_account
+    self.timezone = account.workspace_working_hours_timezone if account.present?
+  end
+
+  def inherited_break_rules
+    account.workspace_break_schedule.flat_map do |entry|
+      entry['days'].map do |weekday|
+        {
+          active: true,
+          end_minute: minute_for_time(entry['end_time']),
+          start_minute: minute_for_time(entry['start_time']),
+          title: entry['title'].presence,
+          weekday: weekday
+        }
+      end
+    end
+  end
+
+  def inherited_work_rule(day)
+    open_all_day = ActiveModel::Type::Boolean.new.cast(day['open_all_day'])
+    closed_all_day = ActiveModel::Type::Boolean.new.cast(day['closed_all_day'])
+    full_day = open_all_day || closed_all_day
+
+    {
+      active: !closed_all_day,
+      end_minute: full_day ? 1440 : minutes_for(day, 'close'),
+      start_minute: full_day ? 0 : minutes_for(day, 'open'),
+      weekday: day['day_of_week']
+    }
+  end
+
+  def minutes_for(day, prefix)
+    (day["#{prefix}_hour"].to_i * 60) + day["#{prefix}_minutes"].to_i
+  end
+
+  def minute_for_time(value)
+    hour, minute = value.split(':').map(&:to_i)
+    (hour * 60) + minute
+  end
 
   def compensation_percent_within_range
     return unless compensation_type == 'percent'

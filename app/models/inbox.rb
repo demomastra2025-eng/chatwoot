@@ -46,6 +46,8 @@ class Inbox < ApplicationRecord
   include Reportable
   include Avatarable
   include OutOfOffisable
+
+  attribute :inherit_working_hours_from_account, :boolean, default: true
   include AccountCacheRevalidator
   include InboxAgentAvailability
 
@@ -102,7 +104,7 @@ class Inbox < ApplicationRecord
   enum sender_name_type: { friendly: 0, professional: 1 }
 
   before_validation :apply_single_conversation_default, on: :create
-  after_create :inherit_workspace_working_hours, if: -> { account.workspace_working_hours_configured? }
+  after_create :inherit_workspace_working_hours, if: :inherit_working_hours_from_account?
   after_destroy :delete_round_robin_agents
 
   after_create_commit :dispatch_create_event
@@ -283,7 +285,6 @@ class Inbox < ApplicationRecord
   private
 
   def inherit_workspace_working_hours
-    update!(inherit_working_hours_from_account: true)
     apply_workspace_working_hours!
   end
 

@@ -117,6 +117,7 @@
       "STATUS": "Appointment status"
     },
     "CALENDAR": {
+      "ALL_RESOURCES_UNAVAILABLE": "All specialists unavailable",
       "AVAILABLE_SLOTS": "{count} free",
       "DESCRIPTION": "Manage appointments, specialist capacity, and blocked time from one native workspace calendar.",
       "MORE_APPOINTMENTS": "+{count} more",
@@ -125,7 +126,10 @@
       "NO_APPOINTMENTS_STATUS": "No appointments in this status",
       "NO_RESOURCES": "Add at least one active specialist to start scheduling.",
       "NO_SERVICE": "No service",
-      "UNAVAILABLE_SLOT": "This time is unavailable"
+      "RESOURCES_UNAVAILABLE": "Unavailable: {names}",
+      "UNAVAILABLE": "Unavailable",
+      "UNAVAILABLE_SLOT": "This time is unavailable",
+      "UNAVAILABLE_TIME_RANGE": "{label} · {start}–{end}"
     },
     "DIALOGS": {
       "CLIENT": "Client",
@@ -158,6 +162,19 @@
       "NO_CONTACT_DESCRIPTION": "Add a contact to this appointment before creating a dialog.",
       "NO_INBOXES": "No channel is available for this contact to create a dialog",
       "TITLE": "No dialog created yet"
+    },
+    "AVAILABILITY_OVERRIDE": {
+      "CONFIRM_ACTION": "Create anyway",
+      "OUTSIDE_WORKING_HOURS_TITLE": "Outside working hours",
+      "OUTSIDE_WORKING_HOURS_DESCRIPTION": "The selected time is outside the specialist's working hours. Create the appointment anyway?",
+      "SLOT_CONFLICT_TITLE": "Time slot is occupied",
+      "SLOT_CONFLICT_DESCRIPTION": "The specialist already has an appointment at this time. Add another patient anyway?",
+      "BREAK_TITLE": "Break time",
+      "BREAK_DESCRIPTION": "The selected time overlaps the specialist’s break. Create the appointment anyway?",
+      "GLOBAL_CLOSURE_TITLE": "Organization is closed",
+      "GLOBAL_CLOSURE_DESCRIPTION": "The organization is closed at this time. Confirm that the specialist and room are available.",
+      "REASON_LABEL": "Reason for exception",
+      "REASON_PLACEHOLDER": "Explain why this scheduling exception is required"
     },
     "APPOINTMENT_FORM": {
       "APPOINTMENT_DESCRIPTION": "Choose the specialist, service, and time slot for the visit.",
@@ -286,6 +303,9 @@
       "EMPTY_DESCRIPTION": "Specialists define who can be booked in the calendar.",
       "EMPTY_TITLE": "No specialists yet",
       "CUSTOM_COLOR": "Custom color",
+      "INHERIT_COMPANY_HOURS": "Use company working hours",
+      "INHERIT_COMPANY_HOURS_DESCRIPTION": "The specialist's working hours, timezone, and company breaks update automatically when the company schedule changes.",
+      "LEGACY_INTERVAL_GAP": "Break between migrated shifts",
       "LIST_DESCRIPTION": "Keep specialist capacity, activity, and compensation settings in sync.",
       "LIST_TITLE": "Specialists",
       "LINKED_USER": "Linked employee",
@@ -303,7 +323,8 @@
       "SUCCESS_SAVE": "Specialist saved",
       "TIMEZONE": "Timezone",
       "USER_ID": "Linked user ID",
-      "WORK_RULES": "Work rules"
+      "WORK_RULES": "Work rules",
+      "MANAGED_BY_MEDELEMENT": "Managed by MedElement"
     },
     "SERVICES": {
       "ADD": "Add service",
@@ -412,6 +433,7 @@
       "RESOURCE_HAS_APPOINTMENTS": "This specialist still has active appointments. Cancel or delete them first.",
       "RESOURCE_NOT_AVAILABLE_FOR_SCHEDULING": "This specialist is not available for scheduling.",
       "RESOURCE_REQUIRED_FOR_SERVICE_PRICE": "Select a specialist for specialist pricing.",
+      "SCHEDULE_VERSION_CONFLICT": "This schedule was changed by someone else. Reload it before saving your changes.",
       "SERVICE_AMOUNT_REQUIRED": "Enter a service amount greater than 0.",
       "SERVICE_NOT_AVAILABLE_FOR_RESOURCE": "This service is not available for the selected specialist.",
       "SETTLEMENT_BELOW_RECORDED_PAYMENTS": "Settlement amount cannot be lower than the recorded payments.",

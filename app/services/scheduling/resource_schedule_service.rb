@@ -30,15 +30,16 @@ class Scheduling::ResourceScheduleService
   def day_payload(date)
     override = workday_overrides.find { |item| item.date == date }
     matching_holidays = holidays_for_date(date)
-    holiday_blocked = holiday_blocks_date?(matching_holidays)
-    working_intervals = working_intervals_for_date(date, override, holiday_blocked)
-    breaks = @include_breaks ? breaks_for_date(date, override) : []
+    workspace_closed = @account.workspace_day_off?(date)
+    holiday_blocked = workspace_closed || holiday_blocks_date?(matching_holidays)
+    working_intervals = working_intervals_for_date(date, override, holiday_blocked, workspace_closed)
+    breaks = @include_breaks && !workspace_closed ? breaks_for_date(date, override) : []
     time_offs = @include_time_offs ? time_offs_for_date(date) : []
 
     {
       date: date.iso8601,
       working: working_intervals.any?,
-      source: schedule_source(override, holiday_blocked, working_intervals),
+      source: schedule_source(override, holiday_blocked, working_intervals, workspace_closed),
       windows: serialize_intervals(working_intervals),
       breaks: serialize_intervals(breaks, include_title: true),
       holidays: serialize_holidays(matching_holidays),
@@ -88,7 +89,8 @@ class Scheduling::ResourceScheduleService
     end
   end
 
-  def schedule_source(override, holiday_blocked, working_intervals)
+  def schedule_source(override, holiday_blocked, working_intervals, workspace_closed)
+    return 'holiday' if workspace_closed
     return 'override' if override.present?
     return 'holiday' if holiday_blocked
     return 'weekly_rules' if working_intervals.any?
@@ -123,7 +125,8 @@ class Scheduling::ResourceScheduleService
     @workday_overrides ||= @resource.workday_overrides.where(date: local_dates).ordered.to_a
   end
 
-  def working_intervals_for_date(date, override, holiday_blocked)
+  def working_intervals_for_date(date, override, holiday_blocked, workspace_closed)
+    return [] if workspace_closed
     return [interval_hash(local_time(date, override.start_minute), local_time(date, override.end_minute))] if override.present?
     return [] if holiday_blocked
 

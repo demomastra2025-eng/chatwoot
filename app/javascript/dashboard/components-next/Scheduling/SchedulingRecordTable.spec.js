@@ -48,4 +48,14 @@ describe('SchedulingRecordTable', () => {
       [{ direction: 'asc', key: 'title' }],
     ]);
   });
+
+  it('clips cells and truncates default values inside their columns', () => {
+    const wrapper = mountTable();
+    const rowCells = wrapper.findAll('.divide-y > .grid > div');
+    const title = rowCells[1].find('span');
+
+    expect(rowCells.every(cell => cell.classes('overflow-hidden'))).toBe(true);
+    expect(title.classes()).toContain('truncate');
+    expect(title.attributes('title')).toBe('First deal');
+  });
 });

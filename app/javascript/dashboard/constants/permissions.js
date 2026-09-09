@@ -12,6 +12,7 @@ export const AVAILABLE_CUSTOM_ROLE_PERMISSIONS = [
   'report_manage',
   'knowledge_base_manage',
   'captain_manage',
+  'scheduling_override',
 ];
 
 export const ROLES = ['agent', 'administrator'];
@@ -30,6 +31,7 @@ export const SCHEDULING_ACCESS_PERMISSIONS = [
   'agent',
   'custom_role',
 ];
+export const SCHEDULING_OVERRIDE_PERMISSION = 'scheduling_override';
 
 export const MANAGE_ALL_CONVERSATION_PERMISSIONS = 'conversation_manage';
 

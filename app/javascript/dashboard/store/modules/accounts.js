@@ -79,6 +79,7 @@ export const actions = {
       commit(types.default.EDIT_ACCOUNT, response.data);
       await dispatch('validityCheck', null, { root: true });
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
+      return response.data;
     } catch (error) {
       commit(types.default.SET_ACCOUNT_UI_FLAG, { isUpdating: false });
       throw error;

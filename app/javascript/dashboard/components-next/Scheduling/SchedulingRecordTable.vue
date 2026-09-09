@@ -146,14 +146,16 @@ const handleHeaderSort = column => {
         <div
           v-for="column in columns"
           :key="column.key"
-          class="min-w-0"
+          class="min-w-0 overflow-hidden"
           :class="[
             column.align === 'end' ? 'text-end' : 'text-start',
             column.cellClass,
           ]"
         >
           <slot :name="`cell-${column.key}`" :row="row">
-            {{ row[column.key] }}
+            <span class="block truncate" :title="row[column.key]">
+              {{ row[column.key] }}
+            </span>
           </slot>
         </div>
       </div>

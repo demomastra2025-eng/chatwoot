@@ -25,6 +25,18 @@ RSpec.describe Scheduling::Appointments::UpsertService do
     )
   end
 
+  it 'locks the target resource before checking and persisting availability' do
+    resources = account.scheduling_resources
+    locked_resources = resources.lock
+    allow(account).to receive(:scheduling_resources).and_return(resources)
+    expect(resources).to receive(:lock).and_return(locked_resources)
+    expect(locked_resources).to receive(:find).with(resource.id).and_call_original
+
+    perform(client_comment: 'Serialized')
+
+    expect(appointment.reload.client_comment).to eq('Serialized')
+  end
+
   it 'rejects generic mutations of imported Medelement appointments' do
     appointment.update!(source: 'medelement', external_ref: 'medelement:reception:upsert')
 
@@ -93,6 +105,76 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   it 'rejects an unsupported appointment type at the model runtime boundary' do
     expect { perform(appointment_type: 'Терапевт') }.to raise_error(ActiveRecord::RecordInvalid) do |error|
       expect(error.record.errors.details[:appointment_type]).to include(error: :inclusion, value: 'Терапевт')
+    end
+  end
+
+  context 'with availability overrides' do
+    let(:admin) { create(:user, account: account, role: :administrator) }
+    let(:agent) { create(:user, account: account, role: :agent) }
+    let(:booking_day) { ActiveSupport::TimeZone[resource.timezone].local(2026, 3, 9, 10, 15, 0) }
+
+    before do
+      resource.work_rules.create!(weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60, active: true)
+      appointment.update!(starts_at: booking_day.change(hour: 9), ends_at: booking_day.change(hour: 9, min: 30), duration_min: 30)
+    end
+
+    def perform_override(actor:, **override_params)
+      described_class.new(
+        account: account,
+        appointment: appointment,
+        actor: actor,
+        params: {
+          starts_at: booking_day.iso8601,
+          duration_min: 30
+        }.merge(override_params)
+      ).perform
+    end
+
+    it 'records an authorized break override with its reason and audit comment' do
+      resource.break_rules.create!(weekday: 1, start_minute: 10 * 60, end_minute: 11 * 60, active: true)
+
+      perform_override(actor: admin, confirm_break_conflict: true, override_reason: 'Urgent patient')
+
+      override = appointment.reload.custom_attributes.fetch('availability_overrides').last
+      expect(override).to include(
+        'actor_id' => admin.id,
+        'codes' => ['BLOCKED_BY_BREAK'],
+        'reason' => 'Urgent patient'
+      )
+      expect(appointment.audits.last.comment).to include('Urgent patient', 'BLOCKED_BY_BREAK')
+    end
+
+    it 'requires a reason for every requested override' do
+      expect do
+        perform_override(actor: admin, confirm_break_conflict: true)
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('OVERRIDE_REASON_REQUIRED') }
+    end
+
+    it 'rejects an override from an agent without the assigned capability' do
+      expect do
+        perform_override(actor: agent, confirm_break_conflict: true, override_reason: 'Requested')
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('OVERRIDE_FORBIDDEN') }
+    end
+
+    it 'does not allow personal time off to be bypassed' do
+      create(
+        :scheduling_time_off,
+        account: account,
+        resource: resource,
+        starts_at: booking_day.change(hour: 10),
+        ends_at: booking_day.change(hour: 11)
+      )
+
+      expect do
+        perform_override(
+          actor: admin,
+          confirm_break_conflict: true,
+          confirm_global_closure: true,
+          confirm_outside_working_hours: true,
+          confirm_slot_conflict: true,
+          override_reason: 'Requested'
+        )
+      end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('BLOCKED_BY_VACATION') }
     end
   end
 

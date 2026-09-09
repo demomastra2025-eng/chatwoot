@@ -46,7 +46,7 @@ export function useAccount() {
   };
 
   const updateAccount = async (data, options) => {
-    await store.dispatch('accounts/update', {
+    return store.dispatch('accounts/update', {
       ...data,
       options,
     });

@@ -12,11 +12,13 @@ import {
   startOfMonth,
   startOfWeek,
 } from 'date-fns';
+import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz';
 
 import {
   DEFAULT_VISIBLE_END_MINUTE,
   DEFAULT_VISIBLE_START_MINUTE,
   MINUTE_STEP,
+  WEEKDAY_VALUES,
 } from './constants';
 
 const WEEK_STARTS_ON = 1;
@@ -42,6 +44,18 @@ export const canCreateAppointmentConversation = appointment =>
 
 export const isAppointmentProviderOwned = appointment =>
   appointment?.source === 'medelement';
+
+export const isCurrentScheduleRequest = ({
+  activeResourceId,
+  currentDrawerGeneration,
+  currentRequestId,
+  drawerGeneration,
+  requestId,
+  resourceId,
+}) =>
+  Number(activeResourceId) === Number(resourceId) &&
+  currentDrawerGeneration === drawerGeneration &&
+  currentRequestId === requestId;
 
 export const medelementCabinetsForResource = resource => {
   const customAttributes = resource?.customAttributes || {};
@@ -209,50 +223,132 @@ export const toDate = value => {
 
 export const formatDateKey = value => format(toDate(value), 'yyyy-MM-dd');
 
-export const buildCalendarRange = (view, anchorDate) => {
-  const date = toDate(anchorDate);
+export const collapseLegacyWorkIntervals = ({
+  breakRules,
+  gapTitle,
+  workRules,
+}) => {
+  const normalizedBreakRules = breakRules.map(rule => ({ ...rule }));
+  const normalizedWorkRules = [];
+
+  WEEKDAY_VALUES.forEach(weekday => {
+    const weekdayRules = workRules
+      .filter(rule => rule.weekday === weekday)
+      .sort(
+        (left, right) =>
+          left.startMinute - right.startMinute ||
+          left.endMinute - right.endMinute
+      );
+    const activeRules = weekdayRules.filter(rule => rule.active);
+    const effectiveRules = activeRules.length ? activeRules : weekdayRules;
+    if (effectiveRules.length <= 1) {
+      normalizedWorkRules.push(...effectiveRules);
+      return;
+    }
+
+    let coveredUntil = effectiveRules[0].endMinute;
+    effectiveRules.slice(1).forEach(rule => {
+      if (rule.startMinute > coveredUntil) {
+        const existingGap = normalizedBreakRules.find(
+          breakRule =>
+            breakRule.weekday === weekday &&
+            breakRule.startMinute === coveredUntil &&
+            breakRule.endMinute === rule.startMinute
+        );
+        if (existingGap) {
+          existingGap.active = true;
+        } else {
+          normalizedBreakRules.push({
+            active: true,
+            endMinute: rule.startMinute,
+            startMinute: coveredUntil,
+            title: gapTitle,
+            weekday,
+          });
+        }
+      }
+      coveredUntil = Math.max(coveredUntil, rule.endMinute);
+    });
+
+    normalizedWorkRules.push({
+      ...effectiveRules[0],
+      active: effectiveRules.some(rule => rule.active),
+      endMinute: Math.max(...effectiveRules.map(rule => rule.endMinute)),
+      startMinute: Math.min(...effectiveRules.map(rule => rule.startMinute)),
+    });
+  });
+
+  return {
+    breakRules: normalizedBreakRules,
+    workRules: normalizedWorkRules,
+  };
+};
+
+export const buildCalendarRange = (view, anchorDate, timezone) => {
+  const date = timezone
+    ? utcToZonedTime(toDate(anchorDate), timezone)
+    : toDate(anchorDate);
+  let range;
 
   switch (view) {
     case 'day':
-      return {
+      range = {
         from: startOfDay(date),
         to: endOfDay(date),
       };
+      break;
     case 'month':
-      return {
+      range = {
         from: startOfWeek(startOfMonth(date), { weekStartsOn: WEEK_STARTS_ON }),
         to: endOfWeek(endOfMonth(date), { weekStartsOn: WEEK_STARTS_ON }),
       };
+      break;
     case 'list':
     case 'kanban':
-      return {
+      range = {
         from: startOfDay(date),
         to: endOfDay(addDays(date, 13)),
       };
+      break;
     case 'week':
     default:
-      return {
+      range = {
         from: startOfWeek(date, { weekStartsOn: WEEK_STARTS_ON }),
         to: endOfWeek(date, { weekStartsOn: WEEK_STARTS_ON }),
       };
   }
+
+  if (!timezone) return range;
+
+  return {
+    from: zonedTimeToUtc(range.from, timezone),
+    to: zonedTimeToUtc(range.to, timezone),
+  };
 };
 
-export const shiftAnchorDate = (view, anchorDate, direction) => {
-  const date = toDate(anchorDate);
+export const shiftAnchorDate = (view, anchorDate, direction, timezone) => {
+  const date = timezone
+    ? utcToZonedTime(toDate(anchorDate), timezone)
+    : toDate(anchorDate);
+  let shiftedDate;
 
   switch (view) {
     case 'day':
-      return addDays(date, direction);
+      shiftedDate = addDays(date, direction);
+      break;
     case 'month':
-      return addMonths(date, direction);
+      shiftedDate = addMonths(date, direction);
+      break;
     case 'list':
     case 'kanban':
-      return addDays(date, direction * 14);
+      shiftedDate = addDays(date, direction * 14);
+      break;
     case 'week':
     default:
-      return addWeeks(date, direction);
+      shiftedDate = addWeeks(date, direction);
   }
+
+  return timezone ? zonedTimeToUtc(shiftedDate, timezone) : shiftedDate;
 };
 
 export const formatCalendarTitle = (view, anchorDate, locale) => {
@@ -464,15 +560,19 @@ export const clipIntervalToDay = (startsAt, endsAt, day) => {
   };
 };
 
-export const buildTimeOffIntervals = (timeOffs, column) => {
+export const buildTimeOffIntervals = (
+  timeOffs,
+  column,
+  convertDate = toDate
+) => {
   return timeOffs
     .filter(
       item => item.resourceId === null || item.resourceId === column.resourceId
     )
     .map(item => {
       return clipIntervalToDay(
-        toDate(item.startsAt),
-        toDate(item.endsAt),
+        convertDate(item.startsAt),
+        convertDate(item.endsAt),
         column.date
       );
     })

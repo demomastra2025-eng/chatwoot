@@ -71,6 +71,24 @@ RSpec.describe Scheduling::ResourceScheduleService do
                                ])
   end
 
+  it 'keeps a global workspace day off closed despite a resource workday override' do
+    account.update!(workspace_days_off: [{ date: monday.to_date.iso8601, title: 'Company holiday' }])
+    create(
+      :scheduling_workday_override,
+      account: account,
+      resource: resource,
+      date: monday.to_date,
+      start_minute: 10 * 60,
+      end_minute: 16 * 60,
+      break_start_minute: 12 * 60,
+      break_end_minute: 13 * 60
+    )
+
+    day = perform[:days].first
+
+    expect(day).to include(working: false, source: 'holiday', windows: [], breaks: [])
+  end
+
   it 'honors include toggles without changing the working-day calculation' do
     create(:scheduling_holiday, account: account, date: monday.to_date, title: 'Clinic day', working_day_override: true)
     create(:scheduling_time_off, account: account, resource: resource, starts_at: time_zone.local(2026, 4, 20, 10, 0),

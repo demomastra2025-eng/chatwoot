@@ -1,7 +1,8 @@
 class Api::V1::AccountsController < Api::BaseController
   WORKSPACE_WORKING_HOURS_PARAMS = [
-    :workspace_working_hours_enabled,
     :workspace_timezone,
+    { workspace_breaks: [:title, :start_time, :end_time, { days: [] }] },
+    { workspace_days_off: [:date, :title, :recurring_yearly] },
     {
       workspace_working_hours: [
         :day_of_week, :closed_all_day, :open_hour, :open_minutes,
@@ -10,9 +11,10 @@ class Api::V1::AccountsController < Api::BaseController
     }
   ].freeze
   ACCOUNT_SETTINGS_PARAMS = %i[
-    auto_resolve_after auto_resolve_message auto_resolve_ignore_waiting audio_transcriptions auto_resolve_label
+    auto_resolve_after auto_resolve_message auto_resolve_ignore_waiting audio_transcriptions call_transcriptions auto_resolve_label
     scheduling_contact_required scheduling_company_enabled default_appointment_touch_plan_id default_deal_touch_plan_id
-    default_task_touch_plan_id dashboard_sidebar_hidden_items_version
+    default_task_touch_plan_id dashboard_sidebar_hidden_items_version scheduling_allow_outside_working_hours
+    scheduling_allow_overlapping_appointments
   ].freeze
 
   include AuthHelper
@@ -137,7 +139,7 @@ class Api::V1::AccountsController < Api::BaseController
   end
 
   def workspace_working_hours_params?
-    settings_params.keys.intersect?(%w[workspace_working_hours_enabled workspace_timezone workspace_working_hours])
+    settings_params.keys.intersect?(%w[workspace_timezone workspace_working_hours workspace_breaks workspace_days_off])
   end
 
   def check_signup_enabled

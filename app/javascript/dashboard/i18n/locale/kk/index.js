@@ -30,9 +30,8 @@ import macros from './macros.json';
 import report from './report.json';
 import resetPassword from './resetPassword.json';
 import search from './search.json';
-// Scheduling intentionally uses the complete Russian catalog until a full
-// Kazakh translation is available, avoiding partial keys and raw fallbacks.
-import scheduling from '../ru/scheduling.json';
+import russianScheduling from '../ru/scheduling.json';
+import kazakhScheduling from './scheduling.json';
 import setNewPassword from './setNewPassword.json';
 import settings from './settings.json';
 import signup from './signup.json';
@@ -42,6 +41,28 @@ import whatsappTemplates from './whatsappTemplates.json';
 import contentTemplates from './contentTemplates.json';
 import mfa from './mfa.json';
 import yearInReview from './yearInReview.json';
+
+const mergeCatalog = (base, overrides) =>
+  Object.entries(overrides).reduce(
+    (catalog, [key, value]) => {
+      const baseValue = catalog[key];
+      const mergeNested =
+        value &&
+        baseValue &&
+        typeof value === 'object' &&
+        typeof baseValue === 'object' &&
+        !Array.isArray(value) &&
+        !Array.isArray(baseValue);
+
+      return {
+        ...catalog,
+        [key]: mergeNested ? mergeCatalog(baseValue, value) : value,
+      };
+    },
+    { ...base }
+  );
+
+const scheduling = mergeCatalog(russianScheduling, kazakhScheduling);
 
 export default {
   ...advancedFilters,

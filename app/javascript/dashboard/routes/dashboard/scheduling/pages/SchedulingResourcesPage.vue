@@ -20,15 +20,9 @@ import SchedulingDrawer from 'dashboard/components-next/Scheduling/SchedulingDra
 import SchedulingEmptyState from 'dashboard/components-next/Scheduling/SchedulingEmptyState.vue';
 import SchedulingErrorState from 'dashboard/components-next/Scheduling/SchedulingErrorState.vue';
 import SchedulingFormFieldGroup from 'dashboard/components-next/Scheduling/SchedulingFormFieldGroup.vue';
-import SchedulingMoneyInput from 'dashboard/components-next/Scheduling/SchedulingMoneyInput.vue';
 import SchedulingPageHeader from 'dashboard/components-next/Scheduling/SchedulingPageHeader.vue';
-import SchedulingPercentInput from 'dashboard/components-next/Scheduling/SchedulingPercentInput.vue';
 import SchedulingSelectField from 'dashboard/components-next/Scheduling/SchedulingSelectField.vue';
-import {
-  COMPENSATION_TYPE_VALUES,
-  RESOURCE_COLORS,
-  WEEKDAY_VALUES,
-} from '../constants';
+import { RESOURCE_COLORS, WEEKDAY_VALUES } from '../constants';
 import {
   formatSchedulingErrorMessage,
   toIntegerNumeric,
@@ -43,6 +37,10 @@ import {
   getResourceDisplayPhoto,
 } from '../resourcePhotos';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
+import {
+  collapseLegacyWorkIntervals,
+  isCurrentScheduleRequest,
+} from '../helpers';
 
 const { t } = useI18n();
 
@@ -51,6 +49,9 @@ const referencesStore = useSchedulingReferencesStore();
 const resourceDrawerOpen = ref(false);
 const scheduleDrawerOpen = ref(false);
 const scheduleTab = ref('work');
+const isScheduleLoading = ref(false);
+const isScheduleSaving = ref(false);
+const scheduleLoadError = ref(null);
 const activeResource = ref(null);
 const accountUsers = ref([]);
 const resourceDeleteDialogRef = ref(null);
@@ -59,23 +60,28 @@ const resourcePendingDelete = ref(null);
 const resourceForm = reactive({
   active: true,
   color: RESOURCE_COLORS[0],
-  compensationPercent: 0,
-  compensationType: 'percent',
-  compensationValue: 40,
   description: '',
   id: null,
   name: '',
   photoUrl: '',
   slotDurationMin: 30,
   specialty: '',
-  timezone: 'Asia/Almaty',
   userId: '',
 });
 
 const scheduleForm = reactive({
   breakRules: [],
+  inheritWorkingHoursFromAccount: false,
+  scheduleRevision: null,
   workRules: [],
 });
+let scheduleLoadRequestId = 0;
+let scheduleSaveRequestId = 0;
+let scheduleDrawerGeneration = 0;
+
+const supportsAtomicSchedule = computed(
+  () => activeResource.value?.scheduleUpdateSupported === true
+);
 
 const tabs = computed(() => [
   { label: t('SCHEDULING.RESOURCES.WORK_RULES'), value: 'work' },
@@ -96,12 +102,6 @@ const staffOptions = computed(() =>
   }))
 );
 
-const compensationTypeLabels = computed(() => ({
-  fixed: t('SCHEDULING.COMPENSATION.fixed'),
-  fixed_plus_percent: t('SCHEDULING.COMPENSATION.fixed_plus_percent'),
-  percent: t('SCHEDULING.COMPENSATION.percent'),
-}));
-
 const weekDayLabels = computed(() => ({
   0: t('SCHEDULING.WEEKDAYS.0'),
   1: t('SCHEDULING.WEEKDAYS.1'),
@@ -112,23 +112,31 @@ const weekDayLabels = computed(() => ({
   6: t('SCHEDULING.WEEKDAYS.6'),
 }));
 
-const compensationTypeOptions = computed(() =>
-  COMPENSATION_TYPE_VALUES.map(value => ({
-    label: compensationTypeLabels.value[value] || value,
-    value,
+const breakRuleGroups = computed(() =>
+  WEEKDAY_VALUES.map(weekday => ({
+    rules: scheduleForm.breakRules.filter(rule => rule.weekday === weekday),
+    weekday,
   }))
 );
 
 const formatErrorMessage = error => formatSchedulingErrorMessage(error, t);
+const isProviderOwned = resource =>
+  Boolean(
+    resource.customAttributes?.medelementSpecialistCode ||
+      resource.customAttributes?.medelement_specialist_code
+  );
 
 const pageErrorDescription = computed(() =>
   formatErrorMessage(referencesStore.ui.error)
 );
 
 const resourceCards = computed(() =>
-  referencesStore.resources.filter(
-    resource => !resource.customAttributes?.deletedFromScheduling
-  )
+  referencesStore.resources.filter(resource => {
+    const attributes = resource.customAttributes || {};
+    return !(
+      attributes.deleted_from_scheduling || attributes.deletedFromScheduling
+    );
+  })
 );
 
 const weekDayLabel = weekday => weekDayLabels.value[weekday] || `${weekday}`;
@@ -174,24 +182,6 @@ const standardColorTitle = color => {
   return `${color} · ${t('SCHEDULING.RESOURCES.COLOR_UNAVAILABLE')}`;
 };
 
-const compensationPrimaryLabel = type => {
-  if (type === 'percent') return t('SCHEDULING.COMPENSATION.percent_value');
-
-  return t('SCHEDULING.COMPENSATION.fixed_value');
-};
-
-const compensationSummary = resource => {
-  if (resource.compensationType === 'fixed_plus_percent') {
-    return `${resource.compensationValue} ₸ + ${resource.compensationPercent}%`;
-  }
-
-  if (resource.compensationType === 'percent') {
-    return `${resource.compensationValue}%`;
-  }
-
-  return `${resource.compensationValue} ₸`;
-};
-
 const timeToMinute = value => {
   if (!value) return null;
   const [hours = '0', minutes = '0'] = value.split(':');
@@ -209,16 +199,12 @@ const resetResourceForm = () => {
   Object.assign(resourceForm, {
     active: true,
     color: defaultResourceColor(),
-    compensationPercent: 0,
-    compensationType: 'percent',
-    compensationValue: 40,
     description: '',
     id: null,
     name: '',
     photoUrl: '',
     slotDurationMin: 30,
     specialty: '',
-    timezone: 'Asia/Almaty',
     userId: '',
   });
 };
@@ -311,7 +297,9 @@ const buildScheduleRows = (type, rules) => {
       return [createScheduleRow(defaultScheduleRuleForType(type, weekday))];
     }
 
-    return weekdayRules.map(rule => createScheduleRow(rule));
+    const visibleRules =
+      type === 'work' ? weekdayRules.slice(0, 1) : weekdayRules;
+    return visibleRules.map(rule => createScheduleRow(rule));
   });
 };
 
@@ -408,16 +396,12 @@ const openEditResource = resource => {
   Object.assign(resourceForm, {
     active: resource.active,
     color: resource.color || RESOURCE_COLORS[0],
-    compensationPercent: resource.compensationPercent || 0,
-    compensationType: resource.compensationType || 'percent',
-    compensationValue: resource.compensationValue || 0,
     description: resource.description || '',
     id: resource.id,
     name: resource.name,
     photoUrl: getEditableResourcePhotoUrl(resource),
     slotDurationMin: resource.slotDurationMin || 30,
     specialty: resource.specialty || '',
-    timezone: resource.timezone || 'Asia/Almaty',
     userId: resource.userId || '',
   });
   resourceDrawerOpen.value = true;
@@ -430,18 +414,9 @@ const closeResourceDrawer = () => {
 
 const saveResource = async () => {
   try {
-    await referencesStore.saveResource({
+    const payload = {
       active: resourceForm.active,
       color: resourceForm.color,
-      compensation_percent: toIntegerNumeric(
-        resourceForm.compensationPercent,
-        'compensation_percent'
-      ),
-      compensation_type: resourceForm.compensationType,
-      compensation_value: toIntegerNumeric(
-        resourceForm.compensationValue,
-        'compensation_value'
-      ),
       description: resourceForm.description,
       id: resourceForm.id,
       name: resourceForm.name,
@@ -451,9 +426,13 @@ const saveResource = async () => {
         'slot_duration_min'
       ),
       specialty: resourceForm.specialty,
-      timezone: resourceForm.timezone,
       user_id: toNumeric(resourceForm.userId),
-    });
+    };
+    if (!resourceForm.id) {
+      payload.inherit_working_hours_from_account = true;
+    }
+
+    await referencesStore.saveResource(payload);
     closeResourceDrawer();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
@@ -466,16 +445,12 @@ const toggleResourceActive = async resource => {
     await referencesStore.saveResource({
       active: !resource.active,
       color: resource.color,
-      compensation_percent: resource.compensationPercent,
-      compensation_type: resource.compensationType,
-      compensation_value: resource.compensationValue,
       description: resource.description,
       id: resource.id,
       name: resource.name,
       photo_url: resource.photoUrl,
       slot_duration_min: resource.slotDurationMin,
       specialty: resource.specialty,
-      timezone: resource.timezone,
       user_id: resource.userId,
     });
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
@@ -505,54 +480,114 @@ const deleteResource = async () => {
   }
 };
 
-const openScheduleEditor = async resource => {
-  activeResource.value = resource;
-  scheduleDrawerOpen.value = true;
-  scheduleTab.value = 'work';
-
-  const [workRules, breakRules] = await Promise.all([
-    referencesStore.loadWorkRules(resource.id),
-    referencesStore.loadBreakRules(resource.id),
-  ]);
-
-  scheduleForm.workRules = buildScheduleRows(
-    'work',
-    workRules.length ? workRules : buildDefaultWorkRules()
-  );
-  scheduleForm.breakRules = buildScheduleRows(
-    'break',
-    breakRules.length ? breakRules : buildDefaultBreakRules()
-  );
-};
-
 const closeScheduleDrawer = () => {
+  scheduleLoadRequestId += 1;
+  scheduleSaveRequestId += 1;
+  scheduleDrawerGeneration += 1;
+  isScheduleLoading.value = false;
+  isScheduleSaving.value = false;
+  scheduleLoadError.value = null;
   scheduleDrawerOpen.value = false;
   activeResource.value = null;
   scheduleForm.workRules = [];
   scheduleForm.breakRules = [];
+  scheduleForm.inheritWorkingHoursFromAccount = false;
+  scheduleForm.scheduleRevision = null;
+};
+
+const openScheduleEditor = async resource => {
+  const resourceId = resource.id;
+  scheduleDrawerGeneration += 1;
+  const requestId = scheduleLoadRequestId + 1;
+  scheduleLoadRequestId = requestId;
+  isScheduleLoading.value = true;
+  isScheduleSaving.value = false;
+  scheduleLoadError.value = null;
+  activeResource.value = resource;
+  scheduleDrawerOpen.value = true;
+  scheduleTab.value = 'work';
+  scheduleForm.inheritWorkingHoursFromAccount =
+    resource.scheduleUpdateSupported === true &&
+    resource.inheritWorkingHoursFromAccount === true;
+  scheduleForm.workRules = buildScheduleRows('work', buildDefaultWorkRules());
+  scheduleForm.breakRules = buildScheduleRows(
+    'break',
+    buildDefaultBreakRules()
+  );
+
+  try {
+    const schedule = await referencesStore.loadResourceSchedule(resourceId);
+    if (
+      requestId !== scheduleLoadRequestId ||
+      activeResource.value?.id !== resourceId
+    ) {
+      return;
+    }
+    referencesStore.commitResourceSchedule(resourceId, schedule);
+    activeResource.value = schedule.resource;
+    scheduleForm.inheritWorkingHoursFromAccount =
+      schedule.resource.inheritWorkingHoursFromAccount === true;
+
+    const normalizedSchedule = collapseLegacyWorkIntervals({
+      breakRules: schedule.breakRules,
+      gapTitle: t('SCHEDULING.RESOURCES.LEGACY_INTERVAL_GAP'),
+      workRules: schedule.workRules,
+    });
+    scheduleForm.scheduleRevision = schedule.scheduleRevision;
+    scheduleForm.workRules = buildScheduleRows(
+      'work',
+      normalizedSchedule.workRules.length
+        ? normalizedSchedule.workRules
+        : buildDefaultWorkRules()
+    );
+    scheduleForm.breakRules = buildScheduleRows(
+      'break',
+      normalizedSchedule.breakRules.length
+        ? normalizedSchedule.breakRules
+        : buildDefaultBreakRules()
+    );
+  } catch (error) {
+    if (
+      requestId === scheduleLoadRequestId &&
+      activeResource.value?.id === resourceId
+    ) {
+      scheduleLoadError.value = error;
+      if (error?.response?.status === 404) {
+        await referencesStore.loadResources();
+        closeScheduleDrawer();
+      }
+      useAlert(formatErrorMessage(error));
+    }
+  } finally {
+    if (requestId === scheduleLoadRequestId) {
+      isScheduleLoading.value = false;
+    }
+  }
 };
 
 const saveSchedule = async () => {
-  if (!activeResource.value) return;
+  if (
+    !activeResource.value ||
+    isScheduleLoading.value ||
+    scheduleLoadError.value
+  ) {
+    return;
+  }
+
+  const resourceId = activeResource.value.id;
+  const drawerGeneration = scheduleDrawerGeneration;
+  const requestId = scheduleSaveRequestId + 1;
+  scheduleSaveRequestId = requestId;
+  isScheduleSaving.value = true;
 
   try {
-    await Promise.all([
-      referencesStore.saveWorkRules(
-        activeResource.value.id,
-        scheduleForm.workRules.map(rule => ({
-          active: rule.active,
-          end_minute: timeToMinute(
-            rule.endMinuteText || minuteToTime(rule.endMinute)
-          ),
-          start_minute: timeToMinute(
-            rule.startMinuteText || minuteToTime(rule.startMinute)
-          ),
-          weekday: rule.weekday,
-        }))
-      ),
-      referencesStore.saveBreakRules(
-        activeResource.value.id,
-        scheduleForm.breakRules.map(rule => ({
+    const savedSchedule = await referencesStore.saveResourceSchedule(
+      resourceId,
+      {
+        expected_schedule_revision: scheduleForm.scheduleRevision,
+        inherit_working_hours_from_account:
+          scheduleForm.inheritWorkingHoursFromAccount,
+        break_rules: scheduleForm.breakRules.map(rule => ({
           active: rule.active,
           end_minute: timeToMinute(
             rule.endMinuteText || minuteToTime(rule.endMinute)
@@ -562,13 +597,66 @@ const saveSchedule = async () => {
           ),
           title: rule.title,
           weekday: rule.weekday,
-        }))
-      ),
-    ]);
+        })),
+        work_rules: scheduleForm.workRules.map(rule => ({
+          active: rule.active,
+          end_minute: timeToMinute(
+            rule.endMinuteText || minuteToTime(rule.endMinute)
+          ),
+          start_minute: timeToMinute(
+            rule.startMinuteText || minuteToTime(rule.startMinute)
+          ),
+          weekday: rule.weekday,
+        })),
+      }
+    );
+    if (
+      !isCurrentScheduleRequest({
+        activeResourceId: activeResource.value?.id,
+        currentDrawerGeneration: scheduleDrawerGeneration,
+        currentRequestId: scheduleSaveRequestId,
+        drawerGeneration,
+        requestId,
+        resourceId,
+      })
+    ) {
+      return;
+    }
+    referencesStore.commitResourceSchedule(resourceId, savedSchedule);
     closeScheduleDrawer();
     useAlert(t('SCHEDULING.RESOURCES.SUCCESS_SAVE'));
   } catch (error) {
-    useAlert(formatErrorMessage(error));
+    if (
+      isCurrentScheduleRequest({
+        activeResourceId: activeResource.value?.id,
+        currentDrawerGeneration: scheduleDrawerGeneration,
+        currentRequestId: scheduleSaveRequestId,
+        drawerGeneration,
+        requestId,
+        resourceId,
+      })
+    ) {
+      if (error.persistedSchedule) {
+        referencesStore.commitResourceSchedule(
+          resourceId,
+          error.persistedSchedule
+        );
+      }
+      useAlert(formatErrorMessage(error));
+    }
+  } finally {
+    if (
+      isCurrentScheduleRequest({
+        activeResourceId: activeResource.value?.id,
+        currentDrawerGeneration: scheduleDrawerGeneration,
+        currentRequestId: scheduleSaveRequestId,
+        drawerGeneration,
+        requestId,
+        resourceId,
+      })
+    ) {
+      isScheduleSaving.value = false;
+    }
   }
 };
 
@@ -690,17 +778,6 @@ onMounted(async () => {
                 {{ $t('SCHEDULING.GENERAL.MINUTES') }}
               </span>
             </div>
-
-            <div
-              class="flex items-center justify-between gap-3 rounded-xl bg-n-alpha-black2 px-3 py-2 outline outline-1 outline-transparent"
-            >
-              <span class="text-xs text-n-slate-10">
-                {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
-              </span>
-              <span class="truncate text-sm font-medium text-n-slate-12">
-                {{ compensationSummary(resource) }}
-              </span>
-            </div>
           </div>
 
           <p
@@ -728,7 +805,10 @@ onMounted(async () => {
               </span>
             </div>
 
-            <div class="flex items-center gap-1">
+            <div
+              v-if="!isProviderOwned(resource)"
+              class="flex items-center gap-1"
+            >
               <Button
                 size="sm"
                 variant="ghost"
@@ -774,6 +854,12 @@ onMounted(async () => {
                 @click="openDeleteResourceDialog(resource)"
               />
             </div>
+            <span
+              v-else
+              class="px-2 py-1 text-xs font-medium rounded-md bg-n-alpha-2 text-n-slate-11"
+            >
+              {{ $t('SCHEDULING.RESOURCES.MANAGED_BY_MEDELEMENT') }}
+            </span>
           </div>
         </article>
       </div>
@@ -833,45 +919,6 @@ onMounted(async () => {
                 @update:model-value="handleUserSelection($event)"
               />
             </div>
-          </div>
-
-          <div
-            class="grid gap-4 md:items-end"
-            :class="
-              resourceForm.compensationType === 'fixed_plus_percent'
-                ? 'md:grid-cols-[minmax(0,1fr)_112px_88px]'
-                : resourceForm.compensationType === 'percent'
-                  ? 'md:grid-cols-[minmax(0,1fr)_88px]'
-                  : 'md:grid-cols-[minmax(0,1fr)_112px]'
-            "
-          >
-            <div class="grid gap-1">
-              <span class="text-sm font-medium text-n-slate-12">
-                {{ $t('SCHEDULING.RESOURCES.COMPENSATION') }}
-              </span>
-              <SchedulingSelectField
-                :model-value="resourceForm.compensationType"
-                :options="compensationTypeOptions"
-                :placeholder="$t('SCHEDULING.RESOURCES.COMPENSATION')"
-                @update:model-value="resourceForm.compensationType = $event"
-              />
-            </div>
-            <SchedulingPercentInput
-              v-if="resourceForm.compensationType === 'percent'"
-              v-model="resourceForm.compensationValue"
-              :label="$t('SCHEDULING.COMPENSATION.percent_value')"
-            />
-            <SchedulingMoneyInput
-              v-else
-              v-model="resourceForm.compensationValue"
-              min="0"
-              :label="compensationPrimaryLabel(resourceForm.compensationType)"
-            />
-            <SchedulingPercentInput
-              v-if="resourceForm.compensationType === 'fixed_plus_percent'"
-              v-model="resourceForm.compensationPercent"
-              :label="$t('SCHEDULING.COMPENSATION.percent_value')"
-            />
           </div>
 
           <div class="grid gap-3">
@@ -935,11 +982,38 @@ onMounted(async () => {
         })
       "
       :confirm-label="$t('SCHEDULING.GENERAL.SAVE')"
-      :is-loading="referencesStore.ui.isSaving"
+      :is-loading="isScheduleSaving || isScheduleLoading"
+      :disable-confirm="
+        isScheduleSaving || isScheduleLoading || !!scheduleLoadError
+      "
       @close="closeScheduleDrawer"
       @confirm="saveSchedule"
     >
-      <div class="flex flex-col gap-6">
+      <div v-if="isScheduleLoading" class="flex justify-center py-16">
+        <Spinner class="!w-8 !h-8" />
+      </div>
+      <SchedulingErrorState
+        v-else-if="scheduleLoadError"
+        :title="$t('SCHEDULING.GENERAL.ERROR_TITLE')"
+        :description="formatErrorMessage(scheduleLoadError)"
+        @retry="openScheduleEditor(activeResource)"
+      />
+      <div v-else class="flex flex-col gap-6">
+        <label
+          v-if="supportsAtomicSchedule"
+          class="flex items-start gap-3 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container"
+        >
+          <Switch v-model="scheduleForm.inheritWorkingHoursFromAccount" />
+          <span class="flex min-w-0 flex-col gap-1">
+            <span class="text-sm font-medium text-n-slate-12">
+              {{ $t('SCHEDULING.RESOURCES.INHERIT_COMPANY_HOURS') }}
+            </span>
+            <span class="text-xs leading-5 text-n-slate-11">
+              {{ $t('SCHEDULING.RESOURCES.INHERIT_COMPANY_HOURS_DESCRIPTION') }}
+            </span>
+          </span>
+        </label>
+
         <TabBar
           active-text-class="text-n-slate-12 scale-100"
           :tabs="tabs"
@@ -951,76 +1025,46 @@ onMounted(async () => {
           <div
             v-for="rule in scheduleForm.workRules"
             :key="rule.rowKey"
-            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_88px]"
+            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr]"
+            :class="{
+              'opacity-60': scheduleForm.inheritWorkingHoursFromAccount,
+            }"
           >
             <span class="text-sm font-medium text-n-slate-12">
               {{ weekDayLabel(rule.weekday) }}
             </span>
             <label class="flex items-center gap-2 text-sm text-n-slate-11">
-              <Switch v-model="rule.active" />
+              <Switch
+                v-model="rule.active"
+                :disabled="scheduleForm.inheritWorkingHoursFromAccount"
+              />
               <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
             </label>
             <SchedulingDateTimeField
               v-model="rule.startMinuteText"
               type="time"
+              :disabled="scheduleForm.inheritWorkingHoursFromAccount"
               :label="$t('SCHEDULING.GENERAL.START')"
             />
             <SchedulingDateTimeField
               v-model="rule.endMinuteText"
               type="time"
+              :disabled="scheduleForm.inheritWorkingHoursFromAccount"
               :label="$t('SCHEDULING.GENERAL.END')"
             />
-            <div class="flex items-center justify-end gap-1">
-              <Button
-                size="xs"
-                variant="ghost"
-                color="slate"
-                icon="i-lucide-plus"
-                :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
-                :title="$t('SCHEDULING.GENERAL.CREATE')"
-                @click="addScheduleRule('work', rule.weekday)"
-              />
-              <Button
-                size="xs"
-                variant="ghost"
-                color="ruby"
-                icon="i-lucide-trash-2"
-                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
-                :title="$t('SCHEDULING.GENERAL.DELETE')"
-                @click="removeScheduleRule('work', rule.rowKey)"
-              />
-            </div>
           </div>
         </div>
 
         <div v-else class="flex flex-col gap-4">
           <div
-            v-for="rule in scheduleForm.breakRules"
-            :key="rule.rowKey"
-            class="grid items-center gap-4 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container md:grid-cols-[160px_100px_1fr_1fr_1.2fr_88px]"
+            v-for="group in breakRuleGroups"
+            :key="group.weekday"
+            class="flex flex-col gap-3 rounded-2xl bg-n-surface-1 p-4 outline outline-1 outline-n-container"
           >
-            <span class="text-sm font-medium text-n-slate-12">
-              {{ weekDayLabel(rule.weekday) }}
-            </span>
-            <label class="flex items-center gap-2 text-sm text-n-slate-11">
-              <Switch v-model="rule.active" />
-              <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
-            </label>
-            <SchedulingDateTimeField
-              v-model="rule.startMinuteText"
-              type="time"
-              :label="$t('SCHEDULING.GENERAL.START')"
-            />
-            <SchedulingDateTimeField
-              v-model="rule.endMinuteText"
-              type="time"
-              :label="$t('SCHEDULING.GENERAL.END')"
-            />
-            <Input
-              v-model="rule.title"
-              :label="$t('SCHEDULING.RESOURCES.BREAK_TITLE')"
-            />
-            <div class="flex items-center justify-end gap-1">
+            <div class="flex items-center justify-between gap-3">
+              <span class="text-sm font-medium text-n-slate-12">
+                {{ weekDayLabel(group.weekday) }}
+              </span>
               <Button
                 size="xs"
                 variant="ghost"
@@ -1028,17 +1072,57 @@ onMounted(async () => {
                 icon="i-lucide-plus"
                 :aria-label="$t('SCHEDULING.GENERAL.CREATE')"
                 :title="$t('SCHEDULING.GENERAL.CREATE')"
-                @click="addScheduleRule('break', rule.weekday)"
+                :disabled="scheduleForm.inheritWorkingHoursFromAccount"
+                @click="addScheduleRule('break', group.weekday)"
               />
-              <Button
-                size="xs"
-                variant="ghost"
-                color="ruby"
-                icon="i-lucide-trash-2"
-                :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
-                :title="$t('SCHEDULING.GENERAL.DELETE')"
-                @click="removeScheduleRule('break', rule.rowKey)"
-              />
+            </div>
+
+            <div class="flex flex-col gap-3">
+              <div
+                v-for="(rule, index) in group.rules"
+                :key="rule.rowKey"
+                class="grid items-center gap-4 rounded-xl bg-n-alpha-black2 p-3 md:grid-cols-[100px_1fr_1fr_1.2fr_40px]"
+              >
+                <label class="flex flex-col gap-1 text-sm text-n-slate-11">
+                  <span class="text-xs">
+                    {{ $t('SCHEDULING.EXCEPTIONS.BREAK') }} {{ index + 1 }}
+                  </span>
+                  <span class="flex items-center gap-2">
+                    <Switch
+                      v-model="rule.active"
+                      :disabled="scheduleForm.inheritWorkingHoursFromAccount"
+                    />
+                    <span>{{ $t('SCHEDULING.GENERAL.ACTIVE') }}</span>
+                  </span>
+                </label>
+                <SchedulingDateTimeField
+                  v-model="rule.startMinuteText"
+                  type="time"
+                  :disabled="scheduleForm.inheritWorkingHoursFromAccount"
+                  :label="$t('SCHEDULING.GENERAL.START')"
+                />
+                <SchedulingDateTimeField
+                  v-model="rule.endMinuteText"
+                  type="time"
+                  :disabled="scheduleForm.inheritWorkingHoursFromAccount"
+                  :label="$t('SCHEDULING.GENERAL.END')"
+                />
+                <Input
+                  v-model="rule.title"
+                  :label="$t('SCHEDULING.RESOURCES.BREAK_TITLE')"
+                  :disabled="scheduleForm.inheritWorkingHoursFromAccount"
+                />
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  color="ruby"
+                  icon="i-lucide-trash-2"
+                  :aria-label="$t('SCHEDULING.GENERAL.DELETE')"
+                  :title="$t('SCHEDULING.GENERAL.DELETE')"
+                  :disabled="scheduleForm.inheritWorkingHoursFromAccount"
+                  @click="removeScheduleRule('break', rule.rowKey)"
+                />
+              </div>
             </div>
           </div>
         </div>

@@ -34,6 +34,11 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     response.parsed_body
   end
 
+  def grant_scheduling_override_permission
+    custom_role = create(:custom_role, account: account, permissions: ['scheduling_override'])
+    account.account_users.find_by!(user: agent).update!(custom_role: custom_role)
+  end
+
   it 'creates an appointment inside a valid slot' do
     post path, params: base_params, headers: headers, as: :json
 
@@ -997,6 +1002,47 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body['code']).to eq('OUTSIDE_WORKING_HOURS')
   end
 
+  it 'creates an appointment outside working hours only after an enabled explicit confirmation' do
+    grant_scheduling_override_permission
+    account.settings['scheduling_allow_outside_working_hours'] = true
+    account.save!
+    outside_params = base_params.merge(
+      starts_at: booking_day.change(hour: 8).iso8601,
+      ends_at: booking_day.change(hour: 8, min: 30).iso8601
+    )
+
+    post path, params: outside_params, headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('OUTSIDE_WORKING_HOURS')
+
+    expect do
+      post path,
+           params: outside_params.merge(
+             confirm_outside_working_hours: true,
+             override_reason: 'Urgent patient'
+           ),
+           headers: headers,
+           as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+    expect(response).to have_http_status(:created)
+  end
+
+  it 'does not accept an outside-hours confirmation while the account setting is disabled' do
+    grant_scheduling_override_permission
+    post path,
+         params: base_params.merge(
+           starts_at: booking_day.change(hour: 8).iso8601,
+           ends_at: booking_day.change(hour: 8, min: 30).iso8601,
+           confirm_outside_working_hours: true,
+           override_reason: 'Urgent patient'
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('OUTSIDE_WORKING_HOURS')
+  end
+
   it 'rejects holiday conflicts' do
     create(:scheduling_holiday, account: account, date: booking_day.to_date)
 
@@ -1039,6 +1085,104 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
 
     expect(response).to have_http_status(:conflict)
     expect(response_body['code']).to eq('SLOT_CONFLICT')
+  end
+
+  it 'creates an overlapping appointment only after an enabled explicit confirmation' do
+    grant_scheduling_override_permission
+    account.settings['scheduling_allow_overlapping_appointments'] = true
+    account.save!
+    create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day,
+      ends_at: booking_day + 1.hour
+    )
+
+    post path, params: base_params, headers: headers, as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+
+    expect do
+      post path,
+           params: base_params.merge(
+             confirm_slot_conflict: true,
+             override_reason: 'Urgent patient'
+           ),
+           headers: headers,
+           as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+    expect(response).to have_http_status(:created)
+  end
+
+  it 'does not accept an overlap confirmation while the account setting is disabled' do
+    grant_scheduling_override_permission
+    create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day,
+      ends_at: booking_day + 1.hour
+    )
+
+    post path,
+         params: base_params.merge(
+           confirm_slot_conflict: true,
+           override_reason: 'Urgent patient'
+         ),
+         headers: headers,
+         as: :json
+
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+  end
+
+  it 'requires a separate confirmation for each enabled availability conflict' do
+    grant_scheduling_override_permission
+    account.settings.merge!(
+      'scheduling_allow_outside_working_hours' => true,
+      'scheduling_allow_overlapping_appointments' => true
+    )
+    account.save!
+    outside_params = base_params.merge(
+      starts_at: booking_day.change(hour: 8).iso8601,
+      ends_at: booking_day.change(hour: 8, min: 30).iso8601
+    )
+    create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      starts_at: booking_day.change(hour: 8),
+      ends_at: booking_day.change(hour: 8, min: 30)
+    )
+
+    post path,
+         params: outside_params.merge(
+           confirm_outside_working_hours: true,
+           override_reason: 'Urgent patient'
+         ),
+         headers: headers,
+         as: :json
+    expect(response).to have_http_status(:conflict)
+    expect(response_body['code']).to eq('SLOT_CONFLICT')
+
+    expect do
+      post path,
+           params: outside_params.merge(
+             confirm_outside_working_hours: true,
+             confirm_slot_conflict: true,
+             override_reason: 'Urgent patient'
+           ),
+           headers: headers,
+           as: :json
+    end.to change(Scheduling::Appointment, :count).by(1)
+    expect(response).to have_http_status(:created)
   end
 
   it 'rejects inactive service-resource combinations' do

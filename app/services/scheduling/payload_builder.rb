@@ -215,9 +215,17 @@ module Scheduling::PayloadBuilder
       specialty: resource.specialty,
       photo_url: resource.photo_url,
       description: resource.description,
-      color: resource.color,
+      color: resource.color
+    }.merge(resource_capacity(resource))
+  end
+
+  def resource_capacity(resource)
+    {
       timezone: resource.timezone,
       slot_duration_min: resource.slot_duration_min,
+      schedule_update_supported: true,
+      availability_override_supported: true,
+      inherit_working_hours_from_account: resource.inherit_working_hours_from_account,
       compensation_type: resource.compensation_type,
       compensation_value: resource.compensation_value,
       compensation_percent: resource.compensation_percent,

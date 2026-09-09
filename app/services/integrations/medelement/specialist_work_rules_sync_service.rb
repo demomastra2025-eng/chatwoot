@@ -74,9 +74,9 @@ class Integrations::Medelement::SpecialistWorkRulesSyncService
   end
 
   def replace_default_work_rules!(resource)
-    existing_seeded_at = resource.custom_attributes[DEFAULT_WORK_RULES_SEEDED_AT_KEY]
-
-    Scheduling::WorkRule.transaction do
+    resource.with_lock do
+      resource.reload
+      existing_seeded_at = resource.custom_attributes[DEFAULT_WORK_RULES_SEEDED_AT_KEY]
       resource.work_rules.destroy_all
       desired_default_work_rules.each { |rule| create_work_rule(resource, rule) }
       mark_seeded(resource, existing_seeded_at)

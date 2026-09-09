@@ -11,6 +11,8 @@ module OutOfOffisable
   end
 
   def out_of_office?
+    return !account.workspace_open_at? if respond_to?(:inherit_working_hours_from_account?) && inherit_working_hours_from_account?
+
     working_hours_enabled? && working_hours.today.closed_now?
   end
 
@@ -42,7 +44,7 @@ module OutOfOffisable
   def apply_workspace_working_hours!
     transaction do
       update!(
-        working_hours_enabled: account.workspace_working_hours_enabled?,
+        working_hours_enabled: true,
         timezone: account.workspace_working_hours_timezone
       )
       update_working_hours(account.workspace_working_hours_schedule)

@@ -58,22 +58,27 @@ RSpec.describe Scheduling::Appointments::CreateConversationService do
 
   it 'preserves the assignee when a single-conversation inbox returns an existing conversation' do
     existing_assignee = create(:user, account: account, role: :agent)
-    inbox.update!(lock_to_single_conversation: true)
+    single_conversation_inbox = create(:channel_telegram, account: account).inbox
+    single_conversation_contact_inbox = create(:contact_inbox, contact: contact, inbox: single_conversation_inbox)
+    single_conversation_params = params.merge(
+      contact_inbox_id: single_conversation_contact_inbox.id,
+      inbox_id: single_conversation_inbox.id
+    )
     existing_conversation = create(
       :conversation,
       account: account,
       assignee: existing_assignee,
       contact: contact,
-      contact_inbox: contact_inbox,
-      inbox: inbox
+      contact_inbox: single_conversation_contact_inbox,
+      inbox: single_conversation_inbox
     )
 
     expect do
       result = described_class.new(
         account: account,
         appointment: appointment,
-        inbox: inbox,
-        params: params,
+        inbox: single_conversation_inbox,
+        params: single_conversation_params,
         actor: actor
       ).perform
 

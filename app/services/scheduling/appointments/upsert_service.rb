@@ -3,8 +3,14 @@ class Scheduling::Appointments::UpsertService
   CLIENT_NAME_PART_KEYS = %i[client_first_name client_last_name client_middle_name].freeze
   DERIVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[service_ids services].freeze
   INTAKE_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[medelement_cabinet_code].freeze
-  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode].freeze
+  PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_KEYS = %w[source_mode availability_overrides].freeze
   PRESERVED_SYSTEM_CUSTOM_ATTRIBUTE_PREFIXES = %w[medelement_].freeze
+  AVAILABILITY_OVERRIDE_PARAMS = {
+    confirm_break_conflict: 'BLOCKED_BY_BREAK',
+    confirm_global_closure: 'BLOCKED_BY_HOLIDAY',
+    confirm_outside_working_hours: 'OUTSIDE_WORKING_HOURS',
+    confirm_slot_conflict: 'SLOT_CONFLICT'
+  }.freeze
 
   def initialize(account:, params:, appointment: nil, actor: nil)
     @account = account
@@ -19,6 +25,7 @@ class Scheduling::Appointments::UpsertService
 
     ApplicationRecord.transaction do
       apply_attributes!
+      lock_resource_for_availability!
       mark_medelement_provider_confirmation_pending!
       validate_medelement_patient!
       validate_medelement_cabinet!
@@ -37,6 +44,10 @@ class Scheduling::Appointments::UpsertService
   private
 
   attr_reader :account, :actor, :appointment, :params
+
+  def lock_resource_for_availability!
+    account.scheduling_resources.lock.find(appointment.resource_id)
+  end
 
   def apply_attributes!
     resource = resolve_resource!
@@ -605,7 +616,7 @@ class Scheduling::Appointments::UpsertService
   end
 
   def resolve_ends_at(starts_at:, duration_min:, current:)
-    return current unless starts_at.present?
+    return current if starts_at.blank?
 
     explicit_ends_at = params.key?(:ends_at) ? resolve_datetime(:ends_at, current: current) : nil
     ends_at = explicit_ends_at || (starts_at + duration_min.minutes)
@@ -921,14 +932,72 @@ class Scheduling::Appointments::UpsertService
     return if appointment.status == 'cancelled'
     return unless availability_validation_required?
 
-    result = availability_service.availability_result(starts_at: appointment.starts_at, ends_at: appointment.ends_at)
-    return if result.available?
+    confirmed_codes = confirmed_availability_override_codes
+    ignored_codes = []
 
-    raise Scheduling::Error.new(
-      code: result.code,
-      message: result.message,
-      status: result.code == 'VALIDATION_ERROR' ? :unprocessable_content : :conflict
-    )
+    loop do
+      result = availability_service.availability_result(
+        starts_at: appointment.starts_at,
+        ends_at: appointment.ends_at,
+        ignored_codes: ignored_codes
+      )
+      if result.available?
+        record_availability_override!(ignored_codes) if ignored_codes.present?
+        return
+      end
+      if confirmed_codes.include?(result.code)
+        ignored_codes << result.code
+        next
+      end
+
+      raise Scheduling::Error.new(
+        code: result.code,
+        message: result.message,
+        status: result.code == 'VALIDATION_ERROR' ? :unprocessable_content : :conflict
+      )
+    end
+  end
+
+  def confirmed_availability_override_codes
+    codes = AVAILABILITY_OVERRIDE_PARAMS.filter_map do |param, code|
+      code if ActiveModel::Type::Boolean.new.cast(params[param])
+    end
+    return [] if codes.empty?
+
+    ensure_availability_override_authorized!
+    codes.select { |code| availability_override_enabled?(code) }
+  end
+
+  def ensure_availability_override_authorized!
+    reason = params[:override_reason].to_s.strip
+    if reason.blank?
+      raise Scheduling::Error.new(code: 'OVERRIDE_REASON_REQUIRED', message: 'Override reason is required', status: :unprocessable_content)
+    end
+
+    account_user = actor.is_a?(User) ? account.account_users.find_by(user_id: actor.id) : nil
+    return if account_user&.administrator?
+    return if account_user&.permissions&.include?('scheduling_override')
+
+    raise Scheduling::Error.new(code: 'OVERRIDE_FORBIDDEN', message: 'Scheduling override permission is required', status: :forbidden)
+  end
+
+  def availability_override_enabled?(code)
+    return account.scheduling_allow_outside_working_hours? if code == 'OUTSIDE_WORKING_HOURS'
+    return account.scheduling_allow_overlapping_appointments? if code == 'SLOT_CONFLICT'
+
+    true
+  end
+
+  def record_availability_override!(codes)
+    overrides = Array(appointment.custom_attributes.to_h['availability_overrides'])
+    override = {
+      'actor_id' => actor.id,
+      'codes' => codes.uniq,
+      'created_at' => Time.current.iso8601,
+      'reason' => params[:override_reason].to_s.strip
+    }
+    appointment.custom_attributes = appointment.custom_attributes.to_h.merge('availability_overrides' => overrides + [override])
+    appointment.audit_comment = "Scheduling override: #{override['reason']} (#{override['codes'].join(', ')})"
   end
 
   def availability_validation_required?

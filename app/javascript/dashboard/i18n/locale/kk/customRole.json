@@ -37,7 +37,8 @@
       "CONTACT_MANAGE": "Manage contacts",
       "REPORT_MANAGE": "Manage reports",
       "KNOWLEDGE_BASE_MANAGE": "Manage knowledge base",
-      "CAPTAIN_MANAGE": "AI агенттерін басқару"
+      "CAPTAIN_MANAGE": "AI агенттерін басқару",
+      "SCHEDULING_OVERRIDE": "Кесте қайшылықтарын растау"
     },
     "FORM": {
       "NAME": {

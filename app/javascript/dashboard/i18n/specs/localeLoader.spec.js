@@ -51,6 +51,22 @@ describe('dashboard i18n lazy loading', () => {
     );
   });
 
+  it('loads Kazakh scheduling overrides while retaining the complete fallback catalog', async () => {
+    const setLocaleMessage = vi.fn();
+    const i18n = {
+      availableLocales: ['en', 'ru'],
+      setLocaleMessage,
+    };
+
+    await loadLocaleMessages(i18n, 'kk');
+
+    const messages = setLocaleMessage.mock.calls[0][1];
+    expect(messages.SCHEDULING.RESOURCES.INHERIT_COMPANY_HOURS).toBe(
+      'Компанияның жұмыс уақытын пайдалану'
+    );
+    expect(messages.SCHEDULING.GENERAL.SAVE).toBeTruthy();
+  });
+
   it('uses the registered runtime i18n instance for component locale changes', async () => {
     const i18n = {
       availableLocales: ['en', 'ru'],

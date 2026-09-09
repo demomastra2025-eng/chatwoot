@@ -213,7 +213,7 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
                 <Checkbox
                   :model-value="modelValue.includes(resource.id)"
                   aria-hidden="true"
-                  class="pointer-events-none"
+                  class="pointer-events-none shrink-0"
                   tabindex="-1"
                 />
                 <Avatar

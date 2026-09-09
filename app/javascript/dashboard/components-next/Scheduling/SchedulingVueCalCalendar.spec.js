@@ -53,10 +53,15 @@ describe('SchedulingVueCalCalendar', () => {
     HTMLElement.prototype.scrollTo = vi.fn();
     useI18n.mockReturnValue({
       locale: { value: 'en' },
-      t: vi.fn(key => {
+      t: vi.fn((key, params = {}) => {
         const labels = {
           'CHOICE_TOGGLE.NO': 'No',
           'CHOICE_TOGGLE.YES': 'Yes',
+          'SCHEDULING.CALENDAR.ALL_RESOURCES_UNAVAILABLE':
+            'All specialists unavailable',
+          'SCHEDULING.CALENDAR.RESOURCES_UNAVAILABLE': `Unavailable: ${params.names}`,
+          'SCHEDULING.CALENDAR.UNAVAILABLE': 'Unavailable',
+          'SCHEDULING.CALENDAR.UNAVAILABLE_TIME_RANGE': `${params.label} · ${params.start}–${params.end}`,
         };
 
         return labels[key] || key;
@@ -278,9 +283,38 @@ describe('SchedulingVueCalCalendar', () => {
     expect(vueCal.props('timeStep')).toBe(30);
     expect(vueCal.props('snapToInterval')).toBe(5);
     expect(vueCal.props('timeCellHeight')).toBe(24);
-    expect(wrapper.findAll('.vuecal__time-cell')).toHaveLength(30);
-    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('07:05');
-    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('07:30');
+    expect(vueCal.props('timeFrom')).toBe(0);
+    expect(vueCal.props('timeTo')).toBe(24 * 60);
+    expect(wrapper.findAll('.vuecal__time-cell')).toHaveLength(48);
+    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('00:05');
+    expect(wrapper.find('.vuecal__time-column').text()).not.toContain('00:30');
+  });
+
+  it('scrolls to 08:00 without a schedule and to the configured working-day start', async () => {
+    const wrapper = mountCalendar({ view: 'day' });
+    await nextTick();
+    await nextTick();
+    const vueCal = wrapper.findComponent(VueCal);
+    const scrollToTime = vi.spyOn(vueCal.vm.view, 'scrollToTime');
+
+    await wrapper.setProps({ view: 'week' });
+    await nextTick();
+    expect(scrollToTime).toHaveBeenLastCalledWith(8 * 60);
+
+    await wrapper.setProps({
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1020,
+          weekday: 1,
+        },
+      ],
+    });
+    await nextTick();
+    expect(scrollToTime).toHaveBeenLastCalledWith(9 * 60);
   });
 
   it('keeps long specialist names inside their day columns', async () => {
@@ -332,5 +366,89 @@ describe('SchedulingVueCalCalendar', () => {
 
     expect(wrapper.text()).toContain('2 specialists');
     expect(wrapper.text()).not.toContain('1 specialist');
+  });
+
+  it('shows unavailable time and affected specialists in a shared week', async () => {
+    const wrapper = mountCalendar({
+      resources: [
+        { ...baseProps.resources[0], name: 'Dr. Sam' },
+        {
+          id: 18,
+          name: 'Dr. Lee',
+          color: '#2563eb',
+          slotDurationMin: 30,
+        },
+      ],
+      workRules: [
+        {
+          id: 1,
+          active: true,
+          resourceId: 12,
+          startMinute: 540,
+          endMinute: 1020,
+          weekday: 1,
+        },
+        {
+          id: 2,
+          active: true,
+          resourceId: 18,
+          startMinute: 600,
+          endMinute: 1020,
+          weekday: 1,
+        },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const unavailableEvents = wrapper
+      .findComponent(VueCal)
+      .props('events')
+      .filter(event => event.backgroundKind === 'unavailable');
+
+    expect(unavailableEvents.map(event => event.backgroundLabel)).toEqual(
+      expect.arrayContaining([
+        'Unavailable: Dr. Lee · 09:00–10:00',
+        'All specialists unavailable · 00:00–09:00',
+      ])
+    );
+    expect(wrapper.text()).not.toContain('Unavailable: Dr. Lee');
+    expect(wrapper.text()).not.toContain('All specialists unavailable');
+  });
+
+  it('lays overlapping appointments side by side instead of stacking them', async () => {
+    const appointment = {
+      clientName: 'Alex Doe',
+      durationMin: 60,
+      endsAt: '2026-03-09T11:00:00.000Z',
+      resourceId: 12,
+      serviceNameSnapshot: 'Consultation',
+      startsAt: '2026-03-09T10:00:00.000Z',
+      status: 'scheduled',
+    };
+    const wrapper = mountCalendar({
+      appointments: [
+        { ...appointment, id: 71 },
+        { ...appointment, id: 72, clientName: 'Blair Doe' },
+      ],
+    });
+
+    await nextTick();
+    await nextTick();
+
+    const eventCards = wrapper.findAll('.scheduling-vue-cal__event-card');
+    const overlapClasses = eventCards.map(
+      card => card.element.closest('.vuecal__event')?.className || ''
+    );
+
+    expect(wrapper.findComponent(VueCal).props('stackEvents')).toBe(false);
+    expect(eventCards).toHaveLength(2);
+    expect(overlapClasses).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('vuecal__event--stack-1-2'),
+        expect.stringContaining('vuecal__event--stack-2-2'),
+      ])
+    );
   });
 });

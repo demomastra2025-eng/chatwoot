@@ -22,6 +22,14 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  allowOutsideWorkingHours: {
+    type: Boolean,
+    default: false,
+  },
+  allowOverlappingAppointments: {
+    type: Boolean,
+    default: false,
+  },
   breakRules: {
     type: Array,
     default: () => [],
@@ -65,6 +73,10 @@ const props = defineProps({
   workdayOverrides: {
     type: Array,
     default: () => [],
+  },
+  workspaceTimezone: {
+    type: String,
+    default: 'UTC',
   },
 });
 
@@ -184,6 +196,8 @@ const handleStatusChange = payload => {
 
     <template v-else-if="isCalendarView">
       <SchedulingVueCalCalendar
+        :allow-outside-working-hours="allowOutsideWorkingHours"
+        :allow-overlapping-appointments="allowOverlappingAppointments"
         class="min-h-0 flex-1"
         :anchor-date="anchorDate"
         :appointments="appointments"
@@ -196,6 +210,7 @@ const handleStatusChange = payload => {
         :view="view"
         :work-rules="workRules"
         :workday-overrides="workdayOverrides"
+        :workspace-timezone="workspaceTimezone"
         @create-appointment="emit('createAppointment', $event)"
         @move-appointment="emit('moveAppointment', $event)"
         @resize-appointment="emit('resizeAppointment', $event)"

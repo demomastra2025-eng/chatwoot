@@ -215,6 +215,10 @@ RSpec.describe 'Accounts API', type: :request do
         auto_resolve_after: 40,
         auto_resolve_message: 'Auto resolved',
         auto_resolve_ignore_waiting: false,
+        audio_transcriptions: true,
+        call_transcriptions: true,
+        scheduling_allow_outside_working_hours: true,
+        scheduling_allow_overlapping_appointments: true,
         dashboard_sidebar_item_order: %w[Contacts Conversation Inbox Settings],
         dashboard_sidebar_hidden_items: ['Conversation:Resolved'],
         dashboard_sidebar_hidden_items_version: 14,
@@ -255,6 +259,10 @@ RSpec.describe 'Accounts API', type: :request do
           auto_resolve_after
           auto_resolve_message
           auto_resolve_ignore_waiting
+          audio_transcriptions
+          call_transcriptions
+          scheduling_allow_outside_working_hours
+          scheduling_allow_overlapping_appointments
           dashboard_sidebar_item_order
           dashboard_sidebar_hidden_items
           dashboard_sidebar_hidden_items_version
@@ -271,7 +279,7 @@ RSpec.describe 'Accounts API', type: :request do
         end
       end
 
-      it 'updates Workspace working hours and synchronizes inheriting inboxes' do
+      it 'updates Workspace working hours and synchronizes inheriting inboxes', :aggregate_failures do
         inherited_inbox = create(:inbox, account: account, inherit_working_hours_from_account: true)
         custom_inbox = create(:inbox, account: account, inherit_working_hours_from_account: false, timezone: 'UTC')
         schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
@@ -279,21 +287,87 @@ RSpec.describe 'Accounts API', type: :request do
 
         patch "/api/v1/accounts/#{account.id}",
               params: {
-                workspace_working_hours_enabled: true,
                 workspace_timezone: 'Asia/Almaty',
-                workspace_working_hours: schedule
+                workspace_working_hours: schedule,
+                workspace_breaks: [
+                  { days: [1, 2, 3, 4, 5], start_time: '13:00', end_time: '14:00', title: 'Lunch' }
+                ],
+                workspace_days_off: [
+                  { date: '2026-12-16', title: 'Independence Day', recurring_yearly: true }
+                ]
               },
               headers: admin.create_new_auth_token,
               as: :json
 
         expect(response).to have_http_status(:success)
         expect(account.reload.workspace_working_hours_enabled?).to be(true)
+        expect(account.workspace_break_schedule.first['title']).to eq('Lunch')
+        expect(account.workspace_days_off_schedule.first['date']).to eq('2026-12-16')
         expect(inherited_inbox.reload).to have_attributes(working_hours_enabled: true, timezone: 'Asia/Almaty')
         expect(inherited_inbox.weekly_schedule.find { |day| day['day_of_week'] == 1 }['open_hour']).to eq(10)
         expect(custom_inbox.reload.timezone).to eq('UTC')
 
         new_inbox = create(:inbox, account: account)
         expect(new_inbox).to have_attributes(inherit_working_hours_from_account: true, timezone: 'Asia/Almaty')
+      end
+
+      it 'synchronizes specialists that inherit Workspace working hours' do
+        inherited_resource = create(
+          :scheduling_resource,
+          account: account,
+          inherit_working_hours_from_account: true,
+          timezone: 'UTC'
+        )
+        schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+        schedule[1].merge!('open_hour' => 10, 'close_hour' => 18)
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: {
+                workspace_timezone: 'Asia/Almaty',
+                workspace_working_hours: schedule,
+                workspace_breaks: [
+                  { days: [1, 2, 3, 4, 5], start_time: '13:00', end_time: '14:00', title: 'Lunch' }
+                ]
+              },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(inherited_resource.reload).to have_attributes(timezone: 'Asia/Almaty')
+        expect(inherited_resource.work_rules.find_by!(weekday: 1)).to have_attributes(
+          start_minute: 600,
+          end_minute: 1080,
+          active: true
+        )
+        expect(inherited_resource.break_rules.find_by!(weekday: 1)).to have_attributes(
+          start_minute: 780,
+          end_minute: 840,
+          title: 'Lunch'
+        )
+      end
+
+      it 'updates a personal specialist timezone without replacing personal rules' do
+        personal_resource = create(
+          :scheduling_resource,
+          account: account,
+          inherit_working_hours_from_account: false,
+          timezone: 'UTC'
+        )
+        personal_rule = personal_resource.work_rules.create!(
+          weekday: 1,
+          start_minute: 660,
+          end_minute: 1140,
+          active: true
+        )
+
+        patch "/api/v1/accounts/#{account.id}",
+              params: { workspace_timezone: 'America/New_York' },
+              headers: admin.create_new_auth_token,
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(personal_resource.reload.timezone).to eq('America/New_York')
+        expect(personal_resource.work_rules).to contain_exactly(personal_rule)
       end
 
       it 'updates onboarding step to invite_team if onboarding step is present in account custom attributes' do

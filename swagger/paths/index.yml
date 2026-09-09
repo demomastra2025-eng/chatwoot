@@ -227,6 +227,14 @@ x-scheduling-error-schema: &scheduling_error_schema
         - BLOCKED_BY_BREAK
         - BLOCKED_BY_VACATION
         - SLOT_CONFLICT
+        - OVERRIDE_REASON_REQUIRED
+        - OVERRIDE_FORBIDDEN
+        - RESOURCE_READ_ONLY
+        - WORK_RULES_INHERITED
+        - BREAK_RULES_INHERITED
+        - DUPLICATE_WORKDAY
+        - INVALID_SCHEDULE_PAYLOAD
+        - SCHEDULE_VERSION_CONFLICT
         - SERVICE_NOT_AVAILABLE_FOR_RESOURCE
         - INVALID_IIN
         - DUPLICATE_EXTERNAL_REF
@@ -255,6 +263,9 @@ x-scheduling-resource-schema: &scheduling_resource_schema
     specialty: { type: string, nullable: true }
     timezone: { type: string }
     slot_duration_min: { type: integer }
+    schedule_update_supported: { type: boolean }
+    availability_override_supported: { type: boolean }
+    inherit_working_hours_from_account: { type: boolean }
     compensation_type: { type: string, nullable: true }
     compensation_value: { type: integer, nullable: true }
     compensation_percent: { type: integer, nullable: true }
@@ -592,8 +603,8 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               photo_url: { type: string }
               description: { type: string }
               color: { type: string }
-              timezone: { type: string }
               slot_duration_min: { type: integer }
+              inherit_working_hours_from_account: { type: boolean }
               compensation_type: { type: string }
               compensation_value: { type: integer }
               compensation_percent: { type: integer }
@@ -672,8 +683,8 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               photo_url: { type: string }
               description: { type: string }
               color: { type: string }
-              timezone: { type: string }
               slot_duration_min: { type: integer }
+              inherit_working_hours_from_account: { type: boolean }
               compensation_type: { type: string }
               compensation_value: { type: integer }
               compensation_percent: { type: integer }
@@ -722,6 +733,129 @@ x-scheduling-expense-schema: &scheduling_expense_schema
             schema: *scheduling_error_schema
       '404':
         description: Resource not found
+        content:
+          application/json:
+            schema: *scheduling_error_schema
+
+/api/v1/accounts/{account_id}/scheduling/resources/{resource_id}/schedule:
+  parameters:
+    - $ref: '#/components/parameters/account_id'
+    - in: path
+      name: resource_id
+      required: true
+      schema: { type: integer }
+  get:
+    tags: [Scheduling]
+    operationId: get-scheduling-resource-schedule
+    summary: Get one consistent resource schedule snapshot
+    description: Returns the resource, all weekly rules, and an opaque revision required by the atomic update endpoint.
+    security:
+      - userApiKey: []
+    responses:
+      '200':
+        description: Resource schedule snapshot
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  required: [resource, schedule_revision, work_rules, break_rules]
+                  properties:
+                    resource: *scheduling_resource_schema
+                    schedule_revision: { type: string, pattern: '^[0-9a-f]{64}$' }
+                    work_rules:
+                      type: array
+                      items: *scheduling_rule_schema
+                    break_rules:
+                      type: array
+                      items: *scheduling_break_rule_schema
+      '403':
+        description: Scheduling feature disabled, caller is not an admin, or resource is provider-owned
+        content:
+          application/json:
+            schema: *scheduling_error_schema
+      '404':
+        description: Resource not found
+        content:
+          application/json:
+            schema: *scheduling_error_schema
+  patch:
+    tags: [Scheduling]
+    operationId: update-scheduling-resource-schedule
+    summary: Atomically replace a resource schedule
+    description: Updates company-hours inheritance, work rules, and break rules in one transaction. MedElement-managed resources are read-only.
+    security:
+      - userApiKey: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [expected_schedule_revision, inherit_working_hours_from_account, work_rules, break_rules]
+            properties:
+              expected_schedule_revision: { type: string, pattern: '^[0-9a-f]{64}$' }
+              inherit_working_hours_from_account: { type: boolean }
+              work_rules:
+                type: array
+                items:
+                  type: object
+                  required: [weekday, start_minute, end_minute]
+                  properties:
+                    weekday: { type: integer, minimum: 0, maximum: 6 }
+                    start_minute: { type: integer, minimum: 0, maximum: 1439 }
+                    end_minute: { type: integer, minimum: 1, maximum: 1440 }
+                    active: { type: boolean }
+              break_rules:
+                type: array
+                items:
+                  type: object
+                  required: [weekday, start_minute, end_minute]
+                  properties:
+                    weekday: { type: integer, minimum: 0, maximum: 6 }
+                    start_minute: { type: integer, minimum: 0, maximum: 1439 }
+                    end_minute: { type: integer, minimum: 1, maximum: 1440 }
+                    title: { type: string }
+                    active: { type: boolean }
+    responses:
+      '200':
+        description: Updated resource and schedule
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                payload:
+                  type: object
+                  required: [resource, schedule_revision, work_rules, break_rules]
+                  properties:
+                    resource: *scheduling_resource_schema
+                    schedule_revision: { type: string, pattern: '^[0-9a-f]{64}$' }
+                    work_rules:
+                      type: array
+                      items: *scheduling_rule_schema
+                    break_rules:
+                      type: array
+                      items: *scheduling_break_rule_schema
+      '403':
+        description: Scheduling feature disabled or caller is not an admin
+        content:
+          application/json:
+            schema: *scheduling_error_schema
+      '404':
+        description: Resource not found
+        content:
+          application/json:
+            schema: *scheduling_error_schema
+      '409':
+        description: Schedule revision conflict; no changes were applied
+        content:
+          application/json:
+            schema: *scheduling_error_schema
+      '422':
+        description: Invalid payload, duplicate weekday, or provider-owned schedule
         content:
           application/json:
             schema: *scheduling_error_schema
@@ -1495,6 +1629,21 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               settlement_amount: { type: integer }
               settlement_payment_method: { type: string }
               payment_status: { type: string }
+              confirm_outside_working_hours:
+                type: boolean
+                description: Explicitly confirm an outside-hours appointment mutation. Honored only when enabled in account scheduling settings.
+              confirm_slot_conflict:
+                type: boolean
+                description: Explicitly confirm an overlapping appointment mutation. Honored only when enabled in account scheduling settings.
+              confirm_break_conflict:
+                type: boolean
+                description: Explicitly confirm an appointment during a specialist break.
+              confirm_global_closure:
+                type: boolean
+                description: Explicitly confirm an appointment while the organization is globally closed.
+              override_reason:
+                type: string
+                description: Required when any availability override is requested. The caller must be an administrator or have the scheduling_override permission.
               custom_attributes:
                 type: object
                 additionalProperties: true
@@ -1602,6 +1751,21 @@ x-scheduling-expense-schema: &scheduling_expense_schema
               settlement_amount: { type: integer }
               settlement_payment_method: { type: string }
               payment_status: { type: string }
+              confirm_outside_working_hours:
+                type: boolean
+                description: Explicitly confirm an outside-hours appointment mutation. Honored only when enabled in account scheduling settings.
+              confirm_slot_conflict:
+                type: boolean
+                description: Explicitly confirm an overlapping appointment mutation. Honored only when enabled in account scheduling settings.
+              confirm_break_conflict:
+                type: boolean
+                description: Explicitly confirm an appointment during a specialist break.
+              confirm_global_closure:
+                type: boolean
+                description: Explicitly confirm an appointment while the organization is globally closed.
+              override_reason:
+                type: string
+                description: Required when any availability override is requested. The caller must be an administrator or have the scheduling_override permission.
               custom_attributes:
                 type: object
                 additionalProperties: true

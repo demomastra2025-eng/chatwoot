@@ -33,6 +33,8 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response_body.dig('payload', 'compensation_type')).to eq('fixed_plus_percent')
     expect(response_body.dig('payload', 'compensation_percent')).to eq(10)
+    expect(response_body.dig('payload', 'schedule_update_supported')).to be(true)
+    expect(response_body.dig('payload', 'availability_override_supported')).to be(true)
   end
 
   it 'normalizes decimal zero resource compensation values' do
@@ -111,6 +113,281 @@ RSpec.describe 'Scheduling Resources API', type: :request do
     expect(response_body.dig('payload', 0, 'weekday')).to eq(1)
   end
 
+  it 'keeps accepting legacy multi-interval payloads during the compatibility rollout' do
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/work_rules",
+          params: {
+            work_rules: [
+              { weekday: 1, start_minute: 9 * 60, end_minute: 13 * 60, active: true },
+              { weekday: 1, start_minute: 14 * 60, end_minute: 18 * 60, active: true }
+            ]
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(resource.work_rules.reload.pluck(:weekday, :start_minute, :end_minute)).to contain_exactly(
+      [1, 9 * 60, 13 * 60],
+      [1, 14 * 60, 18 * 60]
+    )
+  end
+
+  it 'inherits company working hours and exposes the inheritance flag' do
+    schedule = AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup
+    schedule[1].merge!('open_hour' => 10, 'close_hour' => 18)
+    account.update!(
+      workspace_working_hours_enabled: true,
+      workspace_timezone: 'Asia/Almaty',
+      workspace_working_hours: schedule
+    )
+    resource.work_rules.create!(weekday: 1, start_minute: 540, end_minute: 600, active: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}",
+          params: { inherit_working_hours_from_account: true },
+          headers: headers,
+          as: :json
+
+    inherited_rule = resource.reload.work_rules.find_by!(weekday: 1)
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'inherit_working_hours_from_account')).to be(true)
+    expect(resource.timezone).to eq('Asia/Almaty')
+    expect(inherited_rule).to have_attributes(start_minute: 600, end_minute: 1080, active: true)
+  end
+
+  it 'inherits company working hours and breaks when the new client requests it' do
+    account.update!(
+      workspace_timezone: 'Asia/Almaty',
+      workspace_working_hours: AccountWorkspaceWorkingHours::DEFAULT_SCHEDULE.deep_dup,
+      workspace_breaks: [
+        { days: [1, 2, 3, 4, 5], start_time: '13:00', end_time: '14:00', title: 'Lunch' }
+      ]
+    )
+
+    post "/api/v1/accounts/#{account.id}/scheduling/resources",
+         params: { name: 'New doctor', inherit_working_hours_from_account: true },
+         headers: headers,
+         as: :json
+
+    created_resource = account.scheduling_resources.find(response_body.dig('payload', 'id'))
+    expect(response).to have_http_status(:created)
+    expect(created_resource.inherit_working_hours_from_account).to be(true)
+    expect(created_resource.work_rules.find_by!(weekday: 1)).to have_attributes(start_minute: 540, end_minute: 1020, active: true)
+    expect(created_resource.break_rules.find_by!(weekday: 1)).to have_attributes(start_minute: 780, end_minute: 840, title: 'Lunch')
+  end
+
+  it 'keeps legacy create requests on personal hours during a rolling rollout' do
+    post "/api/v1/accounts/#{account.id}/scheduling/resources",
+         params: { name: 'Legacy doctor' },
+         headers: headers,
+         as: :json
+
+    created_resource = account.scheduling_resources.find(response_body.dig('payload', 'id'))
+    expect(response).to have_http_status(:created)
+    expect(created_resource.inherit_working_hours_from_account).to be(false)
+    expect(created_resource.work_rules).to be_empty
+  end
+
+  it 'rejects custom work rules while company hours are inherited' do
+    resource.update!(inherit_working_hours_from_account: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/work_rules",
+          params: {
+            work_rules: [
+              { weekday: 1, start_minute: 9 * 60, end_minute: 18 * 60, active: true }
+            ]
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('WORK_RULES_INHERITED')
+  end
+
+  it 'rejects changing company-hours inheritance for an imported specialist' do
+    imported_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
+    )
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}",
+          params: { inherit_working_hours_from_account: true },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
+    expect(imported_resource.reload.inherit_working_hours_from_account).to be(false)
+  end
+
+  it 'rejects legacy work-rule updates for an imported specialist' do
+    imported_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
+    )
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}/work_rules",
+          params: { work_rules: [{ weekday: 1, start_minute: 540, end_minute: 1020, active: true }] },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
+  end
+
+  it 'rejects legacy break-rule updates for an imported specialist' do
+    imported_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: { 'medelement_specialist_code' => '27492901726817790' }
+    )
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{imported_resource.id}/break_rules",
+          params: { break_rules: [{ weekday: 1, start_minute: 720, end_minute: 780, active: true }] },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('RESOURCE_READ_ONLY')
+  end
+
+  it 'updates inheritance, work rules, and breaks atomically' do
+    revision = Scheduling::ResourceScheduleRevision.generate(resource)
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/schedule",
+          params: {
+            expected_schedule_revision: revision,
+            inherit_working_hours_from_account: false,
+            work_rules: [{ weekday: 1, start_minute: 600, end_minute: 1080, active: true }],
+            break_rules: [{ weekday: 1, start_minute: 780, end_minute: 840, title: 'Lunch', active: true }]
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:ok), response.body
+    expect(resource.reload.work_rules.find_by!(weekday: 1)).to have_attributes(start_minute: 600, end_minute: 1080)
+    expect(resource.break_rules.find_by!(weekday: 1)).to have_attributes(start_minute: 780, end_minute: 840)
+  end
+
+  it 'requires the inheritance flag for an atomic schedule update' do
+    original_rule = resource.work_rules.create!(weekday: 2, start_minute: 540, end_minute: 1020, active: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/schedule",
+          params: { work_rules: [], break_rules: [] },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(resource.reload.inherit_working_hours_from_account).to be(false)
+    expect(resource.work_rules).to contain_exactly(original_rule)
+  end
+
+  it 'rolls back the full schedule when one rule is invalid' do
+    original_rule = resource.work_rules.create!(weekday: 2, start_minute: 540, end_minute: 1020, active: true)
+    revision = Scheduling::ResourceScheduleRevision.generate(resource.reload)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/schedule",
+          params: {
+            expected_schedule_revision: revision,
+            inherit_working_hours_from_account: false,
+            work_rules: [{ weekday: 1, start_minute: 600, end_minute: 1080, active: true }],
+            break_rules: [{ weekday: 1, start_minute: 900, end_minute: 800, active: true }]
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(resource.work_rules.reload).to contain_exactly(original_rule)
+  end
+
+  it 'returns one consistent schedule snapshot with an opaque revision' do
+    resource.work_rules.create!(weekday: 1, start_minute: 540, end_minute: 1020, active: true)
+    resource.break_rules.create!(weekday: 1, start_minute: 780, end_minute: 840, title: 'Lunch', active: true)
+
+    get "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/schedule", headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'schedule_revision')).to match(/\A[0-9a-f]{64}\z/)
+    expect(response_body.dig('payload', 'work_rules', 0, 'weekday')).to eq(1)
+    expect(response_body.dig('payload', 'break_rules', 0, 'title')).to eq('Lunch')
+  end
+
+  it 'rejects a stale schedule revision without changing the newer schedule' do
+    stale_revision = Scheduling::ResourceScheduleRevision.generate(resource)
+    newer_rule = resource.work_rules.create!(weekday: 2, start_minute: 540, end_minute: 1020, active: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/schedule",
+          params: {
+            expected_schedule_revision: stale_revision,
+            inherit_working_hours_from_account: false,
+            work_rules: [{ weekday: 1, start_minute: 600, end_minute: 1080, active: true }],
+            break_rules: []
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:conflict), response.body
+    expect(response_body['code']).to eq('SCHEDULE_VERSION_CONFLICT')
+    expect(response_body.dig('details', 'current_schedule_revision')).to match(/\A[0-9a-f]{64}\z/)
+    expect(resource.work_rules.reload).to contain_exactly(newer_rule)
+  end
+
+  it 'rejects malformed schedule rule containers and elements without mutation' do
+    original_rule = resource.work_rules.create!(weekday: 2, start_minute: 540, end_minute: 1020, active: true)
+    revision = Scheduling::ResourceScheduleRevision.generate(resource.reload)
+
+    [{}, ['bad']].each do |invalid_rules|
+      patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/schedule",
+            params: {
+              expected_schedule_revision: revision,
+              inherit_working_hours_from_account: false,
+              work_rules: invalid_rules,
+              break_rules: []
+            },
+            headers: headers,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content), response.body
+      expect(response_body['code']).to eq('INVALID_SCHEDULE_PAYLOAD')
+      expect(resource.work_rules.reload).to contain_exactly(original_rule)
+    end
+  end
+
+  it 'rejects malformed legacy work-rule payloads without mutation' do
+    original_rule = resource.work_rules.create!(weekday: 2, start_minute: 540, end_minute: 1020, active: true)
+
+    [{}, ['bad']].each do |invalid_rules|
+      patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/work_rules",
+            params: { work_rules: invalid_rules },
+            headers: headers,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content), response.body
+      expect(response_body['code']).to eq('INVALID_SCHEDULE_PAYLOAD')
+      expect(resource.work_rules.reload).to contain_exactly(original_rule)
+    end
+  end
+
+  it 'rejects malformed legacy break-rule payloads without mutation' do
+    original_break = resource.break_rules.create!(
+      weekday: 2,
+      start_minute: 780,
+      end_minute: 840,
+      title: 'Lunch',
+      active: true
+    )
+
+    [{}, ['bad']].each do |invalid_rules|
+      patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/break_rules",
+            params: { break_rules: invalid_rules },
+            headers: headers,
+            as: :json
+
+      expect(response).to have_http_status(:unprocessable_content), response.body
+      expect(response_body['code']).to eq('INVALID_SCHEDULE_PAYLOAD')
+      expect(resource.break_rules.reload).to contain_exactly(original_break)
+    end
+  end
+
   it 'updates break rules without auth header crashes' do
     patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/break_rules",
           params: {
@@ -123,6 +400,22 @@ RSpec.describe 'Scheduling Resources API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response_body.dig('payload', 0, 'title')).to eq('Lunch')
+  end
+
+  it 'rejects custom break rules while company hours are inherited' do
+    resource.update!(inherit_working_hours_from_account: true)
+
+    patch "/api/v1/accounts/#{account.id}/scheduling/resources/#{resource.id}/break_rules",
+          params: {
+            break_rules: [
+              { weekday: 1, start_minute: 13 * 60, end_minute: 14 * 60, title: 'Custom break', active: true }
+            ]
+          },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body['code']).to eq('BREAK_RULES_INHERITED')
   end
 
   it 'rejects modifying imported Medelement specialist identity' do

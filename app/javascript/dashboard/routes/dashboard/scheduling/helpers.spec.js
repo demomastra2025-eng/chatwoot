@@ -1,11 +1,14 @@
 import {
   buildCalendarRange,
+  buildTimeOffIntervals,
   buildMedelementProviderCommandDetails,
   buildMedelementProviderCommandParams,
   canCreateAppointmentConversation,
+  collapseLegacyWorkIntervals,
   deriveVisibleMinuteWindow,
   getServicePriceForResource,
   isAppointmentProviderOwned,
+  isCurrentScheduleRequest,
   isMedelementResource,
   isServiceAvailableForResource,
   medelementCommandFailureMessage,
@@ -17,6 +20,49 @@ import {
 } from './helpers';
 
 describe('scheduling helpers', () => {
+  it('uses the supplied Workspace timezone converter for time-off intervals', () => {
+    const convertDate = vi.fn(value =>
+      value === 'starts-at'
+        ? new Date(2026, 2, 9, 10, 0)
+        : new Date(2026, 2, 9, 11, 0)
+    );
+    const column = {
+      date: new Date(2026, 2, 9),
+      resourceId: 7,
+    };
+
+    expect(
+      buildTimeOffIntervals(
+        [{ resourceId: 7, startsAt: 'starts-at', endsAt: 'ends-at' }],
+        column,
+        convertDate
+      )
+    ).toEqual([{ startMinute: 600, endMinute: 660 }]);
+    expect(convertDate).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts schedule completion only for the current drawer generation and resource', () => {
+    const current = {
+      activeResourceId: 12,
+      currentDrawerGeneration: 4,
+      currentRequestId: 8,
+      drawerGeneration: 4,
+      requestId: 8,
+      resourceId: 12,
+    };
+
+    expect(isCurrentScheduleRequest(current)).toBe(true);
+    expect(isCurrentScheduleRequest({ ...current, activeResourceId: 13 })).toBe(
+      false
+    );
+    expect(
+      isCurrentScheduleRequest({ ...current, currentDrawerGeneration: 5 })
+    ).toBe(false);
+    expect(isCurrentScheduleRequest({ ...current, currentRequestId: 9 })).toBe(
+      false
+    );
+  });
+
   it('identifies provider-owned Medelement appointments', () => {
     expect(isAppointmentProviderOwned({ source: 'medelement' })).toBe(true);
     expect(isAppointmentProviderOwned({ source: 'manual' })).toBe(false);
@@ -167,6 +213,49 @@ describe('scheduling helpers', () => {
       to.getSeconds(),
       to.getMilliseconds(),
     ]).toEqual([2026, 2, 15, 23, 59, 59, 999]);
+  });
+
+  it('builds API day boundaries in the Workspace timezone', () => {
+    const { from, to } = buildCalendarRange(
+      'day',
+      '2026-03-09T12:00:00.000Z',
+      'Asia/Almaty'
+    );
+
+    expect(from.toISOString()).toBe('2026-03-08T19:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-03-09T18:59:59.999Z');
+  });
+
+  it('preserves legacy split shifts as one work interval plus gap breaks', () => {
+    const schedule = collapseLegacyWorkIntervals({
+      breakRules: [
+        {
+          active: false,
+          endMinute: 14 * 60,
+          startMinute: 13 * 60,
+          title: 'Existing gap',
+          weekday: 1,
+        },
+      ],
+      gapTitle: 'Legacy interval gap',
+      workRules: [
+        { active: true, endMinute: 13 * 60, startMinute: 9 * 60, weekday: 1 },
+        { active: true, endMinute: 18 * 60, startMinute: 14 * 60, weekday: 1 },
+      ],
+    });
+
+    expect(schedule.workRules).toEqual([
+      { active: true, endMinute: 18 * 60, startMinute: 9 * 60, weekday: 1 },
+    ]);
+    expect(schedule.breakRules).toEqual([
+      {
+        active: true,
+        endMinute: 14 * 60,
+        startMinute: 13 * 60,
+        title: 'Existing gap',
+        weekday: 1,
+      },
+    ]);
   });
 
   it('shifts list view by two weeks', () => {
