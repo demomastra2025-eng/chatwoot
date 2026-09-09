@@ -518,7 +518,23 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
   end
 
   def preload_last_non_activity_messages_by_thread
-    @last_non_activity_messages_by_thread_id = preload_last_messages_by_thread(non_activity: true)
+    @last_non_activity_messages_by_thread_id = {}
+    activity_thread_links = {}
+
+    @accessible_links_by_thread_id.each do |thread_id, links|
+      last_public_message = @last_public_messages_by_thread_id[thread_id]
+      if last_public_message&.activity?
+        activity_thread_links[thread_id] = links
+      else
+        @last_non_activity_messages_by_thread_id[thread_id] = last_public_message
+      end
+    end
+
+    return if activity_thread_links.empty?
+
+    @last_non_activity_messages_by_thread_id.merge!(
+      preload_last_messages_by_thread(non_activity: true, links_by_thread_id: activity_thread_links)
+    )
   end
 
   def preload_list_message_associations
@@ -593,8 +609,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       preloader.for_communication_threads(@accessible_links_by_thread_id)
   end
 
-  def preload_last_messages_by_thread(non_activity: false)
-    links = @accessible_links_by_thread_id.values.flatten
+  def preload_last_messages_by_thread(non_activity: false, links_by_thread_id: @accessible_links_by_thread_id)
+    links = links_by_thread_id.values.flatten
     conversation_ids = links.map(&:conversation_id)
     return {} if conversation_ids.empty?
 
@@ -610,7 +626,7 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
                                        .reorder(Arel.sql('messages.conversation_id, messages.created_at DESC, messages.id DESC'))
                                        .index_by(&:conversation_id)
 
-    @accessible_links_by_thread_id.transform_values do |thread_links|
+    links_by_thread_id.transform_values do |thread_links|
       messages = thread_links.filter_map { |link| last_messages_by_conversation_id[link.conversation_id] }
       messages_in_current_session(messages, thread_links).max_by { |message| [message.created_at, message.id] }
     end
