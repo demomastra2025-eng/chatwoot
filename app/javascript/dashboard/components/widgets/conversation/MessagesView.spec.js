@@ -184,6 +184,7 @@ describe('MessagesView', () => {
         messageSentSinceOpened: true,
         resetReplyEditorHeight: vi.fn(),
         conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
       };
 
       MessagesView.watch.currentChat.call(
@@ -197,6 +198,53 @@ describe('MessagesView', () => {
       expect(context.messageSentSinceOpened).toBe(false);
       expect(context.resetReplyEditorHeight).toHaveBeenCalled();
       expect(context.conversationHistoryGeneration).toBe(1);
+      expect(context.hasUserScrolled).toBe(false);
+    });
+
+    it('preserves manual scroll state for updates to the active chat', () => {
+      const context = {
+        fetchAllAttachmentsFromCurrentChat: vi.fn(),
+        fetchSuggestions: vi.fn(),
+        resetReplyEditorHeight: vi.fn(),
+        conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
+      };
+
+      MessagesView.watch.currentChat.call(
+        context,
+        { id: 987, is_communication_thread: true, unread_count: 1 },
+        { id: 987, is_communication_thread: true, unread_count: 0 }
+      );
+
+      expect(context.hasUserScrolled).toBe(true);
+      expect(context.fetchAllAttachmentsFromCurrentChat).not.toHaveBeenCalled();
+      expect(context.conversationHistoryGeneration).toBe(0);
+    });
+
+    it('establishes a fresh scroll position after switching chats', () => {
+      const context = {
+        $nextTick: callback => callback(),
+        fetchAllAttachmentsFromCurrentChat: vi.fn(),
+        fetchSuggestions: vi.fn(),
+        resetReplyEditorHeight: vi.fn(),
+        fetchPreviousMessages: vi.fn(),
+        isNearConversationBottom: vi.fn(() => false),
+        scrollToBottom: vi.fn(),
+        makeMessagesRead: vi.fn(),
+        conversationHistoryGeneration: 0,
+        hasUserScrolled: true,
+      };
+
+      MessagesView.watch.currentChat.call(
+        context,
+        { id: 988, is_communication_thread: true },
+        { id: 987, is_communication_thread: true }
+      );
+      MessagesView.methods.onScrollToMessage.call(context);
+
+      expect(context.hasUserScrolled).toBe(false);
+      expect(context.scrollToBottom).toHaveBeenCalledOnce();
+      expect(context.makeMessagesRead).toHaveBeenCalledOnce();
     });
   });
 

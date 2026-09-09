@@ -326,6 +326,7 @@ export default {
         return;
       }
       this.conversationHistoryGeneration += 1;
+      this.hasUserScrolled = false;
       this.fetchAllAttachmentsFromCurrentChat();
       this.fetchSuggestions();
       this.messageSentSinceOpened = false;
