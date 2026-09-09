@@ -82,6 +82,11 @@ RSpec.describe Webhooks::WhatsappEventsJob do
     expect { job_instance.perform_now }.to have_enqueued_job(described_class).on_queue('whatsapp_inbound')
   end
 
+  it 'backs off repeated WABA lock contention without exceeding 30 seconds' do
+    expect(Whatsapp::WabaLock::RETRY_WAIT.call(1)).to eq(2.seconds)
+    expect(Whatsapp::WabaLock::RETRY_WAIT.call(20)).to eq(30.seconds)
+  end
+
   it 'retries an out-of-order mutation until its original message arrives' do
     allow_any_instance_of(described_class).to receive(:dispatch_changes)
       .and_raise(Whatsapp::IncomingMessageMutationService::TargetNotFoundError)

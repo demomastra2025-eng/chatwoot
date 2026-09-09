@@ -46,7 +46,8 @@ class AutomationRules::TouchActionService
     return create_deferred_touch(params, action_id) if deferred_action?(params, action_id)
 
     action_key = action_key.presence || action_id.presence || 'create_touch'
-    reminder = find_or_create_event_touch(params, action_key)
+    action_signature = automation_action_signature(params) if trigger_message.blank?
+    reminder = find_or_create_event_touch(params, action_key, action_signature)
 
     Reminders::StaleAutomationTouchService.new(reminder: reminder, trigger_message: trigger_message).perform
     Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
@@ -75,43 +76,93 @@ class AutomationRules::TouchActionService
 
   private
 
-  def find_or_create_event_touch(params, action_key)
-    return Reminder.transaction { create_automation_touch(params, action_key) } if trigger_message.blank?
-
+  def find_or_create_event_touch(params, action_key, action_signature)
     Reminder.transaction do
-      lock_automation_event!(action_key)
-      existing_event_touch(action_key) || create_automation_touch(params, action_key)
+      lock_automation_event!(action_key, action_signature)
+      existing_event_touch(action_key, action_signature) || create_automation_touch(params, action_key, action_signature)
     end
+  rescue ActiveRecord::RecordInvalid => e
+    raise unless duplicate_open_touch_error?(e.record)
+
+    account.reminders.where(status: Reminder::OPEN_STATUSES, fingerprint: e.record.fingerprint).first || raise
   end
 
-  def create_automation_touch(params, action_key)
+  def duplicate_open_touch_error?(reminder)
+    reminder.is_a?(Reminder) &&
+      reminder.errors.to_hash == { base: ['An open touch with the same content already exists'] }
+  end
+
+  def create_automation_touch(params, action_key, action_signature)
     reminder = Reminders::CreateService.new(
       account: account,
       remindable: record,
       attributes: build_touch_attributes(params)
     ).perform
-    reminder.mark_automation_provenance!(rule, trigger_message: trigger_message, action_key: action_key)
+    reminder.mark_automation_provenance!(
+      rule,
+      trigger_message: trigger_message,
+      action_key: action_key,
+      action_signature: action_signature
+    )
     reminder
   end
 
-  def existing_event_touch(action_key)
-    account.reminders
-           .where(remindable: record)
-           .where(
-             'metadata @> ?',
-             {
-               Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
-               Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message.id,
-               Reminder::AUTOMATION_ACTION_KEY => action_key
-             }.to_json
-           )
-           .first
+  def existing_event_touch(action_key, action_signature)
+    metadata = {
+      Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
+      Reminder::AUTOMATION_ACTION_KEY => action_key
+    }
+    metadata[Reminder::AUTOMATION_TRIGGER_MESSAGE_ID_KEY] = trigger_message.id if trigger_message.present?
+    scope = account.reminders.where(remindable: record).where('metadata @> ?', metadata.to_json)
+    scope = scope.where(status: Reminder::OPEN_STATUSES) if trigger_message.blank?
+    return scope.first if action_signature.blank?
+
+    matching_touch = scope.where('metadata @> ?', { Reminder::AUTOMATION_ACTION_SIGNATURE_KEY => action_signature }.to_json).first
+    return matching_touch if matching_touch.present?
+
+    legacy_touch = scope.where("COALESCE(metadata ->> '#{Reminder::AUTOMATION_ACTION_SIGNATURE_KEY}', '') = ''").first
+    adopt_legacy_event_touch(legacy_touch, action_key, action_signature)
   end
 
-  def lock_automation_event!(action_key)
-    source = [account.id, rule.id, entity_kind, record.id, trigger_message.id, action_key].join(':')
+  def adopt_legacy_event_touch(legacy_touch, action_key, action_signature)
+    return if legacy_touch.blank?
+
+    rule.with_lock do
+      rule.reload
+      return if rule.updated_at > legacy_touch.created_at
+
+      legacy_touch.with_lock do
+        legacy_touch.reload
+        return if legacy_touch.metadata[Reminder::AUTOMATION_ACTION_SIGNATURE_KEY].present?
+
+        legacy_touch.mark_automation_provenance!(
+          rule,
+          trigger_message: nil,
+          action_key: action_key,
+          action_signature: action_signature
+        )
+      end
+    end
+    legacy_touch
+  end
+
+  def lock_automation_event!(action_key, action_signature)
+    source_parts = [account.id, rule.id, entity_kind, record.id, trigger_message&.id, action_key]
+    source_parts << action_signature if action_signature.present?
+    source = source_parts.join(':')
     lock_key = Digest::SHA256.hexdigest("automation-touch-event:#{source}").first(16).to_i(16) % ((2**63) - 1)
     Reminder.connection.execute("SELECT pg_advisory_xact_lock(#{lock_key})")
+  end
+
+  def automation_action_signature(params)
+    Digest::SHA256.hexdigest(JSON.generate(canonical_json_value(params)))
+  end
+
+  def canonical_json_value(value)
+    return value.deep_stringify_keys.sort.to_h.transform_values { |nested| canonical_json_value(nested) } if value.is_a?(Hash)
+    return value.map { |nested| canonical_json_value(nested) } if value.is_a?(Array)
+
+    value
   end
 
   def deferred_action?(params, action_id)

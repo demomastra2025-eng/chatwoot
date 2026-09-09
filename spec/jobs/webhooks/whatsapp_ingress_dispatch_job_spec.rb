@@ -19,6 +19,11 @@ RSpec.describe Webhooks::WhatsappIngressDispatchJob do
     expect(described_class.queue_name).to eq('whatsapp_inbound')
   end
 
+  it 'backs off repeated WABA lock contention without exceeding 30 seconds' do
+    expect(Whatsapp::WabaLock::RETRY_WAIT.call(1)).to eq(2.seconds)
+    expect(Whatsapp::WabaLock::RETRY_WAIT.call(20)).to eq(30.seconds)
+  end
+
   it 'fails closed when the adapter does not confirm enqueue' do
     enqueue_error = ActiveJob::EnqueueError.new('redis unavailable')
     failed_job = instance_double(described_class, successfully_enqueued?: false, enqueue_error: enqueue_error)

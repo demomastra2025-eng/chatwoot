@@ -38,6 +38,105 @@ RSpec.describe AutomationRules::TouchActionService do
       expect(touch.scheduled_at).to be_within(2.seconds).of(5.minutes.from_now)
     end
 
+    it 'returns an existing open touch when a delayed non-message event is dispatched again' do
+      params = { body: 'Idempotent follow-up', delay_minutes: 10 }
+      existing_touch = service.create_touch(params)
+
+      travel 2.seconds do
+        expect do
+          expect(service.create_touch(params)).to eq(existing_touch)
+        end.not_to change(Reminder, :count)
+      end
+    end
+
+    it 'adopts an open touch created before action signatures were stored' do
+      params = { body: 'Legacy follow-up', delay_minutes: 10 }
+      existing_touch = service.create_touch(params, action_key: 'legacy-action')
+      existing_touch.update_column(
+        :metadata,
+        existing_touch.metadata.except(Reminder::AUTOMATION_ACTION_SIGNATURE_KEY)
+      )
+      allow(rule).to receive(:with_lock).and_call_original
+
+      travel 2.seconds do
+        expect do
+          expect(service.create_touch(params, action_key: 'legacy-action')).to eq(existing_touch)
+        end.not_to change(Reminder, :count)
+      end
+
+      expect(existing_touch.reload.metadata[Reminder::AUTOMATION_ACTION_SIGNATURE_KEY]).to be_present
+      expect(rule).to have_received(:with_lock)
+    end
+
+    it 'does not adopt a legacy touch after its automation rule was edited' do
+      existing_touch = service.create_touch({ body: 'Old follow-up', delay_minutes: 10 }, action_key: 'legacy-action')
+      existing_touch.update_column(
+        :metadata,
+        existing_touch.metadata.except(Reminder::AUTOMATION_ACTION_SIGNATURE_KEY)
+      )
+
+      travel 2.seconds do
+        rule.touch
+
+        expect do
+          new_touch = service.create_touch({ body: 'Updated follow-up', delay_minutes: 10 }, action_key: 'legacy-action')
+          expect(new_touch).not_to eq(existing_touch)
+          expect(new_touch.body).to eq('Updated follow-up')
+        end.to change(Reminder, :count).by(1)
+      end
+
+      expect(existing_touch.reload.metadata[Reminder::AUTOMATION_ACTION_SIGNATURE_KEY]).to be_blank
+    end
+
+    it 'keeps the legacy advisory lock source for message-trigger actions' do
+      trigger_message = create(:message, account: account, inbox: inbox, conversation: conversation)
+      message_service = described_class.new(
+        rule: rule,
+        account: account,
+        record: conversation,
+        entity_kind: 'conversation',
+        trigger_message: trigger_message
+      )
+      expected_source = [account.id, rule.id, 'conversation', conversation.id, trigger_message.id, 'message-action'].join(':')
+      expected_lock_key = Digest::SHA256.hexdigest("automation-touch-event:#{expected_source}").first(16).to_i(16) % ((2**63) - 1)
+
+      allow(Reminder.connection).to receive(:execute).and_call_original
+
+      message_service.create_touch({ body: 'Message follow-up', delay_minutes: 10 }, action_key: 'message-action')
+
+      expect(Reminder.connection).to have_received(:execute)
+        .with("SELECT pg_advisory_xact_lock(#{expected_lock_key})")
+    end
+
+    it 'does not absorb a duplicate validation failure that contains another error' do
+      invalid_touch = build(:reminder, account: account, remindable: conversation)
+      invalid_touch.errors.add(:base, 'An open touch with the same content already exists')
+      invalid_touch.errors.add(:conversation, 'must belong to the current account')
+      validation_error = ActiveRecord::RecordInvalid.new(invalid_touch)
+      allow(service).to receive(:create_automation_touch).and_raise(validation_error)
+
+      expect do
+        service.create_touch(body: 'Invalid duplicate', delay_minutes: 10)
+      end.to raise_error(validation_error)
+    end
+
+    it 'creates a new touch when the action parameters change but the action key stays the same' do
+      existing_touch = service.create_touch({ body: 'Old follow-up', delay_minutes: 10 }, action_key: 'stable-action')
+
+      expect do
+        new_touch = service.create_touch({ body: 'Updated follow-up', delay_minutes: 10 }, action_key: 'stable-action')
+        expect(new_touch).not_to eq(existing_touch)
+        expect(new_touch.body).to eq('Updated follow-up')
+      end.to change(Reminder, :count).by(1)
+    end
+
+    it 'creates a new touch after the matching touch reaches a terminal state' do
+      params = { body: 'Reusable follow-up', delay_minutes: 10 }
+      service.create_touch(params).cancel!
+
+      expect { service.create_touch(params) }.to change(Reminder, :count).by(1)
+    end
+
     it 'persists the safe post-delivery action for a one-time conversation touch' do
       touch = service.create_touch(
         body: 'Final follow-up',

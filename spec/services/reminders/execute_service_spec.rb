@@ -128,6 +128,38 @@ RSpec.describe Reminders::ExecuteService do
       expect(message.content).to include(conversation.contact.name)
     end
 
+    it 'retargets every conversation reference before completing a post-delivery action touch' do
+      original_conversation = create(:conversation, status: :resolved)
+      replacement_conversation = create(
+        :conversation,
+        account: original_conversation.account,
+        inbox: original_conversation.inbox,
+        contact: original_conversation.contact,
+        contact_inbox: original_conversation.contact_inbox,
+        status: :open
+      )
+      touch = create(
+        :reminder,
+        account: original_conversation.account,
+        conversation: original_conversation,
+        target_conversation: original_conversation,
+        remindable: original_conversation,
+        status: :processing,
+        body: 'Follow up in the active conversation',
+        post_delivery_action: Reminder::POST_DELIVERY_ACTION_RESOLVE_CONVERSATION
+      )
+
+      expect do
+        described_class.new(reminder: touch).perform
+      end.to change { replacement_conversation.messages.outgoing.count }.by(1)
+
+      touch.reload
+      expect(touch).to be_completed
+      expect(touch.conversation).to eq(replacement_conversation)
+      expect(touch.target_conversation).to eq(replacement_conversation)
+      expect(touch.remindable).to eq(replacement_conversation)
+    end
+
     it 'adds trusted automation provenance only for an automation reminder' do
       conversation = create(:conversation)
       rule = create(:automation_rule, account: conversation.account)

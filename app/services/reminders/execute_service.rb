@@ -103,6 +103,10 @@ class Reminders::ExecuteService
   def update_resolved_targets!(conversation)
     updates = {}
     updates[:target_conversation] = conversation if reminder.target_conversation_id != conversation.id
+    if reminder.post_delivery_action.present? && reminder.remindable.is_a?(Conversation) && reminder.remindable_id != conversation.id
+      updates[:conversation] = conversation
+      updates[:remindable] = conversation
+    end
     updates[:target_contact_inbox] = conversation.contact_inbox if reminder.target_contact_inbox_id != conversation.contact_inbox_id
     reminder.update!(updates) if updates.present?
   end

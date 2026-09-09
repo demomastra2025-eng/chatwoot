@@ -6,7 +6,7 @@ class Webhooks::WhatsappEventsJob < MutexApplicationJob
 
   queue_as :whatsapp_inbound
   retry_on LockAcquisitionError, wait: 1.second, attempts: 8
-  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: 5.seconds, attempts: :unlimited
+  retry_on Whatsapp::WabaLock::LockAcquisitionError, wait: Whatsapp::WabaLock::RETRY_WAIT, attempts: :unlimited
   retry_on Whatsapp::AuthenticatedWebhookRoute::RuntimeIdentityChangedError, Whatsapp::CloudMediaDownload::MetadataFetchError, Down::Error,
            Whatsapp::IncomingMessageWhatsappCloudService::PreparedAttachmentError, wait: 5.seconds, attempts: 8
   retry_on Whatsapp::IncomingMessageMutationService::TargetNotFoundError, wait: 5.seconds, attempts: 120
