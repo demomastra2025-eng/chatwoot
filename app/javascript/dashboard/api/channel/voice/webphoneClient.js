@@ -86,6 +86,14 @@ class WebphoneClient extends EventTarget {
     // destroy an otherwise healthy SIP handle before the transport reconnects.
     this.handleBrowserOffline = () => this.pauseNativeSessionRetries();
     this.handlePageShow = () => this.resumeNativeSessions();
+    this.handleBeforeUnload = event => {
+      if (!this.hasNativeCallInProgress()) return undefined;
+
+      event.preventDefault();
+      event.returnValue = '';
+      return '';
+    };
+    this.nativeCallUnloadGuardRegistered = false;
     this.handlePageHide = event => {
       // BFCache keeps the page alive and later emits `pageshow`.
       if (event?.persisted) return;
@@ -111,6 +119,26 @@ class WebphoneClient extends EventTarget {
 
   static isNativeSipProvider(provider) {
     return NATIVE_BROWSER_SIP_PROVIDERS.has(provider);
+  }
+
+  hasNativeCallInProgress() {
+    return Object.values(this.nativeSipClients).some(
+      client =>
+        client?.hasActiveCall === true ||
+        Boolean(client?.pendingIncomingCall) ||
+        client?.outboundAttempt?.sipCallSent === true
+    );
+  }
+
+  syncNativeCallUnloadGuard() {
+    if (typeof window === 'undefined') return;
+
+    const shouldRegister = this.hasNativeCallInProgress();
+    if (shouldRegister === this.nativeCallUnloadGuardRegistered) return;
+
+    const action = shouldRegister ? 'addEventListener' : 'removeEventListener';
+    window[action]('beforeunload', this.handleBeforeUnload);
+    this.nativeCallUnloadGuardRegistered = shouldRegister;
   }
 
   prepareNativeSipRuntime() {
@@ -252,6 +280,7 @@ class WebphoneClient extends EventTarget {
           ...(event.detail || {}),
         };
         this.updateProviderRegistration(detail.provider, eventName, detail);
+        this.syncNativeCallUnloadGuard();
         this.dispatchEvent(new CustomEvent(eventName, { detail }));
       });
     });
@@ -535,6 +564,7 @@ class WebphoneClient extends EventTarget {
     this.nativeSipClients[sessionKey] = client;
     this.nativeSipClientGenerations[sessionKey] = generation;
     this.subscribeClient(provider, client, { sessionKey });
+    this.syncNativeCallUnloadGuard();
     return client;
   }
 
@@ -990,6 +1020,7 @@ class WebphoneClient extends EventTarget {
         delete this.nativeSipClients[sessionKey];
         delete this.nativeSipClientGenerations[sessionKey];
       }
+      this.syncNativeCallUnloadGuard();
     }
   }
 
@@ -1256,14 +1287,18 @@ class WebphoneClient extends EventTarget {
       callRef: payload.callRef || payload.callSid || payload.call_sid,
       janusCallRef: payload.janusCallRef || payload.janus_call_ref,
     };
-    if (typeof client.rejectIncomingCall === 'function') {
-      return client.rejectIncomingCall(callScope);
-    }
+    try {
+      if (typeof client.rejectIncomingCall === 'function') {
+        return await client.rejectIncomingCall(callScope);
+      }
 
-    return client.endClientCall(callScope);
+      return await client.endClientCall(callScope);
+    } finally {
+      this.syncNativeCallUnloadGuard();
+    }
   }
 
-  endClientCall(providerOrPayload = this.activeProvider) {
+  async endClientCall(providerOrPayload = this.activeProvider) {
     const payload =
       typeof providerOrPayload === 'object'
         ? providerOrPayload
@@ -1273,11 +1308,15 @@ class WebphoneClient extends EventTarget {
     const client = this.getClient(provider, { ...payload, sessionKey });
     if (!client) return null;
 
-    return client.endClientCall({
-      ...payload,
-      callRef: payload.callRef || payload.callSid || payload.call_sid,
-      janusCallRef: payload.janusCallRef || payload.janus_call_ref,
-    });
+    try {
+      return await client.endClientCall({
+        ...payload,
+        callRef: payload.callRef || payload.callSid || payload.call_sid,
+        janusCallRef: payload.janusCallRef || payload.janus_call_ref,
+      });
+    } finally {
+      this.syncNativeCallUnloadGuard();
+    }
   }
 
   nativeSessionDescriptor(sessionKey) {
@@ -1339,6 +1378,7 @@ class WebphoneClient extends EventTarget {
             })
           );
         }
+        this.syncNativeCallUnloadGuard();
       }
     }
   }

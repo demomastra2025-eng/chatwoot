@@ -124,6 +124,11 @@ describe('webphoneClient', () => {
     WebphoneClient.nativeSessionGenerations = {};
     WebphoneClient.bootstrapIncomingPromise = null;
     WebphoneClient.deviceInitializationPromises = {};
+    window.removeEventListener(
+      'beforeunload',
+      WebphoneClient.handleBeforeUnload
+    );
+    WebphoneClient.nativeCallUnloadGuardRegistered = false;
   });
 
   it('coalesces concurrent dashboard bootstrap requests', async () => {
@@ -1309,6 +1314,156 @@ describe('webphoneClient', () => {
         reason: 'page_hidden',
       })
     );
+  });
+
+  it('registers the unload guard only while a native SIP call is active', async () => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      provider: 'sipuni',
+      calling_supported: true,
+      sip_profile_id: 501,
+      inbox_id: 4083,
+      janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+      sip: {
+        username: 'sip-agent',
+        password: 'sip-secret',
+        host: 'ats01.kz.sipuni.com',
+      },
+    });
+    janusInitializeMock.mockResolvedValue({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:501',
+      inboxId: 4083,
+      sipProfileId: 501,
+      callingSupported: true,
+      registered: true,
+    });
+    await WebphoneClient.initializeDevice(4083, { native: true });
+    const client = WebphoneClient.nativeSipClients['sip_profile:501'];
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    client.hasActiveCall = true;
+
+    WebphoneClient.syncNativeCallUnloadGuard();
+    expect(addSpy).toHaveBeenCalledWith(
+      'beforeunload',
+      WebphoneClient.handleBeforeUnload
+    );
+    const activeCallUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(activeCallUnload);
+    expect(activeCallUnload.defaultPrevented).toBe(true);
+    expect(janusDestroyMock).not.toHaveBeenCalled();
+
+    client.hasActiveCall = false;
+    WebphoneClient.syncNativeCallUnloadGuard();
+    expect(removeSpy).toHaveBeenCalledWith(
+      'beforeunload',
+      WebphoneClient.handleBeforeUnload
+    );
+    const idleUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(idleUnload);
+    expect(idleUnload.defaultPrevented).toBe(false);
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it.each([
+    [
+      'a pending incoming call',
+      { pendingIncomingCall: { callRef: 'incoming' } },
+    ],
+    ['a sent outbound SIP call', { outboundAttempt: { sipCallSent: true } }],
+  ])('guards page unload for %s', async (_description, callState) => {
+    getNativeWebphoneTokenMock.mockResolvedValue({
+      provider: 'sipuni',
+      calling_supported: true,
+      sip_profile_id: 501,
+      inbox_id: 4083,
+      janusServer: 'wss://dev.one-link.kz/janus-sipuni',
+      sip: {
+        username: 'sip-agent',
+        password: 'sip-secret',
+        host: 'ats01.kz.sipuni.com',
+      },
+    });
+    janusInitializeMock.mockResolvedValue({
+      provider: 'sipuni',
+      sessionKey: 'sip_profile:501',
+      inboxId: 4083,
+      sipProfileId: 501,
+      callingSupported: true,
+      registered: true,
+    });
+    await WebphoneClient.initializeDevice(4083, { native: true });
+    Object.assign(
+      WebphoneClient.nativeSipClients['sip_profile:501'],
+      callState
+    );
+
+    WebphoneClient.syncNativeCallUnloadGuard();
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it.each([
+    ['rejectIncomingCall', 'pendingIncomingCall'],
+    ['endClientCall', 'hasActiveCall'],
+  ])(
+    'removes the unload guard after local %s cleanup',
+    async (action, stateField) => {
+      const client = {
+        rejectIncomingCall: vi.fn(async () => {
+          client.pendingIncomingCall = null;
+        }),
+        endClientCall: vi.fn(async () => {
+          client.hasActiveCall = false;
+        }),
+        [stateField]:
+          stateField === 'pendingIncomingCall' ? { callRef: 'incoming' } : true,
+      };
+      WebphoneClient.nativeSipClients['sip_profile:501'] = client;
+      WebphoneClient.sessions['sip_profile:501'] = {
+        provider: 'sipuni',
+        sessionKey: 'sip_profile:501',
+        sipProfileId: 501,
+      };
+      WebphoneClient.syncNativeCallUnloadGuard();
+
+      await WebphoneClient[action]({
+        provider: 'sipuni',
+        sessionKey: 'sip_profile:501',
+      });
+
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(WebphoneClient.nativeCallUnloadGuardRegistered).toBe(false);
+    }
+  );
+
+  it('removes a stale unload guard when replacing the only active session', () => {
+    const staleClient = {
+      hasActiveCall: true,
+      destroyDevice: vi.fn(),
+      addEventListener: vi.fn(),
+    };
+    WebphoneClient.nativeSipClients = {
+      'sip_profile:501': staleClient,
+      'sip_profile:502': { hasActiveCall: false },
+    };
+    WebphoneClient.nativeSipClientGenerations = {
+      'sip_profile:501': 1,
+      'sip_profile:502': 1,
+    };
+    WebphoneClient.syncNativeCallUnloadGuard();
+
+    WebphoneClient.nativeSipClientFor('sipuni', 'sip_profile:501', 2);
+
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(WebphoneClient.nativeCallUnloadGuardRegistered).toBe(false);
+    expect(staleClient.destroyDevice).toHaveBeenCalledOnce();
   });
 
   it('routes native Binotel sessions to the Janus SIP client', async () => {
