@@ -12,6 +12,36 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     Crm::Bootstrap::AccountService.new(account: account).perform
   end
 
+  it 'reads an old-writer row through the canonical catalog snapshot without writing on show' do
+    task_type = account.crm_task_types.find_by!(code: 'call')
+    task_outcome = task_type.outcomes.find_by!(code: 'answered')
+    task = create(:crm_task, account: account, activity_type: 'call', outcome: 'answered')
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(task_type_id: nil, task_outcome_id: nil, context_kind: nil)
+    # rubocop:enable Rails/SkipsModelValidations
+    writes = []
+    subscriber = lambda do |_name, _start, _finish, _id, payload|
+      sql = payload[:sql].to_s
+      writes << sql if sql.match?(/\A(?:INSERT|UPDATE|DELETE) /) &&
+                       sql.match?(/"crm_(?:tasks|task_types|task_outcomes)"/)
+    end
+
+    ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+      get "#{path}/#{task.id}", headers: headers, as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(writes).to be_empty
+    expect(payload).to include(
+      'context_kind' => 'personal',
+      'task_type_id' => task_type.id,
+      'task_outcome_id' => task_outcome.id,
+      'outcome' => 'answered'
+    )
+    expect(task.reload).to have_attributes(task_type_id: nil, task_outcome_id: nil, context_kind: nil)
+  end
+
   it 'creates task activity types and outcomes for CRM task workflows' do
     post path,
          params: {
@@ -35,7 +65,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(created_task.outcome_note).to eq('Client joined and approved next step')
   end
 
-  it 'updates task outcome details through the task API' do
+  it 'rejects task outcome details through generic update' do
     task = create(:crm_task, account: account, status: account.crm_task_statuses.find_by!(code: 'todo'))
 
     patch "#{path}/#{task.id}",
@@ -47,10 +77,26 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
           headers: headers,
           as: :json
 
-    expect(response).to have_http_status(:ok)
-    expect(response.parsed_body.dig('payload', 'outcome')).to eq('not_done')
-    expect(response.parsed_body.dig('payload', 'outcome_note')).to eq('Customer asked to postpone until next week')
-    expect(task.reload.outcome_note).to eq('Customer asked to postpone until next week')
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('TASK_COMMAND_REQUIRED')
+    expect(response.parsed_body.dig('details', 'fields')).to contain_exactly('outcome', 'outcome_note')
+    expect(task.reload).to have_attributes(outcome: nil, outcome_note: nil)
+  end
+
+  it 'rejects status transitions through generic update' do
+    todo_status = account.crm_task_statuses.find_by!(code: 'todo')
+    done_status = account.crm_task_statuses.find_by!(code: 'done')
+    task = create(:crm_task, account: account, status: todo_status)
+
+    patch "#{path}/#{task.id}",
+          params: { status_id: done_status.id },
+          headers: headers,
+          as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response.parsed_body['code']).to eq('TASK_COMMAND_REQUIRED')
+    expect(response.parsed_body.dig('details', 'fields')).to contain_exactly('status_id')
+    expect(task.reload.status_id).to eq(todo_status.id)
   end
 
   it 'creates a date-only all-day task deadline' do
@@ -455,6 +501,7 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'assignee_id')).to eq(next_assignee.id)
     expect(task.reload.assignee_id).to eq(next_assignee.id)
+    expect(task.events.where(event_type: 'task_assigned')).to exist
   end
 
   it 'blocks moving a task to done when required custom fields are missing' do
@@ -516,6 +563,27 @@ RSpec.describe 'CRM Tasks Runtime API', type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(response.parsed_body.dig('payload', 'archived_at')).to be_nil
+  end
+
+  it 'archives an old-writer row after bootstrapping missing catalogs' do
+    task = create(:crm_task, account: account, status: account.crm_task_statuses.find_by!(code: 'todo'))
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(task_type_id: nil, context_kind: nil)
+    # rubocop:enable Rails/SkipsModelValidations
+    Crm::TaskOutcome.where(account: account).delete_all
+    Crm::TaskType.where(account: account).delete_all
+
+    post "#{path}/#{task.id}/archive",
+         params: { lock_version: task.lock_version },
+         headers: headers,
+         as: :json
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload['archived_at']).to be_present
+    expect(payload['context_kind']).to eq('personal')
+    expect(payload['task_type_id']).to eq(account.crm_task_types.find_by!(code: 'task').id)
+    expect(task.reload).to have_attributes(context_kind: 'personal', task_type_id: payload['task_type_id'])
   end
 
   it 'drops custom field values when their field definition is deleted' do

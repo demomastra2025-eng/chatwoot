@@ -35,10 +35,7 @@ module Crm::Tasks::RequestParams
     title
     description
     task_type_id
-    task_outcome_id
     activity_type
-    outcome
-    outcome_note
     priority
     all_day
     due_on
@@ -49,5 +46,12 @@ module Crm::Tasks::RequestParams
     external_ref
     idempotency_key
     lock_version
+  ].freeze
+
+  FORM_KEYS = (UPDATE_KEYS + %i[task_outcome_id outcome outcome_note]).freeze
+
+  COMMAND_ONLY_UPDATE_KEYS = %i[
+    status_id task_outcome_id outcome outcome_note completed_at completed_by_id
+    cancelled_at cancelled_by_id cancellation_reason reschedule_count
   ].freeze
 end

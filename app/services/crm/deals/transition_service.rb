@@ -1,10 +1,13 @@
 class Crm::Deals::TransitionService < Crm::BaseWriteService
-  def initialize(account:, deal:, params:, actor: nil)
+  def initialize(account:, deal:, params:, actor: nil, **transition_options)
     @deal = deal
+    @catalogs_provisioned = transition_options.fetch(:catalogs_provisioned, false)
+    assert_known_transition_options!(transition_options)
     super(account: account, params: params, record: @deal, actor: actor)
   end
 
   def perform
+    provision_task_catalogs! if closing_command? && !@catalogs_provisioned
     prepare_transition!
     saved_deal = ApplicationRecord.transaction { persist_transition! }
     publish_transition(saved_deal) if @realtime_event_name.present?
@@ -14,6 +17,11 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
   private
 
   attr_reader :deal
+
+  def assert_known_transition_options!(options)
+    unknown_options = options.keys - %i[catalogs_provisioned]
+    raise ArgumentError, "Unknown transition options: #{unknown_options.join(', ')}" if unknown_options.present?
+  end
 
   def prepare_transition!
     @correlation_id = SecureRandom.uuid
@@ -143,7 +151,8 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
 
         Crm::Tasks::CancelService.new(
           account: account, task: task, actor: actor, correlation_id: correlation_id,
-          params: { lock_version: task.lock_version, cancellation_reason: 'deal_closed' }
+          params: { lock_version: task.lock_version, cancellation_reason: 'deal_closed' },
+          catalogs_provisioned: true
         ).perform
       end
     end
@@ -153,5 +162,9 @@ class Crm::Deals::TransitionService < Crm::BaseWriteService
     return unless params.key?(:position)
 
     resolve_integer(:position, current: deal.position, allow_nil: true)
+  end
+
+  def provision_task_catalogs!
+    Crm::TaskCatalogs::Provisioner.new(account: account).perform
   end
 end

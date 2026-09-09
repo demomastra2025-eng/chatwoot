@@ -105,6 +105,8 @@ export const formatCrmErrorMessage = (error, t) => {
         payload.message,
         { fields: missingFields }
       );
+    case 'TASK_COMMAND_REQUIRED':
+      return t('CRM.ERRORS.TASK_COMMAND_REQUIRED');
     case 'STALE_RECORD':
       return t('CRM.ERRORS.STALE_RECORD');
     case 'VALIDATION_ERROR':

@@ -388,15 +388,16 @@ module Crm::PayloadBuilder
   end
 
   # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
-  def task(task)
+  def task(task, catalog_snapshot: nil)
+    read_model = Crm::Tasks::ReadModel.new(task: task, catalog_snapshot: catalog_snapshot)
     {
       id: task.id,
       account_id: task.account_id,
-      context_kind: task.context_kind,
+      context_kind: read_model.context_kind,
       deal_id: task.deal_id,
       status_id: task.status_id,
-      task_type_id: task.task_type_id,
-      task_outcome_id: task.task_outcome_id,
+      task_type_id: read_model.task_type&.id,
+      task_outcome_id: read_model.task_outcome&.id,
       assignee_id: task.assignee_id,
       creator_id: task.creator_id,
       completed_by_id: task.completed_by_id,
@@ -406,7 +407,7 @@ module Crm::PayloadBuilder
       title: task.title,
       description: task.description,
       activity_type: task.activity_type,
-      outcome: task.outcome,
+      outcome: read_model.outcome,
       outcome_note: task.outcome_note,
       priority: task.priority,
       all_day: task.all_day,
@@ -418,8 +419,8 @@ module Crm::PayloadBuilder
       cancelled_at: iso8601(task.cancelled_at),
       cancellation_reason: task.cancellation_reason,
       reschedule_count: task.reschedule_count,
-      task_type: task_type_summary(task.task_type),
-      task_outcome: task_outcome_summary(task.task_outcome),
+      task_type: task_type_summary(read_model.task_type),
+      task_outcome: task_outcome_summary(read_model.task_outcome),
       position: task.position,
       external_ref: task.external_ref,
       idempotency_key: task.idempotency_key,

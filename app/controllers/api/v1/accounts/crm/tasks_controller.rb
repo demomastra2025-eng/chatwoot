@@ -1,6 +1,6 @@
 class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseController
   before_action :ensure_crm_tasks_enabled!
-  before_action :bootstrap_defaults!, only: [:index, :create, :complete, :cancel, :reopen]
+  before_action :bootstrap_defaults!, only: [:create, :complete, :cancel, :reopen]
   before_action :set_task,
                 only: [:show, :update, :save_form, :timeline, :change_status, :complete, :cancel, :reopen, :reschedule, :assign,
                        :archive, :unarchive]
@@ -9,8 +9,9 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
     authorize ::Crm::Task
 
     tasks = filtered_tasks
+    catalog_snapshot = ::Crm::Tasks::CatalogSnapshot.new(account: Current.account)
     render_payload(
-      tasks.map { |task| ::Crm::PayloadBuilder.task(task) },
+      tasks.map { |task| ::Crm::PayloadBuilder.task(task, catalog_snapshot: catalog_snapshot) },
       meta: { count: tasks.size }
     )
   end
@@ -37,10 +38,11 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
 
   def update
     authorize @task
+    reject_command_only_update_params!
 
-    task = ::Crm::Tasks::UpsertService.new(
+    task = ::Crm::Tasks::SaveFormService.new(
       account: Current.account,
-      params: update_task_params,
+      params: update_task_params.to_h.merge(idempotency_key: request.request_id),
       task: @task,
       actor: Current.user
     ).perform
@@ -64,7 +66,7 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   def save_form
     run_task_command!(
       ::Crm::Tasks::SaveFormService,
-      params.permit(*::Crm::Tasks::RequestParams::UPDATE_KEYS, :status_id, :cancellation_reason, custom_attributes: {})
+      params.permit(*::Crm::Tasks::RequestParams::FORM_KEYS, :status_id, :cancellation_reason, custom_attributes: {})
     )
   end
 
@@ -169,6 +171,18 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
 
   def update_task_params
     params.permit(*::Crm::Tasks::RequestParams::UPDATE_KEYS, custom_attributes: {})
+  end
+
+  def reject_command_only_update_params!
+    fields = ::Crm::Tasks::RequestParams::COMMAND_ONLY_UPDATE_KEYS.select { |key| params.key?(key) }
+    return if fields.empty?
+
+    raise Crm::Error.new(
+      code: 'TASK_COMMAND_REQUIRED',
+      message: 'Task lifecycle fields must be changed through a task command',
+      status: :unprocessable_content,
+      details: { fields: fields }
+    )
   end
 
   def run_task_command!(service_class, command_params)

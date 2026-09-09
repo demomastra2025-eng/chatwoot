@@ -700,12 +700,15 @@ const saveTaskResult = async ({ task, note, taskOutcomeId }) => {
 
   try {
     const updatedTask = await runTaskMutation(() =>
-      CrmTasksAPI.complete(currentTask.id, {
-        idempotency_key: crypto.randomUUID(),
-        lock_version: currentTask.lockVersion,
-        outcome_note: note,
-        task_outcome_id: Number(taskOutcomeId),
-      })
+      CrmTasksAPI.complete(
+        currentTask.id,
+        compactPayload({
+          idempotency_key: crypto.randomUUID(),
+          lock_version: currentTask.lockVersion,
+          outcome_note: note,
+          task_outcome_id: taskOutcomeId ? Number(taskOutcomeId) : undefined,
+        })
+      )
     );
 
     applyTaskRealtimeUpdate(updatedTask);

@@ -23,6 +23,21 @@ RSpec.describe Crm::Task do
       expect(sales_task.custom_field_context).to eq('deal_task')
     end
 
+    it 'exposes inferred expand fields for a row committed by an old writer' do
+      task = create(:crm_task, account: account, activity_type: 'task')
+      task_type = task.task_type
+      # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+      task.update_columns(task_type_id: nil, context_kind: nil)
+      # rubocop:enable Rails/SkipsModelValidations
+
+      task.reload
+
+      expect(task.effective_context_kind).to eq('personal')
+      expect(task.effective_task_type).to eq(task_type)
+      expect(task.custom_field_context).to eq('standalone_task')
+      expect(Crm::PayloadBuilder.task(task)).to include(context_kind: 'personal', task_type_id: task_type.id)
+    end
+
     it 'allows an explicitly personal task to remain linked to a deal' do
       task = build(:crm_task, account: account, context_kind: 'personal', deal: deal)
 
@@ -153,29 +168,29 @@ RSpec.describe Crm::Task do
     end
   end
 
-  describe 'contact owner sync' do
+  describe 'relationship ownership' do
     let(:account) { create(:account) }
     let(:owner) { create(:user, account: account, role: :agent) }
     let(:new_owner) { create(:user, account: account, role: :agent) }
     let(:contact) { create(:contact, account: account, owner: owner) }
 
-    it 'syncs assignee changes to the primary deal contact' do
+    it 'allows changing the executor without transferring the primary deal contact' do
       deal = create(:crm_deal, account: account, owner: owner)
       create(:crm_deal_contact, account: account, deal: deal, contact: contact, primary: true)
       task = create(:crm_task, account: account, deal: deal, assignee: owner)
 
       task.update!(assignee: new_owner)
 
-      expect(contact.reload.owner).to eq(new_owner)
+      expect(contact.reload.owner).to eq(owner)
     end
 
-    it 'syncs assignee changes to the originating conversation contact when there is no deal' do
+    it 'allows changing the executor without transferring the originating conversation contact' do
       conversation = create(:conversation, account: account, contact: contact, assignee: owner)
       task = create(:crm_task, account: account, originating_conversation: conversation, assignee: owner)
 
       task.update!(assignee: new_owner)
 
-      expect(contact.reload.owner).to eq(new_owner)
+      expect(contact.reload.owner).to eq(owner)
     end
   end
 end

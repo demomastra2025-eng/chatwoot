@@ -1,4 +1,6 @@
 class Crm::Tasks::CommandService < Crm::BaseWriteService
+  include Crm::Tasks::ExpandCompatibility
+
   SNAPSHOT_KEYS = %w[
     status_id position task_type_id task_outcome_id outcome outcome_note assignee_id
     start_at due_at due_on all_day schedule_timezone completed_at completed_by_id
@@ -9,13 +11,15 @@ class Crm::Tasks::CommandService < Crm::BaseWriteService
     @task = task
     @correlation_id = command_options[:correlation_id]
     @broadcast = command_options.fetch(:broadcast, true)
+    @catalogs_provisioned = command_options.fetch(:catalogs_provisioned, false)
     assert_known_command_options!(command_options)
     super(account: account, params: params, record: @task, actor: actor)
   end
 
   def perform
+    provision_task_catalogs! unless @catalogs_provisioned
     ApplicationRecord.transaction do
-      task.lock!
+      lock_task_for_command!
       idempotent_task = find_idempotent_task
       next idempotent_task if idempotent_task
 
@@ -40,12 +44,17 @@ class Crm::Tasks::CommandService < Crm::BaseWriteService
   attr_reader :task
 
   def assert_known_command_options!(options)
-    unknown_options = options.keys - %i[broadcast correlation_id]
+    unknown_options = options.keys - %i[broadcast catalogs_provisioned correlation_id]
     raise ArgumentError, "Unknown command options: #{unknown_options.join(', ')}" if unknown_options.present?
   end
 
   def no_op?
     false
+  end
+
+  def lock_task_for_command!
+    task.lock!
+    prepare_expand_compatibility!
   end
 
   def after_save!
@@ -96,7 +105,20 @@ class Crm::Tasks::CommandService < Crm::BaseWriteService
   end
 
   def fingerprint_payload
-    params.except(:lock_version, :idempotency_key).sort.to_h
+    canonical_fingerprint_value(params.except(:lock_version, :idempotency_key))
+  end
+
+  def canonical_fingerprint_value(value)
+    case value
+    when Hash
+      value.keys.sort_by(&:to_s).to_h do |key|
+        [key.to_s, canonical_fingerprint_value(value[key])]
+      end
+    when Array
+      value.map { |item| canonical_fingerprint_value(item) }
+    else
+      value
+    end
   end
 
   def state_snapshot

@@ -7,12 +7,14 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     @task = task || account.crm_tasks.new
     @broadcast_linked_deal = publication_options.fetch(:broadcast_linked_deal, true)
     @broadcast = publication_options.fetch(:broadcast, true)
+    @catalogs_provisioned = publication_options.fetch(:catalogs_provisioned, false)
     assert_known_publication_options!(publication_options)
     super(account: account, params: params, record: @task, actor: actor)
   end
 
   def perform
     new_record = task.new_record?
+    bootstrap_defaults! unless @catalogs_provisioned
     saved_task = ApplicationRecord.transaction { persist_task!(new_record) }
     Crm::AfterCommit.run { publish_saved_task!(saved_task, new_record: new_record) } if @broadcast
     saved_task
@@ -23,12 +25,11 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
   attr_reader :task, :broadcast_linked_deal
 
   def assert_known_publication_options!(options)
-    unknown_options = options.keys - %i[broadcast broadcast_linked_deal]
+    unknown_options = options.keys - %i[broadcast broadcast_linked_deal catalogs_provisioned]
     raise ArgumentError, "Unknown publication options: #{unknown_options.join(', ')}" if unknown_options.present?
   end
 
   def persist_task!(new_record)
-    bootstrap_defaults!
     assert_lock_version!
     resolve_task_context!
     validate_task_references!
@@ -87,10 +88,17 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       title: resolve_title,
       description: resolve_optional_text(:description, current: task.description),
       activity_type: @task_type.code,
-      outcome: @task_outcome&.code,
+      outcome: resolved_outcome_code,
       outcome_note: resolve_optional_text(:outcome_note, current: task.outcome_note),
       priority: resolve_optional_text(:priority, current: task.priority || 'medium')
     }
+  end
+
+  def resolved_outcome_code
+    return @task_outcome&.code if params.key?(:task_outcome_id) || params.key?(:outcome)
+    return if task_type_changed?(@task_type)
+
+    @task_outcome&.code || task.outcome
   end
 
   def schedule_attributes

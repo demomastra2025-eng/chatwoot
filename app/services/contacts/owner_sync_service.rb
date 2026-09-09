@@ -10,8 +10,6 @@ class Contacts::OwnerSyncService
       sync_assignment_client_ownership!
       sync_conversations!
       sync_communication_threads!
-      sync_primary_contact_deals!
-      sync_crm_tasks!
       sync_scheduling_appointments!
       sync_open_reminders!
     end
@@ -61,49 +59,6 @@ class Contacts::OwnerSyncService
     records_with_owner_mismatch(scope, :assignee_id)
   end
 
-  def sync_primary_contact_deals!
-    primary_contact_deals_requiring_owner_sync.find_each do |deal|
-      deal.update!(owner_id: owner_id)
-    end
-  end
-
-  def primary_contact_deals_requiring_owner_sync
-    scope = primary_contact_deals
-    records_with_owner_mismatch(scope, :owner_id)
-  end
-
-  def primary_contact_deals
-    Crm::Deal.joins(:deal_contacts).where(
-      account_id: contact.account_id,
-      crm_deal_contacts: {
-        account_id: contact.account_id,
-        contact_id: contact.id,
-        primary: true
-      }
-    )
-  end
-
-  def sync_crm_tasks!
-    crm_tasks_requiring_owner_sync.find_each do |task|
-      task.update!(assignee_id: owner_id)
-    end
-  end
-
-  def crm_tasks_requiring_owner_sync
-    scope = contact_crm_tasks.distinct
-    records_with_owner_mismatch(scope, :assignee_id)
-  end
-
-  def contact_crm_tasks
-    scope = Crm::Task.where(account_id: contact.account_id)
-    deal_scope = scope.where(deal_id: primary_contact_deals.select(:id))
-    conversation_scope = scope.where(
-      originating_conversation_id: contact.conversations.where(account_id: contact.account_id).select(:id)
-    )
-
-    deal_scope.or(conversation_scope)
-  end
-
   def sync_scheduling_appointments!
     scheduling_appointments_requiring_owner_sync.find_each do |appointment|
       appointment.update!(owner_id: owner_id)
@@ -126,7 +81,9 @@ class Contacts::OwnerSyncService
   end
 
   def open_reminders_requiring_owner_sync
-    scope = Reminder.open_statuses.where(account_id: contact.account_id)
+    scope = Reminder.open_statuses
+                    .where(account_id: contact.account_id)
+                    .where('remindable_type IS NULL OR remindable_type NOT IN (?)', %w[Crm::Deal Crm::Task])
     contact_reminders = scope.where(target_contact_id: contact.id)
     target_conversation_reminders = scope.where(target_conversation_id: contact_conversation_ids)
     conversation_reminders = scope.where(conversation_id: contact_conversation_ids)

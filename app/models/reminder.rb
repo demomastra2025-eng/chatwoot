@@ -663,7 +663,7 @@ class Reminder < ApplicationRecord
     when 'appointment.ends_at'
       remindable.try(:ends_at)
     when 'task.due_at'
-      remindable.try(:due_at)
+      remindable.try(:effective_due_at)
     when 'deal.expected_close_on'
       remindable.try(:expected_close_on)&.in_time_zone
     when 'conversation.created_at'

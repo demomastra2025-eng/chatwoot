@@ -120,7 +120,7 @@ RSpec.describe AutomationRules::CrmActionService do
       expect(task.events.where(event_type: 'task_completed')).to exist
     end
 
-    it 'assigns task assignee through the native upsert path' do
+    it 'assigns task assignee through the canonical command path' do
       rule = create(
         :automation_rule,
         account: account,
@@ -132,6 +132,7 @@ RSpec.describe AutomationRules::CrmActionService do
       described_class.new(rule, account, task, entity_kind: 'task').perform
 
       expect(task.reload.assignee_id).to eq(assignee.id)
+      expect(task.events.where(event_type: 'task_assigned')).to exist
     end
   end
 end

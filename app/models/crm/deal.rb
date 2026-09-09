@@ -123,7 +123,6 @@ class Crm::Deal < ApplicationRecord
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
   before_destroy :cancel_deferred_touch_enrollments, prepend: true
-  after_commit :sync_primary_contact_owner, if: :saved_change_to_owner_id?
   after_update_commit :sync_deferred_touch_enrollments
 
   def primary_contact
@@ -191,13 +190,6 @@ class Crm::Deal < ApplicationRecord
     return if position.present? && position.to_i.positive?
 
     self.position = stage.deals.kept.maximum(:position).to_i + 1
-  end
-
-  def sync_primary_contact_owner
-    contact = primary_contact
-    return if contact.blank? || contact.owner_id == owner_id
-
-    contact.update!(owner_id: owner_id)
   end
 
   def related_records_belong_to_account

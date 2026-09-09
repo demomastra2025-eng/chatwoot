@@ -1,4 +1,6 @@
 class Crm::Tasks::ArchiveService < Crm::BaseWriteService
+  include Crm::Tasks::ExpandCompatibility
+
   def initialize(account:, task:, params:, archived:, actor: nil)
     @task = task
     @archived = archived
@@ -6,6 +8,7 @@ class Crm::Tasks::ArchiveService < Crm::BaseWriteService
   end
 
   def perform
+    provision_task_catalogs!
     saved_task, changed = ApplicationRecord.transaction { persist_archive_state! }
     publish_archive_state(saved_task) if changed
     saved_task
@@ -17,6 +20,7 @@ class Crm::Tasks::ArchiveService < Crm::BaseWriteService
 
   def persist_archive_state!
     task.lock!
+    prepare_expand_compatibility!
     assert_lock_version!
     return [task, false] if archived == task.archived_at.present?
 

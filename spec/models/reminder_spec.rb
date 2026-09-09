@@ -282,6 +282,28 @@ RSpec.describe Reminder do
       expect(reminder.scheduled_at.to_i).to eq((conversation.created_at + 1.hour).to_i)
     end
 
+    it 'materializes task due anchors from an all-day due date' do
+      task = create(
+        :crm_task,
+        all_day: true,
+        due_on: Date.new(2026, 9, 10),
+        schedule_timezone: 'Asia/Almaty'
+      )
+      reminder = build(
+        :reminder,
+        account: task.account,
+        remindable: task,
+        timing_mode: :relative,
+        relative_anchor: 'task.due_at',
+        relative_offset_seconds: -30.minutes.to_i,
+        scheduled_at: nil
+      )
+
+      reminder.validate
+
+      expect(reminder.scheduled_at.to_i).to eq((task.effective_due_at - 30.minutes).to_i)
+    end
+
     it 'materializes relative scheduling on the calculated date with a fixed time of day' do
       zone = Time.find_zone!('Asia/Almaty')
       appointment = create(

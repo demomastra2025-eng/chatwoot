@@ -117,6 +117,7 @@
       "UNSORTED_STAGE_REQUIRES_FALLBACK": "Create at least one active open stage before disabling Unsorted.",
       "TASK_STATUS_HAS_TASKS": "You cannot delete a task status while it still has tasks. Move all open and completed tasks to another status first.",
       "TASK_STATUS_REQUIRES_FIELDS": "Fill required fields before marking the task as done: {fields}.",
+      "TASK_COMMAND_REQUIRED": "Use the task completion, cancellation, reopening, or result action to change lifecycle fields.",
       "STALE_RECORD": "This record changed in another request. Refresh and try again.",
       "VALIDATION_ERROR": "Please fix the form errors and try again."
     },

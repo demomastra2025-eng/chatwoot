@@ -11,8 +11,16 @@ class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
 
   def perform
     validate_request!
+    bootstrap_defaults!
+    persist_form!
+  end
+
+  private
+
+  def persist_form!
     ApplicationRecord.transaction do
       task.lock!
+      prepare_expand_compatibility!
       previous_result = find_idempotent_task
       next previous_result if previous_result
 
@@ -28,8 +36,6 @@ class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
       task.reload
     end
   end
-
-  private
 
   def event_type
     'task_form_saved'
@@ -57,8 +63,13 @@ class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
   def run_operation(service_class, attributes)
     service_class.new(
       account: account, task: task, actor: actor,
-      params: attributes.merge(lock_version: task.lock_version), broadcast: false
+      params: attributes.merge(lock_version: task.lock_version),
+      broadcast: false, catalogs_provisioned: true
     ).perform
+  end
+
+  def bootstrap_defaults!
+    Crm::Bootstrap::AccountService.new(account: account).perform if account.feature_enabled?('crm_tasks')
   end
 
   def state_snapshot

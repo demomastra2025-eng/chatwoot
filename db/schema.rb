@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_07_220000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_09_130000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1651,14 +1651,14 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_07_220000) do
     t.boolean "all_day", default: false, null: false
     t.date "due_on"
     t.string "schedule_timezone", default: "Asia/Almaty", null: false
-    t.bigint "task_type_id", null: false
+    t.bigint "task_type_id"
     t.bigint "task_outcome_id"
     t.bigint "completed_by_id"
     t.datetime "cancelled_at"
     t.bigint "cancelled_by_id"
     t.text "cancellation_reason"
     t.integer "reschedule_count", default: 0, null: false
-    t.string "context_kind", null: false
+    t.string "context_kind"
     t.index ["account_id", "activity_type", "due_at"], name: "index_crm_tasks_on_account_activity_type_due_at"
     t.index ["account_id", "deal_id", "activity_type"], name: "index_crm_tasks_on_account_deal_activity_type"
     t.index ["account_id", "deal_id"], name: "index_crm_tasks_on_account_deal"

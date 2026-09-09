@@ -137,13 +137,15 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
 
     return deal if params.keys == [:lock_version] && target_stage.blank?
 
+    task_catalogs_provisioned = provision_task_catalogs_for_closing!(target_stage)
     ApplicationRecord.transaction do
-      deal = update_deal_fields(deal, params) unless params.keys == [:lock_version]
+      deal = update_composite_deal_fields(deal, params, task_catalogs_provisioned) unless params.keys == [:lock_version]
       if target_stage.present?
         deal = transition_deal_to_stage(
           deal,
           target_stage,
-          closing_reasons: closing_reasons
+          closing_reasons: closing_reasons,
+          catalogs_provisioned: task_catalogs_provisioned
         )
       end
       deal
@@ -219,13 +221,18 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
       raise(ArgumentError, 'Selected CRM pipeline has no active stages')
   end
 
-  def update_deal_fields(deal, params)
+  def update_deal_fields(deal, params, task_catalogs_provisioned: false)
     ::Crm::Deals::UpsertService.new(
       account: account,
       params: params,
       deal: deal,
-      actor: actor
+      actor: actor,
+      task_catalogs_provisioned: task_catalogs_provisioned
     ).perform
+  end
+
+  def update_composite_deal_fields(deal, params, task_catalogs_provisioned)
+    update_deal_fields(deal, params, task_catalogs_provisioned: task_catalogs_provisioned)
   end
 
   def deal_for_update(deal_id)
@@ -269,7 +276,7 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
     target_stage
   end
 
-  def transition_deal_to_stage(deal, stage, closing_reasons: nil)
+  def transition_deal_to_stage(deal, stage, closing_reasons: nil, catalogs_provisioned: false)
     ::Crm::Deals::StageCommandService.new(
       account: account,
       deal: deal,
@@ -278,8 +285,16 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
         stage_id: stage.id,
         lock_version: deal.lock_version
       }.compact,
-      actor: actor
+      actor: actor,
+      catalogs_provisioned: catalogs_provisioned
     ).perform
+  end
+
+  def provision_task_catalogs_for_closing!(target_stage)
+    return false unless target_stage&.outcome.in?(%w[won lost])
+
+    ::Crm::TaskCatalogs::Provisioner.new(account: account).perform
+    true
   end
 
   def stage_selector?(stage_id:, stage_name:, stage_code:)

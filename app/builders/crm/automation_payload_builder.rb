@@ -7,7 +7,7 @@ module Crm::AutomationPayloadBuilder
   ].freeze
   TASK_ATTRIBUTES = %i[
     id title description context_kind activity_type outcome outcome_note priority all_day start_at due_at due_on
-    schedule_timezone completed_at external_ref status_id assignee_id creator_id team_id deal_id
+    schedule_timezone completed_at external_ref status_id task_type_id task_outcome_id assignee_id creator_id team_id deal_id
     originating_conversation_id archived_at custom_attributes
   ].freeze
 
@@ -23,9 +23,15 @@ module Crm::AutomationPayloadBuilder
   end
 
   def task(task)
+    read_model = Crm::Tasks::ReadModel.new(task: task)
     {
       account: task.account.webhook_data,
-      task: attributes_for(task, TASK_ATTRIBUTES),
+      task: attributes_for(task, TASK_ATTRIBUTES).merge(
+        context_kind: read_model.context_kind,
+        task_type_id: read_model.task_type&.id,
+        task_outcome_id: read_model.task_outcome&.id,
+        outcome: read_model.outcome
+      ),
       status: { id: task.status.id, name: task.status.name, category: task.status.category }
     }.merge(task_relations(task))
   end

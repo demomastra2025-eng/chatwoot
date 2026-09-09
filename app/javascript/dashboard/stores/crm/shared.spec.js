@@ -13,6 +13,7 @@ describe('formatCrmErrorMessage', () => {
       'CRM.ERRORS.DEFAULT_STAGE_REQUIRES_FALLBACK',
     ],
     ['IDEMPOTENCY_KEY_REUSED', 'CRM.ERRORS.IDEMPOTENCY_KEY_REUSED'],
+    ['TASK_COMMAND_REQUIRED', 'CRM.ERRORS.TASK_COMMAND_REQUIRED'],
     ['DEAL_TRANSITION_NOT_UNDOABLE', 'CRM.ERRORS.DEAL_TRANSITION_NOT_UNDOABLE'],
   ])('localizes %s', (code, translationKey) => {
     const t = vi.fn(key => `translated:${key}`);

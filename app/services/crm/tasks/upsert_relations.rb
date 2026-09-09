@@ -64,7 +64,7 @@ module Crm::Tasks::UpsertRelations
   def resolve_task_type!
     return account.crm_task_types.find(params[:task_type_id]) if requested_task_type_id?
     return task_type_by_activity if params.key?(:activity_type)
-    return task.task_type if task.persisted?
+    return task.effective_task_type if task.persisted? && task.effective_task_type.present?
 
     default_task_type || validation_error!('task_type_id', 'must reference an active task type')
   end
@@ -86,9 +86,19 @@ module Crm::Tasks::UpsertRelations
   def resolve_task_outcome(task_type)
     return resolve_outcome_by_id(task_type) if params.key?(:task_outcome_id)
     return resolve_outcome_by_code(task_type) if params.key?(:outcome)
-    return if task.task_type_id.present? && task.task_type_id != task_type.id
+    return if task_type_changed?(task_type)
 
-    task.task_outcome
+    task.task_outcome || legacy_task_outcome(task_type)
+  end
+
+  def task_type_changed?(task_type)
+    task.persisted? && task.effective_task_type.present? && task.effective_task_type.id != task_type.id
+  end
+
+  def legacy_task_outcome(task_type)
+    return if task.outcome.blank?
+
+    task_type.outcomes.find_by(code: task.outcome)
   end
 
   def resolve_outcome_by_id(task_type)

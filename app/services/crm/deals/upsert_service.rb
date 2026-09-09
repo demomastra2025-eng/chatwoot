@@ -4,13 +4,17 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
   include Crm::Deals::UpsertOwnership
   include Crm::Deals::UpsertResolution
 
-  def initialize(account:, params:, deal: nil, actor: nil)
+  def initialize(account:, params:, deal: nil, actor: nil, **upsert_options)
     @deal = deal || account.crm_deals.new
+    @task_catalogs_provisioned = upsert_options.fetch(:task_catalogs_provisioned, false)
+    assert_known_upsert_options!(upsert_options)
     super(account: account, params: params, record: @deal, actor: actor)
   end
 
   def perform
     @correlation_id = SecureRandom.uuid
+    bootstrap_defaults!
+    @task_catalogs_provisioned ||= account.feature_enabled?('crm_tasks')
     saved_deal = ApplicationRecord.transaction { persist_deal! }
     publish_saved_deal(saved_deal) if @realtime_event_name.present?
     saved_deal
@@ -20,8 +24,16 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
 
   attr_reader :deal
 
+  def assert_known_upsert_options!(options)
+    unknown_options = options.keys - %i[task_catalogs_provisioned]
+    raise ArgumentError, "Unknown upsert options: #{unknown_options.join(', ')}" if unknown_options.present?
+  end
+
+  def task_catalogs_provisioned?
+    @task_catalogs_provisioned
+  end
+
   def persist_deal!
-    bootstrap_defaults!
     assert_lock_version!
     resolve_deal_context!
     initialize_existing_stage_visit!
@@ -148,7 +160,6 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     apply_post_save_updates!
     @contacts_changed = sync_contacts!(contacts: @contacts, primary_contact: @primary_contact)
     sync_related_touches!
-    sync_owner_to_primary_contact!(@primary_contact)
     capture_realtime_event!
     write_event!(new_record: @new_record, contacts_changed: @contacts_changed, correlation_id: @correlation_id)
     notify_assignment!(new_record: @new_record)

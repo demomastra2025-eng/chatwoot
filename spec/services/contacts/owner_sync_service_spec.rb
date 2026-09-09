@@ -7,7 +7,7 @@ RSpec.describe Contacts::OwnerSyncService do
   let(:contact) { create(:contact, account: account, owner: nil) }
 
   describe '#perform' do
-    it 'syncs a contact owner to existing conversations, communication thread, and primary deal', :aggregate_failures do
+    it 'syncs communication ownership while preserving independent deal and task assignees', :aggregate_failures do
       conversation_without_assignee = create(:conversation, account: account, contact: contact, assignee: nil)
       conversation_with_other_assignee = create(:conversation, account: account, contact: contact, assignee: other_agent)
       other_contact_conversation = create(:conversation, account: account, assignee: other_agent)
@@ -30,22 +30,37 @@ RSpec.describe Contacts::OwnerSyncService do
       task.update!(assignee: other_agent)
       appointment.update!(owner: other_agent)
       reminder.update!(owner: other_agent)
+      task_reminder = create(
+        :reminder,
+        account: account,
+        remindable: task,
+        touch_conversation: conversation_without_assignee,
+        owner: other_agent
+      )
+      deal_reminder = create(
+        :reminder,
+        account: account,
+        remindable: deal,
+        touch_conversation: conversation_without_assignee,
+        owner: other_agent
+      )
 
       contact.update!(owner: owner)
 
       expect(conversation_without_assignee.reload.assignee).to eq(owner)
       expect(conversation_with_other_assignee.reload.assignee).to eq(owner)
       expect(thread.reload.assignee).to eq(owner)
-      expect(deal.reload.owner).to eq(owner)
-      expect(task.reload.assignee).to eq(owner)
+      expect(deal.reload.owner).to be_nil
+      expect(task.reload.assignee).to eq(other_agent)
       expect(appointment.reload.owner).to eq(owner)
       expect(ownership.reload.user).to eq(owner)
       expect(reminder.reload.owner).to eq(owner)
+      expect(task_reminder.reload.owner).to eq(other_agent)
+      expect(deal_reminder.reload.owner).to eq(other_agent)
       expect(other_contact_conversation.reload.assignee).to eq(other_agent)
       expect(other_contact_thread.reload.assignee).to eq(other_agent)
       expect(other_contact_deal.reload.owner).to eq(other_agent)
     end
-
 
     it 'assigns every channel conversation without requiring inbox membership' do
       channel_conversation = create(:conversation, account: account, contact: contact, assignee: other_agent)
@@ -76,13 +91,12 @@ RSpec.describe Contacts::OwnerSyncService do
 
       expect(conversation.reload.assignee).to be_nil
       expect(thread.reload.assignee).to be_nil
-      expect(deal.reload.owner).to be_nil
-      expect(task.reload.assignee).to be_nil
+      expect(deal.reload.owner).to eq(owner)
+      expect(task.reload.assignee).to eq(owner)
       expect(appointment.reload.owner).to be_nil
       expect(AssignmentClientOwnership.exists?(id: ownership.id)).to be(false)
       expect(reminder.reload.owner).to be_nil
     end
-
 
     it 'does not sync deals where the contact is not primary' do
       non_primary_deal = create(:crm_deal, account: account, owner: other_agent)

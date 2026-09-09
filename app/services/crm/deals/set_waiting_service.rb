@@ -5,6 +5,7 @@ class Crm::Deals::SetWaitingService < Crm::BaseWriteService
   end
 
   def perform
+    provision_task_catalogs_for_wake_up!
     changed = false
     saved_deal = ApplicationRecord.transaction do
       deal.lock!
@@ -89,8 +90,15 @@ class Crm::Deals::SetWaitingService < Crm::BaseWriteService
       account: account,
       actor: actor,
       broadcast_linked_deal: false,
+      catalogs_provisioned: true,
       params: wake_up_task_params(waiting_until, title)
     ).perform
+  end
+
+  def provision_task_catalogs_for_wake_up!
+    return unless create_wake_up_task? && account.feature_enabled?('crm_tasks')
+
+    Crm::TaskCatalogs::Provisioner.new(account: account).perform
   end
 
   def wake_up_task_params(waiting_until, title)

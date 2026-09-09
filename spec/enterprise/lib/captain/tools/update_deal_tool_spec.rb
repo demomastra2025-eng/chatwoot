@@ -62,6 +62,39 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
     expect(event.meta).not_to have_key('transition_reason')
   end
 
+  it 'provisions task catalogs before a composite field update and close when CRM tasks are disabled' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    pipeline = create(:crm_pipeline, account: account)
+    current_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'new', outcome: 'open', position: 1)
+    won_stage = create(:crm_stage, account: account, pipeline: pipeline, code: 'won', outcome: 'won', position: 2)
+    deal = create(
+      :crm_deal,
+      account: account,
+      pipeline: pipeline,
+      stage: current_stage,
+      originating_conversation_id: conversation.id
+    )
+    tool_context = Struct.new(:state).new(
+      { conversation: { id: conversation.id }, deal: { id: deal.id }, contact: { id: contact.id } }
+    )
+    lock_order = []
+    callback = lambda do |_name, _started, _finished, _id, payload|
+      sql = payload[:sql].to_s
+      lock_order << :catalog if sql.include?('pg_advisory_xact_lock')
+      lock_order << :deal if sql.start_with?('UPDATE "crm_deals"')
+    end
+
+    ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+      tool.perform(tool_context, title: 'Closed deal', stage_id: won_stage.id)
+    end
+
+    expect(account).not_to be_feature_enabled('crm_tasks')
+    expect(lock_order.first).to eq(:catalog)
+    expect(lock_order.drop(1)).to all(eq(:deal))
+    expect(deal.reload).to have_attributes(title: 'Closed deal', stage_id: won_stage.id)
+  end
+
   it 'updates an explicit deal_id instead of the current conversation deal' do
     contact = create(:contact, account: account)
     conversation = create(:conversation, account: account, contact: contact)

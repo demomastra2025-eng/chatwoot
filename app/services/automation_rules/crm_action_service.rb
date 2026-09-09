@@ -68,7 +68,8 @@ class AutomationRules::CrmActionService
   end
 
   def assign_task_assignee(action_params)
-    mutate_task!(assignee_id: normalize_optional_action_param(action_params))
+    mutate_task!({ assignee_id: normalize_optional_action_param(action_params) },
+                 service_class: ::Crm::Tasks::AssignService, command: 'task-assignment')
   end
 
   def assign_task_team(action_params)
@@ -138,12 +139,13 @@ class AutomationRules::CrmActionService
     ).perform
   end
 
-  def mutate_task!(params)
+  def mutate_task!(params, service_class: ::Crm::Tasks::UpsertService, command: nil)
     ensure_entity_kind!('task')
 
-    @record = ::Crm::Tasks::UpsertService.new(
+    idempotency_key = [@execution_key, @current_action_key, command].compact.join(':').presence if command
+    @record = service_class.new(
       account: account,
-      params: params.merge(lock_version: record.lock_version),
+      params: params.merge(lock_version: record.lock_version, idempotency_key: idempotency_key).compact,
       task: record,
       actor: nil
     ).perform
@@ -169,7 +171,8 @@ class AutomationRules::CrmActionService
     @record = ::Crm::Tasks::StatusTransitionService.new(
       account: account,
       task: record,
-      params: params.merge(lock_version: record.lock_version),
+      params: params.merge(lock_version: record.lock_version,
+                           idempotency_key: [@execution_key, @current_action_key, 'task-status'].compact.join(':').presence),
       actor: nil
     ).perform
   end

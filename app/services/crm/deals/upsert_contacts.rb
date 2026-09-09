@@ -31,19 +31,13 @@ module Crm::Deals::UpsertContacts
     deal_contact.new_record? || deal_contact.primary != (contact.id == primary_contact&.id)
   end
 
-  def sync_owner_to_primary_contact!(primary_contact)
-    return if primary_contact.blank?
-    return if primary_contact.owner_id == deal.owner_id
-
-    primary_contact.update!(owner_id: deal.owner_id)
-  end
-
   def sync_incomplete_task_teams!
     tasks = incomplete_tasks_for_team_sync
     tasks.find_each do |task|
       ::Crm::Tasks::UpsertService.new(
         account: account,
         actor: actor,
+        catalogs_provisioned: task_catalogs_provisioned?,
         params: { lock_version: task.lock_version },
         task: task
       ).perform

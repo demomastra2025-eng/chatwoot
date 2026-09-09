@@ -7,7 +7,7 @@
 #  all_day                     :boolean          default(FALSE), not null
 #  archived_at                 :datetime
 #  completed_at                :datetime
-#  context_kind                :string           not null
+#  context_kind                :string
 #  custom_attributes           :jsonb            not null
 #  description                 :text
 #  due_at                      :datetime
@@ -30,6 +30,7 @@
 #  deal_id                     :bigint
 #  originating_conversation_id :bigint
 #  status_id                   :bigint           not null
+#  task_type_id                :bigint
 #  team_id                     :bigint
 #
 # Indexes
@@ -83,7 +84,7 @@ class Crm::Task < ApplicationRecord
   belongs_to :account, class_name: '::Account'
   belongs_to :deal, class_name: '::Crm::Deal', optional: true, inverse_of: :tasks
   belongs_to :status, class_name: '::Crm::TaskStatus'
-  belongs_to :task_type, class_name: '::Crm::TaskType', inverse_of: :tasks
+  belongs_to :task_type, class_name: '::Crm::TaskType', inverse_of: :tasks, optional: true
   belongs_to :task_outcome, class_name: '::Crm::TaskOutcome', inverse_of: :tasks, optional: true
   belongs_to :assignee, class_name: '::User', optional: true
   belongs_to :creator, class_name: '::User', optional: true
@@ -122,6 +123,7 @@ class Crm::Task < ApplicationRecord
 
   before_validation :normalize_activity_type
   before_validation :normalize_context_kind
+  before_validation :normalize_task_type
   before_validation :normalize_outcome
   before_validation :normalize_outcome_note
   before_validation :sync_catalog_snapshots
@@ -130,7 +132,6 @@ class Crm::Task < ApplicationRecord
   before_validation :normalize_schedule
   before_validation :prepare_custom_attributes
   before_validation :assign_position, on: :create
-  after_commit :sync_contact_owner_from_assignee, if: :saved_change_to_assignee_id?
 
   def self.custom_field_context_for(context_kind)
     CUSTOM_FIELD_CONTEXT_BY_KIND.fetch(context_kind.to_s.strip.downcase)
@@ -157,7 +158,22 @@ class Crm::Task < ApplicationRecord
   end
 
   def custom_field_context
-    self.class.custom_field_context_for(context_kind)
+    self.class.custom_field_context_for(effective_context_kind)
+  end
+
+  # Expand-phase readers must tolerate rows written by an older application
+  # version before the catalog foreign keys become mandatory.
+  def effective_context_kind
+    context_kind.presence || inferred_context_kind
+  end
+
+  def effective_task_type
+    return task_type if task_type.present?
+    return if account.blank?
+
+    account.crm_task_types.find_by(code: activity_type) ||
+      account.crm_task_types.active.find_by(default: true) ||
+      account.crm_task_types.active.ordered.first
   end
 
   private
@@ -186,6 +202,10 @@ class Crm::Task < ApplicationRecord
 
   def normalize_context_kind
     self.context_kind = context_kind.to_s.strip.downcase.presence || inferred_context_kind
+  end
+
+  def normalize_task_type
+    self.task_type ||= effective_task_type
   end
 
   def inferred_context_kind
@@ -260,17 +280,5 @@ class Crm::Task < ApplicationRecord
     return false unless record.respond_to?(:account_id)
 
     record.account_id == account_id
-  end
-
-  def sync_contact_owner_from_assignee
-    contact = owner_sync_contact
-    return if contact.blank? || contact.owner_id == assignee_id
-    return if assignee_id.present? && !account.users.exists?(id: assignee_id)
-
-    contact.update!(owner_id: assignee_id)
-  end
-
-  def owner_sync_contact
-    deal&.primary_contact || originating_conversation&.contact
   end
 end

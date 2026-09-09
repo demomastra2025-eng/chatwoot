@@ -31,6 +31,35 @@ RSpec.describe Crm::Tasks::UpsertService do
     expect(task).to have_attributes(context_kind: 'personal', deal_id: nil)
   end
 
+  it 'repairs catalog and context fields left null by an old writer on update' do
+    task = create(
+      :crm_task,
+      account: account,
+      status: status,
+      activity_type: 'call',
+      outcome: 'answered',
+      outcome_note: 'Reached the client'
+    )
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(task_type_id: nil, context_kind: nil)
+    # rubocop:enable Rails/SkipsModelValidations
+
+    updated_task = described_class.new(
+      account: account,
+      task: task.reload,
+      params: { lock_version: task.lock_version, title: 'Updated by new writer' }
+    ).perform
+
+    expect(updated_task).to have_attributes(
+      title: 'Updated by new writer',
+      context_kind: 'personal',
+      task_type_id: account.crm_task_types.find_by!(code: 'call').id,
+      task_outcome_id: account.crm_task_types.find_by!(code: 'call').outcomes.find_by!(code: 'answered').id,
+      outcome: 'answered',
+      outcome_note: 'Reached the client'
+    )
+  end
+
   it 'rejects an explicit sales context without a deal' do
     request = lambda do
       described_class.new(

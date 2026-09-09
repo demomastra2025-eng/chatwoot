@@ -5,6 +5,8 @@ class AddContextKindToCrmTasks < ActiveRecord::Migration[7.1]
   SALES_DEAL_SQL = "context_kind <> 'sales' OR deal_id IS NOT NULL".freeze
 
   def up
+    # Keep context_kind nullable during the expand release. New writers always
+    # populate it, while old rolling-deploy writers leave it unset.
     add_column :crm_tasks, :context_kind, :string
 
     backfill_context_kind!
@@ -19,7 +21,6 @@ class AddContextKindToCrmTasks < ActiveRecord::Migration[7.1]
                          validate: false
     validate_check_constraint :crm_tasks, name: ALLOWED_CONTEXTS_CONSTRAINT
     validate_check_constraint :crm_tasks, name: SALES_DEAL_CONSTRAINT
-    change_column_null :crm_tasks, :context_kind, false
   end
 
   def down

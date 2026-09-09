@@ -1230,7 +1230,9 @@ const updateAllDay = enabled => {
     return;
   }
 
-  if (form.dueAt) form.dueAt = `${form.dueAt.slice(0, 10)}T12:00`;
+  // A date-only deadline has no implied wall-clock time. Require an explicit
+  // timed value instead of inventing noon and shifting it across timezones.
+  form.dueAt = '';
 };
 
 const saveTask = async () => {
@@ -1286,12 +1288,15 @@ const saveTaskCompletion = async ({ task, note, taskOutcomeId }) => {
 
   try {
     const updatedTask = await runTaskMutation(() =>
-      CrmTasksAPI.complete(currentTask.id, {
-        idempotency_key: crypto.randomUUID(),
-        lock_version: currentTask.lockVersion,
-        outcome_note: note,
-        task_outcome_id: Number(taskOutcomeId),
-      })
+      CrmTasksAPI.complete(
+        currentTask.id,
+        compactPayload({
+          idempotency_key: crypto.randomUUID(),
+          lock_version: currentTask.lockVersion,
+          outcome_note: note,
+          task_outcome_id: taskOutcomeId ? Number(taskOutcomeId) : undefined,
+        })
+      )
     );
     applyTaskRealtimeState(updatedTask);
     completionDialogRef.value?.close();

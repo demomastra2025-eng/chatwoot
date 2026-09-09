@@ -19,7 +19,7 @@ class CreateCrmTaskCatalogs < ActiveRecord::Migration[7.1]
     create_task_outcomes
     add_catalog_references
     backfill_catalogs
-    enforce_task_type
+    add_task_type_index
   end
 
   def down
@@ -74,6 +74,8 @@ class CreateCrmTaskCatalogs < ActiveRecord::Migration[7.1]
   end
 
   def add_catalog_references
+    # Keep task_type_id nullable during the expand release: old web and worker
+    # processes do not write catalog IDs while a rolling deploy is in flight.
     add_reference :crm_tasks, :task_type, foreign_key: { to_table: :crm_task_types }
     add_reference :crm_tasks, :task_outcome, foreign_key: { to_table: :crm_task_outcomes }
   end
@@ -141,8 +143,7 @@ class CreateCrmTaskCatalogs < ActiveRecord::Migration[7.1]
     SQL
   end
 
-  def enforce_task_type
-    change_column_null :crm_tasks, :task_type_id, false
+  def add_task_type_index
     add_index :crm_tasks, [:account_id, :task_type_id, :due_at], name: 'index_crm_tasks_on_account_type_due_at'
   end
 end

@@ -21,6 +21,7 @@ vi.mock('dashboard/api/crm/tasks', () => ({
       'update',
       'saveForm',
       'assign',
+      'complete',
       'reschedule',
       'changeStatus',
     ].map(key => [key, vi.fn()])
@@ -149,6 +150,13 @@ beforeEach(() => {
     .mockResolvedValue(
       response({ ...initialTask, lockVersion: 2, assigneeId: 3 })
     );
+  CrmTasksAPI.complete.mockReset().mockResolvedValue(
+    response({
+      ...initialTask,
+      lockVersion: 2,
+      completedAt: '2026-09-09T12:00:00Z',
+    })
+  );
   CrmDealsAPI.get.mockReset().mockResolvedValue(response([]));
 });
 afterEach(() => {
@@ -271,6 +279,30 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     expect(CrmTasksAPI.reschedule).not.toHaveBeenCalled();
   });
 
+  it('omits an unselected outcome instead of sending a synthetic ID', async () => {
+    const { state } = await mountEditor(kind);
+    await open(kind, state);
+
+    if (kind === 'panel') {
+      await state.saveTaskResult({
+        task: state.tasks[0],
+        note: '',
+        taskOutcomeId: '',
+      });
+    } else {
+      await state.saveTaskCompletion({
+        task: state.tasks[0],
+        note: '',
+        taskOutcomeId: '',
+      });
+    }
+
+    expect(CrmTasksAPI.complete).toHaveBeenCalledWith(
+      7,
+      expect.not.objectContaining({ task_outcome_id: expect.anything() })
+    );
+  });
+
   it('preserves the draft on a server-side conflict', async () => {
     const { state } = await mountEditor(kind);
     await open(kind, state);
@@ -352,6 +384,18 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
 });
 
 describe('page async drawer scope', () => {
+  it('does not invent a noon deadline when switching an all-day task to timed mode', async () => {
+    const { state } = await mountEditor('page');
+    await open('page', state);
+    state.form.allDay = true;
+    state.form.dueAt = '2026-10-01';
+
+    state.updateAllDay(false);
+
+    expect(state.form.allDay).toBe(false);
+    expect(state.form.dueAt).toBe('');
+  });
+
   it('does not show old history or clear the new task loading state', async () => {
     const { state } = await mountEditor('page');
     const previous = deferred();

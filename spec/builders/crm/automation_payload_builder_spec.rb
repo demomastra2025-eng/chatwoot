@@ -57,6 +57,8 @@ RSpec.describe Crm::AutomationPayloadBuilder do
     let(:team) { instance_double(Team, id: 5, name: 'Success') }
     let(:deal) { instance_double(Crm::Deal, id: 6, title: 'Renewal') }
     let(:conversation) { instance_double(Conversation, webhook_data: { id: 7, display_id: 70 }) }
+    let(:task_type) { instance_double(Crm::TaskType, id: 9, name: 'Call', code: 'call') }
+    let(:task_outcome) { instance_double(Crm::TaskOutcome, id: 10, name: 'Answered', code: 'answered') }
     let(:task) do
       instance_double(
         Crm::Task,
@@ -64,6 +66,8 @@ RSpec.describe Crm::AutomationPayloadBuilder do
           'id' => 8,
           'title' => 'Call buyer',
           'context_kind' => 'sales',
+          'task_type_id' => 9,
+          'task_outcome_id' => 10,
           'internal_only' => true
         },
         account: account,
@@ -72,6 +76,10 @@ RSpec.describe Crm::AutomationPayloadBuilder do
         creator: creator,
         team: team,
         deal: deal,
+        task_type: task_type,
+        task_outcome: task_outcome,
+        effective_context_kind: 'sales',
+        effective_task_type: task_type,
         originating_conversation: conversation
       )
     end
@@ -79,7 +87,14 @@ RSpec.describe Crm::AutomationPayloadBuilder do
     it 'serializes allowlisted attributes and related domain records' do
       expect(described_class.task(task)).to eq(
         account: { id: 1, name: 'Acme' },
-        task: { id: 8, title: 'Call buyer', context_kind: 'sales' },
+        task: {
+          id: 8,
+          title: 'Call buyer',
+          context_kind: 'sales',
+          task_type_id: 9,
+          task_outcome_id: 10,
+          outcome: 'answered'
+        },
         status: { id: 2, name: 'Open', category: 'open' },
         assignee: { id: 3, name: 'Assignee' },
         creator: { id: 4, name: 'Creator' },

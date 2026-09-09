@@ -51,6 +51,161 @@ RSpec.describe Crm::Tasks::CommandService do
     expect(task.reload.cancelled_at).to be_nil
   end
 
+  it 'uses a stable fingerprint for semantically identical nested params' do
+    first = Crm::Tasks::SaveFormService.new(
+      account: account,
+      task: task,
+      actor: actor,
+      params: {
+        idempotency_key: 'nested',
+        lock_version: task.lock_version,
+        custom_attributes: { beta: ['two', { zeta: 2, alpha: 1 }], alpha: 'one' }
+      }
+    )
+    second = Crm::Tasks::SaveFormService.new(
+      account: account,
+      task: task,
+      actor: actor,
+      params: {
+        custom_attributes: { alpha: 'one', beta: ['two', { alpha: 1, zeta: 2 }] },
+        lock_version: task.lock_version,
+        idempotency_key: 'nested'
+      }
+    )
+
+    expect(first.send(:command_fingerprint)).to eq(second.send(:command_fingerprint))
+  end
+
+  it 'hydrates catalog and context fields left null by an old writer before running a command' do
+    assignee = create(:user, account: account, role: :agent)
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(
+      activity_type: 'call', context_kind: nil, outcome: 'answered',
+      task_outcome_id: nil, task_type_id: nil
+    )
+    # rubocop:enable Rails/SkipsModelValidations
+    Crm::TaskOutcome.where(account: account).delete_all
+    Crm::TaskType.where(account: account).delete_all
+
+    Crm::Tasks::AssignService.new(
+      account: account,
+      task: task.reload,
+      actor: actor,
+      params: { assignee_id: assignee.id, lock_version: task.lock_version }
+    ).perform
+
+    expect(task.reload).to have_attributes(
+      assignee_id: assignee.id,
+      context_kind: 'personal',
+      task_type_id: account.crm_task_types.find_by!(code: 'call').id,
+      task_outcome_id: account.crm_task_outcomes.find_by!(code: 'answered').id,
+      outcome: 'answered'
+    )
+  end
+
+  %i[assign reschedule archive].each do |writer|
+    it "preserves an unknown legacy outcome through #{writer}" do
+      # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+      task.update_columns(
+        activity_type: 'call', context_kind: nil, outcome: 'provider_custom',
+        task_outcome_id: nil, task_type_id: nil
+      )
+      # rubocop:enable Rails/SkipsModelValidations
+
+      run_legacy_writer(writer)
+
+      expect(task.reload).to have_attributes(
+        task_type_id: account.crm_task_types.find_by!(code: 'call').id,
+        task_outcome_id: nil,
+        outcome: 'provider_custom'
+      )
+    end
+  end
+
+  %i[reschedule archive].each do |writer|
+    it "hydrates a known legacy outcome through #{writer}" do
+      # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+      task.update_columns(
+        activity_type: 'call', context_kind: nil, outcome: 'answered',
+        task_outcome_id: nil, task_type_id: nil
+      )
+      # rubocop:enable Rails/SkipsModelValidations
+
+      run_legacy_writer(writer)
+
+      expect(task.reload).to have_attributes(
+        task_type_id: account.crm_task_types.find_by!(code: 'call').id,
+        task_outcome_id: account.crm_task_outcomes.find_by!(code: 'answered').id,
+        outcome: 'answered'
+      )
+    end
+  end
+
+  it 'takes the catalog lock before the task row lock for a form save and does not reacquire it in nested commands' do
+    assignee = create(:user, account: account, role: :agent)
+    account.crm_task_outcomes.find_by!(code: 'busy').destroy!
+    lock_order = []
+    callback = lambda do |_name, _started, _finished, _id, payload|
+      sql = payload[:sql].to_s
+      lock_order << :catalog if sql.include?('pg_advisory_xact_lock')
+      lock_order << :task if sql.match?(/FROM "crm_tasks".*FOR UPDATE/)
+    end
+
+    ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+      Crm::Tasks::SaveFormService.new(
+        account: account, task: task, actor: actor,
+        params: {
+          assignee_id: assignee.id, idempotency_key: 'lock-order',
+          lock_version: task.lock_version
+        }
+      ).perform
+    end
+
+    expect(lock_order).to eq(%i[catalog task task])
+  end
+
+  it 'completes an old-writer row after bootstrapping missing catalogs' do
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(task_type_id: nil, context_kind: nil)
+    # rubocop:enable Rails/SkipsModelValidations
+    Crm::TaskOutcome.where(account: account).delete_all
+    Crm::TaskType.where(account: account).delete_all
+
+    Crm::Tasks::CompleteService.new(
+      account: account,
+      task: task.reload,
+      actor: actor,
+      params: { lock_version: task.lock_version }
+    ).perform
+
+    expect(task.reload).to have_attributes(
+      context_kind: 'personal',
+      task_type_id: account.crm_task_types.find_by!(code: 'task').id,
+      completed_at: be_present
+    )
+  end
+
+  it 'cancels an old-writer row after bootstrapping missing catalogs' do
+    # rubocop:disable Rails/SkipsModelValidations -- Simulates a mixed-version writer against the expand schema.
+    task.update_columns(task_type_id: nil, context_kind: nil)
+    # rubocop:enable Rails/SkipsModelValidations
+    Crm::TaskOutcome.where(account: account).delete_all
+    Crm::TaskType.where(account: account).delete_all
+
+    Crm::Tasks::CancelService.new(
+      account: account,
+      task: task.reload,
+      actor: actor,
+      params: { cancellation_reason: 'No longer needed', lock_version: task.lock_version }
+    ).perform
+
+    expect(task.reload).to have_attributes(
+      context_kind: 'personal',
+      task_type_id: account.crm_task_types.find_by!(code: 'task').id,
+      cancelled_at: be_present
+    )
+  end
+
   describe 'deal closure' do
     let(:pipeline) { account.crm_pipelines.find_by!(code: 'sales_pipeline') }
     let(:deal) { create(:crm_deal, account: account, pipeline: pipeline, stage: pipeline.stages.find_by!(code: 'new')) }
@@ -98,5 +253,47 @@ RSpec.describe Crm::Tasks::CommandService do
       expect(task.events.where(event_type: 'task_cancelled')).not_to exist
       expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
     end
+
+    it 'takes the catalog lock before deal and task row locks when closing a deal' do
+      task.update!(deal: deal)
+      account.crm_task_outcomes.find_by!(code: 'busy').destroy!
+      lock_order = []
+      callback = lambda do |_name, _started, _finished, _id, payload|
+        sql = payload[:sql].to_s
+        lock_order << :catalog if sql.include?('pg_advisory_xact_lock')
+        lock_order << :row if sql.match?(/FROM "crm_(deals|tasks)".*FOR UPDATE/)
+      end
+
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') { close.perform }
+
+      expect(lock_order.first).to eq(:catalog)
+      expect(lock_order.drop(1)).to all(eq(:row))
+    end
+  end
+
+  def run_legacy_writer(writer)
+    send("run_legacy_#{writer}")
+  end
+
+  def run_legacy_assign
+    assignee = create(:user, account: account, role: :agent)
+    Crm::Tasks::AssignService.new(
+      account: account, task: task.reload, actor: actor,
+      params: { assignee_id: assignee.id, lock_version: task.lock_version }
+    ).perform
+  end
+
+  def run_legacy_reschedule
+    Crm::Tasks::RescheduleService.new(
+      account: account, task: task.reload, actor: actor,
+      params: { all_day: false, due_at: 1.day.from_now, lock_version: task.lock_version }
+    ).perform
+  end
+
+  def run_legacy_archive
+    Crm::Tasks::ArchiveService.new(
+      account: account, task: task.reload, actor: actor,
+      params: { lock_version: task.lock_version }, archived: true
+    ).perform
   end
 end
