@@ -22,6 +22,7 @@ import ReconnectService from 'dashboard/helper/ReconnectService';
 import { useUISettings } from 'dashboard/composables/useUISettings';
 import { setDashboardLocale } from 'dashboard/i18n';
 import { useCallReconnection } from 'dashboard/composables/useCallReconnection';
+import { ensureAccountLoaded } from 'dashboard/helper/accountBootstrap';
 
 export default {
   name: 'App',
@@ -109,7 +110,11 @@ export default {
       }
     },
     async initializeAccount() {
-      await this.$store.dispatch('accounts/get');
+      await ensureAccountLoaded({
+        accountId: this.currentAccountId,
+        getAccount: this.getAccount,
+        loadAccounts: () => this.$store.dispatch('accounts/get'),
+      });
       this.$store.dispatch('setActiveAccount', {
         accountId: this.currentAccountId,
       });

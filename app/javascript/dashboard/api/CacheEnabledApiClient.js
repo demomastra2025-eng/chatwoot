@@ -2,6 +2,24 @@
 import { DataManager } from '../helper/CacheHelper/DataManager';
 import ApiClient from './ApiClient';
 
+const cacheKeysRequests = new Map();
+
+export const getAccountCacheKeys = accountId => {
+  const requestKey = String(accountId);
+  const activeRequest = cacheKeysRequests.get(requestKey);
+  if (activeRequest) return activeRequest;
+
+  const request = axios
+    .get(`/api/v1/accounts/${accountId}/cache_keys`)
+    .finally(() => {
+      if (cacheKeysRequests.get(requestKey) === request) {
+        cacheKeysRequests.delete(requestKey);
+      }
+    });
+  cacheKeysRequests.set(requestKey, request);
+  return request;
+};
+
 class CacheEnabledApiClient extends ApiClient {
   constructor(resource, options = {}) {
     super(resource, options);
@@ -70,9 +88,7 @@ class CacheEnabledApiClient extends ApiClient {
       return this.getFromNetwork(accountId);
     }
 
-    const { data } = await axios.get(
-      `/api/v1/accounts/${accountId}/cache_keys`
-    );
+    const { data } = await getAccountCacheKeys(accountId);
     const cacheKeyFromApi = data.cache_keys?.[this.cacheModelName];
     if (cacheKeyFromApi === undefined || cacheKeyFromApi === null) {
       return this.refetchAndCommit(null, accountId);

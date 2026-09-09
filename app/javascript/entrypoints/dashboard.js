@@ -36,6 +36,7 @@ import { directive as onClickaway } from 'vue3-click-away';
 import Checkbox from 'dashboard/components-next/checkbox/Checkbox.vue';
 import Radio from 'dashboard/components-next/radio/Radio.vue';
 import Select from 'dashboard/components-next/select/Select.vue';
+import { runWhenDOMReady } from 'dashboard/helper/domReady';
 
 import 'floating-vue/dist/style.css';
 
@@ -121,7 +122,7 @@ initializeChatwootEvents();
 initializeAnalyticsEvents();
 initalizeRouter();
 
-window.onload = async () => {
+runWhenDOMReady(async () => {
   await setDashboardLocale(window.chatwootConfig?.selectedLocale);
   app.mount('#app');
-};
+});
