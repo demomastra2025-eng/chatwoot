@@ -1,11 +1,11 @@
 module Scheduling::PayloadBuilder
   module_function
 
-  def appointment(appointment, payments: nil, expense_record: nil)
+  def appointment(appointment, payments: nil, expense_record: nil, dialog_context: nil)
     conversation = available_conversation(appointment.conversation)
     explicit_communication_thread = conversation&.communication_thread
-    legacy_chat_conversation = conversation || appointment_chat_conversation(appointment)
-    legacy_communication_thread = appointment_communication_thread(appointment, legacy_chat_conversation)
+    legacy_chat_conversation = conversation || appointment_chat_conversation(appointment, dialog_context)
+    legacy_communication_thread = appointment_communication_thread(appointment, legacy_chat_conversation, dialog_context)
 
     {
       id: appointment.id,
@@ -81,7 +81,9 @@ module Scheduling::PayloadBuilder
     conversation if conversation&.inbox.present?
   end
 
-  def appointment_chat_conversation(appointment)
+  def appointment_chat_conversation(appointment, dialog_context = nil)
+    return dialog_context.dig(appointment.id, :chat_conversation) if dialog_context&.key?(appointment.id)
+
     thread = appointment_communication_thread(appointment, nil)
     return thread_primary_conversation(thread) if thread.present?
 
@@ -93,7 +95,9 @@ module Scheduling::PayloadBuilder
                .first
   end
 
-  def appointment_communication_thread(appointment, chat_conversation)
+  def appointment_communication_thread(appointment, chat_conversation, dialog_context = nil)
+    return dialog_context.dig(appointment.id, :communication_thread) if dialog_context&.key?(appointment.id)
+
     return appointment.conversation.communication_thread if appointment.conversation.present?
     return chat_conversation.communication_thread if chat_conversation&.communication_thread.present?
     return if chat_conversation.present?
@@ -131,6 +135,8 @@ module Scheduling::PayloadBuilder
   end
 
   def calendar(payload)
+    dialog_context = Scheduling::AppointmentDialogContextLoader.new(payload[:appointments]).perform
+
     {
       view: payload[:view],
       range: payload[:range],
@@ -140,7 +146,7 @@ module Scheduling::PayloadBuilder
       holidays: payload[:holidays].map { |item| holiday(item) },
       workday_overrides: payload[:workday_overrides].map { |item| workday_override(item) },
       time_offs: payload[:time_offs].map { |item| time_off(item) },
-      appointments: payload[:appointments].map { |item| appointment(item) },
+      appointments: payload[:appointments].map { |item| appointment(item, dialog_context: dialog_context) },
       payments: payload[:payments].map { |item| payment(item) },
       expenses: payload[:expenses].map { |item| expense(item) },
       slots: payload[:slots]
