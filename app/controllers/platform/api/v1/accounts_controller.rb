@@ -9,10 +9,13 @@ class Platform::Api::V1::AccountsController < PlatformController
   def show; end
 
   def create
-    @resource = Account.create!(account_params)
-    update_resource_features
-    @resource.save!
-    @platform_app.platform_app_permissibles.find_or_create_by(permissible: @resource)
+    Account.transaction do
+      @resource = Account.create!(account_params)
+      update_resource_features
+      @resource.save!
+      AccessControl::SystemRoleBootstrapper.call(account: @resource)
+      @platform_app.platform_app_permissibles.find_or_create_by!(permissible: @resource)
+    end
   end
 
   def update

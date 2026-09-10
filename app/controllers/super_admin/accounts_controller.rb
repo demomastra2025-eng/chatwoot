@@ -1,6 +1,19 @@
 class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   STORAGE_GB_IN_BYTES = 1.gigabyte
 
+  def create
+    resource = new_resource(resource_params)
+    authorize_resource(resource)
+
+    if create_with_access_roles(resource)
+      redirect_to after_resource_created_path(resource), notice: translate_with_resource('create.success')
+    else
+      render :new,
+             locals: { page: Administrate::Page::Form.new(dashboard, resource) },
+             status: :unprocessable_entity
+    end
+  end
+
   # Overwrite any of the RESTful controller actions to implement custom behavior
   # For example, you may want to send an email after a foo is updated.
   #
@@ -89,6 +102,15 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
   end
 
   private
+
+  def create_with_access_roles(resource)
+    Account.transaction do
+      next false unless resource.save
+
+      AccessControl::SystemRoleBootstrapper.call(account: resource)
+      true
+    end
+  end
 
   def normalize_limits(raw_limits)
     raw_limits.to_h.each_with_object({}) do |(key, value), normalized|
@@ -185,9 +207,7 @@ class SuperAdmin::AccountsController < SuperAdmin::ApplicationController
     options[:notice] = notice if notice.present?
     options[:alert] = alert if alert.present?
 
-    # rubocop:disable Rails/I18nLocaleTexts
     redirect_back(**options)
-    # rubocop:enable Rails/I18nLocaleTexts
   end
 end
 

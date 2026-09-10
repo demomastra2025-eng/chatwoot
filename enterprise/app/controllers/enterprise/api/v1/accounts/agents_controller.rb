@@ -12,6 +12,18 @@ module Enterprise::Api::V1::Accounts::AgentsController
   private
 
   def associate_agent_with_custom_role
-    @agent.current_account_user.update!(custom_role_id: params[:custom_role_id])
+    custom_role = Current.account.custom_roles.find(params[:custom_role_id]) if params[:custom_role_id].present?
+    account_user = @agent.current_account_user
+    access_role = materialized_access_role(custom_role) unless account_user.administrator?
+    account_user.update!(custom_role: custom_role, access_role: access_role)
+  end
+
+  def materialized_access_role(custom_role)
+    return unless custom_role
+
+    analysis = AccessControl::LegacyCustomRoleMapper.analyze(custom_role)
+    return unless analysis.mappable?
+
+    AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
   end
 end

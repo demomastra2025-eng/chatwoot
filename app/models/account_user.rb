@@ -37,6 +37,7 @@ class AccountUser < ApplicationRecord
 
   accepts_nested_attributes_for :account
 
+  before_validation :synchronize_access_role, if: :access_role_identity_changed?
   after_create_commit :notify_creation, :create_notification_setting
   after_destroy :notify_deletion, :remove_user_from_account
   after_save :update_presence_in_redis, if: :saved_change_to_availability?
@@ -73,6 +74,31 @@ class AccountUser < ApplicationRecord
   end
 
   private
+
+  def synchronize_access_role
+    return if account.blank?
+    return if new_record? && access_role_id?
+
+    self.access_role = if custom_role_id?
+                         access_role_for_custom_role
+                       else
+                         account.access_roles.find_by(system_key: administrator? ? 'administrator' : 'employee')
+                       end
+  end
+
+  def access_role_for_custom_role
+    return if administrator?
+
+    custom_role_record = CustomRole.find_by(id: custom_role_id, account_id: account_id)
+    return unless custom_role_record
+    return unless AccessControl::LegacyCustomRoleMapper.analyze(custom_role_record).mappable?
+
+    account.access_roles.find_by(legacy_custom_role_id: custom_role_id)
+  end
+
+  def access_role_identity_changed?
+    new_record? || will_save_change_to_role? || will_save_change_to_custom_role_id?
+  end
 
   def access_role_belongs_to_account
     return if access_role.blank? || access_role.account_id == account_id

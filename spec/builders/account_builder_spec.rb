@@ -42,7 +42,23 @@ RSpec.describe AccountBuilder do
       it 'links user to account as administrator' do
         user, account = account_builder.perform
         expect(user.account_users.first.role).to eq('administrator')
+        expect(user.account_users.first.access_role.system_key).to eq('administrator')
         expect(user.accounts.first).to eq(account)
+      end
+
+      it 'bootstraps the five system roles' do
+        _user, account = account_builder.perform
+
+        expect(account.access_roles.where.not(system_key: nil).pluck(:system_key))
+          .to match_array(AccessControl::SystemRoleCatalog::ROLE_NAMES.keys)
+      end
+
+      it 'rolls back the account graph when role bootstrap fails' do
+        allow(AccessControl::SystemRoleBootstrapper).to receive(:call).and_raise(ActiveRecord::RecordInvalid)
+
+        expect { account_builder.perform }.to raise_error(ActiveRecord::RecordInvalid)
+        expect(Account.where(name: account_name)).not_to exist
+        expect(User.where(email: email)).not_to exist
       end
 
       it 'increments the counts of models' do

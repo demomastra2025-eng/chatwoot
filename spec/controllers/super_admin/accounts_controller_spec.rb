@@ -25,6 +25,39 @@ RSpec.describe 'Super Admin accounts API', type: :request do
     end
   end
 
+  describe 'POST /super_admin/accounts' do
+    let(:account_params) do
+      { account: { name: 'New Workspace', locale: 'en', status: 'active' } }
+    end
+
+    around do |example|
+      previous_value = Rails.application.env_config['action_dispatch.show_exceptions']
+      Rails.application.env_config['action_dispatch.show_exceptions'] = :none
+      example.run
+    ensure
+      Rails.application.env_config['action_dispatch.show_exceptions'] = previous_value
+    end
+
+    it 'creates the account and its five system roles atomically' do
+      sign_in(super_admin, scope: :super_admin)
+
+      post '/super_admin/accounts', params: account_params
+
+      created_account = Account.find_by!(name: 'New Workspace')
+      expect(response).to have_http_status(:redirect)
+      expect(created_account.access_roles.where.not(system_key: nil).pluck(:system_key))
+        .to match_array(AccessControl::SystemRoleCatalog::ROLE_NAMES.keys)
+    end
+
+    it 'rolls back account creation when role bootstrap fails' do
+      sign_in(super_admin, scope: :super_admin)
+      allow(AccessControl::SystemRoleBootstrapper).to receive(:call).and_raise(ActiveRecord::RecordInvalid)
+
+      expect { post '/super_admin/accounts', params: account_params }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(Account.where(name: 'New Workspace')).not_to exist
+    end
+  end
+
   describe 'POST /super_admin/accounts/{account_id}/reset_cache' do
     before do
       create(:label, account: account)

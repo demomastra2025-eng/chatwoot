@@ -28,7 +28,24 @@ RSpec.describe 'Platform Accounts API', type: :request do
 
         expect(response).to have_http_status(:success)
         expect(response.body).to include('Test Account')
-        expect(platform_app.platform_app_permissibles.first.permissible.name).to eq('Test Account')
+        created_account = platform_app.platform_app_permissibles.first.permissible
+        expect(created_account.name).to eq('Test Account')
+        expect(created_account.access_roles.where.not(system_key: nil).pluck(:system_key))
+          .to match_array(AccessControl::SystemRoleCatalog::ROLE_NAMES.keys)
+      end
+
+      it 'rolls back the account and permissible when role bootstrap fails' do
+        invalid_role = AccessRole.new
+        invalid_role.errors.add(:base, 'bootstrap failed')
+        error = ActiveRecord::RecordInvalid.new(invalid_role)
+        allow(AccessControl::SystemRoleBootstrapper).to receive(:call).and_raise(error)
+
+        post '/platform/api/v1/accounts', params: { name: 'Rolled Back Account' },
+                                          headers: { api_access_token: platform_app.access_token.token }, as: :json
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(Account.where(name: 'Rolled Back Account')).not_to exist
+        expect(platform_app.platform_app_permissibles).to be_empty
       end
 
       it 'creates an account with locale' do

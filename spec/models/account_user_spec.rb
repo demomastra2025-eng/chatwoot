@@ -55,6 +55,46 @@ RSpec.describe AccountUser do
         end
       end.to raise_error(ActiveRecord::InvalidForeignKey)
     end
+
+    it 'assigns the matching system role for a new plain user when presets exist' do
+      account = create(:account)
+      roles = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key
+
+      agent = create(:account_user, account: account, role: :agent)
+      administrator = create(:account_user, account: account, role: :administrator)
+
+      expect(agent.access_role).to eq(roles.fetch('employee'))
+      expect(administrator.access_role).to eq(roles.fetch('administrator'))
+    end
+
+    it 'resynchronizes access role when the legacy identity changes' do
+      account = create(:account)
+      roles = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key
+      custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+      mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+      account_user = create(:account_user, account: account, role: :agent)
+
+      account_user.update!(custom_role: custom_role)
+      expect(account_user.access_role).to eq(mapped_role)
+
+      account_user.update!(role: :administrator)
+      expect(account_user.access_role).to be_nil
+
+      account_user.update!(custom_role: nil)
+      expect(account_user.access_role).to eq(roles.fetch('administrator'))
+    end
+
+    it 'does not reuse a stale mapping after a custom role becomes unsupported' do
+      account = create(:account)
+      custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+      AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+      custom_role.update!(permissions: %w[report_manage])
+
+      account_user = create(:account_user, account: account, role: :agent)
+      account_user.update!(custom_role: custom_role)
+
+      expect(account_user.access_role).to be_nil
+    end
   end
 
   describe 'destroy call agent::destroy service' do

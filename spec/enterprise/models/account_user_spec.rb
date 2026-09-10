@@ -29,6 +29,28 @@ RSpec.describe AccountUser, type: :model do
     end
   end
 
+  describe 'default access role assignment' do
+    it 'uses a materialized custom role for a new agent' do
+      account = create(:account)
+      custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+      access_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+
+      account_user = create(:account_user, account: account, role: :agent, custom_role: custom_role)
+
+      expect(account_user.access_role).to eq(access_role)
+    end
+
+    it 'leaves administrator with a custom role unresolved' do
+      account = create(:account)
+      custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+      AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+
+      account_user = create(:account_user, account: account, role: :administrator, custom_role: custom_role)
+
+      expect(account_user.access_role).to be_nil
+    end
+  end
+
   describe 'audit log' do
     context 'when account user is created' do
       it 'has associated audit log created' do

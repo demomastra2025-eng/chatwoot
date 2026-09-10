@@ -11,6 +11,7 @@ class AccountBuilder
     end
     ActiveRecord::Base.transaction do
       @account = create_account
+      @system_roles = AccessControl::SystemRoleBootstrapper.call(account: @account).roles_by_key
       @user = create_and_link_user
     end
     [@user, @account]
@@ -61,7 +62,8 @@ class AccountBuilder
     AccountUser.create!(
       account_id: account.id,
       user_id: user.id,
-      role: AccountUser.roles['administrator']
+      role: AccountUser.roles['administrator'],
+      access_role: @system_roles.fetch('administrator')
     )
   end
 
