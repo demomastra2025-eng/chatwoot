@@ -76,6 +76,15 @@ class Crm::Deals::UpsertService < Crm::BaseWriteService
     )
     @creator = resolve_optional_record(:creator_id, account.users, current: deal.creator || actor)
     @team = resolve_optional_record(:team_id, account.teams, current: deal.team)
+    authorize_assignment! if assignment_authorization_required?
+  end
+
+  def assignment_authorization_required?
+    actor.present? && (@new_record || params.key?(:owner_id) || params.key?(:team_id))
+  end
+
+  def authorize_assignment!
+    Crm::Deals::AssignmentAuthorizer.call(account: account, actor: actor, owner: @owner, team: @team)
   end
 
   def resolve_reference_context!

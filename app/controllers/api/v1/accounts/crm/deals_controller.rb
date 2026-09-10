@@ -83,6 +83,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def create
     authorize ::Crm::Deal
+    authorize ::Crm::Deal, :assign? if assignment_requested?(create_deal_params)
 
     existing_deal = idempotent_deal
     return render_payload(::Crm::PayloadBuilder.deal(existing_deal)) if existing_deal.present?
@@ -98,6 +99,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def update
     authorize @deal
+    authorize @deal, :assign? if assignment_requested?(update_deal_params)
 
     deal = ::Crm::Deals::UpsertService.new(
       account: Current.account,
@@ -444,7 +446,7 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   def idempotent_deal
     return if create_deal_params[:idempotency_key].blank?
 
-    Current.account.crm_deals.preload(
+    policy_scope(::Crm::Deal).preload(
       :company,
       :originating_conversation,
       :originating_communication_thread,
@@ -479,5 +481,9 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
 
   def update_deal_params
     params.permit(*UPDATE_PARAM_KEYS, contact_ids: [], closing_reasons: [], custom_attributes: {})
+  end
+
+  def assignment_requested?(permitted_params)
+    permitted_params.key?(:owner_id) || permitted_params.key?(:team_id)
   end
 end

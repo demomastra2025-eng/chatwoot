@@ -5,6 +5,12 @@ class AccessControl::ModeResolver
     new(account_user).call(resource: resource, capability: capability)
   end
 
+  def self.mode_for_account(account_id)
+    ActiveRecord::Base.uncached do
+      Account.where(id: account_id).pick(:access_control_mode) || raise(ActiveRecord::RecordNotFound)
+    end
+  end
+
   def initialize(account_user)
     @account_user = account_user
   end
@@ -36,9 +42,7 @@ class AccessControl::ModeResolver
   end
 
   def access_control_mode
-    ActiveRecord::Base.uncached do
-      Account.where(id: account_user.account_id).pick(:access_control_mode) || raise(ActiveRecord::RecordNotFound)
-    end
+    self.class.mode_for_account(account_user.account_id)
   end
 
   def current_account_user
