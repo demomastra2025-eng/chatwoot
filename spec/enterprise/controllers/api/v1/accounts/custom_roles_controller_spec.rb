@@ -153,6 +153,17 @@ RSpec.describe 'Custom Roles API', type: :request do
         expect(response).to have_http_status(:success)
         expect(CustomRole.count).to eq(0)
       end
+
+      it 'rejects deletion while the role is assigned' do
+        create(:account_user, account: account, custom_role: custom_role)
+
+        delete "/api/v1/accounts/#{account.id}/custom_roles/#{custom_role.id}",
+               headers: administrator.create_new_auth_token
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.parsed_body['error']).to be_present
+        expect(CustomRole.where(id: custom_role.id)).to exist
+      end
     end
 
     context 'when the user is an agent and is authenticated' do

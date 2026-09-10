@@ -31,6 +31,32 @@ RSpec.describe AccountUser do
     end
   end
 
+  describe 'access role' do
+    it 'allows a role from the same account' do
+      role = create(:access_role, account: account_user.account)
+
+      expect(account_user.update(access_role: role)).to be(true)
+    end
+
+    it 'rejects a role from another account' do
+      account_user.access_role = create(:access_role)
+
+      expect(account_user).not_to be_valid
+      expect(account_user.errors[:access_role]).to include('must belong to the same account')
+    end
+
+    it 'enforces account isolation at the database boundary' do
+      other_role = create(:access_role)
+
+      expect do
+        described_class.transaction(requires_new: true) do
+          # Bypass model validation intentionally to verify the tenant foreign key.
+          account_user.update_column(:access_role_id, other_role.id) # rubocop:disable Rails/SkipsModelValidations
+        end
+      end.to raise_error(ActiveRecord::InvalidForeignKey)
+    end
+  end
+
   describe 'destroy call agent::destroy service' do
     it 'gets created with the right default settings' do
       create(:conversation, account: account_user.account, assignee: account_user.user, inbox: inbox)

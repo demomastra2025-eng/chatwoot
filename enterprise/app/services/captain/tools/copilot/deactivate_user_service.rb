@@ -65,6 +65,7 @@ class Captain::Tools::Copilot::DeactivateUserService < Captain::Tools::Copilot::
       role: account_user.role,
       availability: account_user.availability,
       auto_offline: account_user.auto_offline,
+      access_role_id: account_user.access_role_id,
       custom_role_id: account_user.custom_role_id,
       agent_capacity_policy_id: account_user.agent_capacity_policy_id,
       team_ids: team_ids_for(user.id),

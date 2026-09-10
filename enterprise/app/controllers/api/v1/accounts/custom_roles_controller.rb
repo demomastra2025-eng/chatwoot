@@ -17,8 +17,9 @@ class Api::V1::Accounts::CustomRolesController < Api::V1::Accounts::EnterpriseAc
   end
 
   def destroy
-    @custom_role.destroy!
-    head :ok
+    return head :ok if @custom_role.destroy
+
+    render json: { error: @custom_role.errors.full_messages.to_sentence }, status: :unprocessable_content
   end
 
   def permitted_params

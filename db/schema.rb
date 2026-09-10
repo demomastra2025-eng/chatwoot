@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_09_130000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_10_060100) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -21,6 +21,43 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_09_130000) do
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
   enable_extension "vector"
+
+  create_table "access_role_grants", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "access_role_id", null: false
+    t.string "resource", null: false
+    t.string "capability", null: false
+    t.string "access_scope", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["access_role_id", "resource", "capability"], name: "index_access_role_grants_on_role_resource_capability", unique: true
+    t.index ["access_role_id"], name: "index_access_role_grants_on_access_role_id"
+    t.index ["account_id", "resource", "capability", "access_scope"], name: "index_access_role_grants_on_account_lookup"
+    t.index ["account_id"], name: "index_access_role_grants_on_account_id"
+    t.check_constraint "access_scope::text = ANY (ARRAY['none'::character varying, 'own'::character varying, 'team'::character varying, 'all'::character varying]::text[])", name: "access_role_grants_supported_scope"
+    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'transition'::character varying, 'take'::character varying, 'override_schedule'::character varying, 'complete_cancel'::character varying]::text[])", name: "access_role_grants_supported_capability"
+    t.check_constraint "resource::text = 'contacts'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'conversations'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'take'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'override_schedule'::character varying]::text[])) OR resource::text = 'deals'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'tasks'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'complete_cancel'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[]))", name: "access_role_grants_supported_resource_capability"
+    t.check_constraint "resource::text = ANY (ARRAY['contacts'::character varying, 'conversations'::character varying, 'appointments'::character varying, 'deals'::character varying, 'tasks'::character varying]::text[])", name: "access_role_grants_supported_resource"
+  end
+
+  create_table "access_roles", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "name", null: false
+    t.string "description"
+    t.string "system_key"
+    t.bigint "legacy_custom_role_id"
+    t.integer "lock_version", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index "account_id, lower((name)::text)", name: "index_access_roles_on_account_and_lower_name", unique: true
+    t.index ["account_id", "id"], name: "index_access_roles_on_account_and_id", unique: true
+    t.index ["account_id", "system_key"], name: "index_access_roles_on_account_and_system_key", unique: true, where: "(system_key IS NOT NULL)"
+    t.index ["account_id"], name: "index_access_roles_on_account_id"
+    t.index ["legacy_custom_role_id"], name: "index_access_roles_on_legacy_custom_role", unique: true, where: "(legacy_custom_role_id IS NOT NULL)"
+    t.check_constraint "btrim(name::text) <> ''::text", name: "access_roles_non_blank_name"
+    t.check_constraint "system_key IS NULL OR legacy_custom_role_id IS NULL", name: "access_roles_single_identity_source"
+    t.check_constraint "system_key IS NULL OR (system_key::text = ANY (ARRAY['administrator'::character varying, 'department_lead'::character varying, 'employee'::character varying, 'commercial_director'::character varying, 'observer'::character varying]::text[]))", name: "access_roles_supported_system_key"
+  end
 
   create_table "access_tokens", force: :cascade do |t|
     t.string "owner_type"
@@ -61,6 +98,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_09_130000) do
     t.datetime "reactivated_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "access_role_id"
+    t.index ["access_role_id"], name: "index_account_user_lifecycle_snapshots_on_access_role_id"
+    t.index ["account_id", "access_role_id"], name: "index_lifecycle_snapshots_on_account_and_access_role"
+    t.index ["account_id", "custom_role_id"], name: "index_lifecycle_snapshots_on_account_and_custom_role"
     t.index ["account_id", "user_id"], name: "index_account_user_lifecycle_snapshots_active", unique: true, where: "(reactivated_at IS NULL)"
     t.index ["account_id"], name: "index_account_user_lifecycle_snapshots_on_account_id"
     t.index ["deactivated_at"], name: "index_account_user_lifecycle_snapshots_on_deactivated_at"
@@ -80,6 +121,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_09_130000) do
     t.boolean "auto_offline", default: true, null: false
     t.bigint "custom_role_id"
     t.bigint "agent_capacity_policy_id"
+    t.bigint "access_role_id"
+    t.index ["access_role_id"], name: "index_account_users_on_access_role_id"
+    t.index ["account_id", "access_role_id"], name: "index_account_users_on_account_and_access_role"
     t.index ["account_id", "user_id"], name: "uniq_user_id_per_account_id", unique: true
     t.index ["account_id"], name: "index_account_users_on_account_id"
     t.index ["agent_capacity_policy_id"], name: "index_account_users_on_agent_capacity_policy_id"
@@ -1747,6 +1791,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_09_130000) do
     t.text "permissions", default: [], array: true
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.index ["account_id", "id"], name: "index_custom_roles_on_account_and_id", unique: true
     t.index ["account_id"], name: "index_custom_roles_on_account_id"
   end
 
@@ -3625,9 +3670,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_09_130000) do
     t.index ["inbox_id"], name: "index_working_hours_on_inbox_id"
   end
 
+  add_foreign_key "access_role_grants", "access_roles"
+  add_foreign_key "access_role_grants", "access_roles", column: ["account_id", "access_role_id"], primary_key: ["account_id", "id"], name: "fk_access_role_grants_role_account"
+  add_foreign_key "access_role_grants", "accounts"
+  add_foreign_key "access_roles", "accounts"
+  add_foreign_key "access_roles", "custom_roles", column: "legacy_custom_role_id"
+  add_foreign_key "access_roles", "custom_roles", column: ["account_id", "legacy_custom_role_id"], primary_key: ["account_id", "id"], name: "fk_access_roles_legacy_custom_role_account"
+  add_foreign_key "account_user_lifecycle_snapshots", "access_roles", column: ["account_id", "access_role_id"], primary_key: ["account_id", "id"], name: "fk_lifecycle_snapshots_access_role_account", validate: false
+  add_foreign_key "account_user_lifecycle_snapshots", "access_roles", name: "fk_lifecycle_snapshots_access_role", validate: false
   add_foreign_key "account_user_lifecycle_snapshots", "accounts", on_delete: :cascade
+  add_foreign_key "account_user_lifecycle_snapshots", "custom_roles", column: ["account_id", "custom_role_id"], primary_key: ["account_id", "id"], name: "fk_lifecycle_snapshots_custom_role_account", validate: false
   add_foreign_key "account_user_lifecycle_snapshots", "users", column: "deactivated_by_id", on_delete: :nullify
   add_foreign_key "account_user_lifecycle_snapshots", "users", on_delete: :cascade
+  add_foreign_key "account_users", "access_roles", column: ["account_id", "access_role_id"], primary_key: ["account_id", "id"], name: "fk_account_users_access_role_account", validate: false
+  add_foreign_key "account_users", "access_roles", name: "fk_account_users_access_role", validate: false
   add_foreign_key "accounts", "billing_organizations"
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"

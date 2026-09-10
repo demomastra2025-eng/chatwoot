@@ -182,12 +182,14 @@ RSpec.describe 'Captain account admin people copilot tools' do
       operator = create(:user, account: account, email: 'restorable@example.com')
       account_user = AccountUser.find_by!(account: account, user: operator)
       custom_role = create(:custom_role, account: account)
+      access_role = create(:access_role, account: account)
       capacity_policy = create(:agent_capacity_policy, account: account)
       account_user.update!(
         role: 'administrator',
         availability: 'busy',
         auto_offline: false,
         custom_role: custom_role,
+        access_role: access_role,
         agent_capacity_policy: capacity_policy
       )
       team = create(:team, account: account)
@@ -214,6 +216,7 @@ RSpec.describe 'Captain account admin people copilot tools' do
         availability: 'busy',
         auto_offline: false,
         custom_role_id: custom_role.id,
+        access_role_id: access_role.id,
         agent_capacity_policy_id: capacity_policy.id
       )
       expect(team.reload.members).to include(operator)

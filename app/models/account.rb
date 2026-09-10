@@ -75,6 +75,7 @@ class Account < ApplicationRecord
   belongs_to :billing_organization, optional: true
 
   has_many :account_users, dependent: :destroy_async
+  has_many :access_roles, dependent: :destroy
 
   has_many :api_channels, dependent: :destroy_async, class_name: '::Channel::Api'
   has_many :articles, dependent: :destroy_async, class_name: '::Article'
@@ -171,6 +172,7 @@ class Account < ApplicationRecord
 
   before_validation :validate_limit_keys
   before_validation :normalize_default_settings
+  before_destroy :clear_access_role_references, prepend: true
   after_create_commit :notify_creation
   after_destroy :remove_account_sequences
 
@@ -263,6 +265,13 @@ class Account < ApplicationRecord
   end
 
   private
+
+  def clear_access_role_references
+    # The roles are destroyed synchronously with the account; remove restrictive
+    # assignment references first so account teardown cannot strand the parent.
+    AccountUser.where(account_id: id).update_all(access_role_id: nil) # rubocop:disable Rails/SkipsModelValidations
+    AccountUserLifecycleSnapshot.where(account_id: id).update_all(access_role_id: nil) # rubocop:disable Rails/SkipsModelValidations
+  end
 
   def storage_limit_account
     self

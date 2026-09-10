@@ -9,6 +9,24 @@ RSpec.describe Account, type: :model do
     it { is_expected.to have_many(:sla_policies).dependent(:destroy_async) }
     it { is_expected.to have_many(:applied_slas).dependent(:destroy_async) }
     it { is_expected.to have_many(:custom_roles).dependent(:destroy_async) }
+    it { is_expected.to have_many(:access_roles).dependent(:destroy) }
+  end
+
+  describe 'access role teardown' do
+    it 'removes role dependencies before deleting the account' do
+      account = create(:account)
+      access_role = create(:access_role, account: account)
+      grant = create(:access_role_grant, account: account, access_role: access_role)
+      account_user = create(:account_user, account: account, access_role: access_role)
+      snapshot = create(:account_user_lifecycle_snapshot, account: account, access_role: access_role)
+
+      account.destroy!
+
+      expect(AccessRole.where(id: access_role.id)).not_to exist
+      expect(AccessRoleGrant.where(id: grant.id)).not_to exist
+      expect(account_user.reload.access_role_id).to be_nil
+      expect(AccountUserLifecycleSnapshot.where(id: snapshot.id)).not_to exist
+    end
   end
 
   describe 'sla_policies' do

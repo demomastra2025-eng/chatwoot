@@ -28,7 +28,9 @@
 
 class CustomRole < ApplicationRecord
   belongs_to :account
-  has_many :account_users, dependent: :nullify
+  has_many :account_users, dependent: :restrict_with_error
+  has_many :account_user_lifecycle_snapshots, dependent: :restrict_with_error
+  has_one :access_role, foreign_key: :legacy_custom_role_id, dependent: :restrict_with_error, inverse_of: :legacy_custom_role
 
   PERMISSIONS = %w[
     conversation_manage

@@ -48,6 +48,16 @@ RSpec.describe AccountUser, type: :model do
         expect(account_user_audit_log.associated).to eq(account_user.account)
         expect(account_user_audit_log.audited_changes).to eq('availability' => [0, 1])
       end
+
+      it 'records access role reassignment' do
+        account_user = create(:account_user)
+        access_role = create(:access_role, account: account_user.account)
+
+        account_user.update!(access_role: access_role)
+
+        account_user_audit_log = Audited::Audit.where(auditable: account_user, action: 'update').last
+        expect(account_user_audit_log.audited_changes).to eq('access_role_id' => [nil, access_role.id])
+      end
     end
   end
 end

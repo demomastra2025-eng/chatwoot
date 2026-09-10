@@ -5,6 +5,8 @@ module Enterprise::Audit::AccountUser
     audited only: [
       :availability,
       :role,
+      :access_role_id,
+      :custom_role_id,
       :account_id,
       :inviter_id,
       :user_id

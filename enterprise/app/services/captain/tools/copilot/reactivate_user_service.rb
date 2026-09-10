@@ -105,6 +105,7 @@ class Captain::Tools::Copilot::ReactivateUserService < Captain::Tools::Copilot::
       role: normalized_role,
       availability: normalized_availability,
       auto_offline: snapshot.nil? || snapshot.auto_offline,
+      access_role_id: restorable_access_role_id(snapshot),
       custom_role_id: restorable_custom_role_id(snapshot),
       agent_capacity_policy_id: restorable_capacity_policy_id(snapshot)
     )
@@ -125,6 +126,12 @@ class Captain::Tools::Copilot::ReactivateUserService < Captain::Tools::Copilot::
     return if snapshot&.custom_role_id.blank?
 
     account.custom_roles.where(id: snapshot.custom_role_id).pick(:id)
+  end
+
+  def restorable_access_role_id(snapshot)
+    return if snapshot&.access_role_id.blank?
+
+    account.access_roles.where(id: snapshot.access_role_id).pick(:id)
   end
 
   def restorable_capacity_policy_id(snapshot)
