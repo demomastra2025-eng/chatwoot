@@ -1,4 +1,6 @@
 class AccessRole < ApplicationRecord
+  include AccessControl::AccountLockable
+
   SYSTEM_KEYS = %w[administrator department_lead employee commercial_director observer].freeze
 
   belongs_to :account
@@ -21,6 +23,8 @@ class AccessRole < ApplicationRecord
   validate :legacy_custom_role_is_not_system_role
 
   before_validation :normalize_attributes
+  before_validation :lock_account_for_access_control
+  before_destroy :lock_account_for_access_control
 
   private
 

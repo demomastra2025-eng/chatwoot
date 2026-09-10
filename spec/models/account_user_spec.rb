@@ -95,6 +95,43 @@ RSpec.describe AccountUser do
 
       expect(account_user.access_role).to be_nil
     end
+
+    it 'rejects an assignment that diverges from legacy identity in enforced mode' do
+      account = create(:account)
+      roles = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key
+      account_user = create(:account_user, account: account, role: :agent)
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      expect(account_user.update(access_role: roles.fetch('observer'))).to be(false)
+      expect(account_user.errors[:access_role]).to include('must match the legacy identity while access control is enforced')
+      expect(account_user.reload.access_role).to eq(roles.fetch('employee'))
+    end
+
+    it 'keeps a changed legacy identity synchronized in enforced mode' do
+      account = create(:account)
+      roles = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key
+      account_user = create(:account_user, account: account, role: :agent)
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      account_user.update!(role: :administrator)
+
+      expect(account_user.access_role).to eq(roles.fetch('administrator'))
+    end
+
+    it 'rejects an unsupported custom role assignment in enforced mode' do
+      account = create(:account)
+      AccessControl::SystemRoleBootstrapper.call(account: account)
+      account_user = create(:account_user, account: account, role: :agent)
+      unsupported = create(:custom_role, account: account, permissions: %w[report_manage])
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      expect(account_user.update(custom_role: unsupported)).to be(false)
+      expect(account_user.errors[:access_role]).to include('must match the legacy identity while access control is enforced')
+      expect(account_user.reload.custom_role).to be_nil
+    end
   end
 
   describe 'destroy call agent::destroy service' do

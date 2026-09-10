@@ -28,4 +28,31 @@ RSpec.describe CustomRole, type: :model do
 
     expect { custom_role.destroy! }.to raise_error(ActiveRecord::RecordNotDestroyed)
   end
+
+  it 'reconciles a materialized mapping after a representable permission change' do
+    account = create(:account)
+    AccessControl::SystemRoleBootstrapper.call(account: account)
+    custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+    expect(custom_role.access_role).to be_nil
+    mapped_role = AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+    custom_role.update!(permissions: %w[contact_manage])
+
+    expect(mapped_role.grants.reload.pluck(:resource).uniq).to eq(%w[contacts])
+  end
+
+  it 'rejects permissions that cannot be represented in enforced mode' do
+    account = create(:account)
+    AccessControl::SystemRoleBootstrapper.call(account: account)
+    custom_role = create(:custom_role, account: account, permissions: %w[crm_task_view])
+    AccessControl::LegacyCustomRoleMapper.call(custom_role: custom_role)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+    expect(custom_role.update(permissions: %w[report_manage])).to be(false)
+    expect(custom_role.errors[:permissions]).to include('must be representable while access control is enforced')
+    expect(custom_role.reload.permissions).to eq(%w[crm_task_view])
+  end
 end

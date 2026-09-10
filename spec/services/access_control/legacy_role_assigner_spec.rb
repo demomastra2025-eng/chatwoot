@@ -68,5 +68,26 @@ RSpec.describe AccessControl::LegacyRoleAssigner do
       expect(result.status).to eq('assigned_administrator')
       expect(employee.reload.access_role).to eq(roles.fetch('administrator'))
     end
+
+    it 'assigns active lifecycle snapshots and ignores completed snapshots' do
+      snapshot_account = create(:account)
+      active_snapshot = create(:account_user_lifecycle_snapshot, account: snapshot_account, role: 'agent')
+      completed_snapshot = create(
+        :account_user_lifecycle_snapshot,
+        account: snapshot_account,
+        role: 'administrator',
+        reactivated_at: Time.current
+      )
+
+      result = described_class.call(account: snapshot_account, apply: true)
+
+      expect(result.counts).to eq('assigned_employee' => 1)
+      expect(result.entries.first).to have_attributes(
+        account_user_id: nil,
+        lifecycle_snapshot_id: active_snapshot.id
+      )
+      expect(active_snapshot.reload.access_role.system_key).to eq('employee')
+      expect(completed_snapshot.reload.access_role).to be_nil
+    end
   end
 end

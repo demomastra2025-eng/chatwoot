@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_10_060100) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -133,6 +133,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_060100) do
 
   create_table "accounts", id: :serial, force: :cascade do |t|
     t.string "name", null: false
+    t.string "access_control_mode", default: "legacy", null: false
     t.datetime "created_at", precision: nil, null: false
     t.datetime "updated_at", precision: nil, null: false
     t.integer "locale", default: 0
@@ -149,6 +150,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_060100) do
     t.bigint "billing_organization_id"
     t.index ["billing_organization_id"], name: "index_accounts_on_billing_organization_id"
     t.index ["status"], name: "index_accounts_on_status"
+    t.check_constraint "access_control_mode::text = ANY (ARRAY['legacy'::character varying, 'shadow'::character varying, 'enforced'::character varying]::text[])", name: "accounts_supported_access_control_mode"
   end
 
   create_table "action_mailbox_inbound_emails", force: :cascade do |t|

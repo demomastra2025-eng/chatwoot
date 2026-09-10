@@ -26,6 +26,8 @@
 
 class AccountUser < ApplicationRecord
   include AvailabilityStatusable
+  include AccessControl::AccountLockable
+  include AccessControl::LegacyIdentityCompatible
 
   belongs_to :account
   belongs_to :user
@@ -37,6 +39,7 @@ class AccountUser < ApplicationRecord
 
   accepts_nested_attributes_for :account
 
+  before_validation :lock_account_for_access_control, if: :access_control_assignment_changed?
   before_validation :synchronize_access_role, if: :access_role_identity_changed?
   after_create_commit :notify_creation, :create_notification_setting
   after_destroy :notify_deletion, :remove_user_from_account
@@ -44,6 +47,7 @@ class AccountUser < ApplicationRecord
 
   validates :user_id, uniqueness: { scope: :account_id }
   validate :access_role_belongs_to_account
+  validate :access_role_matches_enforced_identity, if: :access_control_assignment_changed?
 
   def create_notification_setting
     setting = user.notification_settings.find_or_initialize_by(account_id: account.id)
@@ -98,6 +102,10 @@ class AccountUser < ApplicationRecord
 
   def access_role_identity_changed?
     new_record? || will_save_change_to_role? || will_save_change_to_custom_role_id?
+  end
+
+  def access_control_assignment_changed?
+    access_role_identity_changed? || will_save_change_to_access_role_id?
   end
 
   def access_role_belongs_to_account

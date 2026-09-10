@@ -37,6 +37,9 @@
 #  fk_rails_...  (user_id => users.id) ON DELETE => cascade
 #
 class AccountUserLifecycleSnapshot < ApplicationRecord
+  include AccessControl::AccountLockable
+  include AccessControl::LegacyIdentityCompatible
+
   belongs_to :account
   belongs_to :user
   belongs_to :deactivated_by, class_name: 'User', optional: true
@@ -50,12 +53,25 @@ class AccountUserLifecycleSnapshot < ApplicationRecord
   validates :deactivated_at, presence: true
   validate :access_role_belongs_to_account
   validate :custom_role_belongs_to_account
+  validate :access_role_matches_enforced_identity, if: :active_access_control_identity_changed?
   validates :user_id, uniqueness: {
     scope: :account_id,
     conditions: -> { where(reactivated_at: nil) }
   }, if: -> { reactivated_at.nil? }
 
+  before_validation :lock_account_for_access_control, if: :access_control_identity_changed?
+  before_destroy :lock_account_for_access_control
+
   private
+
+  def access_control_identity_changed?
+    new_record? || will_save_change_to_role? || will_save_change_to_custom_role_id? ||
+      will_save_change_to_access_role_id? || will_save_change_to_reactivated_at?
+  end
+
+  def active_access_control_identity_changed?
+    reactivated_at.nil? && access_control_identity_changed?
+  end
 
   def access_role_belongs_to_account
     return if access_role.blank? || access_role.account_id == account_id

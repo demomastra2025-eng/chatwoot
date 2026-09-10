@@ -1,6 +1,7 @@
 class AccessControl::LegacyCompatibilityChecker
   Entry = Data.define(
     :account_user_id,
+    :lifecycle_snapshot_id,
     :user_id,
     :status,
     :expected_identity,
@@ -23,15 +24,18 @@ class AccessControl::LegacyCompatibilityChecker
   end
 
   def call
-    entries = account.account_users.includes(:custom_role, access_role: :grants).find_each.map do |account_user|
-      compare(account_user)
-    end
+    entries = compatibility_subjects.map { |subject| compare(subject) }
     Result.new(account_id: account.id, entries: entries)
   end
 
   private
 
   attr_reader :account
+
+  def compatibility_subjects
+    account.account_users.includes(:custom_role, access_role: :grants).find_each.to_a +
+      AccountUserLifecycleSnapshot.active.where(account_id: account.id).includes(:custom_role, access_role: :grants).find_each.to_a
+  end
 
   def compare(account_user)
     return unresolved_entry(account_user, 'conflict', 'administrator_with_custom_role') if administrator_with_custom_role?(account_user)
@@ -60,7 +64,7 @@ class AccessControl::LegacyCompatibilityChecker
   def expectation_for(account_user)
     return custom_role_expectation(account_user.custom_role) if account_user.custom_role
 
-    system_key = account_user.administrator? ? 'administrator' : 'employee'
+    system_key = account_user.role == 'administrator' ? 'administrator' : 'employee'
     {
       identity: { system_key: system_key, legacy_custom_role_id: nil },
       grants: AccessControl::SystemRoleCatalog.grants_for(system_key),
@@ -105,7 +109,7 @@ class AccessControl::LegacyCompatibilityChecker
   end
 
   def administrator_with_custom_role?(account_user)
-    account_user.administrator? && account_user.custom_role_id?
+    account_user.role == 'administrator' && account_user.custom_role_id?
   end
 
   def unsupported_entry(account_user, expectation)
@@ -130,10 +134,11 @@ class AccessControl::LegacyCompatibilityChecker
     )
   end
 
-  def entry(account_user, **attributes)
+  def entry(subject, **attributes)
     Entry.new(
-      account_user_id: account_user.id,
-      user_id: account_user.user_id,
+      account_user_id: subject.is_a?(AccountUser) ? subject.id : nil,
+      lifecycle_snapshot_id: subject.is_a?(AccountUserLifecycleSnapshot) ? subject.id : nil,
+      user_id: subject.user_id,
       **attributes
     )
   end

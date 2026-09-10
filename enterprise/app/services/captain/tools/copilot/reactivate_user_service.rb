@@ -73,28 +73,41 @@ class Captain::Tools::Copilot::ReactivateUserService < Captain::Tools::Copilot::
   end
 
   def reactivate_user(user, snapshot_id:, role:, availability:)
-    user.with_lock do
-      snapshot_scope = AccountUserLifecycleSnapshot.active.lock.where(account: account, user: user)
-      snapshot = snapshot_id.present? ? snapshot_scope.find_by(id: snapshot_id) : snapshot_scope.first
-      account_user = account.account_users.find_by(user: user)
-
-      if account_user.present? && snapshot.blank?
-        already_active_result(account_user)
-      else
-        raise ActiveRecord::RecordNotFound, 'Active lifecycle snapshot not found' if snapshot_id.present? && snapshot.blank?
-
-        account_user ||= create_account_user!(user, snapshot: snapshot, role: role, availability: availability)
-        restored_memberships = restore_workspace_memberships!(user, snapshot)
-        snapshot&.update!(reactivated_at: Time.current)
-
-        { action: 'reactivate_user', account_user: account_user, snapshot: snapshot, **restored_memberships }
-      end
+    account.with_lock do
+      user.with_lock { reactivate_locked_user(user, snapshot_id: snapshot_id, role: role, availability: availability) }
     end
+  end
+
+  def reactivate_locked_user(user, snapshot_id:, role:, availability:)
+    snapshot = locked_snapshot_for(user, snapshot_id)
+    account_user = account.account_users.find_by(user: user)
+
+    return already_active_result(account_user) if account_user.present? && snapshot.blank?
+
+    ensure_requested_snapshot_found!(snapshot, snapshot_id)
+
+    account_user ||= create_account_user!(user, snapshot: snapshot, role: role, availability: availability)
+    restored_memberships = restore_workspace_memberships!(user, snapshot)
+    snapshot&.update!(reactivated_at: Time.current)
+
+    { action: 'reactivate_user', account_user: account_user, snapshot: snapshot, **restored_memberships }
+  end
+
+  def locked_snapshot_for(user, snapshot_id)
+    scope = AccountUserLifecycleSnapshot.active.lock.where(account: account, user: user)
+    snapshot_id.present? ? scope.find_by(id: snapshot_id) : scope.first
+  end
+
+  def ensure_requested_snapshot_found!(snapshot, snapshot_id)
+    return if snapshot_id.blank? || snapshot.present?
+
+    raise ActiveRecord::RecordNotFound, 'Active lifecycle snapshot not found'
   end
 
   def create_account_user!(user, snapshot:, role:, availability:)
     normalized_role = role.presence || snapshot&.role || 'agent'
     normalized_availability = availability.presence || snapshot&.availability || 'offline'
+    role_overridden = role.present?
     ensure_valid_role!(normalized_role)
     ensure_valid_availability!(normalized_availability)
 
@@ -105,10 +118,16 @@ class Captain::Tools::Copilot::ReactivateUserService < Captain::Tools::Copilot::
       role: normalized_role,
       availability: normalized_availability,
       auto_offline: snapshot.nil? || snapshot.auto_offline,
-      access_role_id: restorable_access_role_id(snapshot),
-      custom_role_id: restorable_custom_role_id(snapshot),
+      **access_control_attributes_for_reactivation(snapshot, role: normalized_role, role_overridden: role_overridden),
       agent_capacity_policy_id: restorable_capacity_policy_id(snapshot)
     )
+  end
+
+  def access_control_attributes_for_reactivation(snapshot, role:, role_overridden:)
+    {
+      access_role_id: access_role_id_for_reactivation(snapshot, role_overridden: role_overridden),
+      custom_role_id: custom_role_id_for_reactivation(snapshot, role: role, role_overridden: role_overridden)
+    }
   end
 
   def restore_workspace_memberships!(user, snapshot)
@@ -128,10 +147,22 @@ class Captain::Tools::Copilot::ReactivateUserService < Captain::Tools::Copilot::
     account.custom_roles.where(id: snapshot.custom_role_id).pick(:id)
   end
 
+  def custom_role_id_for_reactivation(snapshot, role:, role_overridden:)
+    return if role_overridden && role == 'administrator'
+
+    restorable_custom_role_id(snapshot)
+  end
+
   def restorable_access_role_id(snapshot)
     return if snapshot&.access_role_id.blank?
 
     account.access_roles.where(id: snapshot.access_role_id).pick(:id)
+  end
+
+  def access_role_id_for_reactivation(snapshot, role_overridden:)
+    return if role_overridden
+
+    restorable_access_role_id(snapshot)
   end
 
   def restorable_capacity_policy_id(snapshot)

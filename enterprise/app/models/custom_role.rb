@@ -27,6 +27,8 @@
 # - 'captain_manage': Can manage AI agents.
 
 class CustomRole < ApplicationRecord
+  include AccessControl::AccountLockable
+
   belongs_to :account
   has_many :account_users, dependent: :restrict_with_error
   has_many :account_user_lifecycle_snapshots, dependent: :restrict_with_error
@@ -54,4 +56,25 @@ class CustomRole < ApplicationRecord
 
   validates :name, presence: true
   validates :permissions, inclusion: { in: PERMISSIONS }
+  validate :permissions_remain_mappable_when_enforced, if: :will_save_change_to_permissions?
+
+  before_validation :lock_account_for_access_control
+  before_destroy :lock_account_for_access_control
+  after_save :reconcile_materialized_access_role, if: :saved_change_to_permissions?
+
+  private
+
+  def permissions_remain_mappable_when_enforced
+    return unless account&.access_control_mode_enforced?
+    return if AccessControl::LegacyCustomRoleMapper.analyze(self).mappable?
+
+    errors.add(:permissions, 'must be representable while access control is enforced')
+  end
+
+  def reconcile_materialized_access_role
+    return unless AccessRole.exists?(legacy_custom_role_id: id)
+    return unless AccessControl::LegacyCustomRoleMapper.analyze(self).mappable?
+
+    AccessControl::LegacyCustomRoleMapper.call(custom_role: self)
+  end
 end

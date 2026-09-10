@@ -40,20 +40,22 @@ class Captain::Tools::Copilot::DeactivateUserService < Captain::Tools::Copilot::
     return replay_snapshot!(user_id) if account_user.blank?
 
     user = account_user.user
-    user.with_lock do
-      account_user = account.account_users.find_by(user_id: user.id)
-      if account_user.blank?
-        replay_snapshot!(user.id)
-      else
-        ensure_user_can_be_deactivated!(account_user, user)
-        snapshot = create_lifecycle_snapshot!(account_user, user)
-        TeamMember.joins(:team).where(teams: { account_id: account.id }, user_id: user.id).destroy_all
-        InboxMember.joins(:inbox).where(inboxes: { account_id: account.id }, user_id: user.id).destroy_all
-        account_user.destroy!
-
-        { snapshot: snapshot, idempotent_replay: false }
-      end
+    account.with_lock do
+      user.with_lock { deactivate_locked_user(user) }
     end
+  end
+
+  def deactivate_locked_user(user)
+    account_user = account.account_users.find_by(user_id: user.id)
+    return replay_snapshot!(user.id) if account_user.blank?
+
+    ensure_user_can_be_deactivated!(account_user, user)
+    snapshot = create_lifecycle_snapshot!(account_user, user)
+    TeamMember.joins(:team).where(teams: { account_id: account.id }, user_id: user.id).destroy_all
+    InboxMember.joins(:inbox).where(inboxes: { account_id: account.id }, user_id: user.id).destroy_all
+    account_user.destroy!
+
+    { snapshot: snapshot, idempotent_replay: false }
   end
 
   def create_lifecycle_snapshot!(account_user, user)

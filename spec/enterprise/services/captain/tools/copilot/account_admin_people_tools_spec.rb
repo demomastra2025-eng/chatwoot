@@ -182,14 +182,12 @@ RSpec.describe 'Captain account admin people copilot tools' do
       operator = create(:user, account: account, email: 'restorable@example.com')
       account_user = AccountUser.find_by!(account: account, user: operator)
       custom_role = create(:custom_role, account: account)
-      access_role = create(:access_role, account: account)
       capacity_policy = create(:agent_capacity_policy, account: account)
       account_user.update!(
         role: 'administrator',
         availability: 'busy',
         auto_offline: false,
         custom_role: custom_role,
-        access_role: access_role,
         agent_capacity_policy: capacity_policy
       )
       team = create(:team, account: account)
@@ -216,7 +214,7 @@ RSpec.describe 'Captain account admin people copilot tools' do
         availability: 'busy',
         auto_offline: false,
         custom_role_id: custom_role.id,
-        access_role_id: access_role.id,
+        access_role_id: nil,
         agent_capacity_policy_id: capacity_policy.id
       )
       expect(team.reload.members).to include(operator)
@@ -231,6 +229,61 @@ RSpec.describe 'Captain account admin people copilot tools' do
       replay_payload = JSON.parse(service.execute(lifecycle_snapshot_id: deactivate_payload['lifecycle_snapshot_id']))
       expect(replay_payload).to include('action' => 'reactivate_user_already_active', 'idempotent_replay' => true)
       expect(AccountUserLifecycleSnapshot.find(deactivate_payload['lifecycle_snapshot_id']).reactivated_at).to be_present
+    end
+
+    it 'reactivates a migrated lifecycle snapshot after enforcement' do
+      operator = create(:user, account: account, email: 'enforced-reactivation@example.com')
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      deactivate_payload = JSON.parse(
+        Captain::Tools::Copilot::DeactivateUserService.new(assistant, user: admin).execute(user_id: operator.id)
+      )
+      snapshot = AccountUserLifecycleSnapshot.find(deactivate_payload.fetch('lifecycle_snapshot_id'))
+      expected_access_role = snapshot.access_role
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+
+      expect(AccessControl::EnforcementReadiness.call(account: account)).to be_ready
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      payload = JSON.parse(service.execute(lifecycle_snapshot_id: snapshot.id))
+
+      expect(payload.fetch('action')).to eq('reactivate_user')
+      expect(AccountUser.find_by!(account: account, user: operator).access_role).to eq(expected_access_role)
+      expect(snapshot.reload.reactivated_at).to be_present
+    end
+
+    it 'reconciles an agent snapshot when enforced reactivation overrides the role to administrator' do
+      operator = create(:user, account: account, email: 'agent-to-admin@example.com')
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      snapshot_id = JSON.parse(
+        Captain::Tools::Copilot::DeactivateUserService.new(assistant, user: admin).execute(user_id: operator.id)
+      ).fetch('lifecycle_snapshot_id')
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      result = service.execute(lifecycle_snapshot_id: snapshot_id, role: 'administrator')
+      restored = AccountUser.find_by(account: account, user: operator)
+
+      expect(result).not_to start_with('ERROR:')
+      expect(restored).to have_attributes(role: 'administrator', custom_role_id: nil)
+      expect(restored.access_role.system_key).to eq('administrator')
+    end
+
+    it 'reconciles an administrator snapshot when enforced reactivation overrides the role to agent' do
+      operator = create(:user, account: account, email: 'admin-to-agent@example.com')
+      account.account_users.find_by!(user: operator).update!(role: :administrator)
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      snapshot_id = JSON.parse(
+        Captain::Tools::Copilot::DeactivateUserService.new(assistant, user: admin).execute(user_id: operator.id)
+      ).fetch('lifecycle_snapshot_id')
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      result = service.execute(lifecycle_snapshot_id: snapshot_id, role: 'agent')
+      restored = AccountUser.find_by(account: account, user: operator)
+
+      expect(result).not_to start_with('ERROR:')
+      expect(restored).to have_attributes(role: 'agent', custom_role_id: nil)
+      expect(restored.access_role.system_key).to eq('employee')
     end
 
     it 'reactivates by stable user ID and rejects identities from another account' do

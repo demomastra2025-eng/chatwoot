@@ -1,4 +1,6 @@
 class AccessRoleGrant < ApplicationRecord
+  include AccessControl::AccountLockable
+
   RESOURCE_CAPABILITIES = {
     'contacts' => %w[view create update_fields assign delete_archive view_configuration configure export view_reports],
     'conversations' => %w[view create update_fields assign transition take delete_archive view_configuration configure export view_reports],
@@ -25,6 +27,8 @@ class AccessRoleGrant < ApplicationRecord
   validate :capability_supported_for_resource
 
   before_validation :normalize_attributes
+  before_validation :lock_account_for_access_control
+  before_destroy :lock_account_for_access_control
 
   private
 

@@ -58,5 +58,30 @@ RSpec.describe AccessControl::LegacyCompatibilityChecker do
 
       expect(result.entries.map(&:account_user_id)).to match_array(account.account_user_ids)
     end
+
+    it 'checks active lifecycle snapshots and ignores completed snapshots' do
+      account = create(:account)
+      roles = AccessControl::SystemRoleBootstrapper.call(account: account).roles_by_key
+      active_snapshot = create(
+        :account_user_lifecycle_snapshot,
+        account: account,
+        role: 'agent',
+        access_role: roles.fetch('employee')
+      )
+      create(
+        :account_user_lifecycle_snapshot,
+        account: account,
+        role: 'administrator',
+        reactivated_at: Time.current
+      )
+
+      result = described_class.call(account: account)
+
+      expect(result.counts).to eq('matched' => 1)
+      expect(result.entries.first).to have_attributes(
+        account_user_id: nil,
+        lifecycle_snapshot_id: active_snapshot.id
+      )
+    end
   end
 end

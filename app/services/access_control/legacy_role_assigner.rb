@@ -1,5 +1,5 @@
 class AccessControl::LegacyRoleAssigner
-  Entry = Data.define(:account_user_id, :user_id, :status, :access_role_id, :details)
+  Entry = Data.define(:account_user_id, :lifecycle_snapshot_id, :user_id, :status, :access_role_id, :details)
   Result = Data.define(:account_id, :apply, :entries) do
     def counts
       entries.group_by(&:status).transform_values(&:size)
@@ -29,19 +29,24 @@ class AccessControl::LegacyRoleAssigner
   attr_reader :account, :apply
 
   def build_result(roles_by_key)
-    entries = account.account_users.includes(:access_role, :custom_role).find_each.map do |account_user|
-      classify_with_lock(account_user, roles_by_key)
+    entries = assignment_subjects.map do |subject|
+      classify_with_lock(subject, roles_by_key)
     end
 
     Result.new(account_id: account.id, apply: apply, entries: entries)
   end
 
-  def classify_with_lock(account_user, roles_by_key)
-    return classify_and_assign(account_user, roles_by_key) unless apply
+  def assignment_subjects
+    account.account_users.includes(:access_role, :custom_role).find_each.to_a +
+      AccountUserLifecycleSnapshot.active.where(account_id: account.id).includes(:access_role, :custom_role).find_each.to_a
+  end
 
-    account_user.with_lock do
-      account_user.reload
-      classify_and_assign(account_user, roles_by_key)
+  def classify_with_lock(subject, roles_by_key)
+    return classify_and_assign(subject, roles_by_key) unless apply
+
+    subject.with_lock do
+      subject.reload
+      classify_and_assign(subject, roles_by_key)
     end
   end
 
@@ -59,7 +64,7 @@ class AccessControl::LegacyRoleAssigner
   end
 
   def administrator_with_custom_role?(account_user)
-    account_user.administrator? && account_user.custom_role_id?
+    account_user.role == 'administrator' && account_user.custom_role_id?
   end
 
   def assign_custom_role(account_user)
@@ -81,7 +86,7 @@ class AccessControl::LegacyRoleAssigner
   end
 
   def assign_system_role(account_user, roles_by_key)
-    system_key = account_user.administrator? ? 'administrator' : 'employee'
+    system_key = account_user.role == 'administrator' ? 'administrator' : 'employee'
     role = roles_by_key[system_key]
     return entry(account_user, 'already_assigned', role.id) if role && account_user.access_role_id == role.id
 
@@ -97,10 +102,11 @@ class AccessControl::LegacyRoleAssigner
     account.access_roles.where(system_key: AccessControl::SystemRoleCatalog::ROLE_NAMES.keys).index_by(&:system_key)
   end
 
-  def entry(account_user, status, access_role_id, details = nil)
+  def entry(subject, status, access_role_id, details = nil)
     Entry.new(
-      account_user_id: account_user.id,
-      user_id: account_user.user_id,
+      account_user_id: subject.is_a?(AccountUser) ? subject.id : nil,
+      lifecycle_snapshot_id: subject.is_a?(AccountUserLifecycleSnapshot) ? subject.id : nil,
+      user_id: subject.user_id,
       status: status,
       access_role_id: access_role_id,
       details: details

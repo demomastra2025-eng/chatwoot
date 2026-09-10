@@ -21,12 +21,14 @@ RSpec.describe AccessControl::LegacyRoleBackfill do
     it 'applies unambiguous assignments and reports parity' do
       account = create(:account)
       account_user = create(:account_user, account: account, role: :agent)
+      snapshot = create(:account_user_lifecycle_snapshot, account: account, role: 'administrator')
 
       summary = described_class.call(accounts: Account.where(id: account.id), apply: true)
 
       expect(summary).to have_attributes(apply: true, processed_accounts: 1, failed_accounts: 0)
-      expect(summary.compatibility_counts).to eq('matched' => 1)
+      expect(summary.compatibility_counts).to eq('matched' => 2)
       expect(account_user.reload.access_role.system_key).to eq('employee')
+      expect(snapshot.reload.access_role.system_key).to eq('administrator')
     end
 
     it 'is idempotent after a successful apply' do
@@ -73,6 +75,7 @@ RSpec.describe AccessControl::LegacyRoleBackfill do
       account_user = create(:account_user, account: account, role: :agent)
       mismatch = AccessControl::LegacyCompatibilityChecker::Entry.new(
         account_user_id: account_user.id,
+        lifecycle_snapshot_id: nil,
         user_id: account_user.user_id,
         status: 'mismatch',
         expected_identity: nil,
