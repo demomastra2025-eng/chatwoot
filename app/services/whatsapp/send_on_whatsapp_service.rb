@@ -10,12 +10,22 @@ class Whatsapp::SendOnWhatsappService < Base::SendOnChannelService
   end
 
   def perform_reply
-    should_send_template_message = template_params.present? || !message.conversation.can_reply?
-    if should_send_template_message
-      send_template_message
-    else
-      send_session_message
-    end
+    return send_template_message if template_params.present?
+
+    delivery_policy = Outbound::DeliveryPolicy.evaluate(
+      conversation: conversation,
+      inbox: inbox,
+      content_kind: 'free_text',
+      attachments: message.attachments
+    )
+    return fail_delivery_policy!(delivery_policy) unless delivery_policy.allowed?
+
+    send_session_message
+  end
+
+  def fail_delivery_policy!(delivery_policy)
+    message.update!(status: :failed, external_error: delivery_policy.reason)
+    update_campaign_delivery(status: :failed, error_message: delivery_policy.reason)
   end
 
   def send_template_message

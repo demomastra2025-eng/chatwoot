@@ -116,6 +116,47 @@ describe Whatsapp::SendOnWhatsappService do
         expect(message.reload.source_id).to eq('123456789')
       end
 
+      it 'uses the contact reply window across conversations in the same WhatsApp inbox' do
+        previous_conversation = create(
+          :conversation,
+          account: conversation.account,
+          contact: conversation.contact,
+          contact_inbox: contact_inbox,
+          inbox: whatsapp_channel.inbox
+        )
+        create(:message, message_type: :incoming, content: 'previous reply',
+                         conversation: previous_conversation, account: conversation.account)
+        message = create(:message, message_type: :outgoing, content: 'automation reply',
+                                   conversation: conversation, account: conversation.account)
+
+        stub_request(:post, 'https://waba.360dialog.io/v1/messages')
+          .with(
+            headers: headers,
+            body: { 'to' => '123456789', 'text' => { 'body' => 'automation reply' }, 'type' => 'text' }.to_json
+          )
+          .to_return(status: 200, body: success_response, headers: { 'content-type' => 'application/json' })
+
+        described_class.new(message: message).perform
+
+        expect(message.reload.source_id).to eq('123456789')
+        expect(message.external_error).to be_nil
+      end
+
+      it 'fails free text with the delivery policy reason when the reply window is closed' do
+        message = create(:message, message_type: :outgoing, content: 'late automation reply',
+                                   conversation: conversation, account: conversation.account)
+
+        expect(Whatsapp::TemplateProcessorService).not_to receive(:new)
+
+        described_class.new(message: message).perform
+
+        expect(message.reload).to have_attributes(
+          status: 'failed',
+          external_error: Outbound::DeliveryPolicy::WHATSAPP_TEMPLATE_REQUIRED_REASON
+        )
+        expect(WebMock).not_to have_requested(:post, 'https://waba.360dialog.io/v1/messages')
+      end
+
       it 'sends session replies to the phone contact inbox before a BSUID contact inbox' do
         contact = create(:contact, account: whatsapp_channel.account, phone_number: '+77475318623')
         phone_contact_inbox = create(:contact_inbox, inbox: whatsapp_channel.inbox, contact: contact, source_id: '77475318623')
