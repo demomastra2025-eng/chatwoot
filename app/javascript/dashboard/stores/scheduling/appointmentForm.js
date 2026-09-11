@@ -434,6 +434,31 @@ export const useSchedulingAppointmentFormStore = defineStore(
         }
       },
 
+      async loadContact(contactId) {
+        this.ui.isLoadingContacts = true;
+
+        try {
+          const { data } = await SchedulingContactsAPI.get({
+            contact_id: contactId,
+            limit: 1,
+          });
+          const contact = normalizePayload(data)[0] || null;
+          if (!contact) return null;
+
+          this.contacts = [
+            contact,
+            ...this.contacts.filter(item => item.id !== contact.id),
+          ];
+          this.applyContact(contact);
+          return contact;
+        } catch (error) {
+          this.ui.error = extractSchedulingError(error);
+          throw error;
+        } finally {
+          this.ui.isLoadingContacts = false;
+        }
+      },
+
       async createInlineContact(contact) {
         this.ui.isCreatingContact = true;
 

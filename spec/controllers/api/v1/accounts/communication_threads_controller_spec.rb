@@ -259,6 +259,49 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(payload.second.dig(:last_non_activity_message, :id)).to eq(accessible_message.id)
     end
 
+    it 'reuses the latest public message when it is already non-activity' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      message = create(:message, account: account, conversation: conversation, message_type: :incoming)
+      message_preload_queries = []
+
+      callback = lambda do |_name, _started, _finished, _unique_id, payload|
+        sql = payload[:sql].to_s
+        message_preload_queries << sql if sql.include?('DISTINCT ON (messages.conversation_id)')
+      end
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+      end
+
+      expect(response).to have_http_status(:success)
+      thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
+      expect(thread_payload.dig(:messages, 0, :id)).to eq(message.id)
+      expect(thread_payload.dig(:last_non_activity_message, :id)).to eq(message.id)
+      expect(message_preload_queries.size).to eq(1)
+    end
+
+    it 'loads an older non-activity message when the latest public message is activity' do
+      conversation = create(:conversation, account: account)
+      create(:inbox_member, user: agent, inbox: conversation.inbox)
+      non_activity_message = create(:message, account: account, conversation: conversation, message_type: :incoming)
+      activity_message = create(:message, account: account, conversation: conversation, message_type: :activity)
+      message_preload_queries = []
+
+      callback = lambda do |_name, _started, _finished, _unique_id, payload|
+        sql = payload[:sql].to_s
+        message_preload_queries << sql if sql.include?('DISTINCT ON (messages.conversation_id)')
+      end
+      ActiveSupport::Notifications.subscribed(callback, 'sql.active_record') do
+        get "/api/v1/accounts/#{account.id}/communication_threads", headers: headers, as: :json
+      end
+
+      expect(response).to have_http_status(:success)
+      thread_payload = JSON.parse(response.body, symbolize_names: true).dig(:data, :payload).first
+      expect(thread_payload.dig(:messages, 0, :id)).to eq(activity_message.id)
+      expect(thread_payload.dig(:last_non_activity_message, :id)).to eq(non_activity_message.id)
+      expect(message_preload_queries.size).to eq(2)
+    end
+
     it 'filters threads by child conversation labels' do
       matching_conversation = create(:conversation, account: account)
       other_conversation = create(:conversation, account: account)

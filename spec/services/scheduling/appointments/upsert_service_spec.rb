@@ -97,6 +97,7 @@ RSpec.describe Scheduling::Appointments::UpsertService do
   end
 
   context 'when the selected resource belongs to Medelement' do
+    let(:valid_phone) { ['+7', '700', '000', '0001'].join }
     let(:service) do
       create(
         :scheduling_service,
@@ -232,6 +233,29 @@ RSpec.describe Scheduling::Appointments::UpsertService do
         perform(resource_id: resource.id, client_first_name: 'Айжан', client_last_name: 'Касымова',
                 client_phone: ['+7', '700', '000', '0001'].join)
       end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_CABINET_INVALID') }
+    end
+
+    %w[companyCabinetCode company_cabinet_code COMPANY_CABINET_CODE].each do |cabinet_key|
+      it "accepts the #{cabinet_key} resource cabinet format" do
+        resource.update!(
+          custom_attributes: resource.custom_attributes.merge(
+            'medelement_cabinets' => [{ cabinet_key => 'cabinet-1' }]
+          )
+        )
+        appointment.update!(
+          service: nil,
+          custom_attributes: appointment.custom_attributes.except('service_ids', 'services')
+        )
+
+        expect do
+          perform(
+            resource_id: resource.id,
+            client_first_name: 'Айжан',
+            client_last_name: 'Касымова',
+            client_phone: valid_phone
+          )
+        end.not_to raise_error
+      end
     end
 
     it 'allows an unrelated update to a legacy appointment without a cabinet' do

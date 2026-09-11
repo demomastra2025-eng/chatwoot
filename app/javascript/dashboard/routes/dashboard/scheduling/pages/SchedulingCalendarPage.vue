@@ -141,6 +141,9 @@ const inlineContactForm = reactive({
 const appointmentPrefillKeys = [
   'action',
   'contactId',
+  'contactFirstName',
+  'contactLastName',
+  'contactMiddleName',
   'contactName',
   'contactPhone',
   'conversationId',
@@ -1166,14 +1169,20 @@ const clearAppointmentPrefillQuery = async () => {
 const consumeAppointmentPrefillQuery = async () => {
   if (queryValue('action') !== 'new') return;
 
+  const contactId = numericQueryValue('contactId');
+
   openNewAppointment({
-    clientName: queryValue('contactName') || '',
-    clientPhone: queryValue('contactPhone') || '',
-    contactId: numericQueryValue('contactId'),
+    contactId,
     conversationId: numericQueryValue('conversationId'),
   });
 
-  await clearAppointmentPrefillQuery();
+  try {
+    if (contactId) await formStore.loadContact(contactId);
+  } catch (error) {
+    useAlert(formatErrorMessage(error));
+  } finally {
+    await clearAppointmentPrefillQuery();
+  }
 };
 
 const handleDrawerClose = () => {
@@ -2267,7 +2276,6 @@ onMounted(async () => {
                         class="appointment-drawer-multi-control"
                         :model-value="formStore.form.serviceIds"
                         :options="serviceOptions"
-                        use-api-results
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                         :search-placeholder="
                           $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_SEARCH')

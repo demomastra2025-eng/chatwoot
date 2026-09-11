@@ -110,6 +110,46 @@ RSpec.describe Integrations::Medelement::AppointmentImporterService do
     expect(appointment.reload.conversation_id).to be_nil
   end
 
+  it 'preserves a locally confirmed appointment while the provider reception remains active' do
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'confirmed',
+      source: 'medelement',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE'])
+    )
+
+    service.upsert!(
+      resource: resource,
+      contact: nil,
+      reception: reception,
+      import_context: import_context
+    )
+
+    expect(appointment.reload.status).to eq('confirmed')
+  end
+
+  it 'completes a locally confirmed appointment when the provider reception becomes inactive' do
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      status: 'confirmed',
+      source: 'medelement',
+      external_ref: service.external_ref_for(reception['RECEPTION_CODE'])
+    )
+
+    service.upsert!(
+      resource: resource,
+      contact: nil,
+      reception: reception.merge('ACTIVE' => 0),
+      import_context: import_context
+    )
+
+    expect(appointment.reload.status).to eq('completed')
+  end
+
   it 'reimports a trusted outbound appointment without changing its local origin' do
     contact = create(:contact, account: account)
     appointment = create(

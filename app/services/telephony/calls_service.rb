@@ -1,5 +1,5 @@
 class Telephony::CallsService
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
 
   def initialize(account:)
     @account = account

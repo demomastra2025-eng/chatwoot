@@ -103,9 +103,13 @@ export default {
       );
     },
     isVirtualPbxProfileAssignmentInbox() {
-      return ['sipuni', 'binotel', 'asterisk_analog', 'beeline'].includes(
-        this.virtualPbxProviderKind
-      );
+      return [
+        'sipuni',
+        'binotel',
+        'asterisk_analog',
+        'beeline',
+        'wazo',
+      ].includes(this.virtualPbxProviderKind);
     },
     isVirtualPbxSipCredentialsVisible() {
       return ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
@@ -113,9 +117,13 @@ export default {
       );
     },
     isVirtualPbxLocalNativeProvider() {
-      return ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
-        this.virtualPbxProviderKind
-      );
+      return [
+        'asterisk_analog',
+        'sipuni',
+        'binotel',
+        'beeline',
+        'wazo',
+      ].includes(this.virtualPbxProviderKind);
     },
     submitButtonLabel() {
       if (this.isVirtualPbxProfileAssignmentInbox) {

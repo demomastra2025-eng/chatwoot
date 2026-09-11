@@ -23,7 +23,7 @@ RSpec.describe 'Telephony Readiness API', type: :request do
     expect(payload).to include('ready' => true, 'warnings' => [])
     expect(payload.fetch('janus_sip')).to include(
       'healthy' => true,
-      'providers' => %w[asterisk_analog sipuni binotel beeline],
+      'providers' => %w[asterisk_analog sipuni binotel beeline wazo],
       'mode' => 'browser_webphone'
     )
     expect(payload.fetch('account')).to include(

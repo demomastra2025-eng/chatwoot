@@ -73,7 +73,7 @@ describe('Voice channel setup', () => {
     routerPushMock.mockReset();
     createVirtualPbxChannelMock.mockReset();
     dispatchMock.mockResolvedValue({ id: 101 });
-    routeMock.query = { provider: 'kazakhstan' };
+    routeMock.query = { provider: 'wazo' };
   });
 
   it('renders direct Sipuni as a Virtual PBX setup form', () => {
@@ -82,6 +82,14 @@ describe('Voice channel setup', () => {
 
     expect(wrapper.find('form').exists()).toBe(true);
     expect(wrapper.text()).not.toContain('INBOX_MGMT.ADD.VOICE.SIPUNI');
+  });
+
+  it('maps the legacy Kazakhstan route to the Wazo setup form', () => {
+    routeMock.query = { provider: 'kazakhstan' };
+    const wrapper = buildWrapper();
+
+    expect(wrapper.find('form').exists()).toBe(true);
+    expect(wrapper.vm.kazakhstanState.providerKind).toBe('wazo');
   });
 
   it('lists Asterisk analog as a separate provider card', () => {
@@ -250,6 +258,47 @@ describe('Voice channel setup', () => {
     });
   });
 
+  it('creates a standalone Wazo Virtual PBX channel', async () => {
+    routeMock.query = { provider: 'wazo' };
+    createVirtualPbxChannelMock.mockResolvedValue({
+      payload: { ui_config: { inbox_id: 7701 }, errors: [] },
+    });
+    const wrapper = buildWrapper();
+
+    Object.assign(wrapper.vm.kazakhstanState, {
+      channelName: 'Wazo Virtual PBX',
+      phoneNumber: '+7 700 000 1001',
+      connectionHost: 'wazo.example.kz',
+    });
+    await wrapper.find('form').trigger('submit');
+    await flushPromises();
+
+    const [payload, options] = createVirtualPbxChannelMock.mock.calls[0];
+    expect(options).toEqual({ dryRun: false, remoteCommit: false });
+    expect(payload).toMatchObject({
+      provider_kind: 'wazo',
+      channel_name: 'Wazo Virtual PBX',
+      connection: {
+        host: 'wazo.example.kz',
+        port: '5060',
+        transport: 'udp',
+      },
+      metadata: {
+        source: 'virtual_pbx_ui',
+        pbx_platform: 'wazo',
+        outbound_dial_format: 'kz_trunk',
+      },
+    });
+    expect(routerReplaceMock).toHaveBeenCalledWith({
+      name: 'settings_inboxes_add_agents',
+      params: {
+        accountId: 530,
+        inbox_id: 7701,
+      },
+      query: { provider: 'wazo' },
+    });
+  });
+
   it('does not require shared Sipuni credentials before creating a Virtual PBX channel', async () => {
     routeMock.query = { provider: 'sipuni' };
     createVirtualPbxChannelMock.mockResolvedValue({
@@ -269,8 +318,8 @@ describe('Voice channel setup', () => {
     expect(payload.connection).not.toHaveProperty('password');
   });
 
-  it('keeps Sipuni create form free of provider technical numbers and operator SIP AOR', async () => {
-    routeMock.query = { provider: 'kazakhstan' };
+  it('keeps Wazo create form free of provider numbers while exposing optional SIP transport settings', async () => {
+    routeMock.query = { provider: 'wazo' };
     const wrapper = buildWrapper();
 
     wrapper.vm.isVirtualPbxAdvancedVisible = true;
@@ -285,10 +334,10 @@ describe('Voice channel setup', () => {
     expect(wrapper.text()).not.toContain(
       'INBOX_MGMT.ADD.VOICE.FONOSTER.OPERATOR_AGENT_AOR.LABEL'
     );
-    expect(wrapper.text()).not.toContain(
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.CONNECTION_PORT.LABEL'
     );
-    expect(wrapper.text()).not.toContain(
+    expect(wrapper.text()).toContain(
       'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.TRANSPORT.LABEL'
     );
     expect(wrapper.text()).not.toContain(
@@ -342,7 +391,7 @@ describe('Voice channel setup', () => {
   });
 
   it('creates an Asterisk analog channel with configurable provider connection', async () => {
-    routeMock.query = { provider: 'kazakhstan' };
+    routeMock.query = { provider: 'asterisk_analog' };
     createVirtualPbxChannelMock.mockResolvedValue({
       payload: { ui_config: { inbox_id: 202 }, errors: [] },
     });
@@ -410,7 +459,7 @@ describe('Voice channel setup', () => {
   });
 
   it('points employee SIP assignment to settings instead of create', () => {
-    routeMock.query = { provider: 'kazakhstan' };
+    routeMock.query = { provider: 'wazo' };
     const wrapper = buildWrapper();
 
     expect(wrapper.text()).toContain(

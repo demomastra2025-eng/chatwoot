@@ -32,8 +32,8 @@ class Telephony::CallReconciliationService
   AI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   SIPUNI_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
   NATIVE_SIP_PRE_ANSWER_STATUSES = %w[created ringing connecting].freeze
-  NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
-  NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS = %w[asterisk_analog binotel beeline].freeze
+  NATIVE_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
+  NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS = %w[asterisk_analog binotel beeline wazo].freeze
 
   STATUS_PROGRESS = {
     'created' => 0,

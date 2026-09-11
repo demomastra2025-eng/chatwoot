@@ -3,6 +3,7 @@ class Api::V1::Accounts::Scheduling::ContactsController < Api::V1::Accounts::Sch
 
   def index
     contacts = Current.account.contacts.order(created_at: :desc)
+    contacts = contacts.where(id: params[:contact_id]) if params[:contact_id].present?
     contacts = apply_search(contacts)
     contacts = contacts.limit(limit_param)
 

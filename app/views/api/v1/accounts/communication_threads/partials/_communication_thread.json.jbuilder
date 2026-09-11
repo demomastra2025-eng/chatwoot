@@ -3,14 +3,15 @@ channels = local_assigns.fetch(:channels, [])
 last_public_message = local_assigns[:last_public_message]
 last_non_activity_message = local_assigns[:last_non_activity_message]
 conversation_unread_counts = local_assigns[:conversation_unread_counts]
+message_push_data_by_id = {}
 message_push_data = lambda do |message|
   next if message.blank?
 
-  options = {}
-  if conversation_unread_counts
-    options[:conversation_unread_count] = conversation_unread_counts.fetch(message.conversation_id, 0)
+  message_push_data_by_id[message.id] ||= begin
+    options = {}
+    options[:conversation_unread_count] = conversation_unread_counts.fetch(message.conversation_id, 0) if conversation_unread_counts
+    message.push_event_data(**options)
   end
-  message.push_event_data(**options)
 end
 linked_conversations = links.filter_map(&:conversation)
 agent_last_seen_values = linked_conversations.map(&:agent_last_seen_at)

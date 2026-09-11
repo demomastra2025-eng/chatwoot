@@ -75,7 +75,7 @@ class Integrations::Medelement::CabinetSnapshotResolver
   end
 
   def cabinet_code(cabinet)
-    normalized_payload(cabinet)['companyCabinetCode'].to_s
+    Integrations::Medelement::CabinetAttributes.code(cabinet).to_s
   end
 
   def normalized_payload(payload)

@@ -43,7 +43,7 @@ RSpec.describe 'Label API', type: :request do
         expect(response.body).to include(label.title)
       end
 
-      it 'rejects custom-role users without runtime permissions from listing labels' do
+      it 'allows custom-role users without runtime permissions to list labels' do
         custom_role = create(:custom_role, account: account, permissions: [])
         custom_role_user = create(:user, account: account, role: :agent)
         custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
@@ -52,7 +52,8 @@ RSpec.describe 'Label API', type: :request do
             headers: custom_role_user.create_new_auth_token,
             as: :json
 
-        expect(response).to have_http_status(:unauthorized)
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include(label.title)
       end
     end
   end
@@ -72,6 +73,17 @@ RSpec.describe 'Label API', type: :request do
       it 'shows the contact' do
         get "/api/v1/accounts/#{account.id}/labels/#{label.id}",
             headers: admin.create_new_auth_token,
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(response.body).to include(label.title)
+      end
+
+      it 'allows an agent to show a label' do
+        agent = create(:user, account: account, role: :agent)
+
+        get "/api/v1/accounts/#{account.id}/labels/#{label.id}",
+            headers: agent.create_new_auth_token,
             as: :json
 
         expect(response).to have_http_status(:success)
@@ -122,6 +134,18 @@ RSpec.describe 'Label API', type: :request do
           'emoji' => '💎'
         )
       end
+
+      it 'allows an agent to create a label' do
+        agent = create(:user, account: account, role: :agent)
+
+        expect do
+          post "/api/v1/accounts/#{account.id}/labels",
+               headers: agent.create_new_auth_token,
+               params: valid_params
+        end.to change(Label, :count).by(1)
+
+        expect(response).to have_http_status(:success)
+      end
     end
   end
 
@@ -163,6 +187,34 @@ RSpec.describe 'Label API', type: :request do
         expect(label.display_title).to eq('Новый тег клиента')
         expect(response.parsed_body['display_title']).to eq('Новый тег клиента')
       end
+
+      it 'allows a custom-role user without runtime permissions to update a label' do
+        custom_role = create(:custom_role, account: account, permissions: [])
+        custom_role_user = create(:user, account: account, role: :agent)
+        custom_role_user.account_users.find_by(account: account).update!(custom_role: custom_role)
+
+        patch "/api/v1/accounts/#{account.id}/labels/#{label.id}",
+              headers: custom_role_user.create_new_auth_token,
+              params: { display_title: 'Доступно всем' },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(label.reload.display_title).to eq('Доступно всем')
+      end
+    end
+  end
+
+  describe 'DELETE /api/v1/accounts/{account.id}/labels/:id' do
+    it 'allows an agent to delete a label' do
+      agent = create(:user, account: account, role: :agent)
+
+      expect do
+        delete "/api/v1/accounts/#{account.id}/labels/#{label.id}",
+               headers: agent.create_new_auth_token,
+               as: :json
+      end.to change(Label, :count).by(-1)
+
+      expect(response).to have_http_status(:success)
     end
   end
 end
