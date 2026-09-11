@@ -32,6 +32,7 @@ const NATIVE_SIP_PROVIDERS = new Set([
   'sipuni',
   'binotel',
   'beeline',
+  'wazo',
 ]);
 const SIP_STANDBY_REASON =
   'sip_profile_registration_lease_owned_by_another_tab';

@@ -1,9 +1,10 @@
 # frozen_string_literal: true
 
 require 'cgi'
+require 'securerandom'
 
 class Telephony::VirtualPbx::ProvisioningService
-  ALLOWED_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
+  ALLOWED_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   DEFAULT_ROUTE_MODE = 'operator'
   DEFAULT_FALLBACK_MODE = 'reject'
   DEFAULT_OPERATOR_DISTRIBUTION_MODE = Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
@@ -12,8 +13,8 @@ class Telephony::VirtualPbx::ProvisioningService
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
   DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT = 'kz_trunk'
-  PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
-  LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
+  LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   LEGACY_PROVIDER_CONFIG_KEYS = %i[
     app_ref
     runtime_app_ref
@@ -89,7 +90,11 @@ class Telephony::VirtualPbx::ProvisioningService
   def provisioning_plan(inbox_id:, operation: 'update', include_diagnostics: false)
     config = config_builder.for_inbox(inbox_id)
     steps = operation.to_s == 'delete' ? delete_steps(config) : update_steps({}, config)
-    plan = local_provisioning_plan(steps: steps)
+    plan = if config[:provider_kind] == 'wazo' && operation.to_s != 'delete'
+             wazo_provisioning_plan(config)
+           else
+             local_provisioning_plan(steps: steps)
+           end
 
     product_payload(
       operation: 'provisioning_plan',
@@ -104,34 +109,51 @@ class Telephony::VirtualPbx::ProvisioningService
     )
   end
 
-  # Keep remote_commit in the public service contract while remote mutations remain fail-closed.
-  def provision(inbox_id:, remote_commit: false, include_diagnostics: false) # rubocop:disable Lint/UnusedMethodArgument
+  def provision(inbox_id:, remote_commit: false, include_diagnostics: false)
     config = config_builder.for_inbox(inbox_id)
-    plan = local_provisioning_plan(steps: update_steps({}, config))
+    unless config[:provider_kind] == 'wazo' && remote_commit_requested?(remote_commit)
+      plan = local_provisioning_plan(steps: update_steps({}, config))
+      return product_payload(
+        operation: 'provision', config: config, include_diagnostics: include_diagnostics,
+        extra: {
+          status: 'local_only', remote_commit: false, mutation_allowed: false,
+          remote_mutation_allowed: false, remote_mutation_reason: REMOTE_MUTATION_REASON,
+          provisioning_plan: product_plan(plan), warnings: config[:warnings]
+        }
+      )
+    end
+
+    return wazo_not_configured_payload(config, include_diagnostics) unless Telephony::Wazo::ApiClient.configured?
+    return wazo_target_mismatch_payload(config, include_diagnostics) unless wazo_target_matches?(config)
+
+    plan = wazo_provisioning_plan(config)
+    run = build_provisioning_run(config, plan)
+    run.mark_running!
+    result = wazo_provisioning_service(inbox_id).sync!
+    mark_wazo_synced!(inbox_id)
+    run.mark_succeeded!(executed_operations: result[:executed_operations], remote_snapshot: result[:remote_snapshot])
+    updated_config = config_builder.for_inbox(inbox_id)
 
     product_payload(
-      operation: 'provision',
-      config: config_builder.for_inbox(inbox_id),
-      include_diagnostics: include_diagnostics,
+      operation: 'provision', config: updated_config, include_diagnostics: include_diagnostics,
       extra: {
-        status: 'local_only',
-        remote_commit: false,
-        mutation_allowed: false,
-        remote_mutation_allowed: false,
-        remote_mutation_reason: REMOTE_MUTATION_REASON,
-        provisioning_plan: product_plan(plan),
-        warnings: config[:warnings]
+        status: result[:status], remote_commit: true, mutation_allowed: true, remote_mutation_allowed: true,
+        provisioning_plan: product_plan(plan), provisioning_run: run.summary_payload,
+        executed_operations: result[:executed_operations], reconciliation: result[:reconciliation], warnings: updated_config[:warnings]
       }
     )
+  rescue Telephony::Error => e
+    run&.mark_failed!(error: e)
+    wazo_failure_payload(config, include_diagnostics, plan, run, e)
   end
 
   def reconcile(inbox_id:, include_diagnostics: false)
     config = config_builder.for_inbox(inbox_id)
-    reconciliation = {
-      status: config[:ready] ? 'ready' : 'action_required',
-      drift: [],
-      checked_at: Time.current.iso8601
-    }
+    reconciliation = if config[:provider_kind] == 'wazo' && Telephony::Wazo::ApiClient.configured?
+                       wazo_provisioning_service(inbox_id).reconcile
+                     else
+                       { status: config[:ready] ? 'ready' : 'action_required', drift: [], checked_at: Time.current.iso8601 }
+                     end
 
     product_payload(
       operation: 'reconcile',
@@ -216,7 +238,8 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def delete_channel(inbox_id:, confirm: false, dry_run: true, remote_commit: false, include_diagnostics: false)
     existing_config = config_builder.for_inbox(inbox_id)
-    remote_commit = remote_commit_for(existing_config[:provider_kind], remote_commit)
+    remote_attempted = false
+    remote_commit = existing_config[:provider_kind] == 'wazo' && remote_commit_requested?(remote_commit)
     errors = []
     errors << error('confirmation_required', 'Deletion requires explicit confirmation') unless confirm
     if existing_config.dig(
@@ -226,6 +249,11 @@ class Telephony::VirtualPbx::ProvisioningService
                       'Legacy/reference resources are read-only and cannot be deleted by provisioning')
     end
     errors << error('active_calls_present', 'Channel has active calls and cannot be deleted') if active_calls_present?(inbox_id)
+    if remote_commit && !Telephony::Wazo::ApiClient.configured?
+      errors << error('wazo_api_not_configured', 'Wazo API credentials are not configured')
+    elsif remote_commit && !wazo_target_matches?(existing_config)
+      errors << error('wazo_sip_host_mismatch', 'Channel SIP host does not match the configured Wazo target')
+    end
 
     if dry_run || errors.any?
       return dry_run_payload(operation: 'delete', normalized_payload: { inbox_id: inbox_id, confirm: confirm }, errors: errors,
@@ -233,6 +261,8 @@ class Telephony::VirtualPbx::ProvisioningService
     end
 
     plan = local_provisioning_plan(steps: delete_steps(existing_config))
+    remote_attempted = remote_commit
+    remote_result = wazo_provisioning_service(inbox_id).delete_all! if remote_commit
 
     mutation_result = delete_local_channel!(inbox_id)
     payload = mutation_payload(
@@ -242,17 +272,113 @@ class Telephony::VirtualPbx::ProvisioningService
       delete_steps(existing_config),
       existing_config: existing_config,
       prebuilt_plan: plan,
-      remote_result: nil,
+      remote_result: remote_result,
       remote_commit: remote_commit,
       include_diagnostics: include_diagnostics
     )
     broadcast_webphone_config_changed!('delete', mutation_result, existing_config)
     payload
+  rescue StandardError => e
+    raise unless remote_attempted
+
+    wazo_delete_failure_payload(existing_config, include_diagnostics, plan, e)
   end
 
   private
 
   attr_reader :account, :current_user, :config_builder
+
+  def wazo_provisioning_service(inbox_id)
+    Telephony::Wazo::ProvisioningService.new(account: account, inbox: account.inboxes.find(inbox_id))
+  end
+
+  def wazo_provisioning_plan(config)
+    operations = Array.wrap(config[:profiles]).map do |profile|
+      attrs = profile.with_indifferent_access
+      step(
+        'upsert_wazo_operator_graph',
+        'Create or update a managed Wazo user, line, extension, and SIP endpoint',
+        remote: true,
+        ref: attrs[:agent_ref] || attrs[:internal_extension]
+      )
+    end
+    { status: 'ready', remote_mutations: 'enabled', operations: operations }
+  end
+
+  def build_provisioning_run(config, plan)
+    Telephony::ProvisioningRun.build_for(
+      account: account, operation: 'provision', desired_state: config, plan: plan,
+      current_user: current_user, remote_commit: true
+    ).tap(&:save!)
+  end
+
+  def mark_wazo_synced!(inbox_id)
+    inbox = account.inboxes.find(inbox_id)
+    connection = inbox.telephony_number_binding&.provider_connection
+    now = Time.current
+    connection&.update!(ownership_status: 'managed', provisioning_status: 'ready', last_synced_at: now,
+                        metadata: connection.metadata.to_h.merge('wazo_synced_at' => now.iso8601))
+    inbox.telephony_number_binding&.update!(ownership_status: 'managed', last_synced_at: now)
+  end
+
+  def wazo_not_configured_payload(config, include_diagnostics)
+    product_payload(
+      operation: 'provision', config: config, include_diagnostics: include_diagnostics,
+      extra: {
+        status: 'remote_blocked', remote_commit: false, mutation_allowed: false,
+        remote_mutation_allowed: false, remote_mutation_reason: 'WAZO_API_NOT_CONFIGURED',
+        errors: [error('wazo_api_not_configured', 'Wazo API credentials are not configured')]
+      }
+    )
+  end
+
+  def wazo_target_matches?(config)
+    configured_host = ENV.fetch('TELEPHONY_WAZO_SIP_HOST', '').strip.downcase
+    channel_host = config.dig(:resources, :provider_connection, :host).to_s.strip.downcase
+    configured_host.present? && ActiveSupport::SecurityUtils.secure_compare(configured_host, channel_host)
+  end
+
+  def wazo_target_mismatch_payload(config, include_diagnostics)
+    product_payload(
+      operation: 'provision', config: config, include_diagnostics: include_diagnostics,
+      extra: {
+        status: 'remote_blocked', remote_commit: false, mutation_allowed: false,
+        remote_mutation_allowed: false, remote_mutation_reason: 'WAZO_SIP_HOST_MISMATCH',
+        errors: [error('wazo_sip_host_mismatch', 'Channel SIP host does not match the configured Wazo target')]
+      }
+    )
+  end
+
+  def wazo_failure_payload(config, include_diagnostics, plan, run, exception)
+    remote_attempted = run.present?
+    product_payload(
+      operation: 'provision', config: config || {}, include_diagnostics: include_diagnostics,
+      extra: {
+        status: 'remote_failed', remote_commit: remote_attempted, mutation_allowed: true,
+        remote_mutation_allowed: true, provisioning_plan: product_plan(plan || {}),
+        provisioning_run: run&.summary_payload,
+        remote_side_effects_possible: remote_attempted,
+        errors: [error(exception.code || 'wazo_api_failed', exception.message)]
+      }
+    )
+  end
+
+  def wazo_delete_failure_payload(config, include_diagnostics, plan, exception)
+    code = exception.respond_to?(:code) ? exception.code : 'wazo_delete_incomplete'
+    message = if exception.is_a?(Telephony::Error)
+                exception.message
+              else
+                'Local deletion failed after remote cleanup was attempted'
+              end
+    product_payload(
+      operation: 'delete', config: config || {}, include_diagnostics: include_diagnostics,
+      extra: {
+        status: 'delete_failed', remote_commit: true, mutation_allowed: false,
+        remote_side_effects_possible: true, provisioning_plan: product_plan(plan || {}),
+        errors: [error(code || 'wazo_delete_incomplete', message)]
+      }
+    )
+  end
 
   def verify_configuration_version!(config, expected_version)
     return if expected_version.blank?
@@ -284,7 +410,7 @@ class Telephony::VirtualPbx::ProvisioningService
     plan.deep_dup.tap do |copy|
       operations = Array.wrap(copy[:operations] || copy['operations']).map do |operation|
         attrs = operation.with_indifferent_access
-        attrs.slice(:key, :description, :risk, :owned, :shared, :conflict, :remote)
+        attrs.slice(:code, :key, :description, :risk, :owned, :shared, :conflict, :remote, :ref)
       end
       copy[:operations] = operations
       copy[:items] = product_plan_items(operations)
@@ -612,7 +738,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def normalize_metadata(source)
     source = source.to_h.deep_stringify_keys
-    metadata = source.slice('environment', 'source', 'notes', 'outbound_dial_format')
+    metadata = source.slice('environment', 'source', 'notes', 'pbx_platform', 'outbound_dial_format')
     outbound_dial_format = first_present(
       metadata['outbound_dial_format'],
       source['outboundDialFormat'],
@@ -627,7 +753,7 @@ class Telephony::VirtualPbx::ProvisioningService
     [].tap do |errors|
       unless payload[:provider_kind].in?(ALLOWED_PROVIDER_KINDS)
         errors << error('provider_kind_invalid',
-                        'provider_kind must be asterisk_analog, sipuni, binotel, or beeline')
+                        'provider_kind must be asterisk_analog, sipuni, binotel, beeline, or wazo')
       end
       errors << error('channel_name_required', 'channel_name is required') if payload[:channel_name].blank?
       errors << error('display_phone_number_required', 'display_phone_number is required') if payload[:display_phone_number].blank?
@@ -766,6 +892,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def password_secret_ref_for(profile_record, profile, payload, index, sip_username:)
     return nil if sip_username.blank?
+    return generated_refs(payload)[:profile_secret_refs][index] if payload[:provider_kind] == 'wazo'
     return generated_refs(payload)[:profile_secret_refs][index] if profile[:sip_password].present?
 
     profile_record.password_secret_ref
@@ -773,6 +900,7 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def credentials_ref_for(profile_record, profile, payload, index, sip_username:)
     return nil if sip_username.blank?
+    return generated_refs(payload)[:profile_secret_refs][index] if payload[:provider_kind] == 'wazo'
     return generated_refs(payload)[:profile_secret_refs][index] if profile[:sip_password].present?
 
     profile_record.credentials_ref
@@ -1011,7 +1139,8 @@ class Telephony::VirtualPbx::ProvisioningService
     Array.wrap(payload[:profiles]).each_with_index do |profile, index|
       profile_record = sip_profile_record_for(inbox, profile)
       previous_profile = sip_profile_cleanup_snapshot(profile_record) if profile_record.persisted?
-      sip_username = profile.key?(:sip_username) ? profile[:sip_username] : profile_record.sip_username
+      sip_username = sip_username_for(profile_record, profile, payload, inbox)
+      sip_password = sip_password_for(profile_record, profile, payload)
       availability_mode = profile_availability_mode(profile, payload)
       agent_ref = generated_refs(payload)[:profile_refs][index]
       credentials_ref = credentials_ref_for(profile_record, profile, payload, index, sip_username: sip_username)
@@ -1022,7 +1151,7 @@ class Telephony::VirtualPbx::ProvisioningService
         internal_extension: profile[:internal_extension],
         provider_connection: provider_connection,
         sip_username: sip_username,
-        sip_password: profile[:sip_password].presence || profile_record.sip_password,
+        sip_password: sip_password,
         password_secret_ref: password_secret_ref_for(profile_record, profile, payload, index, sip_username: sip_username),
         sip_host: profile_sip_host(profile, payload),
         agent_ref: agent_ref,
@@ -1035,7 +1164,7 @@ class Telephony::VirtualPbx::ProvisioningService
         status: 'active',
         managed_by: MANAGED_BY_ONELINK,
         ownership_status: LOCAL_OWNERSHIP_STATUS,
-        metadata: { provider_kind: payload[:provider_kind] }
+        metadata: profile_record.metadata.to_h.merge(provider_kind: payload[:provider_kind])
       )
       stale_profiles << previous_profile if stale_sip_profile_cleanup_required?(previous_profile, profile_record)
       profile_record.save!
@@ -1063,6 +1192,21 @@ class Telephony::VirtualPbx::ProvisioningService
       status: profile_record.status,
       enabled: profile_record.enabled
     }.compact
+  end
+
+  def sip_username_for(profile_record, profile, payload, inbox)
+    explicit = profile.key?(:sip_username) ? profile[:sip_username] : profile_record.sip_username
+    return explicit if explicit.present? || payload[:provider_kind] != 'wazo'
+
+    identity = profile[:user_id].presence || profile[:internal_extension]
+    "ol#{account.id}i#{inbox.id}u#{identity}"
+  end
+
+  def sip_password_for(profile_record, profile, payload)
+    explicit = profile[:sip_password].presence || profile_record.sip_password
+    return explicit if explicit.present? || payload[:provider_kind] != 'wazo'
+
+    SecureRandom.base58(32)
   end
 
   def stale_sip_profile_cleanup_required?(previous_profile, profile_record)
