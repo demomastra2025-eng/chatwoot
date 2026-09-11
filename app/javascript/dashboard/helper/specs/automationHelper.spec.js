@@ -102,6 +102,7 @@ const CONVERSATION_EVENTS = [
 const APPOINTMENT_EVENTS = [
   'appointment_created',
   'appointment_updated',
+  'appointment_rescheduled',
   'appointment_cancelled',
   'appointment_completed',
 ];

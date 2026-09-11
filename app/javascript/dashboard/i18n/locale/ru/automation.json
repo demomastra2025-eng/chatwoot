@@ -185,6 +185,7 @@
       "CONVERSATION_TRANSFERRED_TO_AI": "Диалог переведён на AI",
       "APPOINTMENT_CREATED": "Запись создана",
       "APPOINTMENT_UPDATED": "Запись обновлена",
+      "APPOINTMENT_RESCHEDULED": "Запись перенесена",
       "APPOINTMENT_CANCELLED": "Запись отменена",
       "APPOINTMENT_COMPLETED": "Запись завершена",
       "DEAL_CREATED": "Сделка создана",

@@ -1,10 +1,13 @@
 class SchedulingAutomationRuleListener < BaseListener
+  RESCHEDULED_ATTRIBUTE_KEYS = %w[starts_at resource_id].freeze
+
   def appointment_created(event)
     process_appointment_event(event, 'appointment_created')
   end
 
   def appointment_updated(event)
     process_appointment_event(event, 'appointment_updated')
+    process_appointment_event(event, 'appointment_rescheduled') if appointment_rescheduled?(event)
   end
 
   def appointment_cancelled(event)
@@ -16,6 +19,10 @@ class SchedulingAutomationRuleListener < BaseListener
   end
 
   private
+
+  def appointment_rescheduled?(event)
+    event.data[:changed_attributes].to_h.keys.intersect?(RESCHEDULED_ATTRIBUTE_KEYS)
+  end
 
   def process_appointment_event(event, event_name)
     return if performed_by_automation?(event)
