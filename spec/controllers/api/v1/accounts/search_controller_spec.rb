@@ -226,6 +226,39 @@ RSpec.describe 'Search', type: :request do
         expect(result).to include(message: nil)
       end
 
+      it 'preserves the first-message payload without per-conversation message queries' do
+        search_term = "batch-#{SecureRandom.hex(6)}"
+        first_message_ids = Array.new(2) do
+          contact = create(:contact, account: account, name: search_term)
+          conversation = create(:conversation, account: account, contact: contact)
+          create(:inbox_member, user: agent, inbox: conversation.inbox)
+          first_message = create(:message, conversation: conversation, account: account, inbox: conversation.inbox, created_at: 2.minutes.ago)
+          create(:message, conversation: conversation, account: account, inbox: conversation.inbox, created_at: 1.minute.ago)
+          first_message.id
+        end
+        sql_queries = []
+        subscriber = lambda do |*, event|
+          next if event[:name] == 'SCHEMA' || event[:cached]
+
+          sql_queries << event[:sql].to_s.squish
+        end
+
+        ActiveSupport::Notifications.subscribed(subscriber, 'sql.active_record') do
+          get "/api/v1/accounts/#{account.id}/search/conversations",
+              headers: agent.create_new_auth_token,
+              params: { q: search_term },
+              as: :json
+        end
+
+        expect(response).to have_http_status(:success)
+        payload = JSON.parse(response.body, symbolize_names: true).dig(:payload, :conversations)
+        expect(payload.pluck(:message).pluck(:id)).to match_array(first_message_ids)
+        message_queries = sql_queries.grep(/FROM "messages"/)
+        expect(message_queries.grep(/DISTINCT ON \(messages\.conversation_id\)/).size).to eq(1)
+        expect(message_queries.grep(/"messages"\."conversation_id" = .*LIMIT/)).to be_empty
+        expect(sql_queries.grep(/FROM "conversations".*WHERE "conversations"\."id" = .*LIMIT/)).to be_empty
+      end
+
       context 'with advanced_search feature enabled', :opensearch do
         before do
           account.enable_features!('advanced_search')

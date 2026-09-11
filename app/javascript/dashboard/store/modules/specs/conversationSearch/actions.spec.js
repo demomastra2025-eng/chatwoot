@@ -9,9 +9,10 @@ vi.mock('axios');
 
 describe('#actions', () => {
   beforeEach(() => {
+    actions.clearSearchResults({ commit });
     commit.mockClear();
-    dispatch.mockClear();
-    axios.get.mockClear();
+    dispatch.mockReset();
+    axios.get.mockReset();
   });
 
   describe('#get', () => {
@@ -87,6 +88,102 @@ describe('#actions', () => {
       expect(dispatch).toHaveBeenCalledWith('messageSearch', payload);
       expect(dispatch).toHaveBeenCalledWith('articleSearch', payload);
     });
+
+    it('passes one abort signal to all requests in the current search', async () => {
+      const signals = [];
+      const payloadByPath = {
+        contacts: { contacts: [] },
+        conversations: { conversations: [] },
+        messages: { messages: [] },
+        articles: { articles: [] },
+      };
+      axios.get.mockImplementation((url, config) => {
+        const path = url.split('/').at(-1);
+        signals.push(config.signal);
+        return Promise.resolve({ data: { payload: payloadByPath[path] } });
+      });
+      dispatch.mockImplementation((action, actionPayload) =>
+        actions[action]({ commit }, actionPayload)
+      );
+
+      await actions.fullSearch({ commit, dispatch }, { q: 'test' });
+
+      expect(signals).toHaveLength(4);
+      expect(signals.every(signal => signal instanceof AbortSignal)).toBe(true);
+      expect(new Set(signals)).toHaveLength(1);
+    });
+
+    it('aborts the previous full search and only completes the current one', async () => {
+      const requests = [];
+      const payloadByPath = {
+        contacts: { contacts: [] },
+        conversations: { conversations: [] },
+        messages: { messages: [] },
+        articles: { articles: [] },
+      };
+      axios.get.mockImplementation((url, config) => {
+        return new Promise((resolve, reject) => {
+          const request = { url, signal: config.signal, resolve };
+          requests.push(request);
+          config.signal.addEventListener('abort', () =>
+            reject(new Error('aborted'))
+          );
+        });
+      });
+      dispatch.mockImplementation((action, actionPayload) =>
+        actions[action]({ commit }, actionPayload)
+      );
+
+      const previousSearch = actions.fullSearch(
+        { commit, dispatch },
+        { q: 'previous' }
+      );
+      const currentSearch = actions.fullSearch(
+        { commit, dispatch },
+        { q: 'current' }
+      );
+
+      expect(
+        requests.slice(0, 4).every(request => request.signal.aborted)
+      ).toBe(true);
+      requests.slice(4).forEach(request => {
+        const path = request.url.split('/').at(-1);
+        request.resolve({ data: { payload: payloadByPath[path] } });
+      });
+      await Promise.all([previousSearch, currentSearch]);
+
+      const completedSearchCommits = commit.mock.calls.filter(
+        ([type, flags]) =>
+          type === types.FULL_SEARCH_SET_UI_FLAG && flags.isSearchCompleted
+      );
+      expect(completedSearchCommits).toHaveLength(1);
+    });
+
+    it('keeps active request controllers isolated between store instances', async () => {
+      const firstCommit = vi.fn();
+      const secondCommit = vi.fn();
+      let resolveFirstDispatch;
+      const pendingDispatch = new Promise(resolve => {
+        resolveFirstDispatch = resolve;
+      });
+      const firstDispatch = vi.fn(() => pendingDispatch);
+      const secondDispatch = vi.fn(() => Promise.resolve());
+      const abortSpy = vi.spyOn(AbortController.prototype, 'abort');
+
+      const firstSearch = actions.fullSearch(
+        { commit: firstCommit, dispatch: firstDispatch },
+        { q: 'first store' }
+      );
+      await actions.fullSearch(
+        { commit: secondCommit, dispatch: secondDispatch },
+        { q: 'second store' }
+      );
+
+      expect(abortSpy).not.toHaveBeenCalled();
+      resolveFirstDispatch();
+      await firstSearch;
+      abortSpy.mockRestore();
+    });
   });
 
   describe('#contactSearch', () => {
@@ -132,6 +229,43 @@ describe('#actions', () => {
       await actions.conversationSearch({ commit }, { q: 'test' });
       expect(commit.mock.calls).toEqual([
         [types.CONVERSATION_SEARCH_SET_UI_FLAG, { isFetching: true }],
+        [types.CONVERSATION_SEARCH_SET_UI_FLAG, { isFetching: false }],
+      ]);
+    });
+
+    it('ignores a stale response after search results are cleared', async () => {
+      let resolveOld;
+      let resolveCurrent;
+      axios.get
+        .mockReturnValueOnce(
+          new Promise(resolve => {
+            resolveOld = resolve;
+          })
+        )
+        .mockReturnValueOnce(
+          new Promise(resolve => {
+            resolveCurrent = resolve;
+          })
+        );
+
+      const oldSearch = actions.conversationSearch({ commit }, { q: 'old' });
+      actions.clearSearchResults({ commit });
+      commit.mockClear();
+      const currentSearch = actions.conversationSearch(
+        { commit },
+        { q: 'current' }
+      );
+
+      resolveCurrent({
+        data: { payload: { conversations: [{ id: 'current' }] } },
+      });
+      await currentSearch;
+      resolveOld({ data: { payload: { conversations: [{ id: 'old' }] } } });
+      await oldSearch;
+
+      expect(commit.mock.calls).toEqual([
+        [types.CONVERSATION_SEARCH_SET_UI_FLAG, { isFetching: true }],
+        [types.CONVERSATION_SEARCH_SET, [{ id: 'current' }]],
         [types.CONVERSATION_SEARCH_SET_UI_FLAG, { isFetching: false }],
       ]);
     });

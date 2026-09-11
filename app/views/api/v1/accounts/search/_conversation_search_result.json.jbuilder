@@ -1,7 +1,7 @@
 json.id conversation.display_id
 json.account_id conversation.account_id
 json.created_at conversation.created_at.to_i
-message = conversation.messages.first
+message = @conversation_first_messages[conversation.id]
 if message
   json.message do
     json.partial! 'message', formats: [:json], message: message

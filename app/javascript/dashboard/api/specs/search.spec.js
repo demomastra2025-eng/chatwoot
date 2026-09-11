@@ -77,6 +77,18 @@ describe('#SearchAPI', () => {
       );
     });
 
+    it('#conversations forwards an abort signal', () => {
+      const controller = new AbortController();
+      searchAPI.conversations({ q: 'test', signal: controller.signal });
+      expect(axiosMock.get).toHaveBeenCalledWith(
+        '/api/v1/search/conversations',
+        {
+          params: { q: 'test', page: 1, since: undefined, until: undefined },
+          signal: controller.signal,
+        }
+      );
+    });
+
     it('#messages', () => {
       searchAPI.messages({ q: 'test', page: 1 });
       expect(axiosMock.get).toHaveBeenCalledWith('/api/v1/search/messages', {
