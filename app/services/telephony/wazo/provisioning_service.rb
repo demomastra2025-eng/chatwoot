@@ -35,10 +35,15 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
   end
 
   def reconcile
-    desired_names = desired_profiles.map { |profile| endpoint_name(profile) }.sort
+    desired_by_name = desired_profiles.index_by { |profile| endpoint_name(profile) }
+    desired_names = desired_by_name.keys.sort
     endpoints = managed_endpoints
     actual_names = endpoints.filter_map { |endpoint| endpoint['name'] }.sort
-    incomplete = endpoints.filter_map { |endpoint| endpoint['name'] unless graph_complete?(endpoint) }.sort
+    incomplete = endpoints.filter_map do |endpoint|
+      name = endpoint['name']
+      profile = desired_by_name[name]
+      name if profile.present? && !graph_complete?(endpoint, profile)
+    end.sort
 
     reconciliation_payload(desired_names, actual_names, incomplete)
   end
@@ -147,8 +152,7 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
   def validated_persisted_refs(profile, discovered_endpoint)
     refs = profile.metadata.to_h.stringify_keys.slice(*REMOTE_REF_KEYS)
     return refs if refs.values.none?(&:present?)
-
-    raise_cleanup_refs_error! unless refs.values.all?(&:present?)
+    return validated_partial_refs(profile, refs) unless REMOTE_REF_KEYS.all? { |key| refs[key].present? }
 
     endpoint_uuid = refs.fetch('wazo_endpoint_uuid')
     endpoint = if discovered_endpoint&.fetch('uuid', nil).to_s == endpoint_uuid.to_s
@@ -159,6 +163,74 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
     actual = graph_refs(endpoint, profile: profile)
     ensure_cleanup_refs_match!(refs, actual)
     refs
+  end
+
+  def validated_partial_refs(profile, refs)
+    verified = refs.each_with_object({}) do |(key, identifier), result|
+      next if identifier.blank?
+
+      result[key] = identifier if persisted_ref_owned?(profile, key, identifier, refs)
+    rescue Telephony::Error => e
+      raise unless not_found?(e)
+
+      clear_checkpoint_remote_ref!(profile, key)
+    end
+    validate_line_only_extension_checkpoint!(profile, refs, verified)
+    verified
+  end
+
+  def validate_line_only_extension_checkpoint!(profile, refs, verified)
+    return if refs['wazo_line_id'].blank? || refs['wazo_extension_id'].present?
+
+    line = client.line(refs['wazo_line_id'])
+    extension_summary = managed_extension_for_profile(line, profile)
+    raise_extension_recovery_error! if extension_summary.blank?
+
+    extension = client.extension(extension_summary.fetch('id'))
+    raise_extension_recovery_error! unless extension_belongs_solely_to_line?(extension, line)
+
+    verified['wazo_extension_id'] = extension.fetch('id')
+  rescue KeyError
+    raise_extension_recovery_error!
+  end
+
+  def persisted_ref_owned?(profile, key, identifier, refs)
+    resource, expected = persisted_ref_resource_and_marker(profile, key, identifier)
+    raise_cleanup_refs_error! unless expected.all? { |field, value| resource[field].to_s == value.to_s }
+    ensure_extension_belongs_to_line!(resource, refs['wazo_line_id']) if key == 'wazo_extension_id'
+
+    true
+  end
+
+  def ensure_extension_belongs_to_line!(extension, line_id)
+    raise_cleanup_refs_error! if line_id.blank?
+
+    line = client.line(line_id)
+    raise_cleanup_refs_error! unless extension_belongs_solely_to_line?(extension, line)
+  end
+
+  def extension_belongs_solely_to_line?(extension, line)
+    extension_ids = Array(line['extensions']).filter_map { |candidate| candidate['id'] }
+    extension_ids.map(&:to_s).include?(extension['id'].to_s) && sole_line?(extension, line)
+  end
+
+  def persisted_ref_resource_and_marker(profile, key, identifier)
+    case key
+    when 'wazo_user_uuid'
+      [client.user(identifier), user_payload(profile).stringify_keys.slice('username', 'lastname')]
+    when 'wazo_line_id'
+      [client.line(identifier), line_payload(profile).stringify_keys.slice('context', 'caller_id_name')]
+    when 'wazo_extension_id'
+      [client.extension(identifier), extension_payload(profile).stringify_keys]
+    when 'wazo_endpoint_uuid'
+      [client.sip_endpoint(identifier), { 'name' => endpoint_name(profile), 'label' => endpoint_label }]
+    else
+      raise_cleanup_refs_error!
+    end
+  end
+
+  def clear_checkpoint_remote_ref!(profile, key)
+    profile.update!(metadata: profile.metadata.to_h.except(key))
   end
 
   def existing_graph_refs(endpoint, profile)
@@ -191,6 +263,9 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
     line = client.line(line_id)
     extension_id ||= managed_extension_for_profile(line, profile)&.fetch('id', nil)
     raise_extension_recovery_error! if extension_id.blank?
+
+    extension = client.extension(extension_id)
+    raise_extension_recovery_error! unless extension_belongs_solely_to_line?(extension, line)
 
     client.update_line(line_id, line_payload(profile))
     client.update_extension(extension_id, extension_payload(profile))
@@ -427,8 +502,8 @@ class Telephony::Wazo::ProvisioningService # rubocop:disable Metrics/ClassLength
     client.dissociate_user_line(refs[:user_uuid], line_id) if refs[:user_uuid].present?
   end
 
-  def graph_complete?(endpoint)
-    refs = graph_refs(endpoint)
+  def graph_complete?(endpoint, profile)
+    refs = graph_refs(endpoint, profile: profile)
     refs.values.all?(&:present?)
   rescue Telephony::Error
     false

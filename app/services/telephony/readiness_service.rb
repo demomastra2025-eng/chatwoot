@@ -84,7 +84,7 @@ class Telephony::ReadinessService
   def build_inbox_warnings(channel, binding, policy, virtual_pbx)
     return [warning('missing_number_binding', 'Telephony number binding is missing')] if binding.blank?
 
-    warnings = binding_warnings(channel, binding, virtual_pbx)
+    warnings = binding_warnings(channel, binding, virtual_pbx) + virtual_pbx_blocking_warnings(virtual_pbx)
     return warnings + [warning('missing_routing_policy', 'Telephony routing policy is missing')] if policy.blank?
 
     warnings + build_route_warnings(binding, policy)
@@ -156,6 +156,13 @@ class Telephony::ReadinessService
       phone_numbers[:display_phone_number].present? &&
       phone_numbers[:ingress_number].present? &&
       phone_numbers[:display_phone_number] != phone_numbers[:ingress_number]
+  end
+
+  def virtual_pbx_blocking_warnings(virtual_pbx)
+    Array.wrap(virtual_pbx&.dig(:warnings)).filter_map do |item|
+      attrs = item.to_h.with_indifferent_access
+      warning(attrs[:code], attrs[:message]) if attrs[:severity] == 'blocking'
+    end
   end
 
   def virtual_pbx_config(inbox)

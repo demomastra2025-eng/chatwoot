@@ -81,4 +81,22 @@ RSpec.describe 'Telephony Readiness API', type: :request do
     expect(inbox).to include('ready' => false, 'number_binding_present' => false)
     expect(inbox.fetch('warnings').map { |warning| warning['code'] }).to include('missing_number_binding')
   end
+
+  it 'propagates blocking Virtual PBX readiness warnings to the account summary' do
+    voice_inbox
+    virtual_pbx = Telephony::VirtualPbx::ConfigBuilder.new(account: account).for_inbox(voice_inbox)
+    virtual_pbx[:warnings] << {
+      code: 'provider_live_boundary_unverified',
+      message: 'Provider live boundary has not been verified',
+      severity: 'blocking'
+    }
+    builder = instance_double(Telephony::VirtualPbx::ConfigBuilder, for_inbox: virtual_pbx)
+    allow(Telephony::VirtualPbx::ConfigBuilder).to receive(:new).and_return(builder)
+
+    get path, headers: headers
+
+    payload = response.parsed_body.fetch('payload')
+    expect(payload).to include('ready' => false)
+    expect(payload.dig('inboxes', 0, 'warnings').pluck('code')).to include('provider_live_boundary_unverified')
+  end
 end

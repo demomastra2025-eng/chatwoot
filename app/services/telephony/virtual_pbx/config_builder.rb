@@ -6,6 +6,15 @@ class Telephony::VirtualPbx::ConfigBuilder
   MANAGED_BY_ONELINK = 'onelink'
   SECRET_KEY_PATTERN = /(password|secret|token|api[_-]?key|credential|auth)/i
   PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
+  WAZO_LIVE_VERIFICATION_FLAGS = {
+    'inbound_route_verified' => ['wazo_inbound_route_unverified', 'Wazo inbound DID route has not been verified'],
+    'outbound_route_verified' => ['wazo_outbound_route_unverified', 'Wazo outbound trunk route has not been verified'],
+    'event_ingress_verified' => ['wazo_event_ingress_unverified', 'Wazo call event ingress has not been verified'],
+    'recording_verified' => ['wazo_recording_unverified', 'Wazo call recording persistence has not been verified']
+  }.freeze
+  WAZO_VERIFICATION_METADATA_KEYS = (WAZO_LIVE_VERIFICATION_FLAGS.keys + ['wazo_verified_configuration_fingerprint']).freeze
+  WAZO_PROVIDER_RUNTIME_ATTRIBUTES = %w[last_reconciled_at remote_drift_detected_at remote_drift_summary].freeze
+  WAZO_PROVIDER_RUNTIME_METADATA_KEYS = %w[max_call_duration_seconds].freeze
   UNKNOWN_PROVIDER_TEMPLATE = {
     label: 'SIP provider',
     default_transport: 'udp',
@@ -123,6 +132,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       id: config[:id],
       inbox_id: config[:inbox_id],
       configuration_version: config[:configuration_version],
+      live_verification_fingerprint: config[:live_verification_fingerprint],
       status: ui_status_payload(config, ownership, resources),
       channel: {
         name: config[:name],
@@ -260,6 +270,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       channel_id: channel.id,
       account_id: account.id,
       configuration_version: configuration_version_for(inbox, channel, binding, policy),
+      live_verification_fingerprint: live_verification_fingerprint_for(provider_kind, inbox, channel, binding, policy),
       provider: channel.provider,
       provider_kind: provider_kind,
       provider_template: template_for(provider_kind),
@@ -310,6 +321,30 @@ class Telephony::VirtualPbx::ConfigBuilder
     attributes = record.attributes.except('created_at', 'updated_at', 'last_synced_at')
     attributes['metadata'] = record.metadata.to_h.except(*SIP_PROFILE_RUNTIME_METADATA_KEYS) if record.is_a?(Telephony::SipProfile)
     [record.class.base_class.name, attributes]
+  end
+
+  def wazo_live_configuration_fingerprint(inbox, channel, binding, policy)
+    records = [inbox, channel, binding, policy, binding&.provider_connection, *inbox.telephony_sip_profiles.order(:id).to_a].compact
+    payload = records.map { |record| wazo_live_configuration_fingerprint_for(record) }
+    Digest::SHA256.hexdigest(JSON.generate(canonical_configuration_value(payload)))
+  end
+
+  def wazo_live_configuration_fingerprint_for(record)
+    attributes = record.attributes.except('created_at', 'updated_at', 'last_synced_at')
+    if record.is_a?(Telephony::SipProfile)
+      attributes['metadata'] = record.metadata.to_h.except(*SIP_PROFILE_RUNTIME_METADATA_KEYS)
+    elsif record.is_a?(Telephony::ProviderConnection) || record.is_a?(Telephony::NumberBinding)
+      attributes = attributes.except(*WAZO_PROVIDER_RUNTIME_ATTRIBUTES) if record.is_a?(Telephony::ProviderConnection)
+      metadata_keys = WAZO_VERIFICATION_METADATA_KEYS + WAZO_PROVIDER_RUNTIME_METADATA_KEYS
+      attributes['metadata'] = record.metadata.to_h.except(*metadata_keys)
+    end
+    [record.class.base_class.name, attributes]
+  end
+
+  def live_verification_fingerprint_for(provider_kind, inbox, channel, binding, policy)
+    return unless provider_kind == 'wazo'
+
+    wazo_live_configuration_fingerprint(inbox, channel, binding, policy)
   end
 
   def canonical_configuration_value(value)
@@ -472,29 +507,69 @@ class Telephony::VirtualPbx::ConfigBuilder
       end
       warnings << split_phone_warning(parts)
       warnings << provider_managed_gateway_credentials_warning(channel: channel, binding: binding, parts: parts)
-      warnings.concat(wazo_readiness_warnings(channel: channel, binding: binding))
+      warnings.concat(wazo_readiness_warnings(channel: channel, binding: binding, policy: policy))
       warnings << legacy_ownership_warning(channel: channel, binding: binding)
     end.compact
   end
 
-  def wazo_readiness_warnings(channel:, binding:)
+  def wazo_readiness_warnings(channel:, binding:, policy:)
     return [] unless channel&.provider.to_s == 'wazo'
 
     profiles = channel.inbox.telephony_sip_profiles.select(&:enabled?)
     return [warning('missing_wazo_profiles', 'Add at least one enabled Wazo operator profile', severity: 'blocking')] if profiles.empty?
 
     connection = binding&.provider_connection
-    warnings = []
-    if connection.blank? || connection.provisioning_status != 'ready'
-      warnings << warning('wazo_remote_provisioning_required', 'Apply Wazo provisioning before using this channel', severity: 'blocking')
-    end
-    if profiles.any? { |profile| profile.metadata.to_h['wazo_endpoint_uuid'].blank? }
-      warnings << warning('wazo_endpoint_missing', 'One or more Wazo operator endpoints are not provisioned', severity: 'blocking')
-    end
-    if profiles.none?(&:registered_for_routing?)
-      warnings << warning('wazo_operators_offline', 'No Wazo operator endpoint is currently registered', severity: 'blocking')
-    end
+    warnings = wazo_remote_and_profile_warnings(connection, profiles)
+    warnings.concat(wazo_live_verification_warnings(channel, binding, policy))
     warnings
+  end
+
+  def wazo_remote_and_profile_warnings(connection, profiles)
+    [
+      wazo_remote_provisioning_warning(connection),
+      wazo_endpoint_warning(profiles),
+      wazo_operator_registration_warning(profiles)
+    ].compact
+  end
+
+  def wazo_remote_provisioning_warning(connection)
+    return if connection.present? && connection.provisioning_status == 'ready'
+
+    warning('wazo_remote_provisioning_required', 'Apply Wazo provisioning before using this channel', severity: 'blocking')
+  end
+
+  def wazo_endpoint_warning(profiles)
+    return unless profiles.any? { |profile| profile.metadata.to_h['wazo_endpoint_uuid'].blank? }
+
+    warning('wazo_endpoint_missing', 'One or more Wazo operator endpoints are not provisioned', severity: 'blocking')
+  end
+
+  def wazo_operator_registration_warning(profiles)
+    return if profiles.any?(&:registered_for_routing?)
+
+    warning('wazo_operators_offline', 'No Wazo operator endpoint is currently registered', severity: 'blocking')
+  end
+
+  def wazo_live_verification_warnings(channel, binding, policy)
+    connection = binding&.provider_connection
+    verification = connection&.metadata.to_h.stringify_keys
+    fingerprint_matches = wazo_verification_fingerprint_matches?(verification, channel, binding, policy)
+    WAZO_LIVE_VERIFICATION_FLAGS.filter_map do |key, (code, message)|
+      verified = fingerprint_matches && verified_wazo_capability?(verification&.[](key))
+      warning(code, message, severity: 'blocking') unless verified
+    end
+  end
+
+  def wazo_verification_fingerprint_matches?(verification, channel, binding, policy)
+    stored = verification&.[]('wazo_verified_configuration_fingerprint')
+    return false unless stored.is_a?(String) && stored.match?(/\A[0-9a-f]{64}\z/)
+
+    expected = wazo_live_configuration_fingerprint(channel.inbox, channel, binding, policy)
+    ActiveSupport::SecurityUtils.secure_compare(stored, expected)
+  end
+
+  def verified_wazo_capability?(value)
+    value == true || value.to_s.casecmp('true').zero?
   end
 
   def provider_managed_gateway_credentials_warning(channel:, binding:, parts:)

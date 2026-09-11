@@ -77,6 +77,98 @@ RSpec.describe Telephony::Wazo::ProvisioningService do
     expect(client).not_to have_received(:sip_endpoints)
   end
 
+  it 'reports an incomplete desired graph during reconcile instead of raising an argument error' do
+    endpoint = {
+      'uuid' => 'endpoint-uuid', 'name' => 'ol-a74-i242-p87',
+      'label' => 'OneLink managed account=74 inbox=242'
+    }
+    allow(client).to receive(:sip_endpoints).and_return([endpoint])
+    allow(client).to receive(:sip_endpoint).with('endpoint-uuid').and_return(endpoint)
+
+    result = service.reconcile
+
+    expect(result).to include(
+      status: 'drifted',
+      incomplete_graph_endpoint_names: ['ol-a74-i242-p87'],
+      missing_endpoint_names: [],
+      stale_endpoint_names: []
+    )
+  end
+
+  it 'recovers a valid partial checkpoint after a process interruption', :aggregate_failures do
+    profile_metadata['wazo_user_uuid'] = 'user-uuid'
+    allow(client).to receive(:sip_endpoints).and_return([])
+    allow(client).to receive(:user).with('user-uuid').and_return(
+      'username' => 'ol-a74-i242-u-p87', 'lastname' => 'managed 74/242/87'
+    )
+    expect(client).to receive(:update_user).with('user-uuid', hash_including(username: 'ol-a74-i242-u-p87'))
+    expect(client).to receive(:create_sip_endpoint).and_return('uuid' => 'endpoint-uuid')
+    allow(client).to receive(:lines).and_return([])
+    allow(client).to receive(:extensions).and_return([])
+    expect(client).to receive(:create_line).and_return(
+      'id' => 12, 'extensions' => [{ 'id' => 13, 'context' => 'onelink-test', 'exten' => '101' }]
+    )
+    expect(client).to receive(:associate_user_line).with('user-uuid', 12)
+    expect(client).to receive(:associate_line_extension).with(12, 13)
+    expect(client).to receive(:associate_line_sip_endpoint).with(12, 'endpoint-uuid')
+
+    expect(service.sync!).to include(status: 'remote_committed')
+    expect(profile_metadata.slice(*described_class::REMOTE_REF_KEYS)).to include(
+      'wazo_user_uuid' => 'user-uuid', 'wazo_endpoint_uuid' => 'endpoint-uuid',
+      'wazo_line_id' => 12, 'wazo_extension_id' => 13
+    )
+  end
+
+  it 'blocks recovery when a partial checkpoint points to an unowned resource' do
+    profile_metadata['wazo_user_uuid'] = 'foreign-user-uuid'
+    allow(client).to receive(:sip_endpoints).and_return([])
+    allow(client).to receive(:user).with('foreign-user-uuid').and_return(
+      'username' => 'foreign-user', 'lastname' => 'not managed by OneLink'
+    )
+    expect(client).not_to receive(:update_user)
+
+    expect { service.sync! }.to raise_error(Telephony::Error) do |error|
+      expect(error.code).to eq('WAZO_GRAPH_OWNERSHIP_UNPROVEN')
+    end
+  end
+
+  it 'blocks a colliding extension that does not belong to the managed line' do
+    profile_metadata.merge!('wazo_line_id' => 12, 'wazo_extension_id' => 13)
+    allow(client).to receive(:sip_endpoints).and_return([])
+    allow(client).to receive(:line).with(12).and_return(
+      'id' => 12, 'context' => 'onelink-test', 'caller_id_name' => 'OneLink managed a=74 i=242 p=87',
+      'extensions' => [{ 'id' => 99 }]
+    )
+    allow(client).to receive(:extension).with(13).and_return(
+      'id' => 13, 'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 77 }]
+    )
+    expect(client).not_to receive(:update_extension)
+
+    expect { service.sync! }.to raise_error(Telephony::Error) do |error|
+      expect(error.code).to eq('WAZO_GRAPH_OWNERSHIP_UNPROVEN')
+    end
+  end
+
+  it 'blocks a shared extension discovered from a line-only checkpoint before remote mutation' do
+    profile_metadata['wazo_line_id'] = 12
+    managed_line = {
+      'id' => 12, 'context' => 'onelink-test', 'caller_id_name' => 'OneLink managed a=74 i=242 p=87',
+      'extensions' => [{ 'id' => 13, 'context' => 'onelink-test', 'exten' => '101' }]
+    }
+    allow(client).to receive(:sip_endpoints).and_return([])
+    allow(client).to receive(:line).with(12).and_return(managed_line)
+    allow(client).to receive(:extension).with(13).and_return(
+      'id' => 13, 'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 12 }, { 'id' => 77 }]
+    )
+    expect(client).not_to receive(:update_line)
+    expect(client).not_to receive(:update_extension)
+    expect(client).not_to receive(:associate_line_extension)
+
+    expect { service.sync! }.to raise_error(Telephony::Error) do |error|
+      expect(error.code).to eq('WAZO_EXTENSION_OWNERSHIP_UNPROVEN')
+    end
+  end
+
   context 'with an existing managed graph' do
     let(:profile_metadata) do
       {
@@ -103,7 +195,7 @@ RSpec.describe Telephony::Wazo::ProvisioningService do
         'username' => 'ol-a74-i242-u-p87', 'lastname' => 'managed 74/242/87', 'lines' => [{ 'id' => 12 }]
       )
       allow(client).to receive(:extension).with(13).and_return(
-        'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 12 }]
+        'id' => 13, 'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 12 }]
       )
       expect(client).to receive(:update_user).with('user-uuid', hash_including(username: 'ol-a74-i242-u-p87'))
       expect(client).to receive(:update_line).with(
@@ -222,7 +314,7 @@ RSpec.describe Telephony::Wazo::ProvisioningService do
       'lines' => [{ 'id' => 12 }]
     )
     allow(client).to receive(:extension).with(13).and_return(
-      'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 12 }]
+      'id' => 13, 'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 12 }]
     )
     allow(client).to receive(:dissociate_line_sip_endpoint)
     allow(client).to receive(:dissociate_line_extension)
@@ -261,7 +353,7 @@ RSpec.describe Telephony::Wazo::ProvisioningService do
       'username' => 'ol-a74-i242-u-p87', 'lastname' => 'managed 74/242/87', 'lines' => [{ 'id' => 12 }]
     )
     allow(client).to receive(:extension).with(13).and_return(
-      'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 12 }]
+      'id' => 13, 'context' => 'onelink-test', 'exten' => '101', 'lines' => [{ 'id' => 12 }]
     )
     allow(client).to receive(:delete_sip_endpoint)
 

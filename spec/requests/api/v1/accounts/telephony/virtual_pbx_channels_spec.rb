@@ -468,6 +468,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
 
     expect(response).to have_http_status(:ok)
     body = response.parsed_body.fetch('payload')
+    expect(body.dig('ui_config', 'live_verification_fingerprint')).to match(/\A[0-9a-f]{64}\z/)
     expect(body).to include(
       'valid' => true,
       'local_commit' => true,
@@ -487,6 +488,48 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       'pbx_platform' => 'wazo',
       'outbound_dial_format' => 'kz_trunk'
     )
+    fingerprint = body.dig('ui_config', 'live_verification_fingerprint')
+    fingerprint_builder = Telephony::VirtualPbx::ConfigBuilder.new(account: account)
+    fingerprint_records = [inbox, inbox.channel, inbox.telephony_number_binding,
+                           inbox.telephony_number_binding.routing_policy, connection]
+    before_fingerprint_components = fingerprint_records.map do |record|
+      fingerprint_builder.send(:wazo_live_configuration_fingerprint_for, record.reload)
+    end
+    verification = Telephony::VirtualPbx::ConfigBuilder::WAZO_LIVE_VERIFICATION_FLAGS.keys.index_with(true)
+    verification_payload = payload.deep_merge(
+      metadata: verification.merge('wazo_verified_configuration_fingerprint' => fingerprint)
+    )
+    put_with_configuration_version "#{base_path}/#{inbox.id}",
+                                   params: verification_payload.merge(dry_run: false, remote_commit: false),
+                                   headers: headers,
+                                   as: :json
+
+    expect(response).to have_http_status(:ok)
+    verified_body = response.parsed_body.fetch('payload')
+    after_fingerprint_components = fingerprint_records.map do |record|
+      fingerprint_builder.send(:wazo_live_configuration_fingerprint_for, record.reload)
+    end
+    changed_fingerprint_components = after_fingerprint_components.zip(before_fingerprint_components).filter_map do |after, before|
+      after.first unless after == before
+    end
+    expect(changed_fingerprint_components).to be_empty
+    expect(verified_body.dig('ui_config', 'live_verification_fingerprint')).to eq(fingerprint)
+    expect(connection.reload.metadata).to include(
+      verification.merge('wazo_verified_configuration_fingerprint' => fingerprint)
+    )
+
+    put_with_configuration_version "#{base_path}/#{inbox.id}",
+                                   params: verification_payload.deep_merge(
+                                     connection: { host: 'changed-wazo.example.kz' },
+                                     dry_run: false,
+                                     remote_commit: false
+                                   ),
+                                   headers: headers,
+                                   as: :json
+
+    expect(response).to have_http_status(:ok)
+    changed_body = response.parsed_body.fetch('payload')
+    expect(changed_body.dig('ui_config', 'live_verification_fingerprint')).not_to eq(fingerprint)
   end
 
   it 'generates Wazo operator SIP credentials and explicitly provisions the managed endpoint' do
@@ -499,6 +542,7 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     post base_path, params: payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
     inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
     inbox = Inbox.find(inbox_id)
+    expect(inbox.telephony_number_binding.provider_connection.metadata['outbound_dial_format']).to eq('kz_trunk')
     inbox.inbox_members.create!(user_id: agent.id)
 
     put_with_configuration_version "#{base_path}/#{inbox_id}",

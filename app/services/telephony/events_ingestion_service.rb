@@ -44,6 +44,7 @@ class Telephony::EventsIngestionService
     sipuni
     binotel
     beeline
+    wazo
   ].freeze
   ACCOUNT_METADATA_KEYS = %w[
     onelink_account_id

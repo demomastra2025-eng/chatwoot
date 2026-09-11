@@ -126,6 +126,7 @@ class Telephony::CallReconciliationService
 
   JANUS_NATIVE_SIP_REF_SQL = NATIVE_SIP_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:janus:%'" }.join(' OR ').freeze
   NATIVE_SIP_LOCAL_REF_SQL = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "external_call_ref LIKE '#{provider}:local:%'" }.join(' OR ').freeze
+  NATIVE_SIP_LOCAL_PROVIDER_SQL = NATIVE_SIP_LOCAL_OUTBOUND_PROVIDERS.map { |provider| "'#{provider}'" }.join(', ').freeze
   AI_ROUTE_SCOPE_SQL = <<~SQL.squish.freeze
     COALESCE(
       metadata ->> 'route_action',
@@ -139,7 +140,7 @@ class Telephony::CallReconciliationService
     "(provider = 'sipuni' AND provider_call_sid IS NOT NULL)",
     "(#{JANUS_NATIVE_SIP_REF_SQL})",
     "(#{AI_ROUTE_SCOPE_SQL})",
-    "(provider IN ('asterisk_analog', 'binotel', 'beeline') AND direction = 'outbound' " \
+    "(provider IN (#{NATIVE_SIP_LOCAL_PROVIDER_SQL}) AND direction = 'outbound' " \
     "AND provider_call_sid IS NULL AND (#{NATIVE_SIP_LOCAL_REF_SQL}))"
   ].join(' OR ').freeze
 

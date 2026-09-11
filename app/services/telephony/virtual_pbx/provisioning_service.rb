@@ -13,6 +13,7 @@ class Telephony::VirtualPbx::ProvisioningService
   REMOTE_MUTATION_REASON = 'REMOTE_MUTATION_REQUIRES_APPROVAL'
   DEFAULT_OPERATOR_SIP_DOMAIN = 'operator.cloud.vconsult.kz'
   DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT = 'kz_trunk'
+  DEFAULT_WAZO_OUTBOUND_DIAL_FORMAT = 'kz_trunk'
   PROVIDER_OWNED_ROUTING_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   LOCAL_NATIVE_PROVIDER_KINDS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   LEGACY_PROVIDER_CONFIG_KEYS = %i[
@@ -738,7 +739,11 @@ class Telephony::VirtualPbx::ProvisioningService
 
   def normalize_metadata(source)
     source = source.to_h.deep_stringify_keys
-    metadata = source.slice('environment', 'source', 'notes', 'pbx_platform', 'outbound_dial_format')
+    metadata = source.slice(
+      'environment', 'source', 'notes', 'pbx_platform', 'outbound_dial_format',
+      'inbound_route_verified', 'outbound_route_verified', 'event_ingress_verified', 'recording_verified',
+      'wazo_verified_configuration_fingerprint'
+    )
     outbound_dial_format = first_present(
       metadata['outbound_dial_format'],
       source['outboundDialFormat'],
@@ -1068,13 +1073,19 @@ class Telephony::VirtualPbx::ProvisioningService
     metadata = existing_metadata
                .merge((payload[:metadata] || {}).to_h.with_indifferent_access)
                .merge(connection_metadata)
-    return metadata unless payload[:provider_kind].to_s == 'asterisk_analog'
+    default_dial_format = default_outbound_dial_format(payload[:provider_kind])
+    return metadata if default_dial_format.blank?
 
     if metadata[:outbound_dial_format].blank? && existing_metadata[:outbound_dial_format].present?
       metadata[:outbound_dial_format] = existing_metadata[:outbound_dial_format]
     end
-    metadata[:outbound_dial_format] = DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT if metadata[:outbound_dial_format].blank?
+    metadata[:outbound_dial_format] = default_dial_format if metadata[:outbound_dial_format].blank?
     metadata
+  end
+
+  def default_outbound_dial_format(provider_kind)
+    return DEFAULT_ASTERISK_ANALOG_OUTBOUND_DIAL_FORMAT if provider_kind.to_s == 'asterisk_analog'
+    return DEFAULT_WAZO_OUTBOUND_DIAL_FORMAT if provider_kind.to_s == 'wazo'
   end
 
   def provider_connection_credentials_ref(payload, refs)

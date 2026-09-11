@@ -354,7 +354,7 @@ class Telephony::OperatorCallRejectService
   end
 
   def janus_sip_call_ref?
-    call_session.external_call_ref.to_s.match?(/\A(?:asterisk_analog|binotel|sipuni|beeline):janus:/)
+    call_session.external_call_ref.to_s.match?(/\A(?:asterisk_analog|binotel|sipuni|beeline|wazo):janus:/)
   end
 
   def reject_event_payload

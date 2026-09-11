@@ -62,6 +62,36 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(profile.reload).to be_enabled
   end
 
+  def create_wazo_webphone_channel(provider_connection)
+    channel = create(
+      :channel_voice,
+      account: account,
+      provider: 'wazo',
+      phone_number: voice_phone_number,
+      provider_config: {
+        provider_kind: 'wazo',
+        provider_connection_id: provider_connection.id,
+        number_ref: 'wazo-browser-number-ref',
+        routing_mode: 'operator',
+        operator_distribution_mode: 'broadcast'
+      }
+    )
+    create(:inbox_member, inbox: channel.inbox, user: administrator)
+    channel
+  end
+
+  def create_wazo_webphone_profile(channel, provider_connection)
+    create(
+      :telephony_sip_profile,
+      account: account, inbox: channel.inbox, user: administrator,
+      internal_extension: '601', provider_connection: provider_connection,
+      sip_username: 'onelink-601', sip_password: 'test-wazo-sip-password',
+      sip_host: 'wazo.example.test', agent_ref: 'wazo-profile-601',
+      availability_mode: 'browser_webphone', status: 'active',
+      agent_aor: 'sip:onelink-601@wazo.example.test'
+    )
+  end
+
   it 'returns an unsupported payload instead of raising for non-voice inboxes' do
     instagram_inbox = create(:channel_instagram, account: account).inbox
 
@@ -164,6 +194,55 @@ RSpec.describe 'Telephony Webphone API', type: :request do
     expect(payload['registered_for_routing']).to be(true)
     expect(payload['recording_strategy']).to eq('provider_api')
     expect(payload['recording_fallback_strategy']).to eq('browser_fallback')
+  end
+
+  it 'returns the same native Janus SIP calling contract for Wazo browser profiles' do
+    provider_connection = create(
+      :telephony_provider_connection,
+      account: account,
+      provider_kind: 'wazo',
+      host: 'wazo.example.test',
+      port: 5060,
+      transport: 'udp',
+      metadata: { codec: 'pcma' }
+    )
+    wazo_channel = create_wazo_webphone_channel(provider_connection)
+    sip_profile = create_wazo_webphone_profile(wazo_channel, provider_connection)
+    mark_sip_profile_registered!(sip_profile)
+
+    with_modified_env(
+      TELEPHONY_WAZO_JANUS_WS_URL: 'wss://dev.one-link.kz/janus-wazo',
+      TELEPHONY_WAZO_JANUS_SERVER_RECORDING_ENABLED: 'true'
+    ) do
+      post path,
+           params: { client_instance_id: 'test-tab', inbox_id: wazo_channel.inbox.id },
+           headers: headers,
+           as: :json
+    end
+
+    payload = response.parsed_body.fetch('payload')
+    expect(response).to have_http_status(:ok)
+    expect(payload).to include(
+      'provider' => 'wazo',
+      'calling_supported' => true,
+      'browser_join_supported' => true,
+      'registered_for_routing' => true
+    )
+    expect_authorized_janus_url(
+      payload['janus_server'],
+      server_url: 'wss://dev.one-link.kz/janus-wazo',
+      profile: sip_profile
+    )
+    expect(payload['sip']).to include(
+      'username' => 'onelink-601',
+      'password' => 'test-wazo-sip-password',
+      'host' => 'wazo.example.test',
+      'port' => 5060,
+      'transport' => 'udp',
+      'internal_extension' => '601',
+      'codec' => 'pcma'
+    )
+    expect_janus_server_recording(payload, 'wazo')
   end
 
   it 'returns Beeline SIP domain, outbound proxy, and PCMA in the Janus contract' do

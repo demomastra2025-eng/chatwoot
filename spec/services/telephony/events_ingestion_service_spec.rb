@@ -25,6 +25,11 @@ RSpec.describe Telephony::EventsIngestionService do
       )
     end
 
+    it 'classifies Wazo lifecycle events as native SIP events' do
+      expect(described_class::NATIVE_SIP_PROVIDERS).to include('wazo')
+      expect(service.send(:native_sip_provider?, 'wazo')).to be(true)
+    end
+
     it 'retries uniqueness conflicts outside the failed transaction and reuses the persisted call session' do
       expected_conversation_id = existing_call_session.conversation_id
       expected_contact_id = existing_call_session.contact_id
