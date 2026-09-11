@@ -249,9 +249,7 @@ class Telephony::Sipuni::EventAdapter
       if outbound_binding.present?
         outbound_binding
       else
-        scoped = Telephony::NumberBinding.where(provider: 'sipuni')
-        account_id = raw_value('account_id', 'accountId', 'chatwoot_account_id', 'chatwootAccountId')
-        scoped = scoped.where(account_id: account_id) if account_id.present?
+        scoped = apply_tenant_scope(Telephony::NumberBinding.where(provider: 'sipuni'))
 
         find_binding(scoped) || unique_binding(scoped)
       end
@@ -367,8 +365,7 @@ class Telephony::Sipuni::EventAdapter
   def existing_call_session
     @existing_call_session ||=
       if call_id.present?
-        sessions = Telephony::CallSession
-                   .where(provider: 'sipuni')
+        sessions = apply_tenant_scope(Telephony::CallSession.where(provider: 'sipuni'))
                    .where('provider_call_sid = :call_id OR external_call_ref = :call_ref',
                           call_id: call_id,
                           call_ref: "sipuni:#{call_id}")
@@ -429,7 +426,16 @@ class Telephony::Sipuni::EventAdapter
   end
 
   def scoped_binding_from_channel
-    @scoped_binding_from_channel ||= binding_from_sip_username(Telephony::NumberBinding.where(provider: 'sipuni'))
+    @scoped_binding_from_channel ||=
+      binding_from_sip_username(apply_tenant_scope(Telephony::NumberBinding.where(provider: 'sipuni')))
+  end
+
+  def apply_tenant_scope(scope)
+    account_id = raw_value('account_id', 'accountId', 'chatwoot_account_id', 'chatwootAccountId')
+    inbox_id = raw_value('inbox_id', 'inboxId', 'chatwoot_inbox_id', 'chatwootInboxId')
+    scope = scope.where(account_id: account_id) if account_id.present?
+    scope = scope.where(inbox_id: inbox_id) if inbox_id.present?
+    scope
   end
 
   def outbound_hint?

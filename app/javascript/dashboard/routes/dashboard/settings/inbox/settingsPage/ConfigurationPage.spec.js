@@ -473,6 +473,67 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
+  it('saves a Binotel webhook token on the inbox provider config', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'binotel',
+        provider_config: {
+          provider_kind: 'binotel',
+          existing_setting: 'keep-me',
+          binotel_events_webhook_token: 'old-token',
+          binotel_webhook_token: 'legacy-token',
+        },
+      },
+    });
+    await flushPromises();
+
+    expect(wrapper.vm.binotelWebhookUrl).toBe(
+      'https://dev.one-link.kz/binotel/events/old-token'
+    );
+
+    wrapper.vm.binotelWebhookToken = 'new-token';
+    await wrapper.vm.updateBinotelWebhookToken();
+    await flushPromises();
+
+    expect(storeDispatchMock).toHaveBeenCalledWith('inboxes/updateInbox', {
+      id: 42,
+      formData: false,
+      channel: {
+        provider_config: {
+          provider_kind: 'binotel',
+          existing_setting: 'keep-me',
+          binotel_events_webhook_token: 'new-token',
+        },
+      },
+    });
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SUCCESS'
+    );
+  });
+
+  it('copies the Binotel webhook URL for provider setup', async () => {
+    const wrapper = buildWrapper({
+      inbox: {
+        ...baseInbox,
+        provider: 'binotel',
+        provider_config: {
+          binotel_events_webhook_token: 'saved-token',
+        },
+      },
+    });
+    await flushPromises();
+
+    await wrapper.vm.copyBinotelWebhookUrl();
+
+    expect(copyTextToClipboardMock).toHaveBeenCalledWith(
+      'https://dev.one-link.kz/binotel/events/saved-token'
+    );
+    expect(alertMock).toHaveBeenCalledWith(
+      'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_COPY_SUCCESS'
+    );
+  });
+
   it('renders Sipuni settings as employee SIP assignments without technical provider fields', async () => {
     const wrapper = buildWrapper();
     await flushPromises();

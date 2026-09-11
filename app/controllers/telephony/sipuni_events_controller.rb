@@ -48,9 +48,9 @@ class Telephony::SipuniEventsController < ActionController::API
     return payload if sipuni_channel.blank?
 
     config = sipuni_channel.provider_config_hash.with_indifferent_access
-    payload['chatwoot_account_id'] ||= sipuni_channel.account_id
-    payload['chatwoot_inbox_id'] ||= sipuni_channel.inbox&.id
-    payload['number_ref'] ||= config[:number_ref]
+    payload['chatwoot_account_id'] = sipuni_channel.account_id
+    payload['chatwoot_inbox_id'] = sipuni_channel.inbox&.id
+    payload['number_ref'] = config[:number_ref]
     payload
   end
 
@@ -65,13 +65,18 @@ class Telephony::SipuniEventsController < ActionController::API
   end
 
   def process_lifecycle_event(payload)
-    return persist_reconciliation_only_event(payload) if sipuni_browser_webphone_unmatched?(payload)
+    if sipuni_browser_webphone_unmatched?(payload)
+      terminal_payload = Telephony::Sipuni::TerminalFallbackAdapter.new(payload).payload
+      return enqueue_lifecycle_event(terminal_payload) if terminal_payload.present?
+
+      return persist_reconciliation_only_event(payload)
+    end
 
     enqueue_lifecycle_event(payload)
   end
 
   def enqueue_lifecycle_event(payload)
-    Telephony::InboundRouteLifecycleJob.perform_later(payload)
+    Telephony::InboundRouteLifecycleJob.perform_later(payload, retry_failed: true)
     'accepted'
   end
 

@@ -908,6 +908,7 @@ Rails.application.routes.draw do
   end
 
   match 'sipuni/events/:token', to: 'telephony/sipuni_events#create', via: %i[get post]
+  post 'binotel/events/:token', to: 'telephony/binotel_events#create'
   post 'internal/voice/inbound/route', to: 'telephony/bridge_routes#create'
   post 'internal/voice/inbound/event', to: 'telephony/bridge_events#create'
   get 'internal/voice/janus-ws/authorize', to: 'internal/voice/janus_websocket_authorizations#show'

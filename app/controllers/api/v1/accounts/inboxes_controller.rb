@@ -510,8 +510,13 @@ class Api::V1::Accounts::InboxesController < Api::V1::Accounts::BaseController
     attrs = channel_params.to_h.with_indifferent_access
     return attrs if attrs[:provider_config].blank?
 
+    incoming_provider_config = attrs[:provider_config].to_h.deep_stringify_keys
     provider_config = @inbox.channel.provider_config.to_h.deep_stringify_keys
-    attrs[:provider_config] = provider_config.deep_merge(attrs[:provider_config].to_h.deep_stringify_keys)
+    if incoming_provider_config['binotel_events_webhook_token'].present?
+      incoming_provider_config.delete('binotel_webhook_token')
+      provider_config.delete('binotel_webhook_token')
+    end
+    attrs[:provider_config] = provider_config.deep_merge(incoming_provider_config)
     attrs
   end
 

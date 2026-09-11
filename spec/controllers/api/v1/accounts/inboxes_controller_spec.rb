@@ -1323,6 +1323,40 @@ RSpec.describe 'Inboxes API', type: :request do
         )
       end
 
+      it 'removes the legacy Binotel webhook token when rotating the canonical token' do
+        provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'binotel')
+        voice_channel = create(
+          :channel_voice,
+          account: account,
+          provider: 'binotel',
+          provider_config: {
+            provider_kind: 'binotel',
+            provider_connection_id: provider_connection.id,
+            number_ref: 'binotel-number-ref',
+            binotel_webhook_token: 'legacy-token'
+          }
+        )
+
+        patch "/api/v1/accounts/#{account.id}/inboxes/#{voice_channel.inbox.id}",
+              headers: admin.create_new_auth_token,
+              params: {
+                channel: {
+                  provider_config: {
+                    binotel_events_webhook_token: 'canonical-token',
+                    binotel_webhook_token: 'attacker-controlled-legacy-token'
+                  }
+                }
+              },
+              as: :json
+
+        expect(response).to have_http_status(:success)
+        expect(voice_channel.reload.provider_config).to include(
+          'number_ref' => 'binotel-number-ref',
+          'binotel_events_webhook_token' => 'canonical-token'
+        )
+        expect(voice_channel.provider_config).not_to have_key('binotel_webhook_token')
+      end
+
       it 'rejects runtime identity updates for whatsapp web inboxes' do
         with_modified_env(
           'EVOLUTION_API_URL' => 'https://evolution.example.com',

@@ -62,6 +62,8 @@ export default {
       virtualPbxReconcileResult: null,
       sipuniWebhookToken: '',
       isUpdatingSipuniWebhook: false,
+      binotelWebhookToken: '',
+      isUpdatingBinotelWebhook: false,
       virtualPbxForm: {
         channelName: '',
         providerKind: '',
@@ -189,6 +191,12 @@ export default {
         this.inbox.provider === 'sipuni'
       );
     },
+    isBinotelVoiceInbox() {
+      return (
+        this.inbox.channel_type === 'Channel::Voice' &&
+        this.inbox.provider === 'binotel'
+      );
+    },
     sipuniWebhookUrl() {
       const token = this.sipuniWebhookToken.trim();
       if (!token) return '';
@@ -196,6 +204,14 @@ export default {
       const baseUrl =
         window.chatwootConfig?.hostURL || window.location.origin || '';
       return `${baseUrl.replace(/\/$/, '')}/sipuni/events/${encodeURIComponent(token)}`;
+    },
+    binotelWebhookUrl() {
+      const token = this.binotelWebhookToken.trim();
+      if (!token) return '';
+
+      const baseUrl =
+        window.chatwootConfig?.hostURL || window.location.origin || '';
+      return `${baseUrl.replace(/\/$/, '')}/binotel/events/${encodeURIComponent(token)}`;
     },
     virtualPbxLoadKey() {
       return [
@@ -448,6 +464,10 @@ export default {
       this.sipuniWebhookToken =
         this.inbox.provider_config?.sipuni_events_webhook_token ||
         this.inbox.provider_config?.sipuni_webhook_token ||
+        '';
+      this.binotelWebhookToken =
+        this.inbox.provider_config?.binotel_events_webhook_token ||
+        this.inbox.provider_config?.binotel_webhook_token ||
         '';
       this.$nextTick(() => {
         this.isSettingDefaults = false;
@@ -1142,6 +1162,66 @@ export default {
         this.isUpdatingSipuniWebhook = false;
       }
     },
+    generateBinotelWebhookToken() {
+      if (window.crypto?.getRandomValues) {
+        const bytes = new Uint8Array(24);
+        window.crypto.getRandomValues(bytes);
+        this.binotelWebhookToken = Array.from(bytes, byte =>
+          byte.toString(16).padStart(2, '0')
+        ).join('');
+        return;
+      }
+
+      this.binotelWebhookToken = `${Date.now()}${Math.random()
+        .toString(36)
+        .slice(2)}`;
+    },
+    async copyBinotelWebhookUrl() {
+      if (!this.binotelWebhookUrl) return;
+
+      try {
+        await copyTextToClipboard(this.binotelWebhookUrl);
+        useAlert(
+          this.$t(
+            'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_COPY_SUCCESS'
+          )
+        );
+      } catch {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      }
+    },
+    async updateBinotelWebhookToken() {
+      const token = this.binotelWebhookToken.trim();
+      if (!token) {
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_REQUIRED')
+        );
+        return;
+      }
+
+      this.isUpdatingBinotelWebhook = true;
+      try {
+        const providerConfig = { ...this.inbox.provider_config };
+        delete providerConfig.binotel_webhook_token;
+        await this.$store.dispatch('inboxes/updateInbox', {
+          id: this.inbox.id,
+          formData: false,
+          channel: {
+            provider_config: {
+              ...providerConfig,
+              binotel_events_webhook_token: token,
+            },
+          },
+        });
+        useAlert(
+          this.$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SUCCESS')
+        );
+      } catch (error) {
+        useAlert(this.$t('INBOX_MGMT.EDIT.API.ERROR_MESSAGE'));
+      } finally {
+        this.isUpdatingBinotelWebhook = false;
+      }
+    },
     async syncTemplates() {
       this.isSyncingTemplates = true;
       try {
@@ -1289,6 +1369,72 @@ export default {
               @click="updateSipuniWebhookToken"
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.SIPUNI_WEBHOOK_SAVE') }}
+            </NextButton>
+          </div>
+        </div>
+      </SettingsFieldSection>
+      <SettingsFieldSection
+        v-if="isBinotelVoiceInbox"
+        :label="$t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TITLE')"
+        :help-text="
+          $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SUBTITLE')
+        "
+      >
+        <div class="flex flex-col gap-4">
+          <woot-code
+            v-if="binotelWebhookUrl"
+            :script="binotelWebhookUrl"
+            lang="html"
+          />
+          <div
+            v-else
+            class="rounded-xl border border-n-amber-4 bg-n-amber-2/40 p-4 text-sm text-n-amber-11"
+          >
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_EMPTY') }}
+          </div>
+
+          <label class="flex flex-col gap-1 text-sm text-n-slate-12">
+            {{ $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN') }}
+            <input
+              v-model="binotelWebhookToken"
+              class="rounded-lg border border-n-weak py-2 font-mono text-sm"
+              type="text"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+              :placeholder="
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_TOKEN_PLACEHOLDER'
+                )
+              "
+            />
+          </label>
+
+          <div class="flex flex-wrap gap-3">
+            <NextButton type="button" @click="generateBinotelWebhookToken">
+              {{
+                $t(
+                  'INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_GENERATE'
+                )
+              }}
+            </NextButton>
+            <NextButton
+              type="button"
+              :disabled="!binotelWebhookUrl"
+              @click="copyBinotelWebhookUrl"
+            >
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_COPY')
+              }}
+            </NextButton>
+            <NextButton
+              type="button"
+              :is-loading="isUpdatingBinotelWebhook"
+              @click="updateBinotelWebhookToken"
+            >
+              {{
+                $t('INBOX_MGMT.ADD.VOICE.CONFIGURATION.BINOTEL_WEBHOOK_SAVE')
+              }}
             </NextButton>
           </div>
         </div>
