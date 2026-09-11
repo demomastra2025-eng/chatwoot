@@ -14,7 +14,9 @@ message_push_data = lambda do |message|
   end
 end
 linked_conversations = links.filter_map(&:conversation)
-agent_last_seen_values = linked_conversations.map(&:agent_last_seen_at)
+agent_last_seen_values = linked_conversations.map do |conversation|
+  (@channel_last_seen_timestamps_by_conversation_id || {}).fetch(conversation.id, conversation.agent_last_seen_at)
+end
 assignee_last_seen_values = linked_conversations.map(&:assignee_last_seen_at)
 thread_agent_last_seen_at =
   agent_last_seen_values.min.to_i if agent_last_seen_values.present? && agent_last_seen_values.all?(&:present?)
@@ -79,7 +81,7 @@ json.last_incoming_message_at directional_message_timestamps[:incoming]&.to_i
 json.last_outgoing_message_at directional_message_timestamps[:outgoing]&.to_i
 json.agent_last_seen_at thread_agent_last_seen_at
 json.assignee_last_seen_at thread_assignee_last_seen_at
-json.unread_count communication_thread.unread_count
+json.unread_count linked_conversations.sum { |conversation| (@channel_unread_counts_by_conversation_id || {}).fetch(conversation.id, 0) }
 json.priority communication_thread.priority
 json.assignee_id communication_thread.assignee_id
 json.team_id communication_thread.team_id

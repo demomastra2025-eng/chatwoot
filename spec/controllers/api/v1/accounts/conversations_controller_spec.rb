@@ -1399,6 +1399,10 @@ RSpec.describe 'Conversations API', type: :request do
       end
 
       it 'updates last seen' do
+        other_agent = create(:user, account: account, role: :agent)
+        Conversations::RecordUserReadStateService.new(conversation: conversation, user: agent).perform
+        other_cursor = conversation.last_seen_at_for(other_agent)
+
         post "/api/v1/accounts/#{account.id}/conversations/#{conversation.display_id}/unread",
              headers: agent.create_new_auth_token,
              as: :json
@@ -1407,6 +1411,8 @@ RSpec.describe 'Conversations API', type: :request do
         last_seen_at = conversation.messages.incoming.last.created_at - 1.second
         expect(conversation.reload.agent_last_seen_at).to eq(last_seen_at)
         expect(conversation.reload.assignee_last_seen_at).to eq(last_seen_at)
+        expect(conversation.last_seen_at_for(agent)).to eq(last_seen_at)
+        expect(conversation.last_seen_at_for(other_agent)).to eq(other_cursor)
       end
 
       it 'refreshes the communication thread unread count' do

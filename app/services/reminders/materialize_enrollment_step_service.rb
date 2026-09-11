@@ -103,6 +103,7 @@ class Reminders::MaterializeEnrollmentStepService
     ).perform
     apply_automation_provenance!(reminder)
     Reminders::SyncRemindableService.new(remindable: enrollment.remindable).perform
+    approve_resolved_reminder!(reminder)
     Reminders::CampaignConflictPolicy.new(reminder: reminder).cancel_if_conflict!
     claim.update!(status: 'materialized', reminder: reminder, materialized_at: now)
     schedule.refresh_next_due!
@@ -125,6 +126,11 @@ class Reminders::MaterializeEnrollmentStepService
 
   def reminder_attributes(step, claim)
     Reminders::EnrollmentReminderAttributes.new(enrollment: enrollment, step: step, claim: claim).call
+  end
+
+  def approve_resolved_reminder!(reminder)
+    reminder.reload
+    reminder.approve! if reminder.draft? && reminder.ready_for_pending?
   end
 
   def enrollment_creator

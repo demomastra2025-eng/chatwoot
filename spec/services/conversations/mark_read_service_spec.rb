@@ -198,5 +198,28 @@ RSpec.describe Conversations::MarkReadService do
         expect { projected_message.content }.to raise_error(ActiveModel::MissingAttributeError)
       end
     end
+
+    context 'with multiple account users' do
+      let(:channel) { create(:channel_api) }
+
+      it 'marks only the current user read and preserves the other user cursor' do
+        other_user = create(:user, account: channel.account, role: :agent)
+        create(:inbox_member, user: other_user, inbox: channel.inbox)
+        conversation = create(:conversation, account: channel.account, inbox: channel.inbox, agent_last_seen_at: nil)
+        incoming_message = create(
+          :message,
+          account: channel.account,
+          inbox: channel.inbox,
+          conversation: conversation,
+          message_type: :incoming,
+          created_at: 5.minutes.ago
+        )
+
+        described_class.new(conversation: conversation, user: user).perform
+
+        expect(conversation.reload.unread_messages_for(user).incoming).to be_empty
+        expect(conversation.unread_messages_for(other_user).incoming).to contain_exactly(incoming_message)
+      end
+    end
   end
 end

@@ -265,10 +265,20 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
 
   def aggregate_assignment_counts(scope, include_unread: false)
     relation = CommunicationThread.where(id: scope.except(:order).select(:id))
-    columns = assignment_count_columns
-    columns += unread_assignment_count_columns if include_unread
+    counts = basic_assignment_counts(relation)
+    return counts unless include_unread
 
-    assignment_counts_from(relation.pick(*columns))
+    unread_counts = basic_assignment_counts(unread_thread_scope(relation))
+    counts.merge(
+      all_unread_count: unread_counts[:all_count],
+      mine_unread_count: unread_counts[:mine_count],
+      unassigned_unread_count: unread_counts[:unassigned_count]
+    )
+  end
+
+  def basic_assignment_counts(relation)
+    all_count, mine_count, unassigned_count = Array(relation.pick(*assignment_count_columns)).map(&:to_i)
+    { all_count: all_count, mine_count: mine_count, unassigned_count: unassigned_count }
   end
 
   def assignment_count_columns
@@ -277,32 +287,6 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
       Arel.sql("COUNT(*) FILTER (WHERE communication_threads.assignee_id = #{current_user.id.to_i})"),
       Arel.sql('COUNT(*) FILTER (WHERE communication_threads.assignee_id IS NULL)')
     ]
-  end
-
-  def unread_assignment_count_columns
-    [
-      Arel.sql('COUNT(*) FILTER (WHERE communication_threads.unread_count > 0)'),
-      Arel.sql(
-        'COUNT(*) FILTER (WHERE communication_threads.unread_count > 0 AND ' \
-        "communication_threads.assignee_id = #{current_user.id.to_i})"
-      ),
-      Arel.sql(
-        'COUNT(*) FILTER (WHERE communication_threads.unread_count > 0 AND ' \
-        'communication_threads.assignee_id IS NULL)'
-      )
-    ]
-  end
-
-  def assignment_counts_from(raw_values)
-    values = Array(raw_values).map(&:to_i)
-    {
-      all_count: values[0],
-      mine_count: values[1],
-      unassigned_count: values[2],
-      all_unread_count: values[3].to_i,
-      mine_unread_count: values[4].to_i,
-      unassigned_unread_count: values[5].to_i
-    }
   end
 
   def unread_counts
@@ -392,9 +376,24 @@ class CommunicationThreadFinder # rubocop:disable Metrics/ClassLength
   end
 
   def unread_thread_scope(scope)
-    CommunicationThread
-      .where(id: scope.except(:order).select(:id))
-      .where('communication_threads.unread_count > 0')
+    unread_conversations = Conversations::UnreadScopeBuilder.new(
+      scope: accessible_conversations,
+      account: current_account,
+      user: current_user
+    ).perform.select(:id)
+    base_scope = CommunicationThread.where(id: scope.except(:order).select(:id))
+    base_scope.where(id: thread_ids_for_conversations(unread_conversations)).or(legacy_unread_thread_scope(base_scope))
+  end
+
+  def legacy_unread_thread_scope(scope)
+    user_states = ConversationUserReadState.where(account_id: current_account.id, user_id: current_user.id).select(:conversation_id)
+    scope.where('communication_threads.unread_count > 0').where.not(id: thread_ids_for_conversations(user_states))
+  end
+
+  def thread_ids_for_conversations(conversations)
+    CommunicationThreadConversation
+      .where(account_id: current_account.id, conversation_id: conversations)
+      .select(:communication_thread_id)
   end
 
   def normalize_counts(counts)

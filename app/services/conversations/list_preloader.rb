@@ -9,8 +9,9 @@ class Conversations::ListPreloader
     { owner: USER_ASSOCIATIONS }
   ].freeze
 
-  def initialize(account:, conversations:)
+  def initialize(account:, conversations:, user:)
     @account = account
+    @user = user
     @conversations = Array(conversations)
     raise ArgumentError, 'Conversation account mismatch' if @conversations.any? { |conversation| conversation.account_id != account.id }
 
@@ -39,6 +40,10 @@ class Conversations::ListPreloader
 
   def unread_count(conversation)
     @unread_counts.fetch(conversation.id, 0)
+  end
+
+  def last_seen_at(conversation)
+    @last_seen_at_by_conversation_id.fetch(conversation.id, conversation.agent_last_seen_at)
   end
 
   def can_reply?(conversation)
@@ -109,9 +114,13 @@ class Conversations::ListPreloader
   def preload_message_state
     incoming = @account.messages.reorder(nil).where(conversation_id: @conversations_by_id.keys).incoming
     @last_incoming_timestamps = incoming.group(:conversation_id).maximum(:created_at)
-    @unread_counts = incoming.where(private: false).joins(:conversation)
-                             .where('conversations.agent_last_seen_at IS NULL OR messages.created_at > conversations.agent_last_seen_at')
-                             .group(:conversation_id).count
+    user_read_state = Conversations::UserReadStatePreloader.new(
+      account: @account,
+      conversation_ids: @conversations_by_id.keys,
+      user: @user
+    ).perform
+    @last_seen_at_by_conversation_id = user_read_state.last_seen_timestamps
+    @unread_counts = user_read_state.unread_counts
   end
 
   def preload_labels

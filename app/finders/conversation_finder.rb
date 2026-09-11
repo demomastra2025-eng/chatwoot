@@ -280,7 +280,7 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
   end
 
   def unread_conversation_scope(scope)
-    Conversations::UnreadScopeBuilder.new(scope: scope, account: current_account).perform
+    Conversations::UnreadScopeBuilder.new(scope: scope, account: current_account, user: current_user).perform
   end
 
   def unread_dialog_count(scope)

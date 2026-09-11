@@ -53,7 +53,7 @@ class Conversations::SidebarUnreadCountService
   end
 
   def unread_message_scope
-    Conversations::UnreadScopeBuilder.new(scope: accessible_conversations, account: account).perform
+    Conversations::UnreadScopeBuilder.new(scope: accessible_conversations, account: account, user: user).perform
   end
 
   def label_counts(scope)

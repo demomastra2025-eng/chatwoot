@@ -115,7 +115,7 @@ class Conversations::FilterService < FilterService
   end
 
   def unread_conversation_scope(scope)
-    Conversations::UnreadScopeBuilder.new(scope: scope, account: @account).perform
+    Conversations::UnreadScopeBuilder.new(scope: scope, account: @account, user: @user).perform
   end
 
   def unread_counts

@@ -6,6 +6,7 @@ import {
   OPERATOR_TYPES_6,
   OPERATOR_TYPES_7,
   OPERATOR_TYPES_8,
+  SERVICE_SET_OPERATOR_TYPES,
 } from './operators';
 
 const APPOINTMENT_AUTOMATION_CONDITIONS = [
@@ -49,7 +50,7 @@ const APPOINTMENT_AUTOMATION_CONDITIONS = [
     key: 'service_id',
     name: 'APPOINTMENT_SERVICE',
     inputType: 'search_select',
-    filterOperators: OPERATOR_TYPES_1,
+    filterOperators: SERVICE_SET_OPERATOR_TYPES,
   },
 ];
 

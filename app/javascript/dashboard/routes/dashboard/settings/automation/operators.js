@@ -9,6 +9,18 @@ export const OPERATOR_TYPES_1 = [
   },
 ];
 
+export const SERVICE_SET_OPERATOR_TYPES = [
+  ...OPERATOR_TYPES_1,
+  {
+    value: 'contains_only',
+    label: 'Contains only',
+  },
+  {
+    value: 'not_contains_only',
+    label: 'Does not contain only',
+  },
+];
+
 export const OPERATOR_TYPES_2 = [
   {
     value: 'equal_to',

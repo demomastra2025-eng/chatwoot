@@ -37,7 +37,7 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
 
     service = Messages::StatusUpdateService.new(message, 'sent')
     service.perform
-    message.update!(content_attributes: {})
+    message.update!(content_attributes: message.content_attributes.to_h.except('external_error'))
     ::SendReplyJob.perform_later(message.id)
   rescue StandardError => e
     render_could_not_create_error(e.message)
@@ -72,7 +72,7 @@ class Api::V1::Accounts::Conversations::MessagesController < Api::V1::Accounts::
   end
 
   def first_unread_message_id
-    @conversation.unread_messages
+    @conversation.unread_messages_for(Current.user)
                  .where(account_id: @conversation.account_id, private: false)
                  .incoming
                  .reorder(:created_at, :id)

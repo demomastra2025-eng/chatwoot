@@ -40,7 +40,7 @@ class AutomationRules::AppointmentFieldCatalog
     },
     'service_id' => {
       field_type: 'service',
-      operators: %w[equal_to not_equal_to]
+      operators: %w[equal_to not_equal_to contains_only not_contains_only]
     }
   }.freeze
 

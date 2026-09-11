@@ -241,7 +241,22 @@ class CommunicationThreads::FilterService < FilterService
   end
 
   def unread_thread_scope(scope)
-    scope.where('communication_threads.unread_count > 0')
+    unread_conversation_ids = Conversations::UnreadScopeBuilder.new(
+      scope: base_relation,
+      account: @account,
+      user: @user
+    ).perform.select(:id)
+    unread_thread_ids = CommunicationThreadConversation
+                        .where(account_id: @account.id, conversation_id: unread_conversation_ids)
+                        .select(:communication_thread_id)
+    user_state_conversation_ids = ConversationUserReadState.where(account_id: @account.id, user_id: @user.id).select(:conversation_id)
+    threads_with_user_state_ids = CommunicationThreadConversation
+                                  .where(account_id: @account.id, conversation_id: user_state_conversation_ids)
+                                  .select(:communication_thread_id)
+
+    scope.where(id: unread_thread_ids).or(
+      scope.where('communication_threads.unread_count > 0').where.not(id: threads_with_user_state_ids)
+    )
   end
 
   def channel_unread_counts(scope)

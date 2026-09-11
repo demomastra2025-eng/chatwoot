@@ -126,6 +126,7 @@ export default {
       await this.setLocale(this.uiSettings?.locale || locale);
       this.latestChatwootVersion = latestChatwootVersion;
       vueActionCable.init(this.store, pubsubToken, authClientId);
+      this.reconnectService?.disconnect();
       this.reconnectService = new ReconnectService(this.store, this.router);
       window.reconnectService = this.reconnectService;
 

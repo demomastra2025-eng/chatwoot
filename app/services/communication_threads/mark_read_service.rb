@@ -27,7 +27,7 @@ class CommunicationThreads::MarkReadService
 
     refresh_communication_thread!
     updated_thread = communication_thread.reload
-    @last_seen_at = conversations.filter_map(&:agent_last_seen_at).max
+    @last_seen_at = conversations.filter_map { |conversation| conversation.last_seen_at_for(current_user) }.max
     enqueue_realtime_update(updated_thread)
     updated_thread
   end
@@ -36,8 +36,10 @@ class CommunicationThreads::MarkReadService
     conversations.map do |conversation|
       {
         conversation_id: conversation.display_id,
-        agent_last_seen_at: conversation.agent_last_seen_at&.to_i,
-        unread_count: conversation.unread_incoming_messages_count
+        agent_last_seen_at: conversation.last_seen_at_for(current_user)&.to_i,
+        unread_count: conversation.unread_messages_for(current_user)
+                                  .where(account_id: current_account.id, private: false)
+                                  .incoming.count
       }
     end
   end
@@ -54,15 +56,11 @@ class CommunicationThreads::MarkReadService
     conversation_ids = conversations.map(&:id)
     return false if conversation_ids.blank?
 
-    Message.without_imported_history
-           .joins(:conversation)
-           .where(
-             account_id: current_account.id,
-             conversation_id: conversation_ids,
-             message_type: Message.message_types[:incoming],
-             private: false
-           )
-           .exists?(['messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)', Time.zone.at(0)])
+    Conversations::UserReadStatePreloader.new(
+      account: current_account,
+      conversation_ids: conversation_ids,
+      user: current_user
+    ).perform.unread_counts.present?
   end
 
   def mark_read_required?

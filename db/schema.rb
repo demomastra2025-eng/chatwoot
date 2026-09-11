@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_08_180700) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_11_170000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1242,6 +1242,20 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_08_180700) do
     t.index ["account_id"], name: "index_conversation_status_transitions_on_account_id"
     t.index ["actor_type", "actor_id"], name: "index_conversation_status_transitions_on_actor"
     t.index ["conversation_id"], name: "index_conversation_status_transitions_on_conversation_id"
+  end
+
+  create_table "conversation_user_read_states", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "conversation_id", null: false
+    t.bigint "user_id", null: false
+    t.datetime "last_seen_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "user_id"], name: "index_conversation_user_read_states_on_account_id_and_user_id"
+    t.index ["account_id"], name: "index_conversation_user_read_states_on_account_id"
+    t.index ["conversation_id", "user_id"], name: "idx_conversation_user_read_states_unique", unique: true
+    t.index ["conversation_id"], name: "index_conversation_user_read_states_on_conversation_id"
+    t.index ["user_id"], name: "index_conversation_user_read_states_on_user_id"
   end
 
   create_table "conversations", id: :serial, force: :cascade do |t|
@@ -3390,6 +3404,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_08_180700) do
   add_foreign_key "contacts", "users", column: "owner_id"
   add_foreign_key "conversation_status_transitions", "accounts"
   add_foreign_key "conversation_status_transitions", "conversations"
+  add_foreign_key "conversation_user_read_states", "accounts", on_delete: :cascade
+  add_foreign_key "conversation_user_read_states", "conversations", on_delete: :cascade
+  add_foreign_key "conversation_user_read_states", "users", on_delete: :cascade
   add_foreign_key "crm_comments", "accounts"
   add_foreign_key "crm_comments", "users"
   add_foreign_key "crm_deal_contacts", "accounts"

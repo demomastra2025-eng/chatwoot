@@ -9,6 +9,7 @@ import {
 
 const MAX_DISCONNECT_SECONDS = 10800;
 const ACTIVE_CONVERSATION_RESYNC_DEBOUNCE = 3000;
+const VISIBLE_RECONCILIATION_INTERVAL = 30000;
 
 // The disconnect delay threshold is added to account for delays in identifying
 // disconnections (for example, the websocket disconnection takes up to 3 seconds)
@@ -21,11 +22,32 @@ class ReconnectService {
     this.router = router;
     this.disconnectTime = null;
     this.lastActiveConversationSyncAt = 0;
+    this.isVisibleReconciliationInFlight = false;
+    this.visibleReconciliationTimer = null;
 
     this.setupEventListeners();
+    this.startVisibleReconciliation();
   }
 
-  disconnect = () => this.removeEventListeners();
+  disconnect = () => {
+    this.stopVisibleReconciliation();
+    this.removeEventListeners();
+  };
+
+  startVisibleReconciliation = () => {
+    this.stopVisibleReconciliation();
+    this.visibleReconciliationTimer = window.setInterval(
+      this.reconcileVisibleRoute,
+      VISIBLE_RECONCILIATION_INTERVAL
+    );
+  };
+
+  stopVisibleReconciliation = () => {
+    if (!this.visibleReconciliationTimer) return;
+
+    window.clearInterval(this.visibleReconciliationTimer);
+    this.visibleReconciliationTimer = null;
+  };
 
   setupEventListeners = () => {
     window.addEventListener('online', this.handleOnlineEvent);
@@ -67,13 +89,26 @@ class ReconnectService {
   };
 
   handleWindowFocus = async () => {
-    await this.syncActiveConversationMessagesIfNeeded();
+    await this.reconcileVisibleRoute();
   };
 
   handleVisibilityChange = async () => {
     if (document.hidden) return;
 
-    await this.syncActiveConversationMessagesIfNeeded();
+    await this.reconcileVisibleRoute();
+  };
+
+  reconcileVisibleRoute = async () => {
+    const currentRoute = this.router.currentRoute.value.name;
+    if (document.hidden || this.isVisibleReconciliationInFlight) return;
+    if (!isAConversationRoute(currentRoute, true)) return;
+
+    this.isVisibleReconciliationInFlight = true;
+    try {
+      await this.syncActiveConversationMessagesIfNeeded();
+    } finally {
+      this.isVisibleReconciliationInFlight = false;
+    }
   };
 
   syncActiveConversationMessagesIfNeeded = async () => {
@@ -98,10 +133,11 @@ class ReconnectService {
     });
   };
 
-  fetchConversations = async () => {
+  fetchConversations = async updatedWithin => {
     await this.store.dispatch('updateChatListFilters', {
       page: null,
       updatedWithin:
+        updatedWithin ??
         this.getSecondsSinceDisconnect() + DISCONNECT_DELAY_THRESHOLD,
     });
     await this.store.dispatch('fetchAllConversations');
@@ -118,7 +154,7 @@ class ReconnectService {
     });
   };
 
-  fetchConversationsOnReconnect = async () => {
+  fetchConversationsOnReconnect = async updatedWithin => {
     const {
       getAppliedConversationFiltersQuery,
       'customViews/getActiveConversationFolder': activeFolder,
@@ -129,7 +165,7 @@ class ReconnectService {
     if (query) {
       await this.fetchFilteredOrSavedConversations(query);
     } else {
-      await this.fetchConversations();
+      await this.fetchConversations(updatedWithin);
     }
   };
 

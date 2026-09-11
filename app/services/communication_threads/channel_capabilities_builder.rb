@@ -12,7 +12,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   SUPPORTED_UNLINKED_CHANNELS = (CONTACT_TARGET_REQUIREMENTS.keys + Inbox::API_CHANNEL_TYPES + ['Channel::WebWidget']).freeze
   INITIALIZE_OPTION_KEYS = %i[
     contact available_inboxes include_unlinked deduplicate_linked preferred_status
-    unread_counts last_incoming_message_timestamps
+    unread_counts last_incoming_message_timestamps last_seen_timestamps
   ].freeze
 
   def initialize(links:, **options)
@@ -25,6 +25,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     @preferred_status = options.fetch(:preferred_status, nil).to_s.presence
     @unread_counts = options[:unread_counts]
     @last_incoming_message_timestamps = options[:last_incoming_message_timestamps]
+    @last_seen_timestamps = options[:last_seen_timestamps]
   end
 
   def perform
@@ -34,7 +35,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
   private
 
   attr_reader :links, :contact, :available_inboxes, :include_unlinked, :deduplicate_linked, :preferred_status,
-              :unread_counts, :last_incoming_message_timestamps
+              :unread_counts, :last_incoming_message_timestamps, :last_seen_timestamps
 
   def validate_options!(options)
     unknown_options = options.keys - INITIALIZE_OPTION_KEYS
@@ -97,7 +98,7 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
 
   def read_state_payload(conversation)
     {
-      agent_last_seen_at: conversation.agent_last_seen_at&.to_i,
+      agent_last_seen_at: conversation_last_seen_at(conversation)&.to_i,
       assignee_last_seen_at: conversation.assignee_last_seen_at&.to_i,
       unread_count: conversation_unread_count(conversation)
     }
@@ -176,6 +177,12 @@ class CommunicationThreads::ChannelCapabilitiesBuilder
     return conversation.unread_incoming_messages_count if unread_counts.nil?
 
     unread_counts.fetch(conversation.id, 0)
+  end
+
+  def conversation_last_seen_at(conversation)
+    return conversation.agent_last_seen_at if last_seen_timestamps.nil?
+
+    last_seen_timestamps.fetch(conversation.id, conversation.agent_last_seen_at)
   end
 
   def contact_inbox_by_inbox_id

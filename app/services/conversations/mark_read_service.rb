@@ -6,71 +6,66 @@ class Conversations::MarkReadService
   end
 
   def perform
-    if assignee? && @conversation.assignee_unread_messages.exists?
-      sync_payload = unread_message_sync_payload
-      update_last_seen_on_conversation(Time.current.utc, true)
-      sync_mark_read_receipts(sync_payload)
-      return
-    end
-
-    if !assignee? && @conversation.unread_messages.exists?
-      sync_payload = unread_message_sync_payload
-      update_last_seen_on_conversation(Time.current.utc, false)
+    user_unread_messages = @conversation.unread_messages_for(@user)
+    if user_unread_messages.exists?
+      sync_payload = unread_message_sync_payload(user_unread_messages)
+      update_last_seen(Time.current.utc)
       sync_mark_read_receipts(sync_payload)
       return
     end
 
     return unless should_update_last_seen?
 
-    update_last_seen_on_conversation(Time.current.utc, assignee?)
+    update_last_seen(Time.current.utc)
   end
 
   private
 
-  def update_last_seen_on_conversation(last_seen_at, update_assignee)
+  def update_last_seen(last_seen_at)
+    Conversations::RecordUserReadStateService.new(conversation: @conversation, user: @user).perform(last_seen_at: last_seen_at)
     last_seen_updater.perform(
       last_seen_at: last_seen_at,
-      update_assignee: update_assignee.present?,
+      update_assignee: assignee?,
       refresh_communication_thread: @refresh_communication_thread
     )
   end
 
   def should_update_last_seen?
-    agent_needs_update = @conversation.agent_last_seen_at.blank? || @conversation.agent_last_seen_at < 1.hour.ago
-    return agent_needs_update unless assignee?
+    user_last_seen_at = @conversation.last_seen_at_for(@user)
+    user_needs_update = user_last_seen_at.blank? || user_last_seen_at < 1.hour.ago
+    return user_needs_update unless assignee?
 
     assignee_needs_update = @conversation.assignee_last_seen_at.blank? || @conversation.assignee_last_seen_at < 1.hour.ago
-    agent_needs_update || assignee_needs_update
+    user_needs_update || assignee_needs_update
   end
 
-  def unread_message_sync_payload
+  def unread_message_sync_payload(user_unread_messages)
     channel = @conversation.inbox.channel
 
     case channel
     when Channel::WhatsappWeb
-      { whatsapp_web_messages: unread_incoming_messages_for_sync(:source_id) }
+      { whatsapp_web_messages: unread_incoming_messages_for_sync(user_unread_messages, :source_id) }
     when Channel::Whatsapp
       return {} unless channel.provider == 'whatsapp_cloud'
 
-      { whatsapp_cloud_messages: unread_incoming_messages_for_sync(:source_id, :created_at, :content_attributes) }
+      { whatsapp_cloud_messages: unread_incoming_messages_for_sync(user_unread_messages, :source_id, :created_at, :content_attributes) }
     when Channel::Telegram
       return {} if @conversation.additional_attributes['business_connection_id'].blank?
 
-      { telegram_messages: unread_incoming_messages_for_sync(:source_id) }
+      { telegram_messages: unread_incoming_messages_for_sync(user_unread_messages, :source_id) }
     when Channel::TelegramPersonal
-      { telegram_personal_messages: unread_incoming_messages_for_sync(:source_id, :content_attributes) }
+      { telegram_personal_messages: unread_incoming_messages_for_sync(user_unread_messages, :source_id, :content_attributes) }
     else
       {}
     end
   end
 
-  def unread_incoming_messages_for_sync(*columns)
-    @conversation.unread_messages
-                 .where(account_id: @conversation.account_id)
-                 .incoming
-                 .where.not(source_id: [nil, ''])
-                 .select(:id, *columns)
-                 .to_a
+  def unread_incoming_messages_for_sync(user_unread_messages, *columns)
+    user_unread_messages.where(account_id: @conversation.account_id)
+                        .incoming
+                        .where.not(source_id: [nil, ''])
+                        .select(:id, *columns)
+                        .to_a
   end
 
   def sync_mark_read_receipts(sync_payload)

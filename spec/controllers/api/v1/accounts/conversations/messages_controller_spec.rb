@@ -448,7 +448,14 @@ RSpec.describe 'Conversation Messages API', type: :request do
   end
 
   describe 'POST /api/v1/accounts/{account.id}/conversations/:conversation_id/messages/:id/retry' do
-    let(:message) { create(:message, account: account, status: :failed, content_attributes: { external_error: 'error' }) }
+    let(:message) do
+      create(
+        :message,
+        account: account,
+        status: :failed,
+        content_attributes: { external_error: 'error', template_params: { name: 'approved_template' } }
+      )
+    end
 
     context 'when it is an unauthenticated user' do
       it 'returns unauthorized' do
@@ -472,6 +479,7 @@ RSpec.describe 'Conversation Messages API', type: :request do
         expect(response).to have_http_status(:success)
         expect(message.reload.status).to eq('sent')
         expect(message.reload.content_attributes['external_error']).to be_nil
+        expect(message.reload.content_attributes['template_params']).to eq('name' => 'approved_template')
       end
     end
 

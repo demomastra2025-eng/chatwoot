@@ -174,18 +174,20 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       accessible_links: accessible_links_for(@communication_thread)
     )
     @communication_thread = service.perform
+    channel_read_states = service.channel_read_states
     render json: {
       id: @communication_thread.display_id,
-      unread_count: @communication_thread.unread_count,
+      unread_count: channel_read_states.sum { |state| state[:unread_count] },
       agent_last_seen_at: service.last_seen_at&.to_i,
-      channels: service.channel_read_states
+      channels: channel_read_states
     }
   end
 
   def unread
     @communication_thread = CommunicationThreads::MarkUnreadService.new(
       communication_thread: @communication_thread,
-      accessible_links: accessible_links_for(@communication_thread)
+      accessible_links: accessible_links_for(@communication_thread),
+      current_user: Current.user
     ).perform
     preload_accessible_links([@communication_thread], include_unlinked: true)
     preload_crm_deal_stages([@communication_thread])
@@ -210,7 +212,13 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
                         message_type: Message.message_types[:incoming],
                         private: false
                       )
-                      .where('messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)', Time.zone.at(0))
+    messages = messages.where(
+      'messages.created_at > COALESCE(' \
+      "(SELECT COALESCE(last_seen_at, '-infinity'::timestamp) FROM conversation_user_read_states " \
+      'WHERE conversation_id = conversations.id AND user_id = ?), ' \
+      "conversations.agent_last_seen_at, '-infinity'::timestamp)",
+      Current.user.id
+    )
     messages = messages.where('messages.created_at >= ?', communication_thread.session_started_at) if communication_thread.session_started_at?
 
     messages.reorder('messages.created_at ASC', 'messages.id ASC').limit(1).pick(:id)
@@ -446,7 +454,8 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
         include_unlinked: include_unlinked,
         preferred_status: preferred_channel_status,
         unread_counts: @channel_unread_counts_by_conversation_id,
-        last_incoming_message_timestamps: @last_incoming_message_timestamps_by_conversation_id
+        last_incoming_message_timestamps: @last_incoming_message_timestamps_by_conversation_id,
+        last_seen_timestamps: @channel_last_seen_timestamps_by_conversation_id
       ).perform
     end
   end
@@ -489,12 +498,19 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
 
     incoming_messages = incoming_channel_messages(conversation_ids)
     @last_incoming_message_timestamps_by_conversation_id = incoming_messages.group(:conversation_id).maximum(:created_at)
-    @channel_unread_counts_by_conversation_id = unread_channel_message_counts(incoming_messages)
+    user_read_state = Conversations::UserReadStatePreloader.new(
+      account: Current.account,
+      conversation_ids: conversation_ids,
+      user: Current.user
+    ).perform
+    @channel_last_seen_timestamps_by_conversation_id = user_read_state.last_seen_timestamps
+    @channel_unread_counts_by_conversation_id = user_read_state.unread_counts
   end
 
   def reset_channel_message_state
     @channel_unread_counts_by_conversation_id = {}
     @last_incoming_message_timestamps_by_conversation_id = {}
+    @channel_last_seen_timestamps_by_conversation_id = {}
   end
 
   def incoming_channel_messages(conversation_ids)
@@ -503,18 +519,6 @@ class Api::V1::Accounts::CommunicationThreadsController < Api::V1::Accounts::Bas
       conversation_id: conversation_ids,
       message_type: Message.message_types[:incoming]
     )
-  end
-
-  def unread_channel_message_counts(incoming_messages)
-    incoming_messages.without_imported_history
-                     .where(private: false)
-                     .joins(:conversation)
-                     .where(
-                       'messages.created_at > COALESCE(conversations.agent_last_seen_at, ?)',
-                       Time.zone.at(0)
-                     )
-                     .group(:conversation_id)
-                     .count
   end
 
   def preload_last_non_activity_messages_by_thread

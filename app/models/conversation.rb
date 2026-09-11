@@ -117,6 +117,7 @@ class Conversation < ApplicationRecord
   has_many :telephony_call_sessions, class_name: 'Telephony::CallSession', dependent: :nullify
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :conversation_participants, dependent: :destroy_async
+  has_many :conversation_user_read_states, dependent: :delete_all
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
   has_many :attachments, through: :messages
   has_many :reporting_events, dependent: :destroy_async
@@ -187,6 +188,17 @@ class Conversation < ApplicationRecord
 
   def unread_messages
     scope = agent_last_seen_at.present? ? messages.created_since(agent_last_seen_at) : messages
+    scope.without_imported_history
+  end
+
+  def last_seen_at_for(user)
+    read_state = conversation_user_read_states.find_by(user_id: user.id)
+    read_state ? read_state.last_seen_at : agent_last_seen_at
+  end
+
+  def unread_messages_for(user)
+    last_seen_at = last_seen_at_for(user)
+    scope = last_seen_at.present? ? messages.created_since(last_seen_at) : messages
     scope.without_imported_history
   end
 

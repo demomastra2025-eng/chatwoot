@@ -1159,6 +1159,12 @@ RSpec.describe 'Communication Threads API', type: :request do
       create(:inbox_member, user: agent, inbox: first_conversation.inbox)
       create(:inbox_member, user: agent, inbox: second_inbox)
       thread = first_conversation.reload.communication_thread
+      other_agent = create(:user, account: account, role: :agent)
+      Conversations::RecordUserReadStateService.new(conversation: first_conversation, user: agent).perform
+      Conversations::RecordUserReadStateService.new(conversation: second_conversation, user: agent).perform
+      other_cursors = [first_conversation, second_conversation].to_h do |conversation|
+        [conversation.id, conversation.last_seen_at_for(other_agent)]
+      end
 
       expect(thread.reload.unread_count).to eq(0)
 
@@ -1171,6 +1177,10 @@ RSpec.describe 'Communication Threads API', type: :request do
       expect(second_conversation.reload.unread_incoming_messages_count).to eq(1)
       expect(thread.reload.unread_count).to eq(2)
       expect(response.parsed_body['unread_count']).to eq(2)
+      expect(first_conversation.last_seen_at_for(agent)).to be < first_conversation.messages.incoming.last.created_at
+      expect(second_conversation.last_seen_at_for(agent)).to be < second_conversation.messages.incoming.last.created_at
+      expect(first_conversation.last_seen_at_for(other_agent)).to eq(other_cursors[first_conversation.id])
+      expect(second_conversation.last_seen_at_for(other_agent)).to eq(other_cursors[second_conversation.id])
     end
   end
 

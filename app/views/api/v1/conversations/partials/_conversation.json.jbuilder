@@ -65,7 +65,7 @@ if conversation.campaign.present?
 end
 json.uuid conversation.uuid
 json.additional_attributes conversation.additional_attributes
-json.agent_last_seen_at conversation.agent_last_seen_at.to_i
+json.agent_last_seen_at(list_preloader ? list_preloader.last_seen_at(conversation).to_i : conversation.last_seen_at_for(Current.user).to_i)
 json.assignee_last_seen_at conversation.assignee_last_seen_at.to_i
 json.can_reply(list_preloader ? list_preloader.can_reply?(conversation) : conversation.can_reply?)
 json.contact_last_seen_at conversation.contact_last_seen_at.to_i
@@ -81,7 +81,10 @@ json.created_at conversation.created_at.to_i
 json.updated_at conversation.updated_at.to_f
 json.timestamp conversation.last_activity_at.to_i
 json.first_reply_created_at conversation.first_reply_created_at.to_i
-json.unread_count(list_preloader ? list_preloader.unread_count(conversation) : conversation.unread_incoming_messages_count)
+json.unread_count(
+  list_preloader ? list_preloader.unread_count(conversation) :
+    conversation.unread_messages_for(Current.user).where(account_id: conversation.account_id, private: false).incoming.count
+)
 json.last_incoming_message_at directional_message_timestamps[:incoming]&.to_i
 json.last_outgoing_message_at directional_message_timestamps[:outgoing]&.to_i
 json.last_non_activity_message(
