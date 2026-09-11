@@ -897,6 +897,40 @@ describe('ConfigurationPage Virtual PBX management', () => {
     );
   });
 
+  it('requires explicit confirmation before applying Wazo remote provisioning', async () => {
+    const confirmMock = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    getVirtualPbxStatusMock.mockResolvedValueOnce({
+      payload: {
+        ...statusPayload.payload,
+        ui_config: {
+          ...statusPayload.payload.ui_config,
+          channel: {
+            ...statusPayload.payload.ui_config.channel,
+            provider_kind: 'wazo',
+          },
+        },
+      },
+    });
+    const wrapper = buildWrapper({
+      inbox: { ...baseInbox, provider: 'wazo' },
+    });
+    await flushPromises();
+    provisionVirtualPbxChannelMock.mockClear();
+
+    await wrapper.vm.provisionVirtualPbxChannel();
+    expect(provisionVirtualPbxChannelMock).not.toHaveBeenCalled();
+
+    confirmMock.mockReturnValue(true);
+    await wrapper.vm.provisionVirtualPbxChannel();
+    await flushPromises();
+
+    expect(provisionVirtualPbxChannelMock).toHaveBeenCalledWith(42, {
+      remoteCommit: true,
+      includeDiagnostics: false,
+    });
+    confirmMock.mockRestore();
+  });
+
   it('reconciles sync state through the product API', async () => {
     const wrapper = buildWrapper();
     await flushPromises();

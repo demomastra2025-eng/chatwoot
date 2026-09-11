@@ -406,8 +406,10 @@
           "CHANGE_ACTION": "Change provider"
         },
         "PROVIDERS": {
-          "KAZAKHSTAN": "Virtual PBX",
-          "KAZAKHSTAN_DESC": "Use OneLink Virtual PBX for Kazakhstan numbers through Janus SIP.",
+          "KAZAKHSTAN": "Wazo Virtual PBX",
+          "KAZAKHSTAN_DESC": "Connect Kazakhstan SIP lines through Wazo and the existing OneLink webphone.",
+          "WAZO": "Wazo Virtual PBX",
+          "WAZO_DESC": "Connect Wazo to the existing OneLink webphone. Operator SIP access is provisioned automatically.",
           "SIPUNI": "Sipuni",
           "SIPUNI_DESC": "Connect Sipuni as a separate SIP provider through the browser webphone.",
           "ASTERISK_ANALOG": "Asterisk analog",
@@ -436,7 +438,8 @@
             "SIPUNI": "Sipuni",
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk analog",
-            "BEELINE": "Beeline Cloud PBX"
+            "BEELINE": "Beeline Cloud PBX",
+            "WAZO": "Wazo"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Provider account number",
@@ -562,6 +565,7 @@
           "PLAN_BUTTON": "Preview sync plan",
           "RECONCILE_BUTTON": "Check remote state",
           "PROVISION_BUTTON": "Sync with telephony",
+          "WAZO_APPLY_CONFIRM": "Apply this plan to Wazo now? This creates, updates, or removes managed Wazo resources.",
           "PROVISIONING_PLAN_READY": "Provisioning plan is ready",
           "PROVISION_BLOCKED": "Remote provisioning could not be completed",
           "PROVISION_SUCCESS": "Remote provisioning has completed",

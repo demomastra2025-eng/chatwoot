@@ -55,6 +55,13 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       'default_codec' => 'pcma',
       'allows_display_ingress_split' => true
     )
+    expect(payload.dig('provider_templates', 'wazo')).to include(
+      'label' => 'Wazo',
+      'default_port' => 5060,
+      'default_transport' => 'udp',
+      'default_codec' => 'pcma',
+      'allows_display_ingress_split' => true
+    )
   end
 
   def put_with_configuration_version(path, params:, headers:, as:)
@@ -436,6 +443,142 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
       'outbound_proxy' => '46.227.186.231:6050',
       'codec' => 'pcma'
     )
+  end
+
+  it 'creates a standalone Wazo channel for the existing OneLink Janus' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'wazo',
+      channel_name: 'Wazo Virtual PBX',
+      display_phone_number: '+77000001001',
+      provider_account_number: '1001',
+      ingress_number: '1001',
+      connection: {
+        host: '188.241.217.162',
+        port: 5060,
+        transport: 'udp'
+      },
+      metadata: {
+        source: 'virtual_pbx_ui',
+        pbx_platform: 'wazo',
+        outbound_dial_format: 'kz_trunk'
+      }
+    )
+
+    post base_path, params: payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include(
+      'valid' => true,
+      'local_commit' => true,
+      'remote_commit' => false,
+      'status' => 'local_committed'
+    )
+    inbox = Inbox.find(body.dig('ui_config', 'inbox_id'))
+    connection = inbox.telephony_number_binding.provider_connection
+    expect(inbox.channel.provider).to eq('wazo')
+    expect(connection).to have_attributes(
+      provider_kind: 'wazo',
+      host: '188.241.217.162',
+      port: 5060,
+      transport: 'udp'
+    )
+    expect(connection.metadata).to include(
+      'pbx_platform' => 'wazo',
+      'outbound_dial_format' => 'kz_trunk'
+    )
+  end
+
+  it 'generates Wazo operator SIP credentials and explicitly provisions the managed endpoint' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'wazo',
+      channel_name: 'Wazo Virtual PBX',
+      connection: { host: 'wazo.example.kz', port: 5060, transport: 'udp' },
+      metadata: { source: 'virtual_pbx_ui', pbx_platform: 'wazo' }
+    )
+    post base_path, params: payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    inbox = Inbox.find(inbox_id)
+    inbox.inbox_members.create!(user_id: agent.id)
+
+    put_with_configuration_version "#{base_path}/#{inbox_id}",
+                                   params: {
+                                     dry_run: false,
+                                     remote_commit: false,
+                                     profiles: [{ user_id: agent.id, internal_extension: '101', enabled: true }]
+                                   },
+                                   headers: headers,
+                                   as: :json
+
+    expect(response).to have_http_status(:ok)
+    profile = inbox.telephony_sip_profiles.find_by!(user_id: agent.id)
+    expect(profile.sip_username).to eq("ol#{account.id}i#{inbox.id}u#{agent.id}")
+    expect(profile.sip_password).to be_present
+    expect(response.body).not_to include(profile.sip_password)
+
+    post "#{base_path}/#{inbox_id}/provisioning_plan",
+         params: { operation: 'update' },
+         headers: headers,
+         as: :json
+    plan = response.parsed_body.dig('payload', 'provisioning_plan', 'operations')
+    expect(plan.pluck('code')).to eq(['upsert_wazo_operator_graph'])
+    expect(plan.pluck('ref')).to all(be_present)
+
+    remote_service = instance_double(Telephony::Wazo::ProvisioningService)
+    allow(Telephony::Wazo::ApiClient).to receive(:configured?).and_return(true)
+    allow(Telephony::Wazo::ProvisioningService).to receive(:new).and_return(remote_service)
+    allow(remote_service).to receive(:sync!).and_return(
+      status: 'remote_committed',
+      remote_commit: true,
+      executed_operations: [{ action: 'create_endpoint', endpoint_name: "ol-a#{account.id}-i#{inbox.id}-p#{profile.id}" }],
+      reconciliation: { status: 'ready' },
+      remote_snapshot: { endpoint_names: ["ol-a#{account.id}-i#{inbox.id}-p#{profile.id}"] }
+    )
+
+    ClimateControl.modify TELEPHONY_WAZO_SIP_HOST: 'other-wazo.example.kz' do
+      post "#{base_path}/#{inbox_id}/provision",
+           params: { remote_commit: true },
+           headers: headers,
+           as: :json
+    end
+    expect(response.parsed_body.fetch('payload')).to include(
+      'status' => 'remote_blocked',
+      'remote_mutation_reason' => 'WAZO_SIP_HOST_MISMATCH'
+    )
+    expect(remote_service).not_to have_received(:sync!)
+
+    ClimateControl.modify TELEPHONY_WAZO_SIP_HOST: 'wazo.example.kz' do
+      post "#{base_path}/#{inbox_id}/provision",
+           params: { remote_commit: true },
+           headers: headers,
+           as: :json
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch('payload')).to include(
+      'status' => 'remote_committed',
+      'remote_commit' => true,
+      'remote_mutation_allowed' => true
+    )
+    expect(response.parsed_body.dig('payload', 'ui_config', 'permissions', 'remote_commit_allowed')).to be(true)
+    expect(remote_service).to have_received(:sync!)
+    expect(inbox.reload.telephony_number_binding.provider_connection.provisioning_status).to eq('ready')
+
+    allow(remote_service).to receive(:sync!).and_raise(
+      Telephony::Error.new(code: 'WAZO_API_FAILED', message: 'remote failed', status: :bad_gateway)
+    )
+    ClimateControl.modify TELEPHONY_WAZO_SIP_HOST: 'wazo.example.kz' do
+      post "#{base_path}/#{inbox_id}/provision",
+           params: { remote_commit: true },
+           headers: headers,
+           as: :json
+    end
+    expect(response.parsed_body.fetch('payload')).to include(
+      'status' => 'remote_failed',
+      'remote_commit' => true,
+      'remote_side_effects_possible' => true
+    )
+    expect(response.body).not_to include(profile.sip_password)
   end
 
   it 'rejects Beeline settings that violate the fixed UDP and PCMA contract' do
@@ -1758,6 +1901,54 @@ RSpec.describe 'Telephony Virtual PBX channels API', type: :request do
     expect(payload).to include('operation' => 'update', 'dry_run' => true, 'valid' => false)
     expect(payload.fetch('errors').map { |error| error['code'] }).to include('number_ref_taken')
     expect(first_binding.reload.number_ref).not_to eq(second_binding.number_ref)
+  end
+
+  it 'blocks remote Wazo deletion when the API target is not configured' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'wazo',
+      connection: { host: 'wazo.example.kz', port: 5060, transport: 'udp' }
+    )
+    post base_path, params: payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    allow(Telephony::Wazo::ApiClient).to receive(:configured?).and_return(false)
+
+    delete "#{base_path}/#{inbox_id}",
+           params: { confirm: true, dry_run: false, remote_commit: true },
+           headers: headers,
+           as: :json
+
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include('dry_run' => true, 'valid' => false)
+    expect(body.fetch('errors').pluck('code')).to include('wazo_api_not_configured')
+    expect(Inbox.exists?(inbox_id)).to be(true)
+  end
+
+  it 'reports possible remote side effects when local deletion fails after Wazo cleanup' do
+    payload = valid_create_payload.deep_dup.merge(
+      provider_kind: 'wazo',
+      connection: { host: 'wazo.example.kz', port: 5060, transport: 'udp' }
+    )
+    post base_path, params: payload.merge(dry_run: false, remote_commit: false), headers: headers, as: :json
+    inbox_id = response.parsed_body.dig('payload', 'ui_config', 'inbox_id')
+    remote_service = instance_double(Telephony::Wazo::ProvisioningService, delete_all!: { status: 'remote_committed' })
+    allow(Telephony::Wazo::ApiClient).to receive(:configured?).and_return(true)
+    allow(Telephony::Wazo::ProvisioningService).to receive(:new).and_return(remote_service)
+    allow_any_instance_of(Telephony::VirtualPbx::ProvisioningService).to receive(:delete_local_channel!)
+      .and_raise(ActiveRecord::StatementInvalid, 'synthetic local failure')
+
+    ClimateControl.modify(TELEPHONY_WAZO_SIP_HOST: 'wazo.example.kz') do
+      delete "#{base_path}/#{inbox_id}",
+             params: { confirm: true, dry_run: false, remote_commit: true },
+             headers: headers,
+             as: :json
+    end
+
+    body = response.parsed_body.fetch('payload')
+    expect(body).to include(
+      'status' => 'delete_failed', 'remote_commit' => true, 'remote_side_effects_possible' => true
+    )
+    expect(body.fetch('errors').pluck('code')).to include('wazo_delete_incomplete')
+    expect(Inbox.exists?(inbox_id)).to be(true)
   end
 
   it 'deletes only a managed local bundle when explicitly confirmed' do
