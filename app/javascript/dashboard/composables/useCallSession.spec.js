@@ -196,6 +196,31 @@ describe('useCallSession', () => {
     consoleErrorSpy.mockRestore();
   });
 
+  it.each([401, 403])(
+    'does not retry browser calling bootstrap after HTTP %s',
+    async status => {
+      vi.useFakeTimers();
+      const consoleErrorSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+      bootstrapIncomingSupportMock.mockRejectedValue(
+        Object.assign(new Error('authorization failed'), {
+          response: { status },
+        })
+      );
+
+      mountUseCallSession();
+      await Promise.resolve();
+
+      expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(bootstrapIncomingSupportMock).toHaveBeenCalledTimes(1);
+      consoleErrorSpy.mockRestore();
+    }
+  );
+
   it('bootstraps browser calling for the active voice inbox route', async () => {
     routeMock.params = { inbox_id: '4696' };
     inboxGetterMock.mockReturnValue({ id: 4696, provider: 'sipuni' });

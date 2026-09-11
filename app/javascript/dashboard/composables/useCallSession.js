@@ -11,6 +11,7 @@ import { BUS_EVENTS } from 'shared/constants/busEvents';
 import { emitter } from 'shared/helpers/mitt';
 
 const INCOMING_BOOTSTRAP_RETRY_MS = 10_000;
+const TERMINAL_WEBPHONE_BOOTSTRAP_HTTP_STATUSES = new Set([401, 403]);
 const TERMINAL_CLAIM_FAILURE_CODES = new Set([
   'CALL_NOT_CLAIMABLE',
   'CALL_ALREADY_CLAIMED',
@@ -64,6 +65,11 @@ const positiveNumber = value => {
   return Number.isFinite(numericValue) && numericValue > 0
     ? numericValue
     : null;
+};
+
+const shouldRetryWebphoneBootstrap = error => {
+  const status = Number(error?.response?.status || error?.status);
+  return !TERMINAL_WEBPHONE_BOOTSTRAP_HTTP_STATUSES.has(status);
 };
 
 const isBrowserCallingInbox = inbox => {
@@ -1206,6 +1212,8 @@ export function useCallSession() {
       // eslint-disable-next-line no-console
       console.error('Failed to bootstrap browser calling:', error);
       clearBootstrapRetry();
+      if (!shouldRetryWebphoneBootstrap(error)) return null;
+
       bootstrapRetryTimer = window.setTimeout(
         // eslint-disable-next-line no-use-before-define
         bootstrapIncomingSupport,
