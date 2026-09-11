@@ -188,6 +188,7 @@
       "CONVERSATION_TRANSFERRED_TO_AI": "Conversation transferred to AI",
       "APPOINTMENT_CREATED": "Appointment Created",
       "APPOINTMENT_UPDATED": "Appointment Updated",
+      "APPOINTMENT_RESCHEDULED": "Appointment Rescheduled",
       "APPOINTMENT_CANCELLED": "Appointment Cancelled",
       "APPOINTMENT_COMPLETED": "Appointment Completed",
       "DEAL_CREATED": "Deal Created",

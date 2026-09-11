@@ -24,6 +24,7 @@ import {
 } from 'dashboard/stores/scheduling/shared';
 import { useSchedulingReferencesStore } from 'dashboard/stores/scheduling/references';
 import { isKazakhstanE164Phone } from 'dashboard/stores/scheduling/appointmentForm';
+import { schedulingContactNameParts } from 'dashboard/stores/scheduling/contactName';
 import {
   fromDateTimeInputValue,
   getServicePriceForResource,
@@ -138,6 +139,7 @@ const resourceOptions = computed(() =>
 const serviceOptions = computed(() =>
   activeServices.value.map(service => ({
     label: service.name,
+    wrapLabel: true,
     value: service.id,
   }))
 );
@@ -148,7 +150,11 @@ const serviceOptionsForForm = form => {
   );
 
   return servicesAvailableForResource(activeServices.value, resource).map(
-    service => ({ label: service.name, value: service.id })
+    service => ({
+      label: service.name,
+      value: service.id,
+      wrapLabel: true,
+    })
   );
 };
 const hasServiceOptionsForForm = form => serviceOptionsForForm(form).length > 0;
@@ -241,15 +247,17 @@ const resetCreateForm = () => {
   const primaryResourceCabinets =
     medelementCabinetsForResource(primaryResource);
   const defaults = buildDefaultAppointmentTimes();
+  const contactNameParts = schedulingContactNameParts({
+    firstName: contact.value?.first_name || contact.value?.firstName,
+    fullName: contactName.value,
+    lastName: contact.value?.last_name || contact.value?.lastName,
+    middleName: contact.value?.middle_name || contact.value?.middleName,
+  });
 
   Object.assign(createForm, {
-    clientFirstName:
-      contact.value?.first_name ||
-      contact.value?.firstName ||
-      contactName.value,
-    clientLastName: contact.value?.last_name || contact.value?.lastName || '',
-    clientMiddleName:
-      contact.value?.middle_name || contact.value?.middleName || '',
+    clientFirstName: contactNameParts.firstName,
+    clientLastName: contactNameParts.lastName,
+    clientMiddleName: contactNameParts.middleName,
     clientName: contactName.value,
     clientNameStructured: true,
     clientPhone: contactPhone.value,
@@ -1186,6 +1194,7 @@ watch(
                         $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
                       "
                       dropdown-placement="auto"
+                      wrap-label
                       @update:model-value="handleCreateServiceChange"
                     />
                     <Input
@@ -1643,6 +1652,7 @@ watch(
                         $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_EMPTY')
                       "
                       dropdown-placement="auto"
+                      wrap-label
                       @update:model-value="
                         handleFormServiceChange(
                           appointmentForms[appointmentKey(appointment)],

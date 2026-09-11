@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n';
 import Button from 'dashboard/components-next/button/Button.vue';
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ComboBoxDropdown from 'dashboard/components-next/combobox/ComboBoxDropdown.vue';
+import { normalizeComboboxSearchText } from 'dashboard/components-next/combobox/search';
 
 const props = defineProps({
   options: {
@@ -37,6 +38,7 @@ const props = defineProps({
   },
   dropdownMinWidth: { type: Number, default: 0 },
   triggerIcon: { type: String, default: '' },
+  wrapLabel: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['open', 'update:modelValue', 'search']);
@@ -123,9 +125,9 @@ const filteredOptions = computed(() => {
   }
 
   // For local search, filter options based on search term
-  const searchTerm = search.value.toLowerCase();
+  const searchTerm = normalizeComboboxSearchText(search.value);
   return props.options.filter(option =>
-    option.label.toLowerCase().includes(searchTerm)
+    normalizeComboboxSearchText(option.label).includes(searchTerm)
   );
 });
 const selectPlaceholder = computed(() => {
@@ -167,7 +169,7 @@ const hasAppendSlot = computed(() => !!slots.append);
 const triggerClass = computed(() => [
   'w-full !px-2 text-n-slate-12 font-normal focus:outline-n-brand',
   props.inputLike
-    ? '!h-10 !rounded-lg !bg-n-alpha-black2 !py-2.5 !outline-n-weak hover:!outline-n-slate-6 dark:hover:!outline-n-slate-6'
+    ? `${props.wrapLabel ? '!h-auto min-h-10' : '!h-10'} !rounded-lg !bg-n-alpha-black2 !py-2.5 !outline-n-weak hover:!outline-n-slate-6 dark:hover:!outline-n-slate-6`
     : '!py-2.5 group-hover/combobox:border-n-slate-6',
   hasAppendSlot.value ? '!pr-[4.25rem]' : '!pr-2',
   {
@@ -291,8 +293,12 @@ useEventListener(window, 'scroll', updateDropdownPosition, {
               aria-hidden="true"
             />
             <span
-              class="min-w-0 flex-1 truncate text-left"
-              :class="selectedLabelClass"
+              class="min-w-0 flex-1 text-left"
+              :class="[
+                selectedLabelClass,
+                wrapLabel ? 'whitespace-normal break-words' : 'truncate',
+              ]"
+              :title="selectedLabel"
             >
               {{ selectedLabel }}
             </span>

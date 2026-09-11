@@ -162,6 +162,24 @@ describe('useSchedulingAppointmentFormStore', () => {
     });
   });
 
+  it('splits a two-part contact name when the surname field is empty', () => {
+    const store = useSchedulingAppointmentFormStore();
+
+    store.openCreate();
+    store.applyContact({
+      firstName: 'Айжан Касымова',
+      fullName: 'Айжан Касымова',
+      id: 17,
+      lastName: '',
+    });
+
+    expect(store.form).toMatchObject({
+      clientFirstName: 'Айжан',
+      clientLastName: 'Касымова',
+      contactId: 17,
+    });
+  });
+
   it('loads a contact by id and keeps structured name fields separate', async () => {
     SchedulingContactsAPI.get.mockResolvedValue({
       data: {

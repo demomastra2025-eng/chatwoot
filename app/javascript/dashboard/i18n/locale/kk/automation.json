@@ -186,6 +186,7 @@
       "CONVERSATION_OPENED": "Conversation Opened",
       "APPOINTMENT_CREATED": "Appointment Created",
       "APPOINTMENT_UPDATED": "Appointment Updated",
+      "APPOINTMENT_RESCHEDULED": "Appointment Rescheduled",
       "APPOINTMENT_CANCELLED": "Appointment Cancelled",
       "APPOINTMENT_COMPLETED": "Appointment Completed",
       "DEAL_CREATED": "Deal Created",

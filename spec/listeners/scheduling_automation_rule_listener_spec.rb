@@ -89,6 +89,46 @@ RSpec.describe SchedulingAutomationRuleListener do
     end
   end
 
+  describe 'appointment_updated rescheduling' do
+    let!(:automation_rule) do
+      create(
+        :automation_rule,
+        account: account,
+        event_name: 'appointment_rescheduled',
+        conditions: [{ attribute_key: 'status', filter_operator: 'equal_to', values: ['scheduled'], query_operator: nil }],
+        actions: [{ action_name: 'send_webhook_event', action_params: ['https://example.com/hooks/appointments'] }]
+      )
+    end
+
+    it 'invokes rescheduled rules when the appointment start changes' do
+      changed_attributes = { 'starts_at' => [appointment.starts_at, appointment.starts_at + 1.hour] }
+
+      listener.appointment_updated(
+        Events::Base.new('appointment_updated', Time.zone.now, appointment: appointment, changed_attributes: changed_attributes)
+      )
+
+      expect(AutomationRules::AppointmentActionService).to have_received(:new).with(
+        automation_rule,
+        account,
+        appointment,
+        changed_attributes: changed_attributes
+      )
+    end
+
+    it 'does not invoke rescheduled rules for unrelated appointment updates' do
+      listener.appointment_updated(
+        Events::Base.new(
+          'appointment_updated',
+          Time.zone.now,
+          appointment: appointment,
+          changed_attributes: { 'client_comment' => [nil, 'Updated'] }
+        )
+      )
+
+      expect(AutomationRules::AppointmentActionService).not_to have_received(:new)
+    end
+  end
+
   describe 'integration flow' do
     before do
       clear_enqueued_jobs

@@ -6,6 +6,7 @@ import { useI18n } from 'vue-i18n';
 
 import Avatar from 'dashboard/components-next/avatar/Avatar.vue';
 import ComboBoxDropdown from 'dashboard/components-next/combobox/ComboBoxDropdown.vue';
+import { normalizeComboboxSearchText } from 'dashboard/components-next/combobox/search';
 
 const props = defineProps({
   options: {
@@ -47,6 +48,10 @@ const props = defineProps({
     default: '',
   },
   useApiResults: {
+    type: Boolean,
+    default: false,
+  },
+  wrapLabels: {
     type: Boolean,
     default: false,
   },
@@ -132,9 +137,9 @@ const filteredOptions = computed(() => {
     return props.options;
   }
 
-  const searchTerm = search.value.toLowerCase();
+  const searchTerm = normalizeComboboxSearchText(search.value);
   return props.options.filter(option =>
-    option.label?.toLowerCase().includes(searchTerm)
+    normalizeComboboxSearchText(option.label).includes(searchTerm)
   );
 });
 
@@ -254,7 +259,8 @@ defineExpose({
         <div
           v-for="tag in selectedTags"
           :key="tag.value"
-          class="flex max-w-[75%] items-center justify-center gap-1 rounded-lg bg-n-blue-5/70 px-2 py-0.5 outline outline-1 outline-n-blue-7/60"
+          class="flex items-center justify-center gap-1 rounded-lg bg-n-blue-5/70 px-2 py-0.5 outline outline-1 outline-n-blue-7/60"
+          :class="wrapLabels ? 'max-w-full' : 'max-w-[75%]'"
           @click.stop
         >
           <Avatar
@@ -264,7 +270,11 @@ defineExpose({
             :size="18"
             rounded-full
           />
-          <span class="min-w-0 flex-grow truncate text-sm text-n-blue-12">
+          <span
+            class="min-w-0 flex-grow text-sm text-n-blue-12"
+            :class="wrapLabels ? 'whitespace-normal break-words' : 'truncate'"
+            :title="tag.label"
+          >
             {{ tag.label }}
           </span>
           <a

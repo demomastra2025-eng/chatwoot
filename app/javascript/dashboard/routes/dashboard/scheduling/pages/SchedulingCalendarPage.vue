@@ -480,6 +480,7 @@ const serviceOptions = computed(() =>
   ).map(service => ({
     label: service.name,
     value: service.id,
+    wrapLabel: true,
   }))
 );
 const hasServiceOptions = computed(() => serviceOptions.value.length > 0);
@@ -2276,6 +2277,7 @@ onMounted(async () => {
                         class="appointment-drawer-multi-control"
                         :model-value="formStore.form.serviceIds"
                         :options="serviceOptions"
+                        wrap-labels
                         :placeholder="$t('SCHEDULING.APPOINTMENT_FORM.SERVICE')"
                         :search-placeholder="
                           $t('SCHEDULING.APPOINTMENT_FORM.SERVICE_SEARCH')

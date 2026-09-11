@@ -536,6 +536,10 @@ export const AUTOMATIONS = {
     conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
     actions: APPOINTMENT_AUTOMATION_ACTIONS,
   },
+  appointment_rescheduled: {
+    conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
+    actions: APPOINTMENT_AUTOMATION_ACTIONS,
+  },
   appointment_cancelled: {
     conditions: APPOINTMENT_AUTOMATION_CONDITIONS,
     actions: APPOINTMENT_AUTOMATION_ACTIONS,
@@ -622,6 +626,10 @@ export const AUTOMATION_RULE_EVENTS = [
   {
     key: 'appointment_updated',
     value: 'APPOINTMENT_UPDATED',
+  },
+  {
+    key: 'appointment_rescheduled',
+    value: 'APPOINTMENT_RESCHEDULED',
   },
   {
     key: 'appointment_cancelled',
