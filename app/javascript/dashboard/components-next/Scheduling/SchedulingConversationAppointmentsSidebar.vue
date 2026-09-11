@@ -61,6 +61,7 @@ const scrollContainer = ref(null);
 const isCreating = ref(false);
 const isSavingCreate = ref(false);
 const savingAppointmentKey = ref('');
+const cancellingAppointmentKey = ref('');
 const createForm = reactive({
   clientFirstName: '',
   clientLastName: '',
@@ -320,6 +321,9 @@ const lookupParams = computed(() => {
 });
 
 const appointmentKey = appointment => `appointment-${appointment.id}`;
+const isProviderCancellationPending = appointment =>
+  isAppointmentProviderOwned(appointment) &&
+  appointment?.providerConfirmationStatus === 'pending';
 const isAppointmentOpen = appointment =>
   openAppointmentKeys.value.includes(appointmentKey(appointment));
 
@@ -601,10 +605,9 @@ const buildCreatePayload = () =>
   );
 
 const upsertAppointment = appointment => {
-  appointments.value = mergeUniqueAppointments(
-    [appointment],
-    appointments.value
-  );
+  appointments.value = mergeUniqueAppointments(appointments.value, [
+    appointment,
+  ]);
   appointmentForms[appointmentKey(appointment)] =
     formFromAppointment(appointment);
 };
@@ -776,12 +779,39 @@ const saveCreateAppointment = async () => {
   }
 };
 
+async function cancelAppointment(appointment) {
+  const key = appointmentKey(appointment);
+  cancellingAppointmentKey.value = key;
+  try {
+    const response = await SchedulingAppointmentsAPI.cancel(appointment.id);
+    const savedAppointment = normalizePayload(response.data);
+    upsertAppointment(savedAppointment);
+    refreshSidebarCounters();
+    if (
+      isAppointmentProviderOwned(savedAppointment) &&
+      savedAppointment.status !== 'cancelled'
+    ) {
+      useAlert(t('SCHEDULING.PROVIDER_COMMANDS.QUEUED'));
+    } else {
+      useAlert(t('SCHEDULING.APPOINTMENT_FORM.SUCCESS_CANCEL'));
+    }
+  } catch (error) {
+    useAlert(formatSchedulingErrorMessage(error, t));
+  } finally {
+    cancellingAppointmentKey.value = '';
+  }
+}
+
 const saveAppointment = async appointment => {
   if (isAppointmentProviderOwned(appointment)) return;
 
   const key = appointmentKey(appointment);
   const form = appointmentForms[key];
   if (isAppointmentFormInvalid(form)) return;
+  if (form.status === 'cancelled' && appointment.status !== 'cancelled') {
+    await cancelAppointment(appointment);
+    return;
+  }
 
   savingAppointmentKey.value = key;
   try {
@@ -1311,6 +1341,26 @@ watch(
               />
             </span>
           </button>
+
+          <div
+            v-if="
+              isAppointmentProviderOwned(appointment) &&
+              appointment.status !== 'cancelled' &&
+              !isProviderCancellationPending(appointment)
+            "
+            class="flex justify-end px-3 pb-2.5"
+          >
+            <Button
+              size="sm"
+              slate
+              faded
+              :is-loading="
+                cancellingAppointmentKey === appointmentKey(appointment)
+              "
+              :label="$t('SCHEDULING.APPOINTMENT_FORM.CANCEL_APPOINTMENT')"
+              @click="cancelAppointment(appointment)"
+            />
+          </div>
 
           <div
             v-show="isAppointmentOpen(appointment)"

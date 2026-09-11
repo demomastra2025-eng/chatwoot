@@ -34,7 +34,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   ].freeze
 
   before_action :set_appointment, only: [:show, :update, :cancel, :create_conversation, :destroy]
-  before_action :ensure_editable_appointment!, only: [:update, :cancel, :destroy]
+  before_action :ensure_editable_appointment!, only: [:destroy]
   before_action :ensure_destroyable_appointment!, only: [:destroy]
 
   def index
@@ -68,6 +68,9 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def update
+    return cancel_and_render if cancellation_requested?
+
+    ensure_editable_appointment!
     appointment = Scheduling::Appointments::UpsertService.new(
       account: Current.account,
       params: appointment_params,
@@ -79,14 +82,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   end
 
   def cancel
-    appointment = Scheduling::Appointments::UpsertService.new(
-      account: Current.account,
-      params: { status: 'cancelled', payment_status: 'cancelled' },
-      appointment: @appointment,
-      actor: Current.user
-    ).perform
-
-    render_payload(Scheduling::PayloadBuilder.appointment(appointment))
+    cancel_and_render
   end
 
   def create_conversation
@@ -190,6 +186,19 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
 
   def ensure_editable_appointment!
     Scheduling::Appointments::MutationGuard.ensure_editable!(@appointment)
+  end
+
+  def cancellation_requested?
+    appointment_params[:status].to_s == 'cancelled'
+  end
+
+  def cancel_and_render
+    appointment = Scheduling::Appointments::CancelService.new(
+      appointment: @appointment,
+      actor: Current.user
+    ).perform
+
+    render_payload(Scheduling::PayloadBuilder.appointment(appointment))
   end
 
   def ensure_destroyable_appointment!

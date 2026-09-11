@@ -75,6 +75,16 @@ vi.mock('dashboard/api/scheduling/appointments', () => ({
         data: { payload: { ...existingAppointment, client_name: 'Айша' } },
       })
     ),
+    cancel: vi.fn(() =>
+      Promise.resolve({
+        data: {
+          payload: {
+            ...existingAppointment,
+            medelement_provider_sync_status: 'pending',
+          },
+        },
+      })
+    ),
   },
 }));
 
@@ -143,6 +153,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     SchedulingAppointmentsAPI.create.mockClear();
     SchedulingAppointmentsAPI.get.mockClear();
     SchedulingAppointmentsAPI.update.mockClear();
+    SchedulingAppointmentsAPI.cancel.mockClear();
     SchedulingAppointmentsAPI.get.mockResolvedValue({
       data: { payload: [existingAppointment] },
     });
@@ -371,6 +382,36 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await wrapper.vm.saveAppointment(providerAppointment);
 
     expect(wrapper.vm.openAppointmentKeys).toEqual([]);
+    expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
+
+    SchedulingAppointmentsAPI.cancel.mockResolvedValueOnce({
+      data: {
+        payload: {
+          ...providerAppointment,
+          provider_confirmation_status: 'pending',
+        },
+      },
+    });
+
+    await wrapper.vm.cancelAppointment(providerAppointment);
+
+    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(501);
+    expect(mocks.alert).toHaveBeenCalledWith(
+      'SCHEDULING.PROVIDER_COMMANDS.QUEUED'
+    );
+    expect(
+      wrapper.vm.isProviderCancellationPending(wrapper.vm.appointments[0])
+    ).toBe(true);
+  });
+
+  it('uses the cancellation endpoint instead of updating the record status', async () => {
+    const wrapper = mountComponent();
+    await flushPromises();
+    wrapper.vm.appointmentForms['appointment-501'].status = 'cancelled';
+
+    await wrapper.vm.saveAppointment(existingAppointment);
+
+    expect(SchedulingAppointmentsAPI.cancel).toHaveBeenCalledWith(501);
     expect(SchedulingAppointmentsAPI.update).not.toHaveBeenCalled();
   });
 

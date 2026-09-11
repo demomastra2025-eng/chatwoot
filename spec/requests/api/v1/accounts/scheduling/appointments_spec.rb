@@ -1279,6 +1279,32 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body['code']).to eq('APPOINTMENT_READ_ONLY')
   end
 
+  it 'routes an imported appointment cancellation update through the provider-safe cancel service' do
+    appointment = create(
+      :scheduling_appointment,
+      resource: resource,
+      account: account,
+      contact: contact,
+      service: service,
+      source: 'medelement',
+      external_ref: 'medelement:reception:1'
+    )
+    cancel_service = instance_double(Scheduling::Appointments::CancelService, perform: appointment)
+    expect(Scheduling::Appointments::CancelService).to receive(:new).with(
+      appointment: appointment,
+      actor: agent
+    ).and_return(cancel_service)
+
+    put "#{path}/#{appointment.id}",
+        params: { status: 'cancelled', client_name: 'Ignored edit' },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'source')).to eq('medelement')
+    expect(appointment.reload.client_name).not_to eq('Ignored edit')
+  end
+
   it 'returns a stable calendar payload shape' do
     conversation = create(:conversation, account: account, contact: contact)
     appointment = create(
