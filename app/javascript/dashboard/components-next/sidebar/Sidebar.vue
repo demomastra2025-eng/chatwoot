@@ -179,7 +179,7 @@ const hasAuditLogs = computed(() => {
 });
 
 const hasContactSettingsAccess = computed(() => {
-  return checkPermissions(['administrator']);
+  return checkPermissions(['administrator', 'agent', 'custom_role']);
 });
 
 const hasSettingsAccess = computed(() => {

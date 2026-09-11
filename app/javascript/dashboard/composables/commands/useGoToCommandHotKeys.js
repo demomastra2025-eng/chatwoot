@@ -131,7 +131,7 @@ const GO_TO_COMMANDS = [
     section: 'COMMAND_BAR.SECTIONS.SETTINGS',
     icon: ICON_LABELS,
     path: accountId => `accounts/${accountId}/settings/labels/list`,
-    role: ['administrator'],
+    role: ['administrator', 'agent'],
   },
   {
     id: 'open_canned_response_settings',
