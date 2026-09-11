@@ -212,6 +212,21 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     });
   });
 
+  it('splits a two-part chat contact name when the surname field is empty', async () => {
+    const currentChat = defaultCurrentChat();
+    currentChat.meta.sender.name = 'Айжан Касымова';
+    const wrapper = mountComponent(currentChat);
+    await flushPromises();
+
+    const header = wrapper.findComponent({ name: 'SidebarActionsHeader' });
+    await header.vm.$emit('click', 'new_appointment');
+
+    expect(wrapper.vm.createForm).toMatchObject({
+      clientFirstName: 'Айжан',
+      clientLastName: 'Касымова',
+    });
+  });
+
   it('renders appointment status as a colored icon before the title without a dashed status rail', async () => {
     const wrapper = mountComponent();
     await flushPromises();
@@ -670,7 +685,7 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
 
     expect(wrapper.vm.serviceOptionsForForm({ resourceId: 7 })).toEqual([
-      { label: 'Консультация', value: 9 },
+      { label: 'Консультация', value: 9, wrapLabel: true },
     ]);
   });
 
@@ -707,8 +722,8 @@ describe('SchedulingConversationAppointmentsSidebar', () => {
     await flushPromises();
 
     expect(wrapper.vm.serviceOptionsForForm({ resourceId: 7 })).toEqual([
-      { label: 'Консультация', value: 9 },
-      { label: 'Другая услуга', value: 10 },
+      { label: 'Консультация', value: 9, wrapLabel: true },
+      { label: 'Другая услуга', value: 10, wrapLabel: true },
     ]);
   });
 

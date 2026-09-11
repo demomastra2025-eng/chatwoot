@@ -132,9 +132,14 @@ defineExpose({
             <span
               :class="[
                 option.labelClass || 'text-n-slate-12',
-                { 'font-medium': isSelected(option) },
+                {
+                  'font-medium': isSelected(option),
+                  truncate: !option.wrapLabel,
+                  'whitespace-normal break-words': option.wrapLabel,
+                },
               ]"
-              class="min-w-0 flex-1 truncate text-left"
+              class="min-w-0 flex-1 text-left"
+              :title="option.label"
             >
               {{ option.label }}
             </span>

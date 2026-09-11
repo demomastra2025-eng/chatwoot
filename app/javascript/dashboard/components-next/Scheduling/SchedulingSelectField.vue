@@ -44,6 +44,10 @@ defineProps({
     type: Boolean,
     default: false,
   },
+  wrapLabel: {
+    type: Boolean,
+    default: false,
+  },
 });
 
 const emit = defineEmits(['open', 'search', 'update:modelValue']);
@@ -75,6 +79,7 @@ defineOptions({
       :has-error="hasError"
       :disabled="disabled"
       :use-api-results="useApiResults"
+      :wrap-label="wrapLabel"
       input-like
       @open="emit('open')"
       @search="emit('search', $event)"

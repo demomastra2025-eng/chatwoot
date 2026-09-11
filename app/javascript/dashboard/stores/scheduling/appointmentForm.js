@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import SchedulingAppointmentsAPI from 'dashboard/api/scheduling/appointments';
 import SchedulingContactsAPI from 'dashboard/api/scheduling/contacts';
 import { PAYMENT_METHOD_VALUES } from 'dashboard/routes/dashboard/scheduling/constants';
+import { schedulingContactNameParts } from './contactName';
 import {
   compactPayload,
   extractSchedulingError,
@@ -354,16 +355,17 @@ export const useSchedulingAppointmentFormStore = defineStore(
         const previousContactPhone = this.selectedContact?.phone || '';
         const phoneCameFromPreviousContact =
           previousContactPhone && existingPhone === previousContactPhone;
+        const contactName = schedulingContactNameParts(contact);
 
         this.selectedContact = contact;
         this.form = {
           ...this.form,
           clientBirthDate: contact.birthDate || '',
-          clientFirstName: contact.firstName || contact.fullName || '',
+          clientFirstName: contactName.firstName,
           clientGender: contact.gender || '',
           clientIdentifier: contact.identifier || '',
-          clientLastName: contact.lastName || '',
-          clientMiddleName: contact.middleName || '',
+          clientLastName: contactName.lastName,
+          clientMiddleName: contactName.middleName,
           clientName: contact.fullName || '',
           clientNameStructured: true,
           clientPhone:

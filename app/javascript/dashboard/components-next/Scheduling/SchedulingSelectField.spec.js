@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import ComboBox from 'dashboard/components-next/combobox/ComboBox.vue';
 import SchedulingSelectField from './SchedulingSelectField.vue';
@@ -15,6 +15,10 @@ const mountComponent = () =>
   });
 
 describe('SchedulingSelectField', () => {
+  afterEach(() => {
+    document.body.innerHTML = '';
+  });
+
   it('opens the existing searchable combobox programmatically', async () => {
     const wrapper = mountComponent();
 
@@ -60,6 +64,49 @@ describe('SchedulingSelectField', () => {
     );
     expect(dropdown.style.left).toBe('395px');
     expect(dropdown.style.width).toBe('405px');
+
+    wrapper.unmount();
+  });
+
+  it('shows a selected long label without truncation when requested', () => {
+    const label = 'Полное наименование медицинской услуги';
+    const wrapper = mount(SchedulingSelectField, {
+      props: {
+        modelValue: 1,
+        options: [{ label, value: 1, wrapLabel: true }],
+        wrapLabel: true,
+      },
+    });
+
+    const selectedLabel = wrapper.get(`span[title="${label}"]`);
+    expect(selectedLabel.classes()).toContain('whitespace-normal');
+    expect(selectedLabel.classes()).not.toContain('truncate');
+
+    wrapper.unmount();
+  });
+
+  it('normalizes non-breaking spaces while searching', async () => {
+    const wrapper = mount(SchedulingSelectField, {
+      attachTo: document.body,
+      props: {
+        modelValue: '',
+        options: [{ label: 'Первичный\u00a0приём кардиолога', value: 1 }],
+        searchPlaceholder: 'Search services',
+      },
+    });
+
+    wrapper.vm.open();
+    await wrapper.vm.$nextTick();
+    const input = document.body.querySelector(
+      'input[placeholder="Search services"]'
+    );
+    input.value = 'первичный приём';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await wrapper.vm.$nextTick();
+
+    expect(
+      document.body.querySelector('[role="option"]').textContent
+    ).toContain('Первичный\u00a0приём кардиолога');
 
     wrapper.unmount();
   });
