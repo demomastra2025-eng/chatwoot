@@ -116,6 +116,31 @@ RSpec.describe Integrations::Medelement::ResourceAvailabilityService do
     expect(client).not_to have_received(:get_receptions).with(hash_including(company_cabinet_code: 'cabinet-2'))
   end
 
+  it 'accepts persisted cabinet code key variants' do
+    resource.update!(
+      custom_attributes: resource.custom_attributes.merge(
+        'medelement_cabinets' => [
+          { 'company_cabinet_code' => 'cabinet-1' },
+          { 'COMPANY_CABINET_CODE' => 'cabinet-2' }
+        ]
+      )
+    )
+    allow(client).to receive(:get_receptions).and_return([])
+
+    result = described_class.new(
+      resource: resource,
+      from: from_time,
+      to: to_time,
+      slots: slots,
+      client: client,
+      cabinet_code: 'cabinet-2'
+    ).perform
+
+    expect(result).to have_attributes(status: 'fresh')
+    expect(result.slots).to all(include(medelement_cabinet_code: 'cabinet-2'))
+    expect(client).to have_received(:get_receptions).with(hash_including(company_cabinet_code: 'cabinet-2'))
+  end
+
   it 'excludes the current reception while checking a move' do
     allow(client).to receive(:get_receptions).and_return(
       [

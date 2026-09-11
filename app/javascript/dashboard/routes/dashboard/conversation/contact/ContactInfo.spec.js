@@ -147,6 +147,30 @@ describe('ContactInfo', () => {
     expect(wrapper.vm.showEditModal).toBe(false);
   });
 
+  it('prefills a calendar appointment by opaque record ids only', () => {
+    const wrapper = buildWrapper({
+      contact: {
+        name: 'Айжан',
+        last_name: 'Касымова',
+        middle_name: 'Ерлановна',
+        phone_number: ['+7', '700', '000', '0001'].join(''),
+      },
+    });
+
+    wrapper.vm.onCreateAppointment();
+
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'scheduling_calendar',
+      params: { accountId: 1 },
+      query: {
+        action: 'new',
+        contactId: wrapper.vm.contact.id,
+        conversationId: Number(wrapper.vm.$route.params.id),
+        source: 'contact',
+      },
+    });
+  });
+
   it('updates the shared contact owner from the owner combobox', async () => {
     const wrapper = buildWrapper({
       contact: {

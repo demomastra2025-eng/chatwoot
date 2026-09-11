@@ -335,8 +335,6 @@ export default {
       this.openCrmRoute('scheduling_calendar', {
         action: 'new',
         contactId: this.contact.id,
-        contactName: this.contact.name || undefined,
-        contactPhone: this.contact.phone_number || undefined,
         conversationId:
           Number.isFinite(conversationId) && conversationId > 0
             ? conversationId

@@ -55,7 +55,7 @@ class Integrations::Medelement::ResourceAvailabilityService
     @cabinets ||= begin
       values = Array(resource.custom_attributes.to_h['medelement_cabinets']).filter_map do |payload|
         attributes = payload.to_h.with_indifferent_access
-        code = attributes['companyCabinetCode'].to_s.presence
+        code = Integrations::Medelement::CabinetAttributes.code(payload)
         next if code.blank?
 
         { code: code, name: attributes['cabinetName'].to_s.presence }

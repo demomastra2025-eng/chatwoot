@@ -84,7 +84,7 @@ class Integrations::Medelement::AppointmentImporterService
       starts_at: starts_at,
       ends_at: ends_at,
       duration_min: duration_minutes(starts_at, ends_at),
-      status: appointment_status(reception),
+      status: appointment_status(appointment, reception),
       appointment_type: PRIMARY_APPOINTMENT_TYPE,
       source: provider_binding(appointment, reception).source,
       service: service_identity_authoritative ? services.first : appointment.service,
@@ -104,8 +104,11 @@ class Integrations::Medelement::AppointmentImporterService
   end
   # rubocop:enable Metrics/MethodLength
 
-  def appointment_status(reception)
-    reception['ACTIVE'].to_i == 1 ? 'scheduled' : 'completed'
+  def appointment_status(appointment, reception)
+    return 'completed' unless reception['ACTIVE'].to_i == 1
+    return 'confirmed' if appointment.status == 'confirmed'
+
+    'scheduled'
   end
 
   def client_attributes(contact)

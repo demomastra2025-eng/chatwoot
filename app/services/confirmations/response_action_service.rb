@@ -39,7 +39,6 @@ class Confirmations::ResponseActionService
       next 'subject_not_confirmable' unless appointment.status == 'scheduled'
 
       with_automation_actor do
-        Scheduling::Appointments::MutationGuard.ensure_editable!(appointment)
         Scheduling::Appointments::MutationGuard.ensure_assignable!({ status: 'confirmed' })
         appointment.update!(status: 'confirmed')
       end

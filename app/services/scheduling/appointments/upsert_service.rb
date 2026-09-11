@@ -303,7 +303,7 @@ class Scheduling::Appointments::UpsertService
       )
     end
 
-    valid_codes = Array(appointment.resource.custom_attributes.to_h['medelement_cabinets']).pluck('companyCabinetCode').map(&:to_s)
+    valid_codes = medelement_resource_cabinet_codes
     return if cabinet_code.in?(valid_codes)
 
     raise Scheduling::Error.new(
@@ -311,6 +311,12 @@ class Scheduling::Appointments::UpsertService
       message: 'Medelement cabinet must belong to the selected specialist',
       status: :unprocessable_content
     )
+  end
+
+  def medelement_resource_cabinet_codes
+    Array(appointment.resource.custom_attributes.to_h['medelement_cabinets']).filter_map do |cabinet|
+      Integrations::Medelement::CabinetAttributes.code(cabinet)
+    end
   end
 
   def medelement_cabinet_validation_required?
