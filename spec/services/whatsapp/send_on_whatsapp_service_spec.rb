@@ -411,6 +411,22 @@ describe Whatsapp::SendOnWhatsappService do
         )
       end
 
+      it 'keeps 360Dialog campaign delivery pending when delivery outcome is unknown' do
+        campaign = create_template_campaign(channel: whatsapp_channel, params: template_params)
+        delivery = create_campaign_delivery(campaign: campaign, channel: whatsapp_channel, contact: conversation.contact)
+        message = create_template_message(conversation: conversation, campaign: campaign, params: template_params)
+        stub_request(:post, 'https://waba.360dialog.io/v1/messages').to_timeout
+
+        described_class.new(message: message).perform
+
+        expect(message.reload).to have_attributes(status: 'sent', source_id: nil, external_error: nil)
+        expect(message.content_attributes).to include(
+          Whatsapp::Providers::Whatsapp360DialogService::DELIVERY_OUTCOME_UNKNOWN_KEY => true
+        )
+        expect(delivery.reload).to have_attributes(status: 'pending', error_message: nil)
+        expect(delivery.metadata).to include('delivery_outcome_unknown' => true)
+      end
+
       it 'updates the delivery that belongs to the message campaign run' do
         campaign = create_template_campaign(channel: whatsapp_channel, params: template_params)
         old_run = create(:campaign_run, campaign: campaign, account: whatsapp_channel.account, inbox: whatsapp_channel.inbox)

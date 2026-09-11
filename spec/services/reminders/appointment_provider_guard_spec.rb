@@ -123,7 +123,9 @@ RSpec.describe Reminders::AppointmentProviderGuard do
     it 'allows delivery after the exact remove command succeeded' do
       expect(Integrations::Medelement::AppointmentFreshnessVerifier).not_to receive(:new)
 
-      expect(described_class.new(reminder: reminder, phase: :delivery).perform).to eq(described_class::CONTINUE)
+      guard = described_class.new(reminder: reminder, phase: :delivery)
+      expect(guard.verify).to be_nil
+      expect(guard.perform).to eq(described_class::CONTINUE)
 
       expect(Integrations::Medelement::ProviderCommand).to have_received(:find_by).with(
         id: command.id,
@@ -173,5 +175,36 @@ RSpec.describe Reminders::AppointmentProviderGuard do
       expect(reminder.reload).to be_cancelled
       expect(reminder.last_error).to eq('provider_remove_command_mismatch')
     end
+  end
+
+  it 'applies a supplied verification without calling the provider under the caller lock' do
+    verification = Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+      status: 'fresh',
+      reason: nil,
+      checked_at: Time.current,
+      command_id: nil,
+      command_status: nil
+    )
+
+    expect(verifier).not_to receive(:perform)
+
+    expect(described_class.new(reminder: reminder, phase: :delivery).perform(verification: verification)).to eq(described_class::CONTINUE)
+  end
+
+  it 'lets a local cancellation committed after verification override a supplied fresh result' do
+    verification = Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+      status: 'fresh',
+      reason: nil,
+      checked_at: 1.second.ago,
+      command_id: nil,
+      command_status: nil
+    )
+    appointment.update!(status: :cancelled)
+
+    expect(verifier).not_to receive(:perform)
+
+    expect(described_class.new(reminder: reminder, phase: :delivery).perform(verification: verification)).to eq(described_class::STOP)
+    expect(reminder.reload).to be_cancelled
+    expect(reminder.last_error).to eq('local_appointment_cancelled')
   end
 end

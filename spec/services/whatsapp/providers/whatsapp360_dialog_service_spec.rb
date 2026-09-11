@@ -63,6 +63,9 @@ describe Whatsapp::Providers::Whatsapp360DialogService do
               }, type: 'interactive'
             }.to_json
           ).to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
+        expect(HTTParty).to receive(:post)
+          .with('https://waba.360dialog.io/v1/messages', hash_including(timeout: 20))
+          .and_call_original
         expect(service.send_message('+123456789', message)).to eq 'message_id'
       end
 
@@ -92,6 +95,38 @@ describe Whatsapp::Providers::Whatsapp360DialogService do
           ).to_return(status: 200, body: whatsapp_response.to_json, headers: response_headers)
         expect(service.send_message('+123456789', message)).to eq 'message_id'
       end
+    end
+  end
+
+  describe 'ambiguous delivery outcomes' do
+    let(:message) do
+      create(:message, message_type: :outgoing, content: 'test', inbox: whatsapp_channel.inbox)
+    end
+
+    it 'records a timeout and suppresses a duplicate send' do
+      request = stub_request(:post, 'https://waba.360dialog.io/v1/messages').to_timeout
+
+      expect(service.send_message('+123****6789', message)).to be_nil
+      expect(message.reload).to have_attributes(status: 'sent', source_id: nil, external_error: nil)
+      expect(message.content_attributes).to include(
+        described_class::DELIVERY_OUTCOME_UNKNOWN_KEY => true,
+        'whatsapp_360_delivery_outcome_error_class' => 'Net::OpenTimeout'
+      )
+
+      expect(service.send_message('+123****6789', message)).to be_nil
+      expect(request).to have_been_requested.once
+    end
+
+    it 'records a successful response without an acknowledgement as unknown' do
+      stub_request(:post, 'https://waba.360dialog.io/v1/messages')
+        .to_return(status: 200, body: {}.to_json, headers: response_headers)
+
+      expect(service.send_message('+123****6789', message)).to be_nil
+      expect(message.reload.content_attributes).to include(
+        described_class::DELIVERY_OUTCOME_UNKNOWN_KEY => true,
+        'whatsapp_360_delivery_outcome_error_class' =>
+          'Whatsapp::Providers::BaseService::DeliveryAcknowledgementMissingError'
+      )
     end
   end
 end

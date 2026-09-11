@@ -9,12 +9,21 @@ class Reminders::AppointmentProviderGuard
     @phase = phase.to_s
   end
 
-  def perform
+  def verify
+    appointment = provider_appointment
+    return if appointment.blank?
+    return if provider_cancellation_notification?(appointment)
+
+    verify_appointment(appointment)
+  end
+
+  def perform(verification: nil)
     appointment = provider_appointment
     return CONTINUE if appointment.blank?
     return handle_cancellation_notification(appointment) if provider_cancellation_notification?(appointment)
 
-    verification = Integrations::Medelement::AppointmentFreshnessVerifier.new(appointment: appointment).perform
+    verification = local_cancellation_result if appointment.status == 'cancelled'
+    verification ||= verify_appointment(appointment)
     return CONTINUE if verification.allowed?
 
     verification.terminal? ? cancel!(verification) : defer!(verification)
@@ -24,6 +33,20 @@ class Reminders::AppointmentProviderGuard
   private
 
   attr_reader :reminder, :phase
+
+  def verify_appointment(appointment)
+    Integrations::Medelement::AppointmentFreshnessVerifier.new(appointment: appointment).perform
+  end
+
+  def local_cancellation_result
+    Integrations::Medelement::AppointmentFreshnessVerifier::Result.new(
+      status: 'cancelled',
+      reason: 'local_appointment_cancelled',
+      checked_at: Time.current,
+      command_id: nil,
+      command_status: nil
+    )
+  end
 
   def provider_appointment
     return unless reminder.remindable_type == 'Scheduling::Appointment'

@@ -68,6 +68,7 @@ module Redis::RedisKeys
   AUTO_ASSIGNMENT_JOB_QUEUED = 'AUTO_ASSIGNMENT_JOB::%<inbox_id>d::QUEUED'.freeze
   AUTO_ASSIGNMENT_JOB_RUNNING = 'AUTO_ASSIGNMENT_JOB::%<inbox_id>d::RUNNING'.freeze
   AUTO_ASSIGNMENT_LEGACY_DRAIN = 'AUTO_ASSIGNMENT_JOB::%<inbox_id>d::LEGACY_DRAIN'.freeze
+  REMINDER_DELIVERY_MUTEX = 'REMINDER_DELIVERY::%<reminder_id>d'.freeze
 
   ## Account Email Rate Limiting
   ACCOUNT_OUTBOUND_EMAIL_COUNT_KEY = 'OUTBOUND_EMAIL_COUNT::%<account_id>d::%<date>s'.freeze
