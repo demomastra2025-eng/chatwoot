@@ -115,7 +115,7 @@ class Integrations::Medelement::OutboundChangeService
                         else
                           Integrations::Medelement::AppointmentProviderStatus::PENDING
                         end
-      Integrations::Medelement::AppointmentProviderStatus.persist!(appointment, provider_status)
+      Integrations::Medelement::AppointmentProviderStatus.persist!(appointment, provider_status, command: command)
     end
   end
 

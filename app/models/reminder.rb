@@ -93,6 +93,7 @@ class Reminder < ApplicationRecord
   RESPONSE_ACTIONS = [RESPONSE_ACTION_CONFIRM_APPOINTMENT].freeze
   POST_DELIVERY_AUDIT_SOURCE_KEY = 'post_delivery_audit_source'.freeze
   POST_DELIVERY_AUTOMATION_RULE_ID_KEY = 'post_delivery_automation_rule_id'.freeze
+  AUTOMATION_EVENT_NAME_KEY = 'automation_event_name'.freeze
   AUTOMATION_TRIGGER_MESSAGE_ID_KEY = 'automation_trigger_message_id'.freeze
   AUTOMATION_ACTION_KEY = 'automation_action_key'.freeze
   AUTOMATION_ACTION_SIGNATURE_KEY = 'automation_action_signature'.freeze
@@ -107,6 +108,7 @@ class Reminder < ApplicationRecord
     TRANSIENT_METADATA_KEYS + [
       POST_DELIVERY_AUDIT_SOURCE_KEY,
       POST_DELIVERY_AUTOMATION_RULE_ID_KEY,
+      AUTOMATION_EVENT_NAME_KEY,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY,
       AUTOMATION_ACTION_KEY,
       AUTOMATION_ACTION_SIGNATURE_KEY
@@ -675,6 +677,7 @@ class Reminder < ApplicationRecord
     {
       POST_DELIVERY_AUTOMATION_RULE_ID_KEY => automation_rule.id,
       POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
+      AUTOMATION_EVENT_NAME_KEY => automation_rule.event_name,
       AUTOMATION_TRIGGER_MESSAGE_ID_KEY => trigger_message&.id,
       AUTOMATION_ACTION_KEY => action_key.presence&.to_s,
       AUTOMATION_ACTION_SIGNATURE_KEY => action_signature.presence&.to_s

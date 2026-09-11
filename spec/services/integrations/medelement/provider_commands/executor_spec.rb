@@ -1199,6 +1199,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::Executor do
         payment_status: 'cancelled',
         service_id: local_service.id
       )
+      expect(appointment.custom_attributes).to include(
+        Integrations::Medelement::AppointmentProviderStatus::CANCELLATION_COMMAND_ID_KEY => command.id
+      )
     end
   end
 

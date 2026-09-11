@@ -653,7 +653,8 @@ RSpec.describe Reminder do
       target_contact = create(:contact, account: account, phone_number: '+77001112233')
       other_contact = create(:contact, account: account, phone_number: '+77004445566')
       target_contact_inbox = create(:contact_inbox, contact: target_contact, inbox: whatsapp_inbox)
-      target_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: target_contact, contact_inbox: target_contact_inbox)
+      target_conversation = create(:conversation, account: account, inbox: whatsapp_inbox, contact: target_contact,
+                                                  contact_inbox: target_contact_inbox)
       reminder = described_class.new(
         account: account,
         creator: creator,
@@ -787,7 +788,8 @@ RSpec.describe Reminder do
 
       expect(reminder.reload.metadata).to include(
         Reminder::POST_DELIVERY_AUTOMATION_RULE_ID_KEY => rule.id,
-        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation'
+        Reminder::POST_DELIVERY_AUDIT_SOURCE_KEY => 'automation',
+        Reminder::AUTOMATION_EVENT_NAME_KEY => rule.event_name
       )
       expect(reminder.metadata.keys & Reminder::TRANSIENT_METADATA_KEYS).to be_empty
     end

@@ -381,7 +381,10 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     appointment.update!(
       source: 'medelement',
       external_ref: 'medelement:reception:reception-1',
-      custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1'),
+      custom_attributes: appointment.custom_attributes.merge(
+        'medelement_reception_code' => 'reception-1',
+        Integrations::Medelement::AppointmentProviderStatus::CANCELLATION_COMMAND_ID_KEY => -1
+      ),
       status: 'cancelled',
       payment_status: 'cancelled'
     )
@@ -399,6 +402,9 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
 
     expect(command).to have_attributes(operation: 'remove_reception', provider_reception_code: 'reception-1')
     expect(command.confirmation_request).to be_confirmed
+    expect(appointment.reload.custom_attributes).to include(
+      Integrations::Medelement::AppointmentProviderStatus::CANCELLATION_COMMAND_ID_KEY => command.id
+    )
   end
 
   it 'does not duplicate a removal through the generic appointment updated event' do
