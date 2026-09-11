@@ -131,6 +131,11 @@ describe('webphoneClient', () => {
     WebphoneClient.nativeCallUnloadGuardRegistered = false;
   });
 
+  it('routes Wazo sessions through the native Janus SIP client', () => {
+    expect(WebphoneClient.clients.wazo).toBe(WebphoneClient.clients.sipuni);
+    expect(WebphoneClient.constructor.isNativeSipProvider('wazo')).toBe(true);
+  });
+
   it('coalesces concurrent dashboard bootstrap requests', async () => {
     let resolveToken;
     getWebphoneTokenMock.mockReturnValue(

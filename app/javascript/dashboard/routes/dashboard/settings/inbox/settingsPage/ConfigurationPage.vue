@@ -180,7 +180,7 @@ export default {
     isVirtualPbxVoiceInbox() {
       return (
         this.inbox.channel_type === 'Channel::Voice' &&
-        ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
+        ['asterisk_analog', 'sipuni', 'binotel', 'beeline', 'wazo'].includes(
           this.inbox.provider
         )
       );
@@ -271,9 +271,13 @@ export default {
       return ['sipuni', 'binotel'].includes(this.virtualPbxProviderKind);
     },
     isVirtualPbxLocalNativeProvider() {
-      return ['asterisk_analog', 'sipuni', 'binotel', 'beeline'].includes(
-        this.virtualPbxProviderKind
-      );
+      return [
+        'asterisk_analog',
+        'sipuni',
+        'binotel',
+        'beeline',
+        'wazo',
+      ].includes(this.virtualPbxProviderKind);
     },
     showVirtualPbxTechnicalSettings() {
       return !this.isVirtualPbxProviderOwnedSip;
@@ -301,6 +305,9 @@ export default {
     },
     isVirtualPbxBeeline() {
       return this.virtualPbxProviderKind === 'beeline';
+    },
+    isVirtualPbxWazo() {
+      return this.virtualPbxProviderKind === 'wazo';
     },
     virtualPbxTransportOptions() {
       return ['udp', 'tcp', 'tls'];
@@ -352,6 +359,10 @@ export default {
           label: this.$t(
             'INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.BEELINE'
           ),
+        },
+        {
+          value: 'wazo',
+          label: this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVIDER_KIND.WAZO'),
         },
       ];
     },
@@ -670,18 +681,31 @@ export default {
     },
     async provisionVirtualPbxChannel() {
       if (!this.isVirtualPbxVoiceInbox || !this.inbox.id) return;
+      if (
+        this.isVirtualPbxWazo &&
+        // Explicit safety gate for a remote Wazo control-plane mutation.
+        // eslint-disable-next-line no-alert
+        !window.confirm(
+          this.$t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.WAZO_APPLY_CONFIRM')
+        )
+      ) {
+        return;
+      }
 
       this.isProvisioningVirtualPbx = true;
       try {
         const response = await VoiceAPI.provisionVirtualPbxChannel(
           this.inbox.id,
-          { remoteCommit: false, includeDiagnostics: false }
+          {
+            remoteCommit: this.isVirtualPbxWazo,
+            includeDiagnostics: false,
+          }
         );
         const payload = response?.payload || {};
         this.virtualPbxProvisioningPlan = payload.provisioning_plan || null;
         await this.loadVirtualPbxProvisioningRuns();
 
-        if (payload.status === 'blocked') {
+        if (payload.errors?.length) {
           useAlert(
             payload.errors?.[0]?.message ||
               payload.errors?.[0]?.code ||
@@ -1923,6 +1947,55 @@ export default {
             >
               {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.UPDATE_BUTTON') }}
             </NextButton>
+            <NextButton
+              data-testid="virtual-pbx-plan"
+              type="button"
+              :is-loading="isLoadingVirtualPbxPlan"
+              @click="loadVirtualPbxProvisioningPlan"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_BUTTON') }}
+            </NextButton>
+            <NextButton
+              data-testid="virtual-pbx-reconcile"
+              type="button"
+              :is-loading="isReconcilingVirtualPbx"
+              @click="reconcileVirtualPbxChannel"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.RECONCILE_BUTTON') }}
+            </NextButton>
+            <NextButton
+              v-if="isVirtualPbxWazo"
+              data-testid="virtual-pbx-wazo-apply"
+              type="button"
+              :disabled="!isVirtualPbxRemoteCommitAllowed"
+              :is-loading="isProvisioningVirtualPbx"
+              @click="provisionVirtualPbxChannel"
+            >
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PROVISION_BUTTON') }}
+            </NextButton>
+          </div>
+
+          <div
+            v-if="virtualPbxPlanOperations.length"
+            class="rounded-xl border border-n-weak p-4 text-sm text-n-slate-11"
+          >
+            <div class="mb-2 font-medium text-n-slate-12">
+              {{ $t('INBOX_MGMT.ADD.VOICE.VIRTUAL_PBX.PLAN_OPERATIONS') }}
+            </div>
+            <ul class="list-disc pl-5">
+              <li
+                v-for="operation in virtualPbxPlanOperations"
+                :key="`${operation.action || operation.key || operation.code}-${operation.ref || operation.description}`"
+              >
+                {{
+                  operation.description ||
+                  operation.action ||
+                  operation.key ||
+                  operation.code ||
+                  operation.id
+                }}
+              </li>
+            </ul>
           </div>
         </form>
       </SettingsFieldSection>

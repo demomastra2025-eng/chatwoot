@@ -406,8 +406,10 @@
           "CHANGE_ACTION": "Сменить провайдера"
         },
         "PROVIDERS": {
-          "KAZAKHSTAN": "Виртуальная АТС",
-          "KAZAKHSTAN_DESC": "Используйте OneLink Виртуальная АТС для номеров Казахстана.",
+          "KAZAKHSTAN": "Виртуальная АТС Wazo",
+          "KAZAKHSTAN_DESC": "Подключите казахстанские SIP-линии через Wazo и текущий вебфон OneLink.",
+          "WAZO": "Виртуальная АТС Wazo",
+          "WAZO_DESC": "Подключите Wazo к текущему вебфону OneLink. Операторские SIP-доступы создаются автоматически.",
           "SIPUNI": "Sipuni",
           "SIPUNI_DESC": "Подключите Sipuni как отдельный SIP-провайдер через браузерный вебфон.",
           "ASTERISK_ANALOG": "Asterisk аналоговый",
@@ -436,7 +438,8 @@
             "SIPUNI": "Sipuni",
             "BINOTEL": "Binotel",
             "ASTERISK_ANALOG": "Asterisk аналоговый",
-            "BEELINE": "Билайн"
+            "BEELINE": "Билайн",
+            "WAZO": "Wazo"
           },
           "PROVIDER_ACCOUNT_NUMBER": {
             "LABEL": "Номер/аккаунт у провайдера",
@@ -562,6 +565,7 @@
           "PLAN_BUTTON": "Показать план синхронизации",
           "RECONCILE_BUTTON": "Проверить remote-состояние",
           "PROVISION_BUTTON": "Синхронизировать с телефонией",
+          "WAZO_APPLY_CONFIRM": "Применить этот план в Wazo сейчас? Будут созданы, обновлены или удалены управляемые ресурсы Wazo.",
           "PROVISIONING_PLAN_READY": "План provisioning готов",
           "PROVISION_BLOCKED": "Remote provisioning не удалось выполнить",
           "PROVISION_SUCCESS": "Remote provisioning завершён",

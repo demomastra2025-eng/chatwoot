@@ -1,5 +1,5 @@
 class Telephony::ReadinessService
-  JANUS_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  JANUS_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
 
   def initialize(account:)
     @account = account

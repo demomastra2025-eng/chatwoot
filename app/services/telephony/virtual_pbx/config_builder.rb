@@ -5,7 +5,7 @@ require 'digest'
 class Telephony::VirtualPbx::ConfigBuilder
   MANAGED_BY_ONELINK = 'onelink'
   SECRET_KEY_PATTERN = /(password|secret|token|api[_-]?key|credential|auth)/i
-  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline].freeze
+  PROVIDER_OWNED_SIP_PROVIDERS = %w[asterisk_analog sipuni binotel beeline wazo].freeze
   UNKNOWN_PROVIDER_TEMPLATE = {
     label: 'SIP provider',
     default_transport: 'udp',
@@ -46,6 +46,15 @@ class Telephony::VirtualPbx::ConfigBuilder
       default_transport: 'udp',
       default_port: 5060,
       default_outbound_proxy: '46.227.186.231:6050',
+      default_codec: 'pcma',
+      allows_display_ingress_split: true,
+      default_route_mode: 'operator',
+      default_operator_distribution_mode: Telephony::RoutingPolicy::OPERATOR_DISTRIBUTION_BROADCAST
+    },
+    'wazo' => {
+      label: 'Wazo',
+      default_transport: 'udp',
+      default_port: 5060,
       default_codec: 'pcma',
       allows_display_ingress_split: true,
       default_route_mode: 'operator',
@@ -152,7 +161,7 @@ class Telephony::VirtualPbx::ConfigBuilder
       employees: ui_employees_payload(config[:profiles]),
       permissions: {
         editable: !ownership[:read_only],
-        remote_commit_allowed: false,
+        remote_commit_allowed: wazo_remote_commit_allowed?(config),
         diagnostics_available: true
       },
       warnings: config[:warnings] || []
@@ -463,8 +472,29 @@ class Telephony::VirtualPbx::ConfigBuilder
       end
       warnings << split_phone_warning(parts)
       warnings << provider_managed_gateway_credentials_warning(channel: channel, binding: binding, parts: parts)
+      warnings.concat(wazo_readiness_warnings(channel: channel, binding: binding))
       warnings << legacy_ownership_warning(channel: channel, binding: binding)
     end.compact
+  end
+
+  def wazo_readiness_warnings(channel:, binding:)
+    return [] unless channel&.provider.to_s == 'wazo'
+
+    profiles = channel.inbox.telephony_sip_profiles.select(&:enabled?)
+    return [warning('missing_wazo_profiles', 'Add at least one enabled Wazo operator profile', severity: 'blocking')] if profiles.empty?
+
+    connection = binding&.provider_connection
+    warnings = []
+    if connection.blank? || connection.provisioning_status != 'ready'
+      warnings << warning('wazo_remote_provisioning_required', 'Apply Wazo provisioning before using this channel', severity: 'blocking')
+    end
+    if profiles.any? { |profile| profile.metadata.to_h['wazo_endpoint_uuid'].blank? }
+      warnings << warning('wazo_endpoint_missing', 'One or more Wazo operator endpoints are not provisioned', severity: 'blocking')
+    end
+    if profiles.none?(&:registered_for_routing?)
+      warnings << warning('wazo_operators_offline', 'No Wazo operator endpoint is currently registered', severity: 'blocking')
+    end
+    warnings
   end
 
   def provider_managed_gateway_credentials_warning(channel:, binding:, parts:)
@@ -485,6 +515,10 @@ class Telephony::VirtualPbx::ConfigBuilder
 
   def provider_sip_device_credentials_configured?(connection)
     connection.username.present? && connection.password_secret_ref.present?
+  end
+
+  def wazo_remote_commit_allowed?(config)
+    config[:provider_kind].to_s == 'wazo' && Telephony::Wazo::ApiClient.configured?
   end
 
   def provider_owned_sip_channel?(channel)
