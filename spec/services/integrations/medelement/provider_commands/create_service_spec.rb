@@ -262,6 +262,37 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     expect { service.perform }.to raise_error(error)
   end
 
+  it 'does not suppress another validation failure alongside a duplicate idempotency key' do
+    invalid_command = Integrations::Medelement::ProviderCommand.new
+    invalid_command.errors.add(:idempotency_key, :taken)
+    invalid_command.errors.add(:operation, :invalid)
+    error = ActiveRecord::RecordInvalid.new(invalid_command)
+    allow(service).to receive(:create_new_command!).and_raise(error)
+
+    expect { service.perform }.to raise_error(error)
+  end
+
+  it 'retries duplicate lookup without the query cache' do
+    existing = service.perform
+    existing.update!(status: 'succeeded')
+    race_service = described_class.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      operation: 'create_reception',
+      idempotency_key: idempotency_key,
+      company_cabinet_code: 'cabinet-1',
+      actor: user
+    )
+    scope = race_service.send(:command_scope)
+
+    allow(race_service).to receive(:command_scope).and_return(scope)
+    allow(scope).to receive(:find_by).with(idempotency_key: idempotency_key).and_return(nil, nil, existing)
+    expect(ApplicationRecord).to receive(:uncached).twice.and_call_original
+
+    expect(race_service.perform).to eq(existing)
+  end
+
   it 'rejects reuse of an idempotency key for a different command payload' do
     service.perform
 

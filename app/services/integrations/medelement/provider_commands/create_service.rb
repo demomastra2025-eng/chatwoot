@@ -1,6 +1,7 @@
 # rubocop:disable Metrics/ClassLength
 class Integrations::Medelement::ProviderCommands::CreateService
   CONFIRMATION_TTL = 30.minutes
+  DUPLICATE_LOOKUP_DELAYS = [0, 0.01, 0.05].freeze
 
   # This boundary mirrors the command API payload; keyword arguments keep call sites explicit.
   # rubocop:disable Metrics/ParameterLists
@@ -31,8 +32,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
 
     create_new_command!(intent_fingerprint)
   rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
-    raise if e.is_a?(ActiveRecord::RecordInvalid) &&
-             (!e.record.is_a?(Integrations::Medelement::ProviderCommand) || !e.record.errors.of_kind?(:idempotency_key, :taken))
+    raise if e.is_a?(ActiveRecord::RecordInvalid) && !idempotency_validation_conflict?(e.record)
 
     resolve_record_not_unique!(intent_fingerprint)
   end
@@ -88,7 +88,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   end
 
   def persist_command!(snapshot:, request_fingerprint:, intent_fingerprint:)
-    ApplicationRecord.transaction do
+    ApplicationRecord.transaction(requires_new: true) do
       command = command_scope.create!(
         command_attributes(
           snapshot: snapshot,
@@ -130,7 +130,7 @@ class Integrations::Medelement::ProviderCommands::CreateService
   end
 
   def resolve_record_not_unique!(intent_fingerprint)
-    duplicate = command_scope.find_by(idempotency_key: idempotency_key)
+    duplicate = find_duplicate_after_conflict
     return resolve_idempotent_duplicate!(duplicate, intent_fingerprint) if duplicate.present?
 
     raise Scheduling::Error.new(
@@ -138,6 +138,24 @@ class Integrations::Medelement::ProviderCommands::CreateService
       message: 'Another Medelement command is already in progress for this target',
       status: :conflict
     )
+  end
+
+  def find_duplicate_after_conflict
+    DUPLICATE_LOOKUP_DELAYS.each do |delay|
+      sleep(delay) if delay.positive?
+      duplicate = ApplicationRecord.uncached { command_scope.find_by(idempotency_key: idempotency_key) }
+      return duplicate if duplicate.present?
+    end
+    nil
+  end
+
+  def idempotency_validation_conflict?(record)
+    return false unless record.is_a?(Integrations::Medelement::ProviderCommand)
+
+    details = record.errors.details
+    idempotency_errors = details[:idempotency_key]
+    idempotency_errors.present? && details.except(:idempotency_key).blank? &&
+      idempotency_errors.all? { |detail| detail[:error] == :taken }
   end
 
   def idempotency_fingerprint

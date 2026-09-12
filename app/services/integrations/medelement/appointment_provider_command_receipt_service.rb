@@ -12,7 +12,7 @@ class Integrations::Medelement::AppointmentProviderCommandReceiptService
     return unless provider_actor?
 
     attributes = provider_command_attributes
-    command = Integrations::Medelement::OutboundChangeService.new(**attributes).perform || recent_command
+    command = Integrations::Medelement::OutboundChangeService.new(**attributes).perform
     ensure_receipt_available!(command)
     attach_receipt!(command) if command.present?
     command
@@ -49,13 +49,6 @@ class Integrations::Medelement::AppointmentProviderCommandReceiptService
   def provider_confirmation_pending?
     appointment.custom_attributes.to_h[Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY] ==
       Integrations::Medelement::AppointmentProviderStatus::PENDING
-  end
-
-  def recent_command
-    Integrations::Medelement::ProviderCommand.where(
-      account_id: appointment.account_id,
-      appointment_id: appointment.id
-    ).where('created_at >= ?', appointment.updated_at).order(created_at: :desc, id: :desc).first
   end
 
   def receipt_unavailable_error

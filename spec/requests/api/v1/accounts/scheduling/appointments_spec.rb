@@ -1344,6 +1344,59 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'appointments', 0, 'conversation_display_id')).to eq(conversation.display_id)
   end
 
+  it 'accepts resource_ids as an array and filters the calendar payload' do
+    other_resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          resource_ids: [resource.id]
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response_body.dig('payload', 'resources').pluck('id')).to eq([resource.id])
+    expect(response_body.dig('payload', 'resources').pluck('id')).not_to include(other_resource.id)
+  end
+
+  it 'rejects malformed calendar resource_ids instead of returning empty availability' do
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          resource_ids: ['invalid']
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:unprocessable_content)
+    expect(response_body).to include(
+      'code' => 'VALIDATION_ERROR',
+      'error' => 'resource_ids must contain positive integer IDs'
+    )
+  end
+
+  it 'returns not found for an unknown calendar resource_id' do
+    unknown_id = Scheduling::Resource.maximum(:id).to_i + 10_000
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: {
+          view: 'week',
+          from: booking_day.beginning_of_day.iso8601,
+          to: (booking_day + 7.days).end_of_day.iso8601,
+          resource_ids: unknown_id.to_s
+        },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:not_found)
+    expect(response_body).to include('error' => 'Resource could not be found')
+  end
+
   it 'filters the calendar payload by managed appointment custom fields' do
     create(
       :crm_field_definition,

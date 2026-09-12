@@ -51,4 +51,48 @@ RSpec.describe Integrations::Medelement::AppointmentProviderCommandReceiptServic
       .to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE') }
     expect(Integrations::Medelement::OutboundChangeJob).to have_been_enqueued
   end
+
+  it 'does not attach an unrelated recent command when the update is a provider no-op' do
+    account = create(:account)
+    actor = create(:user, account: account)
+    resource = create(:scheduling_resource, account: account)
+    appointment = create(:scheduling_appointment, account: account, resource: resource)
+    unrelated = Integrations::Medelement::ProviderCommand.create!(
+      account: account,
+      appointment: appointment,
+      contact: appointment.contact,
+      operation: 'remove_reception',
+      status: 'succeeded',
+      idempotency_key: 'unrelated-remove'
+    )
+    outbound_service = instance_double(Integrations::Medelement::OutboundChangeService, perform: nil)
+    allow(Integrations::Medelement::OutboundChangeService).to receive(:new).and_return(outbound_service)
+
+    result = described_class.new(appointment: appointment, actor: actor, new_record: false).perform
+
+    expect(result).to be_nil
+    expect(appointment.medelement_provider_command_receipt).to be_nil
+    expect(unrelated.reload).to be_succeeded
+  end
+
+  it 'fails closed when a pending provider mutation returns no command' do
+    account = create(:account)
+    actor = create(:user, account: account)
+    resource = create(:scheduling_resource, account: account)
+    appointment = create(
+      :scheduling_appointment,
+      account: account,
+      resource: resource,
+      custom_attributes: {
+        Integrations::Medelement::AppointmentProviderStatus::ATTRIBUTE_KEY =>
+          Integrations::Medelement::AppointmentProviderStatus::PENDING
+      }
+    )
+    outbound_service = instance_double(Integrations::Medelement::OutboundChangeService, perform: nil)
+    allow(Integrations::Medelement::OutboundChangeService).to receive(:new).and_return(outbound_service)
+
+    expect do
+      described_class.new(appointment: appointment, actor: actor, new_record: false).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_COMMAND_RECEIPT_UNAVAILABLE') }
+  end
 end

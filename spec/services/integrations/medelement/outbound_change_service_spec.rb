@@ -377,6 +377,30 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     )
   end
 
+  it 'keeps service and custom attribute updates local for an existing provider reception' do
+    appointment.update!(
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1')
+    )
+
+    result = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment.updated',
+      actor_id: actor.id,
+      change: {
+        changed_attributes: {
+          'service_id' => [nil, 42],
+          'custom_attributes' => [{ 'note' => 'before' }, { 'note' => 'after' }]
+        },
+        desired_attributes: described_class.appointment_event_snapshot(appointment)
+      }
+    ).perform
+
+    expect(result).to be_nil
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+  end
+
   it 'creates an immediate removal command for a locally cancelled provider reception' do
     appointment.update!(
       source: 'medelement',
