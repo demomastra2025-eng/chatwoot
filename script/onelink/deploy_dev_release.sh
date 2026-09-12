@@ -137,12 +137,17 @@ rollback() {
 }
 
 systemctl restart "${SERVICE}" || rollback "systemd restart"
-for _attempt in $(seq 1 90); do
-  code="$(curl -sS -o /dev/null --max-time 3 -w '%{http_code}' http://127.0.0.1:3002/api/v1/profile || true)"
+health_deadline=$((SECONDS + 600))
+while ((SECONDS < health_deadline)); do
+  remaining=$((health_deadline - SECONDS))
+  curl_timeout=$((remaining < 3 ? remaining : 3))
+  code="$(curl -sS -o /dev/null --max-time "${curl_timeout}" -w '%{http_code}' http://127.0.0.1:3002/api/v1/profile || true)"
   if [[ "${code}" == 401 || "${code}" == 200 ]]; then
     break
   fi
-  sleep 2
+  remaining=$((health_deadline - SECONDS))
+  ((remaining > 0)) || break
+  sleep "$((remaining < 2 ? remaining : 2))"
 done
 [[ "${code:-}" == 401 || "${code:-}" == 200 ]] || rollback "Rails health check HTTP ${code:-000}"
 
