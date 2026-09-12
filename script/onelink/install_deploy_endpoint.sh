@@ -23,6 +23,12 @@ case "${ENVIRONMENT}" in
     ACTION_TARGET=/usr/local/sbin/onelink-dev-deploy-release
     GATE_SOURCE="${SCRIPT_DIR}/dev_release_gate.py"
     GATE_TARGET=/usr/local/sbin/onelink-dev-release-gate
+    VERIFY_SOURCE="${SCRIPT_DIR}/verify_dev_release.sh"
+    VERIFY_TARGET=/usr/local/sbin/onelink-dev-verify-release
+    TREE_SOURCE="${SCRIPT_DIR}/verify_release_tree.py"
+    TREE_TARGET=/usr/local/sbin/onelink-verify-release-tree
+    MANIFEST_SOURCE="${SCRIPT_DIR}/medelement_contract_manifest.json"
+    MANIFEST_TARGET=/usr/local/share/onelink-dev-medelement-contract-manifest.json
     ORIGINAL_VERB=deploy
     ;;
   production)
@@ -46,8 +52,14 @@ fi
 install -o root -g root -m 0755 "${FORCED_SOURCE}" "${FORCED_TARGET}"
 install -o root -g root -m 0755 "${ACTION_SOURCE}" "${ACTION_TARGET}"
 if [[ "${ENVIRONMENT}" == dev ]]; then
-  [[ -f "${GATE_SOURCE}" ]] || { echo "missing installer input: ${GATE_SOURCE}" >&2; exit 66; }
+  for file in "${GATE_SOURCE}" "${VERIFY_SOURCE}" "${TREE_SOURCE}" "${MANIFEST_SOURCE}"; do
+    [[ -f "${file}" ]] || { echo "missing installer input: ${file}" >&2; exit 66; }
+  done
   install -o root -g root -m 0755 "${GATE_SOURCE}" "${GATE_TARGET}"
+  install -o root -g root -m 0755 "${VERIFY_SOURCE}" "${VERIFY_TARGET}"
+  install -o root -g root -m 0755 "${TREE_SOURCE}" "${TREE_TARGET}"
+  install -d -o root -g root -m 0755 "$(dirname "${MANIFEST_TARGET}")"
+  install -o root -g root -m 0644 "${MANIFEST_SOURCE}" "${MANIFEST_TARGET}"
 fi
 
 HOME_DIR="$(getent passwd "${USER_NAME}" | cut -d: -f6)"
@@ -64,6 +76,9 @@ chmod 0600 "${HOME_DIR}/.ssh/authorized_keys"
 
 SUDOERS="/etc/sudoers.d/${USER_NAME}"
 printf '%s ALL=(root) NOPASSWD: %s *\n' "${USER_NAME}" "${ACTION_TARGET}" > "${SUDOERS}"
+if [[ "${ENVIRONMENT}" == dev ]]; then
+  printf '%s ALL=(root) NOPASSWD: %s *\n' "${USER_NAME}" "${VERIFY_TARGET}" >> "${SUDOERS}"
+fi
 chmod 0440 "${SUDOERS}"
 visudo -cf "${SUDOERS}" >/dev/null
 

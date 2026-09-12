@@ -79,11 +79,26 @@ deploy <40-character-sha>
 Сервер:
 
 1. получает SHA из Git;
-2. готовит новый release-каталог и зависимости;
-3. выполняет `db:chatwoot_prepare` до переключения;
-4. атомарно переключает `/srv/onelink-dev/current`;
-5. проверяет Rails, workers и Vite;
-6. автоматически возвращает предыдущий release при ошибке.
+2. сравнивает его с фактическим live SHA и обязательным unified contract SHA;
+3. блокирует deletion, explicit Revert и возврат старого содержимого защищённых contract-файлов;
+4. готовит новый release-каталог и зависимости;
+5. проверяет tracked tree и запускает contract suite при изменении критичных файлов;
+6. выполняет `db:chatwoot_prepare` без schema/model rewrites и повторно проверяет tracked tree;
+7. атомарно переключает `/srv/onelink-dev/current`;
+8. проверяет Rails, workers, Vite, finalizers и итоговый tracked tree;
+9. автоматически возвращает предыдущий release при ошибке.
+
+После deploy workflow вызывает отдельную разрешённую forced-команду:
+
+```text
+verify <40-character-sha>
+```
+
+Она запускает фиксированный exact-SHA RSpec suite с deterministic seed, RuboCop,
+Ruby syntax и tracked-tree verification непосредственно из deployed release. Полный
+stdout и отдельный SHA-256 загружаются неизменяемым GitHub Actions artifact с именем,
+содержащим SHA, run ID и run attempt. Protected paths, baseline hashes и точный список
+contract specs находятся в `medelement_contract_manifest.json`.
 
 ## Поведение PROD
 

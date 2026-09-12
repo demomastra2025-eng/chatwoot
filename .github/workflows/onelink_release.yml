@@ -86,6 +86,7 @@ jobs:
           git diff --check "$BASE_SHA" "$HEAD_SHA"
           python3 -m unittest script/onelink/test_change_plan.py
           python3 -m unittest script/onelink/test_dev_release_gate.py
+          python3 -m unittest script/onelink/test_verify_release_tree.py
           python3 script/onelink/change_plan.py \
             --base "$BASE_SHA" --head "$HEAD_SHA" \
             --github-output "$GITHUB_OUTPUT" \
@@ -258,6 +259,31 @@ jobs:
             echo "::notice::DEV deployment lock is busy; retrying in 30 seconds ($attempt/40)."
             sleep 30
           done
+      - name: Verify deployed exact SHA
+        env:
+          DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.ONELINK_DEV_DEPLOY_USER }}
+        run: |
+          install -d -m 0755 dev-release-evidence
+          set +e
+          ssh -i ~/.ssh/onelink-dev \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
+            "$DEPLOY_USER@$DEPLOY_HOST" "verify $GITHUB_SHA" \
+            2>&1 | tee "dev-release-evidence/verification-${GITHUB_SHA}.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          sha256sum "dev-release-evidence/verification-${GITHUB_SHA}.log" \
+            > "dev-release-evidence/verification-${GITHUB_SHA}.log.sha256"
+          exit "$status"
+      - name: Upload immutable deployed-release evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: onelink-dev-exact-sha-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: dev-release-evidence/
+          if-no-files-found: error
+          retention-days: 90
       - name: Publish deployment result
         if: always() && steps.deployment.outputs.id
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7

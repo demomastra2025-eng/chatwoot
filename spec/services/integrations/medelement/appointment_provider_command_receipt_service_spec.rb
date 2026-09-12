@@ -75,6 +75,25 @@ RSpec.describe Integrations::Medelement::AppointmentProviderCommandReceiptServic
     expect(unrelated.reload).to be_succeeded
   end
 
+  it 'returns no receipt for a metadata-only provider-backed appointment update' do
+    account = create(:account)
+    actor = create(:user, account: account)
+    resource = create(:scheduling_resource, account: account)
+    appointment = create(:scheduling_appointment, account: account, resource: resource)
+    appointment.update!(client_comment: 'metadata only')
+    service = described_class.new(appointment: appointment, actor: actor, new_record: false)
+    outbound_service = instance_double(Integrations::Medelement::OutboundChangeService, perform: nil)
+    expect(Integrations::Medelement::OutboundChangeService).to receive(:new).with(
+      hash_including(
+        event_name: 'appointment_updated',
+        change: hash_including(changed_attributes: hash_including('client_comment' => [nil, 'metadata only']))
+      )
+    ).and_return(outbound_service)
+
+    expect(service.perform).to be_nil
+    expect(appointment.medelement_provider_command_receipt).to be_nil
+  end
+
   it 'fails closed when a pending provider mutation returns no command' do
     account = create(:account)
     actor = create(:user, account: account)

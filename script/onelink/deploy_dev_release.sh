@@ -26,6 +26,9 @@ LOCK_FILE="${ROOT}/runtime/deploy.lock"
 SERVICE=onelink-chatwoot-dev.service
 RELEASE="${RELEASES}/onelink-dev-${SHA:0:12}"
 GATE_SCRIPT=/usr/local/sbin/onelink-dev-release-gate
+CONTRACT_MANIFEST=/usr/local/share/onelink-dev-medelement-contract-manifest.json
+VERIFY_SCRIPT=/usr/local/sbin/onelink-dev-verify-release
+TREE_VERIFIER=/usr/local/sbin/onelink-verify-release-tree
 readonly RBENV_ROOT=/opt/rbenv
 readonly DEV_TOOLCHAIN_PATH="${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 configure_toolchain() {
@@ -36,9 +39,16 @@ configure_toolchain() {
 configure_toolchain
 PREVIOUS="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
 TMP_RELEASE="${RELEASE}.tmp.$$"
+RELEASE_CREATED=0
+DEPLOY_SUCCEEDED=0
 
 log() { printf '[onelink-dev-deploy] %s\n' "$*"; }
-cleanup() { rm -rf "${TMP_RELEASE}"; }
+cleanup() {
+  rm -rf "${TMP_RELEASE}"
+  if ((RELEASE_CREATED == 1 && DEPLOY_SUCCEEDED == 0)) && [[ "$(readlink -f "${CURRENT}" 2>/dev/null || true)" != "${RELEASE}" ]]; then
+    rm -rf "${RELEASE}"
+  fi
+}
 trap cleanup EXIT
 
 mkdir -p "${RELEASES}" "$(dirname "${LOCK_FILE}")"
@@ -48,6 +58,9 @@ flock -n 9 || { echo "another DEV deployment is active" >&2; exit 75; }
 [[ -d "${SOURCE_REPO}/.git" ]] || { echo "missing deployment repository: ${SOURCE_REPO}" >&2; exit 66; }
 [[ -f "${ENV_FILE}" ]] || { echo "missing DEV environment file" >&2; exit 66; }
 [[ -x "${GATE_SCRIPT}" ]] || { echo "missing DEV release gate: ${GATE_SCRIPT}" >&2; exit 66; }
+[[ -r "${CONTRACT_MANIFEST}" ]] || { echo "missing DEV contract manifest: ${CONTRACT_MANIFEST}" >&2; exit 66; }
+[[ -x "${VERIFY_SCRIPT}" ]] || { echo "missing DEV release verifier: ${VERIFY_SCRIPT}" >&2; exit 66; }
+[[ -x "${TREE_VERIFIER}" ]] || { echo "missing DEV tree verifier: ${TREE_VERIFIER}" >&2; exit 66; }
 [[ -x "${RBENV_ROOT}/bin/rbenv" && -x "${RBENV_ROOT}/shims/bundle" ]] || {
   echo "missing DEV Ruby toolchain under ${RBENV_ROOT}" >&2
   exit 69
@@ -69,10 +82,18 @@ if ((ALLOW_ROLLBACK == 1)) && ! git -C "${SOURCE_REPO}" branch -r --contains "${
   exit 65
 fi
 
-gate_args=(--repo "${SOURCE_REPO}" --current "${CURRENT}" --candidate "${SHA}")
+gate_args=(--repo "${SOURCE_REPO}" --current "${CURRENT}" --candidate "${SHA}" --contract-manifest "${CONTRACT_MANIFEST}")
 ((ALLOW_ROLLBACK == 1)) && gate_args+=(--allow-rollback)
 log "validating candidate against the actual live release"
-python3 "${GATE_SCRIPT}" "${gate_args[@]}"
+if GATE_OUTPUT="$(python3 "${GATE_SCRIPT}" "${gate_args[@]}" 2>&1)"; then
+  printf '%s\n' "${GATE_OUTPUT}"
+else
+  gate_status=$?
+  printf '%s\n' "${GATE_OUTPUT}" >&2
+  exit "${gate_status}"
+fi
+CONTRACT_TESTS_REQUIRED=0
+grep -qx 'contract_tests_required=true' <<< "${GATE_OUTPUT}" && CONTRACT_TESTS_REQUIRED=1
 
 if [[ ! -d "${RELEASE}" ]]; then
   log "creating immutable source release ${RELEASE}"
@@ -98,7 +119,11 @@ PY
     pnpm install --frozen-lockfile --prefer-offline
   )
   mv "${TMP_RELEASE}" "${RELEASE}"
+  RELEASE_CREATED=1
 fi
+
+log "verifying exact tracked tree before release preparation"
+"${TREE_VERIFIER}" --repo "${SOURCE_REPO}" --release "${RELEASE}" --sha "${SHA}"
 
 load_dev_env() {
   local line key value
@@ -121,9 +146,17 @@ load_dev_env() {
 log "running idempotent DEV database preparation"
 (
   load_dev_env
+  export ANNOTATERB_SKIP_ON_DB_TASKS=1
+  export ONELINK_IMMUTABLE_RELEASE=1
   cd "${RELEASE}"
   bundle exec rails db:chatwoot_prepare
 )
+log "verifying exact tracked tree after database preparation"
+"${TREE_VERIFIER}" --repo "${SOURCE_REPO}" --release "${RELEASE}" --sha "${SHA}"
+if ((CONTRACT_TESTS_REQUIRED == 1)); then
+  log "running mandatory scheduling/Medelement contract suite before cutover"
+  "${VERIFY_SCRIPT}" --contracts-only "${SHA}"
+fi
 
 CURRENT_BEFORE_CUTOVER="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
 [[ "${CURRENT_BEFORE_CUTOVER}" == "${PREVIOUS}" ]] || {
@@ -182,7 +215,11 @@ RUNNING_SHA="$(cat "${CURRENT}/.git_sha")"
 log "running idempotent post-deploy finalizers"
 (
   load_dev_env
+  export ANNOTATERB_SKIP_ON_DB_TASKS=1
+  export ONELINK_IMMUTABLE_RELEASE=1
   cd "${CURRENT}"
   bundle exec rails runner script/onelink/finalize_release.rb
 ) || rollback "post-deploy finalizers"
+"${TREE_VERIFIER}" --repo "${SOURCE_REPO}" --release "${CURRENT}" --sha "${SHA}" || rollback "tracked release tree drift"
+DEPLOY_SUCCEEDED=1
 log "DEV deployment complete sha=${SHA}"

@@ -1,0 +1,42 @@
+{
+  "contract_specs": [
+    "spec/services/confirmations/resolve_service_spec.rb",
+    "spec/services/integrations/medelement/provider_commands/create_service_spec.rb",
+    "spec/services/integrations/medelement/provider_commands/create_service_concurrency_spec.rb",
+    "spec/services/integrations/medelement/appointment_provider_command_receipt_service_spec.rb",
+    "spec/services/integrations/medelement/appointment_provider_command_receipt_lookup_service_spec.rb",
+    "spec/services/integrations/medelement/appointment_provider_status_spec.rb",
+    "spec/services/integrations/medelement/outbound_change_service_spec.rb",
+    "spec/services/scheduling/available_slot_search_service_spec.rb",
+    "spec/services/scheduling/calendar_view_service_spec.rb",
+    "spec/services/scheduling/id_list_param_parser_spec.rb",
+    "spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb",
+    "spec/requests/api/v1/accounts/scheduling/appointments_spec.rb"
+  ],
+  "protected_files": {
+    "app/controllers/api/v1/accounts/scheduling/base_controller.rb": "011de50a17ccdab6b209a6c99b0f8ebc284828b63f35353aa0365045e30597af",
+    "app/services/confirmations/resolve_service.rb": "1e484759afb5529afa7486b5d02b979dbc6a461b79625c1efd0e515a044c030c",
+    "app/services/integrations/medelement/appointment_provider_command_receipt_lookup_service.rb": "004fbc07fde6a95bf9daa977f23730fe590e1d2f5e43bab20ab2dd4181a9e313",
+    "app/services/integrations/medelement/appointment_provider_command_receipt_service.rb": "716c926951f12068626d4a49b0e5a4dab5ec7d86c3647ba24e52652321b926ac",
+    "app/services/integrations/medelement/appointment_provider_status.rb": "eb7231d0ab10e9aa1f4419a83dff3af69e00d5284befe01889f66c4851ca452a",
+    "app/services/integrations/medelement/outbound_change_service.rb": "462622ed8a909d37f843026f9c344a501aaac7468048a8b890c03cfed41c7fff",
+    "app/services/integrations/medelement/provider_commands/create_service.rb": "4e87fcd7b494d9fddc437e21bce0840d9ea33e6451537da094010bbe9cd7e6df",
+    "app/services/scheduling/calendar_view_service.rb": "409a83e2b6af9629de767901880e23250f4dae559c73db7f5d570c8ca2957cfb",
+    "app/services/scheduling/id_list_param_parser.rb": "860a2867c3c3b7638278f847ef628d6bd9893050eb10a588a9caa117433f890f",
+    "enterprise/lib/captain/tools/operations/appointment_operations.rb": "565d59b2279b9072811a767681eb634ebab4264082c94b94b060984cee775b12",
+    "spec/enterprise/services/captain/tools/copilot/search_available_slots_service_spec.rb": "732e4af964c762760c9bfcc11bb35650b32e20a7f98ef87f7289b3ea02e69765",
+    "spec/requests/api/v1/accounts/scheduling/appointments_spec.rb": "3f8ebd80a43bccdc3e6f0af6c45f8b7fbc1f34178ad32512cdb57dcde7a749fc",
+    "spec/services/confirmations/resolve_service_spec.rb": "30a78f108e667ac7b5abc4908865450c8f66b4308d247e4af0658b7eed473cd5",
+    "spec/services/integrations/medelement/appointment_provider_command_receipt_lookup_service_spec.rb": "274eb0d48e82270b45322eb10bede8b063a83b95849d8dc6d81509b419cea24f",
+    "spec/services/integrations/medelement/appointment_provider_command_receipt_service_spec.rb": "1343b9660b74c3b594f6fc00d765870d76de6e13f98b4d40c926cf07deda4cf5",
+    "spec/services/integrations/medelement/appointment_provider_status_spec.rb": "bcb43a172a426b14c4845039edca6b9e4cde4fff55c351bb66614bebb4ca165d",
+    "spec/services/integrations/medelement/outbound_change_service_spec.rb": "d0a3f2a44e7984c3c2c2f507a3ecafe0ea823d16662b356d348afb95ed0583d2",
+    "spec/services/integrations/medelement/provider_commands/create_service_concurrency_spec.rb": "256f81c47ba3029b0ea1706f5a723a7fd8bc32ed6ac2525b7e762321bbb1b943",
+    "spec/services/integrations/medelement/provider_commands/create_service_spec.rb": "7b2c68f673ca7a648f0680fe83c92baf26fd683b04d44e36251471114e4b8b63",
+    "spec/services/scheduling/available_slot_search_service_spec.rb": "d3feaaa996c644d3b1e5ca9a00489fa7d2c9811a53bb4241188a67ddced10838",
+    "spec/services/scheduling/calendar_view_service_spec.rb": "34484cd9730c69edebf03d08bdd63e11c18a92155b6a5618f054337b74ac2ede",
+    "spec/services/scheduling/id_list_param_parser_spec.rb": "3a4ad285ee156a47061cc572cb4151210fd690d149095297a6e3a494c7dec8b6"
+  },
+  "required_ancestor": "48be39f5eed8608179dcd07e987337a7a821156a",
+  "version": 1
+}
