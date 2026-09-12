@@ -237,7 +237,14 @@ class Captain::Tools::Operations::DealOperations < Captain::Tools::Operations::B
 
   def deal_for_update(deal_id)
     normalized_deal_id = optional_positive_id(deal_id)
-    return account.crm_deals.find(normalized_deal_id) if normalized_deal_id.present?
+    if normalized_deal_id.present?
+      scope = if customer_agent_execution?
+                Crm::Deals::ContactScope.resolve(account: account, contact: current_contact)
+              else
+                account.crm_deals
+              end
+      return scope.find(normalized_deal_id)
+    end
 
     current_deal
   end

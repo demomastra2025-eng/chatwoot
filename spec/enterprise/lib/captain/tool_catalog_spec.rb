@@ -74,7 +74,7 @@ RSpec.describe Captain::ToolCatalog do
     it 'keeps employee-actor and private conversation tools out of the customer-agent scope' do
       assistant_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_ASSISTANT).pluck(:id)
       agent_tool_ids = described_class.available_tools_for(assistant, Captain::ToolAccess::SCOPE_AGENT).pluck(:id)
-      restricted_tool_ids = %w[add_deal_comment add_task_comment get_conversation]
+      restricted_tool_ids = %w[add_deal_comment add_task_comment get_conversation get_deal_timeline]
 
       expect(assistant_tool_ids).to include(*restricted_tool_ids)
       expect(agent_tool_ids).not_to include(*restricted_tool_ids)

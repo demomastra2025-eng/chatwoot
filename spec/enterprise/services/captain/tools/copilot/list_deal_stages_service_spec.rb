@@ -73,6 +73,18 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
     expect(payload['ignored_filters']).to eq('deal_id' => 1)
   end
 
+  it 'rejects a customer-agent deal ID outside the current contact scope' do
+    other_contact_deal = create(:crm_deal, account: account)
+    customer_service = described_class.new(
+      assistant,
+      user: assistant,
+      conversation: conversation,
+      execution_scope: Captain::ToolAccess::SCOPE_AGENT
+    )
+
+    expect(execute_as_agent(customer_service, deal_id: other_contact_deal.id)).to include('ActiveRecord::RecordNotFound')
+  end
+
   it 'prioritizes a user-provided pipeline name over conflicting code and numeric ID selectors' do
     requested_pipeline = create(:crm_pipeline, account: account, name: 'Продажи', code: 'sales')
     requested_stage = create(:crm_stage, account: account, pipeline: requested_pipeline, code: 'new', position: 1, color: '#111111')
@@ -122,5 +134,10 @@ RSpec.describe Captain::Tools::Copilot::ListDealStagesService do
         'closing_reason_required' => true
       )
     )
+  end
+  def execute_as_agent(tool, **params)
+    execute_method = tool.method(:execute)
+    execute_method = execute_method.super_method if execute_method.owner == Captain::Tools::Instrumentation
+    execute_method.call(**params)
   end
 end

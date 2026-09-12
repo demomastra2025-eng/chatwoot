@@ -92,10 +92,16 @@ class Captain::Tools::Copilot::ListDealStagesService < Captain::Tools::Copilot::
   end
 
   def resolve_deal(deal_id:, use_current_deal:)
-    return account.crm_deals.includes(:pipeline, :stage).find(deal_id) if deal_id.present?
+    return deal_scope.includes(:pipeline, :stage).find(deal_id) if deal_id.present?
     return current_deal if use_current_deal
 
     nil
+  end
+
+  def deal_scope
+    return account.crm_deals unless customer_agent_execution?
+
+    Crm::Deals::ContactScope.resolve(account: account, contact: current_contact)
   end
 
   def pipeline_selector(arguments)

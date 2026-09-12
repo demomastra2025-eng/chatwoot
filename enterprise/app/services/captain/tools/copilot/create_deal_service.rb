@@ -67,7 +67,8 @@ class Captain::Tools::Copilot::CreateDealService < Captain::Tools::Copilot::Base
     Captain::Tools::Operations::DealOperations.new(
       assistant: assistant,
       conversation: current_conversation,
-      actor: @user
+      actor: @user,
+      execution_scope: execution_scope
     )
   end
 end

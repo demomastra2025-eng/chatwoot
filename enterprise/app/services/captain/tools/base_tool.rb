@@ -19,11 +19,12 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
     end
   end
 
-  def initialize(assistant, user: nil, conversation: nil, copilot_thread: nil)
+  def initialize(assistant, user: nil, conversation: nil, copilot_thread: nil, execution_scope: nil)
     @assistant = assistant
     @user = user
     @conversation = conversation
     @copilot_thread = copilot_thread
+    @execution_scope = execution_scope&.to_s
     super()
   end
 
@@ -92,6 +93,14 @@ class Captain::Tools::BaseTool < RubyLLM::Tool
     return nil if @user.blank? || @assistant.blank?
 
     @current_account_user ||= AccountUser.find_by(account_id: @assistant.account_id, user_id: @user.id)
+  end
+
+  def customer_agent_execution?
+    @execution_scope == Captain::ToolAccess::SCOPE_AGENT
+  end
+
+  def execution_scope
+    @execution_scope
   end
 
   def account_administrator?

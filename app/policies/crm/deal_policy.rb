@@ -1,5 +1,16 @@
 class Crm::DealPolicy < Crm::BasePolicy
+  def self.legacy_view_allowed?(account_user)
+    return false if account_user.blank?
+
+    permissions = Array(account_user.permissions)
+    permissions.include?('administrator') ||
+      (account_user.custom_role_id.blank? && permissions.include?('agent')) ||
+      (permissions & %w[crm_deal_view crm_deal_manage]).any?
+  end
+
   class Scope < Crm::BasePolicy::Scope
+    ACCESS_SCOPE_PRIORITY = { 'none' => 0, 'own' => 1, 'team' => 2, 'all' => 3 }.freeze
+
     def initialize(user_context, scope, capability: 'view')
       super(user_context, scope)
       @capability = capability
@@ -39,6 +50,48 @@ class Crm::DealPolicy < Crm::BasePolicy
       end
     end
 
+    def self.intersection(user_context, relation, capabilities:)
+      Array(capabilities).reduce(relation) do |effective_scope, capability|
+        capability_scope = new(user_context, relation, capability: capability.to_s).resolve
+        effective_scope.where(id: capability_scope.select(:id))
+      end
+    end
+
+    def self.intersection_access_scope(user_context, capabilities:)
+      account_user = user_context[:account_user]
+      return 'none' if account_user.blank?
+
+      resolutions = Array(capabilities).map do |capability|
+        AccessControl::ModeResolver.call(
+          account_user: account_user,
+          resource: 'deals',
+          capability: capability.to_s
+        )
+      end
+      return 'all' unless resolutions.all? { |resolution| resolution.authoritative_source == 'access_role' }
+
+      resolutions.map { |resolution| resolution.access_role_resolution&.scope || 'none' }
+                 .min_by { |scope| ACCESS_SCOPE_PRIORITY.fetch(scope) }
+    end
+
+    def self.owner_ids(user_context, access_scope:)
+      account = user_context[:account]
+      user = user_context[:user]
+      return [] if account.blank? || user.blank?
+
+      case access_scope
+      when 'all'
+        account.account_users.pluck(:user_id)
+      when 'team'
+        team_ids = account.teams.joins(:team_members).where(team_members: { user_id: user.id }).select(:id)
+        (TeamMember.where(team_id: team_ids).pluck(:user_id) + [user.id]).uniq
+      when 'own'
+        [user.id]
+      else
+        []
+      end
+    end
+
     private
 
     attr_reader :capability
@@ -66,6 +119,10 @@ class Crm::DealPolicy < Crm::BasePolicy
 
   def timeline?
     deal_access?(:view)
+  end
+
+  def view_reports?
+    deal_access?(:view_reports, record_scoped: false)
   end
 
   def create?
@@ -108,7 +165,8 @@ class Crm::DealPolicy < Crm::BasePolicy
   end
 
   def legacy_deal_access?(capability)
-    return deal_view_access? if capability == :view
+    return self.class.legacy_view_allowed?(account_user) if capability == :view
+    return administrator_access? || has_permission?('report_manage') if capability == :view_reports
 
     deal_manage_access?
   end

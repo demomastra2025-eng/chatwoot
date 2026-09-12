@@ -79,14 +79,19 @@ class Captain::Tools::Agent::AccountToolAdapter < Captain::Runtime::Tool
   end
 
   def schema_delegate
-    @schema_delegate ||= delegate_class.new(assistant, user: assistant)
+    @schema_delegate ||= delegate_class.new(
+      assistant,
+      user: assistant,
+      execution_scope: Captain::ToolAccess::SCOPE_AGENT
+    )
   end
 
   def invoke_delegate(tool_context, params)
     delegate = delegate_class.new(
       assistant,
       user: assistant,
-      conversation: current_conversation(tool_context)
+      conversation: current_conversation(tool_context),
+      execution_scope: Captain::ToolAccess::SCOPE_AGENT
     )
     execute_method = delegate.method(:execute)
     execute_method = execute_method.super_method if execute_method.owner == Captain::Tools::Instrumentation && execute_method.super_method

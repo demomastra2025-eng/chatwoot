@@ -35,4 +35,26 @@ RSpec.describe Captain::Tools::Copilot::GetDealService do
   it 'returns a structured failure when the deal is missing' do
     expect(service.execute(deal_id: 999)).to eq('ERROR: Deal not found')
   end
+
+  it 'limits customer-agent direct IDs to deals of the current contact' do
+    conversation = create(:conversation, account: account)
+    current_deal = create(:crm_deal, account: account)
+    create(:crm_deal_contact, account: account, deal: current_deal, contact: conversation.contact, primary: true)
+    other_deal = create(:crm_deal, account: account)
+    customer_service = described_class.new(
+      assistant,
+      user: assistant,
+      conversation: conversation,
+      execution_scope: Captain::ToolAccess::SCOPE_AGENT
+    )
+
+    expect(JSON.parse(execute_as_agent(customer_service, deal_id: current_deal.id)).dig('deal', 'id')).to eq(current_deal.id)
+    expect(execute_as_agent(customer_service, deal_id: other_deal.id)).to eq('ERROR: Deal not found')
+  end
+
+  def execute_as_agent(tool, **params)
+    execute_method = tool.method(:execute)
+    execute_method = execute_method.super_method if execute_method.owner == Captain::Tools::Instrumentation
+    execute_method.call(**params)
+  end
 end

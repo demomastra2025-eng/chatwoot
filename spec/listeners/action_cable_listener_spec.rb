@@ -760,13 +760,13 @@ describe ActionCableListener do
       )
     end
 
-    it 'broadcasts the deal payload to the account stream' do
+    it 'broadcasts a minimal deal refresh to authorized user streams' do
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
-        ["account_#{account.id}"],
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
         'crm.deal.created',
         hash_including(
           account_id: account.id,
-          deal: hash_including(id: deal.id, title: deal.title),
+          deal_id: deal.id,
           meta: { event_type: 'deal_created' }
         )
       )

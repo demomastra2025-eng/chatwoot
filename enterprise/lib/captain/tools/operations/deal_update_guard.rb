@@ -85,10 +85,7 @@ class Captain::Tools::Operations::DealUpdateGuard
   end
 
   def contact_deals(excluding:)
-    scope = account.crm_deals
-                   .kept
-                   .joins(:deal_contacts)
-                   .where(crm_deal_contacts: { contact_id: current_contact.id })
+    scope = ::Crm::Deals::ContactScope.resolve(account: account, contact: current_contact).kept
     scope = scope.where.not(id: excluding.id) if excluding.present?
     scope.limit(50)
   end

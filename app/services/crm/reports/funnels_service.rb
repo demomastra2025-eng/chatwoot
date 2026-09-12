@@ -11,10 +11,11 @@ class Crm::Reports::FunnelsService
     { key: '31_plus', min_days: 31, max_days: nil }
   ].freeze
 
-  attr_reader :account, :params, :since_time, :until_time, :group_by, :currency
+  attr_reader :account, :deal_relation, :params, :since_time, :until_time, :group_by, :currency
 
-  def initialize(account:, params: {})
+  def initialize(account:, deals_scope:, params: {})
     @account = account
+    @deal_relation = deals_scope
     @params = params.to_h.symbolize_keys
     @since_time = parse_time(@params[:since]) || 30.days.ago.beginning_of_day
     @until_time = parse_time(@params[:until]) || Time.current.end_of_day
@@ -59,17 +60,15 @@ class Crm::Reports::FunnelsService
   end
 
   def dominant_currency
-    account.crm_deals
-           .where.not(currency: [nil, ''])
-           .group(:currency)
-           .order(Arel.sql('COUNT(*) DESC'))
-           .limit(1)
-           .pluck(:currency)
-           .first
+    deal_relation.where.not(currency: [nil, ''])
+                 .group(:currency)
+                 .order(Arel.sql('COUNT(*) DESC'))
+                 .limit(1)
+                 .pick(:currency)
   end
 
   def deals_scope
-    scope = account.crm_deals.joins(:pipeline, :stage)
+    scope = deal_relation.joins(:pipeline, :stage)
     scope = scope.where(pipeline_id: params[:pipeline_id]) if params[:pipeline_id].present?
     scope
   end

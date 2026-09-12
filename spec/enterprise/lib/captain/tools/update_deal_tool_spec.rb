@@ -109,6 +109,7 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
       originating_conversation_id: conversation.id
     )
     target_deal = create(:crm_deal, account: account, title: 'Target deal', pipeline: pipeline, stage: stage)
+    create(:crm_deal_contact, account: account, deal: target_deal, contact: contact, primary: true)
     tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, deal: { id: current_deal.id }, contact: { id: contact.id } })
 
     payload = JSON.parse(tool.perform(tool_context, deal_id: target_deal.id, title: 'Updated target deal'))
@@ -117,6 +118,18 @@ RSpec.describe Captain::Tools::UpdateDealTool, type: :model do
     expect(payload['deal']).to include('id' => target_deal.id, 'title' => 'Updated target deal')
     expect(target_deal.reload.title).to eq('Updated target deal')
     expect(current_deal.reload.title).to eq('Current linked deal')
+  end
+
+  it 'rejects an explicit deal_id that is not linked to the current contact' do
+    contact = create(:contact, account: account)
+    conversation = create(:conversation, account: account, contact: contact)
+    other_contact_deal = create(:crm_deal, account: account, title: 'Other contact deal')
+    tool_context = Struct.new(:state).new({ conversation: { id: conversation.id }, contact: { id: contact.id } })
+
+    result = tool.perform(tool_context, deal_id: other_contact_deal.id, title: 'Leaked update')
+
+    expect(result).to include('ERROR:', 'ActiveRecord::RecordNotFound')
+    expect(other_contact_deal.reload.title).to eq('Other contact deal')
   end
 
   it 'keeps an explicitly selected deal across a short follow-up value turn' do

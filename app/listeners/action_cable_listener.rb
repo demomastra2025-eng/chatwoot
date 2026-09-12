@@ -366,13 +366,21 @@ class ActionCableListener < BaseListener
     account = event.data[:account] || deal&.account
     return if account.blank? || deal.blank?
 
+    event_meta = event.data[:meta].to_h.symbolize_keys
+    tokens = ::Crm::Deals::RealtimeRecipients.new(
+      account: account,
+      deal: deal,
+      changes: event_meta[:changes]
+    ).tokens
+    return if tokens.blank?
+
     broadcast(
       account,
-      [account_token(account)],
+      tokens,
       event_name,
       {
-        deal: ::Crm::PayloadBuilder.deal(deal),
-        meta: event.data[:meta] || {}
+        deal_id: deal.id,
+        meta: event_meta.slice(:event_type, :contacts_changed, :task_id)
       }
     )
   end

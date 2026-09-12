@@ -71,7 +71,6 @@ import {
   isDiscreteFilterableCustomFieldDefinition,
   isFilterableCustomFieldDefinition,
   normalizeCustomFieldFilters,
-  recordMatchesCustomFieldFilters,
 } from 'dashboard/stores/crm/customFieldFilters';
 import { resolveCustomFieldEntries } from 'dashboard/stores/crm/customFieldFormatter';
 import {
@@ -95,7 +94,6 @@ import {
 } from 'dashboard/routes/dashboard/crm/boardVisibility';
 import {
   canRollbackOptimisticDeal,
-  dealMatchesCreatedRange,
   isDealVersionNewer,
   sortDealsForBoard,
   stageCountsAfterDealMove,
@@ -133,10 +131,6 @@ const { locale, t } = useI18n();
 
 const DEALS_PREFERENCES_STORAGE_KEY = 'crm-deals-page-preferences';
 const MANUAL_BOARD_SORT_KEY = 'position';
-const CRM_DEAL_ARCHIVE_EVENTS = new Set([
-  'crm.deal.archived',
-  'crm.deal.unarchived',
-]);
 
 const deals = ref([]);
 const dealsMeta = ref({});
@@ -1498,50 +1492,6 @@ const mergeDealsById = (currentDeals, nextDeals) => {
   return [...recordsById.values()];
 };
 
-const removeDeal = dealId => {
-  deals.value = deals.value.filter(item => Number(item.id) !== Number(dealId));
-};
-
-const dealMatchesCurrentFilters = deal => {
-  const archived = Boolean(deal.archivedAt);
-  if (archived !== Boolean(filters.archived)) return false;
-  if (!dealMatchesCreatedRange(deal, filters.dateRange)) return false;
-  if (filters.aiOnly && deal.dialogStatus !== 'pending') return false;
-  if (
-    filters.companyId &&
-    Number(deal.companyId) !== Number(filters.companyId)
-  ) {
-    return false;
-  }
-  if (filters.ownerId && Number(deal.ownerId) !== Number(filters.ownerId)) {
-    return false;
-  }
-  if (
-    filters.pipelineId &&
-    Number(deal.pipelineId) !== Number(filters.pipelineId)
-  ) {
-    return false;
-  }
-  if (filters.stageId && Number(deal.stageId) !== Number(filters.stageId)) {
-    return false;
-  }
-  if (filters.teamId && Number(deal.teamId) !== Number(filters.teamId)) {
-    return false;
-  }
-  if (filters.contactId) {
-    const hasMatchingContact = (deal.dealContacts || []).some(
-      contact => Number(contact.contactId) === Number(filters.contactId)
-    );
-    if (!hasMatchingContact) return false;
-  }
-
-  return recordMatchesCustomFieldFilters(
-    deal,
-    filterableDealFieldDefinitions.value,
-    customFieldFilters.value
-  );
-};
-
 const loadContacts = async query => {
   const normalizedQuery = String(query || '').trim();
   contactSearchGeneration += 1;
@@ -2331,32 +2281,9 @@ const scheduleDealsReload = useDebounceFn(() => {
 }, 300);
 
 const handleCrmDealRealtimeEvent = payload => {
-  const realtimeDeal = normalizePayload({ payload: payload?.deal });
-  if (!realtimeDeal?.id) return;
+  if (!Number(payload?.deal_id)) return;
 
-  const isSelectedDeal =
-    selectedDeal.value &&
-    Number(selectedDeal.value.id) === Number(realtimeDeal.id);
-  if (isSelectedDeal) {
-    selectedDeal.value = realtimeDeal;
-  }
-
-  if (filters.nextAction) {
-    scheduleDealsReload();
-    return;
-  }
-
-  const filterMatch = dealMatchesCurrentFilters(realtimeDeal);
-
-  if (filterMatch) {
-    upsertDeal(realtimeDeal);
-  } else {
-    removeDeal(realtimeDeal.id);
-  }
-
-  if (CRM_DEAL_ARCHIVE_EVENTS.has(payload?.event)) {
-    syncSelectedDeal(deals.value);
-  }
+  scheduleDealsReload();
 };
 
 const startEditingDealTitle = deal => {

@@ -7,6 +7,14 @@ RSpec.describe Captain::Tools::Copilot::SearchDealsService do
   let(:service) { described_class.new(assistant, user: user) }
   let(:conversation) { create(:conversation, account: account) }
   let(:conversation_service) { described_class.new(assistant, user: user, conversation: conversation) }
+  let(:customer_service) do
+    described_class.new(
+      assistant,
+      user: assistant,
+      conversation: conversation,
+      execution_scope: Captain::ToolAccess::SCOPE_AGENT
+    )
+  end
   let(:company) { create(:company, account: account) }
   let(:owner) { create(:user, account: account) }
   let(:pipeline) { create(:crm_pipeline, account: account) }
@@ -125,5 +133,43 @@ RSpec.describe Captain::Tools::Copilot::SearchDealsService do
       expect(payload['deals'].map { |deal| deal['id'] }).to contain_exactly(linked_deal.id)
       expect(payload['deals'].map { |deal| deal['id'] }).not_to include(unlinked_deal.id)
     end
+
+    it 'keeps customer-agent title searches inside the current contact scope' do
+      current_contact_deal = create(:crm_deal, account: account, title: 'Shared renewal', pipeline: pipeline, stage: stage)
+      create(:crm_deal_contact, account: account, deal: current_contact_deal, contact: conversation.contact, primary: true)
+      other_contact_deal = create(:crm_deal, account: account, title: 'Shared renewal', pipeline: pipeline, stage: stage)
+
+      payload = JSON.parse(execute_as_agent(customer_service, query: 'Shared renewal'))
+
+      expect(payload['filters']).to include('contact_id' => conversation.contact_id, 'query' => 'Shared renewal')
+      expect(payload['deals'].map { |deal| deal['id'] }).to contain_exactly(current_contact_deal.id)
+      expect(payload['deals'].map { |deal| deal['id'] }).not_to include(other_contact_deal.id)
+    end
+
+    it 'rejects a customer-agent attempt to select another contact' do
+      other_contact = create(:contact, account: account)
+
+      expect(execute_as_agent(customer_service, contact_id: other_contact.id)).to include(
+        'ERROR: ArgumentError: Customer AI can only search deals for the current conversation contact'
+      )
+    end
+
+    it 'fails closed for customer-agent search without a current conversation contact' do
+      customer_service_without_conversation = described_class.new(
+        assistant,
+        user: assistant,
+        execution_scope: Captain::ToolAccess::SCOPE_AGENT
+      )
+
+      expect(execute_as_agent(customer_service_without_conversation, query: 'renewal')).to include(
+        'ERROR: ArgumentError: Customer AI can only search deals for the current conversation contact'
+      )
+    end
+  end
+
+  def execute_as_agent(tool, **params)
+    execute_method = tool.method(:execute)
+    execute_method = execute_method.super_method if execute_method.owner == Captain::Tools::Instrumentation
+    execute_method.call(**params)
   end
 end

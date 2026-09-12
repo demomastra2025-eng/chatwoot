@@ -2,11 +2,13 @@ class Crm::Reports::ManagerEffectivenessService
   DEFAULT_CURRENCY = 'KZT'.freeze
   DEFAULT_CALL_DURATION_THRESHOLD_SECONDS = 25
 
-  attr_reader :account, :params, :since_time, :until_time, :currency,
+  attr_reader :account, :deal_relation, :visible_owner_ids, :params, :since_time, :until_time, :currency,
               :pipeline_id, :call_duration_threshold_seconds
 
-  def initialize(account:, params: {})
+  def initialize(account:, deals_scope:, visible_owner_ids:, params: {})
     @account = account
+    @deal_relation = deals_scope
+    @visible_owner_ids = Array(visible_owner_ids).compact.uniq
     @params = params.to_h.symbolize_keys
     @since_time = parse_time(@params[:since]) || 30.days.ago.beginning_of_day
     @until_time = parse_time(@params[:until]) || Time.current.end_of_day
@@ -58,12 +60,11 @@ class Crm::Reports::ManagerEffectivenessService
   end
 
   def dominant_currency
-    account.crm_deals
-           .where.not(currency: [nil, ''])
-           .group(:currency)
-           .order(Arel.sql('COUNT(*) DESC'))
-           .limit(1)
-           .pick(:currency)
+    deal_relation.where.not(currency: [nil, ''])
+                 .group(:currency)
+                 .order(Arel.sql('COUNT(*) DESC'))
+                 .limit(1)
+                 .pick(:currency)
   end
 
   def data_sources
@@ -198,7 +199,7 @@ class Crm::Reports::ManagerEffectivenessService
   end
 
   def deals_scope
-    scope = account.crm_deals.kept.joins(:stage)
+    scope = deal_relation.kept.joins(:stage)
     scope = scope.where(pipeline_id: pipeline_id) if pipeline_id.present?
     scope
   end
@@ -217,18 +218,18 @@ class Crm::Reports::ManagerEffectivenessService
     Telephony::CallSession
       .joins(:agent_binding)
       .where(account_id: account.id, direction: 'outbound')
-      .where(telephony_agent_bindings: { account_id: account.id })
+      .where(telephony_agent_bindings: { account_id: account.id, user_id: visible_owner_ids })
       .where('COALESCE(telephony_call_sessions.started_at, telephony_call_sessions.created_at) BETWEEN ? AND ?', since_time, until_time)
   end
 
   def appointment_scope
-    Scheduling::Appointment.where(account_id: account.id, starts_at: since_time..until_time)
+    Scheduling::Appointment.where(account_id: account.id, owner_id: visible_owner_ids, starts_at: since_time..until_time)
   end
 
   def crm_task_meeting_scope
     Crm::Task
       .kept
-      .where(account_id: account.id, activity_type: 'meeting')
+      .where(account_id: account.id, assignee_id: visible_owner_ids, activity_type: 'meeting')
       .where('COALESCE(crm_tasks.due_at, crm_tasks.start_at, crm_tasks.created_at) BETWEEN ? AND ?', since_time, until_time)
   end
 
@@ -237,6 +238,7 @@ class Crm::Reports::ManagerEffectivenessService
       .joins(:appointment)
       .where(account_id: account.id, created_at: since_time..until_time)
       .where(scheduling_appointments: { account_id: account.id })
+      .where("#{payment_owner_sql} IN (?)", visible_owner_ids)
   end
 
   def payment_owner_sql

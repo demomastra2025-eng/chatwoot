@@ -1,14 +1,15 @@
 class Captain::Tools::Operations::BaseOperation
-  def initialize(assistant:, conversation: nil, actor: nil, selection_context: nil)
+  def initialize(assistant:, conversation: nil, actor: nil, selection_context: nil, execution_scope: nil)
     @assistant = assistant
     @conversation = conversation
     @actor = actor
     @selection_context = selection_context
+    @execution_scope = execution_scope&.to_s
   end
 
   private
 
-  attr_reader :assistant, :conversation, :actor, :selection_context
+  attr_reader :assistant, :conversation, :actor, :selection_context, :execution_scope
 
   def account
     assistant.account
@@ -38,6 +39,10 @@ class Captain::Tools::Operations::BaseOperation
     return nil unless conversation
 
     Captain::ContextFields.appointment_for(account: account, conversation: conversation)
+  end
+
+  def customer_agent_execution?
+    execution_scope == Captain::ToolAccess::SCOPE_AGENT
   end
 
   def ensure_feature_enabled!(feature_name, message)

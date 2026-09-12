@@ -119,6 +119,64 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
     expect(response).to have_http_status(:ok)
   end
 
+  it 'intersects enforced deal view and view_reports scopes before aggregating' do
+    pipeline = create(:crm_pipeline, account: account, default: true)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'open')
+    other_agent = create(:user, account: account, role: :agent)
+    own_conversation = create(:conversation, account: account)
+    other_conversation = create(:conversation, account: account)
+    own_deal = create(
+      :crm_deal,
+      account: account,
+      owner: administrator,
+      pipeline: pipeline,
+      stage: stage,
+      originating_conversation: own_conversation,
+      amount_minor: 100_000,
+      currency: 'KZT'
+    )
+    create(
+      :crm_deal,
+      account: account,
+      owner: other_agent,
+      pipeline: pipeline,
+      stage: stage,
+      originating_conversation: other_conversation,
+      amount_minor: 900_000,
+      currency: 'KZT'
+    )
+    other_binding = create(:telephony_agent_binding, account: account, user: other_agent)
+    create(
+      :telephony_call_session,
+      account: account,
+      agent_binding: other_binding,
+      direction: 'outbound',
+      status: 'completed',
+      started_at: 1.day.ago
+    )
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    administrator.account_users.find_by!(account: account).access_role.grants
+                 .find_by!(resource: 'deals', capability: 'view')
+                 .update!(access_scope: 'own')
+
+    get path, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'summary')).to include(
+      'created_deals_count' => 1,
+      'open_deals_count' => 1,
+      'pipeline_amount_minor' => own_deal.amount_minor
+    )
+
+    get manager_effectiveness_path, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'totals', 'leads_count')).to eq(1)
+    expect(response.parsed_body.dig('payload', 'rows').pluck('owner_id')).to contain_exactly(administrator.id)
+  end
+
   it 'returns manager effectiveness metrics from native CRM, telephony, scheduling, and payment data' do
     travel_to Time.zone.local(2026, 1, 15, 12, 0, 0) do
       pipeline = create(:crm_pipeline, account: account, name: 'Sales', code: 'sales', default: true)
@@ -198,6 +256,29 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
       )
       expect(response.parsed_body.dig('meta', 'call_duration_threshold_seconds')).to eq(25)
     end
+  end
+
+  it 'includes mixed-source metrics for an all-scope owner without a deal' do
+    owner = create(:user, account: account, role: :agent)
+    binding = create(:telephony_agent_binding, account: account, user: owner)
+    create(
+      :telephony_call_session,
+      account: account,
+      agent_binding: binding,
+      direction: 'outbound',
+      status: 'completed',
+      started_at: 1.day.ago,
+      duration_seconds: 30
+    )
+
+    get manager_effectiveness_path, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig('payload', 'rows').find { |row| row['owner_id'] == owner.id }).to include(
+      'leads_count' => 0,
+      'call_attempts_count' => 1,
+      'connected_calls_count' => 1
+    )
   end
 
   it 'returns unauthorized without auth' do

@@ -956,7 +956,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
     it('should emit dashboard bus events for CRM deal ActionCable events', () => {
       const dealPayload = {
         account_id: 1,
-        deal: { id: 42, title: 'Realtime Deal' },
+        deal_id: 42,
         meta: { event_type: 'deal_created' },
       };
 
@@ -1003,7 +1003,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
         .mockResolvedValue([]);
       const dealPayload = {
         account_id: 1,
-        deal: { id: 42, title: 'Realtime Deal' },
+        deal_id: 42,
         meta: { event_type: 'deal_created' },
       };
 
