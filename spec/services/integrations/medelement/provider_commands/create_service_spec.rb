@@ -3,6 +3,15 @@ require 'rails_helper'
 RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
   subject(:perform) { service.perform }
 
+  def record_not_unique_for(constraint_name)
+    result = instance_double(PG::Result)
+    allow(result).to receive(:error_field).with(PG::Result::PG_DIAG_CONSTRAINT_NAME).and_return(constraint_name)
+    pg_error = instance_double(PG::UniqueViolation, result: result)
+    error = ActiveRecord::RecordNotUnique.new('duplicate key')
+    allow(error).to receive(:cause).and_return(pg_error)
+    error
+  end
+
   let(:service) do
     described_class.new(
       account: account,
@@ -272,6 +281,35 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     expect { service.perform }.to raise_error(error)
   end
 
+  it 'recovers only the account/idempotency database constraint race' do
+    existing = service.perform
+    existing.update!(status: 'succeeded')
+    race_service = described_class.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      operation: 'create_reception',
+      idempotency_key: idempotency_key,
+      company_cabinet_code: 'cabinet-1',
+      actor: user
+    )
+    scope = race_service.send(:command_scope)
+    allow(race_service).to receive(:command_scope).and_return(scope)
+    allow(scope).to receive(:find_by).with(idempotency_key: idempotency_key).and_return(nil, existing)
+    allow(race_service).to receive(:create_new_command!).and_raise(
+      record_not_unique_for(described_class::IDEMPOTENCY_UNIQUE_CONSTRAINT)
+    )
+
+    expect(race_service.perform).to eq(existing)
+  end
+
+  it 'does not suppress a different database uniqueness constraint' do
+    error = record_not_unique_for('idx_medelement_commands_unfinished_appointment')
+    allow(service).to receive(:create_new_command!).and_raise(error)
+
+    expect { service.perform }.to raise_error(error)
+  end
+
   it 'retries duplicate lookup without the query cache' do
     existing = service.perform
     existing.update!(status: 'succeeded')
@@ -310,6 +348,41 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
       expect(error.code).to eq('MEDELEMENT_IDEMPOTENCY_KEY_REUSED')
       expect(error.status).to eq(409)
     }
+  end
+
+  it 'includes a non-user actor identity in the idempotency fingerprint' do
+    first = described_class.new(
+      account: account,
+      hook: hook,
+      appointment: appointment,
+      operation: 'create_reception',
+      idempotency_key: idempotency_key,
+      company_cabinet_code: 'cabinet-1',
+      actor_descriptor: { type: 'Captain::Assistant', id: 41 }
+    ).perform
+
+    expect do
+      described_class.new(
+        account: account,
+        hook: hook,
+        appointment: appointment,
+        operation: 'create_reception',
+        idempotency_key: idempotency_key,
+        company_cabinet_code: 'cabinet-1',
+        actor_descriptor: { type: 'Captain::Assistant', id: 42 }
+      ).perform
+    end.to raise_error(Scheduling::Error) { |error| expect(error.code).to eq('MEDELEMENT_IDEMPOTENCY_KEY_REUSED') }
+    expect(first.reload).to be_awaiting_confirmation
+  end
+
+  %w[v2_awaiting_confirmation processing failed succeeded].each do |status|
+    it "returns the exact same command when an identical #{status} request is replayed" do
+      existing = service.perform
+      existing.update!(status: status)
+
+      expect(service.perform).to eq(existing)
+      expect(Integrations::Medelement::ProviderCommand.where(account: account, idempotency_key: idempotency_key).count).to eq(1)
+    end
   end
 
   it 'rejects a second unfinished command for the same appointment' do

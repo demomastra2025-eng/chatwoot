@@ -1,0 +1,185 @@
+name: OneLink Promote Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-character SHA already verified in DEV
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/demomastra2025-eng/chatwoot
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: read
+      contents: read
+      deployments: read
+      packages: read
+    outputs:
+      image_ref: ${{ steps.image.outputs.image_ref }}
+      sha: ${{ steps.input.outputs.sha }}
+    steps:
+      - name: Validate requested SHA
+        id: input
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'A full lowercase 40-character Git SHA is required.' >&2
+            exit 64
+          }
+          echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve immutable digest and verify embedded revision
+        id: image
+        env:
+          REQUESTED_SHA: ${{ steps.input.outputs.sha }}
+        run: |
+          raw_manifest="$(mktemp)"
+          docker buildx imagetools inspect "$IMAGE_NAME:$REQUESTED_SHA" --raw > "$raw_manifest"
+          digest="sha256:$(sha256sum "$raw_manifest" | cut -d' ' -f1)"
+          image_ref="$IMAGE_NAME@$digest"
+          docker pull "$image_ref"
+          embedded_sha="$(docker run --rm --entrypoint cat "$image_ref" /app/.git_sha | tr -d '\r\n')"
+          [[ "$embedded_sha" == "$REQUESTED_SHA" ]]
+          echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Verify keyless signature and GitHub provenance
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp \
+              '^https://github.com/demomastra2025-eng/chatwoot/.github/workflows/onelink_release.yml@refs/heads/onelink-dev$' \
+            "$IMAGE_REF"
+          gh attestation verify "oci://$IMAGE_REF" --repo "$GITHUB_REPOSITORY"
+      - name: Require successful deployment of this SHA in DEV
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUESTED_SHA: ${{ steps.input.outputs.sha }}
+        with:
+          script: |
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'development',
+              ref: process.env.REQUESTED_SHA,
+              per_page: 100
+            });
+            for (const deployment of deployments) {
+              const statuses = await github.rest.repos.listDeploymentStatuses({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.id,
+                per_page: 100
+              });
+              if (statuses.data.some(s => s.state === 'success')) {
+                core.info(`DEV proof found in deployment ${deployment.id}`);
+                return;
+              }
+            }
+            core.setFailed('No successful DEV deployment exists for this exact SHA.');
+      - name: Require successful nightly proof for this exact SHA
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUESTED_SHA: ${{ steps.input.outputs.sha }}
+        with:
+          script: |
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'nightly',
+              ref: process.env.REQUESTED_SHA,
+              per_page: 100
+            });
+            for (const deployment of deployments) {
+              const statuses = await github.rest.repos.listDeploymentStatuses({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.id,
+                per_page: 1
+              });
+              if (statuses.data[0]?.state === 'success') {
+                core.info(`Nightly proof found in deployment ${deployment.id}.`);
+                return;
+              }
+            }
+            core.setFailed('No successful nightly proof exists for this exact SHA.');
+
+  promote:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    environment:
+      name: production
+      url: https://app.one-link.kz
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - name: Create production deployment record
+        id: deployment
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          DEPLOY_IMAGE: ${{ needs.resolve.outputs.image_ref }}
+          DEPLOY_SHA: ${{ needs.resolve.outputs.sha }}
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.DEPLOY_SHA,
+              environment: 'production',
+              auto_merge: false,
+              required_contexts: [],
+              payload: { image: process.env.DEPLOY_IMAGE }
+            });
+            core.setOutput('id', deployment.data.id);
+      - name: Install restricted SSH credentials
+        env:
+          SSH_KEY: ${{ secrets.ONELINK_PROD_DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.ONELINK_PROD_KNOWN_HOSTS }}
+        run: |
+          install -d -m 0700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/onelink-production
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 0600 ~/.ssh/onelink-production ~/.ssh/known_hosts
+      - name: Promote exact digest with rolling verification
+        env:
+          DEPLOY_HOST: ${{ secrets.ONELINK_PROD_DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.ONELINK_PROD_DEPLOY_USER }}
+          RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
+          IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
+        run: |
+          ssh -i ~/.ssh/onelink-production -o BatchMode=yes -o IdentitiesOnly=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" "promote $RELEASE_SHA $IMAGE_REF"
+      - name: Publish deployment result
+        if: always() && steps.deployment.outputs.id
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          DEPLOYMENT_ID: ${{ steps.deployment.outputs.id }}
+          DEPLOY_RESULT: ${{ job.status }}
+        with:
+          script: |
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: Number(process.env.DEPLOYMENT_ID),
+              state: process.env.DEPLOY_RESULT === 'success' ? 'success' : 'failure',
+              environment: 'production',
+              environment_url: 'https://app.one-link.kz',
+              log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });

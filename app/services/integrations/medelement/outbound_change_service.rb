@@ -158,7 +158,7 @@ class Integrations::Medelement::OutboundChangeService
     end
     return if cancelled?(appointment)
     return 'create_reception' if provider_reception_code(appointment).blank?
-    return 'move_reception' if changed_attributes.keys.intersect?(APPOINTMENT_MOVE_KEYS)
+    return 'move_reception' if provider_move_changed?
   end
 
   def contact_operation(contact)
@@ -172,6 +172,22 @@ class Integrations::Medelement::OutboundChangeService
     return unless changed_attributes.keys.intersect?(CONTACT_UPDATE_KEYS)
 
     'update_patient'
+  end
+
+  def provider_move_changed?
+    APPOINTMENT_MOVE_KEYS.any? do |key|
+      values = changed_attributes[key]
+      values.is_a?(Array) && values.size >= 2 && normalized_move_value(key, values.first) != normalized_move_value(key, values.last)
+    end
+  end
+
+  def normalized_move_value(key, value)
+    return Integer(value, exception: false) if key == 'resource_id'
+    return if value.blank?
+
+    Time.zone.parse(value.to_s)&.utc&.iso8601(6)
+  rescue ArgumentError
+    value.to_s
   end
 
   # rubocop:disable Metrics/MethodLength, Metrics/ParameterLists
@@ -195,6 +211,7 @@ class Integrations::Medelement::OutboundChangeService
       contact: contact,
       operation: operation,
       idempotency_key: command_idempotency_key,
+      dispatch_identity: event_key,
       company_cabinet_code: company_cabinet_code,
       desired_starts_at: desired_starts_at,
       desired_ends_at: desired_ends_at,
@@ -205,8 +222,8 @@ class Integrations::Medelement::OutboundChangeService
   # rubocop:enable Metrics/MethodLength, Metrics/ParameterLists
 
   # rubocop:disable Metrics/ParameterLists
-  def create_command(appointment:, contact:, operation:, idempotency_key:, company_cabinet_code:, desired_starts_at:,
-                     desired_ends_at:, desired_attributes:)
+  def create_command(appointment:, contact:, operation:, idempotency_key:, dispatch_identity:, company_cabinet_code:,
+                     desired_starts_at:, desired_ends_at:, desired_attributes:)
     Integrations::Medelement::ProviderCommands::CreateService.new(
       account: account,
       hook: hook,
@@ -214,6 +231,7 @@ class Integrations::Medelement::OutboundChangeService
       contact: contact,
       operation: operation,
       idempotency_key: idempotency_key,
+      dispatch_identity: dispatch_identity,
       company_cabinet_code: company_cabinet_code,
       actor: actor,
       actor_descriptor: actor_descriptor,

@@ -236,6 +236,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.conversation_id).not_to eq(other_conversation.id)
   end
 
+  # rubocop:disable RSpec/MultipleExpectations
   it 'atomically creates and links a conversation to an appointment' do
     inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
     create(:inbox_member, user: agent, inbox: inbox)
@@ -288,6 +289,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.conversation_id).to eq(conversation.id)
     expect(response_body.dig('payload', 'conversation_id')).to eq(conversation.id)
   end
+  # rubocop:enable RSpec/MultipleExpectations
 
   it 'creates and links a conversation without making an imported Medelement appointment editable' do
     inbox = create(:inbox, account: account, channel: create(:channel_api, account: account))
@@ -519,6 +521,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(appointment.reload.conversation_id).to eq(unavailable_conversation.id)
   end
 
+  # rubocop:disable RSpec/MultipleExpectations
   it 'keeps an explicit appointment conversation ahead of a separate contact thread target' do
     explicit_conversation = create(:conversation, account: account, contact: contact)
     thread_conversation = create(:conversation, account: account, contact: contact)
@@ -555,6 +558,7 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'chat_conversation_id')).to eq(explicit_conversation.id)
     expect(response_body.dig('payload', 'chat_conversation_display_id')).to eq(explicit_conversation.display_id)
   end
+  # rubocop:enable RSpec/MultipleExpectations
 
   it 'creates a no-service appointment with a manual service name snapshot' do
     post path,
@@ -1362,6 +1366,27 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 'resources').pluck('id')).not_to include(other_resource.id)
   end
 
+  it 'normalizes CSV and array resource_ids to the same resources and slots' do
+    other_resource = create(:scheduling_resource, account: account, timezone: 'Asia/Almaty')
+    resource_ids = [resource.id, other_resource.id]
+    request_params = {
+      view: 'week',
+      from: booking_day.beginning_of_day.iso8601,
+      to: (booking_day + 7.days).end_of_day.iso8601,
+      include_slots: true
+    }
+
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: request_params.merge(resource_ids: resource_ids.join(',')), headers: headers, as: :json
+    string_result = response_body.fetch('payload')
+    get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+        params: request_params.merge(resource_ids: resource_ids), headers: headers, as: :json
+    array_result = response_body.fetch('payload')
+
+    expect(array_result.fetch('resources').pluck('id')).to eq(string_result.fetch('resources').pluck('id'))
+    expect(array_result.fetch('slots').size).to eq(string_result.fetch('slots').size)
+  end
+
   it 'rejects malformed calendar resource_ids instead of returning empty availability' do
     get "/api/v1/accounts/#{account.id}/scheduling/calendar",
         params: {
@@ -1378,6 +1403,23 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
       'code' => 'VALIDATION_ERROR',
       'error' => 'resource_ids must contain positive integer IDs'
     )
+  end
+
+  [{ unexpected: 42 }, [[42]], [true]].each do |malformed_resource_ids|
+    it "rejects malformed resource_ids #{malformed_resource_ids.inspect}" do
+      get "/api/v1/accounts/#{account.id}/scheduling/calendar",
+          params: {
+            view: 'week',
+            from: booking_day.beginning_of_day.iso8601,
+            to: (booking_day + 7.days).end_of_day.iso8601,
+            resource_ids: malformed_resource_ids
+          },
+          headers: headers,
+          as: :json
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response_body['code']).to eq('VALIDATION_ERROR')
+    end
   end
 
   it 'returns not found for an unknown calendar resource_id' do

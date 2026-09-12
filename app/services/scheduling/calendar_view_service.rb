@@ -4,7 +4,7 @@ class Scheduling::CalendarViewService
     @view = options.fetch(:view)
     @from = options.fetch(:from)
     @to = options.fetch(:to)
-    @requested_resource_ids = Array(options[:resource_ids]).compact_blank
+    @requested_resource_ids = Scheduling::IdListParamParser.parse(options[:resource_ids], field_name: 'resource_ids')
     filters = options.fetch(:filters, {})
     @statuses = Array(filters[:statuses]).compact_blank
     @payment_statuses = Array(filters[:payment_statuses]).compact_blank
@@ -77,7 +77,7 @@ class Scheduling::CalendarViewService
       scope = account.scheduling_resources.not_deleted_from_scheduling.includes(:work_rules, :break_rules).ordered
       scope = scope.where(id: @requested_resource_ids) if @requested_resource_ids.present?
       resolved = scope.to_a
-      missing_ids = @requested_resource_ids.map(&:to_i) - resolved.map(&:id)
+      missing_ids = @requested_resource_ids - resolved.map(&:id)
       raise ActiveRecord::RecordNotFound, "Resources not found: #{missing_ids.join(', ')}" if missing_ids.present?
 
       resolved

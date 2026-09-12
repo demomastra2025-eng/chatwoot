@@ -50,7 +50,14 @@ Repo paths below are relative to the One Link application repository root unless
 
 ## Git And Repo Boundaries
 
-- Primary branch: `onelink-main`
+- Integration and deployment branch: `onelink-dev`.
+- `onelink-main` is the upstream-sync baseline; do not deploy it directly.
+- Normal product work happens directly in `onelink-dev`: verify, commit, and push. A green
+  push deploys automatically to DEV; a failed gate leaves the previous DEV release running.
+- Use a temporary `feature/*` or `fix/*` branch and pull request only for large, risky, or
+  parallel work. Delete it after merge.
+- Only a SHA that ran successfully in DEV is eligible for manual production promotion.
+- The delivery pipeline and operator setup are documented in `script/onelink/README.md`.
 - Do not use this fork's `develop` as the main base branch.
 - Remote layout:
   - `origin` = `git@github.com:demomastra2025-eng/chatwoot.git`
@@ -69,8 +76,9 @@ Repo paths below are relative to the One Link application repository root unless
   - external API-consumer skill: `onelink-integrator`; the Claude Code bundle remains in `.claude/skills/onelink-integrator`
 - Upstream sync:
   - fetch tags with `git fetch upstream --tags`
-  - branch from `onelink-main`
+  - branch upstream synchronization work from `onelink-main`
   - use `sync/...` branches for upstream merges
+  - merge the reviewed synchronization result into `onelink-dev`
   - never push product changes to `upstream`
 
 ## Architecture Read Order

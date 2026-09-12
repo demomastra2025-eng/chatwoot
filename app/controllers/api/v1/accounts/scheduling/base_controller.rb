@@ -51,18 +51,7 @@ class Api::V1::Accounts::Scheduling::BaseController < Api::V1::Accounts::BaseCon
   end
 
   def parse_id_list_param!(value, field_name:)
-    values = value.is_a?(Array) ? value : value.to_s.split(',')
-    values.filter_map do |item|
-      text = item.to_s.strip
-      next if text.blank?
-
-      id = Integer(text, 10)
-      raise ArgumentError, "#{field_name} must contain positive integer IDs" unless id.positive?
-
-      id
-    end.uniq
-  rescue ArgumentError, TypeError
-    raise ArgumentError, "#{field_name} must contain positive integer IDs"
+    Scheduling::IdListParamParser.parse(value, field_name: field_name)
   end
 
   def parse_datetime_param!(value, field_name:, required: true)

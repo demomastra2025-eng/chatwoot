@@ -2,8 +2,11 @@ require 'rails_helper'
 require 'timeout'
 
 RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
+  include ActiveJob::TestHelper
+
   self.use_transactional_tests = false
 
+  # rubocop:disable RSpec/ExampleLength
   it 'returns one durable command when two database connections create the same intent', :aggregate_failures do
     schedule_service = instance_double(Integrations::Medelement::CronScheduleService, sync!: true, destroy!: true)
     allow(Integrations::Medelement::CronScheduleService).to receive(:new).and_return(schedule_service)
@@ -12,6 +15,9 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     release = Queue.new
     results = Queue.new
     errors = Queue.new
+    backend_pids = Queue.new
+    transaction_probes = Queue.new
+    unique_conflicts = Queue.new
     services = Array.new(2) { build_service(records) }
 
     services.each do |service|
@@ -20,12 +26,22 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
         release.pop
         method.call(*args)
       end
+      allow(service).to receive(:idempotency_unique_violation?).and_wrap_original do |method, error|
+        result = method.call(error)
+        unique_conflicts << result
+        result
+      end
     end
 
     threads = services.map do |service|
       Thread.new do
         ActiveRecord::Base.connection_pool.with_connection do
-          command_id = ApplicationRecord.transaction { service.perform.id }
+          command_id = ApplicationRecord.transaction(requires_new: true) do
+            backend_pids << ApplicationRecord.connection.select_value('SELECT pg_backend_pid()').to_i
+            id = service.perform.id
+            transaction_probes << ApplicationRecord.connection.select_value('SELECT 1').to_i
+            id
+          end
           results << command_id
         rescue StandardError => e
           errors << e
@@ -37,8 +53,14 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     2.times { release << true }
     threads.each { |thread| Timeout.timeout(10) { thread.join } }
 
+    thread_errors = Array.new(errors.size) { errors.pop }
+    expect(thread_errors).to be_empty, -> { thread_errors.map(&:full_message).join("\n") }
     command_ids = Array.new(2) { Timeout.timeout(2) { results.pop } }
-    expect(errors).to be_empty
+    pids = Array.new(2) { Timeout.timeout(2) { backend_pids.pop } }
+    probes = Array.new(2) { Timeout.timeout(2) { transaction_probes.pop } }
+    expect(pids.uniq.size).to eq(2)
+    expect(probes).to contain_exactly(1, 1)
+    expect(unique_conflicts).to be_empty
     expect(command_ids.uniq.one?).to be(true)
     expect(
       Integrations::Medelement::ProviderCommand.where(
@@ -51,6 +73,14 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
                          .where("metadata ->> 'medelement_provider_command_id' = ?", command_ids.first.to_s)
                          .count
     ).to eq(1)
+
+    clear_enqueued_jobs
+    command_ids.each do |command_id|
+      Integrations::Medelement::ProviderCommands::AutoConfirmationService.new(
+        command: Integrations::Medelement::ProviderCommand.find(command_id)
+      ).perform
+    end
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.exactly(:once)
   ensure
     2.times { release&.push(true) }
     threads&.each do |thread|
@@ -59,6 +89,7 @@ RSpec.describe Integrations::Medelement::ProviderCommands::CreateService do
     end
     cleanup_records(records) if defined?(records) && records
   end
+  # rubocop:enable RSpec/ExampleLength
 
   def create_records
     account = create(:account).tap { |record| record.enable_features!('scheduling') }

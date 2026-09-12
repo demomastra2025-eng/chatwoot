@@ -1,0 +1,163 @@
+name: OneLink Nightly Full Verification
+
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: onelink-nightly
+  cancel-in-progress: true
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.target.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: onelink-dev
+          persist-credentials: false
+      - name: Freeze the current onelink-dev revision
+        id: target
+        run: |
+          sha="$(git rev-parse HEAD)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  backend:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    env:
+      RAILS_ENV: test
+      POSTGRES_HOST: localhost
+      DISABLE_BOOTSNAP: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ''
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['5432:5432']
+        options: >-
+          --mount type=tmpfs,destination=/var/lib/postgresql/data
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          bundler-cache: true
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare database
+        run: bundle exec rake db:create db:schema:load
+      - name: Run full Ruby suite shard
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: 8
+          NODE_OPTIONS: --openssl-legacy-provider
+        run: |
+          mapfile -t all_specs < <(find spec -name '*_spec.rb' -type f | sort)
+          specs=()
+          for index in "${!all_specs[@]}"; do
+            if ((index % SHARDS == SHARD)); then specs+=("${all_specs[$index]}"); fi
+          done
+          bundle exec rspec --profile=10 "${specs[@]}"
+
+  frontend:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run eslint
+      - run: pnpm run test
+      - run: pnpm run build:app
+
+  security:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          bundler-cache: true
+      - name: Scan Ruby dependencies and application code
+        run: |
+          bundle exec bundler-audit check --update
+          bundle exec brakeman --no-pager
+
+  gate:
+    name: OneLink Nightly Gate
+    if: always()
+    needs: [resolve, backend, frontend, security]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - env:
+          BACKEND: ${{ needs.backend.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          SECURITY: ${{ needs.security.result }}
+        run: |
+          [[ "$BACKEND" == success ]]
+          [[ "$FRONTEND" == success ]]
+          [[ "$SECURITY" == success ]]
+      - name: Publish immutable nightly proof
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          TESTED_SHA: ${{ needs.resolve.outputs.sha }}
+        with:
+          script: |
+            const deployment = await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: process.env.TESTED_SHA,
+              environment: 'nightly',
+              auto_merge: false,
+              required_contexts: [],
+              payload: { workflow_run_id: context.runId }
+            });
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.data.id,
+              state: 'success',
+              environment: 'nightly',
+              log_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });

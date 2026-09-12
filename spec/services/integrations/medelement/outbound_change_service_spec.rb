@@ -401,6 +401,92 @@ RSpec.describe Integrations::Medelement::OutboundChangeService do
     expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
   end
 
+  {
+    'metadata-only' => { 'custom_attributes' => [{ 'internal' => 'before' }, { 'internal' => 'after' }] },
+    'service-only' => { 'service_id' => [1, 2] },
+    'cabinet-only' => { 'custom_attributes' => [{ 'medelement_cabinet_code' => 'cabinet-1' }, { 'medelement_cabinet_code' => 'cabinet-2' }] },
+    'comment-only' => { 'client_comment' => %w[before after] }
+  }.each do |name, changed_attributes|
+    it "does not create a provider move for a #{name} update" do
+      appointment.update!(
+        external_ref: 'medelement:reception:reception-1',
+        custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1')
+      )
+
+      result = described_class.new(
+        entity_type: 'appointment',
+        entity_id: appointment.id,
+        event_name: 'appointment.updated',
+        actor_id: actor.id,
+        change: {
+          changed_attributes: changed_attributes,
+          desired_attributes: described_class.appointment_event_snapshot(appointment)
+        }
+      ).perform
+
+      expect(result).to be_nil
+      expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+      expect(Integrations::Medelement::ProviderCommandConfirmationJob).not_to have_been_enqueued
+    end
+  end
+
+  it 'does not create a provider move when time and resource values are unchanged' do
+    appointment.update!(
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1')
+    )
+
+    result = described_class.new(
+      entity_type: 'appointment',
+      entity_id: appointment.id,
+      event_name: 'appointment.updated',
+      actor_id: actor.id,
+      change: {
+        changed_attributes: {
+          'starts_at' => [appointment.starts_at, appointment.starts_at.iso8601],
+          'ends_at' => [appointment.ends_at, appointment.ends_at.iso8601],
+          'resource_id' => [appointment.resource_id, appointment.resource_id.to_s]
+        },
+        desired_attributes: described_class.appointment_event_snapshot(appointment)
+      }
+    ).perform
+
+    expect(result).to be_nil
+    expect(Integrations::Medelement::ProviderCommand.where(appointment: appointment)).to be_empty
+  end
+
+  it 'creates exactly one provider move for a real resource change' do
+    previous_resource_id = appointment.resource_id
+    new_resource = create(
+      :scheduling_resource,
+      account: account,
+      custom_attributes: {
+        'medelement_specialist_code' => 'specialist-2',
+        'medelement_cabinets' => [{ 'companyCabinetCode' => 'cabinet-1' }]
+      }
+    )
+    appointment.update!(
+      resource: new_resource,
+      external_ref: 'medelement:reception:reception-1',
+      custom_attributes: appointment.custom_attributes.merge('medelement_reception_code' => 'reception-1')
+    )
+
+    expect do
+      command = described_class.new(
+        entity_type: 'appointment',
+        entity_id: appointment.id,
+        event_name: 'appointment.updated',
+        actor_id: actor.id,
+        change: {
+          changed_attributes: { 'resource_id' => [previous_resource_id, new_resource.id] },
+          desired_attributes: described_class.appointment_event_snapshot(appointment)
+        }
+      ).perform
+      expect(command).to have_attributes(operation: 'move_reception', appointment_id: appointment.id)
+    end.to change(Integrations::Medelement::ProviderCommand, :count).by(1)
+    expect(Integrations::Medelement::ProviderCommandConfirmationJob).to have_been_enqueued.exactly(:once)
+  end
+
   it 'creates an immediate removal command for a locally cancelled provider reception' do
     appointment.update!(
       source: 'medelement',
