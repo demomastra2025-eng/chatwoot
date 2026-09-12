@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  deployments: read
 
 env:
   IMAGE_NAME: ghcr.io/demomastra2025-eng/chatwoot
@@ -45,10 +46,30 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Resolve the last successfully deployed DEV revision
+        id: deployed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          while IFS=$'\t' read -r deployment_id deployed_sha; do
+            state="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/deployments/${deployment_id}/statuses" \
+              --jq '.[0].state // ""')"
+            if [[ "$state" == success && "$deployed_sha" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "sha=$deployed_sha" >> "$GITHUB_OUTPUT"
+              echo 'found=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done < <(gh api \
+            "repos/${GITHUB_REPOSITORY}/deployments?environment=development&per_page=100" \
+            --jq '.[] | [.id, .sha] | @tsv')
+          echo 'found=false' >> "$GITHUB_OUTPUT"
       - name: Classify and validate the pushed diff
         id: plan
         env:
-          BASE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ steps.deployed.outputs.sha }}
+          FALLBACK_SHA: ${{ github.event.before }}
+          HAS_DEV_PROOF: ${{ steps.deployed.outputs.found }}
           HEAD_SHA: ${{ github.sha }}
           RELEASE_REF: ${{ github.ref }}
         run: |
@@ -56,6 +77,9 @@ jobs:
             echo "Only refs/heads/onelink-dev can publish a release" >&2
             exit 1
           }
+          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}"; then
+            BASE_SHA="$FALLBACK_SHA"
+          fi
           if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}"; then
             BASE_SHA="${HEAD_SHA}^"
           fi
@@ -65,6 +89,11 @@ jobs:
             --base "$BASE_SHA" --head "$HEAD_SHA" \
             --github-output "$GITHUB_OUTPUT" \
             --validate-migrations --validate-release-surface
+          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+          if [[ "$HAS_DEV_PROOF" != true ]]; then
+            echo 'runtime=true' >> "$GITHUB_OUTPUT"
+            echo '::notice::No successful DEV deployment proof exists; forcing bootstrap deployment.'
+          fi
       - if: steps.plan.outputs.backend == 'true' || steps.plan.outputs.migrations == 'true'
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
         with:
@@ -81,13 +110,10 @@ jobs:
       - name: Run changed Ruby checks
         if: steps.plan.outputs.backend == 'true' || steps.plan.outputs.migrations == 'true'
         env:
-          BASE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ steps.plan.outputs.base_sha }}
           HEAD_SHA: ${{ github.sha }}
           NODE_OPTIONS: --openssl-legacy-provider
         run: |
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}"; then
-            BASE_SHA="${HEAD_SHA}^"
-          fi
           mapfile -t ruby_files < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list ruby)
           mapfile -t specs < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list specs)
           if ((${#ruby_files[@]})); then bundle exec rubocop --force-exclusion "${ruby_files[@]}"; fi
@@ -99,12 +125,9 @@ jobs:
       - name: Run changed frontend checks
         if: steps.plan.outputs.frontend == 'true'
         env:
-          BASE_SHA: ${{ github.event.before }}
+          BASE_SHA: ${{ steps.plan.outputs.base_sha }}
           HEAD_SHA: ${{ github.sha }}
         run: |
-          if [[ -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]] || ! git cat-file -e "${BASE_SHA}^{commit}"; then
-            BASE_SHA="${HEAD_SHA}^"
-          fi
           mapfile -t files < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list frontend)
           if ((${#files[@]})); then
             pnpm exec eslint "${files[@]}"
