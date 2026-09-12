@@ -38,6 +38,12 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
     return result if conversations.blank?
 
     result[:conversations] = conversations
+    if compact_conversation_results?
+      @compact_conversation_results = true
+      preload(conversations, [:contact, :inbox])
+      return result
+    end
+
     preload(conversations, [:contact, :inbox, :assignee])
     @conversation_first_messages = first_messages_by_conversation(conversations)
     attach_conversations_to_messages(@conversation_first_messages, conversations)
@@ -70,5 +76,9 @@ class Api::V1::Accounts::SearchController < Api::V1::Accounts::BaseController
 
   def preload(records, associations)
     ActiveRecord::Associations::Preloader.new(records: records, associations: associations).call
+  end
+
+  def compact_conversation_results?
+    params[:compact].to_s == 'true'
   end
 end

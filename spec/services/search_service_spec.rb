@@ -129,6 +129,39 @@ describe SearchService do
           search_service.perform
         end
 
+        it 'uses the indexed English search-vector expression without changing phrase search' do
+          allow(account).to receive(:feature_enabled?).and_call_original
+          allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
+          search_service = described_class.new(current_user: user, current_account: account, params: params, search_type: search_type)
+
+          sql = search_service.perform[:messages].to_sql
+
+          expect(sql).to include("to_tsvector('english'::regconfig, COALESCE(messages.content, ''))")
+          expect(sql).to include("to_tsquery('english'::regconfig, 'Harry')")
+        end
+
+        it 'returns the same ordered ids as the legacy implicit English vector expression' do
+          allow(account).to receive(:feature_enabled?).and_call_original
+          allow(account).to receive(:feature_enabled?).with('search_with_gin').and_return(true)
+          create(:message, account: account, inbox: inbox, content: 'wizards study together')
+
+          ['Harry', 'wizard', 'the', 'Harry Potter'].each do |query|
+            tsquery = query.split.join(' <-> ')
+            search_params = params.merge(q: query)
+            search_service = described_class.new(
+              current_user: user,
+              current_account: account,
+              params: search_params,
+              search_type: search_type
+            )
+            legacy_ids = account.messages.where(inbox_id: inbox.id)
+                                .where('content @@ to_tsquery(?)', tsquery)
+                                .reorder(created_at: :desc).limit(15).pluck(:id)
+
+            expect(search_service.perform[:messages].pluck(:id)).to eq(legacy_ids)
+          end
+        end
+
         it 'returns same results regardless of search type' do
           # Create test messages
           message3 = create(:message, account: account, inbox: inbox, content: 'Harry is a wizard apprentice')

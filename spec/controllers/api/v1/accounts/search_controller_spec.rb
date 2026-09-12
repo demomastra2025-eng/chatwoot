@@ -186,6 +186,18 @@ RSpec.describe 'Search', type: :request do
         expect(response_data[:payload][:conversations].length).to eq 1
       end
 
+      it 'returns only dashboard fields when compact conversation search is requested' do
+        get "/api/v1/accounts/#{account.id}/search/conversations",
+            headers: agent.create_new_auth_token,
+            params: { q: 'test', compact: true },
+            as: :json
+
+        expect(response).to have_http_status(:success)
+        result = JSON.parse(response.body, symbolize_names: true).dig(:payload, :conversations).first
+        expect(result).to include(:id, :account_id, :created_at, :contact, :inbox, :additional_attributes)
+        expect(result).not_to include(:message, :agent)
+      end
+
       it 'returns conversations matching message content' do
         matching_contact = create(:contact, email: 'message-match@example.com', account: account)
         matching_conversation = create(:conversation, account: account, contact: matching_contact)

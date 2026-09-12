@@ -1615,6 +1615,32 @@ RSpec.describe 'Scheduling Appointments API', type: :request do
     expect(response_body.dig('payload', 0, 'conversation_display_id')).to eq(conversation.display_id)
   end
 
+  it 'bulk resolves the specific chat for appointments listed in a dialog panel' do
+    chat_conversation = create(:conversation, account: account, contact: contact)
+    appointments = Array.new(2) do |index|
+      create(
+        :scheduling_appointment,
+        resource: resource,
+        account: account,
+        contact: contact,
+        service: service,
+        starts_at: booking_day + index.hours,
+        ends_at: booking_day + index.hours + 30.minutes
+      )
+    end
+
+    get path,
+        params: { contact_ids: contact.id },
+        headers: headers,
+        as: :json
+
+    expect(response).to have_http_status(:ok)
+    payload = response_body['payload'].index_by { |item| item['id'] }
+    expect(payload.keys).to match_array(appointments.map(&:id))
+    expect(payload.values.pluck('chat_conversation_id')).to all(eq(chat_conversation.id))
+    expect(payload.values.pluck('chat_conversation_display_id')).to all(eq(chat_conversation.display_id))
+  end
+
   it 'filters appointments index by managed appointment custom fields' do
     create(
       :crm_field_definition,

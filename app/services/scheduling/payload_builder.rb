@@ -77,6 +77,11 @@ module Scheduling::PayloadBuilder
     end
   end
 
+  def appointments(records)
+    dialog_context = Scheduling::AppointmentDialogContextLoader.new(records).perform
+    records.map { |record| appointment(record, dialog_context: dialog_context) }
+  end
+
   def available_conversation(conversation)
     conversation if conversation&.inbox.present?
   end
@@ -135,8 +140,6 @@ module Scheduling::PayloadBuilder
   end
 
   def calendar(payload)
-    dialog_context = Scheduling::AppointmentDialogContextLoader.new(payload[:appointments]).perform
-
     {
       view: payload[:view],
       range: payload[:range],
@@ -146,7 +149,7 @@ module Scheduling::PayloadBuilder
       holidays: payload[:holidays].map { |item| holiday(item) },
       workday_overrides: payload[:workday_overrides].map { |item| workday_override(item) },
       time_offs: payload[:time_offs].map { |item| time_off(item) },
-      appointments: payload[:appointments].map { |item| appointment(item, dialog_context: dialog_context) },
+      appointments: appointments(payload[:appointments]),
       payments: payload[:payments].map { |item| payment(item) },
       expenses: payload[:expenses].map { |item| expense(item) },
       slots: payload[:slots]

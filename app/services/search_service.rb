@@ -104,8 +104,12 @@ class SearchService
       # This will do entire sentence matching using phrase distance operator
       tsquery = search_query.split.join(' <-> ')
 
-      # Apply the text search using the GIN index
-      base_query.where('content @@ to_tsquery(?)', tsquery)
+      # Keep the existing English phrase-search semantics while matching the
+      # expression used by the dedicated search-vector GIN index.
+      base_query.where(
+        "to_tsvector('english'::regconfig, COALESCE(messages.content, '')) @@ to_tsquery('english'::regconfig, ?)",
+        tsquery
+      )
                 .reorder('created_at DESC')
                 .page(params[:page])
                 .per(15)

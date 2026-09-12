@@ -40,7 +40,7 @@ class Api::V1::Accounts::Scheduling::AppointmentsController < Api::V1::Accounts:
   def index
     appointments = filtered_appointments
     render_payload(
-      appointments.map { |appointment| Scheduling::PayloadBuilder.appointment(appointment) },
+      Scheduling::PayloadBuilder.appointments(appointments),
       meta: { count: appointments.size }
     )
   end

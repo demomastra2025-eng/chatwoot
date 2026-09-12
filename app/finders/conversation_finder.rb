@@ -153,8 +153,6 @@ class ConversationFinder # rubocop:disable Metrics/ClassLength
     allowed_message_types = [Message.message_types[:incoming], Message.message_types[:outgoing]]
     @conversations = conversations.joins(:messages).where('messages.content ILIKE :search', search: "%#{params[:q]}%")
                                   .where(messages: { message_type: allowed_message_types }).includes(:messages)
-                                  .where('messages.content ILIKE :search', search: "%#{params[:q]}%")
-                                  .where(messages: { message_type: allowed_message_types })
   end
 
   def filter_by_status

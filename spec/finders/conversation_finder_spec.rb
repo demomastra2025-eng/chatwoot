@@ -24,6 +24,21 @@ describe ConversationFinder do
   end
 
   describe '#perform' do
+    context 'with a message-content query' do
+      let(:params) { { q: 'exact duplicate predicate' } }
+
+      it 'keeps message matching and the serializer preload with one predicate' do
+        matching_conversation = create(:conversation, account: account, inbox: inbox)
+        create(:message, conversation: matching_conversation, content: 'exact duplicate predicate', message_type: :incoming)
+        create(:message, conversation: matching_conversation, content: 'exact duplicate predicate', message_type: :activity)
+
+        records = conversation_finder.perform[:conversations].to_a
+
+        expect(records.map(&:id)).to eq([matching_conversation.id])
+        expect(records.first.association(:messages)).to be_loaded
+      end
+    end
+
     context 'with status' do
       let(:params) { { status: 'open', assignee_type: 'me' } }
 
