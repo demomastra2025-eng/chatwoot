@@ -109,6 +109,12 @@ log "running idempotent DEV database preparation"
   bundle exec rails db:chatwoot_prepare
 )
 
+CURRENT_BEFORE_CUTOVER="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
+[[ "${CURRENT_BEFORE_CUTOVER}" == "${PREVIOUS}" ]] || {
+  echo "refusing concurrent DEV cutover: expected=${PREVIOUS:-missing} current=${CURRENT_BEFORE_CUTOVER:-missing}" >&2
+  exit 75
+}
+
 log "switching current symlink and restarting the DEV application group"
 rm -f "${CURRENT}.next"
 ln -s "${RELEASE}" "${CURRENT}.next"
@@ -116,12 +122,16 @@ mv -Tf "${CURRENT}.next" "${CURRENT}"
 
 rollback() {
   local reason="$1"
+  local current_target
   echo "DEV verification failed: ${reason}" >&2
-  if [[ -n "${PREVIOUS}" && -d "${PREVIOUS}" ]]; then
+  current_target="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
+  if [[ "${current_target}" == "${RELEASE}" && -n "${PREVIOUS}" && -d "${PREVIOUS}" ]]; then
     ln -s "${PREVIOUS}" "${CURRENT}.rollback"
     mv -Tf "${CURRENT}.rollback" "${CURRENT}"
     systemctl restart "${SERVICE}"
     echo "rolled back DEV to ${PREVIOUS}" >&2
+  elif [[ "${current_target}" != "${RELEASE}" ]]; then
+    echo "skipped rollback because current changed concurrently to ${current_target:-missing}" >&2
   fi
   exit 1
 }

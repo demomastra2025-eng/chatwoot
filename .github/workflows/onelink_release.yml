@@ -236,7 +236,9 @@ jobs:
           DEPLOY_HOST: ${{ secrets.ONELINK_DEV_DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.ONELINK_DEV_DEPLOY_USER }}
         run: |
-          ssh -i ~/.ssh/onelink-dev -o BatchMode=yes -o IdentitiesOnly=yes \
+          ssh -i ~/.ssh/onelink-dev \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$DEPLOY_USER@$DEPLOY_HOST" "deploy $GITHUB_SHA"
       - name: Publish deployment result
         if: always() && steps.deployment.outputs.id
