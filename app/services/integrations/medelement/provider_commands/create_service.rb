@@ -30,7 +30,10 @@ class Integrations::Medelement::ProviderCommands::CreateService
     return resolve_idempotent_duplicate!(existing, intent_fingerprint) if existing.present?
 
     create_new_command!(intent_fingerprint)
-  rescue ActiveRecord::RecordNotUnique
+  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+    raise if e.is_a?(ActiveRecord::RecordInvalid) &&
+             (!e.record.is_a?(Integrations::Medelement::ProviderCommand) || !e.record.errors.of_kind?(:idempotency_key, :taken))
+
     resolve_record_not_unique!(intent_fingerprint)
   end
 
