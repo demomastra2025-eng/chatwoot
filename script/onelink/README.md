@@ -54,7 +54,8 @@ git switch -c feature/<короткое-название>
 - `.github/workflows/onelink_pr_gate.yml` — проверки необязательной feature-ветки/PR.
 - `.github/workflows/onelink_release.yml` — проверки каждого push в `onelink-dev`,
   быстрый DEV deploy и сборка подписанного production image.
-- `.github/workflows/onelink_nightly.yml` — полный ночной Ruby/Vue/security suite.
+- `.github/workflows/onelink_nightly.yml` — полный Ruby/Vue/security suite: по расписанию,
+  вручную или для точного SHA по запросу production promotion.
 - `.github/workflows/onelink_promote_production.yml` — ручное продвижение проверенного
   DEV SHA в PROD.
 
@@ -95,13 +96,25 @@ promote <40-character-sha> ghcr.io/demomastra2025-eng/chatwoot@sha256:<digest>
 Workflow допускает promotion только если:
 
 - этот SHA успешно работал в DEV;
+- authoritative digest получен напрямую из успешного `docker/build-push-action` и
+  сохранён в DEV deployment proof без повторного хеширования manifest;
 - image содержит тот же SHA;
 - signature, provenance и SBOM валидны;
-- последний nightly, содержащий SHA, зелёный;
+- full verification точного SHA зелёный: готовый nightly proof переиспользуется, а при
+  его отсутствии promotion автоматически запускает тот же полный suite;
 - человек подтвердил GitHub Environment `production`.
 
 Rollout идёт workers → второй web → первый web. При ошибке сервисы возвращаются на
 предыдущий image, а `.env.production` обновляется только после полной проверки.
+Promotion script намеренно использует orchestration boundary `/root/crafty`:
+`.env.production` и `docker-compose.production.yml`, а не repo-local
+`docker-compose.production.yaml`.
+
+PROD endpoint доступен GitHub-hosted runner через отдельный SSH listener, который
+допускает только пользователя `onelink-prod-deploy`. Environment `production` хранит
+`ONELINK_PROD_DEPLOY_HOST`, `ONELINK_PROD_DEPLOY_PORT`,
+`ONELINK_PROD_DEPLOY_USER`, `ONELINK_PROD_DEPLOY_SSH_KEY` и
+`ONELINK_PROD_KNOWN_HOSTS`; основной административный SSH открывать не требуется.
 
 ## Одноразовая настройка оператора
 
@@ -112,8 +125,9 @@ Rollout идёт workers → второй web → первый web. При ош�
 
 - DEV: `ONELINK_DEV_DEPLOY_HOST`, `ONELINK_DEV_DEPLOY_USER`,
   `ONELINK_DEV_DEPLOY_SSH_KEY`, `ONELINK_DEV_KNOWN_HOSTS`;
-- PROD: `ONELINK_PROD_DEPLOY_HOST`, `ONELINK_PROD_DEPLOY_USER`,
-  `ONELINK_PROD_DEPLOY_SSH_KEY`, `ONELINK_PROD_KNOWN_HOSTS`.
+- PROD: `ONELINK_PROD_DEPLOY_HOST`, `ONELINK_PROD_DEPLOY_PORT`,
+  `ONELINK_PROD_DEPLOY_USER`, `ONELINK_PROD_DEPLOY_SSH_KEY`,
+  `ONELINK_PROD_KNOWN_HOSTS`.
 
 На каждом сервере используется отдельный непривилегированный deploy user и отдельный
 Ed25519 key с forced command. Root SSH key в GitHub не хранится. Установка endpoint:

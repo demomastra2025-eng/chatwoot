@@ -4,13 +4,19 @@ on:
   schedule:
     - cron: '0 20 * * *'
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      sha:
+        description: Full onelink-dev SHA to verify
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: onelink-nightly
-  cancel-in-progress: true
+  group: onelink-nightly-${{ inputs.sha || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   resolve:
@@ -21,12 +27,29 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: onelink-dev
+          fetch-depth: 0
           persist-credentials: false
-      - name: Freeze the current onelink-dev revision
+      - name: Freeze an exact onelink-dev revision
         id: target
+        env:
+          WORKFLOW_REF: ${{ github.ref }}
+          REQUESTED_SHA: ${{ inputs.sha }}
         run: |
-          sha="$(git rev-parse HEAD)"
+          [[ "$WORKFLOW_REF" == refs/heads/onelink-dev ]] || {
+            echo "full verification must run from refs/heads/onelink-dev" >&2
+            exit 65
+          }
+          if [[ -n "$REQUESTED_SHA" ]]; then
+            sha="$REQUESTED_SHA"
+          else
+            sha="$(git rev-parse HEAD)"
+          fi
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "$sha^{commit}"
+          git merge-base --is-ancestor "$sha" HEAD || {
+            echo "$sha is not contained in onelink-dev" >&2
+            exit 65
+          }
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
   backend:
@@ -42,7 +65,7 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: pgvector/pgvector@sha256:7d400e340efb42f4d8c9c12c6427adb253f726881a9985d2a471bf0eed824dff
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: ''
@@ -56,7 +79,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        image: redis@sha256:8b81dd37ff027bec4e516d41acfbe9fe2460070dc6d4a4570a2ac5b9d59df065
         ports: ['6379:6379']
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -128,6 +151,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      # Publish the immutable proof consumed by production promotion.
       deployments: write
     steps:
       - env:
@@ -139,6 +163,7 @@ jobs:
           [[ "$FRONTEND" == success ]]
           [[ "$SECURITY" == success ]]
       - name: Publish immutable nightly proof
+        if: github.event_name != 'workflow_call'
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           TESTED_SHA: ${{ needs.resolve.outputs.sha }}

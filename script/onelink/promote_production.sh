@@ -104,14 +104,17 @@ wait_service() {
 }
 
 recreate() {
-  local image="$1" service="$2" source_sha="${3:-${SHA}}"
+  local image="$1" service="$2" source_sha="${3:-${SHA}}" timeout=240
+  case "${service}" in
+    chatwoot_rails|chatwoot_rails_2) timeout=600 ;;
+  esac
   CHATWOOT_IMAGE="${image}" SOURCE_SHA="${source_sha}" "${COMPOSE[@]}" \
     up -d --no-deps --no-build --force-recreate "${service}"
-  wait_service "${service}" 240
+  wait_service "${service}" "${timeout}"
 }
 
 rollback() {
-  local reason="$1" service rollback_failed=false
+  local reason="$1" service cid running_sha rollback_failed=false
   echo "production verification failed: ${reason}; rolling back" >&2
   for service in "${APP_SERVICES[@]}"; do
     case "${service}" in chatwoot_rails|chatwoot_rails_2) continue ;; esac
@@ -119,6 +122,17 @@ rollback() {
   done
   recreate "${ROLLBACK_TAG}" chatwoot_rails_2 "${OLD_SHA}" || rollback_failed=true
   recreate "${ROLLBACK_TAG}" chatwoot_rails "${OLD_SHA}" || rollback_failed=true
+  for service in "${APP_SERVICES[@]}"; do
+    cid="$(CHATWOOT_IMAGE="${ROLLBACK_TAG}" SOURCE_SHA="${OLD_SHA}" "${COMPOSE[@]}" ps -q "${service}")"
+    running_sha=""
+    if [[ -n "${cid}" ]]; then
+      running_sha="$(docker exec "${cid}" cat /app/.git_sha 2>/dev/null | tr -d '\r\n' || true)"
+    fi
+    if [[ "${running_sha}" != "${OLD_SHA}" ]]; then
+      echo "rollback mismatch: ${service} runs ${running_sha:-unknown}, expected ${OLD_SHA}" >&2
+      rollback_failed=true
+    fi
+  done
   [[ "${rollback_failed}" == false ]] || echo "rollback verification failed; operator intervention required" >&2
   exit 1
 }

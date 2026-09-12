@@ -14,12 +14,99 @@ permissions:
 env:
   IMAGE_NAME: ghcr.io/demomastra2025-eng/chatwoot
 
+concurrency:
+  group: onelink-production-promotion
+  cancel-in-progress: false
+
 jobs:
-  resolve:
+  nightly-proof:
     runs-on: ubuntu-24.04
     permissions:
+      actions: read
+      contents: read
+      # Read exact-SHA nightly deployment proofs.
+      deployments: read
+    outputs:
+      exists: ${{ steps.proof.outputs.exists }}
+    steps:
+      - name: Validate requested SHA
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'A full lowercase 40-character Git SHA is required.' >&2
+            exit 64
+          }
+      - name: Find an existing exact nightly proof
+        id: proof
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUESTED_SHA: ${{ inputs.sha }}
+        with:
+          script: |
+            const deployments = await github.paginate(github.rest.repos.listDeployments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              environment: 'nightly',
+              ref: process.env.REQUESTED_SHA,
+              per_page: 100
+            });
+            for (const deployment of deployments) {
+              const statuses = await github.rest.repos.listDeploymentStatuses({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                deployment_id: deployment.id,
+                per_page: 1
+              });
+              let payload = deployment.payload;
+              if (typeof payload === 'string') {
+                try { payload = JSON.parse(payload); } catch { payload = {}; }
+              }
+              const runId = Number(payload?.workflow_run_id);
+              if (statuses.data[0]?.state !== 'success' || !Number.isSafeInteger(runId)) {
+                continue;
+              }
+              const run = await github.rest.actions.getWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runId
+              });
+              if (
+                run.data.conclusion === 'success' &&
+                run.data.head_branch === 'onelink-dev' &&
+                run.data.head_sha === process.env.REQUESTED_SHA &&
+                run.data.path === '.github/workflows/onelink_nightly.yml'
+              ) {
+                core.info(`Reusing nightly proof from deployment ${deployment.id}.`);
+                core.setOutput('exists', 'true');
+                return;
+              }
+            }
+            core.setOutput('exists', 'false');
+
+  full-verification:
+    needs: nightly-proof
+    if: needs.nightly-proof.outputs.exists != 'true'
+    permissions:
+      contents: read
+      # The reusable suite publishes a proof after every required shard passes.
+      deployments: write
+    uses: ./.github/workflows/onelink_nightly.yml
+    with:
+      sha: ${{ inputs.sha }}
+
+  resolve:
+    needs: [nightly-proof, full-verification]
+    if: >-
+      always() &&
+      needs.nightly-proof.result == 'success' &&
+      (needs.full-verification.result == 'success' || needs.full-verification.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
       attestations: read
       contents: read
+      # Verify DEV and full-suite deployment proofs for the requested SHA.
       deployments: read
       packages: read
     outputs:
@@ -29,45 +116,20 @@ jobs:
       - name: Validate requested SHA
         id: input
         env:
+          WORKFLOW_REF: ${{ github.ref }}
           REQUESTED_SHA: ${{ inputs.sha }}
         run: |
+          [[ "$WORKFLOW_REF" == refs/heads/onelink-dev ]] || {
+            echo 'Production promotion must run from refs/heads/onelink-dev.' >&2
+            exit 65
+          }
           [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]] || {
             echo 'A full lowercase 40-character Git SHA is required.' >&2
             exit 64
           }
           echo "sha=$REQUESTED_SHA" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Resolve immutable digest and verify embedded revision
-        id: image
-        env:
-          REQUESTED_SHA: ${{ steps.input.outputs.sha }}
-        run: |
-          raw_manifest="$(mktemp)"
-          docker buildx imagetools inspect "$IMAGE_NAME:$REQUESTED_SHA" --raw > "$raw_manifest"
-          digest="sha256:$(sha256sum "$raw_manifest" | cut -d' ' -f1)"
-          image_ref="$IMAGE_NAME@$digest"
-          docker pull "$image_ref"
-          embedded_sha="$(docker run --rm --entrypoint cat "$image_ref" /app/.git_sha | tr -d '\r\n')"
-          [[ "$embedded_sha" == "$REQUESTED_SHA" ]]
-          echo "image_ref=$image_ref" >> "$GITHUB_OUTPUT"
-      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
-      - name: Verify keyless signature and GitHub provenance
-        env:
-          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cosign verify \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity-regexp \
-              '^https://github.com/demomastra2025-eng/chatwoot/.github/workflows/onelink_release.yml@refs/heads/onelink-dev$' \
-            "$IMAGE_REF"
-          gh attestation verify "oci://$IMAGE_REF" --repo "$GITHUB_REPOSITORY"
       - name: Require successful deployment of this SHA in DEV
+        id: dev-proof
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           REQUESTED_SHA: ${{ steps.input.outputs.sha }}
@@ -87,47 +149,70 @@ jobs:
                 deployment_id: deployment.id,
                 per_page: 100
               });
-              if (statuses.data.some(s => s.state === 'success')) {
+              let payload = deployment.payload;
+              if (typeof payload === 'string') {
+                try { payload = JSON.parse(payload); } catch { payload = {}; }
+              }
+              const runId = Number(payload?.workflow_run_id);
+              if (statuses.data[0]?.state !== 'success' || !Number.isSafeInteger(runId)) {
+                continue;
+              }
+              const run = await github.rest.actions.getWorkflowRun({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runId
+              });
+              if (
+                run.data.conclusion === 'success' &&
+                run.data.head_branch === 'onelink-dev' &&
+                run.data.head_sha === process.env.REQUESTED_SHA &&
+                run.data.path === '.github/workflows/onelink_release.yml' &&
+                typeof payload?.image === 'string' &&
+                /^ghcr\.io\/demomastra2025-eng\/chatwoot@sha256:[0-9a-f]{64}$/.test(payload.image)
+              ) {
                 core.info(`DEV proof found in deployment ${deployment.id}`);
+                core.setOutput('image_ref', payload.image);
                 return;
               }
             }
             core.setFailed('No successful DEV deployment exists for this exact SHA.');
-      - name: Require successful nightly proof for this exact SHA
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
-        env:
-          REQUESTED_SHA: ${{ steps.input.outputs.sha }}
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
-          script: |
-            const deployments = await github.paginate(github.rest.repos.listDeployments, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              environment: 'nightly',
-              ref: process.env.REQUESTED_SHA,
-              per_page: 100
-            });
-            for (const deployment of deployments) {
-              const statuses = await github.rest.repos.listDeploymentStatuses({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                deployment_id: deployment.id,
-                per_page: 1
-              });
-              if (statuses.data[0]?.state === 'success') {
-                core.info(`Nightly proof found in deployment ${deployment.id}.`);
-                return;
-              }
-            }
-            core.setFailed('No successful nightly proof exists for this exact SHA.');
-
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify immutable image embeds the requested revision
+        id: image
+        env:
+          IMAGE_REF: ${{ steps.dev-proof.outputs.image_ref }}
+          REQUESTED_SHA: ${{ steps.input.outputs.sha }}
+        run: |
+          docker pull "$IMAGE_REF"
+          embedded_sha="$(docker run --rm --entrypoint cat "$IMAGE_REF" /app/.git_sha | tr -d '\r\n')"
+          [[ "$embedded_sha" == "$REQUESTED_SHA" ]]
+          echo "image_ref=$IMAGE_REF" >> "$GITHUB_OUTPUT"
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Verify keyless signature and GitHub provenance
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.image_ref }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cosign verify \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --certificate-identity-regexp \
+              '^https://github.com/demomastra2025-eng/chatwoot/.github/workflows/onelink_release.yml@refs/heads/onelink-dev$' \
+            "$IMAGE_REF"
+          gh attestation verify "oci://$IMAGE_REF" --repo "$GITHUB_REPOSITORY"
   promote:
     needs: resolve
     runs-on: ubuntu-24.04
+    timeout-minutes: 300
     environment:
       name: production
       url: https://app.one-link.kz
     permissions:
       contents: read
+      # Record the immutable digest and result in the production environment.
       deployments: write
     steps:
       - name: Create production deployment record
@@ -153,6 +238,8 @@ jobs:
           SSH_KEY: ${{ secrets.ONELINK_PROD_DEPLOY_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.ONELINK_PROD_KNOWN_HOSTS }}
         run: |
+          [[ -n "$SSH_KEY" ]] || { echo 'ONELINK_PROD_DEPLOY_SSH_KEY is empty.' >&2; exit 64; }
+          [[ -n "$KNOWN_HOSTS" ]] || { echo 'ONELINK_PROD_KNOWN_HOSTS is empty.' >&2; exit 64; }
           install -d -m 0700 ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/onelink-production
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
@@ -160,11 +247,24 @@ jobs:
       - name: Promote exact digest with rolling verification
         env:
           DEPLOY_HOST: ${{ secrets.ONELINK_PROD_DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.ONELINK_PROD_DEPLOY_PORT }}
           DEPLOY_USER: ${{ secrets.ONELINK_PROD_DEPLOY_USER }}
           RELEASE_SHA: ${{ needs.resolve.outputs.sha }}
           IMAGE_REF: ${{ needs.resolve.outputs.image_ref }}
         run: |
-          ssh -i ~/.ssh/onelink-production -o BatchMode=yes -o IdentitiesOnly=yes \
+          [[ -n "$DEPLOY_HOST" ]] || { echo 'ONELINK_PROD_DEPLOY_HOST is empty.' >&2; exit 64; }
+          [[ -n "$DEPLOY_USER" ]] || { echo 'ONELINK_PROD_DEPLOY_USER is empty.' >&2; exit 64; }
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || {
+            echo 'ONELINK_PROD_DEPLOY_PORT must be a TCP port.' >&2
+            exit 64
+          }
+          ((10#$DEPLOY_PORT >= 1 && 10#$DEPLOY_PORT <= 65535)) || {
+            echo 'ONELINK_PROD_DEPLOY_PORT is outside the TCP port range.' >&2
+            exit 64
+          }
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/onelink-production \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o ConnectTimeout=15 \
+            -o ServerAliveInterval=30 -o ServerAliveCountMax=20 \
             "$DEPLOY_USER@$DEPLOY_HOST" "promote $RELEASE_SHA $IMAGE_REF"
       - name: Publish deployment result
         if: always() && steps.deployment.outputs.id
