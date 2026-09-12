@@ -82,6 +82,21 @@ RSpec.describe 'Telephony Readiness API', type: :request do
     expect(inbox.fetch('warnings').map { |warning| warning['code'] }).to include('missing_number_binding')
   end
 
+  it 'rejects a supported number binding from a different SIP provider' do
+    voice_channel.update!(provider: 'wazo')
+    voice_inbox.telephony_number_binding.update!(provider: 'sipuni')
+
+    get path, headers: headers
+
+    payload = response.parsed_body.fetch('payload')
+    inbox = payload.fetch('inboxes').first
+    warning_codes = inbox.fetch('warnings').map { |warning| warning['code'] }
+
+    expect(payload).to include('ready' => false)
+    expect(inbox).to include('provider' => 'wazo', 'ready' => false)
+    expect(warning_codes).to include('binding_provider_mismatch')
+  end
+
   it 'propagates blocking Virtual PBX readiness warnings to the account summary' do
     voice_inbox
     virtual_pbx = Telephony::VirtualPbx::ConfigBuilder.new(account: account).for_inbox(voice_inbox)

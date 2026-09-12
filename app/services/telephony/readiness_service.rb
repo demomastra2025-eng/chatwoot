@@ -127,14 +127,14 @@ class Telephony::ReadinessService
   def binding_warnings(channel, binding, virtual_pbx)
     [
       (warning('missing_number_ref', 'Telephony number ref is missing') if binding.number_ref.blank?),
-      binding_provider_warning(binding),
+      binding_provider_warning(channel, binding),
       (warning('missing_last_synced_at', 'Telephony number binding has never been synced') if binding.last_synced_at.blank?),
       phone_number_mismatch_warning(channel, binding, virtual_pbx)
     ].compact
   end
 
-  def binding_provider_warning(binding)
-    return if binding.provider.in?(JANUS_SIP_PROVIDERS)
+  def binding_provider_warning(channel, binding)
+    return if binding.provider.in?(JANUS_SIP_PROVIDERS) && binding.provider == channel&.provider
 
     warning('binding_provider_mismatch', 'Telephony number binding provider does not match inbox provider')
   end

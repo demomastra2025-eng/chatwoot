@@ -44,6 +44,27 @@ def test_unsupported_provider_is_rejected():
         valid_settings(realtime_provider="pipecat")
 
 
+@pytest.mark.parametrize(
+    ("provider", "missing_credentials"),
+    [
+        ("gemini-live", {"gemini_api_key": ""}),
+        ("openai-live", {"openai_api_key": ""}),
+        ("openai-realtime", {"openai_api_key": ""}),
+        ("elevenlabs", {"elevenlabs_api_key": ""}),
+        ("elevenlabs", {"openrouter_api_key": ""}),
+        ("cartesia", {"cartesia_api_key": ""}),
+        ("cartesia", {"openrouter_api_key": ""}),
+        ("fish", {"fish_api_key": ""}),
+        ("fish", {"openrouter_api_key": ""}),
+    ],
+)
+def test_provider_readiness_reports_missing_credentials(provider, missing_credentials):
+    settings = valid_settings(realtime_provider=provider, **missing_credentials)
+
+    assert settings.ready is True
+    assert settings.provider_readiness[provider] is False
+
+
 def test_openai_live_uses_only_the_openai_credential():
     settings = valid_settings(
         realtime_provider="openai-live",

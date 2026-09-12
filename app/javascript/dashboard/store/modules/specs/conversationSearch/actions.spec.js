@@ -18,7 +18,10 @@ describe('#actions', () => {
   describe('#get', () => {
     it('sends correct actions if no query param is provided', () => {
       actions.get({ commit }, { q: '' });
-      expect(commit.mock.calls).toEqual([[types.SEARCH_CONVERSATIONS_SET, []]]);
+      expect(commit.mock.calls).toEqual([
+        [types.SEARCH_CONVERSATIONS_SET, []],
+        [types.SEARCH_CONVERSATIONS_SET_UI_FLAG, { isFetching: false }],
+      ]);
     });
 
     it('sends correct actions if query param is provided and API call is success', async () => {
@@ -48,6 +51,40 @@ describe('#actions', () => {
         [types.SEARCH_CONVERSATIONS_SET_UI_FLAG, { isFetching: true }],
         [types.SEARCH_CONVERSATIONS_SET_UI_FLAG, { isFetching: false }],
       ]);
+    });
+
+    it('aborts the previous request and ignores its stale response', async () => {
+      const requests = [];
+      axios.get.mockImplementation(
+        (_url, config) =>
+          new Promise(resolve => {
+            requests.push({ resolve, signal: config.signal });
+          })
+      );
+
+      const previousSearch = actions.get({ commit }, { q: 'previous' });
+      const currentSearch = actions.get({ commit }, { q: 'current' });
+
+      expect(requests[0].signal.aborted).toBe(true);
+      requests[1].resolve({ data: { payload: [{ id: 'current' }] } });
+      await currentSearch;
+      requests[0].resolve({ data: { payload: [{ id: 'previous' }] } });
+      await previousSearch;
+
+      const resultCommits = commit.mock.calls.filter(
+        ([type, records]) =>
+          type === types.SEARCH_CONVERSATIONS_SET && records.length
+      );
+      expect(resultCommits).toEqual([
+        [types.SEARCH_CONVERSATIONS_SET, [{ id: 'current' }]],
+      ]);
+      expect(
+        commit.mock.calls.filter(
+          ([type, flags]) =>
+            type === types.SEARCH_CONVERSATIONS_SET_UI_FLAG &&
+            flags.isFetching === false
+        )
+      ).toHaveLength(1);
     });
   });
 

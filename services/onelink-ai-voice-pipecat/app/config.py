@@ -203,6 +203,22 @@ class Settings(BaseModel):
         return tuple(errors)
 
     @property
+    def provider_readiness(self) -> dict[str, bool]:
+        """Expose credential availability per provider without leaking values."""
+
+        def configured(*credentials: SecretStr) -> bool:
+            return all(credential.get_secret_value().strip() for credential in credentials)
+
+        return {
+            "gemini-live": configured(self.gemini_api_key),
+            "openai-live": configured(self.openai_api_key),
+            "openai-realtime": configured(self.openai_api_key),
+            "elevenlabs": configured(self.elevenlabs_api_key, self.openrouter_api_key),
+            "cartesia": configured(self.cartesia_api_key, self.openrouter_api_key),
+            "fish": configured(self.fish_api_key, self.openrouter_api_key),
+        }
+
+    @property
     def ready(self) -> bool:
         """Return whether local configuration is sufficient to start sessions."""
         return not self.readiness_errors

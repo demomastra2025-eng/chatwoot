@@ -10,7 +10,7 @@ const getSearchRequestScope = commit => {
   return searchRequestScopes.get(commit);
 };
 
-const abortActiveFullSearch = commit => {
+const abortActiveSearch = commit => {
   const scope = getSearchRequestScope(commit);
   scope.controller?.abort();
   scope.controller = undefined;
@@ -68,34 +68,45 @@ export const getters = {
 
 export const actions = {
   async get({ commit }, { q }) {
+    const scope = getSearchRequestScope(commit);
+    abortActiveSearch(commit);
+    scope.generation += 1;
     commit(types.SEARCH_CONVERSATIONS_SET, []);
     if (!q) {
+      commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, { isFetching: false });
       return;
     }
+    scope.controller = new AbortController();
+    const request = currentSearchRequest(commit);
     commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, { isFetching: true });
     try {
       const {
         data: { payload },
-      } = await SearchAPI.get({ q });
+      } = await SearchAPI.get({ q, signal: request.signal });
+      if (!isCurrentSearchRequest(commit, request)) return;
+
       commit(types.SEARCH_CONVERSATIONS_SET, payload);
     } catch (error) {
       // Ignore error
     } finally {
-      commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, {
-        isFetching: false,
-      });
+      if (isCurrentSearchRequest(commit, request)) {
+        commit(types.SEARCH_CONVERSATIONS_SET_UI_FLAG, {
+          isFetching: false,
+        });
+        scope.controller = undefined;
+      }
     }
   },
   async fullSearch({ commit, dispatch }, payload) {
     const { q, ...filters } = payload;
     const scope = getSearchRequestScope(commit);
     if (!q && !Object.keys(filters).length) {
-      abortActiveFullSearch(commit);
+      abortActiveSearch(commit);
       scope.generation += 1;
       return;
     }
 
-    abortActiveFullSearch(commit);
+    abortActiveSearch(commit);
     scope.generation += 1;
     scope.controller = new AbortController();
     const request = currentSearchRequest(commit);
@@ -208,7 +219,7 @@ export const actions = {
   },
   clearSearchResults({ commit }) {
     const scope = getSearchRequestScope(commit);
-    abortActiveFullSearch(commit);
+    abortActiveSearch(commit);
     scope.generation += 1;
     commit(types.CLEAR_SEARCH_RESULTS);
   },
