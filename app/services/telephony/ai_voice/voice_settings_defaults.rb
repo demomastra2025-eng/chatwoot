@@ -17,6 +17,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'provider' => 'gemini-live',
     'stt_provider' => 'elevenlabs',
     'model' => 'gemini-3.1-flash-live-preview',
+    'delegation_model' => 'gpt-5.4-mini',
     'api_version' => 'v1beta',
     'voice' => 'sulafat',
     'language' => 'ru-KZ',
@@ -84,6 +85,7 @@ class Telephony::AiVoice::VoiceSettingsDefaults
     'gemini-live' => {
       'model' => 'gemini-3.1-flash-live-preview', 'voice' => 'sulafat', 'language' => 'auto'
     }.freeze,
+    'openai-live' => { 'model' => 'gpt-live-1', 'voice' => 'marin' }.freeze,
     'openai-realtime' => { 'model' => 'gpt-realtime-2', 'voice' => 'alloy' }.freeze,
     'elevenlabs' => { 'model' => 'openai/gpt-5.4-mini', 'voice' => 'Xb7hH8MSUJpSbSDYk0k2' }.freeze,
     'cartesia' => {

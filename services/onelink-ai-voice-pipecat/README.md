@@ -6,10 +6,13 @@ Rails remains the control/data plane and the existing media server remains the m
 
 ## Voice providers
 
-The validated Rails voice context selects one of four providers through
+The validated Rails voice context selects a provider through
 `ai.provider`:
 
 - `gemini-live`: native Gemini Live speech-to-speech. Requires `GOOGLE_API_KEY`.
+- `openai-live`: native GPT Live full-duplex speech-to-speech with OpenAI Responses
+  delegation for OneLink tools. Requires `OPENAI_API_KEY`. `ai.model` selects the
+  live frontend model and `ai.delegation_model` selects the backend model.
 - `openai-realtime`: native OpenAI Realtime speech-to-speech. Requires
   `OPENAI_API_KEY`.
 - `elevenlabs`: ElevenLabs Realtime STT -> OpenRouter LLM -> ElevenLabs TTS.
@@ -32,8 +35,8 @@ Cartesia voice ID. STT/TTS model overrides use
 
 The session watchdog uses the validated Rails voice settings for two silence
 prompts, a final silence message, optional hangup, and maximum call duration.
-Every exact runtime phrase uses a provider-compatible path: Gemini realtime text
-input, an isolated OpenAI Realtime audio response with tools disabled, or a
+Every direct runtime phrase uses a provider-compatible path: Gemini realtime text
+input, GPT Live commentary, an isolated OpenAI Realtime audio response with tools disabled, or a
 `TTSSpeakFrame` that is not appended to the ElevenLabs/OpenRouter context.
 
 Read-like tools continue running up to their hard `timeout_ms`. Fast results are

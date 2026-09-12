@@ -349,6 +349,7 @@ describe('AssistantSystemSettingsForm', () => {
   });
 
   it.each([
+    ['openai-live', 'gpt-live-1', 'marin'],
     ['openai-realtime', 'gpt-realtime-2', 'alloy'],
     ['elevenlabs', 'openai/gpt-5.4-mini', 'Xb7hH8MSUJpSbSDYk0k2'],
     ['cartesia', 'openai/gpt-5.4-mini', '71a7ad14-091c-4e8e-a314-022ece01c121'],
@@ -386,6 +387,33 @@ describe('AssistantSystemSettingsForm', () => {
     }
   );
 
+  it('preserves a custom OpenAI Live delegation model on save', async () => {
+    const wrapper = buildWrapper({
+      assistant: {
+        id: 58,
+        config: {
+          voice_settings: {
+            provider: 'openai-live',
+            model: 'gpt-live-1',
+            delegation_model: 'gpt-5.4',
+            voice: 'marin',
+            language: 'ru-KZ',
+          },
+        },
+      },
+    });
+
+    expect(wrapper.vm.state.voiceSettings.delegationModel).toBe('gpt-5.4');
+
+    const payload = await wrapper.vm.buildPayload();
+    expect(payload.assistant.config.voice_settings).toEqual(
+      expect.objectContaining({
+        provider: 'openai-live',
+        delegation_model: 'gpt-5.4',
+      })
+    );
+  });
+
   it('requires a Fish voice id and persists every supported STT variant', async () => {
     const wrapper = buildWrapper({ assistant: { id: 58, config: {} } });
 
@@ -422,22 +450,24 @@ describe('AssistantSystemSettingsForm', () => {
     );
   });
 
-  it('loads provider-specific defaults from a partial saved voice config', async () => {
-    const wrapper = buildWrapper({
-      assistant: {
-        id: 58,
-        config: { voice_settings: { provider: 'openai-realtime' } },
-      },
-    });
+  it.each([
+    ['openai-live', 'gpt-live-1', 'marin'],
+    ['openai-realtime', 'gpt-realtime-2', 'alloy'],
+  ])(
+    'loads %s defaults from a partial saved voice config',
+    async (provider, model, voice) => {
+      const wrapper = buildWrapper({
+        assistant: {
+          id: 58,
+          config: { voice_settings: { provider } },
+        },
+      });
 
-    const payload = await wrapper.vm.buildPayload();
+      const payload = await wrapper.vm.buildPayload();
 
-    expect(payload.assistant.config.voice_settings).toEqual(
-      expect.objectContaining({
-        provider: 'openai-realtime',
-        model: 'gpt-realtime-2',
-        voice: 'alloy',
-      })
-    );
-  });
+      expect(payload.assistant.config.voice_settings).toEqual(
+        expect.objectContaining({ provider, model, voice })
+      );
+    }
+  );
 });

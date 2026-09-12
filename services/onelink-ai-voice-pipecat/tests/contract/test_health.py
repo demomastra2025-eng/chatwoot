@@ -35,6 +35,7 @@ def test_health_distinguishes_liveness_and_readiness():
         "realtime_provider": "gemini-live",
         "supported_providers": [
             "gemini-live",
+            "openai-live",
             "openai-realtime",
             "elevenlabs",
             "cartesia",

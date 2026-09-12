@@ -68,6 +68,7 @@ def create_app(
             "realtime_provider": runtime_settings.realtime_provider,
             "supported_providers": [
                 "gemini-live",
+                "openai-live",
                 "openai-realtime",
                 "elevenlabs",
                 "cartesia",

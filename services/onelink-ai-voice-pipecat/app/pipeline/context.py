@@ -16,11 +16,12 @@ class ContextModel(BaseModel):
 
 
 class AiSettings(ContextModel):
-    provider: Literal["gemini-live", "openai-realtime", "elevenlabs", "cartesia", "fish"] = (
-        "gemini-live"
-    )
+    provider: Literal[
+        "gemini-live", "openai-live", "openai-realtime", "elevenlabs", "cartesia", "fish"
+    ] = "gemini-live"
     stt_provider: Literal["elevenlabs", "fish", "gemini"] = "elevenlabs"
     model: str = Field(min_length=1, max_length=200)
+    delegation_model: str = Field(default="gpt-5.4-mini", min_length=1, max_length=200)
     voice: str = Field(min_length=1, max_length=100)
     language: str = Field(default="ru-KZ", min_length=2, max_length=20)
     input_language_priorities: list[str] = Field(
@@ -32,9 +33,7 @@ class AiSettings(ContextModel):
     system_prompt: str = Field(min_length=1, max_length=100_000)
     first_message: str | None = Field(default=None, max_length=2_000)
     closing_message: str | None = Field(default=None, max_length=2_000)
-    manager_handoff_mode: Literal["live_transfer", "callback", "disabled"] = (
-        "live_transfer"
-    )
+    manager_handoff_mode: Literal["live_transfer", "callback", "disabled"] = "live_transfer"
     callback_message: str = Field(
         default="Спасибо, я передам информацию. Наш менеджер вам перезвонит.",
         min_length=1,
@@ -63,9 +62,7 @@ class AiSettings(ContextModel):
     finish_current_word_on_interrupt: bool = True
     interrupt_word_boundary_grace_ms: int = Field(default=240, ge=0, le=500)
     voice_activity_profile: Literal["sensitive", "balanced", "noisy"] = "balanced"
-    interruption_mode: Literal["vad_confirmed", "transcript_confirmed"] = (
-        "transcript_confirmed"
-    )
+    interruption_mode: Literal["vad_confirmed", "transcript_confirmed"] = "transcript_confirmed"
     min_interrupt_words: int = Field(default=1, ge=1, le=10)
     interruption_confirmation_window_ms: int = Field(default=800, ge=100, le=3_000)
     speech_start_sensitivity: str = "START_SENSITIVITY_LOW"

@@ -47,6 +47,7 @@ const DEFAULT_VOICE_SETTINGS = {
   provider: 'gemini-live',
   sttProvider: 'elevenlabs',
   model: 'gemini-3.1-flash-live-preview',
+  delegationModel: 'gpt-5.4-mini',
   voice: 'sulafat',
   language: 'auto',
   inputLanguagePriorities: ['ru-KZ', 'kk-KZ', 'en-US'],
@@ -93,6 +94,7 @@ const normalizeVoiceActivityProfile = value =>
 
 const VOICE_PROVIDER_OPTIONS = Object.freeze([
   { value: 'gemini-live', label: 'Gemini Live' },
+  { value: 'openai-live', label: 'OpenAI GPT Live' },
   { value: 'openai-realtime', label: 'OpenAI Realtime' },
   { value: 'elevenlabs', label: 'ElevenLabs + OpenRouter' },
   { value: 'cartesia', label: 'Cartesia + OpenRouter' },
@@ -122,6 +124,16 @@ const VOICE_PROVIDER_PRESETS = Object.freeze({
       { value: 'fenrir', label: 'Fenrir' },
       { value: 'kore', label: 'Kore' },
       { value: 'puck', label: 'Puck' },
+    ],
+  },
+  'openai-live': {
+    model: 'gpt-live-1',
+    voice: 'marin',
+    language: 'ru-KZ',
+    models: [{ value: 'gpt-live-1', label: 'GPT Live 1' }],
+    voices: [
+      { value: 'marin', label: 'Marin' },
+      { value: 'cedar', label: 'Cedar' },
     ],
   },
   'openai-realtime': {
@@ -540,6 +552,8 @@ const updateStateFromAssistant = assistant => {
       providerPreset.sttProvider ||
       DEFAULT_VOICE_SETTINGS.sttProvider,
     model,
+    delegationModel:
+      voiceSettings.delegation_model ?? DEFAULT_VOICE_SETTINGS.delegationModel,
     voice: voiceSettings.voice || providerPreset.voice,
     language,
     inputLanguagePriorities: normalizeInputLanguagePriorities(
@@ -680,6 +694,13 @@ const buildPayload = async () => {
               }
             : {}),
           model: state.voiceSettings.model || DEFAULT_VOICE_SETTINGS.model,
+          ...(state.voiceSettings.provider === 'openai-live'
+            ? {
+                delegation_model:
+                  state.voiceSettings.delegationModel ||
+                  DEFAULT_VOICE_SETTINGS.delegationModel,
+              }
+            : {}),
           voice: isFishProvider.value
             ? state.voiceSettings.voice.trim()
             : state.voiceSettings.voice || DEFAULT_VOICE_SETTINGS.voice,

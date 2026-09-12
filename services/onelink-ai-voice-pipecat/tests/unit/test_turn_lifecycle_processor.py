@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -9,6 +9,7 @@ from pipecat.frames.frames import (
     LLMFullResponseEndFrame,
     LLMFullResponseStartFrame,
     LLMTextFrame,
+    SpeechOutputAudioRawFrame,
     TranscriptionFrame,
     UserStartedSpeakingFrame,
     UserStoppedSpeakingFrame,
@@ -17,6 +18,7 @@ from pipecat.processors.frame_processor import FrameDirection
 
 import app.pipeline.processors as processors_module
 from app.pipeline.processors import (
+    AssistantLifecycleProcessor,
     ConversationActivity,
     DomainTranscriptNormalizationProcessor,
     ModelLifecycleProcessor,
@@ -39,6 +41,28 @@ class ActivityState:
 
     def touch_user(self) -> None:
         self.touches += 1
+
+
+@pytest.mark.asyncio
+async def test_assistant_lifecycle_records_live_speech_output_audio():
+    state = ActivityState()
+    recorder = SimpleNamespace(write_outbound=AsyncMock())
+    processor = AssistantLifecycleProcessor(
+        cast(SessionState, state),
+        ConversationActivity(),
+        cast(Any, recorder),
+    )
+    processor.push_frame = AsyncMock()
+    frame = SpeechOutputAudioRawFrame(
+        audio=b"\x01\x00" * 160,
+        sample_rate=8_000,
+        num_channels=1,
+    )
+
+    await processor.process_frame(frame, FrameDirection.DOWNSTREAM)
+
+    recorder.write_outbound.assert_awaited_once_with(frame.audio, sample_rate=8_000)
+    processor.push_frame.assert_awaited_once_with(frame, FrameDirection.DOWNSTREAM)
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ dependencies = [
   "fastapi>=0.115.6,<1",
   "google-genai==2.22.0",
   "httpx>=0.28,<1",
-  "pipecat-ai[cartesia,elevenlabs,fish,google,openai,silero,websocket]==1.8.1",
+  "pipecat-ai[cartesia,elevenlabs,fish,google,openai,silero,websocket]==1.9.0",
   "uvicorn>=0.32,<1",
 ]
 

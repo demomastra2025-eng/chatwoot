@@ -44,6 +44,17 @@ def test_unsupported_provider_is_rejected():
         valid_settings(realtime_provider="pipecat")
 
 
+def test_openai_live_uses_only_the_openai_credential():
+    settings = valid_settings(
+        realtime_provider="openai-live",
+        gemini_api_key="",
+        elevenlabs_api_key="",
+        openrouter_api_key="",
+    )
+
+    assert settings.provider_credentials("openai-live") == {"openai_api_key": "openai-secret"}
+
+
 @pytest.mark.parametrize("value", [0, -1, 1001])
 def test_invalid_session_limits_are_rejected(value):
     with pytest.raises(ValidationError):
