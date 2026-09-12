@@ -13,6 +13,10 @@ env:
 jobs:
   release-gate:
     runs-on: ubuntu-24.04
+    env:
+      RAILS_ENV: test
+      POSTGRES_HOST: localhost
+      DISABLE_BOOTSNAP: 1
     concurrency:
       group: onelink-dev-gate
       cancel-in-progress: true
@@ -87,9 +91,9 @@ jobs:
           mapfile -t ruby_files < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list ruby)
           mapfile -t specs < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list specs)
           if ((${#ruby_files[@]})); then bundle exec rubocop --force-exclusion "${ruby_files[@]}"; fi
+          bundle exec rake db:create db:schema:load
           bundle exec rails zeitwerk:check
           if ((${#specs[@]})); then
-            bundle exec rake db:create db:schema:load
             bundle exec rspec --profile=10 "${specs[@]}"
           fi
       - name: Run changed frontend checks

@@ -49,6 +49,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.backend == 'true'
     runs-on: ubuntu-24.04
+    env:
+      RAILS_ENV: test
+      POSTGRES_HOST: localhost
+      DISABLE_BOOTSNAP: 1
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -95,9 +99,9 @@ jobs:
           NODE_OPTIONS: --openssl-legacy-provider
         run: |
           mapfile -t specs < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list specs)
+          bundle exec rake db:create db:schema:load
           bundle exec rails zeitwerk:check
           if ((${#specs[@]})); then
-            bundle exec rake db:create db:schema:load
             bundle exec rspec --profile=10 "${specs[@]}"
           fi
 

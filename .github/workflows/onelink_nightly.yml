@@ -32,6 +32,10 @@ jobs:
   backend:
     needs: resolve
     runs-on: ubuntu-24.04
+    env:
+      RAILS_ENV: test
+      POSTGRES_HOST: localhost
+      DISABLE_BOOTSNAP: 1
     strategy:
       fail-fast: false
       matrix:
