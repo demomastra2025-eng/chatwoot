@@ -190,7 +190,7 @@ def main() -> int:
             selected = related_specs(files)
         elif args.list == "migrations":
             selected = [path for path in files if path.startswith("db/migrate/")]
-        print("\n".join(selected))
+        sys.stdout.write("".join(f"{path}\n" for path in selected))
     elif not args.github_output:
         print(json.dumps({"files": files, "plan": plan}, sort_keys=True))
 

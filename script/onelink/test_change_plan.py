@@ -13,6 +13,27 @@ from script.onelink.change_plan import (
 
 
 class ChangePlanTest(unittest.TestCase):
+    def test_empty_cli_file_list_has_no_output(self):
+        root = Path(__file__).resolve().parents[2]
+
+        result = subprocess.run(
+            [
+                "python3",
+                "script/onelink/change_plan.py",
+                "--base",
+                "HEAD",
+                "--head",
+                "HEAD",
+                "--list",
+                "frontend",
+            ],
+            cwd=root,
+            check=True,
+            capture_output=True,
+        )
+
+        self.assertEqual(result.stdout, b"")
+
     def test_deleted_runtime_file_is_included_in_changed_files(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
