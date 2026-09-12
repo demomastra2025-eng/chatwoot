@@ -20,6 +20,14 @@ ENV_FILE="${ROOT}/.env.development"
 LOCK_FILE="${ROOT}/runtime/deploy.lock"
 SERVICE=onelink-chatwoot-dev.service
 RELEASE="${RELEASES}/onelink-dev-${SHA:0:12}"
+readonly RBENV_ROOT=/opt/rbenv
+readonly DEV_TOOLCHAIN_PATH="${RBENV_ROOT}/bin:${RBENV_ROOT}/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+configure_toolchain() {
+  export RBENV_ROOT
+  export PATH="${DEV_TOOLCHAIN_PATH}"
+  hash -r
+}
+configure_toolchain
 PREVIOUS="$(readlink -f "${CURRENT}" 2>/dev/null || true)"
 TMP_RELEASE="${RELEASE}.tmp.$$"
 
@@ -33,6 +41,11 @@ flock -n 9 || { echo "another DEV deployment is active" >&2; exit 75; }
 
 [[ -d "${SOURCE_REPO}/.git" ]] || { echo "missing deployment repository: ${SOURCE_REPO}" >&2; exit 66; }
 [[ -f "${ENV_FILE}" ]] || { echo "missing DEV environment file" >&2; exit 66; }
+[[ -x "${RBENV_ROOT}/bin/rbenv" && -x "${RBENV_ROOT}/shims/bundle" ]] || {
+  echo "missing DEV Ruby toolchain under ${RBENV_ROOT}" >&2
+  exit 69
+}
+command -v pnpm >/dev/null || { echo "missing DEV pnpm executable" >&2; exit 69; }
 
 log "fetching canonical onelink-dev branch"
 git -C "${SOURCE_REPO}" fetch --quiet origin \
@@ -78,8 +91,12 @@ load_dev_env() {
     key="${line%%=*}"
     value="${line#*=}"
     [[ "${key}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    case "${key}" in
+      PATH | RBENV_ROOT | DEV_TOOLCHAIN_PATH | BASH_ENV | ENV) continue ;;
+    esac
     export "${key}=${value}"
   done < "${ENV_FILE}"
+  configure_toolchain
   [[ "${RAILS_ENV:-development}" != production ]]
   [[ "${NODE_ENV:-development}" != production ]]
   [[ "${POSTGRES_DATABASE:-}" == chatwoot_dev ]]
