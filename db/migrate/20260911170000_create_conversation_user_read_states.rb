@@ -29,7 +29,10 @@ class CreateConversationUserReadStates < ActiveRecord::Migration[7.1]
     add_index :conversation_user_read_states, [:account_id, :user_id]
 
     reversible do |direction|
-      direction.up { execute BACKFILL_SQL }
+      direction.up do
+        execute 'SET LOCAL statement_timeout = 0'
+        execute BACKFILL_SQL
+      end
     end
   end
 end
