@@ -2,12 +2,13 @@ class Crm::Reports::ManagerEffectivenessService
   DEFAULT_CURRENCY = 'KZT'.freeze
   DEFAULT_CALL_DURATION_THRESHOLD_SECONDS = 25
 
-  attr_reader :account, :deal_relation, :visible_owner_ids, :params, :since_time, :until_time, :currency,
+  attr_reader :account, :deal_relation, :task_relation, :visible_owner_ids, :params, :since_time, :until_time, :currency,
               :pipeline_id, :call_duration_threshold_seconds
 
-  def initialize(account:, deals_scope:, visible_owner_ids:, params: {})
+  def initialize(account:, deals_scope:, tasks_scope:, visible_owner_ids:, params: {})
     @account = account
     @deal_relation = deals_scope
+    @task_relation = tasks_scope
     @visible_owner_ids = Array(visible_owner_ids).compact.uniq
     @params = params.to_h.symbolize_keys
     @since_time = parse_time(@params[:since]) || 30.days.ago.beginning_of_day
@@ -227,9 +228,9 @@ class Crm::Reports::ManagerEffectivenessService
   end
 
   def crm_task_meeting_scope
-    Crm::Task
+    task_relation
       .kept
-      .where(account_id: account.id, assignee_id: visible_owner_ids, activity_type: 'meeting')
+      .where(assignee_id: visible_owner_ids, activity_type: 'meeting')
       .where('COALESCE(crm_tasks.due_at, crm_tasks.start_at, crm_tasks.created_at) BETWEEN ? AND ?', since_time, until_time)
   end
 

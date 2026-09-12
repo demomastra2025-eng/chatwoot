@@ -177,6 +177,34 @@ RSpec.describe 'CRM Deal Reports API', type: :request do
     expect(response.parsed_body.dig('payload', 'rows').pluck('owner_id')).to contain_exactly(administrator.id)
   end
 
+  it 'excludes task metrics when enforced tasks view_reports access is none' do
+    pipeline = create(:crm_pipeline, account: account, default: true)
+    stage = create(:crm_stage, account: account, pipeline: pipeline, outcome: 'open')
+    owner = create(:user, account: account, role: :agent)
+    conversation = create(:conversation, account: account)
+    create(
+      :crm_deal,
+      account: account,
+      owner: owner,
+      pipeline: pipeline,
+      stage: stage,
+      originating_conversation: conversation
+    )
+    create(:crm_task, account: account, assignee: owner, activity_type: 'meeting', due_at: 1.day.ago)
+    AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+    AccessControl::ModeTransition.call(account: account, to: :shadow)
+    AccessControl::ModeTransition.call(account: account, to: :enforced)
+    administrator.account_users.find_by!(account: account).access_role.grants
+                 .find_by!(resource: 'tasks', capability: 'view_reports')
+                 .update!(access_scope: 'none')
+
+    get manager_effectiveness_path, headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    owner_row = response.parsed_body.dig('payload', 'rows').find { |row| row['owner_id'] == owner.id }
+    expect(owner_row).to include('meeting_tasks_count' => 0)
+  end
+
   it 'returns manager effectiveness metrics from native CRM, telephony, scheduling, and payment data' do
     travel_to Time.zone.local(2026, 1, 15, 12, 0, 0) do
       pipeline = create(:crm_pipeline, account: account, name: 'Sales', code: 'sales', default: true)

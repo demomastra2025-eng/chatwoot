@@ -390,13 +390,21 @@ class ActionCableListener < BaseListener
     account = event.data[:account] || task&.account
     return if account.blank? || task.blank?
 
+    event_meta = event.data[:meta].to_h.symbolize_keys
+    tokens = ::Crm::Tasks::RealtimeRecipients.new(
+      account: account,
+      task: task,
+      changes: event_meta[:changes]
+    ).tokens
+    return if tokens.blank?
+
     broadcast(
       account,
-      [account_token(account)],
+      tokens,
       event_name,
       {
-        task: ::Crm::PayloadBuilder.task(task),
-        meta: event.data[:meta] || {}
+        task_id: task.id,
+        meta: event_meta.slice(:event_type)
       }
     )
   end

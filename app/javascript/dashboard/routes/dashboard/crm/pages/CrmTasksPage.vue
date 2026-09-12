@@ -204,6 +204,8 @@ const taskUiActionQueryInFlight = ref(false);
 const taskLoadGeneration = ref(0);
 let taskRealtimeSequence = 0;
 const pendingTaskRealtimeUpdates = new Map();
+let taskRealtimeLifecycleGeneration = 0;
+const taskRealtimeRequestSequences = new Map();
 
 const accountId = useMapGetter('getCurrentAccountId');
 const agents = useMapGetter('agents/getAgents');
@@ -1187,27 +1189,6 @@ const runTaskMutation = async (request, expectedTask) => {
   return newest;
 };
 
-const handleCrmTaskRealtimeEvent = payload => {
-  if (
-    Number(payload?.account_id) !== Number(accountId.value) ||
-    !payload?.task
-  ) {
-    return;
-  }
-
-  taskRealtimeSequence += 1;
-  const task = rememberTaskSnapshot(
-    pendingTaskRealtimeUpdates,
-    normalizePayload({ payload: payload.task }),
-    taskRealtimeSequence
-  );
-  applyTaskRealtimeState(task);
-
-  if (Number(selectedTask.value?.id) === Number(task.id)) {
-    selectedTask.value = task;
-  }
-};
-
 const syncSelectedTask = records => {
   if (!selectedTask.value) return;
 
@@ -1388,6 +1369,30 @@ const toggleArchived = async task => {
   }
 };
 
+const fetchTaskPages = async ({
+  accumulatedTasks = [],
+  loadGeneration,
+  page = 1,
+  query,
+}) => {
+  const { data } = await CrmTasksAPI.get({
+    ...query,
+    page,
+    per_page: 500,
+  });
+  if (loadGeneration !== taskLoadGeneration.value) return null;
+
+  const loadedTasks = [...accumulatedTasks, ...normalizePayload(data)];
+  if (!data?.meta?.has_more) return loadedTasks;
+
+  return fetchTaskPages({
+    accumulatedTasks: loadedTasks,
+    loadGeneration,
+    page: page + 1,
+    query,
+  });
+};
+
 const loadTasks = async () => {
   taskLoadGeneration.value += 1;
   const loadGeneration = taskLoadGeneration.value;
@@ -1427,10 +1432,10 @@ const loadTasks = async () => {
       ).toISOString();
     }
 
-    const { data } = await CrmTasksAPI.get(query);
-    if (loadGeneration !== taskLoadGeneration.value) return;
+    const loadedTasks = await fetchTaskPages({ loadGeneration, query });
+    if (!loadedTasks) return;
 
-    tasks.value = normalizePayload(data)
+    tasks.value = loadedTasks
       .map(task => rememberTaskSnapshot(pendingTaskRealtimeUpdates, task))
       .filter(taskMatchesRealtimeFilters);
     pendingTaskRealtimeUpdates.forEach(update => {
@@ -1446,6 +1451,69 @@ const loadTasks = async () => {
     if (loadGeneration === taskLoadGeneration.value) ui.isLoading = false;
   }
 };
+
+const refreshTaskFromRealtime = async payload => {
+  if (
+    Number(payload?.account_id) !== Number(accountId.value) ||
+    !payload?.task_id
+  ) {
+    return;
+  }
+
+  taskRealtimeSequence += 1;
+  const realtimeSequence = taskRealtimeSequence;
+  const lifecycleGeneration = taskRealtimeLifecycleGeneration;
+  const accountAtStart = accountId.value;
+  const taskId = Number(payload.task_id);
+  taskRealtimeRequestSequences.set(taskId, realtimeSequence);
+
+  try {
+    const { data } = await CrmTasksAPI.show(taskId);
+    if (
+      lifecycleGeneration !== taskRealtimeLifecycleGeneration ||
+      accountAtStart !== accountId.value ||
+      taskRealtimeRequestSequences.get(taskId) !== realtimeSequence
+    ) {
+      return;
+    }
+
+    const task = normalizePayload(data);
+    const newest = rememberTaskSnapshot(
+      pendingTaskRealtimeUpdates,
+      task,
+      realtimeSequence
+    );
+    applyTaskRealtimeState(newest);
+    if (Number(selectedTask.value?.id) === taskId) selectedTask.value = newest;
+  } catch (error) {
+    if (
+      lifecycleGeneration !== taskRealtimeLifecycleGeneration ||
+      accountAtStart !== accountId.value ||
+      taskRealtimeRequestSequences.get(taskId) !== realtimeSequence
+    ) {
+      return;
+    }
+    if (error?.response?.status !== 404) {
+      await loadTasks();
+      return;
+    }
+
+    const remembered = pendingTaskRealtimeUpdates.get(taskId);
+    if (remembered?.sequence > realtimeSequence) return;
+
+    taskLoadGeneration.value += 1;
+    ui.isLoading = false;
+    removeTask(taskId);
+    if (Number(selectedTask.value?.id) === taskId) closeDrawer();
+    if (Number(editingTaskTitleId.value) === taskId) closeTaskTitleEditor();
+  } finally {
+    if (taskRealtimeRequestSequences.get(taskId) === realtimeSequence) {
+      taskRealtimeRequestSequences.delete(taskId);
+    }
+  }
+};
+
+const handleCrmTaskRealtimeEvent = payload => refreshTaskFromRealtime(payload);
 
 const updateTaskDeadlineFromBoard = async ({ bucket, task }) => {
   if (!canManageTasks.value || !task) return;
@@ -1967,6 +2035,7 @@ const handleTaskUiActionQuery = async () => {
 };
 
 onMounted(async () => {
+  taskRealtimeLifecycleGeneration += 1;
   if (!canViewTasks.value) return;
 
   try {
@@ -1997,6 +2066,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   emitter.off(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, handleCrmTaskRealtimeEvent);
   isComponentUnmounted = true;
+  taskRealtimeLifecycleGeneration += 1;
+  taskRealtimeRequestSequences.clear();
   dealOptionsLoadGeneration += 1;
   timelineLoadGeneration += 1;
   taskLoadGeneration.value += 1;
@@ -2004,6 +2075,8 @@ onBeforeUnmount(() => {
 });
 
 watch(accountId, () => {
+  taskRealtimeLifecycleGeneration += 1;
+  taskRealtimeRequestSequences.clear();
   dealOptionsLoadGeneration += 1;
   dealOptions.value = [];
   taskLoadGeneration.value += 1;

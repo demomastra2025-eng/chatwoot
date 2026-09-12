@@ -2,10 +2,11 @@ class Crm::Tasks::CommandService < Crm::BaseWriteService
   include Crm::Tasks::ExpandCompatibility
 
   SNAPSHOT_KEYS = %w[
-    status_id position task_type_id task_outcome_id outcome outcome_note assignee_id
+    status_id position task_type_id task_outcome_id outcome outcome_note assignee_id team_id
     start_at due_at due_on all_day schedule_timezone completed_at completed_by_id
     cancelled_at cancelled_by_id cancellation_reason reschedule_count
   ].freeze
+  SERVER_GENERATED_FINGERPRINT_KEYS = %i[customer_change_requested_at customer_cancellation_requested_at].freeze
 
   def initialize(account:, task:, params:, actor: nil, **command_options)
     @task = task
@@ -70,6 +71,7 @@ class Crm::Tasks::CommandService < Crm::BaseWriteService
 
   def record_command_event!(before_data)
     @recorded_event_type = command_event_type(before_data)
+    @realtime_assignment_changes = assignment_changes_since(before_data)
     Crm::Events::Writer.record!(
       account: account,
       eventable: task,
@@ -105,7 +107,9 @@ class Crm::Tasks::CommandService < Crm::BaseWriteService
   end
 
   def fingerprint_payload
-    canonical_fingerprint_value(params.except(:lock_version, :idempotency_key))
+    canonical_fingerprint_value(
+      params.except(:lock_version, :idempotency_key, *SERVER_GENERATED_FINGERPRINT_KEYS)
+    )
   end
 
   def canonical_fingerprint_value(value)
@@ -147,8 +151,20 @@ class Crm::Tasks::CommandService < Crm::BaseWriteService
   end
 
   def publish_realtime!(saved_task)
-    dispatch_crm_task_realtime_event!(Events::Types::CRM_TASK_UPDATED, saved_task, meta: { event_type: @recorded_event_type })
+    dispatch_crm_task_realtime_event!(
+      Events::Types::CRM_TASK_UPDATED,
+      saved_task,
+      meta: { event_type: @recorded_event_type, changes: @realtime_assignment_changes }
+    )
     dispatch_linked_deal_update!(saved_task, event_type: @recorded_event_type)
+  end
+
+  def assignment_changes_since(before_data)
+    %w[assignee_id team_id].each_with_object({}) do |key, changes|
+      before_value = before_data[key]
+      after_value = task.public_send(key)
+      changes[key] = [before_value, after_value] if before_value != after_value
+    end
   end
 
   def command_event_type(_before_data)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_11_180000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -34,10 +34,10 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.index ["access_role_id"], name: "index_access_role_grants_on_access_role_id"
     t.index ["account_id", "resource", "capability", "access_scope"], name: "index_access_role_grants_on_account_lookup"
     t.index ["account_id"], name: "index_access_role_grants_on_account_id"
-    t.check_constraint "access_scope::text = ANY (ARRAY['none'::character varying, 'own'::character varying, 'team'::character varying, 'all'::character varying]::text[])", name: "access_role_grants_supported_scope"
-    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'transition'::character varying, 'take'::character varying, 'override_schedule'::character varying, 'complete_cancel'::character varying]::text[])", name: "access_role_grants_supported_capability"
-    t.check_constraint "resource::text = 'contacts'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'conversations'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'take'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying, 'override_schedule'::character varying]::text[])) OR resource::text = 'deals'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[])) OR resource::text = 'tasks'::text AND (capability::text = ANY (ARRAY['view'::character varying, 'create'::character varying, 'update_fields'::character varying, 'assign'::character varying, 'transition'::character varying, 'complete_cancel'::character varying, 'delete_archive'::character varying, 'view_configuration'::character varying, 'configure'::character varying, 'export'::character varying, 'view_reports'::character varying]::text[]))", name: "access_role_grants_supported_resource_capability"
-    t.check_constraint "resource::text = ANY (ARRAY['contacts'::character varying, 'conversations'::character varying, 'appointments'::character varying, 'deals'::character varying, 'tasks'::character varying]::text[])", name: "access_role_grants_supported_resource"
+    t.check_constraint "access_scope::text = ANY (ARRAY['none'::character varying::text, 'own'::character varying::text, 'team'::character varying::text, 'all'::character varying::text])", name: "access_role_grants_supported_scope"
+    t.check_constraint "capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'transition'::character varying::text, 'take'::character varying::text, 'override_schedule'::character varying::text, 'complete_cancel'::character varying::text])", name: "access_role_grants_supported_capability"
+    t.check_constraint "resource::text = 'contacts'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text])) OR resource::text = 'conversations'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'take'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text])) OR resource::text = 'appointments'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text, 'override_schedule'::character varying::text])) OR resource::text = 'deals'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text])) OR resource::text = 'tasks'::text AND (capability::text = ANY (ARRAY['view'::character varying::text, 'create'::character varying::text, 'update_fields'::character varying::text, 'assign'::character varying::text, 'transition'::character varying::text, 'complete_cancel'::character varying::text, 'delete_archive'::character varying::text, 'view_configuration'::character varying::text, 'configure'::character varying::text, 'export'::character varying::text, 'view_reports'::character varying::text]))", name: "access_role_grants_supported_resource_capability"
+    t.check_constraint "resource::text = ANY (ARRAY['contacts'::character varying::text, 'conversations'::character varying::text, 'appointments'::character varying::text, 'deals'::character varying::text, 'tasks'::character varying::text])", name: "access_role_grants_supported_resource"
   end
 
   create_table "access_roles", force: :cascade do |t|
@@ -55,8 +55,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.index ["account_id"], name: "index_access_roles_on_account_id"
     t.index ["legacy_custom_role_id"], name: "index_access_roles_on_legacy_custom_role", unique: true, where: "(legacy_custom_role_id IS NOT NULL)"
     t.check_constraint "btrim(name::text) <> ''::text", name: "access_roles_non_blank_name"
+    t.check_constraint "system_key IS NULL OR (system_key::text = ANY (ARRAY['administrator'::character varying::text, 'department_lead'::character varying::text, 'employee'::character varying::text, 'commercial_director'::character varying::text, 'observer'::character varying::text]))", name: "access_roles_supported_system_key"
     t.check_constraint "system_key IS NULL OR legacy_custom_role_id IS NULL", name: "access_roles_single_identity_source"
-    t.check_constraint "system_key IS NULL OR (system_key::text = ANY (ARRAY['administrator'::character varying, 'department_lead'::character varying, 'employee'::character varying, 'commercial_director'::character varying, 'observer'::character varying]::text[]))", name: "access_roles_supported_system_key"
   end
 
   create_table "access_tokens", force: :cascade do |t|
@@ -150,7 +150,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.bigint "billing_organization_id"
     t.index ["billing_organization_id"], name: "index_accounts_on_billing_organization_id"
     t.index ["status"], name: "index_accounts_on_status"
-    t.check_constraint "access_control_mode::text = ANY (ARRAY['legacy'::character varying, 'shadow'::character varying, 'enforced'::character varying]::text[])", name: "accounts_supported_access_control_mode"
+    t.check_constraint "access_control_mode::text = ANY (ARRAY['legacy'::character varying::text, 'shadow'::character varying::text, 'enforced'::character varying::text])", name: "accounts_supported_access_control_mode"
   end
 
   create_table "action_mailbox_inbound_emails", force: :cascade do |t|
@@ -1615,7 +1615,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.index ["account_id", "pipeline_id", "position"], name: "index_crm_stages_on_account_pipeline_position"
     t.index ["account_id"], name: "index_crm_stages_on_account_id"
     t.index ["pipeline_id", "code"], name: "index_crm_stages_on_pipeline_id_and_code", unique: true
-    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY ((ARRAY['won'::character varying, 'lost'::character varying])::text[])))"
+    t.index ["pipeline_id", "outcome"], name: "index_crm_stages_on_pipeline_unique_active_terminal", unique: true, where: "((active = true) AND ((outcome)::text = ANY (ARRAY[('won'::character varying)::text, ('lost'::character varying)::text])))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_default_active", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["pipeline_id"], name: "index_crm_stages_on_pipeline_id"
   end
@@ -1664,9 +1664,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.boolean "default", default: false, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "customer_task_assignee_id"
+    t.bigint "customer_task_team_id"
     t.index ["account_id", "code"], name: "index_crm_task_types_on_account_id_and_code", unique: true
     t.index ["account_id"], name: "index_crm_task_types_on_account_default", unique: true, where: "((\"default\" = true) AND (active = true))"
     t.index ["account_id"], name: "index_crm_task_types_on_account_id"
+    t.index ["customer_task_assignee_id"], name: "idx_crm_task_types_customer_assignee"
+    t.index ["customer_task_team_id"], name: "idx_crm_task_types_customer_team"
   end
 
   create_table "crm_tasks", force: :cascade do |t|
@@ -1705,6 +1709,13 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.text "cancellation_reason"
     t.integer "reschedule_count", default: 0, null: false
     t.string "context_kind"
+    t.boolean "customer_visible", default: false, null: false
+    t.string "customer_title"
+    t.text "customer_result"
+    t.text "customer_change_request"
+    t.datetime "customer_change_requested_at"
+    t.text "customer_cancellation_request"
+    t.datetime "customer_cancellation_requested_at"
     t.index ["account_id", "activity_type", "due_at"], name: "index_crm_tasks_on_account_activity_type_due_at"
     t.index ["account_id", "deal_id", "activity_type"], name: "index_crm_tasks_on_account_deal_activity_type"
     t.index ["account_id", "deal_id"], name: "index_crm_tasks_on_account_deal"
@@ -1712,6 +1723,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.index ["account_id", "due_on"], name: "index_crm_tasks_on_active_due_on", where: "(archived_at IS NULL)"
     t.index ["account_id", "external_ref"], name: "index_crm_tasks_on_account_external_ref", unique: true, where: "(external_ref IS NOT NULL)"
     t.index ["account_id", "idempotency_key"], name: "index_crm_tasks_on_account_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["account_id", "originating_conversation_id", "updated_at"], name: "idx_crm_tasks_customer_visible_conversation", where: "(customer_visible = true)"
     t.index ["account_id", "originating_conversation_id"], name: "index_crm_tasks_on_account_originating_conversation"
     t.index ["account_id", "status_id", "assignee_id", "due_at"], name: "index_crm_tasks_on_active_list_dimensions", where: "(archived_at IS NULL)"
     t.index ["account_id", "status_id", "position", "id"], name: "index_crm_tasks_on_account_status_position"
@@ -2319,8 +2331,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
     t.datetime "executed_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'provider_status_unknown'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying, 'v2_provider_status_unknown'::character varying])::text[])))"
-    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY ((ARRAY['create_patient'::character varying, 'update_patient'::character varying])::text[])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY ((ARRAY['awaiting_confirmation'::character varying, 'awaiting_patient_selection'::character varying, 'awaiting_patient_creation'::character varying, 'awaiting_phone_refresh'::character varying, 'queued'::character varying, 'processing'::character varying, 'reconciliation_required'::character varying, 'provider_status_unknown'::character varying, 'v2_awaiting_confirmation'::character varying, 'v2_awaiting_patient_selection'::character varying, 'v2_awaiting_patient_creation'::character varying, 'v2_awaiting_phone_refresh'::character varying, 'v2_queued'::character varying, 'v2_processing'::character varying, 'v2_reconciliation_required'::character varying, 'v2_provider_status_unknown'::character varying])::text[])))"
+    t.index ["account_id", "appointment_id"], name: "idx_medelement_commands_unfinished_appointment", unique: true, where: "((appointment_id IS NOT NULL) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('provider_status_unknown'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text, ('v2_provider_status_unknown'::character varying)::text])))"
+    t.index ["account_id", "contact_id"], name: "idx_medelement_commands_unfinished_patient_identity", unique: true, where: "((contact_id IS NOT NULL) AND (((operation)::text = ANY (ARRAY[('create_patient'::character varying)::text, ('update_patient'::character varying)::text])) OR (((operation)::text = 'create_reception'::text) AND ((provider_patient_code IS NULL) OR ((provider_patient_code)::text = ''::text)))) AND ((status)::text = ANY (ARRAY[('awaiting_confirmation'::character varying)::text, ('awaiting_patient_selection'::character varying)::text, ('awaiting_patient_creation'::character varying)::text, ('awaiting_phone_refresh'::character varying)::text, ('queued'::character varying)::text, ('processing'::character varying)::text, ('reconciliation_required'::character varying)::text, ('provider_status_unknown'::character varying)::text, ('v2_awaiting_confirmation'::character varying)::text, ('v2_awaiting_patient_selection'::character varying)::text, ('v2_awaiting_patient_creation'::character varying)::text, ('v2_awaiting_phone_refresh'::character varying)::text, ('v2_queued'::character varying)::text, ('v2_processing'::character varying)::text, ('v2_reconciliation_required'::character varying)::text, ('v2_provider_status_unknown'::character varying)::text])))"
     t.index ["account_id", "idempotency_key"], name: "idx_medelement_commands_account_idempotency", unique: true
     t.index ["account_id"], name: "index_medelement_provider_commands_on_account_id"
     t.index ["appointment_id", "status"], name: "idx_medelement_commands_appointment_status"
@@ -3790,6 +3802,8 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_10_170000) do
   add_foreign_key "crm_task_outcomes", "crm_task_types", column: "task_type_id"
   add_foreign_key "crm_task_statuses", "accounts"
   add_foreign_key "crm_task_types", "accounts"
+  add_foreign_key "crm_task_types", "teams", column: "customer_task_team_id"
+  add_foreign_key "crm_task_types", "users", column: "customer_task_assignee_id"
   add_foreign_key "crm_tasks", "accounts"
   add_foreign_key "crm_tasks", "conversations", column: "originating_conversation_id"
   add_foreign_key "crm_tasks", "crm_deals", column: "deal_id"

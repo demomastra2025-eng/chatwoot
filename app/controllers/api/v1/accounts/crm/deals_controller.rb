@@ -348,11 +348,11 @@ class Api::V1::Accounts::Crm::DealsController < Api::V1::Accounts::Crm::BaseCont
   end
 
   def open_task_deal_ids
-    Current.account.crm_tasks.kept
-           .joins(:status)
-           .where(crm_task_statuses: { category: %w[open in_progress] })
-           .where.not(deal_id: nil)
-           .select(:deal_id)
+    policy_scope(::Crm::Task).kept
+                             .joins(:status)
+                             .where(crm_task_statuses: { category: %w[open in_progress] })
+                             .where.not(deal_id: nil)
+                             .select(:deal_id)
   end
 
   def overdue_task_deal_ids

@@ -19,6 +19,7 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
     report = ::Crm::Reports::ManagerEffectivenessService.new(
       account: Current.account,
       deals_scope: report_deals_scope,
+      tasks_scope: report_tasks_scope,
       visible_owner_ids: report_owner_ids,
       params: manager_effectiveness_report_params
     )
@@ -44,6 +45,14 @@ class Api::V1::Accounts::Crm::ReportsController < Api::V1::Accounts::Crm::BaseCo
       capabilities: %w[view view_reports]
     )
     ::Crm::DealPolicy::Scope.owner_ids(pundit_user, access_scope: access_scope)
+  end
+
+  def report_tasks_scope
+    ::Crm::TaskPolicy::Scope.intersection(
+      pundit_user,
+      Current.account.crm_tasks,
+      capabilities: %w[view view_reports]
+    )
   end
 
   def deal_report_params

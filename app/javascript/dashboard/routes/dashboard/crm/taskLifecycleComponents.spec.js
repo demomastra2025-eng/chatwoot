@@ -91,8 +91,17 @@ const deferred = () => {
   });
   return { promise, resolve };
 };
-const publish = task =>
-  emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, { account_id: 1, task });
+const publishTaskId = async taskId => {
+  emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, {
+    account_id: 1,
+    task_id: taskId,
+  });
+  await flushPromises();
+};
+const publish = async task => {
+  CrmTasksAPI.show.mockResolvedValue(response(task));
+  await publishTaskId(task.id);
+};
 const wrappers = [];
 const mountEditor = async (kind, extraProps = {}) => {
   const wrapper = shallowMount(
@@ -164,9 +173,39 @@ afterEach(() => {
 });
 
 describe.each(['page', 'panel'])('%s task concurrency', kind => {
-  it('normalizes the raw Cable envelope without losing custom-attribute keys', async () => {
+  it('loads every bounded API page before publishing the complete task set', async () => {
     const { state } = await mountEditor(kind);
-    publish({
+    CrmTasksAPI.get.mockReset();
+    CrmTasksAPI.get
+      .mockResolvedValueOnce({
+        data: {
+          payload: [structuredClone(initialTask)],
+          meta: { has_more: true },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          payload: [{ ...initialTask, id: 8, title: 'Second page' }],
+          meta: { has_more: false },
+        },
+      });
+
+    await state.loadTasks();
+
+    expect(state.tasks.map(task => task.id)).toEqual([7, 8]);
+    expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ page: 1, per_page: 500 })
+    );
+    expect(CrmTasksAPI.get).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ page: 2, per_page: 500 })
+    );
+  });
+
+  it('normalizes the scoped refresh response without losing custom-attribute keys', async () => {
+    const { state } = await mountEditor(kind);
+    await publish({
       id: 7,
       account_id: 1,
       deal_id: 4,
@@ -189,7 +228,7 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
         response({ ...initialTask, lockVersion: 12, title: 'HTTP 12' })
       )
     );
-    publish({ ...initialTask, lockVersion: 11, title: 'Cable 11' });
+    await publish({ ...initialTask, lockVersion: 11, title: 'Cable 11' });
     expect(state.tasks[0]).toMatchObject({
       lockVersion: 12,
       title: 'HTTP 12',
@@ -198,7 +237,7 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
       response([{ ...initialTask, lockVersion: 10, title: 'GET 10' }])
     );
     await state.loadTasks();
-    publish({ ...initialTask, lockVersion: 11, title: 'Cable 11 again' });
+    await publish({ ...initialTask, lockVersion: 11, title: 'Cable 11 again' });
     expect(state.tasks[0]).toMatchObject({
       lockVersion: 12,
       title: 'HTTP 12',
@@ -220,7 +259,7 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
 
   it('does not resurrect an archived task from an older list response', async () => {
     const { state } = await mountEditor(kind);
-    publish({
+    await publish({
       ...initialTask,
       lockVersion: 3,
       archivedAt: '2026-09-05T10:00:00Z',
@@ -230,13 +269,90 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     expect(state.tasks).toEqual([]);
   });
 
+  it('removes a task that is no longer visible after an opaque Cable refresh', async () => {
+    const { state } = await mountEditor(kind);
+    await open(kind, state);
+    CrmTasksAPI.show.mockRejectedValueOnce({ response: { status: 404 } });
+
+    await publishTaskId(initialTask.id);
+
+    expect(state.tasks).toEqual([]);
+    expect(state.selectedTask).toBeNull();
+  });
+
+  it('does not publish a stale list or leave loading active after realtime access loss', async () => {
+    const { state } = await mountEditor(kind);
+    const pending = deferred();
+    CrmTasksAPI.get.mockReturnValueOnce(pending.promise);
+    const loading = state.loadTasks();
+    CrmTasksAPI.show.mockRejectedValueOnce({ response: { status: 404 } });
+
+    await publishTaskId(initialTask.id);
+    expect(state.ui.isLoading).toBe(false);
+    pending.resolve(response([initialTask]));
+    await loading;
+
+    expect(state.tasks).toEqual([]);
+    expect(state.ui.isLoading).toBe(false);
+  });
+
+  it('ignores realtime events from another account', async () => {
+    const { state } = await mountEditor(kind);
+
+    emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, {
+      account_id: 2,
+      task_id: initialTask.id,
+    });
+    await flushPromises();
+
+    expect(CrmTasksAPI.show).not.toHaveBeenCalled();
+    expect(state.tasks[0].title).toBe('Original');
+  });
+
+  it('keeps list loading bounded when realtime completes during the request', async () => {
+    const { state } = await mountEditor(kind);
+    const pending = deferred();
+    CrmTasksAPI.get.mockReturnValueOnce(pending.promise);
+    const loading = state.loadTasks();
+
+    await publish({ ...initialTask, lockVersion: 2, title: 'Realtime' });
+    expect(state.ui.isLoading).toBe(true);
+    pending.resolve(response([{ ...initialTask, lockVersion: 1 }]));
+    await loading;
+
+    expect(state.ui.isLoading).toBe(false);
+    expect(state.tasks[0]).toMatchObject({ lockVersion: 2, title: 'Realtime' });
+  });
+
+  it('drops a realtime continuation after unmount', async () => {
+    const { wrapper, state } = await mountEditor(kind);
+    const pending = deferred();
+    const listRequestsBeforeEvent = CrmTasksAPI.get.mock.calls.length;
+    CrmTasksAPI.show.mockReturnValueOnce(pending.promise);
+    emitter.emit(BUS_EVENTS.CRM_TASK_REALTIME_EVENT, {
+      account_id: 1,
+      task_id: initialTask.id,
+    });
+    await flushPromises();
+
+    wrapper.unmount();
+    wrappers.splice(wrappers.indexOf(wrapper), 1);
+    pending.resolve(
+      response({ ...initialTask, lockVersion: 3, title: 'After unmount' })
+    );
+    await flushPromises();
+
+    expect(state.tasks[0].title).toBe('Original');
+    expect(CrmTasksAPI.get).toHaveBeenCalledTimes(listRequestsBeforeEvent);
+  });
+
   it('keeps the draft in a second editor and blocks stale writes before HTTP', async () => {
     const first = await mountEditor(kind);
     const second = await mountEditor(kind);
     await open(kind, first.state);
     await open(kind, second.state);
     second.state.form.title = 'My draft';
-    publish({
+    await publish({
       ...initialTask,
       lockVersion: 2,
       assigneeId: 2,
@@ -323,7 +439,7 @@ describe.each(['page', 'panel'])('%s task concurrency', kind => {
     const pending = deferred();
     CrmTasksAPI.saveForm.mockReturnValueOnce(pending.promise);
     const saving = state.saveTask();
-    publish({ ...initialTask, lockVersion: 3, assigneeId: 4 });
+    await publish({ ...initialTask, lockVersion: 3, assigneeId: 4 });
     pending.resolve(
       response({ ...initialTask, lockVersion: 2, title: 'My title' })
     );
@@ -547,7 +663,7 @@ it('keeps the inline title draft on a concurrent task update', async () => {
   const { state } = await mountEditor('page');
   state.startEditingTaskTitle(state.tasks[0]);
   state.taskTitleDraft = 'Inline draft';
-  publish({ ...initialTask, lockVersion: 2, title: 'Other title' });
+  await publish({ ...initialTask, lockVersion: 2, title: 'Other title' });
   await state.saveTaskTitle(state.tasks[0]);
   expect(CrmTasksAPI.update).not.toHaveBeenCalled();
   expect(state.taskTitleDraft).toBe('Inline draft');

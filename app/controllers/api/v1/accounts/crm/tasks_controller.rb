@@ -1,4 +1,7 @@
 class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseController
+  DEFAULT_PER_PAGE = 100
+  MAX_PER_PAGE = 500
+
   before_action :ensure_crm_tasks_enabled!
   before_action :bootstrap_defaults!, only: [:create, :complete, :cancel, :reopen]
   before_action :set_task,
@@ -8,11 +11,18 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   def index
     authorize ::Crm::Task
 
-    tasks = filtered_tasks
+    scope = filtered_tasks
+    total_count = scope.count
+    tasks = scope.offset((page - 1) * per_page).limit(per_page)
     catalog_snapshot = ::Crm::Tasks::CatalogSnapshot.new(account: Current.account)
     render_payload(
       tasks.map { |task| ::Crm::PayloadBuilder.task(task, catalog_snapshot: catalog_snapshot) },
-      meta: { count: tasks.size }
+      meta: {
+        count: total_count,
+        page: page,
+        per_page: per_page,
+        has_more: (page * per_page) < total_count
+      }
     )
   end
 
@@ -162,7 +172,10 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
   def idempotent_task
     return if create_task_params[:idempotency_key].blank?
 
-    Current.account.crm_tasks.find_by(idempotency_key: create_task_params[:idempotency_key])
+    existing_task = Current.account.crm_tasks.find_by(idempotency_key: create_task_params[:idempotency_key])
+    return if existing_task.blank?
+
+    policy_scope(Current.account.crm_tasks).find(existing_task.id)
   end
 
   def set_task
@@ -194,5 +207,17 @@ class Api::V1::Accounts::Crm::TasksController < Api::V1::Accounts::Crm::BaseCont
       actor: Current.user
     ).perform
     render_payload(::Crm::PayloadBuilder.task(task))
+  end
+
+  def page
+    value = params[:page].to_i
+    value.positive? ? value : 1
+  end
+
+  def per_page
+    value = params[:per_page].to_i
+    return DEFAULT_PER_PAGE unless value.positive?
+
+    [value, MAX_PER_PAGE].min
   end
 end

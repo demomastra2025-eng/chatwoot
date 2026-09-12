@@ -788,18 +788,39 @@ describe ActionCableListener do
       )
     end
 
-    it 'broadcasts the task payload to the account stream' do
+    it 'broadcasts an opaque task refresh to the account stream' do
       expect(ActionCableBroadcastJob).to receive(:perform_later).with(
         ["account_#{account.id}"],
         'crm.task.updated',
         hash_including(
           account_id: account.id,
-          task: hash_including(id: task.id, title: task.title),
+          task_id: task.id,
           meta: { event_type: 'task_rescheduled' }
         )
       )
 
       listener.crm_task_updated(event)
+    end
+
+    it 'broadcasts only an opaque refresh to authorized user streams in enforced mode' do
+      task.update!(assignee: agent)
+      outsider = create(:user, account: account, role: :agent)
+      AccessControl::LegacyRoleAssigner.call(account: account, apply: true)
+      AccessControl::ModeTransition.call(account: account, to: :shadow)
+      AccessControl::ModeTransition.call(account: account, to: :enforced)
+
+      expect(ActionCableBroadcastJob).to receive(:perform_later).with(
+        a_collection_containing_exactly(agent.pubsub_token, admin.pubsub_token),
+        'crm.task.updated',
+        {
+          account_id: account.id,
+          task_id: task.id,
+          meta: { event_type: 'task_rescheduled' }
+        }
+      )
+
+      listener.crm_task_updated(event)
+      expect(outsider.pubsub_token).not_to eq(agent.pubsub_token)
     end
   end
 

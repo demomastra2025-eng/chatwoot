@@ -47,8 +47,19 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     @task_type = resolve_task_type!
     @task_outcome = resolve_task_outcome(@task_type)
     @originating_conversation = resolve_originating_conversation(deal: @deal)
+    @assignee = resolve_assignee(deal: @deal, originating_conversation: @originating_conversation)
+    @team = resolve_team(deal: @deal)
+    authorize_assignment! if assignment_authorization_required?
     @external_ref = resolve_optional_text(:external_ref, current: task.external_ref)
     @idempotency_key = resolve_optional_text(:idempotency_key, current: task.idempotency_key)
+  end
+
+  def assignment_authorization_required?
+    actor.present? && (task.new_record? || params.key?(:assignee_id) || params.key?(:team_id))
+  end
+
+  def authorize_assignment!
+    Crm::Tasks::AssignmentAuthorizer.call(account: account, actor: actor, assignee: @assignee, team: @team)
   end
 
   def validate_task_references!
@@ -76,9 +87,9 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       status: @status,
       task_type: @task_type,
       task_outcome: @task_outcome,
-      assignee: resolve_assignee(deal: @deal, originating_conversation: @originating_conversation),
+      assignee: @assignee,
       creator: resolve_optional_record(:creator_id, account.users, current: task.creator || actor),
-      team: resolve_team(deal: @deal),
+      team: @team,
       originating_conversation: @originating_conversation
     }
   end
@@ -91,7 +102,14 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
       outcome: resolved_outcome_code,
       outcome_note: resolve_optional_text(:outcome_note, current: task.outcome_note),
       priority: resolve_optional_text(:priority, current: task.priority || 'medium')
-    }
+    }.merge(customer_attributes)
+  end
+
+  def customer_attributes
+    %i[
+      customer_visible customer_title customer_result customer_change_request customer_change_requested_at
+      customer_cancellation_request customer_cancellation_requested_at
+    ].index_with { |key| params[key] }.select { |key, _value| params.key?(key) }
   end
 
   def resolved_outcome_code
@@ -130,6 +148,7 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     reposition_task!(@requested_position) if @requested_position.present?
     write_event!(new_record: new_record)
     notify_assignment!(new_record: new_record)
+    @realtime_assignment_changes = task.previous_changes.slice('assignee_id', 'team_id')
     task.reload
   end
 
@@ -137,7 +156,10 @@ class Crm::Tasks::UpsertService < Crm::BaseWriteService
     dispatch_crm_task_realtime_event!(
       new_record ? Events::Types::CRM_TASK_CREATED : Events::Types::CRM_TASK_UPDATED,
       saved_task,
-      meta: { event_type: new_record ? 'task_created' : 'task_updated' }
+      meta: {
+        event_type: new_record ? 'task_created' : 'task_updated',
+        changes: @realtime_assignment_changes
+      }
     )
     dispatch_linked_deal_update!(saved_task, event_type: 'task_changed') if broadcast_linked_deal
   end

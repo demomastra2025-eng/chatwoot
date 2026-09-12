@@ -110,6 +110,7 @@ class Crm::Task < ApplicationRecord
   validates :reschedule_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :schedule_timezone, inclusion: { in: TZInfo::Timezone.all_identifiers }
   validates :due_on, presence: true, if: :all_day?
+  validates :customer_title, presence: true, if: :customer_visible?
   validates :custom_attributes, jsonb_attributes_length: true
   validate :sales_context_requires_deal
   validate :related_records_belong_to_account
@@ -120,6 +121,7 @@ class Crm::Task < ApplicationRecord
   }
   scope :kept, -> { where(archived_at: nil) }
   scope :archived, -> { where.not(archived_at: nil) }
+  scope :customer_visible, -> { where(customer_visible: true) }
 
   before_validation :normalize_activity_type
   before_validation :normalize_context_kind

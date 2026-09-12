@@ -977,7 +977,7 @@ describe('ActionCableConnector - Copilot Tests', () => {
     it('should emit dashboard bus events for CRM task ActionCable events', () => {
       const taskPayload = {
         account_id: 1,
-        task: { id: 73, title: 'Realtime task' },
+        task_id: 73,
         meta: { event_type: 'task_rescheduled' },
       };
 

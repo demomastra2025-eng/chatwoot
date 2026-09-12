@@ -1,40 +1,148 @@
 class Crm::TaskPolicy < Crm::BasePolicy
+  def self.legacy_view_allowed?(account_user)
+    return false if account_user.blank?
+
+    permissions = Array(account_user.permissions)
+    permissions.include?('administrator') ||
+      (account_user.custom_role_id.blank? && permissions.include?('agent')) ||
+      permissions.intersect?(%w[crm_task_view crm_task_manage])
+  end
+
+  class Scope < Crm::BasePolicy::Scope
+    def initialize(user_context, scope, capability: 'view')
+      super(user_context, scope)
+      @capability = capability
+    end
+
+    def resolve
+      account_scope = super
+      return missing_account_user_scope(account_scope) if account_user.blank?
+
+      mode_resolution = AccessControl::ModeResolver.call(
+        account_user: account_user,
+        resource: 'tasks',
+        capability: capability
+      )
+      instrument_shadow_scope(mode_resolution)
+      return account_scope unless mode_resolution.authoritative_source == 'access_role'
+
+      self.class.apply(
+        account_scope,
+        access_scope: mode_resolution.access_role_resolution&.scope || 'none',
+        user: user,
+        account: account
+      )
+    end
+
+    def self.apply(relation, access_scope:, user:, account:)
+      case access_scope
+      when 'all'
+        relation
+      when 'team'
+        team_ids = TeamMember.joins(:team).where(user_id: user.id, teams: { account_id: account.id }).select(:team_id)
+        relation.where(assignee_id: user.id).or(relation.where(team_id: team_ids))
+      when 'own'
+        relation.where(assignee_id: user.id)
+      else
+        relation.none
+      end
+    end
+
+    def self.intersection(user_context, relation, capabilities:)
+      Array(capabilities).reduce(relation) do |effective_scope, capability|
+        capability_scope = new(user_context, relation, capability: capability.to_s).resolve
+        effective_scope.where(id: capability_scope.select(:id))
+      end
+    end
+
+    private
+
+    attr_reader :capability
+
+    def missing_account_user_scope(account_scope)
+      return account_scope if account.blank?
+
+      AccessControl::ModeResolver.mode_for_account(account.id) == 'enforced' ? account_scope.none : account_scope
+    end
+
+    def instrument_shadow_scope(mode_resolution)
+      return unless mode_resolution.mode == 'shadow'
+
+      AccessControl::ModeAwareDecision.instrument_shadow_scope(mode_resolution: mode_resolution, legacy_scope: 'all')
+    end
+  end
+
   def index?
-    task_view_access?
+    task_access?(:view, record_scoped: false)
   end
 
   def show?
-    task_view_access?
+    task_access?(:view)
   end
 
   def timeline?
-    task_view_access?
+    task_access?(:view)
   end
 
   def create?
-    task_manage_access?
+    task_access?(:create, record_scoped: false)
   end
 
   def update?
-    task_manage_access?
-  end
-
-  def change_status?
-    task_manage_access?
+    task_access?(:update_fields)
   end
 
   alias save_form? update?
-  alias complete? change_status?
-  alias cancel? change_status?
-  alias reopen? change_status?
-  alias reschedule? change_status?
-  alias assign? change_status?
+  alias reschedule? update?
 
-  def archive?
-    task_manage_access?
+  def assign?
+    task_access?(:assign, record_scoped: record != ::Crm::Task)
   end
 
-  def unarchive?
-    task_manage_access?
+  def change_status?
+    task_access?(:transition)
+  end
+
+  alias reopen? change_status?
+
+  def complete?
+    task_access?(:complete_cancel)
+  end
+
+  alias cancel? complete?
+
+  def archive?
+    task_access?(:delete_archive)
+  end
+
+  alias unarchive? archive?
+
+  private
+
+  def task_access?(capability, record_scoped: true)
+    legacy_allowed = capability == :view ? self.class.legacy_view_allowed?(account_user) : task_manage_access?
+    return legacy_allowed if account_user.blank?
+
+    mode_resolution = AccessControl::ModeResolver.call(
+      account_user: account_user,
+      resource: 'tasks',
+      capability: capability.to_s
+    )
+    access_scope = mode_resolution.access_role_resolution&.scope || 'none'
+    access_role_allowed = if record_scoped
+                            Scope.apply(
+                              account.crm_tasks,
+                              access_scope: access_scope,
+                              user: user,
+                              account: account
+                            ).exists?(id: record.id)
+                          else
+                            access_scope != 'none'
+                          end
+    AccessControl::ModeAwareDecision.call(
+      mode_resolution: mode_resolution,
+      legacy_allowed: legacy_allowed,
+      access_role_allowed: access_role_allowed
+    )
   end
 end

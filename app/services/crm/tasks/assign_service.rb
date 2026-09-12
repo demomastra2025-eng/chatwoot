@@ -25,6 +25,10 @@ class Crm::Tasks::AssignService < Crm::Tasks::CommandService
   end
 
   def requested_assignee
-    @requested_assignee ||= resolve_optional_record(:assignee_id, account.users, current: task.assignee)
+    @requested_assignee ||= begin
+      assignee = resolve_optional_record(:assignee_id, account.users, current: task.assignee)
+      Crm::Tasks::AssignmentAuthorizer.call(account: account, actor: actor, assignee: assignee, team: task.team)
+      assignee
+    end
   end
 end

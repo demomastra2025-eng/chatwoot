@@ -4,7 +4,9 @@ class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
   DETAIL_KEYS = %i[
     context_kind deal_id creator_id team_id originating_conversation_id title description
     task_type_id task_outcome_id activity_type outcome outcome_note priority
-    position external_ref custom_attributes
+    position external_ref custom_attributes customer_visible customer_title customer_result
+    customer_change_request customer_change_requested_at
+    customer_cancellation_request customer_cancellation_requested_at
   ].freeze
   SCHEDULE_KEYS = Crm::Tasks::RescheduleService::SCHEDULE_KEYS
   STATUS_KEYS = %i[status_id task_outcome_id outcome outcome_note cancellation_reason position].freeze
@@ -77,7 +79,9 @@ class Crm::Tasks::SaveFormService < Crm::Tasks::CommandService
   end
 
   def fingerprint_payload
-    canonical_payload(params.except(:lock_version, :idempotency_key))
+    canonical_payload(
+      params.except(:lock_version, :idempotency_key, *SERVER_GENERATED_FINGERPRINT_KEYS)
+    )
   end
 
   def canonical_payload(value)
