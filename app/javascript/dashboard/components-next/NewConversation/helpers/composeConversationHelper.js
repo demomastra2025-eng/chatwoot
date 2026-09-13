@@ -11,7 +11,7 @@ const CHANNEL_PRIORITY = {
   'Channel::WhatsappWeb': 5,
   'Channel::TelegramPersonal': 6,
   'Channel::Telegram': 7,
-  'Channel::LinkedinPersonal': 8,
+
   'Channel::Weixin': 9,
   'Channel::VkCommunity': 10,
   'Channel::Line': 11,

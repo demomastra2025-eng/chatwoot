@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_12_180000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_13_090000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -849,6 +849,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_12_180000) do
     t.index ["account_id", "profile_urn"], name: "index_channel_linkedin_personal_on_account_id_and_profile_urn", unique: true
     t.index ["account_id"], name: "index_channel_linkedin_personal_on_account_id"
     t.index ["webhook_identifier"], name: "index_channel_linkedin_personal_on_webhook_identifier", unique: true
+    t.check_constraint "false", name: "channel_linkedin_personal_retired", validate: false
   end
 
   create_table "channel_sms", force: :cascade do |t|
@@ -1694,6 +1695,7 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_12_180000) do
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["channel_id", "channel_type"], name: "index_inboxes_on_channel_id_and_channel_type"
     t.index ["portal_id"], name: "index_inboxes_on_portal_id"
+    t.check_constraint "channel_type::text IS DISTINCT FROM 'Channel::LinkedinPersonal'::text", name: "inboxes_linkedin_personal_retired", validate: false
   end
 
   create_table "installation_configs", force: :cascade do |t|

@@ -23,6 +23,8 @@
   - action_mailbox_routing
   - low
   - deferred
+  # Temporary consumer for compatibility tombstones enqueued before LinkedIn Personal retirement.
+  - linkedin_personal_history
   - telegram_personal_history
   - purgable
   - housekeeping

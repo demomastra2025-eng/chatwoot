@@ -658,6 +658,17 @@ RSpec.describe 'Inboxes API', type: :request do
         expect(response.body).to include('API Inbox')
       end
 
+      it 'rejects the retired LinkedIn Personal channel type' do
+        expect do
+          post "/api/v1/accounts/#{account.id}/inboxes",
+               headers: admin.create_new_auth_token,
+               params: { name: 'Retired channel', channel: { type: 'linkedin_personal' } },
+               as: :json
+        end.not_to change(Inbox, :count)
+
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+
       it 'persists top-level Janus SIP voice channel parameters for native voice inbox creation' do
         account.enable_features!('channel_voice')
         phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
