@@ -78,8 +78,9 @@ describe('#actions', () => {
       });
 
       const request = actions.get({ commit });
-      await Promise.resolve();
-      await Promise.resolve();
+      await vi.waitFor(() => {
+        expect(axios.get).toHaveBeenCalledWith('/api/v1/accounts/64/inboxes');
+      });
       window.history.pushState({}, '', '/app/accounts/6/settings/inboxes');
 
       resolveInboxes({ data: { payload: [inboxList[0]] } });
