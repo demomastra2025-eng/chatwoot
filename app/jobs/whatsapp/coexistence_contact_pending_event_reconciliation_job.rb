@@ -1,5 +1,5 @@
 class Whatsapp::CoexistenceContactPendingEventReconciliationJob < ApplicationJob
-  queue_as :whatsappweb_history
+  queue_as :whatsapp_coexistence_history
 
   discard_on ActiveRecord::RecordNotFound
 

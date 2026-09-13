@@ -74,14 +74,16 @@ RSpec.describe Whatsapp::CoexistenceHistoryFailureRecoveryJob do
     allow(history_service).to receive(:replay_failures)
   end
 
-  it 'uses a recovery-only queue that legacy history workers do not consume' do
-    rendered_config = ERB.new(File.read(Rails.root.join('config/sidekiq_whatsappweb_history.yml'))).result
+  it 'uses the official recovery queue while consuming serialized legacy recovery jobs' do
+    rendered_config = ERB.new(File.read(Rails.root.join('config/sidekiq_whatsapp_coexistence_history.yml'))).result
     worker_config = YAML.safe_load(rendered_config, permitted_classes: [Symbol], aliases: true)
 
-    expect(described_class.queue_name).to eq('whatsappweb_history_recovery')
+    expect(described_class.queue_name).to eq('whatsapp_coexistence_history_recovery')
     expect(described_class.queue_name).not_to eq(Whatsapp::CoexistenceWebhookSyncJob.queue_name)
-    expect(worker_config[:queues]).to eq(%w[whatsappweb_history whatsappweb_history_recovery])
-    expect(described_class.new(channel.id, identity).serialize['queue_name']).to eq('whatsappweb_history_recovery')
+    expect(worker_config[:queues]).to eq(
+      %w[whatsapp_coexistence_history whatsapp_coexistence_history_recovery whatsappweb_history_recovery]
+    )
+    expect(described_class.new(channel.id, identity).serialize['queue_name']).to eq('whatsapp_coexistence_history_recovery')
   end
 
   it 'replays one bounded batch and durably schedules the next cursor' do

@@ -11,5 +11,6 @@ whatsapp_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bu
 whatsappweb_inbound_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_whatsappweb_inbound.yml
 audio_transcription_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_audio_transcription.yml
 telegram_personal_history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_telegram_personal_history.yml
-history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_whatsappweb_history.yml
+history_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_whatsapp_coexistence_history.yml
+whatsappweb_history_worker: WHATSAPPWEB_HISTORY_SIDEKIQ_CONCURRENCY=${WHATSAPPWEB_HISTORY_SIDEKIQ_CONCURRENCY:-1} ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec sidekiq -C config/sidekiq_whatsappweb_history.yml
 echo_worker: ENABLE_SIDEKIQ_CRON=false DISABLE_SIDEKIQ_ALIVE=true bundle exec rails ip_lookup:setup && bundle exec sidekiq -C config/sidekiq_whatsappweb_echo.yml

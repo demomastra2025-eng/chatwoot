@@ -1,7 +1,7 @@
 class Whatsapp::CoexistenceWebhookSyncJob < MutexApplicationJob
   CHANNEL_LOCK_TIMEOUT = 30.minutes
 
-  queue_as :whatsappweb_history
+  queue_as :whatsapp_coexistence_history
 
   retry_on Whatsapp::WabaLivePriority::LiveTrafficPendingError, wait: 5.seconds, attempts: :unlimited, jitter: 0.5
   retry_on LockAcquisitionError, wait: 15.seconds, attempts: :unlimited, jitter: 0.5

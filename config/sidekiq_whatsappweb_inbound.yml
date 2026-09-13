@@ -1,6 +1,6 @@
 ---
 :verbose: false
-:concurrency: <%= ENV.fetch("WHATSAPPWEB_INBOUND_SIDEKIQ_CONCURRENCY", 4) %>
+:concurrency: <%= ENV.fetch("WHATSAPPWEB_INBOUND_SIDEKIQ_CONCURRENCY", 1) %>
 :timeout: 25
 :max_retries: 3
 
@@ -8,6 +8,6 @@
   - whatsappweb_inbound
 
 production:
-  :concurrency: <%= ENV.fetch("WHATSAPPWEB_INBOUND_SIDEKIQ_CONCURRENCY", 4) %>
+  :concurrency: <%= ENV.fetch("WHATSAPPWEB_INBOUND_SIDEKIQ_CONCURRENCY", 1) %>
 staging:
-  :concurrency: <%= ENV.fetch("WHATSAPPWEB_INBOUND_SIDEKIQ_CONCURRENCY", 4) %>
+  :concurrency: <%= ENV.fetch("WHATSAPPWEB_INBOUND_SIDEKIQ_CONCURRENCY", 1) %>
