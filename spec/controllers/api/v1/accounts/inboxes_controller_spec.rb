@@ -671,6 +671,7 @@ RSpec.describe 'Inboxes API', type: :request do
 
       it 'persists top-level Janus SIP voice channel parameters for native voice inbox creation' do
         account.enable_features!('channel_voice')
+        provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
         phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
 
         expect do
@@ -681,6 +682,7 @@ RSpec.describe 'Inboxes API', type: :request do
                  phone_number: phone_number,
                  provider: 'sipuni',
                  provider_config: {
+                   provider_connection_id: provider_connection.id,
                    number_ref: 'number-ref-top-level',
                    routing_mode: 'operator',
                    operator_agent_aor: 'sip:1001@example.test',
@@ -724,6 +726,7 @@ RSpec.describe 'Inboxes API', type: :request do
       it 'creates one Janus SIP voice inbox that is ready for both operator and Captain routing' do
         account.enable_features!('channel_voice')
         assistant = create(:captain_assistant, account: account)
+        provider_connection = create(:telephony_provider_connection, account: account, provider_kind: 'sipuni')
         phone_number = "+1555#{SecureRandom.random_number(10**8).to_s.rjust(8, '0')}"
 
         expect do
@@ -734,6 +737,7 @@ RSpec.describe 'Inboxes API', type: :request do
                  phone_number: phone_number,
                  provider: 'sipuni',
                  provider_config: {
+                   provider_connection_id: provider_connection.id,
                    number_ref: 'number-ref-unified',
                    app_route_app_ref: 'fallback-app-ref-unified',
                    routing_mode: 'operator',
