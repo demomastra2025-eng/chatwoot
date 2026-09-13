@@ -6,6 +6,7 @@ RSpec.describe 'Inboxes API', type: :request do
   let(:account) { create(:account) }
   let(:agent) { create(:user, account: account, role: :agent) }
   let(:admin) { create(:user, account: account, role: :administrator) }
+  let(:whatsapp_api_version) { GlobalConfigService.load('WHATSAPP_API_VERSION', 'v25.0') }
 
   describe 'GET /api/v1/accounts/{account.id}/inboxes' do
     context 'when it is an unauthenticated user' do
@@ -1269,7 +1270,7 @@ RSpec.describe 'Inboxes API', type: :request do
           phone_number_id: 'phone-1'
         ).and_return(token_inspection)
 
-        stub_request(:get, 'https://graph.facebook.com/v22.0/waba-1/message_templates')
+        stub_request(:get, "https://graph.facebook.com/#{whatsapp_api_version}/waba-1/message_templates")
           .to_return(status: 200, body: { data: [] }.to_json, headers: { 'Content-Type' => 'application/json' })
 
         whatsapp_channel = create(
@@ -1990,7 +1991,7 @@ RSpec.describe 'Inboxes API', type: :request do
     context 'when it is an authenticated administrator' do
       context 'with WhatsApp inbox' do
         it 'syncs templates immediately and returns the refreshed inbox payload' do
-          stub_request(:get, 'https://graph.facebook.com/v22.0/123456789/message_templates')
+          stub_request(:get, "https://graph.facebook.com/#{whatsapp_api_version}/123456789/message_templates")
             .to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: { data: [] }.to_json)
 
           post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",
@@ -2221,7 +2222,7 @@ RSpec.describe 'Inboxes API', type: :request do
     end
 
     it 'syncs templates immediately and returns the refreshed inbox payload' do
-      stub_request(:get, 'https://graph.facebook.com/v22.0/123456789/message_templates')
+      stub_request(:get, "https://graph.facebook.com/#{whatsapp_api_version}/123456789/message_templates")
         .to_return(status: 200, headers: { 'Content-Type' => 'application/json' }, body: { data: [remote_template] }.to_json)
 
       post "/api/v1/accounts/#{account.id}/inboxes/#{whatsapp_inbox.id}/sync_templates",
