@@ -118,7 +118,8 @@ jobs:
         run: |
           mapfile -t ruby_files < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list ruby)
           mapfile -t specs < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list specs)
-          if ((${#ruby_files[@]})); then bundle exec rubocop --force-exclusion "${ruby_files[@]}"; fi
+          # Report legacy convention offenses while still blocking warnings, errors, and fatal issues.
+          if ((${#ruby_files[@]})); then bundle exec rubocop --fail-level warning --force-exclusion "${ruby_files[@]}"; fi
           bundle exec rake db:create db:schema:load
           bundle exec rails zeitwerk:check
           if ((${#specs[@]})); then

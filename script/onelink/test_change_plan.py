@@ -7,6 +7,7 @@ import unittest
 from script.onelink.change_plan import (
     changed_files,
     classify,
+    existing_files_with_suffixes,
     related_specs,
     validate_migrations,
 )
@@ -53,6 +54,19 @@ class ChangePlanTest(unittest.TestCase):
                 files = changed_files(base, head)
 
         self.assertEqual(files, ["app/services/obsolete.rb"])
+
+    def test_deleted_files_are_excluded_from_lint_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = root / "app/services/current.rb"
+            existing.parent.mkdir(parents=True)
+            existing.touch()
+            with chdir(root):
+                files = existing_files_with_suffixes(
+                    ["app/services/current.rb", "app/services/deleted.rb"], {".rb"}
+                )
+
+        self.assertEqual(files, ["app/services/current.rb"])
 
     def test_classifies_cross_boundary_change(self):
         plan = classify(

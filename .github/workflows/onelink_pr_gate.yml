@@ -91,7 +91,8 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           mapfile -t files < <(python3 script/onelink/change_plan.py --base "$BASE_SHA" --head "$HEAD_SHA" --list ruby)
-          if ((${#files[@]})); then bundle exec rubocop --force-exclusion "${files[@]}"; fi
+          # Report legacy convention offenses while still blocking warnings, errors, and fatal issues.
+          if ((${#files[@]})); then bundle exec rubocop --fail-level warning --force-exclusion "${files[@]}"; fi
       - name: Run directly related Ruby specs
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

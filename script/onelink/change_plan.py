@@ -138,6 +138,12 @@ def related_specs(paths: Iterable[str]) -> list[str]:
     return sorted(specs)
 
 
+def existing_files_with_suffixes(paths: Iterable[str], suffixes: set[str]) -> list[str]:
+    return sorted(
+        path for path in paths if Path(path).suffix in suffixes and Path(path).is_file()
+    )
+
+
 def validate_migrations(paths: Iterable[str]) -> list[str]:
     violations: list[str] = []
     for raw_path in paths:
@@ -183,9 +189,9 @@ def main() -> int:
     if args.list:
         selected = files
         if args.list == "ruby":
-            selected = [path for path in files if Path(path).suffix in RUBY_SUFFIXES]
+            selected = existing_files_with_suffixes(files, RUBY_SUFFIXES)
         elif args.list == "frontend":
-            selected = [path for path in files if Path(path).suffix in FRONTEND_SUFFIXES]
+            selected = existing_files_with_suffixes(files, FRONTEND_SUFFIXES)
         elif args.list == "specs":
             selected = related_specs(files)
         elif args.list == "migrations":
