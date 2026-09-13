@@ -120,7 +120,8 @@ def related_specs(paths: Iterable[str]) -> list[str]:
     for raw_path in paths:
         path = Path(raw_path)
         if raw_path.startswith("spec/") and raw_path.endswith("_spec.rb"):
-            specs.add(raw_path)
+            if path.is_file():
+                specs.add(raw_path)
             continue
         if path.suffix != ".rb":
             continue

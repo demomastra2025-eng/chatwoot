@@ -132,6 +132,19 @@ class ChangePlanTest(unittest.TestCase):
 
         self.assertEqual(specs, ["spec/lib/example_spec.rb", "spec/services/example_spec.rb"])
 
+    def test_deleted_specs_are_excluded_from_related_specs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            existing = root / "spec/services/current_spec.rb"
+            existing.parent.mkdir(parents=True)
+            existing.touch()
+            with chdir(root):
+                specs = related_specs(
+                    ["spec/services/current_spec.rb", "spec/services/deleted_spec.rb"]
+                )
+
+        self.assertEqual(specs, ["spec/services/current_spec.rb"])
+
     def test_destructive_migration_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
