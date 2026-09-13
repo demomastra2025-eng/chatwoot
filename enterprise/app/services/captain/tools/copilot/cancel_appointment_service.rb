@@ -4,9 +4,10 @@ class Captain::Tools::Copilot::CancelAppointmentService < Captain::Tools::Copilo
   end
 
   description 'Cancel the appointment linked to the current conversation'
+  param :appointment_id, type: :number, desc: 'Exact appointment ID returned by get_appointment or a previous appointment mutation', required: false
 
-  def execute
-    appointment = appointment_operations.cancel_current_appointment
+  def execute(appointment_id: nil)
+    appointment = appointment_operations.cancel_current_appointment(appointment_id: appointment_id)
     formatted_payload(
       ::Scheduling::ToolPayloadBuilder.appointment_payload(action: 'cancel_appointment', appointment: appointment)
     )

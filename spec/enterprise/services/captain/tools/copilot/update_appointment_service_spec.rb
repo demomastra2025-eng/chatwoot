@@ -83,6 +83,23 @@ RSpec.describe Captain::Tools::Copilot::UpdateAppointmentService do
       expect(described_class.parameters[:custom_attributes].type).to eq(:object)
     end
 
+    it 'updates the explicitly selected appointment when the conversation has multiple appointments' do
+      other = create(
+        :scheduling_appointment,
+        account: account,
+        conversation: conversation,
+        contact: contact,
+        resource: resource,
+        starts_at: appointment.starts_at + 1.day
+      )
+
+      result = execute_confirmed(appointment_id: appointment.id, client_comment: 'Selected appointment')
+
+      expect(result).not_to start_with('ERROR:')
+      expect(appointment.reload.client_comment).to eq('Selected appointment')
+      expect(other.reload.client_comment).to be_nil
+    end
+
     it 'returns an error when explicit ends_at conflicts with duration_min' do
       result = execute_confirmed(
         starts_at: updated_start.iso8601,

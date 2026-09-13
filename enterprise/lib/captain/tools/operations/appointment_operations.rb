@@ -1,7 +1,7 @@
 class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operations::BaseOperation
-  def cancel_current_appointment
+  def cancel_current_appointment(appointment_id: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
-    raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
+    appointment = target_appointment(appointment_id)
 
     ::Scheduling::Appointments::UpsertService.new(
       account: account,
@@ -9,7 +9,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
         status: 'cancelled',
         payment_status: 'cancelled'
       },
-      appointment: current_appointment,
+      appointment: appointment,
       actor: actor
     ).perform
   end
@@ -43,10 +43,10 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     attach_provider_command_receipt(appointment)
   end
 
-  def update_current_appointment(resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil, appointment_type: nil,
-                                 client_comment: nil, custom_attributes: nil)
+  def update_current_appointment(appointment_id: nil, resource_id: nil, service_id: nil, starts_at: nil, ends_at: nil, duration_min: nil,
+                                 appointment_type: nil, client_comment: nil, custom_attributes: nil)
     ensure_feature_enabled!('scheduling', 'Scheduling is not enabled for this account')
-    raise ArgumentError, 'Current appointment is not available' if current_appointment.blank?
+    appointment = target_appointment(appointment_id)
 
     params = {}
     params[:resource_id] = resource_id unless resource_id.nil?
@@ -61,7 +61,7 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
     ::Scheduling::Appointments::UpsertService.new(
       account: account,
       params: params,
-      appointment: current_appointment,
+      appointment: appointment,
       actor: actor
     ).perform
   end
@@ -82,6 +82,27 @@ class Captain::Tools::Operations::AppointmentOperations < Captain::Tools::Operat
   end
 
   private
+
+  def target_appointment(appointment_id)
+    raise ArgumentError, 'Current conversation is not available' if conversation.blank?
+
+    appointments = account.scheduling_appointments.where(conversation_id: conversation.id)
+    return explicit_target_appointment(appointments, appointment_id) unless appointment_id.nil?
+
+    compatible_appointments = appointments.limit(2).to_a
+    raise ArgumentError, 'Current appointment is not available' if compatible_appointments.empty?
+    raise ArgumentError, 'appointment_id is required when the conversation has multiple appointments' if compatible_appointments.many?
+
+    compatible_appointments.first
+  end
+
+  def explicit_target_appointment(appointments, appointment_id)
+    appointment_id = required_positive_id(appointment_id, field_name: 'appointment_id')
+    appointment = appointments.find_by(id: appointment_id)
+    raise ArgumentError, 'Appointment is not available for the current conversation' if appointment.blank?
+
+    appointment
+  end
 
   def attach_provider_command_receipt(appointment)
     return appointment if appointment.medelement_provider_command_receipt.present?

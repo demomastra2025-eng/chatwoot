@@ -135,6 +135,19 @@ RSpec.describe 'Captain tool schema metadata' do
     end
   end
 
+  it 'exposes the same optional exact appointment target for update and cancel in both scopes' do
+    tool_pairs = [
+      [Captain::Tools::UpdateAppointmentTool, Captain::Tools::Copilot::UpdateAppointmentService],
+      [Captain::Tools::CancelAppointmentTool, Captain::Tools::Copilot::CancelAppointmentService]
+    ]
+
+    tool_pairs.each do |public_tool, assistant_tool|
+      expect(public_tool.parameters[:appointment_id]).to have_attributes(type: 'number', required: false)
+      expect(assistant_tool.parameters[:appointment_id]).to have_attributes(type: :number, required: false)
+      expect(public_tool.parameters[:appointment_id].description).to eq(assistant_tool.parameters[:appointment_id].description)
+    end
+  end
+
   it 'keeps registry descriptions aligned with runtime descriptions for representative built-in tools' do
     expect(Captain::ToolRegistry.definition_for('create_touch').description).to eq(
       Captain::Tools::CreateTouchTool.description
