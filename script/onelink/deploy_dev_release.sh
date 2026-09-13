@@ -202,7 +202,12 @@ done
 
 for unit in onelink-chatwoot-dev-workers.service \
   onelink-chatwoot-dev-communication-thread-realtime-worker.service; do
-  [[ "$(systemctl is-active "${unit}")" == active ]] || rollback "${unit} is not active"
+  unit_deadline=$((SECONDS + 180))
+  while ((SECONDS < unit_deadline)); do
+    [[ "$(systemctl is-active "${unit}" || true)" == active ]] && break
+    sleep 2
+  done
+  [[ "$(systemctl is-active "${unit}" || true)" == active ]] || rollback "${unit} is not active"
 done
 
 for asset in /vite-dev/@vite/client /vite-dev/entrypoints/dashboard.js; do
