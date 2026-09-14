@@ -36,11 +36,12 @@ class Captain::Assistant::AgentRunnerService
     end
   end
 
-  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil)
+  def initialize(assistant:, conversation: nil, callbacks: {}, source: nil, response_fence: nil)
     @assistant = assistant
     @conversation = conversation
     @callbacks = callbacks
     @source = source
+    @response_fence = response_fence.to_h.symbolize_keys.compact
     @handoff_tool_called = false
   end
 
@@ -54,6 +55,8 @@ class Captain::Assistant::AgentRunnerService
         end
       end
     end
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue StandardError => e
     # In rake/local runs, conversation may not be present, so account is optional here.
     ChatwootExceptionTracker.new(e, account: @conversation&.account).capture_exception
@@ -702,9 +705,12 @@ class Captain::Assistant::AgentRunnerService
       account_id: @assistant.account_id,
       assistant_id: @assistant.id,
       assistant_config: @assistant.config,
-      captain_runtime: @assistant.account.captain_runtime_preferences
+      captain_runtime: @assistant.account.captain_runtime_preferences,
+      captain_scheduling_grounding_guard_enabled: @assistant.account.feature_enabled?('captain_scheduling_grounding_guard')
     }
     state[:source] = @source if @source.present?
+    state[:captain_control_generation] = @response_fence[:control_generation] if @response_fence.key?(:control_generation)
+    state[:captain_response_fence] = @response_fence if @conversation.present? && @response_fence.present?
     state[:runtime_clock] = runtime_clock_state
 
     time_phase('build_conversation_state') { build_conversation_state(state) } if @conversation

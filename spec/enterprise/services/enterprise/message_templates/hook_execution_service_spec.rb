@@ -132,6 +132,18 @@ RSpec.describe MessageTemplates::HookExecutionService do
         expect(conversation.reload.status).to eq('open')
       end
 
+      it 'does not create transfer notifications when the handoff was already applied' do
+        message = build(:message, conversation: conversation, message_type: :incoming, account: account)
+        service = described_class.new(message: message)
+        allow(conversation).to receive(:bot_handoff!)
+          .with(source: 'system', fence: { last_message_id: nil })
+          .and_return(:already_applied)
+        allow(MessageTemplates::Template::OutOfOffice).to receive(:perform_if_applicable)
+
+        expect { service.send(:perform_handoff) }.not_to(change { conversation.messages.count })
+        expect(MessageTemplates::Template::OutOfOffice).not_to have_received(:perform_if_applicable)
+      end
+
       it 'does not send out of office message when Captain is handling' do
         out_of_office_service = instance_double(MessageTemplates::Template::OutOfOffice)
         allow(MessageTemplates::Template::OutOfOffice).to receive(:new).and_return(out_of_office_service)

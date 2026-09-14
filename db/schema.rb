@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.1].define(version: 2026_09_13_090000) do
+ActiveRecord::Schema[7.1].define(version: 2026_09_14_120000) do
   create_schema "agent_transport"
   create_schema "evolution_api"
   create_schema "mastra_agent"
@@ -1286,6 +1286,9 @@ ActiveRecord::Schema[7.1].define(version: 2026_09_13_090000) do
     t.datetime "waiting_since"
     t.text "cached_label_list"
     t.bigint "assignee_agent_bot_id"
+    t.string "captain_control_state", default: "ai", null: false
+    t.bigint "captain_control_generation", default: 0, null: false
+    t.datetime "captain_handoff_applied_at"
     t.index ["account_id", "display_id"], name: "index_conversations_on_account_id_and_display_id", unique: true
     t.index ["account_id", "id"], name: "index_conversations_on_id_and_account_id"
     t.index ["account_id", "inbox_id", "status", "assignee_id"], name: "conv_acid_inbid_stat_asgnid_idx"

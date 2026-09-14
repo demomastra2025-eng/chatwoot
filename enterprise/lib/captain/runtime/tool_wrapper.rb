@@ -15,6 +15,7 @@ class Captain::Runtime::ToolWrapper
   TOOL_REQUEST_COUNTS_KEY = Captain::Runtime::ToolLoopGuard::REQUEST_COUNTS_KEY
   TERMINAL_TOOL_STOP_KEY = Captain::Runtime::ToolLoopGuard::TERMINAL_STOP_KEY
   MUTATING_TOOL_EXECUTIONS_KEY = :captain_v2_mutating_tool_executions
+  SERVICE_SPECIFIC_SCHEDULING_KEY = :captain_v2_service_specific_scheduling
   VERIFIED_ID_DESCRIPTION = 'Use only an ID verified from the user, current context, or a prior tool result. Never guess an ID.'
   OPTIONAL_ARGUMENT_DESCRIPTION =
     'If this value was not explicitly provided or resolved, omit the key entirely; never invent a placeholder value.'
@@ -52,6 +53,7 @@ class Captain::Runtime::ToolWrapper
   end
 
   def call(args)
+    ensure_response_run_current!
     normalized_args = normalize_args(args)
 
     request_stop = requested_tool_stop_result(normalized_args)
@@ -65,6 +67,8 @@ class Captain::Runtime::ToolWrapper
     return complete_and_halt(attempt_error) if attempt_error
 
     execute_registered_tool(normalized_args)
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue InvalidToolArgumentsError => e
     invalid_tool_arguments_result(e)
   rescue StandardError => e
@@ -110,6 +114,16 @@ class Captain::Runtime::ToolWrapper
   end
 
   private
+
+  def ensure_response_run_current!
+    state = @context_wrapper.context[:state] || {}
+    fence = state[:captain_response_fence] || state['captain_response_fence']
+    return if fence.blank?
+
+    assistant_id = state[:assistant_id] || state['assistant_id']
+    assistant = Captain::Assistant.find_by(id: assistant_id)
+    Captain::Conversation::RunFenceService.new(assistant: assistant, state: state).ensure_current!
+  end
 
   def execute_registered_tool(normalized_args)
     tool_context = Captain::Runtime::ToolContext.new(run_context: @context_wrapper)
@@ -328,7 +342,73 @@ class Captain::Runtime::ToolWrapper
 
   def pre_execution_error(normalized_args)
     bound_tool_error_for_current_agent ||
-      tool_safety_error_for(:tool_arguments, normalized_args)
+      tool_safety_error_for(:tool_arguments, normalized_args) ||
+      scheduling_context_error(normalized_args)
+  end
+
+  def scheduling_context_error(normalized_args)
+    return unless canonical_tool_name == 'search_available_slots'
+
+    @context_wrapper.tool_loop_guard_mutex.synchronize do
+      return remember_service_specific_scheduling! if positive_service_id?(normalized_args[:service_id])
+      return unless service_specific_scheduling?
+
+      publish_generic_after_service_specific_attempt
+      return unless scheduling_grounding_guard_enabled?
+
+      Captain::ToolResult.failure(
+        error: 'Service-specific availability requires a confirmed service_id.',
+        data: { code: 'service_context_required' },
+        retryable: false,
+        audit: {
+          failure_stage: 'tool_arguments',
+          failure_reason: 'service_context_required',
+          tool_name: canonical_tool_name,
+          provider_call_blocked: true
+        }
+      )
+    end
+  end
+
+  def positive_service_id?(value)
+    value.present? && value.to_i.positive?
+  end
+
+  def remember_service_specific_scheduling!
+    context_wrapper_context[SERVICE_SPECIFIC_SCHEDULING_KEY] = true
+    nil
+  end
+
+  def service_specific_scheduling?
+    ActiveModel::Type::Boolean.new.cast(context_wrapper_context[SERVICE_SPECIFIC_SCHEDULING_KEY])
+  end
+
+  def scheduling_grounding_guard_enabled?
+    state = context_wrapper_context[:state].to_h.with_indifferent_access
+    ActiveModel::Type::Boolean.new.cast(state[:captain_scheduling_grounding_guard_enabled])
+  end
+
+  def canonical_tool_name
+    name = @tool.name.to_s
+    %w[search_available_slots search_scheduling_resources search_scheduling_services].find do |candidate|
+      name == candidate || name.end_with?("__#{candidate}") || name.end_with?(":#{candidate}")
+    end || name
+  end
+
+  def publish_generic_after_service_specific_attempt
+    state = context_wrapper_context[:state].to_h.with_indifferent_access
+    Llm::EventBus.publish(
+      'captain.generic_after_service_specific_attempt',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: state[:account_id],
+      conversation_id: state.dig(:conversation, :id),
+      tool_name: canonical_tool_name,
+      enforced: scheduling_grounding_guard_enabled?,
+      provider_call_blocked: scheduling_grounding_guard_enabled?
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][ToolWrapper] Failed to publish scheduling context block: #{e.class}: #{e.message}")
   end
 
   def complete_and_render(result)

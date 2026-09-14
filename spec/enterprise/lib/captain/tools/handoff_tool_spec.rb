@@ -19,11 +19,13 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
 
   describe '#parameters' do
     it 'returns the correct parameters' do
-      expect(tool.parameters).to have_key(:reason)
+      expect(tool.parameters.keys).to include(:reason, :status_reason, :message)
       expect(tool.parameters[:reason].name).to eq(:reason)
       expect(tool.parameters[:reason].type).to eq('string')
       expect(tool.parameters[:reason].description).to eq('Optional handoff reason for the human team')
       expect(tool.parameters[:reason].required).to be false
+      expect(tool.parameters[:status_reason]).to have_attributes(type: 'string', required: false)
+      expect(tool.parameters[:message]).to have_attributes(type: 'string', required: false)
     end
   end
 
@@ -32,14 +34,20 @@ RSpec.describe Captain::Tools::HandoffTool, type: :model do
       context 'with reason provided' do
         it 'stores pending handoff context and halts the runtime' do
           reason = 'Customer needs specialized support'
+          status_reason = 'Needs agent'
+          message = 'I will connect you with a human agent.'
 
           expect do
-            result = tool.perform(tool_context, reason: reason)
+            result = tool.perform(tool_context, reason: reason, status_reason: status_reason, message: message)
             expect(result).to be_a(RubyLLM::Tool::Halt)
             expect(result.content).to eq("Conversation handed off to human support team (Reason: #{reason})")
           end.not_to change(Message, :count)
 
-          expect(run_context.context[:pending_human_handoff]).to include(reason: reason)
+          expect(run_context.context[:pending_human_handoff]).to include(
+            reason: reason,
+            status_reason: status_reason,
+            message: message
+          )
         end
 
         it 'creates a conversation_bot_handoff reporting event' do

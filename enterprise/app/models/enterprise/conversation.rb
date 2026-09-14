@@ -1,6 +1,36 @@
 module Enterprise::Conversation
   attr_accessor :captain_activity_reason, :captain_activity_reason_type
 
+  def captain_ai_control_active?
+    !captain_human_control_active?
+  end
+
+  def captain_human_control_active?
+    captain_control_state == Captain::Conversation::ControlService::HUMAN_CONTROL
+  end
+
+  def stamp_captain_control_generation!(message)
+    captain_control_service.stamp_generation!(message)
+  end
+
+  def activate_captain_human_control!(source:, actor: nil)
+    captain_control_service.activate_human!(source: source, actor: actor)
+  end
+
+  def prepare_captain_ai_control!
+    captain_control_service.prepare_ai!
+  end
+
+  def publish_captain_ai_control_activated!(source:, actor: nil)
+    captain_control_service.publish_ai_activated!(source: source, actor: actor)
+  end
+
+  def bot_handoff!(status_reason: nil, actor: Current.user || Current.executed_by, source: 'system', fence: nil, &)
+    result = captain_control_service.handoff!(status_reason: status_reason, actor: actor, source: source, fence: fence, &)
+    dispatcher_dispatch(::Conversation::CONVERSATION_BOT_HANDOFF) if result == :applied
+    result
+  end
+
   def dispatch_captain_inference_resolved_event
     dispatch_captain_inference_event(Events::Types::CONVERSATION_CAPTAIN_INFERENCE_RESOLVED)
   end
@@ -37,6 +67,10 @@ module Enterprise::Conversation
   end
 
   private
+
+  def captain_control_service
+    Captain::Conversation::ControlService.new(self)
+  end
 
   def dispatch_captain_inference_event(event_name)
     dispatcher_dispatch(event_name)

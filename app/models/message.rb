@@ -153,6 +153,7 @@ class Message < ApplicationRecord
   has_one :csat_survey_response, dependent: :destroy_async
   has_many :notifications, as: :primary_actor, dependent: :destroy_async
 
+  before_create :activate_captain_human_control_for_human_response
   after_create_commit :execute_after_create_commit_callbacks
 
   after_update_commit :dispatch_update_event
@@ -508,6 +509,8 @@ class Message < ApplicationRecord
 
     transition_conversation_status!('open', source: 'system')
   end
+
+  def activate_captain_human_control_for_human_response; end
 
   def scheduled_touch_message?
     touch_content_attributes = content_attributes.to_h.with_indifferent_access

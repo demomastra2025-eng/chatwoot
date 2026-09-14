@@ -81,7 +81,11 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
           on_agent_thinking: kind_of(Proc),
           on_tool_start: kind_of(Proc),
           on_tool_complete: kind_of(Proc)
-        )
+        ),
+        response_fence: {
+          control_generation: 0,
+          last_message_id: conversation.messages.incoming.last.id
+        }
       ).and_return(agent_runner_service)
 
       described_class.perform_now(conversation, assistant)
@@ -215,6 +219,68 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       expect do
         described_class.perform_now(conversation, assistant, expected_last_message_id: expected_last_message_id)
       end.not_to(change { conversation.messages.outgoing.count })
+    end
+
+    it 'does not start a response while human control is active' do
+      conversation.activate_captain_human_control!(source: 'agent_reply')
+      expect(agent_runner_service).not_to receive(:generate_response)
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+    end
+
+    it 'does not publish an AI response when a human replies during generation' do
+      agent = create(:user, account: account, role: :agent)
+      expected_generation = conversation.captain_control_generation
+      allow(agent_runner_service).to receive(:generate_response) do
+        create(:message, conversation: conversation, message_type: :outgoing, sender: agent, account: account, inbox: inbox)
+        { 'response' => 'Late AI response' }
+      end
+
+      described_class.perform_now(conversation, assistant, expected_control_generation: expected_generation)
+
+      expect(conversation.reload.captain_control_state).to eq('human')
+      expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+    end
+
+    it 'does not publish after a human reply commits while its ownership callback is waiting' do
+      trigger_message = conversation.messages.incoming.last
+      allow(agent_runner_service).to receive(:generate_response) do
+        create(:message, conversation: conversation, message_type: :outgoing, sender: create(:user, account: account), account: account, inbox: inbox)
+        conversation.update!(captain_control_state: 'ai', captain_control_generation: 0, status: :pending)
+        { 'response' => 'Late AI response' }
+      end
+
+      described_class.perform_now(conversation, assistant, expected_last_message_id: trigger_message.id)
+
+      expect(conversation.reload.captain_control_state).to eq('ai')
+      expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
+    end
+
+    it 'rechecks ownership while holding the conversation lock before publishing an AI response' do
+      expect(conversation).to receive(:with_lock).and_call_original
+
+      described_class.perform_now(conversation, assistant)
+
+      expect(conversation.messages.outgoing.where(sender: assistant)).not_to be_empty
+    end
+
+    it 'does not revive a queued run after control returns to Captain in a newer generation' do
+      agent = create(:user, account: account, role: :agent)
+      stale_generation = conversation.captain_control_generation
+      conversation.activate_captain_human_control!(source: 'agent_reply', actor: agent)
+      Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: { status: 'pending' },
+        actor: agent,
+        source: 'api'
+      ).perform
+      expect(agent_runner_service).not_to receive(:generate_response)
+
+      described_class.perform_now(conversation, assistant, expected_control_generation: stale_generation)
+
+      expect(conversation.messages.outgoing.where(sender: assistant)).to be_empty
     end
 
     it 'skips a buffered stale job when the latest incoming no longer matches the buffer state' do
@@ -367,6 +433,17 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         described_class.perform_now(conversation, assistant, expected_last_message_id: last_incoming_message_id)
       end.not_to(change { conversation.messages.count })
 
+      expect(conversation.reload.status).to eq('pending')
+      expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
+    end
+
+    it 'stops a fenced runtime silently without applying provider-error handoff' do
+      allow(agent_runner_service).to receive(:generate_response).and_raise(
+        Captain::Conversation::ControlGenerationStaleError,
+        'Captain response run is stale: buffer_state_changed'
+      )
+
+      expect { described_class.perform_now(conversation, assistant) }.not_to(change { conversation.messages.count })
       expect(conversation.reload.status).to eq('pending')
       expect(account.reload.usage_limits[:captain][:responses][:consumed]).to eq(0)
     end
@@ -625,7 +702,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
       )
     end
 
-    it 'creates the configured public handoff message when the V2 handoff tool already opened the conversation' do
+    it 'does not duplicate a public handoff message when another run already applied the handoff' do
       assistant.update!(config: {
                           'handoff_message_enabled' => true,
                           'handoff_message_mode' => 'static',
@@ -640,7 +717,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
       conversation.reload
       expect(conversation.status).to eq('open')
-      expect(conversation.messages.outgoing.last.content).to eq('Connecting you to a human agent.')
+      expect(conversation.messages.outgoing.where(private: false)).to be_empty
       expect(conversation.waiting_since).to be_present
     end
 
@@ -715,7 +792,7 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         expect(conversation.reload.status).to eq('open')
       end
 
-      it 'does not fall back to default public text when static handoff message is blank' do
+      it 'uses localized default public text when static handoff message is blank' do
         assistant.update!(config: {
                             'handoff_message_enabled' => true,
                             'handoff_message_mode' => 'static',
@@ -724,9 +801,11 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
 
         expect do
           described_class.perform_now(conversation, assistant)
-        end.not_to(change { conversation.messages.outgoing.where(private: false).count })
+        end.to change { conversation.messages.outgoing.where(private: false).count }.by(1)
 
         expect(conversation.reload.status).to eq('open')
+        expected_handoff = I18n.with_locale(account.locale) { I18n.t('conversations.captain.handoff') }
+        expect(conversation.messages.outgoing.where(private: false).last.content).to eq(expected_handoff)
       end
 
       it 'uses generated handoff text when AI handoff message mode is enabled' do
@@ -761,6 +840,101 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         private_note = conversation.reload.messages.where(private: true).last
         expect(private_note.content).to eq('Customer requested billing specialist')
         expect(private_note.sender).to eq(assistant)
+      end
+
+      it 'drops an unknown optional status reason before creating handoff artifacts' do
+        buffer_token = SecureRandom.uuid
+        trigger_message = conversation.messages.incoming.last
+        expected_generation = conversation.captain_control_generation
+        state_key = format(Redis::Alfred::CAPTAIN_MESSAGE_BUFFER_STATE, conversation_id: conversation.id)
+        Redis::Alfred.set(
+          state_key,
+          { token: buffer_token, assistant_id: assistant.id, last_message_id: trigger_message.id }.to_json,
+          ex: 10.minutes.to_i
+        )
+        account.update!(
+          conversation_status_reason_config: {
+            open: { options: ['Needs agent'], required: false }
+          }
+        )
+        allow(Llm::EventBus).to receive(:publish)
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_reason' => 'Customer requested a human',
+            'handoff_status_reason' => 'handoff_requested'
+          }
+        )
+
+        expect do
+          described_class.perform_now(
+            conversation,
+            assistant,
+            buffer_token: buffer_token,
+            expected_last_message_id: trigger_message.id,
+            expected_control_generation: expected_generation
+          )
+        end.not_to raise_error
+
+        transition = conversation.reload.status_transitions.last
+        expect(transition).to have_attributes(reason: nil, source: 'system')
+        expect(conversation.messages.where(private: true, content: 'Customer requested a human').count).to eq(1)
+        expect(conversation.messages.where(private: true, content: described_class.new.send(:provider_error_note_content)).count).to eq(0)
+        expect(Redis::Alfred.get(state_key)).to be_nil
+        expect(agent_runner_service).to have_received(:generate_response).once
+        expect(Llm::EventBus).to have_received(:publish)
+          .with('captain.handoff_status_reason_dropped', hash_including(account_id: account.id, conversation_id: conversation.id))
+      ensure
+        Redis::Alfred.delete(state_key) if defined?(state_key)
+      end
+
+      it 'does not regenerate or duplicate handoff effects when the same fenced job is retried' do
+        trigger_message = conversation.messages.incoming.last
+        expected_generation = conversation.captain_control_generation
+        assistant.update!(config: {
+                            'handoff_message_enabled' => true,
+                            'handoff_message_mode' => 'ai',
+                            'handoff_message' => ''
+                          })
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_reason' => 'Customer requested a person',
+            'handoff_message' => 'I am connecting you with a person.'
+          }
+        )
+
+        2.times do
+          described_class.perform_now(
+            conversation,
+            assistant,
+            expected_control_generation: expected_generation,
+            expected_last_message_id: trigger_message.id
+          )
+        end
+
+        expect(agent_runner_service).to have_received(:generate_response).once
+        expect(conversation.messages.where(private: true, content: 'Customer requested a person').count).to eq(1)
+        expect(conversation.messages.outgoing.where(private: false, content: 'I am connecting you with a person.').count).to eq(1)
+        expect(conversation.status_transitions.where(to_status: 'open').count).to eq(1)
+      end
+
+      it 'canonicalizes a configured optional status reason before handoff' do
+        account.update!(
+          conversation_status_reason_config: {
+            open: { options: ['Needs agent'], required: false }
+          }
+        )
+        allow(agent_runner_service).to receive(:generate_response).and_return(
+          {
+            'response' => 'conversation_handoff',
+            'handoff_status_reason' => 'needs AGENT'
+          }
+        )
+
+        described_class.perform_now(conversation, assistant)
+
+        expect(conversation.reload.status_transitions.last).to have_attributes(reason: 'Needs agent', source: 'captain')
       end
 
       it 'records the AI open activity with the handoff reason' do
@@ -1203,6 +1377,34 @@ RSpec.describe Captain::Conversation::ResponseBuilderJob, type: :job do
         )
         expect(private_note.content).not_to include('StandardError')
         expect(private_note.content).not_to include('Generic error')
+      end
+
+      it 'does not inherit handoff fields from a polluted failed response' do
+        job = described_class.new
+        job.send(:initialize_response_context, conversation, assistant, nil, conversation.messages.incoming.last.id, 0)
+        job.instance_variable_set(
+          :@response,
+          {
+            'response' => 'conversation_handoff',
+            'handoff_reason' => 'Polluted handoff reason',
+            'handoff_message' => 'Polluted public handoff',
+            'handoff_status_reason' => 'invalid_reason'
+          }
+        )
+        allow(job).to receive(:log_error)
+        allow(Llm::EventBus).to receive(:publish)
+
+        expect { job.send(:handle_error, standard_error) }.not_to raise_error
+
+        transition = conversation.reload.status_transitions.last
+        expect(transition).to have_attributes(reason: nil, source: 'system')
+        expect(conversation.messages.where(content: 'Polluted handoff reason')).to be_empty
+        expect(conversation.messages.where(content: 'Polluted public handoff')).to be_empty
+        expect(conversation.messages.where(private: true).last.content).to eq(
+          'Automatic reply could not be generated. Handoff to human agent was triggered.'
+        )
+        expect(Llm::EventBus).to have_received(:publish)
+          .with('captain.provider_fallback_without_status_reason', hash_including(conversation_id: conversation.id))
       end
 
       it 'ensures Current.executed_by is reset' do

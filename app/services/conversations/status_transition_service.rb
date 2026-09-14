@@ -10,6 +10,19 @@ class Conversations::StatusTransitionService
   end
 
   def perform
+    if explicit_captain_control_release?
+      conversation.save! if conversation.has_changes_to_save?
+      return conversation.with_lock { perform_transition }
+    end
+
+    perform_transition
+  end
+
+  private
+
+  attr_reader :conversation, :account, :params, :actor, :source
+
+  def perform_transition
     previous_status = conversation.status
     target_status = resolve_target_status(previous_status)
     status_changing = previous_status != target_status
@@ -19,18 +32,31 @@ class Conversations::StatusTransitionService
       enforce_required: enforce_reason? && status_changing
     )
 
+    prepare_captain_control_release!
     conversation.status = target_status
     assign_snoozed_until!
     changed = conversation.changed?
     conversation.save! if changed
 
     record_transition!(previous_status: previous_status, target_status: conversation.status, reason: reason) if changed && status_changing
+    publish_captain_control_release!
     true
   end
 
-  private
+  def explicit_captain_control_release?
+    params[:status].to_s.in?(%w[pending resolved]) && actor.present? && source.in?(%w[api manual bulk_action communication_thread copilot]) &&
+      conversation.respond_to?(:prepare_captain_ai_control!)
+  end
 
-  attr_reader :conversation, :account, :params, :actor, :source
+  def prepare_captain_control_release!
+    @captain_control_released = explicit_captain_control_release? && conversation.prepare_captain_ai_control!
+  end
+
+  def publish_captain_control_release!
+    return unless @captain_control_released
+
+    conversation.publish_captain_ai_control_activated!(source: source, actor: actor)
+  end
 
   def resolve_target_status(previous_status)
     return params[:status].to_s if params[:status].present?

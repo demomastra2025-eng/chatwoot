@@ -73,6 +73,7 @@ RSpec.describe 'Enterprise Conversations API', type: :request do
         assistant,
         expected_last_message_id: conversation.messages.incoming.last.id
       )
+      expect(conversation.messages.incoming.last.additional_attributes['captain_control_generation']).to eq(0)
     end
 
     it 'turns off typing when the conversation leaves pending' do

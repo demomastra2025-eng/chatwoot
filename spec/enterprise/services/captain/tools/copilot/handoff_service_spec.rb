@@ -37,5 +37,19 @@ RSpec.describe Captain::Tools::Copilot::HandoffService do
       expect(payload['status_reason']).to eq('Needs agent')
       expect(conversation.reload.status_transitions.last.reason).to eq('Needs agent')
     end
+
+    it 'succeeds with no transition reason for an unknown optional status reason' do
+      account.update!(
+        conversation_status_reason_config: {
+          open: { options: ['Needs agent'], required: false }
+        }
+      )
+
+      payload = JSON.parse(service.execute(reason: 'сложный кейс', status_reason: 'handoff_requested'))
+
+      expect(payload).to include('status' => 'open', 'status_reason' => nil)
+      expect(conversation.reload.status_transitions.last).to have_attributes(reason: nil, source: 'system')
+      expect(conversation.messages.where(private: true, content: 'сложный кейс').count).to eq(1)
+    end
   end
 end

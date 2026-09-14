@@ -45,6 +45,17 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
         'ends_at' => '2026-04-20T09:45:00+05:00'
       )
       expect(payload['slots'].map { |slot| slot['starts_at'] }).not_to include('2026-04-20T10:00:00+05:00')
+      expect(payload).to include(
+        'availability_scope' => 'service_confirmed',
+        'requested_service_id' => consultation.id,
+        'customer_offer_eligible' => true,
+        'service_match' => include(
+          'confirmed' => true,
+          'service_id' => consultation.id,
+          'resource_id' => resource.id,
+          'resource_ids' => [resource.id]
+        )
+      )
     end
 
     it 'treats non-positive and blank service ids as an omitted filter' do
@@ -55,6 +66,17 @@ RSpec.describe Captain::Tools::Copilot::SearchAvailableSlotsService do
 
         expect(payload['service']).to be_nil
         expect(payload['resources'].map { |item| item['id'] }).to contain_exactly(resource.id, other_resource.id)
+        expect(payload).to include(
+          'availability_scope' => 'generic',
+          'requested_service_id' => nil,
+          'customer_offer_eligible' => false,
+          'service_match' => {
+            'confirmed' => false,
+            'service_id' => nil,
+            'resource_id' => nil,
+            'resource_ids' => []
+          }
+        )
       end
     end
 

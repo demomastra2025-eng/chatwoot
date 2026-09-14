@@ -509,6 +509,7 @@ RSpec.describe Conversation do
 
     before do
       allow(Rails.configuration.dispatcher).to receive(:dispatch)
+      allow(Llm::EventBus).to receive(:publish).and_call_original
     end
 
     context 'when waiting_since is blank' do
@@ -554,14 +555,148 @@ RSpec.describe Conversation do
     end
 
     it 'changes status to open' do
-      conversation.bot_handoff!
+      expect(conversation.bot_handoff!).to eq(:applied)
       expect(conversation.reload.status).to eq('open')
+      expect(conversation.captain_control_state).to eq('human')
+      expect(conversation.captain_control_generation).to eq(1)
+      expect(conversation.captain_handoff_applied_at).to be_present
+    end
+
+    it 'rolls back the short handoff bundle and applies its artifacts once on retry' do
+      artifact_content = 'Human handoff artifact'
+      original_waiting_since = conversation.waiting_since
+
+      expect do
+        conversation.bot_handoff! do
+          create(:message, conversation: conversation, message_type: :outgoing, private: true, content: artifact_content)
+          raise ActiveRecord::RecordInvalid
+        end
+      end.to raise_error(ActiveRecord::RecordInvalid)
+
+      conversation.reload
+      expect(conversation.status).to eq('pending')
+      expect(conversation.captain_control_state).to eq('ai')
+      expect(conversation.waiting_since).to eq(original_waiting_since)
+      expect(conversation.messages.where(content: artifact_content)).to be_empty
+
+      expect do
+        conversation.bot_handoff! do
+          create(:message, conversation: conversation, message_type: :outgoing, private: true, content: artifact_content)
+        end
+      end.to change { conversation.messages.where(content: artifact_content).count }.by(1)
+
+      expect(conversation.reload).to have_attributes(status: 'open', captain_control_state: 'human')
+      expect(conversation.bot_handoff! { raise 'must not execute duplicate artifacts' }).to eq(:already_applied)
     end
 
     it 'dispatches CONVERSATION_BOT_HANDOFF event' do
       expect(Rails.configuration.dispatcher).to receive(:dispatch)
         .with(described_class::CONVERSATION_BOT_HANDOFF, anything, hash_including(conversation: conversation))
       conversation.bot_handoff!
+    end
+
+    it 'applies handoff exactly once for the active human-control epoch' do
+      expect(conversation.bot_handoff!).to eq(:applied)
+      expect(conversation.bot_handoff!).to eq(:already_applied)
+
+      expect(conversation.reload.captain_control_generation).to eq(1)
+      expect(Rails.configuration.dispatcher).to have_received(:dispatch)
+        .with(described_class::CONVERSATION_BOT_HANDOFF, anything, hash_including(conversation: conversation)).once
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.handoff.requested', hash_including(conversation_id: conversation.id)).twice
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.handoff.applied', hash_including(conversation_id: conversation.id)).once
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.handoff.skipped_duplicate', hash_including(conversation_id: conversation.id)).once
+    end
+
+    it 'does not apply a bot handoff over an already assigned human agent' do
+      conversation.update!(assignee: create(:user, account: conversation.account))
+
+      expect(conversation.bot_handoff!).to eq(:already_applied)
+      expect(conversation.reload.captain_control_state).to eq('human')
+      expect(conversation.captain_control_generation).to eq(1)
+      expect(conversation.captain_handoff_applied_at).to be_nil
+      expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
+        .with(described_class::CONVERSATION_BOT_HANDOFF, anything, anything)
+    end
+
+    it 'skips a stale handoff and its notifications when a human reply committed first' do
+      assistant = create(:captain_assistant, account: conversation.account)
+      create(:captain_inbox, inbox: conversation.inbox, captain_assistant: assistant)
+      trigger_message = create(:message, conversation: conversation, message_type: :incoming)
+      expected_generation = conversation.captain_control_generation
+      create(:message, conversation: conversation, message_type: :outgoing)
+      conversation.update!(captain_control_state: 'ai', captain_control_generation: expected_generation, status: :pending)
+      notification_created = false
+
+      result = conversation.bot_handoff!(
+        fence: { control_generation: expected_generation, last_message_id: trigger_message.id }
+      ) { notification_created = true }
+
+      expect(result).to eq(:stale)
+      expect(notification_created).to be(false)
+      expect(conversation.reload.status).to eq('pending')
+      expect(Rails.configuration.dispatcher).not_to have_received(:dispatch)
+        .with(described_class::CONVERSATION_BOT_HANDOFF, anything, anything)
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.handoff.skipped_stale', hash_including(conversation_id: conversation.id))
+    end
+
+    it 'preserves the base default actor for audit telemetry' do
+      actor = create(:user, account: conversation.account)
+      allow(Current).to receive(:user).and_return(actor)
+      allow(Current).to receive(:executed_by).and_return(nil)
+
+      conversation.bot_handoff!
+
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.handoff.applied', hash_including(actor_type: 'User', actor_id: actor.id))
+    end
+
+    it 'returns control to Captain only on an explicit agent transfer to pending' do
+      agent = create(:user, account: conversation.account)
+      conversation.bot_handoff!
+
+      Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: { status: 'pending' },
+        actor: agent,
+        source: 'api'
+      ).perform
+
+      expect(conversation.reload.captain_control_state).to eq('ai')
+      expect(conversation.captain_control_generation).to eq(2)
+      expect(conversation.captain_handoff_applied_at).to be_nil
+    end
+
+    it 'does not return control to Captain for an automatic pending transition' do
+      conversation.bot_handoff!
+
+      Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: { status: 'pending' },
+        source: 'system'
+      ).perform
+
+      expect(conversation.reload.captain_control_state).to eq('human')
+      expect(conversation.captain_control_generation).to eq(1)
+    end
+
+    it 'ends the human-control epoch when an agent resolves the conversation' do
+      agent = create(:user, account: conversation.account)
+      conversation.bot_handoff!
+
+      Conversations::StatusTransitionService.new(
+        conversation: conversation,
+        params: { status: 'resolved' },
+        actor: agent,
+        source: 'api'
+      ).perform
+
+      expect(conversation.reload.status).to eq('resolved')
+      expect(conversation.captain_control_state).to eq('ai')
+      expect(conversation.captain_control_generation).to eq(2)
     end
   end
 

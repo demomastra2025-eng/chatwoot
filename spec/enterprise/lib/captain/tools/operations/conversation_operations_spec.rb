@@ -234,5 +234,46 @@ RSpec.describe Captain::Tools::Operations::ConversationOperations do
       expect(conversation.reload).to be_open
       expect(conversation.status_transitions.last.reason).to eq('Needs agent')
     end
+
+    it 'drops an unknown optional status reason before creating handoff artifacts' do
+      account.update!(
+        conversation_status_reason_config: {
+          open: { options: ['Needs agent'], required: false }
+        }
+      )
+      allow(Llm::EventBus).to receive(:publish)
+      allow(MessageTemplates::Template::OutOfOffice).to receive(:perform_if_applicable)
+
+      expect { operations.handoff(reason: 'Customer requested a human', status_reason: 'handoff_requested') }.not_to raise_error
+
+      transition = conversation.reload.status_transitions.last
+      expect(transition).to have_attributes(reason: nil, source: 'system')
+      expect(conversation.messages.where(private: true, content: 'Customer requested a human').count).to eq(1)
+      expect(MessageTemplates::Template::OutOfOffice).to have_received(:perform_if_applicable).with(conversation).once
+      expect(Llm::EventBus).to have_received(:publish)
+        .with('captain.handoff_status_reason_dropped', hash_including(account_id: account.id, conversation_id: conversation.id))
+    end
+
+    it 'does not duplicate notes or out-of-office side effects when handoff is retried' do
+      allow(MessageTemplates::Template::OutOfOffice).to receive(:perform_if_applicable)
+
+      2.times { operations.handoff(reason: 'Customer requested a human') }
+
+      expect(conversation.reload.messages.where(private: true, content: 'Customer requested a human').count).to eq(1)
+      expect(conversation.status_transitions.where(to_status: 'open').count).to eq(1)
+      expect(MessageTemplates::Template::OutOfOffice).to have_received(:perform_if_applicable).with(conversation).once
+    end
+
+    it 'uses a free-text fallback only when it matches a configured open reason' do
+      account.update!(
+        conversation_status_reason_config: {
+          open: { options: ['Needs agent'], required: false }
+        }
+      )
+
+      operations.handoff(reason: 'needs agent')
+
+      expect(conversation.reload.status_transitions.last).to have_attributes(reason: 'Needs agent', source: 'copilot')
+    end
   end
 end

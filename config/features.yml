@@ -244,6 +244,9 @@
 - name: scheduling
   display_name: Scheduling
   enabled: true
+- name: captain_scheduling_grounding_guard
+  display_name: Captain Scheduling Grounding Guard
+  enabled: false
 - name: scheduling_finance
   display_name: Scheduling Finance
   enabled: true

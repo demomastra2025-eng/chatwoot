@@ -186,6 +186,7 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
           state: hash_including(
             account_id: account.id,
             assistant_id: assistant.id,
+            captain_scheduling_grounding_guard_enabled: false,
             captain_runtime: hash_including(
               'assistant_thinking_effort' => 'none',
               'assistant_moderation' => false
@@ -203,6 +204,17 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         expect(context[:captain_v2_trace_input]).to include('I need help with my account')
         expect(max_turns).to eq(described_class::MAX_RUNTIME_TURNS)
         expect(runtime_options[:llm_context]).to be_a(RubyLLM::Context)
+        mock_result
+      end
+
+      service.generate_response(message_history: message_history)
+    end
+
+    it 'enables scheduling guard state only for an account with the feature flag' do
+      account.enable_features!('captain_scheduling_grounding_guard')
+
+      expect(mock_runner).to receive(:run) do |_input, context:, **_options|
+        expect(context.dig(:state, :captain_scheduling_grounding_guard_enabled)).to be(true)
         mock_result
       end
 
@@ -1325,6 +1337,20 @@ RSpec.describe Captain::Assistant::AgentRunnerService do
         status: conversation.status
       )
       expect(state[:channel_type]).to eq(inbox.channel_type)
+    end
+
+    it 'includes the response fence used before runtime tool execution' do
+      fenced_service = described_class.new(
+        assistant: assistant,
+        conversation: conversation,
+        response_fence: { control_generation: 4, buffer_token: 'buffer-token', last_message_id: 91 }
+      )
+
+      expect(fenced_service.send(:build_state)[:captain_response_fence]).to eq(
+        control_generation: 4,
+        buffer_token: 'buffer-token',
+        last_message_id: 91
+      )
     end
 
     it 'includes contact inbox attributes when conversation is present' do

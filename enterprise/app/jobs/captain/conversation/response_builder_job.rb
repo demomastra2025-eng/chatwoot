@@ -43,12 +43,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   retry_on ActiveStorage::FileNotFoundError, attempts: 3, wait: 2.seconds
   retry_on Faraday::BadRequestError, attempts: 3, wait: 2.seconds
 
-  def perform(conversation, assistant, buffer_token: nil, expected_last_message_id: nil)
-    @conversation = conversation
-    @inbox = conversation.inbox
-    @assistant = assistant
-    @buffer_token = buffer_token
-    @expected_last_message_id = expected_last_message_id
+  def perform(conversation, assistant, buffer_token: nil, expected_last_message_id: nil, expected_control_generation: nil)
+    initialize_response_context(conversation, assistant, buffer_token, expected_last_message_id, expected_control_generation)
 
     return unless current_buffer_state_valid? && conversation_allows_captain_response?
 
@@ -58,6 +54,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     maintain_typing_indicator
     generate_and_process_response
+  rescue Captain::Conversation::ControlGenerationStaleError => e
+    Rails.logger.info("[CAPTAIN][RunFence] Stopped stale response conversation_id=#{conversation.id}: #{e.message}")
   rescue ActiveStorage::FileNotFoundError, Faraday::BadRequestError => e
     cancelled = response_cancelled?
     handle_error(e)
@@ -73,6 +71,15 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   delegate :account, :inbox, to: :@conversation
 
+  def initialize_response_context(conversation, assistant, buffer_token, expected_last_message_id, expected_control_generation)
+    @conversation = conversation
+    @inbox = conversation.inbox
+    @assistant = assistant
+    @buffer_token = buffer_token
+    @expected_last_message_id = expected_last_message_id || conversation.messages.incoming.last&.id
+    @expected_control_generation = expected_control_generation || message_control_generation || conversation.captain_control_generation
+  end
+
   def generate_and_process_response
     wait_for_audio_transcriptions
     wait_for_document_parsing
@@ -81,7 +88,12 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     @response = Captain::Assistant::AgentRunnerService.new(
       assistant: @assistant,
       conversation: @conversation,
-      callbacks: callbacks
+      callbacks: callbacks,
+      response_fence: {
+        control_generation: @expected_control_generation,
+        buffer_token: @buffer_token,
+        last_message_id: @expected_last_message_id
+      }.compact
     ).generate_response(
       message_history: collect_previous_messages
     )
@@ -115,11 +127,16 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
     ensure_response_content_for_artifact_failure!(attachment_ids)
 
-    ActiveRecord::Base.transaction do
-      create_messages(attachment_ids: attachment_ids)
-      Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
-      account.increment_response_usage
-      account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+    @conversation.with_lock do
+      return process_cancelled_response unless current_buffer_state_valid?
+      return process_cancelled_response if response_cancelled?
+
+      ActiveRecord::Base.transaction do
+        create_messages(attachment_ids: attachment_ids)
+        Rails.logger.info("[CAPTAIN][ResponseBuilderJob] Incrementing response usage for #{account.id}")
+        account.increment_response_usage
+        account.increment_token_usage(@response.dig('usage', 'total_tokens'))
+      end
     end
     true
   end
@@ -291,11 +308,9 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def normalize_blank_public_response!
     return unless blank_public_response?
 
-    @response = @response.merge(
-      'response' => PROVIDER_ERROR_HANDOFF_RESPONSE,
-      'reasoning' => 'Provider error occurred: Assistant runtime returned a blank response',
-      'error_class' => Captain::Assistant::AgentRunnerService::BlankResponseError.name,
-      'error_message' => 'Assistant runtime returned a blank response'
+    @response = provider_fallback_response(
+      error_class: Captain::Assistant::AgentRunnerService::BlankResponseError.name,
+      error_message: 'Assistant runtime returned a blank response'
     )
   end
 
@@ -312,44 +327,63 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def process_action(action)
-    case action
-    when 'handoff'
-      I18n.with_locale(@assistant.account.locale) do
-        create_handoff_private_note
-        create_handoff_message
-        bot_handoff_with_activity_reason
-        send_out_of_office_message_if_applicable
+    was_open = conversation_open?
+    reason = action == 'provider_error_handoff' ? provider_error_note_content : handoff_activity_reason
+    result = bot_handoff_with_activity_reason(reason) do
+      case action
+      when 'handoff' then create_handoff_notifications
+      when 'provider_error_handoff' then create_provider_error_handoff_notifications
+      when 'v2_handoff' then create_v2_handoff_notifications(was_open)
       end
-    when 'provider_error_handoff'
-      create_provider_error_private_note
-      bot_handoff_with_activity_reason(provider_error_note_content)
+    end
+    result == :applied
+  end
+
+  def create_handoff_notifications
+    I18n.with_locale(@assistant.account.locale) do
+      create_handoff_private_note
+      create_handoff_message(preserve_waiting_since: true)
       send_out_of_office_message_if_applicable
-    when 'v2_handoff'
-      if conversation_pending?
-        I18n.with_locale(@assistant.account.locale) do
-          create_handoff_private_note
-          create_handoff_message
-          bot_handoff_with_activity_reason
-          send_out_of_office_message_if_applicable
-        end
-      else
-        create_handoff_message(preserve_waiting_since: true)
-      end
     end
   end
 
-  def bot_handoff_with_activity_reason(reason = handoff_activity_reason)
+  def create_provider_error_handoff_notifications
+    create_provider_error_private_note
+    send_out_of_office_message_if_applicable
+  end
+
+  def create_v2_handoff_notifications(was_open)
+    return create_handoff_message(preserve_waiting_since: true) if was_open
+
+    create_handoff_notifications
+  end
+
+  def bot_handoff_with_activity_reason(reason = handoff_activity_reason, &)
     status_reason = handoff_status_reason
     source = status_reason.present? ? 'captain' : 'system'
-
-    if reason.present?
-      @conversation.with_captain_activity_context(
-        reason: reason,
-        reason_type: v2_handoff_tool_fired? ? :tool : :inference
-      ) { @conversation.bot_handoff!(status_reason: status_reason, actor: @assistant, source: source) }
-    else
-      @conversation.bot_handoff!(status_reason: status_reason, actor: @assistant, source: source)
+    handoff = lambda do
+      @conversation.bot_handoff!(
+        status_reason: status_reason,
+        actor: @assistant,
+        source: source,
+        fence: current_response_fence,
+        &
+      )
     end
+    return handoff.call if reason.blank?
+
+    @conversation.with_captain_activity_context(
+      reason: reason,
+      reason_type: v2_handoff_tool_fired? ? :tool : :inference,
+      &handoff
+    )
+  end
+
+  def current_response_fence
+    {
+      control_generation: @expected_control_generation,
+      last_message_id: @expected_last_message_id
+    }.compact
   end
 
   def handoff_activity_reason
@@ -359,9 +393,26 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def handoff_status_reason
     explicit_reason = @response['handoff_status_reason'].to_s.strip.presence || @response['status_reason'].to_s.strip.presence
     config = Conversations::StatusReasonConfig.new(@conversation.account)
-    return config.resolve_reason!('open', explicit_reason, enforce_required: false) if explicit_reason.present?
+    if explicit_reason.present?
+      canonical_reason = config.canonical_reason('open', explicit_reason)
+      publish_handoff_status_reason_dropped if canonical_reason.blank?
+      return canonical_reason
+    end
 
     config.canonical_reason('open', handoff_activity_reason)
+  end
+
+  def publish_handoff_status_reason_dropped
+    Llm::EventBus.publish(
+      'captain.handoff_status_reason_dropped',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: account.id,
+      conversation_id: @conversation.id,
+      job_id: job_id
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][Handoff] Failed to publish dropped status reason: #{e.class}: #{e.message}")
   end
 
   def send_out_of_office_message_if_applicable
@@ -389,7 +440,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   def handoff_message_content
     return @response['handoff_message'].presence if @assistant.handoff_message_mode_value == Captain::Assistant::MESSAGE_MODE_AI
 
-    @assistant.config['handoff_message'].presence
+    @assistant.config['handoff_message'].presence || I18n.t('conversations.captain.handoff')
   end
 
   def create_handoff_private_note
@@ -665,13 +716,33 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
     return true unless current_buffer_state_valid?
 
     if conversation_allows_captain_response?
-      @response ||= {}
-      @response['error_class'] = error.class.name
-      @response['error_message'] = error.message
+      @response = provider_fallback_response(error_class: error.class.name, error_message: error.message)
+      publish_provider_fallback_without_status_reason
       process_action('provider_error_handoff')
     end
     clear_buffer_state_if_current
     true
+  end
+
+  def provider_fallback_response(error_class:, error_message:)
+    {
+      'response' => PROVIDER_ERROR_HANDOFF_RESPONSE,
+      'error_class' => error_class,
+      'error_message' => error_message
+    }
+  end
+
+  def publish_provider_fallback_without_status_reason
+    Llm::EventBus.publish(
+      'captain.provider_fallback_without_status_reason',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: account.id,
+      conversation_id: @conversation.id,
+      job_id: job_id
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][Handoff] Failed to publish provider fallback: #{e.class}: #{e.message}")
   end
 
   def log_error(error)
@@ -819,6 +890,8 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
   end
 
   def conversation_allows_captain_response?
+    return false if @conversation.captain_human_control_active?
+
     return true if conversation_pending?
     return false unless conversation_open?
 
@@ -831,6 +904,7 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def current_buffer_state_valid?
     return false unless conversation_eligible_for_response?
+    return false unless control_generation_current?
 
     current_last_incoming_message_id = @conversation.reload.messages.incoming.last&.id
     return bufferless_state_valid?(current_last_incoming_message_id) if @buffer_token.blank?
@@ -877,6 +951,19 @@ class Captain::Conversation::ResponseBuilderJob < ApplicationJob
 
   def conversation_eligible_for_response?
     (conversation_allows_captain_response? || v2_handoff_tool_fired?) && @conversation.inbox.captain_assistant&.id == @assistant.id
+  end
+
+  def control_generation_current?
+    @conversation.reload.captain_ai_control_active? &&
+      !Captain::Conversation::ControlService.human_response_after?(@conversation, @expected_last_message_id) &&
+      @conversation.captain_control_generation.to_i == @expected_control_generation.to_i
+  end
+
+  def message_control_generation
+    return if @expected_last_message_id.blank?
+
+    attributes = Message.where(id: @expected_last_message_id, conversation_id: @conversation.id).pick(:additional_attributes)
+    attributes.to_h['captain_control_generation']
   end
 end
 # rubocop:enable Metrics/ClassLength

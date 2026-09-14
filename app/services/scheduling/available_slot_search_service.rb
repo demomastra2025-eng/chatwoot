@@ -15,7 +15,7 @@ class Scheduling::AvailableSlotSearchService
   def perform
     validate_range!
 
-    {
+    payload = {
       range: {
         from: @from.iso8601,
         to: @to.iso8601
@@ -27,6 +27,7 @@ class Scheduling::AvailableSlotSearchService
       total_slots: normalized_slots.length,
       availability: availability_payload
     }.compact
+    payload.merge(availability_scope_payload)
   end
 
   private
@@ -123,6 +124,31 @@ class Scheduling::AvailableSlotSearchService
 
   def availability_resources
     @availability_resources ||= []
+  end
+
+  def availability_scope_payload
+    confirmed = service_match_confirmed?
+    {
+      availability_scope: availability_scope(confirmed),
+      requested_service_id: @service_id,
+      service_match: {
+        confirmed: confirmed,
+        service_id: confirmed ? service.id : nil,
+        resource_id: confirmed && resources.one? ? resources.first.id : nil,
+        resource_ids: confirmed ? resources.map(&:id) : []
+      },
+      customer_offer_eligible: confirmed
+    }
+  end
+
+  def availability_scope(confirmed)
+    return 'generic' if @service_id.blank?
+
+    confirmed ? 'service_confirmed' : 'service_unconfirmed'
+  end
+
+  def service_match_confirmed?
+    @service_id.present? && service.present? && resources.present?
   end
 
   def medelement_resource?(resource)

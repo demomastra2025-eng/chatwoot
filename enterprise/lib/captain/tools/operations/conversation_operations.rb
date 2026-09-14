@@ -178,13 +178,15 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
   def handoff(reason: nil, status_reason: nil)
     raise ArgumentError, 'Current conversation is not available' if conversation.blank?
 
-    add_private_note(note: reason) if reason.present?
+    canonical_status_reason, source = configured_handoff_status_reason(conversation, status_reason, fallback_reason: reason)
     conversation.bot_handoff!(
-      status_reason: configured_status_reason_for(conversation, 'open', status_reason, fallback_reason: reason),
+      status_reason: canonical_status_reason,
       actor: actor || assistant,
-      source: captain_status_source
-    )
-    ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation) unless conversation.campaign.present?
+      source: source
+    ) do
+      add_private_note(note: reason) if reason.present?
+      ::MessageTemplates::Template::OutOfOffice.perform_if_applicable(conversation) if conversation.campaign.blank?
+    end
     conversation.reload
   end
 
@@ -443,6 +445,31 @@ class Captain::Tools::Operations::ConversationOperations < Captain::Tools::Opera
     return config.resolve_reason!(target_status, explicit_reason, enforce_required: false) if explicit_reason.present?
 
     config.canonical_reason(target_status, fallback_reason)
+  end
+
+  def configured_handoff_status_reason(target_conversation, explicit_reason, fallback_reason: nil)
+    config = ::Conversations::StatusReasonConfig.new(target_conversation.account)
+    explicit_reason = explicit_reason.to_s.strip.presence
+    if explicit_reason.present?
+      canonical_reason = config.canonical_reason('open', explicit_reason)
+      publish_handoff_status_reason_dropped(target_conversation) if canonical_reason.blank?
+      return [canonical_reason, canonical_reason.present? ? captain_status_source : 'system']
+    end
+
+    canonical_reason = config.canonical_reason('open', fallback_reason)
+    [canonical_reason, canonical_reason.present? ? captain_status_source : 'system']
+  end
+
+  def publish_handoff_status_reason_dropped(target_conversation)
+    Llm::EventBus.publish(
+      'captain.handoff_status_reason_dropped',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: target_conversation.account_id,
+      conversation_id: target_conversation.id
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][Handoff] Failed to publish dropped status reason: #{e.class}: #{e.message}")
   end
 
   def captain_status_source

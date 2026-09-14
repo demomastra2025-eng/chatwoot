@@ -16,6 +16,7 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
 
   def execute(tool_context, **params)
     ensure_tool_execution_allowed!
+    ensure_captain_control_current!(tool_context)
     result = super
     audit_tool_execution(arguments: params, result: result, runtime_context: runtime_context(tool_context))
     result
@@ -59,6 +60,52 @@ class Captain::Tools::BasePublicTool < Captain::Runtime::Tool
             assistant: assistant,
             scope_name: Captain::ToolAccess::SCOPE_AGENT
           )
+  end
+
+  def ensure_captain_control_current!(tool_context)
+    state = tool_context&.state&.with_indifferent_access || {}
+    return ensure_response_fence_current!(state) if state[:captain_response_fence].present?
+
+    ensure_legacy_control_generation_current!(state)
+  end
+
+  def ensure_response_fence_current!(state)
+    Captain::Conversation::RunFenceService.new(assistant: assistant, state: state).ensure_current!
+  end
+
+  def ensure_legacy_control_generation_current!(state)
+    expected_generation = state[:captain_control_generation]
+    conversation_id = state.dig(:conversation, :id)
+    return if expected_generation.nil? || conversation_id.blank?
+
+    control_state, control_generation = captain_control_snapshot(conversation_id)
+    return if captain_control_current?(control_state, control_generation, expected_generation)
+
+    publish_captain_run_fenced(conversation_id, expected_generation, control_generation, control_state)
+    raise Captain::Conversation::ControlGenerationStaleError, 'Captain control changed before tool execution'
+  end
+
+  def captain_control_snapshot(conversation_id)
+    account_scoped(::Conversation).where(id: conversation_id).pick(:captain_control_state, :captain_control_generation)
+  end
+
+  def captain_control_current?(control_state, control_generation, expected_generation)
+    control_state != Captain::Conversation::ControlService::HUMAN_CONTROL &&
+      control_generation.to_i == expected_generation.to_i
+  end
+
+  def publish_captain_run_fenced(conversation_id, expected_generation, control_generation, control_state)
+    Llm::EventBus.publish(
+      'captain.run.fenced',
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: assistant.account_id,
+      conversation_id: conversation_id,
+      expected_control_generation: expected_generation,
+      actual_control_generation: control_generation,
+      control_state: control_state,
+      stage: 'tool_execution'
+    )
   end
 
   def registry_definition

@@ -367,6 +367,18 @@ RSpec.describe Captain::Runtime::Runner do
       expect(result.context[Captain::Runtime::ToolWrapper::TERMINAL_TOOL_STOP_KEY]).to be_present
     end
 
+    it 'propagates a stale Captain response fence instead of converting it to a provider error' do
+      stale_error = Captain::Conversation::ControlGenerationStaleError.new('Captain response run is stale')
+      agent = Captain::Runtime::Agent.new(name: 'assistant_agent')
+      chat = RuntimeRunnerSpecChat.new
+      allow(chat).to receive(:ask).and_raise(stale_error)
+      expect(Llm::Runtime).to receive(:build_chat).and_return(chat)
+
+      expect do
+        runner.run(agent, 'Respond', registry: { agent.name => agent }, llm_context: llm_context, account: account)
+      end.to raise_error(stale_error)
+    end
+
     it 'continues from restored history without exposing tools during finalization-only retries' do
       tool = RuntimeRunnerSpecTool.new('create_deal', 'Create deal')
       agent = Captain::Runtime::Agent.new(

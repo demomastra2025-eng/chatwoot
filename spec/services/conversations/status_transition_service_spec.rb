@@ -43,6 +43,38 @@ RSpec.describe Conversations::StatusTransitionService do
     )
   end
 
+  it 'returns ownership to Captain when an agent explicitly resolves a human-owned conversation' do
+    allow(Llm::EventBus).to receive(:publish)
+    conversation.activate_captain_human_control!(source: 'agent_reply', actor: agent)
+    human_generation = conversation.reload.captain_control_generation
+
+    transition(params: { status: 'resolved' })
+
+    expect(conversation.reload).to have_attributes(
+      status: 'resolved',
+      captain_control_state: 'ai',
+      captain_control_generation: human_generation + 1,
+      captain_handoff_applied_at: nil
+    )
+    expect(Llm::EventBus).to have_received(:publish).with(
+      'captain.control.ai_activated',
+      hash_including(conversation_id: conversation.id, source: 'manual')
+    )
+  end
+
+  it 'returns ownership to Captain for an explicit bulk resolve' do
+    conversation.activate_captain_human_control!(source: 'agent_reply', actor: agent)
+
+    described_class.new(
+      conversation: conversation,
+      params: { status: 'resolved' },
+      actor: agent,
+      source: 'bulk_action'
+    ).perform
+
+    expect(conversation.reload).to have_attributes(status: 'resolved', captain_control_state: 'ai')
+  end
+
   it 'requires configured reasons for manual transitions' do
     configure_status_reasons(:resolved, options: ['Вопрос решён'], required: true)
 

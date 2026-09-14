@@ -22,6 +22,7 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
       duration_min: duration_min,
       limit: limit
     ).perform
+    publish_service_match(payload)
 
     formatted_payload(payload)
   rescue StandardError => e
@@ -30,5 +31,23 @@ class Captain::Tools::Copilot::SearchAvailableSlotsService < Captain::Tools::Cop
 
   def active?
     @user.present? && assistant.account.feature_enabled?('scheduling')
+  end
+
+  private
+
+  def publish_service_match(payload)
+    match = payload.fetch(:service_match)
+    event_name = match.fetch(:confirmed) ? 'captain.service_match_confirmed' : 'captain.service_match_missing'
+    Llm::EventBus.publish(
+      event_name,
+      feature: 'assistant',
+      runtime_mode: 'captain_runtime',
+      account_id: account.id,
+      conversation_id: current_conversation&.id,
+      service_id: payload[:requested_service_id],
+      resource_ids: match[:resource_ids]
+    )
+  rescue StandardError => e
+    Rails.logger.warn("[CAPTAIN][Scheduling] Failed to publish service match: #{e.class}: #{e.message}")
   end
 end

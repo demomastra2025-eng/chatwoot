@@ -1,6 +1,13 @@
 module Enterprise::Message
   private
 
+  def activate_captain_human_control_for_human_response
+    return unless captain_human_control_candidate?
+
+    conversation.activate_captain_human_control!(source: 'agent_reply', actor: sender)
+    turn_off_captain_typing_indicator
+  end
+
   def mark_pending_conversation_as_open_for_human_response
     return unless captain_auto_open_candidate?
 
@@ -12,17 +19,20 @@ module Enterprise::Message
       ).perform
       return unless conversation.saved_change_to_status?
 
-      turn_off_captain_typing_indicator
       create_captain_auto_open_activity_message
     end
   end
 
   def captain_auto_open_candidate?
-    captain_pending_conversation? &&
-      human_response? &&
+    captain_pending_conversation? && captain_human_control_candidate?
+  end
+
+  def captain_human_control_candidate?
+    human_response? &&
       !private? &&
       !scheduled_touch_message? &&
-      !template_bootstrap_message?
+      !template_bootstrap_message? &&
+      ::CaptainInbox.exists?(inbox_id: conversation.inbox_id)
   end
 
   def captain_pending_conversation?

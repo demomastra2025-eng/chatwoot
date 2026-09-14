@@ -19,6 +19,8 @@ class Captain::Runtime::Runner
   rescue MaxTurnsExceeded => e
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent),
                  output: "Conversation ended: #{e.message}", error: e)
+  rescue Captain::Conversation::ControlGenerationStaleError
+    raise
   rescue StandardError => e
     finalize_run(session&.dig(:chat), session&.dig(:context_wrapper), session&.dig(:current_agent), output: nil, error: e)
   end
